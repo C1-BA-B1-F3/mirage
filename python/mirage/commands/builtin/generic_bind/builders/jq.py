@@ -49,4 +49,4 @@ async def jq(
                             s=s)
 
 
-BUILDER = Builder('jq', jq, make_jq_provision, False, None)
+BUILDER = Builder('jq', jq, make_jq_provision, False, None, read=True)

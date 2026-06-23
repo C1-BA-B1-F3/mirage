@@ -54,4 +54,4 @@ async def diff(
                               r=r)
 
 
-BUILDER = Builder('diff', diff, None, False, None)
+BUILDER = Builder('diff', diff, None, False, None, read=True)

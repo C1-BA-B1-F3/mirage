@@ -45,4 +45,4 @@ async def look(
                               fold_case=f)
 
 
-BUILDER = Builder('look', look, None, False, None)
+BUILDER = Builder('look', look, None, False, None, read=True)

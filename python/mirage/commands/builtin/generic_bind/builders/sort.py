@@ -61,4 +61,4 @@ async def sort(
     )
 
 
-BUILDER = Builder('sort', sort, None, False, None)
+BUILDER = Builder('sort', sort, None, False, None, read=True)

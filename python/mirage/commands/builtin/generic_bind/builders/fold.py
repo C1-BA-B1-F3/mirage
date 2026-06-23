@@ -44,4 +44,4 @@ async def fold(
                               break_spaces=s)
 
 
-BUILDER = Builder('fold', fold, None, False, None)
+BUILDER = Builder('fold', fold, None, False, None, read=True)

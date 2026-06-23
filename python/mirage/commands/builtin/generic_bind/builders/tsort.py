@@ -40,4 +40,4 @@ async def tsort(
                                stdin=stdin)
 
 
-BUILDER = Builder('tsort', tsort, None, False, None)
+BUILDER = Builder('tsort', tsort, None, False, None, read=True)

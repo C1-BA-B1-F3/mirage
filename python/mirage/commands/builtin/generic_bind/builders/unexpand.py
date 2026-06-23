@@ -45,4 +45,4 @@ async def unexpand(
                                   all_spaces=a)
 
 
-BUILDER = Builder('unexpand', unexpand, None, False, None)
+BUILDER = Builder('unexpand', unexpand, None, False, None, read=True)

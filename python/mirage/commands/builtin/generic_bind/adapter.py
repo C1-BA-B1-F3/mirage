@@ -25,6 +25,8 @@ from mirage.types import PathSpec
 
 logger = logging.getLogger(__name__)
 
+FACTORY_READ_RESOURCES: set[str] = set()
+
 
 class Builder(NamedTuple):
     name: str
@@ -32,6 +34,7 @@ class Builder(NamedTuple):
     provision: Callable | None = None
     write: bool = False
     aggregate: Callable | None = None
+    read: bool = False
 
 
 def make_resolve_glob(readdir: Callable,

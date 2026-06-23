@@ -42,4 +42,4 @@ async def fmt(
                              width=int(w) if w is not None else 75)
 
 
-BUILDER = Builder('fmt', fmt, None, False, None)
+BUILDER = Builder('fmt', fmt, None, False, None, read=True)

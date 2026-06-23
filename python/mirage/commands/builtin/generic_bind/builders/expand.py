@@ -44,4 +44,4 @@ async def expand(
                                 initial_only=i)
 
 
-BUILDER = Builder('expand', expand, None, False, None)
+BUILDER = Builder('expand', expand, None, False, None, read=True)

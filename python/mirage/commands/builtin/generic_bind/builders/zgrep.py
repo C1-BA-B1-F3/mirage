@@ -45,4 +45,4 @@ async def zgrep(
     )
 
 
-BUILDER = Builder('zgrep', zgrep, None, False, None)
+BUILDER = Builder('zgrep', zgrep, None, False, None, read=True)

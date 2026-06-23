@@ -40,4 +40,4 @@ async def rev(
                              stdin=stdin)
 
 
-BUILDER = Builder('rev', rev, None, False, None)
+BUILDER = Builder('rev', rev, None, False, None, read=True)

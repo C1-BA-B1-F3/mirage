@@ -26,9 +26,11 @@ load_dotenv(".env.development")
 config = NotionConfig(api_key=os.environ["NOTION_API_KEY"])
 resource = NotionResource(config=config)
 
-with Workspace({"/notion/": resource}, mode=MountMode.READ, fuse=True) as ws:
+with Workspace({"/notion/": resource},
+               mode=MountMode.READ,
+               fuse_mounts={"/": True}) as ws:
     time.sleep(1)
-    mp = ws.fuse_mountpoint
+    mp = ws.fuse_mountpoints["/"]
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")
 

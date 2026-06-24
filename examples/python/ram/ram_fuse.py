@@ -36,9 +36,11 @@ for name in sorted(store.files):
     size = len(store.files[name])
     print(f"  {name} ({size:,} bytes)")
 
-with Workspace({"/data/": resource}, mode=MountMode.WRITE, fuse=True) as ws:
+with Workspace({"/data/": resource},
+               mode=MountMode.WRITE,
+               fuse_mounts={"/": True}) as ws:
     time.sleep(1)
-    mp = ws.fuse_mountpoint
+    mp = ws.fuse_mountpoints["/"]
 
     print(f"\n=== FUSE MODE: mounted at {mp} ===\n")
 

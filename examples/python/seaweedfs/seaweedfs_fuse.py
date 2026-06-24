@@ -56,11 +56,11 @@ async def cleanup(ws: Workspace) -> None:
 with Workspace(
     {"/seaweedfs/": resource},
         mode=MountMode.WRITE,
-        fuse=True,
+        fuse_mounts={"/": True},
 ) as ws:
     asyncio.run(seed(ws))
     time.sleep(1)
-    mp = ws.fuse_mountpoint
+    mp = ws.fuse_mountpoints["/"]
 
     print(f"=== FUSE MODE: SeaweedFS mounted at {mp} ===\n")
 

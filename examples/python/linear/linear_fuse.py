@@ -26,9 +26,11 @@ load_dotenv(".env.development")
 config = LinearConfig(api_key=os.environ["LINEAR_API_KEY"])
 resource = LinearResource(config=config)
 
-with Workspace({"/linear/": resource}, mode=MountMode.READ, fuse=True) as ws:
+with Workspace({"/linear/": resource},
+               mode=MountMode.READ,
+               fuse_mounts={"/": True}) as ws:
     time.sleep(1)
-    mp = ws.fuse_mountpoint
+    mp = ws.fuse_mountpoints["/"]
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")
 

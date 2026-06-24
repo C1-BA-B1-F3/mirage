@@ -35,10 +35,10 @@ resource = SSHResource(config)
 with Workspace(
     {"/ssh/": resource},
         mode=MountMode.WRITE,
-        fuse=True,
+        fuse_mounts={"/": True},
 ) as ws:
     time.sleep(1)
-    mp = ws.fuse_mountpoint
+    mp = ws.fuse_mountpoints["/"]
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")
 

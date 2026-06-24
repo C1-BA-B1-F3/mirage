@@ -37,9 +37,11 @@ print("Seeded Redis with sample files")
 
 resource = RedisResource(url=REDIS_URL, key_prefix=KEY_PREFIX)
 
-with Workspace({"/data/": resource}, mode=MountMode.WRITE, fuse=True) as ws:
+with Workspace({"/data/": resource},
+               mode=MountMode.WRITE,
+               fuse_mounts={"/": True}) as ws:
     time.sleep(1)
-    mp = ws.fuse_mountpoint
+    mp = ws.fuse_mountpoints["/"]
 
     print(f"\n=== FUSE MODE: mounted at {mp} ===\n")
 

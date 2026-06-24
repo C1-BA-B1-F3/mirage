@@ -32,9 +32,11 @@ config = EmailConfig(
 )
 resource = EmailResource(config=config)
 
-with Workspace({"/email/": resource}, mode=MountMode.READ, fuse=True) as ws:
+with Workspace({"/email/": resource},
+               mode=MountMode.READ,
+               fuse_mounts={"/": True}) as ws:
     time.sleep(1)
-    mp = ws.fuse_mountpoint
+    mp = ws.fuse_mountpoints["/"]
 
     print(f"=== FUSE MODE: mounted at {mp} ===\n")
 

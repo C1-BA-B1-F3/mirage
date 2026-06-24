@@ -33,9 +33,11 @@ for fpath in sorted(DATA_DIR.iterdir()):
 
 print(f"Seeded {len(store.files)} files from {DATA_DIR}")
 
-with Workspace({"/data/": resource}, mode=MountMode.READ, fuse=True) as ws:
+with Workspace({"/data/": resource},
+               mode=MountMode.READ,
+               fuse_mounts={"/": True}) as ws:
     time.sleep(1)
-    mp = ws.fuse_mountpoint
+    mp = ws.fuse_mountpoints["/"]
 
     print(f"\n=== FUSE MODE (READ): mounted at {mp} ===\n")
 

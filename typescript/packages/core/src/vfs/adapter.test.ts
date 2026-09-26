@@ -57,7 +57,7 @@ describe('VFSAdapter', () => {
       const refused = await ws.shell('rm /nested/data/a.txt')
       expect(refused.exitCode).toBe(1)
       expect(stderrStr(refused)).toBe(
-        "rm: cannot remove '/nested/data/a.txt': Operation not supported\n",
+        "rm: cannot remove '/nested/data/a.txt': Read-only file system\n",
       )
       expect(vfs.ops().some((op) => op.name === 'write')).toBe(false)
     } finally {
@@ -129,9 +129,8 @@ describe('VFSAdapter', () => {
         expect(result.exitCode === 0).toBe(mode === MountMode.WRITE)
         expect(write).toHaveBeenCalledTimes(mode === MountMode.WRITE ? 1 : 0)
         const refused = await ws.shell('rm /nested/data/a.txt')
-        expect(stderrStr(refused)).toBe(
-          "rm: cannot remove '/nested/data/a.txt': Operation not supported\n",
-        )
+        const reason = mode === MountMode.READ ? 'Read-only file system' : 'Operation not supported'
+        expect(stderrStr(refused)).toBe(`rm: cannot remove '/nested/data/a.txt': ${reason}\n`)
         expect(vfs.ops().some((op) => op.name === 'write')).toBe(true)
         expect(vfs.ops().some((op) => op.name === 'unlink')).toBe(false)
       } finally {

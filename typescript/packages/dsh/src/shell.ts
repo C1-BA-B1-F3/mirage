@@ -74,7 +74,7 @@ const SINK_PREFIX = '/dev'
 // redirection made it. Hide refusals keep `Permission denied`. Only
 // consulted for a call that ran under `read-only`, so the only permission
 // error these can catch is the one this executor just imposed.
-const DENIAL_SIGNATURES = [': Permission denied', ': Read-only file system']
+const DENIAL_SIGNATURES = ['read-only mount at ', ': Permission denied', ': Read-only file system']
 
 /** Configuration for the mirage shell executor. */
 export interface MirageShellConfig {

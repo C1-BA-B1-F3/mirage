@@ -30,7 +30,7 @@ from mirage.vfs.types import DuOps, NativeReadOps, ReadOps, WriteOps
 
 # Hugging Face bucket files are read and written through the generic factory;
 # rather than the generic (list, total) tuple.
-# cp and mv are skipped because HF buckets have no server-side copy/rename op.
+# Copy falls back to reads and writes; there is no native copy/rename op.
 IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
                 native=NativeReadOps(read_range=_read,
                                      read_stream=_read_stream,

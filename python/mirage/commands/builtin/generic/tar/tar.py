@@ -290,6 +290,8 @@ async def _extract_archive(
                 except FS_ERRORS as exc:
                     notices.append(f"tar: {'/'.join(parts[:-1])}: Cannot "
                                    f"mkdir: {fs_strerror(exc)}")
+                    # GNU tar 1.35 (debian:stable-slim) reports ENOENT
+                    # for the member after its parent mkdir failed.
                     notices.append(f"tar: {'/'.join(parts)}: Cannot open: "
                                    "No such file or directory")
                     failed = True

@@ -41,7 +41,13 @@ export const CP_BUILDER: Builder = {
   name: 'cp',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {
-    const { dirCopy, find, mkdir } = ops
+    const { dirCopy, find } = ops
+    // Without a file transfer capability, creating directories would
+    // leave an uncopyable destination tree. Keep the refusal guarded.
+    const mkdir =
+      ops.copy === undefined && ops.write === undefined
+        ? requireOp<NonNullable<CommandIO['mkdir']>>(undefined, 'mkdir')
+        : ops.mkdir
     const copy = requireOp(ops.copy, 'copy')
     const idx = opts.index ?? undefined
     const resolved = await resolveGlobOf(ops)(accessor, paths, idx)
@@ -72,12 +78,13 @@ export const CP_BUILDER: Builder = {
     // are worded.
     const { write } = ops
     const guarded = pathRulesActive() || resolved.some((p) => hiddenPathsIntersect(p.virtual))
+    const primitive = ops.copy === undefined || (guarded && mkdir !== undefined)
     const strategy: NativeCopy | PrimitiveCopy =
-      guarded && write !== undefined && mkdir !== undefined
+      primitive && write !== undefined
         ? {
             readBytes: (p: PathSpec) => ops.readBytes(accessor, p, idx),
             write: (p: PathSpec, data: Uint8Array) => write(accessor, p, data),
-            mkdir: (p: PathSpec) => mkdir(accessor, p),
+            mkdir: (p: PathSpec) => requireOp(ops.mkdir, 'mkdir')(accessor, p),
             readdir: (p: PathSpec) => ops.readdir(accessor, p, idx),
           }
         : {

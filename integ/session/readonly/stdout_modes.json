@@ -369,7 +369,7 @@
     },
     {
       "id": "sro_tar_c_names_a_relative_archive_as_typed",
-      "seq": 1231066,
+      "seq": 1231110,
       "session": "narrowed",
       "command": "(cd /res/sro && tar -cf c.tar f.txt)",
       "expect": {
@@ -384,7 +384,7 @@
     },
     {
       "id": "sro_sort_o_names_a_relative_output_as_typed",
-      "seq": 1231067,
+      "seq": 1231111,
       "session": "narrowed",
       "command": "(cd /res/sro && sort -o o.txt f.txt)",
       "expect": {
@@ -398,7 +398,7 @@
     },
     {
       "id": "sro_shuf_o_names_a_relative_output_as_typed",
-      "seq": 1231068,
+      "seq": 1231112,
       "session": "narrowed",
       "command": "(cd /res/sro && shuf -o o.txt f.txt)",
       "expect": {
@@ -412,7 +412,7 @@
     },
     {
       "id": "sro_grep_f_names_a_relative_pattern_file_as_typed",
-      "seq": 1231069,
+      "seq": 1231113,
       "session": "narrowed",
       "command": "(cd /res/sro && grep -f nofile f.txt)",
       "expect": {
@@ -426,7 +426,7 @@
     },
     {
       "id": "sro_sed_f_names_a_relative_script_as_typed",
-      "seq": 1231070,
+      "seq": 1231114,
       "session": "narrowed",
       "command": "(cd /res/sro && sed -f nofile f.txt)",
       "expect": {
@@ -440,7 +440,7 @@
     },
     {
       "id": "sro_cp_t_names_a_relative_target_as_typed",
-      "seq": 1231071,
+      "seq": 1231115,
       "session": "narrowed",
       "command": "(cd /res/sro && cp -t nodir f.txt)",
       "expect": {
@@ -454,7 +454,7 @@
     },
     {
       "id": "sro_split_names_its_default_outputs_as_formed",
-      "seq": 1231072,
+      "seq": 1231116,
       "session": "narrowed",
       "command": "(cd /res/sro && split -l 1 f.txt)",
       "expect": {
@@ -468,7 +468,7 @@
     },
     {
       "id": "sro_split_names_an_absolute_prefix_as_typed",
-      "seq": 1231073,
+      "seq": 1231117,
       "session": "narrowed",
       "command": "split -l 1 /res/sro/f.txt /res/sro/pre",
       "expect": {
@@ -482,7 +482,7 @@
     },
     {
       "id": "sro_split_names_a_dot_prefix_as_typed",
-      "seq": 1231074,
+      "seq": 1231118,
       "session": "narrowed",
       "command": "(cd /res/sro && split -l 1 f.txt ./pre)",
       "expect": {
@@ -496,7 +496,7 @@
     },
     {
       "id": "sro_csplit_names_its_default_outputs_as_formed",
-      "seq": 1231075,
+      "seq": 1231119,
       "session": "narrowed",
       "command": "(cd /res/sro && csplit two.txt 2)",
       "expect": {
@@ -507,7 +507,7 @@
     },
     {
       "id": "sro_csplit_k_still_reports_the_refusal",
-      "seq": 1231076,
+      "seq": 1231120,
       "session": "narrowed",
       "command": "(cd /res/sro && csplit -k -f pp two.txt 2)",
       "expect": {
@@ -522,7 +522,7 @@
     },
     {
       "id": "sro_split_and_csplit_write_into_the_cwd",
-      "seq": 1231077,
+      "seq": 1231121,
       "session": "narrowed",
       "command": "(mkdir -p /data/sro_sp && cd /data/sro_sp && split -l 1 /res/sro/two.txt && csplit /res/sro/two.txt 2 && ls; cd / && rm -r /data/sro_sp)",
       "expect": {
@@ -536,7 +536,7 @@
     },
     {
       "id": "sro_unzip_o_names_the_file_it_cannot_replace",
-      "seq": 1231078,
+      "seq": 1231122,
       "session": "narrowed",
       "command": "(cd /res/sro && unzip -o a.zip)",
       "expect": {
@@ -550,7 +550,7 @@
     },
     {
       "id": "sro_unzip_d_cannot_make_its_directory",
-      "seq": 1231079,
+      "seq": 1231123,
       "session": "narrowed",
       "command": "unzip -q /res/sro/a.zip -d /res/sro/out",
       "expect": {
@@ -565,7 +565,7 @@
     },
     {
       "id": "sro_zip_cannot_create_its_archive",
-      "seq": 1231080,
+      "seq": 1231124,
       "session": "narrowed",
       "command": "(cd /res/sro && zip b.zip f.txt)",
       "expect": {
@@ -576,7 +576,7 @@
     },
     {
       "id": "sro_mkdir_p_blames_the_first_missing_component",
-      "seq": 1231081,
+      "seq": 1231125,
       "session": "narrowed",
       "command": "mkdir -p /res/sro/n/m",
       "expect": {
@@ -590,7 +590,7 @@
     },
     {
       "id": "sro_mkdir_p_blames_a_relative_component_as_typed",
-      "seq": 1231082,
+      "seq": 1231126,
       "session": "narrowed",
       "command": "(cd /res/sro && mkdir -p n/m)",
       "expect": {
@@ -604,7 +604,7 @@
     },
     {
       "id": "sro_mkdir_p_of_an_existing_directory_succeeds",
-      "seq": 1231083,
+      "seq": 1231127,
       "session": "narrowed",
       "command": "mkdir -p /res/sro && echo ok",
       "expect": {
@@ -618,7 +618,7 @@
     },
     {
       "id": "sro_mkdir_of_an_existing_directory_exists",
-      "seq": 1231084,
+      "seq": 1231128,
       "session": "narrowed",
       "command": "mkdir /res/sro",
       "expect": {
@@ -629,7 +629,7 @@
     },
     {
       "id": "sro_gzip_f_cannot_replace_its_output",
-      "seq": 1231085,
+      "seq": 1231129,
       "session": "narrowed",
       "command": "gzip -f /res/sro/f.txt",
       "expect": {
@@ -643,7 +643,7 @@
     },
     {
       "id": "sro_gzip_cannot_create_a_new_output",
-      "seq": 1231086,
+      "seq": 1231130,
       "session": "narrowed",
       "command": "(cd /res/sro && gzip a.tar)",
       "expect": {
@@ -654,7 +654,7 @@
     },
     {
       "id": "sro_gzip_warns_then_stops_at_the_first_create",
-      "seq": 1231087,
+      "seq": 1231131,
       "session": "narrowed",
       "command": "gzip /res/sro/f.txt /res/sro/a.tar /res/sro/a.zip",
       "expect": {
@@ -665,7 +665,7 @@
     },
     {
       "id": "sro_gzip_goes_on_past_a_missing_input",
-      "seq": 1231088,
+      "seq": 1231132,
       "session": "narrowed",
       "command": "(mkdir -p /data/sro_gz && cd /data/sro_gz && printf g > g.txt && gzip nope.txt g.txt; echo rc=$?; ls; cd / && rm -r /data/sro_gz)",
       "expect": {
@@ -676,7 +676,7 @@
     },
     {
       "id": "sro_mktemp_names_a_relative_template",
-      "seq": 1231089,
+      "seq": 1231133,
       "session": "narrowed",
       "command": "(cd /res/sro && mktemp -p .)",
       "expect": {
@@ -690,7 +690,7 @@
     },
     {
       "id": "sro_mktemp_d_names_the_template",
-      "seq": 1231090,
+      "seq": 1231134,
       "session": "narrowed",
       "command": "mktemp -d -p /res/sro",
       "expect": {
@@ -705,7 +705,7 @@
     },
     {
       "id": "sro_mktemp_bare_template_is_the_cwd",
-      "seq": 1231091,
+      "seq": 1231135,
       "session": "narrowed",
       "command": "(cd /res/sro && mktemp x.XXX)",
       "expect": {
@@ -716,7 +716,7 @@
     },
     {
       "id": "sro_mktemp_pathless_creates_under_tmp",
-      "seq": 1231092,
+      "seq": 1231136,
       "session": "narrowed",
       "command": "(cd /res/sro && p=$(mktemp) && dirname \"$p\" && test -f \"$p\" && rm \"$p\" && echo ok)",
       "expect": {
@@ -727,7 +727,7 @@
     },
     {
       "id": "sro_refusals_wrote_nothing",
-      "seq": 1231100,
+      "seq": 1231140,
       "command": "ls /res/sro",
       "expect": {
         "exit": 0,
@@ -737,7 +737,7 @@
     },
     {
       "id": "sro_cleanup",
-      "seq": 1231101,
+      "seq": 1231141,
       "command": "rm -r /res/sro",
       "expect": {
         "exit": 0,
@@ -753,6 +753,47 @@
       "expect": {
         "exit": 0,
         "stdout": "x\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_nested_tar_prep",
+      "seq": 1231066,
+      "command": "mkdir -p /res/sro-src/sub /res/sro-out && printf 'nested\\n' > /res/sro-src/sub/f.txt && printf 'flat\\n' > /res/sro-src/f.txt && tar -cf /res/sro-nested.tar -C /res/sro-src sub/f.txt f.txt && rm -r /res/sro-src",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_nested_tar_reports_parent_and_member_failures",
+      "seq": 1231067,
+      "session": "narrowed",
+      "command": "tar -xf /res/sro-nested.tar -C /res/sro-out",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: sub: Cannot mkdir: Read-only file system\ntar: sub/f.txt: Cannot open: No such file or directory\ntar: f.txt: Cannot open: Read-only file system\ntar: Exiting with failure status due to previous errors\n"
+      }
+    },
+    {
+      "id": "sro_nested_tar_wrote_nothing",
+      "seq": 1231068,
+      "command": "ls -A /res/sro-out",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_nested_tar_cleanup",
+      "seq": 1231069,
+      "command": "rm -r /res/sro-nested.tar /res/sro-out",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
         "stderr": ""
       }
     }

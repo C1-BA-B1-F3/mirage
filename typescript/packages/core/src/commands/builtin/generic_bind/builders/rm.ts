@@ -41,7 +41,8 @@ export const RM_BUILDER: Builder = {
     if (paths.length === 0) return rmWithoutOperands(force)
     const idx = opts.index ?? undefined
     const resolved = await resolveGlobOf(ops)(accessor, paths, idx)
-    const { rmR, rmdir } = ops
+    const rmR = requireOp(ops.rmR, 'rmR')
+    const rmdir = requireOp(ops.rmdir, 'rmdir')
     const unlink = requireOp(ops.unlink, 'unlink')
     const lines: string[] = []
     const errors: string[] = []
@@ -76,9 +77,6 @@ export const RM_BUILDER: Builder = {
           // rmR/rmdir are resolved lazily so object stores without a real
           // directory-remove op still unlink plain files (mirrors Python).
           if (recursive) {
-            if (rmR === undefined) {
-              throw new Error('rm: recursive remove not supported on this backend')
-            }
             if (verbose) {
               entryLines = removalLines(
                 await cpWalk(
@@ -91,9 +89,6 @@ export const RM_BUILDER: Builder = {
             }
             await rmR(accessor, p)
           } else if (dirFlag) {
-            if (rmdir === undefined) {
-              throw new Error('rm: directory remove not supported on this backend')
-            }
             if ((await ops.readdir(accessor, p, idx)).length > 0) {
               errors.push(`rm: cannot remove '${p.rawPath}': Directory not empty`)
               continue

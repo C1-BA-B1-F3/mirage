@@ -1379,7 +1379,7 @@
       "command": "f=/lf/traces/trace-beta.json; echo \"cold=$(stat -c %s \"$f\")\"; echo \"read=$(cat \"$f\" | wc -c)\"; echo \"warm=$(stat -c %s \"$f\")\"",
       "expect": {
         "exit": 0,
-        "stdout": "cold=0\nread=694\nwarm=694\n",
+        "stdout": "cold=-\nread=694\nwarm=694\n",
         "stderr": ""
       }
     }

@@ -282,7 +282,7 @@
       "command": "du -sh /lf/traces",
       "expect": {
         "exit": 0,
-        "stdout": "0\t/lf/traces\n",
+        "stdout": "5.8K\t/lf/traces\n",
         "stderr": ""
       }
     },

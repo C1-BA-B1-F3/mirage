@@ -50,7 +50,7 @@ async def test_minimal_reads_serve_shell_streams_and_dispatch(accessor):
         assert refused.exit_code == 1
         assert await refused.stderr_str() == (
             "rm: cannot remove '/nested/data/a.txt': "
-            "Operation not supported\n")
+            "Read-only file system\n")
         assert "write" not in {op.name for op in vfs.ops_list()}
     finally:
         await ws.close()
@@ -109,9 +109,10 @@ async def test_write_capability_obeys_mount_mode(accessor, mode):
         assert (result.exit_code == 0) == (mode == MountMode.WRITE)
         assert write.await_count == (1 if mode == MountMode.WRITE else 0)
         refused = await ws.shell("rm /nested/data/a.txt")
+        reason = ("Read-only file system"
+                  if mode == MountMode.READ else "Operation not supported")
         assert await refused.stderr_str() == (
-            "rm: cannot remove '/nested/data/a.txt': "
-            "Operation not supported\n")
+            f"rm: cannot remove '/nested/data/a.txt': {reason}\n")
         assert "write" in {op.name for op in vfs.ops_list()}
         assert "unlink" not in {op.name for op in vfs.ops_list()}
     finally:

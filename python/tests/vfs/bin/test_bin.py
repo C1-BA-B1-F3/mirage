@@ -46,5 +46,5 @@ async def test_a_write_into_the_view_is_refused_as_read_only():
     assert await io.stdout_str() == "755\n"
     io = await ws.shell("rm /usr/bin/ls; gzip -c /usr/bin/ls | gunzip | wc -l")
     assert await io.stderr_str() == ("rm: cannot remove '/usr/bin/ls': "
-                                     "Operation not supported\n")
+                                     "Read-only file system\n")
     assert await io.stdout_str() != "0\n"

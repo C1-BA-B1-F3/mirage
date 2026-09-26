@@ -66,9 +66,7 @@ describe('BinViewVFS', () => {
       )
       expect(DEC.decode(io.stdout)).toBe('755\n')
       io = await ws.shell('rm /usr/bin/ls; gzip -c /usr/bin/ls | gunzip | wc -l')
-      expect(DEC.decode(io.stderr)).toBe(
-        "rm: cannot remove '/usr/bin/ls': Operation not supported\n",
-      )
+      expect(DEC.decode(io.stderr)).toBe("rm: cannot remove '/usr/bin/ls': Read-only file system\n")
       expect(DEC.decode(io.stdout)).not.toBe('0\n')
     } finally {
       await ws.close()

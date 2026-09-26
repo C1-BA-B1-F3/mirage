@@ -395,6 +395,8 @@ export async function tarGeneric(
           await ensureDir(parent, toSpec, deps.mkdir, deps.stat, made)
         } catch (err) {
           if (!isFsError(err)) throw err
+          // GNU tar 1.35 (debian:stable-slim) reports ENOENT for the
+          // member after its parent mkdir failed.
           notices.push(
             `tar: ${parts.slice(0, -1).join('/')}: Cannot mkdir: ${String(fsStrerror(err))}`,
             `tar: ${parts.join('/')}: Cannot open: No such file or directory`,

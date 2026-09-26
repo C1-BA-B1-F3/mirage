@@ -56,6 +56,7 @@ def _read_only_gzip_mount() -> tuple[Workspace, RAMVFS]:
     vfs = RAMVFS()
     vfs._store.files["/f.txt"] = b"hello\n"
     vfs._store.files["/f.txt.gz"] = gzip.compress(b"hello\n")
+    vfs._store.files["/g.txt"] = b"fresh\n"
     return Workspace({"/ro/": (vfs, MountMode.READ)}), vfs
 
 
@@ -74,21 +75,31 @@ def test_a_read_only_mount_runs_gzip_where_it_writes_nothing(
     assert vfs._store.files == before
 
 
-@pytest.mark.parametrize("line,refused", [
-    ("gzip /ro/f.txt", "/ro/f.txt.gz"),
-    ("gzip -k /ro/f.txt", "/ro/f.txt.gz"),
-    ("gzip -d /ro/f.txt.gz", "/ro/f.txt"),
+_EXISTS = "gzip: /ro/f.txt.gz already exists;\tnot overwritten\n"
+
+
+@pytest.mark.parametrize("line,code,stderr", [
+    ("gzip /ro/f.txt", 2, _EXISTS),
+    ("gzip -k /ro/f.txt", 2, _EXISTS),
+    ("gzip -f /ro/f.txt", 1, "gzip: /ro/f.txt.gz: Read-only file system\n"),
+    ("gzip /ro/g.txt", 1, "\ngzip: /ro/g.txt.gz: Read-only file system\n"),
+    ("gzip /ro/f.txt /ro/g.txt", 1,
+     _EXISTS + "\ngzip: /ro/g.txt.gz: Read-only file system\n"),
+    ("gzip -d /ro/f.txt.gz", 1, "gzip: /ro/f.txt: Read-only file system\n"),
 ])
-def test_a_read_only_mount_refuses_gzip_at_the_write(line: str, refused: str):
+def test_a_read_only_mount_refuses_gzip_at_the_write(line: str, code: int,
+                                                     stderr: str):
     # Nothing refuses the command before it runs: the write of the
     # replacement file is what the mount refuses, in gzip's own voice,
-    # and the operand it would have replaced is left in place.
+    # and the operand it would have replaced is left in place. An output
+    # already there is left alone without -f (a warning); -f's refused
+    # replace goes on to the next operand, and an output that cannot be
+    # created ends the run with write_error's leading newline. Pinned
+    # against gzip 1.13 on a read-only tmpfs.
     ws, vfs = _read_only_gzip_mount()
     before = dict(vfs._store.files)
     result = asyncio.run(ws.shell(line))
-    assert result.exit_code == 1
-    assert result.stderr == f"gzip: {refused}: Read-only file system\n".encode(
-    )
+    assert (result.exit_code, result.stderr) == (code, stderr.encode())
     assert vfs._store.files == before
 
 

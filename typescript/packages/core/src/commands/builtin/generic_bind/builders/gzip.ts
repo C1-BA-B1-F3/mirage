@@ -29,6 +29,7 @@ export const GZIP_BUILDER: Builder = {
       (p) => ops.readStream(accessor, p, idx),
       (p, d) => write(accessor, p, d),
       (p) => unlink(accessor, p),
+      (p) => ops.stat(accessor, p),
     )
   },
 }

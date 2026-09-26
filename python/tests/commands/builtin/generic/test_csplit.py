@@ -25,9 +25,15 @@ async def _no_read(path: PathSpec) -> bytes:
 
 
 @pytest.mark.asyncio
-async def test_stdin_outputs_are_named_on_the_executing_mount():
-    # No operand and no -f to read a prefix from: the executing mount's
-    # prefix names the outputs, and the writes keys stay mount-relative.
+@pytest.mark.parametrize("cwd,named", [
+    ("/data", ["/data/xx00", "/data/xx01"]),
+    ("/data/sub", ["/data/sub/xx00", "/data/sub/xx01"]),
+])
+async def test_stdin_outputs_are_named_in_the_working_directory(
+        cwd: str, named: list[str]):
+    # No operand and no -f to read a prefix from: `xx` in the working
+    # directory names the outputs (GNU), and the writes keys stay
+    # mount-relative.
     specs: list[PathSpec] = []
 
     async def write_bytes(path: PathSpec, data: bytes) -> None:
@@ -37,12 +43,10 @@ async def test_stdin_outputs_are_named_on_the_executing_mount():
                          read_bytes=_no_read,
                          write_bytes=write_bytes,
                          stdin=b"a\nb\n",
-                         mount_prefix="/data")
-    assert [(p.virtual, p.vfs_path) for p in specs] == [
-        ("/data/xx00", "xx00"),
-        ("/data/xx01", "xx01"),
-    ]
-    assert list(io.writes) == ["/xx00", "/xx01"]
+                         mount_prefix="/data",
+                         cwd=cwd)
+    assert [p.virtual for p in specs] == named
+    assert list(io.writes) == [name[len("/data"):] for name in named]
 
 
 @pytest.mark.asyncio

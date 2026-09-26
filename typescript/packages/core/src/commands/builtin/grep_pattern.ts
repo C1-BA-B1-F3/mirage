@@ -86,14 +86,16 @@ export async function resolvePattern(
       (first === undefined ? undefined : mountPrefixOf(first.virtual, first.vfsPath)) ??
       mountPrefix ??
       ''
-    for (const filePath of patternFiles) {
+    for (const file of patternFiles) {
+      const filePath = file instanceof PathSpec ? file.virtual : file
       const patternSpec = PathSpec.fromStrPath(filePath, mountKey(filePath, prefix))
       let fileData: Uint8Array
       try {
         fileData = await materialize(stream(patternSpec))
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        return { pattern: null, neverMatch: false, error: `${name}: ${filePath}: ${msg}\n` }
+        const shown = file instanceof PathSpec ? file.rawPath : file
+        return { pattern: null, neverMatch: false, error: `${name}: ${shown}: ${msg}\n` }
       }
       pattern = mergePatternList(pattern, fileData)
     }

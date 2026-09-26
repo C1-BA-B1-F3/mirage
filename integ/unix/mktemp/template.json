@@ -1,0 +1,221 @@
+{
+  "cases": [
+    {
+      "id": "mktemp_bare_template_is_in_the_cwd",
+      "seq": 1271001,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/mkt_a && cd /data/mkt_a && mktemp x.XXX | sed 's/\\.[A-Za-z0-9]\\{3\\}$/.RND/' && ls | wc -l; cd / && rm -r /data/mkt_a)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x.RND\n1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "mktemp_pathless_honors_tmpdir",
+      "seq": 1271002,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/mkt_b && TMPDIR=/data/mkt_b mktemp | xargs dirname && rm -r /data/mkt_b",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/mkt_b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "mktemp_t_prefers_tmpdir_over_p",
+      "seq": 1271003,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/mkt_c && TMPDIR=/data/mkt_c mktemp -t -p /nowhere f.XXX | xargs dirname && rm -r /data/mkt_c",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/mkt_c\n",
+        "stderr": ""
+      },
+      "flags": [
+        "t",
+        "p"
+      ]
+    },
+    {
+      "id": "mktemp_prints_a_relative_directory_as_typed",
+      "seq": 1271004,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(cd /data && mktemp -u -p sub f.XXX | sed 's/\\.[A-Za-z0-9]\\{3\\}$/.RND/')",
+      "expect": {
+        "exit": 0,
+        "stdout": "sub/f.RND\n",
+        "stderr": ""
+      },
+      "flags": [
+        "u",
+        "p"
+      ]
+    },
+    {
+      "id": "mktemp_never_makes_its_directory",
+      "seq": 1271005,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mktemp -p /data/mkt_none; echo rc=$?; test -e /data/mkt_none || echo absent",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nabsent\n",
+        "stderr": "mktemp: failed to create file via template '/data/mkt_none/tmp.XXXXXXXXXX': No such file or directory\n"
+      },
+      "flags": [
+        "p"
+      ]
+    },
+    {
+      "id": "mktemp_d_names_the_template_with_its_suffix",
+      "seq": 1271006,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mktemp -d --suffix=.s -p /data/a.txt x.XXX",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mktemp: failed to create directory via template '/data/a.txt/x.XXX.s': Not a directory\n"
+      },
+      "flags": [
+        "d",
+        "suffix",
+        "p"
+      ]
+    },
+    {
+      "id": "mktemp_q_hides_only_the_create_failure",
+      "seq": 1271007,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mktemp -q -p /data/mkt_none; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "q",
+        "p"
+      ]
+    },
+    {
+      "id": "mktemp_refuses_too_few_xs",
+      "seq": 1271008,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mktemp x.XX",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mktemp: too few X's in template 'x.XX'\n"
+      }
+    },
+    {
+      "id": "mktemp_refuses_an_absolute_template_under_p",
+      "seq": 1271009,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mktemp -p /data /abs/x.XXX",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mktemp: invalid template, '/abs/x.XXX'; with --tmpdir, it may not be absolute\n"
+      },
+      "flags": [
+        "p"
+      ]
+    },
+    {
+      "id": "mktemp_t_refuses_a_directory_in_the_template",
+      "seq": 1271010,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mktemp -t sub/x.XXX",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mktemp: invalid template, 'sub/x.XXX', contains directory separator\n"
+      },
+      "flags": [
+        "t"
+      ]
+    },
+    {
+      "id": "mktemp_refuses_a_directory_in_the_suffix",
+      "seq": 1271011,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mktemp --suffix=a/b x.XXX",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mktemp: invalid suffix 'a/b', contains directory separator\n"
+      },
+      "flags": [
+        "suffix"
+      ]
+    },
+    {
+      "id": "mktemp_suffix_needs_the_template_to_end_in_x",
+      "seq": 1271012,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mktemp --suffix=.s x.XXXy",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mktemp: with --suffix, template 'x.XXXy' must end in X\n"
+      },
+      "flags": [
+        "suffix"
+      ]
+    },
+    {
+      "id": "mktemp_keeps_what_follows_the_last_x",
+      "seq": 1271013,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mktemp -u x.XXXy.txt | sed 's/^x\\.[A-Za-z0-9]\\{3\\}y\\.txt$/ok/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "ok\n",
+        "stderr": ""
+      },
+      "flags": [
+        "u"
+      ]
+    }
+  ]
+}

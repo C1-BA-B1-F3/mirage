@@ -289,7 +289,7 @@ describe('sort -o', () => {
     })
     expect(stderr).toBe('sort: multiple output files specified\n')
     expect(code).toBe(2)
-    expect(parseFlags({ output: ['/data/p1', '/data/p1'] }).output).toBe('/data/p1')
+    expect(parseFlags({ output: ['/data/p1', '/data/p1'] }).output?.virtual).toBe('/data/p1')
   })
 
   it('refuses the first bad option on the line', async () => {

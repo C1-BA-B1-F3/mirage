@@ -2,7 +2,9 @@ import zlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
+from mirage.commands.builtin.generic.archive.walk import StatFn
 from mirage.commands.builtin.generic.decompress import decompress_inputs
+from mirage.commands.builtin.utils.copy import path_exists
 from mirage.commands.builtin.utils.stream import resolve_source, stdin_bytes
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
@@ -12,6 +14,7 @@ from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 from mirage.utils.compress import gzip_compress_stream
+from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.utils.key_prefix import mounted_path
 
 
@@ -38,6 +41,7 @@ async def gzip(
     read_bytes: Callable[..., Awaitable[bytes]],
     write_bytes: Callable[..., Awaitable[None]],
     unlink: Callable[..., Awaitable[None]],
+    stat: StatFn | None = None,
     stdin: ByteSource | None = None,
     decompress: bool = False,
     keep: bool = False,
@@ -60,20 +64,55 @@ async def gzip(
     read = stdin_bytes(read_bytes, stdin)
     writes: dict[str, ByteSource] = {}
     stdout: list[bytes] = []
+    lines: list[str] = []
+    exit_code = 0
     for p in paths:
         in_place = not (to_stdout or p.raw_path == "-")
-        raw = await (read_bytes(p) if in_place else read(p))
+        # An input gzip cannot read is reported and skipped, and the run
+        # goes on to the next operand (a directory is a warning, exit 2,
+        # in the house `<cmd>: <path>: Is a directory` words); so is an
+        # output already there without -f, and a replace -f is refused.
+        # An output it cannot create is fatal: gzip's write_error leads
+        # with a newline and exits, leaving later operands untouched.
+        # Pinned against gzip 1.13 (debian:stable-slim).
+        try:
+            raw = await (read_bytes(p) if in_place else read(p))
+        except IsADirectoryError as exc:
+            lines.append(f"gzip: {p.raw_path}: {fs_strerror(exc)}")
+            exit_code = exit_code or 2
+            continue
+        except FS_ERRORS as exc:
+            lines.append(f"gzip: {p.raw_path}: {fs_strerror(exc)}")
+            exit_code = 1
+            continue
         data = zlib.compress(raw, level=level, wbits=zlib.MAX_WBITS | 16)
         if not in_place:
             stdout.append(data)
             continue
-        stripped = p.mount_path
-        out_path = stripped + ".gz"
-        await write_bytes(mounted_path(p, out_path), data)
+        out_path = p.mount_path + ".gz"
+        out = mounted_path(p, out_path)
+        existed = stat is not None and await path_exists(stat, out)
+        if existed and not force:
+            lines.append(
+                f"gzip: {p.raw_path}.gz already exists;\tnot overwritten")
+            exit_code = exit_code or 2
+            continue
+        try:
+            await write_bytes(out, data)
+        except FS_ERRORS as exc:
+            lines.append(("" if existed else "\n") +
+                         f"gzip: {p.raw_path}.gz: {fs_strerror(exc)}")
+            exit_code = 1
+            if existed:
+                continue
+            break
         writes[out_path] = data
         if not keep:
             await unlink(p)
-    return b"".join(stdout) or None, IOResult(writes=writes)
+    stderr = ("\n".join(lines) + "\n").encode() if lines else None
+    return b"".join(stdout) or None, IOResult(writes=writes,
+                                              stderr=stderr,
+                                              exit_code=exit_code)
 
 
 __all__ = ["gzip", "extract_level"]
@@ -106,12 +145,14 @@ async def gzip_generic(
     read_bytes: Callable[..., Awaitable[bytes]],
     write_bytes: Callable[..., Awaitable[None]],
     unlink: Callable[..., Awaitable[None]],
+    stat: StatFn | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
     return await gzip(paths,
                       read_bytes=read_bytes,
                       write_bytes=write_bytes,
                       unlink=unlink,
+                      stat=stat,
                       stdin=opts.stdin,
                       decompress=parsed.decompress,
                       keep=parsed.keep,

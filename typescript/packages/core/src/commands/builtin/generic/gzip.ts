@@ -15,6 +15,9 @@ import { decompressInputs } from './decompress.ts'
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { fsStrerror, isEisdir, isFsError } from '../../../utils/errors.ts'
+import { pathExists } from '../utils/copy.ts'
+import type { StatFn } from './archive/walk.ts'
 import { mountedPath } from '../../../utils/key_prefix.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
@@ -40,10 +43,12 @@ export async function gzipGeneric(
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
   unlink: (p: PathSpec) => Promise<void>,
+  stat?: StatFn,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('gzip'))
   const decompress = fl.asBool('d')
   const keep = fl.asBool('k')
+  const force = fl.asBool('f')
   const stdoutMode = fl.asBool('c')
 
   if (decompress)
@@ -62,19 +67,59 @@ export async function gzipGeneric(
   const read = stdinStream(stream, opts.stdin)
   const writes: Record<string, Uint8Array> = {}
   const stdout: Uint8Array[] = []
+  const lines: string[] = []
+  let exitCode = 0
   for (const p of paths) {
     const inPlace = !(stdoutMode || p.rawPath === '-')
-    const raw = await materialize(inPlace ? stream(p) : read(p))
+    // An input gzip cannot read is reported and skipped, and the run goes on
+    // to the next operand (a directory is a warning, exit 2, in the house
+    // `<cmd>: <path>: Is a directory` words); so is an output already there
+    // without -f, and a replace -f is refused. An output it cannot create is
+    // fatal: gzip's write_error leads with a newline and exits, leaving later
+    // operands untouched. Pinned against gzip 1.13 (debian:stable-slim).
+    // Mirrors gzip.py.
+    let raw: Uint8Array
+    try {
+      raw = await materialize(inPlace ? stream(p) : read(p))
+    } catch (err) {
+      if (isEisdir(err)) {
+        lines.push(`gzip: ${p.rawPath}: ${String(fsStrerror(err))}`)
+        if (exitCode === 0) exitCode = 2
+        continue
+      }
+      if (!isFsError(err)) throw err
+      lines.push(`gzip: ${p.rawPath}: ${String(fsStrerror(err))}`)
+      exitCode = 1
+      continue
+    }
     const data = await gzip(raw)
     if (!inPlace) {
       stdout.push(data)
       continue
     }
-    const pStripped = p.mountPath
-    const outPath = pStripped + '.gz'
-    await write(mountedPath(p, outPath), data)
+    const outPath = p.mountPath + '.gz'
+    const out = mountedPath(p, outPath)
+    const existed = stat !== undefined && (await pathExists(stat, out))
+    if (existed && !force) {
+      lines.push(`gzip: ${p.rawPath}.gz already exists;\tnot overwritten`)
+      if (exitCode === 0) exitCode = 2
+      continue
+    }
+    try {
+      await write(out, data)
+    } catch (err) {
+      if (!isFsError(err)) throw err
+      lines.push(`${existed ? '' : '\n'}gzip: ${p.rawPath}.gz: ${String(fsStrerror(err))}`)
+      exitCode = 1
+      if (existed) continue
+      break
+    }
     writes[outPath] = data
     if (!keep) await unlink(p)
   }
-  return [stdout.length > 0 ? concat(stdout) : null, new IOResult({ writes })]
+  const stderr = lines.length > 0 ? new TextEncoder().encode(lines.join('\n') + '\n') : null
+  return [
+    stdout.length > 0 ? concat(stdout) : null,
+    new IOResult({ writes, exitCode, ...(stderr !== null ? { stderr } : {}) }),
+  ]
 }

@@ -26,6 +26,7 @@ import type {
 import type { Accessor } from '../../../accessor/base.ts'
 import {
   requirePathsWritable,
+  effectivePathMode,
   getAdmission,
   getCurrentSession,
   getOpPolicies,
@@ -42,8 +43,18 @@ import { removeRemnants, visibleBelow, type RemnantChannel } from '../../../util
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import type { StatOverlay } from '../../../ops/types.ts'
 
-import { FileType, PathSpec, type FileStat } from '../../../types.ts'
-import { eacces, eisdir, enotsup, isMissError } from '../../../utils/errors.ts'
+import { FileType, MountMode, PathSpec, type FileStat } from '../../../types.ts'
+import {
+  eacces,
+  eexist,
+  eisdir,
+  enoent,
+  enotdir,
+  enotsup,
+  erofsReadOnly,
+  isEnoent,
+  isMissError,
+} from '../../../utils/errors.ts'
 import type { ChildMounts } from '../../../ops/types.ts'
 import {
   DEFAULT_MAX_GLOB_MATCHES,
@@ -51,7 +62,7 @@ import {
   type TargetStat,
 } from '../../../utils/glob_walk.ts'
 import { norm, parent } from '../../../utils/path.ts'
-import { stripSlash } from '../../../utils/slash.ts'
+import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
 
 import type { AggregateFn, CommandFnResult, CommandOpts, ProvisionFn } from '../../config.ts'
 
@@ -380,6 +391,62 @@ function modeCheck(written: readonly PathSpec[], subtree = false): void {
   }
 }
 
+/**
+ * Answer a mkdir on a read-only region the way the filesystem would. A
+ * read-only filesystem refuses only a create it would really make, so the
+ * answer is whatever the create runs into first, walking the components from
+ * the mount root: a missing one is refused with EROFS, a file in the chain is
+ * ENOTDIR, an existing leaf is EEXIST, and `mkdir -p` of a directory that is
+ * already there succeeds. The blamed path is the first component that would
+ * have been made, as GNU's `mkdir -p` names it (`'/ro/n'` for `/ro/n/m`).
+ * Pinned against GNU coreutils 9.7 on a read-only tmpfs. Mirrors Python's
+ * `_mkdir_on_read_only`.
+ */
+async function mkdirOnReadOnly<A extends Accessor>(
+  stat: StatOp<A>,
+  gate: readonly [string, MountMode],
+  accessor: A,
+  path: PathSpec,
+  parents: boolean,
+): Promise<void> {
+  const [prefix, mode] = gate
+  const base = rstripSlash(prefix)
+  const leaf = rstripSlash(path.virtual) || '/'
+  if (leaf !== base && !leaf.startsWith(base + '/')) {
+    throw erofsReadOnly(`mount ${prefix} is read-only`, path.virtual)
+  }
+  // Each component's backend key keeps the leaf's own key prefix, recovered
+  // from its (virtual, vfsPath) pair as PathSpec.dir does.
+  const cut = leaf.length - stripSlash(path.vfsPath).length
+  const parts = leaf
+    .slice(base.length)
+    .split('/')
+    .filter((part) => part !== '')
+  const chain = parts.map((_, index) => {
+    const virtual = `${base}/${parts.slice(0, index + 1).join('/')}`
+    return PathSpec.fromStrPath(virtual, stripSlash(virtual.slice(cut)))
+  })
+  for (const [index, component] of chain.entries()) {
+    let row: FileStat
+    try {
+      row = await stat(accessor, component)
+    } catch (err) {
+      if (!isEnoent(err)) throw err
+      if (!parents && index < chain.length - 1) throw enoent(path.virtual)
+      const blame =
+        chain
+          .slice(index)
+          .find((spec) => effectivePathMode(spec.virtual, prefix, mode) === MountMode.READ) ?? path
+      throw erofsReadOnly(`mount ${prefix} is read-only`, blame.virtual)
+    }
+    if (row.type !== FileType.DIRECTORY) {
+      if (index === chain.length - 1) throw eexist(path.virtual)
+      throw enotdir(parents ? component.virtual : path.virtual)
+    }
+  }
+  if (!parents) throw eexist(path.virtual)
+}
+
 /** Guard only written endpoints; native subtree mutations also check descendants. */
 export function withModeGuard<A extends Accessor = Accessor>(ops: CommandIO<A>): CommandIO<A> {
   const guarded = { ...ops }
@@ -388,6 +455,18 @@ export function withModeGuard<A extends Accessor = Accessor>(ops: CommandIO<A>):
     guardSlot(ops, guarded, slot, (paths) => {
       modeCheck(access.firstSource ? paths.slice(1) : paths, access.subtree)
     })
+  }
+  // A directory on a read-only region answers what the create would run into
+  // instead of refusing the operand outright (mkdirOnReadOnly).
+  const mk = ops.mkdir
+  if (mk !== undefined) {
+    guarded.mkdir = (accessor, path, parents) => {
+      const gate = mountGateFor(path.virtual)
+      if (gate !== null && effectivePathMode(path.virtual, gate[0], gate[1]) === MountMode.READ) {
+        return mkdirOnReadOnly(ops.stat, gate, accessor, path, parents ?? false)
+      }
+      return mk(accessor, path, parents)
+    }
   }
   return guarded
 }

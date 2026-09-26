@@ -130,10 +130,9 @@ export function backupRaw(fl: FlagView): string | boolean | undefined {
   return undefined
 }
 
-// -t arrives as a resolved virtual-path string. PathSpec is accepted for
-// the shape Python's executor promotes PATH flag values into
-// (`workspace/executor/command/flags.py`); the TypeScript executor keeps
-// the string on both the single-mount and the relay path.
+// -t arrives as the PathSpec of the word that spelled it on the
+// single-mount path, and as its resolved virtual-path string on the relay
+// path, which parses for a cross-mount strategy. Mirrors Python.
 export function targetFlags(cmdName: string, fl: FlagView): [PathSpec | string | null, boolean] {
   const raw: unknown = fl.raw('target_directory')
   const targetDir: PathSpec | string | null =
@@ -221,12 +220,12 @@ export async function targetDirError(
   try {
     info = await stat(target)
   } catch (err) {
-    if (isEnotdir(err)) return `${cmdName}: target directory '${target.virtual}': Not a directory`
+    if (isEnotdir(err)) return `${cmdName}: target directory '${target.rawPath}': Not a directory`
     if (!isMissingPath(err)) throw err
-    return `${cmdName}: target directory '${target.virtual}': No such file or directory`
+    return `${cmdName}: target directory '${target.rawPath}': No such file or directory`
   }
   if (info.type !== FileType.DIRECTORY) {
-    return `${cmdName}: target directory '${target.virtual}': Not a directory`
+    return `${cmdName}: target directory '${target.rawPath}': Not a directory`
   }
   return null
 }

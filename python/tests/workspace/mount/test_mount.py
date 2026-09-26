@@ -310,7 +310,10 @@ async def test_a_path_guarded_command_is_still_held_at_its_write():
     cmd = next(cmd for cmd in vfs.commands() if cmd.name == "gzip")
     assert cmd.path_guarded
     mount.register(cmd)
-    with pytest.raises(ReadOnlyError):
-        await mount.execute_cmd("gzip", [PathSpec.from_str_path("/ram/a")], [],
-                                {})
+    # The write is refused where it happens and gzip says so in its own
+    # words (the fatal write_error form), leaving the store untouched.
+    _, io = await mount.execute_cmd("gzip", [PathSpec.from_str_path("/ram/a")],
+                                    [], {})
+    assert (io.exit_code,
+            io.stderr) == (1, b"\ngzip: /ram/a.gz: Read-only file system\n")
     assert vfs._store.files == {"/a": b"original"}

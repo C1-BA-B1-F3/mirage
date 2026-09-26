@@ -1,11 +1,11 @@
 import { PATTERN_KEYS, mergePatternList } from '../grep_pattern.ts'
-import { resolveSource } from '../utils/stream.ts'
+import { isStdin, resolveSource } from '../utils/stream.ts'
 import { specOf } from '../../spec/index.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import type { FlagValue } from '../../spec/types.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
-import { PathSpec } from '../../../types.ts'
+import type { PathSpec } from '../../../types.ts'
 import { fsErrorLine, isFsError } from '../../../utils/errors.ts'
 
 export const PROGRAM_FILE_COMMANDS = new Set(['grep', 'rg', 'sed', 'awk', 'jq'])
@@ -26,8 +26,8 @@ const FILE_KEYS: Readonly<Record<string, string>> = {
 }
 
 /** The invocation's program files, or an empty list for inline programs. */
-export function programFiles(name: string, bag: Record<string, FlagValue>): string[] {
-  return new FlagView(bag, specOf(name)).asList(FILE_KEYS[name] ?? 'f')
+export function programFiles(name: string, bag: Record<string, FlagValue>): PathSpec[] {
+  return new FlagView(bag, specOf(name)).asPaths(FILE_KEYS[name] ?? 'f')
 }
 
 /** Read program files once before input routing or traversal fan-out.
@@ -55,11 +55,10 @@ export async function prepareProgram(
   // the same bytes as a file, so neither refusal follows from it.
   let taken = false
   const pieces: Uint8Array[] = []
-  for (const file of files) {
-    const path = PathSpec.fromStrPath(file)
+  for (const path of files) {
     try {
-      if (name !== 'jq' && (file === '-' || file === '/dev/stdin')) {
-        if (name === 'rg' && file === '-') {
+      if (name !== 'jq' && isStdin(path)) {
+        if (name === 'rg' && path.rawPath === '-') {
           if (taken) {
             return [
               texts,

@@ -124,7 +124,7 @@ describe('handleCli', () => {
     // answer is the leaf's too: intercepting it anyway would make the
     // declaration unreachable.
     const ownHelp: CLIVerbFn = (inv) => [
-      new TextEncoder().encode(`help=${String(inv.flags.help)}\n`),
+      new TextEncoder().encode(`help=${String(inv.flags.help as boolean | undefined)}\n`),
       new IOResult(),
     ]
     const spec = new CLISpec({

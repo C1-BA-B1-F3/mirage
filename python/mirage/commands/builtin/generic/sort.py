@@ -358,9 +358,8 @@ async def sort(
     this writes it once every input has been read, so when an input fails
     only at its stat or its read (a directory), GNU reports an unopenable
     output first and leaves a new one behind empty, and this reports the
-    input and writes nothing. An output is named by its resolved path,
-    where GNU echoes the word typed, which is the same TypeScript
-    constraint ``parse_flags`` documents.
+    input and writes nothing. An output is named by the word typed, as
+    GNU echoes it.
 
     Args:
         paths (list[PathSpec]): the operands; none reads standard input.
@@ -429,7 +428,7 @@ async def sort(
         except FS_ERRORS as exc:
             strerror = fs_strerror(exc) or str(exc)
             return b"", IOResult(stderr=sort_die(OPEN_FAILED,
-                                                 parsed.output.virtual,
+                                                 parsed.output.raw_path,
                                                  strerror),
                                  exit_code=2)
         return b"", IOResult(writes={parsed.output.mount_path: output},

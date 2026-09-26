@@ -1391,8 +1391,20 @@ describe('tar and unzip on a read-only mount', () => {
       'tar: /ro/b.tar: Cannot open: Read-only file system\n' +
         'tar: Error is not recoverable: exiting now\n',
     ],
-    ['cd /ro && unzip a.zip', 1, 'unzip: /ro/f.txt: Read-only file system\n'],
-    ['cd /ro && unzip -o a.zip', 1, 'unzip: /ro/f.txt: Read-only file system\n'],
+    // UnZip 6.00: a member it cannot create is named as it would have made
+    // it (exit 50), an extraction directory it cannot make ends the run
+    // (exit 2). Mirrors test_unzip.py.
+    ['cd /ro && unzip a.zip', 50, 'error:  cannot create f.txt\n        Read-only file system\n'],
+    [
+      'cd /ro && unzip -o a.zip',
+      50,
+      'error:  cannot create f.txt\n        Read-only file system\n',
+    ],
+    [
+      'unzip -q /ro/a.zip -d /ro/out',
+      2,
+      'checkdir:  cannot create extraction directory: /ro/out\n           Read-only file system\n',
+    ],
   ])('refuses %s at its write', async (line, code, refused) => {
     const [exitCode, , stderr] = await readOnlyShell(ARCHIVES, line)
     expect([exitCode, stderr]).toEqual([code, refused])

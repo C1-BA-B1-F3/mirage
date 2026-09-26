@@ -14,18 +14,21 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { UsageError } from '../../errors.ts'
+import { quoteText } from '../../quote.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { rstripSlash } from '../../../utils/slash.ts'
-import { mountKey } from '../../../utils/key_prefix.ts'
+import { fsStrerror, isEnoent, isFsError } from '../../../utils/errors.ts'
+import { resolvePath } from '../../../utils/path.ts'
 import { extraOperandError } from '../../spec/usage.ts'
 import { CommandName } from '../../spec/types.ts'
 
 const ENC = new TextEncoder()
+const DEFAULT_TEMPLATE = 'tmp.XXXXXXXXXX'
 
 function randomSuffix(length: number): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
   let out = ''
   for (let i = 0; i < length; i++) {
     out += chars[Math.floor(Math.random() * chars.length)] ?? ''
@@ -33,74 +36,139 @@ function randomSuffix(length: number): string {
   return out
 }
 
-function makePathSpec(virtual: string, mountPrefix: string): PathSpec {
-  return new PathSpec({
-    virtual,
-    directory: virtual,
-    vfsPath: mountKey(virtual, mountPrefix),
-    resolved: true,
-  })
+/**
+ * The template a create names, formed as GNU mktemp forms it: the formed
+ * template, how many X's end its body, and the length of the suffix after
+ * them. The name stays as typed, so a relative template or directory prints
+ * and refuses relative: a bare template lives in the working directory, and
+ * only a line with no template, -p/--tmpdir or -t joins a directory in
+ * front of it ($TMPDIR if set, else /tmp; -t prefers $TMPDIR over -p).
+ * Pinned against GNU coreutils 9.7 (debian:stable-slim). Mirrors Python's
+ * plan_template.
+ */
+export function planTemplate(
+  templateArg: string | undefined,
+  suffixArg: string | undefined,
+  destDir: string,
+  useDestDir: boolean,
+  t: boolean,
+  envTmpdir: string,
+): [string, number, number] {
+  let template = templateArg ?? DEFAULT_TEMPLATE
+  let suffix: string
+  if (suffixArg !== undefined) {
+    if (!template.endsWith('X')) {
+      throw new UsageError(
+        `mktemp: with --suffix, template '${quoteText(template)}' must end in X`,
+        1,
+      )
+    }
+    suffix = suffixArg
+    template += suffix
+  } else {
+    const lastX = template.lastIndexOf('X')
+    suffix = lastX >= 0 ? template.slice(lastX + 1) : ''
+  }
+  if (suffix.includes('/')) {
+    throw new UsageError(
+      `mktemp: invalid suffix '${quoteText(suffix)}', contains directory separator`,
+      1,
+    )
+  }
+  const body = template.slice(0, template.length - suffix.length)
+  const xCount = body.length - body.replace(/X+$/, '').length
+  if (xCount < 3) {
+    throw new UsageError(`mktemp: too few X's in template '${quoteText(template)}'`, 1)
+  }
+  if (useDestDir || t || templateArg === undefined) {
+    let directory: string
+    if (t) {
+      directory = envTmpdir || destDir || '/tmp'
+      if (template.includes('/')) {
+        throw new UsageError(
+          `mktemp: invalid template, '${quoteText(template)}', contains directory separator`,
+          1,
+        )
+      }
+    } else {
+      directory = destDir || envTmpdir || '/tmp'
+      if (template.startsWith('/')) {
+        throw new UsageError(
+          `mktemp: invalid template, '${quoteText(template)}'; with --tmpdir, it may not be absolute`,
+          1,
+        )
+      }
+    }
+    template = `${directory}${directory.endsWith('/') ? '' : '/'}${template}`
+  }
+  return [template, xCount, suffix.length]
 }
 
+/**
+ * Create a temporary file or directory and print its name. The create is one
+ * file or one directory, never a directory the line named: a missing one
+ * answers ENOENT, the way GNU's open(O_CREAT|O_EXCL) does. The one exception
+ * is /tmp when it is only the fallback: a system always has it, but a
+ * workspace's root starts empty, so it is made on first use. `mkdir`/`write`
+ * take the resolved virtual path, so the create lands on whichever mount
+ * owns it, not the one the working directory is on. Mirrors Python's mktemp.
+ */
 export async function mktempGeneric(
   texts: string[],
   opts: CommandOpts,
-  mkdir: (p: PathSpec, parents?: boolean) => Promise<void>,
+  mkdir: (p: PathSpec) => Promise<void>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('mktemp'))
   if (texts.length > 1) throw extraOperandError(CommandName.MKTEMP, texts[1] ?? '')
-  const tFlag = fl.asBool('t')
   const directory = fl.asBool('directory')
-  const dryRun = fl.asBool('dry_run')
-  const suffix = fl.asStr('suffix') ?? ''
-  const tmpdirValue: unknown = fl.raw('p') ?? fl.raw('tmpdir')
-  const templateArg = texts[0]
-  let template = templateArg !== undefined && templateArg !== '' ? templateArg : 'tmp.XXXXXXXXXX'
-  let parent: string
-  if (tFlag) {
-    parent = '/tmp'
-  } else if (tmpdirValue instanceof PathSpec) {
-    parent = tmpdirValue.virtual
-  } else if (typeof tmpdirValue === 'string') {
-    parent = tmpdirValue
-  } else if (template.includes('/')) {
-    // An explicit path template names its own directory (GNU); only a bare
-    // template with no -p/-t falls back to the temp dir.
-    const idx = template.lastIndexOf('/')
-    parent = template.slice(0, idx) || '/'
-    template = template.slice(idx + 1)
-  } else {
-    parent = '/tmp'
-  }
-  let xCount = 0
-  while (xCount < template.length && template.charCodeAt(template.length - 1 - xCount) === 88) {
-    xCount += 1
-  }
-  let name: string
-  if (xCount > 0) {
-    name = template.slice(0, template.length - xCount) + randomSuffix(xCount) + suffix
-  } else {
-    name = `${template}.${randomSuffix(8)}`
-  }
-  const path = `${rstripSlash(parent)}/${name}`
-  if (!dryRun) {
-    const mountPrefix = opts.mountPrefix ?? ''
-    const quiet = fl.asBool('quiet')
+  const tmpdirValue = fl.asPaths('tmpdir')[0] ?? fl.asStr('tmpdir')
+  const pValue = fl.asPaths('p')[0] ?? fl.asStr('p')
+  const destValue = tmpdirValue ?? pValue
+  const destDir = destValue instanceof PathSpec ? destValue.rawPath : (destValue ?? '')
+  const useDestDir = fl.raw('tmpdir') !== undefined || fl.raw('p') !== undefined
+  const t = fl.asBool('t')
+  const envTmpdir = opts.env?.TMPDIR ?? ''
+  const [template, xCount, suffixLen] = planTemplate(
+    texts[0],
+    fl.asStr('suffix'),
+    destDir,
+    useDestDir,
+    t,
+    envTmpdir,
+  )
+  const fallback = (texts.length === 0 || useDestDir || t) && destDir === '' && envTmpdir === ''
+  const end = template.length - suffixLen
+  const name = template.slice(0, end - xCount) + randomSuffix(xCount) + template.slice(end)
+  const create = (path: PathSpec): Promise<void> =>
+    directory ? mkdir(path) : write(path, new Uint8Array(0))
+  if (!fl.asBool('dry_run')) {
+    const path = PathSpec.fromStrPath(resolvePath(name, opts.cwd))
     try {
-      await mkdir(makePathSpec(parent, mountPrefix), true)
-      if (directory) {
-        await mkdir(makePathSpec(path, mountPrefix))
-      } else {
-        await write(makePathSpec(path, mountPrefix), new Uint8Array(0))
+      try {
+        await create(path)
+      } catch (error) {
+        if (!fallback || !isEnoent(error)) throw error
+        await mkdir(PathSpec.fromStrPath('/tmp'))
+        await create(path)
       }
     } catch (error) {
-      // -q suppresses diagnostics about file/directory creation only
-      // (GNU); usage errors and internal failures still propagate.
-      if (!quiet) throw error
-      return [null, new IOResult({ exitCode: 1 })]
+      if (!isFsError(error)) throw error
+      // -q suppresses the diagnostic about the create only (GNU); a bad
+      // template still says so.
+      if (fl.asBool('quiet')) return [null, new IOResult({ exitCode: 1 })]
+      const kind = directory ? 'directory' : 'file'
+      return [
+        null,
+        new IOResult({
+          exitCode: 1,
+          stderr: ENC.encode(
+            `mktemp: failed to create ${kind} via template '${quoteText(template)}': ${String(fsStrerror(error))}\n`,
+          ),
+        }),
+      ]
     }
   }
-  const result: ByteSource = ENC.encode(path + '\n')
+  const result: ByteSource = ENC.encode(name + '\n')
   return [result, new IOResult()]
 }

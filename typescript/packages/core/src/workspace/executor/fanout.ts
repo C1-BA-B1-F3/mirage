@@ -167,8 +167,7 @@ function adjustDepthFlags(
   const delta = mountDepth - parentDepth
   const out: Record<string, FlagValue> = { ...flagKwargs }
   flagOccurrences(out).push(...flagOccurrences(flagKwargs))
-  const first = (v: string | boolean | number | string[]): string | boolean | number =>
-    Array.isArray(v) ? (v[0] ?? '') : v
+  const first = (v: FlagValue): FlagValue => (Array.isArray(v) ? (v[0] ?? '') : v)
   if ('maxdepth' in out) {
     const orig = Number(first(out.maxdepth))
     if (!Number.isNaN(orig)) {

@@ -497,17 +497,20 @@ describe('split quotes the suffix start value', () => {
   })
 })
 
-// No operand to read a prefix from: the executing mount's prefix names the
-// outputs, and the writes keys stay mount-relative like every other
+// No operand to read a prefix from: `x` in the working directory names the
+// outputs (GNU), and the writes keys stay mount-relative like every other
 // command's, so the executor can prefix them. Mirrors test_split.py.
-describe('split names stdin outputs on the executing mount', () => {
-  it('addresses each output by its virtual path', async () => {
+describe('split names stdin outputs in the working directory', () => {
+  it.each([
+    ['/data', ['/data/xaa', '/data/xab']],
+    ['/data/sub', ['/data/sub/xaa', '/data/sub/xab']],
+  ])('addresses each output under %s', async (cwd, named) => {
     const specs: PathSpec[] = []
     const opts = {
       stdin: ENC.encode('a\nb\n'),
       flags: { lines: '1' },
       filetypeFns: null,
-      cwd: '/',
+      cwd,
       mountPrefix: '/data',
     } as CommandOpts
     const result = await splitGeneric(
@@ -521,12 +524,9 @@ describe('split names stdin outputs on the executing mount', () => {
         return Promise.resolve()
       },
     )
-    expect(specs.map((p) => [p.virtual, p.vfsPath])).toEqual([
-      ['/data/xaa', 'xaa'],
-      ['/data/xab', 'xab'],
-    ])
+    expect(specs.map((p) => p.virtual)).toEqual(named)
     const [, io] = result as [unknown, IOResult]
-    expect(Object.keys(io.writes)).toEqual(['/xaa', '/xab'])
+    expect(Object.keys(io.writes)).toEqual(named.map((n) => n.slice('/data'.length)))
   })
 })
 

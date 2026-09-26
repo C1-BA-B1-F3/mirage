@@ -257,7 +257,7 @@ async def test_extract_writes_only_selected_members():
     out, res, written = await _run(("xl/workbook.xml", ))
     assert set(written) == {"/xl/workbook.xml"}
     assert written["/xl/workbook.xml"] == WORKBOOK
-    assert "inflating: /xl/workbook.xml" in out.decode()
+    assert out.decode() == "Archive:  /a.zip\n  inflating: xl/workbook.xml\n"
     assert "app.xml" not in out.decode()
     assert res.exit_code == 0
 
@@ -542,7 +542,10 @@ async def test_x_that_leaves_nothing_exits_11_in_every_mode():
     assert out == ZERO_TESTED.format("/a.zip").encode()
     assert res.exit_code == 11
     out, res, written = await _run((), data=data, x=("*", ))
-    assert out is None and res.exit_code == 11 and written == {}
+    # An extraction heads its listing with the archive even when the
+    # filter leaves nothing to extract (UnZip 6.00).
+    assert out == b"Archive:  /a.zip\n"
+    assert res.exit_code == 11 and written == {}
 
 
 @pytest.mark.asyncio
@@ -608,16 +611,26 @@ async def test_a_read_only_mount_runs_unzip_where_it_writes_nothing(line: str):
     assert vfs._store.files == before
 
 
+_CANNOT_CREATE = (b"error:  cannot create f.txt\n"
+                  b"        Read-only file system\n")
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    "cd /ro && unzip a.zip",
-    "cd /ro && unzip -o a.zip",
-    "unzip -d /ro/out /ro/a.zip",
+@pytest.mark.parametrize("line,code,stdout,stderr", [
+    ("cd /ro && unzip a.zip", 50, b"Archive:  a.zip\n", _CANNOT_CREATE),
+    ("cd /ro && unzip -o a.zip", 50, b"Archive:  a.zip\n", _CANNOT_CREATE),
+    ("unzip -d /ro/out /ro/a.zip", 2, b"Archive:  /ro/a.zip\n",
+     b"checkdir:  cannot create extraction directory: /ro/out\n"
+     b"           Read-only file system\n"),
 ])
-async def test_a_read_only_mount_refuses_unzip_at_the_write(line: str):
+async def test_a_read_only_mount_refuses_unzip_at_the_write(
+        line: str, code: int, stdout: bytes, stderr: bytes):
+    # UnZip 6.00 on a read-only filesystem: a member it cannot create is
+    # named as it would have made it (exit 50), an extraction directory it
+    # cannot make ends the run (exit 2).
     ws, vfs = _read_only_unzip_mount()
     before = dict(vfs._store.files)
     result = await ws.shell(line)
-    assert result.exit_code != 0
-    assert b"Read-only file system" in (result.stderr or b"")
+    assert (result.exit_code, await result.materialize_stdout(),
+            result.stderr) == (code, stdout, stderr)
     assert vfs._store.files == before

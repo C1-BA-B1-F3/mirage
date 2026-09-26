@@ -24,14 +24,16 @@ from mirage.accessor.base import Accessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.generic.du import DEFAULT_MAX_DU_ENTRIES
 from mirage.commands.config import CommandFnResult, CommandOpts, ProvisionFn
-from mirage.context import (get_admission, get_current_session, get_mount_gate,
+from mirage.context import (effective_path_mode, get_admission,
+                            get_current_session, get_mount_gate,
                             get_op_policies, hidden_paths_intersect,
                             hidden_refusal, path_allowed)
 from mirage.context.session_context import require_paths_writable
 from mirage.ops.types import ChildMounts, LinkTargetStat, StatOverlay
 from mirage.policy.policies import Policies, pre_ops_gate
-from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import MISS_ERRORS, eisdir, enotsup
+from mirage.types import FileStat, FileType, MountMode, PathSpec
+from mirage.utils.errors import (MISS_ERRORS, ReadOnlyError, eexist, eisdir,
+                                 enoent, enotdir, enotsup)
 from mirage.utils.glob_walk import DEFAULT_MAX_GLOB_MATCHES, make_resolve_glob
 from mirage.utils.hidden import move_reveals
 from mirage.utils.path import norm, parent
@@ -634,6 +636,86 @@ def _mode_call(fn: OperationFn, skip_first: bool, subtree: bool, *args: Any,
     return fn(*args, **kwargs)
 
 
+async def _mkdir_on_read_only(stat: StatOp, gate: tuple[str, MountMode],
+                              accessor: Any, path: PathSpec,
+                              parents: bool) -> None:
+    """Answer a mkdir on a read-only region the way the filesystem would.
+
+    A read-only filesystem refuses only a create it would really make,
+    so the answer is whatever the create runs into first, walking the
+    components from the mount root: a missing one is refused with EROFS,
+    a file in the chain is ENOTDIR, an existing leaf is EEXIST, and
+    ``mkdir -p`` of a directory that is already there succeeds. The
+    blamed path is the first component that would have been made, as
+    GNU's ``mkdir -p`` names it (``'/ro/n'`` for ``/ro/n/m``). Pinned
+    against GNU coreutils 9.7 on a read-only tmpfs. Mirrors TS
+    ``mkdirOnReadOnly``.
+
+    Args:
+        stat (StatOp): the backend stat, for walking the components.
+        gate (tuple[str, MountMode]): the mount prefix and its mode.
+        accessor (Any): the mkdir call's accessor.
+        path (PathSpec): the directory to make.
+        parents (bool): ``-p``.
+    """
+    prefix, mode = gate
+    base = prefix.rstrip("/")
+    leaf = path.virtual.rstrip("/") or "/"
+    if leaf != base and not leaf.startswith(base + "/"):
+        raise ReadOnlyError(errno.EROFS, "Read-only file system", path.virtual)
+    # Each component's backend key keeps the leaf's own key prefix,
+    # recovered from its (virtual, vfs_path) pair as PathSpec.dir does.
+    cut = len(leaf) - len(path.vfs_path.strip("/"))
+    parts = [part for part in leaf[len(base):].split("/") if part]
+    chain = []
+    for depth in range(1, len(parts) + 1):
+        virtual = f"{base}/{'/'.join(parts[:depth])}"
+        chain.append(PathSpec.from_str_path(virtual, virtual[cut:].strip("/")))
+    for index, component in enumerate(chain):
+        try:
+            row = await stat(accessor, component)
+        except FileNotFoundError as exc:
+            if not parents and index < len(chain) - 1:
+                raise enoent(path) from exc
+            blame = next(
+                (spec for spec in chain[index:] if effective_path_mode(
+                    spec.virtual, prefix, mode) == MountMode.READ), path)
+            raise ReadOnlyError(errno.EROFS, "Read-only file system",
+                                blame.virtual) from exc
+        if row.type is not FileType.DIRECTORY:
+            if index == len(chain) - 1:
+                raise eexist(path)
+            raise enotdir(component if parents else path)
+    if not parents:
+        raise eexist(path)
+
+
+def _mode_mkdir(fn: OperationFn,
+                stat: StatOp,
+                accessor: Any,
+                path: Any,
+                parents: bool = False,
+                **options: Any) -> Any:
+    """The mkdir slot of ``_mode_call``: a directory on a read-only
+    region answers what the create would run into instead of refusing
+    the operand outright (``_mkdir_on_read_only``). Sync like
+    ``_mode_call``.
+
+    Args:
+        fn (OperationFn): the raw backend mkdir.
+        stat (StatOp): the backend stat.
+        accessor (Any): the call's accessor.
+        path (Any): the directory to make.
+        parents (bool): ``-p``.
+        **options: forwarded untouched.
+    """
+    gate = get_mount_gate()
+    if (gate is not None and isinstance(path, PathSpec)
+            and effective_path_mode(path.virtual, *gate) == MountMode.READ):
+        return _mkdir_on_read_only(stat, gate, accessor, path, parents)
+    return fn(accessor, path, parents=parents, **options)
+
+
 def with_mode_guard(ops: CommandIO) -> CommandIO:
     """Return ``ops`` whose mutation slots hold each written path to
     its region's effective mode.
@@ -650,7 +732,11 @@ def with_mode_guard(ops: CommandIO) -> CommandIO:
     changes: dict[str, Any] = {}
     for slot, access in _MUTATIONS.items():
         fn = getattr(ops, slot)
-        if fn is not None:
+        if fn is None:
+            continue
+        if slot == "mkdir":
+            changes[slot] = functools.partial(_mode_mkdir, fn, ops.stat)
+        else:
             changes[slot] = functools.partial(_mode_call, fn,
                                               access.first_source,
                                               access.subtree)

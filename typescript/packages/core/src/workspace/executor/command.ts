@@ -398,6 +398,10 @@ export async function handleCommand(
         sharedSpec !== undefined ? registeredSpec(cmdName, sharedSpec) : null,
         cmdName,
         session.cwd,
+        undefined,
+        false,
+        undefined,
+        true,
       )
     const csFlags = csParsed.flagKwargs
     const csTexts = findExprTokens ?? csParsed.texts

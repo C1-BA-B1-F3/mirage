@@ -142,8 +142,7 @@ async def test_mktemp_creates_file():
     text = out.decode()
     assert text.startswith("/tmp/tmp.")
     assert text.endswith("\n")
-    assert [(path.virtual, parents)
-            for path, parents in mkdir_calls] == [("/tmp", True)]
+    assert mkdir_calls == []
     assert len(write_calls) == 1
     assert write_calls[0][0].virtual == text.rstrip("\n")
     assert write_calls[0][1] == b""
@@ -166,8 +165,7 @@ async def test_mktemp_creates_directory():
                           t=True)
     text = out.decode().rstrip("\n")
     assert [(path.virtual, parents)
-            for path, parents in mkdir_calls] == [("/tmp", True),
-                                                  (text, False)]
+            for path, parents in mkdir_calls] == [(text, False)]
     assert write_calls == []
 
 
@@ -185,8 +183,49 @@ async def test_mktemp_custom_parent():
                           write_bytes_fn=write_bytes_fn,
                           p="/var/cache")
     assert out.decode().startswith("/var/cache/tmp.")
-    assert (mkdir_calls[0][0].virtual, mkdir_calls[0][1]) == ("/var/cache",
-                                                              True)
+    assert mkdir_calls == []
+
+
+@pytest.mark.asyncio
+async def test_mktemp_never_creates_a_named_parent():
+    # GNU creates one file or directory, never the directory it goes in:
+    # a missing -p directory is ENOENT, named by the template.
+    mkdir_calls: list[PathSpec] = []
+
+    async def mkdir_fn(path):
+        mkdir_calls.append(path)
+
+    async def write_bytes_fn(path, data):
+        raise FileNotFoundError(path.virtual)
+
+    out, io = await mktemp(mkdir_fn=mkdir_fn,
+                           write_bytes_fn=write_bytes_fn,
+                           p="/var/cache")
+    assert (out, io.exit_code, mkdir_calls) == (None, 1, [])
+    assert io.stderr == (b"mktemp: failed to create file via template "
+                         b"'/var/cache/tmp.XXXXXXXXXX': No such file or "
+                         b"directory\n")
+
+
+@pytest.mark.asyncio
+async def test_mktemp_makes_only_the_fallback_tmp():
+    # A workspace root starts with no /tmp, so the fallback directory is
+    # made on first use, and only when nothing named another one.
+    made: list[str] = []
+    files: set[str] = set()
+
+    async def mkdir_fn(path):
+        made.append(path.virtual)
+
+    async def write_bytes_fn(path, data):
+        if "/tmp" not in made:
+            raise FileNotFoundError(path.virtual)
+        files.add(path.virtual)
+
+    out, io = await mktemp(mkdir_fn=mkdir_fn, write_bytes_fn=write_bytes_fn)
+    assert io.exit_code == 0
+    assert made == ["/tmp"]
+    assert files == {out.decode().rstrip("\n")}
 
 
 @pytest.mark.asyncio

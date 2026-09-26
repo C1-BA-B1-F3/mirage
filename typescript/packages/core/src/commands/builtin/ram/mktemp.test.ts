@@ -26,8 +26,10 @@ const DEC = new TextDecoder()
 async function runMktemp(
   flags: Record<string, string | boolean | number | string[]>,
   texts: string[] = [],
+  dirs: string[] = [],
 ): Promise<{ out: string; vfs: RAMVFS }> {
   const vfs = new RAMVFS()
+  for (const dir of dirs) vfs.store.dirs.add(dir)
   const cmd = RAM_MKTEMP[0]
   if (cmd === undefined) throw new Error('mktemp not registered')
   const result = await cmd.fn((vfs as { accessor?: unknown }).accessor as never, [], texts, {
@@ -59,14 +61,18 @@ describe('mktemp', () => {
   })
 
   it('uses the directory of an explicit path template', async () => {
-    const { out, vfs } = await runMktemp({}, ['/data/mt/f.XXXX'])
+    const { out, vfs } = await runMktemp({}, ['/data/mt/f.XXXX'], ['/data', '/data/mt'])
     const path = out.trim()
     expect(path.startsWith('/data/mt/f.')).toBe(true)
     expect(vfs.store.files.has(path)).toBe(true)
   })
 
   it('-d uses the directory of an explicit path template', async () => {
-    const { out, vfs } = await runMktemp({ directory: true }, ['/data/mtd/t.XXXX'])
+    const { out, vfs } = await runMktemp(
+      { directory: true },
+      ['/data/mtd/t.XXXX'],
+      ['/data', '/data/mtd'],
+    )
     const path = out.trim()
     expect(path.startsWith('/data/mtd/t.')).toBe(true)
     expect(vfs.store.dirs.has(path)).toBe(true)
@@ -109,5 +115,97 @@ describe('mktemp on a read-only mount', () => {
     const [exitCode, , stderr] = await readOnlyShell('true', line)
     expect(exitCode).toBe(1)
     expect(stderr).toContain('Read-only file system')
+  })
+})
+
+async function shellOf(
+  mounts: Record<string, [RAMVFS, MountMode]>,
+  line: string,
+): Promise<[number, string, string]> {
+  const ws = new Workspace(mounts, { mode: MountMode.WRITE, shellParser: await getTestParser() })
+  try {
+    const r = await ws.shell(line)
+    return [r.exitCode, DEC.decode(r.stdout), DEC.decode(r.stderr)]
+  } finally {
+    await ws.close()
+  }
+}
+
+describe('mktemp names and routing', () => {
+  it('creates a pathless name under /tmp whatever the cwd', async () => {
+    // The create goes where /tmp lives (the workspace root), not to the
+    // mount the working directory is on, which here is read-only.
+    const ro = new RAMVFS()
+    const [exitCode, out] = await shellOf(
+      { '/ro': [ro, MountMode.READ] },
+      'cd /ro && mktemp && mktemp -d',
+    )
+    expect(exitCode).toBe(0)
+    expect(
+      out
+        .split('\n')
+        .filter(Boolean)
+        .map((n) => n.startsWith('/tmp/tmp.')),
+    ).toEqual([true, true])
+    expect(ro.store.files.size).toBe(0)
+  })
+
+  // Pinned against GNU coreutils 9.7 (debian:stable-slim); a missing
+  // directory is never created.
+  it.each([
+    [
+      'mktemp -p /data/nodir',
+      "mktemp: failed to create file via template '/data/nodir/tmp.XXXXXXXXXX': No such file or directory\n",
+    ],
+    [
+      'mktemp -d --suffix=.s -p /data/nodir x.XXX',
+      "mktemp: failed to create directory via template '/data/nodir/x.XXX.s': No such file or directory\n",
+    ],
+    [
+      'cd /data && mktemp sub/x.XXX',
+      "mktemp: failed to create file via template 'sub/x.XXX': No such file or directory\n",
+    ],
+    ['mktemp x.XX', "mktemp: too few X's in template 'x.XX'\n"],
+    [
+      'mktemp -p /data /abs/x.XXX',
+      "mktemp: invalid template, '/abs/x.XXX'; with --tmpdir, it may not be absolute\n",
+    ],
+    [
+      'mktemp -t sub/x.XXX',
+      "mktemp: invalid template, 'sub/x.XXX', contains directory separator\n",
+    ],
+  ])('refuses %s in GNU words', async (line, stderr) => {
+    const data = new RAMVFS()
+    const [exitCode, , err] = await shellOf({ '/data': [data, MountMode.WRITE] }, line)
+    expect([exitCode, err]).toEqual([1, stderr])
+    expect(data.store.files.size).toBe(0)
+  })
+
+  it('creates a bare template relative to the cwd', async () => {
+    const data = new RAMVFS()
+    const [exitCode, out] = await shellOf(
+      { '/data': [data, MountMode.WRITE] },
+      'cd /data && mktemp x.XXX',
+    )
+    const name = out.trimEnd()
+    expect(exitCode).toBe(0)
+    expect(name.startsWith('x.') && name.length === 5).toBe(true)
+    expect([...data.store.files.keys()]).toEqual([`/${name}`])
+  })
+
+  it('honors TMPDIR', async () => {
+    const data = new RAMVFS()
+    const [exitCode, out] = await shellOf(
+      { '/data': [data, MountMode.WRITE] },
+      'TMPDIR=/data mktemp; TMPDIR=/data mktemp -t -p /elsewhere f.XXX',
+    )
+    expect(exitCode).toBe(0)
+    expect(
+      out
+        .split('\n')
+        .filter(Boolean)
+        .map((n) => n.startsWith('/data/tmp.') || n.startsWith('/data/f.')),
+    ).toEqual([true, true])
+    expect(data.store.files.size).toBe(2)
   })
 })

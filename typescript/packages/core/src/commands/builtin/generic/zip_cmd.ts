@@ -14,6 +14,7 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { fsStrerror, isFsError } from '../../../utils/errors.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import { deflateRaw } from '../../../utils/compress.ts'
@@ -184,6 +185,11 @@ const NOTHING_TO_DO_EXIT = 12
 const REPEATED_EXIT = 16
 const REPEATED_ERROR = '\nzip error: Invalid command arguments (cannot repeat names in zip file)\n'
 const REPEATED_INDENT = ' '.repeat(21)
+// An archive zip cannot create ends the run before any member is added, -q
+// or not (Info-ZIP's ZE_CREAT, exit 15). Info-ZIP prints it on stdout like
+// every diagnostic; mirage keeps it on stderr with the rest. Mirrors
+// zip_cmd.py.
+const CREATE_EXIT = 15
 // Unix mode bits in the high half of external_attr.
 const DIR_MODE = ((0o40755 << 16) | 0x10) >>> 0
 const FILE_MODE = (0o100644 << 16) >>> 0
@@ -401,7 +407,16 @@ export async function zipGeneric(
     outputLines.push(`  adding: ${member.name}`)
   }
   const archive = buildZip(items)
-  await deps.write(archivePath, archive)
+  try {
+    await deps.write(archivePath, archive)
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    const message =
+      warningText(plan.warnings, quiet) +
+      `zip I/O error: ${String(fsStrerror(err))}\n` +
+      `zip error: Could not create output file (${archivePath.rawPath})\n`
+    return [null, new IOResult({ exitCode: CREATE_EXIT, stderr: ENC.encode(message) })]
+  }
   const stdout: ByteSource | null =
     !quiet && outputLines.length > 0 ? ENC.encode(outputLines.join('\n') + '\n') : null
   return [

@@ -32,7 +32,7 @@ import {
 } from './constants.ts'
 import { flagOccurrences } from './flag_view.ts'
 import { expandOldStyle } from './oldstyle.ts'
-import type { CommandSpec, Option, ValueType, FlagValue } from './types.ts'
+import type { CommandSpec, Option, ValueType, ParsedFlagValue } from './types.ts'
 
 /**
  * The builtin `Option` objects whose choices are gnulib ARGMATCH tables.
@@ -92,7 +92,7 @@ function argmatchDests(spec: CommandSpec): ReadonlySet<string> {
 }
 
 export interface ParsedArgsInit {
-  flags: Record<string, FlagValue>
+  flags: Record<string, ParsedFlagValue>
   args: [string, ValueType][]
   pathFlagValues?: string[]
   rawOperands?: [string, ValueType][]
@@ -136,7 +136,7 @@ export interface ParsedArgsInit {
 }
 
 export class ParsedArgs {
-  readonly flags: Record<string, FlagValue>
+  readonly flags: Record<string, ParsedFlagValue>
   readonly args: [string, ValueType][]
   readonly pathFlagValues: string[]
   readonly rawOperands: [string, ValueType][]
@@ -308,7 +308,7 @@ function checkValue(
 // names `bad1`. Only what the environment or a default fills in afterwards
 // is checked after the scan.
 function setValueFlag(
-  flags: Record<string, FlagValue>,
+  flags: Record<string, ParsedFlagValue>,
   refusals: Refusals,
   cs: CompiledSpec,
   argmatchDestSet: ReadonlySet<string>,
@@ -334,7 +334,7 @@ function setValueFlag(
 // The values the bag holds for one dest. The bare boolean form of an
 // optional-value flag is exempt from the per-value checks, so it reads as
 // no value at all.
-function bagValues(flags: Record<string, FlagValue>, destName: string): string[] {
+function bagValues(flags: Record<string, ParsedFlagValue>, destName: string): string[] {
   const value = flags[destName]
   if (Array.isArray(value)) return value
   return typeof value === 'string' ? [value] : []
@@ -369,7 +369,11 @@ function rebase(
 // Record a boolean flag occurrence under its canonical dest. A count flag
 // accumulates occurrences into a number (`-vvv` and `-v -v -v` both land
 // as 3); every other boolean flag is sticky true.
-function setBoolFlag(flags: Record<string, FlagValue>, cs: CompiledSpec, spelling: string): void {
+function setBoolFlag(
+  flags: Record<string, ParsedFlagValue>,
+  cs: CompiledSpec,
+  spelling: string,
+): void {
   const name = cs.destOf(spelling)
   flagOccurrences(flags).push([name, true])
   if (cs.countDests.has(name)) {
@@ -489,7 +493,7 @@ export function parseCommand(
   const scanArgv = old !== null ? old.argv : argv
   const scanOrigins = old !== null ? old.origins : argv.map((_, idx) => idx)
 
-  const flags: Record<string, FlagValue> = {}
+  const flags: Record<string, ParsedFlagValue> = {}
   // Every scalar value-flag occurrence, in scan order, beside the bag that
   // keeps only the last of each. Appended to by setValueFlag and read by
   // nobody here: it leaves on the parse result.
@@ -1031,13 +1035,13 @@ export function parseCommand(
   })
 }
 
-export function parseToKwargs(parsed: ParsedArgs): Record<string, FlagValue> {
-  const result: Record<string, FlagValue> = {}
+export function parseToKwargs(parsed: ParsedArgs): Record<string, ParsedFlagValue> {
+  const result: Record<string, ParsedFlagValue> = {}
   for (const [key, value] of Object.entries(parsed.flags)) {
     result[flagKwargName(key)] = value
   }
   flagOccurrences(result).push(
-    ...flagOccurrences(parsed.flags).map(([name, value]): [string, FlagValue] => [
+    ...flagOccurrences(parsed.flags).map(([name, value]): [string, ParsedFlagValue] => [
       flagKwargName(name),
       value,
     ]),

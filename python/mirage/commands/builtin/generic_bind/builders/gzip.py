@@ -31,7 +31,8 @@ async def gzip(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     return await gzip_generic(resolved, list(texts), opts,
                               bound_op(ops.read_bytes, accessor, opts.index),
                               partial(ops.require(Operation.WRITE), accessor),
-                              partial(ops.require(Operation.UNLINK), accessor))
+                              partial(ops.require(Operation.UNLINK), accessor),
+                              partial(ops.stat, accessor))
 
 
 BUILDER = Builder('gzip', gzip, write=True)

@@ -27,7 +27,6 @@ import {
 
 const STAMP: ZipRow['dateTime'] = [2026, 9, 20, 7, 33, 0]
 
-// One char per byte both ways, so a test can state bytes no code page owns.
 const bytes = (text: string): Uint8Array => Uint8Array.from(text, (c) => c.charCodeAt(0))
 const chars = (data: Uint8Array): string => String.fromCharCode(...data)
 

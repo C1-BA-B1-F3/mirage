@@ -1281,8 +1281,6 @@ describe('unzip -v', () => {
   })
 
   it('writes comments as stored', async () => {
-    // Info-ZIP assumes no code page for a comment, so a legacy one keeps its
-    // bytes; only NUL, CR, ^S and ESC are touched.
     const vfs = new RAMVFS()
     vfs.store.files.set('/l.zip', decodeBase64(LEGACY_COMMENTS))
     const r = await runCmd(RAM_UNZIP, vfs, [PathSpec.fromStrPath('/l.zip')], { v: true })

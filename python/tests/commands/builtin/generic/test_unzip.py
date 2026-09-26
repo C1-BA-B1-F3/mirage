@@ -458,8 +458,6 @@ async def test_vq_drops_the_archive_line_and_filters_like_l():
 
 @pytest.mark.asyncio
 async def test_v_writes_comments_as_stored():
-    # Info-ZIP assumes no code page for a comment, so a legacy one keeps
-    # its bytes; only NUL, CR, ^S and ESC are touched.
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         info = zipfile.ZipInfo("b.txt", date_time=STAMP)

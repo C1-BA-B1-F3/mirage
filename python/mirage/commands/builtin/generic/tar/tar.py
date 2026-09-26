@@ -25,7 +25,7 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView, MountView
 from mirage.types import PathSpec
 from mirage.utils.compress import GZIP_MAGIC, gunzip_partial
-from mirage.utils.errors import GzipDataError, fs_strerror
+from mirage.utils.errors import FS_ERRORS, GzipDataError, fs_strerror
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +229,17 @@ async def _create_archive(
     if exit_code:
         notices.append(ERROR_TRAILER)
     archive = buf.getvalue()
-    await write_bytes(archive_path, archive)
+    try:
+        await write_bytes(archive_path, archive)
+    except FS_ERRORS as exc:
+        # GNU opens the archive before it reads a member, so an archive
+        # it cannot create is the whole run's one fatal line.
+        shown = archive_path.raw_path or archive_path.virtual
+        return None, IOResult(exit_code=CREATE_ERROR_EXIT,
+                              stderr=_stderr([
+                                  f"tar: {shown}: Cannot open: "
+                                  f"{fs_strerror(exc)}", FATAL_TRAILER
+                              ]))
     stdout = ("\n".join(names) + "\n").encode() if verbose and names else None
     return stdout, IOResult(writes={archive_path.mount_path: archive},
                             stderr=_stderr(notices),
@@ -283,6 +293,10 @@ async def _extract_archive(
     made: set[str] = set()
     extracted_bytes: list[bytes] = []
     misses: list[str] = []
+    # A member GNU cannot create (a read-only region, a missing op) is
+    # reported by its own name and the run goes on to the next one,
+    # closing with the one trailer and exit 2.
+    failed = False
     with _open_archive(await read_bytes(archive_path), mode_suffix) as result:
         tf, failure = result.archive, result.failure
         if tf is not None:
@@ -311,7 +325,14 @@ async def _extract_archive(
                         if parts:
                             out_dir = dest_path.rstrip("/") + "/" + "/".join(
                                 parts)
-                            await ensure_dir(out_dir, mkdir_fn, stat, made)
+                            try:
+                                await ensure_dir(out_dir, mkdir_fn, stat, made)
+                            except FS_ERRORS as exc:
+                                notices.append(f"tar: {'/'.join(parts)}: "
+                                               f"Cannot mkdir: "
+                                               f"{fs_strerror(exc)}")
+                                failed = True
+                                continue
                             names.append(member.name.rstrip("/") + "/")
                     continue
                 extracted = tf.extractfile(member)
@@ -328,9 +349,25 @@ async def _extract_archive(
                 out_path = dest_path.rstrip("/") + "/" + "/".join(parts)
                 parent = out_path.rsplit("/", 1)[0] or "/"
                 if parent != "/":
-                    await ensure_dir(parent, mkdir_fn, stat, made)
-                await write_bytes(PathSpec.from_str_path(out_path),
-                                  data=content)
+                    try:
+                        await ensure_dir(parent, mkdir_fn, stat, made)
+                    except FS_ERRORS as exc:
+                        notices.append(f"tar: {'/'.join(parts[:-1])}: Cannot "
+                                       f"mkdir: {fs_strerror(exc)}")
+                        # GNU tar 1.35 (debian:stable-slim) reports ENOENT
+                        # for the member after its parent mkdir failed.
+                        notices.append(f"tar: {'/'.join(parts)}: Cannot "
+                                       "open: No such file or directory")
+                        failed = True
+                        continue
+                try:
+                    await write_bytes(PathSpec.from_str_path(out_path),
+                                      data=content)
+                except FS_ERRORS as exc:
+                    notices.append(f"tar: {'/'.join(parts)}: Cannot open: "
+                                   f"{fs_strerror(exc)}")
+                    failed = True
+                    continue
                 if not relay:
                     # Relay writes land on whichever mount owns each path
                     # and invalidate through the dispatcher; keying them here
@@ -352,9 +389,9 @@ async def _extract_archive(
         return stdout, IOResult(exit_code=2,
                                 stderr=_child_failure(failure, stderr_lines),
                                 writes=writes)
-    if misses:
+    if misses or failed:
         stderr_lines = stderr_lines + misses + [ERROR_TRAILER]
-    return stdout, IOResult(exit_code=2 if misses else 0,
+    return stdout, IOResult(exit_code=2 if misses or failed else 0,
                             stderr=_stderr(stderr_lines),
                             writes=writes)
 
@@ -467,21 +504,6 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> TarFlags:
         strip_components=fl.as_str("strip_components"),
         exclude=fl.as_str("exclude"),
     )
-
-
-def tar_writes(flags: Mapping[str, FlagValue], paths: list[PathSpec]) -> bool:
-    """Whether a tar invocation writes: ``-c`` writes the archive and
-    ``-x`` its members, while ``-t`` only lists them and ``-x -O``
-    extracts to stdout. The modes are read in ``tar``'s own order, create
-    before list before extract.
-
-    Args:
-        flags (Mapping[str, FlagValue]): the parsed flag bag.
-        paths (list[PathSpec]): the operands the mount received.
-    """
-    parsed = parse_flags(flags)
-    return parsed.create or (parsed.extract and not parsed.list_only
-                             and not parsed.to_stdout)
 
 
 async def tar_generic(

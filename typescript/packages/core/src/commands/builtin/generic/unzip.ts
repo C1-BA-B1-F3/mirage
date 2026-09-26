@@ -27,7 +27,7 @@ import {
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { inflateRaw } from '../../../utils/compress.ts'
-import { versionLine, type CommandFnResult, type CommandOpts, type WritesFn } from '../../config.ts'
+import { versionLine, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
 import { lstripSlash, rstripSlash, stripSlash } from '../../../utils/slash.ts'
 
@@ -378,16 +378,6 @@ async function ensureParents(
   const dir = path.slice(0, idx)
   if (dir === '' || dir === '/') return
   await mkdir(makePathSpec(dir), true)
-}
-
-// Whether an unzip invocation writes: it extracts the archive unless -l, -v,
-// -t, -p or -Z asks it to list, test, pipe or describe the members instead.
-// Mirrors Python's unzip_writes.
-export const unzipWrites: WritesFn = (flags, paths) => {
-  const fl = new FlagView(flags, specOf('unzip'))
-  const readOnly =
-    fl.asBool('args_l') || fl.asBool('v') || fl.asBool('t') || fl.asBool('p') || fl.asBool('Z')
-  return paths.length > 0 && !readOnly
 }
 
 export async function unzipGeneric(

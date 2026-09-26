@@ -20,7 +20,7 @@ import { hiddenPathsIntersect, pathRulesActive } from '../../../../context/sessi
 import { walkFind } from '../../../../core/generic/find.ts'
 import { cpGeneric, parseFlags } from '../../generic/cp.ts'
 import type { Builder, CommandIO } from '../adapter.ts'
-import { resolveGlobOf } from '../adapter.ts'
+import { requireOp, resolveGlobOf } from '../adapter.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import { specOf } from '../../../spec/builtins.ts'
 
@@ -40,12 +40,15 @@ export function overlayableStat(
 export const CP_BUILDER: Builder = {
   name: 'cp',
   write: true,
-  requirements: ['copy'],
   fn: async (ops, accessor, paths, _texts, opts) => {
-    const { copy, dirCopy, find, mkdir } = ops
-    if (copy === undefined) {
-      throw new Error('cp: backend provides no copy op')
-    }
+    const { dirCopy, find } = ops
+    // Without a file transfer capability, creating directories would
+    // leave an uncopyable destination tree. Keep the refusal guarded.
+    const mkdir =
+      ops.copy === undefined && ops.write === undefined
+        ? requireOp<NonNullable<CommandIO['mkdir']>>(undefined, 'mkdir')
+        : ops.mkdir
+    const copy = requireOp(ops.copy, 'copy')
     const idx = opts.index ?? undefined
     const resolved = await resolveGlobOf(ops)(accessor, paths, idx)
     // No native find op: fall back to a readdir walk (mirrors Python's
@@ -75,12 +78,13 @@ export const CP_BUILDER: Builder = {
     // are worded.
     const { write } = ops
     const guarded = pathRulesActive() || resolved.some((p) => hiddenPathsIntersect(p.virtual))
+    const primitive = ops.copy === undefined || (guarded && mkdir !== undefined)
     const strategy: NativeCopy | PrimitiveCopy =
-      guarded && write !== undefined && mkdir !== undefined
+      primitive && write !== undefined
         ? {
             readBytes: (p: PathSpec) => ops.readBytes(accessor, p, idx),
             write: (p: PathSpec, data: Uint8Array) => write(accessor, p, data),
-            mkdir: (p: PathSpec) => mkdir(accessor, p),
+            mkdir: (p: PathSpec) => requireOp(ops.mkdir, 'mkdir')(accessor, p),
             readdir: (p: PathSpec) => ops.readdir(accessor, p, idx),
           }
         : {

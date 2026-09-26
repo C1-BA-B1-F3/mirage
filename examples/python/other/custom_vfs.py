@@ -112,6 +112,26 @@ async def write(accessor: WikiAccessor, path: PathSpec, data: bytes) -> None:
     node[name] = data.decode()
 
 
+async def mkdir(accessor: WikiAccessor,
+                path: PathSpec,
+                parents: bool = False) -> None:
+    parts = [p for p in path.vfs_path.split("/") if p]
+    node = accessor.pages
+    for i, part in enumerate(parts):
+        leaf = i == len(parts) - 1
+        if part not in node:
+            if not leaf and not parents:
+                raise FileNotFoundError(path.virtual)
+            node[part] = {}
+        elif leaf and (not parents or not isinstance(node[part], dict)):
+            raise FileExistsError(path.virtual)
+        node = node[part]
+        if not isinstance(node, dict):
+            raise NotADirectoryError(path.virtual)
+    if not parts and not parents:
+        raise FileExistsError(path.virtual)
+
+
 # Optional: a bespoke domain verb, registered alongside the generics.
 @command("wiki_titles", vfs="wiki", spec=CommandSpec())
 async def wiki_titles(accessor, paths, texts, opts):
@@ -126,7 +146,7 @@ async def wiki_titles(accessor, paths, texts, opts):
 def make_io(*, writable: bool = True) -> VFSAdapter:
     return VFSAdapter(
         read=ReadOps(readdir=readdir, read_bytes=read_bytes, stat=stat),
-        writes=WriteOps(write=write) if writable else WriteOps(),
+        writes=WriteOps(write=write, mkdir=mkdir) if writable else WriteOps(),
     )
 
 
@@ -213,6 +233,20 @@ async def main():
             "cat /nested/wiki/notes.md",
             "wc -c /feed/status.md",
             "rm /feed/status.md",
+            "gzip -c /feed/status.md | gunzip",
+            "mkdir /wiki/new/child",
+            "test ! -e /wiki/new && echo no-partial-parent",
+            "mkdir -p /wiki/new/child",
+            "mkdir /wiki/new/child",
+            "mkdir -p /wiki/new/child",
+            "mkdir -p /wiki/notes.md/child",
+            "mkdir /wiki/guides/empty",
+            "cp -r /wiki/guides /wiki/copied",
+            "ls /wiki/copied",
+            "cat /wiki/copied/quickstart.md",
+            "rm -r /wiki/copied /wiki/notes.md",
+            "rm -d /wiki/copied/empty /wiki/notes.md",
+            "cp -r /nested/wiki/guides /nested/wiki/copied",
     ):
         await show(ws, line)
 

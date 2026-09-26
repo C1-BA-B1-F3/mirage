@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from dataclasses import replace
 from functools import partial
 
 from mirage.accessor.base import Accessor
@@ -93,10 +94,17 @@ async def cp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     paths = await ops.resolve_glob(accessor, paths, opts.index)
     dir_copy = partial(ops.dir_copy, accessor) if ops.dir_copy else None
     mkdir = partial(ops.mkdir, accessor) if ops.mkdir else None
+    if ops.copy is None and ops.write is None:
+        # Directory creation is not a usable copy step without a file
+        # transfer capability. Refuse it through the same guarded door
+        # before the command leaves an uncopyable destination tree.
+        mkdir = partial(
+            replace(ops, mkdir=None).require(Operation.MKDIR), accessor)
     strategy: NativeCopy | PrimitiveCopy
     guarded = path_rules_active() or any(
         hidden_paths_intersect(p.virtual) for p in paths)
-    if guarded and ops.write is not None and mkdir is not None:
+    primitive = ops.copy is None or (guarded and mkdir is not None)
+    if primitive and ops.write is not None:
         # A native copy moves a tree in one backend call and a native
         # find lists it, neither of which passes an entry through the
         # guard the way a read does; while a path rule scopes cp, or a
@@ -108,7 +116,8 @@ async def cp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         strategy = PrimitiveCopy(read_bytes=bound_op(ops.read_bytes, accessor,
                                                      opts.index),
                                  write=partial(_write, ops.write, accessor),
-                                 mkdir=mkdir,
+                                 mkdir=partial(ops.require(Operation.MKDIR),
+                                               accessor),
                                  readdir=bound_op(ops.readdir, accessor,
                                                   opts.index))
     else:
@@ -127,7 +136,4 @@ async def cp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                              opts.index))
 
 
-BUILDER = Builder('cp',
-                  cp,
-                  write=True,
-                  requirements=frozenset({Operation.COPY}))
+BUILDER = Builder('cp', cp, write=True)

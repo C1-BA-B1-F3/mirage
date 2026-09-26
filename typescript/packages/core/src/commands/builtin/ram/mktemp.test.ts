@@ -14,9 +14,11 @@
 
 import { RAM_COMMANDS } from './index.ts'
 import { describe, expect, it } from 'vitest'
-import { materialize } from '../../../io/types.ts'
+import { materialize, type IOResult } from '../../../io/types.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
-import { MountMode } from '../../../types.ts'
+import { MountMode, type PathSpec } from '../../../types.ts'
+import type { CommandOpts } from '../../config.ts'
+import { mktempGeneric } from '../generic/mktemp.ts'
 import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
 import { Workspace } from '../../../workspace/workspace/workspace.ts'
 const RAM_MKTEMP = RAM_COMMANDS.filter((c) => c.name === 'mktemp' && c.filetype == null)
@@ -207,5 +209,49 @@ describe('mktemp names and routing', () => {
         .map((n) => n.startsWith('/data/tmp.') || n.startsWith('/data/f.')),
     ).toEqual([true, true])
     expect(data.store.files.size).toBe(2)
+  })
+})
+
+// GNU creates exclusively and tries another name, so a taken name is never
+// written over. Mirrors test_phase_r_paths.py.
+describe('mktemp never reuses a taken name', () => {
+  const opts = { stdin: null, flags: {}, filetypeFns: null, cwd: '/data' } as CommandOpts
+
+  it('draws again when a name is taken', async () => {
+    const probed: string[] = []
+    const written: string[] = []
+    const result = await mktempGeneric(
+      ['x.XXX'],
+      opts,
+      () => Promise.reject(new Error('a file create makes no directory')),
+      (p) => {
+        written.push(p.virtual)
+        return Promise.resolve()
+      },
+      (p) => {
+        probed.push(p.virtual)
+        return Promise.resolve(probed.length === 1)
+      },
+    )
+    const [out, io] = result as [Uint8Array, IOResult]
+    expect(io.exitCode).toBe(0)
+    expect(probed.length).toBe(2)
+    expect(probed[0]).not.toBe(probed[1])
+    expect(written).toEqual([probed[1]])
+    expect(DEC.decode(out)).toBe(`${(probed[1] ?? '').slice('/data/'.length)}\n`)
+  })
+
+  it('gives up when every name is taken', async () => {
+    const written: string[] = []
+    const record = (p: PathSpec): Promise<void> => {
+      written.push(p.virtual)
+      return Promise.resolve()
+    }
+    const result = await mktempGeneric(['x.XXX'], opts, record, record, () => Promise.resolve(true))
+    const [out, io] = result as [Uint8Array | null, IOResult]
+    expect([out, io.exitCode, written]).toEqual([null, 1, []])
+    expect(DEC.decode(io.stderr as Uint8Array)).toBe(
+      "mktemp: failed to create file via template 'x.XXX': File exists\n",
+    )
   })
 })

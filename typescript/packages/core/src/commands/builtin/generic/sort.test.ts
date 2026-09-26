@@ -292,6 +292,17 @@ describe('sort -o', () => {
     expect(parseFlags({ output: ['/data/p1', '/data/p1'] }).output?.virtual).toBe('/data/p1')
   })
 
+  it('tells two outputs apart by the word typed', () => {
+    // GNU compares -o values with STREQ: `-o ./out -o out` is refused
+    // although both name one file (coreutils 9.7). Mirrors test_sort.py.
+    const typed = (rawPath: string): PathSpec =>
+      new PathSpec({ virtual: '/data/out', directory: '/data/', vfsPath: 'out', rawPath })
+    expect(() => parseFlags({ output: [typed('./out'), typed('out')] })).toThrow(
+      'sort: multiple output files specified',
+    )
+    expect(parseFlags({ output: [typed('out'), typed('out')] }).output?.rawPath).toBe('out')
+  })
+
   it('refuses the first bad option on the line', async () => {
     const [, first] = await run({
       stdin: bytes('a\n'),

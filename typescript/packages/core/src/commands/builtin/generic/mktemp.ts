@@ -19,13 +19,15 @@ import { quoteText } from '../../quote.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { fsStrerror, isEnoent, isFsError } from '../../../utils/errors.ts'
+import { eexist, fsStrerror, isEnoent, isFsError } from '../../../utils/errors.ts'
 import { resolvePath } from '../../../utils/path.ts'
 import { extraOperandError } from '../../spec/usage.ts'
 import { CommandName } from '../../spec/types.ts'
 
 const ENC = new TextEncoder()
 const DEFAULT_TEMPLATE = 'tmp.XXXXXXXXXX'
+// How many names a create draws before it gives up with EEXIST.
+const ATTEMPTS = 100
 
 function randomSuffix(length: number): string {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -111,13 +113,17 @@ export function planTemplate(
  * is /tmp when it is only the fallback: a system always has it, but a
  * workspace's root starts empty, so it is made on first use. `mkdir`/`write`
  * take the resolved virtual path, so the create lands on whichever mount
- * owns it, not the one the working directory is on. Mirrors Python's mktemp.
+ * owns it, not the one the working directory is on. A name already taken is
+ * never reused: GNU creates exclusively and draws again, so an existing file
+ * is left alone, and -u names only a free one; `exists` asks the mount that
+ * owns the name. Mirrors Python's mktemp.
  */
 export async function mktempGeneric(
   texts: string[],
   opts: CommandOpts,
   mkdir: (p: PathSpec) => Promise<void>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
+  exists?: (p: PathSpec) => Promise<boolean>,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('mktemp'))
   if (texts.length > 1) throw extraOperandError(CommandName.MKTEMP, texts[1] ?? '')
@@ -139,12 +145,21 @@ export async function mktempGeneric(
   )
   const fallback = (texts.length === 0 || useDestDir || t) && destDir === '' && envTmpdir === ''
   const end = template.length - suffixLen
-  const name = template.slice(0, end - xCount) + randomSuffix(xCount) + template.slice(end)
+  const draw = (): string =>
+    template.slice(0, end - xCount) + randomSuffix(xCount) + template.slice(end)
   const create = (path: PathSpec): Promise<void> =>
     directory ? mkdir(path) : write(path, new Uint8Array(0))
-  if (!fl.asBool('dry_run')) {
-    const path = PathSpec.fromStrPath(resolvePath(name, opts.cwd))
-    try {
+  let name = draw()
+  try {
+    let path = PathSpec.fromStrPath(resolvePath(name, opts.cwd))
+    let attempt = 0
+    while (exists !== undefined && (await exists(path))) {
+      attempt += 1
+      if (attempt >= ATTEMPTS) throw eexist(path.virtual)
+      name = draw()
+      path = PathSpec.fromStrPath(resolvePath(name, opts.cwd))
+    }
+    if (!fl.asBool('dry_run')) {
       try {
         await create(path)
       } catch (error) {
@@ -152,22 +167,22 @@ export async function mktempGeneric(
         await mkdir(PathSpec.fromStrPath('/tmp'))
         await create(path)
       }
-    } catch (error) {
-      if (!isFsError(error)) throw error
-      // -q suppresses the diagnostic about the create only (GNU); a bad
-      // template still says so.
-      if (fl.asBool('quiet')) return [null, new IOResult({ exitCode: 1 })]
-      const kind = directory ? 'directory' : 'file'
-      return [
-        null,
-        new IOResult({
-          exitCode: 1,
-          stderr: ENC.encode(
-            `mktemp: failed to create ${kind} via template '${quoteText(template)}': ${String(fsStrerror(error))}\n`,
-          ),
-        }),
-      ]
     }
+  } catch (error) {
+    if (!isFsError(error)) throw error
+    // -q suppresses the diagnostic about the create only (GNU); a bad
+    // template still says so.
+    if (fl.asBool('quiet')) return [null, new IOResult({ exitCode: 1 })]
+    const kind = directory ? 'directory' : 'file'
+    return [
+      null,
+      new IOResult({
+        exitCode: 1,
+        stderr: ENC.encode(
+          `mktemp: failed to create ${kind} via template '${quoteText(template)}': ${String(fsStrerror(error))}\n`,
+        ),
+      }),
+    ]
   }
   const result: ByteSource = ENC.encode(name + '\n')
   return [result, new IOResult()]

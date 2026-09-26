@@ -15,6 +15,7 @@
 import { PathSpec } from '../../../../types.ts'
 import { mountKey } from '../../../../utils/key_prefix.ts'
 import { mktempGeneric } from '../../generic/mktemp.ts'
+import { pathExists } from '../../utils/copy.ts'
 import { requireOp, type Builder } from '../adapter.ts'
 
 export const MKTEMP_BUILDER: Builder = {
@@ -40,6 +41,10 @@ export const MKTEMP_BUILDER: Builder = {
       async (p, d) => {
         if (opts.dispatch !== undefined) await opts.dispatch('write', p, [d])
         else await write(accessor, local(p), d)
+      },
+      async (p) => {
+        if (opts.statPath !== undefined) return (await opts.statPath(p.virtual)) !== null
+        return pathExists((at) => ops.stat(accessor, at), local(p))
       },
     )
   },

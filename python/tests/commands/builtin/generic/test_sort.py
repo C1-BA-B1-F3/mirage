@@ -337,6 +337,22 @@ def test_two_outputs_are_refused_unless_they_name_one_file():
     assert parsed.output is not None and parsed.output.virtual == "/data/p1"
 
 
+def test_two_outputs_are_told_apart_by_the_word_typed():
+    # GNU compares -o values with STREQ: `-o ./out -o out` is refused
+    # although both name one file (coreutils 9.7).
+    def typed(raw: str) -> PathSpec:
+        return PathSpec(virtual="/data/out",
+                        directory="/data/",
+                        vfs_path="out",
+                        raw_path=raw)
+
+    with pytest.raises(UsageError) as exc:
+        parse_flags({"output": [typed("./out"), typed("out")]})
+    assert str(exc.value) == "sort: multiple output files specified"
+    parsed = parse_flags({"output": [typed("out"), typed("out")]})
+    assert parsed.output is not None and parsed.output.raw_path == "out"
+
+
 def test_the_first_bad_option_on_the_line_is_the_one_refused():
     outputs = [_spec("/data/p1"), _spec("/data/p2")]
     with pytest.raises(UsageError):

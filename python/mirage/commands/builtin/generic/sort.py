@@ -173,14 +173,19 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> SortFlags:
     fl = FlagView(flags, spec=SPECS["sort"])
     mode: str | None = None
     output: PathSpec | None = None
+    # Each -o is the next word typed, and GNU compares two by that word
+    # (STREQ), so `-o ./out -o out` names two outputs even though they
+    # are one file. A line parsed for a cross-mount strategy keeps the
+    # resolved strings, compared as they are.
+    typed = iter(fl.as_paths("output"))
     for dest, value in fl.occurrences("key", "output", "c", "C", "check"):
         if dest == "key" and isinstance(value, str):
             parse_keydef(value, KeyMods(), False)
         elif dest == "output":
-            path = value if isinstance(value, PathSpec) else next(
-                (p for p in fl.as_paths("output")
-                 if p.virtual == value), PathSpec.from_str_path(str(value)))
-            if output is not None and path.virtual != output.virtual:
+            spelled = next(typed, None)
+            path = spelled if spelled is not None else (value if isinstance(
+                value, PathSpec) else PathSpec.from_str_path(str(value)))
+            if output is not None and path.raw_path != output.raw_path:
                 raise UsageError(MULTIPLE_OUTPUTS)
             output = path
         elif dest == "check" or value is True:

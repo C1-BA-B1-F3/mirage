@@ -17,6 +17,8 @@ from mirage.utils.path import resolve_path
 
 _ALPHABET = string.ascii_letters + string.digits
 DEFAULT_TEMPLATE = "tmp.XXXXXXXXXX"
+# How many names a create draws before it gives up with EEXIST.
+ATTEMPTS = 100
 
 
 def _rand_suffix(length: int) -> str:
@@ -106,6 +108,7 @@ async def mktemp(
     quiet: bool = False,
     env_tmpdir: str = "",
     cwd: str = "/",
+    exists_fn: Callable[[PathSpec], Awaitable[bool]] | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     """Create a temporary file or directory and print its name.
 
@@ -116,7 +119,9 @@ async def mktemp(
     starts empty, so it is made on first use. ``mkdir_fn`` and
     ``write_bytes_fn`` take the resolved virtual path, so the create
     lands on whichever mount owns it, not the one the working directory
-    is on.
+    is on. A name already taken is never reused: GNU creates exclusively
+    and draws again, so an existing file is left alone, and ``-u`` names
+    only a free one.
 
     Args:
         *texts (str): the template operand, if any.
@@ -131,6 +136,8 @@ async def mktemp(
         quiet (bool): ``-q``: no diagnostic for a failed create.
         env_tmpdir (str): the session's ``$TMPDIR``.
         cwd (str): the working directory a relative name resolves in.
+        exists_fn (Callable[[PathSpec], Awaitable[bool]] | None): whether
+            a name is taken, asked of the mount that owns it.
     """
     if len(texts) > 1:
         raise extra_operand_error(CommandName.MKTEMP, texts[1])
@@ -142,7 +149,10 @@ async def mktemp(
     fallback = ((not texts or use_dest_dir or t) and not dest_dir
                 and not env_tmpdir)
     end = len(template) - suffix_len
-    name = template[:end - x_count] + _rand_suffix(x_count) + template[end:]
+
+    def draw() -> str:
+        return (template[:end - x_count] + _rand_suffix(x_count) +
+                template[end:])
 
     async def create(path: PathSpec) -> None:
         if d:
@@ -150,9 +160,16 @@ async def mktemp(
         else:
             await write_bytes_fn(path, b"")
 
-    if not dry_run:
-        path = PathSpec.from_str_path(resolve_path(name, cwd))
-        try:
+    name = draw()
+    try:
+        for _ in range(ATTEMPTS):
+            path = PathSpec.from_str_path(resolve_path(name, cwd))
+            if exists_fn is None or not await exists_fn(path):
+                break
+            name = draw()
+        else:
+            raise FileExistsError(path.virtual)
+        if not dry_run:
             try:
                 await create(path)
             except FileNotFoundError:
@@ -160,17 +177,17 @@ async def mktemp(
                     raise
                 await mkdir_fn(PathSpec.from_str_path("/tmp"))
                 await create(path)
-        except FS_ERRORS as exc:
-            # -q suppresses the diagnostic about the create only (GNU);
-            # a bad template still says so.
-            if quiet:
-                return None, IOResult(exit_code=1)
-            kind = "directory" if d else "file"
-            return None, IOResult(
-                exit_code=1,
-                stderr=(f"mktemp: failed to create {kind} via template "
-                        f"'{quote_text(template)}': {fs_strerror(exc)}\n"
-                        ).encode())
+    except FS_ERRORS as exc:
+        # -q suppresses the diagnostic about the create only (GNU); a
+        # bad template still says so.
+        if quiet:
+            return None, IOResult(exit_code=1)
+        kind = "directory" if d else "file"
+        return None, IOResult(
+            exit_code=1,
+            stderr=(
+                f"mktemp: failed to create {kind} via template "
+                f"'{quote_text(template)}': {fs_strerror(exc)}\n").encode())
     return (name + "\n").encode(), IOResult()
 
 
@@ -216,6 +233,7 @@ async def mktemp_generic(
     opts: CommandOpts,
     mkdir_fn: Callable[..., Awaitable[None]],
     write_bytes_fn: Callable[..., Awaitable[None]],
+    exists_fn: Callable[[PathSpec], Awaitable[bool]] | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
     return await mktemp(*texts,
@@ -229,4 +247,5 @@ async def mktemp_generic(
                         suffix=parsed.suffix,
                         quiet=parsed.quiet,
                         env_tmpdir=(opts.env or {}).get("TMPDIR", ""),
-                        cwd=opts.cwd.virtual)
+                        cwd=opts.cwd.virtual,
+                        exists_fn=exists_fn)

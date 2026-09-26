@@ -1200,3 +1200,62 @@ describe('ls --block-size refusals are worded as GNU words them', () => {
     expect((caught as UsageError).exitCode).toBe(2)
   })
 })
+
+describe('dot entries respect mount boundaries', () => {
+  for (const prefix of ['', '/data', '/nested/data']) {
+    for (const subdir of [false, true]) {
+      it.each([false, true])(
+        `prefix=${prefix} subdir=${String(subdir)} namespace=%s`,
+        async (namespace) => {
+          const root = prefix || '/'
+          const directory = subdir ? `${prefix}/sub` : root
+          const tree = new Map([
+            [root, new FileStat({ name: 'root', type: FileType.DIRECTORY, mode: 0o751 })],
+            [`${prefix}/sub`, new FileStat({ name: 'sub', type: FileType.DIRECTORY, mode: 0o750 })],
+          ])
+          const backendStat = vi.fn((path: PathSpec): Promise<FileStat> => {
+            const row = tree.get(path.virtual)
+            if (row === undefined) throw new Error(`out-of-mount stat: ${path.virtual}`)
+            expect(path.vfsPath).toBe(mountKey(path.virtual, prefix))
+            return Promise.resolve(row)
+          })
+          const read = (path: PathSpec): Promise<string[]> =>
+            Promise.resolve(path.virtual === root ? [`${prefix}/sub`] : [])
+          const statPath = vi.fn(
+            (path: string): Promise<FileStat> =>
+              Promise.resolve(
+                tree.get(path) ??
+                  new FileStat({
+                    name: 'parent',
+                    type: FileType.DIRECTORY,
+                    mode: 0o700,
+                  }),
+              ),
+          )
+          const options = opts({ all: true, args_l: true })
+          if (namespace) options.statPath = statPath
+          const result = await lsGeneric(
+            [new PathSpec({ virtual: directory, directory, vfsPath: subdir ? 'sub' : '' })],
+            options,
+            read,
+            backendStat,
+          )
+          expect(result?.[1].exitCode).toBe(0)
+          expect(result?.[1].stderr).toBeNull()
+          const output = DEC.decode(result?.[0] as Uint8Array)
+          const dotMode = subdir ? 'drwxr-x---' : 'drwxr-x--x'
+          const parentMode =
+            subdir || !prefix ? 'drwxr-x--x' : namespace ? 'drwx------' : 'drwxr-xr-x'
+          expect(output).toContain(`${dotMode} 1 - - 4096 - .\n`)
+          expect(output).toContain(`${parentMode} 1 - - 4096 - ..\n`)
+          if (namespace) {
+            const parent = subdir ? root : root.slice(0, root.lastIndexOf('/')) || '/'
+            expect(statPath.mock.calls.slice(-2)).toEqual([[directory], [parent]])
+          } else {
+            expect(backendStat).toHaveBeenCalled()
+          }
+        },
+      )
+    }
+  }
+})

@@ -24,7 +24,7 @@ from mirage.io.types import IOResult
 from mirage.ops.types import ChildMounts, LinkView, MountView, StatPath
 from mirage.types import FileStat, FileType, LsSortBy, LsTimeKind, PathSpec
 from mirage.utils.errors import fs_strerror
-from mirage.utils.key_prefix import rekey
+from mirage.utils.key_prefix import mount_prefix_of, rekey, under_path
 from mirage.utils.path import CycleError, respell_one
 from mirage.utils.stat_view import content_size
 from mirage.utils.width import char_width
@@ -1381,11 +1381,15 @@ async def ls(
         for dir_spec, entries in operand.groups:
             if show_dot_entries:
                 dots = []
+                prefix = mount_prefix_of(dir_spec.virtual, dir_spec.vfs_path)
                 for name in (".", ".."):
                     target = posixpath.normpath(
                         posixpath.join(dir_spec.virtual, name))
                     row = FileStat(name=name, type=FileType.DIRECTORY)
-                    if needed:
+                    # Only the namespace can stat a parent outside this
+                    # mount; otherwise keep the synthetic directory row.
+                    if needed and (stat_path is not None
+                                   or under_path(target, prefix)):
                         try:
                             if stat_path is not None:
                                 found = await stat_path(target)

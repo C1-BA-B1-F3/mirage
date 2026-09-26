@@ -17,7 +17,8 @@ import json
 import pytest
 
 from mirage.commands.cli.builtin.gh import GH
-from mirage.commands.cli.builtin.gh.accessor import body_value, repo_number
+from mirage.commands.cli.builtin.gh.accessor import (body_value, read_cli_file,
+                                                     repo_number)
 from mirage.commands.cli.builtin.gh.api import api
 from mirage.commands.cli.builtin.gh.issue import comments_for, comments_text
 from mirage.commands.cli.builtin.gh.repo import (fork, list_cmd, rename,
@@ -177,7 +178,10 @@ def _doors(files: dict[str, bytes]) -> CLIDoors:
 
 @pytest.mark.asyncio
 async def test_short_body_file_dash_reads_standard_input():
-    flags = {"body_file": _path("/-")}
+    flags = {
+        "body_file":
+        PathSpec(virtual="/-", directory="/", vfs_path="-", raw_path="-")
+    }
     for argv in (("issue", "create", "-F", "-"), ("issue", "create", "-F-")):
         value = await body_value(
             _inv(flags=flags, stdin=b"short body", argv=argv), FlagView(flags))
@@ -786,3 +790,25 @@ async def test_comment_metadata_matches_gh(monkeypatch):
     assert comments_text(rows) == ("author:\t\nassociation:\tcontributor\n"
                                    "edited:\ttrue\nstatus:\toutdated\n"
                                    "--\ncomment\n--\n")
+
+
+@pytest.mark.asyncio
+async def test_file_reader_keeps_resolved_path_and_materializes_stream():
+    path = PathSpec(virtual="/scratch/body.md",
+                    directory="/scratch/",
+                    vfs_path="body.md",
+                    raw_path="./body.md")
+    content = [b"first ", b"second"]
+
+    async def chunks():
+        for chunk in content:
+            yield chunk
+
+    async def dispatch(op, spec, *args, **kwargs):
+        assert op == "read"
+        assert spec is path
+        return chunks(), None
+
+    value = await read_cli_file(_inv(doors=CLIDoors(dispatch=dispatch)), path,
+                                "--body-file")
+    assert value == b"first second"

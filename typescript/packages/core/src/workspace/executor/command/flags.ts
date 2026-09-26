@@ -45,11 +45,12 @@ import { rstripSlash } from '../../../utils/slash.ts'
  * set to a sentinel. Mirrors `synthesize_path_spec` in the Python
  * executor.
  */
-function synthesizePathSpec(value: string): PathSpec {
+function synthesizePathSpec(value: string, rawPath = value): PathSpec {
   const slash = value.lastIndexOf('/')
   return new PathSpec({
     vfsPath: '',
     virtual: value,
+    rawPath,
     directory: slash >= 0 ? value.slice(0, slash + 1) : '/',
     resolved: true,
   })
@@ -71,10 +72,11 @@ function takeSpelling(
   spellings: Map<string, PathSpec[]>,
   scopeMap: Map<string, PathSpec>,
   value: string,
+  rawPath?: string,
 ): PathSpec {
   const taken = spellings.get(rstripSlash(value) || '/')?.shift()
   if (taken !== undefined) return taken
-  return scopeMap.get(value) ?? synthesizePathSpec(value)
+  return scopeMap.get(value) ?? synthesizePathSpec(value, rawPath)
 }
 
 export function parseFlags(
@@ -147,19 +149,26 @@ export function parseFlags(
     if (!strFlagPaths) {
       for (const [key, value] of Object.entries(flagKwargs)) {
         const shape = pathKeys.get(key)
+        const raw = parsed.rawPathFlags[key]
+        const rawParts = Array.isArray(raw) ? raw : []
         const parts: readonly (string | PathSpec)[] = Array.isArray(value) ? value : []
         if (shape === 'pair' && Array.isArray(value)) {
           flagKwargs[key] = parts.map((part, index) =>
             index % 2 === 1 && typeof part === 'string'
-              ? takeSpelling(spellings, scopeMap, part)
+              ? takeSpelling(spellings, scopeMap, part, rawParts[index])
               : part,
           )
         } else if (shape === 'multiple' && Array.isArray(value)) {
           flagKwargs[key] = parts
             .filter((part): part is string => typeof part === 'string')
-            .map((part) => takeSpelling(spellings, scopeMap, part))
+            .map((part, index) => takeSpelling(spellings, scopeMap, part, rawParts[index]))
         } else if (shape === 'single' && typeof value === 'string') {
-          flagKwargs[key] = takeSpelling(spellings, scopeMap, value)
+          flagKwargs[key] = takeSpelling(
+            spellings,
+            scopeMap,
+            value,
+            typeof raw === 'string' ? raw : undefined,
+          )
         }
       }
     }

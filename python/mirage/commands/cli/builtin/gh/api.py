@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import json
-import posixpath
 import re
 from typing import Any, cast
 from urllib.parse import urlsplit
@@ -26,10 +25,8 @@ from mirage.core.github.client import github_request_response
 from mirage.core.github.config import GhConfig
 from mirage.core.github.placeholder import expand
 from mirage.core.jq import jq_eval
-from mirage.io.stream import materialize
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue, PathSpec
-from mirage.utils.errors import fs_strerror
 
 INT_RE = re.compile(r"^-?\d+$")
 KEY_RE = re.compile(r"^([^\[\]]+)((?:\[[^\[\]]*\])*)$")
@@ -125,36 +122,10 @@ def _set_field(fields: dict[str, Any], key: str, value: Any) -> None:
     _put(fields, _key_parts(key), value)
 
 
-async def _stdin(inv: CLIInvocation[GhConfig]) -> bytes:
-    if inv.stdin is None:
-        raise ValueError("standard input is required")
-    return await materialize(inv.stdin)
-
-
-def _file_spec(inv: CLIInvocation[GhConfig], path: str) -> PathSpec:
-    if path.startswith("/"):
-        return PathSpec.from_str_path(path)
-    cwd = inv.env.get("PWD", "/")
-    return PathSpec.from_str_path(posixpath.normpath(posixpath.join(cwd,
-                                                                    path)))
-
-
-async def _read_file(inv: CLIInvocation[GhConfig], path: str) -> bytes:
-    if path == "-":
-        return await _stdin(inv)
-    if inv.doors is None or inv.doors.dispatch is None:
-        raise ValueError(f"read {path}: a workspace is required")
-    try:
-        data, _ = await inv.doors.dispatch("read", _file_spec(inv, path))
-    except (FileNotFoundError, NotADirectoryError) as exc:
-        raise ValueError(f"read {path}: {fs_strerror(exc)}") from None
-    return data if isinstance(data, bytes) else bytes(data)
-
-
 async def _field_value(inv: CLIInvocation[GhConfig], value: str) -> JsonValue:
     expanded = expand(value, inv.config)
     if expanded.startswith("@"):
-        return (await _read_file(inv, expanded[1:])).decode()
+        return (await read_cli_file(inv, expanded[1:], "--field")).decode()
     return typed(expanded)
 
 

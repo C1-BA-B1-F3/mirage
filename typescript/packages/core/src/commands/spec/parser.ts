@@ -94,6 +94,7 @@ function argmatchDests(spec: CommandSpec): ReadonlySet<string> {
 export interface ParsedArgsInit {
   flags: Record<string, ParsedFlagValue>
   args: [string, ValueType][]
+  rawPathFlags?: Record<string, ParsedFlagValue>
   pathFlagValues?: string[]
   rawOperands?: [string, ValueType][]
   textFlagValues?: string[]
@@ -138,6 +139,8 @@ export interface ParsedArgsInit {
 export class ParsedArgs {
   readonly flags: Record<string, ParsedFlagValue>
   readonly args: [string, ValueType][]
+  /** Selected PATH option values before cwd resolution, keyed like parseToKwargs. */
+  readonly rawPathFlags: Record<string, ParsedFlagValue>
   readonly pathFlagValues: string[]
   readonly rawOperands: [string, ValueType][]
   readonly textFlagValues: string[]
@@ -189,6 +192,7 @@ export class ParsedArgs {
   constructor(init: ParsedArgsInit) {
     this.flags = init.flags
     this.args = init.args
+    this.rawPathFlags = init.rawPathFlags ?? {}
     this.pathFlagValues = init.pathFlagValues ?? []
     this.rawOperands = init.rawOperands ?? []
     this.textFlagValues = init.textFlagValues ?? []
@@ -964,10 +968,12 @@ export function parseCommand(
     if (origIdx !== undefined && origIdx >= 0) wordKinds[origIdx] = kind
   }
 
+  const rawPathFlags: Record<string, ParsedFlagValue> = {}
   const pathFlagValues: string[] = []
   for (const [flagName, kind] of cs.kindByDest) {
     if (kind !== 'path' || !(flagName in flags)) continue
     const val = flags[flagName]
+    if (val !== undefined) rawPathFlags[flagKwargName(flagName)] = val
     if (Array.isArray(val) && cs.pairDests.has(flagName)) {
       // Only the odd slots are the paths: the even ones name them.
       const paired = val.map((part, index) => (index % 2 ? resolvePath(part, cwd) : part))
@@ -1014,6 +1020,7 @@ export function parseCommand(
   return new ParsedArgs({
     flags,
     args: classified,
+    rawPathFlags,
     pathFlagValues,
     rawOperands,
     textFlagValues,

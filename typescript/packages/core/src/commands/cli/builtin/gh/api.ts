@@ -19,11 +19,7 @@ import { expand } from '../../../../core/github/placeholder.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
 import type { GitHubResponse } from '../../../../core/github/client.ts'
 import { jqEval } from '../../../../core/jq/index.ts'
-import { materialize } from '../../../../io/types.ts'
-import { PathSpec } from '../../../../types.ts'
-import { fsStrerror, isEnoent, isEnotdir } from '../../../../utils/errors.ts'
-import { resolvePath } from '../../../../utils/path.ts'
-import { ghTransport, jsonOut, textOut } from './accessor.ts'
+import { ghTransport, jsonOut, readCliFile, textOut } from './accessor.ts'
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 const EMPTY_ARRAY = Symbol('empty-array')
@@ -118,37 +114,10 @@ function setField(fields: Record<string, unknown>, key: string, value: unknown):
   put(fields, keyParts(key), value)
 }
 
-async function stdinBytes(inv: CLIInvocation): Promise<Uint8Array> {
-  if (inv.stdin === null) throw new Error('standard input is required')
-  return materialize(inv.stdin)
-}
-
-function isDashInput(inv: CLIInvocation, long: string): boolean {
-  return inv.argv.some(
-    (word, index) => word === `${long}=-` || (word === long && inv.argv[index + 1] === '-'),
-  )
-}
-
-async function readFile(inv: CLIInvocation, path: string): Promise<Uint8Array> {
-  if (path === '-') return stdinBytes(inv)
-  const dispatch = inv.doors?.dispatch
-  if (dispatch === undefined) throw new Error(`read ${path}: a workspace is required`)
-  const cwd = inv.env.PWD ?? '/'
-  const virtual = resolvePath(path, cwd)
-  try {
-    const [data] = await dispatch('read', PathSpec.fromStrPath(virtual))
-    return data instanceof Uint8Array ? data : new Uint8Array(data as ArrayBuffer)
-  } catch (err) {
-    const strerror = isEnoent(err) || isEnotdir(err) ? fsStrerror(err) : null
-    if (strerror !== null) throw new Error(`read ${path}: ${strerror}`)
-    throw err
-  }
-}
-
 async function fieldValue(inv: CLIInvocation, value: string): Promise<Json> {
   const expanded = expand(value, inv.config as GhConfig)
   if (expanded.startsWith('@')) {
-    return new TextDecoder().decode(await readFile(inv, expanded.slice(1)))
+    return new TextDecoder().decode(await readCliFile(inv, expanded.slice(1), '--field'))
   }
   return typed(expanded)
 }
@@ -177,11 +146,11 @@ function requestHeaders(fl: FlagView): Record<string, string> {
 }
 
 async function inputBody(inv: CLIInvocation, fl: FlagView): Promise<Json | undefined> {
-  const raw = fl.asStr('input')
+  const raw = fl.raw('input')
   if (raw === undefined) return undefined
-  const path = raw === '-' || isDashInput(inv, '--input') ? '-' : raw
+  const path = fl.asPaths('input')[0]?.rawPath ?? fl.asStr('input') ?? ''
   try {
-    return JSON.parse(new TextDecoder().decode(await readFile(inv, path))) as Json
+    return JSON.parse(new TextDecoder().decode(await readCliFile(inv, raw, '--input'))) as Json
   } catch (err) {
     if (err instanceof SyntaxError) throw new Error(`invalid JSON in ${path}: ${err.message}`)
     throw err

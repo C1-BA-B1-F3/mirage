@@ -89,17 +89,30 @@ function refreshToken(
   return new URLSearchParams(body.toString('utf8')).get('refresh_token') ?? undefined
 }
 
-// The fake OAuth exchange every google client makes before its first call.
+// The fixture's credential. It is a bearer as it is, and outside credential
+// routing it is the one refresh token /token exchanges.
+const FIXTURE_TOKEN = 'gws-integ-token'
+
 function credentialKey(ctx: Ctx<C>, token: string): string {
   return JSON.stringify([ctx.run, ctx.tenant, token])
 }
 
-function tokenRoutes(issued: Set<string>): KitRoute<C>[] {
+// The fake OAuth exchange every google client makes before its first call.
+// Google exchanges only a refresh token it issued, and so does this: the
+// fixture credential, or under credential routing a credential that names its
+// own run. Anything else is `invalid_grant`. Exchanging whatever arrived made
+// the check on every other route a formality, since a caller that was never
+// given a token could mint one here and read the fixture's data with it.
+function tokenRoutes(issued: Set<string>, runTokenPattern: string): KitRoute<C>[] {
+  const routed = runTokenPattern === '' ? null : new RegExp(runTokenPattern)
   return [
     kitRoute('POST', '/token', (ctx) => {
       const token = refreshToken(ctx.headers, ctx.url, ctx.body)
       if (token === undefined || token.trim() === '') {
         return { status: 400, body: { error: 'invalid_request' } }
+      }
+      if (token !== FIXTURE_TOKEN && routed?.exec(token)?.groups?.run === undefined) {
+        return { status: 400, body: { error: 'invalid_grant', error_description: 'Bad Request' } }
       }
       issued.add(credentialKey(ctx, token))
       return ok({
@@ -156,11 +169,13 @@ function tokenRoutes(issued: Set<string>): KitRoute<C>[] {
 // One list, in the order the old single route() function tried its patterns:
 // the API-prefixed surfaces first, then Drive, then the editors. Order only
 // matters inside a surface, and each module states its own.
-export function gwsRoutes(): KitRoute<C>[] {
+export function gwsRoutes(runTokenPattern = gwsConfig.runTokenPattern): KitRoute<C>[] {
   // The fixed fixture token and tokens exchanged on this server are the fake's
   // credentials. Tenant selectors choose data; they never authorize a request.
   // Each routes() call belongs to one runtime, with exchanges scoped by run
-  // and tenant so a token issued in one world cannot open another.
+  // and tenant so a token issued in one world cannot open another. The routes
+  // cannot see the runtime's config, so a caller that starts the fake with a
+  // run-token pattern of its own passes the same pattern here.
   const issued = new Set<string>()
   const apiRoutes = [
     ...gmailRoutes(),
@@ -173,7 +188,7 @@ export function gwsRoutes(): KitRoute<C>[] {
     ...catchAllRoutes(),
   ]
   return [
-    ...tokenRoutes(issued),
+    ...tokenRoutes(issued, runTokenPattern),
     ...apiRoutes.map(
       (r): KitRoute<C> => ({
         ...r,
@@ -189,7 +204,7 @@ export function gwsRoutes(): KitRoute<C>[] {
           const token = /^Bearer\s+(\S+)$/i.exec(auth)?.[1]
           if (
             token === undefined ||
-            (token !== 'gws-integ-token' && !issued.has(credentialKey(ctx, token)))
+            (token !== FIXTURE_TOKEN && !issued.has(credentialKey(ctx, token)))
           ) {
             return googleError(
               401,

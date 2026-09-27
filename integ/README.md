@@ -54,7 +54,11 @@ explicit tenant headers/queries take precedence over the credential tenant.
 Captured names use the same validation as explicit selectors.
 
 GWS accepts the credential in the OAuth `refresh_token` form field and returns
-it as the access token, so the subsequent bearer selects the same run. HF Hub
+it as the access token, so the subsequent bearer selects the same run. That
+credential and the fixture's `gws-integ-token` are the only refresh tokens its
+`/token` exchanges; any other gets Google's `400 invalid_grant`. The fixture
+token also works as a bearer as it is. An API request with no credential is
+refused with 403, and one whose bearer was never exchanged with 401. HF Hub
 REST and MCP share run routing and request scheduling.
 
 `DELETE /_kit/runs/<run>` waits for that run's requests, disconnects its client,

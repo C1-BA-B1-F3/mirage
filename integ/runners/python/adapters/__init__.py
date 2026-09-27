@@ -521,6 +521,9 @@ class NextcloudService:
 
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
+# The gws fake's credential: a bearer as it is, and the one refresh token its
+# /token exchanges.
+GWS_TOKEN = "gws-integ-token"
 
 
 class GwsService:
@@ -575,7 +578,7 @@ class GwsService:
             extras["docs"] = docs
         if extras:
             reset_body["extras"] = extras
-        headers = {"Authorization": "Bearer gws-integ-token"}
+        headers = {"Authorization": f"Bearer {GWS_TOKEN}"}
         async with aiohttp.ClientSession(headers=headers) as session:
             async with session.post(f"{url}/reset", json=reset_body) as resp:
                 resp.raise_for_status()
@@ -718,26 +721,26 @@ class GwsService:
     def vfs(self, mount: dict) -> GoogleDriveVFS:
         return GoogleDriveVFS(
             GoogleDriveConfig(client_id="integ",
-                              refresh_token="integ",
+                              refresh_token=GWS_TOKEN,
                               api_base=self.url,
                               folder_id=self.folder_ids[mount["path"]]))
 
     def gdocs_vfs(self) -> GDocsVFS:
         return GDocsVFS(
             GDocsConfig(client_id="integ",
-                        refresh_token="integ",
+                        refresh_token=GWS_TOKEN,
                         api_base=self.url))
 
     def gsheets_vfs(self) -> GSheetsVFS:
         return GSheetsVFS(
             GSheetsConfig(client_id="integ",
-                          refresh_token="integ",
+                          refresh_token=GWS_TOKEN,
                           api_base=self.url))
 
     def gslides_vfs(self) -> GSlidesVFS:
         return GSlidesVFS(
             GSlidesConfig(client_id="integ",
-                          refresh_token="integ",
+                          refresh_token=GWS_TOKEN,
                           api_base=self.url))
 
     def gcal_vfs(self) -> GCalVFS:
@@ -745,20 +748,20 @@ class GwsService:
         # and lands on the seeded events.
         return GCalVFS(
             GCalConfig(client_id="integ",
-                       refresh_token="integ",
+                       refresh_token=GWS_TOKEN,
                        api_base=self.url,
                        today="2026-02-11"))
 
     def gmail_vfs(self) -> GmailVFS:
         return GmailVFS(
             GmailConfig(client_id="integ",
-                        refresh_token="integ",
+                        refresh_token=GWS_TOKEN,
                         api_base=self.url))
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         config: dict[str, object] = {
             "client_id": "integ",
-            "refresh_token": "integ",
+            "refresh_token": GWS_TOKEN,
             "api_base": self.url,
         }
         if self.cli_scope is not None:

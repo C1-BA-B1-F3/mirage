@@ -23,7 +23,7 @@ import { ANNOUNCE_RE } from '../kit/typescript/announce.ts'
 import { start } from '../kit/typescript/serve.ts'
 import { DEFAULT_RUN, DEFAULT_TENANT } from '../kit/typescript/tenant.ts'
 import type { JsonValue } from '../kit/typescript/types.ts'
-import { gwsFake } from './fake.ts'
+import { gwsFake, gwsRoutes } from './fake.ts'
 import { cachedState, dropState, withState } from './store/cache.ts'
 import { loadState } from './store/load.ts'
 import { saveState } from './store/save.ts'
@@ -1308,9 +1308,11 @@ async function main(): Promise<void> {
 }
 
 async function testCredentialRuns(): Promise<void> {
+  const pattern = '^draw:(?<run>[^:]+):(?<tenant>[^:]+)$'
   const home = await start({
     ...gwsFake,
-    config: { ...gwsFake.config, runTokenPattern: '^draw:(?<run>[^:]+):(?<tenant>[^:]+)$' },
+    config: { ...gwsFake.config, runTokenPattern: pattern },
+    routes: () => gwsRoutes(pattern),
   })
   try {
     for (const run of ['a', 'b']) await home.runtime.reset({ run, tenants: ['ws'] })
@@ -1349,6 +1351,29 @@ async function testCredentialRuns(): Promise<void> {
         run === 'a',
       )
     }
+    // A credential opens the world it was exchanged in and no other.
+    assert.equal(
+      (
+        await fetch(`${home.endpoint}/_run/b/drive/v3/files`, {
+          headers: { Authorization: 'Bearer draw:a:ws' },
+        })
+      ).status,
+      401,
+    )
+    assert.equal(
+      (
+        await fetch(`${home.endpoint}/drive/v3/files`, {
+          headers: { Authorization: 'Bearer draw:a:ws', 'x-mirage-tenant': 'other' },
+        })
+      ).status,
+      401,
+    )
+    // Credential routing exchanges its own credentials, not any string.
+    const invented = await fetch(`${home.endpoint}/token`, {
+      method: 'POST',
+      body: new URLSearchParams({ refresh_token: 'invented' }),
+    })
+    assert.equal(invented.status, 400)
     process.stdout.write('gws credential run regressions passed\n')
   } finally {
     await home.close()
@@ -1408,31 +1433,27 @@ async function testAuthentication(): Promise<void> {
         401,
       )
     }
-    const exchange = await fetch(`${home.endpoint}/token`, {
+    // A refresh token the fake never issued is not exchanged, so the bearer a
+    // caller spells from it opens nothing either.
+    const invented = await fetch(`${home.endpoint}/token`, {
       method: 'POST',
       body: new URLSearchParams({ refresh_token: 'test-refresh' }),
+    })
+    assert.equal(invented.status, 400)
+    assert.equal(obj((await invented.json()) as JsonValue).error, 'invalid_grant')
+    assert.equal(
+      (await fetch(values, { headers: { Authorization: 'Bearer test-refresh' } })).status,
+      401,
+    )
+    const exchange = await fetch(`${home.endpoint}/token`, {
+      method: 'POST',
+      body: new URLSearchParams({ refresh_token: 'gws-integ-token' }),
     })
     assert.equal(exchange.status, 200)
     const token = String(obj((await exchange.json()) as JsonValue).access_token)
     assert.equal(
       (await fetch(values, { headers: { Authorization: `Bearer ${token}` } })).status,
       200,
-    )
-    assert.equal(
-      (
-        await fetch(`${home.endpoint}/_run/other/drive/v3/files`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-      ).status,
-      401,
-    )
-    assert.equal(
-      (
-        await fetch(values, {
-          headers: { Authorization: `Bearer ${token}`, 'x-mirage-tenant': 'other' },
-        })
-      ).status,
-      401,
     )
     assert.equal((await fetch(`${home.endpoint}/token`, { method: 'POST' })).status, 400)
     process.stdout.write('gws authentication regressions passed\n')

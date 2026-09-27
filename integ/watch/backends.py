@@ -45,6 +45,9 @@ SERVER_DIR = Path(__file__).resolve().parents[1] / "server"
 GITHUB_OWNER = "integ"
 GITHUB_REPO = "watch"
 GITHUB_REF = "main"
+# The gws fake's credential: a bearer as it is, and the one refresh token its
+# /token exchanges.
+GWS_TOKEN = "gws-integ-token"
 
 Pair = tuple[Workspace, "WorkspaceWriter | GitHubWriter"]
 VFSFactory = Callable[[], Any]
@@ -457,7 +460,7 @@ async def build_gdrive(spec: dict) -> Pair | None:
     if not url:
         return None
     url = url.rstrip("/")
-    headers = {"Authorization": "Bearer gws-integ-token"}
+    headers = {"Authorization": f"Bearer {GWS_TOKEN}"}
     async with aiohttp.ClientSession(headers=headers) as session:
         async with session.post(f"{url}/reset", json={}) as resp:
             resp.raise_for_status()
@@ -475,7 +478,7 @@ async def build_gdrive(spec: dict) -> Pair | None:
         spec, lambda: GoogleDriveVFS(
             GoogleDriveConfig(client_id="integ-client",
                               client_secret="integ-secret",
-                              refresh_token="integ-refresh",
+                              refresh_token=GWS_TOKEN,
                               api_base=url,
                               folder_id=folder_id)))
 

@@ -1549,10 +1549,13 @@ async function openSsh(target: Target, options?: OpenOptions): Promise<Open> {
 }
 
 const GDRIVE_FOLDER_MIME = 'application/vnd.google-apps.folder'
+// The gws fake's credential: a bearer as it is, and the one refresh token its
+// /token exchanges.
+const GWS_TOKEN = 'gws-integ-token'
 
 async function gwsJson(url: string, init?: RequestInit): Promise<Record<string, unknown>> {
   const headers = new Headers(init?.headers)
-  headers.set('Authorization', 'Bearer gws-integ-token')
+  headers.set('Authorization', `Bearer ${GWS_TOKEN}`)
   const r = await fetch(url, { ...init, headers })
   if (!r.ok) throw new Error(`gws fake request failed: ${url} -> ${String(r.status)}`)
   return (await r.json()) as Record<string, unknown>
@@ -1691,7 +1694,12 @@ function gwsNativeVfs(
 ): GDocsVFS | GSheetsVFS | GSlidesVFS | GmailVFS | GCalVFS {
   // apiBase points the backend at the fake server through the same
   // config field a real embedder uses; nothing is monkey-patched.
-  const config = { clientId: 'integ', clientSecret: 'integ', refreshToken: 'integ', apiBase: base }
+  const config = {
+    clientId: 'integ',
+    clientSecret: 'integ',
+    refreshToken: GWS_TOKEN,
+    apiBase: base,
+  }
   if (vfs === 'gdocs') return new GDocsVFS(config)
   if (vfs === 'gsheets') return new GSheetsVFS(config)
   if (vfs === 'gmail') return new GmailVFS(config)
@@ -1767,7 +1775,7 @@ async function openGws(target: Target): Promise<Open> {
     mounts[m.path] = new GDriveVFS({
       clientId: 'integ',
       clientSecret: 'integ',
-      refreshToken: 'integ',
+      refreshToken: GWS_TOKEN,
       apiBase: base,
       folderId: parent,
     })
@@ -1786,7 +1794,7 @@ async function openGws(target: Target): Promise<Open> {
     ws.registerCli('gws', GWS, {
       client_id: 'integ',
       client_secret: 'integ',
-      refresh_token: 'integ',
+      refresh_token: GWS_TOKEN,
       api_base: base,
       ...(scope !== undefined ? { folder_id: folderIds[scope] } : {}),
     })

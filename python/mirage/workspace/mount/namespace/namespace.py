@@ -474,6 +474,30 @@ class Namespace:
             return path
         return resolve_symlinks(path, targets)
 
+    def follow_parent(self, path: str) -> str:
+        """Return ``path`` with every link above its final name resolved.
+
+        The walk the kernel gives a path before the call sees it: every
+        component but the last is followed, and the last is the op's own
+        to follow or not (stat against lstat). Identity when no link sits
+        above the name, a trailing slash included.
+
+        Args:
+            path (str): absolute virtual path.
+
+        Raises:
+            CycleError: when resolution exceeds the hop limit (ELOOP).
+        """
+        trimmed = path.rstrip("/")
+        parent, _, name = trimmed.rpartition("/")
+        if not name:
+            return path
+        above = parent or "/"
+        resolved = self.follow(above)
+        if resolved == above:
+            return path
+        return resolved.rstrip("/") + path[len(parent):]
+
     def link_stat_at(self, path: str) -> FileStat | None:
         """lstat a path: the link's own stat, or None when not a link.
 

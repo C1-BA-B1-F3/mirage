@@ -28,7 +28,7 @@ import {
 import { eacces, enoent, erofsReadOnly } from '../utils/errors.ts'
 import { parent } from '../utils/path.ts'
 import type { Policies } from '../policy/policies.ts'
-import type { EntryGate, PathSpec } from '../types.ts'
+import type { EntryGate, PathSpec, WalkProbe } from '../types.ts'
 import { MOUNT_MODE_RANK, MountMode, weakerMode } from '../types.ts'
 
 /**
@@ -410,6 +410,49 @@ export function mountGateFor(virtual: string): readonly [string, MountMode] | nu
   return bestPrefix === null || bestMode === null ? null : [bestPrefix, bestMode]
 }
 
+const walkProbeStorage = createAsyncContext<readonly [string, WalkProbe]>()
+
+/**
+ * Bind what a command's dot walks read, for the duration of `fn`: the run
+ * of one command.
+ *
+ * Bound by `Mount.executeCmd` around the handler, beside the mount gate: the
+ * command tier reaches its backend without passing the dispatcher's door,
+ * so the walk guard on its I/O proves an operand's `.` and `..` with the
+ * door's stat and link follow through this binding. Mirrors Python's
+ * set_walk_probe.
+ */
+export function runWithWalkProbe<T>(
+  prefix: string,
+  probe: WalkProbe,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return Promise.resolve(walkProbeStorage.run([prefix, probe], fn))
+}
+
+/**
+ * The walk probe bound to the command serving `virtual`, null outside a
+ * mount's command (a generic invoked directly in a test).
+ *
+ * Selected by the path the way `mountGateFor` selects a gate, so on the
+ * fallback storage a concurrent command on another mount cannot lend its
+ * probe to this one. Mirrors Python's get_walk_probe.
+ */
+export function walkProbeFor(virtual: string): WalkProbe | null {
+  const v = normPrefix(virtual)
+  let bestLen = -1
+  let best: WalkProbe | null = null
+  for (const [rawPrefix, probe] of walkProbeStorage.liveStores()) {
+    const prefix = normPrefix(rawPrefix)
+    if (prefix !== '/' && v !== prefix && !v.startsWith(prefix + '/')) continue
+    if (prefix.length > bestLen) {
+      bestLen = prefix.length
+      best = probe
+    }
+  }
+  return best
+}
+
 const redirectStorage = createAsyncContext<[object, readonly PathSpec[]]>()
 
 /**
@@ -447,6 +490,7 @@ export function captureSessionContext(
     admissionStorage.capture(),
     opPoliciesStorage.capture(),
     mountGateStorage.capture(),
+    walkProbeStorage.capture(),
     redirectStorage.capture(),
     programStorage.capture(),
   ]

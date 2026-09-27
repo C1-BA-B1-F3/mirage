@@ -291,6 +291,77 @@ describe('the node table answers every verb that names a link', () => {
       await ws.close()
     }
   })
+
+  it('refuses a symlink whose parent cannot hold it', async () => {
+    // symlink(2) resolves the directory a name goes in before the name:
+    // ENOENT when it is absent, ENOTDIR when a plain file stands in the
+    // chain at any depth, and a link above the name is followed first.
+    // Unchecked, the node was an orphan that invented the directories above
+    // it, which ls then listed.
+    const ws = await linkWorkspace()
+    try {
+      await ws.shell('ln -s missing /ram/dangling')
+      const cases: [string, string][] = [
+        ['/ram/nope/y', 'ENOENT'],
+        ['/ram/nope/deeper/y', 'ENOENT'],
+        ['/ram/dangling/y', 'ENOENT'],
+        ['/ram/a.txt/y', 'ENOTDIR'],
+        ['/ram/a.txt/sub/y', 'ENOTDIR'],
+        ['/ram/link/y', 'ENOTDIR'],
+      ]
+      for (const [name, code] of cases) {
+        await expect(ws.dispatch('symlink', name, [], { target: 'x' })).rejects.toMatchObject({
+          code,
+        })
+      }
+      expect([...ws.namespace.symlinkTargets().keys()].sort()).toEqual([
+        '/ram/dangling',
+        '/ram/link',
+      ])
+      expect(DEC.decode((await ws.shell('ls /ram')).stdout)).toBe('a.txt\nd\ndangling\nlink\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('files a link made under a linked directory in its target', async () => {
+    // Every link above the final name is followed before the op sees the
+    // path, whichever surface named it. The node table filed a relative
+    // `ln -s t alias/x` under the alias's own name, where no listing of the
+    // directory and no read through it ever looked.
+    const ws = await linkWorkspace()
+    try {
+      await ws.shell('mkdir /ram/e; ln -s d /ram/alias')
+      await ws.dispatch('symlink', '/ram/alias/x', [], { target: 't' })
+      await ws.dispatch('symlink', '/ram/e/empty', [], { target: 't' })
+      expect(ws.namespace.readlink('/ram/d/x')).toBe('t')
+      expect(ws.namespace.isLink('/ram/alias/x')).toBe(false)
+      expect(await ws.dispatch('readlink', '/ram/alias/x')).toBe('t')
+      expect(ws.namespace.readlink('/ram/e/empty')).toBe('t')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('refuses a link rename whose landing parent cannot hold it', async () => {
+    // rename(2) resolves the destination's directory as symlink(2) does,
+    // and the node table moved a link anywhere at all.
+    const ws = await linkWorkspace()
+    try {
+      for (const [landing, code] of [
+        ['/ram/nope/x', 'ENOENT'],
+        ['/ram/a.txt/x', 'ENOTDIR'],
+      ] as const) {
+        await expect(
+          ws.dispatch('rename', '/ram/link', [PathSpec.fromStrPath(landing)]),
+        ).rejects.toMatchObject({ code })
+        expect(ws.namespace.isLink(landing)).toBe(false)
+      }
+      expect(ws.namespace.readlink('/ram/link')).toBe('a.txt')
+    } finally {
+      await ws.close()
+    }
+  })
 })
 
 describe('the fenced remnant cascade rides the mount revisions', () => {

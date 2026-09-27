@@ -123,7 +123,7 @@ describe('cross-mount partial output matches single-mount bytes', () => {
       await ws.shell("printf '1\\n2\\n' > /a/n.txt")
       const result = await ws.shell('sed s/1/X/ /a/n.txt /b/missing.txt')
       expect(result.stdoutText).toBe('X\n2\n')
-      expect(result.stderrText).toBe('sed: /b/missing.txt: No such file or directory\n')
+      expect(result.stderrText).toBe("sed: can't read /b/missing.txt: No such file or directory\n")
       // GNU sed exits 2 when it cannot open an operand, whichever mount it
       // lives on. The cross-mount combiner used to flatten it to the
       // fetch's own code, which made this disagree with single-mount.
@@ -283,11 +283,17 @@ describe('rest of the read family keeps partial output past missing', () => {
     ['fold /a/f.txt /a/missing.txt', '1\n2\n', 'fold'],
     ['fmt /a/f.txt /a/missing.txt', '1 2\n', 'fmt'],
   ]
+  // tac and fmt name the open that failed (FAILURE_WORDING); the rest
+  // print the plain line.
+  const WORDED: Record<string, string> = {
+    tac: "tac: failed to open '/a/missing.txt' for reading: No such file or directory\n",
+    fmt: "fmt: cannot open '/a/missing.txt' for reading: No such file or directory\n",
+  }
   for (const [cmd, expected, name] of CASES) {
     it(`${name} keeps partial output`, async () => {
       const [out, err, code] = await runNumbered([cmd])
       expect(out).toBe(expected)
-      expect(err).toBe(`${name}: /a/missing.txt: No such file or directory\n`)
+      expect(err).toBe(WORDED[name] ?? `${name}: /a/missing.txt: No such file or directory\n`)
       expect(code).toBe(1)
     })
   }
@@ -339,7 +345,7 @@ describe('rest of the read family keeps partial output past missing', () => {
     // directory, which it opens and then fails to read, is 4.
     const [out, err, code] = await runNumbered(['sed s/1/X/ /a/f.txt /a/missing.txt'])
     expect(out).toBe('X\n2\n')
-    expect(err).toBe('sed: /a/missing.txt: No such file or directory\n')
+    expect(err).toBe("sed: can't read /a/missing.txt: No such file or directory\n")
     expect(code).toBe(2)
   })
 

@@ -223,7 +223,7 @@ async function checkPartialRead(ws: Workspace, dst: string, label: string): Prom
   ;[out, err, code] = await run(ws, `sed s/a/X/ ${src} ${miss}`)
   check(
     `${label}: sed keeps partial output`,
-    out === 'Xaa\n' && code === 2 && err === `sed: ${miss}: No such file or directory\n`,
+    out === 'Xaa\n' && code === 2 && err === `sed: can't read ${miss}: No such file or directory\n`,
   )
   // sort aborts on any failed operand, single- and cross-mount alike.
   ;[out, err, code] = await run(ws, `sort ${src} ${miss}`)

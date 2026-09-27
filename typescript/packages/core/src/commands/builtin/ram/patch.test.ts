@@ -113,8 +113,9 @@ it.each(['', '/data', '/nested/data'])(
         return Promise.resolve()
       }
       const input = PathSpec.fromStrPath(prefix + '/fix.diff', 'fix.diff')
+      const orig = PathSpec.fromStrPath(prefix + '/hello.txt', 'hello.txt')
       await patchGeneric(
-        source === 'operand' ? [input] : [],
+        source === 'operand' ? [orig, input] : [],
         {
           mountPrefix: prefix,
           filetypeFns: null,

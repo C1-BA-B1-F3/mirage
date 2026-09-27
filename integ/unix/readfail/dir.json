@@ -165,7 +165,7 @@
       "expect": {
         "exit": 4,
         "stdout": "",
-        "stderr": "sed: /data/rfdir: Is a directory\n"
+        "stderr": "sed: read error on /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -179,7 +179,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sed: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "sed: can't read /data/rfnope.txt: No such file or directory\n"
       }
     },
     {
@@ -221,7 +221,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "uniq: /data/rfdir: Is a directory\n"
+        "stderr": "uniq: error reading '/data/rfdir': Is a directory\n"
       }
     },
     {
@@ -277,7 +277,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "tsort: /data/rfdir: Is a directory\n"
+        "stderr": "tsort: /data/rfdir: read error: Is a directory\n"
       }
     },
     {
@@ -347,7 +347,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "split: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "split: cannot open '/data/rfnope.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -375,7 +375,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "csplit: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "csplit: cannot open '/data/rfnope.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -795,7 +795,7 @@
       "expect": {
         "exit": 2,
         "stdout": "a\nb\n",
-        "stderr": "sed: /data/rfnope: No such file or directory\n"
+        "stderr": "sed: can't read /data/rfnope: No such file or directory\n"
       }
     },
     {
@@ -809,7 +809,7 @@
       "expect": {
         "exit": 4,
         "stdout": "",
-        "stderr": "sed: /data/rfdir: Is a directory\n"
+        "stderr": "sed: read error on /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -823,7 +823,7 @@
       "expect": {
         "exit": 4,
         "stdout": "a\nb\n",
-        "stderr": "sed: /data/rfdir: Is a directory\n"
+        "stderr": "sed: read error on /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -837,7 +837,7 @@
       "expect": {
         "exit": 2,
         "stdout": "a\nb\nc\nd\n",
-        "stderr": "sed: /data/rfnope: No such file or directory\n"
+        "stderr": "sed: can't read /data/rfnope: No such file or directory\n"
       }
     },
     {
@@ -851,7 +851,7 @@
       "expect": {
         "exit": 4,
         "stdout": "",
-        "stderr": "sed: /data/rfdir: Is a directory\n"
+        "stderr": "sed: read error on /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -865,7 +865,7 @@
       "expect": {
         "exit": 4,
         "stdout": "",
-        "stderr": "sed: /data/rfnope: No such file or directory\nsed: /data/rfdir: Is a directory\n"
+        "stderr": "sed: can't read /data/rfnope: No such file or directory\nsed: read error on /data/rfdir: Is a directory\n"
       }
     },
     {

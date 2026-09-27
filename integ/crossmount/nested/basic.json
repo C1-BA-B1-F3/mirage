@@ -789,7 +789,7 @@
       "expect": {
         "exit": 4,
         "stdout": "",
-        "stderr": "sed: /ghost: Is a directory\n"
+        "stderr": "sed: read error on /ghost: Is a directory\n"
       }
     },
     {
@@ -815,7 +815,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "uniq: /ghost: Is a directory\n"
+        "stderr": "uniq: error reading '/ghost': Is a directory\n"
       }
     },
     {
@@ -911,7 +911,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sed: /ghost: No such file or directory\n"
+        "stderr": "sed: can't read /ghost: No such file or directory\n"
       }
     },
     {

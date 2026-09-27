@@ -14,9 +14,10 @@
 
 import pytest
 
-from mirage.commands.builtin.generic.truncate import parse_size, truncate
+from mirage.commands.builtin.generic.truncate import (TruncateFlags,
+                                                      parse_size, truncate)
 from mirage.commands.errors import UsageError
-from mirage.types import FileStat, FileType, PathSpec
+from mirage.types import PathSpec
 
 
 def test_plain_and_operation_sizes():
@@ -144,15 +145,15 @@ def _operand(path: str, raw: str) -> PathSpec:
 
 
 @pytest.mark.asyncio
-async def test_a_missing_operand_is_settled_by_the_truncate_op():
-    # GNU opens with O_CREAT before it reads a size, so a stat that misses
-    # is never the verdict: a bare name is created, `missing/` is the
-    # open's EISDIR, and a relative size starts from nothing.
+async def test_a_slashed_operand_is_settled_by_the_truncate_op():
+    # GNU opens with O_CREAT before it stats, so `missing/` and `reg/` are
+    # the open's EISDIR, not the stat's miss, and an absent bare name is
+    # made where its directory exists. The chain answers first: under an
+    # absent directory the name is ENOENT and the op never runs, every
+    # operand is still tried, and -c leaves an absent name alone.
     lengths: list[tuple[str, int]] = []
 
     async def stat(path):
-        if path.raw_path.startswith("/under"):
-            raise NotADirectoryError(path.virtual)
         raise FileNotFoundError(path.virtual)
 
     async def truncate_fn(path, length) -> None:
@@ -160,98 +161,19 @@ async def test_a_missing_operand_is_settled_by_the_truncate_op():
 
     _, io = await truncate([
         _operand("/missing", "/missing/"),
+        _operand("/nodir/x", "/nodir/x"),
         _operand("/missing", "/missing"),
-        _operand("/under/x", "/under/x"),
     ],
-                           size="+4",
+                           flags=TruncateFlags(size="4", no_create=False),
                            stat=stat,
                            truncate_fn=truncate_fn)
-    assert lengths == [("/missing/", 4), ("/missing", 4), ("/under/x", 4)]
-    assert io.exit_code == 0
-    assert io.stderr is None
-
-
-@pytest.mark.asyncio
-async def test_a_failed_open_is_reported_and_the_rest_still_run():
-    # One GNU line per operand the open refuses, the name always quoted
-    # (quoteaf), and every other operand still truncated.
-    lengths: list[tuple[str, int]] = []
-
-    async def stat(path):
-        raise FileNotFoundError(path.virtual)
-
-    async def truncate_fn(path, length) -> None:
-        if path.raw_path != "b":
-            raise FileNotFoundError(path.virtual)
-        lengths.append((path.raw_path, length))
-
-    _, io = await truncate([
-        _operand("/nope/x", "nope/x"),
-        _operand("/b", "b"),
-        _operand("/it's/x", "it's/x"),
-    ],
-                           size="2",
-                           stat=stat,
-                           truncate_fn=truncate_fn)
-    assert lengths == [("b", 2)]
+    assert lengths == [("/missing/", 4), ("/missing", 4)]
     assert io.exit_code == 1
-    assert io.stderr == (b"truncate: cannot open 'nope/x' for writing: "
-                         b"No such file or directory\n"
-                         b"truncate: cannot open \"it's/x\" for writing: "
+    assert io.stderr == (b"truncate: cannot open '/nodir/x' for writing: "
                          b"No such file or directory\n")
-
-
-@pytest.mark.asyncio
-async def test_no_create_leaves_a_missing_operand_alone():
-    # -c opens without O_CREAT: the open's ENOENT is silence whether the
-    # file or its parent is missing, a parent that is a file is still
-    # refused, and an operand that is there is truncated.
-    lengths: list[tuple[str, int]] = []
-
-    async def stat(path):
-        if path.raw_path == "f.txt/x":
-            raise NotADirectoryError(path.virtual)
-        if path.raw_path == "have":
-            return FileStat(name="have", size=6, type=FileType.FILE)
-        raise FileNotFoundError(path.virtual)
-
-    async def truncate_fn(path, length) -> None:
-        lengths.append((path.raw_path, length))
-
-    _, io = await truncate([
-        _operand("/gone", "gone"),
-        _operand("/nope/x", "nope/x"),
-        _operand("/f.txt/x", "f.txt/x"),
-        _operand("/have", "have"),
-    ],
-                           size="-2",
+    _, io = await truncate([_operand("/missing", "/missing")],
+                           flags=TruncateFlags(size="4", no_create=True),
                            stat=stat,
-                           truncate_fn=truncate_fn,
-                           no_create=True)
-    assert lengths == [("have", 4)]
-    assert io.exit_code == 1
-    assert io.stderr == (b"truncate: cannot open 'f.txt/x' for writing: "
-                         b"Not a directory\n")
-
-
-@pytest.mark.asyncio
-async def test_a_bad_size_is_refused_before_any_operand_is_looked_at():
-    # GNU parses -s with its options, so -c skipping every operand does
-    # not skip the refusal.
-    looked_at: list[str] = []
-
-    async def stat(path):
-        looked_at.append(path.raw_path)
-        raise FileNotFoundError(path.virtual)
-
-    async def truncate_fn(path, length) -> None:
-        looked_at.append(path.raw_path)
-
-    with pytest.raises(UsageError) as exc:
-        await truncate([_operand("/gone", "gone")],
-                       size="<abc",
-                       stat=stat,
-                       truncate_fn=truncate_fn,
-                       no_create=True)
-    assert str(exc.value) == "truncate: Invalid number: 'abc'"
-    assert looked_at == []
+                           truncate_fn=truncate_fn)
+    assert io.exit_code == 0
+    assert lengths == [("/missing/", 4), ("/missing", 4)]

@@ -8,6 +8,7 @@ from mirage.commands.builtin.constants import (SED_MISSING_SCRIPT,
 from mirage.commands.builtin.sed_script import (SedCommand, execute_program,
                                                 parse_one_command,
                                                 parse_program)
+from mirage.commands.builtin.utils.lines import join_file_lines
 from mirage.commands.builtin.utils.stream import (is_stdin, read_stdin_async,
                                                   stdin_bytes)
 from mirage.commands.config import CommandOpts
@@ -26,6 +27,29 @@ def _is_simple_sub(commands: list[SedCommand], suppress: bool) -> bool:
             and commands[0].get("addr_start") is None and not suppress)
 
 
+def _run_stream(texts: list[str], commands: list[SedCommand], suppress: bool,
+                extended: bool) -> str:
+    """Run the script over the operands as GNU does without -i: one stream.
+
+    Line numbers and ``$`` span the files, and a file whose last line has
+    no newline still ends that line where the next file begins, so ``ab``
+    then ``cd`` are two lines; only the stream's own last line keeps a
+    missing newline missing. -i edits each file on its own instead.
+
+    Args:
+        texts (list[str]): the readable operands' contents, in order.
+        commands (list[SedCommand]): the parsed script.
+        suppress (bool): -n.
+        extended (bool): -E.
+    """
+    if not texts:
+        return ""
+    return execute_program(join_file_lines(texts, "\n"),
+                           commands,
+                           suppress=suppress,
+                           extended=extended)
+
+
 async def sed(
     paths: list[PathSpec],
     expression: str,
@@ -39,7 +63,12 @@ async def sed(
 ) -> tuple[ByteSource | None, IOResult]:
     if not in_place:
         read_bytes = stdin_bytes(read_bytes, stdin)
-    if ";" in expression or "{" in expression or "\n" in expression:
+    if not expression.strip():
+        # An empty script is a program with no commands, which prints its
+        # input unchanged (`sed ''`); an address with no command still is
+        # GNU's `missing command`.
+        commands: list[SedCommand] = []
+    elif ";" in expression or "{" in expression or "\n" in expression:
         commands = parse_program(expression)
     else:
         commands = [parse_one_command(expression)[0]]
@@ -92,7 +121,7 @@ async def sed(
                                   exit_code=code,
                                   stderr=err or None)
 
-        outputs: list[str] = []
+        texts: list[str] = []
         read_ok: list[PathSpec] = []
         for p in paths:
             try:
@@ -103,17 +132,14 @@ async def sed(
                 if isinstance(exc, IsADirectoryError):
                     break
                 continue
-            text = data.decode(errors="replace")
-            new_text = execute_program(text,
-                                       commands,
-                                       suppress=suppress,
-                                       extended=extended)
-            outputs.append(new_text)
+            texts.append(data.decode(errors="replace"))
             read_ok.append(p)
-        return "".join(outputs).encode(), IOResult(
-            cache=[p.mount_path for p in read_ok if not is_stdin(p)],
-            exit_code=code,
-            stderr=err or None)
+        return _run_stream(texts, commands, suppress,
+                           extended).encode(), IOResult(cache=[
+                               p.mount_path for p in read_ok if not is_stdin(p)
+                           ],
+                                                        exit_code=code,
+                                                        stderr=err or None)
 
     if paths:
         # GNU -i redirects the whole output stream to the file whatever the
@@ -121,7 +147,7 @@ async def sed(
         # land their text. Gating on the command set left every non-s/d
         # script printing to stdout while reporting success (#326 corpus).
         modifying = in_place
-        all_outputs: list[str] = []
+        texts = []
         writes = {}
         err = b""
         code = 0
@@ -136,30 +162,28 @@ async def sed(
                     break
                 continue
             text = data.decode(errors="replace")
-            result = execute_program(text,
-                                     commands,
-                                     suppress=suppress,
-                                     extended=extended)
-            if modifying:
-                if write_bytes is None:
-                    raise NotImplementedError(
-                        "sed: in-place edit (-i) is not supported on this "
-                        "backend")
-                new_data = result.encode()
-                await write_bytes(p, new_data)
-                writes[p.mount_path] = new_data
-                edited.append(p)
-            else:
-                all_outputs.append(result)
+            if not modifying:
+                texts.append(text)
+                continue
+            if write_bytes is None:
+                raise NotImplementedError(
+                    "sed: in-place edit (-i) is not supported on this "
+                    "backend")
+            new_data = execute_program(text,
+                                       commands,
+                                       suppress=suppress,
+                                       extended=extended).encode()
+            await write_bytes(p, new_data)
+            writes[p.mount_path] = new_data
+            edited.append(p)
         if modifying:
             return None, IOResult(writes=writes,
                                   cache=[p.mount_path for p in edited],
                                   exit_code=code,
                                   stderr=err or None)
-        # GNU concatenates per-file output with no separator (each file's
-        # output already carries its own newlines).
-        return "".join(all_outputs).encode(), IOResult(exit_code=code,
-                                                       stderr=err or None)
+        return _run_stream(texts, commands, suppress,
+                           extended).encode(), IOResult(exit_code=code,
+                                                        stderr=err or None)
 
     raw = await read_stdin_async(stdin)
     if raw is None:

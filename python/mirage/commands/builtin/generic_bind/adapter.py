@@ -23,17 +23,19 @@ from typing import Any, NoReturn, Protocol, overload
 from mirage.accessor.base import Accessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.generic.du import DEFAULT_MAX_DU_ENTRIES
+from mirage.commands.builtin.utils.paths import dot_refusal
 from mirage.commands.config import CommandFnResult, CommandOpts, ProvisionFn
 from mirage.context import (effective_path_mode, get_admission,
                             get_current_session, get_mount_gate,
-                            get_op_policies, hidden_paths_intersect,
-                            hidden_refusal, path_allowed)
+                            get_op_policies, get_walk_probe,
+                            hidden_paths_intersect, hidden_refusal,
+                            path_allowed)
 from mirage.context.session_context import require_paths_writable
 from mirage.ops.types import ChildMounts, LinkTargetStat, StatOverlay
 from mirage.policy.policies import Policies, pre_ops_gate
-from mirage.types import FileStat, FileType, MountMode, PathSpec
-from mirage.utils.errors import (MISS_ERRORS, ReadOnlyError, eexist, eisdir,
-                                 enoent, enotdir, enotsup)
+from mirage.types import FileStat, FileType, MountMode, PathSpec, WalkProbe
+from mirage.utils.errors import (MISS_ERRORS, DotWalkError, ReadOnlyError,
+                                 eexist, eisdir, enoent, enotdir, enotsup)
 from mirage.utils.glob_walk import DEFAULT_MAX_GLOB_MATCHES, make_resolve_glob
 from mirage.utils.hidden import move_reveals
 from mirage.utils.path import norm, parent
@@ -523,10 +525,12 @@ def _with_operation_guards(fn: OperationFn, slot: str) -> OperationFn:
     """
     access = _MUTATIONS.get(slot)
     if access is None:
-        return functools.partial(_guarded_call, fn, False)
+        return functools.partial(_walked_call, None,
+                                 functools.partial(_guarded_call, fn, False))
     fn = functools.partial(_mode_call, fn, access.first_source, access.subtree)
     fn = functools.partial(_rule_call, fn)
     fn = functools.partial(_guarded_call, fn, access.create)
+    fn = functools.partial(_walked_call, None, fn)
     return functools.partial(_policy_call, _op_policy_scope(), fn, slot, True,
                              access.first_source)
 
@@ -569,6 +573,126 @@ def with_hidden_guard(ops: CommandIO) -> CommandIO:
                                              ops.glob_children)
     if ops.exists is not None:
         changes["exists"] = functools.partial(_guarded_exists, ops.exists)
+    return replace(ops, **changes)
+
+
+# Every op slot that takes a path: the kernel resolves a path before
+# the op sees it, whatever the op then does, so presence facts (stat,
+# exists, the native find) are walked too. `du` is a bundle of ops a
+# du generic reaches only after it has stat-ed its operand.
+_WALK_SLOTS = ("read_bytes", "read_stream", "read_range", "stat", "exists",
+               "readdir", "find", "write", "append", "create", "truncate",
+               "set_attrs", "mkdir", "unlink", "rmdir", "rm_r", "rename",
+               "copy", "dir_copy")
+
+
+async def _walk_admit(probe: WalkProbe, specs: list[PathSpec]) -> None:
+    """Raise what the first unwalkable operand's dots answer.
+
+    Args:
+        probe (WalkProbe): the workspace stat and link follow the walk
+            reads.
+        specs (list[PathSpec]): the call's PathSpec positionals that
+            carry a dotted spelling.
+    """
+    for spec in specs:
+        refusal = await dot_refusal(probe.stat, spec, probe.follow)
+        if refusal is not None:
+            raise refusal
+
+
+async def _walked_await(probe: WalkProbe, specs: list[PathSpec],
+                        pending: Awaitable[Any]) -> Any:
+    """Await an op once its operands walk; close it unstarted if not.
+
+    Args:
+        probe (WalkProbe): what the walk reads.
+        specs (list[PathSpec]): the dotted operands.
+        pending (Awaitable[Any]): the op's not-yet-awaited result.
+    """
+    try:
+        await _walk_admit(probe, specs)
+    except BaseException:
+        close = getattr(pending, "close", None)
+        if close is not None:
+            close()
+        raise
+    return await pending
+
+
+async def _walked_stream(probe: WalkProbe, specs: list[PathSpec],
+                         source: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    """Drain a stream once its operands walk; close it if they do not.
+
+    Args:
+        probe (WalkProbe): what the walk reads.
+        specs (list[PathSpec]): the dotted operands.
+        source (AsyncIterator[bytes]): the not-yet-started stream.
+    """
+    try:
+        await _walk_admit(probe, specs)
+    except BaseException:
+        close = getattr(source, "aclose", None)
+        if close is not None:
+            await close()
+        raise
+    async for chunk in source:
+        yield chunk
+
+
+def _walked_call(walk: WalkProbe | None, fn: OperationFn, *args: Any,
+                 **kwargs: Any) -> Any:
+    """Call a backend op once the dots of its PathSpec positionals walk.
+
+    A plain def, as ``_guarded_call`` is one: the op's own return shape
+    passes through, an awaitable awaited after the walk and a stream
+    drained after it, so a refused walk never starts the op. An operand
+    with no dotted spelling, the common case, costs one attribute read.
+
+    Args:
+        walk (WalkProbe | None): the wrap-time probe, else the one bound
+            to the running command is read at call time.
+        fn (OperationFn): the guarded backend op.
+        *args: the call's positionals, PathSpecs among them.
+        **kwargs: forwarded untouched.
+    """
+    specs = [
+        arg for arg in args
+        if isinstance(arg, PathSpec) and arg.dotted is not None
+    ]
+    probe = walk if walk is not None else get_walk_probe()
+    if not specs or probe is None:
+        return fn(*args, **kwargs)
+    result = fn(*args, **kwargs)
+    if hasattr(result, "__aiter__") and not hasattr(result, "__await__"):
+        return _walked_stream(probe, specs, result)
+    return _walked_await(probe, specs, result)
+
+
+def with_walk_guard(ops: CommandIO) -> CommandIO:
+    """Return ``ops`` whose slots walk an operand's ``.`` and ``..``.
+
+    ``virtual`` simplifies the dots away, so ``cat nope/../f`` would
+    read ``f`` past a missing ``nope``; the typed spelling rides
+    ``PathSpec.dotted`` and :func:`dot_refusal` proves every name in
+    front of a dot a directory, raising ENOENT or ENOTDIR at the op
+    boundary so each command words the refusal as its own miss. Judged
+    at op time, not before the command runs, because a command can make
+    the directory itself (``mkdir -p nope/../m``, ``mkdir d d/../x``).
+    The probe is the door's stat and link follow, bound by
+    ``Mount.execute_cmd``: captured at wrap time inside a command's
+    window (a lazily drained reader still walks after dispatch
+    returned), read at call time otherwise.
+
+    Args:
+        ops (CommandIO): the backend's IO adapter.
+    """
+    walk = get_walk_probe()
+    changes: dict[str, Any] = {}
+    for slot in _WALK_SLOTS:
+        fn = getattr(ops, slot)
+        if fn is not None:
+            changes[slot] = functools.partial(_walked_call, walk, fn)
     return replace(ops, **changes)
 
 
@@ -775,8 +899,8 @@ def with_rule_guard(ops: CommandIO) -> CommandIO:
 
 
 def with_path_guards(ops: CommandIO) -> CommandIO:
-    """Return ``ops`` under the whole path axis: hides answer ENOENT
-    first, rules refuse next, the mode speaks last.
+    """Return ``ops`` under the whole path axis: the typed dots walk
+    first, hides answer ENOENT next, rules refuse, the mode speaks last.
 
     The one spelling of the guard chain, used by the commands factory
     for every generic command and by a bespoke command family that
@@ -787,7 +911,8 @@ def with_path_guards(ops: CommandIO) -> CommandIO:
     Args:
         ops (CommandIO): the backend's IO adapter.
     """
-    return with_hidden_guard(with_rule_guard(with_mode_guard(ops)))
+    return with_walk_guard(
+        with_hidden_guard(with_rule_guard(with_mode_guard(ops))))
 
 
 def with_write_guards(fn: OperationFn) -> OperationFn:
@@ -1128,6 +1253,10 @@ async def _read_hit_a_dir(ops: CommandIO, accessor: Accessor,
     """
     if isinstance(exc, IsADirectoryError):
         return True
+    if isinstance(exc, DotWalkError):
+        # The path did not resolve at all, which no reading turns into a
+        # directory; its parent may well list the name it simplifies to.
+        return False
     try:
         st: FileStat | None = await ops.stat(accessor, path, index)
     except Exception:
@@ -1234,6 +1363,8 @@ async def _stat_refusing_dirs(ops: CommandIO, accessor: Accessor,
                               opts: CommandOpts, path: PathSpec) -> FileStat:
     try:
         st: FileStat = await ops.stat(accessor, path, opts.index)
+    except DotWalkError:
+        raise
     except FileNotFoundError:
         if await _is_implicit_dir(ops, accessor, path, opts.index):
             raise eisdir(path) from None

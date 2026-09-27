@@ -273,7 +273,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sed: {mount}/__nf_missing__: No such file or directory\n"
+        "stderr": "sed: can't read {mount}/__nf_missing__: No such file or directory\n"
       }
     },
     {
@@ -382,7 +382,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "realpath: '{mount}/__nf_missing__': No such file or directory\n"
+        "stderr": "realpath: {mount}/__nf_missing__: No such file or directory\n"
       }
     },
     {

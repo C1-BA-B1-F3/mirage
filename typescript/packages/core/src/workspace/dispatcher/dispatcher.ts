@@ -18,6 +18,7 @@ import { applyIo } from '../../cache/file/io.ts'
 import type { FileCache } from '../../cache/file/mixin.ts'
 import { CacheManager } from '../../cache/manager.ts'
 import { applyOpLimit, runWithTimeout } from '../../commands/builtin/utils/limit.ts'
+import { dispatchStat, dotRefusal } from '../../commands/builtin/utils/paths.ts'
 import { getExtension } from '../../commands/resolve.ts'
 import { IOResult, type OpReport } from '../../io/types.ts'
 import {
@@ -26,6 +27,7 @@ import {
   eexist,
   einval,
   enoent,
+  enotdir,
   enotempty,
   isEnotdir,
   isMissError,
@@ -38,6 +40,7 @@ import { Policies, PolicyDenied, postOpsGate, preOpsGate } from '../../policy/in
 import { PolicyError } from '../../policy/errors.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { normDir, ownerPrefix, rstripSlash } from '../../utils/slash.ts'
+import { norm, parent } from '../../utils/path.ts'
 import { record, runWithMountContext, runWithRevisions, startOp } from '../../observe/context.ts'
 import { wrapOpStream } from '../mount/mount.ts'
 import type { OpRecord } from '../../observe/record.ts'
@@ -101,6 +104,21 @@ function visibleEntries(entries: string[], parent: string): string[] {
     const trimmed = rstripSlash(e)
     const name = trimmed.slice(trimmed.lastIndexOf('/') + 1)
     return pathAllowed(`${base}/${name}`)
+  })
+}
+
+/**
+ * Whether a backend listing holds the final name of `virtual`. Compared on
+ * the final segment, because backends disagree on entry shape: bare names,
+ * a trailing slash to mark a directory, or full paths. The same
+ * normalization `mergeReaddir` dedupes on. Mirrors Python's `_lists`.
+ */
+function lists(listing: readonly string[], virtual: string): boolean {
+  const trimmed = rstripSlash(virtual)
+  const name = trimmed.slice(trimmed.lastIndexOf('/') + 1)
+  return listing.some((entry) => {
+    const segments = rstripSlash(entry).split('/')
+    return segments[segments.length - 1] === name
   })
 }
 
@@ -225,9 +243,34 @@ export class Dispatcher {
     if (!pathAllowed(path.virtual)) {
       throw hiddenRefusal(path.virtual, HIDDEN_CREATE_OPS.has(opName))
     }
-    const dstArg = args?.[0]
+    let dstArg = args?.[0]
     if (opName === 'rename' && dstArg instanceof PathSpec && !pathAllowed(dstArg.virtual)) {
       throw hiddenRefusal(dstArg.virtual, true)
+    }
+    // A `.` or `..` resolves against the directory it sits in, so every
+    // name in front of one has to be a directory: `virtual` simplified the
+    // dots away and reaches `f` through a missing `nope/..`, the typed
+    // spelling (`dotted`) does not. Mirrors Python's Dispatcher.dispatch.
+    const renamed = opName === 'rename' && dstArg instanceof PathSpec ? dstArg : null
+    if (path.dotted !== null || (renamed !== null && renamed.dotted !== null)) {
+      const walkStat = dispatchStat(this.dispatch)
+      const follow = (virtual: string): string => this.namespace.follow(virtual)
+      const refusal =
+        (await dotRefusal(walkStat, path, follow)) ??
+        (renamed !== null ? await dotRefusal(walkStat, renamed, follow) : null)
+      if (refusal !== null) throw refusal
+    }
+    // The kernel walks a path before the call sees it: every link above
+    // the final name is followed, whatever the op then does with the name.
+    // Command dispatch walks the operands it classifies; this is the same
+    // walk for every other caller (a relative word ln resolves itself, the
+    // op facade, a runtime's os.symlink), so a link made, read or removed
+    // under a linked directory lands in the directory the link names, not
+    // under a name nothing else would look up.
+    path = this.walked(path, HIDDEN_CREATE_OPS.has(opName))
+    if (opName === 'rename' && dstArg instanceof PathSpec) {
+      dstArg = this.walked(dstArg, true)
+      args = [dstArg, ...(args ?? []).slice(1)]
     }
     if (opName === 'rename' && dstArg instanceof PathSpec) {
       // A rename re-anchors everything below its source while the hides
@@ -766,6 +809,21 @@ export class Dispatcher {
     await this.namespace.purgeUnder(path.virtual)
   }
 
+  /**
+   * `path` with the links above its final name followed.
+   *
+   * The walked path answers to the session's hides as the typed one did,
+   * the rule the follow of the final name applies too: a visible link must
+   * not lead into hidden space. Throws CycleError when a link above the
+   * name loops (ELOOP). Mirrors Python's Dispatcher._walked.
+   */
+  private walked(path: PathSpec, create: boolean): PathSpec {
+    const walked = this.namespace.followParent(path.virtual)
+    if (walked === path.virtual) return path
+    if (!pathAllowed(walked)) throw hiddenRefusal(walked, create)
+    return PathSpec.fromStrPath(walked)
+  }
+
   private tableAnswers(
     opName: string,
     virtual: string,
@@ -833,17 +891,24 @@ export class Dispatcher {
         issuer,
       )
       requireTurfWritable(dstMount, dst)
+      // The name the link moves to must have a directory above it, as for
+      // a new link: the table alone would file it under an absent parent
+      // and synthesize the directories above it.
+      const refusal = await this.parentRefusal(dst, issuer)
+      if (refusal !== null) throw refusal
       await this.namespace.unlink(dst.virtual)
       await this.namespace.rename(path.virtual, dst.virtual)
     } else if (opName === 'symlink') {
       target = String(kwargs.target)
-      // symlink(2) refuses an occupied name, and the door is the only
-      // place that can tell: the node table sees a link, and a probe
-      // sees the file or directory a backend holds. Left unchecked, the
-      // new node shadowed live data (the bytes stayed, the name read as
-      // a link) and could bury a mount root, which is the one name a
-      // deployment configured.
-      if (await this.pathPresent(path, issuer)) throw eexist(path)
+      // symlink(2) refuses an occupied name and a name its parent cannot
+      // hold, and the door is the only place that can tell: the node table
+      // sees a link, and a probe sees what a backend holds. Left unchecked,
+      // the new node shadowed live data (the bytes stayed, the name read as
+      // a link), could bury a mount root, which is the one name a
+      // deployment configured, and under an absent parent was an orphan
+      // that invented the directories above it.
+      const refusal = await this.symlinkRefusal(path, issuer)
+      if (refusal !== null) throw refusal
       await this.namespace.symlink(path.virtual, target, Date.now() / 1000)
     } else if (opName === 'stat') {
       const row = this.namespace.linkStatAt(path.virtual)
@@ -875,11 +940,12 @@ export class Dispatcher {
    * Python's Dispatcher._readlink_miss.
    */
   private async readlinkMiss(path: PathSpec, issuer?: symbol): Promise<FsError> {
-    return (await this.pathPresent(path, issuer)) ? einval(path) : enoent(path)
+    const [present] = await this.occupancy(path, issuer)
+    return present ? einval(path) : enoent(path)
   }
 
   /**
-   * Whether anything at all is at `path`.
+   * Whether anything at all is at `path`, and the parent's listing.
    *
    * Four channels, asked in the order of what they prove. The namespace
    * goes first: a link, and a directory that exists only because a
@@ -894,23 +960,32 @@ export class Dispatcher {
    * in its parent's listing, which is also the only way a prefix store
    * can answer for a directory that is nothing but a set of keys.
    * Cannot reuse `resolvePathStat`: that dispatches, and the door is
-   * what dispatch is inside of. Mirrors Python's
-   * Dispatcher._path_present.
+   * what dispatch is inside of.
+   *
+   * The parent's listing comes back beside the answer, null when no probe
+   * reached it or it gave none, because a listing with entries in it also
+   * proves the parent a directory: a create in a directory that holds
+   * anything costs no round trip beyond this one. Mirrors Python's
+   * Dispatcher._occupancy.
    */
-  private async pathPresent(path: PathSpec, issuer?: symbol): Promise<boolean> {
-    if (this.namespace.isLink(path.virtual)) return true
+  private async occupancy(
+    path: PathSpec,
+    issuer?: symbol,
+  ): Promise<[boolean, readonly string[] | null]> {
+    if (this.namespace.isLink(path.virtual)) return [true, null]
     if (namespaceStat(this.namespace.mountPrefixes(), this.namespace, path.virtual) !== null) {
-      return true
+      return [true, null]
     }
     const mount = this.namespace.tryMountFor(path.virtual)
     // Only "no mount serves this path" is the absence being probed for.
-    if (mount === null) return false
+    if (mount === null) return [false, null]
     const resolved = await this.namespace.resolve(path.virtual, false)
-    if (normDir(mount.prefix) === normDir(path.virtual)) return true
+    if (normDir(mount.prefix) === normDir(path.virtual)) return [true, null]
+    let listing: readonly string[] | null
     try {
       const row = (await this.probeOp('stat', resolved, issuer)) as FileStat | null
-      if (row !== null && row.type !== FileType.DIRECTORY) return true
-      return await this.listedByParent(path, issuer)
+      if (row !== null && row.type !== FileType.DIRECTORY) return [true, null]
+      listing = await this.parentListing(path.virtual, issuer)
     } catch (err) {
       if (!(err instanceof PolicyDenied) && !(err instanceof PolicyError)) throw err
       // A channel that refuses to answer is not evidence of absence.
@@ -918,32 +993,104 @@ export class Dispatcher {
       // gave before the split, which asserts nothing the policy is
       // withholding; reporting absence would assert a fact this door was
       // not allowed to check.
-      return true
+      return [true, null]
     }
+    return [listing !== null && lists(listing, path.virtual), listing]
   }
 
   /**
-   * Whether the path's own name is in its parent's listing.
+   * What symlink(2) answers instead of making a link at `path`.
    *
-   * Compared on the final segment, because backends disagree on entry
-   * shape: bare names, a trailing slash to mark a directory, or full
-   * paths. The same normalization `mergeReaddir` dedupes on. Mirrors
-   * Python's Dispatcher._listed_by_parent.
+   * Null when the link can be made. The name must be free (EEXIST) and
+   * its parent a directory (`parentRefusal`), both read off the probes
+   * `occupancy` makes: a parent whose listing answered with entries is a
+   * directory, so only an empty or silent parent is walked, which is the
+   * failure path nearly always. Mirrors Python's
+   * Dispatcher._symlink_refusal.
    */
-  private async listedByParent(path: PathSpec, issuer?: symbol): Promise<boolean> {
-    const trimmed = rstripSlash(path.virtual)
+  private async symlinkRefusal(path: PathSpec, issuer?: symbol): Promise<FsError | null> {
+    const [present, listing] = await this.occupancy(path, issuer)
+    if (present) return eexist(path)
+    if (listing !== null && listing.length > 0) return null
+    return this.parentRefusal(path, issuer)
+  }
+
+  /**
+   * The errno the parent chain of a name being created answers.
+   *
+   * symlink(2) and rename(2) resolve the directory a name goes in before
+   * they look at the name: ENOENT when it is absent and ENOTDIR when a
+   * non-directory stands anywhere in the chain. The chain is walked
+   * upward until something is there, as `destKind` walks a copy's
+   * destination, because a store answers a path under a plain file with
+   * the same miss as an absent one: the parent itself being a directory
+   * is the one clean answer, a directory higher up means the components
+   * below it are absent, and anything else is ENOTDIR. Null when the
+   * parent is a directory, and when a policy closes a channel, which
+   * proves nothing either way. Mirrors Python's
+   * Dispatcher._parent_refusal.
+   */
+  private async parentRefusal(path: PathSpec, issuer?: symbol): Promise<FsError | null> {
+    const immediate = parent(norm(path.virtual))
+    let node = immediate
+    let kind: FileType | null
+    try {
+      kind = await this.entryType(node, issuer)
+      while (kind === null) {
+        node = parent(node)
+        kind = await this.entryType(node, issuer)
+      }
+    } catch (err) {
+      if (err instanceof PolicyDenied || err instanceof PolicyError) return null
+      if (!isEnotdir(err)) throw err
+      // A store that sees the file in the chain answers the probe itself
+      // with ENOTDIR, which is the verdict.
+      kind = FileType.FILE
+    }
+    if (kind !== FileType.DIRECTORY) return enotdir(path)
+    return node === immediate ? null : enoent(path)
+  }
+
+  /**
+   * The type of what stands at `virtual`, null when nothing does.
+   *
+   * The channels `occupancy` asks, for a path the walk above a new name
+   * reaches: namespace structure and a mount root are directories, then
+   * the backend's row, then the path's own entry in its parent's
+   * listing, which is how a prefix store holds a directory that is
+   * nothing but a set of keys. Mirrors Python's Dispatcher._entry_type.
+   */
+  private async entryType(virtual: string, issuer?: symbol): Promise<FileType | null> {
+    if (virtual === '/') return FileType.DIRECTORY
+    if (namespaceStat(this.namespace.mountPrefixes(), this.namespace, virtual) !== null) {
+      return FileType.DIRECTORY
+    }
+    const mount = this.namespace.tryMountFor(virtual)
+    if (mount === null) return null
+    if (normDir(mount.prefix) === normDir(virtual)) return FileType.DIRECTORY
+    const resolved = await this.namespace.resolve(virtual, false)
+    const row = (await this.probeOp('stat', resolved, issuer)) as FileStat | null
+    if (row !== null) return row.type
+    const listing = await this.parentListing(virtual, issuer)
+    return listing !== null && lists(listing, virtual) ? FileType.DIRECTORY : null
+  }
+
+  /**
+   * The backend listing of the directory `virtual` sits in: null when no
+   * mount serves that directory, its backend lists nothing there, or the
+   * path has no name to sit in one. Mirrors Python's
+   * Dispatcher._parent_listing.
+   */
+  private async parentListing(virtual: string, issuer?: symbol): Promise<readonly string[] | null> {
+    const trimmed = rstripSlash(virtual)
     const cut = trimmed.lastIndexOf('/')
     const name = trimmed.slice(cut + 1)
-    if (cut < 0 || name === '') return false
-    const parent = trimmed.slice(0, cut) || '/'
-    if (this.namespace.tryMountFor(parent) === null) return false
-    const resolved = await this.namespace.resolve(parent, false)
+    if (cut < 0 || name === '') return null
+    const above = trimmed.slice(0, cut) || '/'
+    if (this.namespace.tryMountFor(above) === null) return null
+    const resolved = await this.namespace.resolve(above, false)
     const entries = await this.probeOp('readdir', resolved, issuer)
-    if (!Array.isArray(entries)) return false
-    return entries.some((entry) => {
-      const segments = rstripSlash(String(entry)).split('/')
-      return segments[segments.length - 1] === name
-    })
+    return Array.isArray(entries) ? entries.map(String) : null
   }
 
   /**

@@ -18,6 +18,9 @@ from functools import partial
 
 from mirage.commands.builtin.utils.backup import backup_control, backup_target
 from mirage.commands.builtin.utils.constants import DEFAULT_BACKUP_SUFFIX
+from mirage.commands.builtin.utils.paths import (absent_dest_strerror,
+                                                 dispatch_stat, dot_refusal,
+                                                 typed_spec)
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS, parse_command
 from mirage.commands.spec.flag_view import FlagView
@@ -45,6 +48,8 @@ from mirage.workspace.session import SessionState
 _TARGET_DIR_LONG = "--target-directory"
 _SUFFIX_LONG = "--suffix"
 _VALUED_SHORTS = "tS"
+_ENOENT_TEXT = "No such file or directory"
+_ELOOP_TEXT = "Too many levels of symbolic links"
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +234,29 @@ def _follow_visible(namespace: Namespace, virtual: str) -> str:
     return namespace.follow(virtual) if path_allowed(virtual) else virtual
 
 
+def _operand_abs(namespace: Namespace, arg: str | PathSpec, cwd: str) -> str:
+    """An operand as the path the kernel reaches, its final name kept.
+
+    Command dispatch walks the links above the name of every operand it
+    classifies; ln's relative words arrive unclassified, so they are
+    walked here, and every namespace read in this module sees the name
+    the door will. A hidden path stays as typed, and a loop is left for
+    the door to report when the link is made.
+
+    Args:
+        namespace (Namespace): the link table.
+        arg (str | PathSpec): the operand.
+        cwd (str): session working directory.
+    """
+    virtual = abs_path(arg, cwd)
+    if isinstance(arg, PathSpec) or not path_allowed(virtual):
+        return virtual
+    try:
+        return namespace.follow_parent(virtual)
+    except CycleError:
+        return virtual
+
+
 async def _listed_by_parent(dispatch: DispatchFn, virtual: str) -> bool:
     """Whether a path's own name is in its parent's listing.
 
@@ -283,6 +311,28 @@ async def _dir_at(namespace: Namespace, dispatch: DispatchFn, virtual: str,
     return virtual, stat
 
 
+def _refused(flags: LnFlags, typed: str, target_typed: str, why: str) -> str:
+    """ln's line for a link its name's parent chain would not take.
+
+    GNU words the step that failed. Under ``-f`` or ``-b`` it lstats the
+    name before anything else, and an error there other than absence is
+    ``failed to access``; the rest fail at link(2) or symlink(2), where a
+    hard link names its target alongside and a symlink never does.
+
+    Args:
+        flags (LnFlags): the parsed flags.
+        typed (str): the link name as GNU spells it.
+        target_typed (str): the TARGET as typed.
+        why (str): the strerror.
+    """
+    backs = flags.backup not in (None, "none")
+    if (flags.force or backs) and why != _ENOENT_TEXT:
+        return f"ln: failed to access '{typed}': {why}\n"
+    kind = "symbolic link" if flags.symbolic else "hard link"
+    arrow = "" if flags.symbolic else f" => '{target_typed}'"
+    return f"ln: failed to create {kind} '{typed}'{arrow}: {why}\n"
+
+
 def _into(source: str | PathSpec, dir_abs: str, dir_typed: str) -> LinkPlan:
     """The link a TARGET gets inside a directory: GNU names it after the
     target's basename, spelled under the directory as typed.
@@ -328,9 +378,14 @@ async def plan_links(
     hint = usage_hint("ln") + "\n"
     if target_dir is not None:
         typed = target_typed if target_typed is not None else target_dir
-        resolved, stat = await _dir_at(namespace, dispatch,
-                                       abs_path(target_dir, cwd),
-                                       flags.no_dereference)
+        unwalked = await dot_refusal(partial(dispatch_stat, dispatch),
+                                     typed_spec(typed, cwd))
+        if unwalked is not None:
+            return [], (f"ln: failed to access '{typed}': "
+                        f"{fs_strerror(unwalked)}\n")
+        resolved, stat = await _dir_at(
+            namespace, dispatch, _operand_abs(namespace, target_dir, cwd),
+            flags.no_dereference)
         if stat is None:
             return [], (f"ln: failed to access '{typed}': "
                         f"{await miss_strerror(dispatch, resolved)}\n")
@@ -347,11 +402,11 @@ async def plan_links(
             return [], (f"ln: extra operand '{word_text(operands[2])}'\n"
                         f"{hint}")
         return [
-            LinkPlan(operands[0], abs_path(operands[1], cwd),
+            LinkPlan(operands[0], _operand_abs(namespace, operands[1], cwd),
                      word_text(operands[1]))
         ], None
     last = operands[-1]
-    last_abs = abs_path(last, cwd)
+    last_abs = _operand_abs(namespace, last, cwd)
     resolved, stat = await _dir_at(namespace, dispatch, last_abs,
                                    flags.no_dereference)
     is_dir = stat is not None and stat.type == FileType.DIRECTORY
@@ -450,6 +505,22 @@ async def make_link(
     target_typed = word_text(plan.source)
     link_target: str | None = None
     data: bytes | None = None
+    # A `.` or `..` resolves against the directory in front of it, which
+    # has to be there. A symlink's target is stored as typed and never
+    # walked; a hard link's is the file it names.
+    walker = partial(dispatch_stat, dispatch)
+    if not flags.symbolic:
+        unwalked = await dot_refusal(walker, typed_spec(plan.source, cwd))
+        if unwalked is not None:
+            errors.append(f"ln: failed to access '{target_typed}': "
+                          f"{fs_strerror(unwalked)}\n")
+            return
+    unwalked = await dot_refusal(walker, typed_spec(typed, cwd))
+    if unwalked is not None:
+        errors.append(
+            _refused(flags, typed, target_typed,
+                     fs_strerror(unwalked) or _ENOENT_TEXT))
+        return
     if flags.symbolic:
         link_target = target_typed
         if flags.relative:
@@ -468,7 +539,7 @@ async def make_link(
                 pass
             link_target = posixpath.relpath(target_abs, link_dir)
     else:
-        src_abs = abs_path(plan.source, cwd)
+        src_abs = _operand_abs(namespace, plan.source, cwd)
         if _visible_link(namespace, src_abs) and not flags.logical:
             link_target = namespace.readlink(src_abs)
         else:
@@ -500,13 +571,12 @@ async def make_link(
                   if linked else await path_stat(dispatch, plan.link_abs))
         if (behind is not None and behind.type is not FileType.DIRECTORY
                 and (flags.force or backs)):
-            errors.append(f"ln: failed to access '{typed}': Not a directory\n")
+            errors.append(
+                _refused(flags, typed, target_typed, "Not a directory"))
             return
         if not linked and behind is None:
-            arrow = "" if flags.symbolic else f" => '{target_typed}'"
-            why = await miss_strerror(dispatch, plan.link_abs)
-            errors.append(
-                f"ln: failed to create {kind} '{typed}'{arrow}: {why}\n")
+            missed = await miss_strerror(dispatch, plan.link_abs)
+            errors.append(_refused(flags, typed, target_typed, missed))
             return
         if linked and (behind is None
                        or behind.type is not FileType.DIRECTORY):
@@ -514,7 +584,7 @@ async def make_link(
                 f"ln: failed to create {kind} '{typed}': File exists\n")
             return
     if (flags.force and not backs
-            and abs_path(plan.source, cwd) == plan.link_abs
+            and _operand_abs(namespace, plan.source, cwd) == plan.link_abs
             and (_visible_link(namespace, plan.link_abs)
                  or await path_stat(dispatch, plan.link_abs) is not None)):
         errors.append(
@@ -562,15 +632,39 @@ async def make_link(
         except IsADirectoryError:
             errors.append(f"ln: {typed}: cannot overwrite directory\n")
             return
+        except CycleError:
+            errors.append(_refused(flags, typed, target_typed, _ELOOP_TEXT))
+            return
         occupied = False
     if occupied:
         errors.append(f"ln: failed to create {kind} '{typed}': File exists\n")
         return
+    if link_target is None:
+        # A byte copy lands through the backend's write, which on a
+        # keyed store makes the key whatever stands above it. ln is not
+        # mkdir -p, so the parent chain of the name (absent by now) is
+        # judged first, as cp judges its destination's; the door judges
+        # a symlink's itself.
+        why = await absent_dest_strerror(partial(dispatch_stat, dispatch),
+                                         link_spec)
+        if why is not None:
+            errors.append(_refused(flags, typed, target_typed, why))
+            return
     try:
         if link_target is not None:
             await dispatch("symlink", link_spec, target=link_target)
         else:
             await dispatch("write", link_spec, data=data)
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        # The door refuses a name its parent cannot hold (symlink(2)'s
+        # ENOENT and ENOTDIR), and a store's write refuses the same way.
+        errors.append(
+            _refused(flags, typed, target_typed,
+                     fs_strerror(exc) or _ENOENT_TEXT))
+        return
+    except CycleError:
+        errors.append(_refused(flags, typed, target_typed, _ELOOP_TEXT))
+        return
     except FileExistsError:
         # The door owns the existence rule (it is the only layer that
         # can see both the node table and the backend); ln owns the

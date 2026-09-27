@@ -20,22 +20,23 @@ from mirage.io import IOResult
 from mirage.io.stream import async_chain, materialize
 from mirage.io.types import ByteSource
 from mirage.types import PathSpec
+from mirage.utils.errors import revoice_fs_error_line
 
 
 def _has_active_flags(flag_kwargs: dict[str, FlagValue]) -> bool:
     return any(v not in (None, False) for v in flag_kwargs.values())
 
 
-def _respell_fetch_stderr(stderr: bytes, cmd_name: str) -> bytes:
+def _respell_fetch_stderr(stderr: bytes, cmd_name: str,
+                          scope: PathSpec) -> bytes:
     # The per-operand fetch is a native Cmd.CAT sub-run, so its error lines
-    # carry the fetch command's prefix; respell them to the real command so
-    # the cross-mount bytes match single-mount.
-    fetch_prefix = Cmd.CAT.encode() + b": "
-    prefix = cmd_name.encode() + b": "
-    return b"\n".join(
-        prefix +
-        line[len(fetch_prefix):] if line.startswith(fetch_prefix) else line
-        for line in stderr.split(b"\n"))
+    # carry the fetch command's voice; each is said again in the real
+    # command's (its prefix, its quoting, the step it names) so the
+    # cross-mount bytes match single-mount.
+    text = stderr.decode("utf-8", "surrogateescape")
+    return "\n".join(
+        revoice_fs_error_line(line, Cmd.CAT, cmd_name, scope)
+        for line in text.split("\n")).encode("utf-8", "surrogateescape")
 
 
 async def run_stream(cmd_name: str, scopes: list[PathSpec],
@@ -74,7 +75,7 @@ async def run_stream(cmd_name: str, scopes: list[PathSpec],
             if io.stderr is not None:
                 rendered = await materialize(io.stderr)
                 if cmd_name != Cmd.CAT:
-                    rendered = _respell_fetch_stderr(rendered, cmd_name)
+                    rendered = _respell_fetch_stderr(rendered, cmd_name, scope)
                     io.stderr = rendered
                 fail_code = max(fail_code,
                                 read_fail_exit_line(cmd_name, rendered))

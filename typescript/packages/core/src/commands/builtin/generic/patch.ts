@@ -22,6 +22,8 @@ import { readStdinAsync } from '../utils/stream.ts'
 import { lstripSlash, stripSlash } from '../../../utils/slash.ts'
 import { extraOperandError } from '../../spec/usage.ts'
 import { CommandName } from '../../spec/types.ts'
+import { READ_FAILURES, fsStrerror, isEnoent, isFsError } from '../../../utils/errors.ts'
+import { shellQuote } from '../../../utils/quote.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -141,6 +143,31 @@ function parsePatch(patchText: string, stripCount: number): Map<string, Hunk[]> 
   return files
 }
 
+/**
+ * The patch text, or GNU's fatal line when it cannot be had. GNU opens the
+ * patch file before anything else and gives up on the whole run when it
+ * cannot (exit 2): an open that fails names the file (`Can't open patch file
+ * x : ...`), a read that fails does not (`read error : ...`), since only one
+ * patch file is ever read. Mirrors Python's _load_patch_data.
+ */
+async function loadPatchData(
+  source: PathSpec | null,
+  opts: CommandOpts,
+  stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
+): Promise<Uint8Array | string | null> {
+  if (source === null) return readStdinAsync(opts.stdin)
+  try {
+    return await materialize(stream(source))
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    const code = (err as { code?: string }).code
+    if (code !== undefined && READ_FAILURES.has(code)) {
+      return `patch: **** read error : ${String(fsStrerror(err))}\n`
+    }
+    return `patch: **** Can't open patch file ${shellQuote(source.rawPath)} : ${String(fsStrerror(err))}\n`
+  }
+}
+
 export async function patchGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
@@ -152,36 +179,48 @@ export async function patchGeneric(
   const stripCount = fl.asInt('p') ?? 0
   const reverseMode = fl.asBool('R')
   const forwardOnly = fl.asBool('N')
+  const iRaw = fl.raw('i')
   const iFlag = fl.asStr('i') ?? null
   const mountPrefix = opts.mountPrefix ?? ''
-  let patchData: Uint8Array | null = null
-  if (iFlag !== null) {
-    const spec = PathSpec.fromStrPath(iFlag, mountKey(iFlag, mountPrefix))
-    patchData = await materialize(stream(spec))
-  } else if (paths.length > 0) {
-    const first = paths[0]
-    if (first !== undefined) patchData = await materialize(stream(first))
-  } else {
-    patchData = await readStdinAsync(opts.stdin)
+  // `patch [ORIGFILE [PATCHFILE]]`: the second operand is the patch file,
+  // ahead of -i, and the first is the one file every hunk goes to in place
+  // of the names the patch's headers carry. A `-i` classified as a path
+  // keeps its typed spelling, which the fatal line names. Mirrors Python's
+  // patch.
+  const source =
+    paths[1] ??
+    (iRaw instanceof PathSpec
+      ? iRaw
+      : iFlag !== null
+        ? PathSpec.fromStrPath(iFlag, mountKey(iFlag, mountPrefix))
+        : null)
+  const loaded = await loadPatchData(source, opts, stream)
+  if (typeof loaded === 'string') {
+    return [null, new IOResult({ exitCode: 2, stderr: ENC.encode(loaded) })]
   }
-  if (patchData === null || patchData.byteLength === 0) {
+  if (loaded === null || loaded.byteLength === 0) {
     return [null, new IOResult()]
   }
 
-  const patchText = DEC.decode(patchData)
+  const patchText = DEC.decode(loaded)
   const fileHunks = parsePatch(patchText, stripCount)
+  const orig = paths[0] ?? null
   const writes: Record<string, Uint8Array> = {}
+  const lines: string[] = []
 
   for (const [filePath, hunks] of fileHunks) {
-    const spec = PathSpec.fromStrPath(
-      `${mountPrefix.replace(/\/$/, '')}/${lstripSlash(filePath)}`,
-      stripSlash(filePath),
-    )
+    const spec =
+      orig ??
+      PathSpec.fromStrPath(
+        `${mountPrefix.replace(/\/$/, '')}/${lstripSlash(filePath)}`,
+        stripSlash(filePath),
+      )
+    lines.push(`patching file ${orig !== null ? orig.rawPath : lstripSlash(filePath)}\n`)
     let content = ''
     try {
       content = DEC.decode(await materialize(stream(spec)))
     } catch (err) {
-      if (!(err instanceof Error) || !/not found/i.test(err.message)) throw err
+      if (!isEnoent(err)) throw err
     }
     const originalLines = splitLinesNoTrailing(content)
 
@@ -203,8 +242,9 @@ export async function patchGeneric(
     const patched = applyHunks(originalLines, effective, forwardOnly)
     const patchedData = ENC.encode(patched.join('\n') + '\n')
     await write(spec, patchedData)
-    writes[filePath] = patchedData
+    writes[spec.mountPath] = patchedData
   }
 
-  return [null, new IOResult({ writes })]
+  const out = lines.length > 0 ? ENC.encode(lines.join('')) : null
+  return [out, new IOResult({ writes })]
 }

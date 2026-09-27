@@ -6,7 +6,7 @@ import type { FlagValue } from '../../spec/types.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
 import type { PathSpec } from '../../../types.ts'
-import { fsErrorLine, isFsError } from '../../../utils/errors.ts'
+import { fsErrorLine, fsStrerror, isFsError } from '../../../utils/errors.ts'
 
 export const PROGRAM_FILE_COMMANDS = new Set(['grep', 'rg', 'sed', 'awk', 'jq'])
 
@@ -77,8 +77,12 @@ export async function prepareProgram(
       }
     } catch (err) {
       if (!isFsError(err)) throw err
-      let line = fsErrorLine(name, path, err)
-      if (name === 'sed') line = line.replace('sed: ', "sed: couldn't open file ")
+      // sed names this step apart from an input's (`couldn't open file`
+      // against `can't read`).
+      const line =
+        name === 'sed'
+          ? `sed: couldn't open file ${path.rawPath}: ${fsStrerror(err) ?? ''}\n`
+          : fsErrorLine(name, path, err)
       return [
         texts,
         bag,

@@ -320,11 +320,10 @@ export async function expandGeneric(
     const [ok, err] = await readOperands(paths, stream, 'expand')
     const io = operandsIo(err)
     if (ok.length === 0 && err !== '') return [null, io]
-    const parts: string[] = []
-    for (const o of ok) {
-      parts.push(applyExpand(DEC.decode(o.data), tabs, initialOnly))
-    }
-    const result: ByteSource = ENC.encode(parts.join(''))
+    // GNU reads its operands as one stream, so a line a file leaves
+    // unfinished continues into the next one, column and all.
+    const text = ok.map((o) => DEC.decode(o.data)).join('')
+    const result: ByteSource = ENC.encode(applyExpand(text, tabs, initialOnly))
     return [result, io]
   }
   const stdinData = await readStdinAsync(opts.stdin)

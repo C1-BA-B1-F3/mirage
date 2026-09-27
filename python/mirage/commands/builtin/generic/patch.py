@@ -11,6 +11,8 @@ from mirage.commands.spec.types import CommandName, FlagValue
 from mirage.commands.spec.usage import extra_operand_error
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
+from mirage.utils.errors import FS_ERRORS, READ_FAILURES, fs_strerror
+from mirage.utils.quote import shell_quote
 
 
 def _strip_path(path: str, strip_count: int) -> str:
@@ -112,20 +114,33 @@ def _reverse_hunks(
 
 
 async def _load_patch_data(
-    i: PathSpec | None,
-    paths: list[PathSpec],
-    has_vfs: bool,
+    source: PathSpec | None,
     stdin: ByteSource | None,
     read_bytes: Callable[..., Awaitable[bytes]],
-) -> bytes:
-    if i is not None and has_vfs:
-        return await read_bytes(i)
-    if paths and has_vfs:
-        return await read_bytes(paths[0])
-    data = await read_stdin_async(stdin)
-    if data is None:
-        return b""
-    return data
+) -> bytes | str:
+    """The patch text, or GNU's fatal line when it cannot be had.
+
+    GNU opens the patch file before anything else and gives up on the
+    whole run when it cannot (exit 2): an open that fails names the file
+    (``Can't open patch file x : ...``), a read that fails does not
+    (``read error : ...``), since only one patch file is ever read.
+
+    Args:
+        source (PathSpec | None): the patch file, None for stdin.
+        stdin (ByteSource | None): standard input.
+        read_bytes (Callable): bound reader.
+    """
+    if source is None:
+        data = await read_stdin_async(stdin)
+        return b"" if data is None else data
+    try:
+        return await read_bytes(source)
+    except READ_FAILURES as exc:
+        return f"patch: **** read error : {fs_strerror(exc)}\n"
+    except FS_ERRORS as exc:
+        label = shell_quote(source.raw_path or source.virtual)
+        return (f"patch: **** Can't open patch file {label} : "
+                f"{fs_strerror(exc)}\n")
 
 
 async def patch(
@@ -145,14 +160,28 @@ async def patch(
         raise extra_operand_error(CommandName.PATCH, paths[2].raw_path
                                   or paths[2].virtual)
     strip_count = int(p) if p else 0
-    patch_data = await _load_patch_data(i, paths, has_vfs, stdin, read_bytes)
+    # `patch [ORIGFILE [PATCHFILE]]`: the second operand is the patch
+    # file, ahead of -i, and the first is the one file every hunk goes to
+    # in place of the names the patch's headers carry.
+    source = paths[1] if len(paths) > 1 else i
+    patch_data = await _load_patch_data(source if has_vfs else None, stdin,
+                                        read_bytes)
+    if isinstance(patch_data, str):
+        return None, IOResult(exit_code=2, stderr=patch_data.encode())
     patch_text = patch_data.decode(errors="replace")
     file_hunks = _parse_patch(patch_text, strip_count)
+    orig = paths[0] if paths else None
     writes: dict[str, ByteSource] = {}
+    lines: list[str] = []
     for file_path, hunks in file_hunks.items():
-        file_spec = PathSpec.from_str_path(
-            mount_prefix.rstrip("/") + "/" + file_path.lstrip("/"),
-            file_path.lstrip("/"))
+        if orig is not None:
+            file_spec, shown = orig, orig.raw_path or orig.virtual
+        else:
+            file_spec = PathSpec.from_str_path(
+                mount_prefix.rstrip("/") + "/" + file_path.lstrip("/"),
+                file_path.lstrip("/"))
+            shown = file_path.lstrip("/")
+        lines.append(f"patching file {shown}\n")
         try:
             original = (await read_bytes(file_spec)).decode(errors="replace")
         except FileNotFoundError:
@@ -163,8 +192,9 @@ async def patch(
         patched_lines = _apply_hunks(original_lines, hunks, forward_only=N)
         patched_data = ("\n".join(patched_lines) + "\n").encode()
         await write_bytes(file_spec, patched_data)
-        writes[file_path] = patched_data
-    return None, IOResult(writes=writes)
+        writes[file_spec.mount_path] = patched_data
+    out = "".join(lines).encode() if lines else None
+    return out, IOResult(writes=writes)
 
 
 __all__ = ["patch"]

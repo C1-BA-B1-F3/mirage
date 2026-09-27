@@ -432,10 +432,14 @@ export function usageHint(cmdName: string): string {
  * be the as-typed spelling (`rawPath`), never the resolved path.
  */
 export function extraOperandError(cmdName: string, operand: string): UsageError {
+  // mktemp says `too many templates` with no operand, and patch names the
+  // operand first, bare (`patch: x: extra operand`).
   const line =
     cmdName === (CommandName.MKTEMP as string)
       ? 'mktemp: too many templates'
-      : `${cmdName}: extra operand '${operand}'`
+      : cmdName === (CommandName.PATCH as string)
+        ? `patch: ${operand}: extra operand`
+        : `${cmdName}: extra operand '${operand}'`
   return new UsageError(`${line}\n${usageHint(cmdName)}`, usageExitCode(cmdName))
 }
 

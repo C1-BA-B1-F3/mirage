@@ -13,9 +13,10 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { IndexCacheStore } from '../../../../cache/index/store.ts'
-import type { StatOverlay } from '../../../../ops/types.ts'
+import type { LinkView, StatOverlay } from '../../../../ops/types.ts'
 import type { Accessor } from '../../../../accessor/base.ts'
-import type { NativeCopy, PathSpec, PrimitiveCopy, StatFn } from '../../../../types.ts'
+import type { FileStat, NativeCopy, PathSpec, PrimitiveCopy, StatFn } from '../../../../types.ts'
+import { resolvePath } from '../../../../utils/path.ts'
 import { hiddenPathsIntersect, pathRulesActive } from '../../../../context/session_context.ts'
 import { walkFind } from '../../../../core/generic/find.ts'
 import { cpGeneric, parseFlags } from '../../generic/cp.ts'
@@ -35,6 +36,15 @@ export function overlayableStat(
 ): StatFn {
   if (statOverlay === undefined) return (p) => ops.stat(accessor, p, index)
   return async (p) => statOverlay(p.virtual, await ops.stat(accessor, p, index))
+}
+
+// The link standing at the name a destination was typed as. The router
+// follows an operand through a link before the command runs, which leaves
+// `virtual` at the target and the typed name in `rawPath`; cp needs the
+// name, since a dangling one is refused rather than written through.
+// Mirrors Python's _typed_link.
+function typedLink(links: LinkView, cwd: string, path: PathSpec): FileStat | null {
+  return links.statAt(resolvePath(path.rawPath !== '' ? path.rawPath : path.virtual, cwd))
 }
 
 export const CP_BUILDER: Builder = {
@@ -95,6 +105,8 @@ export const CP_BUILDER: Builder = {
               : { dirCopy: (src: PathSpec, target: PathSpec) => dirCopy(accessor, src, target) }),
             ...(mkdir === undefined ? {} : { mkdir: (p: PathSpec) => mkdir(accessor, p) }),
           }
+    const links = opts.ns?.links ?? null
+    const cwd = opts.cwd
     return cpGeneric(
       resolved,
       overlayableStat(ops, accessor, idx, opts.ns?.statOverlay),
@@ -103,6 +115,7 @@ export const CP_BUILDER: Builder = {
       idx,
       undefined,
       (p: PathSpec) => ops.readdir(accessor, p, idx),
+      links === null ? undefined : (p: PathSpec) => typedLink(links, cwd, p),
     )
   },
 }

@@ -93,11 +93,11 @@
       "targets": [
         "ram"
       ],
-      "command": "df /data/nonexistent 2>&1",
+      "command": "df /data/nonexistent '/data/no such' /data/one_byte.txt/x /data",
       "expect": {
         "exit": 1,
-        "stdout": "df: /data/nonexistent: No such file or directory\n",
-        "stderr": ""
+        "stdout": "Filesystem     1K-blocks Used Available Use% Mounted on\nram                    -    -         -    - /data\n",
+        "stderr": "df: /data/nonexistent: No such file or directory\ndf: '/data/no such': No such file or directory\ndf: /data/one_byte.txt/x: Not a directory\n"
       }
     },
     {

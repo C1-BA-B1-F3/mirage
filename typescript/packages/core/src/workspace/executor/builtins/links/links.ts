@@ -17,13 +17,14 @@ import { FlagView, SPECS, parseCommand } from '../../../../commands/spec/index.t
 import { parseToKwargs } from '../../../../commands/spec/parser.ts'
 import type { FileStat } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
-import { fsStrerror, isEacces, isEnoent, isErofs } from '../../../../utils/errors.ts'
+import { fsStrerror, isEacces, isEnoent, isEnotdir, isErofs } from '../../../../utils/errors.ts'
 import { CycleError, gnuBasename } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import { fail, ok, splitFlags } from '../shared.ts'
-import { dispatchStat, statOrNull } from './probe.ts'
+import { dispatchStat } from '../../../../commands/builtin/utils/paths.ts'
+import { statOrNull } from './probe.ts'
 import type { Result } from '../types.ts'
 
 export function posixRelative(target: string, startDir: string): string {
@@ -44,14 +45,13 @@ export function linkFlags(args: (string | PathSpec)[], known: string): Set<strin
 // lstat-style command: `stat dlink/f2` reports f2 because dlink was
 // resolved on the way to it, while `stat dlink` reports the link. A
 // no-follow command therefore still needs its operand's prefix
-// resolved. Throws CycleError on ELOOP.
+// resolved. The walk is the namespace's (`Namespace.followParent`, which
+// the op door runs for every surface); the operand comes back without a
+// trailing slash, which the slash-keeping commands read off `rawPath`
+// instead. Throws CycleError on ELOOP.
 function followParent(namespace: Namespace, virtual: string): string {
   const trimmed = rstripSlash(virtual)
-  const cut = trimmed.lastIndexOf('/')
-  const name = trimmed.slice(cut + 1)
-  if (name === '') return virtual
-  const resolved = namespace.follow(trimmed.slice(0, cut) || '/')
-  return `${rstripSlash(resolved)}/${name}`
+  return trimmed === '' ? virtual : namespace.followParent(trimmed)
 }
 
 // Rewrite path operands through the symlink table (open(2) semantics).
@@ -97,6 +97,7 @@ export function followPaths(
         pattern: item.pattern,
         resolved: item.resolved,
         rawPath: item.rawPath,
+        dotted: item.dotted,
       }),
     )
   }
@@ -320,9 +321,21 @@ export async function prepareMv(
       await dispatch('rename', src, [PathSpec.fromStrPath(targetDst)])
     } catch (err) {
       const suffix = fsStrerror(err)
-      if (suffix === null || (!isEacces(err) && !isErofs(err))) throw err
-      // A read-only endpoint or a policy deny, which GNU voices per
-      // operand and which the backend mv path voices the same way.
+      if (suffix !== null && isEnotdir(err)) {
+        // A plain file in the landing's chain, which GNU meets at the
+        // destination's stat, before any rename.
+        const early: Result = fail(
+          'mv',
+          `mv: cannot stat '${dst.rawPath}': ${suffix}
+`,
+        )
+        return { items, postUnlink: null, postRename: null, early }
+      }
+      if (suffix === null || (!isEacces(err) && !isErofs(err) && !isEnoent(err))) throw err
+      // An absent landing parent, met at the rename as the generic mv words
+      // it for a regular file, or a read-only endpoint or a policy deny,
+      // which GNU voices per operand and the backend mv path voices the
+      // same way.
       const early: Result = fail(
         'mv',
         `mv: cannot move '${src.rawPath}' to '${dst.rawPath}': ${suffix}\n`,

@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
-from mirage.commands.builtin.utils.lines import split_lines
+from mirage.commands.builtin.utils.lines import join_file_lines, split_lines
 from mirage.commands.builtin.utils.stream import read_stdin_async
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
@@ -51,7 +51,9 @@ async def column(
     output_separator: str | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     if paths:
-        raw = await read_bytes(paths[0])
+        # Every operand is read, as one run of lines in which a file's last
+        # line ends where the next file begins.
+        raw = join_file_lines([await read_bytes(p) for p in paths], b"\n")
     else:
         stdin_raw = await read_stdin_async(stdin)
         raw = stdin_raw if stdin_raw is not None else b""

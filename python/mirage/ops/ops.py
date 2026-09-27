@@ -582,6 +582,10 @@ class Ops:
                 directory, another link, a mount root). symlink(2) never
                 overwrites, and the door is the layer that can see both
                 planes to tell.
+            FileNotFoundError: the directory ``path`` would sit in is
+                absent.
+            NotADirectoryError: a non-directory stands where that
+                directory, or one above it, should be.
         """
         await self._call("symlink", path, session_id, target=target)
 

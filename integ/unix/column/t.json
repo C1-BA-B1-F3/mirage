@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "column -t /data/fields.txt",
+      "command": "column -t /data/fields.txt; column -t /data/tabbed.txt /data/mixed.txt",
       "expect": {
         "exit": 0,
-        "stdout": "alice  30  engineer\nbob    25  designer\ncarol  40  manager\n",
+        "stdout": "alice  30  engineer\nbob    25  designer\ncarol  40  manager\na      1\nb      2\nc      3\nHello  World\nHELLO  world\nhello  WORLD\n",
         "stderr": ""
       },
       "flags": [

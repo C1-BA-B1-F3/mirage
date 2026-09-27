@@ -1,9 +1,12 @@
-import { IOResult } from '../../../io/types.ts'
+import { IOResult, type ByteSource } from '../../../io/types.ts'
 import type { FileStat, PathSpec } from '../../../types.ts'
-import { fsErrorLine, isEnoent, isEnotdir, isFsError } from '../../../utils/errors.ts'
-import type { CommandFnResult } from '../../config.ts'
+import { enoent, enotdir, fsErrorLine, isEnotdir, isFsError } from '../../../utils/errors.ts'
 import { UsageError } from '../../errors.ts'
+import { specOf } from '../../spec/builtins.ts'
+import { FlagView } from '../../spec/flag_view.ts'
+import { type FlagValue } from '../../spec/types.ts'
 import { sizeSuffixes } from '../utils/size_suffix.ts'
+import { absentDestStrerror } from '../utils/paths.ts'
 
 // GNU truncate's letter set differs from split's and od's: lowercase
 // g/k/m/t are accepted, b is not (pinned against coreutils 9.7).
@@ -64,54 +67,86 @@ function parseSize(value: string, current: number): number {
   return number
 }
 
-async function currentSize(
-  stat: (path: PathSpec) => Promise<FileStat>,
-  path: PathSpec,
-  noCreate: boolean,
-): Promise<number | null> {
-  try {
-    return (await stat(path)).size ?? 0
-  } catch (err) {
-    // -c opens without O_CREAT, so a name that is not there is left alone,
-    // missing parent or not.
-    if (isEnoent(err)) return noCreate ? null : 0
-    if (isEnotdir(err) && !noCreate) return 0
-    throw err
-  }
+// GNU opens the operand with O_CREAT before it looks at anything, so a name
+// typed with a slash is settled by the open: `missing/` and `reg/` are both
+// "Is a directory" and nothing is created. The size is read first here only
+// because a relative spec needs it, so for a slashed operand a stat that
+// misses is not the verdict; the truncate op answers, as the open would.
+const ENC = new TextEncoder()
+
+export interface TruncateFlags {
+  // The -s spec, as typed.
+  readonly size: string
+  // -c: an absent name stays absent, silently.
+  readonly noCreate: boolean
 }
 
-// GNU opens the operand with O_CREAT before it looks at anything, so the
-// open settles every name: a missing file is created, a missing or
-// non-directory parent refuses it, and a name typed with a slash (`missing/`,
-// `reg/`) is "Is a directory" with nothing created. The size is read first
-// here only because a relative spec needs it, so a stat that misses is not
-// the verdict; the truncate op answers, as the open would. A failure is GNU's
-// per-operand line, `cannot open 'x' for writing` (a read-only region
-// answers there too), and the remaining operands still run. `-c` opens
-// without O_CREAT: the open's ENOENT leaves the operand alone in silence,
-// and every other refusal is still reported.
+// Parse the truncate flag bag once. GNU reads the size while it reads the
+// options, so a spec it refuses is refused here, before any operand is
+// touched or named. Mirrors Python's parse_flags.
+export function parseFlags(bag: Record<string, FlagValue>): TruncateFlags {
+  const fl = new FlagView(bag, specOf('truncate'))
+  const size = fl.asStr('size')
+  if (size === undefined) throw new Error("truncate: you must specify either '--size' or '-s'")
+  parseSize(size, 0)
+  return { size, noCreate: fl.asBool('no_create') }
+}
+
+// Set each operand's length, GNU `truncate -s`. Every operand is tried,
+// and one GNU cannot open is reported in its words and the rest still go
+// (exit 1): `cannot open 'x' for writing` for any open failure, a
+// directory's EISDIR included. Mirrors Python's truncate.
 export async function truncateGeneric(
   paths: readonly PathSpec[],
-  size: string,
+  flags: TruncateFlags,
   stat: (path: PathSpec) => Promise<FileStat>,
   truncate: (path: PathSpec, length: number) => Promise<void>,
-  noCreate = false,
-): Promise<CommandFnResult> {
-  if (paths.length === 0) throw new Error('truncate: missing file operand')
-  // GNU reads -s while it parses its options, so a bad size is refused before
-  // any operand is looked at, even when -c then skips them all.
-  parseSize(size, 0)
-  let errors = ''
+): Promise<[ByteSource | null, IOResult]> {
+  if (paths.length === 0) throw new UsageError(`truncate: missing file operand${TRY_HELP}`, 1)
+  let err = ''
   for (const path of paths) {
     try {
-      const current = await currentSize(stat, path, noCreate)
-      if (current === null) continue
-      await truncate(path, parseSize(size, current))
-    } catch (err) {
-      if (!isFsError(err)) throw err
-      errors += fsErrorLine('truncate', path, err)
+      await truncateOne(path, flags, stat, truncate)
+    } catch (e) {
+      if (!isFsError(e)) throw e
+      err += fsErrorLine('truncate', path, e)
     }
   }
-  if (errors === '') return [null, new IOResult()]
-  return [null, new IOResult({ stderr: new TextEncoder().encode(errors), exitCode: 1 })]
+  return [
+    null,
+    new IOResult({ exitCode: err === '' ? 0 : 1, stderr: err === '' ? null : ENC.encode(err) }),
+  ]
+}
+
+// One operand, in the order GNU's open settles it. GNU opens the name
+// before it looks at anything, with O_CREAT unless -c: an absent file is
+// made (-c leaves it, silently), but only in a directory that exists, and
+// a plain file in the chain is ENOTDIR either way. The size is read first
+// here only because a relative spec needs it, so a stat that misses is not
+// the verdict: the chain is, walked the way cp walks a destination's, since
+// a backend's write would make a key under any parent at all. A name typed
+// with a slash in a directory that exists goes to the truncate op, whose
+// answer is the open's: `missing/` and `reg/` are both `Is a directory` and
+// nothing is made, while under -c `reg/` is the lookup's ENOTDIR. Mirrors
+// Python's _truncate_one.
+async function truncateOne(
+  path: PathSpec,
+  flags: TruncateFlags,
+  stat: (path: PathSpec) => Promise<FileStat>,
+  truncate: (path: PathSpec, length: number) => Promise<void>,
+): Promise<void> {
+  let current = 0
+  try {
+    current = (await stat(path)).size ?? 0
+  } catch (err) {
+    const code = (err as { code?: unknown }).code
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') throw err
+    if (isEnotdir(err) && (flags.noCreate || !path.rawPath.endsWith('/'))) throw err
+    const why = await absentDestStrerror(stat, path)
+    if (why === 'Not a directory') throw enotdir(path)
+    if (flags.noCreate) return
+    if (why !== null) throw enoent(path)
+    current = 0
+  }
+  await truncate(path, parseSize(flags.size, current))
 }

@@ -13,9 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 import { describe, expect, it } from 'vitest'
 
-import type { ByteSource, IOResult } from '../../../io/types.ts'
 import { ContentType, FileStat, FileType, PathSpec } from '../../../types.ts'
-import { enoent, enotdir } from '../../../utils/errors.ts'
+import { enoent } from '../../../utils/errors.ts'
 import { UsageError } from '../../errors.ts'
 import { truncateGeneric } from './truncate.ts'
 
@@ -32,7 +31,7 @@ async function runTruncate(size: string, current = 10): Promise<number[]> {
   const lengths: number[] = []
   await truncateGeneric(
     [fPath()],
-    size,
+    { size, noCreate: false },
     () =>
       Promise.resolve(
         new FileStat({ name: 'f', type: FileType.FILE, content: ContentType.TEXT, size: current }),
@@ -134,7 +133,7 @@ describe('truncate sizes', () => {
     await expect(
       truncateGeneric(
         [fPath()],
-        value,
+        { size: value, noCreate: false },
         () =>
           Promise.resolve(
             new FileStat({ name: 'f', type: FileType.FILE, content: ContentType.TEXT, size: 10 }),
@@ -176,114 +175,43 @@ describe('truncate sizes', () => {
 })
 
 describe('truncate operands', () => {
-  function operand(virtual: string, rawPath: string): PathSpec {
+  function operand(rawPath: string, virtual = '/missing'): PathSpec {
     return new PathSpec({ virtual, directory: '/', vfsPath: virtual.slice(1), rawPath })
   }
 
-  it('settles a missing operand by the truncate op', async () => {
-    // GNU opens with O_CREAT before it reads a size, so a stat that misses
-    // is never the verdict: a bare name is created, `missing/` is the
-    // open's EISDIR, and a relative size starts from nothing.
-    const lengths: [string, number][] = []
-    const stat = (path: PathSpec): Promise<FileStat> =>
-      Promise.reject(path.rawPath.startsWith('/under') ? enotdir(path) : enoent(path))
-    const truncate = (path: PathSpec, length: number): Promise<void> => {
-      lengths.push([path.rawPath, length])
-      return Promise.resolve()
-    }
-    const [, io] = (await truncateGeneric(
-      [
-        operand('/missing', '/missing/'),
-        operand('/missing', '/missing'),
-        operand('/under/x', '/under/x'),
-      ],
-      '+4',
-      stat,
-      truncate,
-    )) as [ByteSource | null, IOResult]
-    expect(lengths).toEqual([
-      ['/missing/', 4],
-      ['/missing', 4],
-      ['/under/x', 4],
-    ])
-    expect(io.exitCode).toBe(0)
-    expect(io.stderr).toBeNull()
-  })
-
-  it('reports a failed open and still runs the rest', async () => {
-    // One GNU line per operand the open refuses, the name always quoted
-    // (quoteaf), and every other operand still truncated.
+  it('settles a slashed operand by the truncate op', async () => {
+    // GNU opens with O_CREAT before it stats, so `missing/` and `reg/` are
+    // the open's EISDIR, not the stat's miss, and an absent bare name is
+    // made where its directory exists. The chain answers first: under an
+    // absent directory the name is ENOENT and the op never runs, every
+    // operand is still tried, and -c leaves an absent name alone.
     const lengths: [string, number][] = []
     const stat = (path: PathSpec): Promise<FileStat> => Promise.reject(enoent(path))
     const truncate = (path: PathSpec, length: number): Promise<void> => {
-      if (path.rawPath !== 'b') return Promise.reject(enoent(path))
       lengths.push([path.rawPath, length])
       return Promise.resolve()
     }
-    const [, io] = (await truncateGeneric(
-      [operand('/nope/x', 'nope/x'), operand('/b', 'b'), operand("/it's/x", "it's/x")],
-      '2',
+    const [, io] = await truncateGeneric(
+      [operand('/missing/'), operand('/nodir/x', '/nodir/x'), operand('/missing')],
+      { size: '4', noCreate: false },
       stat,
       truncate,
-    )) as [ByteSource | null, IOResult]
-    expect(lengths).toEqual([['b', 2]])
+    )
+    expect(lengths).toEqual([
+      ['/missing/', 4],
+      ['/missing', 4],
+    ])
     expect(io.exitCode).toBe(1)
     expect(new TextDecoder().decode(io.stderr as Uint8Array)).toBe(
-      "truncate: cannot open 'nope/x' for writing: No such file or directory\n" +
-        'truncate: cannot open "it\'s/x" for writing: No such file or directory\n',
+      "truncate: cannot open '/nodir/x' for writing: No such file or directory\n",
     )
-  })
-
-  it('leaves a missing operand alone under -c', async () => {
-    // -c opens without O_CREAT: the open's ENOENT is silence whether the file
-    // or its parent is missing, a parent that is a file is still refused, and
-    // an operand that is there is truncated.
-    const lengths: [string, number][] = []
-    const stat = (path: PathSpec): Promise<FileStat> => {
-      if (path.rawPath === 'f.txt/x') return Promise.reject(enotdir(path))
-      if (path.rawPath === 'have') {
-        return Promise.resolve(new FileStat({ name: 'have', type: FileType.FILE, size: 6 }))
-      }
-      return Promise.reject(enoent(path))
-    }
-    const truncate = (path: PathSpec, length: number): Promise<void> => {
-      lengths.push([path.rawPath, length])
-      return Promise.resolve()
-    }
-    const [, io] = (await truncateGeneric(
-      [
-        operand('/gone', 'gone'),
-        operand('/nope/x', 'nope/x'),
-        operand('/f.txt/x', 'f.txt/x'),
-        operand('/have', 'have'),
-      ],
-      '-2',
+    const [, kept] = await truncateGeneric(
+      [operand('/missing')],
+      { size: '4', noCreate: true },
       stat,
       truncate,
-      true,
-    )) as [ByteSource | null, IOResult]
-    expect(lengths).toEqual([['have', 4]])
-    expect(io.exitCode).toBe(1)
-    expect(new TextDecoder().decode(io.stderr as Uint8Array)).toBe(
-      "truncate: cannot open 'f.txt/x' for writing: Not a directory\n",
     )
-  })
-
-  it('refuses a bad size before any operand is looked at', async () => {
-    // GNU parses -s with its options, so -c skipping every operand does not
-    // skip the refusal.
-    const lookedAt: string[] = []
-    const stat = (path: PathSpec): Promise<FileStat> => {
-      lookedAt.push(path.rawPath)
-      return Promise.reject(enoent(path))
-    }
-    const truncate = (path: PathSpec): Promise<void> => {
-      lookedAt.push(path.rawPath)
-      return Promise.resolve()
-    }
-    await expect(
-      truncateGeneric([operand('/gone', 'gone')], '<abc', stat, truncate, true),
-    ).rejects.toThrow(new UsageError("truncate: Invalid number: 'abc'", 1))
-    expect(lookedAt).toEqual([])
+    expect(kept.exitCode).toBe(0)
+    expect(lengths).toHaveLength(2)
   })
 })

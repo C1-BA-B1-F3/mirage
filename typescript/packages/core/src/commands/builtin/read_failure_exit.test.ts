@@ -94,13 +94,14 @@ describe('a read that fails answers like GNU', () => {
       const ws = await makeWs()
       const io = await ws.shell(template.replaceAll('{p}', '/ram/dir'))
       const stderr = io.stderrText
-      // head and tac carry GNU's own `error reading 'dir'` and `dir: read
-      // error`; the rest say the house `<cmd>: <path>: Is a directory` (see
-      // the python twin).
+      // FAILURE_WORDING's commands say the step in GNU's words where that
+      // still names the operand (head/tail/uniq `error reading 'dir'`,
+      // tac/tsort `dir: read error`, sed `read error on dir`); the rest say
+      // the house `<cmd>: <path>: Is a directory` (see the python twin).
       expect(
         stderr.includes('/ram/dir: Is a directory') ||
-          stderr.includes("error reading '/ram/dir': Is a directory") ||
-          stderr.includes('/ram/dir: read error: Is a directory'),
+          stderr.includes('/ram/dir: read error: Is a directory') ||
+          stderr.includes("error reading '/ram/dir': Is a directory"),
       ).toBe(true)
       expect(stderr).not.toContain('No such file')
     })
@@ -114,21 +115,31 @@ describe('a read that fails answers like GNU', () => {
 // operands after the directory). sort emits nothing on any failure
 // because it needs all input before it can sort.
 const GNU_MULTI: [string, number, string, string][] = [
-  ['sed -n p /ram/nope /ram/ok.txt', 2, 'a\nb\n', 'sed: /ram/nope: No such file or directory\n'],
-  ['sed -n p /ram/dir /ram/ok.txt', 4, '', 'sed: /ram/dir: Is a directory\n'],
-  ['sed -n p /ram/ok.txt /ram/dir /ram/ok2.txt', 4, 'a\nb\n', 'sed: /ram/dir: Is a directory\n'],
+  [
+    'sed -n p /ram/nope /ram/ok.txt',
+    2,
+    'a\nb\n',
+    "sed: can't read /ram/nope: No such file or directory\n",
+  ],
+  ['sed -n p /ram/dir /ram/ok.txt', 4, '', 'sed: read error on /ram/dir: Is a directory\n'],
+  [
+    'sed -n p /ram/ok.txt /ram/dir /ram/ok2.txt',
+    4,
+    'a\nb\n',
+    'sed: read error on /ram/dir: Is a directory\n',
+  ],
   [
     'sed -n p /ram/ok.txt /ram/nope /ram/ok2.txt',
     2,
     'a\nb\nc\nd\n',
-    'sed: /ram/nope: No such file or directory\n',
+    "sed: can't read /ram/nope: No such file or directory\n",
   ],
-  ['sed -n p /ram/dir /ram/dir', 4, '', 'sed: /ram/dir: Is a directory\n'],
+  ['sed -n p /ram/dir /ram/dir', 4, '', 'sed: read error on /ram/dir: Is a directory\n'],
   [
     'sed -n p /ram/nope /ram/dir',
     4,
     '',
-    'sed: /ram/nope: No such file or directory\nsed: /ram/dir: Is a directory\n',
+    "sed: can't read /ram/nope: No such file or directory\nsed: read error on /ram/dir: Is a directory\n",
   ],
   [
     'sort /ram/ok.txt /ram/dir /ram/ok2.txt',

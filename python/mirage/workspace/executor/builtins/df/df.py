@@ -13,15 +13,18 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import math
+from functools import partial
 
 from mirage.commands.builtin.utils.formatting import human_scaled, human_size
+from mirage.commands.builtin.utils.paths import (dispatch_stat,
+                                                 nearest_ancestor, typed_spec)
 from mirage.runtime.types import DispatchFn
 from mirage.types import CapacityResult, CapacityState, PathSpec
-from mirage.utils.errors import fs_strerror
-from mirage.utils.path import resolve_path
+from mirage.utils.errors import DotWalkError, enoent, enotdir, fs_error_line
 from mirage.workspace.executor.builtins.df.constants import (BLOCK_SUFFIX,
                                                              SI_UNITS)
 from mirage.workspace.executor.builtins.shared import (fail, ok, operand_text,
+                                                       result,
                                                        split_value_flags)
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.mount import MountEntry
@@ -177,56 +180,61 @@ def _pct_cell(cap: CapacityResult, inodes: bool) -> str:
     return _use_pct(cap.used or 0, cap.available or 0)
 
 
-async def _path_error(dispatch: DispatchFn, spec: PathSpec,
-                      label: str) -> OSError | None:
-    """The lookup failure a FILE operand meets, or None when it resolves.
+async def _operand_error(dispatch: DispatchFn,
+                         spec: PathSpec) -> OSError | None:
+    """What stat-ing one FILE operand answers, None when it is there.
 
-    GNU df errors on a missing FILE operand, so a deeper path is statted
-    before its mount is accepted: ENOENT for an absent entry, ENOTDIR for
-    one under a plain file, stamped with the operand as typed.
+    GNU df stats each FILE to find its filesystem and names the one it
+    cannot reach with the errno it got, so a plain file in the chain is
+    ENOTDIR, told apart from an absent name by walking the chain on a
+    miss, since a store answers both with ENOENT.
 
     Args:
         dispatch (DispatchFn): op dispatcher.
         spec (PathSpec): the operand to stat.
-        label (str): the operand as typed, for the diagnostic.
     """
+    stat = partial(dispatch_stat, dispatch)
     try:
-        await dispatch("stat", spec)
-    except FileNotFoundError:
-        return FileNotFoundError(label)
-    except NotADirectoryError:
-        return NotADirectoryError(label)
+        await stat(spec)
+    except NotADirectoryError as exc:
+        return exc
+    except FileNotFoundError as exc:
+        if isinstance(exc, DotWalkError):
+            return exc
+        _, parent_is_dir = await nearest_ancestor(stat, spec)
+        return exc if parent_is_dir else enotdir(spec)
     return None
 
 
-async def _target_mounts(registry: MountRegistry, dispatch: DispatchFn,
-                         session: SessionState,
-                         operands: list[str | PathSpec]) -> list[MountEntry]:
+async def _target_mounts(
+        registry: MountRegistry, dispatch: DispatchFn, session: SessionState,
+        operands: list[str | PathSpec]) -> tuple[list[MountEntry], list[str]]:
     """Resolve df operands to the mounts to report, deduped and ordered.
 
     No operand (or the workspace root ``/``) reports every mount; a path
-    operand reports the mount that contains it, and a FILE that does not
-    resolve raises its ``FileNotFoundError`` or ``NotADirectoryError``
-    carrying the operand as typed. Mirrors GNU df,
-    which maps each FILE to its filesystem and lists all with no args.
+    operand reports the mount that contains it. GNU df maps each FILE to
+    its filesystem and lists all with no args; one it cannot reach is
+    reported in its own words and the rest still print, exit 1.
 
     Args:
         registry (MountRegistry): mount registry.
         dispatch (DispatchFn): op dispatcher (FILE existence check).
         session (SessionState): session providing cwd for relative operands.
         operands (list[str | PathSpec]): path operands.
+
+    Returns:
+        tuple[list[MountEntry], list[str]]: the mounts, then one stderr
+        line per operand that could not be reached.
     """
     ordered = sorted(registry.mounts(), key=lambda m: m.prefix)
     if not operands:
-        return ordered
+        return ordered, []
     seen: set[str] = set()
     out: list[MountEntry] = []
+    errors: list[str] = []
     for op in operands:
-        if isinstance(op, PathSpec):
-            virtual, label, spec = op.virtual, op.raw_path, op
-        else:
-            virtual = resolve_path(str(op), session.cwd)
-            label, spec = str(op), PathSpec.from_str_path(virtual)
+        spec = typed_spec(op, session.cwd)
+        virtual = spec.virtual
         if virtual in ("", "/"):
             for m in ordered:
                 if m.prefix not in seen:
@@ -235,19 +243,20 @@ async def _target_mounts(registry: MountRegistry, dispatch: DispatchFn,
             continue
         mount = registry.try_mount_for(virtual)
         if mount is None:
-            raise FileNotFoundError(label)
-        # GNU df maps each FILE to its filesystem and errors on a missing
-        # one. The mount root is the filesystem itself (always present); a
-        # deeper path must exist, so stat it before accepting the mount.
+            errors.append(fs_error_line("df", spec, enoent(spec)))
+            continue
+        # The mount root is the filesystem itself (always present); a
+        # deeper path must be reachable before its mount is accepted.
         root = mount.prefix.rstrip("/") or "/"
-        if virtual.rstrip("/") != root:
-            missing = await _path_error(dispatch, spec, label)
-            if missing is not None:
-                raise missing
+        if virtual.rstrip("/") != root or spec.dotted is not None:
+            failure = await _operand_error(dispatch, spec)
+            if failure is not None:
+                errors.append(fs_error_line("df", spec, failure))
+                continue
         if mount.prefix not in seen:
             seen.add(mount.prefix)
             out.append(mount)
-    return out
+    return out, errors
 
 
 def _render_table(header: list[str], rows: list[list[str]],
@@ -329,10 +338,8 @@ async def handle_df(
     inodes = "i" in flags
     show_type = "T" in flags
 
-    try:
-        mounts = await _target_mounts(registry, dispatch, session, operands)
-    except (FileNotFoundError, NotADirectoryError) as exc:
-        return fail("df", f"df: {exc}: {fs_strerror(exc)}\n", 1)
+    mounts, errors = await _target_mounts(registry, dispatch, session,
+                                          operands)
 
     if inodes:
         num_headers = ["Inodes", "IUsed", "IFree"]
@@ -361,7 +368,10 @@ async def handle_df(
         cells.append(mount.prefix.rstrip("/") or "/")
         data.append(cells)
 
-    return ok("df", _render_table(header, data, show_type).encode())
+    table = _render_table(header, data, show_type).encode() if data else None
+    if errors:
+        return result("df", out=table, exit_code=1, stderr="".join(errors))
+    return ok("df", table)
 
 
 __all__ = ["handle_df"]

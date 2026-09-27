@@ -16,6 +16,7 @@ import { asyncChain } from '../../../../../io/stream.ts'
 import { readFailExitCodeFromLine } from '../../../../spec/usage.ts'
 import { IOResult, materialize, type ByteSource } from '../../../../../io/types.ts'
 import type { PathSpec } from '../../../../../types.ts'
+import { revoiceFsErrorLine } from '../../../../../utils/errors.ts'
 import { Cmd, type CrossResult, type RunSingle } from '../types.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
 
@@ -27,14 +28,12 @@ function hasActiveFlags(flagKwargs: Record<string, FlagValue>): boolean {
 }
 
 // The per-operand fetch is a native Cmd.CAT sub-run, so its error lines
-// carry the fetch command's prefix; respell them to the real command so the
-// cross-mount bytes match single-mount.
-function respellFetchStderr(stderr: Uint8Array, cmdName: string): Uint8Array {
-  const fetchPrefix = `${Cmd.CAT}: `
+// carry the fetch command's voice; each is said again in the real command's
+// (its prefix, its quoting, the step it names) so the cross-mount bytes
+// match single-mount.
+function respellFetchStderr(stderr: Uint8Array, cmdName: string, scope: PathSpec): Uint8Array {
   const lines = DEC.decode(stderr).split('\n')
-  const respelled = lines.map((line) =>
-    line.startsWith(fetchPrefix) ? `${cmdName}: ${line.slice(fetchPrefix.length)}` : line,
-  )
+  const respelled = lines.map((line) => revoiceFsErrorLine(line, Cmd.CAT, cmdName, scope))
   return ENC.encode(respelled.join('\n'))
 }
 
@@ -69,7 +68,7 @@ export async function runStream(
       if (io.stderr !== null) {
         let rendered = await materialize(io.stderr)
         if (cmdName !== Cmd.CAT) {
-          rendered = respellFetchStderr(rendered, cmdName)
+          rendered = respellFetchStderr(rendered, cmdName, scope)
           io.stderr = rendered
         }
         failCode = Math.max(failCode, readFailExitCodeFromLine(cmdName, DEC.decode(rendered)))

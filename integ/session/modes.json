@@ -237,7 +237,7 @@
         "ram",
         "disk"
       ],
-      "command": "ln -s /data/sess/a.txt /data/sess/al && ln -s /data2/sess/s.txt /data2/sess/sl",
+      "command": "mkdir -p /data/sess /data2/sess && ln -s /data/sess/a.txt /data/sess/al && ln -s /data2/sess/s.txt /data2/sess/sl",
       "expect": {
         "exit": 0,
         "stdout": "",

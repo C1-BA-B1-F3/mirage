@@ -159,7 +159,10 @@ describe('handleCd', () => {
   // physical name in both modes, so the -L rows land in the same directory
   // bash does while spelling it /deep/real.
   it('simplifies `..` before following links under -L', async () => {
-    const { dispatch } = dispatcher(['/deep'])
+    // The name in front of a `..` has to be a directory either way, so the
+    // target exists here (bash answers `cd /link/..` over a dangling link
+    // with ENOENT).
+    const { dispatch } = dispatcher(['/deep', '/deep/real'])
     const s = session()
     const [, io] = await handleCd(
       dispatch,
@@ -175,7 +178,7 @@ describe('handleCd', () => {
   })
 
   it('applies `..` to the link target under -P', async () => {
-    const { dispatch } = dispatcher(['/deep'])
+    const { dispatch } = dispatcher(['/deep', '/deep/real'])
     const s = session()
     const [, io] = await handleCd(
       dispatch,
@@ -192,7 +195,7 @@ describe('handleCd', () => {
   })
 
   it('resolves a link in the middle of the path under -P', async () => {
-    const { dispatch } = dispatcher(['/deep/real'])
+    const { dispatch } = dispatcher(['/deep/real', '/deep/real/sub'])
     const s = session()
     const [, io] = await handleCd(
       dispatch,

@@ -14,7 +14,7 @@
 
 import { PathSpec } from '../../../types.ts'
 import type { MountRegistry } from '../../mount/registry.ts'
-import { posixNormpath } from '../../../utils/path.ts'
+import { dottedSpelling, posixNormpath } from '../../../utils/path.ts'
 import { stripSlash } from '../../../utils/slash.ts'
 import { hasGlob, unmarkGlobs } from '../../../utils/glob_walk.ts'
 import { relativeSpec } from './relative.ts'
@@ -48,7 +48,9 @@ export function classifyWord(
     }
     // `rawPath` keeps the spelling as typed, the way relativeSpec does:
     // `virtual` has already lost any `..`, and `cd -P` has to resolve the
-    // link a `..` follows before applying it.
+    // link a `..` follows before applying it. `dotted` keeps it for the
+    // walk that proves each `..` a directory; a pattern leaves it textual,
+    // as its matches are respelled.
     if (wordHasGlob) {
       const lastSlash = path.lastIndexOf('/')
       return new PathSpec({
@@ -67,6 +69,7 @@ export function classifyWord(
         directory: `${path}/`,
         rawPath: word,
         resolved: false,
+        dotted: dottedSpelling(word),
       })
     }
     const lastSlash = path.lastIndexOf('/')
@@ -76,6 +79,7 @@ export function classifyWord(
       directory: path.slice(0, lastSlash + 1),
       rawPath: word,
       resolved: true,
+      dotted: dottedSpelling(word),
     })
   }
 

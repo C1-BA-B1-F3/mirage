@@ -13,13 +13,16 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import Callable
+from dataclasses import replace
+from functools import partial
 
+from mirage.commands.builtin.utils.paths import dispatch_stat, dot_refusal
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
-from mirage.types import FileType, PathSpec
+from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
-from mirage.utils.path import CycleError, resolve_path
+from mirage.utils.path import CycleError, dotted_spelling, resolve_path
 from mirage.workspace.executor.builtins.dirs.constants import CD_USAGE
 from mirage.workspace.executor.builtins.dirs.dirs import (join_raw, norm,
                                                           resolve_target,
@@ -54,7 +57,7 @@ def _cd_candidates(
     cdpath_target: str | None,
     session: SessionState,
     cwd: str,
-) -> list[tuple[str, bool]]:
+) -> list[tuple[str, bool, str | None]]:
     """Build the ordered list of directories ``cd`` should try.
 
     Args:
@@ -66,20 +69,40 @@ def _cd_candidates(
             under ``-L``, the physical one under ``-P``.
 
     Returns:
-        ``(resolved_path, announce)`` pairs in trial order; ``announce``
-        marks a non-empty ``$CDPATH`` hit whose absolute path GNU prints.
+        ``(resolved_path, announce, dotted)`` in trial order; ``announce``
+        marks a non-empty ``$CDPATH`` hit whose absolute path GNU prints,
+        and ``dotted`` is the spelling whose ``.`` and ``..`` bash checks
+        (``dotted_spelling``), taken against the candidate's own base.
     """
-    fallback = join_raw(raw, cwd)
+    fallback = (join_raw(raw, cwd), False, dotted_spelling(raw, cwd))
     cdpath = session.env.get("CDPATH")
     if (not cdpath or not cdpath_target
             or not _cdpath_searchable(cdpath_target)):
-        return [(fallback, False)]
-    out: list[tuple[str, bool]] = []
+        return [fallback]
+    out: list[tuple[str, bool, str | None]] = []
     for entry in cdpath.split(":"):
         base = resolve_path(entry, cwd) if entry else cwd
-        out.append((join_raw(cdpath_target, base), entry != ""))
-    out.append((fallback, False))
+        out.append((join_raw(cdpath_target, base), entry
+                    != "", dotted_spelling(cdpath_target, base)))
+    out.append(fallback)
     return out
+
+
+async def _linked_stat(dispatch: DispatchFn, links: dict[str, str],
+                       path: PathSpec) -> FileStat:
+    """Stat a name the way ``cd`` resolves one, through its link table.
+
+    The walk that proves a name in front of ``..`` a directory has to
+    see the links the operand itself is resolved through.
+
+    Args:
+        dispatch (DispatchFn): op dispatcher.
+        links (dict[str, str]): the symlink table cd resolves with.
+        path (PathSpec): the name to stat.
+    """
+    target = resolve_target(path.virtual, links,
+                            True) if links else path.virtual
+    return await dispatch_stat(dispatch, PathSpec.from_str_path(target))
 
 
 async def handle_cd(
@@ -93,6 +116,7 @@ async def handle_cd(
     physical: bool = False,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     raw = _scope_path(path)
+    named = typed_path(path)
     table = links or {}
     # `-L` joins a relative operand to the name the shell is *spelling*,
     # `-P` to the one it resolves to: from a logical /data/lk whose target
@@ -101,7 +125,22 @@ async def handle_cd(
     base = session.cwd if physical else logical_cwd(session)
     candidates = _cd_candidates(typed_path(path), cdpath_target, session, base)
     error: str | None = None
-    for candidate, announce in candidates:
+    for candidate, announce, dotted in candidates:
+        # bash simplifies `..` textually under `-L`, but only once each
+        # name in front of one is proved a directory, the check its own
+        # canonicalization makes; `cd nope/..` does not reach the cwd.
+        if dotted is not None:
+            walk = PathSpec.from_str_path(resolve_path(dotted, "/"))
+            try:
+                refusal = await dot_refusal(
+                    partial(_linked_stat, dispatch, table),
+                    replace(walk, dotted=dotted))
+            except CycleError:
+                error = f"cd: {named}: Too many levels of symbolic links\n"
+                continue
+            if refusal is not None:
+                error = f"cd: {named}: {fs_strerror(refusal)}\n"
+                continue
         # The logical name is the candidate with `..` simplified textually
         # and links left alone; the physical one follows them. `-P`
         # collapses the pair, which is why `cd -P .` re-spells the cwd.
@@ -111,7 +150,7 @@ async def handle_cd(
             try:
                 resolved = resolve_target(candidate, table, physical)
             except CycleError:
-                error = f"cd: {raw}: Too many levels of symbolic links\n"
+                error = f"cd: {named}: Too many levels of symbolic links\n"
                 continue
         else:
             resolved = logical
@@ -128,23 +167,23 @@ async def handle_cd(
         except FileNotFoundError:
             not_found = True
         except FS_ERRORS as exc:
-            error = f"cd: {raw}: {fs_strerror(exc)}\n"
+            error = f"cd: {named}: {fs_strerror(exc)}\n"
             continue
         except ValueError as exc:
-            error = f"cd: {raw}: {exc}\n"
+            error = f"cd: {named}: {exc}\n"
             continue
         if s is None or not_found:
             if is_mount_root(resolved):
                 return _cd_success(session, resolved, logical, spelled, raw,
                                    print_path or announce)
-            error = f"cd: {raw}: No such file or directory\n"
+            error = f"cd: {named}: No such file or directory\n"
             continue
         if s.type != FileType.DIRECTORY:
-            error = f"cd: {raw}: Not a directory\n"
+            error = f"cd: {named}: Not a directory\n"
             continue
         return _cd_success(session, resolved, logical, spelled, raw, print_path
                            or announce)
-    err = (error or f"cd: {raw}: No such file or directory\n").encode()
+    err = (error or f"cd: {named}: No such file or directory\n").encode()
     return None, IOResult(exit_code=1,
                           stderr=err), ExecutionNode(command=f"cd {raw}",
                                                      exit_code=1,

@@ -19,7 +19,7 @@ export interface AppleContainerConfig extends SandboxConfig {
   /**
    * Id of a running container, which is the `--name` it was started
    * with (Apple's tool keeps no separate name). You start it yourself
-   * (`container run -d --name mirage-box ... sleep infinity`); live
+   * (`container run -d --name my-sandbox ... sleep infinity`); live
    * FUSE mounts need `--cap-add SYS_ADMIN` and an image with mirage
    * installed. Every container already has `/dev/fuse`.
    */

@@ -24,10 +24,16 @@ container system start
 container build -f docker/sandbox/Dockerfile --target fuse \
   -t mirage-python-fuse .
 container run -d --cap-add SYS_ADMIN \
-  --name mirage-box mirage-python-fuse sleep infinity
-container cp sandbox.yaml mirage-box:/tmp/sandbox.yaml
-container exec mirage-box mirage workspace create /tmp/sandbox.yaml
+  --name my-sandbox mirage-python-fuse sleep infinity
+container cp sandbox.yaml my-sandbox:/tmp/sandbox.yaml
+container exec my-sandbox mirage workspace create /tmp/sandbox.yaml
 ```
+
+`my-sandbox` is any name you choose: `--name` sets the container's id, and
+the runtime's `container` config below refers to it. Mirage reaches the
+container only through `container exec`; the last command starts a Mirage
+inside it that FUSE-mounts your backends at the same paths, which is how
+programs there see your files.
 
 Host directories reach the container only if you pass them at start with
 `--volume`; the guest otherwise sees nothing from the host filesystem. A
@@ -42,7 +48,7 @@ import { AppleContainerRuntime, MountMode, Workspace } from '@struktoai/mirage-n
 
 const runtime = new AppleContainerRuntime({
   captures: ['python3'],
-  config: { container: 'mirage-box' },
+  config: { container: 'my-sandbox' },
 })
 const ws = new Workspace(
   { '/data': vfs },

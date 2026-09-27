@@ -575,7 +575,8 @@ class GwsService:
             extras["docs"] = docs
         if extras:
             reset_body["extras"] = extras
-        async with aiohttp.ClientSession() as session:
+        headers = {"Authorization": "Bearer gws-integ-token"}
+        async with aiohttp.ClientSession(headers=headers) as session:
             async with session.post(f"{url}/reset", json=reset_body) as resp:
                 resp.raise_for_status()
             for mount in target["mounts"]:

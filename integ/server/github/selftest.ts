@@ -14,12 +14,16 @@
 
 import { searchConformance } from './search_conformance.ts'
 import { spawn } from 'node:child_process'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import type { ChildProcessByStdio } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { ANNOUNCE_RE } from '../kit/typescript/announce.ts'
 import type { JsonValue } from '../kit/typescript/types.ts'
+import { start } from '../kit/typescript/serve.ts'
+import { githubFake } from './fake.ts'
 
 // The routes the corpus does not reach, or cannot exercise fully, because the
 // gh battery drives the porcelain against a one-repository fixture. A client
@@ -113,10 +117,132 @@ async function stage(at: string, path: string, content: string): Promise<string>
 
 const AUTHOR = { name: 'Dana Wu', email: 'dana@example.com', date: '2025-09-02T09:00:00+08:00' }
 
+async function metadataRepository(): Promise<void> {
+  const root = await mkdtemp(join(tmpdir(), 'mirage-empty-repo-'))
+  try {
+    await mkdir(join(root, 'github'))
+    await writeFile(
+      join(root, 'github', 'metadata.json'),
+      JSON.stringify({
+        repos: [
+          {
+            fullName: 'integ/metadata',
+            owner: 'integ',
+            name: 'metadata',
+            defaultBranch: 'main',
+          },
+        ],
+      }),
+    )
+    const home = await start(githubFake, 0, 'metadata', root)
+    try {
+      await home.runtime.reset({ tenants: [TENANT], fixture: 'metadata' })
+      for (const prefix of ['', '/api/v3']) {
+        const repo = `${home.endpoint}${prefix}/repos/integ/metadata`
+        const contents = await fetch(`${repo}/contents/`, { headers: HEADERS })
+        eq('metadata-only contents returns 404', contents.status, 404)
+        eq(
+          'metadata-only contents identifies an empty repository',
+          field((await contents.json()) as JsonValue, 'message'),
+          'This repository is empty.',
+        )
+        const commits = await fetch(`${repo}/commits`, { headers: HEADERS })
+        eq('metadata-only history returns 409', commits.status, 409)
+        eq(
+          'metadata-only history identifies an empty repository',
+          field((await commits.json()) as JsonValue, 'message'),
+          'Git Repository is empty.',
+        )
+        eq('metadata-only tags list is empty', await get(`${repo}/tags`), [])
+      }
+    } finally {
+      await home.close()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+async function emptyRepository(at: string): Promise<void> {
+  const base = `${at}/_run/empty-repository`
+  await post(`${base}/reset`, { run: 'empty-repository', tenants: [TENANT], fixture: 'empty' })
+  for (const prefix of ['', '/api/v3']) {
+    const name = prefix === '' ? 'empty-public' : 'empty-enterprise'
+    const created = await post(`${base}${prefix}/user/repos`, { name })
+    eq('empty repository creation succeeds', created.status, 201)
+    const repo = `${base}${prefix}/repos/integ-user/${name}`
+    for (const path of ['contents', 'contents/']) {
+      const response = await fetch(`${repo}/${path}`, { headers: HEADERS })
+      eq('empty contents returns 404', response.status, 404)
+      eq(
+        'empty contents explains why',
+        field((await response.json()) as JsonValue, 'message'),
+        'This repository is empty.',
+      )
+    }
+    const commits = await fetch(`${repo}/commits`, { headers: HEADERS })
+    eq('empty history returns 409', commits.status, 409)
+    eq(
+      'empty history explains why',
+      field((await commits.json()) as JsonValue, 'message'),
+      'Git Repository is empty.',
+    )
+    const tags = await fetch(`${repo}/tags`, { headers: HEADERS })
+    eq('empty tags succeeds', tags.status, 200)
+    eq('empty tags lists nothing', (await tags.json()) as JsonValue, [])
+    const written = await fetch(`${repo}/contents/first.txt`, {
+      method: 'PUT',
+      headers: HEADERS,
+      body: JSON.stringify({
+        message: 'First real commit',
+        content: Buffer.from('hello').toString('base64'),
+      }),
+    })
+    eq('first write succeeds', written.status, 201)
+    const body = (await written.json()) as JsonValue
+    const history = (await get(`${repo}/commits`)) as JsonValue[]
+    eq('first write has no invented ancestor', history.length, 1)
+    eq(
+      'history contains the written commit',
+      field(history[0] ?? null, 'sha'),
+      field(field(body, 'commit'), 'sha'),
+    )
+    const deleted = await fetch(`${repo}/contents/first.txt`, {
+      method: 'DELETE',
+      headers: HEADERS,
+      body: JSON.stringify({
+        message: 'Remove last file',
+        sha: field(field(body, 'content'), 'sha'),
+      }),
+    })
+    eq('last file deletion succeeds', deleted.status, 200)
+    eq(
+      'a committed empty tree still has history',
+      ((await get(`${repo}/commits`)) as JsonValue[]).length,
+      2,
+    )
+    eq('a committed empty tree lists successfully', await get(`${repo}/contents/`), [])
+  }
+  for (const path of ['/graphql', '/api/graphql']) {
+    const response = await post(`${base}${path}`, { query: '{ viewer { login } }' })
+    eq('GraphQL endpoint succeeds', response.status, 200)
+    eq('GraphQL endpoint resolves viewer', field(response.body, 'data'), {
+      viewer: { login: 'integ-user' },
+    })
+    const anonymous = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '{ viewer { login } }' }),
+    })
+    eq('GraphQL requires authentication', anonymous.status, 401)
+  }
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
   try {
+    await emptyRepository(at)
     const reset = await fetch(`${at}/reset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -1256,3 +1382,4 @@ async function main(): Promise<void> {
 }
 
 await main()
+await metadataRepository()

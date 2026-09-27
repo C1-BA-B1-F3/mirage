@@ -457,7 +457,8 @@ async def build_gdrive(spec: dict) -> Pair | None:
     if not url:
         return None
     url = url.rstrip("/")
-    async with aiohttp.ClientSession() as session:
+    headers = {"Authorization": "Bearer gws-integ-token"}
+    async with aiohttp.ClientSession(headers=headers) as session:
         async with session.post(f"{url}/reset", json={}) as resp:
             resp.raise_for_status()
         folder = f"watch-{uuid.uuid4().hex[:8]}"

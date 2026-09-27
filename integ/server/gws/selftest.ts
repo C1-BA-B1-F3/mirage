@@ -134,6 +134,7 @@ async function api(
     headers: {
       'Content-Type': 'application/json',
       'x-mirage-tenant': tenant,
+      Authorization: 'Bearer gws-integ-token',
       ...(init.headers ?? {}),
     },
   })
@@ -1333,6 +1334,11 @@ async function testCredentialRuns(): Promise<void> {
     })
     assert.equal(made.status, 200)
     for (const run of ['a', 'b']) {
+      const refreshed = await fetch(`${home.endpoint}/token`, {
+        method: 'POST',
+        body: new URLSearchParams({ refresh_token: `draw:${run}:ws` }),
+      })
+      assert.equal(refreshed.status, 200)
       const files = (await (
         await fetch(`${home.endpoint}/drive/v3/files`, {
           headers: { Authorization: `Bearer draw:${run}:ws` },
@@ -1349,5 +1355,92 @@ async function testCredentialRuns(): Promise<void> {
   }
 }
 
+async function testAuthentication(): Promise<void> {
+  const home = await start(gwsFake, 0)
+  try {
+    const made = await post(`${home.endpoint}/v4/spreadsheets`, 'default', {
+      properties: { title: 'private' },
+    })
+    assert.equal(made.status, 200)
+    const id = String(obj(made.body).spreadsheetId)
+    const values = `${home.endpoint}/v4/spreadsheets/${id}/values/Sheet1!A1`
+    assert.equal(
+      (
+        await api(values, 'default', {
+          method: 'PUT',
+          body: JSON.stringify({ values: [['secret']] }),
+        })
+      ).status,
+      200,
+    )
+    for (const authorization of ['', 'Bearer nope', 'Basic nope', 'Bearer']) {
+      for (const method of ['GET', 'PUT']) {
+        const response = await fetch(values, {
+          method,
+          headers: {
+            ...(authorization === '' ? {} : { Authorization: authorization }),
+            'Content-Type': 'application/json',
+          },
+          ...(method === 'PUT' ? { body: JSON.stringify({ values: [['overwritten']] }) } : {}),
+        })
+        assert.equal(response.status, authorization === '' ? 403 : 401)
+        const body = (await response.json()) as { error: { code: number; status: string } }
+        assert.equal(body.error.code, response.status)
+        assert.equal(
+          body.error.status,
+          authorization === '' ? 'PERMISSION_DENIED' : 'UNAUTHENTICATED',
+        )
+      }
+    }
+    assert.deepEqual(obj((await api(values, 'default')).body).values, [['secret']])
+    for (const path of [
+      '/drive/v3/files',
+      '/gmail/v1/users/me/messages',
+      '/calendar/v3/calendars/primary/events',
+      '/v1/documents/missing',
+      '/v1/presentations/missing',
+      '/v1/forms/missing',
+    ]) {
+      assert.equal((await fetch(`${home.endpoint}${path}`)).status, 403)
+      assert.equal(
+        (await fetch(`${home.endpoint}${path}`, { headers: { Authorization: 'Bearer nope' } }))
+          .status,
+        401,
+      )
+    }
+    const exchange = await fetch(`${home.endpoint}/token`, {
+      method: 'POST',
+      body: new URLSearchParams({ refresh_token: 'test-refresh' }),
+    })
+    assert.equal(exchange.status, 200)
+    const token = String(obj((await exchange.json()) as JsonValue).access_token)
+    assert.equal(
+      (await fetch(values, { headers: { Authorization: `Bearer ${token}` } })).status,
+      200,
+    )
+    assert.equal(
+      (
+        await fetch(`${home.endpoint}/_run/other/drive/v3/files`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      ).status,
+      401,
+    )
+    assert.equal(
+      (
+        await fetch(values, {
+          headers: { Authorization: `Bearer ${token}`, 'x-mirage-tenant': 'other' },
+        })
+      ).status,
+      401,
+    )
+    assert.equal((await fetch(`${home.endpoint}/token`, { method: 'POST' })).status, 400)
+    process.stdout.write('gws authentication regressions passed\n')
+  } finally {
+    await home.close()
+  }
+}
+
 await main()
 await testCredentialRuns()
+await testAuthentication()

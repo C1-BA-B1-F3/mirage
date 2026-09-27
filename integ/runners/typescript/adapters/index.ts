@@ -1551,7 +1551,9 @@ async function openSsh(target: Target, options?: OpenOptions): Promise<Open> {
 const GDRIVE_FOLDER_MIME = 'application/vnd.google-apps.folder'
 
 async function gwsJson(url: string, init?: RequestInit): Promise<Record<string, unknown>> {
-  const r = await fetch(url, init)
+  const headers = new Headers(init?.headers)
+  headers.set('Authorization', 'Bearer gws-integ-token')
+  const r = await fetch(url, { ...init, headers })
   if (!r.ok) throw new Error(`gws fake request failed: ${url} -> ${String(r.status)}`)
   return (await r.json()) as Record<string, unknown>
 }

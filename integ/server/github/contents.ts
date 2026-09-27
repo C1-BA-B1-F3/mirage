@@ -203,6 +203,11 @@ export async function writeFile(
 }
 
 const contents = withRepo(async (ctx, repo) => {
+  const branch = await branchFor(ctx.db, ctx.tenant, repo, ctx.query.get('ref') ?? '')
+  if (branch === null) return fail(404, 'No commit found for the ref')
+  if ((await commitList(ctx.db, ctx.tenant, repo, branch)).length === 0) {
+    return fail(404, 'This repository is empty.')
+  }
   const files = await treeOf(ctx.db, ctx.tenant, repo, ctx.query.get('ref') ?? '')
   if (files === null) return fail(404, 'No commit found for the ref')
   const path = param(ctx, 'path').replace(/^\/+|\/+$/g, '')
@@ -244,9 +249,20 @@ const putContents = withRepo(async (ctx, repo) => {
     return fail(422, 'Invalid request.\n\n"sha" wasn\'t supplied.')
   }
   const created = existing === undefined
+  const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
   await writeFile(ctx.db, ctx.tenant, repo, branch, path, data)
   const message = str(body, 'message') === '' ? `Update ${path}` : str(body, 'message')
-  const commit = await recordCommit(ctx.db, ctx.tenant, repo, message, [path], branch)
+  const commit = await recordCommit(
+    ctx.db,
+    ctx.tenant,
+    repo,
+    message,
+    [path],
+    branch,
+    '',
+    undefined,
+    parent,
+  )
   return {
     status: created ? 201 : 200,
     body: { content: fileJson(path, data), commit: writtenCommitJson(commit) },
@@ -267,9 +283,20 @@ const deleteContents = withRepo(async (ctx, repo) => {
   if (str(body, 'sha') !== blobSha(Buffer.from(row.data))) {
     return fail(409, `${path} does not match`)
   }
+  const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
   await ctx.db.githubFile.delete({ where: { pk: row.pk } })
   const message = str(body, 'message') === '' ? `Delete ${path}` : str(body, 'message')
-  const commit = await recordCommit(ctx.db, ctx.tenant, repo, message, [path], branch)
+  const commit = await recordCommit(
+    ctx.db,
+    ctx.tenant,
+    repo,
+    message,
+    [path],
+    branch,
+    '',
+    undefined,
+    parent,
+  )
   return { status: 200, body: { content: null, commit: writtenCommitJson(commit) } }
 })
 
@@ -291,6 +318,7 @@ const oneCommit = withRepo(async (ctx, repo) => {
   const ref = param(ctx, 'ref')
   const branch = await branchFor(ctx.db, ctx.tenant, repo, ref)
   const history = await commitList(ctx.db, ctx.tenant, repo, branch ?? repo.defaultBranch)
+  if (history.length === 0) return fail(409, 'Git Repository is empty.')
   const rendered: Array<Record<string, JsonValue>> = history.map((entry) => ({
     ...(commitJson(entry) as Record<string, JsonValue>),
     files: commitFiles(pathsOf(entry)),

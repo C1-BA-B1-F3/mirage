@@ -312,6 +312,7 @@ export async function visibleHeadOf(
   const stored = await headOf(db, tenant, repo, branch)
   if (stored !== '') return stored
   const tree = await treeOfBranch(db, tenant, repo, branch)
+  if (tree.size === 0) return ''
   return rootCommit([...tree.entries()].map(([p, d]): [string, string] => [p, blobSha(d)])).sha
 }
 
@@ -351,6 +352,7 @@ export async function commitList(
   const last = walked[walked.length - 1]
   if (last !== undefined && last.parentSha === '') return walked
   const tree = await treeOfBranch(db, tenant, repo, branch)
+  if (walked.length === 0 && tree.size === 0) return []
   const pairs: Array<[string, string]> = [...tree.entries()].map(([p, d]) => [p, blobSha(d)])
   return [...walked, rootCommit(pairs)]
 }

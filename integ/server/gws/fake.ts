@@ -14,7 +14,7 @@
 
 import { Prisma } from '../../generated/gws/index.js'
 import { parseConfig, route as kitRoute, schemaFor, unroutedLine } from '../kit/typescript/index.ts'
-import type { Dmmf, Fake, KitConfig, KitRoute } from '../kit/typescript/index.ts'
+import type { Ctx, Dmmf, Fake, KitConfig, KitRoute } from '../kit/typescript/index.ts'
 import { calendarRoutes } from './calendar/routes.ts'
 import { docsRoutes } from './docs/routes.ts'
 import { driveRoutes } from './drive/routes.ts'
@@ -28,7 +28,7 @@ import { PrismaClient } from './store/client.ts'
 import type { C } from './store/client.ts'
 import { loadState } from './store/load.ts'
 import { saveState } from './store/save.ts'
-import { ok, unknownRoute } from './wire/reply.ts'
+import { googleError, header, ok, unknownRoute } from './wire/reply.ts'
 import { route } from './wire/route.ts'
 import type { RouteOpts } from './wire/route.ts'
 
@@ -90,15 +90,24 @@ function refreshToken(
 }
 
 // The fake OAuth exchange every google client makes before its first call.
-function tokenRoutes(): KitRoute<C>[] {
+function credentialKey(ctx: Ctx<C>, token: string): string {
+  return JSON.stringify([ctx.run, ctx.tenant, token])
+}
+
+function tokenRoutes(issued: Set<string>): KitRoute<C>[] {
   return [
-    kitRoute('POST', '/token', (ctx) =>
-      ok({
-        access_token: refreshToken(ctx.headers, ctx.url, ctx.body) ?? 'gws-integ-token',
+    kitRoute('POST', '/token', (ctx) => {
+      const token = refreshToken(ctx.headers, ctx.url, ctx.body)
+      if (token === undefined || token.trim() === '') {
+        return { status: 400, body: { error: 'invalid_request' } }
+      }
+      issued.add(credentialKey(ctx, token))
+      return ok({
+        access_token: token,
         expires_in: 3600,
         token_type: 'Bearer',
-      }),
-    ),
+      })
+    }),
   ]
 }
 
@@ -148,8 +157,12 @@ function tokenRoutes(): KitRoute<C>[] {
 // the API-prefixed surfaces first, then Drive, then the editors. Order only
 // matters inside a surface, and each module states its own.
 export function gwsRoutes(): KitRoute<C>[] {
-  return [
-    ...tokenRoutes(),
+  // The fixed fixture token and tokens exchanged on this server are the fake's
+  // credentials. Tenant selectors choose data; they never authorize a request.
+  // Each routes() call belongs to one runtime, with exchanges scoped by run
+  // and tenant so a token issued in one world cannot open another.
+  const issued = new Set<string>()
+  const apiRoutes = [
     ...gmailRoutes(),
     ...calendarRoutes(),
     ...formsRoutes(),
@@ -158,6 +171,36 @@ export function gwsRoutes(): KitRoute<C>[] {
     ...sheetsRoutes(),
     ...slidesRoutes(),
     ...catchAllRoutes(),
+  ]
+  return [
+    ...tokenRoutes(issued),
+    ...apiRoutes.map(
+      (r): KitRoute<C> => ({
+        ...r,
+        handler: (ctx) => {
+          const auth = header(ctx.headers, 'authorization')
+          if (auth === '') {
+            return googleError(
+              403,
+              "Method doesn't allow unregistered callers.",
+              'PERMISSION_DENIED',
+            )
+          }
+          const token = /^Bearer\s+(\S+)$/i.exec(auth)?.[1]
+          if (
+            token === undefined ||
+            (token !== 'gws-integ-token' && !issued.has(credentialKey(ctx, token)))
+          ) {
+            return googleError(
+              401,
+              'Request had invalid authentication credentials.',
+              'UNAUTHENTICATED',
+            )
+          }
+          return r.handler(ctx)
+        },
+      }),
+    ),
   ]
 }
 

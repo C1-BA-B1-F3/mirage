@@ -61,14 +61,14 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
   }
 
   /**
-   * Skip complete buffered lines before a possible match of a nonempty ASCII
-   * literal without a newline. Leave the candidate and any unfinished line
-   * for readline, which joins transport boundaries before decoding. Return
+   * Skip complete buffered lines before a possible match of an ASCII
+   * literal or conservative, nonempty global byte-view regex. Leave the
+   * candidate and any unfinished record for readline/readUntil, which joins transport boundaries before decoding. Return
    * the skipped line and byte counts without pulling more input. The
    * single-byte view preserves ASCII and byte positions; it is never used
    * for Unicode matching or output.
    */
-  skipNonmatchingLines(needle: string): [number, number] {
+  skipNonmatchingLines(needle: string | RegExp, delimiter = NEWLINE): [number, number] {
     if (this.buf.length === 0) return [0, 0]
     if (this.searchedBuffer !== this.buf.buffer) {
       this.searchedBuffer = this.buf.buffer
@@ -76,11 +76,18 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
       this.searchedText = BYTE_VIEW.decode(this.buf)
     }
     const start = this.buf.byteOffset - this.searchedOffset
-    const hit = this.searchedText.indexOf(needle, start)
-    const end = this.searchedText.lastIndexOf('\n', hit < 0 ? undefined : hit - 1) + 1
+    let hit: number
+    if (typeof needle === 'string') hit = this.searchedText.indexOf(needle, start)
+    else {
+      needle.lastIndex = start
+      hit = needle.exec(this.searchedText)?.index ?? -1
+    }
+    const end =
+      this.searchedText.lastIndexOf(String.fromCharCode(delimiter), hit < 0 ? undefined : hit - 1) +
+      1
     const size = Math.max(0, end - start)
     let count = 0
-    for (let at = 0; at < size; at++) if (this.buf[at] === NEWLINE) count++
+    for (let at = 0; at < size; at++) if (this.buf[at] === delimiter) count++
     this.buf = this.buf.subarray(size)
     return [count, size]
   }

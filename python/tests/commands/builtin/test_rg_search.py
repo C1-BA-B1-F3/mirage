@@ -24,6 +24,7 @@ from mirage.commands.builtin.rg_search import (ByteCursor, NonmatchStop,
                                                smart_case_folds)
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
+from mirage.io.async_line_iterator import AsyncLineIterator
 
 
 def _flags(**flags) -> RgFlags:
@@ -228,3 +229,82 @@ async def test_null_data_anchors_match_embedded_newlines(flags):
     actual, selected = await _search(b"a\nb\0", "^a$", null_data=True, **flags)
     assert actual == "a\nb\0"
     assert selected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'pattern', ['needle', 'needle|other', 'nee.le', '(?:needle|other)+'])
+@pytest.mark.parametrize('flags', [{
+    'count': True
+}, {
+    'files_with_matches': True
+}, {}, {
+    'ignore_case': True,
+    'count': True
+}, {
+    'word_regexp': True,
+    'count': True
+}, {
+    'null_data': True,
+    'count': True
+}])
+async def test_block_search_skips_records(pattern, flags, monkeypatch):
+    reads = 0
+    read_until = AsyncLineIterator.read_until
+
+    async def counted(self, delimiter):
+        nonlocal reads
+        reads += 1
+        return await read_until(self, delimiter)
+
+    monkeypatch.setattr(AsyncLineIterator, 'read_until', counted)
+    data = (b'abcdefg' + (b'\0' if flags.get('null_data') else b'\n')) * 40000
+    result, selected = await _search(data, pattern, **flags)
+    assert (result, selected) == ('', False)
+    assert reads < 50
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('size', [1, 7, 16384, 65536])
+async def test_block_search_preserves_records(size):
+    data = (('abcdefg\n' *
+             (200 if size < 10 else 9000)) + 'é NEEDLE\nother\n' +
+            ('abcdefg\n' * (200 if size < 10 else 9000)) + 'needle').encode()
+
+    async def source():
+        for at in range(0, len(data), size):
+            yield data[at:at + size]
+
+    for flags in [{
+            'line_number': True,
+            'byte_offset': True,
+            'ignore_case': True
+    }, {
+            'count': True,
+            'ignore_case': True
+    }, {
+            'files_with_matches': True,
+            'ignore_case': True
+    }, {
+            'after_context': 1,
+            'before_context': 1,
+            'ignore_case': True
+    }, {
+            'invert_match': True,
+            'count': True
+    }, {
+            'stop_on_nonmatch': True,
+            'ignore_case': True
+    }]:
+        f = _flags(**flags)
+        pat = rg_matcher('needle|other', False, f)
+        fast, slow = Tally(), Tally()
+        actual = b''.join([
+            c async for c in search_haystack(source(), pat, f, 'f', None, fast)
+        ])
+        reference = re.compile(f'(?P<reference>{pat.pattern})', pat.flags)
+        expected = b''.join([
+            c async for c in search_haystack(source(), reference, f, 'f', None,
+                                             slow)
+        ])
+        assert (actual, fast) == (expected, slow)

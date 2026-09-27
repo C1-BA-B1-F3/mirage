@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
 from collections.abc import AsyncIterator
 
 from mirage.io.cachable_iterator import CachableAsyncIterator
@@ -78,22 +79,29 @@ class AsyncLineIterator:
         self._buf = self._buf[count:]
         return count
 
-    def skip_nonmatching_lines(self, needle: bytes) -> tuple[int, int]:
+    def skip_nonmatching_lines(self,
+                               needle: bytes | re.Pattern[bytes],
+                               delimiter: bytes = b"\n") -> tuple[int, int]:
         """Skip complete buffered lines before a possible literal match.
 
         Leave the candidate and any unfinished line for ``readline`` to join
         across transport boundaries. Never pull more input.
 
         Args:
-            needle (bytes): a nonempty ASCII literal without a newline.
+            needle (bytes | re.Pattern[bytes]): conservative byte search.
+            delimiter (bytes): the record separator.
 
         Returns:
             tuple[int, int]: skipped line and byte counts.
         """
-        hit = self._buf.find(needle)
-        end = self._buf.rfind(b"\n", 0,
+        if isinstance(needle, bytes):
+            hit = self._buf.find(needle)
+        else:
+            match = needle.search(self._buf)
+            hit = match.start() if match else -1
+        end = self._buf.rfind(delimiter, 0,
                               hit if hit >= 0 else len(self._buf)) + 1
-        count = self._buf.count(b"\n", 0, end)
+        count = self._buf.count(delimiter, 0, end)
         self._buf = self._buf[end:]
         return count, end
 

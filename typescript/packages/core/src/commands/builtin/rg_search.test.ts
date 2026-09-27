@@ -12,7 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
+import { materialize } from '../../io/types.ts'
+import { describe, expect, it, vi } from 'vitest'
 import { specOf } from '../spec/builtins.ts'
 import { FlagView } from '../spec/flag_view.ts'
 import type { FlagValue } from '../spec/types.ts'
@@ -218,5 +220,70 @@ it.each([{}, { line_regexp: true }])(
   'NUL data anchors match embedded newlines with %j',
   async (flags) => {
     expect(await search('a\nb\0', '^a$', { ...flags, null_data: true })).toBe('a\nb\0')
+  },
+)
+
+describe.each(['needle', 'needle|other', 'nee.le', '(?:needle|other)+'])(
+  'block search %s',
+  (pattern) => {
+    it.each([
+      { count: true },
+      { files_with_matches: true },
+      {},
+      { ignore_case: true, count: true },
+      { word_regexp: true, count: true },
+      { null_data: true, count: true },
+    ])('does not read each nonmatching record: %j', async (flags) => {
+      const reads = vi.spyOn(AsyncLineIterator.prototype, 'readUntil')
+      try {
+        const data = ('abcdefg' + ('null_data' in flags ? '\0' : '\n')).repeat(40000)
+        const result = await search(data, pattern, flags)
+        expect(result).toBe('')
+        expect(reads.mock.calls.length).toBeLessThan(50)
+      } finally {
+        reads.mockRestore()
+      }
+    })
+  },
+)
+
+it.each([1, 7, 16384, 65536])(
+  'preserves records and offsets across %i-byte chunks',
+  async (size) => {
+    const data = ENC.encode(
+      'abcdefg\n'.repeat(size < 10 ? 200 : 9000) +
+        'é NEEDLE\nother\n' +
+        'abcdefg\n'.repeat(size < 10 ? 200 : 9000) +
+        'needle',
+    )
+    async function* input(): AsyncIterable<Uint8Array> {
+      await Promise.resolve()
+      for (let at = 0; at < data.length; at += size) yield data.subarray(at, at + size)
+    }
+    for (const flags of [
+      { line_number: true, byte_offset: true, ignore_case: true },
+      { count: true, ignore_case: true },
+      { files_with_matches: true, ignore_case: true },
+      { after_context: 1, before_context: 1, ignore_case: true },
+      { invert_match: true, count: true },
+      { stop_on_nonmatch: true, ignore_case: true },
+    ]) {
+      const f = flagsOf(flags)
+      const pat = rgMatcher('needle|other', false, f)
+      const fast = { selected: false },
+        slow = { selected: false }
+      const actual = await materialize(searchHaystack(input(), pat, f, 'f', null, fast))
+      const expected = await materialize(
+        searchHaystack(
+          input(),
+          new RegExp(`(?<reference>${pat.source})`, pat.flags),
+          f,
+          'f',
+          null,
+          slow,
+        ),
+      )
+      expect([actual, fast]).toEqual([expected, slow])
+    }
   },
 )

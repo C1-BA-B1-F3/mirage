@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { searchPrefilter } from './search_prefilter.ts'
 import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import { discardStreams } from '../../io/stream.ts'
 import { YieldBudget } from '../../io/yield_budget.ts'
@@ -626,6 +627,12 @@ export function nonmatchStop(f: RgFlags): NonmatchStop {
   return new NonmatchStop(f.stopOnNonmatch, f.invert && !f.passthru)
 }
 
+function recordPrefilter(pat: RegExp, f: RgFlags): string | RegExp | null {
+  return f.invert || f.stopOnNonmatch || f.passthru || printsContext(f)
+    ? null
+    : searchPrefilter(pat)
+}
+
 async function readRecord(
   lines: AsyncLineIterator,
   f: RgFlags,
@@ -644,11 +651,11 @@ async function listing(
   tally: Tally,
   signal?: AbortSignal,
 ): Promise<void> {
-  for (
-    let raw = await readRecord(lines, f, signal);
-    raw !== null;
-    raw = await readRecord(lines, f, signal)
-  ) {
+  const prefilter = recordPrefilter(pat, f)
+  for (;;) {
+    if (prefilter !== null) lines.skipNonmatchingLines(prefilter, f.nullData ? 0 : 10)
+    const raw = await readRecord(lines, f, signal)
+    if (raw === null) break
     if (selects(pat, decodeLine(raw), f.invert)) {
       tally.selected = true
       return
@@ -667,11 +674,11 @@ async function count(
   let total = 0
   let selected = 0
   const stop = nonmatchStop(f)
-  for (
-    let raw = await readRecord(lines, f, signal);
-    raw !== null;
-    raw = await readRecord(lines, f, signal)
-  ) {
+  const prefilter = recordPrefilter(pat, f)
+  for (;;) {
+    if (prefilter !== null) lines.skipNonmatchingLines(prefilter, f.nullData ? 0 : 10)
+    const raw = await readRecord(lines, f, signal)
+    if (raw === null) break
     const text = decodeLine(raw)
     if (!selects(pat, text, f.invert)) {
       if (stop.armed) break
@@ -723,11 +730,15 @@ async function* printedLines(
   let lastPrinted = -1
   let afterLeft = 0
   const stop = nonmatchStop(f)
-  for (
-    let raw = await readRecord(lines, f, signal);
-    raw !== null;
-    raw = await readRecord(lines, f, signal)
-  ) {
+  const prefilter = recordPrefilter(pat, f)
+  for (;;) {
+    if (prefilter !== null) {
+      const [skipped, bytes] = lines.skipNonmatchingLines(prefilter, f.nullData ? 0 : 10)
+      index += skipped
+      position += bytes
+    }
+    const raw = await readRecord(lines, f, signal)
+    if (raw === null) break
     index += 1
     const start = position
     position += raw.byteLength + 1

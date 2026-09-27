@@ -781,7 +781,12 @@ async def test_offsets_and_context_after_empty_lines(flags):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("record",
                          [b"abcdefg\n", b"abcdefg\0", b"\xffabcdef\n"])
-async def test_reject_short_records_by_buffer(record, monkeypatch):
+@pytest.mark.parametrize(
+    "pattern",
+    ["needle", "needle|other", "nee.le", r"\bneedle\b", "(?:needle|other)+"])
+@pytest.mark.parametrize("flags", [re.ASCII, re.ASCII | re.I])
+async def test_reject_short_records_by_buffer(record, pattern, flags,
+                                              monkeypatch):
     data = record * 40000
     reads = 0
     readline = AsyncLineIterator.readline
@@ -799,7 +804,7 @@ async def test_reject_short_records_by_buffer(record, monkeypatch):
     f = parse_flags(FlagView({"c": True}, spec=SPECS["grep"]), False)
     io = IOResult()
     out = await materialize(
-        grep_input(source(), re.compile("needle"), f, "f", False, io))
+        grep_input(source(), re.compile(pattern, flags), f, "f", False, io))
     assert (out, io.exit_code, io.stderr) == (b"0\n", 1, None)
     assert reads < 50
 
@@ -864,7 +869,8 @@ async def test_literal_prefilter_preserves_unfiltered_results(size, flags):
         fast = IOResult()
         slow = IOResult()
         expected = await materialize(
-            grep_input(source(), re.compile("(?:needle)"), f, "f", True, slow))
+            grep_input(source(), re.compile("(?P<reference>needle)"), f, "f",
+                       True, slow))
         actual = await materialize(
             grep_input(source(), re.compile("needle"), f, "f", True, fast))
         assert (actual, fast.stderr, fast.exit_code) == (expected, slow.stderr,
@@ -887,9 +893,15 @@ async def test_literal_prefilter_preserves_unfiltered_results(size, flags):
     ("k", re.IGNORECASE),
     ("é", 0),
     ("a b", re.VERBOSE),
+    ("needle|other", re.I),
+    ("nee.le", 0),
+    (r"\bneedle\b", 0),
+    ("needleX?", 0),
 ])
 async def test_prefilter_preserves_regex_and_unicode(pattern, flags):
-    data = ("other\n" * 3000 + "a.b\na+b\na\\b\na b\nab\né\nK\nk\n").encode()
+    data = (
+        "other\n" * 3000 +
+        "a.b\na+b\na\\b\na b\nab\né\nK\nk\nNEEDLE\nneedleX\nneedle").encode()
 
     async def source():
         yield data
@@ -902,8 +914,8 @@ async def test_prefilter_preserves_regex_and_unicode(pattern, flags):
     fast = IOResult()
     slow = IOResult()
     expected = await materialize(
-        grep_input(source(), re.compile(f"(?:{pattern})", flags), f, "f",
-                   False, slow))
+        grep_input(source(), re.compile(f"(?P<reference>{pattern})", flags), f,
+                   "f", False, slow))
     actual = await materialize(
         grep_input(source(), re.compile(pattern, flags), f, "f", False, fast))
     assert (actual, fast.stderr, fast.exit_code) == (expected, slow.stderr,

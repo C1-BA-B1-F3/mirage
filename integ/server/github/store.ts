@@ -206,14 +206,11 @@ export async function blobBySha(
     where: { tenant, repo: repo.fullName },
     select: { sha: true },
   })
-  const rows = await db.githubStagedEntry.findMany({
-    where: { tenant, treeSha: { in: staged.map((t) => t.sha) } },
+  const row = await db.githubStagedEntry.findFirst({
+    where: { tenant, sha, treeSha: { in: staged.map((t) => t.sha) } },
+    select: { data: true },
   })
-  for (const row of rows) {
-    const data = Buffer.from(row.data)
-    if (blobSha(data) === sha) return data
-  }
-  return null
+  return row === null ? null : Buffer.from(row.data)
 }
 
 // Stage the tree a write is about to replace, so the bytes it drops stay
@@ -246,7 +243,7 @@ export async function stageTree(
   let seq = 0
   for (const [path, data] of files) {
     await db.githubStagedEntry.create({
-      data: { tenant, treeSha: sha, path, data: new Uint8Array(data), seq },
+      data: { tenant, treeSha: sha, path, data: new Uint8Array(data), sha: blobSha(data), seq },
     })
     seq += 1
   }

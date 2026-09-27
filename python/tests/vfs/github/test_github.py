@@ -13,7 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-from unittest.mock import patch
+from collections.abc import Iterator
+from contextlib import contextmanager
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -32,26 +34,32 @@ OWNER = "test-owner"
 REPO = "test-repo"
 
 
-def _offline(tree: dict,
-             truncated: bool = False,
-             default_branch: str = "main"):
-    """Patch both paths that would reach the network.
+@pytest.fixture(autouse=True)
+def no_network() -> Iterator[None]:
+    with patch("mirage.core.github.client.api_request",
+               side_effect=AssertionError(
+                   "unexpected GitHub network request")) as request:
+        yield
+        request.assert_not_called()
 
-    Each is patched in the module that fetches, because the mount is
-    built without touching either: the tree hydrates through
-    ``ensure_tree`` / ``refill_index`` in ``core.github.tree``, and the
-    default branch through ``ensure_default_branch`` in
-    ``core.github.repo``.
+
+@contextmanager
+def _offline(
+        tree: dict,
+        truncated: bool = False,
+        default_branch: str = "main") -> Iterator[tuple[AsyncMock, AsyncMock]]:
+    """Patch branch discovery, recursive trees, and directory lookups together.
 
     Args:
         tree (dict): The recursive tree to answer with.
         truncated (bool): Whether to report it truncated.
         default_branch (str): Branch the repo endpoint reports.
     """
-    return (patch("mirage.core.github.repo.fetch_default_branch",
-                  return_value=default_branch),
-            patch("mirage.core.github.tree.fetch_tree",
-                  return_value=(tree, truncated)))
+    with (patch("mirage.core.github.repo.fetch_default_branch",
+                return_value=default_branch) as branch,
+          patch("mirage.core.github.tree.fetch_tree",
+                return_value=(tree, truncated)) as fetch, _listing(tree)):
+        yield branch, fetch
 
 
 def _listing(tree: dict):
@@ -172,7 +180,7 @@ async def test_stat_returns_sha_fingerprint() -> None:
         TreeEntry(path="src/main.py", type="blob", sha="abc123", size=100),
     }
     vfs = _make_vfs(tree=tree)
-    with _offline(tree)[1], _listing(tree):
+    with _offline(tree):
         result = await stat(vfs.accessor,
                             PathSpec.from_str_path("/src/main.py"), vfs.index)
     assert result.fingerprint == "abc123"
@@ -189,7 +197,7 @@ async def test_replacing_index_still_serves_the_tree() -> None:
 
     # The fresh store is empty, which reads as not-live, so the stat asks
     # the parent directory rather than reporting the path gone.
-    with _offline(tree)[1], _listing(tree):
+    with _offline(tree):
         result = await stat(vfs.accessor,
                             PathSpec.from_str_path("/src/main.py"), vfs.index)
     assert result.fingerprint == "abc123"
@@ -198,7 +206,7 @@ async def test_replacing_index_still_serves_the_tree() -> None:
 @pytest.mark.asyncio
 async def test_stat_raises_when_path_not_in_tree() -> None:
     vfs = _make_vfs()
-    with _offline({})[1], _listing({}), pytest.raises(FileNotFoundError):
+    with _offline({}), pytest.raises(FileNotFoundError):
         await stat(vfs.accessor, PathSpec.from_str_path("/nonexistent.py"),
                    vfs.index)
 
@@ -207,8 +215,7 @@ def test_the_constructor_reaches_no_network() -> None:
     # The rule the lazy split exists to keep: naming a repository costs
     # nothing, so building a mount never blocks the caller's event loop
     # and build_vfs can stay synchronous.
-    branch, fetch = _offline({})
-    with branch as branch_m, fetch as fetch_m:
+    with _offline({}) as (branch_m, fetch_m):
         vfs = GitHubVFS(CONFIG, OWNER, REPO, "main")
     branch_m.assert_not_called()
     fetch_m.assert_not_called()
@@ -265,17 +272,13 @@ async def test_concurrent_ensure_tree_fetches_once() -> None:
 ])
 async def test_removing_a_tree_entry_is_refused_not_missing(
         mode: MountMode, refusal: str) -> None:
-    # rm, rmdir and unlink stat their operand first, and a github stat is
-    # served from the index alone: handed none, it found nothing, so a
-    # file that `ls` listed was "No such file or directory" and `rm -f`
-    # succeeded without removing it. GNU on a filesystem that refuses the
-    # removal names the refusal, -f or not.
+    # Cold stats and warmed listings must agree on existence, so removal
+    # reports the mount's refusal rather than ENOENT, including with -f.
     tree = {
         "top.txt": TreeEntry(path="top.txt", type="blob", sha="a", size=2),
         "empty": TreeEntry(path="empty", type="tree", sha="b", size=None),
     }
-    branch, fetch = _offline(tree)
-    with branch, fetch:
+    with _offline(tree):
         ws = Workspace({"/gh": _make_vfs()}, mode=mode)
         lines = {
             "rm /gh/top.txt":

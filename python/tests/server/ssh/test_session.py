@@ -21,7 +21,8 @@ import pytest
 from mirage import RAMVFS, MountMode, Workspace
 from mirage.server.ssh import stream
 from mirage.server.ssh.session import ends_shell, login_env
-from tests.server.ssh.conftest import start_harness, stop_harness
+from tests.server.ssh.conftest import (bind_key, start_harness, stop_harness,
+                                       vault_workspace)
 
 
 class StubProcess:
@@ -295,3 +296,40 @@ async def test_terminal_editor_bounds_unsubmitted_input(ssh):
         await _read_until(process, "recovered\r\n")
         process.stdin.write("exit\n")
         await asyncio.wait_for(process.wait_closed(), 5)
+
+
+@pytest.mark.asyncio
+async def test_a_key_bound_to_a_profile_runs_under_it(tmp_path):
+    harness = await start_harness(tmp_path, await vault_workspace())
+    guarded = bind_key(harness, 'mirage-profile="guarded"')
+    try:
+        async with harness.connect() as conn:
+            open_read = await conn.run("cat /vault/secret")
+        async with harness.connect(key=guarded) as conn:
+            sealed = await conn.run("cat /vault/secret")
+    finally:
+        await stop_harness(harness)
+    assert open_read.stdout == "token\n"
+    assert sealed.exit_status == 1
+    assert "the vault is sealed" in sealed.stderr
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("options", "reason"), [
+    ('mirage-profile="nope"', "nope"),
+    ('mirage-profile="a",mirage-profile="b"', "exactly one profile"),
+    ('mirage-profile=""', "exactly one profile"),
+    ("mirage-profile", "exactly one profile"),
+])
+async def test_a_key_with_a_bad_profile_is_refused(tmp_path, options, reason):
+    harness = await start_harness(tmp_path, await vault_workspace())
+    bad = bind_key(harness, options)
+    try:
+        async with harness.connect(key=bad) as conn:
+            result = await conn.run("echo never")
+    finally:
+        await stop_harness(harness)
+    assert result.exit_status == 1
+    assert result.stdout == ""
+    assert "cannot open a session" in result.stderr
+    assert reason in result.stderr

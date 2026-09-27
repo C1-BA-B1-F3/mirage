@@ -68,7 +68,7 @@ The Python daemon needs the `ssh` extra (`pip install 'mirage-ai[ssh]'`); the Ty
 
 ## What a Login Gets
 
-- **One session per channel.** Every `ssh` command and every shell runs as a fresh mirage session under the workspace's default profile, just as each channel is a fresh process under sshd. A `cd` or `export` never leaks from one channel to another, and two channels never wait on each other's lines. The session is closed when the channel ends.
+- **One session per channel.** Every `ssh` command and every shell runs as a fresh mirage session under its key's profile (see [Bind a key to a profile](#bind-a-key-to-a-profile)), else the workspace's default profile, just as each channel is a fresh process under sshd. A `cd` or `export` never leaks from one channel to another, and two channels never wait on each other's lines. The session is closed when the channel ends.
 - **Profiles and policies apply.** SSH lines go through `Workspace.shell`, and SFTP goes through the same mount core the [FUSE mount](/home/setup/fuse) uses, so mount modes, hides, asks and policies answer exactly as they do for a shell in that session. A read-only mount refuses an `sftp put` with "Permission denied".
 - **A login environment.** `HOME` is `/`, where every session starts, `USER` and `LOGNAME` are the workspace id, `SSH_CLIENT` and `SSH_CONNECTION` describe the connection, and `TERM` comes from the client's terminal. A variable the profile already set keeps its value, and each one clears the session's `pre_session` gate like any `export`.
 - **History.** Typed lines land in `/.bash_history` like any other top-level line. The login environment line does not.
@@ -77,6 +77,27 @@ The Python daemon needs the `ssh` extra (`pip install 'mirage-ai[ssh]'`); the Ty
 - **The client's exit status.** `ssh host cmd` exits with the line's status, and a dropped connection cancels the line it was running.
 
 Only public keys are accepted: no passwords, no keyboard-interactive. Nothing is forwarded: no ports, no agent, no X11. A subsystem other than SFTP is refused.
+
+## Bind a key to a profile
+
+A workspace's profiles decide what a session may see and run (see
+[Permissions](/home/permissions)). Give a key's line in `authorized_keys` the
+`mirage-profile` option and every `ssh`, `sftp` and `scp` channel that key
+opens runs under that profile instead of the workspace's default:
+
+```text
+mirage-profile="guarded" ssh-ed25519 AAAA... agent-a
+ssh-ed25519 AAAA... me
+```
+
+The daemon reads the option, never the client, so a key can't choose looser
+rules for itself. A sandbox that mounts the workspace over SFTP gets its
+agent's view this way: give each sandbox its own key, bound to that agent's
+profile. The profile is looked up in the workspace
+the login names, so a workspace that defines no profile by that name refuses
+the channel (`mirage: cannot open a session: ...`), as does an option that is
+bare, empty or given twice. A key without the option keeps the default
+profile.
 
 ## Differences Between the Daemons
 
@@ -87,4 +108,4 @@ The two daemons serve the same door, with these differences:
 | Legacy `scp -O` (the SCP protocol) | Served. | Not served. Modern `scp` uses SFTP and works on both. |
 | Terminal line limit | 1024 characters. | 1024 bytes. |
 | Command output | Streamed as the line produces it. | Sent when the line finishes, as the HTTP API sends it. |
-| `authorized_keys` options (`from=`, `command=`, ...) | Enforced by asyncssh; `command=` forces the line that runs. | Not interpreted, so a key line carrying options is skipped with a warning rather than accepted as if it had none. |
+| `authorized_keys` options (`from=`, `command=`, ...) | Enforced by asyncssh; `command=` forces the line that runs. | Only `mirage-profile` is read, so a key line carrying any other option is skipped with a warning rather than accepted as if it had none. |

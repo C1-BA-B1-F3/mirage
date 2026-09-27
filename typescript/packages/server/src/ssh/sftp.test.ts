@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MountMode } from '@struktoai/mirage-core/types'
@@ -31,6 +31,7 @@ interface Harness {
   entry: WorkspaceEntry
   listener: SSHListener
   privateKey: string
+  keysFile: string
 }
 
 const open: Harness[] = []
@@ -40,24 +41,30 @@ const PAYLOAD = Buffer.from(Array.from({ length: 256 * 300 }, (_, i) => i % 256)
 const FXP_INIT_V3 = Buffer.from([0, 0, 0, 5, 1, 0, 0, 0, 3])
 const FXP_VERSION = 2
 
-async function startHarness(mode: MountMode = MountMode.WRITE): Promise<Harness> {
+async function startHarness(mode: MountMode = MountMode.WRITE, ws?: Workspace): Promise<Harness> {
   const dir = mkdtempSync(join(tmpdir(), 'mirage-ssh-sftp-'))
   const pair = mintKeyPair(ssh2.utils)
   writeFileSync(join(dir, 'authorized_keys'), `${pair.public}\n`)
   const registry = new WorkspaceRegistry({ idleGraceSeconds: 0 })
-  const entry = registry.add(new Workspace({ '/': new RAMVFS() }, { mode }), 'demo')
+  const entry = registry.add(ws ?? new Workspace({ '/': new RAMVFS() }, { mode }), 'demo')
   const listener = await startSSHServer(registry, {
     port: 0,
     host: '127.0.0.1',
     hostKeyFile: join(dir, 'host_key'),
     authorizedKeysFile: join(dir, 'authorized_keys'),
   })
-  const harness = { registry, entry, listener, privateKey: pair.private }
+  const harness = {
+    registry,
+    entry,
+    listener,
+    privateKey: pair.private,
+    keysFile: join(dir, 'authorized_keys'),
+  }
   open.push(harness)
   return harness
 }
 
-function connect(h: Harness, username = 'demo'): Promise<Client> {
+function connect(h: Harness, username = 'demo', privateKey = h.privateKey): Promise<Client> {
   return new Promise((resolve, reject) => {
     const client = new ssh2.Client()
     clients.push(client)
@@ -65,8 +72,30 @@ function connect(h: Harness, username = 'demo'): Promise<Client> {
       resolve(client)
     })
     client.on('error', reject)
-    client.connect({ host: '127.0.0.1', port: h.listener.port, username, privateKey: h.privateKey })
+    client.connect({ host: '127.0.0.1', port: h.listener.port, username, privateKey })
   })
+}
+
+/** Authorize a fresh client key whose line carries `options`. */
+function bindKey(h: Harness, options: string): string {
+  const pair = mintKeyPair(ssh2.utils)
+  appendFileSync(h.keysFile, `${options} ${pair.public}\n`)
+  return pair.private
+}
+
+/** A workspace whose `guarded` profile seals `/vault`. */
+async function vaultWorkspace(): Promise<Workspace> {
+  const ws = new Workspace(
+    { '/': new RAMVFS() },
+    {
+      mode: MountMode.WRITE,
+      profiles: {
+        guarded: { commands: { deny: [{ reason: 'the vault is sealed', paths: ['/vault/*'] }] } },
+      },
+    },
+  )
+  await ws.shell('mkdir -p /vault && echo token > /vault/secret')
+  return ws
 }
 
 function sftpOf(client: Client): Promise<SFTPWrapper> {
@@ -487,4 +516,20 @@ it('keeps the open file when rename is refused', async () => {
       })
     ).toString(),
   ).toBe('untouched')
+})
+
+it('serves a key bound to a profile under it', async () => {
+  const h = await startHarness(MountMode.WRITE, await vaultWorkspace())
+  const guarded = bindKey(h, 'mirage-profile="guarded"')
+  const unsealed = await sftpOf(await connect(h))
+  const content = await call<Buffer>((cb) => {
+    unsealed.readFile('/vault/secret', cb)
+  })
+  expect(content.toString()).toBe('token\n')
+  const sealed = await sftpOf(await connect(h, 'demo', guarded))
+  await expect(
+    call<Buffer>((cb) => {
+      sealed.readFile('/vault/secret', cb)
+    }),
+  ).rejects.toMatchObject({ code: STATUS.PERMISSION_DENIED })
 })

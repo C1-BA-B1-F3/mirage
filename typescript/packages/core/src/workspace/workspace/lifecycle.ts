@@ -52,7 +52,6 @@ export async function closeWorkspace(deps: CloseDeps): Promise<void> {
   // managed runners before their mounts are released.
   await deps.jobTable.killAll()
   deps.jobTable.processes.stop()
-  await deps.jobTable.closeConsoles()
   // Runtimes next, and before the cache or any VFS closes. A runtime
   // that was interrupted mid-run still has a journal to replay, and that
   // replay writes to mounts: draining it after the cache had gone made every
@@ -74,6 +73,10 @@ export async function closeWorkspace(deps: CloseDeps): Promise<void> {
   }
   try {
     await deps.jobTable.processes.drain()
+    // Consoles close only once every runner has joined: a runner still
+    // unwinding writes its ending chunk as it settles, and a Redis console
+    // written after close opens a fresh client that nothing quits.
+    await deps.jobTable.closeConsoles()
     const retirements = await Promise.allSettled([...deps.registry.retiringMounts.values()])
     for (const result of retirements) {
       if (result.status === 'rejected') throw result.reason as Error

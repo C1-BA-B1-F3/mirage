@@ -21,6 +21,12 @@ import { IOResult } from '../../io/types.ts'
 import { CapacityState } from '../../types.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { type JobRunner, JobStatus } from '../../shell/job_table/index.ts'
+import {
+  type Channel,
+  type ConsoleChunk,
+  JobConsole,
+  RAMConsoleStore,
+} from '../../shell/console/index.ts'
 import type { ShellParser } from '../../shell/parse/index.ts'
 import { MountMode } from '../../types.ts'
 import { ExecutionNode } from '../types.ts'
@@ -58,7 +64,75 @@ function deaf(release: { fire?: () => void }): JobRunner {
   }
 }
 
+/**
+ * A RAM console that records every write landing after close. A Redis
+ * console reconnects for such a write, and nothing quits that client
+ * again. `open()` lets the held-back writes through.
+ */
+class LateWriteStore extends RAMConsoleStore {
+  readonly late: Channel[] = []
+  private readonly gate: Promise<void>
+  open: () => void = () => undefined
+
+  constructor() {
+    super()
+    this.gate = new Promise<void>((resolve) => {
+      this.open = resolve
+    })
+  }
+
+  override async append(channel: Channel, data: Uint8Array): Promise<ConsoleChunk> {
+    await this.gate
+    if (this.closed) this.late.push(channel)
+    return super.append(channel, data)
+  }
+}
+
+/** A runner that ends only through its abort, as `sleep` does. */
+function untilAborted(abort: AbortController): JobRunner {
+  return () =>
+    new Promise((_resolve, reject) => {
+      abort.signal.addEventListener(
+        'abort',
+        () => {
+          reject(new DOMException('aborted', 'AbortError'))
+        },
+        { once: true },
+      )
+    })
+}
+
 describe('closeWorkspace', () => {
+  // A disowned job killed by pid settles in its own task, writing its
+  // ending as it unwinds; teardown must not close the console under
+  // those writes.
+  it('keeps a console open until its runner settles', async () => {
+    const store = new LateWriteStore()
+    const ws = new Workspace(
+      { '/m': [new RAMVFS(), MountMode.WRITE] },
+      { mode: MountMode.WRITE, shellParser: parser, consoleFactory: () => new JobConsole(store) },
+    )
+    const abort = new AbortController()
+    const job = ws.jobTable.submit({
+      command: 'sleep 30',
+      run: untilAborted(abort),
+      abort,
+      cwd: '/',
+    })
+    ws.jobTable.disown(job.id)
+    expect(job.process?.terminate()).toBe(true)
+    await vi.waitFor(() => {
+      expect(job.status).toBe(JobStatus.KILLED)
+    })
+    const closing = ws.close()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    store.open()
+    await closing
+
+    expect(store.late).toEqual([])
+    expect(store.closed).toBe(true)
+  })
+
   // A bare abort leaves such a job RUNNING with no ending chunk, so
   // anyone parked on waitFinished waits forever on a workspace that is
   // already gone. The console ends promptly; the supervisor

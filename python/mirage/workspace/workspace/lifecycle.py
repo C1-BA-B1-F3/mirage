@@ -126,10 +126,11 @@ async def close_async(ws: "Workspace", ) -> None:
     Jobs are settled here rather than merely cancelled. ``kill_all``
     records the outcome and finishes each console, which is what releases
     a reader parked on ``wait_finished``; a bare cancel leaves the job
-    RUNNING with no ending chunk and that reader waits forever. It never
-    joins the runner, so this cannot block shutdown on a job mid-write,
-    and it happens before any VFS closes so a job cannot keep
-    touching one that is already gone.
+    RUNNING with no ending chunk and that reader waits forever. The
+    supervisor then joins the managed runners before their mounts are
+    released, and the consoles close only after that join: a runner still
+    unwinding writes its ending chunk as it settles, and a Redis console
+    written after close reconnects a client that nothing closes again.
 
     Args:
         ws: the workspace being closed.
@@ -144,12 +145,12 @@ async def close_async(ws: "Workspace", ) -> None:
         await ws._watch.detach()
         await ws.job_table.kill_all()
         ws.processes.stop()
-        await ws.job_table.close_consoles()
         drain_tasks = list(ws._cache._drain_tasks.values())
         await ws._script_policy.close()
         for line_runtime in ws._runtimes.entries:
             await line_runtime.close()
         await ws.processes.drain()
+        await ws.job_table.close_consoles()
         retirements = await asyncio.gather(
             *(asyncio.shield(task)
               for task in list(ws._registry.retiring_mounts.values())),

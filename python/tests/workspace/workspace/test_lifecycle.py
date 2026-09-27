@@ -28,7 +28,8 @@ from mirage.commands.spec import CommandSpec, Operand
 from mirage.io import IOResult
 from mirage.ops.registry import op
 from mirage.runtime.base import Runtime
-from mirage.shell.console import Channel
+from mirage.shell.console import (Channel, ConsoleChunk, JobConsole,
+                                  RAMConsoleStore)
 from mirage.shell.job_table import JobStatus
 from mirage.types import CapacityResult, CapacityState, MountMode, PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -435,6 +436,61 @@ async def test_close_settles_a_job_that_ignores_the_cancel():
 
     # The runner unwinding afterwards must not reopen or relabel it.
     assert job.status == JobStatus.KILLED
+
+
+class _LateWriteStore(RAMConsoleStore):
+    """A RAM console that records every write landing after close.
+
+    A Redis console reconnects for such a write, and nothing closes that
+    client again. ``gate`` holds writes back until the test opens it.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate = asyncio.Event()
+        self.late: list[Channel] = []
+
+    async def append(self, channel: Channel, data: bytes) -> ConsoleChunk:
+        await self.gate.wait()
+        if self.closed:
+            self.late.append(channel)
+        return await super().append(channel, data)
+
+
+@pytest.mark.asyncio
+async def test_close_keeps_a_console_open_until_its_runner_settles():
+    """A disowned job killed by pid settles in its own task.
+
+    It writes its ending as it unwinds, and teardown must not close the
+    console under those writes.
+    """
+    store = _LateWriteStore()
+    started = asyncio.Event()
+
+    async def run(job):
+        started.set()
+        await asyncio.sleep(30)
+
+    ws = Workspace({"/m": (RAMVFS(), MountMode.WRITE)},
+                   mode=MountMode.WRITE,
+                   console_factory=lambda job_id: JobConsole(store))
+    job = ws.job_table.submit(command="sleep 30", run=run, cwd="/")
+    await asyncio.wait_for(started.wait(), timeout=2)
+    ws.job_table.disown(job.id)
+    assert job.process is not None and job.process.terminate()
+
+    async def killed():
+        while job.status == JobStatus.RUNNING:
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(killed(), timeout=2)
+    closing = asyncio.create_task(ws.close())
+    await asyncio.sleep(0.05)
+    store.gate.set()
+    await asyncio.wait_for(closing, timeout=5)
+
+    assert store.late == []
+    assert store.closed
 
 
 @pytest.mark.asyncio

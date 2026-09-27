@@ -42,6 +42,14 @@ const STATE_HINTS: Record<string, string> = {
  */
 export const PRELUDE = 'cd -- "$1" || exit; shift; exec "$@"'
 
+/** Why a line has nowhere to run: its session maps to no container. */
+export function noContainerHint(sessionId: string | null): string {
+  return (
+    `apple_container has no container for session ${sessionId ?? '(none)'}: ` +
+    'list it under containers or set container'
+  )
+}
+
 /** Why this container cannot take a line, named by its state. */
 export function notRunningHint(container: string, state: string): string {
   const detail = STATE_HINTS[state]

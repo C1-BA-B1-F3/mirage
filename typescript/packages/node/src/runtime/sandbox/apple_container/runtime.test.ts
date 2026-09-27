@@ -17,13 +17,15 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PathSpec } from '@struktoai/mirage-core/types'
+import { MountMode, PathSpec } from '@struktoai/mirage-core/types'
 import { buildRuntime } from '@struktoai/mirage-core/runtime/table'
+import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import type { ProcessExecution, RuntimeOptions } from '@struktoai/mirage-core/runtime/types'
 import { describe, expect, it } from 'vitest'
 import type { AppleContainerConfig } from './config.ts'
 import { PRELUDE } from './constants.ts'
 import { AppleContainerRuntime } from './runtime.ts'
+import { Workspace } from '../../../workspace.ts'
 
 const DEC = new TextDecoder()
 const ENC = new TextEncoder()
@@ -35,7 +37,7 @@ interface ContainerResult {
 }
 
 class FakeAppleContainerRuntime extends AppleContainerRuntime {
-  state = 'running'
+  states: Record<string, string> = {}
   inspectCode = 0
   inspectStdout: string | null = null
   readonly calls: [string[], Uint8Array | null][] = []
@@ -56,13 +58,19 @@ class FakeAppleContainerRuntime extends AppleContainerRuntime {
       if (this.inspectCode !== 0) {
         return Promise.resolve({
           stdout: new Uint8Array(),
-          stderr: ENC.encode('Error: container not found: box'),
+          stderr: ENC.encode(`Error: container not found: ${args[1] ?? ''}`),
           code: this.inspectCode,
         })
       }
       return Promise.resolve({
         stdout: ENC.encode(
-          JSON.stringify([{ id: 'box', configuration: {}, status: { state: this.state } }]),
+          JSON.stringify([
+            {
+              id: args[1],
+              configuration: {},
+              status: { state: this.states[args[1] ?? ''] ?? 'running' },
+            },
+          ]),
         ),
         stderr: new Uint8Array(),
         code: 0,
@@ -74,6 +82,16 @@ class FakeAppleContainerRuntime extends AppleContainerRuntime {
       stderr: ENC.encode('warn'),
       code: 0,
     })
+  }
+
+  inspected(): string[] {
+    return this.calls.filter(([args]) => args[0] === 'inspect').map(([args]) => args[1] ?? '')
+  }
+
+  execTargets(): string[] {
+    return this.calls
+      .filter(([args]) => args[0] === 'exec')
+      .map(([args]) => args[args.indexOf('sh') - 1] ?? '')
   }
 }
 
@@ -90,39 +108,41 @@ function prelude(cwd: string, ...argv: string[]): ReturnType<typeof spawnSync> {
 }
 
 describe('AppleContainerRuntime', () => {
-  it('connect inspects the user container', async () => {
+  it('the first line inspects its container', async () => {
     const runtime = makeRuntime()
-    await runtime.connect()
+    await runtime.execLine('pwd', null, {}, '/')
     expect(runtime.calls[0]?.[0]).toEqual(['inspect', 'box'])
+    expect(runtime.execTargets()).toEqual(['box'])
   })
 
   it.each([
     ['stopped', 'start it with `container start box`'],
     ['stopping', 'shutting down'],
     ['unknown', 'state: unknown'],
-  ])('connect names why state %s cannot take a line', async (state, hint) => {
+  ])('names why state %s cannot take a line', async (state, hint) => {
     const runtime = makeRuntime()
-    runtime.state = state
-    await expect(runtime.connect()).rejects.toThrow(hint)
+    runtime.states.box = state
+    await expect(runtime.execLine('pwd', null, {}, '/')).rejects.toThrow(hint)
+    expect(runtime.execTargets()).toEqual([])
   })
 
-  it('connect fails loud when the CLI errors', async () => {
+  it('an inspect error fails loud', async () => {
     const runtime = makeRuntime()
     runtime.inspectCode = 1
-    await expect(runtime.connect()).rejects.toThrow('container not found: box')
+    await expect(runtime.execLine('pwd', null, {}, '/')).rejects.toThrow('container not found: box')
   })
 
   it.each(['not json', '[]', '{}', '[{"status": null}]'])(
-    'connect fails loud on unreadable json %s',
+    'unreadable inspect json %s fails loud',
     async (stdout) => {
       const runtime = makeRuntime()
       runtime.inspectStdout = stdout
-      await expect(runtime.connect()).rejects.toThrow('unreadable json')
+      await expect(runtime.execLine('pwd', null, {}, '/')).rejects.toThrow('unreadable json')
     },
   )
 
-  it('container is required', () => {
-    expect(() => makeRuntime({ config: {} })).toThrow('container')
+  it('config needs a container', () => {
+    expect(() => makeRuntime({ config: {} })).toThrow('container or containers')
   })
 
   it("registers under the config name 'apple_container'", () => {
@@ -178,7 +198,11 @@ describe.skipIf(process.platform === 'win32')('AppleContainerRuntime against a r
   // pipe; without the stdin error guard the stream's unhandled 'error'
   // event crashes the whole process.
   it('a command that ignores a large stdin resolves instead of crashing', async () => {
-    const result = await withFakeCli('#!/bin/sh\nexit 0\n', () =>
+    const fake =
+      '#!/bin/sh\n' +
+      'if [ "$1" = inspect ]; then echo \'[{"status":{"state":"running"}}]\'; fi\n' +
+      'exit 0\n'
+    const result = await withFakeCli(fake, () =>
       new AppleContainerRuntime({ config: { container: 'box' } }).execLine(
         'head -1',
         new Uint8Array(4 * 1024 * 1024),
@@ -192,7 +216,7 @@ describe.skipIf(process.platform === 'win32')('AppleContainerRuntime against a r
   it('a missing CLI names how to install it', async () => {
     await withFakeCli(null, async () => {
       const runtime = new AppleContainerRuntime({ config: { container: 'box' } })
-      await expect(runtime.connect()).rejects.toThrow('brew install container')
+      await expect(runtime.execLine('pwd', null, {}, '/')).rejects.toThrow('brew install container')
     })
   })
 })
@@ -281,13 +305,13 @@ it('preserves argv through execute and shares the shell connection', async () =>
     env: {},
     stdin: null,
   })
-  expect(runtime.calls.filter(([args]) => args[0] === 'inspect')).toHaveLength(1)
+  expect(runtime.inspected()).toEqual(['box'])
   expect(runtime.capabilities).toMatchObject({ process: true, shell: true, filesystem: [] })
 })
 
 it('refuses empty argv and a stopped container before executing', async () => {
   const runtime = makeRuntime()
-  runtime.state = 'stopped'
+  runtime.states.box = 'stopped'
   const request = {
     kind: 'process' as const,
     argv: [] as unknown as ProcessExecution['argv'],
@@ -299,4 +323,35 @@ it('refuses empty argv and a stopped container before executing', async () => {
   expect(runtime.calls).toHaveLength(0)
   await expect(runtime.execute({ ...request, argv: ['node'] })).rejects.toThrow('not running')
   expect(runtime.calls).toHaveLength(1)
+})
+
+it('runs each session in its own container', async () => {
+  const runtime = makeRuntime({
+    captures: ['uname'],
+    config: { container: 'shared', containers: { agent_a: 'box-a', agent_b: 'box-b' } },
+  })
+  const ws = new Workspace(
+    { '/d': new RAMVFS() },
+    { mode: MountMode.EXEC, runtimes: [runtime, 'workspace'] },
+  )
+  for (const sessionId of ['agent_a', 'agent_b', 'agent_a']) {
+    const handle = await ws.session(sessionId)
+    expect((await handle.shell('uname')).exitCode).toBe(0)
+  }
+  expect((await ws.shell('uname')).exitCode).toBe(0)
+  expect(runtime.execTargets()).toEqual(['box-a', 'box-b', 'box-a', 'shared'])
+  expect(runtime.inspected()).toEqual(['box-a', 'box-b', 'shared'])
+})
+
+it('fails a session with no container loudly', async () => {
+  const runtime = makeRuntime({ captures: ['uname'], config: { containers: { agent_a: 'box-a' } } })
+  const ws = new Workspace(
+    { '/d': new RAMVFS() },
+    { mode: MountMode.EXEC, runtimes: [runtime, 'workspace'] },
+  )
+  const handle = await ws.session('agent_b')
+  const result = await handle.shell('uname')
+  expect(result.exitCode).toBe(1)
+  expect(DEC.decode(result.stderr)).toContain('no container for session agent_b')
+  expect(runtime.calls).toHaveLength(0)
 })

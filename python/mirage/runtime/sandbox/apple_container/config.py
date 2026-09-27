@@ -12,22 +12,34 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from mirage.runtime.sandbox.config import SandboxConfig
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class AppleContainerConfig(SandboxConfig):
-    """How to reach the user's running container.
+    """How to reach the user's running containers.
 
     Args:
-        container (str): id of a running container, which is the
-            ``--name`` it was started with (Apple's tool keeps no
-            separate name). You start it yourself (`container run -d
-            --name my-sandbox ... sleep infinity`); live FUSE mounts
-            need `--cap-add SYS_ADMIN` and an image with mirage
-            installed. Every container already has `/dev/fuse`.
+        container (str | None): id of the running container a line
+            runs in, which is the ``--name`` it was started with (Apple's
+            tool keeps no separate name). You start it yourself
+            (`container run -d --name my-sandbox ... sleep infinity`);
+            live FUSE mounts need `--cap-add SYS_ADMIN` and an image
+            with mirage installed. Every container already has
+            `/dev/fuse`.
+        containers (dict[str, str]): one container per agent, keyed by
+            session id: a line from session ``agent_a`` runs in
+            ``containers["agent_a"]``, and a session not listed runs in
+            ``container``. Separate containers are separate VMs, so the
+            agents share no filesystem, processes or view.
     """
 
-    container: str
+    container: str | None = None
+    containers: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.container and not self.containers:
+            raise ValueError(
+                "apple_container config needs container or containers")

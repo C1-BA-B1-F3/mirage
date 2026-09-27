@@ -14,19 +14,24 @@
 
 import asyncio
 import json
+from collections.abc import Sequence
+from typing import Any, Callable
 
+from mirage.context import get_current_session
 from mirage.runtime.mixin import ProcessExecutorMixin
 from mirage.runtime.sandbox.apple_container.config import AppleContainerConfig
 from mirage.runtime.sandbox.apple_container.constants import (
-    APPLE_CONTAINER_CLI_HINT, PRELUDE, RUNNING_STATE, not_running_hint)
+    APPLE_CONTAINER_CLI_HINT, PRELUDE, RUNNING_STATE, no_container_hint,
+    not_running_hint)
 from mirage.runtime.sandbox.base import RemoteSandbox
-from mirage.runtime.types import ProcessExecution, RunResult
+from mirage.runtime.sandbox.config import SandboxConfig
+from mirage.runtime.types import ProcessExecution, RunResult, ScriptSource
 
 
 class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
-    """A container under Apple's `container` tool as a whole-line runtime.
+    """Containers under Apple's `container` tool as a whole-line runtime.
 
-    You start the container yourself; mirage only connects to it and
+    You start the containers yourself; mirage only connects to them and
     execs lines. The `container` CLI is the transport, so there is no
     SDK dependency and no XPC wiring; each line is one `container exec`
     with the merged environment, the session cwd, real stdin, and
@@ -39,6 +44,10 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
     prefixes, the same contract every provider in this family carries.
     The image needs a POSIX sh, which every argv runs under (PRELUDE).
 
+    A line runs in its session's container (config ``containers``,
+    else ``container``), so one runtime can give every agent a VM of
+    its own. Each container is probed once, on its first line.
+
     Args:
         options (Any): the RemoteSandbox constructor fields.
     """
@@ -46,6 +55,15 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
     name = "apple_container"
     config_cls = AppleContainerConfig
     config: AppleContainerConfig
+
+    def __init__(
+            self,
+            captures: Sequence[str] | None = None,
+            config: SandboxConfig | dict[str, Any] | None = None,
+            script: Callable[..., Any] | ScriptSource | None = None) -> None:
+        super().__init__(captures, config, script)
+        self._running: set[str] = set()
+        self._probe_lock = asyncio.Lock()
 
     async def _container(
             self,
@@ -74,13 +92,37 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
         return stdout, stderr, code
 
     async def connect(self) -> None:
-        """Probe the container, refusing any state that cannot take a line.
+        """Attach nothing up front.
+
+        Which container a line needs depends on its session, so _target
+        probes each container on its first line instead.
+        """
+
+    async def _target(self) -> str:
+        """The container this line's session runs in, probed once."""
+        session = get_current_session()
+        session_id = session.session_id if session is not None else None
+        container = (self.config.containers.get(session_id)
+                     if session_id is not None else None)
+        container = container or self.config.container
+        if not container:
+            raise RuntimeError(no_container_hint(session_id))
+        async with self._probe_lock:
+            if container not in self._running:
+                await self._probe(container)
+                self._running.add(container)
+        return container
+
+    async def _probe(self, container: str) -> None:
+        """Refuse a container in any state that cannot take a line.
 
         `container exec` refuses a container that is not running as
-        well; probing once up front names the state and how to recover.
+        well; probing up front names the state and how to recover.
+
+        Args:
+            container (str): the container id to inspect.
         """
-        stdout, stderr, code = await self._container(
-            ["inspect", self.config.container])
+        stdout, stderr, code = await self._container(["inspect", container])
         if code != 0:
             raise RuntimeError(
                 f"container inspect failed: {stderr.decode().strip()}")
@@ -90,8 +132,7 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
             raise RuntimeError("container inspect returned unreadable "
                                f"json: {exc}") from exc
         if state != RUNNING_STATE:
-            raise RuntimeError(
-                not_running_hint(self.config.container, str(state)))
+            raise RuntimeError(not_running_hint(container, str(state)))
 
     async def exec_line(self, line: str, stdin: bytes | None,
                         env: dict[str, str], cwd: str) -> RunResult:
@@ -100,7 +141,6 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
     async def run_process(self, request: ProcessExecution) -> RunResult:
         if not request.argv:
             raise ValueError("process argv must not be empty")
-        await self._ensure_connected()
         return await self._exec_argv(request.argv, request.stdin, {
             **self.config.env,
             **request.env
@@ -108,9 +148,10 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
 
     async def _exec_argv(self, argv: tuple[str, ...], stdin: bytes | None,
                          env: dict[str, str], cwd: str) -> RunResult:
+        container = await self._target()
         args = ["exec", "-i", "-w", "/"]
         for key, value in env.items():
             args += ["-e", f"{key}={value}"]
-        args += [self.config.container, "sh", "-c", PRELUDE, "sh", cwd, *argv]
+        args += [container, "sh", "-c", PRELUDE, "sh", cwd, *argv]
         stdout, stderr, code = await self._container(args, stdin=stdin)
         return RunResult(stdout=stdout, stderr=stderr, exit_code=code)

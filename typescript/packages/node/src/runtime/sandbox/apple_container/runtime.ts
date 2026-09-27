@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { spawn } from 'node:child_process'
+import { getCurrentSession } from '@struktoai/mirage-core/context/session_context'
 import { PROCESS_EXECUTOR, type ProcessExecutor } from '@struktoai/mirage-core/runtime/mixin'
 import { RemoteSandbox } from '@struktoai/mirage-core/runtime/sandbox/base'
 import { registerRuntime } from '@struktoai/mirage-core/runtime/table'
@@ -22,7 +23,13 @@ import type {
   RuntimeOptions,
 } from '@struktoai/mirage-core/runtime/types'
 import { APPLE_CONTAINER_CONFIG_KEYS, type AppleContainerConfig } from './config.ts'
-import { APPLE_CONTAINER_CLI_HINT, PRELUDE, RUNNING_STATE, notRunningHint } from './constants.ts'
+import {
+  APPLE_CONTAINER_CLI_HINT,
+  PRELUDE,
+  RUNNING_STATE,
+  noContainerHint,
+  notRunningHint,
+} from './constants.ts'
 
 interface ContainerResult {
   stdout: Uint8Array
@@ -31,9 +38,9 @@ interface ContainerResult {
 }
 
 /**
- * A container under Apple's `container` tool as a whole-line runtime.
+ * Containers under Apple's `container` tool as a whole-line runtime.
  *
- * You start the container yourself; mirage only connects to it and
+ * You start the containers yourself; mirage only connects to them and
  * execs lines. The `container` CLI is the transport, so there is no
  * SDK dependency and no XPC wiring; each line is one `container exec`
  * with the merged environment, the session cwd, real stdin, and
@@ -45,6 +52,10 @@ interface ContainerResult {
  * (`--volume`). Serve the workspace inside it at the host's mount
  * prefixes, the same contract every provider in this family carries.
  * The image needs a POSIX sh, which every argv runs under (PRELUDE).
+ *
+ * A line runs in its session's container (config `containers`, else
+ * `container`), so one runtime can give every agent a VM of its own.
+ * Each container is probed once, on its first line.
  */
 export class AppleContainerRuntime
   extends RemoteSandbox<AppleContainerConfig>
@@ -52,11 +63,14 @@ export class AppleContainerRuntime
 {
   readonly [PROCESS_EXECUTOR] = true as const
   readonly name = 'apple_container'
+  // Single-flight probe per container: concurrent first lines share one
+  // inspect, and a failed probe clears its slot so the next line retries.
+  private readonly probes = new Map<string, Promise<void>>()
 
   constructor(options: RuntimeOptions<AppleContainerConfig> | Record<string, unknown> = {}) {
     super(options, APPLE_CONTAINER_CONFIG_KEYS)
-    if (!this.config.container) {
-      throw new Error('apple_container config needs container: the id of a running container')
+    if (!this.config.container && Object.keys(this.config.containers ?? {}).length === 0) {
+      throw new Error('apple_container config needs container or containers')
     }
   }
 
@@ -98,13 +112,39 @@ export class AppleContainerRuntime
   }
 
   /**
-   * Probe the container, refusing any state that cannot take a line.
+   * Attach nothing up front. Which container a line needs depends on its
+   * session, so `target` probes each container on its first line instead.
+   */
+  connect(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  /** The container this line's session runs in, probed once. */
+  private async target(signal?: AbortSignal): Promise<string> {
+    const sessionId = getCurrentSession()?.sessionId ?? null
+    const mapped = sessionId !== null ? this.config.containers?.[sessionId] : undefined
+    const container = mapped !== undefined && mapped !== '' ? mapped : this.config.container
+    if (container === undefined || container === '') throw new Error(noContainerHint(sessionId))
+    let probe = this.probes.get(container)
+    if (probe === undefined) {
+      probe = this.probe(container).catch((err: unknown) => {
+        this.probes.delete(container)
+        throw err
+      })
+      this.probes.set(container, probe)
+    }
+    await this.waitFor(probe, signal)
+    return container
+  }
+
+  /**
+   * Refuse a container in any state that cannot take a line.
    *
    * `container exec` refuses a container that is not running as well;
-   * probing once up front names the state and how to recover.
+   * probing up front names the state and how to recover.
    */
-  async connect(): Promise<void> {
-    const result = await this.container(['inspect', this.config.container])
+  private async probe(container: string): Promise<void> {
+    const result = await this.container(['inspect', container])
     if (result.code !== 0) {
       throw new Error(`container inspect failed: ${decode(result.stderr).trim()}`)
     }
@@ -115,7 +155,7 @@ export class AppleContainerRuntime
       throw new Error(`container inspect returned unreadable json: ${String(error)}`)
     }
     if (state !== RUNNING_STATE) {
-      throw new Error(notRunningHint(this.config.container, String(state)))
+      throw new Error(notRunningHint(container, String(state)))
     }
   }
 
@@ -131,7 +171,6 @@ export class AppleContainerRuntime
 
   async runProcess(request: ProcessExecution): Promise<RunResult> {
     if (request.argv.length === 0) throw new Error('process argv must not be empty')
-    await this.ensureConnected(request.signal)
     return this.execArgv(
       request.argv,
       request.stdin,
@@ -148,9 +187,10 @@ export class AppleContainerRuntime
     cwd: string,
     signal?: AbortSignal,
   ): Promise<RunResult> {
+    const container = await this.target(signal)
     const args = ['exec', '-i', '-w', '/']
     for (const [key, value] of Object.entries(env)) args.push('-e', `${key}=${value}`)
-    args.push(this.config.container, 'sh', '-c', PRELUDE, 'sh', cwd, ...argv)
+    args.push(container, 'sh', '-c', PRELUDE, 'sh', cwd, ...argv)
     const result = await this.container(args, stdin, signal)
     return { stdout: result.stdout, stderr: result.stderr, exitCode: result.code }
   }

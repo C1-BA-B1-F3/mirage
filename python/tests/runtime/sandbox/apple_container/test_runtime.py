@@ -17,22 +17,24 @@ import subprocess
 
 import pytest
 
+from mirage import MountMode, Workspace
 from mirage.runtime.sandbox.apple_container import AppleContainerRuntime
 from mirage.runtime.sandbox.apple_container.constants import PRELUDE
 from mirage.runtime.table import build_runtime
 from mirage.runtime.types import ProcessExecution, ShellExecution
 from mirage.types import PathSpec
+from mirage.vfs.ram import RAMVFS
 
 
 class FakeAppleContainerRuntime(AppleContainerRuntime):
 
     def __init__(self,
-                 state: str = "running",
+                 states: dict[str, str] | None = None,
                  inspect_code: int = 0,
                  inspect_stdout: bytes | None = None,
                  **options):
         super().__init__(**options)
-        self.state = state
+        self.states = states or {}
         self.inspect_code = inspect_code
         self.inspect_stdout = inspect_stdout
         self.calls: list[tuple[list[str], bytes | None]] = []
@@ -43,17 +45,26 @@ class FakeAppleContainerRuntime(AppleContainerRuntime):
             if self.inspect_stdout is not None:
                 return self.inspect_stdout, b"", self.inspect_code
             if self.inspect_code != 0:
-                return (b"", b"Error: container not found: box",
+                return (b"", f"Error: container not found: {args[1]}".encode(),
                         self.inspect_code)
             return json.dumps([{
-                "id": "box",
+                "id": args[1],
                 "configuration": {},
                 "status": {
-                    "state": self.state
+                    "state": self.states.get(args[1], "running")
                 }
             }]).encode(), b"", 0
         script = args[-1]
         return f"out:{script}".encode(), b"warn", 0
+
+    def inspected(self) -> list[str]:
+        return [args[1] for args, _ in self.calls if args[0] == "inspect"]
+
+    def exec_targets(self) -> list[str]:
+        return [
+            args[args.index("sh") - 1] for args, _ in self.calls
+            if args[0] == "exec"
+        ]
 
 
 def prelude(cwd: str, *argv: str) -> subprocess.CompletedProcess:
@@ -63,11 +74,11 @@ def prelude(cwd: str, *argv: str) -> subprocess.CompletedProcess:
 
 
 @pytest.mark.asyncio
-async def test_connect_inspects_the_users_container():
+async def test_the_first_line_inspects_its_container():
     runtime = FakeAppleContainerRuntime(config={"container": "box"})
-    await runtime.connect()
-    args, _ = runtime.calls[0]
-    assert args == ["inspect", "box"]
+    await runtime.exec_line("pwd", None, {}, "/")
+    assert runtime.calls[0][0] == ["inspect", "box"]
+    assert runtime.exec_targets() == ["box"]
 
 
 @pytest.mark.asyncio
@@ -76,33 +87,34 @@ async def test_connect_inspects_the_users_container():
     ("stopping", "shutting down"),
     ("unknown", r"state: unknown"),
 ])
-async def test_connect_names_why_a_state_cannot_take_a_line(state, hint):
-    runtime = FakeAppleContainerRuntime(state=state,
+async def test_a_state_that_cannot_take_a_line_is_named(state, hint):
+    runtime = FakeAppleContainerRuntime(states={"box": state},
                                         config={"container": "box"})
     with pytest.raises(RuntimeError, match=hint):
-        await runtime.connect()
+        await runtime.exec_line("pwd", None, {}, "/")
+    assert runtime.exec_targets() == []
 
 
 @pytest.mark.asyncio
-async def test_connect_fails_loud_when_the_cli_errors():
+async def test_an_inspect_error_fails_loud():
     runtime = FakeAppleContainerRuntime(inspect_code=1,
                                         config={"container": "box"})
     with pytest.raises(RuntimeError, match="container not found: box"):
-        await runtime.connect()
+        await runtime.exec_line("pwd", None, {}, "/")
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("stdout",
                          [b"not json", b"[]", b"{}", b'[{"status": null}]'])
-async def test_connect_fails_loud_on_unreadable_json(stdout):
+async def test_unreadable_inspect_json_fails_loud(stdout):
     runtime = FakeAppleContainerRuntime(inspect_stdout=stdout,
                                         config={"container": "box"})
     with pytest.raises(RuntimeError, match="unreadable json"):
-        await runtime.connect()
+        await runtime.exec_line("pwd", None, {}, "/")
 
 
-def test_container_is_required():
-    with pytest.raises(TypeError, match="container"):
+def test_config_needs_a_container():
+    with pytest.raises(ValueError, match="container or containers"):
         AppleContainerRuntime(config={})
 
 
@@ -130,7 +142,7 @@ async def test_exec_line_runs_under_the_prelude_with_stdin_and_stderr():
 
 
 @pytest.mark.asyncio
-async def test_process_preserves_argv_and_shares_the_shell_connection():
+async def test_process_preserves_argv_and_probes_the_container_once():
     runtime = FakeAppleContainerRuntime(config={
         "container": "box",
         "env": {
@@ -151,14 +163,14 @@ async def test_process_preserves_argv_and_shares_the_shell_connection():
     ], b"input")
     await runtime.execute(
         ShellExecution(line="pwd", cwd=PathSpec.from_str_path("/work")))
-    assert sum(args[0] == "inspect" for args, _ in runtime.calls) == 1
+    assert runtime.inspected() == ["box"]
     assert runtime.capabilities.process and runtime.capabilities.shell
     assert runtime.capabilities.filesystem == ()
 
 
 @pytest.mark.asyncio
-async def test_process_refuses_a_stopped_container_and_empty_argv():
-    runtime = FakeAppleContainerRuntime(state="stopped",
+async def test_process_refuses_empty_argv_and_a_stopped_container():
+    runtime = FakeAppleContainerRuntime(states={"box": "stopped"},
                                         config={"container": "box"})
     with pytest.raises(ValueError, match="argv must not be empty"):
         await runtime.execute(
@@ -171,11 +183,48 @@ async def test_process_refuses_a_stopped_container_and_empty_argv():
 
 
 @pytest.mark.asyncio
+async def test_each_session_runs_in_its_own_container():
+    runtime = FakeAppleContainerRuntime(captures=["uname"],
+                                        config={
+                                            "container": "shared",
+                                            "containers": {
+                                                "agent_a": "box-a",
+                                                "agent_b": "box-b"
+                                            }
+                                        })
+    ws = Workspace({"/d": RAMVFS()},
+                   mode=MountMode.EXEC,
+                   runtimes=[runtime, "workspace"])
+    for session_id in ("agent_a", "agent_b", "agent_a"):
+        handle = await ws.session(session_id)
+        assert (await handle.shell("uname")).exit_code == 0
+    assert (await ws.shell("uname")).exit_code == 0
+    assert runtime.exec_targets() == ["box-a", "box-b", "box-a", "shared"]
+    assert runtime.inspected() == ["box-a", "box-b", "shared"]
+
+
+@pytest.mark.asyncio
+async def test_a_session_with_no_container_fails_loud():
+    runtime = FakeAppleContainerRuntime(
+        captures=["uname"], config={"containers": {
+            "agent_a": "box-a"
+        }})
+    ws = Workspace({"/d": RAMVFS()},
+                   mode=MountMode.EXEC,
+                   runtimes=[runtime, "workspace"])
+    handle = await ws.session("agent_b")
+    result = await handle.shell("uname")
+    assert result.exit_code == 1
+    assert "no container for session agent_b" in await result.stderr_str()
+    assert not runtime.calls
+
+
+@pytest.mark.asyncio
 async def test_a_missing_cli_names_how_to_install_it(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path))
     runtime = AppleContainerRuntime(config={"container": "box"})
     with pytest.raises(RuntimeError, match="brew install container"):
-        await runtime.connect()
+        await runtime.exec_line("pwd", None, {}, "/")
 
 
 def test_prelude_enters_the_cwd_and_hands_over_argv_unchanged(tmp_path):

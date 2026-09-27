@@ -14,16 +14,24 @@
 
 import type { SandboxConfig } from '@struktoai/mirage-core/runtime/sandbox/config'
 
-/** How to reach the user's running container. */
+/** How to reach the user's running containers. */
 export interface AppleContainerConfig extends SandboxConfig {
   /**
-   * Id of a running container, which is the `--name` it was started
-   * with (Apple's tool keeps no separate name). You start it yourself
-   * (`container run -d --name my-sandbox ... sleep infinity`); live
-   * FUSE mounts need `--cap-add SYS_ADMIN` and an image with mirage
-   * installed. Every container already has `/dev/fuse`.
+   * Id of the running container a line runs in, which is the `--name`
+   * it was started with (Apple's tool keeps no separate name). You
+   * start it yourself (`container run -d --name my-sandbox ... sleep
+   * infinity`); live FUSE mounts need `--cap-add SYS_ADMIN` and an
+   * image with mirage installed. Every container already has
+   * `/dev/fuse`.
    */
-  container: string
+  container?: string
+  /**
+   * One container per agent, keyed by session id: a line from session
+   * `agent_a` runs in `containers.agent_a`, and a session not listed
+   * runs in `container`. Separate containers are separate VMs, so the
+   * agents share no filesystem, processes or view.
+   */
+  containers?: Record<string, string>
 }
 
-export const APPLE_CONTAINER_CONFIG_KEYS: readonly string[] = ['env', 'container']
+export const APPLE_CONTAINER_CONFIG_KEYS: readonly string[] = ['env', 'container', 'containers']

@@ -78,10 +78,36 @@ POSIX `sh`. The prelude evens out two ways `container exec` differs from
   (`can't cd to /data`) instead of running in an empty directory whose writes
   never reach the backend.
 
+## One container per agent
+
+A line runs in its session's container. List agents under `containers`,
+keyed by the session id each agent's session is created with; a session not
+listed runs in `container`:
+
+```ts
+const runtime = new AppleContainerRuntime({
+  captures: ['python3'],
+  config: { container: 'my-sandbox', containers: { agent_a: 'sandbox-a', agent_b: 'sandbox-b' } },
+})
+const agentA = await ws.session('agent_a', { profile: 'guarded' })
+await agentA.shell('python3 job.py', { cwd: '/data' }) // runs in sandbox-a
+```
+
+In YAML the same block is `config: {container: my-sandbox, containers:
+{agent_a: sandbox-a, agent_b: sandbox-b}}`. Separate containers are separate
+VMs, so agents share no files, processes, CPU or memory. Each container serves
+its own view of the workspace: with Mirage inside it, make that agent's rules
+the `default` profile in its `sandbox.yaml`; with a mount over SFTP, bind the
+container's key to the agent's profile
+([Bind a key to a profile](/home/ssh#bind-a-key-to-a-profile)). A session
+with no container of its own and no `container` fails with
+`apple_container has no container for session ...`. Each container is checked
+with `container inspect` on its first line.
+
 <Note>
-  One container is one VM. Concurrent lines sent to the same `container`
-  share its filesystem and process table. Give each tenant its own container
-  when workload-to-workload isolation matters.
+  One container is one VM. Concurrent lines sent to the same container share
+  its filesystem and process table, so give agents that must not see each
+  other their own container.
 </Note>
 
 <Warning>

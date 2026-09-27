@@ -17,7 +17,7 @@ import { deleteOrder, tenantWhere } from '../kit/typescript/index.ts'
 import type { Dmmf, JsonValue } from '../kit/typescript/index.ts'
 import { SEARCH_SIZE_LIMIT, config } from './config.ts'
 import type { C } from './config.ts'
-import { blobSha, commitSha, rootCommit, treeSha } from './wire.ts'
+import { blobSha, commitSha, rootCommit, rootSha, treeSha } from './wire.ts'
 import type { CommitRow } from './wire.ts'
 
 export interface RepoRow {
@@ -312,7 +312,8 @@ export async function visibleHeadOf(
   const stored = await headOf(db, tenant, repo, branch)
   if (stored !== '') return stored
   const tree = await treeOfBranch(db, tenant, repo, branch)
-  return rootCommit([...tree.entries()].map(([p, d]): [string, string] => [p, blobSha(d)])).sha
+  if (tree.size === 0) return ''
+  return rootSha([...tree.entries()].map(([p, d]): [string, string] => [p, blobSha(d)]))
 }
 
 export async function headOf(
@@ -328,18 +329,25 @@ export async function headOf(
 }
 
 // One branch's commits, newest first: the chain its ref points at, and under
-// it a synthetic root derived from the branch's CONTENT rather than the
-// repository's name, so that a mirror of a repository has the same root sha as
-// its source. Two branches differ in that root exactly when their trees
-// differ. The chain is walked rather than filtered by a column, so a commit
-// two refs share is on both lists and a commit a reset abandoned is on
-// neither, without either case being written down anywhere.
+// it the synthetic root that chain was built on. A branch nothing has been
+// committed to derives its root from its CONTENT rather than the repository's
+// name, so that a mirror of a repository has the same root sha as its source,
+// and two such branches differ in that root exactly when their trees differ.
+// The chain is walked rather than filtered by a column, so a commit two refs
+// share is on both lists and a commit a reset abandoned is on neither, without
+// either case being written down anywhere.
+//
+// Once a commit stands on that root, the root is the parent that commit names.
+// Deriving it again from the files would move it with every write, to a sha
+// the ref never reported, and the oldest commit's parent would be missing from
+// the very history that lists the commit.
 //
 // That synthetic root is the floor for a chain that does not reach one of its
 // own, not a parent stapled under every history. A chain ENDING at a stored
 // commit with no parent already has its root, and appending a second one would
 // report a fabricated ancestor beneath a commit the caller created with
-// `parents: []` precisely to say it has none.
+// `parents: []` precisely to say it has none. A branch with neither a commit
+// nor a file has no root at all, which is how an empty repository reads.
 export async function commitList(
   db: C,
   tenant: string,
@@ -349,10 +357,13 @@ export async function commitList(
   const head = await headOf(db, tenant, repo, branch)
   const walked = head === '' ? [] : chainFrom(head, await commitsBySha(db, tenant, repo))
   const last = walked[walked.length - 1]
-  if (last !== undefined && last.parentSha === '') return walked
+  if (last !== undefined) {
+    return last.parentSha === '' ? walked : [...walked, rootCommit(last.parentSha)]
+  }
   const tree = await treeOfBranch(db, tenant, repo, branch)
+  if (tree.size === 0) return []
   const pairs: Array<[string, string]> = [...tree.entries()].map(([p, d]) => [p, blobSha(d)])
-  return [...walked, rootCommit(pairs)]
+  return [rootCommit(rootSha(pairs))]
 }
 
 export function directoriesOf(files: Tree): Set<string> {

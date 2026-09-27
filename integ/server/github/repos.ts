@@ -384,10 +384,13 @@ export function repoRoutes(): KitRoute<C>[] {
           const asked = ctx.query.get('sha') ?? ''
           const branch = (await branchFor(ctx.db, ctx.tenant, repo, asked)) ?? repo.defaultBranch
           const list = await commitList(ctx.db, ctx.tenant, repo, branch)
+          if (list.length === 0) return fail(409, 'Git Repository is empty.')
           return { status: 200, body: list.map(commitJson) }
         }),
       ),
     ),
+    // Tag refs are not modeled; releases alone do not create git tags here.
+    route<C>('GET', `${p}/repos/:owner/:repo/tags`, authed(withRepo((ctx) => pagedReply(ctx, [])))),
   ])
 }
 

@@ -15,7 +15,7 @@
 import { buildSchema, graphql } from 'graphql'
 
 import type { Ctx, JsonValue, KitRoute, Reply } from '../kit/typescript/index.ts'
-import { API_PREFIXES, DEFAULT_LOGIN } from './config.ts'
+import { DEFAULT_LOGIN } from './config.ts'
 import type { C } from './config.ts'
 import { authedRoute, everywhere, jsonBodyOf, route, str } from './http.ts'
 import { issueOrPullRequestNode } from './issues.ts'
@@ -193,5 +193,5 @@ async function answer(ctx: Ctx<C>): Promise<Reply> {
 }
 
 export function graphqlRoutes(): KitRoute<C>[] {
-  return everywhere<C>(API_PREFIXES, (p) => [route<C>('POST', `${p}/graphql`, authedRoute(answer))])
+  return everywhere<C>(['', '/api'], (p) => [route<C>('POST', `${p}/graphql`, authedRoute(answer))])
 }

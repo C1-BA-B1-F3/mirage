@@ -13,8 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 import { describe, expect, it } from 'vitest'
 
+import type { ByteSource, IOResult } from '../../../io/types.ts'
 import { ContentType, FileStat, FileType, PathSpec } from '../../../types.ts'
-import { enoent } from '../../../utils/errors.ts'
+import { enoent, enotdir } from '../../../utils/errors.ts'
 import { UsageError } from '../../errors.ts'
 import { truncateGeneric } from './truncate.ts'
 
@@ -175,27 +176,61 @@ describe('truncate sizes', () => {
 })
 
 describe('truncate operands', () => {
-  function operand(rawPath: string): PathSpec {
-    return new PathSpec({ virtual: '/missing', directory: '/', vfsPath: 'missing', rawPath })
+  function operand(virtual: string, rawPath: string): PathSpec {
+    return new PathSpec({ virtual, directory: '/', vfsPath: virtual.slice(1), rawPath })
   }
 
-  it('settles a slashed operand by the truncate op', async () => {
-    // GNU opens with O_CREAT before it stats, so `missing/` and `reg/` are
-    // the open's EISDIR, not the stat's miss; a bare operand keeps its own
-    // ENOENT.
+  it('settles a missing operand by the truncate op', async () => {
+    // GNU opens with O_CREAT before it reads a size, so a stat that misses
+    // is never the verdict: a bare name is created, `missing/` is the
+    // open's EISDIR, and a relative size starts from nothing.
     const lengths: [string, number][] = []
-    const stat = (path: PathSpec): Promise<FileStat> => Promise.reject(enoent(path))
+    const stat = (path: PathSpec): Promise<FileStat> =>
+      Promise.reject(path.rawPath.startsWith('/under') ? enotdir(path) : enoent(path))
     const truncate = (path: PathSpec, length: number): Promise<void> => {
       lengths.push([path.rawPath, length])
       return Promise.resolve()
     }
-    await truncateGeneric([operand('/missing/')], '4', stat, truncate)
-    expect(lengths).toEqual([['/missing/', 4]])
-    await expect(truncateGeneric([operand('/missing')], '4', stat, truncate)).rejects.toMatchObject(
-      {
-        code: 'ENOENT',
-      },
+    const [, io] = (await truncateGeneric(
+      [
+        operand('/missing', '/missing/'),
+        operand('/missing', '/missing'),
+        operand('/under/x', '/under/x'),
+      ],
+      '+4',
+      stat,
+      truncate,
+    )) as [ByteSource | null, IOResult]
+    expect(lengths).toEqual([
+      ['/missing/', 4],
+      ['/missing', 4],
+      ['/under/x', 4],
+    ])
+    expect(io.exitCode).toBe(0)
+    expect(io.stderr).toBeNull()
+  })
+
+  it('reports a failed open and still runs the rest', async () => {
+    // One GNU line per operand the open refuses, the name always quoted
+    // (quoteaf), and every other operand still truncated.
+    const lengths: [string, number][] = []
+    const stat = (path: PathSpec): Promise<FileStat> => Promise.reject(enoent(path))
+    const truncate = (path: PathSpec, length: number): Promise<void> => {
+      if (path.rawPath !== 'b') return Promise.reject(enoent(path))
+      lengths.push([path.rawPath, length])
+      return Promise.resolve()
+    }
+    const [, io] = (await truncateGeneric(
+      [operand('/nope/x', 'nope/x'), operand('/b', 'b'), operand("/it's/x", "it's/x")],
+      '2',
+      stat,
+      truncate,
+    )) as [ByteSource | null, IOResult]
+    expect(lengths).toEqual([['b', 2]])
+    expect(io.exitCode).toBe(1)
+    expect(new TextDecoder().decode(io.stderr as Uint8Array)).toBe(
+      "truncate: cannot open 'nope/x' for writing: No such file or directory\n" +
+        'truncate: cannot open "it\'s/x" for writing: No such file or directory\n',
     )
-    expect(lengths).toEqual([['/missing/', 4]])
   })
 })

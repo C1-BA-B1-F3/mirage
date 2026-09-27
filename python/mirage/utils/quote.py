@@ -49,11 +49,12 @@ _NAMED_ESCAPES = {
 # family quote only when the name needs it (gnulib's ``shell_escape``
 # style), while head/tail/tac/fmt/split/csplit/truncate/strings quote
 # always and word the line differently ("cannot open X for reading").
-# head and tail say it in GNU's words (``OPEN_FAILURE_COMMANDS`` in
-# mirage.utils.errors). For the rest mirage renders one line shape, so it
-# renders one policy too: quote when the name needs it, which is the same
-# answer for every name that carries a metacharacter and differs only for
-# the plain ones GNU's always-quoting half would dress up.
+# head, tail, tac and truncate say it in GNU's words, as does stat
+# (``FAILURE_WORDING`` in mirage.utils.errors). For the rest mirage renders
+# one line shape, so it renders one policy too: quote when the name needs
+# it, which is the same answer for every name that carries a metacharacter
+# and differs only for the plain ones GNU's always-quoting half would dress
+# up.
 #
 # Absent on purpose, in two groups. GNU prints the operand bare for grep,
 # sed, cmp, diff, rev (util-linux), md5 (BSD) and zcat (gzip). And the
@@ -82,9 +83,7 @@ SHELL_QUOTED_COMMANDS: frozenset[str] = frozenset({
     "sort",
     "split",
     "strings",
-    "tac",
     "tee",
-    "truncate",
     "tsort",
     "unexpand",
     "uniq",

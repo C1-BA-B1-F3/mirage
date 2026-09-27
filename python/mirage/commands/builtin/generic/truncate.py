@@ -5,7 +5,7 @@ from mirage.commands.builtin.utils.size_suffix import size_suffixes
 from mirage.commands.errors import UsageError
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileStat, PathSpec
-from mirage.utils.errors import FS_ERRORS, fs_strerror
+from mirage.utils.errors import FS_ERRORS, fs_error_line
 
 # GNU truncate's letter set differs from split's and od's: lowercase
 # g/k/m/t are accepted, b is not (pinned against coreutils 9.7).
@@ -70,6 +70,14 @@ def parse_size(value: str, current: int) -> int:
     return number
 
 
+async def _current_size(stat: Callable[[PathSpec], Awaitable[FileStat]],
+                        path: PathSpec) -> int:
+    try:
+        return (await stat(path)).size or 0
+    except (FileNotFoundError, NotADirectoryError):
+        return 0
+
+
 async def truncate(
     paths: list[PathSpec],
     *,
@@ -79,38 +87,33 @@ async def truncate(
 ) -> tuple[ByteSource | None, IOResult]:
     """Set each operand's length, GNU ``truncate -s``.
 
-    GNU opens the operand with O_CREAT before it looks at anything, so a
-    name typed with a slash is settled by the open: ``missing/`` and
-    ``reg/`` are both ``Is a directory`` and nothing is created. The size
-    is read first here only because a relative spec needs it, so for a
-    slashed operand a stat that misses is not the verdict; the truncate
-    op answers, as the open would. An open that fails is GNU's
-    per-operand line, ``cannot open 'x' for writing`` (a read-only
-    region answers there), and the remaining operands still run.
+    GNU opens the operand with O_CREAT before it looks at anything, so the
+    open settles every name: a missing file is created, a missing or
+    non-directory parent refuses it, and a name typed with a slash
+    (``missing/``, ``reg/``) is ``Is a directory`` with nothing created.
+    The size is read first here only because a relative spec needs it, so
+    a stat that misses is not the verdict; the truncate op answers, as the
+    open would. A failure is GNU's per-operand line, ``cannot open 'x' for
+    writing`` (a read-only region answers there too), and the remaining
+    operands still run.
 
     Args:
         paths (list[PathSpec]): the file operands.
         size (str): the ``-s`` spec.
         stat (Callable): stats a path; raises when missing.
-        truncate_fn (Callable): sets a path's length in bytes.
+        truncate_fn (Callable): sets a path's length in bytes, creating
+            the file when it is missing.
     """
     if not paths:
         raise ValueError("truncate: missing file operand")
-    errors: list[str] = []
+    errors = b""
     for path in paths:
         try:
-            current = (await stat(path)).size or 0
-        except (FileNotFoundError, NotADirectoryError):
-            if not path.raw_path.endswith("/"):
-                raise
-            current = 0
-        try:
+            current = await _current_size(stat, path)
             await truncate_fn(path, parse_size(size, current))
         except FS_ERRORS as exc:
-            errors.append(f"truncate: cannot open '{path.raw_path}' "
-                          f"for writing: {fs_strerror(exc)}\n")
-    return None, IOResult(stderr="".join(errors).encode() or None,
-                          exit_code=1 if errors else 0)
+            errors += fs_error_line("truncate", path, exc).encode()
+    return None, IOResult(stderr=errors or None, exit_code=1 if errors else 0)
 
 
 __all__ = ["parse_size", "truncate"]

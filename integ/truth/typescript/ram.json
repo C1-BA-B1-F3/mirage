@@ -143,7 +143,7 @@
     "$ head /data/missing.txt",
     "  exit=1  head: cannot open '/data/missing.txt' for reading: No such file or directory",
     "$ stat /data/missing.txt",
-    "  exit=1  stat: /data/missing.txt: No such file or directory",
+    "  exit=1  stat: cannot statx '/data/missing.txt': No such file or directory",
     "",
     "=== GLOB EXPANSION ===",
     "",

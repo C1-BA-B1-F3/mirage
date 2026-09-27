@@ -1,8 +1,8 @@
 {
   "cases": [
     {
-      "id": "xm_stat_missing",
-      "seq": 766,
+      "id": "nf_tac",
+      "seq": 640,
       "targets": [
         "ram",
         "disk",
@@ -10,8 +10,10 @@
         "opfs",
         "s3",
         "databricks",
+        "gridfs",
         "s3-prefix",
         "databricks-prefix",
+        "gridfs-prefix",
         "hf",
         "hf-prefix",
         "dropbox",
@@ -22,13 +24,14 @@
         "ssh",
         "nextcloud",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "box"
       ],
-      "command": "stat -c '%n' /data/b.txt /data2/xpr_nope.txt",
+      "command": "tac /data/missing.txt",
       "expect": {
         "exit": 1,
-        "stdout": "/data/b.txt\n",
-        "stderr": "stat: cannot statx '/data2/xpr_nope.txt': No such file or directory\n"
+        "stdout": "",
+        "stderr": "tac: failed to open '/data/missing.txt' for reading: No such file or directory\n"
       }
     }
   ]

@@ -455,13 +455,33 @@ export function operandSpelling(
 }
 
 // The commands GNU words a failed operand as the step that failed rather
-// than as the bare name, the name always quoted (gnulib's quoteaf): a
-// missing file is `cannot open 'x' for reading`, and a directory, which
-// opens and then refuses the read, is `error reading 'x'`. Measured on
-// coreutils 9.7 (debian:stable-slim). Mirrors Python's
-// OPEN_FAILURE_COMMANDS. EFBIG and EBADF identify read failures in the
-// backend contract as well.
-export const OPEN_FAILURE_COMMANDS: ReadonlySet<string> = new Set(['head', 'tail'])
+// than as the bare name: [the open, the read of a file that opened], each
+// with `{}` where the name goes. A missing file fails the open (`head:
+// cannot open 'x' for reading`) and a directory, which opens and then
+// refuses the read, fails the read (`head: error reading 'x'`); stat has
+// only its statx, and truncate's directory fails its open for writing, so
+// those two say the same thing twice. A name inside the sentence is always
+// quoted (gnulib's quoteaf); tac's read failure leads with the name, which
+// GNU quotes only when it needs it (quotef). Measured on coreutils 9.7
+// (debian:stable-slim). Mirrors Python's FAILURE_WORDING.
+export const FAILURE_WORDING: ReadonlyMap<string, readonly [opened: string, read: string]> =
+  new Map([
+    ['head', ['cannot open {} for reading', 'error reading {}']],
+    ['tail', ['cannot open {} for reading', 'error reading {}']],
+    ['tac', ['failed to open {} for reading', '{}: read error']],
+    ['stat', ['cannot statx {}', 'cannot statx {}']],
+    ['truncate', ['cannot open {} for writing', 'cannot open {} for writing']],
+  ])
+
+// What fails the read rather than the open, in the backend contract as in
+// the kernel: a directory, a file too large to render whole, and a
+// descriptor that is closed or open for writing only.
+const READ_FAILURES: ReadonlySet<string> = new Set(['EISDIR', 'EFBIG', 'EBADF'])
+
+function worded(template: string, label: string): string {
+  const quoted = template.startsWith('{}') ? shellQuote(label) : shellQuoteAlways(label)
+  return template.replace('{}', () => quoted)
+}
 
 // GNU coreutils stderr line for one failed path operand, spelled as typed
 // (PathSpec.rawPath). Byte-identical with the executor chokepoint and the
@@ -469,7 +489,7 @@ export const OPEN_FAILURE_COMMANDS: ReadonlySet<string> = new Set(['head', 'tail
 // remaining operands after one fails, where the caller holds the operand.
 // A command in SHELL_QUOTED_COMMANDS reports the operand shell-quoted when
 // it needs it ('*.txt'), the way GNU does; every other command reports it
-// bare. A command in OPEN_FAILURE_COMMANDS says which step failed instead,
+// bare. A command in FAILURE_WORDING says which step failed instead,
 // except for standard input, whose `-` line is the one GNU prints when it
 // closes a stdin it could not read.
 export function fsErrorLine(
@@ -480,11 +500,11 @@ export function fsErrorLine(
   const code = (err as { code?: string }).code
   const strerror = gnuStrerror(code)
   const typed = virtualOf(path)
-  if (OPEN_FAILURE_COMMANDS.has(cmdName) && strerror !== null && typed !== '-') {
-    const quoted = shellQuoteAlways(typed)
-    if (code === 'EISDIR' || code === 'EFBIG' || code === 'EBADF')
-      return `${cmdName}: error reading ${quoted}: ${strerror}\n`
-    return `${cmdName}: cannot open ${quoted} for reading: ${strerror}\n`
+  const wording = FAILURE_WORDING.get(cmdName)
+  if (wording !== undefined && strerror !== null && typed !== '-') {
+    const [opened, read] = wording
+    const step = code !== undefined && READ_FAILURES.has(code) ? read : opened
+    return `${cmdName}: ${worded(step, typed)}: ${strerror}\n`
   }
   const label = quotesOperands(cmdName) ? shellQuote(typed) : typed
   if (strerror !== null) return `${cmdName}: ${label}: ${strerror}\n`

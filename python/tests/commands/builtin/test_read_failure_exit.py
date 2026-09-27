@@ -79,15 +79,19 @@ GNU_READ_EXIT = {
 # GNU's wording for a failed read is per-command and unreproducible as a
 # family: `base64: read error: Is a directory`, `sort: read failed: dir:
 # Is a directory`, `rev: fgetwc() failed: Is a directory`, `fmt: read
-# error` with no errno at all, `tac: read error: Invalid argument` with
-# the WRONG errno, `strings: Warning: 'dir' is a directory`, and `gzip:
-# dir is a directory -- ignored`. mirage normalizes all of it to
-# `<cmd>: <path>: Is a directory`, so the message test asserts the house
-# style and only the exit code above is GNU's. Two commands carry GNU's
-# own wording instead: head's `error reading 'dir': Is a directory`, and
-# sort's step names from `sort_die` (`cannot read`, `open failed`, `stat
-# failed`, `read failed`), whose `read failed: dir: Is a directory` still
-# contains the house style.
+# error` with no errno at all, `strings: Warning: 'dir' is a directory`,
+# and `gzip: dir is a directory -- ignored`. mirage normalizes all of it
+# to `<cmd>: <path>: Is a directory`, so the message test asserts the
+# house style and only the exit code above is GNU's. Three commands carry
+# GNU's own wording instead: head's `error reading 'dir': Is a directory`,
+# tac's `dir: read error: Is a directory`, and sort's step names from
+# `sort_die` (`cannot read`, `open failed`, `stat failed`, `read
+# failed`), whose `read failed: dir: Is a directory` still contains the
+# house style. tac's errno is the filesystem's: it seeks to the end
+# before reading, which on ext4 and overlayfs leaves an offset the read
+# is refused at with EINVAL before the directory can answer, while on
+# tmpfs it gets as far as EISDIR. mirage keeps EISDIR, the errno every
+# other command here reports.
 #
 # Two lines print nothing at all on a directory in GNU (`jq .` exits 2
 # silently, `zgrep x` exits 1 silently because gzip's warning is
@@ -132,7 +136,8 @@ async def test_directory_read_says_is_a_directory(template):
     result = await ws.shell(template.format(p="/ram/dir"))
     stderr = (result.stderr or b"").decode()
     assert ("/ram/dir: Is a directory" in stderr
-            or "error reading '/ram/dir': Is a directory" in stderr)
+            or "error reading '/ram/dir': Is a directory" in stderr
+            or "/ram/dir: read error: Is a directory" in stderr)
     assert "No such file" not in stderr
 
 

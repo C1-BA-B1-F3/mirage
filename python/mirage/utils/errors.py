@@ -392,12 +392,35 @@ def _segments(path: str) -> list[str]:
 
 
 # The commands GNU words a failed operand as the step that failed rather
-# than as the bare name, the name always quoted (gnulib's quoteaf): a
-# missing file is ``cannot open 'x' for reading``, and a directory, which
-# opens and then refuses the read, is ``error reading 'x'``. Measured on
-# coreutils 9.7 (debian:stable-slim). FileTooLargeError and
-# BadDescriptorError also identify read failures in the backend contract.
-OPEN_FAILURE_COMMANDS: frozenset[str] = frozenset({"head", "tail"})
+# than as the bare name: (the open, the read of a file that opened), each
+# with ``{}`` where the name goes. A missing file fails the open (``head:
+# cannot open 'x' for reading``) and a directory, which opens and then
+# refuses the read, fails the read (``head: error reading 'x'``); stat has
+# only its statx, and truncate's directory fails its open for writing, so
+# those two say the same thing twice. A name inside the sentence is always
+# quoted (gnulib's quoteaf); tac's read failure leads with the name, which
+# GNU quotes only when it needs it (quotef). Measured on coreutils 9.7
+# (debian:stable-slim).
+FAILURE_WORDING: dict[str, tuple[str, str]] = {
+    "head": ("cannot open {} for reading", "error reading {}"),
+    "tail": ("cannot open {} for reading", "error reading {}"),
+    "tac": ("failed to open {} for reading", "{}: read error"),
+    "stat": ("cannot statx {}", "cannot statx {}"),
+    "truncate": ("cannot open {} for writing", "cannot open {} for writing"),
+}
+
+# What fails the read rather than the open, in the backend contract as in
+# the kernel: a directory, a file too large to render whole, and a
+# descriptor that is closed or open for writing only.
+_READ_FAILURES: tuple[type[OSError],
+                      ...] = (IsADirectoryError, FileTooLargeError,
+                              BadDescriptorError)
+
+
+def _worded(template: str, label: str) -> str:
+    quoted = (shell_quote(label)
+              if template.startswith("{}") else shell_quote_always(label))
+    return template.replace("{}", quoted)
 
 
 def fs_error_line(cmd_name: str, path: str | PathSpec,
@@ -411,7 +434,7 @@ def fs_error_line(cmd_name: str, path: str | PathSpec,
     already-resolved label string. A command in ``SHELL_QUOTED_COMMANDS``
     reports the operand shell-quoted when it needs it (``'*.txt'``), the
     way GNU does; every other command reports it bare. A command in
-    ``OPEN_FAILURE_COMMANDS`` says which step failed instead, except for
+    ``FAILURE_WORDING`` says which step failed instead, except for
     standard input, whose ``-`` line is the one GNU prints when it closes
     a stdin it could not read.
 
@@ -421,16 +444,14 @@ def fs_error_line(cmd_name: str, path: str | PathSpec,
             the reported spelling, a plain string is used verbatim.
         exc (BaseException): The filesystem error.
     """
-    label = getattr(path, "raw_path", None) or _virtual_of(path)
+    raw = getattr(path, "raw_path", None)
+    label = raw if raw is not None else _virtual_of(path)
     strerror = fs_strerror(exc)
-    if (cmd_name in OPEN_FAILURE_COMMANDS and strerror is not None
-            and label != "-"):
-        quoted = shell_quote_always(label)
-        if isinstance(
-                exc,
-            (IsADirectoryError, FileTooLargeError, BadDescriptorError)):
-            return f"{cmd_name}: error reading {quoted}: {strerror}\n"
-        return f"{cmd_name}: cannot open {quoted} for reading: {strerror}\n"
+    wording = FAILURE_WORDING.get(cmd_name)
+    if wording is not None and strerror is not None and label != "-":
+        opened, read = wording
+        step = read if isinstance(exc, _READ_FAILURES) else opened
+        return f"{cmd_name}: {_worded(step, label)}: {strerror}\n"
     if quotes_operands(cmd_name):
         label = shell_quote(label)
     if strerror is not None:

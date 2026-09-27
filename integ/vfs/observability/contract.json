@@ -28,7 +28,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: {mount}/__nf_missing__: No such file or directory\n"
+        "stderr": "stat: cannot statx '{mount}/__nf_missing__': No such file or directory\n"
       }
     },
     {
@@ -263,7 +263,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "tac: {mount}/__nf_missing__: No such file or directory\n"
+        "stderr": "tac: failed to open '{mount}/__nf_missing__' for reading: No such file or directory\n"
       }
     },
     {

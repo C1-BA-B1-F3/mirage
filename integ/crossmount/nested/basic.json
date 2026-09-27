@@ -543,7 +543,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /ghost: No such file or directory\n"
+        "stderr": "stat: cannot statx '/ghost': No such file or directory\n"
       }
     },
     {

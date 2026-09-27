@@ -147,9 +147,11 @@ describe('quotesOperands', () => {
   it('reads the table', () => {
     expect(quotesOperands('cat')).toBe(true)
     expect(quotesOperands('wc')).toBe(true)
-    expect(quotesOperands('tac')).toBe(true)
+    expect(quotesOperands('fold')).toBe(true)
     expect(quotesOperands('sort')).toBe(true)
     expect(quotesOperands('head')).toBe(false)
+    expect(quotesOperands('tac')).toBe(false)
+    expect(quotesOperands('truncate')).toBe(false)
     expect(quotesOperands('grep')).toBe(false)
     expect(quotesOperands('sed')).toBe(false)
     expect(quotesOperands('rev')).toBe(false)

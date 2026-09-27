@@ -357,6 +357,20 @@
       ]
     },
     {
+      "id": "sro_truncate_missing_is_refused",
+      "seq": 1231063,
+      "session": "narrowed",
+      "flags": [
+        "s"
+      ],
+      "command": "truncate -s 0 /res/sro/new.txt; echo rc=$?; test -e /res/sro/new.txt; echo new=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nnew=1\n",
+        "stderr": "truncate: cannot open '/res/sro/new.txt' for writing: Read-only file system\n"
+      }
+    },
+    {
       "id": "sro_unlink_is_refused",
       "seq": 1231062,
       "session": "narrowed",

@@ -1,6 +1,6 @@
 import { IOResult } from '../../../io/types.ts'
 import type { FileStat, PathSpec } from '../../../types.ts'
-import { fsStrerror, isFsError } from '../../../utils/errors.ts'
+import { fsErrorLine, isEnoent, isEnotdir, isFsError } from '../../../utils/errors.ts'
 import type { CommandFnResult } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
 import { sizeSuffixes } from '../utils/size_suffix.ts'
@@ -64,13 +64,26 @@ function parseSize(value: string, current: number): number {
   return number
 }
 
-// GNU opens the operand with O_CREAT before it looks at anything, so a name
-// typed with a slash is settled by the open: `missing/` and `reg/` are both
-// "Is a directory" and nothing is created. The size is read first here only
-// because a relative spec needs it, so for a slashed operand a stat that
-// misses is not the verdict; the truncate op answers, as the open would. An
-// open that fails is GNU's per-operand line, `cannot open 'x' for writing`
-// (a read-only region answers there), and the remaining operands still run.
+async function currentSize(
+  stat: (path: PathSpec) => Promise<FileStat>,
+  path: PathSpec,
+): Promise<number> {
+  try {
+    return (await stat(path)).size ?? 0
+  } catch (err) {
+    if (isEnoent(err) || isEnotdir(err)) return 0
+    throw err
+  }
+}
+
+// GNU opens the operand with O_CREAT before it looks at anything, so the
+// open settles every name: a missing file is created, a missing or
+// non-directory parent refuses it, and a name typed with a slash (`missing/`,
+// `reg/`) is "Is a directory" with nothing created. The size is read first
+// here only because a relative spec needs it, so a stat that misses is not
+// the verdict; the truncate op answers, as the open would. A failure is GNU's
+// per-operand line, `cannot open 'x' for writing` (a read-only region
+// answers there too), and the remaining operands still run.
 export async function truncateGeneric(
   paths: readonly PathSpec[],
   size: string,
@@ -78,24 +91,16 @@ export async function truncateGeneric(
   truncate: (path: PathSpec, length: number) => Promise<void>,
 ): Promise<CommandFnResult> {
   if (paths.length === 0) throw new Error('truncate: missing file operand')
-  const errors: string[] = []
+  let errors = ''
   for (const path of paths) {
-    let current = 0
     try {
-      current = (await stat(path)).size ?? 0
-    } catch (err) {
-      const code = (err as { code?: unknown }).code
-      if (!path.rawPath.endsWith('/') || (code !== 'ENOENT' && code !== 'ENOTDIR')) throw err
-    }
-    try {
+      const current = await currentSize(stat, path)
       await truncate(path, parseSize(size, current))
     } catch (err) {
       if (!isFsError(err)) throw err
-      errors.push(
-        `truncate: cannot open '${path.rawPath}' for writing: ${String(fsStrerror(err))}\n`,
-      )
+      errors += fsErrorLine('truncate', path, err)
     }
   }
-  if (errors.length === 0) return [null, new IOResult()]
-  return [null, new IOResult({ stderr: new TextEncoder().encode(errors.join('')), exitCode: 1 })]
+  if (errors === '') return [null, new IOResult()]
+  return [null, new IOResult({ stderr: new TextEncoder().encode(errors), exitCode: 1 })]
 }

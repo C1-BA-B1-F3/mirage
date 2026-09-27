@@ -17,7 +17,7 @@ import type { RAMAccessor } from '../../accessor/ram.ts'
 import { VFSName, type PathSpec } from '../../types.ts'
 import { norm, nowIso } from './utils.ts'
 import { invalidateAfterWrite } from '../../cache/context.ts'
-import { checkWriteTarget } from './dest.ts'
+import { checkDestParents, checkWriteTarget } from './dest.ts'
 
 export async function truncate(
   accessor: RAMAccessor,
@@ -26,6 +26,7 @@ export async function truncate(
 ): Promise<void> {
   const timer = startOp()
   const p = norm(path.mountPath)
+  checkDestParents(accessor, path, p)
   checkWriteTarget(accessor, path, p)
   const existing = accessor.store.files.get(p) ?? new Uint8Array()
   const out = new Uint8Array(length)

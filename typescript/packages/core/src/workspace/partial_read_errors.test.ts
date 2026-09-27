@@ -276,7 +276,6 @@ describe('rest of the read family keeps partial output past missing', () => {
       'a6e2b7a040683432de03a18fd8a1939a2fdf82585b364bfc874bdd4095c4cae1  /a/f.txt\n',
       'sha256sum',
     ],
-    ['tac /a/f.txt /a/missing.txt', '2\n1\n', 'tac'],
     ['rev /a/f.txt /a/missing.txt', '1\n2\n', 'rev'],
     ['cut -c1 /a/f.txt /a/missing.txt', '1\n2\n', 'cut'],
     ['expand /a/f.txt /a/missing.txt', '1\n2\n', 'expand'],
@@ -292,6 +291,15 @@ describe('rest of the read family keeps partial output past missing', () => {
       expect(code).toBe(1)
     })
   }
+
+  it('tac keeps partial output and names the failed open', async () => {
+    const [out, err, code] = await runNumbered(['tac /a/f.txt /a/missing.txt'])
+    expect(out).toBe('2\n1\n')
+    expect(err).toBe(
+      "tac: failed to open '/a/missing.txt' for reading: No such file or directory\n",
+    )
+    expect(code).toBe(1)
+  })
 
   it('strings keeps partial output', async () => {
     const [out, err, code] = await runNumbered(['strings /a/h.txt /a/missing.txt'])
@@ -322,7 +330,7 @@ describe('rest of the read family keeps partial output past missing', () => {
   it('stat keeps the good row past missing', async () => {
     const [out, err, code] = await runNumbered(['stat /a/f.txt /a/missing.txt'])
     expect(out).toContain('name=f.txt')
-    expect(err).toBe('stat: /a/missing.txt: No such file or directory\n')
+    expect(err).toBe("stat: cannot statx '/a/missing.txt': No such file or directory\n")
     expect(code).toBe(1)
   })
 

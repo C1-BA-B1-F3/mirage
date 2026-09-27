@@ -543,7 +543,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /notion/databases/Tasks__eeee1111-2222-3333-4444-555566667777/Tasks__d5000000-2222-3333-4444-555566667777/Wrong_title__ffff1111-2222-3333-4444-555566667777: No such file or directory\n"
+        "stderr": "stat: cannot statx '/notion/databases/Tasks__eeee1111-2222-3333-4444-555566667777/Tasks__d5000000-2222-3333-4444-555566667777/Wrong_title__ffff1111-2222-3333-4444-555566667777': No such file or directory\n"
       }
     },
     {
@@ -556,7 +556,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /notion/databases/Tasks__eeee1111-2222-3333-4444-555566667777/Tasks__d5000000-2222-3333-4444-555566667777/Write_spec__ffff9999-2222-3333-4444-555566667777: No such file or directory\n"
+        "stderr": "stat: cannot statx '/notion/databases/Tasks__eeee1111-2222-3333-4444-555566667777/Tasks__d5000000-2222-3333-4444-555566667777/Write_spec__ffff9999-2222-3333-4444-555566667777': No such file or directory\n"
       }
     },
     {
@@ -582,7 +582,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /notion/databases/Tasks__eeee1111-2222-3333-4444-555566667777/Tasks__d5000000-2222-3333-4444-555566667777/Wrong_title__ffff1111-2222-3333-4444-555566667777/page.json: No such file or directory\n"
+        "stderr": "stat: cannot statx '/notion/databases/Tasks__eeee1111-2222-3333-4444-555566667777/Tasks__d5000000-2222-3333-4444-555566667777/Wrong_title__ffff1111-2222-3333-4444-555566667777/page.json': No such file or directory\n"
       }
     },
     {
@@ -608,7 +608,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /notion/databases/Tasks__eeee1111-2222-3333-4444-555566667777/Tasks__d5000000-2222-3333-4444-555566667777/Write_spec__ffff1111-2222-3333-4444-555566667777/Fabricated__ffff9999-2222-3333-4444-555566667777: No such file or directory\n"
+        "stderr": "stat: cannot statx '/notion/databases/Tasks__eeee1111-2222-3333-4444-555566667777/Tasks__d5000000-2222-3333-4444-555566667777/Write_spec__ffff1111-2222-3333-4444-555566667777/Fabricated__ffff9999-2222-3333-4444-555566667777': No such file or directory\n"
       }
     },
     {

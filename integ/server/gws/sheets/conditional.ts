@@ -18,7 +18,7 @@ import { asNum, asObj, asObjArr, asStr } from '../wire/json.ts'
 import type { JsonObj } from '../wire/json.ts'
 import { isReply } from '../wire/reply.ts'
 import { CONDITIONAL_RULE, canonical } from './fields.ts'
-import { cellData, shownAt } from './grid.ts'
+import { evaluatedCell, shownAt } from './grid.ts'
 import type { Grid } from './grid.ts'
 import { boundsOf, covers, gridOf, invalid, rangeOn, rectOf, storedRange } from './request.ts'
 import type { At } from './request.ts'
@@ -33,7 +33,7 @@ export function holds(condition: JsonObj, tab: SheetTab, row: number, col: numbe
   const shown = shownAt(tab, row, col)
   const text = shown.toLowerCase()
   const arg = (args[0] ?? '').toLowerCase()
-  const value = cellData(tab.cells.get(`${String(row)},${String(col)}`) ?? '')
+  const value = evaluatedCell(tab, row, col)
   const number = asNum(asObj(value.effectiveValue).numberValue)
   const [low = NaN, high = NaN] = args.map(Number)
   switch (asStr(condition.type)) {

@@ -31,7 +31,7 @@ import { saveState } from './store/save.ts'
 import { parseDriveQuery, matchQuery } from './drive/query.ts'
 import { createDriveItem } from './drive/item.ts'
 import { GwsState } from './store/state.ts'
-import { newTab } from './sheets/grid.ts'
+import { newTab, rangeValues, wholeTab, writeValues } from './sheets/grid.ts'
 import { gridData } from './sheets/spreadsheet.ts'
 import { sheetsBatchUpdate } from './sheets/batch.ts'
 import { CELL_DATA, CELL_FORMAT, canonical } from './sheets/fields.ts'
@@ -821,6 +821,138 @@ async function driveMoveHttp(at: string): Promise<void> {
   ])
 }
 
+async function formulasHttp(at: string): Promise<void> {
+  const tenant = 'formulas'
+  await reset(at, { tenants: [tenant], epoch: EPOCH })
+  const made = await post(`${at}/v4/spreadsheets`, tenant, { properties: { title: 'Formulas' } })
+  const base = `${at}/v4/spreadsheets/${String(obj(made.body).spreadsheetId)}`
+  const put = async (
+    range: string,
+    values: JsonValue[][],
+    option = 'USER_ENTERED',
+  ): Promise<void> => {
+    const response = await api(
+      `${base}/values/${encodeURIComponent(range)}?valueInputOption=${option}`,
+      tenant,
+      { method: 'PUT', body: JSON.stringify({ values }) },
+    )
+    assert.equal(response.status, 200)
+  }
+  const get = async (range: string, render = 'FORMATTED_VALUE'): Promise<JsonValue> => {
+    const response = await api(
+      `${base}/values/${encodeURIComponent(range)}?valueRenderOption=${render}`,
+      tenant,
+    )
+    assert.equal(response.status, 200)
+    return obj(response.body).values ?? []
+  }
+  await put('Sheet1!A1:E1', [['1', '2', '=SUM(A1:B1)', '=A1*10', 'true']])
+  assert.deepEqual(await get('Sheet1!A1:E1'), [['1', '2', '3', '10', 'TRUE']])
+  assert.deepEqual(await get('Sheet1!A1:E1', 'UNFORMATTED_VALUE'), [[1, 2, 3, 10, true]])
+  assert.deepEqual(await get('Sheet1!A1:E1', 'FORMULA'), [[1, 2, '=SUM(A1:B1)', '=A1*10', true]])
+  const grid = await api(`${base}?includeGridData=true&ranges=Sheet1!C1`, tenant)
+  const cell = obj(arr(obj(arr(obj(arr(obj(grid.body).sheets)[0]).data)[0]).rowData)[0])
+  const value = obj(arr(cell.values)[0])
+  assert.deepEqual(value.userEnteredValue, { formulaValue: '=SUM(A1:B1)' })
+  assert.deepEqual(value.effectiveValue, { numberValue: 3 })
+  assert.equal(value.formattedValue, '3')
+  await put('Sheet1!A1', [[5]])
+  assert.deepEqual(await get('Sheet1!C1:D1', 'UNFORMATTED_VALUE'), [[7, 50]])
+
+  await post(`${base}:batchUpdate`, tenant, {
+    requests: [
+      { addSheet: { properties: { title: '2025Final' } } },
+      { addSheet: { properties: { title: "2023'Final" } } },
+    ],
+  })
+  await post(`${base}/values:batchUpdate`, tenant, {
+    valueInputOption: 'USER_ENTERED',
+    data: [
+      { range: "'2025Final'!B2", values: [[20]] },
+      { range: "'2023''Final'!B2", values: [[3]] },
+      {
+        range: 'Sheet1!A2:F2',
+        values: [
+          [
+            "='2025Final'!$B$2-'2023''Final'!B2",
+            '=AVERAGE(A1:B1)',
+            '=MIN(A1:B1)',
+            '=MAX(A1:B1)',
+            '=COUNT(A1:E1)',
+            '=-(2+3)*4/2+SUM(1,2)',
+          ],
+        ],
+      },
+    ],
+  })
+  assert.deepEqual(await get('Sheet1!A2:F2', 'UNFORMATTED_VALUE'), [[17, 3.5, 2, 5, 4, -7]])
+  const batch = await api(
+    `${base}/values:batchGet?ranges=Sheet1!A2:B2&valueRenderOption=UNFORMATTED_VALUE`,
+    tenant,
+  )
+  assert.deepEqual(obj(arr(obj(batch.body).valueRanges)[0]).values, [[17, 3.5]])
+  const formulaBatch = await api(
+    `${base}/values:batchGet?ranges=Sheet1!A2&valueRenderOption=FORMULA`,
+    tenant,
+  )
+  assert.deepEqual(obj(arr(obj(formulaBatch.body).valueRanges)[0]).values, [
+    ["='2025Final'!$B$2-'2023''Final'!B2"],
+  ])
+
+  await put('Sheet1!A3:F3', [['=1+1', '007', 'true', 7, true, "'=2+2"]], 'RAW')
+  assert.deepEqual(await get('Sheet1!A3:F3', 'UNFORMATTED_VALUE'), [
+    ['=1+1', '007', 'true', 7, true, "'=2+2"],
+  ])
+  await put('Sheet1!A4:G4', [
+    ['=UNKNOWN(1)', '=1/0', '=A4+1', '=D4', '=Missing!A1', '=1+', '=AVERAGE(Z1:Z2)'],
+  ])
+  assert.deepEqual(await get('Sheet1!A4:G4'), [
+    ['#NAME?', '#DIV/0!', '#NAME?', '#REF!', '#REF!', '#ERROR!', '#DIV/0!'],
+  ])
+  const errorGrid = await api(`${base}?includeGridData=true&ranges=Sheet1!A4`, tenant)
+  const errorCell = obj(
+    arr(obj(arr(obj(arr(obj(arr(obj(errorGrid.body).sheets)[0]).data)[0]).rowData)[0]).values)[0],
+  )
+  assert.equal(obj(obj(errorCell.effectiveValue).errorValue).type, 'NAME')
+  await put('Sheet1!D4', [[9]])
+  assert.deepEqual(await get('Sheet1!D4', 'UNFORMATTED_VALUE'), [[9]])
+
+  await post(`${base}:batchUpdate`, tenant, {
+    requests: [
+      {
+        repeatCell: {
+          range: {
+            sheetId: 0,
+            startRowIndex: 4,
+            endRowIndex: 5,
+            startColumnIndex: 0,
+            endColumnIndex: 1,
+          },
+          cell: {
+            userEnteredValue: { formulaValue: '=SUM(A1:B1)/10' },
+            userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.0%' } },
+          },
+          fields: 'userEnteredValue,userEnteredFormat.numberFormat',
+        },
+      },
+    ],
+  })
+  assert.deepEqual(await get('Sheet1!A5'), [['70.0%']])
+  assert.deepEqual(await get('Sheet1!A5', 'UNFORMATTED_VALUE'), [[0.7]])
+  await post(`${base}/values/Sheet1!A6:append?valueInputOption=USER_ENTERED`, tenant, {
+    values: [['=SUM(1,2)']],
+  })
+  assert.deepEqual(await get('Sheet1!A6', 'UNFORMATTED_VALUE'), [[3]])
+  await post(`${base}/values/Sheet1!A5:clear`, tenant, {})
+  assert.deepEqual(await get('Sheet1!A5'), [])
+  await put('Sheet1!A5', [['007']], 'RAW')
+  assert.deepEqual(await get('Sheet1!A5', 'UNFORMATTED_VALUE'), [['007']])
+  check(
+    'formulas: typed inputs, render options, recalculation, ranges, errors and write paths',
+    true,
+  )
+}
+
 async function main(): Promise<void> {
   compatibilityDirect()
   sheetsFormatsDirect()
@@ -828,6 +960,7 @@ async function main(): Promise<void> {
   const at = fake.endpoint
   const seed = { tenants: ['t1'], epoch: EPOCH, extras: { forms: FORMS } }
   try {
+    await formulasHttp(at)
     await compatibilityHttp(at)
     await gridRangesHttp(at)
     await driveMoveHttp(at)
@@ -1234,7 +1367,10 @@ async function main(): Promise<void> {
       tab.props.set('10000,0', { userEnteredFormat: { textFormat: { bold: true } } })
       tab.cells.delete('10001,0')
       tab.props.set('10001,0', { note: 'formatted, no value' })
-      st.sheets.set(file.id, { title: file.name, tabs: [tab], nextSheetId: 1 })
+      const formulas = newTab(1, 'Formulas')
+      writeValues(wholeTab(formulas), [[2, '=A1*5', '=1+1', '007', true]], 0)
+      writeValues({ ...wholeTab(formulas), startCol: 2 }, [['=1+1', '007']], 0, 'RAW')
+      st.sheets.set(file.id, { title: file.name, tabs: [tab, formulas], nextSheetId: 2 })
       await saveState(db, gwsFake.dmmf, 't1', st)
       const restored = await loadState(db, 't1')
       check(
@@ -1245,6 +1381,16 @@ async function main(): Promise<void> {
         'bulk cell persistence preserves formats, a formatted blank cell included',
         isDeepStrictEqual(restored.sheets.get(file.id)?.tabs[0]?.props, tab.props),
       )
+      const restoredFormulas = restored.sheets.get(file.id)?.tabs[1]
+      assert.ok(restoredFormulas)
+      assert.deepEqual(
+        rangeValues(wholeTab(restoredFormulas), [restoredFormulas], 'UNFORMATTED_VALUE'),
+        [[2, 10, '=1+1', '007', true]],
+      )
+      assert.deepEqual(rangeValues(wholeTab(restoredFormulas), [restoredFormulas], 'FORMULA'), [
+        [2, '=A1*5', '=1+1', '007', true],
+      ])
+      check('formula and RAW value types survive database reload', true)
       tab.cells.set('00,0', 'duplicate primary key')
       let refusal = ''
       try {

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { JsonValue } from '../../kit/typescript/index.ts'
 import type { SheetTab, Spreadsheet } from '../store/types.ts'
 
 export function colLetterToIndex(letters: string): number {
@@ -119,7 +120,7 @@ export function rangeLabel(
   tab: SheetTab,
   startRow: number,
   startCol: number,
-  values: string[][],
+  values: JsonValue[][],
 ): string {
   const rows = Math.max(1, values.length)
   const cols = Math.max(1, ...values.map((r) => r.length))

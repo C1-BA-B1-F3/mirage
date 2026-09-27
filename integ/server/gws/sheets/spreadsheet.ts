@@ -14,7 +14,7 @@
 
 import type { JsonValue } from '../../kit/typescript/index.ts'
 import type { SheetTab, Spreadsheet } from '../store/types.ts'
-import { asObj, asObjArr, isObj } from '../wire/json.ts'
+import { asObj, asObjArr } from '../wire/json.ts'
 import type { JsonObj } from '../wire/json.ts'
 import type { A1Range } from './a1.ts'
 import { renderBanded } from './banding.ts'
@@ -22,23 +22,35 @@ import { renderRule } from './conditional.ts'
 import { CELL_DATA, DIMENSION_PROPERTIES, ordered } from './fields.ts'
 import { filterHidden, renderFilter } from './filter.ts'
 import { DEFAULT_FORMAT, SPREADSHEET_THEME, effectiveFormat } from './format.ts'
-import { COLUMN_PIXELS, ROW_PIXELS, cellData, tabGrid, tabProperties, wholeTab } from './grid.ts'
+import {
+  COLUMN_PIXELS,
+  ROW_PIXELS,
+  evaluatedCell,
+  tabGrid,
+  tabProperties,
+  wholeTab,
+} from './grid.ts'
+import { FormulaEvaluator } from './formula.ts'
 import type { Grid } from './grid.ts'
 import { boundsOf, covers, overlaps } from './request.ts'
 import type { Bounds } from './request.ts'
 
 // One cell as `includeGridData` reports it: the value, what else a caller
 // wrote to it, and the format it ends up with.
-function cellAt(tab: SheetTab, grid: Grid, row: number, col: number): JsonObj {
+function cellAt(
+  tab: SheetTab,
+  grid: Grid,
+  row: number,
+  col: number,
+  evaluator: FormulaEvaluator,
+): JsonObj {
   const key = `${String(row)},${String(col)}`
-  const text = tab.cells.get(key)
   const props = tab.props.get(key)
-  const numberFormat = asObj(props?.userEnteredFormat).numberFormat
   const out: JsonObj = {
-    ...(text === undefined ? {} : cellData(text, isObj(numberFormat) ? numberFormat : undefined)),
     ...props,
+    ...evaluatedCell(tab, row, col, evaluator),
   }
-  const effective = effectiveFormat(tab, grid, row, col)
+  const effective = effectiveFormat(tab, grid, row, col, asObj(out.effectiveValue))
   if (effective !== undefined) out.effectiveFormat = effective
   return ordered(out, CELL_DATA)
 }
@@ -58,7 +70,8 @@ function dimensionAt(meta: JsonObj | undefined, pixels: number, byFilter: boolea
 // `startRow`/`startColumn` are absent at zero because the live API omits
 // them there, and present for a range that starts further in; `rowData` is
 // absent when no row has anything to report.
-export function gridData(range: A1Range): JsonObj {
+export function gridData(range: A1Range, tabs: readonly SheetTab[] = [range.tab]): JsonObj {
+  const evaluator = new FormulaEvaluator(tabs)
   const tab = range.tab
   const grid = tabGrid(tab)
   const asked = askedBounds(range, grid)
@@ -71,7 +84,7 @@ export function gridData(range: A1Range): JsonObj {
   const consider = (row: number, col: number): void => {
     const key = `${String(row)},${String(col)}`
     if (cells.has(key) || !covers(b, row, col)) return
-    const cell = cellAt(tab, grid, row, col)
+    const cell = cellAt(tab, grid, row, col, evaluator)
     if (Object.keys(cell).length > 0) cells.set(key, cell)
   }
   for (const key of [...tab.cells.keys(), ...tab.props.keys()]) {
@@ -150,8 +163,8 @@ export function fmtSpreadsheet(
     ranges.length === 0 ? sheet.tabs : sheet.tabs.filter((t) => ranges.some((r) => r.tab === t))
   const dataOf = (tab: SheetTab): JsonObj[] =>
     ranges.length === 0
-      ? [gridData(wholeTab(tab))]
-      : ranges.filter((r) => r.tab === tab).map(gridData)
+      ? [gridData(wholeTab(tab), sheet.tabs)]
+      : ranges.filter((r) => r.tab === tab).map((r) => gridData(r, sheet.tabs))
   const sheetOf = (tab: SheetTab): JsonObj => {
     const grid = tabGrid(tab)
     const asked = ranges.filter((r) => r.tab === tab).map((r) => askedBounds(r, grid))

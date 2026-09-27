@@ -19,7 +19,7 @@ import type { JsonObj } from '../wire/json.ts'
 import { googleError, isReply } from '../wire/reply.ts'
 import { holds } from './conditional.ts'
 import { BASIC_FILTER, CELL_DATA, CELL_FORMAT, canonical, ordered } from './fields.ts'
-import { cellData, shownAt, tabGrid } from './grid.ts'
+import { evaluatedCell, shownAt, tabGrid } from './grid.ts'
 import { boundsOf, gridOf, invalid, rangeOn, rectOf, storedRange } from './request.ts'
 import type { At, Rect } from './request.ts'
 
@@ -181,7 +181,7 @@ function compareRows(tab: SheetTab, a: number, b: number, specs: readonly JsonOb
 }
 
 function sortKey(tab: SheetTab, row: number, col: number): SortKey | null {
-  const value = asObj(cellData(tab.cells.get(`${String(row)},${String(col)}`) ?? '').effectiveValue)
+  const value = asObj(evaluatedCell(tab, row, col).effectiveValue)
   if (typeof value.numberValue === 'number') return { rank: 0, num: value.numberValue, str: '' }
   if (typeof value.stringValue === 'string') {
     return { rank: 1, num: 0, str: value.stringValue.toLowerCase() }

@@ -12,11 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { JsonValue } from '../../kit/typescript/index.ts'
 import type { SheetTab } from '../store/types.ts'
-import { asNum, asObj } from '../wire/json.ts'
+import { asObj } from '../wire/json.ts'
 import type { JsonObj } from '../wire/json.ts'
 import type { A1Range } from './a1.ts'
-import { formatNumber } from './number.ts'
+import { FormulaEvaluator } from './formula.ts'
+import { enteredValue, formattedValue, inputValue } from './value.ts'
 
 // The grid a new spreadsheet gets, and the pixel sizes the live API
 // reports for its untouched rows and columns.
@@ -76,32 +78,69 @@ export function tabExtent(tab: SheetTab): { rows: number; cols: number } {
   return { rows, cols }
 }
 
-export function rangeValues(range: A1Range): string[][] {
+export function rangeValues(
+  range: A1Range,
+  tabs: readonly SheetTab[] = [range.tab],
+  render = 'FORMATTED_VALUE',
+): JsonValue[][] {
+  const evaluator = new FormulaEvaluator(tabs)
   const extent = tabExtent(range.tab)
   const endRow = Math.min(range.endRow ?? extent.rows - 1, extent.rows - 1)
   const endCol = range.endCol ?? extent.cols - 1
-  const out: string[][] = []
+  const out: JsonValue[][] = []
   for (let r = range.startRow; r <= endRow; r += 1) {
-    const row: string[] = []
-    for (let c = range.startCol; c <= endCol; c += 1) row.push(shownAt(range.tab, r, c))
+    const row: JsonValue[] = []
+    for (let c = range.startCol; c <= endCol; c += 1) {
+      const key = `${String(r)},${String(c)}`
+      const entered = enteredValue(range.tab, key)
+      if (render === 'FORMULA' && typeof entered.formulaValue === 'string') {
+        row.push(entered.formulaValue)
+      } else {
+        const data = evaluatedCell(range.tab, r, c, evaluator)
+        const value = asObj(data.effectiveValue)
+        row.push(
+          render === 'UNFORMATTED_VALUE' || render === 'FORMULA'
+            ? (value.numberValue ??
+                value.boolValue ??
+                value.stringValue ??
+                data.formattedValue ??
+                '')
+            : (data.formattedValue ?? ''),
+        )
+      }
+    }
     while (row.length > 0 && row[row.length - 1] === '') row.pop()
     out.push(row)
   }
-  while (out.length > 0 && (out[out.length - 1] as string[]).length === 0) out.pop()
+  while (out.length > 0 && (out[out.length - 1] as JsonValue[]).length === 0) out.pop()
   return out
 }
 
-export function tabToCsv(tab: SheetTab): string {
-  const rows = rangeValues(wholeTab(tab))
+export function tabToCsv(tab: SheetTab, tabs: readonly SheetTab[] = [tab]): string {
+  const rows = rangeValues(wholeTab(tab), tabs)
   return rows.map((r) => r.join(',')).join('\n') + (rows.length > 0 ? '\n' : '')
 }
 
-export function writeValues(range: A1Range, values: string[][], startRow: number): number {
+export function writeValues(
+  range: A1Range,
+  values: JsonValue[][],
+  startRow: number,
+  option = 'USER_ENTERED',
+): number {
   let cells = 0
   for (let i = 0; i < values.length; i += 1) {
-    const row = values[i] as string[]
+    const row = values[i] as JsonValue[]
     for (let j = 0; j < row.length; j += 1) {
-      range.tab.cells.set(`${String(startRow + i)},${String(range.startCol + j)}`, String(row[j]))
+      const value = row[j]
+      if (value === null || value === undefined) continue
+      if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
+        continue
+      const key = `${String(startRow + i)},${String(range.startCol + j)}`
+      range.tab.cells.set(key, String(value))
+      const props = { ...range.tab.props.get(key) }
+      if (value === '') delete props.userEnteredValue
+      else props.userEnteredValue = inputValue(value, option)
+      range.tab.props.set(key, props)
       cells += 1
     }
   }
@@ -116,27 +155,12 @@ export function clearRange(range: A1Range): void {
   const endCol = Math.min(range.endCol ?? extent.cols - 1, extent.cols - 1)
   for (let r = range.startRow; r <= endRow; r += 1) {
     for (let c = range.startCol; c <= endCol; c += 1) {
-      range.tab.cells.delete(`${String(r)},${String(c)}`)
+      const key = `${String(r)},${String(c)}`
+      range.tab.cells.delete(key)
+      const props = range.tab.props.get(key)
+      if (props !== undefined) delete props.userEnteredValue
     }
   }
-}
-
-// Plain decimal only: a sign, digits either side of a point, an optional
-// exponent. `0x10`, `1_000`, `Infinity` and a whitespace-only cell are all
-// strings in live Sheets, which `Number()` would have made numeric.
-const DECIMAL = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
-const BOOLEAN = /^(true|false)$/i
-const EXPONENT = /[eE]/
-const EXPONENT_DIGITS = 2
-
-// A number typed with an exponent keeps a scientific format, which live
-// Sheets renders with two decimals and a two-digit exponent: `1e3` is
-// `"1.00E+03"`, `1e-3` is `"1.00E-03"`, `1e10` is `"1.00E+10"`.
-export function scientific(value: number): string {
-  const [mantissa = '', exponent = ''] = value.toExponential(2).split('e')
-  const sign = exponent.startsWith('-') ? '-' : '+'
-  const digits = exponent.replace(/^[+-]/, '').padStart(EXPONENT_DIGITS, '0')
-  return `${mantissa}E${sign}${digits}`
 }
 
 // The grid a tab reports, which the live API grows to hold what was
@@ -152,54 +176,30 @@ export function tabGrid(tab: SheetTab): Grid {
   return { rows: Math.max(tab.rows, used.rows), cols: Math.max(tab.cols, used.cols) }
 }
 
-// Verified against the live API on 2026-08-05, writing through mirage's own
-// path (values.update with valueInputOption=USER_ENTERED): `007` is the
-// number 7 and reports `"7"`, `4.50` reports `"4.5"`, `TRUE` and `true` are
-// both the boolean reporting `"TRUE"`, and everything else stays the string
-// it was typed as. An untouched cell is `{}` -- no keys at all, since
-// ExtendedValue with no field set means empty. A number the cell's
-// numberFormat covers reports what the format renders (0.685 under `0.0%`
-// is `"68.5%"`).
-//
-// Not modeled, and a string here where live Sheets makes it a number: a
-// currency, percent, thousands-separated or date-shaped cell (`$5`, `50%`,
-// `1,234`, `2026-01-02`), which needs Sheets' locale-aware number formats.
-// A leading `+` is a formula in live Sheets (`+5` is formulaValue `"+5"`)
-// whose rendered value happens to match the number taken here.
-export function cellData(text: string, numberFormat?: JsonObj): JsonObj {
-  if (text === '') return {}
-  const trimmed = text.trim()
-  if (BOOLEAN.test(trimmed)) {
-    const value = { boolValue: trimmed.toLowerCase() === 'true' }
-    return {
-      userEnteredValue: value,
-      effectiveValue: value,
-      formattedValue: trimmed.toUpperCase(),
-    }
+export function evaluatedCell(
+  tab: SheetTab,
+  row: number,
+  col: number,
+  evaluator = new FormulaEvaluator([tab]),
+): JsonObj {
+  const key = `${String(row)},${String(col)}`
+  if (!tab.cells.has(key) || tab.cells.get(key) === '') return {}
+  const entered = enteredValue(tab, key)
+  const effective = evaluator.cell(tab, row, col)
+  const numberFormat = asObj(asObj(tab.props.get(key)?.userEnteredFormat).numberFormat)
+  return {
+    userEnteredValue: entered,
+    effectiveValue: effective,
+    formattedValue: formattedValue(
+      effective,
+      numberFormat,
+      typeof entered.numberValue === 'number' && /[eE]/.test(tab.cells.get(key) ?? ''),
+    ),
   }
-  if (DECIMAL.test(trimmed)) {
-    const number = Number(trimmed)
-    const value = { numberValue: number }
-    const formatted = numberFormat === undefined ? null : formatNumber(number, numberFormat)
-    return {
-      userEnteredValue: value,
-      effectiveValue: value,
-      formattedValue: formatted ?? (EXPONENT.test(trimmed) ? scientific(number) : String(number)),
-    }
-  }
-  const value = { stringValue: text }
-  return { userEnteredValue: value, effectiveValue: value, formattedValue: text }
 }
 
-// The text values.get reports for a cell: what was typed, except where the
-// cell's numberFormat renders the number it holds.
 export function shownAt(tab: SheetTab, row: number, col: number): string {
-  const key = `${String(row)},${String(col)}`
-  const text = tab.cells.get(key) ?? ''
-  const numberFormat = asObj(asObj(tab.props.get(key)?.userEnteredFormat).numberFormat)
-  if (Object.keys(numberFormat).length === 0) return text
-  const value = asNum(asObj(cellData(text).effectiveValue).numberValue)
-  return value === undefined ? text : (formatNumber(value, numberFormat) ?? text)
+  return String(evaluatedCell(tab, row, col).formattedValue ?? '')
 }
 
 // One CellData's value, back into the text a cell stores; null when it

@@ -13,7 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GitHubApiError, type GitHubTransport, HttpGitHubTransport, searchCode } from './client.ts'
+import {
+  fetchDirTree,
+  fetchDirTreePage,
+  fetchTree,
+  GitHubApiError,
+  type GitHubTransport,
+  HttpGitHubTransport,
+  searchCode,
+} from './client.ts'
 
 interface Seen {
   url: string
@@ -294,5 +302,56 @@ describe('searchCode', () => {
     )
     expect(out.results.map((r) => r.path)).toEqual(['src/a.py'])
     expect(out.truncated).toBe(false)
+  })
+})
+
+describe('tree reference encoding', () => {
+  it.each(['feature/topic', 'release#1', 'literal%2Fref', 'feature/topic:docs/nested'])(
+    'preserves %s in recursive and directory requests',
+    async (ref) => {
+      REPLY = { status: 200, body: '{"tree":[],"truncated":false}' }
+      const client = transport()
+      await fetchTree(client, 'o', 'r', ref)
+      await fetchDirTreePage(client, 'o', 'r', ref)
+      await fetchDirTree(client, 'o', 'r', ref)
+      expect(SEEN.map(({ url }) => url)).toEqual([
+        `https://api.example.test/repos/o/r/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+        `https://api.example.test/repos/o/r/git/trees/${encodeURIComponent(ref)}`,
+        `https://api.example.test/repos/o/r/git/trees/${encodeURIComponent(ref)}`,
+      ])
+    },
+  )
+})
+
+describe('fetchDirTreePage', () => {
+  it('carries truncation and drops gitlinks', async () => {
+    const transport = {
+      get: () =>
+        Promise.resolve({
+          truncated: true,
+          tree: [
+            { path: 'a.py', type: 'blob', sha: 'a', size: 1 },
+            { path: 'vendor', type: 'commit', sha: 'c' },
+          ],
+        }),
+    } as unknown as GitHubTransport
+    const page = await fetchDirTreePage(transport, 'o', 'r', 'sha')
+    expect(page.truncated).toBe(true)
+    // A gitlink has no blob and no size; the page drops it like the tree.
+    expect(page.tree.map((item) => item.path)).toEqual(['a.py'])
+  })
+
+  it('refuses, through fetchDirTree, a directory GitHub cut short', async () => {
+    // The fallback walk caches what it gets as the whole directory; a name
+    // past GitHub's cut would read as absent, and a fresh probe as gone.
+    const reply = (truncated: boolean) =>
+      ({
+        get: () =>
+          Promise.resolve({ truncated, tree: [{ path: 'a.py', type: 'blob', sha: 'a', size: 1 }] }),
+      }) as unknown as GitHubTransport
+    expect(await fetchDirTree(reply(false), 'o', 'r', 'sha')).toHaveLength(1)
+    const err = await fetchDirTree(reply(true), 'o', 'r', 'sha').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(GitHubApiError)
+    expect((err as GitHubApiError).message).toContain('truncated the tree listing')
   })
 })

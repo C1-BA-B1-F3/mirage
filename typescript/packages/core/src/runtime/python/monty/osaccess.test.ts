@@ -171,10 +171,12 @@ describe('MirageOSAccess entropy', () => {
       expect(access.handle('os.urandom', [0])).toEqual(new Uint8Array())
       expect(random).not.toHaveBeenCalled()
       const bytes = access.handle('os.urandom', [65_537]) as Uint8Array
-      expect(bytes).toEqual(new Uint8Array(65_537).fill(42))
+      expect(bytes.length).toBe(65_537)
+      expect(bytes.every((byte) => byte === 42)).toBe(true)
       expect(random).toHaveBeenCalledTimes(2)
       const maximum = access.handle('os.urandom', [MAX_URANDOM_BYTES]) as Uint8Array
-      expect(maximum).toEqual(new Uint8Array(MAX_URANDOM_BYTES).fill(42))
+      expect(maximum.length).toBe(MAX_URANDOM_BYTES)
+      expect(maximum.every((byte) => byte === 42)).toBe(true)
       expect(random).toHaveBeenCalledTimes(18)
     } finally {
       random.mockRestore()

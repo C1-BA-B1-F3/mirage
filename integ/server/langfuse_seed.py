@@ -24,9 +24,14 @@ PUBLIC_KEY = "pk-lf-mirage-integ"
 SECRET_KEY = "sk-lf-mirage-integ"
 
 # Traces are ingested with client-chosen ids and timestamps, so every VFS name
-# the battery asserts on is fixed. Server-generated fields (createdAt, latency,
-# htmlPath) still vary, which is why the cases project through jq instead of
-# diffing whole documents.
+# the battery asserts on is fixed. createdAt/updatedAt vary between seeds;
+# latency and htmlPath are fixed by the observation times and project id.
+# Model-price initialization can race the web container's schema migrations:
+# trace-alpha's generation then has empty costDetails and null pricing tiers,
+# or populated costDetails, usagePricingTierId/Name and calculated costs.
+# These change the rendered byte length (5.6K vs 5.8K for all traces), so the
+# battery checks du's shape and sum against reads rather than a fixed size.
+# Traces have unknown sizes until read; each du case warms its own cache.
 TRACES = [
     {
         "event_id": "11111111-1111-4111-8111-111111111111",

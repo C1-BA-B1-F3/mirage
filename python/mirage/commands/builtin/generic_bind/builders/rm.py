@@ -18,7 +18,7 @@ from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.cp import walk
 from mirage.commands.builtin.generic.rm_cmd import rm_without_operands
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation)
+                                                          Operation, bound_op)
 from mirage.commands.builtin.utils.output import format_optional_records
 from mirage.commands.builtin.utils.slash_links import (is_slashed_link,
                                                        rm_link_refusal)
@@ -59,22 +59,18 @@ async def rm(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                 errors.append(refusal)
             continue
         try:
-            s = await ops.stat(accessor, p)
-        except NotADirectoryError:
-            # A component is a plain file: the operand sits under one, or
-            # carried a trailing slash that named one (`rm reg/`). -f
-            # ignores it like ENOENT, as GNU's `ignorable_missing` does.
-            if f:
+            s = await ops.stat(accessor, p, index=opts.index)
+        except FS_ERRORS as exc:
+            # ENOTDIR is a component that is a plain file: the operand
+            # sits under one, or carried a trailing slash that named one
+            # (`rm reg/`). -f ignores it and ENOENT alone, as GNU's
+            # `ignorable_missing` does; any other failure is reported,
+            # -f or not. GNU rm reports the operand and keeps removing
+            # the rest.
+            if f and isinstance(exc, (FileNotFoundError, NotADirectoryError)):
                 continue
-            errors.append(f"rm: cannot remove '{p.raw_path}': "
-                          "Not a directory")
-            continue
-        except FileNotFoundError:
-            if f:
-                continue
-            # GNU rm reports the operand and keeps removing the rest.
-            errors.append(f"rm: cannot remove '{p.raw_path}': "
-                          "No such file or directory")
+            errors.append(
+                f"rm: cannot remove '{p.raw_path}': {fs_strerror(exc)}")
             continue
         entry_lines: list[str] = []
         try:
@@ -85,7 +81,8 @@ async def rm(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                                     accessor,
                                                     index=opts.index)
                         entry_lines = removal_lines(await walk(
-                            readdir, functools.partial(ops.stat, accessor), p))
+                            readdir, bound_op(ops.stat, accessor, opts.index),
+                            p))
                     await ops.require(Operation.RM_R)(accessor, p)
                 elif d:
                     if await ops.readdir(accessor, p, index=opts.index):

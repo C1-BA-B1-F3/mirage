@@ -87,6 +87,7 @@ class RedisConsoleStore:
             channel (Channel): which stream the bytes came from.
             data (bytes): the payload.
         """
+        self._check_open()
         ts = time.time()
         ended = "1" if channel == Channel.CONTROL else "0"
         count = await self._append_script(
@@ -102,6 +103,7 @@ class RedisConsoleStore:
     async def read_from(self,
                         seq: int,
                         limit: int | None = None) -> ReadResult:
+        self._check_open()
         pipe = self._client.pipeline()
         pipe.xrange(self._stream, min=f"{seq + 1}-0", max="+", count=limit)
         pipe.get(self._counter)
@@ -135,7 +137,17 @@ class RedisConsoleStore:
 
     async def clear(self) -> None:
         """Delete the console's keys (test and integ teardown only)."""
+        self._check_open()
         await self._client.delete(self._stream, self._counter, self._ended)
+
+    def _check_open(self) -> None:
+        """Refuse a command after close.
+
+        ``aclose`` leaves the pool able to reconnect, so a command issued
+        after it would open a connection that nothing closes again.
+        """
+        if self._closed:
+            raise RuntimeError("RedisConsoleStore is closed")
 
     def _chunk(self, entry: tuple[bytes, dict[bytes, bytes]]) -> ConsoleChunk:
         """Decode one XRANGE entry back into a chunk.

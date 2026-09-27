@@ -17,6 +17,7 @@ import type { VFS } from '../../vfs/base.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
 import type { MountRegistry } from '../mount/registry.ts'
 import type { WorkspaceStateStore } from '../store/base.ts'
+import { ABORT_JOIN_MS } from '../abort.ts'
 import type { WatchManager } from './watch.ts'
 
 export interface CloseDeps {
@@ -49,7 +50,10 @@ export async function closeWorkspace(deps: CloseDeps): Promise<void> {
   // outcome and finishes each console, which is what releases a reader
   // parked on waitFinished; a bare abort leaves the job RUNNING with no
   // ending chunk and that reader waits forever. The supervisor then joins the
-  // managed runners before their mounts are released.
+  // managed runners before their mounts are released, for as long as a
+  // cancelled line is given (`joinOrAbort`): a JS promise cannot be
+  // cancelled, so a runner that never observes its abort is left stopping
+  // rather than holding close forever.
   await deps.jobTable.killAll()
   deps.jobTable.processes.stop()
   // Runtimes next, and before the cache or any VFS closes. A runtime
@@ -72,10 +76,18 @@ export async function closeWorkspace(deps: CloseDeps): Promise<void> {
     }
   }
   try {
-    await deps.jobTable.processes.drain()
-    // Consoles close only once every runner has joined: a runner still
-    // unwinding writes its ending chunk as it settles, and a Redis console
-    // written after close opens a fresh client that nothing quits.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([
+      deps.jobTable.processes.drain(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ABORT_JOIN_MS)
+      }),
+    ]).finally(() => {
+      clearTimeout(timer)
+    })
+    // Consoles close once the runners have joined: a runner still unwinding
+    // writes its ending chunk as it settles. One left stopping past the
+    // grace finds its console discarded, and its writes are dropped.
     await deps.jobTable.closeConsoles()
     const retirements = await Promise.allSettled([...deps.registry.retiringMounts.values()])
     for (const result of retirements) {

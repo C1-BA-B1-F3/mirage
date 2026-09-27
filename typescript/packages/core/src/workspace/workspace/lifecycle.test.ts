@@ -135,8 +135,8 @@ describe('closeWorkspace', () => {
 
   // A bare abort leaves such a job RUNNING with no ending chunk, so
   // anyone parked on waitFinished waits forever on a workspace that is
-  // already gone. The console ends promptly; the supervisor
-  // keeps teardown pending until the runner has really settled.
+  // already gone. The console ends promptly, and teardown is still
+  // joining the runner when the job has been recorded as killed.
   it('settles a job whose runner never observes the abort', async () => {
     const ws = buildWs()
     const release: { fire?: () => void } = {}
@@ -162,6 +162,27 @@ describe('closeWorkspace', () => {
     release.fire?.()
     await Promise.resolve()
     expect(job.status).toBe(JobStatus.KILLED)
+  })
+
+  // A JS promise cannot be cancelled, so such a runner gets the grace a
+  // cancelled line gets (`joinOrAbort`) and is then left stopping: close
+  // does not wait on it forever.
+  it('returns while a runner that ignores its abort is still stopping', async () => {
+    const ws = buildWs()
+    const release: { fire?: () => void } = {}
+    const job = ws.jobTable.submit({
+      command: 'long',
+      run: deaf(release),
+      abort: new AbortController(),
+      cwd: '/',
+    })
+    await ws.close()
+
+    expect(job.status).toBe(JobStatus.KILLED)
+    expect(job.process?.info.state).toBe('stopping')
+    release.fire?.()
+    await job.process?.join()
+    expect(job.process?.info.state).toBe('exited')
   })
 
   it('is idempotent with a job running', async () => {

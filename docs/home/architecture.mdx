@@ -81,8 +81,11 @@ Use `communicate(input)` to send input and drain both output pipes concurrently.
 Calling `wait` without consuming a piped output can apply backpressure, just as
 with a native pipe. Termination requests cancellation; the process remains
 `stopping` until its runner settles. Parent cancellation
-reaches its live managed children. Workspace shutdown awaits tracked runners before closing their mounts;
-a runner that ignores cancellation keeps shutdown pending. Metadata includes
+reaches its live managed children. Workspace shutdown awaits tracked runners before closing their mounts
+and job consoles. Python delivers the cancellation at the runner's next await, so only a runner that
+swallows `CancelledError` keeps shutdown pending. A JavaScript promise cannot be cancelled, so
+TypeScript gives a runner the grace a cancelled line gets (250 ms) and then leaves it `stopping`;
+its later console writes are dropped. Metadata includes
 parent and execution-group IDs. A provider's native descendants are not inferred from these IDs.
 
 The shell keeps its job table separately: `%1` is local to a session, while `$!`

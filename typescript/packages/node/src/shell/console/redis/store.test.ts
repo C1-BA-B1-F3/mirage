@@ -32,6 +32,7 @@ describe.skipIf(REDIS_URL === '')('RedisConsoleStore', () => {
 
   afterEach(async () => {
     for (const store of opened.splice(0)) {
+      if (store.closed) continue
       await store.clear()
       await store.close()
     }
@@ -77,6 +78,20 @@ describe.skipIf(REDIS_URL === '')('RedisConsoleStore', () => {
     await store.append(Channel.STDOUT, ENC.encode('y'))
     await waiter
     expect(woke).toBe(true)
+  })
+
+  it('refuses commands after close instead of reconnecting', async () => {
+    const store = new RedisConsoleStore({
+      url: REDIS_URL,
+      keyPrefix: `test:console:${randomUUID()}:`,
+    })
+    await store.append(Channel.STDOUT, ENC.encode('one'))
+    await store.clear()
+    await store.close()
+    await expect(store.append(Channel.STDOUT, ENC.encode('two'))).rejects.toThrow(
+      'RedisConsoleStore is closed',
+    )
+    await expect(store.readFrom(0)).rejects.toThrow('RedisConsoleStore is closed')
   })
 
   it('close releases a parked waiter', async () => {

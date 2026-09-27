@@ -121,6 +121,7 @@ import { buildSecretsEnv } from './secrets.ts'
 import { start as startKitFake } from '../../../server/kit/typescript/index.ts'
 import { buildRfc822 } from '../../../server/mail/rfc822.ts'
 import type { MailEntry } from '../../../server/mail/rfc822.ts'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export interface Open {
   ws: ExecWorkspace
@@ -742,11 +743,11 @@ async function openHfHub(target: Target, options?: OpenOptions): Promise<Open> {
     // The most specific mount owns the path, as the workspace resolves it, so a
     // nested mount listed after its parent still gets its own commits.
     const m = target.mounts
-      .filter((x) => path === x.path || path.startsWith(`${x.path.replace(/\/+$/, '')}/`))
+      .filter((x) => path === x.path || path.startsWith(`${rstripSlash(x.path)}/`))
       .sort((a, b) => b.path.length - a.path.length)[0]
     if (m === undefined || m.vfs === 'ram') throw new Error(`hf-hub cannot commit ${path}`)
     const vfs = hubMount(m)
-    const rel = path.slice(m.path.replace(/\/+$/, '').length)
+    const rel = path.slice(rstripSlash(m.path).length)
     try {
       await hubCommit(vfs.accessor, {
         additions: [{ path: vfs.accessor.repoPath(rel), data: content }],
@@ -890,7 +891,7 @@ async function openDropbox(target: Target, options?: OpenOptions): Promise<Open>
   const build = (): MountMap => {
     const mounts: Record<string, DropboxVFS> = {}
     for (const m of target.mounts) {
-      const account = String(m.bucket ?? String(m.path).replace(/^\/+|\/+$/g, ''))
+      const account = String(m.bucket ?? stripSlash(String(m.path)))
       mounts[m.path] = new DropboxVFS({
         clientId: 'integ-client',
         clientSecret: 'integ-secret',
@@ -940,7 +941,7 @@ async function makePrefix(
   prefix: string,
 ): Promise<void> {
   let parent = ''
-  for (const name of prefix.replace(/^\/+|\/+$/g, '').split('/')) {
+  for (const name of stripSlash(prefix).split('/')) {
     if (name === '') continue
     // One level at a time: Graph's mkdir 404s when the parent is missing, and
     // `replace` on a folder returns the existing one with its children intact,

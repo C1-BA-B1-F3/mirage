@@ -18,6 +18,7 @@ import { FlagView } from '@struktoai/mirage-core/commands/spec/index'
 import { commit } from '../../../../core/hf_hub/commit.ts'
 import { DEFAULT_COMMIT_MESSAGE } from '../../../../core/hf_hub/constants.ts'
 import { hubFor, repoTypeOf, requireOperands, requireToken, textOut } from './accessor.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /**
  * Delete files or folders from a repository, in one commit.
@@ -32,7 +33,7 @@ export async function deleteCmd(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   const [repoId, ...patterns] = inv.texts
   const files = patterns.filter((p) => !p.endsWith('/'))
-  const folders = patterns.filter((p) => p.endsWith('/')).map((p) => p.replace(/\/+$/, ''))
+  const folders = patterns.filter((p) => p.endsWith('/')).map((p) => rstripSlash(p))
   const target = repoId ?? ''
   const accessor = hubFor(inv, target, repoTypeOf(fl), fl.asStr('revision'))
   await commit(accessor, {

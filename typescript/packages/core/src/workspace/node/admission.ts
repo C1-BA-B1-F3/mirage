@@ -87,6 +87,7 @@ import {
   rootFrame,
   wholeOccurrence,
 } from './occurrence.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 /**
  * What the command plane prints when a line does not get to run: 127
@@ -119,7 +120,7 @@ export function isPending(refused: Refused): boolean {
 }
 
 function norm(virtual: string): string {
-  return virtual.replace(/\/+$/, '') || '/'
+  return rstripSlash(virtual) || '/'
 }
 
 /**

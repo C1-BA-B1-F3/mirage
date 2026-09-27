@@ -26,13 +26,14 @@ import { getHistoryJsonl } from './history.ts'
 import { readdir } from './readdir.ts'
 import { getUserProfile, userJsonBytes } from './users.ts'
 import { detectScope } from './scope.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 async function channelEntry(
   accessor: SlackAccessor,
   path: PathSpec,
   index: IndexCacheStore | undefined,
 ): Promise<IndexEntry | null> {
-  const virtual = path.virtual.replace(/\/+$/, '').split('/').slice(0, -2).join('/')
+  const virtual = rstripSlash(path.virtual).split('/').slice(0, -2).join('/')
   const prefix = mountPrefixOf(path.virtual, path.vfsPath)
   const spec = new PathSpec({
     virtual,

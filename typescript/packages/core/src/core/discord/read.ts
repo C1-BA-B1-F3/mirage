@@ -28,6 +28,7 @@ import { listMembers } from './members.ts'
 import { readdir } from './readdir.ts'
 import { memberJsonBytes } from './render.ts'
 import { detectScope } from './scope.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 async function ancestorEntry(
   accessor: DiscordAccessor,
@@ -35,7 +36,7 @@ async function ancestorEntry(
   index: IndexCacheStore | undefined,
   up: number,
 ): Promise<IndexEntry | null> {
-  let virtual = path.virtual.replace(/\/+$/, '')
+  let virtual = rstripSlash(path.virtual)
   for (let i = 0; i < up; i++) virtual = virtual.split('/').slice(0, -1).join('/')
   const prefix = mountPrefixOf(path.virtual, path.vfsPath)
   const spec = new PathSpec({

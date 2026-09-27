@@ -23,6 +23,7 @@ import type { SessionState } from '../../../session/session.ts'
 import { result } from '../shared.ts'
 import type { Result } from '../types.ts'
 import { GETFATTR_USAGE, attrError, attrOperands, attrUsageRefusal } from './xattr.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 const ENCODINGS = new Set(['text', 'hex', 'base64'])
 const DEFAULT_MATCH = '^user\\.'
@@ -86,9 +87,9 @@ async function walk(
   if (!(stat instanceof FileStat) || stat.type !== FileType.DIRECTORY) return entries
   const [children] = (await dispatch('readdir', path)) as [string[], unknown]
   for (const child of children) {
-    const bare = child.replace(/\/+$/, '')
+    const bare = rstripSlash(child)
     const name = bare.slice(bare.lastIndexOf('/') + 1)
-    const below = `${shown.replace(/\/+$/, '')}/${name}`
+    const below = `${rstripSlash(shown)}/${name}`
     entries.push(...(await walk(dispatch, PathSpec.fromStrPath(bare), below, logical, logical)))
   }
   return entries

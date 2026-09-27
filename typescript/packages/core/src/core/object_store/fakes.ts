@@ -17,7 +17,7 @@
 
 import { Accessor } from '../../accessor/base.ts'
 import { PathSpec } from '../../types.ts'
-import { stripSlash } from '../../utils/slash.ts'
+import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import type {
   ChildEntry,
@@ -117,7 +117,7 @@ export function makeDriver(
         yield { key, kind: 'marker' }
         continue
       }
-      const relative = key.slice(pfx.length).replace(/\/+$/, '')
+      const relative = rstripSlash(key.slice(pfx.length))
       const slash = relative.indexOf('/')
       if (slash === -1 && !key.endsWith('/')) {
         yield {

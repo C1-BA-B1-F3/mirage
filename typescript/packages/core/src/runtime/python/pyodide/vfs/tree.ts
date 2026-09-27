@@ -16,6 +16,7 @@ import { DIR_MODE, FILE_MODE, LINK_MODE } from './constants.ts'
 import { fsError } from './errors.ts'
 import type { MirageFsSeed } from './seed.ts'
 import type { FSNode, NodeHost, NodeOps, StreamOps } from './types.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 /**
  * The node table for one mount prefix.
@@ -225,7 +226,7 @@ export class NodeTree {
   private relative(path: string): string | null {
     if (path === this.prefix) return ''
     if (!path.startsWith(this.prefix + '/')) return null
-    return path.slice(this.prefix.length + 1).replace(/\/+$/, '')
+    return rstripSlash(path.slice(this.prefix.length + 1))
   }
 
   private ensureDir(rel: string): FSNode {

@@ -21,6 +21,7 @@ import { contentTypeForPath } from '@struktoai/mirage-core/utils/filetype'
 import { mountPrefixOf } from '@struktoai/mirage-core/utils/key_prefix'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { dirStatEntry, keyOf, lookupRetrying, pointLookup, refusalsDenied } from './lookup.ts'
+import { stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /**
  * Render one tree row as a FileStat.
@@ -61,7 +62,7 @@ export async function stat(
   index?: IndexCacheStore,
 ): Promise<FileStat> {
   const prefix = mountPrefixOf(pathSpec.virtual, pathSpec.vfsPath)
-  const rel = pathSpec.mountPath.replace(/^\/+|\/+$/g, '')
+  const rel = stripSlash(pathSpec.mountPath)
   if (rel === '') return new FileStat({ name: '/', type: FileType.DIRECTORY })
   const key = keyOf(prefix, rel)
   // A probe through a throwaway index asks for this one path; everything else

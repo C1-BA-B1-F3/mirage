@@ -24,6 +24,7 @@ import { parseRfc822, type ParsedRfc822 } from '../../../../core/email/_parse.ts
 import type { EmailConfig } from '../../../../core/email/config.ts'
 import { build, readBody, splitAddresses, type Attachment, type Source } from './builder.ts'
 import { deliver, saveSentCopy } from './deliver.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 const ENC = new TextEncoder()
 
@@ -71,7 +72,7 @@ async function loadAttachments(
       }
       throw err
     }
-    const trimmed = path.replace(/\/+$/, '')
+    const trimmed = rstripSlash(path)
     const filename = trimmed.slice(trimmed.lastIndexOf('/') + 1) || 'attachment'
     attachments.push({
       filename,

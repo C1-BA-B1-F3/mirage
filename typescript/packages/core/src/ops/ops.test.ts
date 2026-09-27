@@ -24,6 +24,7 @@ import { FileType, Limit, MountMode, OnExceed } from '../types.ts'
 import { eacces, enoent, enotdir } from '../utils/errors.ts'
 import { Session } from '../workspace/workspace/handle.ts'
 import { Workspace } from '../workspace/workspace/workspace.ts'
+import { rstripSlash } from '../utils/slash.ts'
 
 const DEC = new TextDecoder()
 
@@ -764,7 +765,7 @@ describe('Ops.readlink', () => {
       filetype: null,
       fn: async (accessor, path, args, kwargs) => {
         const entries = (await realReaddir(accessor, path, args, kwargs)) as string[]
-        return entries.filter((entry) => !entry.replace(/\/+$/, '').endsWith('hollow'))
+        return entries.filter((entry) => !rstripSlash(entry).endsWith('hollow'))
       },
       write: false,
     })

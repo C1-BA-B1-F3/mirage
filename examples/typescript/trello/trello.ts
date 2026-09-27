@@ -22,6 +22,7 @@ import {
   type FileStat,
   type TrelloConfig,
 } from '@struktoai/mirage-node'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 const __HERE = fileURLToPath(new URL('.', import.meta.url))
 dotenv.config({ path: resolve(__HERE, '../../../.env.development') })
@@ -155,7 +156,7 @@ async function main(): Promise<void> {
     }
 
     console.log('\n=== card write commands (sandbox card) ===')
-    const listId = l0.replace(/\/+$/, '').split('__').pop() ?? ''
+    const listId = rstripSlash(l0).split('__').pop() ?? ''
     if (listId !== '') {
       const created = await run(
         ws,

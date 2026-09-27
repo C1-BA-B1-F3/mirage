@@ -32,6 +32,7 @@ import {
   installDriftState,
   liveOnlyMountPrefixes,
 } from './drift.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 interface RegistryLike {
   tryMountFor(path: string): MountEntry | null
@@ -77,7 +78,7 @@ function makeRegistry(mounts: MountEntry[]): RegistryLike {
     // walk hands `/s3/a` to a `/` mount whenever both are mounted, and
     // the mount-scoped subtree sweep is exactly what that hides.
     tryMountFor: (path: string): MountEntry | null => {
-      const base = `${path.replace(/\/+$/, '')}/`
+      const base = `${rstripSlash(path)}/`
       let best: MountEntry | null = null
       for (const m of mounts) {
         if (base.startsWith(m.prefix) && (best === null || m.prefix.length > best.prefix.length)) {

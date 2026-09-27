@@ -206,12 +206,18 @@ export async function writeFile(
 // An empty repository is answered before the ref is resolved, so every ref
 // gets the same 404 there, including one that names nothing. Only once
 // something has been committed is an unknown ref the ref's own fault, and the
-// refusal names it the way the vendor's does.
+// refusal names it the way the vendor's does. A branch nothing has been
+// committed to is refused the same way: it names no commit, and reading it as
+// an empty tree would pass off a ref that points nowhere as an empty
+// directory.
 const contents = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(404, 'This repository is empty.')
   const ref = ctx.query.get('ref') ?? ''
-  const files = await treeOf(ctx.db, ctx.tenant, repo, ref)
-  if (files === null) return fail(404, `No commit found for the ref ${ref}`)
+  const branch = await branchFor(ctx.db, ctx.tenant, repo, ref)
+  if (branch === null || (await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)) === '') {
+    return fail(404, `No commit found for the ref ${ref === '' ? repo.defaultBranch : ref}`)
+  }
+  const files = await treeOfBranch(ctx.db, ctx.tenant, repo, branch)
   const path = param(ctx, 'path').replace(/^\/+|\/+$/g, '')
   const hit = files.get(path)
   if (hit !== undefined) return { status: 200, body: fileJson(path, hit) }

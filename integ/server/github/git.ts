@@ -314,17 +314,17 @@ async function headSha(ctx: Ctx<C>, repo: RepoRow, branch: string): Promise<stri
 // An empty repository has no refs at all, and both endpoints say so with a 409
 // before reading the ref, whatever it names: a branch, a tag, nothing that
 // exists, or no prefix. Answering from the branch row instead reported the
-// default branch at an empty sha, which no client can resolve.
+// default branch at an empty sha, which no client can resolve. For the same
+// reason a branch nothing has been committed to is no ref once the repository
+// has others: a ref names a commit, so that branch is missing, not at "".
 const showRef = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = param(ctx, 'ref').replace(/^\/+|\/+$/g, '')
   const name = ref.startsWith('heads/') ? ref.slice('heads/'.length) : ''
   const names = await branchNames(ctx.db, ctx.tenant, repo)
-  if (!names.includes(name)) return fail(404, 'Not Found')
-  return {
-    status: 200,
-    body: { ref: `refs/${ref}`, object: { sha: await headSha(ctx, repo, name), type: 'commit' } },
-  }
+  const sha = names.includes(name) ? await headSha(ctx, repo, name) : ''
+  if (sha === '') return fail(404, 'Not Found')
+  return { status: 200, body: { ref: `refs/${ref}`, object: { sha, type: 'commit' } } }
 })
 
 const listRefs = withRepo(async (ctx, repo) => {
@@ -333,10 +333,8 @@ const listRefs = withRepo(async (ctx, repo) => {
   const items: JsonValue[] = []
   for (const name of await branchNames(ctx.db, ctx.tenant, repo)) {
     if (!`heads/${name}`.startsWith(prefix)) continue
-    items.push({
-      ref: `refs/heads/${name}`,
-      object: { sha: await headSha(ctx, repo, name), type: 'commit' },
-    })
+    const sha = await headSha(ctx, repo, name)
+    if (sha !== '') items.push({ ref: `refs/heads/${name}`, object: { sha, type: 'commit' } })
   }
   if (items.length === 0) return fail(404, 'Not Found')
   return { status: 200, body: items }

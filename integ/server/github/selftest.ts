@@ -241,6 +241,15 @@ async function emptyRepository(at: string): Promise<void> {
     const tags = await fetch(`${repo}/tags`, { headers: HEADERS })
     eq('empty tags succeeds', tags.status, 200)
     eq('empty tags lists nothing', (await tags.json()) as JsonValue, [])
+    // The fake lets a branch be cut from nothing here. It holds no commit, so
+    // the repository stays empty, and once another branch has history it is
+    // still no ref: every read of it below is refused.
+    const cut = await post(`${repo}/git/refs`, { ref: 'refs/heads/side', sha: '' })
+    eq('a branch cut from nothing is created', cut.status, 201)
+    eq('and leaves the repository empty', await refusal(`${repo}/contents/?ref=side`), [
+      404,
+      'This repository is empty.',
+    ])
     for (const path of REF_PATHS) {
       eq(`empty ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
         409,
@@ -290,6 +299,16 @@ async function emptyRepository(at: string): Promise<void> {
     eq('contents at an unknown ref names it', await refusal(`${repo}/contents/?ref=nope`), [
       404,
       'No commit found for the ref nope',
+    ])
+    // The listings above already leave `side` out.
+    eq('an uncommitted branch has no contents', await refusal(`${repo}/contents/?ref=side`), [
+      404,
+      'No commit found for the ref side',
+    ])
+    eq('nor a ref', await refusal(`${repo}/git/ref/heads/side`), [404, 'Not Found'])
+    eq('nor a commit', await refusal(`${repo}/commits/side`), [
+      422,
+      'No commit found for SHA: side',
     ])
     const deleted = await fetch(`${repo}/contents/first.txt`, {
       method: 'DELETE',

@@ -92,6 +92,7 @@ jobs:
             data:
               - 'integ/**'
               - 'python/**'
+              - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
@@ -880,9 +881,7 @@ jobs:
         working-directory: python
         run: uv sync --all-extras --no-extra camel
 
-      # The notion fake is a Node server shared by both hosts, so this
-      # otherwise python-only job needs node to start it. No package build is
-      # required: the notion fake imports only node, prisma and the MCP sdk.
+      # Node runs the shared API fakes and the TypeScript watch cache cases.
       - name: Set up Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
         with:
@@ -1048,6 +1047,21 @@ jobs:
           done
           cat /tmp/github-watch.log
           grep -q "GITHUB_URL=" /tmp/github-watch.log
+
+      - name: Build packages for cross-host watch cache tests
+        working-directory: typescript
+        run: pnpm --filter @struktoai/mirage-node... build
+
+      - name: Watch cache invalidation (both hosts)
+        env:
+          S3_ENDPOINT: http://localhost:9000
+          S3_BUCKET: mirage-watch
+          S3_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: minio
+          AWS_SECRET_ACCESS_KEY: minio123
+        run: |
+          ./python/.venv/bin/python integ/watch/cache/run.py
+          pnpm -C integ exec tsx watch/cache/run.ts
 
       - name: Run watch battery
         env:

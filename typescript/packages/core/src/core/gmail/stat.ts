@@ -24,6 +24,7 @@ import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { makeStat } from '../hierarchy/stat.ts'
 import { readdir } from './readdir.ts'
 import { detectScope } from './scope.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 function labelStat(_match: ScopeMatch, _path: PathSpec, entry: IndexEntry): FileStat {
   return new FileStat({
@@ -51,7 +52,7 @@ async function statDay(
   if (entry !== null) {
     return new FileStat({ name: entry.vfsName, type: FileType.DIRECTORY })
   }
-  const virtual = path.virtual.replace(/\/+$/, '').split('/').slice(0, -1).join('/')
+  const virtual = rstripSlash(path.virtual).split('/').slice(0, -1).join('/')
   const prefix = mountPrefixOf(path.virtual, path.vfsPath)
   const labelSpec = new PathSpec({
     virtual,

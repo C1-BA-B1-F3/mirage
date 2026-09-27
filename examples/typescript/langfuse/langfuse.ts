@@ -16,6 +16,7 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import dotenv from 'dotenv'
 import { LangfuseVFS, MountMode, Workspace, type FileStat, type LangfuseConfig } from '@struktoai/mirage-node'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 const __HERE = fileURLToPath(new URL('.', import.meta.url))
 dotenv.config({ path: resolve(__HERE, '../../../.env.development') })
@@ -97,7 +98,7 @@ async function main(): Promise<void> {
     await run(ws, 'rg -l "name" /langfuse/prompts/ | head -n 3')
 
     console.log('\n=== datasets ===')
-    const d0 = (await run(ws, 'ls /langfuse/datasets/ | head -n 1')).trim().replace(/\/+$/, '')
+    const d0 = rstripSlash((await run(ws, 'ls /langfuse/datasets/ | head -n 1')).trim())
     if (d0 !== '') {
       const itemsPath = `/langfuse/datasets/${d0}/items.jsonl`
       await run(ws, `head -n 2 "${itemsPath}"`)

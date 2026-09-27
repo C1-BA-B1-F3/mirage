@@ -1,0 +1,237 @@
+{
+  "mounts": ["/data", "/nested/data"],
+  "cases": [
+    {
+      "id": "create_deep_child",
+      "seed": {
+        "keep.txt": "keep\n"
+      },
+      "warm": [
+        {
+          "command": "ls {root}",
+          "stdout": "keep.txt\n"
+        }
+      ],
+      "write": {
+        "a/b/new.txt": "new\n"
+      },
+      "event": {
+        "kind": "create",
+        "path": "a/b/new.txt"
+      },
+      "checks": [
+        {
+          "command": "ls {root}",
+          "stdout": "a\nkeep.txt\n"
+        },
+        {
+          "command": "cat {root}/a/b/new.txt",
+          "stdout": "new\n"
+        }
+      ]
+    },
+    {
+      "id": "update_cached_body_same_size",
+      "seed": {
+        "a/b/file.txt": "old\n"
+      },
+      "warm": [
+        {
+          "command": "cat {root}/a/b/file.txt",
+          "stdout": "old\n"
+        }
+      ],
+      "write": {
+        "a/b/file.txt": "new\n"
+      },
+      "event": {
+        "kind": "update",
+        "path": "a/b/file.txt"
+      },
+      "checks": [
+        {
+          "command": "cat {root}/a/b/file.txt",
+          "stdout": "new\n"
+        }
+      ]
+    },
+    {
+      "id": "delete_last_key_under_cached_ancestors",
+      "seed": {
+        "keep.txt": "keep\n",
+        "a/b/file.txt": "old\n"
+      },
+      "warm": [
+        {
+          "command": "ls {root}",
+          "stdout": "a\nkeep.txt\n"
+        },
+        {
+          "command": "cat {root}/a/b/file.txt",
+          "stdout": "old\n",
+          "stale": false
+        }
+      ],
+      "delete": ["a/b/file.txt"],
+      "event": {
+        "kind": "delete",
+        "path": "a/b/file.txt"
+      },
+      "checks": [
+        {
+          "command": "ls {root}",
+          "stdout": "keep.txt\n"
+        },
+        {
+          "command": "test -e {root}/a/b/file.txt",
+          "stdout": "",
+          "exit": 1
+        }
+      ]
+    },
+    {
+      "id": "move_invalidates_both_paths",
+      "seed": {
+        "source/keep.txt": "keep\n",
+        "source/a/b/file.txt": "moved\n",
+        "dest/keep.txt": "keep\n",
+        "dest/x/y/file.txt": "stale\n"
+      },
+      "warm": [
+        {
+          "command": "ls {root}/source",
+          "stdout": "a\nkeep.txt\n"
+        },
+        {
+          "command": "cat {root}/source/a/b/file.txt",
+          "stdout": "moved\n",
+          "stale": false
+        },
+        {
+          "command": "cat {root}/dest/x/y/file.txt",
+          "stdout": "stale\n"
+        }
+      ],
+      "write": {
+        "dest/x/y/file.txt": "moved\n"
+      },
+      "delete": ["source/a/b/file.txt"],
+      "event": {
+        "kind": "move",
+        "path": "dest/x/y/file.txt",
+        "previous": "source/a/b/file.txt"
+      },
+      "checks": [
+        {
+          "command": "ls {root}/source",
+          "stdout": "keep.txt\n"
+        },
+        {
+          "command": "cat {root}/dest/x/y/file.txt",
+          "stdout": "moved\n"
+        },
+        {
+          "command": "test -e {root}/source/a/b/file.txt",
+          "stdout": "",
+          "exit": 1
+        }
+      ]
+    },
+    {
+      "id": "move_creates_destination_ancestors",
+      "seed": {
+        "source/keep.txt": "keep\n",
+        "source/a/file.txt": "moved\n",
+        "dest/keep.txt": "keep\n"
+      },
+      "warm": [
+        {
+          "command": "ls {root}/source",
+          "stdout": "a\nkeep.txt\n"
+        },
+        {
+          "command": "ls {root}/dest",
+          "stdout": "keep.txt\n"
+        }
+      ],
+      "write": {
+        "dest/x/y/file.txt": "moved\n"
+      },
+      "delete": ["source/a/file.txt"],
+      "event": {
+        "kind": "move",
+        "path": "dest/x/y/file.txt",
+        "previous": "source/a/file.txt"
+      },
+      "checks": [
+        {
+          "command": "ls {root}/source",
+          "stdout": "keep.txt\n"
+        },
+        {
+          "command": "ls {root}/dest",
+          "stdout": "keep.txt\nx\n"
+        },
+        {
+          "command": "cat {root}/dest/x/y/file.txt",
+          "stdout": "moved\n"
+        }
+      ]
+    },
+    {
+      "id": "unknown_invalidates_entire_subtree",
+      "seed": {
+        "tree/a/file.txt": "old\n",
+        "tree/b/gone.txt": "gone\n",
+        "tree/b/keep.txt": "keep\n"
+      },
+      "warm": [
+        {
+          "command": "ls {root}/tree",
+          "stdout": "a\nb\n"
+        },
+        {
+          "command": "ls {root}/tree/b",
+          "stdout": "gone.txt\nkeep.txt\n"
+        },
+        {
+          "command": "cat {root}/tree/a/file.txt",
+          "stdout": "old\n"
+        },
+        {
+          "command": "cat {root}/tree/b/gone.txt",
+          "stdout": "gone\n",
+          "stale": false
+        }
+      ],
+      "write": {
+        "tree/a/file.txt": "new\n",
+        "tree/c/new.txt": "new\n"
+      },
+      "delete": ["tree/b/gone.txt"],
+      "event": {
+        "kind": "unknown",
+        "path": "tree"
+      },
+      "checks": [
+        {
+          "command": "ls {root}/tree",
+          "stdout": "a\nb\nc\n"
+        },
+        {
+          "command": "ls {root}/tree/b",
+          "stdout": "keep.txt\n"
+        },
+        {
+          "command": "cat {root}/tree/a/file.txt",
+          "stdout": "new\n"
+        },
+        {
+          "command": "test -e {root}/tree/b/gone.txt",
+          "stdout": "",
+          "exit": 1
+        }
+      ]
+    }
+  ]
+}

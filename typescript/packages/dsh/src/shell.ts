@@ -43,6 +43,7 @@ import { TailBuffer, tailCap } from './text.ts'
 import { SpillSink, ensureDirPath, type SpillTarget } from './spill.ts'
 import type {} from './service.ts'
 import type { Refusal } from '@struktoai/mirage-core/types'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 600_000
@@ -667,7 +668,7 @@ export class MirageShellExecutor extends ShellExecutor {
     const source = ws.getSession(this.sessionId ?? ws.defaultSessionId)
     const grants: Record<string, string> = {}
     for (const entry of ws.mounts()) {
-      grants[entry.prefix] = entry.prefix.replace(/\/+$/, '') === SINK_PREFIX ? 'exec' : 'read'
+      grants[entry.prefix] = rstripSlash(entry.prefix) === SINK_PREFIX ? 'exec' : 'read'
     }
     const hide = [...(source.hiddenPaths?.paths ?? []), ...(source.hiddenPaths?.patterns ?? [])]
     const twin = ws.createSession(sessionId, {

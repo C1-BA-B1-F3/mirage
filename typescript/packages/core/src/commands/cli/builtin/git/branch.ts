@@ -215,6 +215,8 @@ export async function branch(inv: CLIInvocation): Promise<CommandFnResult> {
     const filter = await refFilter(repo, words)
     refs = await loadRefs(dispatch, repo.location.gitdir, repo.location.commondir)
     head = await readHead(dispatch, repo.location.gitdir)
+    if (fl.asBool('show_current'))
+      return [ENC.encode(head.branch ? head.branch + '\n' : ''), new IOResult()]
     const force = fl.asBool('D')
     if (fl.asBool('delete') || force) {
       if (listing) throw new BranchUsageError()

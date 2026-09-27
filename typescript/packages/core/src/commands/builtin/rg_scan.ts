@@ -21,6 +21,7 @@ import { BINARY_EXTENSIONS } from './constants.ts'
 import type { FileTypes } from './rg_filetypes.ts'
 import { type Overrides, Verdict, walkCandidate } from './rg_glob.ts'
 import type { AsyncReaddirFn, AsyncStatFn } from './utils/types.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 /**
  * What ripgrep's walker keeps below a directory operand. The ignore crate's
@@ -80,7 +81,7 @@ function errorText(err: unknown): string {
 
 // An entry's path without the folder mark some backends append.
 function entryName(entry: string): string {
-  return entry.replace(/\/+$/, '')
+  return rstripSlash(entry)
 }
 
 function byName(a: string, b: string): number {
@@ -181,7 +182,7 @@ export function walkCandidates(
     let raw = ''
     let best = -1
     for (const scope of scopes) {
-      const root = scope.virtual.replace(/\/+$/, '')
+      const root = rstripSlash(scope.virtual)
       if (root.length > best && (p.virtual === root || p.virtual.startsWith(root + '/'))) {
         base = root
         raw = scope.rawPath

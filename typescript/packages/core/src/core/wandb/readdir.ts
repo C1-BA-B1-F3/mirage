@@ -8,6 +8,7 @@ import { LEAVES, parts, runVars, safeName } from './pathing.ts'
 import { RUN_EXISTS } from './queries.ts'
 import type { Named, FileMetadata } from './types.ts'
 import { mountPrefixOf } from '../../utils/key_prefix.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 function entry(name: string, directory: boolean, size: number | null = null): IndexEntry {
   return new IndexEntry({
@@ -38,7 +39,7 @@ export function fileTree(files: FileMetadata[]): Map<string, [string, IndexEntry
   return new Map([...directories].map(([parent, children]) => [parent, [...children]]))
 }
 export function fileEntries(files: FileMetadata[], prefix: string): [string, IndexEntry][] {
-  return fileTree(files).get(prefix.replace(/\/+$/, '')) ?? []
+  return fileTree(files).get(rstripSlash(prefix)) ?? []
 }
 export async function listing(
   accessor: WandbAccessor,
@@ -51,7 +52,7 @@ export async function listing(
   if (ps.length === 1) nodes = await accessor.client.projects(ps[0] ?? '')
   else if (ps.length === 2) nodes = await accessor.client.runs(ps[0] ?? '', ps[1] ?? '')
   else if (ps.length === 3) {
-    const key = path.virtual.replace(/\/+$/, '')
+    const key = rstripSlash(path.virtual)
     const parent = key.slice(0, key.lastIndexOf('/')) || '/'
     const cached = await index?.listDir(parent)
     if (!cached?.entries?.includes(key)) await accessor.client.run(runVars(ps), RUN_EXISTS)
@@ -88,7 +89,7 @@ export async function readdir(
 ): Promise<string[]> {
   path = path.pattern ? path.dir : path
   parts(accessor, path)
-  const key = path.virtual.replace(/\/+$/, '') || '/'
+  const key = rstripSlash(path.virtual) || '/'
   const cached = await index?.listDir(key)
   if (cached?.entries) return cached.entries
   const entries = await listing(accessor, path, index)

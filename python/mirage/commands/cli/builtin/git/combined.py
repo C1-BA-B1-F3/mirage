@@ -16,14 +16,18 @@ from difflib import SequenceMatcher
 
 from mirage.commands.cli.builtin.git.constants import FUNCNAME_START, GIT_SPACE
 
+# Git 2.50.1 underflows the result count for -U0 combined deletions.
+# Keep the valid zero-length range instead of its unsigned-size overflow.
 CONTEXT = 3
 COMMENT_BYTES = 40
 
 Lost = list[list[tuple[str, int]]]
 
 
-def combined_lines(parents: list[list[str]], result: list[str],
-                   dense: bool) -> list[str]:
+def combined_lines(parents: list[list[str]],
+                   result: list[str],
+                   dense: bool,
+                   context: int = CONTEXT) -> list[str]:
     """The hunks of a combined diff, as git's combine-diff.c selects them.
 
     Row ``k`` is result line ``k``, carrying the parent lines deleted just
@@ -36,6 +40,7 @@ def combined_lines(parents: list[list[str]], result: list[str],
         result (list[str]): the merge result's lines, newlines kept.
         dense (bool): ``--cc``, which drops a hunk whose every change
             comes from the same proper subset of the parents.
+        context (int): the requested number of context lines.
     """
     size = len(result)
     added = [0] * (size + 1)
@@ -58,8 +63,8 @@ def combined_lines(parents: list[list[str]], result: list[str],
                     bucket[found] = (line, bucket[found][1] | bit)
     marked = [bool(added[at] or lost[at]) for at in range(size + 1)]
     if dense:
-        _drop_one_sided(added, lost, marked, (1 << len(parents)) - 1)
-    hidden = _give_context(added, marked)
+        _drop_one_sided(added, lost, marked, (1 << len(parents)) - 1, context)
+    hidden = _give_context(added, marked, context)
     return _dump(result, added, lost, marked, hidden, len(parents))
 
 
@@ -88,7 +93,7 @@ def _find(marked: list[bool], at: int, want: bool) -> int:
 
 
 def _drop_one_sided(added: list[int], lost: Lost, marked: list[bool],
-                    everyone: int) -> None:
+                    everyone: int, context: int) -> None:
     """Unmark each hunk that only some of the parents changed alike.
 
     Args:
@@ -97,6 +102,7 @@ def _drop_one_sided(added: list[int], lost: Lost, marked: list[bool],
             with the parents that had each.
         marked (list[bool]): per row, whether it is shown; updated.
         everyone (int): the mask holding every parent.
+        context (int): the requested number of context lines.
     """
     size = len(marked) - 1
     at = 0
@@ -107,7 +113,7 @@ def _drop_one_sided(added: list[int], lost: Lost, marked: list[bool],
         begin, end = at, at + 1
         while end <= size:
             if not marked[end]:
-                reach = min(_tail(added, begin, end) + CONTEXT, size + 1)
+                reach = min(_tail(added, begin, end) + context, size + 1)
                 ahead = next(
                     (k for k in range(reach - 1, end - 1, -1) if marked[k]),
                     None)
@@ -124,7 +130,8 @@ def _drop_one_sided(added: list[int], lost: Lost, marked: list[bool],
         at = end
 
 
-def _give_context(added: list[int], marked: list[bool]) -> set[int]:
+def _give_context(added: list[int], marked: list[bool],
+                  context: int) -> set[int]:
     """Paint context rows around the marked ones, joining close hunks.
 
     Returns the rows painted as leading context that were not marked
@@ -138,7 +145,7 @@ def _give_context(added: list[int], marked: list[bool]) -> set[int]:
     hidden: set[int] = set()
     at = _find(marked, 0, True)
     while at <= size:
-        for k in range(max(0, at - CONTEXT), at):
+        for k in range(max(0, at - context), at):
             if not marked[k]:
                 hidden.add(k)
             marked[k] = True
@@ -148,13 +155,13 @@ def _give_context(added: list[int], marked: list[bool]) -> set[int]:
                 return hidden
             ahead = _find(marked, gap, True)
             gap = _tail(added, at, gap)
-            if ahead >= gap + CONTEXT:
+            if ahead >= gap + context:
                 break
             for k in range(gap, ahead):
                 marked[k] = True
             at = ahead
         at = ahead
-        for k in range(gap, min(gap + CONTEXT, size + 1)):
+        for k in range(gap, min(gap + context, size + 1)):
             marked[k] = True
     return hidden
 

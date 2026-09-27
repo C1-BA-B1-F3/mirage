@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { RUN_QUERY, rangeHeaderOf } from '../kit/typescript/index.ts'
+import { RUN_QUERY, rangeHeaderOf, stripSlash } from '../kit/typescript/index.ts'
 import type { Ctx, Headers, JsonValue, Reply } from '../kit/typescript/index.ts'
 import type { C } from './config.ts'
 import { serveHash } from './xet.ts'
@@ -25,7 +25,7 @@ export interface HfObject {
 }
 
 export function strip(path: string): string {
-  return path.replace(/^\/+/, '').replace(/\/+$/, '')
+  return stripSlash(path)
 }
 
 // The Hub names a missing file EntryNotFound, and that code is what tells

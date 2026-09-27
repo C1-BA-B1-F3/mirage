@@ -19,6 +19,7 @@ import { parent, posixNormpath } from '../../../../utils/path.ts'
 import { InvalidGitFileError, NotARepositoryError, NoWorkingDirectoryError } from './errors.ts'
 import { readFile, readOptional, under } from './io.ts'
 import type { Dispatch, RepoLocation } from './types.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 const GITDIR_PREFIX = 'gitdir:'
 const COMMON_DIR = 'commondir'
@@ -27,7 +28,7 @@ const DEC = new TextDecoder('utf-8', { fatal: false })
 
 /** Strip a virtual path to its canonical no-trailing-slash spelling. */
 function normalize(path: string): string {
-  const stripped = path.replace(/\/+$/, '')
+  const stripped = rstripSlash(path)
   return stripped === '' ? '/' : stripped
 }
 

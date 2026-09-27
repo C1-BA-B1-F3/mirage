@@ -156,7 +156,7 @@ export async function searchMany(
   const first = paths[0]
   if (first === undefined) throw new Error('search: at least one scope is required')
   const prefix = mountPrefixOf(first.virtual, first.vfsPath)
-  const all = paths.some((p) => p.vfsPath.replace(/^\/+|\/+$/g, '') === '')
+  const all = paths.some((p) => stripSlash(p.vfsPath) === '')
   const targets = all ? [] : await makeResolveGlob(readdir)(accessor, paths, index)
   const output = await searchSegments(accessor, query.query, targets, index, topK, prefix)
   return output.length === 0 ? [] : new TextDecoder().decode(output).replace(/\n$/, '').split('\n')

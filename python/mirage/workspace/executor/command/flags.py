@@ -219,12 +219,16 @@ def parse_flags(
             for value in parsed.path_flag_values:
                 take_spelling(spellings, scope_map, value)
 
-        # Classify positional args: each operand takes its own word.
+        # Classify positional args: each operand takes its own word. The
+        # spelling rides along for a word the classifier left as text
+        # (an interpreter's bare script name under the shell's word
+        # policy), so the handler still sees it as typed: CPython puts
+        # the operand itself in argv[0].
         paths: list[PathSpec] = []
         texts: list[str] = []
-        for value, kind in parsed.args:
+        for (value, kind), (raw, _) in zip(parsed.args, parsed.raw_operands):
             if kind == "path":
-                paths.append(take_spelling(spellings, scope_map, value))
+                paths.append(take_spelling(spellings, scope_map, value, raw))
             else:
                 texts.append(value)
         return ParsedCommand(

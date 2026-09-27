@@ -103,3 +103,10 @@ describe('combinedLines', () => {
     expect(body.slice(-3)).toEqual(['- MAIN\n', ' -SIDE\n', '++BOTH\n'])
   })
 })
+
+it('keeps a valid empty result range for a zero-context deletion', () => {
+  expect(combinedLines([['gone\n'], ['gone\n']], [], true, 0)).toEqual([
+    '@@@ -1,1 -1,1 +1,0 @@@\n',
+    '--gone\n',
+  ])
+})

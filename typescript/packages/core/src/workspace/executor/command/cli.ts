@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { flagOccurrences } from '../../../commands/spec/flag_view.ts'
 import { CLAP_EXIT, CLI_CONFIG_ENV, GIT_LONG_OPTIONS } from '../../../commands/cli/constants.ts'
 import { clapMissingOperands, leafRefusal } from '../../../commands/cli/refusal.ts'
 import { CLISpec, type CLIInvocation, type CLIDoors } from '../../../commands/cli/types.ts'
@@ -300,6 +301,7 @@ export async function handleCli(
     flags[flagKwargName(spelling)] = value
   }
   Object.assign(flags, flagKwargs)
+  flagOccurrences(flags).push(...flagOccurrences(flagKwargs))
   // Only the injected flag is dropped; a leaf that declared --help
   // itself is handed the value it asked for.
   if (mirageHelp) delete flags.help

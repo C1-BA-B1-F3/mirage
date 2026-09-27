@@ -27,6 +27,7 @@ export interface DiffFlags {
   merge: string
   raw: boolean
   abbrev: boolean
+  context: number
   quotePathFully: boolean
 }
 
@@ -74,10 +75,14 @@ export function parseDiffFlags(
   merge = aliases[merge] ?? merge
   if (!['off', 'separate', 'combined', 'dense-combined', 'first-parent'].includes(merge))
     throw new GitError(`invalid value for --diff-merges: ${merge}`)
+  const context = fl.asInt('unified') ?? 3
+  if (context < 0) throw new GitError('negative context length')
   const patch =
     fl.asBool('patch') ||
+    fl.asInt('unified') != null ||
     ((defaultPatch || fl.asBool('cc') || (porcelain && fl.asBool('c'))) && !modes)
   return {
+    context,
     nameOnly,
     nameStatus,
     stat,
@@ -107,7 +112,7 @@ function equal(a: TreeEntry | undefined, b: TreeEntry | undefined): boolean {
   return a?.oid === b?.oid && a?.mode === b?.mode
 }
 
-async function compare(
+export async function compare(
   repo: Repo,
   before: ReadonlyMap<string, TreeEntry>,
   after: ReadonlyMap<string, TreeEntry>,
@@ -187,7 +192,7 @@ function lines(data: Uint8Array): string[] {
  * `--name-only` and `--name-status` stand alone; otherwise raw rows come first,
  * then numstat, stat and summary, then a blank line and the patch.
  */
-async function renderChanges(repo: Repo, rows: Change[], flags: DiffFlags): Promise<string> {
+export async function renderChanges(repo: Repo, rows: Change[], flags: DiffFlags): Promise<string> {
   if (flags.noPatch) return ''
   const width = flags.abbrev ? repo.abbrev : 40
   const fully = flags.quotePathFully
@@ -232,6 +237,7 @@ async function renderChanges(repo: Repo, rows: Change[], flags: DiffFlags): Prom
           row.status === 'R' ? row.score : null,
           repo.abbrev,
           fully,
+          flags.context,
         ),
       )
   }
@@ -307,6 +313,7 @@ export async function commitSummary(
   fully = true,
 ): Promise<string> {
   return renderChanges(repo, await compare(repo, before, after, RENAME_SCORE), {
+    context: 3,
     nameOnly: false,
     nameStatus: false,
     stat: false,
@@ -404,6 +411,7 @@ export async function commitOutput(
           common,
           flags.merge === 'dense-combined',
           flags.quotePathFully,
+          flags.context,
         )
       : ''
   return [head + (head && body ? '\n' : '') + body]
@@ -415,6 +423,7 @@ async function combinedPatch(
   paths: string[],
   dense: boolean,
   fully = true,
+  context = 3,
 ): Promise<string> {
   const output: string[] = []
   for (const path of paths) {
@@ -425,7 +434,7 @@ async function combinedPatch(
       parents: Uint8Array[] = []
     for (const entry of old) parents.push(await blobData(repo, entry))
     const binary = [...parents, data].some((d) => d.subarray(0, 8000).includes(0))
-    const body = binary ? [] : combinedLines(parents.map(lines), lines(data), dense)
+    const body = binary ? [] : combinedLines(parents.map(lines), lines(data), dense, context)
     const mode = fresh?.mode ?? '000000'
     const moved = old.some((e) => (e?.mode ?? '000000') !== mode)
     if (!binary && !body.length && !moved) continue

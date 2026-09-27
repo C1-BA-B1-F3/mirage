@@ -28,6 +28,7 @@ import type { HfConfig } from '../../../../core/hf_hub/config.ts'
 import { DEFAULT_COMMIT_MESSAGE } from '../../../../core/hf_hub/constants.ts'
 import { hubFor, repoTypeOf, requireOperands, requireToken, textOut } from './accessor.ts'
 import { refuseVariadic } from './download.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 interface Row {
   name: string
@@ -55,7 +56,7 @@ async function collect(
   dispatch: DispatchFn,
   local: string,
 ): Promise<{ rows: Row[]; fromDir: boolean }> {
-  const base = local.replace(/\/+$/, '')
+  const base = rstripSlash(local)
   let directory: boolean
   try {
     directory = await isDir(dispatch, base)
@@ -187,6 +188,6 @@ export async function uploadCmd(inv: CLIInvocation): Promise<CommandFnResult> {
     createPr: fl.asBool('create_pr'),
   })
   const home = repoUrl((inv.config as HfConfig).endpoint, accessor.repoType, repoId)
-  const url = `${home}/tree/${accessor.revision}/${base}`.replace(/\/+$/, '')
+  const url = rstripSlash(`${home}/tree/${accessor.revision}/${base}`)
   return textOut(`${url}\n`)
 }

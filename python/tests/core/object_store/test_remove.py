@@ -44,7 +44,8 @@ def test_unlink_deletes_and_invalidates_every_ancestor_listing(accessor):
         make_unlink(make_driver(store))(accessor, spec("/a/b/c.txt")))
     assert store.objects == {}
     assert manager.unlinks == ["/a/b/c.txt"]
-    assert manager.writes == ["/a/b", "/a"]
+    assert manager.writes == []
+    assert manager.ancestors == ["/mnt/a/b/c.txt"]
 
 
 def test_remove_prefix_deletes_the_subtree_and_ancestors_evict(accessor):
@@ -56,7 +57,8 @@ def test_remove_prefix_deletes_the_subtree_and_ancestors_evict(accessor):
     # and each one was cached under its own key.
     assert manager.subtrees == ["/a/b"]
     assert manager.unlinks == []
-    assert manager.writes == ["/a"]
+    assert manager.writes == []
+    assert manager.ancestors == ["/mnt/a/b"]
 
 
 def test_rmdir_refuses_a_nonempty_prefix_and_keeps_every_key(accessor):
@@ -92,7 +94,8 @@ def test_rmdir_removes_the_marker_of_an_empty_prefix(accessor):
     manager = _managed(make_rmdir(make_driver(store))(accessor, spec("/a/b")))
     assert store.objects == {"keep.txt": b"k"}
     assert manager.unlinks == ["/a/b"]
-    assert manager.writes == ["/a"]
+    assert manager.writes == []
+    assert manager.ancestors == ["/mnt/a/b"]
 
 
 def test_rmdir_reports_enoent_for_a_prefix_holding_no_key(accessor):
@@ -219,7 +222,8 @@ def test_unlink_evicts_the_cache_even_when_the_delete_raises(accessor):
 
     manager = _managed(run())
     assert manager.unlinks == ["/a/b.txt"]
-    assert manager.writes == ["/a"]
+    assert manager.writes == []
+    assert manager.ancestors == ["/mnt/a/b.txt"]
 
 
 def test_remove_prefix_evicts_the_subtree_even_when_the_walk_raises(accessor):
@@ -231,4 +235,5 @@ def test_remove_prefix_evicts_the_subtree_even_when_the_walk_raises(accessor):
 
     manager = _managed(run())
     assert manager.subtrees == ["/a/b"]
-    assert manager.writes == ["/a"]
+    assert manager.writes == []
+    assert manager.ancestors == ["/mnt/a/b"]

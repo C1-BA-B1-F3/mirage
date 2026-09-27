@@ -1,3 +1,4 @@
+import { readHead, loadRefs } from './refs.ts'
 import git from 'isomorphic-git'
 import { VERSION } from '../../../../version.ts'
 
@@ -10,9 +11,8 @@ import type { CLIInvocation } from '../../types.ts'
 import { GitError } from './errors.ts'
 import { parseFlags, refCommits, select } from './history.ts'
 import { opened, repoArgs } from './repo.ts'
-import { loadRefs } from './refs.ts'
 import { readFile } from './io.ts'
-import { splitRevisions } from './revparse.ts'
+import { splitRevisions, resolveObject } from './revparse.ts'
 import { checkOperands, escaped, fatal, startPoint } from './util.ts'
 
 const ENC = new TextEncoder()
@@ -184,4 +184,39 @@ function configKey(key: string): string {
   return parts
     .map((part, i) => (i === 0 || i === parts.length - 1 ? part.toLowerCase() : part))
     .join('.')
+}
+
+/** Resolve object ids or abbreviated symbolic reference names. */
+export async function revParse(inv: CLIInvocation): Promise<CommandFnResult> {
+  const fl = new FlagView(inv.flags)
+  try {
+    checkOperands(inv.texts, undefined, escaped(inv.argv))
+    const repo = await opened(fl, inv.doors ?? {})
+    const head = await readHead(repo.dispatch, repo.location.gitdir)
+    const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
+    let out = ''
+    for (const revision of inv.texts) {
+      const obj = await resolveObject(repo, revision)
+      if (!fl.asBool('abbrev_ref')) {
+        out += obj.oid + '\n'
+        continue
+      }
+      if (revision === 'HEAD') {
+        out += (head.ref?.replace(/^refs\/heads\//, '') ?? 'HEAD') + '\n'
+        continue
+      }
+      const name = [
+        revision,
+        'refs/' + revision,
+        'refs/tags/' + revision,
+        'refs/heads/' + revision,
+        'refs/remotes/' + revision,
+      ].find((name) => refs.has(name))
+      if (name !== undefined) out += name.replace(/^refs\/(heads|tags|remotes)\//, '') + '\n'
+    }
+    return [new TextEncoder().encode(out), new IOResult()]
+  } catch (err) {
+    if (err instanceof GitError) return fatal(err)
+    throw err
+  }
 }

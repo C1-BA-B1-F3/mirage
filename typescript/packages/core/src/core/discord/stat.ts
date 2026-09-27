@@ -25,6 +25,7 @@ import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { entryStat, makeStat } from '../hierarchy/stat.ts'
 import { readdir, snowflakeToIso } from './readdir.ts'
 import { detectScope } from './scope.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 function dirStat(_match: ScopeMatch, _path: PathSpec, entry: IndexEntry): FileStat {
   return new FileStat({ name: entry.vfsName, type: FileType.DIRECTORY })
@@ -70,7 +71,7 @@ async function channelProven(
   index: IndexCacheStore | undefined,
   up: number,
 ): Promise<void> {
-  let virtual = path.virtual.replace(/\/+$/, '')
+  let virtual = rstripSlash(path.virtual)
   for (let i = 0; i < up; i++) virtual = virtual.split('/').slice(0, -1).join('/')
   const prefix = mountPrefixOf(path.virtual, path.vfsPath)
   const spec = new PathSpec({

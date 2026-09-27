@@ -155,3 +155,24 @@ async def test_skip_only_buffered_empty_lines_with_limit():
     assert await reader.readline() == b"end"
     assert reader.skip_empty_lines() == 0
     assert await reader.readline() is None
+
+
+@pytest.mark.asyncio
+async def test_skip_nonmatching_lines_retains_candidates_across_chunks():
+    chunks = [b"first\nskip\nskip\nneedle\nskip\nnee", b"dle\ntail"]
+
+    async def source():
+        for chunk in chunks:
+            yield chunk
+
+    lines = AsyncLineIterator(source())
+    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
+    assert await lines.readline() == b"first"
+    assert lines.skip_nonmatching_lines((b"needle", )) == (2, 10)
+    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
+    assert await lines.readline() == b"needle"
+    assert lines.skip_nonmatching_lines((b"needle", )) == (1, 5)
+    assert await lines.readline() == b"needle"
+    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
+    assert await lines.readline() == b"tail"
+    assert await lines.readline() is None

@@ -30,6 +30,7 @@ import { enoent } from '../../../utils/errors.ts'
 import type { CommandOpts } from '../../config.ts'
 import type { UsageError } from '../../errors.ts'
 import type { LinkView, MountView, StatPath } from '../../../ops/types.ts'
+import { rstripSlash } from '../../../utils/slash.ts'
 
 const DEC = new TextDecoder()
 
@@ -385,10 +386,8 @@ describe('duGeneric', () => {
 function mountsView(descendants: string[]): MountView {
   const visible = descendants.filter((d) => !d.endsWith('/hidden'))
   return {
-    descendants: (p: string) =>
-      descendants.filter((d) => d.startsWith(p.replace(/\/+$/, '') + '/')),
-    visibleDescendants: (p: string) =>
-      visible.filter((d) => d.startsWith(p.replace(/\/+$/, '') + '/')),
+    descendants: (p: string) => descendants.filter((d) => d.startsWith(rstripSlash(p) + '/')),
+    visibleDescendants: (p: string) => visible.filter((d) => d.startsWith(rstripSlash(p) + '/')),
     isRoot: () => false,
     rootOf: () => '/',
   }
@@ -407,7 +406,7 @@ function linksView(links: Record<string, string>): LinkView {
     subtree: (p: string) =>
       Object.keys(links)
         .sort()
-        .filter((k) => k.startsWith(p.replace(/\/+$/, '') + '/'))
+        .filter((k) => k.startsWith(rstripSlash(p) + '/'))
         .map((k): [string, FileStat] => [k, statOf(k)]),
     resolve: (p: string) => links[p] ?? p,
     exists: () => Promise.resolve(false),

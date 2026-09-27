@@ -31,6 +31,7 @@ import {
   textCandidates,
   wholeWordLiteral,
 } from './grep_pushdown.ts'
+import { stripSlash } from '../../utils/slash.ts'
 
 describe('classifyPattern', () => {
   it('newlines and regex are REGEX, plain text is SIMPLE, fixed is EXACT', () => {
@@ -194,7 +195,7 @@ function operand(virtual: string, pattern: string | null = null): PathSpec {
   return new PathSpec({
     virtual,
     directory: virtual.slice(0, virtual.lastIndexOf('/')) || '/',
-    vfsPath: virtual.replace(/^\/+|\/+$/g, ''),
+    vfsPath: stripSlash(virtual),
     pattern,
     resolved: pattern === null,
   })

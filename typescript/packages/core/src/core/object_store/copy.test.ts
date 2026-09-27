@@ -40,7 +40,8 @@ describe('object_store copy', () => {
       copyFor(store)(accessor, spec('/src.txt'), spec('/a/b/dst.txt')),
     )
     expect(store.contents()).toEqual({ 'src.txt': 'hi', 'a/b/dst.txt': 'hi' })
-    expect(manager.writes).toEqual(['/a/b/dst.txt', '/a/b', '/a'])
+    expect(manager.writes).toEqual(['/a/b/dst.txt'])
+    expect(manager.ancestors).toEqual(['/mnt/a/b/dst.txt'])
   })
 
   it('a missing source is ENOENT', async () => {

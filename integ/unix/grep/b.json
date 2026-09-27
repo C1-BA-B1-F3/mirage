@@ -720,6 +720,45 @@
         "n",
         "A"
       ]
+    },
+    {
+      "id": "grep_b_sparse_literal_buffers",
+      "seq": 990250,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "awk 'BEGIN {for (i=0; i<4096; i++) print \"abcdefg\"; print \"needle\"; print \"tail\"; print \"needle needle\"}' > /data/grep-sparse.txt; grep -nbo needle /data/grep-sparse.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "4097:32768:needle\n4099:32780:needle\n4099:32787:needle\n",
+        "stderr": ""
+      },
+      "flags": [
+        "b",
+        "n",
+        "o"
+      ]
     }
   ]
 }

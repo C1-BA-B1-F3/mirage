@@ -49,8 +49,11 @@ interface StatusFlags {
 function parseFlags(fl: FlagView): StatusFlags {
   const stated = fl.asStr('untracked_files')
   const mode = stated ?? (fl.asBool('untracked_files') ? UNTRACKED_ALL : UNTRACKED_NORMAL)
+  const version = fl.asStr('porcelain')
+  if (version != null && !['1', 'v1'].includes(version))
+    throw new GitError(`unsupported porcelain version '${version}'`)
   return {
-    porcelain: fl.asBool('porcelain'),
+    porcelain: fl.asBool('porcelain') || fl.asStr('porcelain') != null,
     short: fl.asBool('short'),
     branch: fl.asBool('branch'),
     untracked: mode,

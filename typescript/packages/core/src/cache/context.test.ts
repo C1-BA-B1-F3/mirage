@@ -14,6 +14,8 @@
 
 import { describe, expect, it } from 'vitest'
 
+import { RAMIndexCacheStore } from './index/ram.ts'
+import { CacheManager } from './manager.ts'
 import { PathSpec } from '../types.ts'
 import {
   activeCacheManager,
@@ -32,6 +34,7 @@ class FakeManager {
   writes: string[] = []
   unlinks: string[] = []
   subtrees: string[] = []
+  ancestors: PathSpec[] = []
 
   invalidateAfterWrite(path: string | PathSpec): Promise<void> {
     this.writes.push(path as string)
@@ -40,6 +43,11 @@ class FakeManager {
 
   invalidateAfterUnlink(path: string | PathSpec): Promise<void> {
     this.unlinks.push(path as string)
+    return Promise.resolve()
+  }
+
+  invalidateAncestors(path: PathSpec): Promise<void> {
+    this.ancestors.push(path)
     return Promise.resolve()
   }
 
@@ -74,6 +82,7 @@ describe('cache context', () => {
     await invalidateAfterWrite('/a.txt')
     await invalidateAfterUnlink('/b.txt')
     await invalidateSubtree('/c')
+    await invalidateAncestors(PathSpec.fromStrPath('/c/d'))
   })
 
   it('scopes the manager to the run', async () => {
@@ -97,12 +106,37 @@ describe('cache context', () => {
     })
   })
 
-  it('invalidateAncestors walks the chain to root', async () => {
+  it('invalidateAncestors preserves the full virtual path', async () => {
     const manager = new FakeManager()
-    await runWithCacheManager(manager, async () => {
-      await invalidateAncestors(PathSpec.fromStrPath('/xmdp/a/b/c'))
+    const path = new PathSpec({
+      virtual: '/data/data/a/b.txt',
+      vfsPath: 'data/a/b.txt',
+      directory: '/data/data/a',
     })
-    const seen = manager.writes.map((w) => (w as unknown as PathSpec).mountPath)
-    expect(seen).toEqual(['/xmdp/a/b', '/xmdp/a', '/xmdp'])
+    await runWithCacheManager(manager, async () => {
+      await invalidateAncestors(path)
+    })
+    expect(manager.ancestors).toEqual([path])
+    expect(manager.writes).toEqual([])
   })
+})
+
+it.each(['/data', '/nested/data'])('evicts ancestors under repeated mount %s', async (prefix) => {
+  const index = new RAMIndexCacheStore({ ttl: 600 })
+  const manager = new CacheManager(null, index, prefix, true)
+  const directory = `${prefix}${prefix}/a`
+  const ancestors = [prefix, `${prefix}${prefix}`, directory]
+  for (const ancestor of ancestors) await index.setDir(ancestor, [])
+  await index.setDir(`${prefix}/unrelated`, [])
+  const path = new PathSpec({
+    virtual: `${directory}/b.txt`,
+    directory,
+    vfsPath: `${directory.slice(prefix.length + 1)}/b.txt`,
+  })
+  await runWithCacheManager(manager, async () => {
+    await invalidateAfterWrite(path)
+    await invalidateAncestors(path)
+  })
+  for (const ancestor of ancestors) expect((await index.listDir(ancestor)).entries).toBeUndefined()
+  expect((await index.listDir(`${prefix}/unrelated`)).entries).toBeDefined()
 })

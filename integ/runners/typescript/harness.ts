@@ -19,6 +19,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Outcome, Scope } from '@struktoai/mirage-core/policy/index'
 import type { SessionProfile } from '@struktoai/mirage-core/policy/profile'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 // integ/runtime holds the runtime suite (its own schema and runners,
 // integ/runtime/run.{py,ts} + cli.sh), not battery cases; keep it out.
@@ -470,7 +471,7 @@ export async function seedFixture(
 async function seedFrom(ws: ExecWorkspace, base: string, mountPath: string): Promise<void> {
   for (const file of walkFiles(base)) {
     const rel = relative(base, file).split(sep).join('/')
-    const dest = `${mountPath.replace(/\/+$/, '')}/${rel}`
+    const dest = `${rstripSlash(mountPath)}/${rel}`
     const parent = dest.slice(0, dest.lastIndexOf('/'))
     await ws.shell(`mkdir -p ${parent}`)
     await ws.shell(`tee ${dest} > /dev/null`, { stdin: new Uint8Array(readFileSync(file)) })
@@ -485,7 +486,7 @@ export async function seedMountRoot(ws: ExecWorkspace, mountPath: string): Promi
   // marker file rides the same workspace plumbing fixture seeding uses:
   // the upload auto-creates the folder chain and the delete leaves the
   // folders behind, so the mount lists as empty like every other target.
-  const marker = `${mountPath.replace(/\/+$/, '')}/.seed`
+  const marker = `${rstripSlash(mountPath)}/.seed`
   await ws.shell(`tee ${marker} > /dev/null`, { stdin: ENC.encode('seed\n') })
   await ws.shell(`rm ${marker}`)
 }
@@ -622,7 +623,7 @@ function provisionLine(r: ProvisionInfo): string {
 // base URL, which is only known once the server has bound a port.
 export function bindMount(c: Case, mountPath: string): Case {
   const tokens: ReadonlyArray<readonly [string, string]> = [
-    ['{mount}', mountPath.replace(/\/+$/, '')],
+    ['{mount}', rstripSlash(mountPath)],
     ['{http}', process.env.HTTP_ENDPOINT ?? ''],
   ]
   const subst = (text: string): string =>

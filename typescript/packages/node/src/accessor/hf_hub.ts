@@ -19,6 +19,7 @@ import * as kp from '@struktoai/mirage-core/utils/key_prefix'
 import { HF_ENDPOINT, type HfRepoConfig } from '../vfs/hf_buckets/config.ts'
 import { DEFAULT_REVISION } from '../core/hf_hub/constants.ts'
 import type { TreeEntry } from '../core/hf_hub/tree_entry.ts'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export interface RowTables {
   entries: Map<string, IndexEntry>
@@ -114,10 +115,10 @@ export class HfHubAccessor extends Accessor {
    */
   repoPath(rel: string): string {
     const prefix = this.keyPrefix
-    const stem = rel.replace(/^\/+|\/+$/g, '')
+    const stem = stripSlash(rel)
     if (prefix === '') return stem
-    if (stem === '') return prefix.replace(/\/+$/, '')
-    return kp.apply(prefix, rel).replace(/\/+$/, '')
+    if (stem === '') return rstripSlash(prefix)
+    return rstripSlash(kp.apply(prefix, rel))
   }
 }
 

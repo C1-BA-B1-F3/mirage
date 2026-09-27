@@ -12,7 +12,7 @@ import {
  * keeps the credentials schema, so installing it with start_time/end_time
  * is refused rather than accepted and never applied.
  */
-const DiscordConfigSchema = DiscordCredentialsSchema.extend(timeRangeShape).refine(
+const DiscordConfigSchema = DiscordCredentialsSchema.extend({ ...timeRangeShape }).refine(
   orderedTimes,
   timeRangeOrderError,
 )

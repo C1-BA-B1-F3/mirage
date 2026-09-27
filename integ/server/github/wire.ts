@@ -172,10 +172,14 @@ export function writtenCommitJson(row: { sha: string; message: string }): JsonVa
   return { sha: row.sha, commit: { message: row.message } }
 }
 
-export function rootCommit(tree: Array<[string, string]>): CommitRow {
+export function rootSha(tree: Array<[string, string]>): string {
   const sorted = [...tree].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+  return commitSha(`root\0${sorted.map(([p, b]) => `${p}:${b}`).join('\0')}`)
+}
+
+export function rootCommit(sha: string): CommitRow {
   return {
-    sha: commitSha(`root\0${sorted.map(([p, b]) => `${p}:${b}`).join('\0')}`),
+    sha,
     parentSha: '',
     message: 'Initial commit',
     authorLogin: 'mirage',

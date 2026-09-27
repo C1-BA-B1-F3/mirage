@@ -238,11 +238,75 @@ async function emptyRepository(at: string): Promise<void> {
   }
 }
 
+// A seeded branch has files and no commit, so its ref answers with a root
+// derived from those files. The first change on it, a write or a delete, names
+// that root as its parent, and history has to keep listing it under that
+// commit however the files change afterwards.
+async function seededHistory(at: string): Promise<void> {
+  for (const first of ['PUT', 'DELETE']) {
+    const run = `seeded-${first.toLowerCase()}`
+    const base = `${at}/_run/${run}`
+    await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+    const repo = `${base}/repos/${REPO}`
+    const root = String(field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'))
+    const path = first === 'PUT' ? 'first.txt' : 'README.md'
+    const change =
+      first === 'PUT'
+        ? { message: 'First change', content: Buffer.from('one').toString('base64') }
+        : { message: 'First change', sha: field(await get(`${repo}/contents/${path}`), 'sha') }
+    const changed = await fetch(`${repo}/contents/${path}`, {
+      method: first,
+      headers: HEADERS,
+      body: JSON.stringify(change),
+    })
+    eq(`a first ${first} on a seeded branch succeeds`, changed.status, first === 'PUT' ? 201 : 200)
+    const second = await fetch(`${repo}/contents/second.txt`, {
+      method: 'PUT',
+      headers: HEADERS,
+      body: JSON.stringify({
+        message: 'Second change',
+        content: Buffer.from('two').toString('base64'),
+      }),
+    })
+    eq('a second write on it succeeds', second.status, 201)
+    const history = (await get(`${repo}/commits`)) as JsonValue[]
+    eq(
+      'history lists both changes above one root',
+      history.map((c) => field(field(c, 'commit'), 'message')),
+      ['Second change', 'First change', 'Initial commit'],
+    )
+    eq(
+      'that root is where the ref pointed before the first change',
+      field(history[2] ?? null, 'sha'),
+      root,
+    )
+    const found = field(
+      await get(`${base}/search/commits?q=${encodeURIComponent(`repo:${REPO} first change`)}`),
+      'items',
+    ) as JsonValue[]
+    eq('the first change names that root as its parent', field(found[0] ?? null, 'parents'), [
+      { sha: root },
+    ])
+    const resolved = await fetch(`${repo}/git/commits/${root}`, { headers: HEADERS })
+    eq('that root still resolves as a commit', resolved.status, 200)
+    const compared = await fetch(`${repo}/compare/${root}...main`, { headers: HEADERS })
+    eq('a comparison from that root succeeds', compared.status, 200)
+    eq(
+      'and reports both changes',
+      ((field((await compared.json()) as JsonValue, 'files') ?? []) as JsonValue[]).map((f) =>
+        field(f, 'filename'),
+      ),
+      ['second.txt', path],
+    )
+  }
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
   try {
     await emptyRepository(at)
+    await seededHistory(at)
     const reset = await fetch(`${at}/reset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

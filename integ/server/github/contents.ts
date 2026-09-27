@@ -249,6 +249,9 @@ const putContents = withRepo(async (ctx, repo) => {
     return fail(422, 'Invalid request.\n\n"sha" wasn\'t supplied.')
   }
   const created = existing === undefined
+  // Read before the write, because the parent is where the ref pointed when
+  // this request arrived: a seeded branch's root, or none on an empty branch.
+  // After the write the same question names a root the ref never reported.
   const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
   await writeFile(ctx.db, ctx.tenant, repo, branch, path, data)
   const message = str(body, 'message') === '' ? `Update ${path}` : str(body, 'message')

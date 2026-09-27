@@ -33,6 +33,142 @@
         "stdout": "total ?\n-rw-r--r-- 1 - - 6 Jan  2  2026 f.txt\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "meta_ls_dot_entries_root",
+      "seq": 200001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(listing=$(ls -la /data) && printf '%s\\n' \"$listing\" | awk '$NF == \".\" || $NF == \"..\" { print $NF }')",
+      "expect": {
+        "exit": 0,
+        "stdout": ".\n..\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "meta_ls_dot_entries_root_cwd",
+      "seq": 200001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(listing=$(cd /data && ls -la) && printf '%s\\n' \"$listing\" | awk '$NF == \".\" || $NF == \"..\" { print $NF }')",
+      "expect": {
+        "exit": 0,
+        "stdout": ".\n..\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "meta_ls_dot_entries_subdirectory",
+      "seq": 200001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(listing=$(ls -la /data/metad) && printf '%s\\n' \"$listing\" | awk '$NF == \".\" || $NF == \"..\" { print $NF }')",
+      "expect": {
+        "exit": 0,
+        "stdout": ".\n..\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "meta_ls_dot_entries_recursive",
+      "seq": 200001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/metatree/sub && echo beta > /data/metatree/sub/g.txt && listing=$(ls -laR /data/metatree) && printf '%s\\n' \"$listing\" | awk '/:$/ || $NF == \".\" || $NF == \"..\" { print $NF }'; rm -r /data/metatree)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/metatree:\n.\n..\n/data/metatree/sub:\n.\n..\n",
+        "stderr": ""
+      }
     }
   ]
 }

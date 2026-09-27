@@ -1637,3 +1637,57 @@ async def test_empty_long_listing_and_dot_entries_do_not_recurse():
                           recursive=True)
     assert output == b"/empty:\n.\n..\n"
     assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["", "/data", "/nested/data"])
+@pytest.mark.parametrize("subdir", [False, True])
+@pytest.mark.parametrize("namespace", [False, True])
+async def test_dot_entries_respect_mount_boundary(prefix, subdir, namespace):
+    root = prefix or "/"
+    directory = f"{prefix}/sub" if subdir else root
+    tree = {
+        root: FileStat(name="root", type=FileType.DIRECTORY, mode=0o751),
+        f"{prefix}/sub": FileStat(name="sub",
+                                  type=FileType.DIRECTORY,
+                                  mode=0o750),
+    }
+    readdir, backend_stat = _make_fs_backend(tree)
+    calls = []
+    namespace_calls = []
+
+    async def stat(path, index=None):
+        calls.append((path.virtual, path.vfs_path))
+        assert path.virtual in tree
+        assert path.vfs_path == path.virtual[len(prefix):].strip("/")
+        return await backend_stat(path, index)
+
+    async def stat_path(path):
+        namespace_calls.append(path)
+        return tree.get(
+            path, FileStat(name="parent", type=FileType.DIRECTORY, mode=0o700))
+
+    output, io = await ls([
+        PathSpec(virtual=directory,
+                 directory=directory,
+                 vfs_path="sub" if subdir else "")
+    ],
+                          readdir=readdir,
+                          stat=stat,
+                          long=True,
+                          all_files=True,
+                          show_dot_entries=True,
+                          stat_path=stat_path if namespace else None)
+    assert io.exit_code == 0
+    assert not io.stderr
+    dot_mode = "drwxr-x---" if subdir else "drwxr-x--x"
+    parent_mode = ("drwxr-x--x" if subdir or not prefix else
+                   "drwx------" if namespace else "drwxr-xr-x")
+    assert f"{dot_mode} 1 - - 4096 - .\n" in output.decode()
+    assert f"{parent_mode} 1 - - 4096 - ..\n" in output.decode()
+    if namespace:
+        parent = prefix if subdir and prefix else (root.rsplit("/", 1)[0]
+                                                   or "/")
+        assert namespace_calls[-2:] == [directory, parent]
+    else:
+        assert calls

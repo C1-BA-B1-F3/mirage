@@ -14,7 +14,7 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
+import { mountKey, mountPrefixOf, underPath } from '../../../utils/key_prefix.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import { FileStat, FileType, PathSpec, type LsSortBy, type LsTimeKind } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
@@ -37,7 +37,7 @@ import { identityOf, type Identity } from '../utils/identity.ts'
 import { gnuStrerror, isEacces, isWalkError } from '../../../utils/errors.ts'
 import { failureText } from '../../../errors/classify.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
-import { CycleError, respellOne, norm } from '../../../utils/path.ts'
+import { CycleError, respellOne, posixNormpath } from '../../../utils/path.ts'
 import { formatRecords } from '../utils/output.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 import { contentSize } from '../../../utils/stat_view.ts'
@@ -1019,15 +1019,18 @@ export async function lsGeneric(
       let entries = group
       if (flags.showDotEntries) {
         const dots: FileStat[] = []
+        const prefix = mountPrefixOf(dirSpec.virtual, dirSpec.vfsPath)
         for (const name of ['.', '..']) {
-          const target = norm(`${dirSpec.virtual}/${name}`)
+          const target = posixNormpath(`${dirSpec.virtual}/${name}`)
           let row = new FileStat({ name, type: FileType.DIRECTORY })
-          if (statNeeded(flags)) {
+          // Only the namespace can stat a parent outside this mount.
+          // Without that door, keep the synthetic directory row.
+          if (statNeeded(flags) && (opts.statPath !== undefined || underPath(target, prefix))) {
             try {
               const found =
                 opts.statPath !== undefined
                   ? await opts.statPath(target)
-                  : await stat(childSpec(target, mountPrefixOf(dirSpec.virtual, dirSpec.vfsPath)))
+                  : await stat(childSpec(target, prefix))
               if (found !== null) row = found.with({ name })
             } catch (err) {
               if (!isWalkError(err)) throw err

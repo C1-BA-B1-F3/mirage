@@ -172,6 +172,7 @@ async def _recurse_reassociated(
     execute_fn: Callable[..., Any],
     registry: MountRegistry,
     redirects: list[Any],
+    processes: ProcessSupervisor | None,
     right: Any,
     node: Any,
     session: SessionState,
@@ -193,6 +194,8 @@ async def _recurse_reassociated(
         execute_fn (Callable): recursive execute (for expansions).
         registry (MountRegistry): mount registry.
         redirects (list): parsed redirects hoisted off the list.
+        processes (ProcessSupervisor | None): where the stages run as
+            managed processes.
         right (Any): the list's right operand.
         node (Any): node being executed by handle_connection.
         session (SessionState): shell session state.
@@ -206,7 +209,8 @@ async def _recurse_reassociated(
     # so a pre_session rule governs those exactly as it governs `X=d`.
     view = session_view(session, registry.policies)
     return await _run_redirected(recurse, dispatch, execute_fn, registry, view,
-                                 right, redirects, session, stdin, call_stack)
+                                 right, redirects, processes, session, stdin,
+                                 call_stack)
 
 
 async def _recurse_lifted(
@@ -254,6 +258,7 @@ async def _recurse_stage(
     registry: MountRegistry,
     stages: PipelineStages,
     targets: list[Any],
+    processes: ProcessSupervisor | None,
     node: Any,
     session: SessionState,
     stdin: Any = None,
@@ -275,6 +280,8 @@ async def _recurse_stage(
         registry (MountRegistry): mount registry.
         stages (PipelineStages): the pipeline being run.
         targets (list[Any]): the stages a ``|&`` follows.
+        processes (ProcessSupervisor | None): where the stages run as
+            managed processes.
         node (Any): the stage handle_pipe asks for.
         session (SessionState): the stage's session.
         stdin (Any): input stream.
@@ -290,8 +297,8 @@ async def _recurse_stage(
                 Redirect(fd=2, target=1, kind=RedirectKind.STDERR_TO_STDOUT))
         view = session_view(session, registry.policies)
         return await _run_redirected(recurse, dispatch, execute_fn, registry,
-                                     view, node, bound, session, stdin,
-                                     call_stack)
+                                     view, node, bound, processes, session,
+                                     stdin, call_stack)
     return await _recurse_pipe_stderr(recurse,
                                       dispatch,
                                       execute_fn,
@@ -348,7 +355,7 @@ async def _run_pipeline(
         if i < len(stderr_flags) and stderr_flags[i]
     ]
     pipe_recurse = partial(_recurse_stage, recurse, dispatch, execute_fn,
-                           registry, stages, targets)
+                           registry, stages, targets, processes)
     stdout, io, exec_node = await handle_pipe(pipe_recurse, commands,
                                               stderr_flags, session, stdin,
                                               call_stack, processes)
@@ -451,6 +458,7 @@ async def _run_redirected(
     view: SessionView | None,
     command: Any,
     redirects: list[Redirect],
+    processes: ProcessSupervisor | None,
     session: SessionState,
     stdin: Any,
     call_stack: CallStack | None,
@@ -473,6 +481,8 @@ async def _run_redirected(
         command (Any): the redirected command node, None for a bare
             redirect.
         redirects (list[Redirect]): the statement's parsed redirects.
+        processes (ProcessSupervisor | None): where the stages run as
+            managed processes.
         session (SessionState): shell session state.
         stdin (Any): input stream.
         call_stack (CallStack | None): shell call stack.
@@ -488,13 +498,13 @@ async def _run_redirected(
         # (bash group semantics).
         left, op, right = get_list_parts(command)
         wrapped = partial(_recurse_reassociated, recurse, dispatch, execute_fn,
-                          registry, redirects, right)
+                          registry, redirects, processes, right)
         return await handle_connection(wrapped, left, op, right, session,
                                        stdin, call_stack)
     if command is not None and command.type == NT.PIPELINE:
         return await _run_pipeline(recurse, dispatch, execute_fn, registry,
                                    get_pipeline_stages(command, redirects),
-                                   session, stdin, call_stack)
+                                   session, stdin, call_stack, processes)
     if command is not None and command.type == NT.NEGATED_COMMAND:
         # `! cmd < f` parses as redirected(negated(cmd), < f), but the
         # redirect is the command's: bash negates what `cmd < f` returns,
@@ -503,8 +513,8 @@ async def _run_redirected(
         stdout, io, exec_node = await _run_redirected(recurse, dispatch,
                                                       execute_fn, registry,
                                                       view, inner, redirects,
-                                                      session, stdin,
-                                                      call_stack)
+                                                      processes, session,
+                                                      stdin, call_stack)
         return await _negated(stdout, io, exec_node, session, inner)
     expanded_redirects, pipe_node = await expand_redirects(redirects,
                                                            session,
@@ -829,8 +839,10 @@ async def _execute_node(
         # list and all, exactly as a `list` node would have wrapped it
         # had the parser read the line the way bash does.
         continuation = take_continuation(redirects)
-        run_left = partial(_run_redirected, recurse, dispatch, execute_fn,
-                           registry, view, command, redirects)
+        run_left = partial(
+            _run_redirected, recurse, dispatch, execute_fn, registry, view,
+            command, redirects,
+            job_table.processes if job_table is not None else None)
         if not continuation:
             return await run_left(session, stdin, cs)
         return await _run_continuation(recurse, run_left, node, continuation,

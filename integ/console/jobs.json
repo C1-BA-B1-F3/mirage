@@ -97,6 +97,34 @@
         "stdout": "shell-ok\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "console_redirected_pipeline_stages_are_processes",
+      "seq": 509014,
+      "targets": [
+        "ram",
+        "console-redis"
+      ],
+      "command": "ps | cut -f2 | grep '^ps$' 2>/dev/null",
+      "expect": {
+        "exit": 0,
+        "stdout": "ps\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "console_reassociated_pipeline_stages_are_processes",
+      "seq": 509016,
+      "targets": [
+        "ram",
+        "console-redis"
+      ],
+      "command": "true && ps | cut -f2 | grep '^ps$' 2>/dev/null",
+      "expect": {
+        "exit": 0,
+        "stdout": "ps\n",
+        "stderr": ""
+      }
     }
   ]
 }

@@ -231,6 +231,8 @@ async function recurseReassociated(
   registry: MountRegistry,
   redirects: readonly Redirect[],
   right: TSNodeLike,
+  signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
@@ -245,6 +247,8 @@ async function recurseReassociated(
     registry,
     right,
     [...redirects],
+    signal,
+    processes,
     session,
     stdin,
     callStack,
@@ -300,6 +304,8 @@ async function recurseStage(
   registry: MountRegistry,
   stages: PipelineStages,
   targets: readonly TSNodeLike[],
+  signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
@@ -333,6 +339,8 @@ async function recurseStage(
     registry,
     node,
     bound,
+    signal,
+    processes,
     session,
     stdin,
     callStack,
@@ -382,6 +390,8 @@ async function runPipeline(
     registry,
     stages,
     targets,
+    signal,
+    processes,
   )
   const [stdout, io, execNode] = await handlePipe(
     pipeRecurse,
@@ -458,6 +468,8 @@ async function runRedirected(
   registry: MountRegistry,
   command: TSNodeLike | null,
   redirects: Redirect[],
+  signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
   session: SessionState,
   stdin: ByteSource | null,
   callStack: CallStack | null,
@@ -480,6 +492,8 @@ async function runRedirected(
       registry,
       redirects,
       right,
+      signal,
+      processes,
     )
     return handleConnection(wrapped, left, op, right, session, stdin, callStack)
   }
@@ -493,6 +507,8 @@ async function runRedirected(
       session,
       stdin,
       callStack,
+      signal,
+      processes,
     )
   }
   if (command !== null && command.type === NT.NEGATED_COMMAND) {
@@ -507,6 +523,8 @@ async function runRedirected(
       registry,
       inner,
       redirects,
+      signal,
+      processes,
       session,
       stdin,
       callStack,
@@ -886,6 +904,8 @@ async function executeNodeBody(
       registry,
       command,
       redirects,
+      deps.signal,
+      jobTable.processes,
     )
     if (continuation.length === 0) return runLeft(session, stdin, callStack)
     return runContinuation(recurse, runLeft, node, continuation, session, stdin, callStack)

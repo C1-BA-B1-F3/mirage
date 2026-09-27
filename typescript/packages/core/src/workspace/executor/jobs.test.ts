@@ -192,19 +192,22 @@ describe('handlePs', () => {
     expect((out as Uint8Array).byteLength).toBe(0)
   })
 
-  it('lists the stages of a pipeline behind a list', async () => {
-    const ws = buildWs()
-    try {
-      await ws.shell('echo x > /m/f')
-      const rows = stdoutStr(await ws.shell('true && ps < /m/f | cat'))
-        .trim()
-        .split('\n')
-      const commands = rows.map((row) => row.split('\t')[1])
-      expect(commands).toEqual(expect.arrayContaining(['ps', 'cat']))
-    } finally {
-      await ws.close()
-    }
-  })
+  it.each(['true && ps < /m/f | cat', 'ps | cat 2>/dev/null', 'true && ps | cat 2>/dev/null'])(
+    'lists the stages of a pipeline under a redirect: %s',
+    async (line) => {
+      const ws = buildWs()
+      try {
+        await ws.shell('echo x > /m/f')
+        const rows = stdoutStr(await ws.shell(line))
+          .trim()
+          .split('\n')
+        const commands = rows.map((row) => row.split('\t')[1])
+        expect(commands).toEqual(expect.arrayContaining(['ps', 'cat']))
+      } finally {
+        await ws.close()
+      }
+    },
+  )
 })
 
 describe('handleWait with an invocation signal', () => {

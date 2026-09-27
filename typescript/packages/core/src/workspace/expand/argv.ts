@@ -19,6 +19,7 @@ import type { CallStack } from '../../shell/call_stack.ts'
 import { PathSpec, wordText } from '../../types.ts'
 import { hasGlob, literalWord, markGlobs, unmarkGlobs } from '../../utils/glob_walk.ts'
 import type { MountRegistry } from '../mount/registry.ts'
+import { INTERPRETER_NAMES } from '../lookup/constants.ts'
 import {
   Consumer,
   WordPolicy,
@@ -139,16 +140,24 @@ export async function expandArgv(
   // A native program gets its words the way bash hands them over, with
   // every unquoted glob already expanded, whatever slot the word fills.
   const native = consumer === Consumer.EXTERNAL && !refused
+  // An interpreter run in-process keeps the shell's reading of its words,
+  // which is what its argv is built from, but its script is a file it
+  // opens: the spec's script slot makes that one word a path, so a rule
+  // protecting `secret.py` reads `python3 secret.py` however the script
+  // is spelled.
+  const inProcess = consumer === Consumer.SESSION && INTERPRETER_NAMES.has(name)
   let spec: CommandSpec | null = null
   let wordKinds: (ValueType | null)[] | null = null
   let wordBases: (string | null)[] | null = null
-  // Native captures still need the spec's path roles for admission.
-  if (policy === WordPolicy.MOUNT || consumer === Consumer.EXTERNAL) {
+  // Native captures and interpreters still need the spec's path roles
+  // for admission.
+  if (policy === WordPolicy.MOUNT || consumer === Consumer.EXTERNAL || inProcess) {
     spec = specForCommand(name, registry, session.cwd)
     if (spec !== null) {
       const extra: (ValueType | null)[] = new Array<ValueType | null>(consumed - 1).fill('str')
       const program = lineWords.slice(consumed)
       let kinds = specWordKinds(spec, program, name)
+      if (inProcess) kinds = kinds.map((kind) => (kind === 'path' ? kind : null))
       // A text slot does not keep a native program's pattern literal:
       // bash expands `python3 s.py *.txt` before python reads a word of
       // it, so an unquoted glob is classified by its shape like any

@@ -118,6 +118,8 @@ Monty commands start in the Mirage shell's current directory. Relative
 `open()` and `pathlib` paths reach the workspace dispatcher as absolute
 virtual paths, so `cd /data; python3 -c "print(open('a.txt').read())"`
 reads `/data/a.txt` through the same mount and policy checks as `cat`.
+The script operand is judged like `cat`'s file too: a rule protecting
+`/data/job.py` refuses `python3 job.py` from `/data`.
 `os.getcwd()` and `Path.cwd()` report that virtual directory. Monty 1.0.0's
 JavaScript binding cannot return the native named-tuple stat result that
 `os.chdir()` requires, so changing directories inside the guest raises a

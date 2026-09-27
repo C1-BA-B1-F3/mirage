@@ -35,6 +35,7 @@ from mirage.workspace.expand.spec_hints import (spec_for_command,
 from mirage.workspace.lookup import (Consumer, WordPolicy,
                                      end_options_after_program, lookup,
                                      runtime_refused, word_policy)
+from mirage.workspace.lookup.constants import INTERPRETER_NAMES
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.session import SessionState
@@ -153,11 +154,19 @@ async def expand_argv(
     # A native program gets its words the way bash hands them over, with
     # every unquoted glob already expanded, whatever slot the word fills.
     native = consumer is Consumer.EXTERNAL and not refused
+    # An interpreter run in-process keeps the shell's reading of its
+    # words, which is what its argv is built from, but its script is a
+    # file it opens: the spec's script slot makes that one word a path,
+    # so a rule protecting `secret.py` reads `python3 secret.py` however
+    # the script is spelled.
+    in_process = consumer is Consumer.SESSION and name in INTERPRETER_NAMES
     spec: CommandSpec | None = None
     word_kinds: list[ValueType | None] | None = None
     word_bases: list[str | None] | None = None
-    # Native captures still need the spec's path roles for admission.
-    if policy is WordPolicy.MOUNT or consumer is Consumer.EXTERNAL:
+    # Native captures and interpreters still need the spec's path roles
+    # for admission.
+    if (policy is WordPolicy.MOUNT or consumer is Consumer.EXTERNAL
+            or in_process):
         spec = spec_for_command(name, registry, session.cwd)
         if spec:
             # Before anything reads the line: an option carrying a
@@ -165,6 +174,8 @@ async def expand_argv(
             # POSIX's own `--` is how that is said.
             extra: list[ValueType | None] = ["str"] * (consumed - 1)
             kinds = spec_word_kinds(spec, expanded[consumed:], name)
+            if in_process:
+                kinds = [kind if kind == "path" else None for kind in kinds]
             if native:
                 # A text slot does not keep a native program's pattern
                 # literal: bash expands `python3 s.py *.txt` before

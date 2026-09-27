@@ -453,9 +453,10 @@ def _word_hints(
     or a host process, where no op door follows the read, so the
     script slot the spec declares is the one place a path rule can see
     the file. The tree's gate reads a native capture the same way
-    (``expand_argv``) and leaves an interpreter it runs itself to the
-    op door; here the hints reach no runtime word, since the line runs
-    as typed, so there is nothing to lose by reading them.
+    (``expand_argv``), and an interpreter it runs itself for the script
+    slot alone, since its other words become the program's argv there;
+    here the hints reach no runtime word, since the line runs as typed,
+    so there is nothing to lose by reading them all.
 
     Args:
         line (list[str]): the literal words, name first.

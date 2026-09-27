@@ -64,7 +64,9 @@ import { classifyBarePath } from '../expand/classify/path.ts'
 import { specForCommand, specWordBases, specWordKinds } from '../expand/spec_hints.ts'
 import type { Namespace } from '../mount/namespace/namespace.ts'
 import type { MountRegistry } from '../mount/registry.ts'
+import { INTERPRETER_NAMES } from '../lookup/constants.ts'
 import {
+  Consumer,
   SHELL_NAMES,
   SLASH_KEEPS_LAST,
   WordPolicy,
@@ -482,9 +484,22 @@ function wordHints(
 ): [(ValueType | null)[] | null, (string | null)[] | null] {
   const consumed = registry.matchCommandPrefix([...line])
   const joined = line.slice(0, consumed).join(' ')
+  const consumer = lookup(joined, session, registry)
+  // A mount command's spec is read, and so is a native capture's and an
+  // interpreter's: `python3 steal.py` runs on the runtime's own disk or
+  // a host process, where no op door follows the read, so the script
+  // slot the spec declares is the one place a path rule can see the
+  // file. The tree's gate reads a native capture the same way
+  // (`expandArgv`) and leaves an interpreter it runs itself to the op
+  // door; here the hints reach no runtime word, since the line runs as
+  // typed, so there is nothing to lose by reading them.
   if (
     Object.hasOwn(session.functions, joined) ||
-    wordPolicy(lookup(joined, session, registry)) !== WordPolicy.MOUNT
+    !(
+      wordPolicy(consumer) === WordPolicy.MOUNT ||
+      consumer === Consumer.EXTERNAL ||
+      INTERPRETER_NAMES.has(joined)
+    )
   ) {
     return [null, null]
   }

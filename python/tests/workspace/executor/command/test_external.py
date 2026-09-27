@@ -475,6 +475,66 @@ async def test_external_spec_preserves_text_words_and_shell_globs(kind):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
+@pytest.mark.parametrize("line", [
+    "python3 /work/steal.py",
+    "python3 steal.py",
+    "python3 ./steal.py",
+    "python3 -u steal.py",
+    "python3 -W ignore -- steal.py",
+    "node steal.js",
+    "node -- /work/steal.js",
+])
+async def test_interpreter_script_cannot_bypass_path_policy(kind, line):
+    # The script is a file the runtime reads on its own machine, outside
+    # every op door, so the gate has to see it as the path it is
+    # (`python3 steal.py` reads /work/steal.py exactly as `cat steal.py`
+    # does), whatever option run precedes it.
+    probe = kind(captures=("python3", "node"))
+    policy = RulePolicy(CommandRule(reason="protected", paths=("/work/*", )))
+    async with workspace({"/work": RAMVFS()},
+                         runtimes=[probe],
+                         policies=[policy],
+                         mode=MountMode.EXEC) as ws:
+        await ws.shell("cd /work")
+        result = await ws.shell(line)
+        name, operand = line.split()[0], line.split()[-1]
+        assert result.exit_code == 1
+        assert await result.stderr_str() == f"{name}: {operand}: protected\n"
+        assert not (probe.requests
+                    if isinstance(probe, ProcessProbe) else probe.lines)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
+async def test_interpreter_program_operands_are_not_paths(kind):
+    # Once -c, -m or -e names the program, every operand is that
+    # program's argv, as are the words after a script; none is a file
+    # the rule reads, and each reaches the runtime as typed.
+    probe = kind(captures=("python3", "node"))
+    policy = RulePolicy(CommandRule(reason="protected", paths=("/work/*", )))
+    lines = [
+        ("python3 -c 'print(1)' steal.py", ("python3", "-c", "print(1)",
+                                            "steal.py")),
+        ("python3 -m json.tool steal.py", ("python3", "-m", "json.tool",
+                                           "steal.py")),
+        ("node -e 1 steal.js", ("node", "-e", "1", "steal.js")),
+        ("python3 /open.py steal.py", ("python3", "/open.py", "steal.py")),
+    ]
+    async with workspace({"/work": RAMVFS()},
+                         runtimes=[probe],
+                         policies=[policy],
+                         mode=MountMode.EXEC) as ws:
+        await ws.shell("cd /work")
+        for line, _ in lines:
+            assert (await ws.shell(line)).exit_code == 0, line
+        delegated = ([r.argv for r in probe.requests] if isinstance(
+            probe, ProcessProbe) else
+                     [tuple(shlex.split(run)) for run in probe.lines])
+        assert delegated == [tokens for _, tokens in lines]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
 @pytest.mark.parametrize("willing", [True, False])
 async def test_native_captures_preserve_shell_builtins(kind, willing):
     probe = kind(captures=tuple(SHELL_NAMES), script=lambda ctx: willing)

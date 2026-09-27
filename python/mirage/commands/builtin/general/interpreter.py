@@ -238,6 +238,12 @@ async def resolve_source(
         argv0 = module
     elif code is not None:
         arg_strs = [p.virtual for p in paths] + text_list
+    elif paths and paths[0].raw_path == STDIN_OPERAND:
+        # The stdin spelling typed into the script slot, which the spec
+        # declares a path: it still names no file.
+        arg_strs = [p.virtual for p in paths[1:]] + text_list
+        mode = "stdin"
+        argv0 = argv0_rules.stdin_operand
     elif paths:
         script_path = paths[0]
         arg_strs = [p.virtual for p in paths[1:]] + text_list

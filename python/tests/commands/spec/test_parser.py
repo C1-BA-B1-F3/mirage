@@ -1322,14 +1322,31 @@ def test_every_interpreter_stops_parsing_flags_at_the_stdin_operand(cmd):
     # four together is what keeps js from drifting off python again.
     parsed = parse_command(SPECS[cmd], ["-", "-e", "PROG"], "/")
     assert parsed.flags == {}
-    assert parsed.texts() == ["-", "-e", "PROG"]
+    assert parsed.raw_operands == [("-", "path"), ("-e", "str"),
+                                   ("PROG", "str")]
 
 
 @pytest.mark.parametrize("cmd", ["js", "node", "python", "python3"])
 def test_every_interpreter_hands_a_script_its_own_flags(cmd):
     parsed = parse_command(SPECS[cmd], ["s.js", "-m", "--module"], "/")
     assert parsed.flags == {}
-    assert parsed.texts() == ["s.js", "-m", "--module"]
+    assert parsed.raw_operands == [("s.js", "path"), ("-m", "str"),
+                                   ("--module", "str")]
+
+
+@pytest.mark.parametrize("cmd, payload", [("js", "-e"), ("node", "-e"),
+                                          ("python", "-c"), ("python", "-m"),
+                                          ("python3", "-c"),
+                                          ("python3", "-m")])
+def test_every_interpreter_reads_only_its_script_as_a_path(cmd, payload):
+    # The script is a file the interpreter opens, so a rule on its path
+    # has to see it typed as one; the words after it are the program's
+    # own argv, and once a payload option names the program there is no
+    # script at all (`python3 -c code x` hands x to the code).
+    parsed = parse_command(SPECS[cmd], ["s.py", "t.py"], "/")
+    assert parsed.raw_operands == [("s.py", "path"), ("t.py", "str")]
+    parsed = parse_command(SPECS[cmd], [payload, "PROG", "s.py"], "/")
+    assert parsed.raw_operands == [("s.py", "str")]
 
 
 def test_js_flags_before_the_first_operand_are_still_the_interpreters():

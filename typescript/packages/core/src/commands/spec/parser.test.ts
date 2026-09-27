@@ -1660,15 +1660,44 @@ describe('parseCommand — remainder (argparse nargs=REMAINDER)', () => {
     it(`${cmd} stops parsing flags at the stdin operand`, () => {
       const p = parseCommand(specOf(cmd), ['-', '-e', 'PROG'], '/')
       expect(p.flags).toEqual({})
-      expect(p.texts()).toEqual(['-', '-e', 'PROG'])
+      expect(p.rawOperands).toEqual([
+        ['-', 'path'],
+        ['-e', 'str'],
+        ['PROG', 'str'],
+      ])
     })
 
     it(`${cmd} hands a script its own flags`, () => {
       const p = parseCommand(specOf(cmd), ['s.js', '-m', '--module'], '/')
       expect(p.flags).toEqual({})
-      expect(p.texts()).toEqual(['s.js', '-m', '--module'])
+      expect(p.rawOperands).toEqual([
+        ['s.js', 'path'],
+        ['-m', 'str'],
+        ['--module', 'str'],
+      ])
     })
   }
+
+  // The script is a file the interpreter opens, so a rule on its path
+  // has to see it typed as one; the words after it are the program's
+  // own argv, and once a payload option names the program there is no
+  // script at all (`python3 -c code x` hands x to the code).
+  it.each([
+    ['js', '-e'],
+    ['node', '-e'],
+    ['python', '-c'],
+    ['python', '-m'],
+    ['python3', '-c'],
+    ['python3', '-m'],
+  ])('%s reads only its script as a path (payload %s)', (cmd, payload) => {
+    const script = parseCommand(specOf(cmd), ['s.py', 't.py'], '/')
+    expect(script.rawOperands).toEqual([
+      ['s.py', 'path'],
+      ['t.py', 'str'],
+    ])
+    const program = parseCommand(specOf(cmd), [payload, 'PROG', 's.py'], '/')
+    expect(program.rawOperands).toEqual([['s.py', 'str']])
+  })
 
   it('js flags before the first operand are still the interpreter’s', () => {
     const p = parseCommand(specOf('js'), ['-m', '-e', 'CODE', 'a'], '/')

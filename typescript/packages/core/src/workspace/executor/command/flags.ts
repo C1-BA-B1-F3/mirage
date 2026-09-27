@@ -186,16 +186,21 @@ export function parseFlags(
       for (const value of parsed.pathFlagValues) takeSpelling(spellings, scopeMap, value)
     }
 
-    // Classify positional args: each operand takes its own word.
+    // Classify positional args: each operand takes its own word. The
+    // spelling rides along for a word the classifier left as text (an
+    // interpreter's bare script name under the shell's word policy), so
+    // the handler still sees it as typed: CPython puts the operand
+    // itself in argv[0], and `-` names stdin only as long as it is
+    // still spelled `-`.
     const paths: PathSpec[] = []
     const texts: string[] = []
-    for (const [value, kind] of parsed.args) {
+    parsed.args.forEach(([value, kind], index) => {
       if (kind === 'path') {
-        paths.push(takeSpelling(spellings, scopeMap, value))
+        paths.push(takeSpelling(spellings, scopeMap, value, parsed.rawOperands[index]?.[0]))
       } else {
         texts.push(value)
       }
-    }
+    })
     return {
       paths,
       texts,

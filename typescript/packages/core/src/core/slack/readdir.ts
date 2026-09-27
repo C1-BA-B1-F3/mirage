@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { guardDay } from '../time_range.ts'
 import type { SlackAccessor } from '../../accessor/slack.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
 import { makeReaddir, type DirListing, type Listed } from '../hierarchy/readdir.ts'
@@ -19,6 +20,7 @@ import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { listChannels, listDms } from './channels.ts'
 import { channelDirname, dmDirname, fileBlobName, userFilename } from './formatters.ts'
 import { fetchMessagesForDay, messagesToJsonl, type SlackMessage } from './history.ts'
+import { cursorPages } from './paginate.ts'
 import { detectScope } from './scope.ts'
 import { listUsers, userJsonBytes } from './users.ts'
 import { globSpan, hasGlobSpan } from '../../utils/glob_walk.ts'
@@ -55,6 +57,23 @@ export async function latestMessageTs(
   }
   if (messages.length === 0) return null
   return Number.parseFloat(messages[0]?.ts ?? '0')
+}
+
+async function earliestMessageTs(
+  accessor: SlackAccessor,
+  channelId: string,
+  latest: number,
+): Promise<number> {
+  let first = latest
+  for await (const page of cursorPages<{ ts: string }>(
+    accessor.transport,
+    'conversations.history',
+    { channel: channelId, limit: '200' },
+    'messages',
+  )) {
+    for (const message of page) first = Math.min(first, Number.parseFloat(message.ts))
+  }
+  return first
 }
 
 /**
@@ -166,7 +185,17 @@ async function listChannelDays(
   const span = globSpan(match.pattern)
   const latestTs = await latestMessageTs(accessor, own.id)
   let dates: string[]
-  if (latestTs !== null && created > 0) {
+  if (latestTs !== null && accessor.timeRange.bounded) {
+    const first =
+      created || (accessor.timeRange.start ?? (await earliestMessageTs(accessor, own.id, latestTs)))
+    dates = accessor.timeRange
+      .listingDays(
+        new Date(first * 1000).toISOString().slice(0, 10),
+        new Date(latestTs * 1000).toISOString().slice(0, 10),
+        span,
+      )
+      .reverse()
+  } else if (latestTs !== null && created > 0) {
     dates = dateRange(latestTs, created, 90, span)
   } else if (latestTs !== null) {
     dates = dateRange(latestTs, Math.floor(latestTs), 90, span)
@@ -304,5 +333,6 @@ export const readdir = makeReaddir<SlackAccessor>(detectScope, {
   },
   parentEntryListers: { day: listDay },
   staticRoot: VIRTUAL_ROOTS,
+  guards: { day: guardDay, files: guardDay },
   patternKinds: { channel: hasGlobSpan },
 })

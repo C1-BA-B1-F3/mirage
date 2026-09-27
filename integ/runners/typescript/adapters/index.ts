@@ -12,6 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { normalizeSlackConfig } from '@struktoai/mirage-core/core/slack/config'
+import { normalizeDiscordConfig } from '@struktoai/mirage-core/core/discord/config'
+import { normalizeGCalConfig } from '@struktoai/mirage-core/vfs/gcal/config'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -1686,6 +1689,7 @@ async function seedGwsCalendar(base: string, entries: CalendarEntry[]): Promise<
 function gwsNativeVfs(
   vfs: string,
   base: string,
+  mountConfig: Record<string, unknown> = {},
 ): GDocsVFS | GSheetsVFS | GSlidesVFS | GmailVFS | GCalVFS {
   // apiBase points the backend at the fake server through the same
   // config field a real embedder uses; nothing is monkey-patched.
@@ -1695,7 +1699,8 @@ function gwsNativeVfs(
   if (vfs === 'gmail') return new GmailVFS(config)
   // today is pinned so the rolling window is the same on both hosts and
   // lands on the seeded events.
-  if (vfs === 'gcal') return new GCalVFS({ ...config, today: '2026-02-11' })
+  if (vfs === 'gcal')
+    return new GCalVFS(normalizeGCalConfig({ ...config, today: '2026-02-11', ...mountConfig }))
   return new GSlidesVFS(config)
 }
 
@@ -1744,7 +1749,7 @@ async function openGws(target: Target): Promise<Open> {
       continue
     }
     if (m.vfs !== 'gdrive') {
-      mounts[m.path] = gwsNativeVfs(m.vfs, base)
+      mounts[m.path] = gwsNativeVfs(m.vfs, base, m.config)
       continue
     }
     // A mount may live inside a Shared Drive: the drive is created once
@@ -1810,7 +1815,7 @@ async function openSlack(target: Target): Promise<Open> {
   const reset = await fetch(`${base}/reset`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tenants: [workspace] }),
+    body: JSON.stringify({ tenants: [workspace], fixture: target.dataset ?? 'v1' }),
   })
   if (!reset.ok) throw new Error(`slack /reset failed: ${String(reset.status)}`)
   const mounts: Record<string, SlackVFS | RAMVFS> = {}
@@ -1819,11 +1824,14 @@ async function openSlack(target: Target): Promise<Open> {
       mounts[m.path] = new RAMVFS()
       continue
     }
-    mounts[m.path] = new SlackVFS({
-      token: `xoxb-${workspace}`,
-      searchToken: `xoxp-${workspace}`,
-      baseUrl: `${base}/api`,
-    })
+    mounts[m.path] = new SlackVFS(
+      normalizeSlackConfig({
+        ...m.config,
+        token: `xoxb-${workspace}`,
+        searchToken: `xoxp-${workspace}`,
+        baseUrl: `${base}/api`,
+      }),
+    )
   }
   const ws = new Workspace(mounts, { mode: MountMode.WRITE })
   if (target.clis?.includes('slack') === true) {
@@ -1941,7 +1949,11 @@ async function openDiscord(target: Target): Promise<Open> {
   if (!endpoint) throw new Error('discord target requires DISCORD_URL')
   // The server outlives a single run here, so posted messages have to be
   // rolled back to the fixture before the write cases run again.
-  const reset = await fetch(`${endpoint}/reset`, { method: 'POST' })
+  const reset = await fetch(`${endpoint}/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fixture: target.dataset ?? 'v1' }),
+  })
   if (!reset.ok) throw new Error(`discord /reset failed: ${String(reset.status)}`)
   const mounts: Record<string, DiscordVFS | RAMVFS> = {}
   for (const m of target.mounts) {
@@ -1949,10 +1961,13 @@ async function openDiscord(target: Target): Promise<Open> {
       mounts[m.path] = new RAMVFS()
       continue
     }
-    mounts[m.path] = new DiscordVFS({
-      token: 'integ-bot-token',
-      baseUrl: `${endpoint}/api/v10`,
-    })
+    mounts[m.path] = new DiscordVFS(
+      normalizeDiscordConfig({
+        ...m.config,
+        token: 'integ-bot-token',
+        baseUrl: `${endpoint}/api/v10`,
+      }),
+    )
   }
   const ws = new Workspace(mounts, { mode: MountMode.WRITE })
   if (target.clis?.includes('discord') === true) {

@@ -82,7 +82,7 @@ async def grep(accessor: DiscordAccessor, paths: list[PathSpec],
     operand = pushdown_operand(paths, opts.flags, pattern, SEARCH_HONORED)
     if pattern is not None and operand is not None and fl.as_bool("w"):
         match = detect_scope(operand)
-        if match.kind in NATIVE_KINDS:
+        if not accessor.time_range.bounded and match.kind in NATIVE_KINDS:
             guild_id = match.slots["guild_id"]
             try:
                 msgs = await search_guild(

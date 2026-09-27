@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -20,6 +20,7 @@ from mirage.accessor.gcal import GCalAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.gcal.day import event_span
 from mirage.core.google.client import TokenManager
+from mirage.core.time_range import TimeRange
 from mirage.vfs.gcal.config import GCalConfig
 
 HK = "Asia/Hong_Kong"
@@ -108,9 +109,13 @@ class FakeCalendarApi:
                           calendar_id,
                           time_min,
                           time_max,
-                          time_zone=None):
+                          time_zone=None,
+                          *,
+                          scope=TimeRange()):
         self.listed.append((calendar_id, time_min, time_max))
-        lo = datetime.fromisoformat(time_min)
+        lo = datetime.fromisoformat(
+            time_min) if time_min is not None else datetime.min.replace(
+                tzinfo=timezone.utc)
         hi = datetime.fromisoformat(time_max)
         free_busy = calendar_id == SHARED["id"]
         out = []
@@ -119,7 +124,10 @@ class FakeCalendarApi:
             if span is None:
                 continue
             # timeMin bounds the END and timeMax the START, both exclusive.
-            if span[1] <= lo or span[0] >= hi:
+            if span[1] <= lo or span[
+                    0] >= hi or scope.start is not None and span[1].timestamp(
+                    ) <= scope.start or scope.end is not None and span[
+                        0].timestamp() >= scope.end:
                 continue
             if free_busy:
                 # What Google actually returns for a freeBusyReader role:

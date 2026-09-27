@@ -62,7 +62,7 @@ async def test_list_members_stream_walks_user_ids(config):
 
 @pytest.mark.asyncio
 async def test_stream_messages_for_day_filters_by_date(config):
-    before_int = int(date_to_snowflake("2024-01-15", end=True))
+    before_int = int(date_to_snowflake("2024-01-16"))
     in_range = [{"id": str(before_int - 1000), "content": "ok"}]
     out_of_range = [{"id": str(before_int + 1000), "content": "next-day"}]
     with patch("mirage.core.discord.paginate.discord_get",

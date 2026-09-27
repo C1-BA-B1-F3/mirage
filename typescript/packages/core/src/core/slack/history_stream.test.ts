@@ -31,12 +31,12 @@ describe('streamMessagesForDay', () => {
     const pages: SlackResponse[] = [
       {
         ok: true,
-        messages: [{ ts: '1.0' }, { ts: '2.0' }],
+        messages: [{ ts: '1775260801.0' }, { ts: '1775260802.0' }],
         response_metadata: { next_cursor: 'cur' },
       },
       {
         ok: true,
-        messages: [{ ts: '3.0' }],
+        messages: [{ ts: '1775260803.0' }],
         response_metadata: { next_cursor: '' },
       },
     ]
@@ -45,11 +45,13 @@ describe('streamMessagesForDay', () => {
     for await (const page of streamMessagesForDay(new SlackAccessor(t), 'C1', '2026-04-04')) {
       result.push(page as { ts: string }[])
     }
-    expect(result.flat().map((m) => m.ts)).toEqual(['1.0', '2.0', '3.0'])
+    expect(result.flat().map((m) => m.ts)).toEqual(['1775260801.0', '1775260802.0', '1775260803.0'])
     expect(t.calls[0]?.endpoint).toBe('conversations.history')
     expect(t.calls[0]?.params).toMatchObject({
       channel: 'C1',
       inclusive: 'true',
+      oldest: '1775260800.000000',
+      latest: '1775347200.000000',
       limit: '200',
     })
   })
@@ -60,17 +62,17 @@ describe('fetchMessagesForDay (eager + sort)', () => {
     const pages: SlackResponse[] = [
       {
         ok: true,
-        messages: [{ ts: '3.0' }, { ts: '1.0' }],
+        messages: [{ ts: '1775260803.0' }, { ts: '1775260801.0' }],
         response_metadata: { next_cursor: 'cur' },
       },
       {
         ok: true,
-        messages: [{ ts: '2.0' }],
+        messages: [{ ts: '1775260802.0' }],
         response_metadata: { next_cursor: '' },
       },
     ]
     const t = new FakeTransport((call) => pages[call - 1] ?? { ok: false })
     const msgs = await fetchMessagesForDay(new SlackAccessor(t), 'C1', '2026-04-04')
-    expect(msgs.map((m) => m.ts)).toEqual(['1.0', '2.0', '3.0'])
+    expect(msgs.map((m) => m.ts)).toEqual(['1775260801.0', '1775260802.0', '1775260803.0'])
   })
 })

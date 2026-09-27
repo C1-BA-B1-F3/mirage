@@ -23,11 +23,7 @@ logger = logging.getLogger(__name__)
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DEFAULT_TZ = "UTC"
-# The rolling window a bare readdir of a calendar reports. A calendar is
-# unbounded in both directions and the API offers no descending startTime
-# order, so a full listing means paging to the end; the window is stated in
-# the mount prompt rather than applied silently, and any date glob escapes it.
-WINDOW_BACK_DAYS = 30
+# Bound recurring-event expansion in the future; retain all past events.
 WINDOW_AHEAD_DAYS = 90
 
 
@@ -84,19 +80,18 @@ def day_bounds(day: str, tz: str) -> tuple[str, str]:
     return start.isoformat(), local_midnight(nxt, tz).isoformat()
 
 
-def window_bounds(today: date, tz: str) -> tuple[str, str]:
-    """The RFC3339 pair for the default listing window around a day.
+def window_bounds(today: date, tz: str) -> tuple[None, str]:
+    """The default listing bounds: all past events and a future horizon.
 
     Args:
-        today (date): the day the window is centred on.
+        today (date): the day the future horizon is measured from.
         tz (str): IANA time zone name.
 
     Returns:
-        tuple[str, str]: (timeMin, timeMax) as RFC3339 with offsets.
+        tuple[None, str]: no timeMin and an RFC3339 timeMax.
     """
-    lo = (today - timedelta(days=WINDOW_BACK_DAYS)).isoformat()
     hi = (today + timedelta(days=WINDOW_AHEAD_DAYS)).isoformat()
-    return day_bounds(lo, tz)[0], day_bounds(hi, tz)[1]
+    return None, day_bounds(hi, tz)[1]
 
 
 def valid_day(day: str) -> bool:

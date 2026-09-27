@@ -350,8 +350,8 @@ describe('readdir /<guild>/channels/<ch>/<date>', () => {
       ],
     ])
     const messages = [
-      { id: '1', content: 'hello', attachments: [] },
-      { id: '2', content: 'world', attachments: [] },
+      { id: '175758114816000001', content: 'hello', attachments: [] },
+      { id: '175758114816000002', content: 'world', attachments: [] },
     ]
     const t = new FakeDiscordTransport((_m, endpoint) =>
       endpoint === '/channels/C1/messages' ? messages : null,
@@ -386,7 +386,7 @@ describe('readdir /<guild>/channels/<ch>/<date>', () => {
     ])
     const messages = [
       {
-        id: '1',
+        id: '175758114816000001',
         content: 'files',
         attachments: [
           { id: 'A1', filename: 'kept.txt', url: 'https://cdn.example/kept.txt', size: 5 },

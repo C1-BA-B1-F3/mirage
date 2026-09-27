@@ -14,6 +14,7 @@
 
 from mirage.accessor.base import SessionAccessor
 from mirage.core.discord.config import DiscordConfig
+from mirage.core.time_range import TimeRange
 
 
 class DiscordAccessor(SessionAccessor):
@@ -21,3 +22,5 @@ class DiscordAccessor(SessionAccessor):
     def __init__(self, config: DiscordConfig) -> None:
         super().__init__()
         self.config = config
+        self.time_range = TimeRange.from_strings(config.start_time,
+                                                 config.end_time)

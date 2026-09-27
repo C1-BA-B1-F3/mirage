@@ -51,7 +51,7 @@ class FakeDiscordTransport implements DiscordTransport {
 describe('dateToSnowflake', () => {
   it('produces a larger snowflake at end-of-day than at start', () => {
     const start = BigInt(dateToSnowflake('2026-04-25'))
-    const end = BigInt(dateToSnowflake('2026-04-25', true))
+    const end = BigInt(dateToSnowflake('2026-04-26'))
     expect(end > start).toBe(true)
   })
 
@@ -99,7 +99,7 @@ describe('getHistoryJsonl', () => {
   })
 
   it('filters out messages whose id is past the end-of-day snowflake', async () => {
-    const beforeBig = BigInt(dateToSnowflake('2026-04-25', true))
+    const beforeBig = BigInt(dateToSnowflake('2026-04-26'))
     const inside = { id: String(beforeBig - 10n), content: 'in' }
     const outside = { id: String(beforeBig + 10n), content: 'out' }
     const t = new FakeDiscordTransport((n) => {

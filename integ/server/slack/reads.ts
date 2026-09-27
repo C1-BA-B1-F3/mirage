@@ -217,31 +217,51 @@ export async function clientUserBoot(ctx: Ctx<C>): Promise<Reply> {
   }
 }
 
+// Slack's suffix is a microsecond counter: .116 means .000116, not .116000.
+function historyTimestamp(value: string): string {
+  const [seconds, micros = '0'] = value.split('.')
+  return `${seconds}.${micros.padStart(6, '0')}`
+}
+
 export async function conversationsHistory(ctx: Ctx<C>): Promise<Reply> {
   const args = argsOf(ctx)
   const channel = args.get('channel') ?? ''
   const oldest = args.get('oldest')
   const latest = args.get('latest')
+  const inclusive = ['true', '1'].includes(args.get('inclusive') ?? '')
   const where: Record<string, JsonValue> = { tenant: ctx.tenant, channelId: channel }
   const ts: Record<string, string> = {}
-  if (oldest !== null) ts.gte = oldest
-  if (latest !== null) ts.lte = latest
+  if (oldest !== null) ts[inclusive ? 'gte' : 'gt'] = historyTimestamp(oldest)
+  if (latest !== null) ts[inclusive ? 'lte' : 'lt'] = historyTimestamp(latest)
   if (Object.keys(ts).length > 0) where.ts = ts
-  // Slack returns most-recent-first; the backend re-sorts the day window.
-  const rows: MessageRow[] = await ctx.db.message.findMany({
-    where,
-    orderBy: { ts: 'desc' },
-    take: intQuery(ctx, 'limit', 100),
-  })
+  const rows: MessageRow[] = await ctx.db.message.findMany({ where, orderBy: { ts: 'desc' } })
+  const start = cursorStart(
+    ctx,
+    'next_ts',
+    rows.map((m) => m.ts.replace('.', '')),
+  )
+  if (start === null) return fail('invalid_cursor')
+  const size = pageSize(ctx, 100, 1000)
+  const next = rows[start + size]
   const files = await filesIn(ctx.db, ctx.tenant, channel)
-  const messages = rows.map((m) =>
+  const messages = rows.slice(start, start + size).map((m) =>
     messageJson(
       m,
       files.filter((f) => f.messageTs === m.ts),
       ctx.url.origin,
     ),
   )
-  return { status: 200, body: { ok: true, messages, response_metadata: { next_cursor: '' } } }
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      messages,
+      has_more: next !== undefined,
+      response_metadata: {
+        next_cursor: next === undefined ? '' : cursorFor('next_ts', next.ts.replace('.', '')),
+      },
+    },
+  }
 }
 
 export async function usersList(ctx: Ctx<C>): Promise<Reply> {

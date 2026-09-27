@@ -14,7 +14,8 @@
 
 from mirage.accessor.gcal import GCalAccessor
 from mirage.cache.index import IndexCacheStore, IndexEntry
-from mirage.core.gcal.readdir import calendar_index, readdir
+from mirage.core.gcal.readdir import (bucket_zone, calendar_index, readdir,
+                                      scoped_day_bounds)
 from mirage.core.gcal.scope import detect_scope
 from mirage.core.hierarchy.probe import resolve_entry
 from mirage.core.hierarchy.scope import ScopeMatch
@@ -58,13 +59,16 @@ async def _stat_day(accessor: GCalAccessor, match: ScopeMatch, path: PathSpec,
         path (PathSpec): the path to stat.
         index (IndexCacheStore): the mount's index cache.
     """
+    calendars = await calendar_index(accessor)
+    scoped_day_bounds(accessor, match.slots["day"],
+                      bucket_zone(accessor, calendars), path.virtual)
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is not None:
         return FileStat(name=entry.vfs_name, type=FileType.DIRECTORY)
     # Ask the calendar list rather than the index: the index only knows
     # the calendar once the ROOT has been listed, which a stat of a day
     # two levels down never triggers.
-    if match.slots["calendar"] not in await calendar_index(accessor):
+    if match.slots["calendar"] not in calendars:
         raise enoent(path.virtual)
     return FileStat(name=match.slots["day"], type=FileType.DIRECTORY)
 

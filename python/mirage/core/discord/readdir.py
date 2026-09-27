@@ -31,6 +31,7 @@ from mirage.core.discord.render import history_jsonl_bytes
 from mirage.core.discord.scope import detect_scope
 from mirage.core.hierarchy.readdir import DirListing, Listed, make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
+from mirage.core.time_range import guard_day
 from mirage.utils.glob_walk import glob_span, has_glob_span
 
 logger = logging.getLogger(__name__)
@@ -123,8 +124,11 @@ async def _list_channel_days(accessor: DiscordAccessor, match: ScopeMatch,
     else:
         end_date = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
     span = glob_span(match.pattern)
-    entries = [(d, history_entry(own.id, d))
-               for d in _date_range(end_date, span=span)]
+    dates = (accessor.time_range.listing_days(
+        date.fromisoformat(snowflake_to_date(own.id)),
+        date.fromisoformat(end_date), span) if accessor.time_range.bounded else
+             _date_range(end_date, span=span))
+    entries = [(d, history_entry(own.id, d)) for d in dates]
     return DirListing(entries=entries, partial=span is not None)
 
 
@@ -240,6 +244,10 @@ readdir = make_readdir(
         "files": _list_files,
     },
     parent_entry_listers={"day": _list_day},
+    guards={
+        "day": guard_day,
+        "files": guard_day
+    },
     pattern_kinds={"channel": has_glob_span},
     leaf_error="enotdir",
 )

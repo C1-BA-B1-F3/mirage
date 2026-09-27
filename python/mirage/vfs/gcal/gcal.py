@@ -42,6 +42,7 @@ class GCalVFS(BoundVFS):
         self.config = config
         self._token_manager = TokenManager(config)
         self.accessor = GCalAccessor(self.config, self._token_manager)
+        self.PROMPT = PROMPT + self.accessor.time_range.prompt()
         for fn in COMMANDS:
             self.register(fn)
         for fn in GCAL_VFS_OPS:

@@ -71,8 +71,8 @@ describe('read jsonl branch', () => {
         return {
           ok: true,
           messages: [
-            { ts: '100.0', text: 'hello' },
-            { ts: '200.0', text: 'world' },
+            { ts: '1776988900.0', text: 'hello' },
+            { ts: '1776989000.0', text: 'world' },
           ],
         }
       }
@@ -86,8 +86,8 @@ describe('read jsonl branch', () => {
     const text = decoder.decode(out)
     const lines = text.trimEnd().split('\n')
     expect(lines).toHaveLength(2)
-    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ ts: '100.0', text: 'hello' })
-    expect(JSON.parse(lines[1] ?? '')).toMatchObject({ ts: '200.0', text: 'world' })
+    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ ts: '1776988900.0', text: 'hello' })
+    expect(JSON.parse(lines[1] ?? '')).toMatchObject({ ts: '1776989000.0', text: 'world' })
     const histCall = t.calls.find((c) => c.endpoint === 'conversations.history')
     expect(histCall?.params?.channel).toBe('C1')
   })
@@ -108,7 +108,7 @@ describe('read jsonl branch', () => {
     ])
     const t = new FakeTransport((endpoint) => {
       if (endpoint === 'conversations.history') {
-        return { ok: true, messages: [{ ts: '50.0', text: 'hi' }] }
+        return { ok: true, messages: [{ ts: '1776988850.0', text: 'hi' }] }
       }
       return { ok: true }
     })
@@ -118,7 +118,7 @@ describe('read jsonl branch', () => {
       idx,
     )
     const text = decoder.decode(out).trimEnd()
-    expect(JSON.parse(text)).toMatchObject({ ts: '50.0', text: 'hi' })
+    expect(JSON.parse(text)).toMatchObject({ ts: '1776988850.0', text: 'hi' })
     const histCall = t.calls.find((c) => c.endpoint === 'conversations.history')
     expect(histCall?.params?.channel).toBe('D1')
   })

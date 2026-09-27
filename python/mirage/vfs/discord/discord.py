@@ -40,6 +40,7 @@ class DiscordVFS(BoundVFS):
         super().__init__(io=IO)
         self.config = config
         self.accessor = DiscordAccessor(self.config)
+        self.PROMPT = PROMPT + self.accessor.time_range.prompt()
         for fn in COMMANDS:
             self.register(fn)
         for fn in DISCORD_VFS_OPS:

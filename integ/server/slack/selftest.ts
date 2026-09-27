@@ -144,6 +144,29 @@ async function main(): Promise<void> {
       'invalid_cursor',
     )
 
+    const historyPage = await call('conversations.history', { channel: 'C4', limit: '1' })
+    const nextHistory = await call('conversations.history', {
+      channel: 'C4',
+      limit: '1',
+      cursor: String((historyPage.response_metadata as Json).next_cursor),
+    })
+    check(
+      'history follows its cursor',
+      historyPage.has_more === true &&
+        (historyPage.messages as Json[])[0]!.ts !== (nextHistory.messages as Json[])[0]!.ts,
+    )
+    const microseconds = await call('conversations.history', {
+      channel: 'C4',
+      oldest: THREAD.replace('.000015', '.15'),
+      latest: THREAD,
+      inclusive: 'true',
+    })
+    eq(
+      'history timestamps use a microsecond suffix',
+      (microseconds.messages as Json[]).map((m) => m.ts!),
+      [THREAD],
+    )
+
     const thread = await call('conversations.replies', { channel: 'C4', ts: THREAD })
     const messages = thread.messages as Json[]
     eq(

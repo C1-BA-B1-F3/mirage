@@ -376,7 +376,7 @@ describe('readdir channel/<id> (history dates)', () => {
       ok: true,
       messages: [
         {
-          ts: '1775000000.000100',
+          ts: '1775779200.000100',
           files: [
             {
               id: 'F1',

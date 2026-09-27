@@ -21,6 +21,7 @@ from mirage.core.discord.client import discord_get
 from mirage.core.discord.config import DiscordConfig
 from mirage.core.discord.paginate import after_id_pages
 from mirage.core.discord.render import history_jsonl_bytes
+from mirage.core.time_range import TimeRange
 
 DISCORD_EPOCH = 1420070400000
 
@@ -64,8 +65,13 @@ async def stream_messages_for_day(
     Yields:
         list[dict]: message dicts, filtered to within the date.
     """
-    after = date_to_snowflake(date_str)
-    before_int = int(date_to_snowflake(date_str, end=True))
+    scope = TimeRange.from_strings(config.start_time, config.end_time)
+    start, end = scope.day_bounds(date_str)
+    if start >= end:
+        return
+    first = (round(start * 1000) - DISCORD_EPOCH) << 22
+    before_int = (round(end * 1000) - DISCORD_EPOCH) << 22
+    after = str(max(0, first - 1))
     async for page in after_id_pages(config,
                                      f"/channels/{channel_id}/messages",
                                      base_params={},
@@ -74,10 +80,10 @@ async def stream_messages_for_day(
                                      start_after=after,
                                      newest_first=True,
                                      session=session):
-        in_range = [m for m in page if int(m["id"]) <= before_int]
+        in_range = [m for m in page if first <= int(m["id"]) < before_int]
         if in_range:
             yield in_range
-        if any(int(m["id"]) > before_int for m in page):
+        if any(int(m["id"]) >= before_int for m in page):
             return
 
 

@@ -26,8 +26,10 @@ from mirage.core.slack.files import file_blob_name
 from mirage.core.slack.formatters import (channel_dirname, dm_dirname,
                                           user_filename)
 from mirage.core.slack.history import fetch_messages_for_day, messages_to_jsonl
+from mirage.core.slack.paginate import cursor_pages
 from mirage.core.slack.scope import detect_scope
 from mirage.core.slack.users import list_users, user_json_bytes
+from mirage.core.time_range import guard_day
 from mirage.utils.glob_walk import glob_span, has_glob_span
 
 logger = logging.getLogger(__name__)
@@ -99,6 +101,28 @@ async def _latest_message_ts(config,
     return None
 
 
+async def _earliest_message_ts(accessor: SlackAccessor, channel_id: str,
+                               latest: float) -> float:
+    """Discover the history start when conversation metadata omits creation.
+
+    Args:
+        accessor (SlackAccessor): scoped accessor.
+        channel_id (str): conversation id.
+        latest (float): newest known message timestamp.
+    """
+    first = latest
+    async for page in cursor_pages(accessor.config,
+                                   "conversations.history", {
+                                       "channel": channel_id,
+                                       "limit": 200
+                                   },
+                                   "messages",
+                                   session=accessor.pool):
+        for message in page:
+            first = min(first, float(message["ts"]))
+    return first
+
+
 async def _list_channels_root(accessor: SlackAccessor,
                               match: ScopeMatch) -> Listed:
     channels = await list_channels(accessor.config, session=accessor.pool)
@@ -159,7 +183,17 @@ async def _list_channel_days(accessor: SlackAccessor, match: ScopeMatch,
     latest_ts = await _latest_message_ts(accessor.config,
                                          own.id,
                                          session=accessor.pool)
-    if latest_ts and created:
+    if latest_ts and accessor.time_range.bounded:
+        first = created or accessor.time_range.start
+        if first is None:
+            first = await _earliest_message_ts(accessor, own.id, latest_ts)
+        dates = list(
+            reversed(
+                accessor.time_range.listing_days(
+                    datetime.fromtimestamp(first, timezone.utc).date(),
+                    datetime.fromtimestamp(latest_ts, timezone.utc).date(),
+                    span)))
+    elif latest_ts and created:
         dates = _date_range(latest_ts, created, span=span)
     elif latest_ts:
         dates = _date_range(latest_ts, int(latest_ts), span=span)
@@ -288,6 +322,10 @@ readdir = make_readdir(
     },
     parent_entry_listers={"day": _list_day},
     static_root=VIRTUAL_ROOTS,
+    guards={
+        "day": guard_day,
+        "files": guard_day
+    },
     pattern_kinds={"channel": has_glob_span},
 )
 

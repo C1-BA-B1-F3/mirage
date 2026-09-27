@@ -30,11 +30,11 @@ def config():
 async def test_get_history_jsonl(config):
     messages = [
         {
-            "id": "200",
+            "id": "1196242344345600200",
             "content": "second"
         },
         {
-            "id": "100",
+            "id": "1196242344345600100",
             "content": "first"
         },
     ]

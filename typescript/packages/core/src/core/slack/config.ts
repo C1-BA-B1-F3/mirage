@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { z } from 'zod'
+import { timeRangeShape, orderedTimes, timeRangeOrderError } from '../time_config.ts'
 import {
   parseConfigWithSchema,
   redactConfigWithSchema,
@@ -21,11 +22,14 @@ import {
   secretStr,
 } from '../../vfs/secrets.ts'
 
-export const SlackConfigSchema = z.object({
-  token: secretStr(),
-  searchToken: secretStr().optional(),
-  baseUrl: z.string().optional(),
-})
+export const SlackConfigSchema = z
+  .object({
+    ...timeRangeShape,
+    token: secretStr(),
+    searchToken: secretStr().optional(),
+    baseUrl: z.string().optional(),
+  })
+  .refine(orderedTimes, timeRangeOrderError)
 
 export type SlackConfig = ConfigOf<typeof SlackConfigSchema>
 

@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { TimeRange } from '../time_range.ts'
+import { parseTime } from '../time_range.ts'
 import type { GCalAccessor } from '../../accessor/gcal.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
@@ -27,10 +29,9 @@ import { enoent } from '../../utils/errors.ts'
 import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import { globSpan } from '../../utils/glob_walk.ts'
 import {
-  WINDOW_AHEAD_DAYS,
-  WINDOW_BACK_DAYS,
   clampedHhmm,
   dayBounds,
+  localDate,
   daysCovered,
   eventSpan,
   shiftDay,
@@ -129,14 +130,35 @@ function daySpan(
   pattern: string | null,
   today: string,
   tz: string,
-): [string, string, string, string] {
+  scope: TimeRange,
+): [string | null, string, string, string] {
   const span = globSpan(pattern)
+  let lo = scope.start
+  let hi = scope.end
   if (span !== null) {
-    const last = shiftDay(span[1], -1)
-    return [dayBounds(span[0], tz)[0], dayBounds(last, tz)[1], span[0], last]
-  }
-  const [lo, hi] = windowBounds(today, tz)
-  return [lo, hi, shiftDay(today, -WINDOW_BACK_DAYS), shiftDay(today, WINDOW_AHEAD_DAYS)]
+    const first = parseTime(dayBounds(span[0], tz)[0])
+    const last = parseTime(dayBounds(shiftDay(span[1], -1), tz)[1])
+    lo = Math.max(first, lo ?? first)
+    hi = Math.min(last, hi ?? last)
+  } else hi ??= parseTime(windowBounds(today, tz)[1])
+  return [
+    lo === null ? null : new Date(lo * 1000).toISOString(),
+    new Date(hi * 1000).toISOString(),
+    lo === null ? '0001-01-01' : localDate(lo * 1000, tz),
+    localDate(hi * 1000 - 1, tz),
+  ]
+}
+
+export function scopedDayBounds(
+  accessor: GCalAccessor,
+  day: string,
+  tz: string,
+  virtual: string,
+): [string, string] {
+  const bounds = dayBounds(day, tz)
+  const [start, end] = accessor.timeRange.clip(parseTime(bounds[0]), parseTime(bounds[1]))
+  if (start >= end) throw enoent(virtual)
+  return bounds
 }
 
 /** Build the index entries for one day directory. */
@@ -211,8 +233,20 @@ export async function readdir(
   const freeBusy = entry.accessRole === FREE_BUSY_ROLE
 
   if (match.kind === 'calendar') {
-    const [timeMin, timeMax, first, last] = daySpan(path.pattern, accessor.today(tz), tz)
-    const events = await listEvents(accessor.tokenManager, calId, timeMin, timeMax, tz)
+    const [timeMin, timeMax, first, last] = daySpan(
+      path.pattern,
+      accessor.today(tz),
+      tz,
+      accessor.timeRange,
+    )
+    const events = await listEvents(
+      accessor.tokenManager,
+      calId,
+      timeMin,
+      timeMax,
+      tz,
+      accessor.timeRange,
+    )
     const seen = new Set<string>()
     for (const event of events) {
       const span = eventSpan(event, tz)
@@ -257,8 +291,15 @@ export async function readdir(
   }
 
   const day = match.slots.day ?? ''
-  const [timeMin, timeMax] = dayBounds(day, tz)
-  const events = await listEvents(accessor.tokenManager, calId, timeMin, timeMax, tz)
+  const [timeMin, timeMax] = scopedDayBounds(accessor, day, tz, path.virtual)
+  const events = await listEvents(
+    accessor.tokenManager,
+    calId,
+    timeMin,
+    timeMax,
+    tz,
+    accessor.timeRange,
+  )
   const rows = eventEntries(events, day, tz, freeBusy)
   if (index !== undefined) await index.setDir(virtualKey, rows)
   return rows.map(([name]) => `${prefix}/${key}/${name}`)

@@ -98,9 +98,9 @@ describe('slack grep', () => {
         return {
           ok: true,
           messages: [
-            { ts: '1.0', text: 'hello world' },
-            { ts: '2.0', text: 'goodbye' },
-            { ts: '3.0', text: 'hello again' },
+            { ts: '1704067201.000000', text: 'hello world' },
+            { ts: '1704067202.000000', text: 'goodbye' },
+            { ts: '1704067203.000000', text: 'hello again' },
           ],
         }
       }

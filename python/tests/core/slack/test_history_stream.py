@@ -27,7 +27,7 @@ async def test_stream_messages_for_day_applies_day_bounds_and_yields_pages():
     pages = [
         {
             "messages": [{
-                "ts": "1.0",
+                "ts": "1778371201.0",
                 "text": "a"
             }],
             "response_metadata": {
@@ -36,7 +36,7 @@ async def test_stream_messages_for_day_applies_day_bounds_and_yields_pages():
         },
         {
             "messages": [{
-                "ts": "2.0",
+                "ts": "1778371202.0",
                 "text": "b"
             }],
             "response_metadata": {
@@ -60,8 +60,8 @@ async def test_stream_messages_for_day_applies_day_bounds_and_yields_pages():
     assert [m["text"] for m in seen[1]] == ["b"]
     assert calls[0]["channel"] == "C1"
     assert calls[0]["inclusive"] == "true"
-    assert "oldest" in calls[0]
-    assert "latest" in calls[0]
+    assert calls[0]["oldest"] == "1778371200.000000"
+    assert calls[0]["latest"] == "1778457600.000000"
     assert calls[1]["cursor"] == "cur1"
 
 
@@ -71,9 +71,9 @@ async def test_fetch_messages_for_day_collects_and_sorts_across_pages():
     pages = [
         {
             "messages": [{
-                "ts": "3.0"
+                "ts": "1778371203.0"
             }, {
-                "ts": "1.0"
+                "ts": "1778371201.0"
             }],
             "response_metadata": {
                 "next_cursor": "cur1"
@@ -81,7 +81,7 @@ async def test_fetch_messages_for_day_collects_and_sorts_across_pages():
         },
         {
             "messages": [{
-                "ts": "2.0"
+                "ts": "1778371202.0"
             }],
             "response_metadata": {
                 "next_cursor": ""
@@ -98,4 +98,5 @@ async def test_fetch_messages_for_day_collects_and_sorts_across_pages():
     with patch("mirage.core.slack.paginate.slack_get", new=fake_get):
         result = await fetch_messages_for_day(cfg, "C1", "2026-05-10")
 
-    assert [m["ts"] for m in result] == ["1.0", "2.0", "3.0"]
+    assert [m["ts"] for m in result
+            ] == ["1778371201.0", "1778371202.0", "1778371203.0"]

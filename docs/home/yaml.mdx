@@ -114,3 +114,43 @@ across the workspaces that use it.
 ## Not yet accepted
 
 `read: pinned` is refused, naming the layer it needs: pinning reads to the content a commit records requires a version layer mirage does not have. There is no `write:` key yet. Both are reserved rather than silently ignored, so a config that names one fails at load instead of appearing to work.
+
+## Time-scoped chat and calendar mounts
+
+The `slack`, `discord`, and `gcal` backend config blocks accept `start_time`
+and `end_time`: RFC3339 timestamps with a timezone and at most millisecond
+precision. Start is inclusive and end is exclusive; either may be omitted or
+null. An empty or reversed interval is refused. The same snake_case fields
+work through `build_vfs` in Python and `buildVfs` in TypeScript.
+
+```yaml
+mounts:
+  /calendar:
+    vfs: gcal
+    mode: read
+    config:
+      access_token: "<google-access-token>"
+      time_zone: UTC
+      start_time: "2026-06-01T00:00:00Z"
+      end_time: "2026-07-01T00:00:00Z"
+```
+
+Chat selects messages by creation time; attachments follow those messages.
+Calendar selects events overlapping the interval and retains their original
+payloads, including events that cross a bound. Only day directories intersecting
+the interval are exposed. Calendar day names use the mount's `time_zone` (or its
+primary calendar's timezone); chat day names use UTC. Context such as users,
+channels, and `calendar.json` remains available.
+
+Calendar's bare listing includes all past event days. Without `end_time`, future
+discovery stops at the end of today +90 days; explicit date paths/globs can reach
+further within the configured scope. With `end_time`, that explicit endpoint
+replaces the default horizon. Calendar refuses a listing still incomplete after
+50 API pages; narrow the range instead of receiving a silently truncated result.
+
+Without either bound, Slack and Discord retain their recent listing defaults
+(90 and 30 days respectively). Configuring a bound makes the selected interval
+discoverable. Bounds are enforced on reads, metadata, listings, and VFS searches;
+separately installed account CLIs retain their own access. Read-only does not
+freeze upstream changes. Change bounds by rebuilding/remounting the VFS, which
+clears its cached state.

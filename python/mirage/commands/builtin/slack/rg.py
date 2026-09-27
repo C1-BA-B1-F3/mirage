@@ -59,7 +59,8 @@ async def rg(accessor: SlackAccessor, paths: list[PathSpec], texts: list[str],
     if (operand is not None and pattern_str is not None
             and fl.as_bool("word_regexp")):
         match = detect_scope(operand)
-        if match.kind in NATIVE_KINDS and search_available(accessor.config):
+        if (not accessor.time_range.bounded and match.kind in NATIVE_KINDS
+                and search_available(accessor.config)):
             target = search_target(match)
             file_prefix = mount_prefix_of(operand.virtual,
                                           operand.vfs_path) or ""

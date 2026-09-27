@@ -42,7 +42,7 @@ export class SlackVFS extends BoundVFS<SlackAccessor> implements VFS {
   // (users.list is payload-identical to users.info, verified live), and
   // file blobs carry Slack's upload byte count.
   readonly sizesAlwaysKnown: boolean = true
-  readonly prompt: string = SLACK_PROMPT
+  readonly prompt: string
   readonly writePrompt: string = SLACK_WRITE_PROMPT
   readonly config: SlackConfig
   readonly accessor: SlackAccessor
@@ -52,7 +52,9 @@ export class SlackVFS extends BoundVFS<SlackAccessor> implements VFS {
     this.config = config
     this.accessor = new SlackAccessor(
       new NodeSlackTransport(config.token, config.searchToken, config.baseUrl),
+      config,
     )
+    this.prompt = SLACK_PROMPT + this.accessor.timeRange.prompt()
   }
 
   commands(): readonly RegisteredCommand[] {

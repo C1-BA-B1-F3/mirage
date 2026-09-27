@@ -20,6 +20,7 @@ from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.commands.builtin.slack.grep import grep
 from mirage.commands.builtin.slack.rg import rg
 from mirage.commands.config import CommandOpts
+from mirage.core.time_range import TimeRange
 from mirage.io.types import IOResult, materialize
 from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -45,6 +46,7 @@ async def test_grep_with_many_concrete_paths_defers_to_scan():
     # That search carries `in:#general` and no date, so seven named days were
     # answered with every day the channel ever had. The scan reads the seven.
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     with patch(
             "mirage.commands.builtin.slack.grep.search_messages",
@@ -70,6 +72,7 @@ async def test_grep_with_many_concrete_paths_defers_to_scan():
 @pytest.mark.asyncio
 async def test_rg_with_many_concrete_paths_defers_to_scan():
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     with patch(
             "mirage.commands.builtin.slack.rg.search_messages",
@@ -97,6 +100,7 @@ async def test_grep_second_channel_operand_defers_to_scan():
     # Two channels never coalesced at all, so the first operand won and the
     # second was dropped in silence.
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     channels = [
         PathSpec(vfs_path=mount_key(f"/slack/channels/{name}", "/slack"),
@@ -129,6 +133,7 @@ async def test_grep_second_channel_operand_defers_to_scan():
 async def test_grep_shaping_flag_defers_to_scan():
     # -n reshapes each output line, which a verbatim search answer cannot do.
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     channel = [
         PathSpec(vfs_path=mount_key("/slack/channels/general__C1", "/slack"),
@@ -160,6 +165,7 @@ async def test_grep_shaping_flag_defers_to_scan():
 @pytest.mark.asyncio
 async def test_grep_falls_back_when_native_search_raises():
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     paths = [
         PathSpec(vfs_path=mount_key("/slack/channels/general__C1/*.jsonl",
@@ -204,6 +210,7 @@ async def test_grep_falls_back_when_native_search_raises():
 @pytest.mark.asyncio
 async def test_grep_native_empty_does_not_trigger_fallback():
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     channel = [
         PathSpec(vfs_path=mount_key("/slack/channels/general__C1", "/slack"),
@@ -235,6 +242,7 @@ async def test_grep_without_word_flag_skips_native_search():
     # native path returns search results verbatim as the grep output, so a
     # bare literal would under-report. Only -w may take it.
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     with (
             patch(

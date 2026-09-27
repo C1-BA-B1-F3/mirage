@@ -22,6 +22,7 @@ from mirage.core.slack.history import get_history_jsonl
 from mirage.core.slack.readdir import readdir
 from mirage.core.slack.scope import detect_scope
 from mirage.core.slack.users import get_user_profile, user_json_bytes
+from mirage.core.time_range import guard_day
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
@@ -54,6 +55,7 @@ async def _read_chat(accessor: SlackAccessor, match: ScopeMatch,
         path (PathSpec): the chat.jsonl path.
         index (IndexCacheStore): index cache.
     """
+    await guard_day(accessor, match, path.virtual)
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is not None:
         channel_id = entry.id.split(":", 1)[0]
@@ -83,6 +85,7 @@ async def _read_user(accessor: SlackAccessor, match: ScopeMatch,
 
 async def _blob_url(accessor: SlackAccessor, path: PathSpec,
                     index: IndexCacheStore) -> str:
+    await guard_day(accessor, detect_scope(path), path.virtual)
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is None:
         raise enoent(path.virtual)

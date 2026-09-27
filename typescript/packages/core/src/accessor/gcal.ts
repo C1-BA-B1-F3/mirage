@@ -12,17 +12,20 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { TimeRange } from '../core/time_range.ts'
 import { localDate } from '../core/gcal/day.ts'
 import type { TokenManager } from '../core/google/client.ts'
 import { GoogleApiAccessor } from './google_api.ts'
 import type { GCalConfig } from '../vfs/gcal/config.ts'
 
 export class GCalAccessor extends GoogleApiAccessor {
+  readonly timeRange: TimeRange
   readonly config: GCalConfig
 
   constructor(opts: { tokenManager: TokenManager; config: GCalConfig }) {
     super(opts)
     this.config = opts.config
+    this.timeRange = new TimeRange(opts.config.startTime, opts.config.endTime)
   }
 
   /**

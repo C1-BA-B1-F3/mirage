@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
 from typing import Any
 
 from mirage.core.api.client import SessionArg
@@ -21,16 +20,10 @@ from mirage.core.render.json import jsonl_bytes
 from mirage.core.slack.client import slack_get
 from mirage.core.slack.config import SlackConfig
 from mirage.core.slack.paginate import cursor_pages
+from mirage.core.time_range import TimeRange
 
 
-def _day_bounds_ts(date_str: str) -> tuple[str, str]:
-    dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-    oldest = str(dt.timestamp())
-    latest = str(dt.replace(hour=23, minute=59, second=59).timestamp())
-    return oldest, latest
-
-
-def stream_messages_for_day(
+async def stream_messages_for_day(
         config: SlackConfig,
         channel_id: str,
         date_str: str,
@@ -49,18 +42,25 @@ def stream_messages_for_day(
         list[dict]: messages in one Slack page (unsorted; the eager
         wrapper sorts at the end).
     """
-    oldest, latest = _day_bounds_ts(date_str)
-    return cursor_pages(config,
-                        "conversations.history",
-                        base_params={
-                            "channel": channel_id,
-                            "oldest": oldest,
-                            "latest": latest,
-                            "limit": limit,
-                            "inclusive": "true",
-                        },
-                        items_key="messages",
-                        session=session)
+    scope = TimeRange.from_strings(config.start_time, config.end_time)
+    oldest, latest = scope.day_bounds(date_str)
+    if oldest >= latest:
+        return
+    async for page in cursor_pages(config,
+                                   "conversations.history",
+                                   base_params={
+                                       "channel": channel_id,
+                                       "oldest": f"{oldest:.6f}",
+                                       "latest": f"{latest:.6f}",
+                                       "limit": limit,
+                                       "inclusive": "true",
+                                   },
+                                   items_key="messages",
+                                   session=session):
+        yield [
+            message for message in page
+            if oldest <= float(message["ts"]) < latest
+        ]
 
 
 async def fetch_messages_for_day(

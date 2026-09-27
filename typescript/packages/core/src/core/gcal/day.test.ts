@@ -70,10 +70,7 @@ describe('gcal day bucketing', () => {
   })
 
   it('brackets the day with the default window', () => {
-    expect(windowBounds('2026-08-11', HK)).toEqual([
-      '2026-07-12T00:00:00+08:00',
-      '2026-11-10T00:00:00+08:00',
-    ])
+    expect(windowBounds('2026-08-11', HK)).toEqual([null, '2026-11-10T00:00:00+08:00'])
   })
 
   it('reads the slot shape for all-day', () => {

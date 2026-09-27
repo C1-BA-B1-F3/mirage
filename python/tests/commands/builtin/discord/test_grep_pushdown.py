@@ -20,6 +20,7 @@ from mirage.commands.builtin.discord.grep import grep
 from mirage.commands.builtin.discord.rg import rg
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
+from mirage.core.time_range import TimeRange
 from mirage.io.types import IOResult, materialize
 from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -49,6 +50,7 @@ def _channel_path(name: str = "general__ch_456") -> PathSpec:
 @pytest.mark.asyncio
 async def test_discord_grep_channel_dir_uses_native_search():
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     fake_msgs = [{
         "content": "hello world",
@@ -86,6 +88,7 @@ async def test_discord_grep_with_many_concrete_paths_defers_to_scan():
     # `search_guild` takes a channel but no date, so seven named days were
     # answered with every day the channel ever had. The scan reads the seven.
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     with patch(
             "mirage.commands.builtin.discord.grep.search_guild",
@@ -108,6 +111,7 @@ async def test_discord_grep_second_channel_operand_defers_to_scan():
     # Two channels never coalesced at all, so the first operand won and the
     # second was dropped in silence.
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     with patch(
             "mirage.commands.builtin.discord.grep.search_guild",
@@ -134,6 +138,7 @@ async def test_discord_grep_second_channel_operand_defers_to_scan():
 async def test_discord_grep_shaping_flag_defers_to_scan():
     # -n reshapes each output line, which a verbatim search answer cannot do.
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     with patch(
             "mirage.commands.builtin.discord.grep.search_guild",
@@ -160,6 +165,7 @@ async def test_discord_grep_resolves_ids_without_index():
     """The ids ride in the ``name__id`` dirnames, so a cold cache must not
     degrade the push-down or emit a spurious fallback warning."""
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     path = "/discord/myguild__g_123/channels/general__ch_456"
     paths = [
@@ -187,6 +193,7 @@ async def test_discord_grep_bare_names_skip_native_search():
     """Without ``__id`` in the dirnames there is nothing to search with —
     fall through to the scan instead of guessing."""
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     path = "/discord/myguild/channels/general"
     paths = [
@@ -210,6 +217,7 @@ async def test_discord_grep_bare_names_skip_native_search():
 @pytest.mark.asyncio
 async def test_discord_grep_falls_back_when_native_raises():
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     paths = [
         PathSpec(vfs_path=mount_key(
@@ -245,6 +253,7 @@ async def test_discord_grep_falls_back_when_native_raises():
 async def test_discord_grep_native_empty_does_not_trigger_fallback():
     """search_guild returning [] is a legit no-match — don't double-scan."""
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     with patch(
             "mirage.commands.builtin.discord.grep.search_guild",
@@ -276,6 +285,7 @@ async def test_discord_grep_multi_pattern_skips_native_search():
     -e patterns must fall through to the generic grep instead.
     """
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     paths = [
         PathSpec(vfs_path=mount_key(
@@ -313,6 +323,7 @@ async def test_discord_grep_multi_pattern_skips_native_search():
 @pytest.mark.asyncio
 async def test_discord_rg_channel_dir_uses_native_search():
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     fake_msgs = [{
         "content": "hello rg",
@@ -350,6 +361,7 @@ async def test_discord_rg_multi_pattern_skips_native_search():
     through to the generic rg instead.
     """
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     paths = [
         PathSpec(vfs_path=mount_key(
@@ -391,6 +403,7 @@ async def test_discord_grep_without_word_flag_skips_native_search():
     # the native path returns search results verbatim as the grep output, so
     # a bare literal would under-report. Only -w may take it.
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     with patch(
             "mirage.commands.builtin.discord.grep.search_guild",
             new=AsyncMock(return_value=[]),
@@ -409,6 +422,7 @@ async def test_discord_grep_file_blob_skips_native_search():
     channel-wide message search would return hits that say nothing about
     the requested file."""
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     path = ("/discord/myguild__g_123/channels/general__ch_456/2026-01-01/"
             "files/img__A1.png")

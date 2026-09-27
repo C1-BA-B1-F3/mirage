@@ -35,8 +35,8 @@ describe('getHistoryJsonl', () => {
     const t = new FakeTransport(() => ({
       ok: true,
       messages: [
-        { ts: '1700000010.0', user: 'U1', text: 'hi' },
-        { ts: '1700000020.0', user: 'U2', text: 'yo' },
+        { ts: '1776988810.0', user: 'U1', text: 'hi' },
+        { ts: '1776988820.0', user: 'U2', text: 'yo' },
       ],
       has_more: false,
     }))
@@ -45,15 +45,15 @@ describe('getHistoryJsonl', () => {
     expect(text.endsWith('\n')).toBe(true)
     const lines = text.trim().split('\n')
     expect(lines).toHaveLength(2)
-    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ ts: '1700000010.0', user: 'U1' })
+    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ ts: '1776988810.0', user: 'U1' })
   })
 
   it('sorts messages by ts (numeric ascending)', async () => {
     const t = new FakeTransport(() => ({
       ok: true,
       messages: [
-        { ts: '1700000020.0', text: 'second' },
-        { ts: '1700000010.0', text: 'first' },
+        { ts: '1776988820.0', text: 'second' },
+        { ts: '1776988810.0', text: 'first' },
       ],
       has_more: false,
     }))
@@ -76,12 +76,12 @@ describe('getHistoryJsonl', () => {
       if (n === 1) {
         return {
           ok: true,
-          messages: [{ ts: '1.0', text: 'a' }],
+          messages: [{ ts: '1776988801.0', text: 'a' }],
           has_more: true,
           response_metadata: { next_cursor: 'c2' },
         }
       }
-      return { ok: true, messages: [{ ts: '2.0', text: 'b' }], has_more: false }
+      return { ok: true, messages: [{ ts: '1776988802.0', text: 'b' }], has_more: false }
     })
     const bytes = await getHistoryJsonl(new SlackAccessor(t), 'C1', '2026-04-24')
     expect(calls).toBe(2)
@@ -99,7 +99,7 @@ describe('getHistoryJsonl', () => {
     expect(params?.inclusive).toBe('true')
     expect(params?.limit).toBe('200')
     expect(Math.floor(Number(params?.oldest))).toBe(1776988800)
-    expect(Math.floor(Number(params?.latest))).toBe(1777075199)
+    expect(Math.floor(Number(params?.latest))).toBe(1777075200)
   })
 
   it('breaks pagination when has_more=true but next_cursor is empty', async () => {
@@ -108,7 +108,7 @@ describe('getHistoryJsonl', () => {
       calls = n
       return {
         ok: true,
-        messages: [{ ts: '1.0' }],
+        messages: [{ ts: '1776988801.0' }],
         has_more: true,
         response_metadata: { next_cursor: '' },
       }
@@ -122,9 +122,9 @@ describe('fetchRecentMessages', () => {
   it('fetches one page and sorts ascending by ts', async () => {
     const t = new FakeTransport(() => ({
       ok: true,
-      messages: [{ ts: '3.0' }, { ts: '1.0' }, { ts: '2.0' }],
+      messages: [{ ts: '1776988803.0' }, { ts: '1776988801.0' }, { ts: '1776988802.0' }],
     }))
     const messages = await fetchRecentMessages(new SlackAccessor(t), 'C1', 3)
-    expect(messages.map((m) => m.ts)).toEqual(['1.0', '2.0', '3.0'])
+    expect(messages.map((m) => m.ts)).toEqual(['1776988801.0', '1776988802.0', '1776988803.0'])
   })
 })

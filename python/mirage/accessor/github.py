@@ -62,5 +62,3 @@ class GitHubAccessor(SessionAccessor):
         # once an index was wired.
         self.tree_loaded: bool = tree is not None
         self.truncated = truncated
-        # Listings written into any index; nonzero means the mount listed.
-        self.refills: int = 0

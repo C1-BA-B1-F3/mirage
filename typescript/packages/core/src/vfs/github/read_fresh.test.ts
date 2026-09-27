@@ -152,26 +152,31 @@ describe('github under read: fresh', () => {
     }
   })
 
-  it('lists a new mount once and never asks one directory', async () => {
+  it('asks a new mount one directory per stat until it lists', async () => {
     const w = await ws(await vfsOf())
     try {
       await out(w, `stat ${PATH}`)
       await out(w, `stat ${PATH}`)
       await out(w, 'ls /gh/docs')
-      // create fetched the tree but seeded no index, so the first stat walks.
-      expect(gh.counts()).toEqual([0, 1, 0])
+      // create fetched the tree but seeded no index, so each stat asks one
+      // directory until the listing fills it.
+      expect(gh.counts()).toEqual([2, 1, 0])
+      await out(w, `stat ${PATH}`)
+      expect(gh.counts()).toEqual([2, 1, 0])
     } finally {
       await w.close()
     }
   })
 
-  it('lists a bounded mount once and never asks one directory', async () => {
+  it('asks a bounded mount one directory per stat until it lists', async () => {
     const w = await ws(await vfsOf(), ReadPolicy.BOUNDED)
     try {
       await out(w, `stat ${PATH}`)
       await out(w, `stat ${PATH}`)
       await out(w, 'ls /gh/docs')
-      expect(gh.counts()).toEqual([0, 1, 0])
+      expect(gh.counts()).toEqual([2, 1, 0])
+      await out(w, `stat ${PATH}`)
+      expect(gh.counts()).toEqual([2, 1, 0])
     } finally {
       await w.close()
     }
@@ -370,15 +375,11 @@ describe('github cannot-see versus gone', () => {
     gh.set('docs/a.txt', OLD)
     gh.truncatedRecursive = true
     const vfs = await vfsOf()
-    // create builds it truncated: only the per-directory walk's listings can
-    // arm the point route here.
+    // create builds it truncated.
     expect(vfs.accessor.truncated).toBe(true)
-    expect(vfs.accessor.refills).toBe(0)
     const w = await ws(vfs)
     try {
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
-      // The walk listed the root and docs/ on the way to the file.
-      expect(vfs.accessor.refills).toBe(2)
       gh.log.length = 0
       expect(await out(w, `cat ${PATH}`)).toBe(OLD)
       expect(gh.counts()).toEqual([2, 0, 0])

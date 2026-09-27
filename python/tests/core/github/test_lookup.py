@@ -25,8 +25,9 @@ from mirage.cache.index.redis import RedisIndexCacheStore
 from mirage.core.github import lookup as lookup_mod
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.lookup import locate, point_lookup
+from mirage.core.github.read import read
 from mirage.core.github.stat import stat
-from mirage.core.github.tree import fetch_tree, refill_index
+from mirage.core.github.tree import refill_index
 from mirage.types import FileType, PathSpec
 from tests.fixtures.github_api import FakeGitHub, blob_sha, race_index, serve
 
@@ -79,7 +80,7 @@ async def _listed(gh: FakeGitHub, index) -> GitHubAccessor:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["ram", "redis"])
-async def test_a_probe_after_the_mount_listed_asks_one_directory(gh, backend):
+async def test_a_probe_through_an_empty_index_asks_one_directory(gh, backend):
     index, client = await _store(backend)
     try:
         accessor = await _listed(gh, RAMIndexCacheStore())
@@ -97,12 +98,9 @@ async def test_a_live_index_answers_without_a_request(gh, backend):
     index, client = await _store(backend)
     try:
         accessor = await _listed(gh, index)
-        refills = accessor.refills
         result = await stat(accessor, _spec("docs/a.txt"), index)
         assert result.fingerprint == blob_sha(b"alpha")
         assert gh.counts() == (0, 0, 0)
-        # Answering from a live listing writes none.
-        assert accessor.refills == refills
     finally:
         await _close(index, client)
 
@@ -123,29 +121,19 @@ async def test_an_expired_index_refills_rather_than_asking_one_directory(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("backend", ["ram", "redis"])
-async def test_a_mount_that_never_listed_walks_and_seeds(gh, backend):
+async def test_a_mount_that_never_listed_asks_one_directory(gh, backend):
     index, client = await _store(backend)
     try:
         accessor = _accessor(gh)
         await stat(accessor, _spec("docs/a.txt"), index)
-        assert gh.counts() == (0, 1, 0)
+        assert gh.counts() == (1, 0, 0)
+        # One directory is not the listing, so the first read fills it.
+        assert (await index.list_dir("/gh")).status == LookupStatus.NOT_FOUND
+        assert await read(accessor, _spec("docs/a.txt"), index) == b"alpha"
+        assert gh.counts() == (1, 1, 1)
         assert (await index.list_dir("/gh")).entries is not None
     finally:
         await _close(index, client)
-
-
-@pytest.mark.asyncio
-async def test_a_mount_built_with_its_tree_still_walks_first(gh):
-    # tree_loaded is true here while nothing has been listed into an index,
-    # which is what separates the refill count from the draft's tree_loaded
-    # gate.
-    tree, _ = await fetch_tree(GitHubConfig(token="t", base_url=gh.url), "o",
-                               "r", "main")
-    accessor = _accessor(gh, tree=tree)
-    gh.log.clear()
-    assert accessor.tree_loaded
-    await stat(accessor, _spec("docs/a.txt"), RAMIndexCacheStore())
-    assert gh.counts() == (0, 1, 0)
 
 
 @pytest.mark.asyncio
@@ -178,36 +166,21 @@ class _OrderedIndex(RAMIndexCacheStore):
         return await super().list_dir(vfs_path)
 
 
-class _CountingAccessor(GitHubAccessor):
-
-    @property
-    def refills(self) -> int:
-        self.order.append("refills")
-        return self._refills
-
-    @refills.setter
-    def refills(self, value: int) -> None:
-        self._refills = value
-
-
 @pytest.mark.asyncio
-async def test_the_gate_reads_the_root_before_the_accessor(gh):
+async def test_a_live_root_answers_before_any_request(gh):
     order: list[str] = []
-    accessor = _CountingAccessor(GitHubConfig(token="t", base_url=gh.url), "o",
-                                 "r", "main")
-    accessor.order = order
-    accessor.refills = 1
+    accessor = _accessor(gh)
     live = _OrderedIndex(order)
     await refill_index(accessor, live, "/gh")
     order.clear()
-    # A live root answers without the accessor being consulted at all.
+    gh.log.clear()
     assert await point_lookup(accessor, live, "/gh", "docs/a.txt") is None
     assert order == ["list:/gh"]
-    order.clear()
+    assert gh.counts() == (0, 0, 0)
     found = await point_lookup(accessor, _OrderedIndex(order), "/gh",
                                "docs/a.txt")
     assert found is not None and found.entry is not None
-    assert order[:2] == ["list:/gh", "refills"]
+    assert gh.counts() == (1, 0, 0)
 
 
 @pytest.mark.asyncio
@@ -215,13 +188,12 @@ async def test_a_point_stat_writes_nothing(gh):
     accessor = await _listed(gh, RAMIndexCacheStore())
     tree = accessor.tree
     snapshot = copy.deepcopy(tree)
-    state = (accessor.tree_loaded, accessor.truncated, accessor.refills)
+    state = (accessor.tree_loaded, accessor.truncated)
     index = RAMIndexCacheStore()
     await stat(accessor, _spec("docs/a.txt"), index)
     assert accessor.tree is tree
     assert accessor.tree == snapshot
-    assert (accessor.tree_loaded, accessor.truncated,
-            accessor.refills) == state
+    assert (accessor.tree_loaded, accessor.truncated) == state
     assert (await index.list_dir("/gh")).status == LookupStatus.NOT_FOUND
     assert (await index.list_dir("/gh/docs")).status == LookupStatus.NOT_FOUND
     assert (await index.get("/gh/docs/a.txt")).entry is None
@@ -315,7 +287,8 @@ async def test_a_stat_retries_when_the_index_changes_under_it(gh, kind):
 
 
 @pytest.mark.asyncio
-async def test_a_genuine_miss_is_asked_once(gh, monkeypatch):
+async def test_a_genuine_miss_is_asked_twice_without_a_request(
+        gh, monkeypatch):
     index = RAMIndexCacheStore()
     accessor = await _listed(gh, index)
     calls: list[str] = []
@@ -329,7 +302,8 @@ async def test_a_genuine_miss_is_asked_once(gh, monkeypatch):
                         counting)
     with pytest.raises(FileNotFoundError):
         await stat(accessor, _spec("docs/sub/nope.txt"), index)
-    assert calls == ["/gh/docs/sub/nope.txt"]
+    # The first lookup left the listing that answers the second.
+    assert calls == ["/gh/docs/sub/nope.txt"] * 2
     assert gh.counts() == (0, 0, 0)
 
 

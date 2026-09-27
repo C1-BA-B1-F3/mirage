@@ -163,10 +163,11 @@ async def test_reconcile_private_index_can_resolve_github_ids(
         await rec.reconcile_read(mount, path)
         assert await ws.cache.exists(path)
         assert ws.namespace.meta_for(path) is not None
-        # The mount's own stat walked the tree once; the probe's private
-        # index is answered by one listing of the parent, not a second walk.
-        assert len(tree_calls) == 1
-        assert [unquote(c) for c in dir_calls] == ["main:src"]
+        # Neither index holds a listing, so the mount's own stat and the
+        # probe's private index are each answered by one listing of the
+        # parent, and nothing walks the tree.
+        assert tree_calls == []
+        assert [unquote(c) for c in dir_calls] == ["main:src"] * 2
     finally:
         await ws.close()
 

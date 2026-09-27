@@ -151,27 +151,32 @@ async def test_a_bounded_mount_serves_its_cache():
 
 
 @pytest.mark.asyncio
-async def test_a_new_mount_lists_once_and_never_asks_one_directory():
+async def test_a_new_mount_asks_one_directory_per_stat_until_it_lists():
     with serve(_hub()) as hub:
         ws = _ws(_vfs(hub))
         try:
             await _out(ws, f"stat {PATH}")
             await _out(ws, f"stat {PATH}")
             await _out(ws, "ls /gh/docs")
-            assert hub.counts() == (0, 1, 0)
+            assert hub.counts() == (2, 1, 0)
+            # The listing filled the index, so the stat after it is free.
+            await _out(ws, f"stat {PATH}")
+            assert hub.counts() == (2, 1, 0)
         finally:
             await ws.close()
 
 
 @pytest.mark.asyncio
-async def test_a_bounded_mount_lists_once_and_never_asks_one_directory():
+async def test_a_bounded_mount_asks_one_directory_per_stat_until_it_lists():
     with serve(_hub()) as hub:
         ws = _ws(_vfs(hub), ReadPolicy.BOUNDED)
         try:
             await _out(ws, f"stat {PATH}")
             await _out(ws, f"stat {PATH}")
             await _out(ws, "ls /gh/docs")
-            assert hub.counts() == (0, 1, 0)
+            assert hub.counts() == (2, 1, 0)
+            await _out(ws, f"stat {PATH}")
+            assert hub.counts() == (2, 1, 0)
         finally:
             await ws.close()
 
@@ -402,14 +407,10 @@ async def test_a_truncated_repository_probes_one_directory():
                         default_branch="main",
                         tree=tree,
                         truncated=truncated)
-        # Built truncated, as TypeScript's create builds it: only the
-        # per-directory walk's listings can arm the point route here.
-        assert vfs.accessor.refills == 0
+        # Built truncated, as TypeScript's create builds it.
         ws = _ws(vfs)
         try:
             assert await _out(ws, f"cat {PATH}") == OLD
-            # The walk listed the root and docs/ on the way to the file.
-            assert vfs.accessor.refills == 2
             hub.log.clear()
             assert await _out(ws, f"cat {PATH}") == OLD
             assert hub.counts() == (2, 0, 0)

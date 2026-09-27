@@ -14,6 +14,7 @@
 
 import asyncio
 from unittest.mock import patch
+from urllib.parse import unquote
 
 import pytest
 
@@ -51,6 +52,27 @@ def _offline(tree: dict,
                   return_value=default_branch),
             patch("mirage.core.github.tree.fetch_tree",
                   return_value=(tree, truncated)))
+
+
+def _listing(tree: dict):
+    """Patch the one-directory listing a stat asks an empty index for.
+
+    Args:
+        tree (dict): The recursive tree each listing is cut from.
+    """
+
+    async def page(config, owner, repo, tree_sha, session=None):
+        at = unquote(tree_sha).partition(":")[2]
+        stem = at + "/" if at else ""
+        return [
+            TreeEntry(path=path[len(stem):],
+                      type=entry.type,
+                      sha=entry.sha,
+                      size=entry.size) for path, entry in tree.items()
+            if path.startswith(stem) and "/" not in path[len(stem):]
+        ], False
+
+    return patch("mirage.core.github.tree.fetch_dir_page", new=page)
 
 
 def _make_vfs(ref: str = "main",
@@ -150,7 +172,7 @@ async def test_stat_returns_sha_fingerprint() -> None:
         TreeEntry(path="src/main.py", type="blob", sha="abc123", size=100),
     }
     vfs = _make_vfs(tree=tree)
-    with _offline(tree)[1]:
+    with _offline(tree)[1], _listing(tree):
         result = await stat(vfs.accessor,
                             PathSpec.from_str_path("/src/main.py"), vfs.index)
     assert result.fingerprint == "abc123"
@@ -165,9 +187,9 @@ async def test_replacing_index_still_serves_the_tree() -> None:
     vfs = _make_vfs(tree=tree)
     vfs.set_index(IndexConfig())
 
-    # The fresh store is empty, which reads as not-live, so the next read
-    # fills it by refetching rather than reporting the path gone.
-    with _offline(tree)[1]:
+    # The fresh store is empty, which reads as not-live, so the stat asks
+    # the parent directory rather than reporting the path gone.
+    with _offline(tree)[1], _listing(tree):
         result = await stat(vfs.accessor,
                             PathSpec.from_str_path("/src/main.py"), vfs.index)
     assert result.fingerprint == "abc123"
@@ -176,7 +198,7 @@ async def test_replacing_index_still_serves_the_tree() -> None:
 @pytest.mark.asyncio
 async def test_stat_raises_when_path_not_in_tree() -> None:
     vfs = _make_vfs()
-    with _offline({})[1], pytest.raises(FileNotFoundError):
+    with _offline({})[1], _listing({}), pytest.raises(FileNotFoundError):
         await stat(vfs.accessor, PathSpec.from_str_path("/nonexistent.py"),
                    vfs.index)
 

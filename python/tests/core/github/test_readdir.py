@@ -325,7 +325,7 @@ async def test_truncated_refill_does_not_cache_partial_listings(
 
 
 @pytest.mark.asyncio
-async def test_the_truncated_walk_counts_each_listing_it_writes():
+async def test_the_truncated_walk_caches_each_listing_on_the_way_down():
     files = {"top.txt": b"t", "docs/sub/b.txt": b"b"}
     with serve(FakeGitHub(files=files, truncated_recursive=True)) as gh:
         accessor = GitHubAccessor(GitHubConfig(token="t", base_url=gh.url),
@@ -334,15 +334,14 @@ async def test_the_truncated_walk_counts_each_listing_it_writes():
                                   "main",
                                   tree={},
                                   truncated=True)
+        index = RAMIndexCacheStore()
         path = PathSpec(vfs_path="docs/sub",
                         virtual="/gh/docs/sub",
                         directory="/gh/docs/sub")
-        assert await readdir(accessor, path,
-                             RAMIndexCacheStore()) == ["/gh/docs/sub/b.txt"]
-        # The root and docs listings on the way down, then docs/sub itself:
-        # each is a listing written into the index, which is what arms the
-        # point route on a mount that never runs a whole-tree refill.
-        assert accessor.refills == 3
+        assert await readdir(accessor, path, index) == ["/gh/docs/sub/b.txt"]
+        # The root and docs listings on the way down, then docs/sub itself.
+        for listed in ("/gh", "/gh/docs", "/gh/docs/sub"):
+            assert (await index.list_dir(listed)).entries is not None
         assert gh.count("recursive") == 0
 
 

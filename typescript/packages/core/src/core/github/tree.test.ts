@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchDirTree, fetchTree, GitHubApiError, type GitHubTransport } from './client.ts'
 import { GitHubAccessor } from '../../accessor/github.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
-import { ensureLiveIndex, pointRow, populateIndex, refillIndex } from './tree.ts'
+import { ensureLiveIndex, pointRow, populateIndex } from './tree.ts'
 import { FakeGitHub, blobSha, servedAccessor } from './_test_util.ts'
 
 const ITEMS = [
@@ -145,30 +145,6 @@ describe('populateIndex', () => {
     const index = new RAMIndexCacheStore({ ttl: 600 })
     await populateIndex(index, {}, '/gh')
     expect((await index.listDir('/gh')).entries).toEqual([])
-  })
-})
-
-describe('the refill count', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('counts each refill, and never one that failed or had no index', async () => {
-    const gh = new FakeGitHub({ 'a.txt': 'a' })
-    vi.stubGlobal('fetch', gh.fetch)
-    const accessor = servedAccessor()
-    expect(accessor.refills).toBe(0)
-    await refillIndex(accessor, new RAMIndexCacheStore(), '/gh')
-    await refillIndex(accessor, new RAMIndexCacheStore(), '/gh')
-    expect(accessor.refills).toBe(2)
-    // No index means nothing was listed into one.
-    await refillIndex(accessor, undefined, '/gh')
-    expect(accessor.refills).toBe(2)
-    gh.fail.set('recursive', [401, 'Bad credentials'])
-    await expect(refillIndex(accessor, new RAMIndexCacheStore(), '/gh')).rejects.toMatchObject({
-      status: 401,
-    })
-    expect(accessor.refills).toBe(2)
   })
 })
 

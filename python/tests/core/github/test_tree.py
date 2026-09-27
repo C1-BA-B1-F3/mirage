@@ -26,8 +26,7 @@ from mirage.core.github.client import GitHubApiError
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.tree import (ensure_live_index, ensure_tree,
                                      fetch_dir_page, fetch_dir_tree,
-                                     fetch_tree, index_rows, point_row,
-                                     refill_index)
+                                     fetch_tree, index_rows, point_row)
 from mirage.core.github.tree_entry import TreeEntry
 from tests.fixtures.github_api import FakeGitHub, blob_sha, serve
 
@@ -295,30 +294,6 @@ async def test_a_pinned_mount_reads_its_ref_and_never_asks_for_the_branch(
 def _served_accessor(gh: FakeGitHub, ref: str = "main") -> GitHubAccessor:
     return GitHubAccessor(GitHubConfig(token="t", base_url=gh.url), "o", "r",
                           ref)
-
-
-@pytest.mark.asyncio
-async def test_a_refill_counts_itself():
-    with serve(FakeGitHub(files={"a.txt": b"a"})) as gh:
-        accessor = _served_accessor(gh)
-        assert accessor.refills == 0
-        await refill_index(accessor, RAMIndexCacheStore(), "/gh")
-        await refill_index(accessor, RAMIndexCacheStore(), "/gh")
-        assert accessor.refills == 2
-        # No index means nothing was listed into one.
-        await refill_index(accessor, NULL_INDEX, "/gh")
-        assert accessor.refills == 2
-
-
-@pytest.mark.asyncio
-async def test_a_failed_refill_does_not_count():
-    with serve(FakeGitHub(files={"a.txt": b"a"})) as gh:
-        accessor = _served_accessor(gh)
-        gh.fail["recursive"] = (500, "boom")
-        with pytest.raises(aiohttp.ClientResponseError) as caught:
-            await refill_index(accessor, RAMIndexCacheStore(), "/gh")
-        assert caught.value.status == 500
-        assert accessor.refills == 0
 
 
 # The same rows as tree.test.ts: a parent Octokit would rewrite unencoded

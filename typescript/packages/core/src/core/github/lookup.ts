@@ -93,15 +93,18 @@ export async function lookup(
 }
 
 /**
- * `lookup`, asked once more if the index was cleared under it.
+ * `lookup`, asked once more when it finds nothing.
  *
  * A `read: fresh` verdict clears the mount index without taking its lock,
- * and one landing mid-lookup leaves a miss that only says the store is
- * empty. Read as absence, that miss reaches `onOpMissing` through a
- * dispatcher door and drops the path's overlay for good. Two signs tell it
- * from a real one: the root listing is gone (a live index always has one),
- * or the accessor wrote a listing while the lookup ran, which is a clear
- * followed by a concurrent reseed.
+ * and one landing mid-lookup leaves a miss that only says the store was
+ * emptied. Read as absence, that miss reaches `onOpMissing` through a
+ * dispatcher door and drops the path's overlay for good. The second lookup
+ * refills a cleared index, or reads the one another op reseeded meanwhile,
+ * so a miss is absent only when both agree. A genuine miss costs one more
+ * index read and no request, since the first lookup left the listing that
+ * answers the second; only a missing directory in a truncated tree is
+ * walked twice. Two clears inside one call can still produce a false miss,
+ * as in hf.
  *
  * Mirrors Python's `lookup_retrying`.
  */
@@ -111,28 +114,24 @@ export async function lookupRetrying(
   prefix: string,
   key: string,
 ): Promise<Found> {
-  const refills = accessor.refills
   const found = await lookup(accessor, index, prefix, key)
   if (found.entry !== null || index === undefined) return found
-  const root = await index.listDir(rootOf(prefix))
-  if (root.status !== LookupStatus.NOT_FOUND && accessor.refills === refills) return found
   return lookup(accessor, index, prefix, key)
 }
 
 /**
  * Answer one path with one directory listing, where a walk would be waste.
  *
- * Taken only when the index holds no listing at all while the mount has
- * listed before, which is what a nonzero `accessor.refills` records (every
- * listing written into any index counts): the throwaway store reconcile and
- * the drift check stat through, or a mount index a verdict just cleared. A mount that never
- * listed seeds through its tree as it always has -- `create` fetches the
- * tree but seeds no index, so it counts as not listed -- and a live or
- * expired index keeps its own answer. The root is read before the accessor.
+ * Taken whenever the index holds no listing at all: the throwaway store
+ * reconcile and the drift check stat through, a mount index a verdict just
+ * cleared, or one nothing has listed into yet (`create` fetches the tree but
+ * seeds no index). A live or expired index keeps its own answer, and its root
+ * is read first, so a live index answers without a request.
  *
  * Nothing is written back: one directory is not the mount's listing, and
- * seeding it would make every other path read as absent. A parent it cannot
- * see, and a truncated listing without the name, are no answer.
+ * seeding it would make every other path read as absent. The next readdir or
+ * read fills the index from the whole tree. A parent it cannot see, and a
+ * truncated listing without the name, are no answer.
  *
  * Mirrors Python's `point_lookup`.
  */
@@ -144,7 +143,7 @@ export async function pointLookup(
 ): Promise<Found | null> {
   if (index === undefined) return null
   const root = await index.listDir(rootOf(prefix))
-  if (root.status !== LookupStatus.NOT_FOUND || accessor.refills === 0) return null
+  if (root.status !== LookupStatus.NOT_FOUND) return null
   const answer = await pointRow(accessor, rel)
   if (answer === null) return null
   if (answer.entry === null) return answer.truncated ? null : ABSENT

@@ -22,6 +22,7 @@ import { FileType, PathSpec } from '../../types.ts'
 import { GitHubApiError } from './client.ts'
 import { FakeGitHub, blobSha, raceIndex, servedAccessor } from './_test_util.ts'
 import { locate, lookupRetrying, pointLookup } from './lookup.ts'
+import { read } from './read.ts'
 import { stat } from './stat.ts'
 import { refillIndex } from './tree.ts'
 
@@ -84,7 +85,7 @@ for (const backend of ['ram', 'redis']) {
   describe.skipIf(backend === 'redis' && process.env.REDIS_URL === undefined)(
     `the point route's gate on ${backend}`,
     () => {
-      it('asks one directory once the mount has listed', async () => {
+      it('asks one directory through an empty index', async () => {
         const index = store(backend)
         const accessor = await listed()
         const result = await stat(accessor, spec('docs/a.txt'), index)
@@ -97,11 +98,8 @@ for (const backend of ['ram', 'redis']) {
       it('answers a live index without a request', async () => {
         const index = store(backend)
         const accessor = await listed(index)
-        const refills = accessor.refills
         await stat(accessor, spec('docs/a.txt'), index)
         expect(gh.counts()).toEqual([0, 0, 0])
-        // Answering from a live listing writes none.
-        expect(accessor.refills).toBe(refills)
         await index.close()
       })
 
@@ -114,10 +112,16 @@ for (const backend of ['ram', 'redis']) {
         await index.close()
       })
 
-      it('walks and seeds on a mount that never listed', async () => {
+      it('asks one directory on a mount that never listed', async () => {
         const index = store(backend)
-        await stat(servedAccessor(), spec('docs/a.txt'), index)
-        expect(gh.counts()).toEqual([0, 1, 0])
+        const accessor = servedAccessor()
+        await stat(accessor, spec('docs/a.txt'), index)
+        expect(gh.counts()).toEqual([1, 0, 0])
+        // One directory is not the listing, so the first read fills it.
+        expect((await index.listDir('/gh')).status).toBe(LookupStatus.NOT_FOUND)
+        const data = await read(accessor, spec('docs/a.txt'), index)
+        expect(new TextDecoder().decode(data)).toBe('alpha')
+        expect(gh.counts()).toEqual([1, 1, 1])
         expect((await index.listDir('/gh')).entries).not.toBeNull()
         await index.close()
       })
@@ -142,21 +146,8 @@ describe('the point route', () => {
     expect(gh.counts()).toEqual([1, 0, 0])
   })
 
-  it('reads the root before the accessor', async () => {
+  it('answers a live root before any request', async () => {
     const order: string[] = []
-    const accessor = await listed()
-    let refills = 1
-    // ES2022 class fields shadow a subclass getter, so the recording
-    // property goes on the instance.
-    Object.defineProperty(accessor, 'refills', {
-      get: () => {
-        order.push('refills')
-        return refills
-      },
-      set: (value: number) => {
-        refills = value
-      },
-    })
     class Ordered extends RAMIndexCacheStore {
       override listDir(path: string): Promise<ListResult> {
         order.push(`list:${path}`)
@@ -164,27 +155,26 @@ describe('the point route', () => {
       }
     }
     const live = new Ordered()
-    await refillIndex(accessor, live, '/gh')
+    const accessor = await listed(live)
     order.length = 0
-    // A live root answers without the accessor being consulted at all.
     expect(await pointLookup(accessor, live, '/gh', 'docs/a.txt')).toBeNull()
     expect(order).toEqual(['list:/gh'])
-    order.length = 0
+    expect(gh.counts()).toEqual([0, 0, 0])
     const found = await pointLookup(accessor, new Ordered(), '/gh', 'docs/a.txt')
     expect(found?.entry).not.toBeNull()
-    expect(order.slice(0, 2)).toEqual(['list:/gh', 'refills'])
+    expect(gh.counts()).toEqual([1, 0, 0])
   })
 
   it('writes nothing', async () => {
     const accessor = await listed()
     const tree = accessor.tree
     const snapshot = structuredClone(tree)
-    const state = [accessor.truncated, accessor.refills]
+    const state = [accessor.truncated]
     const index = new RAMIndexCacheStore()
     await stat(accessor, spec('docs/a.txt'), index)
     expect(accessor.tree).toBe(tree)
     expect(accessor.tree).toEqual(snapshot)
-    expect([accessor.truncated, accessor.refills]).toEqual(state)
+    expect([accessor.truncated]).toEqual(state)
     expect((await index.listDir('/gh')).status).toBe(LookupStatus.NOT_FOUND)
     expect((await index.listDir('/gh/docs')).status).toBe(LookupStatus.NOT_FOUND)
     expect((await index.get('/gh/docs/a.txt')).entry ?? null).toBeNull()
@@ -274,19 +264,21 @@ describe('the retry', () => {
     })
   }
 
-  it('asks a genuine miss once', async () => {
+  it('asks a genuine miss twice without a request', async () => {
     const index = new RAMIndexCacheStore()
     const accessor = await listed(index)
     const gets = vi.spyOn(index, 'get')
     await expect(stat(accessor, spec('docs/sub/nope.txt'), index)).rejects.toMatchObject({
       code: 'ENOENT',
     })
-    // A missing key never reaches `get`; the listing answers for it, once.
+    // A missing key never reaches `get`; the listing answers for it, and the
+    // retry reads the listing the first lookup left.
     const lists = vi.spyOn(index, 'listDir')
     await expect(stat(accessor, spec('docs/sub/nope.txt'), index)).rejects.toMatchObject({
       code: 'ENOENT',
     })
     expect(lists.mock.calls.map(([p]) => p).filter((p) => p === '/gh/docs/sub')).toEqual([
+      '/gh/docs/sub',
       '/gh/docs/sub',
     ])
     expect(gets).not.toHaveBeenCalled()

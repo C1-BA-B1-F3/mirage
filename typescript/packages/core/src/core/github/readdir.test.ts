@@ -320,7 +320,7 @@ describe('the truncated walk', () => {
     vi.unstubAllGlobals()
   })
 
-  it('counts each listing it writes', async () => {
+  it('caches each listing on the way down', async () => {
     const gh = new FakeGitHub({ 'top.txt': 't', 'docs/sub/b.txt': 'b' })
     gh.truncatedRecursive = true
     vi.stubGlobal('fetch', gh.fetch)
@@ -339,11 +339,12 @@ describe('the truncated walk', () => {
       resolved: false,
       vfsPath: 'docs/sub',
     })
-    expect(await readdir(accessor, path, new RAMIndexCacheStore())).toEqual(['/gh/docs/sub/b.txt'])
-    // The root and docs listings on the way down, then docs/sub itself: each
-    // is a listing written into the index, which is what arms the point route
-    // on a mount that never runs a whole-tree refill.
-    expect(accessor.refills).toBe(3)
+    const index = new RAMIndexCacheStore()
+    expect(await readdir(accessor, path, index)).toEqual(['/gh/docs/sub/b.txt'])
+    // The root and docs listings on the way down, then docs/sub itself.
+    for (const listed of ['/gh', '/gh/docs', '/gh/docs/sub']) {
+      expect((await index.listDir(listed)).entries).not.toBeNull()
+    }
     expect(gh.count('recursive')).toBe(0)
   })
 

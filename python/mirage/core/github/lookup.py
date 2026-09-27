@@ -116,15 +116,18 @@ async def lookup_retrying(
     prefix: str,
     key: str,
 ) -> Found:
-    """``lookup``, asked once more if the index was cleared under it.
+    """``lookup``, asked once more when it finds nothing.
 
     A ``read: fresh`` verdict clears the mount index without taking its
     lock, and one landing mid-lookup leaves a miss that only says the store
-    is empty. Read as absence, that miss reaches ``on_op_missing`` through a
-    dispatcher door and drops the path's overlay for good. Two signs tell
-    it from a real one: the root listing is gone (a live index always has
-    one), or the accessor wrote a listing while the lookup ran, which is a
-    clear followed by a concurrent reseed.
+    was emptied. Read as absence, that miss reaches ``on_op_missing``
+    through a dispatcher door and drops the path's overlay for good. The
+    second lookup refills a cleared index, or reads the one another op
+    reseeded meanwhile, so a miss is absent only when both agree. A genuine
+    miss costs one more index read and no request, since the first lookup
+    left the listing that answers the second; only a missing directory in
+    a truncated tree is walked twice. Two clears inside one call can still
+    produce a false miss, as in hf.
 
     Args:
         accessor (GitHubAccessor): the mount's accessor.
@@ -135,13 +138,8 @@ async def lookup_retrying(
     Returns:
         Found: the row, or an empty Found for a real absence.
     """
-    refills = accessor.refills
     found = await lookup(accessor, index, prefix, key)
     if found.entry is not None or index is NULL_INDEX:
-        return found
-    root = await index.list_dir(root_of(prefix))
-    if (root.status is not LookupStatus.NOT_FOUND
-            and accessor.refills == refills):
         return found
     return await lookup(accessor, index, prefix, key)
 
@@ -154,19 +152,17 @@ async def point_lookup(
 ) -> Found | None:
     """Answer one path with one directory listing, where a walk would be waste.
 
-    Taken only when the index holds no listing at all while the mount has
-    listed before, which is what a nonzero ``accessor.refills`` records
-    (every listing written into any index counts): the throwaway store
-    reconcile and the drift check stat through, or a mount index a verdict
-    just cleared. A mount that never
-    listed seeds through its tree as it always has, and a live or expired
-    index keeps its own answer. The root is read before the accessor, so a
-    live index answers without the accessor being consulted.
+    Taken whenever the index holds no listing at all: the throwaway store
+    reconcile and the drift check stat through, a mount index a verdict
+    just cleared, or one nothing has listed into yet. A live or expired
+    index keeps its own answer, and its root is read first, so a live index
+    answers without a request.
 
     Nothing is written back: one directory is not the mount's listing, and
-    seeding it would make every other path read as absent. A parent it
-    cannot see, and a truncated listing without the name, are no answer, so
-    the whole tree is asked instead.
+    seeding it would make every other path read as absent. The next readdir
+    or read fills the index from the whole tree. A parent it cannot see,
+    and a truncated listing without the name, are no answer, so the whole
+    tree is asked instead.
 
     Args:
         accessor (GitHubAccessor): the mount's accessor.
@@ -180,7 +176,7 @@ async def point_lookup(
     if index is NULL_INDEX:
         return None
     root = await index.list_dir(root_of(prefix))
-    if root.status is not LookupStatus.NOT_FOUND or accessor.refills == 0:
+    if root.status is not LookupStatus.NOT_FOUND:
         return None
     answer = await point_row(accessor, rel)
     if answer is None:

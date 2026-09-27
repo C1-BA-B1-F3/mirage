@@ -78,6 +78,25 @@ class AsyncLineIterator:
         self._buf = self._buf[count:]
         return count
 
+    def skip_nonmatching_lines(self, needle: bytes) -> tuple[int, int]:
+        """Skip complete buffered lines before a possible literal match.
+
+        Leave the candidate and any unfinished line for ``readline`` to join
+        across transport boundaries. Never pull more input.
+
+        Args:
+            needle (bytes): a nonempty ASCII literal without a newline.
+
+        Returns:
+            tuple[int, int]: skipped line and byte counts.
+        """
+        hit = self._buf.find(needle)
+        end = self._buf.rfind(b"\n", 0,
+                              hit if hit >= 0 else len(self._buf)) + 1
+        count = self._buf.count(b"\n", 0, end)
+        self._buf = self._buf[end:]
+        return count, end
+
     async def read_until(self, delim: bytes) -> tuple[bytes, bool]:
         """Read up to (not including) ``delim``, or to EOF.
 

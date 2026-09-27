@@ -78,7 +78,10 @@ export class BinaryInput {
   }
 
   private deliver(block: Uint8Array): Uint8Array {
-    return this.nul ? block.map((byte) => (byte === 0 ? 10 : byte)) : block
+    if (!this.nul) return block
+    const out = new Uint8Array(block)
+    for (let at = 0; at < out.length; at++) if (out[at] === 0) out[at] = 10
+    return out
   }
 }
 
@@ -171,10 +174,21 @@ export async function* grepInput(
   // terminator the iterator strips. The extra byte past a final line with no
   // newline is never read.
   let bytePos = 0
+  const needle =
+    !f.invert && (!hasContext || f.countOnly || f.quiet || f.filesOnly || f.filesWithoutMatch)
+      ? literalNeedle(pat)
+      : null
   const input = binary.read(source)
   const lines = new AsyncLineIterator(input)
   try {
-    for await (const raw of lines) {
+    for (;;) {
+      if (needle !== null) {
+        const [skipped, bytes] = lines.skipNonmatchingLines(needle)
+        number += skipped
+        bytePos += bytes
+      }
+      const raw = await lines.readline(signal)
+      if (raw === null) break
       if (binary.nul && f.binaryMode === 'without-match') break
       number += 1
       const lineStart = bytePos
@@ -315,4 +329,22 @@ function utf8Pattern(pat: RegExp): RegExp {
     else pattern += char
   }
   return new RegExp(pattern, pat.flags)
+}
+
+/** A literal whose absence in the byte view proves no line can match. */
+function literalNeedle(pat: RegExp): string | null {
+  if (pat.ignoreCase || pat.global || pat.sticky) return null
+  let needle = ''
+  let escaped = false
+  for (const char of pat.source) {
+    if (char < ' ' || char > '~') return null
+    if (escaped) {
+      if (/[a-zA-Z0-9]/.test(char)) return null
+      needle += char
+      escaped = false
+    } else if (char === '\\') escaped = true
+    else if ('.*+?^${}()|[]'.includes(char)) return null
+    else needle += char
+  }
+  return !escaped && needle.length > 0 ? needle : null
 }

@@ -1,0 +1,84 @@
+---
+title: Apple container
+description: Run captured command lines in an existing container under Apple's container tool.
+icon: apple
+---
+
+Apple's [`container`](https://github.com/apple/container) runs every Linux
+container in its own lightweight VM with its own kernel, on Apple silicon with
+macOS 26 or later. `AppleContainerRuntime` connects to a container you
+started and executes every captured line inside it; Mirage never starts,
+stops, or deletes one. See the [Sandbox overview](/python/runtime/sandbox)
+first for routing, the shared image, and how to serve workspace mounts inside
+the sandbox.
+
+## Start the container
+
+Install the tool and start its services once, then build the shared image
+with `container build` from the repo root. Live FUSE mounts need
+`SYS_ADMIN`; every container already has `/dev/fuse`:
+
+```bash
+brew install container
+container system start
+container build -f docker/sandbox/Dockerfile --target fuse \
+  -t mirage-python-fuse .
+container run -d --cap-add SYS_ADMIN \
+  --name mirage-box mirage-python-fuse sleep infinity
+container cp sandbox.yaml mirage-box:/tmp/sandbox.yaml
+container exec mirage-box mirage workspace create /tmp/sandbox.yaml
+```
+
+Host directories reach the container only if you pass them at start with
+`--volume`; the guest otherwise sees nothing from the host filesystem. A
+service on your Mac is not at `127.0.0.1` inside the container either; Apple's
+[host integration guide](https://github.com/apple/container/blob/main/docs/host-integration.md)
+sets up a `host.container.internal` name for sandbox-side configs.
+
+## Connect from Python
+
+```python
+from mirage import MountMode, Workspace
+from mirage.runtime.sandbox.apple_container import AppleContainerRuntime
+
+runtime = AppleContainerRuntime(captures=["python3"],
+                                config={"container": "mirage-box"})
+ws = Workspace({"/data": ...}, mode=MountMode.EXEC,
+               runtimes=[runtime, "workspace"])
+await ws.shell("python3 job.py", cwd="/data")
+```
+
+The `container` CLI is the transport, so there is no SDK dependency or Mirage
+extra. The `container` config is the id the container was started with (its
+`--name`); unknown config fields fail at construction. The first captured line
+checks `container inspect` and accepts only `running`; a `stopped` container
+needs `container start`. Stdin and stderr stay separate.
+
+## Differences from `docker exec`
+
+Every captured command runs under a short `sh` prelude, so the image needs a
+POSIX `sh`. The prelude evens out two ways `container exec` differs from
+`docker exec`:
+
+- `container exec -e` appends to the image's environment rather than
+  replacing a variable the image already sets, so a program started directly
+  would read the image's `PATH`. Under the prelude the session's value wins,
+  as it does with Docker.
+- `container exec -w` creates a working directory that does not exist. Under
+  the prelude, a cwd the container does not serve fails loudly
+  (`can't cd to /data`) instead of running in an empty directory whose writes
+  never reach the backend.
+
+<Note>
+  One container is one VM. Concurrent lines sent to the same `container`
+  share its filesystem and process table. Give each tenant its own container
+  when workload-to-workload isolation matters.
+</Note>
+
+<Warning>
+  Mirage timeouts stop waiting for the command; they do not kill the process
+  inside the container. `container exec` is meant to forward signals into the
+  guest, but release 1.4.1 fails to deliver them
+  ([apple/container#1941](https://github.com/apple/container/issues/1941)).
+  See [Resource limits](/python/runtime/sandbox#resource-limits).
+</Warning>

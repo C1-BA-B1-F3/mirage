@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Run captured programs inside a sandbox (Docker, smolvm, Daytona, e2b, or any machine over SSH) you provision yourself.
+description: Run captured programs inside a sandbox (Docker, Apple container, smolvm, Daytona, e2b, or any machine over SSH) you provision yourself.
 icon: server
 ---
 
@@ -10,20 +10,22 @@ programs inside a separate machine, a local container or
 microVM or a cloud sandbox. Reach for it when a line needs a real OS, heavy
 packages, or a GPU that the in-process interpreters cannot give it.
 
-Five sandbox runtimes ship today, all with the same surface:
+Six sandbox runtimes ship today, all with the same surface:
 
 | Runtime | Connects to | Config |
 | --- | --- | --- |
 | [`docker`](/python/runtime/sandbox/docker) | A container you started (`docker run`) | `container` |
+| [`apple_container`](/python/runtime/sandbox/apple_container) | A container you started with Apple's [`container`](https://github.com/apple/container) | `container` |
 | [`smolvm`](/python/runtime/sandbox/smolvm) | A [smolvm](https://smolmachines.com) microVM you started | `machine` |
 | [`daytona`](/python/runtime/sandbox/daytona) | A [Daytona](https://www.daytona.io) sandbox you created | `sandbox_id`, `api_key` |
 | [`e2b`](/python/runtime/sandbox/e2b) | An [E2B](https://e2b.dev) sandbox you created | `sandbox_id`, `api_key` |
 | [`ssh`](/python/runtime/sandbox/ssh) | Any machine running sshd | `host`, `username`, `identity_file` |
 
-`docker` and `smolvm` run on your own machine, Daytona and e2b in the
-cloud, and `ssh` reaches anything you can already `ssh` into. The isolation
-differs too: a container shares your kernel, a smolvm microVM boots its
-own, and an ssh machine is whatever machine you point it at.
+`docker`, `apple_container` and `smolvm` run on your own machine, Daytona
+and e2b in the cloud, and `ssh` reaches anything you can already `ssh` into.
+The isolation differs too: a Docker container shares its host's kernel, an
+Apple container and a smolvm microVM each boot their own, and an ssh machine
+is whatever machine you point it at.
 
 [Sandlock](/python/runtime/sandbox/sandlock) runs arbitrary commands on the
 local Linux host with Landlock and seccomp confinement. It uses the same
@@ -133,8 +135,9 @@ docker build -f docker/sandbox/Dockerfile --target fuse \
 ```
 
 The one image is the shared base for every machine provider: run it directly
-under Docker or smolvm, use it as a Daytona `image`/`snapshot` source, or use
-it as an E2B template base. Continue with the provider page in the Sandbox
+under Docker, Apple's `container` (build it with `container build`, same
+flags) or smolvm, use it as a Daytona `image`/`snapshot` source, or use it as
+an E2B template base. Continue with the provider page in the Sandbox
 sidebar for connection and configuration details.
 
 ## Selecting in YAML

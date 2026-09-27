@@ -10,8 +10,9 @@
 # and the sandbox-provider SDKs (daytona/e2b) that `all` pulls in: a
 # sandbox is a filesystem host, it never builds agents or launches other
 # sandboxes. Usable as-is for local docker (run with --cap-add SYS_ADMIN
-# --device /dev/fuse), as a Daytona image/snapshot source, and as an E2B
-# template base.
+# --device /dev/fuse), for Apple's container (`container build` with the
+# same flags, run with --cap-add SYS_ADMIN), as a Daytona image/snapshot
+# source, and as an E2B template base.
 #
 # Narrow the extras to just the backends you mount for a leaner image:
 #   docker build -f docker/sandbox/Dockerfile --target fuse \

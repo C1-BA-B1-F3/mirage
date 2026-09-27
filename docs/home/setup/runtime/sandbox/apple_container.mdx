@@ -1,0 +1,37 @@
+---
+title: Apple container
+icon: apple
+description: Connect either Mirage SDK to an existing container under Apple's container tool.
+---
+
+Start the container yourself. Apple's `container` needs Apple silicon and
+macOS 26 or later; live FUSE mounts need `SYS_ADMIN`. Details:
+[Python](/python/runtime/sandbox/apple_container) ·
+[TypeScript](/typescript/runtime/sandbox/apple_container).
+
+```bash
+brew install container
+container system start
+container run -d --cap-add SYS_ADMIN \
+  --name mirage-box mirage-python-fuse sleep infinity
+```
+
+<Tabs>
+  <Tab title="Python SDK" icon="/images/python-logo.svg">
+    ```python
+    from mirage.runtime.sandbox.apple_container import AppleContainerRuntime
+
+    runtime = AppleContainerRuntime(captures=["python3"], config={"container": "mirage-box"})
+    ```
+  </Tab>
+  <Tab title="TypeScript SDK" icon="/images/typescript-logo.svg">
+    ```typescript
+    import { AppleContainerRuntime } from '@struktoai/mirage-node'
+
+    const runtime = new AppleContainerRuntime({
+      captures: ['python3'],
+      config: { container: 'mirage-box' },
+    })
+    ```
+  </Tab>
+</Tabs>

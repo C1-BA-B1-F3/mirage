@@ -104,6 +104,17 @@ const PYTHON_OPTIONS: readonly Option[] = [
   }),
 ]
 
+// CPython's own synopsis, `[-c cmd | -m mod | file | -] [arg] ...`: the
+// first operand is a file the interpreter reads, unless a -c or -m
+// already named the program, and the words after it are the program's
+// argv. The slot has to say so, because a runtime that reads the script
+// itself (a sandbox, a host process) is outside every op door, so the
+// admission gate is the one place a path rule can see the file.
+const PYTHON_SCRIPT = new Operand({ type: 'path', providedBy: ['-c', '-m'] })
+
+// node's `[script.js | -e "script" | -] [arguments]`, the same shape.
+const JS_SCRIPT = new Operand({ type: 'path', providedBy: ['-e'] })
+
 export const SPECS: Record<string, CommandSpec> = {
   bash: new CommandSpec({
     description:
@@ -233,6 +244,7 @@ export const SPECS: Record<string, CommandSpec> = {
           'Run as an ES module (top-level import/export/await); .mjs files select this automatically.',
       }),
     ],
+    positional: [JS_SCRIPT],
     rest: new Operand({ type: 'str', remainder: true }),
   }),
   mktemp: new CommandSpec({
@@ -268,16 +280,19 @@ export const SPECS: Record<string, CommandSpec> = {
           'Run as an ES module (top-level import/export/await); .mjs files select this automatically.',
       }),
     ],
+    positional: [JS_SCRIPT],
     rest: new Operand({ type: 'str', remainder: true }),
   }),
   python: new CommandSpec({
     description: "Run Python on the workspace's bound runtime.",
     options: PYTHON_OPTIONS,
+    positional: [PYTHON_SCRIPT],
     rest: new Operand({ type: 'str', remainder: true }),
   }),
   python3: new CommandSpec({
     description: "Run Python on the workspace's bound runtime.",
     options: PYTHON_OPTIONS,
+    positional: [PYTHON_SCRIPT],
     rest: new Operand({ type: 'str', remainder: true }),
   }),
   uname: new CommandSpec({

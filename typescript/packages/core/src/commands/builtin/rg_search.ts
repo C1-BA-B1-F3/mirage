@@ -17,7 +17,7 @@ import { discardStreams } from '../../io/stream.ts'
 import { YieldBudget } from '../../io/yield_budget.ts'
 import { encodeText } from '../../shell/bytes.ts'
 import { byteOffset } from '../../shell/helpers.ts'
-import { requiredLiteral } from './grep_prefilter.ts'
+import { requiredNeedles } from './grep_prefilter.ts'
 import { decodeLine, encodeLine } from './grep_offsets.ts'
 import type { TypeChange, TypeSelection } from './rg_filetypes.ts'
 
@@ -632,7 +632,8 @@ async function readRecord(
   f: RgFlags,
   signal?: AbortSignal,
 ): Promise<Uint8Array | null> {
-  const [raw, terminated] = await lines.readUntil(f.nullData ? 0 : 10, signal)
+  if (!f.nullData) return lines.readline(signal)
+  const [raw, terminated] = await lines.readUntil(0, signal)
   return terminated || raw.length > 0 ? raw : null
 }
 
@@ -645,9 +646,9 @@ async function listing(
   tally: Tally,
   signal?: AbortSignal,
 ): Promise<void> {
-  const needle = !f.invert && !f.nullData ? requiredLiteral(pat) : null
+  const needles = !f.invert && !f.nullData && !f.stopOnNonmatch ? requiredNeedles(pat) : null
   for (;;) {
-    if (needle !== null) lines.skipNonmatchingLines(needle)
+    if (needles !== null) lines.skipNonmatchingLines(needles, pat.ignoreCase)
     const raw = await readRecord(lines, f, signal)
     if (raw === null) break
     if (selects(pat, decodeLine(raw), f.invert)) {
@@ -668,9 +669,9 @@ async function count(
   let total = 0
   let selected = 0
   const stop = nonmatchStop(f)
-  const needle = !f.invert && !f.nullData && !f.stopOnNonmatch ? requiredLiteral(pat) : null
+  const needles = !f.invert && !f.nullData && !f.stopOnNonmatch ? requiredNeedles(pat) : null
   for (;;) {
-    if (needle !== null) lines.skipNonmatchingLines(needle)
+    if (needles !== null) lines.skipNonmatchingLines(needles, pat.ignoreCase)
     const raw = await readRecord(lines, f, signal)
     if (raw === null) break
     const text = decodeLine(raw)
@@ -724,13 +725,13 @@ async function* printedLines(
   let lastPrinted = -1
   let afterLeft = 0
   const stop = nonmatchStop(f)
-  const needle =
-    !f.invert && !f.nullData && !f.stopOnNonmatch && !f.passthru && !context
-      ? requiredLiteral(pat)
+  const needles =
+    !f.invert && !f.nullData && !f.stopOnNonmatch && !context && !f.passthru
+      ? requiredNeedles(pat)
       : null
   for (;;) {
-    if (needle !== null) {
-      const [skipped, bytes] = lines.skipNonmatchingLines(needle)
+    if (needles !== null) {
+      const [skipped, bytes] = lines.skipNonmatchingLines(needles, pat.ignoreCase)
       index += skipped
       position += bytes
     }

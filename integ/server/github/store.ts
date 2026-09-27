@@ -186,6 +186,47 @@ export async function stagedTree(
 // while every reader scopes by repository: without it two repositories holding
 // the same file would collide on insert, and the second would be handed the
 // first's rows.
+// A blob by its sha, from any tree the repository has held: each branch's
+// files, then every staged tree, which holds each commit's snapshot and each
+// tree a write replaced. Git keeps an object once it is written, so a sha an
+// old listing named still reads its own bytes after the path changes, and a
+// new tree entry can still name it. Measured against GitHub (2026-09-27): a
+// superseded blob answers 200 with its old bytes.
+export async function blobBySha(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  sha: string,
+): Promise<Buffer | null> {
+  for (const branch of await branchNames(db, tenant, repo)) {
+    const files = await treeOfBranch(db, tenant, repo, branch)
+    for (const data of files.values()) if (blobSha(data) === sha) return data
+  }
+  const staged = await db.githubStagedTree.findMany({
+    where: { tenant, repo: repo.fullName },
+    select: { sha: true },
+  })
+  const row = await db.githubStagedEntry.findFirst({
+    where: { tenant, sha, treeSha: { in: staged.map((t) => t.sha) } },
+    select: { data: true },
+  })
+  return row === null ? null : Buffer.from(row.data)
+}
+
+// Stage the tree a write is about to replace, so the bytes it drops stay
+// readable by sha. Staging is content-addressed, so a tree a commit already
+// staged costs one lookup, and only a seeded tree, which no commit staged, is
+// ever copied.
+export async function keepTree(
+  db: C,
+  tenant: string,
+  repo: RepoRow,
+  branch: string,
+): Promise<void> {
+  const files = await treeOfBranch(db, tenant, repo, branch)
+  if (files.size > 0) await stageTree(db, tenant, repo, files)
+}
+
 export async function stageTree(
   db: C,
   tenant: string,
@@ -202,7 +243,7 @@ export async function stageTree(
   let seq = 0
   for (const [path, data] of files) {
     await db.githubStagedEntry.create({
-      data: { tenant, treeSha: sha, path, data: new Uint8Array(data), seq },
+      data: { tenant, treeSha: sha, path, data: new Uint8Array(data), sha: blobSha(data), seq },
     })
     seq += 1
   }

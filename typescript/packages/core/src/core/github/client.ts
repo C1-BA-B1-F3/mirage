@@ -201,9 +201,12 @@ export async function fetchTree(
   repo: string,
   ref: string,
 ): Promise<{ tree: GitHubTreeItem[]; truncated: boolean }> {
-  const data = (await transport.get(`/repos/${owner}/${repo}/git/trees/${ref}`, {
-    recursive: '1',
-  })) as { tree?: GitHubTreeItem[]; truncated?: boolean }
+  const data = (await transport.get(
+    `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}`,
+    {
+      recursive: '1',
+    },
+  )) as { tree?: GitHubTreeItem[]; truncated?: boolean }
   return { tree: dropSubmodules(data.tree ?? []), truncated: data.truncated === true }
 }
 
@@ -213,16 +216,65 @@ function dropSubmodules(tree: GitHubTreeItem[]): GitHubTreeItem[] {
   return tree.filter((item) => item.type !== 'commit')
 }
 
+/**
+ * Fetch one directory's tree (non-recursive), and whether GitHub cut it.
+ *
+ * Args:
+ *   treeSha (string): a raw tree sha, ref, or `{ref}:{dir}` expression.
+ *
+ * Returns:
+ *   { tree, truncated }: the rows, submodule gitlinks excluded, and
+ *   GitHub's `truncated` flag.
+ *
+ * Throws:
+ *   GitHubApiError: the response carries no tree, which must not read as
+ *   an empty directory.
+ */
+export async function fetchDirTreePage(
+  transport: GitHubTransport,
+  owner: string,
+  repo: string,
+  treeSha: string,
+): Promise<{ tree: GitHubTreeItem[]; truncated: boolean }> {
+  const data = (await transport.get(
+    `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(treeSha)}`,
+  )) as {
+    tree?: GitHubTreeItem[]
+    truncated?: boolean
+  }
+  if (data.tree === undefined) {
+    throw new GitHubApiError(
+      `GitHub tree response for ${owner}/${repo} ${treeSha} carries no tree`,
+      0,
+    )
+  }
+  return { tree: dropSubmodules(data.tree), truncated: data.truncated === true }
+}
+
+/**
+ * Fetch a single directory's whole tree (non-recursive).
+ *
+ * Used as fallback when the recursive tree was truncated, where the listing
+ * is cached as complete, so a directory GitHub cut short is refused rather
+ * than returned: a name past the cut would otherwise read as absent, which a
+ * `read: fresh` probe or a drift check takes as gone.
+ *
+ * Mirrors Python's `fetch_dir_tree`.
+ *
+ * Throws:
+ *   GitHubApiError: GitHub truncated the listing, or sent no tree.
+ */
 export async function fetchDirTree(
   transport: GitHubTransport,
   owner: string,
   repo: string,
   treeSha: string,
 ): Promise<GitHubTreeItem[]> {
-  const data = (await transport.get(`/repos/${owner}/${repo}/git/trees/${treeSha}`)) as {
-    tree?: GitHubTreeItem[]
+  const page = await fetchDirTreePage(transport, owner, repo, treeSha)
+  if (page.truncated) {
+    throw new GitHubApiError(`GitHub truncated the tree listing of ${owner}/${repo} ${treeSha}`, 0)
   }
-  return dropSubmodules(data.tree ?? [])
+  return page.tree
 }
 
 export async function fetchBlob(

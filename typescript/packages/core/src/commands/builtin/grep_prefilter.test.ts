@@ -8,7 +8,7 @@ import type { FlagValue } from '../spec/types.ts'
 import { parseFlags as grepFlags } from './generic/grep.ts'
 import { parseFlags as rgFlags } from './generic/rg.ts'
 import { grepInput } from './grep_binary.ts'
-import { requiredLiteral } from './grep_prefilter.ts'
+import { requiredNeedles } from './grep_prefilter.ts'
 import { grepStream, type GrepStreamOptions } from './grep_scan.ts'
 import { searchHaystack } from './rg_search.ts'
 
@@ -72,7 +72,7 @@ it.each(['grep', 'rg', 'stream'])(
       for (const pattern of PATTERNS)
         for (const fold of ['', 'i'])
           for (const flags of [{}, { c: true }, { args_l: true }, { q: true }]) {
-            const method = engine === 'rg' ? 'readUntil' : 'readline'
+            const method = 'readline'
             const spy = vi.spyOn(AsyncLineIterator.prototype, method)
             try {
               const [out, selected, error] = await run(
@@ -165,16 +165,17 @@ it.each([
   '(?=foo)',
   '('.repeat(40) + 'foo' + ')'.repeat(40),
 ])('falls back for %s', (pattern) => {
-  expect(requiredLiteral(new RegExp(pattern))).toBeNull()
+  expect(requiredNeedles(new RegExp(pattern))).toBeNull()
 })
 
 it.each([
   ['s', 'ſ'],
   ['k', 'K'],
 ])('keeps Unicode folds of %s', (pattern, match) => {
-  const prefilter = requiredLiteral(new RegExp(pattern, 'iu'))
-  expect(prefilter).toBeInstanceOf(RegExp)
-  expect((prefilter as RegExp).test(new TextDecoder('latin1').decode(ENC.encode(match)))).toBe(true)
+  const prefilter = requiredNeedles(new RegExp(pattern, 'iu'))
+  expect(prefilter).not.toBeNull()
+  const view = new TextDecoder('latin1').decode(ENC.encode(match)).toLowerCase()
+  expect(prefilter?.some((needle) => view.includes(needle))).toBe(true)
 })
 
 it('retains matches across regex combinations', () => {
@@ -202,14 +203,13 @@ it('retains matches across regex combinations', () => {
         if (left.startsWith('(?') && !left.startsWith('(?:') && repeat !== '') continue
         for (const pattern of [`${left}${repeat}${right}`, `(?:${left}${repeat}|${right})`]) {
           const pat = new RegExp(pattern, 'i')
-          const prefilter = requiredLiteral(pat)
+          const prefilter = requiredNeedles(pat)
           for (const text of texts) {
             if (prefilter === null || !pat.test(text)) continue
-            if (typeof prefilter === 'string') expect(text.includes(prefilter), pattern).toBe(true)
-            else {
-              prefilter.lastIndex = 0
-              expect(prefilter.test(text), pattern).toBe(true)
-            }
+            expect(
+              prefilter.some((needle) => text.toLowerCase().includes(needle)),
+              pattern,
+            ).toBe(true)
           }
         }
       }
@@ -263,4 +263,49 @@ it.each([7, 16384, 65536])('preserves printed stream output at chunk size %i', a
     expect(actual[0].length).toBeGreaterThan(0)
     expect(actual[1]).toBe(0)
   }
+})
+
+it.each([
+  [/zzqqxx/i, ['zzqqxx']],
+  [/zzqqxx|qqzzyy/, ['zzqqxx', 'qqzzyy']],
+  [/(?:zzqqxx)|(?:qqzzyy)/, ['zzqqxx', 'qqzzyy']],
+  [/zz.qxx/, ['qxx']],
+  [/\bfoo\b/, ['foo']],
+  [/(?<!\w)(?:foo)(?!\w)/, ['foo']],
+  [/foo[0-9]+/, ['foo']],
+  [/a?bc/, ['bc']],
+  [/a{0,3}bc/, ['bc']],
+  [/foo(?:bar)?/, ['foo']],
+  [/foo|/, null],
+  [/(?:foo)?/, null],
+  [/\d+/, null],
+  [/(?=foo)/, null],
+  [/(foo)\1/, null],
+  [/\x66oo/, null],
+  [/foo/g, null],
+  [/foo/y, null],
+  [/é/, null],
+] as const)('extracts a conservative requirement for %s', (pat, expected) => {
+  expect(requiredNeedles(pat)).toEqual(expected)
+})
+
+it('never rejects a matching line across combinations of regex operators', () => {
+  const atoms = ['a', 'bc', '[ab]', '.', '\\b', '(?:a|bc)', '(a|)', 'a?b', 'a{0,2}']
+  const texts = ['', 'a', 'b', 'c', 'ab', 'abc', 'bc', 'ac', 'bb', 'aabc', 'bcc', 'abcabc']
+  for (const left of atoms)
+    for (const right of atoms)
+      for (const join of ['', '|']) {
+        for (const suffix of ['', '?', '*', '+', '{0,2}', '{2}']) {
+          const pat = new RegExp(`(?:${left}${join}${right})${suffix}`)
+          const needles = requiredNeedles(pat)
+          if (needles === null) continue
+          for (const text of texts) {
+            if (pat.test(text))
+              expect(
+                needles.some((n) => text.includes(n)),
+                `${String(pat)}: ${text}`,
+              ).toBe(true)
+          }
+        }
+      }
 })

@@ -271,6 +271,34 @@ describe('admission', () => {
     expect(await line('cat open')).toBeNull()
   })
 
+  it('admitLine reads an interpreter’s script as a path', async () => {
+    // The runtime that takes the line runs the interpreter itself, where
+    // no op door follows the script read, so the gate types the script
+    // slot from the interpreter's spec as it does a mount command's: a
+    // bare name under the cwd is the file it names, and once -c or -e
+    // names the program no operand is a path.
+    const w = await ws(
+      parseSessionProfile({
+        commands: { deny: [{ reason: 'sealed', paths: ['/data/secret*'] }] },
+      }),
+    )
+    await w.shell('cd /data')
+    const parser = await getTestParser()
+    const session = w.sessionManager.get(w.sessionManager.defaultId)
+    const line = (text: string) =>
+      admitLine(parser.parse(text), session, w.registry, w.namespace, '', (t) => parser.parse(t))
+    const sealed = await line('python3 secret.py')
+    expect([sealed?.exitCode, DEC.decode(sealed?.stderr)]).toEqual([
+      1,
+      'python3: secret.py: sealed\n',
+    ])
+    const dashed = await line('node -- secret.js')
+    expect([dashed?.exitCode, DEC.decode(dashed?.stderr)]).toEqual([1, 'node: secret.js: sealed\n'])
+    expect(await line("python3 -c 'print(1)' secret.py")).toBeNull()
+    expect(await line('node -e 1 secret.js')).toBeNull()
+    expect(await line('python3 open.py')).toBeNull()
+  })
+
   it('admitLine refuses a walk or a glob under a path rule', async () => {
     // Every line executor acts outside the entry gate (a sandbox's own
     // disk), so a command a path rule reads must not reach it with a

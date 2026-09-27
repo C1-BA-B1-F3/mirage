@@ -29,6 +29,7 @@ import {
   NO_LONG_OPTIONS,
   NUMERIC_SHORT,
   SOLE_ARGUMENT_LONG_OPTIONS,
+  STDIN_SCRIPT_COMMANDS,
 } from './constants.ts'
 import { flagOccurrences } from './flag_view.ts'
 import { expandOldStyle } from './oldstyle.ts'
@@ -938,6 +939,7 @@ export function parseCommand(
   // UsageError (#452). The parser classifies, it never drops or raises.
   const overflowKind: ValueType = positional.at(-1) ?? 'str'
 
+  const stdinScript = STDIN_SCRIPT_COMMANDS.has(cmdName) && isBuiltinGrammar(cmdName, spec)
   const classified: [string, ValueType][] = []
   const rawOperands: [string, ValueType][] = []
   for (let j = 0; j < rawArgs.length; j++) {
@@ -951,6 +953,7 @@ export function parseCommand(
     } else {
       kind = overflowKind
     }
+    if (stdinScript && kind === 'path' && arg === '-') kind = 'str'
     if (kind === 'path') {
       // Against the base an operandBase option left in effect at this
       // position, which is the session cwd for every command that

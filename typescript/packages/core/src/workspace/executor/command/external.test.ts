@@ -505,6 +505,81 @@ describe.each(['process', 'shell'] as const)('external %s path admission', (kind
   })
 })
 
+describe.each(['process', 'shell'] as const)('interpreter %s script admission', (kind) => {
+  async function guardedWorkspace(): Promise<[Workspace, ProcessProbe | ShellProbe]> {
+    const options = { captures: ['python', 'python3', 'js', 'node'] }
+    const probe = kind === 'process' ? new ProcessProbe(options) : new ShellProbe(options)
+    const ws = new Workspace(
+      { '/work': new RAMVFS() },
+      {
+        shellParser: await getTestParser(),
+        runtimes: [probe],
+        mode: MountMode.EXEC,
+        policies: [new RulePolicy({ reason: 'protected', paths: ['/work/*'] })],
+      },
+    )
+    await ws.shell('cd /work')
+    return [ws, probe]
+  }
+
+  // The script is a file the runtime reads on its own machine, outside
+  // every op door, so the gate has to see it as the path it is
+  // (`python3 steal.py` reads /work/steal.py exactly as `cat steal.py`
+  // does), whatever option run precedes it.
+  it.each([
+    'python3 /work/steal.py',
+    'python3 steal.py',
+    'python3 ./steal.py',
+    'python3 -u steal.py',
+    'python3 -W ignore -- steal.py',
+    'node steal.js',
+    'node -- /work/steal.js',
+    'python ./-',
+    'python3 -- /work/-',
+    'js ./-',
+    'node -- /work/-',
+  ])('refuses %s before delegating to a runtime', async (line) => {
+    const [ws, probe] = await guardedWorkspace()
+    try {
+      const result = await ws.shell(line)
+      const words = line.split(' ')
+      const [name = '', operand = ''] = [words[0], words.at(-1)]
+      expect(result.exitCode).toBe(1)
+      expect(DEC.decode(result.stderr)).toBe(`${name}: ${operand}: protected\n`)
+      expect(probe instanceof ProcessProbe ? probe.requests : probe.lines).toHaveLength(0)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  // Once -c, -m or -e names the program, every operand is that program's
+  // argv, as are the words after a script; none is a file the rule
+  // reads, and each reaches the runtime as typed.
+  it('hands a program its operands as typed', async () => {
+    const [ws, probe] = await guardedWorkspace()
+    const lines: [string, string[]][] = [
+      ['python - /work/arg', ['python', '-', '/work/arg']],
+      ['python3 -u -- - -c x', ['python3', '-u', '--', '-', '-c', 'x']],
+      ['js -- - /work/arg', ['js', '--', '-', '/work/arg']],
+      ['node - -e x', ['node', '-', '-e', 'x']],
+      ["python3 -c 'print(1)' steal.py", ['python3', '-c', 'print(1)', 'steal.py']],
+      ['python3 -m json.tool steal.py', ['python3', '-m', 'json.tool', 'steal.py']],
+      ['node -e 1 steal.js', ['node', '-e', '1', 'steal.js']],
+      ['python3 /open.py steal.py', ['python3', '/open.py', 'steal.py']],
+    ]
+    try {
+      for (const [line] of lines) expect((await ws.shell(line)).exitCode, line).toBe(0)
+      const delegated =
+        probe instanceof ProcessProbe ? probe.requests.map((r) => r.argv) : probe.lines
+      expect(delegated).toEqual(
+        lines.map(([, tokens]) => (probe instanceof ProcessProbe ? tokens : shellJoin(tokens))),
+      )
+    } finally {
+      await ws.close()
+    }
+  })
+})
+
 describe.each(['process', 'shell'] as const)('native %s builtin precedence', (kind) => {
   it.each([true, false])('keeps builtins in Mirage when willingness is %s', async (willing) => {
     const options = { captures: [...SHELL_NAMES], script: () => willing }

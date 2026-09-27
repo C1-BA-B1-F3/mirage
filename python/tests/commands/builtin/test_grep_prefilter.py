@@ -7,7 +7,7 @@ import pytest
 from mirage.commands.builtin.generic.grep import parse_flags as grep_flags
 from mirage.commands.builtin.generic.rg import parse_flags as rg_flags
 from mirage.commands.builtin.grep_binary import grep_input
-from mirage.commands.builtin.grep_prefilter import required_literal
+from mirage.commands.builtin.grep_prefilter import required_needles
 from mirage.commands.builtin.grep_scan import grep_stream
 from mirage.commands.builtin.rg_search import Tally, search_haystack
 from mirage.commands.spec import SPECS
@@ -152,18 +152,18 @@ async def test_skipping_preserves_output_status_and_boundaries(
     "(?=foo)", "(" * 40 + "foo" + ")" * 40
 ])
 def test_unsupported_or_optional_patterns_fall_back(pattern):
-    assert required_literal(re.compile(pattern)) is None
+    assert required_needles(re.compile(pattern)) is None
 
 
 @pytest.mark.parametrize("pattern,match", [("s", "ſ"), ("k", "K"), ("i", "İ"),
                                            ("i", "ı")])
 def test_unicode_case_folds_are_never_rejected(pattern, match):
-    prefilter = required_literal(re.compile(pattern, re.IGNORECASE))
-    assert isinstance(prefilter, re.Pattern)
-    assert prefilter.search(match.encode())
+    prefilter = required_needles(re.compile(pattern, re.IGNORECASE))
+    assert prefilter is not None
+    assert any(needle in match.encode().lower() for needle in prefilter)
 
 
-def test_required_literals_retain_matches_across_regex_combinations():
+def test_required_needless_retain_matches_across_regex_combinations():
     atoms = [
         "a", "b", "[ab]", ".", r"\w", "(?:a|b)", "(?:a|)", "(?=a)", "(?!b)",
         "(?<!b)"
@@ -180,13 +180,13 @@ def test_required_literals_retain_matches_across_regex_combinations():
                     f"{left}{repeat}{right}", f"(?:{left}{repeat}|{right})"
             ]:
                 pat = re.compile(pattern, re.IGNORECASE)
-                prefilter = required_literal(pat)
+                prefilter = required_needles(pat)
                 for text in texts:
                     if prefilter is None or not pat.search(text):
                         continue
                     raw = text.encode()
-                    assert (prefilter in raw if isinstance(prefilter, bytes)
-                            else prefilter.search(raw)), (pattern, text)
+                    assert any(needle in raw.lower()
+                               for needle in prefilter), (pattern, text)
 
 
 @pytest.mark.asyncio
@@ -237,3 +237,45 @@ async def test_stream_printed_output_matches_unfiltered(
     assert actual == expected
     assert actual[0]
     assert actual[1:] == (0, None)
+
+
+@pytest.mark.parametrize("source,expected", [
+    ("zzqqxx", (b"zzqqxx", )),
+    ("zzqqxx|qqzzyy", (b"zzqqxx", b"qqzzyy")),
+    ("(?:zzqqxx)|(?:qqzzyy)", (b"zzqqxx", b"qqzzyy")),
+    ("zz.qxx", (b"qxx", )),
+    (r"\bfoo\b", (b"foo", )),
+    (r"(?<!\w)(?:foo)(?!\w)", (b"foo", )),
+    ("foo[0-9]+", (b"foo", )),
+    ("a?bc", (b"bc", )),
+    ("a{0,3}bc", (b"bc", )),
+    ("foo(?:bar)?", (b"foo", )),
+    ("foo|", None),
+    ("(?:foo)?", None),
+    (r"\d+", None),
+    ("(?i:foo)", None),
+    (r"(foo)\1", None),
+    (r"\x66oo", None),
+    ("é", None),
+])
+def test_conservative_requirements(source, expected):
+    assert required_needles(re.compile(source)) == expected
+
+
+def test_never_reject_matching_lines_across_regex_operators():
+    atoms = [
+        "a", "bc", "[ab]", ".", r"\b", "(?:a|bc)", "(a|)", "a?b", "a{0,2}"
+    ]
+    texts = [
+        "", "a", "b", "c", "ab", "abc", "bc", "ac", "bb", "aabc", "bcc",
+        "abcabc"
+    ]
+    for left, right, join, suffix in product(
+            atoms, atoms, ["", "|"], ["", "?", "*", "+", "{0,2}", "{2}"]):
+        pat = re.compile(f"(?:{left}{join}{right}){suffix}")
+        needles = required_needles(pat)
+        if needles is None:
+            continue
+        for text in texts:
+            if pat.search(text):
+                assert any(n in text.encode() for n in needles), (pat, text)

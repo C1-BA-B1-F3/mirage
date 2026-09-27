@@ -128,6 +128,16 @@ const REF_PATHS = [
   'git/refs/tags',
 ]
 
+// Object reads an empty repository refuses the same way, measured against
+// GitHub (2026-09-27): the recursive and shallow tree of a ref, one directory
+// of it, and a blob, here the empty blob every git repository could name.
+const OBJECT_PATHS = [
+  'git/trees/main?recursive=1',
+  'git/trees/main',
+  'git/trees/main%3Adocs',
+  'git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391',
+]
+
 // One staged tree holding one file, which is what a commit needs to exist.
 async function stage(at: string, path: string, content: string): Promise<string> {
   const tree = await post(`${at}/repos/${REPO}/git/trees`, {
@@ -175,7 +185,7 @@ async function metadataRepository(): Promise<void> {
           'Git Repository is empty.',
         )
         eq('metadata-only tags list is empty', await get(`${repo}/tags`), [])
-        for (const path of REF_PATHS) {
+        for (const path of [...REF_PATHS, ...OBJECT_PATHS]) {
           eq(`metadata-only ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
             409,
             'Git Repository is empty.',
@@ -250,7 +260,7 @@ async function emptyRepository(at: string): Promise<void> {
       404,
       'This repository is empty.',
     ])
-    for (const path of REF_PATHS) {
+    for (const path of [...REF_PATHS, ...OBJECT_PATHS]) {
       eq(`empty ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
         409,
         'Git Repository is empty.',
@@ -413,18 +423,118 @@ async function seededHistory(at: string): Promise<void> {
   }
 }
 
+// Git keeps an object once it is written, so a blob sha an old listing named
+// still reads its own bytes after its path changes: overwritten or deleted,
+// whether the bytes came from the seed or from a commit. Measured against
+// GitHub (2026-09-27): a superseded blob answers 200 with its old bytes.
+async function supersededBlobs(at: string): Promise<void> {
+  const run = 'superseded-blobs'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const send = async (method: string, body: JsonValue): Promise<JsonValue> => {
+    const r = await fetch(`${repo}/contents/README.md`, {
+      method,
+      headers: HEADERS,
+      body: JSON.stringify(body),
+    })
+    eq(`the ${method} of README.md succeeds`, r.status, 200)
+    return (await r.json()) as JsonValue
+  }
+  const blob = async (sha: JsonValue): Promise<JsonValue> => {
+    const r = await fetch(`${repo}/git/blobs/${String(sha)}`, { headers: HEADERS })
+    if (r.status !== 200) return r.status
+    return Buffer.from(String(field((await r.json()) as JsonValue, 'content')), 'base64').toString()
+  }
+  const seeded = await get(`${repo}/contents/README.md`)
+  const seededText = Buffer.from(String(field(seeded, 'content')), 'base64').toString()
+  const one = await send('PUT', {
+    message: 'Replace the seed',
+    content: Buffer.from('one').toString('base64'),
+    sha: field(seeded, 'sha'),
+  })
+  eq('a seeded blob a write replaced still reads', await blob(field(seeded, 'sha')), seededText)
+  const oneSha = field(field(one, 'content'), 'sha')
+  const two = await send('PUT', {
+    message: 'Replace the commit',
+    content: Buffer.from('two').toString('base64'),
+    sha: oneSha,
+  })
+  eq('a committed blob a write replaced still reads', await blob(oneSha), 'one')
+  const twoSha = field(field(two, 'content'), 'sha')
+  await send('DELETE', { message: 'Remove it', sha: twoSha })
+  eq('a deleted blob still reads', await blob(twoSha), 'two')
+  eq('a sha no tree ever held is not found', await blob('0'.repeat(40)), 404)
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
   try {
     await emptyRepository(at)
     await seededHistory(at)
+    await supersededBlobs(at)
     const reset = await fetch(`${at}/reset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ tenants: [TENANT], fixture: 'v1' }),
     })
     check('/reset seeds the fixture', reset.status === 200, String(reset.status))
+
+    // ---- `{ref}:{dir}` lists one directory, as GitHub's rev syntax does; the
+    // point lookup sends it percent-encoded as one segment, and python's
+    // client sends the colon raw
+    const shallow = async (segment: string): Promise<{ status: number; body: JsonValue }> => {
+      const r = await fetch(`${at}/repos/${REPO}/git/trees/${segment}`, { headers: HEADERS })
+      return { status: r.status, body: (await r.json()) as JsonValue }
+    }
+    // docs/vendored is a submodule: GitHub lists a gitlink in a tree, and the
+    // client is what drops it.
+    const names = (body: JsonValue): JsonValue[] =>
+      (field(body, 'tree') as JsonValue[]).map((row) => field(row, 'path'))
+    const docs = await shallow('main%3Adocs')
+    eq('an encoded ref:dir lists that directory', names(docs.body), [
+      'architecture.md',
+      'contributing.md',
+      'release.md',
+      'vendored',
+    ])
+    eq('a raw colon lists the same rows', names((await shallow('main:docs')).body), [
+      'architecture.md',
+      'contributing.md',
+      'release.md',
+      'vendored',
+    ])
+    eq(
+      'an encoded slash reaches a nested directory',
+      names((await shallow('main%3Asrc%2Fcache')).body).length,
+      9,
+    )
+    eq('a path through a file is 422', (await shallow('main%3AREADME.md')).status, 422)
+    eq('a missing directory is 404', (await shallow('main%3Anope')).status, 404)
+    eq('an unknown ref is 404', (await shallow('gone%3Adocs')).status, 404)
+    // A bare ref without recursive names only the root's own rows, uncut: the
+    // truncated repository's per-directory walk asks for its root this way.
+    const bareRoot = await get(`${at}/repos/integ/repo-trunc/git/trees/main`)
+    eq('a bare ref lists the root shallow and whole', field(bareRoot, 'truncated'), false)
+    check(
+      'a bare ref lists no nested path',
+      (field(bareRoot, 'tree') as JsonValue[]).every(
+        (row) => !String(field(row, 'path')).includes('/'),
+      ),
+    )
+    const whole = await get(`${at}/repos/${REPO}/git/trees/main?recursive=1`)
+    const wholeRow = (field(whole, 'tree') as JsonValue[]).find(
+      (row) => field(row, 'path') === 'docs/release.md',
+    )
+    const pointRow = (field(docs.body, 'tree') as JsonValue[]).find(
+      (row) => field(row, 'path') === 'release.md',
+    )
+    eq(
+      "a listed row carries the recursive tree row's sha",
+      field(pointRow ?? null, 'sha'),
+      field(wholeRow ?? null, 'sha'),
+    )
     check('vanilla gh search matches Mirage', (await searchConformance(at)) > 0)
 
     // ---- an author the caller states is the author the fake keeps
@@ -1199,6 +1309,7 @@ async function main(): Promise<void> {
     }
 
     eq('`user:` lists that account and no other', await found('user:integ'), [
+      'integ/data-v1',
       'integ/repo-cli',
       'integ/repo-trunc',
       'integ/repo-v1',
@@ -1514,17 +1625,17 @@ async function main(): Promise<void> {
     eq(
       'repositories order by name ascending',
       await repositoryNames('integ', ', orderBy: { field: NAME, direction: ASC }'),
-      ['repo-cli', 'repo-trunc', 'repo-v1'],
+      ['data-v1', 'repo-cli', 'repo-trunc', 'repo-v1'],
     )
     eq(
       'repositories order by name descending',
       await repositoryNames('integ', ', orderBy: { field: NAME, direction: DESC }'),
-      ['repo-v1', 'repo-trunc', 'repo-cli'],
+      ['repo-v1', 'repo-trunc', 'repo-cli', 'data-v1'],
     )
     eq(
       'repositories a push order ties are listed by name',
       await repositoryNames('integ', ', orderBy: { field: PUSHED_AT, direction: DESC }'),
-      ['repo-cli', 'repo-trunc', 'repo-v1'],
+      ['data-v1', 'repo-cli', 'repo-trunc', 'repo-v1'],
     )
     const forked = await post(`${at}/repos/integ/repo-v1/forks`, { name: 'v1-fork' })
     check('the fork is created', forked.status < 300, String(forked.status))

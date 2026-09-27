@@ -12,7 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import { specOf } from '../spec/builtins.ts'
 import { FlagView } from '../spec/flag_view.ts'
 import type { FlagValue } from '../spec/types.ts'
@@ -220,3 +221,55 @@ it.each([{}, { line_regexp: true }])(
     expect(await search('a\nb\0', '^a$', { ...flags, null_data: true })).toBe('a\nb\0')
   },
 )
+
+it.each(['needle', 'needle|qqzzyy', 'nee.le', '\\bneedle\\b'])(
+  'skips nonmatching buffers in each rg output mode: %s',
+  async (pattern) => {
+    for (const flags of [{ count: true }, { files_with_matches: true }, {}]) {
+      const reads = vi.spyOn(AsyncLineIterator.prototype, 'readline')
+      try {
+        expect(
+          await search('abcdefg\n'.repeat(40000), pattern, { ...flags, ignore_case: true }),
+        ).toBe('')
+        expect(reads.mock.calls.length).toBeLessThan(50)
+      } finally {
+        reads.mockRestore()
+      }
+    }
+  },
+)
+
+it.each([
+  {},
+  { count: true },
+  { count_matches: true },
+  { files_with_matches: true },
+  { files_without_match: true },
+  { quiet: true },
+  { max_count: 1 },
+  { invert_match: true },
+  { context: 2 },
+  { passthru: true },
+  { stop_on_nonmatch: true },
+  { null_data: true },
+  { only_matching: true },
+])('preserves rg output and offsets with filtering disabled: %j', async (flags) => {
+  const data =
+    'abc\n'.repeat(200) +
+    'NEEDLE\nnone\nneedle needle\nſ\nK\nİ\nı\n' +
+    'abc\n'.repeat(200) +
+    'needle'
+  const opts = { ...flags, ignore_case: true, line_number: true, byte_offset: true }
+  for (const pattern of ['needle|qqzzyy', 'nee.le', '\\bneedle\\b', '(?:needle)?', 's|k|i']) {
+    const skip = vi
+      .spyOn(AsyncLineIterator.prototype, 'skipNonmatchingLines')
+      .mockReturnValue([0, 0])
+    let expected: string
+    try {
+      expected = await search(data, pattern, opts)
+    } finally {
+      skip.mockRestore()
+    }
+    expect(await search(data, pattern, opts)).toBe(expected)
+  }
+})

@@ -370,7 +370,7 @@ export async function mvGeneric(
     }
     if (keyOf(target).startsWith(keyOf(src) + '/')) {
       errors.push(
-        `mv: cannot move '${src.virtual}' to a subdirectory of itself, '${target.virtual}'`,
+        `mv: cannot move '${src.rawPath}' to a subdirectory of itself, '${target.virtual}'`,
       )
       continue
     }
@@ -390,7 +390,7 @@ export async function mvGeneric(
     }
     if (slashRefusesFile(target, targetExists, srcIsDir)) {
       errors.push(
-        `mv: cannot move '${src.virtual}' to '${target.rawPath}': ${targetErr ?? 'Not a directory'}`,
+        `mv: cannot move '${src.rawPath}' to '${target.rawPath}': ${targetErr ?? 'Not a directory'}`,
       )
       continue
     }
@@ -401,7 +401,7 @@ export async function mvGeneric(
     }
     if (flags.noCopy && isPrimitiveMove(strategy)) {
       errors.push(
-        `mv: cannot move '${src.virtual}' to '${target.virtual}': Invalid cross-device link`,
+        `mv: cannot move '${src.rawPath}' to '${target.rawPath}': Invalid cross-device link`,
       )
       continue
     }
@@ -437,7 +437,7 @@ export async function mvGeneric(
       } catch (err) {
         if (!isFsError(err)) throw err
         errors.push(
-          `mv: cannot move '${src.virtual}' to '${target.virtual}': ${String(fsStrerror(err))}`,
+          `mv: cannot move '${src.rawPath}' to '${target.rawPath}': ${String(fsStrerror(err))}`,
         )
         continue
       }
@@ -484,7 +484,7 @@ export async function mvGeneric(
         // aborted command: GNU reports it and keeps going with the
         // remaining sources.
         errors.push(
-          `mv: cannot move '${src.virtual}' to '${target.virtual}': ${String(fsStrerror(err))}`,
+          `mv: cannot move '${src.rawPath}' to '${target.rawPath}': ${String(fsStrerror(err))}`,
         )
         continue
       }

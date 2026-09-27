@@ -78,6 +78,32 @@ export function enotdir(path: string | { virtual: string }): FsError {
   return fsError(path, 'ENOTDIR')
 }
 
+/**
+ * A path its own `.` and `..` do not resolve (`dotRefusal`): ENOENT or
+ * ENOTDIR at a name in front of a dot.
+ *
+ * Final, which is why it is marked: a keyed store's plain miss can still be
+ * an implicit directory, and the layers that ask (the read commands'
+ * directory probes) re-read ENOENT that way, but a name in front of a dot
+ * that is missing or a plain file is not a directory under any reading.
+ * Every catch site keyed on the code still sees its own. Mirrors Python's
+ * DotWalkError.
+ */
+export interface DotWalkError extends FsError {
+  readonly dotWalk: true
+}
+
+export function dotWalkError(
+  path: string | { virtual: string },
+  code: 'ENOENT' | 'ENOTDIR',
+): DotWalkError {
+  return Object.assign(fsError(path, code), { dotWalk: true as const })
+}
+
+export function isDotWalkError(err: unknown): err is DotWalkError {
+  return err instanceof Error && (err as { dotWalk?: unknown }).dotWalk === true
+}
+
 export function eisdir(path: string | { virtual: string }): FsError {
   return fsError(path, 'EISDIR')
 }
@@ -454,14 +480,55 @@ export function operandSpelling(
   return path
 }
 
-// The commands GNU words a failed operand as the step that failed rather
-// than as the bare name, the name always quoted (gnulib's quoteaf): a
-// missing file is `cannot open 'x' for reading`, and a directory, which
-// opens and then refuses the read, is `error reading 'x'`. Measured on
-// coreutils 9.7 (debian:stable-slim). Mirrors Python's
-// OPEN_FAILURE_COMMANDS. EFBIG and EBADF identify read failures in the
-// backend contract as well.
-export const OPEN_FAILURE_COMMANDS: ReadonlySet<string> = new Set(['head', 'tail'])
+// The failures that happen after the open, which GNU words as the read
+// step: a directory opens and then refuses the read, and the backend
+// contract raises the other two for a read it will not serve. Mirrors
+// Python's READ_FAILURES.
+export const READ_FAILURES: ReadonlySet<string> = new Set(['EISDIR', 'EFBIG', 'EBADF'])
+
+const CANNOT_OPEN = 'cannot open {quoted} for reading: {strerror}'
+
+// How GNU words a failed operand for the commands that name the step that
+// failed instead of printing `<cmd>: <name>: <strerror>`. An entry is
+// [opening, reading]: the line for a name the command could not open, and
+// for one it opened that then refused the read (READ_FAILURES). null keeps
+// the plain line for that step, which is also the choice wherever GNU's own
+// line drops the name (`base64: read error`, `fmt: read error`): mirage
+// words a step GNU's way only while that still says which operand failed.
+// `{quoted}` is the name always quoted (gnulib's quoteaf), `{shown}` quoted
+// only when it needs it (quotef), `{bare}` as typed. Measured on coreutils
+// 9.7 and GNU sed 4.9 (debian:stable-slim), a directory read on tmpfs:
+// overlayfs answers a directory's read with EINVAL, so a tac there says
+// `read error: Invalid argument`. Mirrors Python's FAILURE_WORDING.
+export const FAILURE_WORDING: ReadonlyMap<string, readonly [string | null, string | null]> =
+  new Map([
+    ['csplit', [CANNOT_OPEN, null]],
+    ['fmt', [CANNOT_OPEN, null]],
+    ['head', [CANNOT_OPEN, 'error reading {quoted}: {strerror}']],
+    ['sed', ["can't read {bare}: {strerror}", 'read error on {bare}: {strerror}']],
+    ['split', [CANNOT_OPEN, null]],
+    ['stat', ['cannot statx {quoted}: {strerror}', 'cannot statx {quoted}: {strerror}']],
+    ['tac', ['failed to open {quoted} for reading: {strerror}', '{shown}: read error: {strerror}']],
+    ['tail', [CANNOT_OPEN, 'error reading {quoted}: {strerror}']],
+    [
+      'truncate',
+      [
+        'cannot open {quoted} for writing: {strerror}',
+        'cannot open {quoted} for writing: {strerror}',
+      ],
+    ],
+    ['tsort', [null, '{shown}: read error: {strerror}']],
+    ['uniq', [null, 'error reading {quoted}: {strerror}']],
+  ])
+
+// The command's own template for this failure, null for the plain line: no
+// entry, no template for the step, or standard input, whose `-` line is the
+// one GNU prints when it closes a stdin it could not read.
+function stepWording(cmdName: string, label: string, code: string | undefined): string | null {
+  const wording = FAILURE_WORDING.get(cmdName)
+  if (wording === undefined || label === '-') return null
+  return code !== undefined && READ_FAILURES.has(code) ? wording[1] : wording[0]
+}
 
 // GNU coreutils stderr line for one failed path operand, spelled as typed
 // (PathSpec.rawPath). Byte-identical with the executor chokepoint and the
@@ -469,9 +536,7 @@ export const OPEN_FAILURE_COMMANDS: ReadonlySet<string> = new Set(['head', 'tail
 // remaining operands after one fails, where the caller holds the operand.
 // A command in SHELL_QUOTED_COMMANDS reports the operand shell-quoted when
 // it needs it ('*.txt'), the way GNU does; every other command reports it
-// bare. A command in OPEN_FAILURE_COMMANDS says which step failed instead,
-// except for standard input, whose `-` line is the one GNU prints when it
-// closes a stdin it could not read.
+// bare. A command in FAILURE_WORDING says which step failed instead.
 export function fsErrorLine(
   cmdName: string,
   path: string | { virtual: string; rawPath?: string },
@@ -480,15 +545,50 @@ export function fsErrorLine(
   const code = (err as { code?: string }).code
   const strerror = gnuStrerror(code)
   const typed = virtualOf(path)
-  if (OPEN_FAILURE_COMMANDS.has(cmdName) && strerror !== null && typed !== '-') {
-    const quoted = shellQuoteAlways(typed)
-    if (code === 'EISDIR' || code === 'EFBIG' || code === 'EBADF')
-      return `${cmdName}: error reading ${quoted}: ${strerror}\n`
-    return `${cmdName}: cannot open ${quoted} for reading: ${strerror}\n`
+  const template = stepWording(cmdName, typed, code)
+  if (template !== null && strerror !== null) {
+    // One pass, so a name that spells a placeholder is never substituted.
+    const values: Record<string, string> = {
+      quoted: shellQuoteAlways(typed),
+      shown: shellQuote(typed),
+      bare: typed,
+      strerror,
+    }
+    const line = template.replace(/\{(quoted|shown|bare|strerror)\}/g, (_, key: string) => {
+      return values[key] ?? ''
+    })
+    return `${cmdName}: ${line}\n`
   }
   const label = quotesOperands(cmdName) ? shellQuote(typed) : typed
   if (strerror !== null) return `${cmdName}: ${label}: ${strerror}\n`
   return `${cmdName}: ${label}\n`
+}
+
+// Re-say another command's failed-operand line in `cmdName`'s voice. A
+// command that reads its operands through another one (the cross-mount
+// stream strategy fetches each with cat) holds that command's rendered
+// line, not the error. When the line is the fetch command's own
+// fsErrorLine for `operand`, it is rendered again from the strerror it
+// names, so the prefix, the quoting and the step wording are all the real
+// command's; any other line only has its prefix swapped. Mirrors Python's
+// revoice_fs_error_line.
+export function revoiceFsErrorLine(
+  line: string,
+  fromCmd: string,
+  cmdName: string,
+  operand: string | { virtual: string; rawPath?: string },
+): string {
+  const prefix = `${fromCmd}: `
+  if (!line.startsWith(prefix)) return line
+  const strerror = line.slice(line.lastIndexOf(': ') + 2)
+  const code = Object.keys(STRERROR).find((key) => STRERROR[key] === strerror)
+  if (code !== undefined) {
+    const err = fsError(operand, code)
+    if (fsErrorLine(fromCmd, operand, err) === `${line}\n`) {
+      return fsErrorLine(cmdName, operand, err).replace(/\n$/, '')
+    }
+  }
+  return `${cmdName}: ${line.slice(prefix.length)}`
 }
 
 // The chokepoint variant of fsErrorLine for callers that only hold the

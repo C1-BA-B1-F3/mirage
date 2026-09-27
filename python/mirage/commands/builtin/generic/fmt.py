@@ -77,6 +77,8 @@ def _format_paragraph(para: str, width: int, prefix: str | None,
 
 def _fmt_text(text: str, width: int, goal: int | None, prefix: str | None,
               split_only: bool, tagged: bool, crown: bool) -> str:
+    if not text:
+        return ""
     target_width = min(width, goal) if goal is not None else width
     paragraphs = text.split("\n\n")
     formatted: list[str] = []
@@ -104,12 +106,16 @@ async def fmt(
     uniform: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
     if paths:
-        all_text: list[str] = []
+        # GNU formats each file on its own: a paragraph never runs from one
+        # file into the next, and a file's unfinished last line is ended
+        # before the next file starts.
+        parts: list[str] = []
         for p in paths:
             data = (await read_bytes(p)).decode(errors="replace")
-            all_text.append(data)
-        return _fmt_text("".join(all_text), width, goal, prefix, split_only,
-                         tagged, crown).encode(), IOResult()
+            parts.append(
+                _fmt_text(data, width, goal, prefix, split_only, tagged,
+                          crown))
+        return "".join(parts).encode(), IOResult()
 
     raw = await read_stdin_async(stdin)
     if raw is None:

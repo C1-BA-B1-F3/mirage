@@ -30,7 +30,6 @@ import { rstripSlash } from '../../../utils/slash.ts'
 import {
   cpFlags,
   cpGeneric,
-  entryKind,
   overwriteGate,
   parseFlags,
   targetDirError,
@@ -38,6 +37,7 @@ import {
   type CpFlags,
 } from './cp.ts'
 import { UsageError } from '../../errors.ts'
+import { entryKind } from '../utils/paths.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { type FlagValue } from '../../spec/types.ts'
 import { specOf } from '../../spec/builtins.ts'

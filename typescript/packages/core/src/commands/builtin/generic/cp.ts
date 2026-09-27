@@ -41,9 +41,16 @@ import {
   pathExists,
   type BackendKeyFn,
 } from '../utils/copy.ts'
-import { fsStrerror, isEacces, isEnotdir, isFsError, isMissingPath } from '../../../utils/errors.ts'
+import {
+  fsStrerror,
+  isDotWalkError,
+  isEacces,
+  isEnotdir,
+  isFsError,
+  isMissingPath,
+} from '../../../utils/errors.ts'
+import { absentDestStrerror, descendantPath, nearestAncestor } from '../utils/paths.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
-import { norm, parent } from '../../../utils/path.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 
 const ENC = new TextEncoder()
@@ -260,8 +267,9 @@ function slashAwareKind(
 //
 // The backends answer ENOENT for a path under a plain file just as they do
 // for a genuinely absent one (only a slashed operand makes the stat itself
-// say ENOTDIR), so the chain is walked upward until something exists; the
-// common case (the parent is there) costs a single stat.
+// say ENOTDIR), so the chain is walked upward until something exists
+// (absentDestStrerror); the common case (the parent is there) costs a
+// single stat.
 export async function destKind(
   stat: StatFn,
   target: PathSpec,
@@ -272,32 +280,15 @@ export async function destKind(
   } catch (err) {
     const code = (err as { code?: unknown }).code
     if (code === 'ENOTDIR') return { exists: false, isDir: false, strerror: 'Not a directory' }
+    // Its `..` passes a name that is not there: the chain of the path it
+    // simplifies to says nothing about this one.
+    if (isDotWalkError(err)) {
+      return { exists: false, isDir: false, strerror: 'No such file or directory' }
+    }
     if (!isMissingPath(err)) throw err
   }
   if (info !== null) return slashAwareKind(target, info)
-  const immediate = parent(norm(target.virtual))
-  let node = immediate
-  while (node !== '/') {
-    const { exists, isDir } = await entryKind(stat, descendantPath(target, node))
-    if (exists) {
-      if (!isDir) return { exists: false, isDir: false, strerror: 'Not a directory' }
-      // An existing directory higher up means the intermediate components
-      // are simply absent.
-      return {
-        exists: false,
-        isDir: false,
-        strerror: node === immediate ? null : 'No such file or directory',
-      }
-    }
-    node = parent(node)
-  }
-  // The mount root always exists as a directory and is never stat-ed: a
-  // backend that cannot stat "/" must not fail every copy into it.
-  return {
-    exists: false,
-    isDir: false,
-    strerror: immediate === '/' ? null : 'No such file or directory',
-  }
+  return { exists: false, isDir: false, strerror: await absentDestStrerror(stat, target) }
 }
 
 // Whether a slash-terminated destination refuses a non-directory. POSIX
@@ -315,28 +306,6 @@ export function slashRefusesFile(
   srcIsDir: boolean,
 ): boolean {
   return !targetExists && target.rawPath.endsWith('/') && !srcIsDir
-}
-
-// Probe a path once for {exists, isDir}. ENOTDIR counts as "does not exist":
-// a path whose parent chain runs through a plain file cannot exist. This is
-// the probe for a path that is not an operand (an ancestor in a chain walk,
-// an overwrite target already paired); an operand itself goes through
-// sourceKind or destKind, which keep the ENOTDIR a slashed spelling earns.
-// isMissingPath stays ENOENT-only so read-family commands keep reporting
-// "Not a directory" verbatim.
-export async function entryKind(
-  stat: StatFn,
-  path: PathSpec,
-): Promise<{ exists: boolean; isDir: boolean }> {
-  let info: FileStat
-  try {
-    info = await stat(path)
-  } catch (err) {
-    const code = (err as { code?: unknown }).code
-    if (!isMissingPath(err) && code !== 'ENOTDIR') throw err
-    return { exists: false, isDir: false }
-  }
-  return { exists: true, isDir: info.type === FileType.DIRECTORY }
 }
 
 // Probe a source operand, keeping the errno GNU reports: `cp /plain/child /dst`
@@ -359,16 +328,12 @@ export async function sourceKind(
     if (!isMissingPath(err)) throw err
   }
   if (info !== null) return slashAwareKind(path, info)
-  let node = parent(norm(path.virtual))
-  while (node !== '/') {
-    const up = await entryKind(stat, descendantPath(path, node))
-    if (up.exists) {
-      if (!up.isDir) return { exists: false, isDir: false, strerror: 'Not a directory' }
-      break
-    }
-    node = parent(node)
+  const [, isDir] = await nearestAncestor(stat, path)
+  return {
+    exists: false,
+    isDir: false,
+    strerror: isDir ? 'No such file or directory' : 'Not a directory',
   }
-  return { exists: false, isDir: false, strerror: 'No such file or directory' }
 }
 
 // GNU dir/non-dir overwrite mismatch line, or null when compatible.
@@ -528,10 +493,6 @@ function transferLine(src: PathSpec, target: PathSpec, backup: PathSpec | null):
   let line = `'${src.virtual}' -> '${target.virtual}'`
   if (backup !== null) line += ` (backup: '${backup.virtual}')`
   return line
-}
-
-function descendantPath(root: PathSpec, virtual: string): PathSpec {
-  return PathSpec.fromStrPath(virtual, rekey(root.virtual, root.vfsPath, virtual))
 }
 
 // Recreate a source tree's directories under the destination root. Only
@@ -772,6 +733,10 @@ export async function cpGeneric(
   index?: IndexCacheStore,
   backendKey?: BackendKeyFn,
   readdir?: ReaddirFn,
+  // The link standing at the name a destination was typed as, its own row,
+  // null where none stands (the router has followed the operand by the time
+  // cp runs); undefined outside a workspace. Mirrors Python's link_at.
+  linkAt?: (path: PathSpec) => FileStat | null,
 ): Promise<[ByteSource | null, IOResult]> {
   const keyOf = backendKey ?? backendKeyDefault
   const [sources, dstOperand] = splitOperands('cp', paths, flags.targetDir, flags.noTargetDir)
@@ -858,6 +823,20 @@ export async function cpGeneric(
     const mismatch = overwriteTypeError('cp', src, srcIsDir, target, targetExists, targetIsDir)
     if (mismatch !== null) {
       errors.push(mismatch)
+      continue
+    }
+    if (!targetExists && linkAt !== undefined && linkAt(target) !== null) {
+      // A dangling link: the stat followed it to nothing, but the name is
+      // taken. GNU will not create the file it points at (POSIX would), and
+      // the link is a non-directory to a tree.
+      if (srcIsDir) {
+        errors.push(
+          `cp: cannot overwrite non-directory '${target.rawPath}' with directory '${src.rawPath}'`,
+        )
+        continue
+      }
+      if (flags.verbose) lines.push(transferLine(src, target, null))
+      errors.push(`cp: not writing through dangling symlink '${target.rawPath}'`)
       continue
     }
     if (flags.recursive && srcIsDir) {

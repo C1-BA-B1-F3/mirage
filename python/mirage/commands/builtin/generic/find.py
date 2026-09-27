@@ -9,6 +9,8 @@ from mirage.commands.builtin.find_parse import (parse_depth,
                                                 parse_find_expression,
                                                 parse_mtime, parse_size)
 from mirage.commands.builtin.find_printf import printf_kind
+from mirage.commands.builtin.utils.paths import (dot_refusal, link_follow,
+                                                 stat_or_enoent)
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import is_entry_error
 from mirage.commands.spec import SPECS
@@ -20,7 +22,7 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView, StatPath
 from mirage.types import FileStat, FileType, FindType, PathSpec
 from mirage.utils.dates import iso_timestamp, matches_mtime
-from mirage.utils.errors import MISS_ERRORS
+from mirage.utils.errors import MISS_ERRORS, fs_strerror
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 from mirage.utils.path import respell_one, respell_raw
 from mirage.utils.stat_view import DIR_SIZE
@@ -250,6 +252,7 @@ async def resolve_start(
     *,
     is_link: bool = False,
     stat: Callable[[PathSpec], Awaitable[FileStat]] | None = None,
+    follow: Callable[[str], str] | None = None,
 ) -> StartPoint:
     """Decide what one start point contributes, before any walk.
 
@@ -276,8 +279,23 @@ async def resolve_start(
         is_link (bool): whether the start point is itself a namespace link.
         stat (Callable | None): the mount's stat, asked only to name the
             errno of a start point ``stat_path`` found nothing at.
+        follow (Callable[[str], str] | None): the namespace's link
+            resolution, which the start point may already have been
+            taken through.
     """
-    if stat_path is None or is_link:
+    if stat_path is None:
+        return WALK_START
+    # A start point's own `.` and `..` resolve first, link or not: the
+    # lookup below asks about the path they simplify to.
+    refusal = await dot_refusal(partial(stat_or_enoent, stat_path), search,
+                                follow)
+    if refusal is not None:
+        return StartPoint(walk=False,
+                          results=[],
+                          missing=True,
+                          detail=fs_strerror(refusal)
+                          or "No such file or directory")
+    if is_link:
         return WALK_START
     start = await stat_path(search.virtual)
     if start is None:
@@ -530,7 +548,8 @@ async def early_root(
     start = await resolve_start(search,
                                 args,
                                 stat_path,
-                                is_link=is_link(links, search))
+                                is_link=is_link(links, search),
+                                follow=link_follow(links))
     if start.stat is None or not path_allowed(search.virtual):
         return []
     prefix = mount_prefix_of(search.virtual, search.vfs_path)
@@ -615,7 +634,8 @@ async def _find_root(
                                 args,
                                 stat_path,
                                 is_link=root_is_link,
-                                stat=stat)
+                                stat=stat,
+                                follow=link_follow(links))
     if start.missing:
         return None, start.detail
     if not start.walk and not root_is_link:
@@ -1150,7 +1170,8 @@ async def find_walk_generic(
             start = await resolve_start(search,
                                         args,
                                         stat_path,
-                                        is_link=is_link(links, search))
+                                        is_link=is_link(links, search),
+                                        follow=link_follow(links))
             if start.missing:
                 missing.append(missing_start_line(search, start.detail))
                 matched_runs.append([])

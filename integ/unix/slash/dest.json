@@ -59,11 +59,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mv /data/slashx/src.txt /data/slashx/missing/",
+      "command": "mv /data/slashx/src.txt /data/slashx/missing/; mv /data/slashx/src.txt /data/slashx/missing/../m",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "mv: cannot move '/data/slashx/src.txt' to '/data/slashx/missing/': Not a directory\n"
+        "stderr": "mv: cannot move '/data/slashx/src.txt' to '/data/slashx/missing/': Not a directory\nmv: cannot move '/data/slashx/src.txt' to '/data/slashx/missing/../m': No such file or directory\n"
       }
     },
     {
@@ -287,11 +287,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cp /data/slashx/src.txt /data/slashx/missing/",
+      "command": "cp /data/slashx/src.txt /data/slashx/missing/; cp /data/slashx/src.txt /data/slashx/missing/../c",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "cp: cannot create regular file '/data/slashx/missing/': Not a directory\n"
+        "stderr": "cp: cannot create regular file '/data/slashx/missing/': Not a directory\ncp: cannot create regular file '/data/slashx/missing/../c': No such file or directory\n"
       }
     },
     {
@@ -385,11 +385,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "ln -s /data/slashx/src.txt /data/slashx/missing/",
+      "command": "ln -s /data/slashx/src.txt /data/slashx/missing/; ln -s /data/slashx/src.txt /data/slashx/missing/../y; ln -s /data/slashx/src.txt /data/slashx/reg/../y; (cd /data/slashx && ln -s src.txt missing/../y; ln -s src.txt reg/../y)",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "ln: failed to create symbolic link '/data/slashx/missing/': No such file or directory\n"
+        "stderr": "ln: failed to create symbolic link '/data/slashx/missing/': No such file or directory\nln: failed to create symbolic link '/data/slashx/missing/../y': No such file or directory\nln: failed to create symbolic link '/data/slashx/reg/../y': Not a directory\nln: failed to create symbolic link 'missing/../y': No such file or directory\nln: failed to create symbolic link 'reg/../y': Not a directory\n"
       }
     },
     {
@@ -419,11 +419,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "ln /data/slashx/src.txt /data/slashx/missing/",
+      "command": "ln /data/slashx/src.txt /data/slashx/missing/; ln /data/slashx/src.txt /data/slashx/missing/../h; ln /data/slashx/missing/../src.txt /data/slashx/h",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "ln: failed to create hard link '/data/slashx/missing/' => '/data/slashx/src.txt': No such file or directory\n"
+        "stderr": "ln: failed to create hard link '/data/slashx/missing/' => '/data/slashx/src.txt': No such file or directory\nln: failed to create hard link '/data/slashx/missing/../h' => '/data/slashx/src.txt': No such file or directory\nln: failed to access '/data/slashx/missing/../src.txt': No such file or directory\n"
       }
     },
     {
@@ -487,11 +487,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "echo hi > /data/slashx/missing/",
+      "command": "echo hi > /data/slashx/missing/; echo hi > /data/slashx/missing/../r",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "/data/slashx/missing/: Is a directory\n"
+        "stderr": "/data/slashx/missing/: Is a directory\n/data/slashx/missing/../r: No such file or directory\n"
       }
     },
     {
@@ -555,11 +555,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "echo hi | tee /data/slashx/missing/",
+      "command": "echo hi | tee /data/slashx/missing/ /data/slashx/missing/../t",
       "expect": {
         "exit": 1,
         "stdout": "hi\n",
-        "stderr": "tee: /data/slashx/missing/: Is a directory\n"
+        "stderr": "tee: /data/slashx/missing/: Is a directory\ntee: /data/slashx/missing/../t: No such file or directory\n"
       }
     },
     {
@@ -589,11 +589,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "ln -sf /data/slashx/src.txt /data/slashx/reg/",
+      "command": "ln -sf /data/slashx/src.txt /data/slashx/reg/; ln -sb /data/slashx/src.txt /data/slashx/reg/name; ln -s /data/slashx/src.txt /data/slashx/reg/sub/name",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "ln: failed to access '/data/slashx/reg/': Not a directory\n"
+        "stderr": "ln: failed to access '/data/slashx/reg/': Not a directory\nln: failed to access '/data/slashx/reg/name': Not a directory\nln: failed to create symbolic link '/data/slashx/reg/sub/name': Not a directory\n"
       }
     },
     {
@@ -657,11 +657,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mv /data/slashx/dlnk /data/slashx/nodir/name/",
+      "command": "mv /data/slashx/dlnk /data/slashx/nodir/name/; mv /data/slashx/dlnk /data/slashx/nodir/name; mv /data/slashx/dlnk /data/slashx/reg/name",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "mv: cannot move '/data/slashx/dlnk' to '/data/slashx/nodir/name/': No such file or directory\n"
+        "stderr": "mv: cannot move '/data/slashx/dlnk' to '/data/slashx/nodir/name/': No such file or directory\nmv: cannot move '/data/slashx/dlnk' to '/data/slashx/nodir/name': No such file or directory\nmv: cannot stat '/data/slashx/reg/name': Not a directory\n"
       }
     },
     {
@@ -755,7 +755,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "test ! -e /data/slashx/missing && test ! -e /data/slashx/x && test ! -e /data/slashx/reg~ && cat /data/slashx/src.txt /data/slashx/reg /data/slashx/sd/f && readlink /data/slashx/dlnk",
+      "command": "test ! -e /data/slashx/missing && test ! -e /data/slashx/nodir && test ! -e /data/slashx/x && test ! -e /data/slashx/reg~ && test ! -e /data/slashx/y && test ! -e /data/slashx/h && test ! -e /data/slashx/r && test ! -e /data/slashx/t && test ! -e /data/slashx/c && test ! -e /data/slashx/m && cat /data/slashx/src.txt /data/slashx/reg /data/slashx/sd/f && readlink /data/slashx/dlnk",
       "expect": {
         "exit": 0,
         "stdout": "helloyxsd\n",

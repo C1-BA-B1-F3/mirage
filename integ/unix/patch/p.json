@@ -27,14 +27,15 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "patch -p1 /data/poem.diff > /dev/null && cat /data/poem.txt",
+      "command": "( cd /data && patch -p1 -i poem.diff > /dev/null ) && cat /data/poem.txt",
       "expect": {
         "exit": 0,
         "stdout": "roses are red\nviolets are dark\nsugar is sweet\n",
         "stderr": ""
       },
       "flags": [
-        "p"
+        "p",
+        "i"
       ]
     }
   ]

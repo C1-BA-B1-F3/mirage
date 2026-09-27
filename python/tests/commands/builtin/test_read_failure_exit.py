@@ -76,18 +76,18 @@ GNU_READ_EXIT = {
     "zgrep x {p}": (1, 2),
 }
 
-# GNU's wording for a failed read is per-command and unreproducible as a
-# family: `base64: read error: Is a directory`, `sort: read failed: dir:
-# Is a directory`, `rev: fgetwc() failed: Is a directory`, `fmt: read
-# error` with no errno at all, `tac: read error: Invalid argument` with
-# the WRONG errno, `strings: Warning: 'dir' is a directory`, and `gzip:
-# dir is a directory -- ignored`. mirage normalizes all of it to
-# `<cmd>: <path>: Is a directory`, so the message test asserts the house
-# style and only the exit code above is GNU's. Two commands carry GNU's
-# own wording instead: head's `error reading 'dir': Is a directory`, and
-# sort's step names from `sort_die` (`cannot read`, `open failed`, `stat
-# failed`, `read failed`), whose `read failed: dir: Is a directory` still
-# contains the house style.
+# GNU's wording for a failed read is per-command: `base64: read error:
+# Is a directory`, `sort: read failed: dir: Is a directory`, `rev:
+# fgetwc() failed: Is a directory`, `fmt: read error` with no errno at
+# all, `strings: Warning: 'dir' is a directory`, and `gzip: dir is a
+# directory -- ignored`. mirage says the step in GNU's words only where
+# that still names the operand (``FAILURE_WORDING``: head, tail and uniq
+# say `error reading 'dir'`, tac and tsort `dir: read error`, sed `read
+# error on dir`; sort's steps come from `sort_die`, whose `read failed:
+# dir: Is a directory` still holds the house style) and keeps `<cmd>:
+# <path>: Is a directory` for the rest, so the message test asserts that
+# the operand and the errno are named and only the exit code above is
+# GNU's for every line.
 #
 # Two lines print nothing at all on a directory in GNU (`jq .` exits 2
 # silently, `zgrep x` exits 1 silently because gzip's warning is
@@ -132,6 +132,7 @@ async def test_directory_read_says_is_a_directory(template):
     result = await ws.shell(template.format(p="/ram/dir"))
     stderr = (result.stderr or b"").decode()
     assert ("/ram/dir: Is a directory" in stderr
+            or "/ram/dir: read error: Is a directory" in stderr
             or "error reading '/ram/dir': Is a directory" in stderr)
     assert "No such file" not in stderr
 
@@ -145,17 +146,18 @@ async def test_directory_read_says_is_a_directory(template):
 # (command line, exit, stdout, stderr)
 GNU_SED_MULTI = [
     ("sed -n p /ram/nope /ram/ok.txt", 2, "a\nb\n",
-     "sed: /ram/nope: No such file or directory\n"),
+     "sed: can't read /ram/nope: No such file or directory\n"),
     ("sed -n p /ram/dir /ram/ok.txt", 4, "",
-     "sed: /ram/dir: Is a directory\n"),
+     "sed: read error on /ram/dir: Is a directory\n"),
     ("sed -n p /ram/ok.txt /ram/dir /ram/ok2.txt", 4, "a\nb\n",
-     "sed: /ram/dir: Is a directory\n"),
+     "sed: read error on /ram/dir: Is a directory\n"),
     ("sed -n p /ram/ok.txt /ram/nope /ram/ok2.txt", 2, "a\nb\nc\nd\n",
-     "sed: /ram/nope: No such file or directory\n"),
-    ("sed -n p /ram/dir /ram/dir", 4, "", "sed: /ram/dir: Is a directory\n"),
+     "sed: can't read /ram/nope: No such file or directory\n"),
+    ("sed -n p /ram/dir /ram/dir", 4, "",
+     "sed: read error on /ram/dir: Is a directory\n"),
     ("sed -n p /ram/nope /ram/dir", 4, "",
-     "sed: /ram/nope: No such file or directory\n"
-     "sed: /ram/dir: Is a directory\n"),
+     "sed: can't read /ram/nope: No such file or directory\n"
+     "sed: read error on /ram/dir: Is a directory\n"),
     ("sort /ram/ok.txt /ram/dir /ram/ok2.txt", 2, "",
      "sort: read failed: /ram/dir: Is a directory\n"),
     ("cat /ram/ok.txt /ram/dir /ram/ok2.txt", 1, "a\nb\nc\nd\n",

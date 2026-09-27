@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from mirage.types import (MOUNT_MODE_RANK, EntryGate, MountMode, PathSpec,
-                          weaker_mode)
+                          WalkProbe, weaker_mode)
 from mirage.utils.errors import ReadOnlyError
 from mirage.utils.hidden import (anchor_depth, hides_intersect, is_glob,
                                  path_visible, show_head, shown_mode)
@@ -380,6 +380,38 @@ def get_mount_gate() -> tuple[str, MountMode] | None:
     mount's command (a generic invoked directly in a test, or the
     scratch tier)."""
     return _current_mount_gate.get()
+
+
+_current_walk_probe: ContextVar[WalkProbe | None] = ContextVar(
+    "mirage_current_walk_probe",
+    default=None,
+)
+
+
+def set_walk_probe(probe: WalkProbe) -> Token[Any]:
+    """Bind what a command's dot walks read, for the run of one command.
+
+    Set by ``Mount.execute_cmd`` around the handler, beside the mount
+    gate: the command tier reaches its backend without passing the
+    dispatcher's door, so the walk guard on its I/O proves an operand's
+    ``.`` and ``..`` with the door's stat and link follow through this
+    binding.
+
+    Args:
+        probe (WalkProbe): the door's stat and the namespace's follow.
+    """
+    return _current_walk_probe.set(probe)
+
+
+def reset_walk_probe(token: Token[Any]) -> None:
+    """Restore the previous walk-probe binding."""
+    _current_walk_probe.reset(token)
+
+
+def get_walk_probe() -> WalkProbe | None:
+    """The walk probe bound to the running command, None outside a
+    mount's command (a generic invoked directly in a test)."""
+    return _current_walk_probe.get()
 
 
 def path_rules_active() -> bool:

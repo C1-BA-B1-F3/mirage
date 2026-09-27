@@ -372,11 +372,11 @@ async def expand(
 ) -> tuple[ByteSource | None, IOResult]:
     stops = tabs if tabs is not None else TabStops()
     if paths:
-        all_text: list[str] = []
-        for p in paths:
-            data = (await read_bytes(p)).decode(errors="replace")
-            all_text.append(apply_expand(data, stops, initial_only))
-        return "".join(all_text).encode(), IOResult()
+        # GNU reads its operands as one stream, so a line a file leaves
+        # unfinished continues into the next one, column and all.
+        texts = [(await read_bytes(p)).decode(errors="replace") for p in paths]
+        return apply_expand("".join(texts), stops,
+                            initial_only).encode(), IOResult()
 
     raw = await read_stdin_async(stdin)
     if raw is None:

@@ -791,6 +791,22 @@ export type StatFn<Args extends unknown[] = [path: PathSpec, index?: IndexCacheS
   ...args: Args
 ) => Promise<FileStat>
 
+/**
+ * What proving a running command's `.` and `..` reads.
+ *
+ * The command tier reaches its backend past the dispatcher's door, so
+ * `Mount.executeCmd` binds the door's facts for it: `stat` is the door's
+ * stat (throwing when nothing is there) and `follow` the namespace's link
+ * resolution, null while it holds none. The kernel walk (`followPaths`)
+ * rewrites an operand to its link's target before the handler runs;
+ * `follow` is how that operand is still known for the one its dotted
+ * spelling names. Mirrors Python's WalkProbe.
+ */
+export interface WalkProbe {
+  readonly stat: StatFn
+  readonly follow: ((path: string) => string) | null
+}
+
 export interface NativeCopy {
   copy: CopyFn
   find: FindFn
@@ -833,6 +849,7 @@ export interface PathSpecInit {
   pattern?: string | null
   resolved?: boolean
   rawPath?: string
+  dotted?: string | null
 }
 
 export class PathSpec {
@@ -844,6 +861,12 @@ export class PathSpec {
   // The word's spelling: as typed for relative words, the absolute path
   // for everything else (defaults to `virtual`).
   readonly rawPath: string
+  // The typed spelling with its `.` and `..` kept, absolute, when a named
+  // component precedes one (`dottedSpelling`); null otherwise. `virtual`
+  // has simplified them away, so this is what the walk that proves each
+  // such component a directory reads. It says how the path was reached,
+  // not which path it is. Mirrors Python's PathSpec.dotted.
+  readonly dotted: string | null
 
   constructor(init: PathSpecInit) {
     this.virtual = init.virtual
@@ -852,6 +875,7 @@ export class PathSpec {
     this.pattern = init.pattern ?? null
     this.resolved = init.resolved ?? true
     this.rawPath = init.rawPath ?? init.virtual
+    this.dotted = init.dotted ?? null
     Object.freeze(this)
   }
 

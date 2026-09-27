@@ -87,6 +87,7 @@ async def test_dev_stdin_stays_a_path_so_no_piece_lands_in_dev():
     r = await ws.shell("cd /data && csplit /dev/stdin 2", stdin=b"a\nb\nc\n")
     assert r.exit_code == 1
     assert await r.materialize_stderr() == (
-        b"csplit: /dev/stdin: No such file or directory\n")
+        b"csplit: cannot open '/dev/stdin' for reading: "
+        b"No such file or directory\n")
     listing = await ws.shell("ls /dev")
     assert b"xx00" not in (await listing.materialize_stdout() or b"")

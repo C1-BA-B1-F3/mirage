@@ -129,10 +129,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "rev /data/b.txt",
+      "command": "rev /data/b.txt; rev /data/no_nl.txt /data/one_byte.txt /data/b.txt",
       "expect": {
         "exit": 0,
-        "stdout": "1\n2\n3\n",
+        "stdout": "1\n2\n3\nenilwen gniliart onx1\n2\n3\n",
         "stderr": ""
       }
     },

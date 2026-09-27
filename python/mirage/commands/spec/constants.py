@@ -212,6 +212,7 @@ USAGE_EXIT = {
     "awk": 2,
     "jq": 2,
     "curl": 2,
+    "patch": 2,
     "tar": 64,
     "python": 2,
     "python3": 2,
@@ -285,7 +286,7 @@ OLD_OPTION_EXIT = 2
 
 # Commands whose `Try '--help'` hint line is prefixed with the command
 # name (GNU diffutils style: `diff: Try 'diff --help' ...`).
-USAGE_HINT_PREFIX = frozenset({"diff", "cmp"})
+USAGE_HINT_PREFIX = frozenset({"diff", "cmp", "patch"})
 
 
 def flag_kwarg_name(flag: str) -> str:

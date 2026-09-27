@@ -252,7 +252,12 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
       const guarded = withAbortGuard(
         withDirGuard(
           withPolicyGuard(
-            finish(withPathGuards(stampNamespace(raw, opts.ns?.childMounts, opts.ns?.links))),
+            finish(
+              withPathGuards(
+                stampNamespace(raw, opts.ns?.childMounts, opts.ns?.links),
+                opts.mountPrefix,
+              ),
+            ),
             opts.mountPrefix,
           ),
         ),

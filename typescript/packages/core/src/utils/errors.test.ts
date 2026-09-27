@@ -31,6 +31,7 @@ import {
   noMount,
   listingError,
   readdirError,
+  revoiceFsErrorLine,
 } from './errors.ts'
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
@@ -76,23 +77,61 @@ describe('formatFsError', () => {
 })
 
 describe('fsErrorLine — commands that name the failed open', () => {
-  it.each(['head', 'tail'])('%s reports a missing operand as a failed open', (cmd) => {
-    expect(fsErrorLine(cmd, '/data/nope.txt', enoent('/data/nope.txt'))).toBe(
-      `${cmd}: cannot open '/data/nope.txt' for reading: No such file or directory\n`,
-    )
+  const ENOENT = 'No such file or directory'
+
+  it.each([
+    ['head', `head: cannot open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['tail', `tail: cannot open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['fmt', `fmt: cannot open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['split', `split: cannot open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['csplit', `csplit: cannot open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['tac', `tac: failed to open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['truncate', `truncate: cannot open '/data/nope.txt' for writing: ${ENOENT}\n`],
+    ['stat', `stat: cannot statx '/data/nope.txt': ${ENOENT}\n`],
+    ['sed', `sed: can't read /data/nope.txt: ${ENOENT}\n`],
+    ['uniq', `uniq: /data/nope.txt: ${ENOENT}\n`],
+  ])('%s reports a missing operand as a failed open', (cmd, line) => {
+    expect(fsErrorLine(cmd, '/data/nope.txt', enoent('/data/nope.txt'))).toBe(line)
   })
 
-  it.each(['head', 'tail'])('%s reports a directory as a failed read', (cmd) => {
-    expect(fsErrorLine(cmd, '/data/sub', eisdir('/data/sub'))).toBe(
-      `${cmd}: error reading '/data/sub': Is a directory\n`,
-    )
+  // GNU's own fmt and base64 lines (`fmt: read error`, `base64: read error:
+  // Is a directory`) name no operand, so those keep the plain one.
+  it.each([
+    ['head', "head: error reading '/data/sub': Is a directory\n"],
+    ['tail', "tail: error reading '/data/sub': Is a directory\n"],
+    ['uniq', "uniq: error reading '/data/sub': Is a directory\n"],
+    ['tac', 'tac: /data/sub: read error: Is a directory\n'],
+    ['tsort', 'tsort: /data/sub: read error: Is a directory\n'],
+    ['sed', 'sed: read error on /data/sub: Is a directory\n'],
+    ['truncate', "truncate: cannot open '/data/sub' for writing: Is a directory\n"],
+    ['fmt', 'fmt: /data/sub: Is a directory\n'],
+    ['base64', 'base64: /data/sub: Is a directory\n'],
+  ])('%s reports a directory as a failed read', (cmd, line) => {
+    expect(fsErrorLine(cmd, '/data/sub', eisdir('/data/sub'))).toBe(line)
   })
 
-  it('quotes the operand as typed', () => {
+  it.each([
+    ['head', `head: cannot open "it's.txt" for reading: ${ENOENT}\n`],
+    ['stat', `stat: cannot statx "it's.txt": ${ENOENT}\n`],
+    ['sed', `sed: can't read it's.txt: ${ENOENT}\n`],
+  ])('%s quotes the operand as typed', (cmd, line) => {
     const spec = { virtual: "/data/it's.txt", rawPath: "it's.txt" }
-    expect(fsErrorLine('head', spec, enoent(spec))).toBe(
-      'head: cannot open "it\'s.txt" for reading: No such file or directory\n',
-    )
+    expect(fsErrorLine(cmd, spec, enoent(spec))).toBe(line)
+  })
+
+  // A line that is cat's own for the operand is said again from its
+  // strerror; one about another path only has its prefix swapped.
+  it.each([
+    [
+      'cat: /b/nope: No such file or directory',
+      "sed: can't read /b/nope: No such file or directory",
+    ],
+    ["cat: '/b/a b': Is a directory", 'sed: read error on /b/a b: Is a directory'],
+    ['cat: /b/other: No such file or directory', 'sed: /b/other: No such file or directory'],
+    ['unrelated', 'unrelated'],
+  ])('revoices %j in the real command voice', (line, said) => {
+    const operand = line.includes('a b') ? '/b/a b' : '/b/nope'
+    expect(revoiceFsErrorLine(line, 'cat', 'sed', operand)).toBe(said)
   })
 
   it('leaves standard input bare', () => {

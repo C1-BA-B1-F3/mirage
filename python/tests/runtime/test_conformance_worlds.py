@@ -307,14 +307,18 @@ async def test_door_stats_structure_only_directory():
 async def test_link_ancestors_synthesize_on_every_surface():
     """A link below an absent directory chain is reachable from above.
 
-    ``ln`` permits ``/ghost/deep/lnk`` with no backend serving
-    ``/ghost``; its ancestors synthesize exactly as nested mount
-    prefixes do, so ``ls /`` shows the way in and a guest walk from
-    the root reaches the link.
+    ``ln`` refuses ``/ghost/deep/lnk`` with no backend serving
+    ``/ghost`` (symlink(2)'s ENOENT), but a node table restored from an
+    older snapshot can still hold one; its ancestors synthesize exactly
+    as nested mount prefixes do, so ``ls /`` shows the way in and a
+    guest walk from the root reaches the link.
     """
     ws = structure_world("monty")
     try:
-        assert (await _sh(ws, "ln -s /base/a.txt /ghost/deep/lnk"))[0] == 0
+        code, _, err = await _sh(ws, "ln -s /base/a.txt /ghost/deep/lnk")
+        assert code == 1
+        assert "No such file or directory" in err
+        await ws.namespace.symlink("/ghost/deep/lnk", "/base/a.txt", 0.0)
         st = await ws.vfs.stat("/ghost")
         assert st.type.value == "directory"
         code, out, _ = await _sh(ws, "ls /")

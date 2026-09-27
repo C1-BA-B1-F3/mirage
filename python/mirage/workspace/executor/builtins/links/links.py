@@ -17,14 +17,14 @@ import posixpath
 from functools import partial
 
 from mirage.commands.builtin.generic.cp import dest_kind
+from mirage.commands.builtin.utils.paths import dispatch_stat
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.utils.path import CycleError
-from mirage.workspace.executor.builtins.links.probe import (dispatch_stat,
-                                                            stat_or_none)
+from mirage.workspace.executor.builtins.links.probe import stat_or_none
 from mirage.workspace.executor.builtins.shared import fail, ok, split_flags
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
@@ -42,7 +42,10 @@ def follow_parent(namespace: Namespace, virtual: str) -> str:
     is exempt for an lstat-style command: ``stat dlink/f2`` reports
     ``f2`` because ``dlink`` was resolved on the way to it, while
     ``stat dlink`` reports the link. A no-follow command therefore still
-    needs its operand's directory prefix resolved.
+    needs its operand's directory prefix resolved. The walk is the
+    namespace's (``Namespace.follow_parent``, which the op door runs for
+    every surface); the operand comes back without a trailing slash,
+    which the slash-keeping commands read off ``raw_path`` instead.
 
     Args:
         namespace (Namespace): addressing authority holding the links.
@@ -51,11 +54,8 @@ def follow_parent(namespace: Namespace, virtual: str) -> str:
     Raises:
         CycleError: when a prefix loops past the hop limit (ELOOP).
     """
-    parent, _, name = virtual.rstrip("/").rpartition("/")
-    if not name:
-        return virtual
-    resolved = namespace.follow(parent or "/")
-    return resolved.rstrip("/") + "/" + name
+    trimmed = virtual.rstrip("/")
+    return namespace.follow_parent(trimmed) if trimmed else virtual
 
 
 def follow_paths(
@@ -371,6 +371,18 @@ async def prepare_mv(
             return items, None, None, fail(
                 "mv", f"mv: cannot move '{src.raw_path}' to "
                 f"'{dst.raw_path}': {fs_strerror(exc)}\n")
+        except FileNotFoundError as exc:
+            # The landing's parent is absent, which GNU meets at the
+            # rename, as the generic mv words it for a regular file.
+            return items, None, None, fail(
+                "mv", f"mv: cannot move '{src.raw_path}' to "
+                f"'{dst.raw_path}': {fs_strerror(exc)}\n")
+        except NotADirectoryError as exc:
+            # A plain file in the landing's chain, which GNU meets at the
+            # destination's stat, before any rename.
+            return items, None, None, fail(
+                "mv", f"mv: cannot stat '{dst.raw_path}': "
+                f"{fs_strerror(exc)}\n")
         return items, None, None, ok("mv")
 
     # Unconditional: a directory source carries a whole subtree of node

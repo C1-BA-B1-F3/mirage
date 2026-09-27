@@ -109,6 +109,7 @@ function fmtText(
   tagged: boolean,
   crown: boolean,
 ): string {
+  if (text === '') return ''
   const targetWidth = goal === null ? width : Math.min(width, goal)
   const paragraphs = text.split('\n\n')
   const formatted: string[] = []
@@ -142,12 +143,13 @@ export async function fmtGeneric(
     const [ok, err] = await readOperands(paths, stream, 'fmt')
     const io = operandsIo(err)
     if (ok.length === 0 && err !== '') return [null, io]
-    const parts: string[] = []
-    for (const o of ok) {
-      parts.push(DEC.decode(o.data))
-    }
+    // GNU formats each file on its own: a paragraph never runs from one file
+    // into the next, and a file's unfinished last line is ended before the
+    // next file starts. Mirrors Python's fmt.
     const result: ByteSource = ENC.encode(
-      fmtText(parts.join(''), width, goal, prefix, splitOnly, tagged, crown),
+      ok
+        .map((o) => fmtText(DEC.decode(o.data), width, goal, prefix, splitOnly, tagged, crown))
+        .join(''),
     )
     return [result, io]
   }

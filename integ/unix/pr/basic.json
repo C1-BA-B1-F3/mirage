@@ -507,7 +507,7 @@
       "expect": {
         "exit": 1,
         "stdout": "2\n1\n",
-        "stderr": "tac: /data/pr/missing.txt: No such file or directory\n"
+        "stderr": "tac: failed to open '/data/pr/missing.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -711,7 +711,7 @@
       "expect": {
         "exit": 1,
         "stdout": "1 2\n",
-        "stderr": "fmt: /data/pr/missing.txt: No such file or directory\n"
+        "stderr": "fmt: cannot open '/data/pr/missing.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -779,7 +779,7 @@
       "expect": {
         "exit": 2,
         "stdout": "X\n2\n",
-        "stderr": "sed: /data/pr/missing.txt: No such file or directory\n"
+        "stderr": "sed: can't read /data/pr/missing.txt: No such file or directory\n"
       }
     },
     {
@@ -1017,7 +1017,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "tac: /data/pr: Is a directory\n"
+        "stderr": "tac: /data/pr: read error: Is a directory\n"
       }
     },
     {

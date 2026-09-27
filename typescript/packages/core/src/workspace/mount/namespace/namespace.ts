@@ -394,6 +394,23 @@ export class Namespace {
     return resolveSymlinks(path, targets)
   }
 
+  // Return `path` with every link above its final name resolved: the walk
+  // the kernel gives a path before the call sees it, where the last
+  // component is the op's own to follow or not (stat against lstat).
+  // Identity when no link sits above the name, a trailing slash included.
+  // Throws CycleError on ELOOP. Mirrors Python's Namespace.follow_parent.
+  followParent(path: string): string {
+    const trimmed = rstripSlash(path)
+    const cut = trimmed.lastIndexOf('/')
+    const name = trimmed.slice(cut + 1)
+    if (cut < 0 || name === '') return path
+    const parent = trimmed.slice(0, cut)
+    const above = parent === '' ? '/' : parent
+    const resolved = this.follow(above)
+    if (resolved === above) return path
+    return rstripSlash(resolved) + path.slice(parent.length)
+  }
+
   // lstat a path: the link's own stat, or null when not a link. A
   // symlink has no backend inode, so the node table is the only
   // authority for it.

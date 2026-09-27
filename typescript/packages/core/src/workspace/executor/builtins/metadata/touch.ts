@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { DEFAULT_UMASK } from '../../../../context/session_context.ts'
+import { dispatchStat, dotRefusal } from '../../../../commands/builtin/utils/paths.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { FileStat, SetAttrFields } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
@@ -87,6 +88,11 @@ export async function handleTouch(
     }
     if (flags.has('h') && namespace.isLink(target.virtual)) {
       await setattrLink(dispatch, target, { mtime: stamp })
+      continue
+    }
+    const unwalked = await dotRefusal(dispatchStat(dispatch), target, (v) => namespace.follow(v))
+    if (unwalked !== null) {
+      errors.push(`touch: cannot touch '${target.rawPath}': ${String(fsStrerror(unwalked))}\n`)
       continue
     }
     let virtual: string

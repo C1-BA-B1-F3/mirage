@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { PathSpec } from '../../../../types.ts'
 import { CycleError, norm } from '../../../../utils/path.ts'
 import { PolicyDenied } from '../../../../policy/index.ts'
@@ -50,10 +51,18 @@ export async function handleReadlink(
     return fail('readlink', 'readlink: missing operand\n')
   }
   const canonical = flags.has('f') || flags.has('e') || flags.has('m')
+  // -m alone canonicalizes without asking for anything to be there, so it
+  // is the one mode whose path is never walked.
+  const walks = !canonical || flags.has('e') || flags.has('f')
+  const walker = dispatchStat(dispatch)
   const lines: string[] = []
   let exitCode = 0
   for (const op of operands) {
     const absOp = absPath(op, session.cwd)
+    if (walks && (await dotRefusal(walker, typedSpec(op, session.cwd))) !== null) {
+      exitCode = 1
+      continue
+    }
     if (canonical) {
       // -f/-e/-m canonicalize: resolve every symlink (including a trailing
       // one) and normalize the path, GNU realpath-style. A link operand

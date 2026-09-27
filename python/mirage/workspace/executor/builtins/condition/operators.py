@@ -12,6 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from functools import partial
+
+from mirage.commands.builtin.utils.paths import (dispatch_stat, dot_refusal,
+                                                 typed_spec)
 from mirage.io.types import materialize
 from mirage.shell.errors import ArithError, ExitSignal
 from mirage.types import FileStat, FileType, PathSpec
@@ -54,6 +58,12 @@ async def path_kind(ctx: CondContext,
         ctx (CondContext): evaluation context.
         val (str | PathSpec): operand as typed or classified.
     """
+    walk = typed_spec(val, ctx.session.cwd)
+    if await dot_refusal(partial(dispatch_stat, ctx.dispatch),
+                         walk) is not None:
+        # A path whose `.` and `..` do not resolve names nothing, which
+        # is what every file test reads as false.
+        return None, None
     try:
         scope = operand_scope(ctx, val)
     except CycleError:

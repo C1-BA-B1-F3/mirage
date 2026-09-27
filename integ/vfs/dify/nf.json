@@ -36,7 +36,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /knowledge/__nf_missing__.txt: No such file or directory\n"
+        "stderr": "stat: cannot statx '/knowledge/__nf_missing__.txt': No such file or directory\n"
       }
     }
   ]

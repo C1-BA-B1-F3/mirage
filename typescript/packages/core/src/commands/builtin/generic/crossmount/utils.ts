@@ -123,6 +123,7 @@ export function flatten(scopes: PathSpec[]): PathSpec[] {
         resolved: s.resolved,
         vfsPath: mountKey(s.virtual, ''),
         rawPath: s.rawPath,
+        dotted: s.dotted,
       }),
   )
 }

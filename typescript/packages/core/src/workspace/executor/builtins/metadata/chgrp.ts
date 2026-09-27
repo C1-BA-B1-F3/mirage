@@ -12,10 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { FileStat } from '../../../../types.ts'
 import { PathSpec } from '../../../../types.ts'
-import { fsStrerror, isEnoent, isEnotdir } from '../../../../utils/errors.ts'
-import { CycleError } from '../../../../utils/path.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import { expandOperands, fail, finish, splitValueFlags } from '../shared.ts'
@@ -23,6 +20,7 @@ import {
   isReadOnlyError,
   permissionError,
   parseGroup,
+  resolveOperand,
   setattrLink,
   setattrVia,
   walkOwned,
@@ -57,29 +55,9 @@ export async function handleChgrp(
       await setattrLink(dispatch, target, { gid })
       continue
     }
-    let virtual: string
-    try {
-      virtual = namespace.follow(target.virtual)
-    } catch (err) {
-      if (err instanceof CycleError) {
-        errors.push(`chgrp: cannot access '${target.rawPath}': Too many levels of symbolic links\n`)
-        continue
-      }
-      throw err
-    }
-    const resolved = PathSpec.fromStrPath(virtual)
-    let stat: FileStat
-    try {
-      const [result] = await dispatch('stat', resolved)
-      stat = result as FileStat
-    } catch (err) {
-      const strerror = isEnoent(err) || isEnotdir(err) ? fsStrerror(err) : null
-      if (strerror !== null) {
-        errors.push(`chgrp: cannot access '${target.rawPath}': ${strerror}\n`)
-        continue
-      }
-      throw err
-    }
+    const found = await resolveOperand(namespace, dispatch, 'chgrp', target, errors)
+    if (found === null) continue
+    const [resolved, stat] = found
     const { paths, links } = recursive
       ? await walkOwned(namespace, dispatch, resolved, stat)
       : { paths: [resolved], links: [] as string[] }

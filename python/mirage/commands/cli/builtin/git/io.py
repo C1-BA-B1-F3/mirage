@@ -105,6 +105,9 @@ async def restore_entry(dispatch: DispatchFn,
     linked = links is not None and links.stat_at(path) is not None
     if mode == SYMLINK:
         await remove_file(dispatch, path)
+        # symlink(2) needs the directory above the entry, as the write
+        # below does, so a link alone in a new directory gets one too.
+        await ensure_dir(dispatch, posixpath.dirname(path))
         await dispatch("symlink",
                        PathSpec.from_str_path(path),
                        target=blob.decode("utf-8", errors="replace"))

@@ -79,6 +79,22 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "cache_evict_repeated_mount_tee",
+      "seq": 941005,
+      "targets": [
+        "s3",
+        "s3-prefix",
+        "gridfs",
+        "gridfs-prefix"
+      ],
+      "command": "printf x > {mount}{mount}/old.txt; ls {mount}{mount}; printf y | tee {mount}{mount}/a/b.txt > /dev/null; ls {mount}{mount}; rm -rf {mount}{mount}",
+      "expect": {
+        "exit": 0,
+        "stdout": "old.txt\na\nold.txt\n",
+        "stderr": ""
+      }
     }
   ]
 }

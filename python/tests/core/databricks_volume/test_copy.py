@@ -26,8 +26,12 @@ class _FakeManager:
 
     def __init__(self) -> None:
         self.writes: list[str] = []
+        self.ancestors: list[str] = []
         self.unlinks: list[str] = []
         self.subtrees: list[str] = []
+
+    async def invalidate_ancestors(self, path: PathSpec) -> None:
+        self.ancestors.append(path.virtual)
 
     async def invalidate_after_write(self, path: PathSpec) -> None:
         self.writes.append(path.mount_path)
@@ -188,4 +192,5 @@ async def test_copy_recursive_invalidates_destination_tree(
     # The destination's own listing must go (a merge target can pre-exist)
     # along with every ancestor listing create_directory materialized.
     assert manager.unlinks == ["/deep/dst"]
-    assert manager.writes == ["/deep"]
+    assert manager.writes == []
+    assert manager.ancestors == ["/dbx/deep/dst"]

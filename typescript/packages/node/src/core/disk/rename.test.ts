@@ -36,6 +36,10 @@ class FakeManager {
     return Promise.resolve()
   }
 
+  invalidateAncestors(_path: PathSpec): Promise<void> {
+    return Promise.resolve()
+  }
+
   invalidateSubtree(path: string | PathSpec): Promise<void> {
     this.subtrees.push(typeof path === 'string' ? path : path.mountPath)
     return Promise.resolve()

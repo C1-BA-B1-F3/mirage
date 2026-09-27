@@ -26,6 +26,9 @@ from mirage.types import PathSpec
 
 class _FakeManager:
 
+    async def invalidate_ancestors(self, path: PathSpec) -> None:
+        pass
+
     async def invalidate_after_write(self, path: PathSpec) -> None:
         return None
 

@@ -46,7 +46,8 @@ def test_copy_duplicates_and_invalidates_destination_ancestors(accessor):
     manager = _managed(
         _copy_for(store)(accessor, spec("/src.txt"), spec("/a/b/dst.txt")))
     assert store.objects == {"src.txt": b"hi", "a/b/dst.txt": b"hi"}
-    assert manager.writes == ["/a/b/dst.txt", "/a/b", "/a"]
+    assert manager.writes == ["/a/b/dst.txt"]
+    assert manager.ancestors == ["/mnt/a/b/dst.txt"]
 
 
 def test_copy_missing_source_is_enoent(accessor):

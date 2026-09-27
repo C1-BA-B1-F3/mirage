@@ -14,7 +14,8 @@
 
 import type { Operator } from 'opendal'
 import { onTestFinished, vi } from 'vitest'
-import type { HfAccessor } from '../../accessor/hf.ts'
+import { lstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
+import type { HfBucketsAccessor } from '../../accessor/hf.ts'
 import { FakeHub, serveHub } from '../hf_hub/_test_util.ts'
 
 // Nothing listens here, so an accessor built without a FakeHub fails loudly
@@ -185,10 +186,10 @@ export function fakeHfOperator(initial: Record<string, string | Buffer> = {}): F
     createDir: (_key) => Promise.resolve(),
   }
   function stem(): string {
-    return fake.root.replace(/^\/+|\/+$/g, '')
+    return stripSlash(fake.root)
   }
   function full(key: string): string {
-    const bare = key.replace(/^\/+/, '')
+    const bare = lstripSlash(key)
     return stem() === '' ? bare : `${stem()}/${bare}`
   }
   function rel(absKey: string): string {
@@ -227,7 +228,7 @@ export function fakeHfOperator(initial: Record<string, string | Buffer> = {}): F
  * closed when the calling test finishes.
  */
 export async function installFakeOperator(
-  accessor: HfAccessor,
+  accessor: HfBucketsAccessor,
   fake: FakeHfOperator,
 ): Promise<FakeHub> {
   fake.root = accessor.operatorOptions().root ?? ''

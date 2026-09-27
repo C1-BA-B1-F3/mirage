@@ -60,6 +60,26 @@ class HfHubError(Exception):
         self.error_code = error_code
 
 
+def stall_timeout(seconds: float) -> aiohttp.ClientTimeout:
+    """How long a mount's Hub request may go without progress.
+
+    The clock runs while connecting and waiting for the answer, and
+    restarts on every chunk of the body, so a large download that keeps
+    flowing is never cut off; a total bound would fail any file that takes
+    longer than it to arrive. It is what huggingface_hub's own timeout
+    means, and the TypeScript twin is ``stallFetch``.
+
+    Args:
+        seconds (float): the mount's configured timeout.
+
+    Returns:
+        aiohttp.ClientTimeout: the bound, for the accessor's pool.
+    """
+    return aiohttp.ClientTimeout(total=None,
+                                 sock_connect=seconds,
+                                 sock_read=seconds)
+
+
 def hub_headers(token: SecretStr | None) -> dict[str, str]:
     """Auth and accept headers for one Hub call.
 
@@ -159,7 +179,22 @@ def resolve_url(endpoint: str, repo_type: str, repo_id: str, revision: str,
     if segment:
         base += f"{segment}/"
     return (f"{base}{repo_id}/resolve/{rev_segment(revision)}/"
-            f"{quote(path.lstrip('/'))}")
+            f"{quote_path(path)}")
+
+
+def quote_path(path: str) -> str:
+    """A repo-relative path percent-encoded per segment, no leading slash.
+
+    A Hub repo or bucket may hold a file whose name carries a space or a
+    "#", and pasting it raw truncates the URL at the fragment.
+
+    Args:
+        path (str): the repo-relative path.
+
+    Returns:
+        str: the encoded path.
+    """
+    return quote(path.lstrip("/"))
 
 
 def _error_of(resp: aiohttp.ClientResponse, text: str) -> Exception:

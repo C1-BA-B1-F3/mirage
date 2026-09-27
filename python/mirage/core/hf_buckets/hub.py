@@ -12,10 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from urllib.parse import quote
-
 from mirage.accessor.hf_buckets import HfBucketsAccessor
-from mirage.core.hf_hub.client import HfHubError, etag_value, hub_post
+from mirage.core.hf_hub.client import (HfHubError, etag_value, hub_post,
+                                       quote_path)
 from mirage.types import JsonValue
 
 
@@ -52,7 +51,7 @@ def resolve_url(accessor: HfBucketsAccessor, rel: str) -> str:
         str: the absolute URL, which answers a redirect to the CDN.
     """
     return (f"{_base(accessor)}/buckets/{accessor.config.bucket}/resolve/"
-            f"{quote(accessor.bucket_path(rel))}")
+            f"{quote_path(accessor.bucket_path(rel))}")
 
 
 async def fetch_row(accessor: HfBucketsAccessor,

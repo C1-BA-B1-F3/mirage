@@ -15,6 +15,7 @@
 import pytest
 
 from mirage.accessor.hf_buckets import HfBucketsAccessor, HfBucketsConfig
+from mirage.core.hf_hub.client import stall_timeout
 from mirage.vfs.secrets import reveal_secret
 
 
@@ -93,3 +94,10 @@ def test_bucket_path_applies_the_key_prefix_once():
         key_prefix="a//b")).bucket_path("/x.txt") == "a/b/x.txt"
     assert HfBucketsAccessor(HfBucketsConfig(
         bucket="org/b", key_prefix="/")).bucket_path("/x.txt") == "x.txt"
+
+
+def test_the_pool_waits_the_configured_timeout_without_progress():
+    assert HfBucketsAccessor(
+        HfBucketsConfig(bucket="o/b")).pool._timeout == stall_timeout(30)
+    assert HfBucketsAccessor(HfBucketsConfig(
+        bucket="o/b", timeout=5)).pool._timeout == stall_timeout(5)

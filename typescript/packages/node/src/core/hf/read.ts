@@ -17,6 +17,7 @@ import { record, startOp } from '@struktoai/mirage-core/observe/context'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { eisdir, enoent } from '@struktoai/mirage-core/utils/errors'
 import type { ByteWindow } from '@struktoai/mirage-core/utils/ranges'
+import { stripSlash } from '@struktoai/mirage-core/utils/slash'
 import type { HfBucketsAccessor } from '../../accessor/hf.ts'
 import { HfHubError, hubBytesTagged } from '../hf_hub/client.ts'
 import { REFUSED_STATUSES } from '../hf_hub/constants.ts'
@@ -57,7 +58,7 @@ export async function read(
   options: HfReadOptions = {},
 ): Promise<Uint8Array> {
   const rel = path.mountPath
-  if (rel.replace(/^\/+|\/+$/g, '') === '') throw eisdir(path)
+  if (stripSlash(rel) === '') throw eisdir(path)
   // `size: null` is the window's own spelling for "the rest of the file",
   // which is not the same as asking for no window at all.
   const hasWindow = (options.offset ?? 0) > 0 || options.size !== undefined
@@ -73,7 +74,7 @@ export async function read(
   try {
     ;[data, etag] = await refusalsDenied(
       path,
-      () => hubBytesTagged(accessor.token, resolveUrl(accessor, rel), window),
+      () => hubBytesTagged(accessor.token, resolveUrl(accessor, rel), window, accessor.timeoutMs),
       REFUSED_STATUSES,
     )
   } catch (err) {

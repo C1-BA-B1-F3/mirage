@@ -113,12 +113,22 @@ async def test_recursive_warmup_preserves_modification_times(make_acc, warmup):
         cached = await index.get(path.virtual)
         assert cached.entry is not None
         assert cached.entry.remote_time == when.isoformat()
-        # A warm stat answers from the listing's row; a cold one asks
-        # paths-info, which is the token's source and not an mtime's, so
-        # it reports none, as stat does against the live Hub today.
         assert (await stat(acc, path,
                            index=index)).modified == when.isoformat()
-        assert (await stat(acc, path)).modified is None
+
+
+@pytest.mark.asyncio
+async def test_a_warm_stat_and_a_cold_one_agree_on_the_live_listing(make_acc):
+    # Both bindings list a bucket file with no mtime, though the Hub's tree
+    # row carries uploadedAt (probed 2026-09-27), so a cold stat reports
+    # none either: stamping paths-info's uploadedAt would make the answer
+    # depend on whether a listing ran first.
+    acc = make_acc({"a.txt": b"x"})
+    index = RAMIndexCacheStore()
+    await find(acc, PathSpec.from_str_path("/"), index=index)
+    path = PathSpec.from_str_path("/a.txt")
+    assert (await stat(acc, path, index=index)).modified is None
+    assert (await stat(acc, path)).modified is None
 
 
 @pytest.mark.asyncio

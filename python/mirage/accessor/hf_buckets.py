@@ -12,10 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import opendal
 from pydantic import BaseModel, ConfigDict, SecretStr, field_validator
 
-from mirage.accessor._hf import _HfAccessor
+from mirage.accessor.base import SessionAccessor
+from mirage.core.hf_hub.client import stall_timeout
 from mirage.utils import key_prefix as kp
+from mirage.vfs.secrets import reveal_secret
 
 
 class HfBucketsConfig(BaseModel):
@@ -50,7 +53,7 @@ class HfBucketsConfig(BaseModel):
         return self.bucket.split("/", 1)[1]
 
 
-class HfBucketsAccessor(_HfAccessor):
+class HfBucketsAccessor(SessionAccessor):
     """A mount onto one Hugging Face bucket.
 
     Listing and writes go through the opendal operator; stat's point lookup
@@ -61,7 +64,13 @@ class HfBucketsAccessor(_HfAccessor):
 
     REPO_TYPE = "bucket"
     VFS_NAME = "hf_buckets"
-    config: HfBucketsConfig
+
+    def __init__(self, config: HfBucketsConfig) -> None:
+        """Args:
+            config (HfBucketsConfig): bucket id, credential and key prefix.
+        """
+        super().__init__(timeout=stall_timeout(config.timeout))
+        self.config = config
 
     @property
     def bucket_uri(self) -> str:
@@ -96,3 +105,25 @@ class HfBucketsAccessor(_HfAccessor):
         # file the listing shows as `a/b/x` and answer it absent.
         parts = [p for p in f"{self.key_prefix}/{rel}".split("/") if p]
         return "/".join(parts)
+
+    def operator(self) -> opendal.AsyncOperator:
+        """A fresh opendal operator over the bucket, rooted at key_prefix.
+
+        Returns:
+            opendal.AsyncOperator: the operator listing and writes use.
+        """
+        kwargs = {"repo_type": self.REPO_TYPE, "repo_id": self.config.bucket}
+        token = reveal_secret(self.config.token)
+        if token:
+            kwargs["token"] = token
+        if self.config.endpoint:
+            kwargs["endpoint"] = self.config.endpoint
+        root = self._root()
+        if root:
+            kwargs["root"] = root
+        return opendal.AsyncOperator("hf", **kwargs)
+
+    def _root(self) -> str | None:
+        if not self.key_prefix:
+            return None
+        return "/" + self.key_prefix.strip("/") + "/"

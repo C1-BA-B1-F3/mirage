@@ -18,6 +18,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   HfHubError,
   apiUrl,
+  encodePath,
   errorOf,
   etagValue,
   hubBytesTagged,
@@ -26,6 +27,7 @@ import {
   hubStream,
   resolveUrl,
   revSegment,
+  stallFetch,
 } from './client.ts'
 
 describe('hubHeaders', () => {
@@ -237,5 +239,81 @@ describe('the download wire', () => {
     // The live Hub answers a paths-info body without it with 400.
     await hubPost(undefined, `${base}/post`, { paths: ['a.txt'] })
     expect(seen.at(-1)?.contentType).toBe('application/json')
+  })
+})
+
+describe('encodePath', () => {
+  it('encodes each segment without a leading slash', () => {
+    expect(encodePath('/a dir/f#1.txt')).toBe('a%20dir/f%231.txt')
+  })
+})
+
+const STALL_MS = 300
+
+function pause(ms: number): Promise<void> {
+  return new Promise((done) => setTimeout(done, ms))
+}
+
+async function drain(chunks: AsyncIterable<Uint8Array>): Promise<string> {
+  let text = ''
+  for await (const chunk of chunks) text += new TextDecoder().decode(chunk)
+  return text
+}
+
+async function stallHandle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  if (req.url === '/silent') return
+  res.writeHead(200)
+  if (req.url === '/drip') {
+    // Each chunk lands inside the stall bound, the whole body well past it.
+    for (const chunk of ['ab', 'cd', 'ef', 'gh']) {
+      await pause(STALL_MS / 2)
+      res.write(chunk)
+    }
+    res.end()
+    return
+  }
+  res.write('ab')
+}
+
+describe('stallFetch', () => {
+  let server: Server
+  let base = ''
+
+  beforeEach(async () => {
+    server = createServer((req, res) => void stallHandle(req, res))
+    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done))
+    base = `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`
+  })
+
+  afterEach(async () => {
+    server.closeAllConnections()
+    await new Promise<void>((done) =>
+      server.close(() => {
+        done()
+      }),
+    )
+  })
+
+  it('lets a download that keeps flowing outlive the bound', async () => {
+    const response = await stallFetch(STALL_MS)(`${base}/drip`)
+    expect(await response.text()).toBe('abcdefgh')
+  })
+
+  it('fails a download that stops flowing at the bound', async () => {
+    const response = await stallFetch(STALL_MS)(`${base}/stall`)
+    await expect(response.text()).rejects.toMatchObject({ name: 'TimeoutError' })
+  })
+
+  it('fails a request whose answer never comes', async () => {
+    await expect(stallFetch(STALL_MS)(`${base}/silent`)).rejects.toMatchObject({
+      name: 'TimeoutError',
+    })
+  })
+
+  it('bounds the streamed read', async () => {
+    expect(await drain(hubStream(undefined, `${base}/drip`, undefined, STALL_MS))).toBe('abcdefgh')
+    await expect(
+      drain(hubStream(undefined, `${base}/stall`, undefined, STALL_MS)),
+    ).rejects.toMatchObject({ name: 'TimeoutError' })
   })
 })

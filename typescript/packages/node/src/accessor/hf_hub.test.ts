@@ -12,11 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { Operator } from 'opendal'
+import { describe, expect, it } from 'vitest'
+import { HF_TIMEOUT_MS } from '../vfs/hf_buckets/config.ts'
+import { HfModelsHubAccessor } from './hf_hub.ts'
 
-// An accessor that reaches its backend through an opendal operator.
-// NextcloudAccessor and HfBucketsAccessor satisfy this
-// structurally, which is what lets one walk serve both.
-export interface OperatorAccessor {
-  operator(): Promise<Operator>
-}
+describe('HfHubAccessor', () => {
+  it("waits python's 30 seconds without progress unless configured", () => {
+    expect(new HfModelsHubAccessor({ repoId: 'a/b' }).timeoutMs).toBe(HF_TIMEOUT_MS)
+    expect(new HfModelsHubAccessor({ repoId: 'a/b', timeoutMs: 5000 }).timeoutMs).toBe(5000)
+  })
+})

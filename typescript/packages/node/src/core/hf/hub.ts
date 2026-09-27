@@ -12,13 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 import type { HfBucketsAccessor } from '../../accessor/hf.ts'
-import { HfHubError, etagValue, hubPost } from '../hf_hub/client.ts'
+import { HfHubError, encodePath, etagValue, hubPost } from '../hf_hub/client.ts'
 
 type Row = Record<string, unknown>
 
 function base(accessor: HfBucketsAccessor): string {
-  return accessor.endpoint.replace(/\/+$/, '')
+  return rstripSlash(accessor.endpoint)
 }
 
 /**
@@ -38,12 +39,7 @@ export function pathsInfoUrl(accessor: HfBucketsAccessor): string {
  * a name holding a "#" pasted raw truncates at the fragment.
  */
 export function resolveUrl(accessor: HfBucketsAccessor, rel: string): string {
-  const encoded = accessor
-    .bucketPath(rel)
-    .split('/')
-    .map((part) => encodeURIComponent(part))
-    .join('/')
-  return `${base(accessor)}/buckets/${accessor.repoId}/resolve/${encoded}`
+  return `${base(accessor)}/buckets/${accessor.repoId}/resolve/${encodePath(accessor.bucketPath(rel))}`
 }
 
 /**
@@ -56,9 +52,15 @@ export function resolveUrl(accessor: HfBucketsAccessor, rel: string): string {
  * what it believes is gone. The mount root is never a file and is never asked.
  */
 export async function fetchRow(accessor: HfBucketsAccessor, key: string): Promise<Row | null> {
-  if (key.replace(/^\/+|\/+$/g, '') === '') return null
+  if (stripSlash(key) === '') return null
   const asked = accessor.bucketPath(key)
-  const rows = await hubPost(accessor.token, pathsInfoUrl(accessor), { paths: [asked] })
+  const rows = await hubPost(
+    accessor.token,
+    pathsInfoUrl(accessor),
+    { paths: [asked] },
+    undefined,
+    accessor.timeoutMs,
+  )
   if (!Array.isArray(rows)) {
     throw new HfHubError(`paths-info answered no list for ${asked}`, 0, 'InvalidResponse')
   }

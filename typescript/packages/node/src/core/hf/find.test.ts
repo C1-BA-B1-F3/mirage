@@ -59,12 +59,22 @@ describe('hf find', () => {
     for (const [key, when] of fake.modified) {
       const path = PathSpec.fromStrPath('/' + key)
       expect((await index.get(path.virtual)).entry?.remoteTime).toBe(when)
-      // A warm stat answers from the listing's row; a cold one asks paths-info,
-      // which is the token's source and not an mtime's, so it reports none, as
-      // stat does against the live Hub today.
       expect((await stat(accessor, path, index)).modified).toBe(when)
-      expect((await stat(accessor, path)).modified ?? null).toBeNull()
     }
+  })
+
+  it('a warm stat and a cold one agree on the live listing', async () => {
+    // Both bindings list a bucket file with no mtime, though the Hub's tree
+    // row carries uploadedAt (probed 2026-09-27), so a cold stat reports none
+    // either: stamping paths-info's uploadedAt would make the answer depend on
+    // whether a listing ran first.
+    const accessor = new HfBucketsAccessor({ bucket: 'ns/model' })
+    await installFakeOperator(accessor, fakeHfOperator({ 'a.txt': 'x' }))
+    const index = new RAMIndexCacheStore()
+    await find(accessor, PathSpec.fromStrPath('/'), {}, index)
+    const path = PathSpec.fromStrPath('/a.txt')
+    expect((await stat(accessor, path, index)).modified ?? null).toBeNull()
+    expect((await stat(accessor, path)).modified ?? null).toBeNull()
   })
 
   it.each(['find', 'du'])('%s does not cache an omitted listing size as zero', async (command) => {

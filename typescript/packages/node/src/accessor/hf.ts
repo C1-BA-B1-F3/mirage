@@ -18,70 +18,28 @@ import { VFSName } from '@struktoai/mirage-core/types'
 import * as kp from '@struktoai/mirage-core/utils/key_prefix'
 import { stripSlash } from '@struktoai/mirage-core/utils/slash'
 import { loadOptionalPeer } from '../optional_peer.ts'
-import { HF_ENDPOINT, type HfBucketsConfig, type HfRepoConfig } from '../vfs/hf_buckets/config.ts'
+import { HF_ENDPOINT, HF_TIMEOUT_MS, type HfBucketsConfig } from '../vfs/hf_buckets/config.ts'
 
-export const HF_VFS_NAMES = [
-  VFSName.HF_BUCKETS,
-  VFSName.HF_DATASETS,
-  VFSName.HF_MODELS,
-  VFSName.HF_SPACES,
-] as const
-
-export abstract class HfAccessor extends Accessor {
-  abstract readonly repoType: string
-  abstract readonly vfsName: VFSName
+/**
+ * A mount onto one Hugging Face bucket.
+ *
+ * Listing and writes go through the opendal operator; stat's point lookup and
+ * every read go to the Hub directly, because the bucket's content token (its
+ * xet hash) comes from paths-info and the resolve download, neither of which
+ * the binding exposes.
+ */
+export class HfBucketsAccessor extends Accessor {
+  readonly repoType: string = 'bucket'
+  readonly vfsName: VFSName = VFSName.HF_BUCKETS
   private operatorPromise: Promise<Operator> | null = null
 
-  constructor(public readonly config: HfBucketsConfig | HfRepoConfig) {
+  constructor(public readonly config: HfBucketsConfig) {
     super()
   }
 
   get repoId(): string {
-    const config = this.config as { bucket?: string; repoId?: string }
-    return config.repoId ?? config.bucket ?? ''
+    return this.config.bucket
   }
-
-  abstract get bucketUri(): string
-
-  operatorOptions(): Record<string, string> {
-    const options: Record<string, string> = {
-      repo_type: this.repoType,
-      repo_id: this.repoId,
-    }
-    if (this.config.token !== undefined && this.config.token !== '') {
-      options.token = this.config.token
-    }
-    if (this.config.endpoint !== undefined && this.config.endpoint !== '') {
-      options.endpoint = this.config.endpoint
-    }
-    const keyPrefix = this.config.keyPrefix
-    if (keyPrefix !== undefined && keyPrefix !== '') {
-      options.root = `/${stripSlash(keyPrefix)}/`
-    }
-    const revision = (this.config as { revision?: string }).revision
-    if (revision !== undefined && revision !== '') {
-      options.revision = revision
-    }
-    return options
-  }
-
-  operator(): Promise<Operator> {
-    this.operatorPromise ??= this.createOperator()
-    return this.operatorPromise
-  }
-
-  private async createOperator(): Promise<Operator> {
-    const mod = await loadOptionalPeer(
-      () => import('opendal') as Promise<{ Operator: typeof Operator }>,
-      { feature: 'HuggingFace VFS', packageName: 'opendal' },
-    )
-    return new mod.Operator('hf', this.operatorOptions())
-  }
-}
-
-export class HfBucketsAccessor extends HfAccessor {
-  readonly repoType: string = 'bucket'
-  readonly vfsName: VFSName = VFSName.HF_BUCKETS
 
   get bucketUri(): string {
     return `hf://buckets/${this.repoId}`
@@ -93,6 +51,11 @@ export class HfBucketsAccessor extends HfAccessor {
 
   get token(): string | undefined {
     return this.config.token
+  }
+
+  /** How long one Hub request may go without progress. */
+  get timeoutMs(): number {
+    return this.config.timeoutMs ?? HF_TIMEOUT_MS
   }
 
   get keyPrefix(): string {
@@ -114,31 +77,35 @@ export class HfBucketsAccessor extends HfAccessor {
       .filter((part) => part !== '')
       .join('/')
   }
-}
 
-export class HfDatasetsAccessor extends HfAccessor {
-  readonly repoType: string = 'dataset'
-  readonly vfsName: VFSName = VFSName.HF_DATASETS
-
-  get bucketUri(): string {
-    return `hf://datasets/${this.repoId}`
+  operatorOptions(): Record<string, string> {
+    const options: Record<string, string> = {
+      repo_type: this.repoType,
+      repo_id: this.repoId,
+    }
+    if (this.config.token !== undefined && this.config.token !== '') {
+      options.token = this.config.token
+    }
+    if (this.config.endpoint !== undefined && this.config.endpoint !== '') {
+      options.endpoint = this.config.endpoint
+    }
+    const keyPrefix = this.config.keyPrefix
+    if (keyPrefix !== undefined && keyPrefix !== '') {
+      options.root = `/${stripSlash(keyPrefix)}/`
+    }
+    return options
   }
-}
 
-export class HfModelsAccessor extends HfAccessor {
-  readonly repoType: string = 'model'
-  readonly vfsName: VFSName = VFSName.HF_MODELS
-
-  get bucketUri(): string {
-    return `hf://models/${this.repoId}`
+  operator(): Promise<Operator> {
+    this.operatorPromise ??= this.createOperator()
+    return this.operatorPromise
   }
-}
 
-export class HfSpacesAccessor extends HfAccessor {
-  readonly repoType: string = 'space'
-  readonly vfsName: VFSName = VFSName.HF_SPACES
-
-  get bucketUri(): string {
-    return `hf://spaces/${this.repoId}`
+  private async createOperator(): Promise<Operator> {
+    const mod = await loadOptionalPeer(
+      () => import('opendal') as Promise<{ Operator: typeof Operator }>,
+      { feature: 'HuggingFace VFS', packageName: 'opendal' },
+    )
+    return new mod.Operator('hf', this.operatorOptions())
   }
 }

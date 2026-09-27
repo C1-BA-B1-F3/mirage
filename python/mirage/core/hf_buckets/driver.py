@@ -46,7 +46,7 @@ class HfConn:
 
 
 def _key_prefix_of(accessor: HfBucketsAccessor) -> str:
-    # key_prefix is applied as the operator's root (see _HfAccessor), so
+    # key_prefix is applied as the operator's root (see HfBucketsAccessor), so
     # every key the driver sees is already prefix-relative.
     return ""
 
@@ -168,8 +168,9 @@ async def _head(conn: HfConn, key: str) -> ObjectMeta | None:
         raise HfHubError(f"paths-info answered no size for {key}", 0,
                          "InvalidResponse")
     # No mtime, though the row carries uploadedAt: a listing reads its
-    # times through opendal, and a stat that disagreed with the listing
-    # about one file would be the worse answer.
+    # times through opendal, which reports none for a bucket file, and a
+    # stat that disagreed with the listing about one file would be the
+    # worse answer.
     return ObjectMeta(size=size,
                       modified=None,
                       fingerprint=fingerprint,

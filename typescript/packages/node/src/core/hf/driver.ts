@@ -39,7 +39,7 @@ export interface HfConn {
 }
 
 function keyPrefixOf(_accessor: HfBucketsAccessor): string {
-  // key_prefix is applied as the operator's root (see HfAccessor), so
+  // key_prefix is applied as the operator's root (see HfBucketsAccessor), so
   // every key the driver sees is already prefix-relative.
   return ''
 }
@@ -168,8 +168,8 @@ async function head(conn: HfConn, key: string): Promise<ObjectMeta | null> {
     throw new HfHubError(`paths-info answered no size for ${key}`, 0, 'InvalidResponse')
   }
   // No mtime, though the row carries uploadedAt: a listing reads its times
-  // through opendal, and a stat that disagreed with the listing about one
-  // file would be the worse answer.
+  // through opendal, which reports none for a bucket file, and a stat that
+  // disagreed with the listing about one file would be the worse answer.
   return {
     size: row.size,
     modified: null,

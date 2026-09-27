@@ -16,7 +16,7 @@ import { Accessor } from '@struktoai/mirage-core/accessor/index'
 import type { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
 import { VFSName } from '@struktoai/mirage-core/types'
 import * as kp from '@struktoai/mirage-core/utils/key_prefix'
-import { HF_ENDPOINT, type HfRepoConfig } from '../vfs/hf_buckets/config.ts'
+import { HF_ENDPOINT, HF_TIMEOUT_MS, type HfRepoConfig } from '../vfs/hf_buckets/config.ts'
 import { DEFAULT_REVISION } from '../core/hf_hub/constants.ts'
 import type { TreeEntry } from '../core/hf_hub/tree_entry.ts'
 import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
@@ -78,6 +78,11 @@ export class HfHubAccessor extends Accessor {
 
   get token(): string | undefined {
     return this.config.token
+  }
+
+  /** How long one Hub request may go without progress. */
+  get timeoutMs(): number {
+    return this.config.timeoutMs ?? HF_TIMEOUT_MS
   }
 
   /**

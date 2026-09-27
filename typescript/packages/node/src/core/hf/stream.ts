@@ -16,6 +16,7 @@ import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { recordStream } from '@struktoai/mirage-core/observe/context'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { eisdir, enoent } from '@struktoai/mirage-core/utils/errors'
+import { stripSlash } from '@struktoai/mirage-core/utils/slash'
 import type { HfBucketsAccessor } from '../../accessor/hf.ts'
 import { hubStream } from '../hf_hub/client.ts'
 import { REFUSED_STATUSES } from '../hf_hub/constants.ts'
@@ -39,13 +40,14 @@ export async function* stream(
   _index?: IndexCacheStore,
 ): AsyncIterable<Uint8Array> {
   const rel = path.mountPath
-  if (rel.replace(/^\/+|\/+$/g, '') === '') throw eisdir(path)
+  if (stripSlash(rel) === '') throw eisdir(path)
   const rec = recordStream('read', path.virtual, accessor.vfsName)
   const stamp = (headers: Record<string, string>): void => {
     if (rec !== null) rec.fingerprint = readToken(headers.etag ?? '')
   }
   try {
-    for await (const chunk of hubStream(accessor.token, resolveUrl(accessor, rel), stamp)) {
+    const url = resolveUrl(accessor, rel)
+    for await (const chunk of hubStream(accessor.token, url, stamp, accessor.timeoutMs)) {
       if (rec !== null) rec.bytes += chunk.byteLength
       yield chunk
     }

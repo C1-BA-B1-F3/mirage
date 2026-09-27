@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { load as yamlLoad } from 'js-yaml'
-import { rangeReply, route } from '../kit/typescript/index.ts'
+import { rangeReply, route, stripSlash } from '../kit/typescript/index.ts'
 import type { Ctx, JsonValue, KitRoute, Reply } from '../kit/typescript/index.ts'
 import {
   DEFAULT_LIMIT,
@@ -477,7 +477,7 @@ async function tree(ctx: Ctx<C>): Promise<Reply> {
     limit = n
   }
 
-  const prefix = (ctx.params.path ?? '').replace(/^\/+|\/+$/g, '')
+  const prefix = stripSlash(ctx.params.path ?? '')
   const under = prefix === '' ? '' : `${prefix}/`
   const blobs = (await blobsAt(ctx.db, ctx.tenant, key, sha)).filter((b) =>
     prefix === '' ? true : b.path.startsWith(under),
@@ -571,7 +571,7 @@ async function pathsInfo(ctx: Ctx<C>): Promise<Reply> {
   const date = blobs[0]?.lastModified ?? ''
   const rows: JsonValue[] = []
   for (const raw of named) {
-    const path = String(raw).replace(/^\/+|\/+$/g, '')
+    const path = stripSlash(String(raw))
     const blob = blobs.find((b) => b.path === path)
     if (blob !== undefined) rows.push(treeRow(blob, expand))
     else if (path !== '' && blobs.some((b) => b.path.startsWith(`${path}/`)))

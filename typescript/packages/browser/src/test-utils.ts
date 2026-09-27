@@ -16,6 +16,7 @@ import type { JsonValue } from '@struktoai/mirage-core/types'
 import { PathSpec } from '@struktoai/mirage-core/types'
 import { encodeBase64 } from '@struktoai/mirage-core/utils/base64'
 import { OPFSAccessor } from './accessor/opfs.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export function spec(p: string): PathSpec {
   return PathSpec.fromStrPath(p)
@@ -460,12 +461,12 @@ function jsonResponse(status: number, payload: JsonValue): Response {
  * bad token as 401, both as the live service does.
  */
 export function createFakeUpstash(options: FakeUpstashOptions = {}): FakeUpstash {
-  const url = (options.url ?? 'https://fake.upstash.io').replace(/\/+$/, '')
+  const url = rstripSlash(options.url ?? 'https://fake.upstash.io')
   const token = options.token ?? 'fake-token'
   const redis = new FakeRedis(options.scanPageSize ?? 1000)
   const commands: string[] = []
   const origin = new URL(url)
-  const basePath = origin.pathname.replace(/\/+$/, '')
+  const basePath = rstripSlash(origin.pathname)
 
   const one = (
     args: readonly Arg[],
@@ -476,8 +477,7 @@ export function createFakeUpstash(options: FakeUpstashOptions = {}): FakeUpstash
     try {
       return { result: encodeReply(redis.exec(args), base64) }
     } catch (err) {
-      if (err instanceof Error) return { error: err.message }
-      return { error: typeof err === 'string' ? err : 'unknown error' }
+      return { error: err instanceof Error ? err.message : 'unknown error' }
     }
   }
 

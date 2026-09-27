@@ -26,6 +26,7 @@ import type { DispatchFn } from '../../../../runtime/types.ts'
 import { handleBash } from './bash.ts'
 import { readScriptText, scriptError } from './script.ts'
 import type { ExecuteStringFn, Result } from '../types.ts'
+import { stripSlash } from '../../../../utils/slash.ts'
 
 /** The interpreter words a script's first line names, env resolved. */
 /**
@@ -125,7 +126,7 @@ export async function handleExecPath(
       return await runAsShell(() =>
         handleCommandBuiltin(
           executeFn,
-          ['--', spec.mountPath.replace(/^\/+|\/+$/g, ''), ...args],
+          ['--', stripSlash(spec.mountPath), ...args],
           session,
           registry,
           stdin,

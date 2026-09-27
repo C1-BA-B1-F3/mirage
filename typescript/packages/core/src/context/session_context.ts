@@ -649,7 +649,7 @@ function readonlyBelowUnder(
   mountMode: MountMode,
 ): string | null {
   if (sess.shownPaths == null) return null
-  const v = '/' + virtual.replace(/^\/+|\/+$/g, '')
+  const v = '/' + stripSlash(virtual)
   for (const entry of sess.shownPaths.entries) {
     if (entry.mode == null) continue
     if (isGlob(entry.path)) {
@@ -658,7 +658,7 @@ function readonlyBelowUnder(
       }
       continue
     }
-    const anchor = '/' + entry.path.replace(/^\/+|\/+$/g, '')
+    const anchor = '/' + stripSlash(entry.path)
     const below = v === '/' ? anchor !== '/' : anchor.startsWith(v + '/')
     if (!below) continue
     if (pathModeUnder(sess, anchor, mountPrefix, mountMode) === MountMode.READ) {

@@ -26,10 +26,11 @@ import { readdir } from './readdir.ts'
 import { stat } from './stat.ts'
 import * as tree from './tree.ts'
 import { parseEntry, seedIndex } from './tree.ts'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 function ps(path: string, prefix = ''): PathSpec {
-  const rel = path.replace(/^\/+|\/+$/g, '')
-  const stem = prefix.replace(/\/+$/, '')
+  const rel = stripSlash(path)
+  const stem = rstripSlash(prefix)
   const virtual =
     stem === '' ? (rel === '' ? '/' : `/${rel}`) : rel === '' ? stem : `${stem}/${rel}`
   const parent = virtual.slice(0, virtual.lastIndexOf('/')) || '/'

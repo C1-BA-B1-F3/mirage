@@ -34,6 +34,7 @@ import {
 import type { RepoRow } from './store.ts'
 import { authedRoute, everywhere, fail, jsonBodyOf, param, route, str, withRepo } from './http.ts'
 import { recordCommit, writeFile } from './contents.ts'
+import { stripSlash } from '../kit/typescript/index.ts'
 
 async function blobBySha(
   db: C,
@@ -74,7 +75,7 @@ const createTree = withRepo(async (ctx, repo) => {
   for (const raw of entries) {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
     const entry = raw as Record<string, unknown>
-    const path = String(entry.path ?? '').replace(/^\/+|\/+$/g, '')
+    const path = stripSlash(String(entry.path ?? ''))
     if (path === '') continue
     if ('sha' in entry && entry.sha === null) {
       files.delete(path)
@@ -165,7 +166,7 @@ const createCommit = withRepo(async (ctx, repo) => {
 // perfectly real.
 const createRef = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
-  const ref = str(body, 'ref').replace(/^\/+|\/+$/g, '')
+  const ref = stripSlash(str(body, 'ref'))
   if (!ref.startsWith('refs/heads/')) return fail(422, 'Invalid request.\n\n"ref" is invalid.')
   const name = ref.slice('refs/heads/'.length)
   if (name === '') return fail(422, 'Invalid request.\n\n"ref" is invalid.')
@@ -231,7 +232,7 @@ const createRef = withRepo(async (ctx, repo) => {
 // a fast forward is one where the branch's current head is still reachable by
 // walking first parents back from the requested commit.
 const updateRef = withRepo(async (ctx, repo) => {
-  const ref = param(ctx, 'ref').replace(/^\/+|\/+$/g, '')
+  const ref = stripSlash(param(ctx, 'ref'))
   const name = ref.startsWith('heads/') ? ref.slice('heads/'.length) : ''
   const names = await branchNames(ctx.db, ctx.tenant, repo)
   if (name === '' || !names.includes(name)) return fail(422, 'Reference does not exist')
@@ -319,7 +320,7 @@ async function headSha(ctx: Ctx<C>, repo: RepoRow, branch: string): Promise<stri
 // has others: a ref names a commit, so that branch is missing, not at "".
 const showRef = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
-  const ref = param(ctx, 'ref').replace(/^\/+|\/+$/g, '')
+  const ref = stripSlash(param(ctx, 'ref'))
   const name = ref.startsWith('heads/') ? ref.slice('heads/'.length) : ''
   const names = await branchNames(ctx.db, ctx.tenant, repo)
   const sha = names.includes(name) ? await headSha(ctx, repo, name) : ''
@@ -329,7 +330,7 @@ const showRef = withRepo(async (ctx, repo) => {
 
 const listRefs = withRepo(async (ctx, repo) => {
   if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
-  const prefix = param(ctx, 'ref').replace(/^\/+|\/+$/g, '')
+  const prefix = stripSlash(param(ctx, 'ref'))
   const items: JsonValue[] = []
   for (const name of await branchNames(ctx.db, ctx.tenant, repo)) {
     if (!`heads/${name}`.startsWith(prefix)) continue

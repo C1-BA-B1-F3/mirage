@@ -14,10 +14,11 @@
 
 import { hubGet } from './client.ts'
 import { hfEndpoint, type HfConfig } from './config.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /** Who the configured token belongs to. */
 export async function whoami(config: HfConfig): Promise<Record<string, unknown>> {
-  const url = `${hfEndpoint(config).replace(/\/+$/, '')}/api/whoami-v2`
+  const url = `${rstripSlash(hfEndpoint(config))}/api/whoami-v2`
   const data = await hubGet(config.token, url)
   return typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {}
 }

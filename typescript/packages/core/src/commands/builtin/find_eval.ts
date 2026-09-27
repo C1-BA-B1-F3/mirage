@@ -539,7 +539,7 @@ export function unrespellRaw(row: string, virtual: string, raw: string): string 
   if (row === raw) return virtual
   const stem = raw.endsWith('/') ? raw : raw + '/'
   if (row.startsWith(stem)) {
-    const base = virtual.replace(/\/+$/, '')
+    const base = rstripSlash(virtual)
     return base + '/' + row.slice(stem.length)
   }
   return row

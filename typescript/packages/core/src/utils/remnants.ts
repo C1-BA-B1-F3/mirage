@@ -14,6 +14,7 @@
 
 import { FileStat, FileType, PathSpec } from '../types.ts'
 import { isEnotdir, isMissingPath } from './errors.ts'
+import { rstripSlash } from './slash.ts'
 
 export type Allowed = (virtual: string) => boolean
 
@@ -62,7 +63,7 @@ export interface RemnantChannel {
  * paths rather than names; both normalize to the last component.
  */
 export function entryName(entry: string): string {
-  const trimmed = entry.replace(/\/+$/, '')
+  const trimmed = rstripSlash(entry)
   return trimmed.slice(trimmed.lastIndexOf('/') + 1)
 }
 
@@ -75,7 +76,7 @@ export function entryName(entry: string): string {
  * cannot mean different things at different doors.
  */
 export function visibleBelow(base: string, names: Iterable<string>, allowed: Allowed): boolean {
-  const root = base.replace(/\/+$/, '')
+  const root = rstripSlash(base)
   for (const name of names) {
     if (allowed(`${root}/${entryName(name)}`)) return true
   }
@@ -84,8 +85,8 @@ export function visibleBelow(base: string, names: Iterable<string>, allowed: All
 
 /** The child PathSpec one cascade step descends to. */
 export function childSpec(spec: PathSpec, name: string): PathSpec {
-  const base = spec.virtual.replace(/\/+$/, '')
-  const key = spec.vfsPath.replace(/\/+$/, '')
+  const base = rstripSlash(spec.virtual)
+  const key = rstripSlash(spec.vfsPath)
   return new PathSpec({
     virtual: `${base}/${name}`,
     directory: spec.virtual,

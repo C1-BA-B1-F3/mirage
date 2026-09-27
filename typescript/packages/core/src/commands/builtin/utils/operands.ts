@@ -19,7 +19,7 @@ import { mountKey } from '../../../utils/key_prefix.ts'
 import { eisdir, fsErrorLine, isEisdir, isFsError, isMissError } from '../../../utils/errors.ts'
 import { readFailExitCode } from '../../spec/usage.ts'
 import { resolvePath } from '../../../utils/path.ts'
-import { stripSlash } from '../../../utils/slash.ts'
+import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
 
 const ENC = new TextEncoder()
 
@@ -31,7 +31,7 @@ type Stat = (p: PathSpec) => Promise<FileStat>
 // which takes a PathSpec because its one caller outside this module has
 // one; here both callers hold the virtual string.
 function operandName(virtual: string): string {
-  const trimmed = virtual.replace(/\/+$/, '')
+  const trimmed = rstripSlash(virtual)
   const cut = trimmed.lastIndexOf('/')
   return trimmed.slice(cut + 1) || '/'
 }

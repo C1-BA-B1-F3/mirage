@@ -16,12 +16,13 @@ import { describe, expect, it } from 'vitest'
 import { PathSpec, type ReaddirFn } from '../../../types.ts'
 import type { UsageError } from '../../errors.ts'
 import { backupControl, backupTarget, parentPath, siblingPath } from './backup.ts'
+import { stripSlash } from '../../../utils/slash.ts'
 
 function spec(path: string): PathSpec {
   return new PathSpec({
     virtual: path,
     directory: path,
-    vfsPath: path.replace(/^\/+|\/+$/g, ''),
+    vfsPath: stripSlash(path),
   })
 }
 

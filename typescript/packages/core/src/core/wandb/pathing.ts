@@ -2,6 +2,7 @@ import type { WandbAccessor } from '../../accessor/wandb.ts'
 import type { PathSpec } from '../../types.ts'
 import { enoent } from '../../utils/errors.ts'
 import type { RunVariables } from './types.ts'
+import { stripSlash } from '../../utils/slash.ts'
 
 export const LEAVES = ['run.json', 'config.json', 'summary.json', 'history.jsonl']
 export function safeName(name: string): boolean {
@@ -12,7 +13,7 @@ export function safeName(name: string): boolean {
   )
 }
 export function parts(accessor: WandbAccessor, path: PathSpec): string[] {
-  const key = path.mountPath.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(path.mountPath)
   const result = key ? key.split('/') : []
   if (
     result.some((p) => !safeName(p)) ||

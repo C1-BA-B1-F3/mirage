@@ -35,6 +35,7 @@ import {
   VFSAdapter,
   Workspace,
 } from "@struktoai/mirage-node";
+import { rstripSlash } from "@struktoai/mirage-core/utils/slash";
 
 // A whole custom backend in one script: core functions over your
 // data source, a read adapter with optional writes, one GenericVFS. Every generic
@@ -84,7 +85,7 @@ function node(pages: Tree, key: string): Tree | string {
 function readdir(accessor: WikiAccessor, path: PathSpec): Promise<string[]> {
   const found = node(accessor.pages, path.vfsPath);
   if (typeof found === "string") throw enotdir(path);
-  const parent = path.virtual.replace(/\/+$/, "");
+  const parent = rstripSlash(path.virtual);
   return Promise.resolve(
     Object.entries(found).map(
       ([name, child]) =>
@@ -104,7 +105,7 @@ function readBytes(
 
 function stat(accessor: WikiAccessor, path: PathSpec): Promise<FileStat> {
   const found = node(accessor.pages, path.vfsPath);
-  const trimmed = path.virtual.replace(/\/+$/, "");
+  const trimmed = rstripSlash(path.virtual);
   const name = trimmed.slice(trimmed.lastIndexOf("/") + 1) || "/";
   if (typeof found !== "string")
     return Promise.resolve(

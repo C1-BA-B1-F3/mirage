@@ -16,6 +16,7 @@ import {
   type PathSpec,
   streamFromBytes,
 } from '@struktoai/mirage-core'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 type Pages = Record<string, string>
 
@@ -33,12 +34,12 @@ class PageAccessor extends Accessor {
 }
 
 function key(path: PathSpec): string {
-  return path.vfsPath.replace(/^\/+|\/+$/g, '')
+  return stripSlash(path.vfsPath)
 }
 
 function readdir(accessor: PageAccessor, path: PathSpec): Promise<string[]> {
   if (key(path) !== '') throw enotdir(path)
-  const parent = path.virtual.replace(/\/+$/, '')
+  const parent = rstripSlash(path.virtual)
   return Promise.resolve(
     Object.keys(accessor.pages)
       .sort()
@@ -55,7 +56,7 @@ function readBytes(accessor: PageAccessor, path: PathSpec): Promise<Uint8Array> 
 
 function stat(accessor: PageAccessor, path: PathSpec): Promise<FileStat> {
   const name = key(path)
-  const trimmed = path.virtual.replace(/\/+$/, '')
+  const trimmed = rstripSlash(path.virtual)
   const base = trimmed.slice(trimmed.lastIndexOf('/') + 1) || '/'
   if (name === '') {
     return Promise.resolve(new FileStat({ name: base, size: null, type: FileType.DIRECTORY }))

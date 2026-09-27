@@ -119,9 +119,9 @@ function refuseHidden(path: PathSpec, create: boolean): void {
 }
 
 function visibleChildren(entries: string[], parent: PathSpec): string[] {
-  const base = parent.virtual.replace(/\/+$/, '')
+  const base = rstripSlash(parent.virtual)
   return entries.filter((e) => {
-    const trimmed = e.replace(/\/+$/, '')
+    const trimmed = rstripSlash(e)
     return pathAllowed(`${base}/${trimmed.slice(trimmed.lastIndexOf('/') + 1)}`)
   })
 }

@@ -42,6 +42,7 @@ import {
 import type { RepoRow, Tree } from './store.ts'
 import { authedRoute, everywhere, fail, jsonBodyOf, param, route, str, withRepo } from './http.ts'
 import type { C as Client } from './config.ts'
+import { stripSlash } from '../kit/typescript/index.ts'
 
 function fileJson(path: string, data: Buffer): JsonValue {
   return {
@@ -218,7 +219,7 @@ const contents = withRepo(async (ctx, repo) => {
     return fail(404, `No commit found for the ref ${ref === '' ? repo.defaultBranch : ref}`)
   }
   const files = await treeOfBranch(ctx.db, ctx.tenant, repo, branch)
-  const path = param(ctx, 'path').replace(/^\/+|\/+$/g, '')
+  const path = stripSlash(param(ctx, 'path'))
   const hit = files.get(path)
   if (hit !== undefined) return { status: 200, body: fileJson(path, hit) }
   const listing = dirJson(files, path)
@@ -231,7 +232,7 @@ const contents = withRepo(async (ctx, repo) => {
 // writing is doing so for this reason.
 const putContents = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
-  const path = param(ctx, 'path').replace(/^\/+|\/+$/g, '')
+  const path = stripSlash(param(ctx, 'path'))
   const raw = body.content
   if (raw === undefined || raw === null) {
     return fail(422, 'Invalid request.\n\n"content" wasn\'t supplied.')
@@ -282,7 +283,7 @@ const putContents = withRepo(async (ctx, repo) => {
 
 const deleteContents = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
-  const path = param(ctx, 'path').replace(/^\/+|\/+$/g, '')
+  const path = stripSlash(param(ctx, 'path'))
   const branch = await branchFor(ctx.db, ctx.tenant, repo, str(body, 'branch'))
   if (branch === null) return fail(404, 'Branch not found')
   const row = await ctx.db.githubFile.findFirst({

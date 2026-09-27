@@ -14,6 +14,7 @@
 
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { mountPrefixOf } from '@struktoai/mirage-core/utils/key_prefix'
+import { lstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export function rawPathOf(path: PathSpec): string {
   const prefix = mountPrefixOf(path.virtual, path.vfsPath)
@@ -23,9 +24,7 @@ export function rawPathOf(path: PathSpec): string {
 }
 
 export function hfKey(rawPath: string): string {
-  let start = 0
-  while (start < rawPath.length && rawPath[start] === '/') start += 1
-  return rawPath.slice(start)
+  return lstripSlash(rawPath)
 }
 
 export function isNotFound(err: unknown): boolean {

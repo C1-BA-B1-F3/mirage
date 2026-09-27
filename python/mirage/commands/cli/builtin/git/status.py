@@ -68,7 +68,11 @@ def parse_flags(fl: FlagView) -> StatusFlags:
     if mode is None:
         mode = UNTRACKED_ALL if fl.as_bool(
             "untracked_files") else UNTRACKED_NORMAL
-    return StatusFlags(porcelain=fl.as_bool("porcelain"),
+    version = fl.as_str("porcelain")
+    if version is not None and version not in ("1", "v1"):
+        raise GitError(f"unsupported porcelain version '{version}'")
+    return StatusFlags(porcelain=fl.as_bool("porcelain")
+                       or version is not None,
                        short=fl.as_bool("short"),
                        branch=fl.as_bool("branch"),
                        untracked=mode)

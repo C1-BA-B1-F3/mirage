@@ -56,15 +56,14 @@ export const UNLINK_BUILDER: Builder = {
       const st = await ops.stat(accessor, p, idx)
       isDir = st.type === FileType.DIRECTORY
     } catch (err) {
-      const detail =
-        (err as { code?: string }).code === 'ENOTDIR'
-          ? 'Not a directory'
-          : 'No such file or directory'
+      if (!isFsError(err)) throw err
       return [
         null,
         new IOResult({
           exitCode: 1,
-          stderr: enc.encode(`unlink: cannot unlink '${p.rawPath}': ${detail}\n`),
+          stderr: enc.encode(
+            `unlink: cannot unlink '${p.rawPath}': ${fsStrerror(err) ?? String(err)}\n`,
+          ),
         }),
       ]
     }

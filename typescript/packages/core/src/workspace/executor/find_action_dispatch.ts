@@ -47,6 +47,7 @@ import { EXEC_PLACEHOLDER } from '../../commands/builtin/constants.ts'
 import type { ExecAction, FindAction, PrintfAction } from '../../commands/builtin/types.ts'
 import type { ExecuteFn } from '../expand/node.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 export interface FindActionDoors {
   // Runs an `-exec` line in the session; absent outside a workspace,
@@ -392,8 +393,8 @@ function startBase(start: PathSpec | undefined): string {
  * order `-delete` cannot remove a tree in.
  */
 export function compareDepthFirst(a: string, b: string): number {
-  const pa = a.replace(/\/+$/, '').split('/')
-  const pb = b.replace(/\/+$/, '').split('/')
+  const pa = rstripSlash(a).split('/')
+  const pb = rstripSlash(b).split('/')
   const n = Math.min(pa.length, pb.length)
   for (let i = 0; i < n; i++) {
     const byName = compareCodePoints(pa[i] ?? '', pb[i] ?? '')

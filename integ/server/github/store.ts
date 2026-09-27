@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { Prisma } from '../../generated/github/index.js'
-import { deleteOrder, tenantWhere } from '../kit/typescript/index.ts'
+import { deleteOrder, stripSlash, tenantWhere } from '../kit/typescript/index.ts'
 import type { Dmmf, JsonValue } from '../kit/typescript/index.ts'
 import { SEARCH_SIZE_LIMIT, config } from './config.ts'
 import type { C } from './config.ts'
@@ -518,7 +518,7 @@ export function searchTree(files: Tree, terms: string[], pathFilter: string | nu
   }
   let found = [...matched].sort()
   if (pathFilter !== null && pathFilter !== '') {
-    const at = pathFilter.replace(/^\/+|\/+$/g, '')
+    const at = stripSlash(pathFilter)
     found = found.filter((p) => p === at || p.startsWith(`${at}/`))
   }
   return found

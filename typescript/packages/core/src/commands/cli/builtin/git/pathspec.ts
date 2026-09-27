@@ -15,6 +15,7 @@
 import { posixNormpath } from '../../../../utils/path.ts'
 import { OutsideRepositoryError } from './errors.ts'
 import type { RepoLocation } from './types.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 /**
  * The virtual path a path operand names.
@@ -45,7 +46,7 @@ function absoluteOperand(start: string, operand: string): string {
  */
 export function repoRelative(location: RepoLocation, start: string, operand: string): string {
   const absolute = absoluteOperand(start, operand)
-  const root = location.worktree.replace(/\/+$/, '') || '/'
+  const root = rstripSlash(location.worktree) || '/'
   if (absolute === root) return ''
   const prefix = root.endsWith('/') ? root : `${root}/`
   if (!absolute.startsWith(prefix)) throw new OutsideRepositoryError(operand, root)

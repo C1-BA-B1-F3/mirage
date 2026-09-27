@@ -18,6 +18,7 @@ import { materialize, type IOResult } from '../../../io/types.ts'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
 import { grepGeneric } from './grep.ts'
+import { rstripSlash } from '../../../utils/slash.ts'
 
 type GrepOut = Uint8Array | AsyncIterable<Uint8Array> | null
 
@@ -60,7 +61,7 @@ const stat = (p: PathSpec): Promise<FileStat> =>
     }),
   )
 const readdir = (p: PathSpec): Promise<string[]> =>
-  Promise.resolve(p.virtual.replace(/\/+$/, '') === '/d' ? ['/d/a.txt'] : [])
+  Promise.resolve(rstripSlash(p.virtual) === '/d' ? ['/d/a.txt'] : [])
 
 async function* fileStream(p: PathSpec): AsyncIterable<Uint8Array> {
   await Promise.resolve()

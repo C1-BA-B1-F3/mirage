@@ -14,6 +14,7 @@
 
 import heapq
 import math
+import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Literal
@@ -22,8 +23,10 @@ from dulwich.objects import Commit, ObjectID, Tag
 from dulwich.refs import HEADREF, LOCAL_BRANCH_PREFIX, LOCAL_TAG_PREFIX
 from dulwich.repo import BaseRepo
 
+from mirage.commands.builtin.utils.bre import BreError, search_bre
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    BadDateError, IncompatibleLogOptionsError, UnrecognizedArgumentError)
+    BadDateError, GitError, IncompatibleLogOptionsError,
+    UnrecognizedArgumentError)
 from mirage.commands.cli.builtin.git.format import (MEDIUM, LogFormat,
                                                     parse_pretty)
 from mirage.commands.cli.builtin.git.pickaxe import touches
@@ -47,6 +50,7 @@ class LogFlags:
         search (str | None): ``-S``, the pickaxe string.
         since (float | None): ``--since`` as an epoch second.
         until (float | None): ``--until`` as an epoch second.
+        authors (tuple[re.Pattern[str], ...]): author patterns, ORed together.
         all_refs (bool): ``--all``, start from every ref as well.
         pretty (LogFormat): how each commit renders; medium unless
             ``--oneline`` or ``--pretty``/``--format`` said otherwise.
@@ -63,6 +67,7 @@ class LogFlags:
     search: str | None
     since: float | None
     until: float | None
+    authors: tuple[re.Pattern[str], ...] = ()
     date: str = "default"
     decorate: bool = False
     all_refs: bool = False
@@ -126,30 +131,29 @@ def _timestamp(value: str | None, flag: str) -> float | None:
         raise BadDateError(flag, value) from exc
 
 
-def pretty_value(fl: FlagView) -> str | None:
-    """The --pretty/--format value, honoring the bare optional form.
+def pretty_format(fl: FlagView) -> LogFormat:
+    """Read display formats in command-line order, as Git does.
 
-    Both spellings set the same variable in git; ``--format`` is read
-    first when both appear on one line, an ordering the flag bag cannot
-    preserve. A bare ``--pretty`` means medium, git's own default, but
-    pretty.c reads ``--format`` only in its =value form, so the bare
-    spelling gets git's own fatal (pinned: 2.37 and 2.54, exit 128).
+    Each occurrence is validated before a later option replaces it.
+    ``--oneline`` sets the format; its abbreviation side effect is read
+    separately by the caller. Bare ``--pretty`` resets to medium, while
+    bare ``--format`` is always an error (Git 2.50.1).
 
     Args:
         fl (FlagView): spec-validated view over the raw flag kwargs.
-
-    Raises:
-        UnrecognizedArgumentError: a bare ``--format`` with no value.
     """
-    for key in ("format", "pretty"):
-        raw = fl.raw(key)
-        if isinstance(raw, str):
-            return raw
-        if raw is True:
+    pretty = MEDIUM
+    for key, raw in fl.occurrences("oneline", "pretty", "format"):
+        if key == "oneline":
+            if raw is True:
+                pretty = LogFormat(kind="oneline")
+        elif isinstance(raw, str):
+            pretty = parse_pretty(raw)
+        elif raw is True:
             if key == "format":
                 raise UnrecognizedArgumentError("--format")
-            return "medium"
-    return None
+            pretty = MEDIUM
+    return pretty
 
 
 def parse_flags(fl: FlagView) -> LogFlags:
@@ -159,10 +163,7 @@ def parse_flags(fl: FlagView) -> LogFlags:
         fl (FlagView): spec-validated view over the raw flag kwargs.
     """
     oneline = fl.as_bool("oneline")
-    pretty = LogFormat(kind="oneline") if oneline else MEDIUM
-    spelled = pretty_value(fl)
-    if spelled is not None:
-        pretty = parse_pretty(spelled)
+    pretty = pretty_format(fl)
     graph = fl.as_bool("graph")
     if graph and fl.as_bool("reverse"):
         raise IncompatibleLogOptionsError("--graph", "--reverse")
@@ -170,7 +171,12 @@ def parse_flags(fl: FlagView) -> LogFlags:
     for name in fl.typed_order("topo_order", "date_order"):
         if fl.as_bool(name):
             order = "topo" if name == "topo_order" else "date"
+    try:
+        authors = tuple(search_bre(value) for value in fl.as_list("author"))
+    except BreError as exc:
+        raise GitError(str(exc)) from exc
     return LogFlags(
+        authors=authors,
         date=fl.as_str("date") or "default",
         decorate=fl.as_bool("decorate"),
         max_count=fl.as_int("n"),
@@ -468,14 +474,18 @@ def _in_window(commit: Commit, flags: LogFlags) -> bool:
     return flags.until is None or commit.commit_time <= flags.until
 
 
-def _parents_pass(commit: Commit, flags: LogFlags) -> bool:
-    """Whether a commit's parent count passes ``--merges``,
+def _filters_pass(commit: Commit, flags: LogFlags) -> bool:
+    """Whether a commit's author and parent count pass ``--merges``,
     ``--no-merges`` and kin.
 
     Args:
         commit (Commit): the commit.
         flags (LogFlags): the parsed invocation.
     """
+    if flags.authors and not any(
+            pattern.search(commit.author.decode("utf-8", "replace"))
+            for pattern in flags.authors):
+        return False
     count = len(commit.parents)
     if flags.min_parents is not None and count < flags.min_parents:
         return False
@@ -521,12 +531,12 @@ def walked(repo: BaseRepo,
     if flags.order != "default":
         window = list(source)
         interesting = frozenset(commit.id for commit in window
-                                if _parents_pass(commit, flags))
+                                if _filters_pass(commit, flags))
         source = iter(_sort_commits(window, flags.order))
     steps: list[WalkStep] = []
     printed = 0
     for commit in source:
-        if not _parents_pass(commit, flags):
+        if not _filters_pass(commit, flags):
             continue
         shown = needle is None or touches(store, commit, needle)
         steps.append(WalkStep(commit, shown))

@@ -16,6 +16,7 @@ function accessorWith(fake: FakeNextcloudOperator): NextcloudAccessor {
 // Collects the paths each invalidation hook was told about.
 class RecordingInvalidator implements CacheInvalidator {
   readonly writes: string[] = []
+  ancestors: string[] = []
   readonly unlinks: string[] = []
   readonly subtrees: string[] = []
 
@@ -26,6 +27,11 @@ class RecordingInvalidator implements CacheInvalidator {
 
   invalidateAfterUnlink(path: string | PathSpec): Promise<void> {
     this.unlinks.push(typeof path === 'string' ? path : path.mountPath)
+    return Promise.resolve()
+  }
+
+  invalidateAncestors(path: PathSpec): Promise<void> {
+    this.ancestors.push(path.virtual)
     return Promise.resolve()
   }
 
@@ -69,11 +75,13 @@ describe('nextcloud mkdir', () => {
   // levels until the index TTL expired.
   it('invalidates every ancestor without parents', async () => {
     const recorder = await record('/a/b/c')
-    expect(recorder.writes).toEqual(['/a/b/c', '/a/b', '/a'])
+    expect(recorder.writes).toEqual(['/a/b/c'])
+    expect(recorder.ancestors).toEqual(['/a/b/c'])
   })
 
   it('invalidates the same chain with parents', async () => {
     const recorder = await record('/a/b/c', true)
-    expect(recorder.writes).toEqual(['/a/b/c', '/a/b', '/a'])
+    expect(recorder.writes).toEqual(['/a/b/c'])
+    expect(recorder.ancestors).toEqual(['/a/b/c'])
   })
 })

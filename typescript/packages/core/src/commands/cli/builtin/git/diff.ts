@@ -13,6 +13,10 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import git from 'isomorphic-git'
+import { headEntries } from './changes.ts'
+import { readIndex, refuseUnresolved } from './index_file.ts'
+import { treeEntries, type TreeEntry } from './tree.ts'
+import { compare, renderChanges } from './diff_output.ts'
 import { HEAD } from './constants.ts'
 
 import { IOResult } from '../../../../io/types.ts'
@@ -57,34 +61,50 @@ async function sides(repo: Repo, texts: readonly string[]): Promise<[string, str
 }
 
 /**
- * Diff two commits.
+ * Diff commits or compare staged content with a commit.
  *
  * One revision diffs it against HEAD's tree, two diff against each other. The
- * working tree is not a party to this yet: comparing against it needs the index
- * and the worktree scan, which is where unstaged and staged diffs live.
+ * index is compared with the named revision under --cached or --staged,
+ * defaulting to HEAD or the empty tree on an unborn branch.
  */
 export async function diff(inv: CLIInvocation): Promise<CommandFnResult> {
   const doors = inv.doors ?? {}
   const texts = [...inv.texts]
   const fl = new FlagView(inv.flags)
-  if (texts.length === 0) return [null, new IOResult()]
+  const cached = fl.asBool('cached') || fl.asBool('staged')
+  if (texts.length === 0 && !cached) return [null, new IOResult()]
   try {
     checkOperands(texts, InvalidOptionError, escaped(inv.argv))
     const repo = await opened(fl, doors)
-    const [before, after, warning] = await sides(repo, texts)
-    const body = await treeOutput(
-      repo,
-      before,
-      after,
-      parseDiffFlags(
-        fl,
-        true,
-        'off',
-        true,
-        await renamesEnabled(repo),
-        await configBool(repo, 'core.quotepath', true),
-      ),
+    const flags = parseDiffFlags(
+      fl,
+      true,
+      'off',
+      true,
+      await renamesEnabled(repo),
+      await configBool(repo, 'core.quotepath', true),
     )
+    let body: string,
+      warning = ''
+    if (cached) {
+      if (texts.length > 1) throw new GitError('--cached accepts at most one revision')
+      const state = await readIndex(repo, repo.dispatch)
+      refuseUnresolved(state)
+      const before = texts.length
+        ? await treeEntries(repo, await treeOf(repo, texts[0] ?? HEAD))
+        : ((await headEntries(repo)) ?? new Map<string, TreeEntry>())
+      const after = new Map(
+        [...state.entries].map(([path, entry]) => [
+          path,
+          { oid: entry.oid, mode: entry.mode.toString(8).padStart(6, '0') },
+        ]),
+      )
+      body = await renderChanges(repo, await compare(repo, before, after, flags.renames), flags)
+    } else {
+      const [before, after, note] = await sides(repo, texts)
+      warning = note
+      body = await treeOutput(repo, before, after, flags)
+    }
     const result = warning ? new IOResult({ stderr: ENC.encode(warning) }) : new IOResult()
     if (body === '') return [null, result]
     return [encodeText(body), result]

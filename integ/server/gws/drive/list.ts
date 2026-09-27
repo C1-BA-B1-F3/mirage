@@ -99,7 +99,7 @@ export function exportFile(st: GwsState, item: DriveItem, mimeType: string): Rep
     const tab = sheet?.tabs[0]
     return {
       status: 200,
-      body: Buffer.from(tab === undefined ? '' : tabToCsv(tab)),
+      body: Buffer.from(tab === undefined ? '' : tabToCsv(tab, sheet?.tabs)),
       headers: { 'Content-Type': 'text/csv' },
     }
   }

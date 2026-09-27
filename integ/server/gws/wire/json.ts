@@ -49,8 +49,7 @@ export function asStrArr(v: JsonValue | undefined): string[] | undefined {
   return v.every((e) => typeof e === 'string') ? (v as string[]) : undefined
 }
 
-// A grid of cell text as the values methods take it: the wire allows numbers
-// and booleans in a row, and every one of them is stored as its String().
-export function asGrid(v: JsonValue | undefined): string[][] {
-  return asArr(v).map((row) => asArr(row).map((cell) => String(cell)))
+// Keep wire types so RAW strings remain distinguishable from numbers.
+export function asGrid(v: JsonValue | undefined): JsonValue[][] {
+  return asArr(v).map(asArr)
 }

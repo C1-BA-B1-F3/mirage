@@ -16,6 +16,7 @@ import { DIR_MODE, FILE_MODE } from '../../utils/stat_view.ts'
 import { FileStat, FileType } from '../../types.ts'
 import { lsModeString } from './utils/formatting.ts'
 import { groupName, ownerName, type Identity } from './utils/identity.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 const PRINTF_ESCAPES: Record<string, string> = {
   n: '\n',
@@ -213,10 +214,10 @@ export function expandPrintf(
     } else if (code === 'P') {
       out.push(relativePart(row, startBase))
     } else if (code === 'f') {
-      const trimmed = row.replace(/\/+$/, '')
+      const trimmed = rstripSlash(row)
       out.push(trimmed === '' ? '/' : (trimmed.split('/').pop() ?? trimmed))
     } else if (code === 'h') {
-      const trimmed = row.replace(/\/+$/, '')
+      const trimmed = rstripSlash(row)
       if (!trimmed.includes('/')) {
         out.push(trimmed === '' ? '/' : '.')
       } else {

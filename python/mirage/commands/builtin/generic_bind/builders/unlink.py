@@ -46,15 +46,11 @@ async def unlink(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                               stderr=(f"unlink: cannot unlink '{p.raw_path}': "
                                       "Not a directory\n").encode())
     try:
-        s = await ops.stat(accessor, p)
-    except NotADirectoryError:
+        s = await ops.stat(accessor, p, index=opts.index)
+    except FS_ERRORS as exc:
         return None, IOResult(exit_code=1,
                               stderr=(f"unlink: cannot unlink '{p.raw_path}': "
-                                      "Not a directory\n").encode())
-    except FileNotFoundError:
-        return None, IOResult(exit_code=1,
-                              stderr=(f"unlink: cannot unlink '{p.raw_path}': "
-                                      "No such file or directory\n").encode())
+                                      f"{fs_strerror(exc)}\n").encode())
     if s.type == FileType.DIRECTORY:
         return None, IOResult(exit_code=1,
                               stderr=(f"unlink: cannot unlink '{p.raw_path}': "

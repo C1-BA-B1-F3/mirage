@@ -18,6 +18,7 @@ import type { FileStat } from '../../../types.ts'
 import { FileType, PathSpec } from '../../../types.ts'
 import { eacces, enoent } from '../../../utils/errors.ts'
 import { mountParentReaddir, mountParentStat, resolveScript, splitReadable } from './operands.ts'
+import { rstripSlash } from '../../../utils/slash.ts'
 
 function spec(virtual: string): PathSpec {
   return PathSpec.fromStrPath(virtual)
@@ -73,11 +74,11 @@ describe('resolveScript', () => {
 })
 
 function mountsOf(descendants: string[], hidden: string[] = []): MountView {
-  const under = (p: string) => descendants.filter((d) => d.startsWith(`${p.replace(/\/+$/, '')}/`))
+  const under = (p: string) => descendants.filter((d) => d.startsWith(`${rstripSlash(p)}/`))
   return {
     descendants: under,
     visibleDescendants: (p) => under(p).filter((d) => !hidden.includes(d)),
-    isRoot: (p) => descendants.includes(p.replace(/\/+$/, '')),
+    isRoot: (p) => descendants.includes(rstripSlash(p)),
     rootOf: () => '/',
   }
 }

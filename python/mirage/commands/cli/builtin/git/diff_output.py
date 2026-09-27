@@ -59,6 +59,7 @@ class DiffFlags:
     merge: str = 'off'
     raw: bool = False
     abbrev: bool = False
+    context: int = HUNK_CONTEXT
     quote_path_fully: bool = True
 
 
@@ -108,10 +109,14 @@ def parse_diff_flags(fl: FlagView,
     if merge not in ('off', 'separate', 'combined', 'dense-combined',
                      'first-parent'):
         raise GitError(f'invalid value for --diff-merges: {merge}')
-    patch = fl.as_bool("patch") or ((default_patch or fl.as_bool("cc") or
-                                     (porcelain and fl.as_bool("c")))
-                                    and not any(modes))
-    return DiffFlags(name_only=modes[0],
+    context = fl.as_int("unified")
+    if context is not None and context < 0:
+        raise GitError("negative context length")
+    patch = fl.as_bool("patch") or context is not None or (
+        (default_patch or fl.as_bool("cc") or
+         (porcelain and fl.as_bool("c"))) and not any(modes))
+    return DiffFlags(context=HUNK_CONTEXT if context is None else context,
+                     name_only=modes[0],
                      name_status=modes[1],
                      stat=modes[2],
                      numstat=modes[3],
@@ -256,7 +261,8 @@ def render_changes(repo: BaseRepo, rows: list[Change],
             summaries.extend(_summary(row, display, shown))
         if flags.patch:
             patches.append(
-                file_patch(repo, row, name, origin, abbrev_for(repo), fully))
+                file_patch(repo, row, name, origin, abbrev_for(repo), fully,
+                           flags.context))
     if not (flags.name_only or flags.name_status):
         table = stat_table(stats)
         lines += numbers + (table if flags.stat else
@@ -355,7 +361,8 @@ def file_patch(repo: BaseRepo,
                name: str,
                origin: str,
                width: int,
-               fully: bool = True) -> bytes:
+               fully: bool = True,
+               context: int = HUNK_CONTEXT) -> bytes:
     """One path's patch, headers and hunks, as git's builtin_diff writes it.
 
     A change between a file and a symlink is split into a deletion and
@@ -370,12 +377,14 @@ def file_patch(repo: BaseRepo,
         origin (str): the source path, surrogate-escaped.
         width (int): how many hex digits the index line keeps.
         fully (bool): ``core.quotePath``.
+        context (int): the requested number of context lines.
     """
     old, new = row.old, row.new
     if old and new and old[0] & 0o170000 != new[0] & 0o170000:
-        return (file_patch(repo, replace(
-            row, new=None), name, origin, width, fully) + file_patch(
-                repo, replace(row, old=None), name, origin, width, fully))
+        return (file_patch(repo, replace(row, new=None), name, origin, width,
+                           fully, context) +
+                file_patch(repo, replace(row, old=None), name, origin, width,
+                           fully, context))
     source = quote_path(f'a/{origin}', False, fully)
     target = quote_path(f'b/{name}', False, fully)
     head = [f'diff --git {source} {target}']
@@ -403,7 +412,7 @@ def file_patch(repo: BaseRepo,
     if any(b'\0' in data[:BINARY_SNIFF] for data in (before, after)):
         head.append(f'Binary files {source} and {target} differ')
         return encode_text(''.join(line + '\n' for line in head))
-    body = hunks(byte_lines(before), byte_lines(after))
+    body = hunks(byte_lines(before), byte_lines(after), context)
     if body:
         head += [
             f'--- {source}' + ('\t' if ' ' in source else ''),
@@ -422,7 +431,9 @@ def byte_lines(data: bytes) -> list[bytes]:
     return [line + b'\n' for line in whole] + ([rest] if rest else [])
 
 
-def hunks(old: list[bytes], new: list[bytes]) -> bytes:
+def hunks(old: list[bytes],
+          new: list[bytes],
+          count: int = HUNK_CONTEXT) -> bytes:
     """The ``@@`` hunks of a two-way patch, as xdiff's xdl_emit_diff emits.
 
     Each header carries the nearest earlier line of the old side that
@@ -432,12 +443,13 @@ def hunks(old: list[bytes], new: list[bytes]) -> bytes:
     Args:
         old (list[bytes]): the old side's lines, newlines kept.
         new (list[bytes]): the new side's lines, newlines kept.
+        count (int): the requested number of context lines.
     """
     out = []
     context = b''
     searched = -1
-    for group in SequenceMatcher(
-            a=old, b=new, autojunk=False).get_grouped_opcodes(HUNK_CONTEXT):
+    for group in SequenceMatcher(a=old, b=new,
+                                 autojunk=False).get_grouped_opcodes(count):
         start, stop = group[0][1], group[-1][2]
         found = next((old[k] for k in range(start - 1, searched, -1)
                       if old[k] and chr(old[k][0]) in FUNCNAME_START), None)
@@ -555,9 +567,9 @@ def commit_output(repo: BaseRepo,
                          ' '.join(_short(e, width)
                                   for e in sides) + f' {status}\t{shown}')
     head = stat + encode_text(''.join(line + '\n' for line in lines))
-    patch = combined_patch(
-        repo, maps, common, flags.merge == 'dense-combined',
-        flags.quote_path_fully) if flags.patch and not names else b''
+    patch = combined_patch(repo, maps, common, flags.merge == 'dense-combined',
+                           flags.quote_path_fully,
+                           flags.context) if flags.patch and not names else b''
     return [head + (b'\n' if head and patch else b'') + patch]
 
 
@@ -565,7 +577,8 @@ def combined_patch(repo: BaseRepo,
                    maps: list[dict[bytes, Change]],
                    paths: set[bytes],
                    dense: bool,
-                   fully: bool = True) -> bytes:
+                   fully: bool = True,
+                   context: int = HUNK_CONTEXT) -> bytes:
     """Render ``-c``/``--cc`` for the paths that differ from every parent.
 
     A path with no hunk left and no mode change prints nothing at all,
@@ -577,6 +590,7 @@ def combined_patch(repo: BaseRepo,
         paths (set[bytes]): the paths changed against every parent.
         dense (bool): ``--cc`` rather than ``-c``.
         fully (bool): ``core.quotePath``.
+        context (int): the requested number of context lines.
     """
     out = []
     for path in sorted(paths):
@@ -588,7 +602,7 @@ def combined_patch(repo: BaseRepo,
         binary = any(b'\0' in data[:8000] for data in [*old_data, new_data])
         body = [] if binary else combined_lines(
             [text_lines(data)
-             for data in old_data], text_lines(new_data), dense)
+             for data in old_data], text_lines(new_data), dense, context)
         mode = new[0] if new else 0
         moved = any((entry[0] if entry else 0) != mode for entry in old)
         if not (binary or body or moved):

@@ -184,3 +184,19 @@ it('skips only buffered empty lines, respecting the limit and next line', async 
   expect(reader.skipEmptyLines()).toBe(0)
   expect(await reader.readline()).toBeNull()
 })
+
+it('skips only complete lines and preserves candidates across source chunks', async () => {
+  const iter = new AsyncLineIterator(
+    fromChunks([encode('first\nskip\nskip\nneedle\nskip\nnee'), encode('dle\ntail')]),
+  )
+  expect(iter.skipNonmatchingLines('needle')).toEqual([0, 0])
+  expect(await iter.readline()).toEqual(encode('first'))
+  expect(iter.skipNonmatchingLines('needle')).toEqual([2, 10])
+  expect(iter.skipNonmatchingLines('needle')).toEqual([0, 0])
+  expect(await iter.readline()).toEqual(encode('needle'))
+  expect(iter.skipNonmatchingLines('needle')).toEqual([1, 5])
+  expect(await iter.readline()).toEqual(encode('needle'))
+  expect(iter.skipNonmatchingLines('needle')).toEqual([0, 0])
+  expect(await iter.readline()).toEqual(encode('tail'))
+  expect(await iter.readline()).toBeNull()
+})

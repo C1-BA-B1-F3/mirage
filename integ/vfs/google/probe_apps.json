@@ -43,8 +43,22 @@
       }
     },
     {
-      "id": "gdocs_prov_cat",
+      "id": "gdocs_prov_cat_warm",
       "seq": 930023,
+      "targets": [
+        "gapps"
+      ],
+      "clear_cache": true,
+      "command": "cat /docs/owned/2026-01-01_Q1_Plan__doc0001.gdoc.json > /dev/null",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gdocs_prov_cat",
+      "seq": 930024,
       "targets": [
         "gapps"
       ],
@@ -58,7 +72,7 @@
     },
     {
       "id": "gdocs_prov_grep",
-      "seq": 930024,
+      "seq": 930025,
       "targets": [
         "gapps"
       ],

@@ -41,7 +41,8 @@ describe('object_store rename', () => {
     )
     expect(store.contents()).toEqual({ 'b/dst.txt': 'hi' })
     expect(manager.subtrees).toEqual(['/b/dst.txt', '/a/src.txt'])
-    expect(manager.writes).toEqual(['/b', '/a'])
+    expect(manager.writes).toEqual([])
+    expect(manager.ancestors).toEqual(['/mnt/b/dst.txt', '/mnt/a/src.txt'])
   })
 
   it('falls back to the prefix walk', async () => {

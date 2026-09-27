@@ -264,6 +264,9 @@ async def branch(
         repo, location = await opened(fl, doors)
         filt = await asyncio.to_thread(ref_filter, repo, words)
         head = await read_head(dispatch, location.gitdir)
+        if fl.as_bool("show_current"):
+            return ((head.branch +
+                     "\n").encode() if head.branch else b""), IOResult()
         force = fl.as_bool("D")
         if fl.as_bool("delete") or force:
             if listing:

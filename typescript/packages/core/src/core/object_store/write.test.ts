@@ -58,7 +58,8 @@ describe('object_store write', () => {
       makeWriteBytes(makeDriver(store))(accessor, spec('/a/b/c.txt'), ENC.encode('hi')),
     )
     expect(store.contents()).toEqual({ 'a/b/c.txt': 'hi' })
-    expect(manager.writes).toEqual(['/a/b/c.txt', '/a/b', '/a'])
+    expect(manager.writes).toEqual(['/a/b/c.txt'])
+    expect(manager.ancestors).toEqual(['/mnt/a/b/c.txt'])
   })
 
   it('write at the mount root invalidates only itself', async () => {
@@ -73,7 +74,8 @@ describe('object_store write', () => {
     const store = new FakeStore()
     const manager = await managed(() => makeCreate(makeDriver(store))(accessor, spec('/a/b/c.txt')))
     expect(store.contents()).toEqual({ 'a/b/c.txt': '' })
-    expect(manager.writes).toEqual(['/a/b/c.txt', '/a/b', '/a'])
+    expect(manager.writes).toEqual(['/a/b/c.txt'])
+    expect(manager.ancestors).toEqual(['/mnt/a/b/c.txt'])
   })
 
   it('truncate pads with NUL and invalidates ancestors', async () => {
@@ -82,7 +84,8 @@ describe('object_store write', () => {
       makeTruncate(makeDriver(store))(accessor, spec('/a/f.bin'), 4),
     )
     expect(store.text('a/f.bin')).toBe('0123')
-    expect(manager.writes).toEqual(['/a/f.bin', '/a'])
+    expect(manager.writes).toEqual(['/a/f.bin'])
+    expect(manager.ancestors).toEqual(['/mnt/a/f.bin'])
   })
 
   it('truncate extends a missing key', async () => {
@@ -97,7 +100,8 @@ describe('object_store write', () => {
     expect(store.contents()).toEqual({ 'a/b/': '' })
     expect(manager.writes).toEqual(['/a/b'])
     const deep = await managed(() => makeMkdir(makeDriver(store))(accessor, spec('/x/y'), true))
-    expect(deep.writes).toEqual(['/x/y', '/x'])
+    expect(deep.writes).toEqual(['/x/y'])
+    expect(deep.ancestors).toEqual(['/mnt/x/y'])
   })
 
   it('write names the path, not the key, when the container is gone', async () => {

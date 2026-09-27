@@ -34,7 +34,8 @@ describe('object_store remove', () => {
     const manager = await managed(() => makeUnlink(makeDriver(store))(accessor, spec('/a/b/c.txt')))
     expect(store.contents()).toEqual({})
     expect(manager.unlinks).toEqual(['/a/b/c.txt'])
-    expect(manager.writes).toEqual(['/a/b', '/a'])
+    expect(manager.writes).toEqual([])
+    expect(manager.ancestors).toEqual(['/mnt/a/b/c.txt'])
   })
 
   it('removePrefix deletes the subtree and ancestors evict', async () => {
@@ -45,7 +46,8 @@ describe('object_store remove', () => {
     // and each one was cached under its own key.
     expect(manager.subtrees).toEqual(['/a/b'])
     expect(manager.unlinks).toEqual([])
-    expect(manager.writes).toEqual(['/a'])
+    expect(manager.writes).toEqual([])
+    expect(manager.ancestors).toEqual(['/mnt/a/b'])
   })
 
   // rmdir is not removePrefix. On a keyed store an empty directory is its
@@ -72,7 +74,8 @@ describe('object_store remove', () => {
     const manager = await managed(() => makeRmdir(makeDriver(store))(accessor, spec('/a/b')))
     expect(store.contents()).toEqual({ 'keep.txt': 'k' })
     expect(manager.unlinks).toEqual(['/a/b'])
-    expect(manager.writes).toEqual(['/a'])
+    expect(manager.writes).toEqual([])
+    expect(manager.ancestors).toEqual(['/mnt/a/b'])
   })
 
   it('rmdir reports ENOENT for a prefix holding no key', async () => {
@@ -190,7 +193,8 @@ describe('a retraction evicts the cache even when the driver call throws', () =>
       await expect(makeUnlink(driver)(accessor, spec('/a/b.txt'))).rejects.toThrow('store on fire')
     })
     expect(manager.unlinks).toEqual(['/a/b.txt'])
-    expect(manager.writes).toEqual(['/a'])
+    expect(manager.writes).toEqual([])
+    expect(manager.ancestors).toEqual(['/mnt/a/b.txt'])
   })
 
   it('removePrefix evicts the subtree', async () => {
@@ -204,6 +208,7 @@ describe('a retraction evicts the cache even when the driver call throws', () =>
       )
     })
     expect(manager.subtrees).toEqual(['/a/b'])
-    expect(manager.writes).toEqual(['/a'])
+    expect(manager.writes).toEqual([])
+    expect(manager.ancestors).toEqual(['/mnt/a/b'])
   })
 })

@@ -22,7 +22,7 @@ import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { PathSpec } from '../../types.ts'
 import { formatScore } from '../../utils/score.ts'
-import { rstripSlash } from '../../utils/slash.ts'
+import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { difyPost } from './client.ts'
 import { resolvePath } from './path.ts'
 import { segmentText } from './read.ts'
@@ -255,7 +255,7 @@ export async function searchMany(
   const prefix = mountPrefixOf(first.virtual, first.vfsPath)
   const method = textOption(query, 'method', 'semantic')
   const threshold = floatOption(query, 'threshold', 0)
-  const all = paths.some((p) => p.vfsPath.replace(/^\/+|\/+$/g, '') === '')
+  const all = paths.some((p) => stripSlash(p.vfsPath) === '')
   const targets = all ? [] : await makeResolveGlob(readdir)(accessor, paths, index)
   const output = await searchSegments(accessor, query.query, targets, index, {
     method,

@@ -10,8 +10,12 @@ class _RecordingInvalidator:
 
     def __init__(self) -> None:
         self.writes: list[str] = []
+        self.ancestors: list[str] = []
         self.unlinks: list[str] = []
         self.subtrees: list[str] = []
+
+    async def invalidate_ancestors(self, path: PathSpec) -> None:
+        self.ancestors.append(path.virtual)
 
     async def invalidate_after_write(self, path: PathSpec) -> None:
         self.writes.append(path.mount_path)
@@ -56,7 +60,8 @@ async def test_mkdir_invalidates_every_ancestor_without_parents(make_acc):
     listings hid the new levels until the index TTL expired.
     """
     recorder = await _record(make_acc({}), PathSpec.from_str_path("/a/b/c"))
-    assert recorder.writes == ["/a/b/c", "/a/b", "/a"]
+    assert recorder.writes == ["/a/b/c"]
+    assert recorder.ancestors == ["/a/b/c"]
 
 
 @pytest.mark.asyncio
@@ -64,4 +69,5 @@ async def test_mkdir_parents_invalidates_the_same_chain(make_acc):
     recorder = await _record(make_acc({}),
                              PathSpec.from_str_path("/a/b/c"),
                              parents=True)
-    assert recorder.writes == ["/a/b/c", "/a/b", "/a"]
+    assert recorder.writes == ["/a/b/c"]
+    assert recorder.ancestors == ["/a/b/c"]

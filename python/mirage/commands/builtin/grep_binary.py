@@ -178,10 +178,20 @@ async def grep_input(source: AsyncIterator[bytes],
     # to cover the terminator the iterator strips. The extra byte past a
     # final line with no newline is never read.
     byte_pos = 0
+    needle = (literal_needle(pat) if not f.invert and
+              (not has_context or f.count_only or f.quiet or f.files_only
+               or f.files_without_match) else None)
     input_stream = binary.read(source)
     lines = AsyncLineIterator(input_stream)
     try:
-        async for raw in lines:
+        while True:
+            if needle is not None:
+                skipped, size = lines.skip_nonmatching_lines(needle)
+                number += skipped
+                byte_pos += size
+            raw = await lines.readline()
+            if raw is None:
+                break
             if binary.nul and f.binary_mode == "without-match":
                 break
             number += 1
@@ -320,3 +330,30 @@ def utf8_pattern(pat: re.Pattern[str]) -> re.Pattern[str]:
         else:
             parts.append(char)
     return re.compile("".join(parts), pat.flags)
+
+
+def literal_needle(pat: re.Pattern[str]) -> bytes | None:
+    """A literal whose absence in the bytes proves no line can match.
+
+    Args:
+        pat (re.Pattern[str]): the compiled line matcher.
+    """
+    if pat.flags & (re.IGNORECASE | re.VERBOSE):
+        return None
+    needle: list[str] = []
+    escaped = False
+    for char in pat.pattern:
+        if not " " <= char <= "~":
+            return None
+        if escaped:
+            if char.isalnum():
+                return None
+            needle.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char in ".*+?^${}()|[]":
+            return None
+        else:
+            needle.append(char)
+    return "".join(needle).encode("ascii") if needle and not escaped else None

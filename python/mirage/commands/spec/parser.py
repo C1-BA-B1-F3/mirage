@@ -955,6 +955,8 @@ def parse_command(
     # UsageError (#452). The parser classifies, it never drops or raises.
     overflow_kind = positional[-1] if positional else "str"
 
+    stdin_script = (cmd_name in constants.STDIN_SCRIPT_COMMANDS
+                    and is_builtin_grammar(cmd_name, spec))
     classified: list[tuple[str, ValueType]] = []
     raw_operands: list[tuple[str, ValueType]] = []
     for j, arg in enumerate(raw_args):
@@ -971,6 +973,8 @@ def parse_command(
             kind = rest_kind
         else:
             kind = overflow_kind
+        if stdin_script and kind == "path" and arg == "-":
+            kind = "str"
         if kind == "path":
             # Against the base an operand_base option left in effect at
             # this position, which is the session cwd for every command

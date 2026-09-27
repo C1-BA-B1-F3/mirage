@@ -27,6 +27,7 @@ async def stream_messages_for_day(
         config: SlackConfig,
         channel_id: str,
         date_str: str,
+        scope: TimeRange,
         limit: int = 200,
         session: SessionArg = None) -> AsyncIterator[list[dict[str, Any]]]:
     """Page-streaming history for a channel-day.
@@ -35,6 +36,7 @@ async def stream_messages_for_day(
         config (SlackConfig): Slack credentials.
         channel_id (str): channel ID.
         date_str (str): date in YYYY-MM-DD format.
+        scope (TimeRange): the mount's time scope, clipping the day.
         limit (int): max per page.
         session (SessionArg): pool or live session to ride.
 
@@ -42,7 +44,6 @@ async def stream_messages_for_day(
         list[dict]: messages in one Slack page (unsorted; the eager
         wrapper sorts at the end).
     """
-    scope = TimeRange.from_strings(config.start_time, config.end_time)
     oldest, latest = scope.day_bounds(date_str)
     if oldest >= latest:
         return
@@ -67,6 +68,7 @@ async def fetch_messages_for_day(
         config: SlackConfig,
         channel_id: str,
         date_str: str,
+        scope: TimeRange,
         session: SessionArg = None) -> list[dict[str, Any]]:
     """Fetch all messages for a date as parsed dicts (eager).
 
@@ -74,6 +76,7 @@ async def fetch_messages_for_day(
         config (SlackConfig): Slack credentials.
         channel_id (str): channel ID.
         date_str (str): date in YYYY-MM-DD format.
+        scope (TimeRange): the mount's time scope, clipping the day.
         session (SessionArg): pool or live session to ride.
 
     Returns:
@@ -83,6 +86,7 @@ async def fetch_messages_for_day(
     async for page in stream_messages_for_day(config,
                                               channel_id,
                                               date_str,
+                                              scope,
                                               session=session):
         messages.extend(page)
     messages.sort(key=lambda m: float(m.get("ts", "0")))
@@ -107,6 +111,7 @@ def messages_to_jsonl(messages: list[dict[str, Any]]) -> bytes:
 async def get_history_jsonl(config: SlackConfig,
                             channel_id: str,
                             date_str: str,
+                            scope: TimeRange,
                             session: SessionArg = None) -> bytes:
     """Fetch channel messages for a specific date as JSONL.
 
@@ -114,6 +119,7 @@ async def get_history_jsonl(config: SlackConfig,
         config (SlackConfig): Slack credentials.
         channel_id (str): channel ID.
         date_str (str): date in YYYY-MM-DD format.
+        scope (TimeRange): the mount's time scope, clipping the day.
         session (SessionArg): pool or live session to ride.
 
     Returns:
@@ -122,6 +128,7 @@ async def get_history_jsonl(config: SlackConfig,
     messages = await fetch_messages_for_day(config,
                                             channel_id,
                                             date_str,
+                                            scope,
                                             session=session)
     return messages_to_jsonl(messages)
 

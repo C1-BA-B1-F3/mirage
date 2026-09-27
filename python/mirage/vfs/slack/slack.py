@@ -17,10 +17,11 @@ from typing import Any
 from mirage.accessor.slack import SlackAccessor
 from mirage.commands.builtin.slack import COMMANDS
 from mirage.commands.builtin.slack.io import IO
-from mirage.core.slack.config import SlackConfig
+from mirage.core.time_range import TimeRange
 from mirage.ops.slack import OPS as SLACK_VFS_OPS
 from mirage.types import VFSName
 from mirage.vfs.bound import BoundVFS
+from mirage.vfs.slack.config import SlackConfig
 from mirage.vfs.slack.prompt import PROMPT, WRITE_PROMPT
 
 
@@ -40,7 +41,9 @@ class SlackVFS(BoundVFS):
     def __init__(self, config: SlackConfig) -> None:
         super().__init__(io=IO)
         self.config = config
-        self.accessor = SlackAccessor(self.config)
+        self.accessor = SlackAccessor(
+            self.config,
+            TimeRange.from_strings(config.start_time, config.end_time))
         self.PROMPT = PROMPT + self.accessor.time_range.prompt()
         for fn in COMMANDS:
             self.register(fn)

@@ -148,6 +148,7 @@ async def _day_listing(accessor: DiscordAccessor, channel_id: str,
         messages = await list_messages_for_day(accessor.config,
                                                channel_id,
                                                date_str,
+                                               accessor.time_range,
                                                session=accessor.pool)
     except aiohttp.ClientResponseError as e:
         if _is_soft_error(e):

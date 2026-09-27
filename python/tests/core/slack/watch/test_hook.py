@@ -1,10 +1,10 @@
 import asyncio
 
 from mirage.accessor.slack import SlackAccessor
-from mirage.core.slack.config import SlackConfig
 from mirage.core.slack.watch.hook import SlackEventHook
 from mirage.types import FileChangeKind, PathSpec
 from mirage.vfs.slack import SlackVFS
+from mirage.vfs.slack.config import SlackConfig
 
 # 2025-08-15T23:30:00Z is 4:30pm PDT the same day, so client and mount
 # agree; 2025-08-16T05:00:00Z is 10pm PDT on the 15th, where they do not.

@@ -238,6 +238,7 @@ async def _day_listing(accessor: SlackAccessor, channel_id: str,
         messages = await fetch_messages_for_day(accessor.config,
                                                 channel_id,
                                                 date_str,
+                                                accessor.time_range,
                                                 session=accessor.pool)
     except RuntimeError as e:
         if any(code in str(e) for code in _SOFT_HISTORY_ERRORS):

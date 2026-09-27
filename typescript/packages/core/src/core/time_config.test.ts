@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeSlackConfig } from './slack/config.ts'
-import { normalizeDiscordConfig } from './discord/config.ts'
+import { normalizeSlackConfig } from '../vfs/slack/config.ts'
+import { normalizeDiscordConfig } from '../vfs/discord/config.ts'
 import { normalizeGCalConfig } from '../vfs/gcal/config.ts'
 
 describe('mount time bounds', () => {

@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from mirage.core.discord.config import DiscordConfig
-from mirage.core.slack.config import SlackConfig
+from mirage.vfs.discord.config import DiscordConfig
 from mirage.vfs.gcal.config import GCalConfig
+from mirage.vfs.slack.config import SlackConfig
 
 
 @pytest.mark.parametrize("model,credentials", [

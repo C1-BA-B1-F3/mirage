@@ -124,6 +124,7 @@ async def test_read_jsonl(accessor, index):
     mock_hist.assert_called_once_with(accessor.config,
                                       "C001",
                                       "2023-11-14",
+                                      accessor.time_range,
                                       session=ANY)
 
 

@@ -114,6 +114,7 @@ class FakeDiscordApi:
                                     config,
                                     channel_id,
                                     date_str,
+                                    scope,
                                     session=None):
         self.day_fetches.append((channel_id, date_str))
         if date_str == SEALED_DAY:
@@ -128,9 +129,10 @@ class FakeDiscordApi:
                                 config,
                                 channel_id,
                                 date_str,
+                                scope,
                                 session=None):
         return history_jsonl_bytes(await self.list_messages_for_day(
-            config, channel_id, date_str))
+            config, channel_id, date_str, scope))
 
     async def download_file(self, url, offset=0, size=None, session=None):
         self.downloads.append((url, offset, size))

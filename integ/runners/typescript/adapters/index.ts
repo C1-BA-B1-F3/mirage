@@ -12,8 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { normalizeSlackConfig } from '@struktoai/mirage-core/core/slack/config'
-import { normalizeDiscordConfig } from '@struktoai/mirage-core/core/discord/config'
+import { normalizeSlackConfig } from '@struktoai/mirage-core/vfs/slack/config'
+import { normalizeDiscordConfig } from '@struktoai/mirage-core/vfs/discord/config'
 import { normalizeGCalConfig } from '@struktoai/mirage-core/vfs/gcal/config'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'

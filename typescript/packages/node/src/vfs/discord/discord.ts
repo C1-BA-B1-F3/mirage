@@ -19,11 +19,11 @@ import { DISCORD_COMMANDS } from '@struktoai/mirage-core/commands/builtin/discor
 
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import { NodeDiscordTransport } from '@struktoai/mirage-core/core/discord/client'
-import { redactDiscordConfig } from '@struktoai/mirage-core/core/discord/config'
+import { redactDiscordConfig } from '@struktoai/mirage-core/vfs/discord/config'
 import type {
   DiscordConfig,
   DiscordConfigRedacted,
-} from '@struktoai/mirage-core/core/discord/config'
+} from '@struktoai/mirage-core/vfs/discord/config'
 
 import { DISCORD_OPS } from '@struktoai/mirage-core/ops/discord/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'

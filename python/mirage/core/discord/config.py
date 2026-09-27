@@ -12,12 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import ConfigDict, SecretStr
-
-from mirage.core.time_config import TimeRangeConfig
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
-class DiscordConfig(TimeRangeConfig):
+class DiscordConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     token: SecretStr

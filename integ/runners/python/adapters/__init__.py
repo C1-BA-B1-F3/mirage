@@ -47,7 +47,6 @@ from mirage.accessor.sharepoint import SharePointConfig
 from mirage.commands.cli.specs import cli_spec_for
 from mirage.commands.cli.types import CLISpec
 from mirage.core.databricks_volume.path import configured_root
-from mirage.core.discord.config import DiscordConfig
 from mirage.core.email.config import EmailConfig
 from mirage.core.hf_hub.commit import Addition, commit
 from mirage.runtime.types import ScriptSource
@@ -65,6 +64,7 @@ from mirage.vfs.databricks_volume import (DatabricksVolumeConfig,
                                           DatabricksVolumeVFS)
 from mirage.vfs.dify import DifyConfig, DifyVFS
 from mirage.vfs.digitalocean import DigitalOceanConfig, DigitalOceanVFS
+from mirage.vfs.discord.config import DiscordConfig
 from mirage.vfs.discord.discord import DiscordVFS
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.dropbox import DropboxConfig, DropboxVFS

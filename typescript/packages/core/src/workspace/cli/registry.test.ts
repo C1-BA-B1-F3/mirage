@@ -228,7 +228,7 @@ const BUILTIN_CLIS: readonly (readonly [string, CLISpec])[] = [
   ['git', GIT],
 ]
 
-const SAMPLES: readonly unknown[] = ['x', 1, true, ['x'], null]
+const SAMPLES: readonly unknown[] = ['x', 1, true, ['x']]
 
 // Capital runs collapse to one word (baseURL -> base_url), because that
 // is the spelling a Python config writer uses; per-capital splitting
@@ -256,6 +256,23 @@ describe('builtin CLI configs install from the python spelling', () => {
       }
       const install = new CLIRegistry().install(name, spec, config)
       expect(Object.keys(install.config as Record<string, unknown>).sort()).toEqual(fields.sort())
+    })
+  }
+})
+
+describe('account CLIs take no mount time scope', () => {
+  for (const [name, spec] of [
+    ['slack', SLACK],
+    ['discord', DISCORD],
+  ] as const) {
+    it(`${name} refuses start_time and end_time`, () => {
+      expect(() =>
+        new CLIRegistry().install(name, spec, {
+          token: 'x',
+          start_time: '2026-06-01T00:00:00Z',
+          end_time: '2026-06-02T00:00:00Z',
+        }),
+      ).toThrow(`CLI '${name}': unknown config keys: end_time, start_time`)
     })
   }
 })

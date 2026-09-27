@@ -13,31 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { z } from 'zod'
-import { timeRangeShape, orderedTimes, timeRangeOrderError } from '../time_config.ts'
-import {
-  parseConfigWithSchema,
-  redactConfigWithSchema,
-  type ConfigOf,
-  type RedactedConfig,
-  secretStr,
-} from '../../vfs/secrets.ts'
+import { type ConfigOf, secretStr } from '../../vfs/secrets.ts'
 
-export const DiscordConfigSchema = z
-  .object({
-    ...timeRangeShape,
-    token: secretStr(),
-    baseUrl: z.string().optional(),
-  })
-  .refine(orderedTimes, timeRangeOrderError)
+export const DiscordConfigSchema = z.object({
+  token: secretStr(),
+  baseUrl: z.string().optional(),
+})
 
 export type DiscordConfig = ConfigOf<typeof DiscordConfigSchema>
-
-export type DiscordConfigRedacted = RedactedConfig<DiscordConfig, 'token'>
-
-export function redactDiscordConfig(config: DiscordConfig): DiscordConfigRedacted {
-  return redactConfigWithSchema(DiscordConfigSchema, config) as unknown as DiscordConfigRedacted
-}
-
-export function normalizeDiscordConfig(input: Record<string, unknown>): DiscordConfig {
-  return parseConfigWithSchema(DiscordConfigSchema, input)
-}

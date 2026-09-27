@@ -21,6 +21,7 @@ from mirage.accessor.slack import SlackAccessor
 from mirage.cache.index import IndexEntry, RAMIndexCacheStore
 from mirage.core.slack.config import SlackConfig
 from mirage.core.slack.readdir import _date_range, readdir
+from mirage.core.time_range import TimeRange
 from mirage.types import PathSpec
 
 
@@ -385,8 +386,8 @@ async def _dm_without_created(index) -> SlackAccessor:
             ),
         ),
     ])
-    return SlackAccessor(config=SlackConfig(token="xoxb-test-token",
-                                            end_time="2026-06-02T00:00:00Z"))
+    return SlackAccessor(SlackConfig(token="xoxb-test-token"),
+                         TimeRange.from_strings(None, "2026-06-02T00:00:00Z"))
 
 
 @pytest.mark.asyncio

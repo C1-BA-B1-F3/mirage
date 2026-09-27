@@ -69,6 +69,7 @@ async def _read_chat(accessor: SlackAccessor, match: ScopeMatch,
     return await get_history_jsonl(accessor.config,
                                    channel_id,
                                    match.slots["day"],
+                                   accessor.time_range,
                                    session=accessor.pool)
 
 

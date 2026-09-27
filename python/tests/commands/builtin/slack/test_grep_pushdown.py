@@ -278,7 +278,8 @@ async def test_grep_on_a_time_scoped_mount_skips_native_search():
     """Slack search cannot honor the mount's time bounds, so a scoped
     mount answers from the scan, where a bare directory is GNU's EISDIR."""
     accessor = SlackAccessor(
-        SlackConfig(token="xoxb-test", start_time="2026-01-01T00:00:00Z"))
+        SlackConfig(token="xoxb-test"),
+        TimeRange.from_strings("2026-01-01T00:00:00Z", None))
     index = RAMIndexCacheStore()
     await index.set_dir("/slack/channels", [(
         "general__C1",

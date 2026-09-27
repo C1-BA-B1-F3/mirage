@@ -21,7 +21,13 @@ import type { DispatchFn } from '../../runtime/types.ts'
 import { compileSpec } from '../spec/compile.ts'
 import type { ZodObject, ZodRawShape } from 'zod'
 
-import { CommandSpec, type CommandSpecInit, type FlagValue, UsageStyle } from '../spec/types.ts'
+import {
+  CommandSpec,
+  type CommandSpecInit,
+  type FlagValue,
+  type ParsedFlagValue,
+  UsageStyle,
+} from '../spec/types.ts'
 
 /**
  * One door per state plane, for the CLI verb that needs one.
@@ -305,7 +311,7 @@ function checkCollisions(
   }
 }
 
-export type WalkFlagBag = Record<string, FlagValue>
+export type WalkFlagBag = Record<string, ParsedFlagValue>
 
 export interface WalkResultInit {
   leaf?: CLISpec | null

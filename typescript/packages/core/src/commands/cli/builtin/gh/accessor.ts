@@ -18,6 +18,7 @@ import { parseRepo, type RepoRef } from '../../../../core/github/repo.ts'
 import { jqEval } from '../../../../core/jq/index.ts'
 import { UsageError } from '../../../errors.ts'
 import type { FlagView } from '../../../spec/flag_view.ts'
+import type { FlagValue } from '../../../spec/types.ts'
 import { IOResult, materialize, type ByteSource } from '../../../../io/types.ts'
 import { PathSpec } from '../../../../types.ts'
 import { fsStrerror, isEnoent, isEnotdir } from '../../../../utils/errors.ts'
@@ -86,34 +87,25 @@ export function csvValues(values: readonly string[]): string[] {
   )
 }
 
-function dashOption(inv: CLIInvocation, options: readonly string[]): boolean {
-  return options.some((option) =>
-    inv.argv.some(
-      (word, index) =>
-        word === `${option}=-` ||
-        (option.length === 2 && word === `${option}-`) ||
-        (word === option && inv.argv[index + 1] === '-'),
-    ),
-  )
-}
-
 export async function readCliFile(
   inv: CLIInvocation,
-  raw: unknown,
+  raw: FlagValue,
   option: string,
-  ...aliases: string[]
 ): Promise<Uint8Array> {
-  if (typeof raw !== 'string') throw new Error(`${option} expects a file`)
-  const path = raw === '-' || dashOption(inv, [option, ...aliases]) ? '-' : raw
+  if (!(raw instanceof PathSpec) && typeof raw !== 'string') {
+    throw new Error(`${option} expects a file`)
+  }
+  const path = raw instanceof PathSpec ? raw.rawPath : raw
   if (path === '-') {
     if (inv.stdin === null) throw new Error(`${option} needs standard input`)
     return materialize(inv.stdin)
   }
   const dispatch = inv.doors?.dispatch
   if (dispatch === undefined) throw new Error(`${option} needs a workspace to read files from`)
-  const virtual = resolvePath(path, inv.env.PWD ?? '/')
+  const spec =
+    raw instanceof PathSpec ? raw : PathSpec.fromStrPath(resolvePath(raw, inv.env.PWD ?? '/'))
   try {
-    const [data] = await dispatch('read', PathSpec.fromStrPath(virtual))
+    const [data] = await dispatch('read', spec)
     return await materialize(data as ByteSource)
   } catch (err) {
     const strerror = isEnoent(err) || isEnotdir(err) ? fsStrerror(err) : null
@@ -138,7 +130,7 @@ export async function bodyValue(
   }
   if (inline !== undefined) return inline
   if (source !== undefined)
-    return new TextDecoder().decode(await readCliFile(inv, source, fileFlag, '-F'))
+    return new TextDecoder().decode(await readCliFile(inv, source, fileFlag))
   if (opts.required === true) throw new Error(`${valueFlag} or ${fileFlag} is required`)
   return undefined
 }

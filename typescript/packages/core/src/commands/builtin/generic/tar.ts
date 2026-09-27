@@ -114,12 +114,13 @@ export interface TarDeps {
   isDir: DirProbe
 }
 
-function makePathSpec(virtual: string, prefix: string): PathSpec {
+function makePathSpec(virtual: string, prefix: string, rawPath?: string): PathSpec {
   return new PathSpec({
     virtual,
     directory: virtual,
     vfsPath: mountKey(virtual, prefix),
     resolved: true,
+    ...(rawPath !== undefined ? { rawPath } : {}),
   })
 }
 
@@ -208,8 +209,7 @@ function stderrOf(lines: readonly string[]): Uint8Array | null {
 
 async function writeArchive(
   plan: CreateResult,
-  archivePath: string,
-  mountPrefix: string,
+  archivePath: PathSpec,
   compression: Compression,
   verbose: boolean,
   deps: TarDeps,
@@ -250,13 +250,13 @@ async function writeArchive(
   const raw = await writeTar(entries)
   const archive = await compress(raw, compression)
   try {
-    await deps.write(makePathSpec(archivePath, mountPrefix), archive)
+    await deps.write(archivePath, archive)
   } catch (err) {
     if (!isFsError(err)) throw err
     // GNU opens the archive before it reads a member, so an archive it
     // cannot create is the whole run's one fatal line.
     const stderr = stderrOf([
-      `tar: ${archivePath}: Cannot open: ${String(fsStrerror(err))}`,
+      `tar: ${archivePath.rawPath}: Cannot open: ${String(fsStrerror(err))}`,
       FATAL_TRAILER,
     ])
     return [
@@ -269,7 +269,7 @@ async function writeArchive(
   return [
     stdout,
     new IOResult({
-      writes: { [archivePath]: archive },
+      writes: { [archivePath.virtual]: archive },
       exitCode,
       ...(stderr !== null ? { stderr } : {}),
     }),
@@ -298,6 +298,9 @@ export async function tarGeneric(
   }
   const fFlag = fl.asStr('f') ?? null
   const CFlags = fl.asList('C')
+  // The words that spelled -f and each -C, for the lines that name them.
+  const archiveTyped = fl.asPaths('f')[0]?.rawPath
+  const CTyped = fl.asPaths('C').map((c) => c.rawPath)
   // Only the last -C is a destination; create checks every one.
   const CFlag = CFlags.length > 0 ? (CFlags[CFlags.length - 1] ?? null) : null
   const stripN = fl.asInt('strip_components') ?? 0
@@ -313,14 +316,15 @@ export async function tarGeneric(
     if (archivePath === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
+    const archiveSpec = makePathSpec(archivePath, mountPrefix, archiveTyped)
     const plan = await planCreate(paths, {
-      archive: makePathSpec(archivePath, mountPrefix),
+      archive: archiveSpec,
       exclude,
       dereference: fl.asBool('h'),
       stat: deps.stat,
       walk: deps.walk,
       isDir: deps.isDir,
-      directories: CFlags.map((c) => makePathSpec(c, mountPrefix)),
+      directories: CFlags.map((c, index) => makePathSpec(c, mountPrefix, CTyped[index])),
       links: opts.ns?.links ?? null,
       mounts: opts.ns?.mounts ?? null,
     })
@@ -334,7 +338,7 @@ export async function tarGeneric(
         }),
       ]
     }
-    return writeArchive(plan, archivePath, mountPrefix, compression, verbose, deps)
+    return writeArchive(plan, archiveSpec, compression, verbose, deps)
   }
 
   if (list) {

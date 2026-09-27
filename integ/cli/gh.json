@@ -1247,6 +1247,84 @@
         "stdout": "integ/repo-cli:src/parse/step_1.py: def parse_step_1(value: int) -> int:\ninteg/repo-cli:tests/test_parse.py: from src.parse.step_1 import parse_step_1\ninteg/repo-cli:tests/test_parse.py: def test_parse_step_1() -> None:\ninteg/repo-cli:tests/test_parse.py: assert parse_step_1(1) == 2\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "gh_file_options_resolve_relative_and_attached_paths",
+      "seq": 569109,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "mkdir -p /scratch/cli-files && echo 'relative body' > /scratch/cli-files/body.md && cd /scratch/cli-files && gh issue edit 4 --body-file ./body.md >/dev/null && gh issue view 4 --json body --jq .body && gh issue edit 4 -Fbody.md >/dev/null && gh issue view 4 --json body --jq .body && gh issue edit 4 --body-file=./body.md >/dev/null && gh issue view 4 --json body --jq .body",
+      "expect": {
+        "exit": 0,
+        "stdout": "relative body\n\nrelative body\n\nrelative body\n\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_file_inputs_resolve_in_cwd",
+      "seq": 569110,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "cd /scratch/cli-files && echo '{}' > request.json && gh api repos/integ/repo-cli --method GET --input ./request.json --jq .full_name && gh api repos/integ/repo-cli --method GET --input=./request.json --jq .full_name && gh api repos/integ/repo-cli --method GET -F body=@./body.md --jq .full_name",
+      "expect": {
+        "exit": 0,
+        "stdout": "integ/repo-cli\ninteg/repo-cli\ninteg/repo-cli\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_file_options_keep_stdin_and_literal_dash_distinct",
+      "seq": 569111,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "cd /scratch/cli-files && printf 'literal' > ./- && gh issue edit 4 --body-file ./- >/dev/null && gh issue view 4 --json body --jq .body && printf 'stdin' | gh issue edit 4 --body-file=- >/dev/null && gh issue view 4 --json body --jq .body && printf '{}' | gh api repos/integ/repo-cli --method GET --input=- --jq .full_name",
+      "expect": {
+        "exit": 0,
+        "stdout": "literal\nstdin\ninteg/repo-cli\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_file_read_errors_preserve_typed_paths",
+      "seq": 569112,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "cd /scratch/cli-files; gh issue edit 4 --body-file ./absent.md; gh release create unused --notes-file ./absent.md; gh api repos/integ/repo-cli --input ./absent.md; gh api repos/integ/repo-cli -F body=@./absent.md",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "gh issue edit: read ./absent.md: No such file or directory\ngh release create: read ./absent.md: No such file or directory\ngh api: read ./absent.md: No such file or directory\ngh api: read ./absent.md: No such file or directory\n"
+      }
+    },
+    {
+      "id": "gh_file_read_errors_report_non_directory",
+      "seq": 569113,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "cd /scratch/cli-files; gh issue edit 4 --body-file ./body.md/child; gh api repos/integ/repo-cli -F body=@./body.md/child",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "gh issue edit: read ./body.md/child: Not a directory\ngh api: read ./body.md/child: Not a directory\n"
+      }
+    },
+    {
+      "id": "gh_file_options_use_last_value_instead_of_scanning_argv",
+      "seq": 569114,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "cd /scratch/cli-files && printf 'ignored' | gh issue edit 4 --body-file - --body-file ./body.md >/dev/null && gh issue view 4 --json body --jq .body && printf 'last' | gh issue edit 4 --body-file ./body.md --body-file=- >/dev/null && gh issue view 4 --json body --jq .body",
+      "expect": {
+        "exit": 0,
+        "stdout": "relative body\n\nlast\n",
+        "stderr": ""
+      }
     }
   ]
 }

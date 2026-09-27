@@ -65,12 +65,15 @@ def glob_spec(virtual: str, prefix: str) -> PathSpec:
 
 
 def make_io(**kwargs) -> CommandIO:
-    return CommandIO(readdir=fake_readdir,
-                     read_bytes=fake_readdir,
-                     read_stream=fake_readdir,
-                     stat=fake_readdir,
-                     is_mounted=lambda a: True,
-                     **kwargs)
+    return CommandIO(
+        **{
+            "readdir": fake_readdir,
+            "read_bytes": fake_readdir,
+            "read_stream": fake_readdir,
+            "stat": fake_readdir,
+            "is_mounted": lambda a: True,
+            **kwargs
+        })
 
 
 def test_command_io_default_glob_cap():
@@ -987,12 +990,22 @@ async def test_capability_and_mode_share_path_guards(available, operation,
         hidden_paths=HiddenPaths(paths=("/data/hidden", )),
         shown_paths=ShownPaths(
             entries=(ShowEntry("/data/build", MountMode.WRITE), )))
+
+    async def regions(accessor, path, index=None):
+        # The regions stand as directories, so a mkdir of `f` inside
+        # one is a real create and answers the region's own refusal
+        # (a missing parent would be ENOENT, as GNU says).
+        if path.virtual in ("/data/locked", "/data/hidden", "/data/build"):
+            return FileStat(name=path.virtual, type=FileType.DIRECTORY)
+        raise FileNotFoundError(path.virtual)
+
     st = set_current_session(session)
     mt = set_mount_gate("/data", MountMode.WRITE)
     try:
         ops = adapter.with_policy_guard(
             adapter.with_path_guards(
-                make_io(**{operation.value: backend} if available else {})))
+                make_io(stat=regions,
+                        **{operation.value: backend} if available else {})))
         path = _spec(f"/data/{region}/f")
         args = [NOOPAccessor(), path]
         if operation in (Operation.COPY, Operation.RENAME):

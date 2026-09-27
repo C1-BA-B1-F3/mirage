@@ -90,7 +90,7 @@ describe('rg program files from stdin', () => {
     const [texts, flags, rest, error] = await prepareProgram(
       'rg',
       ['/in'],
-      { file: ['-'] },
+      { file: [typed('-')] },
       ENC.encode('a\nb\n'),
       noDispatch,
     )
@@ -105,7 +105,7 @@ describe('rg program files from stdin', () => {
     const [, , , error] = await prepareProgram(
       'rg',
       [],
-      { file: ['-', '-'] },
+      { file: [typed('-'), typed('-')] },
       ENC.encode('a\n'),
       noDispatch,
       [typed('-')],
@@ -120,7 +120,7 @@ describe('rg program files from stdin', () => {
     const [, , , error] = await prepareProgram(
       'rg',
       [],
-      { file: ['-'] },
+      { file: [typed('-')] },
       ENC.encode('a\n'),
       noDispatch,
       [typed('/in'), typed('-')],
@@ -137,7 +137,7 @@ describe('rg program files from stdin', () => {
     const [, flags, rest, error] = await prepareProgram(
       'rg',
       [],
-      { file: ['/dev/stdin'] },
+      { file: [typed('/dev/stdin')] },
       ENC.encode('a\n'),
       noDispatch,
       [typed('-')],
@@ -152,7 +152,7 @@ describe('rg program files from stdin', () => {
     const [, flags, , error] = await prepareProgram(
       'grep',
       [],
-      { file: ['-', '-'], e: [] },
+      { file: [typed('-'), typed('-')], e: [] },
       ENC.encode('a\n'),
       noDispatch,
       [typed('-')],

@@ -96,6 +96,7 @@ async function readOnlyShell(line: string): Promise<[number, string, string, str
   const vfs = new RAMVFS()
   vfs.store.files.set('/f.txt', ENC.encode('hello\n'))
   vfs.store.files.set('/f.txt.gz', await gzipUtil(ENC.encode('hello\n')))
+  vfs.store.files.set('/g.txt', ENC.encode('fresh\n'))
   const ws = new Workspace(
     { '/ro/': [vfs, MountMode.READ] },
     { shellParser: await getTestParser() },
@@ -124,24 +125,27 @@ describe('gzip and gunzip on a read-only mount', () => {
     ['cd /ro && gunzip < f.txt.gz', 'hello\n'],
     ['cd /ro && gunzip - < f.txt.gz', 'hello\n'],
   ])('runs %s, which writes nothing', async (line, stdout) => {
-    expect(await readOnlyShell(line)).toEqual([0, stdout, '', ['/f.txt', '/f.txt.gz']])
+    expect(await readOnlyShell(line)).toEqual([0, stdout, '', ['/f.txt', '/f.txt.gz', '/g.txt']])
   })
 
   // Nothing refuses the command before it runs: the write of the
   // replacement file is what the mount refuses, in the command's own
-  // voice, and the operand it would have replaced is left in place.
+  // voice, and the operand it would have replaced is left in place. An
+  // output already there is left alone without -f (a warning); -f's refused
+  // replace goes on to the next operand, and an output that cannot be
+  // created ends the run with write_error's leading newline. Pinned against
+  // gzip 1.13 on a read-only tmpfs; mirrors test_gzip.py.
+  const exists = 'gzip: /ro/f.txt.gz already exists;\tnot overwritten\n'
   it.each([
-    ['gzip /ro/f.txt', 'gzip: /ro/f.txt.gz'],
-    ['gzip -k /ro/f.txt', 'gzip: /ro/f.txt.gz'],
-    ['gzip -d /ro/f.txt.gz', 'gzip: /ro/f.txt'],
-    ['gunzip /ro/f.txt.gz', 'gunzip: /ro/f.txt'],
-    ['gunzip -k /ro/f.txt.gz', 'gunzip: /ro/f.txt'],
-  ])('refuses %s at its write', async (line, refused) => {
-    expect(await readOnlyShell(line)).toEqual([
-      1,
-      '',
-      `${refused}: Read-only file system\n`,
-      ['/f.txt', '/f.txt.gz'],
-    ])
+    ['gzip /ro/f.txt', 2, exists],
+    ['gzip -k /ro/f.txt', 2, exists],
+    ['gzip -f /ro/f.txt', 1, 'gzip: /ro/f.txt.gz: Read-only file system\n'],
+    ['gzip /ro/g.txt', 1, '\ngzip: /ro/g.txt.gz: Read-only file system\n'],
+    ['gzip /ro/f.txt /ro/g.txt', 1, exists + '\ngzip: /ro/g.txt.gz: Read-only file system\n'],
+    ['gzip -d /ro/f.txt.gz', 1, 'gzip: /ro/f.txt: Read-only file system\n'],
+    ['gunzip /ro/f.txt.gz', 1, 'gunzip: /ro/f.txt: Read-only file system\n'],
+    ['gunzip -k /ro/f.txt.gz', 1, 'gunzip: /ro/f.txt: Read-only file system\n'],
+  ])('refuses %s at its write', async (line, code, stderr) => {
+    expect(await readOnlyShell(line)).toEqual([code, '', stderr, ['/f.txt', '/f.txt.gz', '/g.txt']])
   })
 })

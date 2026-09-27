@@ -88,6 +88,8 @@ def _argmatch_dests(spec: CommandSpec) -> frozenset[str]:
 class ParsedArgs:
     flags: dict[str, ParsedFlagValue]
     args: list[tuple[str, ValueType]]
+    # Selected PATH values before cwd resolution; keys match parse_to_kwargs.
+    raw_path_flags: dict[str, ParsedFlagValue] = field(default_factory=dict)
     path_flag_values: list[str] = field(default_factory=list)
     raw_operands: list[tuple[str, ValueType]] = field(default_factory=list)
     text_flag_values: list[str] = field(default_factory=list)
@@ -982,11 +984,13 @@ def parse_command(
             raw_operands.append((arg, kind))
         word_kinds[raw_indices[j]] = kind
 
+    raw_path_flags: dict[str, ParsedFlagValue] = {}
     path_flag_values: list[str] = []
     for flag_name, kind in cs.kind_by_dest.items():
         if kind != "path" or flag_name not in flags:
             continue
         value = flags[flag_name]
+        raw_path_flags[flag_kwarg_name(flag_name)] = value
         if isinstance(value, list) and flag_name in cs.pair_dests:
             # Only the odd slots are the paths: the even ones name them.
             paired = [
@@ -1029,6 +1033,7 @@ def parse_command(
     return ParsedArgs(
         flags=flags,
         args=classified,
+        raw_path_flags=raw_path_flags,
         path_flag_values=path_flag_values,
         raw_operands=raw_operands,
         text_flag_values=text_flag_values,

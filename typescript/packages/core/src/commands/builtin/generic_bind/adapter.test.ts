@@ -855,7 +855,13 @@ function capabilityOps(backend?: () => Promise<void>): CommandIO {
     readdir: () => Promise.resolve([]),
     readBytes: () => Promise.resolve(new Uint8Array()),
     readStream: () => oneChunkStream(new Uint8Array()),
-    stat: () => Promise.resolve(new FileStat({ type: FileType.FILE, name: 'f' })),
+    // The regions stand as directories, so a mkdir of `f` inside one is a
+    // real create and answers the region's own refusal (a missing parent
+    // would be ENOENT, as GNU says). Mirrors test_adapter.py.
+    stat: (_accessor, path) =>
+      ['/data/locked', '/data/hidden', '/data/build'].includes(path.virtual)
+        ? Promise.resolve(new FileStat({ type: FileType.DIRECTORY, name: path.virtual }))
+        : Promise.reject(enoent(path.virtual)),
     isMounted: () => true,
     ...(backend === undefined
       ? {}

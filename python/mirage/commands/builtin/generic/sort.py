@@ -173,14 +173,19 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> SortFlags:
     fl = FlagView(flags, spec=SPECS["sort"])
     mode: str | None = None
     output: PathSpec | None = None
+    # Each -o is the next word typed, and GNU compares two by that word
+    # (STREQ), so `-o ./out -o out` names two outputs even though they
+    # are one file. A line parsed for a cross-mount strategy keeps the
+    # resolved strings, compared as they are.
+    typed = iter(fl.as_paths("output"))
     for dest, value in fl.occurrences("key", "output", "c", "C", "check"):
         if dest == "key" and isinstance(value, str):
             parse_keydef(value, KeyMods(), False)
         elif dest == "output":
-            path = value if isinstance(value, PathSpec) else next(
-                (p for p in fl.as_paths("output")
-                 if p.virtual == value), PathSpec.from_str_path(str(value)))
-            if output is not None and path.virtual != output.virtual:
+            spelled = next(typed, None)
+            path = spelled if spelled is not None else (value if isinstance(
+                value, PathSpec) else PathSpec.from_str_path(str(value)))
+            if output is not None and path.raw_path != output.raw_path:
                 raise UsageError(MULTIPLE_OUTPUTS)
             output = path
         elif dest == "check" or value is True:
@@ -358,9 +363,8 @@ async def sort(
     this writes it once every input has been read, so when an input fails
     only at its stat or its read (a directory), GNU reports an unopenable
     output first and leaves a new one behind empty, and this reports the
-    input and writes nothing. An output is named by its resolved path,
-    where GNU echoes the word typed, which is the same TypeScript
-    constraint ``parse_flags`` documents.
+    input and writes nothing. An output is named by the word typed, as
+    GNU echoes it.
 
     Args:
         paths (list[PathSpec]): the operands; none reads standard input.
@@ -429,7 +433,7 @@ async def sort(
         except FS_ERRORS as exc:
             strerror = fs_strerror(exc) or str(exc)
             return b"", IOResult(stderr=sort_die(OPEN_FAILED,
-                                                 parsed.output.virtual,
+                                                 parsed.output.raw_path,
                                                  strerror),
                                  exit_code=2)
         return b"", IOResult(writes={parsed.output.mount_path: output},

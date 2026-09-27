@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { PathSpec } from '../../types.ts'
 import { ImmutableSet } from '../../utils/immutable_set.ts'
 
 // Command names the spec layer references by value. Not a registry of
@@ -335,4 +336,12 @@ export class CommandSpec {
   }
 }
 
-export type FlagValue = string | boolean | number | string[]
+// What the parser itself can put in the bag: it works on argv, so every
+// value is still text, or the bool/number a flag's own shape implies.
+export type ParsedFlagValue = string | boolean | number | string[]
+// What a command receives. The executor recovers a PATH-typed value as the
+// PathSpec of the word that spelled it (`parseFlags`), and the mount stamps
+// its backend key (`Mount.executeCmd`), so an error line can name the path
+// as typed. The mixed list is the `pair` shape (jq's `--rawfile name file`).
+// Mirrors Python's FlagValue.
+export type FlagValue = ParsedFlagValue | PathSpec | PathSpec[] | (string | PathSpec)[]

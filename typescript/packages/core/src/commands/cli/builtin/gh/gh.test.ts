@@ -14,7 +14,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type * as AccessorModule from './accessor.ts'
-import { bodyValue, repoNumber } from './accessor.ts'
+import { bodyValue, readCliFile, repoNumber } from './accessor.ts'
 import { type GitHubResponse, type GitHubTransport } from '../../../../core/github/client.ts'
 import { cliSpecFor } from '../../specs.ts'
 import type { CommandFnResult } from '../../../config.ts'
@@ -23,6 +23,8 @@ import type { CLIInvocation } from '../../types.ts'
 import { issueComments } from '../../../../core/github/issue.ts'
 import { commentsFor, commentsText } from './issue.ts'
 import { GH } from './index.ts'
+import { PathSpec } from '../../../../types.ts'
+import { IOResult } from '../../../../io/types.ts'
 import { api } from './api.ts'
 import { fork, listCmd, rename, summary, view } from './repo.ts'
 
@@ -318,8 +320,27 @@ describe('gh repo', () => {
 })
 
 describe('gh file input', () => {
+  it('keeps a resolved path and materializes streamed file content', async () => {
+    const path = new PathSpec({
+      virtual: '/scratch/body.md',
+      directory: '/scratch/',
+      vfsPath: 'body.md',
+      rawPath: './body.md',
+    })
+    const content = ['first ', 'second']
+    const dispatch = vi.fn(async function* () {
+      for (const chunk of content) yield await Promise.resolve(new TextEncoder().encode(chunk))
+    })
+    const read = vi.fn(() => Promise.resolve([dispatch(), new IOResult()] as [unknown, IOResult]))
+    const call = inv([], {}, { token: 't' }, { doors: { dispatch: read } })
+    expect(DEC.decode(await readCliFile(call, path, '--body-file'))).toBe('first second')
+    expect(read).toHaveBeenCalledWith('read', path)
+  })
+
   it('reads short -F - from standard input after path resolution', async () => {
-    const flags = { body_file: '/-' }
+    const flags = {
+      body_file: new PathSpec({ virtual: '/-', directory: '/', vfsPath: '-', rawPath: '-' }),
+    }
     for (const argv of [
       ['issue', 'create', '-F', '-'],
       ['issue', 'create', '-F-'],

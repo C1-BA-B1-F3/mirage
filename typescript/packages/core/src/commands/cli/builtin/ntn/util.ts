@@ -16,6 +16,7 @@ import { HttpNotionTransport } from '../../../../core/notion/client.ts'
 import type { NotionConfig } from '../../../../core/notion/config.ts'
 import { IOResult, type ByteSource } from '../../../../io/types.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
+import type { FlagValue } from '../../../spec/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 
@@ -24,7 +25,7 @@ const CHECKED = '✓'
 
 export function notionTransport(
   config: unknown,
-  bag?: Record<string, string | boolean | number | string[]>,
+  bag?: Record<string, FlagValue>,
 ): HttpNotionTransport {
   const cfg = config as NotionConfig
   // --notion-version is upstream's per-invocation override of the header, and

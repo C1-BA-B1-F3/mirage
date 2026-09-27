@@ -35,6 +35,7 @@ import { getExtension } from '../../commands/resolve.ts'
 import { resolveLimit } from '../../policy/index.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import { CommandTimeoutError } from '../../commands/errors.ts'
+import { flagOccurrences } from '../../commands/spec/flag_view.ts'
 import type { CommandSpec, FlagValue } from '../../commands/spec/types.ts'
 import { CachableAsyncIterator } from '../../io/cachable_iterator.ts'
 import type { ByteSource } from '../../io/types.ts'
@@ -522,17 +523,29 @@ export class MountEntry {
       const isFiletypeCmd =
         extension !== null && extension !== '' && this.cmds.has(cmdKey(cmdName, extension))
 
-      const prefixedPaths = paths.map(
-        (p) =>
-          new PathSpec({
-            virtual: p.virtual,
-            directory: p.directory,
-            pattern: p.pattern,
-            resolved: p.resolved,
-            vfsPath: mountKey(p.virtual, mountPrefix),
-            rawPath: p.rawPath,
-          }),
-      )
+      const stamp = (p: PathSpec): PathSpec =>
+        new PathSpec({
+          virtual: p.virtual,
+          directory: p.directory,
+          pattern: p.pattern,
+          resolved: p.resolved,
+          vfsPath: mountKey(p.virtual, mountPrefix),
+          rawPath: p.rawPath,
+        })
+      const prefixedPaths = paths.map(stamp)
+      // Stamp this mount's backend key onto path-shaped flag values so
+      // backend reads can address them: a single PathSpec (awk -f, tar -f)
+      // or a list (repeated grep -f, jq's --rawfile pairs). Everything else
+      // passes through unchanged. Mirrors Python's execute_cmd.
+      const stampedFlags: Record<string, FlagValue> = { ...flags }
+      flagOccurrences(stampedFlags).push(...flagOccurrences(flags))
+      for (const [key, value] of Object.entries(flags)) {
+        if (value instanceof PathSpec) stampedFlags[key] = stamp(value)
+        else if (Array.isArray(value) && value.some((item) => item instanceof PathSpec)) {
+          const items: readonly (string | PathSpec)[] = value
+          stampedFlags[key] = items.map((item) => (item instanceof PathSpec ? stamp(item) : item))
+        }
+      }
 
       // A pattern operand travels to the handler whole. The handler
       // resolves it once, through the shared adapter, which is where the
@@ -544,7 +557,7 @@ export class MountEntry {
       const accessor = (this.vfs as { accessor?: Accessor }).accessor ?? NOOP_ACCESSOR
       const cmdOpts: CommandOpts = {
         stdin: context.stdin ?? null,
-        flags,
+        flags: stampedFlags,
         filetypeFns: isFiletypeCmd ? null : filetypeFns,
         mountPrefix,
         command: cmdName,

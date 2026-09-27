@@ -5,7 +5,9 @@ from mirage.commands.builtin.utils.lines import split_lines
 from mirage.commands.builtin.utils.stream import read_stdin_async
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
-from mirage.utils.key_prefix import mount_spec
+from mirage.utils.errors import FS_ERRORS, fs_strerror
+from mirage.utils.key_prefix import mount_key
+from mirage.utils.path import resolve_path
 
 
 def _split_by_patterns(
@@ -43,6 +45,8 @@ async def csplit(
     stdin: ByteSource | None = None,
     prefix: str | PathSpec = "xx",
     mount_prefix: str = "",
+    cwd: str = "/",
+    relay: bool = False,
     digits: int = 2,
     suffix_format: str | None = None,
     keep_on_error: bool = False,
@@ -50,10 +54,14 @@ async def csplit(
     suppress_matched: bool = False,
     elide_empty: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
+    # An output is the -f prefix, or `xx` in the working directory, plus
+    # its suffix, wherever the input lives: GNU writes `xx00` to the cwd,
+    # names it as it formed it (`csplit: xx00`), and stops at the first
+    # one it cannot create, -k or not.
     if isinstance(prefix, PathSpec):
-        prefix = prefix.mount_path
+        prefix_virtual, typed_prefix = prefix.virtual, prefix.raw_path
     else:
-        prefix = "/" + prefix.lstrip("/")
+        prefix_virtual, typed_prefix = resolve_path(prefix, cwd), prefix
     suffix_fmt = suffix_format if suffix_format else f"%0{digits}d"
     # `-` is stdin. /dev/stdin would run csplit on the /dev mount, which
     # is where its pieces would land, so it stays a path.
@@ -67,20 +75,35 @@ async def csplit(
     parts = _split_by_patterns(lines, list(patterns), suppress_matched)
     writes: dict[str, ByteSource] = {}
     sizes: list[str] = []
+    stderr: bytes | None = None
     try:
         for idx, part in enumerate(parts):
             if elide_empty and not part:
                 continue
-            filename = prefix + (suffix_fmt % idx)
+            name = suffix_fmt % idx
+            virtual = prefix_virtual + name
+            spec = PathSpec.from_str_path(virtual,
+                                          mount_key(virtual, mount_prefix))
             data = ("\n".join(part) + "\n").encode() if part else b""
-            await write_bytes(mount_spec(mount_prefix, filename), data)
-            writes[filename] = data
+            try:
+                await write_bytes(spec, data)
+            except FS_ERRORS as exc:
+                stderr = (f"csplit: {typed_prefix + name}: "
+                          f"{fs_strerror(exc)}\n").encode()
+                break
+            if not relay:
+                # Relay writes land on whichever mount owns each path and
+                # invalidate through the dispatcher; keying them here
+                # would have the runner prefix them onto this mount.
+                writes[spec.mount_path] = data
             sizes.append(str(len(data)))
     except Exception:
         if not keep_on_error:
             raise
     output = "" if silent or not sizes else "\n".join(sizes) + "\n"
-    return output.encode(), IOResult(writes=writes)
+    return output.encode(), IOResult(writes=writes,
+                                     stderr=stderr,
+                                     exit_code=1 if stderr else 0)
 
 
 __all__ = ["csplit"]

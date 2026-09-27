@@ -4,7 +4,7 @@
       "id": "mktemp_tier2_directory_tmpdir_suffix",
       "seq": 910033,
       "targets": ["ram", "disk"],
-      "command": "p=$(mktemp --directory --tmpdir=/data/t2mktemp1 --suffix=.dir 'd.XXXX'); test -d \"$p\" && basename \"$p\" | sed 's/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]/XXXX/'",
+      "command": "p=$(mkdir -p /data/t2mktemp1 && mktemp --directory --tmpdir=/data/t2mktemp1 --suffix=.dir 'd.XXXX'); test -d \"$p\" && basename \"$p\" | sed 's/[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]/XXXX/'",
       "expect": { "exit": 0, "stdout": "d.XXXX.dir\n", "stderr": "" },
       "flags": ["directory", "tmpdir", "suffix"]
     },

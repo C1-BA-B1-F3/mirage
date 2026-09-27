@@ -22,7 +22,7 @@ import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView, flagOccurrences } from '../../spec/flag_view.ts'
-import type { FlagValue } from '../../spec/types.ts'
+import type { FlagValue, ParsedFlagValue } from '../../spec/types.ts'
 import { decodeLine, encodeLine } from '../grep_offsets.ts'
 import { buildPatternStr, resolvePattern } from '../grep_pattern.ts'
 import { exitCodeFor } from '../grep_scan.ts'
@@ -102,7 +102,8 @@ function operandName(p: PathSpec): string {
 export function numberFlag(fl: FlagView, dest: string): number | null {
   const raw = fl.raw(dest)
   if (raw === undefined || typeof raw === 'boolean') return null
-  const value = String(raw)
+  // A number option is never PATH-typed, so its value is the parser's own.
+  const value = String(raw as ParsedFlagValue)
   const digits = value.startsWith('+') ? value.slice(1) : value
   let reason: string | null = null
   if (value === '') reason = 'cannot parse integer from empty string'

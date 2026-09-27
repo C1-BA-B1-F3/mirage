@@ -12,40 +12,51 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from functools import partial
+
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.mktemp import mktemp_generic
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           Operation)
+from mirage.commands.builtin.utils.copy import path_exists
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
-from mirage.utils.path import resolve_path
+from mirage.utils.key_prefix import mount_key
 
 
 async def mktemp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                  texts: list[str],
                  opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
+    # The name a pathless mktemp creates is under $TMPDIR or /tmp, which
+    # the working directory's mount rarely owns, so the create goes
+    # through the dispatcher to whichever mount does. Only a generic run
+    # outside a workspace, with no dispatcher and no other mount, writes
+    # through this mount's own ops.
     dispatch = opts.dispatch
 
-    async def mkdir(path: PathSpec, parents: bool = False) -> None:
+    def local(path: PathSpec) -> PathSpec:
+        return PathSpec.from_str_path(
+            path.virtual, mount_key(path.virtual, opts.mount_prefix or ""))
+
+    async def mkdir(path: PathSpec) -> None:
         if dispatch is not None:
-            await dispatch("mkdir",
-                           PathSpec.from_str_path(
-                               resolve_path(path.virtual, opts.cwd.virtual)),
-                           parents=parents)
+            await dispatch("mkdir", path)
         else:
-            await ops.require(Operation.MKDIR)(accessor, path, parents=parents)
+            await ops.require(Operation.MKDIR)(accessor, local(path))
 
     async def write(path: PathSpec, data: bytes) -> None:
         if dispatch is not None:
-            await dispatch("write",
-                           PathSpec.from_str_path(
-                               resolve_path(path.virtual, opts.cwd.virtual)),
-                           data=data)
+            await dispatch("write", path, data=data)
         else:
-            await ops.require(Operation.WRITE)(accessor, path, data)
+            await ops.require(Operation.WRITE)(accessor, local(path), data)
 
-    return await mktemp_generic(paths, list(texts), opts, mkdir, write)
+    async def exists(path: PathSpec) -> bool:
+        if opts.stat_path is not None:
+            return await opts.stat_path(path.virtual) is not None
+        return await path_exists(partial(ops.stat, accessor), local(path))
+
+    return await mktemp_generic(paths, list(texts), opts, mkdir, write, exists)
 
 
 BUILDER = Builder('mktemp', mktemp, write=True)

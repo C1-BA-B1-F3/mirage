@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { command } from '../../commands/config.ts'
-import { CommandSpec, Operand, Option } from '../../commands/spec/types.ts'
+import { CommandSpec, type FlagValue, Operand, Option } from '../../commands/spec/types.ts'
 import { IOResult } from '../../io/types.ts'
 import { JobTable } from '../../shell/job_table/index.ts'
 import { BaseVFS, type VFS } from '../../vfs/base.ts'
@@ -99,7 +99,7 @@ describe('handleCommand — dispatches to mount that has the command', () => {
       options: [new Option({ short: '-n', type: 'str' })],
       rest: new Operand({ type: 'path' }),
     })
-    let seenFlags: Record<string, string | boolean | number | string[]> = {}
+    let seenFlags: Record<string, FlagValue> = {}
     const [cmd] = command({
       name: 'head',
       vfs: 'ram',

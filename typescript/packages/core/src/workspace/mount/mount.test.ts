@@ -566,8 +566,12 @@ it('a path-guarded command is still held at its write', async () => {
   if (cmd === undefined) throw new Error('missing gzip')
   expect(cmd.pathGuarded).toBe(true)
   mount.register(cmd)
-  await expect(
-    mount.executeCmd('gzip', [PathSpec.fromStrPath('/ram/a')], [], {}),
-  ).rejects.toMatchObject({ code: 'EROFS' })
+  // The write is refused where it happens and gzip says so in its own words
+  // (the fatal write_error form), leaving the store untouched.
+  const [, io] = await mount.executeCmd('gzip', [PathSpec.fromStrPath('/ram/a')], [], {})
+  expect([io.exitCode, new TextDecoder().decode(io.stderr as Uint8Array)]).toEqual([
+    1,
+    '\ngzip: /ram/a.gz: Read-only file system\n',
+  ])
   expect([...vfs.store.files.entries()]).toEqual([['/a', new TextEncoder().encode('original')]])
 })

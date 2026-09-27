@@ -14,6 +14,7 @@ from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView, MountView
 from mirage.types import PathSpec
+from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.utils.fnmatch import fnmatch
 from mirage.utils.path import respell_one
 
@@ -33,6 +34,12 @@ REPEATED_EXIT = 16
 REPEATED_ERROR = ("\nzip error: Invalid command arguments "
                   "(cannot repeat names in zip file)\n")
 REPEATED_INDENT = " " * 21
+# An archive zip cannot create ends the run before any member is added,
+# -q or not (Info-ZIP's ZE_CREAT, exit 15). Info-ZIP prints it on stdout
+# like every diagnostic; mirage keeps it on stderr with the rest.
+CREATE_EXIT = 15
+CREATE_ERROR = ("zip I/O error: {0}\n"
+                "zip error: Could not create output file ({1})\n")
 # Info-ZIP has no mount boundaries to describe, so this borrows GNU
 # tar's --one-file-system wording rather than inventing a second one.
 CROSSING_REASON = OTHER_FILESYSTEM
@@ -337,7 +344,13 @@ async def zip_cmd(
             zf.writestr(_info(member, len(data)), data)
             output_lines.append(f"  adding: {member.name}")
     archive = buf.getvalue()
-    await write_bytes(archive_path, archive)
+    try:
+        await write_bytes(archive_path, archive)
+    except FS_ERRORS as exc:
+        return None, IOResult(
+            exit_code=CREATE_EXIT,
+            stderr=_stderr(plan.warnings, q) + CREATE_ERROR.format(
+                fs_strerror(exc), archive_path.raw_path).encode())
     stdout = ("\n".join(output_lines) + "\n").encode() if not q else None
     return stdout, IOResult(writes={archive_path.mount_path: archive},
                             stderr=_stderr(plan.warnings, q))

@@ -15,6 +15,8 @@
 from functools import partial
 
 from mirage.accessor.base import Accessor
+from mirage.commands.builtin.generic.crossmount.utils import \
+    transfer_primitives
 from mirage.commands.builtin.generic.split import split as generic_split
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           Operation, bound_op,
@@ -56,10 +58,17 @@ async def split(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                     if isinstance(numeric_value, str) else
                     parse_suffix_start(hex_value, True, suffix_len)
                     if isinstance(hex_value, str) else 0)
+    # The pieces go to the prefix, or `x` in the working directory, which
+    # need not be this mount, so a dispatcher routes each write to the
+    # mount that owns it.
+    relay = opts.dispatch is not None
+    write_bytes = (transfer_primitives(opts.dispatch)["write"]
+                   if opts.dispatch is not None else partial(
+                       ops.require(Operation.WRITE), accessor))
     return await generic_split(
         paths,
         read_stream=bound_op(ops.read_stream, accessor, opts.index),
-        write_bytes=partial(ops.require(Operation.WRITE), accessor),
+        write_bytes=write_bytes,
         stdin=opts.stdin,
         lines_per_file=(parse_lines_value(lines_value)
                         if lines_value is not None else 0),
@@ -74,7 +83,9 @@ async def split(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         suffix_start=suffix_start,
         additional_suffix=fl.as_str("additional_suffix") or "",
         separator=parse_separator(fl.as_str("separator")),
-        mount_prefix=opts.mount_prefix)
+        mount_prefix=opts.mount_prefix,
+        cwd=opts.cwd.virtual,
+        relay=relay)
 
 
 BUILDER = Builder('split', split, write=True)

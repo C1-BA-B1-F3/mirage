@@ -36,7 +36,7 @@ import { readStdinAsync } from '../utils/stream.ts'
 import { argmatchError } from '../../spec/usage.ts'
 import { argmatch } from '../../spec/argmatch.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { type FlagValue } from '../../spec/types.ts'
+import { type FlagValue, type ParsedFlagValue } from '../../spec/types.ts'
 import { specOf } from '../../spec/builtins.ts'
 
 const ENC = new TextEncoder()
@@ -46,7 +46,7 @@ export interface SortFlags extends SortGlobals {
   check: boolean
   checkQuiet: boolean
   merge: boolean
-  output: string | null
+  output: PathSpec | null
   zeroTerminated: boolean
 }
 
@@ -128,7 +128,7 @@ function earliest(
 // `--check` and `--check=diagnose-first` are `c`; `-C` and `--check=quiet`
 // (or `silent`) are `C`. A `--check` word argmatch refuses throws its
 // UsageError, exit 1.
-function checkMode(raw: FlagValue, dest: string): string {
+function checkMode(raw: ParsedFlagValue, dest: string): string {
   if (dest !== 'check') return dest
   if (raw === true) return 'c'
   const word = String(raw)
@@ -143,13 +143,23 @@ function checkMode(raw: FlagValue, dest: string): string {
 export function parseFlags(bag: Record<string, FlagValue>): SortFlags {
   const fl = new FlagView(bag, specOf('sort'))
   let mode: string | null = null
-  let output: string | null = null
+  let output: PathSpec | null = null
+  // Each -o is the next word typed, and GNU compares two by that word
+  // (STREQ), so `-o ./out -o out` names two outputs even though they are one
+  // file. A line parsed for a cross-mount strategy keeps the resolved
+  // strings, compared as they are. Mirrors sort.py.
+  const typed = fl.asPaths('output')
+  let next = 0
   for (const [dest, value] of fl.occurrences('key', 'output', 'c', 'C', 'check')) {
     if (dest === 'key' && typeof value === 'string') {
       parseKeydef(value, NO_MODS, false)
     } else if (dest === 'output') {
-      for (const path of typeof value === 'string' ? [value] : []) {
-        if (output !== null && path !== output) throw new UsageError(MULTIPLE_OUTPUTS)
+      for (const word of typeof value === 'string' ? [value] : []) {
+        const path = typed[next] ?? PathSpec.fromStrPath(word)
+        next += 1
+        if (output !== null && path.rawPath !== output.rawPath) {
+          throw new UsageError(MULTIPLE_OUTPUTS)
+        }
         output = path
       }
     } else if (dest === 'check' || value === true) {
@@ -294,9 +304,8 @@ async function readRuns(
 // it reads any input and this writes it once every input has been read, so
 // when an input fails only at its stat or its read (a directory), GNU
 // reports an unopenable output first and leaves a new one behind empty, and
-// this reports the input and writes nothing. An output is named by its
-// resolved path, where GNU echoes the word typed, since this bag carries no
-// other spelling of it. Mirrors sort in sort.py.
+// this reports the input and writes nothing. An output is named by the
+// word typed, as GNU echoes it. Mirrors sort in sort.py.
 export async function sortGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
@@ -347,8 +356,8 @@ export async function sortGeneric(
       ]
     }
     const outputPath = PathSpec.fromStrPath(
-      parsed.output,
-      mountKey(parsed.output, opts.mountPrefix ?? ''),
+      parsed.output.virtual,
+      mountKey(parsed.output.virtual, opts.mountPrefix ?? ''),
     )
     try {
       await write(outputPath, output)
@@ -357,7 +366,10 @@ export async function sortGeneric(
       const strerror = fsStrerror(error) ?? String(error)
       return [
         new Uint8Array(),
-        new IOResult({ exitCode: 2, stderr: sortDie(OPEN_FAILED, parsed.output, strerror) }),
+        new IOResult({
+          exitCode: 2,
+          stderr: sortDie(OPEN_FAILED, parsed.output.rawPath, strerror),
+        }),
       ]
     }
     return [

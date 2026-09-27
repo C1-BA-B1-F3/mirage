@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { IOResult, materialize, type ByteSource } from '../../../../../io/types.ts'
+import type { FlagValue } from '../../../../spec/types.ts'
 import { PathSpec } from '../../../../../types.ts'
 import { mountKey } from '../../../../../utils/key_prefix.ts'
 import { Cmd, type CrossResult, type RunSingle } from '../types.ts'
@@ -34,7 +35,7 @@ function scope(path: string): PathSpec {
 interface Call {
   cmd: string
   paths: string[]
-  flags: Record<string, string | boolean | number | string[]>
+  flags: Record<string, FlagValue>
 }
 
 function fakeRunSingle(outputs: Record<string, string>): { fn: RunSingle; calls: Call[] } {

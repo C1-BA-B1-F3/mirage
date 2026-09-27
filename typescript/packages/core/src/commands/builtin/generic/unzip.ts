@@ -30,6 +30,8 @@ import { inflateRaw } from '../../../utils/compress.ts'
 import { versionLine, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
 import { lstripSlash, rstripSlash, stripSlash } from '../../../utils/slash.ts'
+import { errorVirtualPath, fsStrerror, isFsError } from '../../../utils/errors.ts'
+import { pathExists } from '../utils/copy.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -369,15 +371,27 @@ function makePathSpec(virtual: string): PathSpec {
   })
 }
 
-async function ensureParents(
-  mkdir: (p: PathSpec, parents?: boolean) => Promise<void>,
-  path: string,
-): Promise<void> {
-  const idx = path.lastIndexOf('/')
-  if (idx <= 0) return
-  const dir = path.slice(0, idx)
-  if (dir === '' || dir === '/') return
-  await mkdir(makePathSpec(dir), true)
+// Info-ZIP's refusals of a create: a member it cannot write (exit 50,
+// PK_DISK), a directory of the chain it cannot make, and an extraction
+// directory it cannot make (exit 2, before any member). The strerror line
+// hangs under the text after the label, as UnZip 6.00 indents it. Mirrors
+// unzip.py.
+const CREATE_EXIT = 50
+const DEST_EXIT = 2
+
+function createError(verb: string, name: string, strerror: string): string {
+  return `error:  cannot ${verb} ${name}\n        ${strerror}\n`
+}
+
+function checkdirError(dir: string, strerror: string, member: string): string {
+  return (
+    `checkdir error:  cannot create ${dir}\n                 ${strerror}\n` +
+    `                 unable to process ${member}.\n`
+  )
+}
+
+function checkdirDest(dir: string, strerror: string): string {
+  return `checkdir:  cannot create extraction directory: ${dir}\n           ${strerror}\n`
 }
 
 export async function unzipGeneric(
@@ -426,7 +440,15 @@ export async function unzipGeneric(
   if (operand === undefined) return [null, new IOResult()]
   // Relay doors address by full virtual path (flatten's convention),
   // not by the mount-relative key the wrapper's accessor stamped.
-  const archivePath: PathSpec = relay ? makePathSpec(operand.virtual) : operand
+  const archivePath: PathSpec = relay
+    ? new PathSpec({
+        virtual: operand.virtual,
+        directory: operand.virtual,
+        vfsPath: stripSlash(operand.virtual),
+        resolved: true,
+        rawPath: operand.rawPath,
+      })
+    : operand
   const data = await materialize(stream(archivePath))
   let entries: ZipEntry[]
   let count: number
@@ -539,45 +561,86 @@ export async function unzipGeneric(
       return [out, new IOResult({ exitCode, stderr })]
     }
 
+    const base = rstripSlash(dest)
+    // Info-ZIP names an extracted path as the -d directory was typed
+    // followed by the member, or the bare member; the archive heads the
+    // listing as it was typed too. Mirrors unzip.py.
+    const typedDest = fl.asPaths('d')[0]?.rawPath ?? fl.asStr('d') ?? ''
+    const shown = (path: string): string => {
+      const rel = lstripSlash(path.slice(base.length))
+      return typedDest !== '' ? `${rstripSlash(typedDest)}/${rel}` : rel
+    }
+    const makeDirs = async (dir: string): Promise<void> => {
+      if (stat !== undefined) await ensureDir(dir, makePathSpec, mkdir, stat, made)
+      else await mkdir(makePathSpec(dir), true)
+    }
     const writes: Record<string, Uint8Array> = {}
-    const outputLines: string[] = []
+    const outputLines: string[] = quiet ? [] : [`Archive:  ${archivePath.rawPath}`]
+    const errors: string[] = []
     const made = new Set<string>()
+    const listing = (): ByteSource | null =>
+      outputLines.length > 0 ? ENC.encode(outputLines.join('\n') + '\n') : null
+    if (fl.raw('d') !== undefined) {
+      try {
+        await makeDirs(dest)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        return [
+          listing(),
+          new IOResult({
+            exitCode: DEST_EXIT,
+            stderr: ENC.encode(checkdirDest(typedDest, String(fsStrerror(err)))),
+          }),
+        ]
+      }
+    }
     for (const e of selected) {
       const entryName = lstripSlash(e.name)
-      const outPath = rstripSlash(dest) + '/' + rstripSlash(entryName)
-      const reportPath = mountPrefix !== '' ? mountPrefix + outPath : outPath
-      if (e.name.endsWith('/')) {
-        // A directory entry is the only record an empty directory leaves,
-        // so it has to be recreated even though nothing is written inside
-        // it.
-        if (stat !== undefined) {
-          await ensureDir(outPath, makePathSpec, mkdir, stat, made)
-        } else {
-          await mkdir(makePathSpec(outPath), true)
-        }
-        if (!quiet) outputLines.push(`   creating: ${reportPath}/`)
+      const outPath = base + '/' + rstripSlash(entryName)
+      const isDir = e.name.endsWith('/')
+      // A directory entry is the only record an empty directory leaves, so
+      // it has to be recreated even though nothing is written inside it.
+      const parentEnd = outPath.lastIndexOf('/')
+      const chain = isDir ? outPath : parentEnd > 0 ? outPath.slice(0, parentEnd) : ''
+      try {
+        if (chain !== '' && chain !== '/') await makeDirs(chain)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        errors.push(checkdirError(shown(errorVirtualPath(err)), String(fsStrerror(err)), e.name))
         continue
       }
-      const parentEnd = outPath.lastIndexOf('/')
-      const parent = parentEnd > 0 ? outPath.slice(0, parentEnd) : ''
-      if (parent !== '' && parent !== '/') {
-        if (stat !== undefined) {
-          await ensureDir(parent, makePathSpec, mkdir, stat, made)
-        } else {
-          await ensureParents(mkdir, outPath)
-        }
+      if (isDir) {
+        if (!quiet) outputLines.push(`   creating: ${shown(outPath)}/`)
+        continue
       }
       const content = await e.content()
-      await write(makePathSpec(outPath), content)
+      try {
+        await write(makePathSpec(outPath), content)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        // -o unlinks a file already there before it writes, so a refusal of
+        // that is its own verb.
+        const existed = stat !== undefined && (await pathExists(stat, makePathSpec(outPath)))
+        errors.push(
+          createError(existed ? 'delete old' : 'create', shown(outPath), String(fsStrerror(err))),
+        )
+        continue
+      }
       // Relay writes land on whichever mount owns each path and
       // invalidate through the dispatcher; keying them here would have
       // the runner prefix them onto this mount.
       if (!relay) writes[outPath] = content
-      if (!quiet) outputLines.push(`  inflating: ${reportPath}`)
+      if (!quiet) outputLines.push(`  inflating: ${shown(outPath)}`)
     }
-    const stdout: ByteSource | null =
-      outputLines.length > 0 ? ENC.encode(outputLines.join('\n') + '\n') : null
-    return [stdout, new IOResult({ exitCode, stderr, writes })]
+    const allStderr = ENC.encode(cautions + errors.join(''))
+    return [
+      listing(),
+      new IOResult({
+        exitCode: errors.length > 0 ? CREATE_EXIT : exitCode,
+        stderr: allStderr.byteLength > 0 ? allStderr : null,
+        writes,
+      }),
+    ]
   }
 
   const result = await run()

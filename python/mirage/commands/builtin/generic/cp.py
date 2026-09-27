@@ -246,13 +246,13 @@ async def target_dir_error(cmd_name: str, stat: StatFn,
     try:
         info = await stat(target)
     except NotADirectoryError:
-        return (f"{cmd_name}: target directory '{target.virtual}': "
+        return (f"{cmd_name}: target directory '{target.raw_path}': "
                 "Not a directory")
     except (FileNotFoundError, ValueError):
-        return (f"{cmd_name}: target directory '{target.virtual}': "
+        return (f"{cmd_name}: target directory '{target.raw_path}': "
                 "No such file or directory")
     if info.type != FileType.DIRECTORY:
-        return (f"{cmd_name}: target directory '{target.virtual}': "
+        return (f"{cmd_name}: target directory '{target.raw_path}': "
                 "Not a directory")
     return None
 

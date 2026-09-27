@@ -677,7 +677,15 @@ describe.each([7, 16384, PROBE_BLOCK_BYTES])('literal prefilter at chunk size %i
       const f = parseFlags(new FlagView({ binary_files: mode, ...flags }, specOf('grep')))
       const fast = new IOResult()
       const slow = new IOResult()
-      const expected = await materialize(grepInput(source(), /(?:needle)/, f, 'f', true, slow))
+      const unfiltered = vi
+        .spyOn(AsyncLineIterator.prototype, 'skipNonmatchingLines')
+        .mockReturnValue([0, 0])
+      let expected: Uint8Array
+      try {
+        expected = await materialize(grepInput(source(), /needle/, f, 'f', true, slow))
+      } finally {
+        unfiltered.mockRestore()
+      }
       const actual = await materialize(grepInput(source(), /needle/, f, 'f', true, fast))
       expect([actual, fast.stderr, fast.exitCode]).toEqual([expected, slow.stderr, slow.exitCode])
     }
@@ -709,9 +717,17 @@ it.each([
   const f = parseFlags(new FlagView({ n: true, byte_offset: true }, specOf('grep')))
   const fast = new IOResult()
   const slow = new IOResult()
-  const expected = await materialize(
-    grepInput(source(), new RegExp(`(?:${pat.source})`, pat.flags), f, 'f', false, slow),
-  )
+  const unfiltered = vi
+    .spyOn(AsyncLineIterator.prototype, 'skipNonmatchingLines')
+    .mockReturnValue([0, 0])
+  let expected: Uint8Array
+  try {
+    expected = await materialize(
+      grepInput(source(), new RegExp(pat.source, pat.flags), f, 'f', false, slow),
+    )
+  } finally {
+    unfiltered.mockRestore()
+  }
   const actual = await materialize(grepInput(source(), pat, f, 'f', false, fast))
   expect([actual, fast.stderr, fast.exitCode]).toEqual([expected, slow.stderr, slow.exitCode])
 })

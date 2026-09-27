@@ -30,6 +30,7 @@ import {
   rgPieces,
   rustMatches,
 } from './grep_offsets.ts'
+import { requiredLiteral } from './grep_prefilter.ts'
 import { compilePattern } from './grep_pattern.ts'
 import { NO_FILTERS, type WalkFilters, dirAdmitted, fileAdmitted } from './grep_select.ts'
 import { splitLines } from './utils/lines.ts'
@@ -259,8 +260,16 @@ export async function* grepStream(
     ? new RegExp(pat.source, pat.flags.includes('g') ? pat.flags : pat.flags + 'g')
     : null
   const iter = new AsyncLineIterator(source)
+  const needle = !opts.invert ? requiredLiteral(pat) : null
   try {
-    for await (const rawLine of iter) {
+    for (;;) {
+      if (needle !== null) {
+        const [skipped, bytes] = iter.skipNonmatchingLines(needle)
+        lineNum += skipped
+        bytePos += bytes
+      }
+      const rawLine = await iter.readline(opts.signal)
+      if (rawLine === null) break
       lineNum += 1
       const lineStart = bytePos
       bytePos += rawLine.byteLength + 1

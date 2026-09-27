@@ -22,6 +22,7 @@ from mirage.commands.builtin.grep_offsets import (MatchOffsets, decode_line,
                                                   prefix_of, rg_pieces,
                                                   rust_matches)
 from mirage.commands.builtin.grep_pattern import compile_pattern
+from mirage.commands.builtin.grep_prefilter import required_literal
 from mirage.commands.builtin.grep_select import (NO_FILTERS, WalkFilters,
                                                  dir_admitted, file_admitted)
 from mirage.commands.builtin.utils.lines import split_lines
@@ -302,8 +303,17 @@ async def grep_stream(
     # iterator strips included; the byte past a final unterminated line is
     # never read.
     byte_pos = 0
+    lines = AsyncLineIterator(source)
+    needle = required_literal(pat) if not invert else None
     try:
-        async for raw_line in AsyncLineIterator(source):
+        while True:
+            if needle is not None:
+                skipped, size = lines.skip_nonmatching_lines(needle)
+                line_num += skipped
+                byte_pos += size
+            raw_line = await lines.readline()
+            if raw_line is None:
+                break
             line_num += 1
             line_start = byte_pos
             byte_pos += len(raw_line) + 1

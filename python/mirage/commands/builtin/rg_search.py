@@ -18,6 +18,7 @@ from collections.abc import AsyncIterator, Iterable, Iterator
 from dataclasses import dataclass
 
 from mirage.commands.builtin.grep_offsets import decode_line, encode_line
+from mirage.commands.builtin.grep_prefilter import required_literal
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.stream import discard_streams
 from mirage.io.yield_budget import YieldBudget
@@ -643,20 +644,26 @@ def nonmatch_stop(f: RgFlags) -> NonmatchStop:
     return NonmatchStop(f.stop_on_nonmatch, f.invert and not f.passthru)
 
 
-async def _records(lines: AsyncLineIterator,
-                   f: RgFlags) -> AsyncIterator[bytes]:
+async def _records(
+    lines: AsyncLineIterator,
+    f: RgFlags,
+    needle: bytes | re.Pattern[bytes] | None = None
+) -> AsyncIterator[tuple[bytes, int, int]]:
     """Read records through the delimiter selected by rg.
 
     Args:
         lines (AsyncLineIterator): The input cursor.
         f (RgFlags): The parsed flags.
+        needle (bytes | re.Pattern[bytes] | None): necessary byte test.
     """
     delimiter = b"\0" if f.null_data else b"\n"
     while True:
+        skipped, size = lines.skip_nonmatching_lines(
+            needle) if needle is not None else (0, 0)
         raw, terminated = await lines.read_until(delimiter)
         if not terminated and not raw:
             return
-        yield raw
+        yield raw, skipped, size
 
 
 async def _listing(lines: AsyncLineIterator, pat: re.Pattern[str], f: RgFlags,
@@ -670,7 +677,8 @@ async def _listing(lines: AsyncLineIterator, pat: re.Pattern[str], f: RgFlags,
         f (RgFlags): the parsed flags.
         tally (Tally): receives the selection.
     """
-    async for raw in _records(lines, f):
+    needle = required_literal(pat) if not (f.invert or f.null_data) else None
+    async for raw, _, _ in _records(lines, f, needle):
         if _selects(pat, decode_line(raw), f.invert):
             tally.selected = True
             return
@@ -689,7 +697,9 @@ async def _count(lines: AsyncLineIterator, pat: re.Pattern[str], f: RgFlags,
     count = 0
     selected = 0
     stop = nonmatch_stop(f)
-    async for raw in _records(lines, f):
+    needle = required_literal(pat) if not (f.invert or f.null_data
+                                           or f.stop_on_nonmatch) else None
+    async for raw, _, _ in _records(lines, f, needle):
         text = decode_line(raw)
         if not _selects(pat, text, f.invert):
             if stop.armed:
@@ -744,7 +754,12 @@ async def _lines(lines: AsyncLineIterator, printer: RgPrinter,
     last_printed = -1
     after_left = 0
     stop = nonmatch_stop(f)
-    async for raw in _records(lines, f):
+    needle = required_literal(pat) if not (f.invert or f.null_data
+                                           or f.stop_on_nonmatch or f.passthru
+                                           or context) else None
+    async for raw, skipped, size in _records(lines, f, needle):
+        index += skipped
+        position += size
         index += 1
         start = position
         position += len(raw) + 1

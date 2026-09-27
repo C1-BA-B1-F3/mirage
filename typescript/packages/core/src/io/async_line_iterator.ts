@@ -61,14 +61,15 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
   }
 
   /**
-   * Skip complete buffered lines before a possible match of a nonempty ASCII
-   * literal without a newline. Leave the candidate and any unfinished line
-   * for readline, which joins transport boundaries before decoding. Return
+   * Skip complete buffered lines before a required-literal candidate. The
+   * test is either an ASCII string or a global regex over a single-byte view;
+   * it must never match an empty string or contain a record delimiter. Leave
+   * the candidate and any unfinished line for readline, which joins transport boundaries before decoding. Return
    * the skipped line and byte counts without pulling more input. The
    * single-byte view preserves ASCII and byte positions; it is never used
    * for Unicode matching or output.
    */
-  skipNonmatchingLines(needle: string): [number, number] {
+  skipNonmatchingLines(needle: string | RegExp): [number, number] {
     if (this.buf.length === 0) return [0, 0]
     if (this.searchedBuffer !== this.buf.buffer) {
       this.searchedBuffer = this.buf.buffer
@@ -76,7 +77,12 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
       this.searchedText = BYTE_VIEW.decode(this.buf)
     }
     const start = this.buf.byteOffset - this.searchedOffset
-    const hit = this.searchedText.indexOf(needle, start)
+    let hit: number
+    if (typeof needle === 'string') hit = this.searchedText.indexOf(needle, start)
+    else {
+      needle.lastIndex = start
+      hit = needle.exec(this.searchedText)?.index ?? -1
+    }
     const end = this.searchedText.lastIndexOf('\n', hit < 0 ? undefined : hit - 1) + 1
     const size = Math.max(0, end - start)
     let count = 0

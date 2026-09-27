@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from mirage.commands.builtin.grep_offsets import (MatchOffsets, decode_line,
                                                   encode_line, prefix_of)
+from mirage.commands.builtin.grep_prefilter import required_literal
 from mirage.commands.builtin.grep_select import WalkFilters
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.stream import close_quietly
@@ -178,7 +179,7 @@ async def grep_input(source: AsyncIterator[bytes],
     # to cover the terminator the iterator strips. The extra byte past a
     # final line with no newline is never read.
     byte_pos = 0
-    needle = (literal_needle(pat) if not f.invert and
+    needle = (required_literal(pat) if not f.invert and
               (not has_context or f.count_only or f.quiet or f.files_only
                or f.files_without_match) else None)
     input_stream = binary.read(source)
@@ -330,30 +331,3 @@ def utf8_pattern(pat: re.Pattern[str]) -> re.Pattern[str]:
         else:
             parts.append(char)
     return re.compile("".join(parts), pat.flags)
-
-
-def literal_needle(pat: re.Pattern[str]) -> bytes | None:
-    """A literal whose absence in the bytes proves no line can match.
-
-    Args:
-        pat (re.Pattern[str]): the compiled line matcher.
-    """
-    if pat.flags & (re.IGNORECASE | re.VERBOSE):
-        return None
-    needle: list[str] = []
-    escaped = False
-    for char in pat.pattern:
-        if not " " <= char <= "~":
-            return None
-        if escaped:
-            if char.isalnum():
-                return None
-            needle.append(char)
-            escaped = False
-        elif char == "\\":
-            escaped = True
-        elif char in ".*+?^${}()|[]":
-            return None
-        else:
-            needle.append(char)
-    return "".join(needle).encode("ascii") if needle and not escaped else None

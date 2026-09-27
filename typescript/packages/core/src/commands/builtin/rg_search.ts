@@ -17,6 +17,7 @@ import { discardStreams } from '../../io/stream.ts'
 import { YieldBudget } from '../../io/yield_budget.ts'
 import { encodeText } from '../../shell/bytes.ts'
 import { byteOffset } from '../../shell/helpers.ts'
+import { requiredLiteral } from './grep_prefilter.ts'
 import { decodeLine, encodeLine } from './grep_offsets.ts'
 import type { TypeChange, TypeSelection } from './rg_filetypes.ts'
 
@@ -644,11 +645,11 @@ async function listing(
   tally: Tally,
   signal?: AbortSignal,
 ): Promise<void> {
-  for (
-    let raw = await readRecord(lines, f, signal);
-    raw !== null;
-    raw = await readRecord(lines, f, signal)
-  ) {
+  const needle = !f.invert && !f.nullData ? requiredLiteral(pat) : null
+  for (;;) {
+    if (needle !== null) lines.skipNonmatchingLines(needle)
+    const raw = await readRecord(lines, f, signal)
+    if (raw === null) break
     if (selects(pat, decodeLine(raw), f.invert)) {
       tally.selected = true
       return
@@ -667,11 +668,11 @@ async function count(
   let total = 0
   let selected = 0
   const stop = nonmatchStop(f)
-  for (
-    let raw = await readRecord(lines, f, signal);
-    raw !== null;
-    raw = await readRecord(lines, f, signal)
-  ) {
+  const needle = !f.invert && !f.nullData && !f.stopOnNonmatch ? requiredLiteral(pat) : null
+  for (;;) {
+    if (needle !== null) lines.skipNonmatchingLines(needle)
+    const raw = await readRecord(lines, f, signal)
+    if (raw === null) break
     const text = decodeLine(raw)
     if (!selects(pat, text, f.invert)) {
       if (stop.armed) break
@@ -723,11 +724,18 @@ async function* printedLines(
   let lastPrinted = -1
   let afterLeft = 0
   const stop = nonmatchStop(f)
-  for (
-    let raw = await readRecord(lines, f, signal);
-    raw !== null;
-    raw = await readRecord(lines, f, signal)
-  ) {
+  const needle =
+    !f.invert && !f.nullData && !f.stopOnNonmatch && !f.passthru && !context
+      ? requiredLiteral(pat)
+      : null
+  for (;;) {
+    if (needle !== null) {
+      const [skipped, bytes] = lines.skipNonmatchingLines(needle)
+      index += skipped
+      position += bytes
+    }
+    const raw = await readRecord(lines, f, signal)
+    if (raw === null) break
     index += 1
     const start = position
     position += raw.byteLength + 1

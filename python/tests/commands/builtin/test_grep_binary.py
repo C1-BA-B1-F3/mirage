@@ -847,7 +847,8 @@ async def test_reject_short_records_by_buffer(record, monkeypatch):
         "byte_offset": True
     },
 ])
-async def test_literal_prefilter_preserves_unfiltered_results(size, flags):
+async def test_literal_prefilter_preserves_unfiltered_results(
+        size, flags, monkeypatch):
     data = (b"abcdefg\n" * 2100 + b"\xff\0\n" + "é needle 😀\n".encode() +
             b"abcdefg\n" * 2100 + b"needle needle")
     for mode in ["binary", "text", "without-match"]:
@@ -863,8 +864,11 @@ async def test_literal_prefilter_preserves_unfiltered_results(size, flags):
             }, spec=SPECS["grep"]), False)
         fast = IOResult()
         slow = IOResult()
-        expected = await materialize(
-            grep_input(source(), re.compile("(?:needle)"), f, "f", True, slow))
+        with monkeypatch.context() as unfiltered:
+            unfiltered.setattr(AsyncLineIterator, "skip_nonmatching_lines",
+                               lambda *args: (0, 0))
+            expected = await materialize(
+                grep_input(source(), re.compile("needle"), f, "f", True, slow))
         actual = await materialize(
             grep_input(source(), re.compile("needle"), f, "f", True, fast))
         assert (actual, fast.stderr, fast.exit_code) == (expected, slow.stderr,
@@ -888,7 +892,8 @@ async def test_literal_prefilter_preserves_unfiltered_results(size, flags):
     ("é", 0),
     ("a b", re.VERBOSE),
 ])
-async def test_prefilter_preserves_regex_and_unicode(pattern, flags):
+async def test_prefilter_preserves_regex_and_unicode(pattern, flags,
+                                                     monkeypatch):
     data = ("other\n" * 3000 + "a.b\na+b\na\\b\na b\nab\né\nK\nk\n").encode()
 
     async def source():
@@ -901,9 +906,12 @@ async def test_prefilter_preserves_regex_and_unicode(pattern, flags):
         }, spec=SPECS["grep"]), False)
     fast = IOResult()
     slow = IOResult()
-    expected = await materialize(
-        grep_input(source(), re.compile(f"(?:{pattern})", flags), f, "f",
-                   False, slow))
+    with monkeypatch.context() as unfiltered:
+        unfiltered.setattr(AsyncLineIterator, "skip_nonmatching_lines",
+                           lambda *args: (0, 0))
+        expected = await materialize(
+            grep_input(source(), re.compile(pattern, flags), f, "f", False,
+                       slow))
     actual = await materialize(
         grep_input(source(), re.compile(pattern, flags), f, "f", False, fast))
     assert (actual, fast.stderr, fast.exit_code) == (expected, slow.stderr,

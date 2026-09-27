@@ -1320,9 +1320,9 @@ def test_every_interpreter_stops_parsing_flags_at_the_stdin_operand(cmd):
     # `node - -e x` and `python3 - -c x` both run the piped program and
     # hand it the rest as argv (node 22.8.0, CPython 3.12). Pinning all
     # four together is what keeps js from drifting off python again.
-    parsed = parse_command(SPECS[cmd], ["-", "-e", "PROG"], "/")
+    parsed = parse_command(SPECS[cmd], ["-", "-e", "PROG"], "/", cmd)
     assert parsed.flags == {}
-    assert parsed.raw_operands == [("-", "path"), ("-e", "str"),
+    assert parsed.raw_operands == [("-", "str"), ("-e", "str"),
                                    ("PROG", "str")]
 
 
@@ -1347,6 +1347,26 @@ def test_every_interpreter_reads_only_its_script_as_a_path(cmd, payload):
     assert parsed.raw_operands == [("s.py", "path"), ("t.py", "str")]
     parsed = parse_command(SPECS[cmd], [payload, "PROG", "s.py"], "/")
     assert parsed.raw_operands == [("s.py", "str")]
+
+
+@pytest.mark.parametrize("cmd", ["js", "node", "python", "python3"])
+@pytest.mark.parametrize("registered", [False, True])
+@pytest.mark.parametrize("marker", [[], ["--"]])
+def test_interpreter_stdin_is_text_but_explicit_dash_filename_is_a_path(
+        cmd, registered, marker):
+    spec = _registered(cmd) if registered else SPECS[cmd]
+    for word, kind, value in (("-", "str", "-"), ("./-", "path", "/data/-"),
+                              ("/data/-", "path", "/data/-")):
+        parsed = parse_command(spec, [*marker, word, "-e", "/data/arg"],
+                               "/data", cmd)
+        assert parsed.args == [(value, kind), ("-e", "str"),
+                               ("/data/arg", "str")]
+        assert parsed.word_kinds == [
+            *["str"] * len(marker), kind, "str", "str"
+        ]
+        assert parsed.invalid_options == []
+    custom = CommandSpec(positional=(Operand(type="path"), ))
+    assert parse_command(custom, ["-"], "/data", cmd).paths() == ["/data/-"]
 
 
 def test_js_flags_before_the_first_operand_are_still_the_interpreters():

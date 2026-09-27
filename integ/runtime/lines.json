@@ -141,7 +141,7 @@
     },
     {
       "id": "interpreter_script_path_policy",
-      "note": "An interpreter's script operand is a file the runtime reads on its own machine, so the gate types it as a path and a path rule refuses it before the line is handed over, whatever option run precedes it. The words after the script, and every operand once -c, -m or -e named the program, are the program's argv and reach the runtime as typed.",
+      "note": "An interpreter's script operand is a file the runtime reads on its own machine, so the gate types it as a path and a path rule refuses it before the line is handed over, whatever option run precedes it. The words after the script, and every operand once -c, -m or -e named the program, are the program's argv and reach the runtime as typed. A lone dash selects stdin and carries no path, while ./-, absolute dash filenames and stdin redirects still name protected files.",
       "world": {
         "register_runtimes": {
           "processbox": "processbox"
@@ -150,7 +150,9 @@
           {
             "name": "processbox",
             "captures": [
+              "python",
               "python3",
+              "js",
               "node"
             ]
           }
@@ -249,6 +251,82 @@
           "expect": {
             "exit": 0,
             "stdout": "[\"node\",\"-e\",\"1\",\"steal.js\"]\n"
+          }
+        },
+        {
+          "command": "python - /vault/arg",
+          "stdin": "print(1)\n",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"python\",\"-\",\"/vault/arg\"]\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -u -- - -c x",
+          "stdin": "print(1)\n",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"python3\",\"-u\",\"--\",\"-\",\"-c\",\"x\"]\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "js -- - /vault/arg",
+          "stdin": "print(1)\n",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"js\",\"--\",\"-\",\"/vault/arg\"]\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "node - -e x",
+          "stdin": "print(1)\n",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"node\",\"-\",\"-e\",\"x\"]\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python -- ./-",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "python: ./-: credentials are never read by hand\n"
+          }
+        },
+        {
+          "command": "python3 -- /vault/-",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "python3: /vault/-: credentials are never read by hand\n"
+          }
+        },
+        {
+          "command": "js -- ./-",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "js: ./-: credentials are never read by hand\n"
+          }
+        },
+        {
+          "command": "node -- /vault/-",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "node: /vault/-: credentials are never read by hand\n"
+          }
+        },
+        {
+          "command": "python3 - < /vault/secret.py",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "/vault/secret.py: Permission denied\n"
           }
         }
       ]
@@ -598,7 +676,7 @@
     },
     {
       "id": "whole_line_interpreter_script",
-      "note": "A whole-line runtime runs the interpreter itself, where no op door follows the script read, so the gate reads the script slot from the interpreter's spec exactly as it reads a mount command's: a bare script name under the working directory is the file it names, and a payload's operands are not paths.",
+      "note": "A whole-line runtime runs the interpreter itself, where no op door follows the script read, so the gate reads the script slot from the interpreter's spec exactly as it reads a mount command's: a bare script name under the working directory is the file it names, and a payload's operands are not paths. A lone dash selects stdin and carries no path, while ./-, absolute dash filenames and stdin redirects still name protected files.",
       "world": {
         "runtimes": [
           {
@@ -626,7 +704,7 @@
                 {
                   "reason": "sealed",
                   "paths": [
-                    "/ram/secret*"
+                    "/ram/*"
                   ]
                 }
               ]
@@ -677,6 +755,82 @@
           "expect": {
             "exit": 0,
             "stdout": "box:node -e 1 secret.js\n"
+          }
+        },
+        {
+          "command": "python - /ram/arg",
+          "stdin": "print(1)\n",
+          "expect": {
+            "exit": 0,
+            "stdout": "box:python - /ram/arg\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -u -- - -c x",
+          "stdin": "print(1)\n",
+          "expect": {
+            "exit": 0,
+            "stdout": "box:python3 -u -- - -c x\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "js -- - /ram/arg",
+          "stdin": "print(1)\n",
+          "expect": {
+            "exit": 0,
+            "stdout": "box:js -- - /ram/arg\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "node - -e x",
+          "stdin": "print(1)\n",
+          "expect": {
+            "exit": 0,
+            "stdout": "box:node - -e x\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python -- ./-",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "python: ./-: sealed\n"
+          }
+        },
+        {
+          "command": "python3 -- /ram/-",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "python3: /ram/-: sealed\n"
+          }
+        },
+        {
+          "command": "js -- ./-",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "js: ./-: sealed\n"
+          }
+        },
+        {
+          "command": "node -- /ram/-",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "node: /ram/-: sealed\n"
+          }
+        },
+        {
+          "command": "python3 - < /ram/secret.py",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "python3: /ram/secret.py: sealed\n"
           }
         }
       ]

@@ -65,10 +65,6 @@ async function jsCommand(
   let argStrs: string[]
   if (hasCode) {
     argStrs = [...paths.map((p) => p.virtual), ...texts]
-  } else if (paths[0]?.rawPath === STDIN_OPERAND) {
-    // The stdin spelling typed into the script slot, which the spec
-    // declares a path: it still names no file.
-    argStrs = [...paths.slice(1).map((p) => p.virtual), ...texts]
   } else if (paths.length > 0) {
     scriptPath = paths[0] ?? null
     argStrs = [...paths.slice(1).map((p) => p.virtual), ...texts]

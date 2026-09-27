@@ -483,13 +483,17 @@ async def test_external_spec_preserves_text_words_and_shell_globs(kind):
     "python3 -W ignore -- steal.py",
     "node steal.js",
     "node -- /work/steal.js",
+    "python ./-",
+    "python3 -- /work/-",
+    "js ./-",
+    "node -- /work/-",
 ])
 async def test_interpreter_script_cannot_bypass_path_policy(kind, line):
     # The script is a file the runtime reads on its own machine, outside
     # every op door, so the gate has to see it as the path it is
     # (`python3 steal.py` reads /work/steal.py exactly as `cat steal.py`
     # does), whatever option run precedes it.
-    probe = kind(captures=("python3", "node"))
+    probe = kind(captures=("python", "python3", "js", "node"))
     policy = RulePolicy(CommandRule(reason="protected", paths=("/work/*", )))
     async with workspace({"/work": RAMVFS()},
                          runtimes=[probe],
@@ -510,9 +514,13 @@ async def test_interpreter_program_operands_are_not_paths(kind):
     # Once -c, -m or -e names the program, every operand is that
     # program's argv, as are the words after a script; none is a file
     # the rule reads, and each reaches the runtime as typed.
-    probe = kind(captures=("python3", "node"))
+    probe = kind(captures=("python", "python3", "js", "node"))
     policy = RulePolicy(CommandRule(reason="protected", paths=("/work/*", )))
     lines = [
+        ("python - /work/arg", ("python", "-", "/work/arg")),
+        ("python3 -u -- - -c x", ("python3", "-u", "--", "-", "-c", "x")),
+        ("js -- - /work/arg", ("js", "--", "-", "/work/arg")),
+        ("node - -e x", ("node", "-", "-e", "x")),
         ("python3 -c 'print(1)' steal.py", ("python3", "-c", "print(1)",
                                             "steal.py")),
         ("python3 -m json.tool steal.py", ("python3", "-m", "json.tool",

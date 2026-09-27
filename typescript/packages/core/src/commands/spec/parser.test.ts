@@ -1658,13 +1658,36 @@ describe('parseCommand — remainder (argparse nargs=REMAINDER)', () => {
   // together is what keeps js from drifting off python again.
   for (const cmd of ['js', 'node', 'python', 'python3']) {
     it(`${cmd} stops parsing flags at the stdin operand`, () => {
-      const p = parseCommand(specOf(cmd), ['-', '-e', 'PROG'], '/')
+      const p = parseCommand(specOf(cmd), ['-', '-e', 'PROG'], '/', cmd)
       expect(p.flags).toEqual({})
       expect(p.rawOperands).toEqual([
-        ['-', 'path'],
+        ['-', 'str'],
         ['-e', 'str'],
         ['PROG', 'str'],
       ])
+    })
+
+    it(`${cmd} distinguishes stdin from explicit dash filenames in both spec forms`, () => {
+      for (const spec of [specOf(cmd), registered(cmd)]) {
+        for (const marker of [[], ['--']]) {
+          for (const [word, kind, value] of [
+            ['-', 'str', '-'],
+            ['./-', 'path', '/data/-'],
+            ['/data/-', 'path', '/data/-'],
+          ]) {
+            const p = parseCommand(spec, [...marker, word ?? '', '-e', '/data/arg'], '/data', cmd)
+            expect(p.args).toEqual([
+              [value, kind],
+              ['-e', 'str'],
+              ['/data/arg', 'str'],
+            ])
+            expect(p.wordKinds).toEqual([...marker.map(() => 'str'), kind, 'str', 'str'])
+            expect(p.invalidOptions).toEqual([])
+          }
+        }
+      }
+      const custom = new CommandSpec({ positional: [new Operand({ type: 'path' })] })
+      expect(parseCommand(custom, ['-'], '/data', cmd).paths()).toEqual(['/data/-'])
     })
 
     it(`${cmd} hands a script its own flags`, () => {

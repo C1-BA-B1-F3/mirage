@@ -190,8 +190,7 @@ export function parseFlags(
     // spelling rides along for a word the classifier left as text (an
     // interpreter's bare script name under the shell's word policy), so
     // the handler still sees it as typed: CPython puts the operand
-    // itself in argv[0], and `-` names stdin only as long as it is
-    // still spelled `-`.
+    // itself in argv[0].
     const paths: PathSpec[] = []
     const texts: string[] = []
     parsed.args.forEach(([value, kind], index) => {

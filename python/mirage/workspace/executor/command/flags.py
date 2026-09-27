@@ -223,8 +223,7 @@ def parse_flags(
         # spelling rides along for a word the classifier left as text
         # (an interpreter's bare script name under the shell's word
         # policy), so the handler still sees it as typed: CPython puts
-        # the operand itself in argv[0], and `-` names stdin only as
-        # long as it is still spelled `-`.
+        # the operand itself in argv[0].
         paths: list[PathSpec] = []
         texts: list[str] = []
         for (value, kind), (raw, _) in zip(parsed.args, parsed.raw_operands):

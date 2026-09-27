@@ -507,7 +507,7 @@ describe.each(['process', 'shell'] as const)('external %s path admission', (kind
 
 describe.each(['process', 'shell'] as const)('interpreter %s script admission', (kind) => {
   async function guardedWorkspace(): Promise<[Workspace, ProcessProbe | ShellProbe]> {
-    const options = { captures: ['python3', 'node'] }
+    const options = { captures: ['python', 'python3', 'js', 'node'] }
     const probe = kind === 'process' ? new ProcessProbe(options) : new ShellProbe(options)
     const ws = new Workspace(
       { '/work': new RAMVFS() },
@@ -534,6 +534,10 @@ describe.each(['process', 'shell'] as const)('interpreter %s script admission', 
     'python3 -W ignore -- steal.py',
     'node steal.js',
     'node -- /work/steal.js',
+    'python ./-',
+    'python3 -- /work/-',
+    'js ./-',
+    'node -- /work/-',
   ])('refuses %s before delegating to a runtime', async (line) => {
     const [ws, probe] = await guardedWorkspace()
     try {
@@ -554,6 +558,10 @@ describe.each(['process', 'shell'] as const)('interpreter %s script admission', 
   it('hands a program its operands as typed', async () => {
     const [ws, probe] = await guardedWorkspace()
     const lines: [string, string[]][] = [
+      ['python - /work/arg', ['python', '-', '/work/arg']],
+      ['python3 -u -- - -c x', ['python3', '-u', '--', '-', '-c', 'x']],
+      ['js -- - /work/arg', ['js', '--', '-', '/work/arg']],
+      ['node - -e x', ['node', '-', '-e', 'x']],
       ["python3 -c 'print(1)' steal.py", ['python3', '-c', 'print(1)', 'steal.py']],
       ['python3 -m json.tool steal.py', ['python3', '-m', 'json.tool', 'steal.py']],
       ['node -e 1 steal.js', ['node', '-e', '1', 'steal.js']],

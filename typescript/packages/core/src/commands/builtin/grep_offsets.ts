@@ -15,23 +15,7 @@
 import { encodeText } from '../../shell/bytes.ts'
 import { byteOffset } from '../../shell/helpers.ts'
 
-const DEC_REPLACE = new TextDecoder('utf-8', { ignoreBOM: true })
-const DEC_FATAL = new TextDecoder('utf-8', { fatal: true })
-
-// Whether these bytes are valid UTF-8 on their own. `grep_binary.ts` exports
-// its own `validUtf8`, which asks the same question of a rendered output chunk
-// for the binary-file notice; this one selects the fast path of `decodeLine`,
-// and keeping it here is what stops the conversion module importing back into
-// the scanner that uses it.
-function isUtf8(data: Uint8Array): boolean {
-  try {
-    DEC_FATAL.decode(data)
-    return true
-  } catch (error) {
-    if (!(error instanceof TypeError)) throw error
-    return false
-  }
-}
+const DEC_FATAL = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 
 /**
  * The input's bytes as text a byte offset can be counted back out of.
@@ -46,7 +30,11 @@ function isUtf8(data: Uint8Array): boolean {
  * `grep_offsets.py`.
  */
 export function decodeLine(raw: Uint8Array): string {
-  if (isUtf8(raw)) return DEC_REPLACE.decode(raw)
+  try {
+    return DEC_FATAL.decode(raw)
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error
+  }
   const parts: string[] = []
   const units = new Uint16Array(Math.min(raw.length, 8192))
   let used = 0

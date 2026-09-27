@@ -18,6 +18,7 @@ import { YieldBudget } from './yield_budget.ts'
 import { chunks } from './cooperative.ts'
 
 const NEWLINE = 0x0a
+const BYTE_VIEW = new TextDecoder('latin1')
 
 export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
   private readonly source: AsyncIterator<Uint8Array>
@@ -26,6 +27,9 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
   private readonly budget = new YieldBudget()
   private linesSinceCheck = 0
   private pulling = false
+  private searchedBuffer: ArrayBufferLike | null = null
+  private searchedText = ''
+  private searchedOffset = 0
 
   constructor(private readonly input: AsyncIterable<Uint8Array> | AsyncIterator<Uint8Array>) {
     const s = this.input as AsyncIterable<Uint8Array>
@@ -54,6 +58,31 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
     while (count < limit && this.buf[count] === NEWLINE) count++
     this.buf = this.buf.subarray(count)
     return count
+  }
+
+  /**
+   * Skip complete buffered lines before a possible match of a nonempty ASCII
+   * literal without a newline. Leave the candidate and any unfinished line
+   * for readline, which joins transport boundaries before decoding. Return
+   * the skipped line and byte counts without pulling more input. The
+   * single-byte view preserves ASCII and byte positions; it is never used
+   * for Unicode matching or output.
+   */
+  skipNonmatchingLines(needle: string): [number, number] {
+    if (this.buf.length === 0) return [0, 0]
+    if (this.searchedBuffer !== this.buf.buffer) {
+      this.searchedBuffer = this.buf.buffer
+      this.searchedOffset = this.buf.byteOffset
+      this.searchedText = BYTE_VIEW.decode(this.buf)
+    }
+    const start = this.buf.byteOffset - this.searchedOffset
+    const hit = this.searchedText.indexOf(needle, start)
+    const end = this.searchedText.lastIndexOf('\n', hit < 0 ? undefined : hit - 1) + 1
+    const size = Math.max(0, end - start)
+    let count = 0
+    for (let at = 0; at < size; at++) if (this.buf[at] === NEWLINE) count++
+    this.buf = this.buf.subarray(size)
+    return [count, size]
   }
 
   async readline(signal?: AbortSignal): Promise<Uint8Array | null> {

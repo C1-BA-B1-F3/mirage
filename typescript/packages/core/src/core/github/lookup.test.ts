@@ -21,7 +21,7 @@ import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileType, PathSpec } from '../../types.ts'
 import { GitHubApiError } from './client.ts'
 import { FakeGitHub, blobSha, raceIndex, servedAccessor } from './_test_util.ts'
-import { lookupRetrying, pointLookup } from './lookup.ts'
+import { locate, lookupRetrying, pointLookup } from './lookup.ts'
 import { stat } from './stat.ts'
 import { refillIndex } from './tree.ts'
 
@@ -301,5 +301,20 @@ describe('the retry', () => {
       { entry: null },
     )
     expect(gh.counts()).toEqual([0, 0, 0])
+  })
+})
+
+describe('locate', () => {
+  it.each([
+    ['/gh', 'docs/a.txt', '/gh/docs/a.txt'],
+    ['/gh', 'README.md', '/gh/README.md'],
+    ['', 'docs/a.txt', '/docs/a.txt'],
+  ])('names the prefix %j, the path %j and its key', (prefix, rel, key) => {
+    expect(locate(spec(rel, prefix))).toEqual({ prefix, rel, key })
+  })
+
+  it('reads the mount root as no path', () => {
+    const root = new PathSpec({ virtual: '/gh', directory: '/gh', resolved: false, vfsPath: '' })
+    expect(locate(root).rel).toBe('')
   })
 })

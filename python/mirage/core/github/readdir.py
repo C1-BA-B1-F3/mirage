@@ -92,14 +92,17 @@ async def _fallback_readdir(
         raise enoent(virtual)
     entries = await fetch_dir_tree(accessor.config, accessor.owner,
                                    accessor.repo, parent_sha, accessor.pool)
-    listed = await _cache_dir(index, virtual_key, entries)
-    accessor.refills += 1
-    return listed
+    return await _cache_dir(accessor, index, virtual_key, entries)
 
 
-async def _cache_dir(index: IndexCacheStore, virtual_key: str,
-                     entries: list[TreeEntry]) -> list[str]:
-    """Cache one complete tree listing, including each traversed parent."""
+async def _cache_dir(accessor: GitHubAccessor, index: IndexCacheStore,
+                     virtual_key: str, entries: list[TreeEntry]) -> list[str]:
+    """Cache one complete tree listing, including each traversed parent.
+
+    Counted on ``accessor.refills`` once written, as ``seed_index`` counts
+    its own: the two are the only writers of a github listing, so a
+    lookup can tell a listing replaced under it from a real absence.
+    """
     norm = virtual_key.rstrip("/") or "/"
     child_keys: list[str] = []
     dir_entries: list[tuple[str, IndexEntry]] = []
@@ -115,6 +118,7 @@ async def _cache_dir(index: IndexCacheStore, virtual_key: str,
         dir_entries.append((entry.path, idx_entry))
         child_keys.append(child_path)
     await index.set_dir(norm, dir_entries)
+    accessor.refills += 1
     log.debug("fallback readdir populated %d entries for %s", len(entries),
               virtual_key)
     return sorted(child_keys)
@@ -152,8 +156,7 @@ async def _resolve_dir_sha(
         if found is None or found.type != "tree":
             # Remove the former directory before caching a replacement blob.
             await index.invalidate_prefix(child_path)
-        await _cache_dir(index, current_path, entries)
-        accessor.refills += 1
+        await _cache_dir(accessor, index, current_path, entries)
         if found is None or found.type != "tree":
             return None
         current_sha = found.sha

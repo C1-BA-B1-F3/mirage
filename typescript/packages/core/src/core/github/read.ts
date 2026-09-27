@@ -17,10 +17,8 @@ import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { record, startOp } from '../../observe/context.ts'
 import { type PathSpec, VFSName } from '../../types.ts'
 import { eisdir, enoent } from '../../utils/errors.ts'
-import { mountPrefixOf } from '../../utils/key_prefix.ts'
-import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { fetchBlob } from './client.ts'
-import { lookupRetrying } from './lookup.ts'
+import { locate, lookupRetrying } from './lookup.ts'
 
 /**
  * Read a file's blob and record the sha it was fetched by.
@@ -40,13 +38,9 @@ export async function read(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<Uint8Array> {
-  const prefix = mountPrefixOf(path.virtual, path.vfsPath)
-  let rel = path.virtual
-  if (prefix !== '' && rel.startsWith(prefix)) rel = rel.slice(prefix.length) || '/'
-  const trimmed = stripSlash(rel)
-  if (trimmed === '') throw eisdir(path.virtual)
+  const { prefix, rel, key } = locate(path)
+  if (rel === '') throw eisdir(path.virtual)
   if (index === undefined) throw enoent(path)
-  const key = `${rstripSlash(prefix)}/${trimmed}`
   const { entry } = await lookupRetrying(accessor, index, prefix, key)
   if (entry === null) throw enoent(path)
   if (entry.resourceType === 'folder') throw eisdir(path.virtual)

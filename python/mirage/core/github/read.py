@@ -19,11 +19,10 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.api.client import SessionArg
 from mirage.core.github.client import github_get
 from mirage.core.github.config import GitHubConfig
-from mirage.core.github.lookup import lookup_retrying
+from mirage.core.github.lookup import locate, lookup_retrying
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec, VFSName
 from mirage.utils.errors import enoent
-from mirage.utils.key_prefix import mount_prefix_of
 
 
 async def read_bytes(config: GitHubConfig,
@@ -71,11 +70,9 @@ async def read(
         FileNotFoundError: nothing exists at the path.
     """
     virtual = path_spec.virtual
-    prefix = mount_prefix_of(path_spec.virtual, path_spec.vfs_path)
-    rel = path_spec.mount_path.strip("/")
+    prefix, rel, key = locate(path_spec)
     if not rel:
         raise IsADirectoryError(virtual)
-    key = prefix + "/" + rel if prefix else "/" + rel
     entry = (await lookup_retrying(accessor, index, prefix, key)).entry
     if entry is None:
         raise enoent(virtual)

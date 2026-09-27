@@ -62,6 +62,9 @@ export async function populateIndex(
 /**
  * Write the accessor's tree into `index` under `prefix`.
  *
+ * Counted on `accessor.refills` once written, as the per-directory `cacheDir`
+ * counts its own; those two are every github listing write.
+ *
  * Mirrors Python's `seed_index`.
  */
 async function seedIndex(
@@ -72,6 +75,7 @@ async function seedIndex(
   // A truncated response cannot establish that any listing is complete,
   // including an apparently empty directory. Readdir must fill it first.
   await populateIndex(index, accessor.tree, prefix, accessor.truncated ? new Date(0) : undefined)
+  accessor.refills += 1
 }
 
 /**
@@ -108,7 +112,6 @@ export async function refillIndex(
   )
   accessor.truncated = truncated
   accessor.tree = buildTreeMap(tree)
-  accessor.refills += 1
   // A refill replaces this mount's snapshot, including paths now absent.
   await index.invalidatePrefix(rstripSlash(prefix) || '/')
   await seedIndex(accessor, index, prefix)

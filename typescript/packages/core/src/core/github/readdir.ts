@@ -92,13 +92,15 @@ async function fallbackReaddir(
   const parentSha = await resolveDirSha(accessor, key, index, prefix)
   if (parentSha === null) throw enoent(key)
   const entries = await fetchDirTree(accessor.transport, accessor.owner, accessor.repo, parentSha)
-  const listed = await cacheDir(index, key, entries)
-  accessor.refills += 1
-  return listed
+  return cacheDir(accessor, index, key, entries)
 }
 
-// Cache one complete tree listing, including each traversed parent.
+// Cache one complete tree listing, including each traversed parent, and count
+// it on `accessor.refills` as `seedIndex` counts its own: the two are the only
+// writers of a github listing, so a lookup can tell a listing replaced under
+// it from a real absence.
 async function cacheDir(
+  accessor: GitHubAccessor,
   index: IndexCacheStore,
   key: string,
   entries: GitHubTreeItem[],
@@ -123,6 +125,7 @@ async function cacheDir(
   }
   childKeys.sort(compareCodePoints)
   await index.setDir(key, childEntries)
+  accessor.refills += 1
   return childKeys
 }
 
@@ -154,8 +157,7 @@ async function resolveDirSha(
       // Remove the former directory before caching a replacement blob.
       await index.invalidatePrefix(childPath)
     }
-    await cacheDir(index, currentPath, entries)
-    accessor.refills += 1
+    await cacheDir(accessor, index, currentPath, entries)
     if (found?.type !== 'tree') return null
     currentSha = found.sha
     currentPath = childPath

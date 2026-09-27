@@ -19,18 +19,7 @@ import type { PathSpec } from '../../types.ts'
 import { FileStat, FileType } from '../../types.ts'
 import { enoent } from '../../utils/errors.ts'
 import { contentTypeForPath } from '../../utils/filetype.ts'
-import { mountPrefixOf } from '../../utils/key_prefix.ts'
-import { rstripSlash, stripSlash } from '../../utils/slash.ts'
-import { lookupRetrying, pointLookup } from './lookup.ts'
-
-function stripPrefix(path: PathSpec): string {
-  const prefix = mountPrefixOf(path.virtual, path.vfsPath)
-  let p = path.virtual
-  if (prefix !== '' && p.startsWith(prefix)) {
-    p = p.slice(prefix.length) || '/'
-  }
-  return p
-}
+import { locate, lookupRetrying, pointLookup } from './lookup.ts'
 
 // Render one tree row as a FileStat, the same from either route.
 function statOf(entry: IndexEntry): FileStat {
@@ -52,17 +41,15 @@ export async function stat(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
-  const prefix = mountPrefixOf(path.virtual, path.vfsPath)
-  const trimmed = stripSlash(stripPrefix(path))
-  if (trimmed === '') {
+  const { prefix, rel, key } = locate(path)
+  if (rel === '') {
     return new FileStat({ name: '/', type: FileType.DIRECTORY })
   }
   if (index === undefined) throw enoent(path)
-  const key = `${rstripSlash(prefix)}/${trimmed}`
   // A probe through a throwaway index asks for this one path; everything
   // else answers from the mount's listing, filling it if need be.
   const found =
-    (await pointLookup(accessor, index, prefix, trimmed)) ??
+    (await pointLookup(accessor, index, prefix, rel)) ??
     (await lookupRetrying(accessor, index, prefix, key))
   if (found.entry === null) throw enoent(path)
   return statOf(found.entry)

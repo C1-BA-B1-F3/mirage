@@ -14,11 +14,10 @@
 
 from mirage.accessor.github import GitHubAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
-from mirage.core.github.lookup import lookup_retrying, point_lookup
+from mirage.core.github.lookup import locate, lookup_retrying, point_lookup
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.filetype import content_type_for_path
-from mirage.utils.key_prefix import mount_prefix_of
 
 
 def stat_of(entry: IndexEntry) -> FileStat:
@@ -60,17 +59,14 @@ async def stat(
     Raises:
         FileNotFoundError: nothing exists at the path.
     """
-    virtual = path_spec.virtual
-    prefix = mount_prefix_of(path_spec.virtual, path_spec.vfs_path)
-    rel = path_spec.mount_path.strip("/")
+    prefix, rel, key = locate(path_spec)
     if not rel:
         return FileStat(name="/", type=FileType.DIRECTORY)
-    key = prefix + "/" + rel if prefix else "/" + rel
     # A probe through a throwaway index asks for this one path; everything
     # else answers from the mount's listing, filling it if need be.
     found = await point_lookup(accessor, index, prefix, rel)
     if found is None:
         found = await lookup_retrying(accessor, index, prefix, key)
     if found.entry is None:
-        raise enoent(virtual)
+        raise enoent(path_spec.virtual)
     return stat_of(found.entry)

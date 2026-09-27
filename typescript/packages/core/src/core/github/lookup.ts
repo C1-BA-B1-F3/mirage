@@ -18,8 +18,8 @@ import { withIndexLock } from '../../cache/index/lock.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { PathSpec } from '../../types.ts'
 import { isEnoent } from '../../utils/errors.ts'
-import { mountKey } from '../../utils/key_prefix.ts'
-import { rstripSlash } from '../../utils/slash.ts'
+import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
+import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { readdirUnlocked } from './readdir.ts'
 import { pointRow } from './tree.ts'
 import { indexEntryFromTree } from './tree_entry.ts'
@@ -34,6 +34,21 @@ const ABSENT: Readonly<Found> = Object.freeze({ entry: null })
 /** The mount root's key, whose listing tells a live index from not. */
 export function rootOf(prefix: string): string {
   return rstripSlash(prefix) || '/'
+}
+
+/**
+ * Where one path sits, the same for a stat and a read: the mount prefix ('' for
+ * a root mount), the path as the mount sees it with no slash at either end (''
+ * for the mount root), and the mount-absolute key the index files it under.
+ *
+ * Mirrors Python's `locate`.
+ */
+export function locate(path: PathSpec): { prefix: string; rel: string; key: string } {
+  const prefix = mountPrefixOf(path.virtual, path.vfsPath)
+  let at = path.virtual
+  if (prefix !== '' && at.startsWith(prefix)) at = at.slice(prefix.length) || '/'
+  const rel = stripSlash(at)
+  return { prefix, rel, key: `${rstripSlash(prefix)}/${rel}` }
 }
 
 /**

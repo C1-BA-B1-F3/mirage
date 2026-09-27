@@ -24,7 +24,7 @@ from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.redis import RedisIndexCacheStore
 from mirage.core.github import lookup as lookup_mod
 from mirage.core.github.config import GitHubConfig
-from mirage.core.github.lookup import point_lookup
+from mirage.core.github.lookup import locate, point_lookup
 from mirage.core.github.stat import stat
 from mirage.core.github.tree import fetch_tree, refill_index
 from mirage.types import FileType, PathSpec
@@ -348,3 +348,17 @@ async def test_a_miss_without_an_index_is_not_retried(gh, monkeypatch):
     with pytest.raises(FileNotFoundError):
         await stat(accessor, _spec("docs/sub/b.txt"), NULL_INDEX)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("prefix,rel,key", [
+    ("/gh", "docs/a.txt", "/gh/docs/a.txt"),
+    ("/gh", "README.md", "/gh/README.md"),
+    ("", "docs/a.txt", "/docs/a.txt"),
+])
+def test_locate_names_the_prefix_the_path_and_its_key(prefix, rel, key):
+    assert locate(_spec(rel, prefix)) == (prefix, rel, key)
+
+
+def test_locate_reads_the_mount_root_as_no_path():
+    root = PathSpec(virtual="/gh", directory="/gh", vfs_path="")
+    assert locate(root)[1] == ""

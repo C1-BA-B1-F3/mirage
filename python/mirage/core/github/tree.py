@@ -279,6 +279,9 @@ def seed_index(
 ) -> None:
     """Write the accessor's tree into ``index`` under ``prefix``.
 
+    Counted on ``accessor.refills`` once written, as the per-directory
+    ``_cache_dir`` counts its own; those two are every github listing write.
+
     Args:
         accessor (GitHubAccessor): the mount's accessor, holding the tree.
         index (IndexCacheStore): the index to seed.
@@ -290,6 +293,7 @@ def seed_index(
     expires_at = (datetime.fromtimestamp(0, timezone.utc) if accessor.truncated
                   else datetime.now(timezone.utc) + timedelta(days=365))
     index.seed(entries, children, expires_at)
+    accessor.refills += 1
 
 
 async def refill_index(
@@ -326,7 +330,6 @@ async def refill_index(
     accessor.truncated = truncated
     accessor.tree = tree
     accessor.tree_loaded = True
-    accessor.refills += 1
     # A refill replaces this mount's snapshot, including paths now absent.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
     seed_index(accessor, index, prefix)

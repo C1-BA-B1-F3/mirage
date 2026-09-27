@@ -22,7 +22,7 @@ from mirage.cache.index.lock import index_lock
 from mirage.core.github.readdir import _readdir
 from mirage.core.github.tree import index_entry, point_row
 from mirage.types import PathSpec
-from mirage.utils.key_prefix import mount_key
+from mirage.utils.key_prefix import mount_key, mount_prefix_of
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +48,22 @@ def root_of(prefix: str) -> str:
         str: the root key.
     """
     return prefix.rstrip("/") or "/"
+
+
+def locate(path_spec: PathSpec) -> tuple[str, str, str]:
+    """Where one path sits, the same for a stat and a read.
+
+    Args:
+        path_spec (PathSpec): the path asked about.
+
+    Returns:
+        tuple[str, str, str]: the mount prefix ("" for a root mount), the
+        path as the mount sees it with no slash at either end ("" for the
+        mount root), and the mount-absolute key the index files it under.
+    """
+    prefix = mount_prefix_of(path_spec.virtual, path_spec.vfs_path)
+    rel = path_spec.mount_path.strip("/")
+    return prefix, rel, (prefix + "/" + rel if prefix else "/" + rel)
 
 
 async def lookup(

@@ -15,6 +15,7 @@
 import { YieldBudget } from '../../io/yield_budget.ts'
 import { closeQuietly } from '../../io/stream.ts'
 import { decodeLine, encodeLine, MatchOffsets, prefixOf } from './grep_offsets.ts'
+import { requiredNeedles } from './grep_prefilter.ts'
 import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import type { IOResult } from '../../io/types.ts'
 import type { WalkFilters } from './grep_select.ts'
@@ -176,14 +177,14 @@ export async function* grepInput(
   let bytePos = 0
   const needle =
     !f.invert && (!hasContext || f.countOnly || f.quiet || f.filesOnly || f.filesWithoutMatch)
-      ? literalNeedle(pat)
+      ? requiredNeedles(pat)
       : null
   const input = binary.read(source)
   const lines = new AsyncLineIterator(input)
   try {
     for (;;) {
       if (needle !== null) {
-        const [skipped, bytes] = lines.skipNonmatchingLines(needle)
+        const [skipped, bytes] = lines.skipNonmatchingLines(needle, pat.ignoreCase)
         number += skipped
         bytePos += bytes
       }
@@ -329,22 +330,4 @@ function utf8Pattern(pat: RegExp): RegExp {
     else pattern += char
   }
   return new RegExp(pattern, pat.flags)
-}
-
-/** A literal whose absence in the byte view proves no line can match. */
-function literalNeedle(pat: RegExp): string | null {
-  if (pat.ignoreCase || pat.global || pat.sticky) return null
-  let needle = ''
-  let escaped = false
-  for (const char of pat.source) {
-    if (char < ' ' || char > '~') return null
-    if (escaped) {
-      if (/[a-zA-Z0-9]/.test(char)) return null
-      needle += char
-      escaped = false
-    } else if (char === '\\') escaped = true
-    else if ('.*+?^${}()|[]'.includes(char)) return null
-    else needle += char
-  }
-  return !escaped && needle.length > 0 ? needle : null
 }

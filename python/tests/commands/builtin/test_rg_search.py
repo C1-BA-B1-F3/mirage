@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import re
+from unittest.mock import patch
 
 import pytest
 
@@ -24,6 +25,7 @@ from mirage.commands.builtin.rg_search import (ByteCursor, NonmatchStop,
                                                smart_case_folds)
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
+from mirage.io.async_line_iterator import AsyncLineIterator
 
 
 def _flags(**flags) -> RgFlags:
@@ -228,3 +230,79 @@ async def test_null_data_anchors_match_embedded_newlines(flags):
     actual, selected = await _search(b"a\nb\0", "^a$", null_data=True, **flags)
     assert actual == "a\nb\0"
     assert selected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pattern",
+                         ["needle", "needle|qqzzyy", "nee.le", r"\bneedle\b"])
+async def test_skip_nonmatching_buffers_in_each_rg_mode(pattern, monkeypatch):
+    reads = 0
+    read_until = AsyncLineIterator.read_until
+
+    async def counted_read(self, delimiter):
+        nonlocal reads
+        reads += 1
+        return await read_until(self, delimiter)
+
+    monkeypatch.setattr(AsyncLineIterator, "read_until", counted_read)
+    for flags in [{"count": True}, {"files_with_matches": True}, {}]:
+        reads = 0
+        assert await _search(b"abcdefg\n" * 40000,
+                             pattern,
+                             ignore_case=True,
+                             **flags) == ("", False)
+        assert reads < 50
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags", [
+    {},
+    {
+        "count": True
+    },
+    {
+        "count_matches": True
+    },
+    {
+        "files_with_matches": True
+    },
+    {
+        "files_without_match": True
+    },
+    {
+        "quiet": True
+    },
+    {
+        "max_count": 1
+    },
+    {
+        "invert_match": True
+    },
+    {
+        "context": 2
+    },
+    {
+        "passthru": True
+    },
+    {
+        "stop_on_nonmatch": True
+    },
+    {
+        "null_data": True
+    },
+    {
+        "only_matching": True
+    },
+])
+async def test_rg_prefilter_preserves_output_and_offsets(flags):
+    data = ("abc\n" * 200 + "NEEDLE\nnone\nneedle needle\nſ\nK\nİ\nı\n" +
+            "abc\n" * 200 + "needle").encode()
+    opts = dict(flags, ignore_case=True, line_number=True, byte_offset=True)
+    for pattern in [
+            "needle|qqzzyy", "nee.le", r"\bneedle\b", "(?:needle)?", "s|k|i"
+    ]:
+        with patch.object(AsyncLineIterator,
+                          "skip_nonmatching_lines",
+                          return_value=(0, 0)):
+            expected = await _search(data, pattern, **opts)
+        assert await _search(data, pattern, **opts) == expected

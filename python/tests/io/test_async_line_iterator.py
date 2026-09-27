@@ -166,13 +166,13 @@ async def test_skip_nonmatching_lines_retains_candidates_across_chunks():
             yield chunk
 
     lines = AsyncLineIterator(source())
-    assert lines.skip_nonmatching_lines(b"needle") == (0, 0)
+    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
     assert await lines.readline() == b"first"
-    assert lines.skip_nonmatching_lines(b"needle") == (2, 10)
-    assert lines.skip_nonmatching_lines(b"needle") == (0, 0)
+    assert lines.skip_nonmatching_lines((b"needle", )) == (2, 10)
+    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
     assert await lines.readline() == b"needle"
-    assert lines.skip_nonmatching_lines(b"needle") == (1, 5)
+    assert lines.skip_nonmatching_lines((b"needle", )) == (1, 5)
     assert await lines.readline() == b"needle"
-    assert lines.skip_nonmatching_lines(b"needle") == (0, 0)
+    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
     assert await lines.readline() == b"tail"
     assert await lines.readline() is None

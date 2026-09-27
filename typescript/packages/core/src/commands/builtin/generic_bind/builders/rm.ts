@@ -24,6 +24,8 @@ import { isSlashedLink, rmLinkRefusal } from '../../utils/slash_links.ts'
 import {
   errorVirtualPath,
   fsStrerror,
+  isEnoent,
+  isEnotdir,
   isFsError,
   operandSpelling,
 } from '../../../../utils/errors.ts'
@@ -58,17 +60,14 @@ export const RM_BUILDER: Builder = {
         const st = await ops.stat(accessor, p, idx)
         isDir = st.type === FileType.DIRECTORY
       } catch (err) {
-        if (force) continue
+        if (!isFsError(err)) throw err
         // ENOTDIR is a component that is a plain file: the operand sits
-        // under one, or carried a trailing slash that named one (`rm reg/`);
-        // otherwise the operand is simply absent. -f ignores both, as GNU's
-        // `ignorable_missing` does, and without it GNU rm reports the operand
-        // and keeps removing the rest.
-        const detail =
-          (err as { code?: string }).code === 'ENOTDIR'
-            ? 'Not a directory'
-            : 'No such file or directory'
-        errors.push(`rm: cannot remove '${p.rawPath}': ${detail}`)
+        // under one, or carried a trailing slash that named one (`rm reg/`).
+        // -f ignores it and ENOENT alone, as GNU's `ignorable_missing` does;
+        // any other failure is reported, -f or not. GNU rm reports the
+        // operand and keeps removing the rest.
+        if (force && (isEnoent(err) || isEnotdir(err))) continue
+        errors.push(`rm: cannot remove '${p.rawPath}': ${fsStrerror(err) ?? String(err)}`)
         continue
       }
       let entryLines: string[] = []

@@ -23,8 +23,9 @@ from mirage.core.github.repo import ensure_default_branch
 from mirage.core.github.stat import stat
 from mirage.core.github.tree import ensure_tree
 from mirage.core.github.tree_entry import TreeEntry
-from mirage.types import PathSpec, VFSName
+from mirage.types import MountMode, PathSpec, VFSName
 from mirage.vfs.github.github import GitHubVFS
+from mirage.workspace import Workspace
 
 CONFIG = GitHubConfig(token="test-token")
 OWNER = "test-owner"
@@ -234,3 +235,43 @@ async def test_concurrent_ensure_tree_fetches_once() -> None:
         }, False)
         await asyncio.gather(*(ensure_tree(vfs.accessor) for _ in range(8)))
     assert mock_tree.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode,refusal", [
+    (MountMode.READ, "Read-only file system"),
+    (MountMode.WRITE, "Operation not supported"),
+])
+async def test_removing_a_tree_entry_is_refused_not_missing(
+        mode: MountMode, refusal: str) -> None:
+    # rm, rmdir and unlink stat their operand first, and a github stat is
+    # served from the index alone: handed none, it found nothing, so a
+    # file that `ls` listed was "No such file or directory" and `rm -f`
+    # succeeded without removing it. GNU on a filesystem that refuses the
+    # removal names the refusal, -f or not.
+    tree = {
+        "top.txt": TreeEntry(path="top.txt", type="blob", sha="a", size=2),
+        "empty": TreeEntry(path="empty", type="tree", sha="b", size=None),
+    }
+    branch, fetch = _offline(tree)
+    with branch, fetch:
+        ws = Workspace({"/gh": _make_vfs()}, mode=mode)
+        lines = {
+            "rm /gh/top.txt":
+            f"rm: cannot remove '/gh/top.txt': {refusal}\n",
+            "rm -f /gh/top.txt":
+            f"rm: cannot remove '/gh/top.txt': {refusal}\n",
+            "rmdir /gh/empty":
+            f"rmdir: failed to remove '/gh/empty': {refusal}\n",
+            "unlink /gh/top.txt":
+            f"unlink: cannot unlink '/gh/top.txt': {refusal}\n",
+            "rm /gh/nope":
+            "rm: cannot remove '/gh/nope': No such file or directory\n",
+        }
+        for line, stderr in lines.items():
+            result = await ws.shell(line)
+            assert (result.exit_code, await result.stderr_str()) == (1, stderr)
+        result = await ws.shell("rm -f /gh/nope")
+        assert (result.exit_code, await result.stderr_str()) == (0, "")
+        result = await ws.shell("ls /gh")
+        assert await result.stdout_str() == "empty\ntop.txt\n"

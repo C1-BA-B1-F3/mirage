@@ -133,7 +133,9 @@ function tokenRoutes(issued: Set<string>, runTokenPattern: string): KitRoute<C>[
 //   - ids and timestamps are counters over a fixed clock, not random
 //   - `fields` masks are ignored (full resources are returned), except on
 //     updateCells, where the mask decides whether values are touched at all
-//   - sheets store literal values; formulas are not evaluated
+//   - sheets formulas support literals, A1 cell/range references, + - * /,
+//     SUM/AVERAGE/MIN/MAX/COUNT; other syntax reports an explicit error.
+//     Locale-aware date/currency input and array formulas are not modeled.
 //   - files.list paginates on pageSize/pageToken; the token is the next
 //     item's index, so pages are stable for a fixed query
 //   - Gmail search matches case-insensitive substrings, not word stems

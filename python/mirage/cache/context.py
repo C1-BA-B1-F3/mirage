@@ -36,6 +36,9 @@ class CacheInvalidator(Protocol):
     async def invalidate_subtree(self, path: PathSpec) -> None:
         ...
 
+    async def invalidate_ancestors(self, path: PathSpec) -> None:
+        ...
+
     async def cached_bytes(self, path: PathSpec) -> bytes | None:
         ...
 
@@ -137,9 +140,8 @@ async def invalidate_ancestors(path: PathSpec) -> None:
     each one.
 
     Args:
-        path (PathSpec): Mount-relative path that was mutated.
+        path (PathSpec): Mutated path, retaining its full virtual path.
     """
-    parent = path.mount_path.rsplit("/", 1)[0]
-    while parent:
-        await invalidate_after_write(PathSpec.from_str_path(parent))
-        parent = parent.rsplit("/", 1)[0]
+    manager = _active.get()
+    if manager is not None:
+        await manager.invalidate_ancestors(path)

@@ -325,6 +325,19 @@
         "stdout": "[\"stringValue\",\"numberValue\",\"boolValue\",\"stringValue\",\"numberValue\"]\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "gapp_sheets_calculates_user_entered_formulas",
+      "seq": 520024,
+      "targets": [
+        "gapps"
+      ],
+      "command": "SID=$(gws sheets spreadsheets create --json '{\"properties\":{\"title\":\"Formula Probe\"}}' | jq -r .spreadsheetId); gws sheets write --spreadsheet $SID --range 'Sheet1!A1:D1' --json-values '[[\"1\",\"2\",\"=SUM(A1:B1)\",\"=A1*10\"]]' > /dev/null; gws sheets read --spreadsheet $SID --range 'Sheet1!A1:D1' | jq -c .values",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[\"1\",\"2\",\"3\",\"10\"]]\n",
+        "stderr": ""
+      }
     }
   ]
 }

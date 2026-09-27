@@ -27,6 +27,9 @@ class _FakeManager:
         self.unlinks: list[str] = []
         self.subtrees: list[str] = []
 
+    async def invalidate_ancestors(self, path: PathSpec) -> None:
+        pass
+
     async def invalidate_after_write(self, path: PathSpec) -> None:
         self.writes.append(path.mount_path)
 

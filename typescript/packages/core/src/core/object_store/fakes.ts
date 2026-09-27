@@ -259,6 +259,7 @@ export class FakeManager {
   }
 
   readonly writes: string[] = []
+  readonly ancestors: string[] = []
   readonly unlinks: string[] = []
   readonly subtrees: string[] = []
 
@@ -269,6 +270,11 @@ export class FakeManager {
 
   invalidateAfterUnlink(path: string | PathSpec): Promise<void> {
     this.unlinks.push(typeof path === 'string' ? path : path.mountPath)
+    return Promise.resolve()
+  }
+
+  invalidateAncestors(path: PathSpec): Promise<void> {
+    this.ancestors.push(path.virtual)
     return Promise.resolve()
   }
 

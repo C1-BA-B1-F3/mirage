@@ -34,6 +34,25 @@ async function mkCore(): Promise<MountCore> {
 }
 
 describe('MountCore', () => {
+  it('runs every op under its session with no adapter binding it', async () => {
+    // The SFTP door drives MountCore directly, with no FUSE adapter to
+    // enter the session context, so the core binds its own session per
+    // op, as Python's MountCore does.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.shell("echo 'token' > /data/secret.txt")
+    const sess = ws.createSession('agent', {
+      profile: { commands: { deny: [{ reason: 'sealed', paths: ['/data/secret.txt'] }] } },
+    })
+    const readAll = async (core: MountCore): Promise<string> => {
+      const fd = await core.open('/data/secret.txt')
+      return new TextDecoder().decode(await core.read('/data/secret.txt', fd, 0, 64))
+    }
+    expect(await readAll(new MountCore(ws.vfs))).toBe('token\n')
+    await expect(readAll(new MountCore(ws.vfs, { session: sess }))).rejects.toMatchObject({
+      code: 'EACCES',
+    })
+  })
+
   it('refuses a symlink on hidden turf for a scoped session', async () => {
     // The R8 hole: a session-scoped kernel mount could create a link on
     // a mount the profile hides, because the FUSE symlink path wrote the

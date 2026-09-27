@@ -187,6 +187,17 @@ async function emptyRepository(at: string): Promise<void> {
       field((await commits.json()) as JsonValue, 'message'),
       'Git Repository is empty.',
     )
+    // GitHub answers an empty repository before it resolves the ref, so a name
+    // or sha that matches nothing gets the same 409 as the default branch.
+    for (const ref of ['main', 'HEAD', 'nope', 'deadbeef'.repeat(5)]) {
+      const one = await fetch(`${repo}/commits/${ref}`, { headers: HEADERS })
+      eq(`empty commit ${ref} returns 409`, one.status, 409)
+      eq(
+        `empty commit ${ref} explains why`,
+        field((await one.json()) as JsonValue, 'message'),
+        'Git Repository is empty.',
+      )
+    }
     const tags = await fetch(`${repo}/tags`, { headers: HEADERS })
     eq('empty tags succeeds', tags.status, 200)
     eq('empty tags lists nothing', (await tags.json()) as JsonValue, [])

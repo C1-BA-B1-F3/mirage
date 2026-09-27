@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "sed s/l/L/ /data/a.txt /data2/xm.txt",
+      "command": "sed s/l/L/ /data/a.txt /data2/xm.txt; sed -n 2p /data/no_nl.txt /data2/xm.txt",
       "expect": {
         "exit": 0,
-        "stdout": "heLlo\nworLd\nfoo\nbar\nbaz\ncross\n",
+        "stdout": "heLlo\nworLd\nfoo\nbar\nbaz\ncross\ncross\n",
         "stderr": ""
       }
     }

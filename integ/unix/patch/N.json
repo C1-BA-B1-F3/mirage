@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "( cd /data && patch -N -p1 < poem.diff > /dev/null ) && cat /data/poem.txt",
+      "command": "( cd /data && patch -N -p1 < poem.diff > /dev/null; patch -N -p1 < poem.diff; echo rc=$?; cat poem.txt poem.txt.rej; rm poem.txt.rej )",
       "expect": {
         "exit": 0,
-        "stdout": "roses are red\nviolets are dark\nsugar is sweet\n",
+        "stdout": "patching file poem.txt\nReversed (or previously applied) patch detected!  Skipping patch.\n1 out of 1 hunk ignored -- saving rejects to file poem.txt.rej\nrc=1\nroses are red\nviolets are dark\nsugar is sweet\n--- poem.txt\n+++ poem.txt\n@@ -1,3 +1,3 @@\n roses are red\n-violets are blue\n+violets are dark\n sugar is sweet\n",
         "stderr": ""
       },
       "flags": [

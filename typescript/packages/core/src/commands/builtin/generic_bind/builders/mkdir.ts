@@ -117,12 +117,24 @@ export async function makeDirectory<A extends Accessor>(
   parents: boolean,
   links: LinkView | null = null,
 ): Promise<string | null> {
+  let target = path
   if (parents && path.dotted !== null) {
     const failed = await makeWalked(mkdir, accessor, path, path.dotted, links)
     if (failed !== null) return failed
+    // The walk has entered every name the spelling passes through, so the
+    // operand is made by its resolved path alone: walking it again would ask
+    // a store that shows no empty directory (hf) for one the walk just made.
+    target = new PathSpec({
+      virtual: path.virtual,
+      directory: path.directory,
+      vfsPath: path.vfsPath,
+      pattern: path.pattern,
+      resolved: path.resolved,
+      rawPath: path.rawPath,
+    })
   }
   try {
-    await mkdir(accessor, path, parents)
+    await mkdir(accessor, target, parents)
   } catch (err) {
     if (!isFsError(err)) throw err
     const named = operandSpelling(errorVirtualPath(err), path)

@@ -14,10 +14,14 @@
 
 from mirage.commands.builtin.generic.crossmount.types import Cmd
 
-STREAM_COMMANDS = frozenset(
-    {Cmd.CAT, Cmd.NL, Cmd.CUT, Cmd.SED, Cmd.REV, Cmd.AWK})
+STREAM_COMMANDS = frozenset({Cmd.CAT, Cmd.NL, Cmd.CUT, Cmd.SED, Cmd.AWK})
+# The stream commands that read their input as lines: GNU ends a file's
+# unterminated last line where the next file begins (`sed -n 2p` on `ab`
+# then `cd` prints `cd`), so the merged stream carries that newline.
+# `cat` joins the bytes as they are.
+LINE_STREAM_COMMANDS = frozenset({Cmd.NL, Cmd.CUT, Cmd.SED, Cmd.AWK})
 FANOUT_COMMANDS = frozenset({
-    Cmd.GREP, Cmd.RG, Cmd.HEAD, Cmd.TAIL, Cmd.DU, Cmd.FILE, Cmd.MD5,
+    Cmd.REV, Cmd.GREP, Cmd.RG, Cmd.HEAD, Cmd.TAIL, Cmd.DU, Cmd.FILE, Cmd.MD5,
     Cmd.MD5SUM, Cmd.SHA1SUM, Cmd.SHA256SUM, Cmd.SHA384SUM, Cmd.SHA512SUM,
     Cmd.STAT, Cmd.STRINGS, Cmd.TAC, Cmd.FIND, Cmd.RM, Cmd.RMDIR, Cmd.UNLINK,
     Cmd.TOUCH, Cmd.MKDIR, Cmd.TEE

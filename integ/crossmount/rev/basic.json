@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "rev /data/b.txt /data2/xm.txt",
+      "command": "rev /data/b.txt /data2/xm.txt; rev /data/no_nl.txt /data2/xm.txt",
       "expect": {
         "exit": 0,
-        "stdout": "1\n2\n3\nssorc\n",
+        "stdout": "1\n2\n3\nssorc\nenilwen gniliart onssorc\n",
         "stderr": ""
       }
     }

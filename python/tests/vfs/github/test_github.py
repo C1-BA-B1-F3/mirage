@@ -14,7 +14,6 @@
 
 import asyncio
 from unittest.mock import patch
-from urllib.parse import unquote
 
 import pytest
 
@@ -62,7 +61,7 @@ def _listing(tree: dict):
     """
 
     async def page(config, owner, repo, tree_sha, session=None):
-        at = unquote(tree_sha).partition(":")[2]
+        at = tree_sha.partition(":")[2]
         stem = at + "/" if at else ""
         return [
             TreeEntry(path=path[len(stem):],

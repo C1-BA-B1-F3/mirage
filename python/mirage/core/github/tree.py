@@ -74,7 +74,7 @@ async def fetch_tree(
         session=session,
         owner=owner,
         repo=repo,
-        ref=ref,
+        ref=quote(ref, safe=""),
     )
     return _parse_tree_response(data, owner, repo, ref)
 
@@ -92,8 +92,7 @@ async def fetch_dir_page(
         config (GitHubConfig): token and base URL.
         owner (str): repository owner.
         repo (str): repository name.
-        tree_sha (str): a tree sha, or a ``{ref}:{dir}`` expression the
-            caller has already percent-encoded as one path segment.
+        tree_sha (str): a raw tree sha, ref, or ``{ref}:{dir}`` expression.
         session (SessionArg): pool or live session to ride.
 
     Returns:
@@ -111,7 +110,7 @@ async def fetch_dir_page(
         session=session,
         owner=owner,
         repo=repo,
-        tree_sha=tree_sha,
+        tree_sha=quote(tree_sha, safe=""),
     )
     if "tree" not in data:
         raise GitHubApiError(
@@ -192,9 +191,8 @@ async def point_row(accessor: GitHubAccessor,
     expression = f"{ref}:{parent}" if parent else ref
     try:
         rows, truncated = await fetch_dir_page(accessor.config, accessor.owner,
-                                               accessor.repo,
-                                               quote(expression,
-                                                     safe=""), accessor.pool)
+                                               accessor.repo, expression,
+                                               accessor.pool)
     except aiohttp.ClientResponseError as exc:
         if exc.status not in DEFER_STATUSES:
             raise

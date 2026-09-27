@@ -14,7 +14,7 @@
 
 import logging
 from unittest.mock import AsyncMock, patch
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 import aiohttp
 import pytest
@@ -34,6 +34,27 @@ from tests.fixtures.github_api import FakeGitHub, blob_sha, serve
 @pytest.fixture
 def config():
     return GitHubConfig(token="ghp_test")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ref", [
+    "feature/topic", "release#1", "literal%2Fref", "feature/topic:docs/nested"
+])
+@patch("mirage.core.github.client.api_request")
+async def test_tree_requests_encode_reference_once(mock_request, config, ref):
+    mock_request.return_value = {"tree": [], "truncated": False}
+    await fetch_tree(config, "o", "r", ref)
+    await fetch_dir_page(config, "o", "r", ref)
+    await fetch_dir_tree(config, "o", "r", ref)
+    encoded = quote(ref, safe="")
+    expected = f"https://api.github.com/repos/o/r/git/trees/{encoded}"
+    assert [call.args[1]
+            for call in mock_request.await_args_list] == [expected] * 3
+    assert mock_request.await_args_list[0].kwargs["params"] == {
+        "recursive": "1"
+    }
+    assert mock_request.await_args_list[1].kwargs["params"] is None
+    assert mock_request.await_args_list[2].kwargs["params"] is None
 
 
 @pytest.mark.asyncio

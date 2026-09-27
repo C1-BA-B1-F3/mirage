@@ -12,8 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from urllib.parse import unquote
-
 import pytest
 
 from mirage.cache.index.ram import RAMIndexCacheStore
@@ -52,7 +50,7 @@ def dir_calls(monkeypatch):
 
     async def _fetch_dir_page(config, owner, repo, tree_sha, session=None):
         calls.append(tree_sha)
-        at = unquote(tree_sha).partition(":")[2]
+        at = tree_sha.partition(":")[2]
         prefix = at + "/" if at else ""
         rows = [
             TreeEntry(path=path[len(prefix):],
@@ -167,7 +165,7 @@ async def test_reconcile_private_index_can_resolve_github_ids(
         # probe's private index are each answered by one listing of the
         # parent, and nothing walks the tree.
         assert tree_calls == []
-        assert [unquote(c) for c in dir_calls] == ["main:src"] * 2
+        assert dir_calls == ["main:src"] * 2
     finally:
         await ws.close()
 

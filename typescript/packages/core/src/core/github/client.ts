@@ -201,9 +201,12 @@ export async function fetchTree(
   repo: string,
   ref: string,
 ): Promise<{ tree: GitHubTreeItem[]; truncated: boolean }> {
-  const data = (await transport.get(`/repos/${owner}/${repo}/git/trees/${ref}`, {
-    recursive: '1',
-  })) as { tree?: GitHubTreeItem[]; truncated?: boolean }
+  const data = (await transport.get(
+    `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}`,
+    {
+      recursive: '1',
+    },
+  )) as { tree?: GitHubTreeItem[]; truncated?: boolean }
   return { tree: dropSubmodules(data.tree ?? []), truncated: data.truncated === true }
 }
 
@@ -217,8 +220,7 @@ function dropSubmodules(tree: GitHubTreeItem[]): GitHubTreeItem[] {
  * Fetch one directory's tree (non-recursive), and whether GitHub cut it.
  *
  * Args:
- *   treeSha (string): a tree sha, or a `{ref}:{dir}` expression the caller
- *     has already percent-encoded as one path segment.
+ *   treeSha (string): a raw tree sha, ref, or `{ref}:{dir}` expression.
  *
  * Returns:
  *   { tree, truncated }: the rows, submodule gitlinks excluded, and
@@ -234,7 +236,9 @@ export async function fetchDirTreePage(
   repo: string,
   treeSha: string,
 ): Promise<{ tree: GitHubTreeItem[]; truncated: boolean }> {
-  const data = (await transport.get(`/repos/${owner}/${repo}/git/trees/${treeSha}`)) as {
+  const data = (await transport.get(
+    `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(treeSha)}`,
+  )) as {
     tree?: GitHubTreeItem[]
     truncated?: boolean
   }

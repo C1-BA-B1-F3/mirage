@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   fetchDirTree,
   fetchDirTreePage,
+  fetchTree,
   GitHubApiError,
   type GitHubTransport,
   HttpGitHubTransport,
@@ -302,6 +303,24 @@ describe('searchCode', () => {
     expect(out.results.map((r) => r.path)).toEqual(['src/a.py'])
     expect(out.truncated).toBe(false)
   })
+})
+
+describe('tree reference encoding', () => {
+  it.each(['feature/topic', 'release#1', 'literal%2Fref', 'feature/topic:docs/nested'])(
+    'preserves %s in recursive and directory requests',
+    async (ref) => {
+      REPLY = { status: 200, body: '{"tree":[],"truncated":false}' }
+      const client = transport()
+      await fetchTree(client, 'o', 'r', ref)
+      await fetchDirTreePage(client, 'o', 'r', ref)
+      await fetchDirTree(client, 'o', 'r', ref)
+      expect(SEEN.map(({ url }) => url)).toEqual([
+        `https://api.example.test/repos/o/r/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+        `https://api.example.test/repos/o/r/git/trees/${encodeURIComponent(ref)}`,
+        `https://api.example.test/repos/o/r/git/trees/${encodeURIComponent(ref)}`,
+      ])
+    },
+  )
 })
 
 describe('fetchDirTreePage', () => {

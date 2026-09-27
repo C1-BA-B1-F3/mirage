@@ -197,12 +197,7 @@ export async function pointRow(
   const expression = parent === '' ? accessor.ref : `${accessor.ref}:${parent}`
   let page: { tree: GitHubTreeItem[]; truncated: boolean }
   try {
-    page = await fetchDirTreePage(
-      accessor.transport,
-      accessor.owner,
-      accessor.repo,
-      encodeURIComponent(expression),
-    )
+    page = await fetchDirTreePage(accessor.transport, accessor.owner, accessor.repo, expression)
   } catch (err) {
     if (err instanceof GitHubApiError && DEFER_STATUSES.has(err.status)) return null
     throw err

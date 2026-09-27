@@ -107,6 +107,27 @@ function field(body: JsonValue, key: string): JsonValue {
     : null
 }
 
+// A refusal is pinned by its status and its message together, because the
+// vendor tells an empty repository from a missing ref by both.
+async function refusal(url: string): Promise<JsonValue> {
+  const r = await fetch(url, { headers: HEADERS })
+  return [r.status, field((await r.json()) as JsonValue, 'message')]
+}
+
+// Every ref spelling a client might ask an empty repository about: shown or
+// listed, branch or tag, one that would exist and one that never could, and
+// the bare listing with and without its slash.
+const REF_PATHS = [
+  'git/ref/heads/main',
+  'git/ref/heads/nope',
+  'git/ref/tags/v1',
+  'git/refs',
+  'git/refs/',
+  'git/refs/heads',
+  'git/refs/heads/main',
+  'git/refs/tags',
+]
+
 // One staged tree holding one file, which is what a commit needs to exist.
 async function stage(at: string, path: string, content: string): Promise<string> {
   const tree = await post(`${at}/repos/${REPO}/git/trees`, {
@@ -154,6 +175,17 @@ async function metadataRepository(): Promise<void> {
           'Git Repository is empty.',
         )
         eq('metadata-only tags list is empty', await get(`${repo}/tags`), [])
+        for (const path of REF_PATHS) {
+          eq(`metadata-only ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
+            409,
+            'Git Repository is empty.',
+          ])
+        }
+        eq(
+          'metadata-only contents at an unknown ref is still empty',
+          await refusal(`${repo}/contents/?ref=nope`),
+          [404, 'This repository is empty.'],
+        )
       }
     } finally {
       await home.close()
@@ -180,6 +212,14 @@ async function emptyRepository(at: string): Promise<void> {
         'This repository is empty.',
       )
     }
+    // Emptiness is answered before the ref is resolved, so a ref that names
+    // nothing is told the repository is empty, not that the ref is missing.
+    for (const path of ['contents/?ref=nope', 'contents?ref=nope', 'contents/first.txt?ref=nope']) {
+      eq(`empty ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
+        404,
+        'This repository is empty.',
+      ])
+    }
     const commits = await fetch(`${repo}/commits`, { headers: HEADERS })
     eq('empty history returns 409', commits.status, 409)
     eq(
@@ -201,6 +241,21 @@ async function emptyRepository(at: string): Promise<void> {
     const tags = await fetch(`${repo}/tags`, { headers: HEADERS })
     eq('empty tags succeeds', tags.status, 200)
     eq('empty tags lists nothing', (await tags.json()) as JsonValue, [])
+    // The fake lets a branch be cut from nothing here. It holds no commit, so
+    // the repository stays empty, and once another branch has history it is
+    // still no ref: every read of it below is refused.
+    const cut = await post(`${repo}/git/refs`, { ref: 'refs/heads/side', sha: '' })
+    eq('a branch cut from nothing is created', cut.status, 201)
+    eq('and leaves the repository empty', await refusal(`${repo}/contents/?ref=side`), [
+      404,
+      'This repository is empty.',
+    ])
+    for (const path of REF_PATHS) {
+      eq(`empty ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
+        409,
+        'Git Repository is empty.',
+      ])
+    }
     const written = await fetch(`${repo}/contents/first.txt`, {
       method: 'PUT',
       headers: HEADERS,
@@ -218,6 +273,43 @@ async function emptyRepository(at: string): Promise<void> {
       field(history[0] ?? null, 'sha'),
       field(field(body, 'commit'), 'sha'),
     )
+    // One write and the repository has a ref, so refs resolve again: the
+    // branch points at the commit the write made, and a ref, a commit or a
+    // contents ref that names nothing is refused as missing, not as empty.
+    const sha = field(field(body, 'commit'), 'sha')
+    eq('the written branch shows its ref', await get(`${repo}/git/ref/heads/main`), {
+      ref: 'refs/heads/main',
+      object: { sha, type: 'commit' },
+    })
+    for (const path of ['git/refs', 'git/refs/heads']) {
+      eq(`${path} lists the written branch`, await get(`${repo}/${path}`), [
+        { ref: 'refs/heads/main', object: { sha, type: 'commit' } },
+      ])
+    }
+    eq('an unknown ref is missing, not empty', await refusal(`${repo}/git/ref/heads/nope`), [
+      404,
+      'Not Found',
+    ])
+    for (const ref of ['nope', 'refs/heads/nope', 'deadbeef'.repeat(5)]) {
+      eq(`an unknown commit ${ref} is refused by name`, await refusal(`${repo}/commits/${ref}`), [
+        422,
+        `No commit found for SHA: ${ref}`,
+      ])
+    }
+    eq('contents at an unknown ref names it', await refusal(`${repo}/contents/?ref=nope`), [
+      404,
+      'No commit found for the ref nope',
+    ])
+    // The listings above already leave `side` out.
+    eq('an uncommitted branch has no contents', await refusal(`${repo}/contents/?ref=side`), [
+      404,
+      'No commit found for the ref side',
+    ])
+    eq('nor a ref', await refusal(`${repo}/git/ref/heads/side`), [404, 'Not Found'])
+    eq('nor a commit', await refusal(`${repo}/commits/side`), [
+      422,
+      'No commit found for SHA: side',
+    ])
     const deleted = await fetch(`${repo}/contents/first.txt`, {
       method: 'DELETE',
       headers: HEADERS,
@@ -233,6 +325,11 @@ async function emptyRepository(at: string): Promise<void> {
       2,
     )
     eq('a committed empty tree lists successfully', await get(`${repo}/contents/`), [])
+    eq(
+      'a committed empty tree still shows its ref',
+      field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'),
+      field(field((await deleted.json()) as JsonValue, 'commit'), 'sha'),
+    )
   }
   for (const path of ['/graphql', '/api/graphql']) {
     const response = await post(`${base}${path}`, { query: '{ viewer { login } }' })
@@ -260,6 +357,10 @@ async function seededHistory(at: string): Promise<void> {
     await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
     const repo = `${base}/repos/${REPO}`
     const root = String(field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'))
+    eq('a seeded branch is not an empty repository', await refusal(`${repo}/commits/nope`), [
+      422,
+      'No commit found for SHA: nope',
+    ])
     const path = first === 'PUT' ? 'first.txt' : 'README.md'
     const change =
       first === 'PUT'

@@ -328,6 +328,18 @@ export async function headOf(
   return row?.headSha ?? ''
 }
 
+// A repository is empty until some branch points somewhere. That belongs to
+// the repository, not to the ref a caller names, and the vendor answers it
+// before resolving that ref: in an empty repository a ref that matches nothing
+// is told the repository is empty, not that the ref is missing, so the test
+// cannot wait for a ref to resolve to a branch.
+export async function repoIsEmpty(db: C, tenant: string, repo: RepoRow): Promise<boolean> {
+  for (const branch of await branchNames(db, tenant, repo)) {
+    if ((await visibleHeadOf(db, tenant, repo, branch)) !== '') return false
+  }
+  return true
+}
+
 // One branch's commits, newest first: the chain its ref points at, and under
 // it the synthetic root that chain was built on. A branch nothing has been
 // committed to derives its root from its CONTENT rather than the repository's

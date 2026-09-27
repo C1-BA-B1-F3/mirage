@@ -105,17 +105,22 @@ async def _earliest_message_ts(accessor: SlackAccessor, channel_id: str,
                                latest: float) -> float:
     """Discover the history start when conversation metadata omits creation.
 
+    Only history before the scope's end is paged: a message after it is
+    out of scope, and the first message overall precedes the end whenever
+    anything in scope exists at all.
+
     Args:
         accessor (SlackAccessor): scoped accessor.
         channel_id (str): conversation id.
         latest (float): newest known message timestamp.
     """
+    params: dict[str, str | int] = {"channel": channel_id, "limit": 200}
+    if accessor.time_range.end is not None:
+        params["latest"] = f"{accessor.time_range.end:.6f}"
     first = latest
     async for page in cursor_pages(accessor.config,
-                                   "conversations.history", {
-                                       "channel": channel_id,
-                                       "limit": 200
-                                   },
+                                   "conversations.history",
+                                   params,
                                    "messages",
                                    session=accessor.pool):
         for message in page:
@@ -184,13 +189,19 @@ async def _list_channel_days(accessor: SlackAccessor, match: ScopeMatch,
                                          own.id,
                                          session=accessor.pool)
     if latest_ts and accessor.time_range.bounded:
-        first = created or accessor.time_range.start
-        if first is None:
-            first = await _earliest_message_ts(accessor, own.id, latest_ts)
+        start = created or accessor.time_range.start
+        if start is not None:
+            first = datetime.fromtimestamp(start, timezone.utc).date()
+        elif span is not None:
+            first = span[0]
+        else:
+            first = datetime.fromtimestamp(
+                await _earliest_message_ts(accessor, own.id, latest_ts),
+                timezone.utc).date()
         dates = list(
             reversed(
                 accessor.time_range.listing_days(
-                    datetime.fromtimestamp(first, timezone.utc).date(),
+                    first,
                     datetime.fromtimestamp(latest_ts, timezone.utc).date(),
                     span)))
     elif latest_ts and created:

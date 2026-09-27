@@ -228,7 +228,7 @@ const BUILTIN_CLIS: readonly (readonly [string, CLISpec])[] = [
   ['git', GIT],
 ]
 
-const SAMPLES: readonly unknown[] = ['x', 1, true, ['x']]
+const SAMPLES: readonly unknown[] = ['x', 1, true, ['x'], null]
 
 // Capital runs collapse to one word (baseURL -> base_url), because that
 // is the spelling a Python config writer uses; per-capital splitting

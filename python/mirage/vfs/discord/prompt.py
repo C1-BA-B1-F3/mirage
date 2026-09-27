@@ -34,6 +34,8 @@ PROMPT = """\
   With start_time/end_time, listings cover that scope; messages and their
   attachments outside it are absent, including through direct paths.
   Users and channel metadata remain available as context.
+  A time-scoped mount does not search through Discord: grep and rg read
+  the in-scope files, so grep needs -r to search a directory.
   Messages are JSONL; use jq to extract fields like .content, .author.username,
   .attachments.
   grep / rg at channel or guild scope uses Discord's `/messages/search` API

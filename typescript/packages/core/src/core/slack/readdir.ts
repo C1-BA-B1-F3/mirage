@@ -59,16 +59,25 @@ export async function latestMessageTs(
   return Number.parseFloat(messages[0]?.ts ?? '0')
 }
 
+/**
+ * Discover the history start when conversation metadata omits creation.
+ *
+ * Only history before the scope's end is paged: a message after it is out
+ * of scope, and the first message overall precedes the end whenever
+ * anything in scope exists at all.
+ */
 async function earliestMessageTs(
   accessor: SlackAccessor,
   channelId: string,
   latest: number,
 ): Promise<number> {
+  const params: Record<string, string> = { channel: channelId, limit: '200' }
+  if (accessor.timeRange.end !== null) params.latest = accessor.timeRange.end.toFixed(6)
   let first = latest
   for await (const page of cursorPages<{ ts: string }>(
     accessor.transport,
     'conversations.history',
-    { channel: channelId, limit: '200' },
+    params,
     'messages',
   )) {
     for (const message of page) first = Math.min(first, Number.parseFloat(message.ts))
@@ -186,14 +195,16 @@ async function listChannelDays(
   const latestTs = await latestMessageTs(accessor, own.id)
   let dates: string[]
   if (latestTs !== null && accessor.timeRange.bounded) {
-    const first =
-      created || (accessor.timeRange.start ?? (await earliestMessageTs(accessor, own.id, latestTs)))
+    const start = created || accessor.timeRange.start
+    let first: string
+    if (start !== null) first = new Date(start * 1000).toISOString().slice(0, 10)
+    else if (span !== null) first = span[0]
+    else {
+      const earliest = await earliestMessageTs(accessor, own.id, latestTs)
+      first = new Date(earliest * 1000).toISOString().slice(0, 10)
+    }
     dates = accessor.timeRange
-      .listingDays(
-        new Date(first * 1000).toISOString().slice(0, 10),
-        new Date(latestTs * 1000).toISOString().slice(0, 10),
-        span,
-      )
+      .listingDays(first, new Date(latestTs * 1000).toISOString().slice(0, 10), span)
       .reverse()
   } else if (latestTs !== null && created > 0) {
     dates = dateRange(latestTs, created, 90, span)

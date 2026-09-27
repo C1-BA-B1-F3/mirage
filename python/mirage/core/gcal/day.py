@@ -23,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 DEFAULT_TZ = "UTC"
-# Bound recurring-event expansion in the future; retain all past events.
 WINDOW_AHEAD_DAYS = 90
 
 
@@ -82,6 +81,9 @@ def day_bounds(day: str, tz: str) -> tuple[str, str]:
 
 def window_bounds(today: date, tz: str) -> tuple[None, str]:
     """The default listing bounds: all past events and a future horizon.
+
+    The horizon, ``WINDOW_AHEAD_DAYS`` past today, is what keeps a
+    recurring event without an end from expanding forever.
 
     Args:
         today (date): the day the future horizon is measured from.

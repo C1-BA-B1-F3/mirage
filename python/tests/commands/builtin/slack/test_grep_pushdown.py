@@ -16,10 +16,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from mirage.accessor.slack import SlackAccessor
+from mirage.cache.index import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.commands.builtin.slack.grep import grep
 from mirage.commands.builtin.slack.rg import rg
 from mirage.commands.config import CommandOpts
+from mirage.core.slack.config import SlackConfig
 from mirage.core.time_range import TimeRange
 from mirage.io.types import IOResult, materialize
 from mirage.types import ContentType, FileStat, FileType, PathSpec
@@ -268,3 +271,33 @@ async def test_grep_without_word_flag_skips_native_search():
     assert out == b""
     assert io.exit_code == 2
     assert b"No such file" in io.stderr
+
+
+@pytest.mark.asyncio
+async def test_grep_on_a_time_scoped_mount_skips_native_search():
+    """Slack search cannot honor the mount's time bounds, so a scoped
+    mount answers from the scan, where a bare directory is GNU's EISDIR."""
+    accessor = SlackAccessor(
+        SlackConfig(token="xoxb-test", start_time="2026-01-01T00:00:00Z"))
+    index = RAMIndexCacheStore()
+    await index.set_dir("/slack/channels", [(
+        "general__C1",
+        IndexEntry(id="C1",
+                   name="general",
+                   resource_type="slack/channel",
+                   vfs_name="general__C1"),
+    )])
+    channel = [
+        PathSpec(vfs_path=mount_key("/slack/channels/general__C1", "/slack"),
+                 virtual="/slack/channels/general__C1",
+                 directory="/slack/channels/general__C1")
+    ]
+    with patch(
+            "mirage.commands.builtin.slack.grep.search_messages",
+            new=AsyncMock(return_value=b"{}"),
+    ) as fake_search:
+        _out, io = await grep(accessor, channel, ['hello'],
+                              CommandOpts(index=index, flags={'w': True}))
+    fake_search.assert_not_awaited()
+    assert io.exit_code == 2
+    assert b"Is a directory" in io.stderr

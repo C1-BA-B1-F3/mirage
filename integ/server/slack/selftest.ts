@@ -155,6 +155,33 @@ async function main(): Promise<void> {
       historyPage.has_more === true &&
         (historyPage.messages as Json[])[0]!.ts !== (nextHistory.messages as Json[])[0]!.ts,
     )
+    const wholeHistory = (await call('conversations.history', { channel: 'C4' })).messages as Json[]
+    const pagedHistory: JsonValue[] = []
+    let historyCursor = ''
+    do {
+      const page = await call('conversations.history', {
+        channel: 'C4',
+        limit: '2',
+        ...(historyCursor === '' ? {} : { cursor: historyCursor }),
+      })
+      for (const one of page.messages as Json[]) pagedHistory.push(one.ts!)
+      historyCursor = String((page.response_metadata as Json).next_cursor)
+    } while (historyCursor !== '')
+    eq(
+      'following the history cursor lists every message once',
+      pagedHistory,
+      wholeHistory.map((m) => m.ts!),
+    )
+    eq(
+      'an unknown history cursor is refused',
+      (
+        await call('conversations.history', {
+          channel: 'C4',
+          cursor: Buffer.from('next_ts:1000000000000001', 'utf8').toString('base64'),
+        })
+      ).error,
+      'invalid_cursor',
+    )
     const microseconds = await call('conversations.history', {
       channel: 'C4',
       oldest: THREAD.replace('.000015', '.15'),

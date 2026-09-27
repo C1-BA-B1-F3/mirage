@@ -451,3 +451,30 @@ async def test_discord_grep_file_blob_skips_native_search():
     fake_search.assert_not_awaited()
     assert io.exit_code == 0
     assert b"quarter,amount" in await materialize(out)
+
+
+@pytest.mark.asyncio
+async def test_discord_grep_on_a_time_scoped_mount_skips_native_search():
+    """Discord search cannot honor the mount's time bounds, so a scoped
+    mount answers from the per-file scan of the in-scope days."""
+    accessor = AsyncMock()
+    accessor.time_range = TimeRange.from_strings(None, "2026-02-01T00:00:00Z")
+    accessor.config = AsyncMock()
+    paths = [_channel_path()]
+    with patch(
+            "mirage.commands.builtin.discord.grep.search_guild",
+            new=AsyncMock(return_value=[]),
+    ) as fake_search, patch(
+            "mirage.commands.builtin.discord.grep.resolve_glob",
+            new=AsyncMock(return_value=paths),
+    ), patch(
+            "mirage.commands.builtin.discord.grep.generic_grep",
+            new=AsyncMock(return_value=(b"", IOResult(exit_code=1))),
+    ) as fake_scan:
+        await grep(accessor, paths, ['hello'],
+                   CommandOpts(flags={
+                       'w': True,
+                       'r': True
+                   }))
+    fake_search.assert_not_awaited()
+    fake_scan.assert_awaited_once()

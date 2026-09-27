@@ -38,6 +38,8 @@ PROMPT = """\
   With start_time/end_time, listings cover that scope; messages and their
   attachments outside it are absent, including through direct paths.
   Users and channel metadata remain available as context.
+  A time-scoped mount does not search through Slack: grep and rg read
+  the in-scope files, so grep needs -r to search a directory.
   Messages are JSONL; use jq to extract fields like .text, .user, .ts, .files.
   rg over files/ uses Slack's server-side file content search; works on
   PDFs, Word docs, code snippets that Slack has indexed."""

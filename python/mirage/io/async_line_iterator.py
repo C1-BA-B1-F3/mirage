@@ -50,6 +50,7 @@ class AsyncLineIterator:
         self._budget = YieldBudget()
         self._buf = b""
         self._exhausted = False
+        self._unskipped_attempts = 0
 
     def __aiter__(self) -> "AsyncLineIterator":
         return self
@@ -78,21 +79,31 @@ class AsyncLineIterator:
         self._buf = self._buf[count:]
         return count
 
-    def skip_nonmatching_lines(self, needle: bytes) -> tuple[int, int]:
+    def skip_nonmatching_lines(self,
+                               needles: tuple[bytes, ...],
+                               ignore_case: bool = False) -> tuple[int, int]:
         """Skip complete buffered lines before a possible literal match.
 
         Leave the candidate and any unfinished line for ``readline`` to join
         across transport boundaries. Never pull more input.
 
         Args:
-            needle (bytes): a nonempty ASCII literal without a newline.
+            needles (tuple[bytes, ...]): nonempty literals without newlines.
+            ignore_case (bool): search an ASCII-lowercased view.
 
         Returns:
             tuple[int, int]: skipped line and byte counts.
         """
-        hit = self._buf.find(needle)
+        # Bound prefilter work on dense matches; retry with the next buffer.
+        if self._unskipped_attempts >= 8:
+            return 0, 0
+        data = self._buf.lower() if ignore_case else self._buf
+        hit = min((at for needle in needles if (at := data.find(needle)) >= 0),
+                  default=-1)
         end = self._buf.rfind(b"\n", 0,
                               hit if hit >= 0 else len(self._buf)) + 1
+        self._unskipped_attempts = (self._unskipped_attempts +
+                                    1 if end == 0 else 0)
         count = self._buf.count(b"\n", 0, end)
         self._buf = self._buf[end:]
         return count, end
@@ -130,6 +141,7 @@ class AsyncLineIterator:
                 self._buf = self._buf[split:]
                 try:
                     self._buf += await self._source.__anext__()
+                    self._unskipped_attempts = 0
                 except StopAsyncIteration:
                     self._exhausted = True
         except BaseException:
@@ -179,6 +191,7 @@ class AsyncLineIterator:
                 if len(self._buf) < need and not self._exhausted:
                     try:
                         self._buf += await self._source.__anext__()
+                        self._unskipped_attempts = 0
                     except StopAsyncIteration:
                         self._exhausted = True
                     continue

@@ -90,21 +90,18 @@ class _Parser:
             elif char == "\\":
                 escaped = self.source[self.at:self.at + 1]
                 self.at += 1
-                if escaped in ("b", "B", "A", "Z", "z", "d", "D", "s", "S",
-                               "w", "W"):
-                    pass
-                elif escaped and not escaped.isalnum(
-                ) and " " <= escaped <= "~":
-                    atom = _literal(escaped)
-                else:
-                    self.safe = False
-                    break
-            elif char in ".^$":
-                pass
+                if escaped not in ("b", "B", "A", "Z", "z", "d", "D", "s", "S",
+                                   "w", "W"):
+                    if escaped and not escaped.isalnum(
+                    ) and " " <= escaped <= "~":
+                        atom = _literal(escaped)
+                    else:
+                        self.safe = False
+                        break
             elif char in "*+?{}":
                 self.safe = False
                 break
-            elif " " <= char <= "~":
+            elif char not in ".^$" and " " <= char <= "~":
                 atom = _literal(char)
             quantifier = self.source[self.at:self.at + 1]
             if quantifier and quantifier in "*+?":

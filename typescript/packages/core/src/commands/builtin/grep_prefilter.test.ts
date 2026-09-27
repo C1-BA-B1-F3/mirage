@@ -9,7 +9,7 @@ import { parseFlags as grepFlags } from './generic/grep.ts'
 import { parseFlags as rgFlags } from './generic/rg.ts'
 import { grepInput } from './grep_binary.ts'
 import { requiredLiteral } from './grep_prefilter.ts'
-import { grepStream } from './grep_scan.ts'
+import { grepStream, type GrepStreamOptions } from './grep_scan.ts'
 import { searchHaystack } from './rg_search.ts'
 
 const ENC = new TextEncoder()
@@ -214,4 +214,53 @@ it('retains matches across regex combinations', () => {
         }
       }
     }
+})
+
+it.each([7, 16384, 65536])('preserves printed stream output at chunk size %i', async (size) => {
+  const padding = 'é other\n'.repeat(5000)
+  const data = ENC.encode(padding + 'é ZZQQXX 😀\n' + padding + 'tail zzqqxx')
+  const pat = /zz.qxx/i
+  const options: Partial<GrepStreamOptions>[] = [
+    {},
+    { lineNumbers: true },
+    { byteOffsets: true },
+    { lineNumbers: true, byteOffsets: true },
+    { lineNumbers: true, byteOffsets: true, onlyMatching: true },
+    { lineNumbers: true, byteOffsets: true, maxCount: 1 },
+  ]
+  async function* source(): AsyncIterable<Uint8Array> {
+    await Promise.resolve()
+    for (let at = 0; at < data.length; at += size) yield data.subarray(at, at + size)
+  }
+  async function scan(option: Partial<GrepStreamOptions>): Promise<[Uint8Array, number]> {
+    const io = new IOResult({ exitCode: 1 })
+    const out = await materialize(
+      grepStream(source(), pat, {
+        invert: false,
+        lineNumbers: false,
+        byteOffsets: false,
+        onlyMatching: false,
+        maxCount: null,
+        countOnly: false,
+        beforeContext: 0,
+        afterContext: 0,
+        ...option,
+        io,
+      }),
+    )
+    return [out, io.exitCode]
+  }
+  for (const option of options) {
+    const actual = await scan(option)
+    const unfiltered = vi
+      .spyOn(AsyncLineIterator.prototype, 'skipNonmatchingLines')
+      .mockReturnValue([0, 0])
+    try {
+      expect(actual).toEqual(await scan(option))
+    } finally {
+      unfiltered.mockRestore()
+    }
+    expect(actual[0].length).toBeGreaterThan(0)
+    expect(actual[1]).toBe(0)
+  }
 })

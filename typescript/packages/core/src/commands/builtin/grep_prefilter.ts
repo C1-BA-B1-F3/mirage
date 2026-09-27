@@ -87,25 +87,18 @@ class Parser {
         this.at++
       } else if (char === '\\') {
         const escaped = this.source[this.at++] ?? ''
-        if (['b', 'B', 'A', 'Z', 'z', 'd', 'D', 's', 'S', 'w', 'W'].includes(escaped)) {
-          // Assertions and classes do not promise a literal.
-        } else if (
-          escaped !== '' &&
-          !/[a-z0-9]/i.test(escaped) &&
-          escaped >= ' ' &&
-          escaped <= '~'
-        ) {
-          atom = literal(escaped)
-        } else {
-          this.safe = false
-          break
+        if (!['b', 'B', 'A', 'Z', 'z', 'd', 'D', 's', 'S', 'w', 'W'].includes(escaped)) {
+          if (escaped !== '' && !/[a-z0-9]/i.test(escaped) && escaped >= ' ' && escaped <= '~') {
+            atom = literal(escaped)
+          } else {
+            this.safe = false
+            break
+          }
         }
-      } else if ('.^$'.includes(char)) {
-        // Assertions and wildcards do not promise a literal.
       } else if ('*+?{}'.includes(char)) {
         this.safe = false
         break
-      } else if (char >= ' ' && char <= '~') {
+      } else if (!'.^$'.includes(char) && char >= ' ' && char <= '~') {
         atom = literal(char)
       }
       const quantifier = this.source[this.at] ?? ''

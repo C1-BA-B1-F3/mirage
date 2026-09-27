@@ -187,3 +187,53 @@ def test_required_literals_retain_matches_across_regex_combinations():
                     raw = text.encode()
                     assert (prefilter in raw if isinstance(prefilter, bytes)
                             else prefilter.search(raw)), (pattern, text)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size", [7, 16384, 65536])
+@pytest.mark.parametrize("options", [
+    {},
+    {
+        "line_numbers": True
+    },
+    {
+        "byte_offsets": True
+    },
+    {
+        "line_numbers": True,
+        "byte_offsets": True
+    },
+    {
+        "line_numbers": True,
+        "byte_offsets": True,
+        "only_matching": True
+    },
+    {
+        "line_numbers": True,
+        "byte_offsets": True,
+        "max_count": 1
+    },
+])
+async def test_stream_printed_output_matches_unfiltered(
+        size, options, monkeypatch):
+    padding = "é other\n".encode() * 5000
+    data = padding + "é ZZQQXX 😀\n".encode() + padding + b"tail zzqqxx"
+    pat = re.compile("zz.qxx", re.IGNORECASE)
+
+    async def source():
+        for at in range(0, len(data), size):
+            yield data[at:at + size]
+
+    async def scan():
+        io = IOResult(exit_code=1)
+        out = await materialize(grep_stream(source(), pat, io=io, **options))
+        return out, io.exit_code, io.stderr
+
+    actual = await scan()
+    with monkeypatch.context() as unfiltered:
+        unfiltered.setattr(AsyncLineIterator, "skip_nonmatching_lines",
+                           lambda *args: (0, 0))
+        expected = await scan()
+    assert actual == expected
+    assert actual[0]
+    assert actual[1:] == (0, None)

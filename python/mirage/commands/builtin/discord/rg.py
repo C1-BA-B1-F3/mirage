@@ -60,7 +60,7 @@ async def rg(accessor: DiscordAccessor, paths: list[PathSpec],
     if (operand is not None and pattern_str is not None
             and fl.as_bool("word_regexp")):
         match = detect_scope(operand)
-        if match.kind in NATIVE_KINDS:
+        if not accessor.time_range.bounded and match.kind in NATIVE_KINDS:
             guild_id = match.slots["guild_id"]
             try:
                 msgs = await search_guild(

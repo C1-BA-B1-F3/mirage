@@ -23,6 +23,7 @@ from mirage.core.discord.scope import detect_scope
 from mirage.core.hierarchy.probe import resolve_entry
 from mirage.core.hierarchy.read import make_read, make_read_range
 from mirage.core.hierarchy.scope import ScopeMatch
+from mirage.core.time_range import guard_day
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
@@ -55,6 +56,7 @@ async def _read_chat(accessor: DiscordAccessor, match: ScopeMatch,
         path (PathSpec): the chat.jsonl path.
         index (IndexCacheStore): index cache.
     """
+    await guard_day(accessor, match, path.virtual)
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is not None:
         channel_id = entry.id.split(":", 1)[0]
@@ -68,6 +70,7 @@ async def _read_chat(accessor: DiscordAccessor, match: ScopeMatch,
     return await get_history_jsonl(accessor.config,
                                    channel_id,
                                    match.slots["day"],
+                                   accessor.time_range,
                                    session=accessor.pool)
 
 
@@ -88,6 +91,7 @@ async def _read_member(accessor: DiscordAccessor, match: ScopeMatch,
 
 async def _blob_url(accessor: DiscordAccessor, path: PathSpec,
                     index: IndexCacheStore) -> str:
+    await guard_day(accessor, detect_scope(path), path.virtual)
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is None:
         raise enoent(path.virtual)

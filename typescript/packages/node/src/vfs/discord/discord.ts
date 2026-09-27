@@ -19,11 +19,11 @@ import { DISCORD_COMMANDS } from '@struktoai/mirage-core/commands/builtin/discor
 
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import { NodeDiscordTransport } from '@struktoai/mirage-core/core/discord/client'
-import { redactDiscordConfig } from '@struktoai/mirage-core/core/discord/config'
+import { redactDiscordConfig } from '@struktoai/mirage-core/vfs/discord/config'
 import type {
   DiscordConfig,
   DiscordConfigRedacted,
-} from '@struktoai/mirage-core/core/discord/config'
+} from '@struktoai/mirage-core/vfs/discord/config'
 
 import { DISCORD_OPS } from '@struktoai/mirage-core/ops/discord/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
@@ -44,7 +44,7 @@ export class DiscordVFS extends BoundVFS<DiscordAccessor> implements VFS {
   // are rendered at readdir from payloads the listing already fetched, and
   // attachments carry Discord's CDN byte count.
   readonly sizesAlwaysKnown: boolean = true
-  readonly prompt: string = DISCORD_PROMPT
+  readonly prompt: string
   readonly writePrompt: string = DISCORD_WRITE_PROMPT
   readonly config: DiscordConfig
   readonly accessor: DiscordAccessor
@@ -52,7 +52,11 @@ export class DiscordVFS extends BoundVFS<DiscordAccessor> implements VFS {
   constructor(config: DiscordConfig) {
     super(DISCORD_IO)
     this.config = config
-    this.accessor = new DiscordAccessor(new NodeDiscordTransport(config.token, config.baseUrl))
+    this.accessor = new DiscordAccessor(
+      new NodeDiscordTransport(config.token, config.baseUrl),
+      config,
+    )
+    this.prompt = DISCORD_PROMPT + this.accessor.timeRange.prompt()
   }
 
   commands(): readonly RegisteredCommand[] {

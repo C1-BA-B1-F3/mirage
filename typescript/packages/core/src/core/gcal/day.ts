@@ -16,11 +16,6 @@ import type { JsonValue } from '../../types.ts'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const DEFAULT_TZ = 'UTC'
-// The rolling window a bare readdir of a calendar reports. A calendar is
-// unbounded in both directions and the API offers no descending startTime
-// order, so a full listing means paging to the end; the window is stated in
-// the mount prompt rather than applied silently, and any date glob escapes it.
-export const WINDOW_BACK_DAYS = 30
 export const WINDOW_AHEAD_DAYS = 90
 
 const DAY_MS = 86_400_000
@@ -149,11 +144,15 @@ export function dayBounds(day: string, tz: string): [string, string] {
   return [rfc3339(start, tz), rfc3339(next, tz)]
 }
 
-/** The RFC3339 pair for the default listing window around a day. */
-export function windowBounds(today: string, tz: string): [string, string] {
-  const lo = shiftDay(today, -WINDOW_BACK_DAYS)
+/**
+ * Default listing: all past events, with a finite future horizon.
+ *
+ * The horizon, `WINDOW_AHEAD_DAYS` past today, is what keeps a recurring
+ * event without an end from expanding forever.
+ */
+export function windowBounds(today: string, tz: string): [null, string] {
   const hi = shiftDay(today, WINDOW_AHEAD_DAYS)
-  return [dayBounds(lo, tz)[0], dayBounds(hi, tz)[1]]
+  return [null, dayBounds(hi, tz)[1]]
 }
 
 /**

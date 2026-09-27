@@ -56,10 +56,10 @@ describe('slack tail', () => {
         return {
           ok: true,
           messages: [
-            { ts: '1.0', text: 'a' },
-            { ts: '2.0', text: 'b' },
-            { ts: '3.0', text: 'c' },
-            { ts: '4.0', text: 'd' },
+            { ts: '1704067201.000000', text: 'a' },
+            { ts: '1704067202.000000', text: 'b' },
+            { ts: '1704067203.000000', text: 'c' },
+            { ts: '1704067204.000000', text: 'd' },
           ],
         }
       }
@@ -79,7 +79,7 @@ describe('slack tail', () => {
     )
     const lines = out.trimEnd().split('\n')
     expect(lines).toHaveLength(2)
-    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ ts: '3.0', text: 'c' })
-    expect(JSON.parse(lines[1] ?? '')).toMatchObject({ ts: '4.0', text: 'd' })
+    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ ts: '1704067203.000000', text: 'c' })
+    expect(JSON.parse(lines[1] ?? '')).toMatchObject({ ts: '1704067204.000000', text: 'd' })
   })
 })

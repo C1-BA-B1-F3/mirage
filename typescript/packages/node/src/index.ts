@@ -237,8 +237,8 @@ export { MongoDBStore } from './vfs/mongodb/store.ts'
 export { LanceDBVFS, type LanceDBVFSOptions } from './vfs/lancedb/lancedb.ts'
 export { LanceDBStore } from './vfs/lancedb/store.ts'
 export { SlackVFS, type SlackVFSState } from './vfs/slack/slack.ts'
-export { normalizeSlackConfig, redactSlackConfig } from '@struktoai/mirage-core/core/slack/config'
-export type { SlackConfig, SlackConfigRedacted } from '@struktoai/mirage-core/core/slack/config'
+export { normalizeSlackConfig, redactSlackConfig } from '@struktoai/mirage-core/vfs/slack/config'
+export type { SlackConfig, SlackConfigRedacted } from '@struktoai/mirage-core/vfs/slack/config'
 export { SSHVFS, type SSHVFSState } from './vfs/ssh/ssh.ts'
 export {
   normalizeSshConfig,
@@ -266,11 +266,11 @@ export { DiscordVFS, type DiscordVFSState } from './vfs/discord/discord.ts'
 export {
   normalizeDiscordConfig,
   redactDiscordConfig,
-} from '@struktoai/mirage-core/core/discord/config'
+} from '@struktoai/mirage-core/vfs/discord/config'
 export type {
   DiscordConfig,
   DiscordConfigRedacted,
-} from '@struktoai/mirage-core/core/discord/config'
+} from '@struktoai/mirage-core/vfs/discord/config'
 export { TrelloVFS, type TrelloVFSState } from '@struktoai/mirage-core/vfs/trello/trello'
 export {
   normalizeTrelloConfig,

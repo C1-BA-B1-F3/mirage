@@ -14,8 +14,8 @@
 
 import pytest
 
-from mirage.core.discord.config import DiscordConfig
 from mirage.types import VFSName
+from mirage.vfs.discord.config import DiscordConfig
 from mirage.vfs.discord.discord import DiscordVFS
 
 

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { guardDay } from '../time_range.ts'
 import type { DiscordAccessor } from '../../accessor/discord.ts'
 import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
@@ -57,6 +58,7 @@ async function readChat(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<Uint8Array> {
+  await guardDay(accessor, match, path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   let channelId: string
   if (entry !== null) {
@@ -91,6 +93,7 @@ async function blobUrl(
   path: PathSpec,
   index: IndexCacheStore | undefined,
 ): Promise<string> {
+  await guardDay(accessor, detectScope(path), path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry === null) throw enoent(path)
   const extra = entry.extra

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { guardDay } from '../time_range.ts'
 import type { SlackAccessor } from '../../accessor/slack.ts'
 import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
@@ -96,6 +97,7 @@ async function statDay(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
+  await guardDay(accessor, match, path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry !== null) {
     return new FileStat({ name: entry.vfsName, type: FileType.DIRECTORY })
@@ -114,6 +116,7 @@ async function statDay(
 }
 
 export const stat = makeStat<SlackAccessor>(detectScope, readdir, {
+  guards: { messages: guardDay, files: guardDay, file_blob: guardDay },
   entryStats: {
     channel: channelStat,
     user: userStat,

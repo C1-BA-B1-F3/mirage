@@ -82,7 +82,11 @@ async function grepCommand(
   const operand = pushdownOperand(paths, opts.flags, pattern, SEARCH_HONORED)
   if (pattern !== null && operand !== null && fl.asBool('w')) {
     const match = detectScope(operand)
-    if (NATIVE_KINDS.has(match.kind) && (accessor.transport.searchAvailable?.() ?? true)) {
+    if (
+      !accessor.timeRange.bounded &&
+      NATIVE_KINDS.has(match.kind) &&
+      (accessor.transport.searchAvailable?.() ?? true)
+    ) {
       const target = searchTarget(match)
       const filePrefix = mountPrefixOf(operand.virtual, operand.vfsPath)
       const query = buildQuery(pattern, target)

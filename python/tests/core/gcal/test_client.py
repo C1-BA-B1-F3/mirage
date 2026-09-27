@@ -61,3 +61,19 @@ async def test_delete_event_encodes_both_path_segments(monkeypatch,
     parsed = yarl.URL(seen[0])
     assert parsed.fragment == ""
     assert parsed.path.endswith(f"/calendars/{HOLIDAY}/events/evt#1")
+
+
+async def test_page_cap_refuses_an_incomplete_listing(monkeypatch,
+                                                      token_manager):
+    calls = []
+
+    async def fake_get(tm, url, params):
+        calls.append(params)
+        return {"items": [], "nextPageToken": str(len(calls))}
+
+    monkeypatch.setattr(client_mod, "google_get", fake_get)
+    with pytest.raises(RuntimeError, match="exceeded 50 pages"):
+        await list_events(token_manager, "primary", None,
+                          "2026-08-12T00:00:00Z")
+    assert len(calls) == 50
+    assert "timeMin" not in calls[0]

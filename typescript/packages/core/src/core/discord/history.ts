@@ -44,8 +44,11 @@ async function* streamMessagesForDay(
   dateStr: string,
   pageSize = 100,
 ): AsyncIterableIterator<DiscordMessage[]> {
-  const after = dateToSnowflake(dateStr, false)
-  const beforeBig = BigInt(dateToSnowflake(dateStr, true))
+  const [start, end] = accessor.timeRange.dayBounds(dateStr)
+  if (start >= end) return
+  const first = (BigInt(Math.round(start * 1000)) - DISCORD_EPOCH) << 22n
+  const beforeBig = (BigInt(Math.round(end * 1000)) - DISCORD_EPOCH) << 22n
+  const after = (first > 0n ? first - 1n : 0n).toString()
   for await (const page of afterIdPages<DiscordMessage>(accessor, {
     endpoint: `/channels/${channelId}/messages`,
     lastIdFn: (m) => (m as DiscordMessage).id,
@@ -53,9 +56,9 @@ async function* streamMessagesForDay(
     startAfter: after,
     newestFirst: true,
   })) {
-    const inRange = page.filter((m) => BigInt(m.id) <= beforeBig)
+    const inRange = page.filter((m) => BigInt(m.id) >= first && BigInt(m.id) < beforeBig)
     if (inRange.length > 0) yield inRange
-    if (page.some((m) => BigInt(m.id) > beforeBig)) return
+    if (page.some((m) => BigInt(m.id) >= beforeBig)) return
   }
 }
 

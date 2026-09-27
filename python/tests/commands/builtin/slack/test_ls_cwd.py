@@ -16,8 +16,8 @@ from unittest.mock import patch
 
 import pytest
 
-from mirage.core.slack.config import SlackConfig
 from mirage.types import MountMode
+from mirage.vfs.slack.config import SlackConfig
 from mirage.vfs.slack.slack import SlackVFS
 from mirage.workspace.workspace import Workspace
 

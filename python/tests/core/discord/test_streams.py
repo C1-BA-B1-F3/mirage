@@ -22,6 +22,7 @@ from mirage.core.discord.history import (date_to_snowflake,
                                          stream_messages_for_day)
 from mirage.core.discord.members import list_members_stream
 from mirage.core.discord.search import search_guild_stream
+from mirage.core.time_range import TimeRange
 
 
 @pytest.fixture
@@ -62,7 +63,7 @@ async def test_list_members_stream_walks_user_ids(config):
 
 @pytest.mark.asyncio
 async def test_stream_messages_for_day_filters_by_date(config):
-    before_int = int(date_to_snowflake("2024-01-15", end=True))
+    before_int = int(date_to_snowflake("2024-01-16"))
     in_range = [{"id": str(before_int - 1000), "content": "ok"}]
     out_of_range = [{"id": str(before_int + 1000), "content": "next-day"}]
     with patch("mirage.core.discord.paginate.discord_get",
@@ -70,7 +71,7 @@ async def test_stream_messages_for_day_filters_by_date(config):
                return_value=in_range + out_of_range):
         pages = [
             p async for p in stream_messages_for_day(
-                config, "C1", "2024-01-15", page_size=2)
+                config, "C1", "2024-01-15", TimeRange(), page_size=2)
         ]
     flat = [m for page in pages for m in page]
     assert all(int(m["id"]) <= before_int for m in flat)

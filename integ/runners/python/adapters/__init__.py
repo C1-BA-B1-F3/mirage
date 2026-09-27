@@ -47,7 +47,6 @@ from mirage.accessor.sharepoint import SharePointConfig
 from mirage.commands.cli.specs import cli_spec_for
 from mirage.commands.cli.types import CLISpec
 from mirage.core.databricks_volume.path import configured_root
-from mirage.core.discord.config import DiscordConfig
 from mirage.core.email.config import EmailConfig
 from mirage.core.hf_hub.commit import Addition, commit
 from mirage.runtime.types import ScriptSource
@@ -65,6 +64,7 @@ from mirage.vfs.databricks_volume import (DatabricksVolumeConfig,
                                           DatabricksVolumeVFS)
 from mirage.vfs.dify import DifyConfig, DifyVFS
 from mirage.vfs.digitalocean import DigitalOceanConfig, DigitalOceanVFS
+from mirage.vfs.discord.config import DiscordConfig
 from mirage.vfs.discord.discord import DiscordVFS
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.dropbox import DropboxConfig, DropboxVFS
@@ -743,14 +743,15 @@ class GwsService:
                           refresh_token=GWS_TOKEN,
                           api_base=self.url))
 
-    def gcal_vfs(self) -> GCalVFS:
+    def gcal_vfs(self, config: dict) -> GCalVFS:
         # today is pinned so the rolling window is the same on both hosts
         # and lands on the seeded events.
         return GCalVFS(
             GCalConfig(client_id="integ",
                        refresh_token=GWS_TOKEN,
                        api_base=self.url,
-                       today="2026-02-11"))
+                       today="2026-02-11",
+                       **config))
 
     def gmail_vfs(self) -> GmailVFS:
         return GmailVFS(
@@ -1273,13 +1274,15 @@ class SlackService:
         self.workspace = workspace
 
     @classmethod
-    async def create(cls, run_id: str) -> "SlackService":
+    async def create(cls, run_id: str, fixture: str = "v1") -> "SlackService":
         url = os.environ["SLACK_URL"].rstrip("/")
         service = cls(url, f"integ-{run_id}")
         async with aiohttp.ClientSession() as session:
             async with session.post(f"{url}/reset",
-                                    json={"tenants":
-                                          [service.workspace]}) as resp:
+                                    json={
+                                        "tenants": [service.workspace],
+                                        "fixture": fixture
+                                    }) as resp:
                 resp.raise_for_status()
         return service
 
@@ -1301,7 +1304,8 @@ class SlackService:
         return SlackVFS(
             SlackConfig(token=bot,
                         search_token=search,
-                        base_url=f"{self.url}/api"))
+                        base_url=f"{self.url}/api",
+                        **mount.get("config", {})))
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         return {
@@ -1457,17 +1461,19 @@ class DiscordService:
         self.base = base
 
     @classmethod
-    async def create(cls) -> "DiscordService":
+    async def create(cls, fixture: str = "v1") -> "DiscordService":
         base = os.environ["DISCORD_URL"].rstrip("/")
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{base}/reset") as resp:
+            async with session.post(f"{base}/reset", json={"fixture":
+                                                           fixture}) as resp:
                 resp.raise_for_status()
         return cls(base)
 
     def vfs(self, mount: dict) -> DiscordVFS:
         return DiscordVFS(
             DiscordConfig(token="integ-bot-token",
-                          base_url=f"{self.base}/api/v10"))
+                          base_url=f"{self.base}/api/v10",
+                          **mount.get("config", {})))
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         return {
@@ -2483,7 +2489,7 @@ def build_gcal(
         mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, GwsService)
-    return service.gcal_vfs(), _noop
+    return service.gcal_vfs(mount.get("config", {})), _noop
 
 
 def build_gmail(
@@ -2705,11 +2711,11 @@ async def make_service(target: dict, run_id: str) -> "Service | None":
             await github.reset()
         return github
     if target.get("service") == "slack":
-        return await SlackService.create(run_id)
+        return await SlackService.create(run_id, target.get("dataset", "v1"))
     if target.get("service") == "trello":
         return await TrelloService.create()
     if target.get("service") == "discord":
-        return await DiscordService.create()
+        return await DiscordService.create(target.get("dataset", "v1"))
     if target.get("service") == "linear":
         return await LinearService.create()
     if target.get("service") == "dify":

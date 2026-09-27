@@ -14,8 +14,8 @@
 
 import pytest
 
-from mirage.core.slack.config import SlackConfig
 from mirage.types import VFSName
+from mirage.vfs.slack.config import SlackConfig
 from mirage.vfs.slack.slack import SlackVFS
 
 

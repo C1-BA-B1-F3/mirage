@@ -1338,11 +1338,17 @@
     },
     "discord": {
       "fields": {
+        "endTime": {
+          "required": false
+        },
         "getHeaders": {
           "required": false
         },
         "proxyUrl": {
           "required": true
+        },
+        "startTime": {
+          "required": false
         }
       },
       "rename": {},
@@ -1390,6 +1396,9 @@
         "clientSecret": {
           "required": false
         },
+        "endTime": {
+          "required": false
+        },
         "folderId": {
           "required": false
         },
@@ -1400,6 +1409,9 @@
           "required": false
         },
         "refreshToken": {
+          "required": false
+        },
+        "startTime": {
           "required": false
         },
         "timeZone": {
@@ -2055,11 +2067,17 @@
     },
     "slack": {
       "fields": {
+        "endTime": {
+          "required": false
+        },
         "getHeaders": {
           "required": false
         },
         "proxyUrl": {
           "required": true
+        },
+        "startTime": {
+          "required": false
         }
       },
       "rename": {},

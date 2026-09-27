@@ -16,7 +16,7 @@ import { DISCORD_COMMANDS } from '@struktoai/mirage-core/commands/builtin/discor
 import {
   normalizeDiscordConfig,
   redactDiscordConfig,
-} from '@struktoai/mirage-core/core/discord/config'
+} from '@struktoai/mirage-core/vfs/discord/config'
 import { DISCORD_OPS } from '@struktoai/mirage-core/ops/discord/index'
 import { PathSpec, VFSName } from '@struktoai/mirage-core/types'
 import { mountKey } from '@struktoai/mirage-core/utils/key_prefix'

@@ -79,7 +79,7 @@ async function grepCommand(
   const operand = pushdownOperand(paths, opts.flags, pattern, SEARCH_HONORED)
   if (pattern !== null && operand !== null && fl.asBool('w')) {
     const match = detectScope(operand)
-    if (NATIVE_KINDS.has(match.kind)) {
+    if (!accessor.timeRange.bounded && NATIVE_KINDS.has(match.kind)) {
       const guildId = match.slots.guild_id ?? ''
       const channelId = match.slots.channel_id
       try {

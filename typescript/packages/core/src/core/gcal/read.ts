@@ -20,8 +20,7 @@ import { makeRead } from '../hierarchy/read.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { compactJsonBytes } from '../render/json.ts'
 import { listEvents } from './client.ts'
-import { dayBounds } from './day.ts'
-import { bucketZone, calendarIndex, calendarPayload } from './readdir.ts'
+import { bucketZone, calendarIndex, calendarPayload, scopedDayBounds } from './readdir.ts'
 import { detectScope } from './scope.ts'
 
 async function readCalendarJson(
@@ -54,8 +53,15 @@ async function readEvent(
   const calId = entry.id
   if (typeof calId !== 'string') throw enoent(path.virtual)
   const [eventId] = parseEventFilename(match.slots.event ?? '')
-  const [timeMin, timeMax] = dayBounds(match.slots.day ?? '', tz)
-  for (const event of await listEvents(accessor.tokenManager, calId, timeMin, timeMax, tz)) {
+  const [timeMin, timeMax] = scopedDayBounds(accessor, match.slots.day ?? '', tz, path.virtual)
+  for (const event of await listEvents(
+    accessor.tokenManager,
+    calId,
+    timeMin,
+    timeMax,
+    tz,
+    accessor.timeRange,
+  )) {
     if (event.id === eventId) return compactJsonBytes(event)
   }
   throw enoent(path.virtual)

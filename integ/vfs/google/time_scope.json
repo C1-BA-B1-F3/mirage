@@ -1,0 +1,706 @@
+{
+  "cases": [
+    {
+      "id": "slack_scope_lists_only_selected_days",
+      "seq": 880000,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "ls '/slack/channels/general__C1'",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-06-01\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_glob_cannot_widen",
+      "seq": 880001,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "ls -d '/slack/channels/general__C1'/2026-* | wc -l",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_boundary_messages",
+      "seq": 880002,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "cat '/slack/channels/general__C1/2026-06-01/chat.jsonl' | jq -r .text",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_start\nscope_last\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_find",
+      "seq": 880003,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "find '/slack/channels/general__C1' -name chat.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "/slack/channels/general__C1/2026-06-01/chat.jsonl\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_before_day_absent",
+      "seq": 880004,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "ls '/slack/channels/general__C1/2026-05-31' >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_before_read_absent",
+      "seq": 880005,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "cat '/slack/channels/general__C1/2026-05-31/chat.jsonl' >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_before_stat_absent",
+      "seq": 880006,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "test -e '/slack/channels/general__C1/2026-05-31/chat.jsonl'; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_end_day_absent",
+      "seq": 880007,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "ls '/slack/channels/general__C1/2026-06-02' >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_end_read_absent",
+      "seq": 880008,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "cat '/slack/channels/general__C1/2026-06-02/chat.jsonl' >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_end_stat_absent",
+      "seq": 880009,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "test -e '/slack/channels/general__C1/2026-06-02/chat.jsonl'; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_attachments_follow_messages",
+      "seq": 880010,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "ls '/slack/channels/general__C1/2026-06-01/files'",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_last__FT2.txt\nscope_start__FT1.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_attachment_read",
+      "seq": 880011,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "cat '/slack/channels/general__C1/2026-06-01/files/scope_start__FT1.txt'",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_start\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_excluded_attachment_read",
+      "seq": 880012,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "cat '/slack/channels/general__C1/2026-06-01/files/scope_before__FT0.txt' >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_excluded_attachment_stat",
+      "seq": 880013,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "test -e '/slack/channels/general__C1/2026-06-01/files/scope_before__FT0.txt'; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_search_cannot_escape",
+      "seq": 880014,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "rg -w scope_before '/slack/channels/general__C1'; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_warm_other_mount",
+      "seq": 880015,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "cat '/full/channels/general__C1/2026-06-01/chat.jsonl' >/dev/null; cat '/slack/channels/general__C1/2026-06-01/chat.jsonl' | jq -r .text",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_start\nscope_last\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_start_only",
+      "seq": 880016,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "cat '/since/channels/general__C1/2026-06-02/chat.jsonl' | jq -r .text",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_end\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_end_only",
+      "seq": 880017,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "cat '/until/channels/general__C1/2026-06-01/chat.jsonl' | jq -r .text",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_before\nscope_start\nscope_last\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_size_matches_render",
+      "seq": 880018,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "n=$(cat '/slack/channels/general__C1/2026-06-01/chat.jsonl' | wc -c); s=$(stat -c %s '/slack/channels/general__C1/2026-06-01/chat.jsonl'); test \"$n\" = \"$s\"; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_context_still_visible",
+      "seq": 880019,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "test -d '/slack/channels/general__C1'; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_lists_only_selected_days",
+      "seq": 880020,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "ls '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001'",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-06-01\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_glob_cannot_widen",
+      "seq": 880021,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "ls -d '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001'/2026-* | wc -l",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_boundary_messages",
+      "seq": 880022,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "cat '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/chat.jsonl' | jq -r .content",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_start\nscope_last\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_find",
+      "seq": 880023,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "find '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001' -name chat.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/chat.jsonl\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_before_day_absent",
+      "seq": 880024,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "ls '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-05-31' >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_before_read_absent",
+      "seq": 880025,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "cat '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-05-31/chat.jsonl' >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_before_stat_absent",
+      "seq": 880026,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "test -e '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-05-31/chat.jsonl'; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_end_day_absent",
+      "seq": 880027,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "ls '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-02' >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_end_read_absent",
+      "seq": 880028,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "cat '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-02/chat.jsonl' >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_end_stat_absent",
+      "seq": 880029,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "test -e '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-02/chat.jsonl'; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_attachments_follow_messages",
+      "seq": 880030,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "ls '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/files'",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_last__500000000000000013.txt\nscope_start__500000000000000012.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_attachment_read",
+      "seq": 880031,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "cat '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/files/scope_start__500000000000000012.txt'",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_start\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_excluded_attachment_read",
+      "seq": 880032,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "cat '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/files/scope_before__500000000000000011.txt' >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_excluded_attachment_stat",
+      "seq": 880033,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "test -e '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/files/scope_before__500000000000000011.txt'; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_search_cannot_escape",
+      "seq": 880034,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "rg -w scope_before '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001'; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_warm_other_mount",
+      "seq": 880035,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "cat '/full/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/chat.jsonl' >/dev/null; cat '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/chat.jsonl' | jq -r .content",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_start\nscope_last\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_start_only",
+      "seq": 880036,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "cat '/since/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-02/chat.jsonl' | jq -r .content",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_end\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_end_only",
+      "seq": 880037,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "cat '/until/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/chat.jsonl' | jq -r .content",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_before\nscope_start\nscope_last\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_size_matches_render",
+      "seq": 880038,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "n=$(cat '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/chat.jsonl' | wc -c); s=$(stat -c %s '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001/2026-06-01/chat.jsonl'); test \"$n\" = \"$s\"; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "discord_scope_context_still_visible",
+      "seq": 880039,
+      "targets": [
+        "discord-time-scope"
+      ],
+      "command": "test -d '/discord/Mirage HQ__100000000000000001/channels/general__200000000000000001'; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_all_past_discoverable",
+      "seq": 880040,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "ls /full/primary | head -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "2025-01-05\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_calendar_days",
+      "seq": 880041,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "ls /cal/primary",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-06-01\ncalendar.json\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_event_overlap",
+      "seq": 880042,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "cat /cal/primary/2026-06-01/*.gcal.json | jq -r .summary | sort",
+      "expect": {
+        "exit": 0,
+        "stdout": "All day\nAt start\nCross end\nCross start\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_glob_cannot_widen",
+      "seq": 880043,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "ls -d /cal/primary/2026-* | wc -l",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_old_path_absent",
+      "seq": 880044,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "ls /cal/primary/2025-01-05 >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_end_day_absent",
+      "seq": 880045,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "test -d /cal/primary/2026-06-02; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_event_before_absent",
+      "seq": 880046,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "test -e /cal/primary/2026-06-01/*Before*; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_find",
+      "seq": 880047,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "find /cal/primary -name \"*.gcal.json\" | wc -l",
+      "expect": {
+        "exit": 0,
+        "stdout": "4\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_warm_other_mount",
+      "seq": 880048,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "cat /full/primary/2026-06-01/*.gcal.json >/dev/null; cat /cal/primary/2026-06-01/*.gcal.json | jq -r .summary | sort",
+      "expect": {
+        "exit": 0,
+        "stdout": "All day\nAt start\nCross end\nCross start\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_context_visible",
+      "seq": 880049,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "cat /cal/primary/calendar.json | jq -r .bucketTimeZone",
+      "expect": {
+        "exit": 0,
+        "stdout": "UTC\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_start_only",
+      "seq": 880050,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "cat /since/primary/2026-06-02/*At_end* | jq -r .summary",
+      "expect": {
+        "exit": 0,
+        "stdout": "At end\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_end_only",
+      "seq": 880051,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "cat /until/primary/2025-01-05/*.gcal.json | jq -r .summary",
+      "expect": {
+        "exit": 0,
+        "stdout": "Historical\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gcal_scope_forged_direct_read",
+      "seq": 880052,
+      "targets": [
+        "gcal-time-scope"
+      ],
+      "command": "f=$(ls /full/primary/2026-06-01/*Before*); p=$(echo \"$f\" | sed \"s|/full/|/cal/|\"); cat \"$p\" >/dev/null 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "slack_scope_millisecond_api_bounds",
+      "seq": 880100,
+      "targets": [
+        "slack-time-scope"
+      ],
+      "command": "cat '/millis/channels/general__C1/2026-06-01/chat.jsonl' | jq -r .text",
+      "expect": {
+        "exit": 0,
+        "stdout": "scope_last\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

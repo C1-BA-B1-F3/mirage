@@ -306,6 +306,84 @@
       "expect": {
         "refused": "wandb: page"
       }
+    },
+    {
+      "id": "slack_time_scope_round_trips",
+      "vfs": "slack",
+      "config": {
+        "token": "t",
+        "start_time": "2026-06-01T10:00:00+08:00",
+        "end_time": "2026-06-01T03:00:00Z"
+      },
+      "expect": {
+        "state": {
+          "start_time": "2026-06-01T10:00:00+08:00",
+          "end_time": "2026-06-01T03:00:00Z"
+        }
+      }
+    },
+    {
+      "id": "slack_time_scope_requires_timezone",
+      "vfs": "slack",
+      "config": {
+        "token": "t",
+        "start_time": "2026-06-01"
+      },
+      "expect": {
+        "refused": "slack: start"
+      }
+    },
+    {
+      "id": "discord_time_scope_round_trips",
+      "vfs": "discord",
+      "config": {
+        "token": "t",
+        "start_time": "2026-06-01T10:00:00+08:00",
+        "end_time": "2026-06-01T03:00:00Z"
+      },
+      "expect": {
+        "state": {
+          "start_time": "2026-06-01T10:00:00+08:00",
+          "end_time": "2026-06-01T03:00:00Z"
+        }
+      }
+    },
+    {
+      "id": "discord_time_scope_requires_timezone",
+      "vfs": "discord",
+      "config": {
+        "token": "t",
+        "start_time": "2026-06-01"
+      },
+      "expect": {
+        "refused": "discord: start"
+      }
+    },
+    {
+      "id": "gcal_time_scope_round_trips",
+      "vfs": "gcal",
+      "config": {
+        "access_token": "t",
+        "start_time": "2026-06-01T10:00:00+08:00",
+        "end_time": "2026-06-01T03:00:00Z"
+      },
+      "expect": {
+        "state": {
+          "start_time": "2026-06-01T10:00:00+08:00",
+          "end_time": "2026-06-01T03:00:00Z"
+        }
+      }
+    },
+    {
+      "id": "gcal_time_scope_requires_timezone",
+      "vfs": "gcal",
+      "config": {
+        "access_token": "t",
+        "start_time": "2026-06-01"
+      },
+      "expect": {
+        "refused": "gcal: start"
+      }
     }
   ]
 }

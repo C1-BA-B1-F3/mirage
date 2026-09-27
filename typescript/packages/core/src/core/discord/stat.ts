@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { guardDay } from '../time_range.ts'
 import type { DiscordAccessor } from '../../accessor/discord.ts'
 import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
@@ -96,6 +97,7 @@ async function statDay(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
+  await guardDay(accessor, match, path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry !== null) {
     return new FileStat({ name: entry.vfsName, type: FileType.DIRECTORY })
@@ -112,10 +114,11 @@ async function statDay(
  */
 async function statChat(
   accessor: DiscordAccessor,
-  _match: ScopeMatch,
+  match: ScopeMatch,
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
+  await guardDay(accessor, match, path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry !== null) {
     return new FileStat({
@@ -130,6 +133,7 @@ async function statChat(
 }
 
 export const stat = makeStat<DiscordAccessor>(detectScope, readdir, {
+  guards: { messages: guardDay, files: guardDay, file_blob: guardDay },
   entryStats: {
     guild: guildStat,
     channels_dir: dirStat,

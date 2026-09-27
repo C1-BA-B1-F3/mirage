@@ -84,7 +84,8 @@ async def grep(accessor: SlackAccessor, paths: list[PathSpec],
     operand = pushdown_operand(paths, opts.flags, pattern, SEARCH_HONORED)
     if pattern is not None and operand is not None and fl.as_bool("w"):
         match = detect_scope(operand)
-        if match.kind in NATIVE_KINDS and search_available(accessor.config):
+        if (not accessor.time_range.bounded and match.kind in NATIVE_KINDS
+                and search_available(accessor.config)):
             target = search_target(match)
             file_prefix = mount_prefix_of(operand.virtual,
                                           operand.vfs_path) or ""

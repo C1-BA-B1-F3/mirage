@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { z } from 'zod'
+import { timeRangeShape, orderedTimes, timeRangeOrderError } from '../../core/time_config.ts'
 import { GoogleConfigSchema } from '../../core/google/config.ts'
 import {
   type ConfigOf,
@@ -28,6 +29,7 @@ import {
 // import time should a key here ever shadow one of the base's. Mirrors
 // python's `GCalConfig(GoogleConfig)`.
 export const GCalConfigSchema = GoogleConfigSchema.safeExtend({
+  ...timeRangeShape,
   // One zone for the whole mount, not one per calendar: the Calendar UI
   // draws its whole grid in the primary zone, and per-calendar bucketing
   // would make the same day directory name mean different 24-hour windows
@@ -38,7 +40,7 @@ export const GCalConfigSchema = GoogleConfigSchema.safeExtend({
   minAccessRole: z.string().optional(),
   // Pin the day the rolling window centres on; test and snapshot use.
   today: z.string().optional(),
-})
+}).refine(orderedTimes, timeRangeOrderError)
 
 export type GCalConfig = ConfigOf<typeof GCalConfigSchema>
 

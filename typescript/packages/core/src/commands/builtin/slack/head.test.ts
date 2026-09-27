@@ -56,10 +56,10 @@ describe('slack head', () => {
         return {
           ok: true,
           messages: [
-            { ts: '1.0', text: 'a' },
-            { ts: '2.0', text: 'b' },
-            { ts: '3.0', text: 'c' },
-            { ts: '4.0', text: 'd' },
+            { ts: '1704067201.000000', text: 'a' },
+            { ts: '1704067202.000000', text: 'b' },
+            { ts: '1704067203.000000', text: 'c' },
+            { ts: '1704067204.000000', text: 'd' },
           ],
         }
       }
@@ -79,8 +79,8 @@ describe('slack head', () => {
     )
     const lines = out.split('\n').filter((s) => s !== '')
     expect(lines).toHaveLength(2)
-    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ ts: '1.0', text: 'a' })
-    expect(JSON.parse(lines[1] ?? '')).toMatchObject({ ts: '2.0', text: 'b' })
+    expect(JSON.parse(lines[0] ?? '')).toMatchObject({ ts: '1704067201.000000', text: 'a' })
+    expect(JSON.parse(lines[1] ?? '')).toMatchObject({ ts: '1704067202.000000', text: 'b' })
   })
 
   it('returns first N bytes with -c', async () => {
@@ -88,7 +88,7 @@ describe('slack head', () => {
     await seedChannel(idx, '/mnt/slack', 'general__C1', 'C1', { dates: ['2024-01-01'] })
     const transport = new FakeSlackTransport((endpoint) => {
       if (endpoint === 'conversations.history') {
-        return { ok: true, messages: [{ ts: '1.0', text: 'hello' }] }
+        return { ok: true, messages: [{ ts: '1704067201.000000', text: 'hello' }] }
       }
       return { ok: true }
     })

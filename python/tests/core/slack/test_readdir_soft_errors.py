@@ -85,7 +85,7 @@ async def test_day_listing_seals_empty_dir_on_not_in_channel(config, index):
             return channels_page
         raise AssertionError(f"unexpected {method}")
 
-    async def fake_history(_cfg, channel_id, date_str, session=None):
+    async def fake_history(_cfg, channel_id, date_str, _scope, session=None):
         raise err
 
     day = "/slack/channels/foo__C_INACCESSIBLE/2026-05-10"

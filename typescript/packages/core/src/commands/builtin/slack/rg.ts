@@ -66,7 +66,11 @@ async function rgCommand(
   const operand = pushdownOperand(paths, opts.flags, pattern, RG_SEARCH_HONORED)
   if (operand !== null && pattern !== null && fl.asBool('word_regexp')) {
     const match = detectScope(operand)
-    if (NATIVE_KINDS.has(match.kind) && (accessor.transport.searchAvailable?.() ?? true)) {
+    if (
+      !accessor.timeRange.bounded &&
+      NATIVE_KINDS.has(match.kind) &&
+      (accessor.transport.searchAvailable?.() ?? true)
+    ) {
       const target = searchTarget(match)
       const filePrefix = mountPrefixOf(operand.virtual, operand.vfsPath)
       const query = buildQuery(pattern, target)

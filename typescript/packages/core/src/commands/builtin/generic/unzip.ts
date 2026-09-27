@@ -20,15 +20,18 @@ import {
   renderHeader,
   renderRow,
   renderTotals,
+  renderVerbose,
   zipinfoLayout,
   type ZipRow,
 } from './archive/zipinfo.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { inflateRaw } from '../../../utils/compress.ts'
-import type { CommandFnResult, CommandOpts, WritesFn } from '../../config.ts'
+import { versionLine, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
 import { lstripSlash, rstripSlash, stripSlash } from '../../../utils/slash.ts'
+import { errorVirtualPath, fsStrerror, isFsError } from '../../../utils/errors.ts'
+import { pathExists } from '../utils/copy.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -280,7 +283,12 @@ function dosDateTime(date: number, time: number): ZipRow['dateTime'] {
 // over, is a corrupt directory. Info-ZIP and zipfile read the truncated
 // entry anyway (Info-ZIP lists it and exits 1 or 51; a short count makes
 // Info-ZIP exit 3 after listing); mirage refuses up front on both hosts.
-function readZipEntries(data: Uint8Array): { entries: ZipEntry[]; count: number; slack: number } {
+function readZipEntries(data: Uint8Array): {
+  entries: ZipEntry[]
+  count: number
+  slack: number
+  comment: Uint8Array
+} {
   const eocd = findEocd(data)
   if (eocd === -1) throw new ZipFormatError('no_eocd')
   const count = readU16LE(data, eocd + 10)
@@ -298,6 +306,7 @@ function readZipEntries(data: Uint8Array): { entries: ZipEntry[]; count: number;
     const method = readU16LE(data, offset + 10)
     const time = readU16LE(data, offset + 12)
     const date = readU16LE(data, offset + 14)
+    const crc = readU32LE(data, offset + 16)
     const csize = readU32LE(data, offset + 20)
     const size = readU32LE(data, offset + 24)
     const nameLen = readU16LE(data, offset + 28)
@@ -326,12 +335,15 @@ function readZipEntries(data: Uint8Array): { entries: ZipEntry[]; count: number;
       hostVersion: madeBy & 0xff,
       dateTime: dosDateTime(date, time),
       hasExtra: extraLen > 0,
+      crc,
+      comment: data.subarray(offset + 46 + nameLen + extraLen, next),
       content,
     })
     offset = next
   }
   if (offset !== eocd) throw new ZipFormatError('corrupt_cdir')
-  return { entries, count, slack: shift }
+  const comment = data.subarray(eocd + EOCD_LEN, eocd + EOCD_LEN + readU16LE(data, eocd + 20))
+  return { entries, count, slack: shift, comment }
 }
 
 async function entryContent(
@@ -359,24 +371,27 @@ function makePathSpec(virtual: string): PathSpec {
   })
 }
 
-async function ensureParents(
-  mkdir: (p: PathSpec, parents?: boolean) => Promise<void>,
-  path: string,
-): Promise<void> {
-  const idx = path.lastIndexOf('/')
-  if (idx <= 0) return
-  const dir = path.slice(0, idx)
-  if (dir === '' || dir === '/') return
-  await mkdir(makePathSpec(dir), true)
+// Info-ZIP's refusals of a create: a member it cannot write (exit 50,
+// PK_DISK), a directory of the chain it cannot make, and an extraction
+// directory it cannot make (exit 2, before any member). The strerror line
+// hangs under the text after the label, as UnZip 6.00 indents it. Mirrors
+// unzip.py.
+const CREATE_EXIT = 50
+const DEST_EXIT = 2
+
+function createError(verb: string, name: string, strerror: string): string {
+  return `error:  cannot ${verb} ${name}\n        ${strerror}\n`
 }
 
-// Whether an unzip invocation writes: it extracts the archive unless -l, -t,
-// -p or -Z asks it to list, test, pipe or describe the members instead.
-// Mirrors Python's unzip_writes.
-export const unzipWrites: WritesFn = (flags, paths) => {
-  const fl = new FlagView(flags, specOf('unzip'))
-  const readOnly = fl.asBool('args_l') || fl.asBool('t') || fl.asBool('p') || fl.asBool('Z')
-  return paths.length > 0 && !readOnly
+function checkdirError(dir: string, strerror: string, member: string): string {
+  return (
+    `checkdir error:  cannot create ${dir}\n                 ${strerror}\n` +
+    `                 unable to process ${member}.\n`
+  )
+}
+
+function checkdirDest(dir: string, strerror: string): string {
+  return `checkdir:  cannot create extraction directory: ${dir}\n           ${strerror}\n`
 }
 
 export async function unzipGeneric(
@@ -390,7 +405,11 @@ export async function unzipGeneric(
   relay = false,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('unzip'))
+  const verbose = fl.asBool('v')
   if (paths.length === 0) {
+    // Info-ZIP answers -v without an archive with its version banner, and
+    // mirage's version line is that banner here.
+    if (verbose) return [ENC.encode(versionLine('unzip')), new IOResult()]
     return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('unzip: missing operand\n') })]
   }
   const listMode = fl.asBool('args_l')
@@ -421,13 +440,22 @@ export async function unzipGeneric(
   if (operand === undefined) return [null, new IOResult()]
   // Relay doors address by full virtual path (flatten's convention),
   // not by the mount-relative key the wrapper's accessor stamped.
-  const archivePath: PathSpec = relay ? makePathSpec(operand.virtual) : operand
+  const archivePath: PathSpec = relay
+    ? new PathSpec({
+        virtual: operand.virtual,
+        directory: operand.virtual,
+        vfsPath: stripSlash(operand.virtual),
+        resolved: true,
+        rawPath: operand.rawPath,
+      })
+    : operand
   const data = await materialize(stream(archivePath))
   let entries: ZipEntry[]
   let count: number
   let slack: number
+  let comment: Uint8Array
   try {
-    ;({ entries, count, slack } = readZipEntries(data))
+    ;({ entries, count, slack, comment } = readZipEntries(data))
   } catch (err) {
     if (err instanceof ZipFormatError) {
       return [null, refusal(err.fault, archivePath.virtual, zipinfoMode, pipeMode)]
@@ -475,12 +503,19 @@ export async function unzipGeneric(
           ? '/'
           : destRaw
 
-    if (listMode) {
-      const lines = ['  Length      Name', '---------  ----']
-      for (const e of selected) {
-        lines.push(`${String(e.size).padStart(9, ' ')}  ${e.name}`)
+    // Info-ZIP lists only when neither -t nor -p asks for another mode,
+    // and -v widens -l's columns into the verbose table.
+    if ((listMode || verbose) && !(testMode || pipeMode)) {
+      let out: ByteSource
+      if (verbose) {
+        out = renderVerbose(archivePath.virtual, selected, quiet, comment)
+      } else {
+        const lines = ['  Length      Name', '---------  ----']
+        for (const e of selected) {
+          lines.push(`${String(e.size).padStart(9, ' ')}  ${e.name}`)
+        }
+        out = ENC.encode(lines.join('\n') + '\n')
       }
-      const out: ByteSource = ENC.encode(lines.join('\n') + '\n')
       // GNU -l prints no caution lines and only exits 11 when the
       // patterns left nothing at all.
       if (nothingLeft) {
@@ -526,45 +561,86 @@ export async function unzipGeneric(
       return [out, new IOResult({ exitCode, stderr })]
     }
 
+    const base = rstripSlash(dest)
+    // Info-ZIP names an extracted path as the -d directory was typed
+    // followed by the member, or the bare member; the archive heads the
+    // listing as it was typed too. Mirrors unzip.py.
+    const typedDest = fl.asPaths('d')[0]?.rawPath ?? fl.asStr('d') ?? ''
+    const shown = (path: string): string => {
+      const rel = lstripSlash(path.slice(base.length))
+      return typedDest !== '' ? `${rstripSlash(typedDest)}/${rel}` : rel
+    }
+    const makeDirs = async (dir: string): Promise<void> => {
+      if (stat !== undefined) await ensureDir(dir, makePathSpec, mkdir, stat, made)
+      else await mkdir(makePathSpec(dir), true)
+    }
     const writes: Record<string, Uint8Array> = {}
-    const outputLines: string[] = []
+    const outputLines: string[] = quiet ? [] : [`Archive:  ${archivePath.rawPath}`]
+    const errors: string[] = []
     const made = new Set<string>()
+    const listing = (): ByteSource | null =>
+      outputLines.length > 0 ? ENC.encode(outputLines.join('\n') + '\n') : null
+    if (fl.raw('d') !== undefined) {
+      try {
+        await makeDirs(dest)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        return [
+          listing(),
+          new IOResult({
+            exitCode: DEST_EXIT,
+            stderr: ENC.encode(checkdirDest(typedDest, String(fsStrerror(err)))),
+          }),
+        ]
+      }
+    }
     for (const e of selected) {
       const entryName = lstripSlash(e.name)
-      const outPath = rstripSlash(dest) + '/' + rstripSlash(entryName)
-      const reportPath = mountPrefix !== '' ? mountPrefix + outPath : outPath
-      if (e.name.endsWith('/')) {
-        // A directory entry is the only record an empty directory leaves,
-        // so it has to be recreated even though nothing is written inside
-        // it.
-        if (stat !== undefined) {
-          await ensureDir(outPath, makePathSpec, mkdir, stat, made)
-        } else {
-          await mkdir(makePathSpec(outPath), true)
-        }
-        if (!quiet) outputLines.push(`   creating: ${reportPath}/`)
+      const outPath = base + '/' + rstripSlash(entryName)
+      const isDir = e.name.endsWith('/')
+      // A directory entry is the only record an empty directory leaves, so
+      // it has to be recreated even though nothing is written inside it.
+      const parentEnd = outPath.lastIndexOf('/')
+      const chain = isDir ? outPath : parentEnd > 0 ? outPath.slice(0, parentEnd) : ''
+      try {
+        if (chain !== '' && chain !== '/') await makeDirs(chain)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        errors.push(checkdirError(shown(errorVirtualPath(err)), String(fsStrerror(err)), e.name))
         continue
       }
-      const parentEnd = outPath.lastIndexOf('/')
-      const parent = parentEnd > 0 ? outPath.slice(0, parentEnd) : ''
-      if (parent !== '' && parent !== '/') {
-        if (stat !== undefined) {
-          await ensureDir(parent, makePathSpec, mkdir, stat, made)
-        } else {
-          await ensureParents(mkdir, outPath)
-        }
+      if (isDir) {
+        if (!quiet) outputLines.push(`   creating: ${shown(outPath)}/`)
+        continue
       }
       const content = await e.content()
-      await write(makePathSpec(outPath), content)
+      try {
+        await write(makePathSpec(outPath), content)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        // -o unlinks a file already there before it writes, so a refusal of
+        // that is its own verb.
+        const existed = stat !== undefined && (await pathExists(stat, makePathSpec(outPath)))
+        errors.push(
+          createError(existed ? 'delete old' : 'create', shown(outPath), String(fsStrerror(err))),
+        )
+        continue
+      }
       // Relay writes land on whichever mount owns each path and
       // invalidate through the dispatcher; keying them here would have
       // the runner prefix them onto this mount.
       if (!relay) writes[outPath] = content
-      if (!quiet) outputLines.push(`  inflating: ${reportPath}`)
+      if (!quiet) outputLines.push(`  inflating: ${shown(outPath)}`)
     }
-    const stdout: ByteSource | null =
-      outputLines.length > 0 ? ENC.encode(outputLines.join('\n') + '\n') : null
-    return [stdout, new IOResult({ exitCode, stderr, writes })]
+    const allStderr = ENC.encode(cautions + errors.join(''))
+    return [
+      listing(),
+      new IOResult({
+        exitCode: errors.length > 0 ? CREATE_EXIT : exitCode,
+        stderr: allStderr.byteLength > 0 ? allStderr : null,
+        writes,
+      }),
+    ]
   }
 
   const result = await run()

@@ -19,7 +19,7 @@ import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { argmatchError, extraOperandError } from '../../spec/usage.ts'
 import { argmatch } from '../../spec/argmatch.ts'
-import { CommandName, type FlagValue } from '../../spec/types.ts'
+import { CommandName, type FlagValue, type ParsedFlagValue } from '../../spec/types.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { resolveSource } from '../utils/stream.ts'
@@ -40,7 +40,7 @@ interface UniqFlags {
   zeroTerminated: boolean
 }
 
-function parseCount(value: string | boolean | number | string[] | undefined): number | null {
+function parseCount(value: ParsedFlagValue | undefined): number | null {
   if (value === undefined || value === false) return null
   if (typeof value !== 'string') throw new Error(`uniq: invalid count: '${String(value)}'`)
   const normalized = value.trim()
@@ -57,7 +57,7 @@ const ALL_REPEATED_ARGS = ['none', 'prepend', 'separate'] as const
 const GROUP_ARGS = ['prepend', 'append', 'separate', 'both'] as const
 
 function optionalMethod(
-  value: string | boolean | number | string[] | undefined,
+  value: ParsedFlagValue | undefined,
   defaultValue: string,
   allowed: readonly string[],
   option: string,
@@ -81,13 +81,13 @@ function parseFlags(bag: Record<string, FlagValue>): UniqFlags {
   const duplicatesOnly = fl.asBool('repeated')
   const uniqueOnly = fl.asBool('unique')
   const allRepeated = optionalMethod(
-    fl.asBool('D') ? true : fl.raw('all_repeated'),
+    fl.asBool('D') ? true : (fl.raw('all_repeated') as ParsedFlagValue | undefined),
     'none',
     ALL_REPEATED_ARGS,
     'all-repeated',
   ) as UniqFlags['allRepeated']
   const group = optionalMethod(
-    fl.raw('group'),
+    fl.raw('group') as ParsedFlagValue | undefined,
     'separate',
     GROUP_ARGS,
     'group',

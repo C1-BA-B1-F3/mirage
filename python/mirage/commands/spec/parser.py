@@ -88,6 +88,8 @@ def _argmatch_dests(spec: CommandSpec) -> frozenset[str]:
 class ParsedArgs:
     flags: dict[str, ParsedFlagValue]
     args: list[tuple[str, ValueType]]
+    # Selected PATH values before cwd resolution; keys match parse_to_kwargs.
+    raw_path_flags: dict[str, ParsedFlagValue] = field(default_factory=dict)
     path_flag_values: list[str] = field(default_factory=list)
     raw_operands: list[tuple[str, ValueType]] = field(default_factory=list)
     text_flag_values: list[str] = field(default_factory=list)
@@ -374,6 +376,17 @@ def _set_bool_flag(
         flags[name] = True
 
 
+def _attached(value: str, equals: bool) -> str:
+    """An attached short-option value, one leading ``=`` dropped for a
+    program that reads ``-x=VALUE`` as ``VALUE`` (EQUALS_SHORT_VALUES).
+
+    Args:
+        value (str): the value as it follows the option letter.
+        equals (bool): whether this program drops the ``=``.
+    """
+    return value[1:] if equals and value.startswith("=") else value
+
+
 def _match_mixed_cluster(
     tok: str,
     cs: CompiledSpec,
@@ -552,6 +565,7 @@ def parse_command(
         no_long_option_parser = lenient_dash_operands
         outside_sole_argument = False
         digit_options = False
+        equals_values = False
         synonyms: dict[str, str] = {}
     else:
         # getopt_long, with exactly two exceptions, both named rather
@@ -582,6 +596,7 @@ def parse_command(
         # are the real program's own tables, not facts any declaration
         # states.
         digit_options = builtin and cmd_name in constants.DIGIT_OPTIONS
+        equals_values = builtin and cmd_name in constants.EQUALS_SHORT_VALUES
         synonyms = {
             spelling: same
             for (name, spelling), same in constants.LONG_SYNONYMS.items()
@@ -749,9 +764,10 @@ def parse_command(
                     matched_value = True
                     break
                 if tok.startswith(vf) and len(tok) > len(vf):
+                    attached_value = _attached(tok[len(vf):], equals_values)
                     _set_value_flag(flags, refusals, cs, argmatch_dests, vf,
-                                    tok[len(vf):])
-                    base = _rebase(flags, cs, vf, tok[len(vf):], base)
+                                    attached_value)
+                    base = _rebase(flags, cs, vf, attached_value, base)
                     i += 1
                     matched_value = True
                     break
@@ -789,6 +805,7 @@ def parse_command(
             if mixed is not None:
                 cluster_bools, vflag, attached = mixed
                 if attached is not None:
+                    attached = _attached(attached, equals_values)
                     for name in cluster_bools:
                         _set_bool_flag(flags, cs, name)
                     _set_value_flag(flags, refusals, cs, argmatch_dests, vflag,
@@ -967,11 +984,13 @@ def parse_command(
             raw_operands.append((arg, kind))
         word_kinds[raw_indices[j]] = kind
 
+    raw_path_flags: dict[str, ParsedFlagValue] = {}
     path_flag_values: list[str] = []
     for flag_name, kind in cs.kind_by_dest.items():
         if kind != "path" or flag_name not in flags:
             continue
         value = flags[flag_name]
+        raw_path_flags[flag_kwarg_name(flag_name)] = value
         if isinstance(value, list) and flag_name in cs.pair_dests:
             # Only the odd slots are the paths: the even ones name them.
             paired = [
@@ -989,6 +1008,8 @@ def parse_command(
             flags[flag_name] = resolved_list
             path_flag_values.extend(resolved_list)
         elif isinstance(value, str):
+            if cmd_name == "wget" and flag_name == "-O" and value == "-":
+                continue
             resolved = resolve_path(value, cwd)
             flags[flag_name] = resolved
             path_flag_values.append(resolved)
@@ -1004,13 +1025,15 @@ def parse_command(
             text_flag_values.append(value)
 
     flags.occurrences = [
-        (name, resolve_path(value, cwd) if cs.kind_by_dest.get(name) == "path"
-         and isinstance(value, str) else value)
-        for name, value in flags.occurrences
+        (name, resolve_path(value, cwd)
+         if cs.kind_by_dest.get(name) == "path" and isinstance(value, str)
+         and not (cmd_name == "wget" and name == "-O" and value == "-") else
+         value) for name, value in flags.occurrences
     ]
     return ParsedArgs(
         flags=flags,
         args=classified,
+        raw_path_flags=raw_path_flags,
         path_flag_values=path_flag_values,
         raw_operands=raw_operands,
         text_flag_values=text_flag_values,

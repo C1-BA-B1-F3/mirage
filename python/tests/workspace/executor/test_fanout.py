@@ -701,8 +701,9 @@ def test_ls_r_renders_a_file_mount_as_one_row_and_no_group():
     root._store.files["/top.txt"] = b"T\n"
     ws = Workspace(mounts={"/": (root, MountMode.EXEC)})
     io = asyncio.run(ws.shell("ls -aRF /"))
-    assert _stdout(io).startswith("/:\n.bash_history\ndev/\ntop.txt\nusr/\n\n"
-                                  "/usr:\nbin/\n\n/dev:\nnull\nzero\n\n")
+    assert _stdout(io).startswith(
+        "/:\n./\n../\n.bash_history\ndev/\ntop.txt\nusr/\n\n"
+        "/usr:\n./\n../\nbin/\n\n/dev:\n./\n../\nnull\nzero\n\n")
     assert _stdout(io).count(".bash_history") == 1
 
 
@@ -782,3 +783,34 @@ def test_context_across_a_nested_mount_is_separated(line):
     assert _stdout(io) == ("/base/top.txt:hit\n/base/top.txt-y\n--\n"
                            "/base/inner/real.txt:hit\n"
                            "/base/inner/real.txt-z\n")
+
+
+@pytest.mark.parametrize("options, expected", [
+    ("--sort path -l", "/base/inner/real.txt\n/base/top.txt\n"),
+    ("--sortr path -l", "/base/top.txt\n/base/inner/real.txt\n"),
+    ("--sort path -I", "hit\nhit\n"),
+    ("-d 1 -l", "/base/top.txt\n"),
+    ("-d 2 --sort path -l", "/base/inner/real.txt\n/base/top.txt\n"),
+    ("--sort path --heading",
+     "/base/inner/real.txt\nhit\n\n/base/top.txt\nhit\n"),
+    ("--sort path -A1",
+     "/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n/base/top.txt:hit\n/base/top.txt-y\n"
+     ),
+    ("--type-add 'foo:*.txt' --type-clear foo --type-add 'foo:*.py' -t foo -l",
+     ""),
+    ("-t txt -T txt -t txt --sort path -l",
+     "/base/inner/real.txt\n/base/top.txt\n"),
+    ("-t txt -T txt -t txt -l", "/base/top.txt\n/base/inner/real.txt\n"),
+])
+def test_rg_options_across_nested_mounts(options, expected):
+    io = asyncio.run(_context_workspace().shell(f"rg {options} hit /base"))
+    assert _stdout(io) == expected
+    assert io.exit_code == (0 if expected else 1)
+
+
+@pytest.mark.parametrize("direction", ["sort", "sortr"])
+def test_rg_creation_sort_is_explicitly_unsupported(direction):
+    io = asyncio.run(
+        _context_workspace().shell(f"rg --{direction} created hit /base"))
+    assert io.exit_code == 2
+    assert b"creation time is not supported" in io.stderr

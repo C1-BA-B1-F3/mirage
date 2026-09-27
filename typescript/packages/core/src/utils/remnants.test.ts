@@ -15,6 +15,7 @@
 import { describe, expect, it } from 'vitest'
 import { ContentType, FileStat, FileType, PathSpec } from '../types.ts'
 import { VisibleRemnant, childSpec, entryName, removeRemnants, visibleBelow } from './remnants.ts'
+import { rstripSlash } from './slash.ts'
 
 function spec(virtual: string): PathSpec {
   return new PathSpec({
@@ -48,7 +49,7 @@ class TreeChannel {
   }
 
   readdir(at: PathSpec): Promise<string[]> {
-    const base = at.virtual.replace(/\/+$/, '')
+    const base = rstripSlash(at.virtual)
     if (!this.dirs.has(base)) return Promise.reject(miss(base))
     const names = new Set<string>()
     for (const p of [...this.dirs, ...this.files, ...this.ghosts]) {

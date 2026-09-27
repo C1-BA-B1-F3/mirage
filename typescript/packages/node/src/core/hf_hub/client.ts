@@ -16,6 +16,7 @@ import { apiRequest } from '@struktoai/mirage-core/core/api/client'
 import type { ApiResponse, RetryPolicy } from '@struktoai/mirage-core/core/api/client'
 import type { ByteWindow } from '@struktoai/mirage-core/utils/ranges'
 import { API_SEGMENTS, MAX_RETRIES, RESOLVE_SEGMENTS, RETRY_STATUSES } from './constants.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export const RETRY: RetryPolicy = {
   statuses: RETRY_STATUSES,
@@ -61,7 +62,7 @@ export function hubHeaders(token: string | undefined): Record<string, string> {
 /** The /api URL for one repository-scoped endpoint. */
 export function apiUrl(endpoint: string, repoType: string, repoId: string, suffix: string): string {
   const segment = API_SEGMENTS[repoType] ?? 'models'
-  return `${endpoint.replace(/\/+$/, '')}/api/${segment}/${repoId}${suffix}`
+  return `${rstripSlash(endpoint)}/api/${segment}/${repoId}${suffix}`
 }
 
 /**
@@ -96,7 +97,7 @@ export function revSegment(revision: string): string {
 
 export function repoUrl(endpoint: string, repoType: string, repoId: string): string {
   const segment = RESOLVE_SEGMENTS[repoType] ?? ''
-  const base = `${endpoint.replace(/\/+$/, '')}/${segment === '' ? '' : `${segment}/`}`
+  const base = `${rstripSlash(endpoint)}/${segment === '' ? '' : `${segment}/`}`
   return `${base}${repoId}`
 }
 
@@ -108,7 +109,7 @@ export function resolveUrl(
   path: string,
 ): string {
   const segment = RESOLVE_SEGMENTS[repoType] ?? ''
-  const base = `${endpoint.replace(/\/+$/, '')}/${segment === '' ? '' : `${segment}/`}`
+  const base = `${rstripSlash(endpoint)}/${segment === '' ? '' : `${segment}/`}`
   const encoded = path
     .replace(/^\/+/, '')
     .split('/')

@@ -1659,6 +1659,12 @@
         "base_url": {
           "required": false
         },
+        "end_time": {
+          "required": false
+        },
+        "start_time": {
+          "required": false
+        },
         "token": {
           "required": true
         }
@@ -1735,6 +1741,9 @@
         "client_secret": {
           "required": false
         },
+        "end_time": {
+          "required": false
+        },
         "folder_id": {
           "required": false
         },
@@ -1742,6 +1751,9 @@
           "required": false
         },
         "refresh_token": {
+          "required": false
+        },
+        "start_time": {
           "required": false
         },
         "time_zone": {
@@ -2624,7 +2636,13 @@
         "base_url": {
           "required": false
         },
+        "end_time": {
+          "required": false
+        },
         "search_token": {
+          "required": false
+        },
+        "start_time": {
           "required": false
         },
         "token": {

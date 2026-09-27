@@ -17,14 +17,13 @@ from pydantic import BaseModel, ConfigDict
 
 from mirage import Workspace
 from mirage.config import load_config, resolve_secrets
-from mirage.core.slack.config import SlackConfig
 from mirage.secrets import registry
 from mirage.secrets.config import SecretRef, SecretSource
 from mirage.secrets.errors import SecretsError
 from mirage.secrets.registry import register_secrets
 from mirage.secrets.sources import resolve_config_secrets, resolve_sources
 from mirage.secrets.types import ResolvedSecret
-from mirage.vfs.slack import SlackVFS
+from mirage.vfs.slack import SlackConfig, SlackVFS
 
 CALLS: list[tuple[str, str]] = []
 

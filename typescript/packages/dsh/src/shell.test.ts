@@ -14,12 +14,35 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { command, type RegisteredCommand } from '@struktoai/mirage-core/commands/config'
+import { CommandSpec } from '@struktoai/mirage-core/commands/spec/types'
+import { IOResult } from '@struktoai/mirage-core/io/types'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { MountMode } from '@struktoai/mirage-core/types'
 import { LocalRuntime, Workspace, parseSessionProfile } from '@struktoai/mirage-node'
 import { MirageService } from './service.ts'
 import { MirageShellExecutor } from './shell.ts'
 import type { MirageShellConfig } from './shell.ts'
+
+class ServiceVFS extends RAMVFS {
+  calls = 0
+
+  override commands(): readonly RegisteredCommand[] {
+    return [
+      ...super.commands(),
+      ...command({
+        name: 'custom_write',
+        vfs: 'ram',
+        spec: new CommandSpec(),
+        write: true,
+        fn: () => {
+          this.calls++
+          return [null, new IOResult()]
+        },
+      }),
+    ]
+  }
+}
 
 const workspaces: Workspace[] = []
 
@@ -161,6 +184,32 @@ describe('sandbox policy', () => {
     )
     expect(result.exitCode).not.toBe(0)
     expect(result.sandbox?.denied).toBe(true)
+  })
+
+  it('recognizes a custom service command refused before its handler runs', async () => {
+    const vfs = new ServiceVFS()
+    const ws = new Workspace({ '/data': [vfs, MountMode.WRITE] })
+    workspaces.push(ws)
+    const shell = await attachShell(ws, {})
+    const result = await shell.run(
+      shell.resolve({
+        command: 'custom_write',
+        sandboxPolicy: READ_ONLY,
+      }),
+    )
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr.text).toContain('read-only mount at ')
+    expect(result.sandbox?.denied).toBe(true)
+    expect(vfs.calls).toBe(0)
+    const allowed = await shell.run(
+      shell.resolve({
+        command: 'custom_write',
+        sandboxPolicy: WORKSPACE_WRITE,
+      }),
+    )
+    expect(allowed.exitCode).toBe(0)
+    expect(allowed.sandbox?.denied).toBe(false)
+    expect(vfs.calls).toBe(1)
   })
 
   it('still reads under a read-only policy', async () => {

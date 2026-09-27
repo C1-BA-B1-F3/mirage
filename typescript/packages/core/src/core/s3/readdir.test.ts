@@ -25,6 +25,7 @@ import { S3Accessor } from '../../accessor/s3.ts'
 import { PathSpec } from '../../types.ts'
 import * as clientMod from './client.ts'
 import { readdir } from './readdir.ts'
+import { stripSlash } from '../../utils/slash.ts'
 
 class ListCmd {
   constructor(readonly input: Record<string, unknown>) {}
@@ -81,7 +82,7 @@ function mockBucket(keys: string[]): void {
 
 function spec(virtual: string): PathSpec {
   return new PathSpec({
-    vfsPath: virtual.replace(/^\/+|\/+$/g, ''),
+    vfsPath: stripSlash(virtual),
     virtual,
     directory: virtual,
   })

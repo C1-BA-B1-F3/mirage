@@ -24,13 +24,16 @@ import { csplitGeneric } from './csplit.ts'
 
 const ENC = new TextEncoder()
 
-async function runCsplit(flags: CommandOpts['flags']): Promise<[PathSpec[], IOResult]> {
+async function runCsplit(
+  flags: CommandOpts['flags'],
+  cwd = '/data',
+): Promise<[PathSpec[], IOResult]> {
   const specs: PathSpec[] = []
   const opts = {
     stdin: ENC.encode('a\nb\n'),
     flags,
     filetypeFns: null,
-    cwd: '/',
+    cwd,
     mountPrefix: '/data',
   } as CommandOpts
   const result = await csplitGeneric(
@@ -49,16 +52,17 @@ async function runCsplit(flags: CommandOpts['flags']): Promise<[PathSpec[], IORe
   return [specs, io]
 }
 
-// The executing mount's prefix names every output, and the writes keys stay
-// mount-relative so the executor can prefix them. Mirrors test_csplit.py.
-describe('csplit names outputs on the executing mount', () => {
-  it('addresses stdin outputs by their virtual path', async () => {
-    const [specs, io] = await runCsplit({})
-    expect(specs.map((p) => [p.virtual, p.vfsPath])).toEqual([
-      ['/data/xx00', 'xx00'],
-      ['/data/xx01', 'xx01'],
-    ])
-    expect(Object.keys(io.writes)).toEqual(['/xx00', '/xx01'])
+// With no -f, `xx` in the working directory names every output (GNU), and
+// the writes keys stay mount-relative so the executor can prefix them.
+// Mirrors test_csplit.py.
+describe('csplit names outputs in the working directory', () => {
+  it.each([
+    ['/data', ['/data/xx00', '/data/xx01']],
+    ['/data/sub', ['/data/sub/xx00', '/data/sub/xx01']],
+  ])('addresses stdin outputs under %s', async (cwd, named) => {
+    const [specs, io] = await runCsplit({}, cwd)
+    expect(specs.map((p) => p.virtual)).toEqual(named)
+    expect(Object.keys(io.writes)).toEqual(named.map((n) => n.slice('/data'.length)))
   })
 
   it('addresses a prefix path by its virtual path', async () => {

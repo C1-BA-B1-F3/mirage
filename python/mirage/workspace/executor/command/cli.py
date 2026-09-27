@@ -29,6 +29,7 @@ from mirage.commands.cli.walk import owns_argv, walk
 from mirage.commands.errors import CommandTimeoutError, UsageError
 from mirage.commands.spec import flag_kwarg_name
 from mirage.commands.spec.constants import HELP_OPTION
+from mirage.commands.spec.flag_view import FlagBag
 from mirage.commands.spec.help import render_help
 from mirage.commands.spec.types import FlagValue, Operand, UsageStyle
 from mirage.io import IOResult
@@ -361,11 +362,13 @@ async def handle_cli(
     # Group flags merge into the one bag: ancestor/descendant collisions
     # are a build-time CLISpec error, so a group flag can never shadow a
     # leaf flag.
-    kw: dict[str, FlagValue] = {
+    kw: FlagBag[FlagValue] = FlagBag({
         flag_kwarg_name(spelling): value
         for spelling, value in result.group_flags.items()
-    }
+    })
     kw.update(parsed.flag_kwargs)
+    if isinstance(parsed.flag_kwargs, FlagBag):
+        kw.occurrences.extend(parsed.flag_kwargs.occurrences)
     if mirage_help:
         # Only the injected flag is dropped; a leaf that declared
         # --help itself is handed the value it asked for.

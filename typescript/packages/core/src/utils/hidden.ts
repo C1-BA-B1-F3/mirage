@@ -48,7 +48,7 @@ export function isGlob(entry: string): boolean {
  */
 export function anchorDepth(entry: string): number {
   let depth = 0
-  for (const part of entry.replace(/^\/+|\/+$/g, '').split('/')) {
+  for (const part of stripSlash(entry).split('/')) {
     if (part === '' || isGlob(part)) break
     depth += 1
   }

@@ -17,14 +17,15 @@ import zipfile
 
 import pytest
 
+from mirage.commands.config import version_line
 from mirage.commands.errors import UsageError
-from mirage.commands.spec import SPECS
-from mirage.types import PathSpec
-from mirage.workspace.executor.command.flags import parse_flags
+from mirage.types import MountMode, PathSpec
+from mirage.vfs.ram import RAMVFS
+from mirage.workspace import Workspace
 
 from mirage.commands.builtin.generic.unzip import (  # isort: skip
     CORRUPT_CDIR, EXTRA_BYTES, MISSING_BYTES, NO_EOCD, UNZIP_NO_DIRECTORY,
-    ZERO_TESTED, ZIPINFO_NO_DIRECTORY, unzip, unzip_writes)
+    ZERO_TESTED, ZIPINFO_NO_DIRECTORY, unzip)
 
 WORKBOOK = b"WORKBOOK-CONTENT\n"
 SHEET = b"SHEET1-CONTENT\n"
@@ -257,7 +258,7 @@ async def test_extract_writes_only_selected_members():
     out, res, written = await _run(("xl/workbook.xml", ))
     assert set(written) == {"/xl/workbook.xml"}
     assert written["/xl/workbook.xml"] == WORKBOOK
-    assert "inflating: /xl/workbook.xml" in out.decode()
+    assert out.decode() == "Archive:  /a.zip\n  inflating: xl/workbook.xml\n"
     assert "app.xml" not in out.decode()
     assert res.exit_code == 0
 
@@ -429,6 +430,76 @@ async def test_z_default_prints_header_rows_and_totals():
 
 
 @pytest.mark.asyncio
+async def test_v_lists_the_verbose_table():
+    out, res, written = await _run((), data=_stored(MULTI), v=True)
+    assert out == (
+        b"Archive:  /a.zip\n"
+        b" Length   Method    Size  Cmpr    Date    Time   CRC-32   Name\n"
+        b"--------  ------  ------- ---- ---------- ----- --------  ----\n"
+        b"       0  Stored        0   0% 2026-09-20 07:33 00000000  dir/\n"
+        b"     200  Stored      200   0% 2026-09-20 07:33 599af058  "
+        b"dir/a.txt\n"
+        b"       1  Stored        1   0% 2026-09-20 07:33 71beeff9  b.txt\n"
+        b"--------          -------  ---                            -------\n"
+        b"     201              201   0%                            3 files\n")
+    assert (res.exit_code, res.stderr, written) == (0, None, {})
+
+
+@pytest.mark.asyncio
+async def test_vq_drops_the_archive_line_and_filters_like_l():
+    out, res, _ = await _run(("b.txt", "nomatch"),
+                             data=_stored(MULTI),
+                             v=True,
+                             q=True)
+    assert out.decode().splitlines()[0].startswith(" Length   Method")
+    assert out.decode().splitlines()[-1].endswith("1 file")
+    assert (res.exit_code, res.stderr) == (0, None)
+
+
+@pytest.mark.asyncio
+async def test_v_writes_comments_as_stored():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        info = zipfile.ZipInfo("b.txt", date_time=STAMP)
+        info.comment = b"na\xefve\x13 \xff"
+        zf.writestr(info, b"b")
+        zf.comment = b"caf\xe9 \x1b[1m\r\nfin"
+    out, res, _ = await _run((), data=buf.getvalue(), v=True)
+    assert out == (
+        b"Archive:  /a.zip\n"
+        b"caf\xe9 ^[[1m\n"
+        b"fin\n"
+        b" Length   Method    Size  Cmpr    Date    Time   CRC-32   Name\n"
+        b"--------  ------  ------- ---- ---------- ----- --------  ----\n"
+        b"       1  Stored        1   0% 2026-09-20 07:33 71beeff9  b.txt\n"
+        b"na\xefve \xff\n"
+        b"--------          -------  ---                            -------\n"
+        b"       1                1   0%                            1 file\n")
+    assert (res.exit_code, res.stderr) == (0, None)
+
+
+@pytest.mark.asyncio
+async def test_v_without_an_archive_prints_the_version_line():
+    out, res = await unzip([],
+                           read_bytes=_Reader(b""),
+                           write_bytes=_no_write,
+                           mkdir_fn=_no_mkdir,
+                           v=True)
+    assert out == version_line("unzip")
+    assert res.exit_code == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("listing", [{"args_l": True}, {"v": True}])
+async def test_t_and_p_outrank_the_listing_letters(listing):
+    # Info-ZIP lists only when neither -t nor -p picks another mode.
+    out, _, _ = await _run(("b.txt", ), data=_stored(MULTI), p=True, **listing)
+    assert out == b"b"
+    out, _, _ = await _run((), data=_stored(MULTI), t=True, **listing)
+    assert out == b"No errors detected in /a.zip\n"
+
+
+@pytest.mark.asyncio
 async def test_zl_adds_the_compressed_size_column():
     out, res, _ = await _run(("b.txt", ),
                              data=_stored(MULTI),
@@ -542,7 +613,10 @@ async def test_x_that_leaves_nothing_exits_11_in_every_mode():
     assert out == ZERO_TESTED.format("/a.zip").encode()
     assert res.exit_code == 11
     out, res, written = await _run((), data=data, x=("*", ))
-    assert out is None and res.exit_code == 11 and written == {}
+    # An extraction heads its listing with the archive even when the
+    # filter leaves nothing to extract (UnZip 6.00).
+    assert out == b"Archive:  /a.zip\n"
+    assert res.exit_code == 11 and written == {}
 
 
 @pytest.mark.asyncio
@@ -585,17 +659,50 @@ async def test_p_excludes_and_cautions_on_stderr():
         "caution: excluded filename not matched:  nomatch\n")
 
 
-@pytest.mark.parametrize("argv,writes", [
-    ([], False),
-    (["a.zip"], True),
-    (["-o", "a.zip"], True),
-    (["-d", "out", "a.zip"], True),
-    (["-l", "a.zip"], False),
-    (["-t", "a.zip"], False),
-    (["-p", "a.zip", "f.txt"], False),
-    (["-Z", "a.zip"], False),
-    (["-Z", "-1", "a.zip"], False),
+def _read_only_unzip_mount() -> tuple[Workspace, RAMVFS]:
+    vfs = RAMVFS()
+    vfs._store.files["/a.zip"] = _zip_entries((("f.txt", b"hello\n"), ))
+    return Workspace({"/ro/": (vfs, MountMode.READ)}), vfs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line", [
+    "unzip -l /ro/a.zip",
+    "unzip -v /ro/a.zip",
+    "unzip -t /ro/a.zip",
+    "unzip -p /ro/a.zip f.txt",
+    "unzip -Z /ro/a.zip",
+    "unzip -Z -1 /ro/a.zip",
 ])
-def test_unzip_writes_only_when_it_extracts(argv: list[str], writes: bool):
-    parsed = parse_flags(argv, SPECS["unzip"], "unzip", "/data")
-    assert unzip_writes(parsed.flag_kwargs, parsed.paths) is writes
+async def test_a_read_only_mount_runs_unzip_where_it_writes_nothing(line: str):
+    ws, vfs = _read_only_unzip_mount()
+    before = dict(vfs._store.files)
+    result = await ws.shell(line)
+    await result.materialize_stdout()
+    assert result.exit_code == 0
+    assert vfs._store.files == before
+
+
+_CANNOT_CREATE = (b"error:  cannot create f.txt\n"
+                  b"        Read-only file system\n")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,code,stdout,stderr", [
+    ("cd /ro && unzip a.zip", 50, b"Archive:  a.zip\n", _CANNOT_CREATE),
+    ("cd /ro && unzip -o a.zip", 50, b"Archive:  a.zip\n", _CANNOT_CREATE),
+    ("unzip -d /ro/out /ro/a.zip", 2, b"Archive:  /ro/a.zip\n",
+     b"checkdir:  cannot create extraction directory: /ro/out\n"
+     b"           Read-only file system\n"),
+])
+async def test_a_read_only_mount_refuses_unzip_at_the_write(
+        line: str, code: int, stdout: bytes, stderr: bytes):
+    # UnZip 6.00 on a read-only filesystem: a member it cannot create is
+    # named as it would have made it (exit 50), an extraction directory it
+    # cannot make ends the run (exit 2).
+    ws, vfs = _read_only_unzip_mount()
+    before = dict(vfs._store.files)
+    result = await ws.shell(line)
+    assert (result.exit_code, await result.materialize_stdout(),
+            result.stderr) == (code, stdout, stderr)
+    assert vfs._store.files == before

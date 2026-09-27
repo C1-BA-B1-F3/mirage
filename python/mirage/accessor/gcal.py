@@ -17,6 +17,7 @@ from datetime import date, datetime
 from mirage.accessor.base import Accessor
 from mirage.core.gcal.day import zone
 from mirage.core.google.client import TokenManager
+from mirage.core.time_range import TimeRange
 from mirage.vfs.gcal.config import GCalConfig
 
 
@@ -25,6 +26,8 @@ class GCalAccessor(Accessor):
     def __init__(self, config: GCalConfig,
                  token_manager: TokenManager) -> None:
         self.config = config
+        self.time_range = TimeRange.from_strings(config.start_time,
+                                                 config.end_time)
         self.token_manager = token_manager
 
     def today(self, tz: str) -> date:

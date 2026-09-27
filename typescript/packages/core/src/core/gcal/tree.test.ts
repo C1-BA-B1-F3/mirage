@@ -198,6 +198,7 @@ describe('gcal readdir', () => {
   it('lists only days holding events', async () => {
     expect(names(await readdir(accessor, spec('/primary'), index))).toEqual([
       'calendar.json',
+      '2025-01-05',
       '2026-08-10',
       '2026-08-11',
       '2026-08-12',
@@ -205,17 +206,16 @@ describe('gcal readdir', () => {
     ])
   })
 
-  it('omits days outside the window', async () => {
-    // 2025-01-05 exists but sits far outside the -30/+90 day window.
-    expect(names(await readdir(accessor, spec('/primary'), index))).not.toContain('2025-01-05')
+  it('includes all past days', async () => {
+    expect(names(await readdir(accessor, spec('/primary'), index))).toContain('2025-01-05')
   })
 
   it('escapes the default window with a date glob', async () => {
     const out = names(await readdir(accessor, spec('/primary/2025-01-*', '2025-01-*'), index))
     expect(out).toContain('2025-01-05')
     const last = lastListed()
-    expect(last[1].startsWith('2025-01-01')).toBe(true)
-    expect(last[2].startsWith('2025-02-01')).toBe(true)
+    expect(last[1]).toBe('2024-12-31T16:00:00.000Z')
+    expect(last[2]).toBe('2025-01-31T16:00:00.000Z')
   })
 
   it('lists one file per overlapping event', async () => {
@@ -267,8 +267,8 @@ describe('gcal readdir', () => {
   it('centres the window in the bucket zone', async () => {
     await readdir(accessor, spec('/primary'), index)
     const last = lastListed()
-    expect(last[1].endsWith('+08:00')).toBe(true)
-    expect(last[2].endsWith('+08:00')).toBe(true)
+    expect(last[1]).toBeNull()
+    expect(last[2]).toBe('2026-11-09T16:00:00.000Z')
   })
 })
 

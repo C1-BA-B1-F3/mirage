@@ -16,6 +16,7 @@ import { isEnoent } from '../../utils/errors.ts'
 import { type IndexEntry, LookupStatus } from './config.ts'
 import type { IndexCacheStore } from './store.ts'
 import { withIndexLock } from './lock.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 /**
  * Resolve an index entry, listing the parent directory once when its listing
@@ -49,7 +50,7 @@ export async function entryOrWarm(
   virtualKey: string,
   warm: (() => Promise<unknown>) | null,
 ): Promise<IndexEntry | null> {
-  const parent = virtualKey.replace(/\/+$/, '').replace(/\/[^/]+$/, '') || '/'
+  const parent = rstripSlash(virtualKey).replace(/\/[^/]+$/, '') || '/'
   return withIndexLock(index, parent, async () => {
     let listing = await index.listDir(parent)
     if (listing.entries != null && !listing.entries.includes(virtualKey)) return null

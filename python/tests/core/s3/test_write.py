@@ -26,8 +26,12 @@ class _FakeManager:
 
     def __init__(self) -> None:
         self.writes: list[str] = []
+        self.ancestors: list[str] = []
         self.unlinks: list[str] = []
         self.subtrees: list[str] = []
+
+    async def invalidate_ancestors(self, path: PathSpec) -> None:
+        self.ancestors.append(path.virtual)
 
     async def invalidate_after_write(self, path: PathSpec) -> None:
         self.writes.append(path.mount_path)
@@ -87,7 +91,8 @@ def test_write_invalidates_every_ancestor_listing(monkeypatch):
     manager, puts = asyncio.run(_write(monkeypatch, "/a/b/c.txt"))
     assert puts == [("a/b/c.txt", b"hi")]
     # The put materializes `a` and `a/b` too, so their listings are stale.
-    assert manager.writes == ["/a/b/c.txt", "/a/b", "/a"]
+    assert manager.writes == ["/a/b/c.txt"]
+    assert manager.ancestors == ["/mnt/a/b/c.txt"]
 
 
 def test_write_at_mount_root_invalidates_only_itself(monkeypatch):

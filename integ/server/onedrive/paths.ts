@@ -13,9 +13,10 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { JsonValue, Reply } from '../kit/typescript/index.ts'
+import { stripSlash } from '../kit/typescript/index.ts'
 
 export function norm(path: string): string {
-  return path.replace(/^\/+|\/+$/g, '')
+  return stripSlash(path)
 }
 
 export function baseName(path: string): string {

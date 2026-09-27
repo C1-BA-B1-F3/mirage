@@ -18,6 +18,7 @@ import { whoami } from '../../../../core/hf_hub/account.ts'
 import { API_BASE } from '../../../../core/hf_hub/constants.ts'
 import { hfEndpoint, type HfConfig } from '../../../../core/hf_hub/config.ts'
 import { requireToken, textOut } from './accessor.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /** Print the account the configured token belongs to. */
 export async function whoamiCmd(inv: CLIInvocation): Promise<CommandFnResult> {
@@ -52,7 +53,7 @@ export async function whoamiCmd(inv: CLIInvocation): Promise<CommandFnResult> {
   // REQUEST used: an empty endpoint means the public Hub there, and comparing
   // the raw value would announce a private endpoint with no origin after it
   // for a request that went to huggingface.co.
-  const endpoint = hfEndpoint(inv.config as HfConfig).replace(/\/+$/, '')
+  const endpoint = rstripSlash(hfEndpoint(inv.config as HfConfig))
   if (endpoint !== API_BASE) {
     lines.push(`Authenticated through private endpoint: ${endpoint}`)
   }

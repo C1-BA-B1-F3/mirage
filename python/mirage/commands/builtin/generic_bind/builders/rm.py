@@ -16,8 +16,7 @@ import functools
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.cp import walk
-from mirage.commands.builtin.generic.rm_cmd import (rm_without_operands,
-                                                    rm_writes)
+from mirage.commands.builtin.generic.rm_cmd import rm_without_operands
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           Operation)
 from mirage.commands.builtin.utils.output import format_optional_records
@@ -81,27 +80,21 @@ async def rm(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         try:
             if s.type == FileType.DIRECTORY:
                 if recursive:
-                    if ops.rm_r is None:
-                        raise NotImplementedError(
-                            "rm: recursive remove not supported on this "
-                            "backend")
                     if v:
                         readdir = functools.partial(ops.readdir,
                                                     accessor,
                                                     index=opts.index)
                         entry_lines = removal_lines(await walk(
                             readdir, functools.partial(ops.stat, accessor), p))
-                    await ops.rm_r(accessor, p)
+                    await ops.require(Operation.RM_R)(accessor, p)
                 elif d:
-                    if ops.rmdir is None:
-                        raise NotImplementedError(
-                            "rm: directory remove not supported on this "
-                            "backend")
                     if await ops.readdir(accessor, p, index=opts.index):
                         errors.append(f"rm: cannot remove '{p.raw_path}': "
                                       "Directory not empty")
                         continue
-                    await ops.rmdir(accessor, p, index=opts.index)
+                    await ops.require(Operation.RMDIR)(accessor,
+                                                       p,
+                                                       index=opts.index)
                     entry_lines = [f"removed directory '{p.virtual}'"]
                 else:
                     errors.append(
@@ -128,8 +121,4 @@ async def rm(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                             exit_code=1 if errors else 0)
 
 
-BUILDER = Builder('rm',
-                  rm,
-                  write=True,
-                  requirements=frozenset({Operation.UNLINK}),
-                  writes=rm_writes)
+BUILDER = Builder('rm', rm, write=True)

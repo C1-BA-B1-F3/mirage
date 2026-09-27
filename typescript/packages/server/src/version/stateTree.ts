@@ -52,18 +52,14 @@ export interface TreeInputs {
   meta: VersionMeta
 }
 
-function stripSlashes(p: string): string {
-  return stripSlash(p)
-}
-
 function treePath(prefix: string, rel: string): string {
-  const p = stripSlashes(prefix)
+  const p = stripSlash(prefix)
   const r = lstripSlash(rel)
   return p === '' ? r : `${p}/${r}`
 }
 
 function relPath(prefix: string, tp: string): string {
-  const p = stripSlashes(prefix)
+  const p = stripSlash(prefix)
   const rest = p === '' ? tp : tp.slice(p.length + 1)
   return `/${rest}`
 }
@@ -172,7 +168,7 @@ export function toState(
   const mounts: AnyDict[] = []
   for (const mount of meta.mounts) {
     const prefix = mount.prefix as string
-    const treePrefix = stripSlashes(prefix)
+    const treePrefix = stripSlash(prefix)
     const vfsState = { ...(mount.vfsState as AnyDict) }
     const files: Record<string, Uint8Array> = {}
     for (const [tp, data] of Object.entries(entries)) {

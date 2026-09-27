@@ -1698,6 +1698,12 @@
         "baseUrl": {
           "required": false
         },
+        "endTime": {
+          "required": false
+        },
+        "startTime": {
+          "required": false
+        },
         "token": {
           "required": true
         }
@@ -1783,6 +1789,9 @@
         "clientSecret": {
           "required": false
         },
+        "endTime": {
+          "required": false
+        },
         "folderId": {
           "required": false
         },
@@ -1793,6 +1802,9 @@
           "required": false
         },
         "refreshToken": {
+          "required": false
+        },
+        "startTime": {
           "required": false
         },
         "timeZone": {
@@ -2814,7 +2826,13 @@
         "baseUrl": {
           "required": false
         },
+        "endTime": {
+          "required": false
+        },
         "searchToken": {
+          "required": false
+        },
+        "startTime": {
           "required": false
         },
         "token": {

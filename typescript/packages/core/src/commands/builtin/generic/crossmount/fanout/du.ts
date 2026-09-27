@@ -16,6 +16,7 @@ import { humanSize } from '../../../utils/formatting.ts'
 import { rollup, separateTotal } from '../../du.ts'
 import { respellRaw } from '../../../../../utils/path.ts'
 import type { OperandRun } from '../types.ts'
+import { rstripSlash } from '../../../../../utils/slash.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -96,7 +97,7 @@ function leavesOf(
 }
 
 function rstrip(path: string): string {
-  return path.endsWith('/') && path !== '/' ? path.replace(/\/+$/, '') : path
+  return path.endsWith('/') && path !== '/' ? rstripSlash(path) : path
 }
 
 // Fold per-mount du blocks into one tree, GNU's way.

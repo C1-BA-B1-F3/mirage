@@ -55,6 +55,8 @@ const ENC = new TextEncoder()
 // `in:#channel`, so two named days became every day the channel ever had.
 // One operand or the generic scan.
 export const SEARCH_HONORED = ['w'] as const
+// rg spells the same flag by its long name.
+export const RG_SEARCH_HONORED = ['word_regexp'] as const
 export const SEARCH_MAX_RESULTS = 100
 
 async function* slackStream(
@@ -80,7 +82,11 @@ async function grepCommand(
   const operand = pushdownOperand(paths, opts.flags, pattern, SEARCH_HONORED)
   if (pattern !== null && operand !== null && fl.asBool('w')) {
     const match = detectScope(operand)
-    if (NATIVE_KINDS.has(match.kind) && (accessor.transport.searchAvailable?.() ?? true)) {
+    if (
+      !accessor.timeRange.bounded &&
+      NATIVE_KINDS.has(match.kind) &&
+      (accessor.transport.searchAvailable?.() ?? true)
+    ) {
       const target = searchTarget(match)
       const filePrefix = mountPrefixOf(operand.virtual, operand.vfsPath)
       const query = buildQuery(pattern, target)

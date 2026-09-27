@@ -15,6 +15,8 @@
 from functools import partial
 
 from mirage.accessor.base import Accessor
+from mirage.commands.builtin.generic.crossmount.utils import \
+    transfer_primitives
 from mirage.commands.builtin.generic.csplit import csplit as generic_csplit
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           Operation, bound_op,
@@ -33,14 +35,22 @@ async def csplit(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     paths = await resolve_or_empty(ops, accessor, paths, opts.index)
     prefix_flag = fl.raw("prefix")
     prefix = prefix_flag if isinstance(prefix_flag, (str, PathSpec)) else "xx"
+    # The pieces go to the prefix, or `xx` in the working directory, which
+    # need not be this mount, so a dispatcher routes each write to the
+    # mount that owns it.
+    write_bytes = (transfer_primitives(opts.dispatch)["write"]
+                   if opts.dispatch is not None else partial(
+                       ops.require(Operation.WRITE), accessor))
     return await generic_csplit(
         paths,
         texts,
         read_bytes=bound_op(ops.read_bytes, accessor, opts.index),
-        write_bytes=partial(ops.require(Operation.WRITE), accessor),
+        write_bytes=write_bytes,
         stdin=opts.stdin,
         prefix=prefix,
         mount_prefix=opts.mount_prefix,
+        cwd=opts.cwd.virtual,
+        relay=opts.dispatch is not None,
         digits=int(fl.as_str("digits") or "2"),
         suffix_format=fl.as_str("suffix_format"),
         keep_on_error=fl.as_bool("keep_files"),
@@ -49,7 +59,4 @@ async def csplit(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         elide_empty=fl.as_bool("elide_empty_files"))
 
 
-BUILDER = Builder('csplit',
-                  csplit,
-                  write=True,
-                  requirements=frozenset({Operation.WRITE}))
+BUILDER = Builder('csplit', csplit, write=True)

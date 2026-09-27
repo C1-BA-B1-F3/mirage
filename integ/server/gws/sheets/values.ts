@@ -25,7 +25,12 @@ export function unparseable(rangeStr: string): Reply {
   return googleError(400, `Unable to parse range: ${rangeStr}`, 'INVALID_ARGUMENT')
 }
 
-export function batchGetValues(st: GwsState, id: string, ranges: string[]): Reply {
+export function batchGetValues(
+  st: GwsState,
+  id: string,
+  ranges: string[],
+  render = 'FORMATTED_VALUE',
+): Reply {
   const sheet = st.sheets.get(id)
   if (sheet === undefined) return NOT_FOUND
   const valueRanges: JsonValue[] = []
@@ -35,7 +40,7 @@ export function batchGetValues(st: GwsState, id: string, ranges: string[]): Repl
     valueRanges.push({
       range: rangeLabelFor(range, rangeStr),
       majorDimension: 'ROWS',
-      values: rangeValues(range),
+      values: rangeValues(range, sheet.tabs, render),
     })
   }
   return ok({ spreadsheetId: id, valueRanges })
@@ -44,7 +49,12 @@ export function batchGetValues(st: GwsState, id: string, ranges: string[]): Repl
 // totalUpdatedRows/Columns count the distinct rows and columns holding at
 // least one updated cell, not the sum over the data entries, so two ranges
 // overlapping one row report that row once.
-export function batchUpdateValues(st: GwsState, id: string, data: JsonObj[]): Reply {
+export function batchUpdateValues(
+  st: GwsState,
+  id: string,
+  data: JsonObj[],
+  option = 'USER_ENTERED',
+): Reply {
   const sheet = st.sheets.get(id)
   if (sheet === undefined) return NOT_FOUND
   const responses: JsonValue[] = []
@@ -57,9 +67,9 @@ export function batchUpdateValues(st: GwsState, id: string, data: JsonObj[]): Re
     const range = parseA1(sheet, rangeStr)
     if (range === null) return unparseable(rangeStr)
     const values = asGrid(entry.values)
-    const cells = writeValues(range, values, range.startRow)
+    const cells = writeValues(range, values, range.startRow, option)
     for (let i = 0; i < values.length; i += 1) {
-      const row = values[i] as string[]
+      const row = values[i] as JsonValue[]
       if (row.length > 0) rows.add(`${String(range.tab.sheetId)},${String(range.startRow + i)}`)
       for (let j = 0; j < row.length; j += 1) {
         columns.add(`${String(range.tab.sheetId)},${String(range.startCol + j)}`)

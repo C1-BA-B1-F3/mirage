@@ -19,6 +19,7 @@ import { type FlagValue } from '../../spec/types.ts'
 import { quoteText } from '../../quote.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
+import { fsStrerror, isFsError } from '../../../utils/errors.ts'
 import { mountKey } from '../../../utils/key_prefix.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { readStdinAsync, stdinStream } from '../utils/stream.ts'
@@ -275,7 +276,7 @@ export interface ShufFlags {
   // PathSpec and reads it with as_paths; this bag carries the resolved
   // virtual-path string, so asStr is the twin and the PathSpec is built at
   // the call site.
-  readonly output: string | null
+  readonly output: PathSpec | null
 }
 
 // Read shuf's flags once, refusing a head count GNU refuses.
@@ -311,9 +312,14 @@ export function parseFlags(bag: Record<string, FlagValue>): ShufFlags | string {
   const fl = new FlagView(bag, specOf('shuf'))
   let inputRangeRaw: string | null = null
   let outputRaw: string | null = null
-  const typed = fl
-    .typedOrder('head_count', 'input_range', 'output')
-    .flatMap((dest) => fl.asList(dest).map((raw): [string, string] => [dest, raw]))
+  // -o is PATH-typed, so its values are the words as typed, read off the
+  // PathSpecs, which is what GNU compares two -o by. A line parsed for a
+  // cross-mount strategy carries resolved strings, compared as they are.
+  const typed = fl.typedOrder('head_count', 'input_range', 'output').flatMap((dest) => {
+    const specs = dest === 'output' ? fl.asPaths(dest) : []
+    const words = specs.length > 0 ? specs.map((p) => p.rawPath) : fl.asList(dest)
+    return words.map((raw): [string, string] => [dest, raw])
+  })
   for (const [dest, raw] of typed) {
     if (dest === 'head_count') {
       if (!UNSIGNED.test(raw)) return `shuf: invalid line count: '${quoteText(raw)}'\n`
@@ -323,10 +329,6 @@ export function parseFlags(bag: Record<string, FlagValue>): ShufFlags | string {
       if (typeof bounds === 'string') return rangeError(raw, bounds)
       inputRangeRaw = raw
     } else if (outputRaw !== null && outputRaw !== raw) {
-      // Deliberate divergence: the TypeScript bag carries a PATH option's
-      // resolved virtual path, not the word typed, so `-o out -o ./out`
-      // reads as one output here where GNU (and the python twin, which
-      // still sees the raw word) refuses it as two.
       return `${MULTIPLE_OUTPUTS}\n`
     } else {
       outputRaw = raw
@@ -335,13 +337,17 @@ export function parseFlags(bag: Record<string, FlagValue>): ShufFlags | string {
   if (fl.asBool('echo') && inputRangeRaw !== null) return `${ECHO_WITH_RANGE}\n`
   const countValue = fl.asList('head_count').at(-1)
   const count = countValue === undefined ? null : BigInt(countValue)
+  const outputWord = fl.asList('output').at(-1)
+  const output =
+    fl.asPaths('output').at(-1) ??
+    (outputWord === undefined ? null : PathSpec.fromStrPath(outputWord))
   return {
     count: count === null || count <= SIZE_MAX ? count : SIZE_MAX,
     echo: fl.asBool('echo'),
     zeroTerminated: fl.asBool('zero_terminated'),
     withReplacement: fl.asBool('repeat'),
     inputRange: inputRangeRaw,
-    output: outputRaw,
+    output,
   }
 }
 
@@ -363,10 +369,11 @@ export async function shufGeneric(
     parsed.output === null
       ? null
       : new PathSpec({
-          virtual: parsed.output,
-          directory: parsed.output,
-          vfsPath: mountKey(parsed.output, opts.mountPrefix ?? ''),
+          virtual: parsed.output.virtual,
+          directory: parsed.output.virtual,
+          vfsPath: mountKey(parsed.output.virtual, opts.mountPrefix ?? ''),
           resolved: true,
+          rawPath: parsed.output.rawPath,
         })
   const sep = zeroSep ? '\x00' : '\n'
 
@@ -435,7 +442,18 @@ export async function shufGeneric(
   // terminates each line rather than being appended to the join.
   const result: ByteSource = ENC.encode(out.length === 0 ? '' : out.join(sep) + sep)
   if (output !== null) {
-    await write(output, result)
+    try {
+      await write(output, result)
+    } catch (err) {
+      if (!isFsError(err)) throw err
+      return [
+        null,
+        new IOResult({
+          exitCode: 1,
+          stderr: ENC.encode(`shuf: ${output.rawPath}: ${String(fsStrerror(err))}\n`),
+        }),
+      ]
+    }
     return [null, new IOResult({ writes: { [output.mountPath]: result } })]
   }
   return [result, new IOResult()]

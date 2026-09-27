@@ -12,6 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { normalizeSlackConfig } from '@struktoai/mirage-core/vfs/slack/config'
+import { normalizeDiscordConfig } from '@struktoai/mirage-core/vfs/discord/config'
+import { normalizeGCalConfig } from '@struktoai/mirage-core/vfs/gcal/config'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -118,6 +121,7 @@ import { buildSecretsEnv } from './secrets.ts'
 import { start as startKitFake } from '../../../server/kit/typescript/index.ts'
 import { buildRfc822 } from '../../../server/mail/rfc822.ts'
 import type { MailEntry } from '../../../server/mail/rfc822.ts'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export interface Open {
   ws: ExecWorkspace
@@ -739,11 +743,11 @@ async function openHfHub(target: Target, options?: OpenOptions): Promise<Open> {
     // The most specific mount owns the path, as the workspace resolves it, so a
     // nested mount listed after its parent still gets its own commits.
     const m = target.mounts
-      .filter((x) => path === x.path || path.startsWith(`${x.path.replace(/\/+$/, '')}/`))
+      .filter((x) => path === x.path || path.startsWith(`${rstripSlash(x.path)}/`))
       .sort((a, b) => b.path.length - a.path.length)[0]
     if (m === undefined || m.vfs === 'ram') throw new Error(`hf-hub cannot commit ${path}`)
     const vfs = hubMount(m)
-    const rel = path.slice(m.path.replace(/\/+$/, '').length)
+    const rel = path.slice(rstripSlash(m.path).length)
     try {
       await hubCommit(vfs.accessor, {
         additions: [{ path: vfs.accessor.repoPath(rel), data: content }],
@@ -887,7 +891,7 @@ async function openDropbox(target: Target, options?: OpenOptions): Promise<Open>
   const build = (): MountMap => {
     const mounts: Record<string, DropboxVFS> = {}
     for (const m of target.mounts) {
-      const account = String(m.bucket ?? String(m.path).replace(/^\/+|\/+$/g, ''))
+      const account = String(m.bucket ?? stripSlash(String(m.path)))
       mounts[m.path] = new DropboxVFS({
         clientId: 'integ-client',
         clientSecret: 'integ-secret',
@@ -937,7 +941,7 @@ async function makePrefix(
   prefix: string,
 ): Promise<void> {
   let parent = ''
-  for (const name of prefix.replace(/^\/+|\/+$/g, '').split('/')) {
+  for (const name of stripSlash(prefix).split('/')) {
     if (name === '') continue
     // One level at a time: Graph's mkdir 404s when the parent is missing, and
     // `replace` on a folder returns the existing one with its children intact,
@@ -1549,9 +1553,14 @@ async function openSsh(target: Target, options?: OpenOptions): Promise<Open> {
 }
 
 const GDRIVE_FOLDER_MIME = 'application/vnd.google-apps.folder'
+// The gws fake's credential: a bearer as it is, and the one refresh token its
+// /token exchanges.
+const GWS_TOKEN = 'gws-integ-token'
 
 async function gwsJson(url: string, init?: RequestInit): Promise<Record<string, unknown>> {
-  const r = await fetch(url, init)
+  const headers = new Headers(init?.headers)
+  headers.set('Authorization', `Bearer ${GWS_TOKEN}`)
+  const r = await fetch(url, { ...init, headers })
   if (!r.ok) throw new Error(`gws fake request failed: ${url} -> ${String(r.status)}`)
   return (await r.json()) as Record<string, unknown>
 }
@@ -1686,16 +1695,23 @@ async function seedGwsCalendar(base: string, entries: CalendarEntry[]): Promise<
 function gwsNativeVfs(
   vfs: string,
   base: string,
+  mountConfig: Record<string, unknown> = {},
 ): GDocsVFS | GSheetsVFS | GSlidesVFS | GmailVFS | GCalVFS {
   // apiBase points the backend at the fake server through the same
   // config field a real embedder uses; nothing is monkey-patched.
-  const config = { clientId: 'integ', clientSecret: 'integ', refreshToken: 'integ', apiBase: base }
+  const config = {
+    clientId: 'integ',
+    clientSecret: 'integ',
+    refreshToken: GWS_TOKEN,
+    apiBase: base,
+  }
   if (vfs === 'gdocs') return new GDocsVFS(config)
   if (vfs === 'gsheets') return new GSheetsVFS(config)
   if (vfs === 'gmail') return new GmailVFS(config)
   // today is pinned so the rolling window is the same on both hosts and
   // lands on the seeded events.
-  if (vfs === 'gcal') return new GCalVFS({ ...config, today: '2026-02-11' })
+  if (vfs === 'gcal')
+    return new GCalVFS(normalizeGCalConfig({ ...config, today: '2026-02-11', ...mountConfig }))
   return new GSlidesVFS(config)
 }
 
@@ -1744,7 +1760,7 @@ async function openGws(target: Target): Promise<Open> {
       continue
     }
     if (m.vfs !== 'gdrive') {
-      mounts[m.path] = gwsNativeVfs(m.vfs, base)
+      mounts[m.path] = gwsNativeVfs(m.vfs, base, m.config)
       continue
     }
     // A mount may live inside a Shared Drive: the drive is created once
@@ -1765,7 +1781,7 @@ async function openGws(target: Target): Promise<Open> {
     mounts[m.path] = new GDriveVFS({
       clientId: 'integ',
       clientSecret: 'integ',
-      refreshToken: 'integ',
+      refreshToken: GWS_TOKEN,
       apiBase: base,
       folderId: parent,
     })
@@ -1784,7 +1800,7 @@ async function openGws(target: Target): Promise<Open> {
     ws.registerCli('gws', GWS, {
       client_id: 'integ',
       client_secret: 'integ',
-      refresh_token: 'integ',
+      refresh_token: GWS_TOKEN,
       api_base: base,
       ...(scope !== undefined ? { folder_id: folderIds[scope] } : {}),
     })
@@ -1810,7 +1826,7 @@ async function openSlack(target: Target): Promise<Open> {
   const reset = await fetch(`${base}/reset`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tenants: [workspace] }),
+    body: JSON.stringify({ tenants: [workspace], fixture: target.dataset ?? 'v1' }),
   })
   if (!reset.ok) throw new Error(`slack /reset failed: ${String(reset.status)}`)
   const mounts: Record<string, SlackVFS | RAMVFS> = {}
@@ -1819,11 +1835,14 @@ async function openSlack(target: Target): Promise<Open> {
       mounts[m.path] = new RAMVFS()
       continue
     }
-    mounts[m.path] = new SlackVFS({
-      token: `xoxb-${workspace}`,
-      searchToken: `xoxp-${workspace}`,
-      baseUrl: `${base}/api`,
-    })
+    mounts[m.path] = new SlackVFS(
+      normalizeSlackConfig({
+        ...m.config,
+        token: `xoxb-${workspace}`,
+        searchToken: `xoxp-${workspace}`,
+        baseUrl: `${base}/api`,
+      }),
+    )
   }
   const ws = new Workspace(mounts, { mode: MountMode.WRITE })
   if (target.clis?.includes('slack') === true) {
@@ -1941,7 +1960,11 @@ async function openDiscord(target: Target): Promise<Open> {
   if (!endpoint) throw new Error('discord target requires DISCORD_URL')
   // The server outlives a single run here, so posted messages have to be
   // rolled back to the fixture before the write cases run again.
-  const reset = await fetch(`${endpoint}/reset`, { method: 'POST' })
+  const reset = await fetch(`${endpoint}/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fixture: target.dataset ?? 'v1' }),
+  })
   if (!reset.ok) throw new Error(`discord /reset failed: ${String(reset.status)}`)
   const mounts: Record<string, DiscordVFS | RAMVFS> = {}
   for (const m of target.mounts) {
@@ -1949,10 +1972,13 @@ async function openDiscord(target: Target): Promise<Open> {
       mounts[m.path] = new RAMVFS()
       continue
     }
-    mounts[m.path] = new DiscordVFS({
-      token: 'integ-bot-token',
-      baseUrl: `${endpoint}/api/v10`,
-    })
+    mounts[m.path] = new DiscordVFS(
+      normalizeDiscordConfig({
+        ...m.config,
+        token: 'integ-bot-token',
+        baseUrl: `${endpoint}/api/v10`,
+      }),
+    )
   }
   const ws = new Workspace(mounts, { mode: MountMode.WRITE })
   if (target.clis?.includes('discord') === true) {

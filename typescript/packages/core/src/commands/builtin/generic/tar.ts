@@ -17,15 +17,22 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { mountKey } from '../../../utils/key_prefix.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
-import { gzip, gunzip, getCompressionCodec } from '../../../utils/compress.ts'
-import type { CommandFnResult, CommandOpts, WritesFn } from '../../config.ts'
+import { gzip, gunzipPartial, getCompressionCodec } from '../../../utils/compress.ts'
+import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { readTar, writeTar, type TarEntry } from '../tar_helper.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
-import { COMPRESSION_SIGNATURES, CREATE_ERROR_EXIT, ERROR_TRAILER } from './tar/constants.ts'
+import {
+  CHILD_STATUS,
+  COMPRESSION_SIGNATURES,
+  CREATE_ERROR_EXIT,
+  ERROR_TRAILER,
+  FATAL_TRAILER,
+  INVALID_ARCHIVE,
+} from './tar/constants.ts'
 import { planCreate, type DirProbe, type StatFn, type WalkFn } from './tar/create.ts'
-import { fsStrerror, isEacces } from '../../../utils/errors.ts'
+import { fsStrerror, isEacces, isFsError, type GzipDataError } from '../../../utils/errors.ts'
 import { ensureDir, extractDest } from './archive/extract.ts'
-import type { Compression, CompressionKind, CreateResult } from './tar/types.ts'
+import type { Compression, CompressionKind, CreateResult, ReadResult } from './tar/types.ts'
 
 const ENC = new TextEncoder()
 
@@ -107,12 +114,13 @@ export interface TarDeps {
   isDir: DirProbe
 }
 
-function makePathSpec(virtual: string, prefix: string): PathSpec {
+function makePathSpec(virtual: string, prefix: string, rawPath?: string): PathSpec {
   return new PathSpec({
     virtual,
     directory: virtual,
     vfsPath: mountKey(virtual, prefix),
     resolved: true,
+    ...(rawPath !== undefined ? { rawPath } : {}),
   })
 }
 
@@ -156,13 +164,43 @@ function unsupportedKind(compression: Compression, create: boolean): Compression
   return create && codec.compress === undefined ? compression : null
 }
 
-async function decompress(data: Uint8Array, kind: Compression): Promise<Uint8Array> {
+/**
+ * Read tar entries while retaining a failed gzip child's diagnostic.
+ *
+ * Complete deflate bodies survive a damaged or missing gzip trailer. Data
+ * cut off inside a body is still discarded; GNU tar can recover partial
+ * entries there. Mirrors Python's _open_archive for listing and extraction.
+ */
+async function readArchive(data: Uint8Array, kind: Compression): Promise<ReadResult> {
   const detected = kind ?? detectCompression(data)
-  if (detected === null) return data
-  if (detected === 'gzip') return gunzip(data)
-  const codec = getCompressionCodec(detected)
-  if (codec === undefined) return data
-  return codec.decompress(data)
+  let failure: GzipDataError | null = null
+  if (detected === 'gzip') {
+    ;[data, failure] = await gunzipPartial(data)
+    if (failure !== null && (!failure.keepsOutput || data.byteLength === 0))
+      return { entries: [], failure, notices: [] }
+  } else if (detected !== null) {
+    const codec = getCompressionCodec(detected)
+    if (codec !== undefined) data = await codec.decompress(data)
+  }
+  try {
+    return { entries: await readTar(data), failure, notices: [] }
+  } catch (err) {
+    if (failure === null) throw err
+    return { entries: [], failure, notices: data.byteLength >= 512 ? [...INVALID_ARCHIVE] : [] }
+  }
+}
+
+/**
+ * tar's stderr when its gzip child fails: gzip's own lines, what tar printed
+ * meanwhile, then tar's two fatal lines. The run exits 2, and the child's
+ * failure outranks every member that was not found. Mirrors Python's
+ * _child_failure.
+ */
+function childFailure(failure: GzipDataError, lines: readonly string[]): Uint8Array {
+  const status = CHILD_STATUS.replace('{}', String(failure.exitCode))
+  return ENC.encode(
+    failure.render('gzip', 'stdin') + [...lines, status, FATAL_TRAILER].join('\n') + '\n',
+  )
 }
 
 function stderrOf(lines: readonly string[]): Uint8Array | null {
@@ -171,8 +209,7 @@ function stderrOf(lines: readonly string[]): Uint8Array | null {
 
 async function writeArchive(
   plan: CreateResult,
-  archivePath: string,
-  mountPrefix: string,
+  archivePath: PathSpec,
   compression: Compression,
   verbose: boolean,
   deps: TarDeps,
@@ -212,26 +249,31 @@ async function writeArchive(
   if (exitCode !== 0) notices.push(ERROR_TRAILER)
   const raw = await writeTar(entries)
   const archive = await compress(raw, compression)
-  await deps.write(makePathSpec(archivePath, mountPrefix), archive)
+  try {
+    await deps.write(archivePath, archive)
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    // GNU opens the archive before it reads a member, so an archive it
+    // cannot create is the whole run's one fatal line.
+    const stderr = stderrOf([
+      `tar: ${archivePath.rawPath}: Cannot open: ${String(fsStrerror(err))}`,
+      FATAL_TRAILER,
+    ])
+    return [
+      null,
+      new IOResult({ exitCode: CREATE_ERROR_EXIT, ...(stderr !== null ? { stderr } : {}) }),
+    ]
+  }
   const stderr = stderrOf(notices)
   const stdout = verbose && names.length > 0 ? ENC.encode(`${names.join('\n')}\n`) : null
   return [
     stdout,
     new IOResult({
-      writes: { [archivePath]: archive },
+      writes: { [archivePath.virtual]: archive },
       exitCode,
       ...(stderr !== null ? { stderr } : {}),
     }),
   ]
-}
-
-// Whether a tar invocation writes: -c writes the archive and -x its members,
-// while -t only lists them and -x -O extracts to stdout. The modes are read
-// in tar's own order, create before list before extract. Mirrors Python's
-// tar_writes.
-export const tarWrites: WritesFn = (flags) => {
-  const fl = new FlagView(flags, specOf('tar'))
-  return fl.asBool('c') || (fl.asBool('x') && !fl.asBool('t') && !fl.asBool('to_stdout'))
 }
 
 export async function tarGeneric(
@@ -256,6 +298,9 @@ export async function tarGeneric(
   }
   const fFlag = fl.asStr('f') ?? null
   const CFlags = fl.asList('C')
+  // The words that spelled -f and each -C, for the lines that name them.
+  const archiveTyped = fl.asPaths('f')[0]?.rawPath
+  const CTyped = fl.asPaths('C').map((c) => c.rawPath)
   // Only the last -C is a destination; create checks every one.
   const CFlag = CFlags.length > 0 ? (CFlags[CFlags.length - 1] ?? null) : null
   const stripN = fl.asInt('strip_components') ?? 0
@@ -271,14 +316,15 @@ export async function tarGeneric(
     if (archivePath === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
+    const archiveSpec = makePathSpec(archivePath, mountPrefix, archiveTyped)
     const plan = await planCreate(paths, {
-      archive: makePathSpec(archivePath, mountPrefix),
+      archive: archiveSpec,
       exclude,
       dereference: fl.asBool('h'),
       stat: deps.stat,
       walk: deps.walk,
       isDir: deps.isDir,
-      directories: CFlags.map((c) => makePathSpec(c, mountPrefix)),
+      directories: CFlags.map((c, index) => makePathSpec(c, mountPrefix, CTyped[index])),
       links: opts.ns?.links ?? null,
       mounts: opts.ns?.mounts ?? null,
     })
@@ -292,7 +338,7 @@ export async function tarGeneric(
         }),
       ]
     }
-    return writeArchive(plan, archivePath, mountPrefix, compression, verbose, deps)
+    return writeArchive(plan, archiveSpec, compression, verbose, deps)
   }
 
   if (list) {
@@ -300,12 +346,14 @@ export async function tarGeneric(
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
     const raw = await materialize(deps.stream(makePathSpec(archivePath, mountPrefix)))
-    const data = await decompress(raw, compression)
-    const entries = await readTar(data)
+    const { entries, failure, notices } = await readArchive(raw, compression)
     const names = entries.map((e) => (e.isDir === true ? `${rstripSlash(e.name)}/` : e.name))
     const { keep, misses } = selectedMembers(names, selectors)
     const shown = names.filter((_, index) => keep.has(index))
     const out: ByteSource | null = shown.length > 0 ? ENC.encode(shown.join('\n') + '\n') : null
+    if (failure !== null) {
+      return [out, new IOResult({ exitCode: 2, stderr: childFailure(failure, notices) })]
+    }
     if (misses.length > 0) {
       const missStderr = stderrOf([...misses, ERROR_TRAILER])
       return [
@@ -324,14 +372,16 @@ export async function tarGeneric(
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
     const raw = await materialize(deps.stream(makePathSpec(archivePath, mountPrefix)))
-    const data = await decompress(raw, compression)
+    const { entries, failure, notices } = await readArchive(raw, compression)
     const writes: Record<string, Uint8Array> = {}
-    const entries = await readTar(data)
     const listed = entries.map((e) => (e.isDir === true ? `${rstripSlash(e.name)}/` : e.name))
     const { keep, misses } = selectedMembers(listed, selectors)
-    const notices: string[] = []
     const made = new Set<string>()
     const chunks: Uint8Array[] = []
+    // A member GNU cannot create (a read-only region, a missing op) is
+    // reported by its own name and the run goes on to the next one,
+    // closing with the one trailer and exit 2.
+    let failed = false
     const toSpec = (virtual: string): PathSpec => makePathSpec(virtual, mountPrefix)
     for (const [index, entry] of entries.entries()) {
       if (!keep.has(index)) continue
@@ -350,7 +400,14 @@ export async function tarGeneric(
           const parts = outParts(entry.name, stripN, notices)
           if (parts.length > 0) {
             const outDir = `${rstripSlash(destPath)}/${parts.join('/')}`
-            await ensureDir(outDir, toSpec, deps.mkdir, deps.stat, made)
+            try {
+              await ensureDir(outDir, toSpec, deps.mkdir, deps.stat, made)
+            } catch (err) {
+              if (!isFsError(err)) throw err
+              notices.push(`tar: ${parts.join('/')}: Cannot mkdir: ${String(fsStrerror(err))}`)
+              failed = true
+              continue
+            }
             if (verbose) verboseLines.push(`${rstripSlash(entry.name)}/`)
           }
         }
@@ -365,8 +422,29 @@ export async function tarGeneric(
       if (parts.length === 0) continue
       const outPath = `${rstripSlash(destPath)}/${parts.join('/')}`
       const parent = outPath.slice(0, outPath.lastIndexOf('/')) || '/'
-      if (parent !== '/') await ensureDir(parent, toSpec, deps.mkdir, deps.stat, made)
-      await deps.write(makePathSpec(outPath, mountPrefix), entry.data)
+      if (parent !== '/') {
+        try {
+          await ensureDir(parent, toSpec, deps.mkdir, deps.stat, made)
+        } catch (err) {
+          if (!isFsError(err)) throw err
+          // GNU tar 1.35 (debian:stable-slim) reports ENOENT for the
+          // member after its parent mkdir failed.
+          notices.push(
+            `tar: ${parts.slice(0, -1).join('/')}: Cannot mkdir: ${String(fsStrerror(err))}`,
+            `tar: ${parts.join('/')}: Cannot open: No such file or directory`,
+          )
+          failed = true
+          continue
+        }
+      }
+      try {
+        await deps.write(makePathSpec(outPath, mountPrefix), entry.data)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        notices.push(`tar: ${parts.join('/')}: Cannot open: ${String(fsStrerror(err))}`)
+        failed = true
+        continue
+      }
       // Relay writes land on whichever mount owns each path and
       // invalidate through the dispatcher; keying them here would have
       // the runner prefix them onto this mount.
@@ -383,11 +461,14 @@ export async function tarGeneric(
         merged.set(chunk, offset)
         offset += chunk.byteLength
       }
-      const errLines = [
-        ...notices,
-        ...(verbose ? verboseLines : []),
-        ...(misses.length > 0 ? [...misses, ERROR_TRAILER] : []),
-      ]
+      const errLines = [...notices, ...(verbose ? verboseLines : [])]
+      if (failure !== null) {
+        return [
+          merged.byteLength > 0 ? merged : null,
+          new IOResult({ exitCode: 2, stderr: childFailure(failure, errLines) }),
+        ]
+      }
+      if (misses.length > 0) errLines.push(...misses, ERROR_TRAILER)
       const stderr = stderrOf(errLines)
       return [
         merged.byteLength > 0 ? merged : null,
@@ -399,13 +480,19 @@ export async function tarGeneric(
     }
     const stdout =
       verbose && verboseLines.length > 0 ? ENC.encode(verboseLines.join('\n') + '\n') : null
-    const errLines = [...notices, ...(misses.length > 0 ? [...misses, ERROR_TRAILER] : [])]
+    if (failure !== null) {
+      return [stdout, new IOResult({ writes, exitCode: 2, stderr: childFailure(failure, notices) })]
+    }
+    const errLines = [
+      ...notices,
+      ...(misses.length > 0 || failed ? [...misses, ERROR_TRAILER] : []),
+    ]
     const stderr = stderrOf(errLines)
     return [
       stdout,
       new IOResult({
         writes,
-        exitCode: misses.length > 0 ? 2 : 0,
+        exitCode: misses.length > 0 || failed ? 2 : 0,
         ...(stderr !== null ? { stderr } : {}),
       }),
     ]

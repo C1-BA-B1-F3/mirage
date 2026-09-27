@@ -249,3 +249,33 @@ Acting on Slack (sending, reacting, pins, member info, search) goes
 through the [slack CLI](/python/cli/slack) when installed; the mounted
 tree stays read-oriented. The `<name>__<id>` path segments supply the
 channel and user IDs the CLI flags take.
+
+## Time scope
+
+Set `start_time` and/or `end_time` in the mount's YAML `config` (or pass
+`start_time`/`end_time` to Python; `startTime`/`endTime` to the TypeScript
+constructor). Bounds are RFC3339 timestamps with an explicit timezone and
+at most millisecond precision. Start is inclusive; end is exclusive.
+An omitted or null bound is open. Start must precede end.
+
+```yaml
+mounts:
+  /history:
+    vfs: slack
+    mode: read
+    config:
+      token: "<bot-token>"
+      start_time: "2026-06-01T10:00:00Z"
+      end_time: "2026-06-02T00:00:00Z"
+```
+
+With a bound configured, channel listings cover the selected period rather
+than the default recent window. Day directories use UTC. Messages are selected
+by creation time, and attachments follow their parent messages. Direct paths,
+`stat`, date globs, and `grep`/`rg` cannot escape the scope. Scoped searches scan
+the filtered files instead of using unrestricted provider search. User/member
+and channel/server metadata remain visible as context.
+
+These settings apply to the VFS, not to separately installed account CLIs.
+`mode: read` prevents mount writes; it does not freeze upstream edits or deletions.
+Rebuild/remount the VFS to change its scope so cached listings and bytes are cleared.

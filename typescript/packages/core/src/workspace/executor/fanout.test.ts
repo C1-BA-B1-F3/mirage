@@ -658,7 +658,7 @@ describe('ls -R across a mount boundary', () => {
     const out = await runLine(mounts, 'ls -aRF /')
     expect(
       out.startsWith(
-        '/:\n.bash_history\ndev/\ntop.txt\nusr/\n\n/usr:\nbin/\n\n/dev:\nnull\nzero\n\n',
+        '/:\n./\n../\n.bash_history\ndev/\ntop.txt\nusr/\n\n/usr:\n./\n../\nbin/\n\n/dev:\n./\n../\nnull\nzero\n\n',
       ),
     ).toBe(true)
     expect(out.split('.bash_history').length).toBe(2)
@@ -775,5 +775,22 @@ describe('fanOutTraversal context across a nested mount', () => {
     expect(await runLine(line)).toBe(
       '/base/top.txt:hit\n/base/top.txt-y\n--\n/base/inner/real.txt:hit\n/base/inner/real.txt-z\n',
     )
+  })
+  it.each([
+    ['--sort path -l', '/base/inner/real.txt\n/base/top.txt\n'],
+    ['--sortr path -l', '/base/top.txt\n/base/inner/real.txt\n'],
+    ['--sort path -I', 'hit\nhit\n'],
+    ['-d 1 -l', '/base/top.txt\n'],
+    ['-d 2 --sort path -l', '/base/inner/real.txt\n/base/top.txt\n'],
+    ['--sort path --heading', '/base/inner/real.txt\nhit\n\n/base/top.txt\nhit\n'],
+    [
+      '--sort path -A1',
+      '/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n/base/top.txt:hit\n/base/top.txt-y\n',
+    ],
+    ["--type-add 'foo:*.txt' --type-clear foo --type-add 'foo:*.py' -t foo -l", ''],
+    ['-t txt -T txt -t txt --sort path -l', '/base/inner/real.txt\n/base/top.txt\n'],
+    ['-t txt -T txt -t txt -l', '/base/top.txt\n/base/inner/real.txt\n'],
+  ])('applies rg %s across the whole tree', async (options, expected) => {
+    expect(await runLine(`rg ${options} hit /base`)).toBe(expected)
   })
 })

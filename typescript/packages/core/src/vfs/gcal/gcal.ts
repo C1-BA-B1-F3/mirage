@@ -41,7 +41,7 @@ export class GCalVFS extends BoundVFS<GCalAccessor> implements VFS {
   // people and a day-long index would keep serving a schedule that has
   // already moved.
   override readonly indexTtl: number = 300
-  readonly prompt: string = GCAL_PROMPT
+  readonly prompt: string
   readonly writePrompt: string = GCAL_WRITE_PROMPT
   readonly config: GCalConfig
   readonly accessor: GCalAccessor
@@ -51,6 +51,7 @@ export class GCalVFS extends BoundVFS<GCalAccessor> implements VFS {
     this.config = config
     const tm = new TokenManager(config)
     this.accessor = new GCalAccessor({ tokenManager: tm, config })
+    this.prompt = GCAL_PROMPT + this.accessor.timeRange.prompt()
   }
 
   commands(): readonly RegisteredCommand[] {

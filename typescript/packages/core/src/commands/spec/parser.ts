@@ -21,6 +21,7 @@ import {
   ARG_PLACEHOLDER,
   ARGMATCH_CHOICE_OPTIONS,
   DIGIT_OPTIONS,
+  EQUALS_SHORT_VALUES,
   FLOAT_VALUE,
   flagKwargName,
   INT_VALUE,
@@ -31,7 +32,7 @@ import {
 } from './constants.ts'
 import { flagOccurrences } from './flag_view.ts'
 import { expandOldStyle } from './oldstyle.ts'
-import type { CommandSpec, Option, ValueType, FlagValue } from './types.ts'
+import type { CommandSpec, Option, ValueType, ParsedFlagValue } from './types.ts'
 
 /**
  * The builtin `Option` objects whose choices are gnulib ARGMATCH tables.
@@ -91,8 +92,9 @@ function argmatchDests(spec: CommandSpec): ReadonlySet<string> {
 }
 
 export interface ParsedArgsInit {
-  flags: Record<string, FlagValue>
+  flags: Record<string, ParsedFlagValue>
   args: [string, ValueType][]
+  rawPathFlags?: Record<string, ParsedFlagValue>
   pathFlagValues?: string[]
   rawOperands?: [string, ValueType][]
   textFlagValues?: string[]
@@ -135,8 +137,10 @@ export interface ParsedArgsInit {
 }
 
 export class ParsedArgs {
-  readonly flags: Record<string, FlagValue>
+  readonly flags: Record<string, ParsedFlagValue>
   readonly args: [string, ValueType][]
+  /** Selected PATH option values before cwd resolution, keyed like parseToKwargs. */
+  readonly rawPathFlags: Record<string, ParsedFlagValue>
   readonly pathFlagValues: string[]
   readonly rawOperands: [string, ValueType][]
   readonly textFlagValues: string[]
@@ -188,6 +192,7 @@ export class ParsedArgs {
   constructor(init: ParsedArgsInit) {
     this.flags = init.flags
     this.args = init.args
+    this.rawPathFlags = init.rawPathFlags ?? {}
     this.pathFlagValues = init.pathFlagValues ?? []
     this.rawOperands = init.rawOperands ?? []
     this.textFlagValues = init.textFlagValues ?? []
@@ -307,7 +312,7 @@ function checkValue(
 // names `bad1`. Only what the environment or a default fills in afterwards
 // is checked after the scan.
 function setValueFlag(
-  flags: Record<string, FlagValue>,
+  flags: Record<string, ParsedFlagValue>,
   refusals: Refusals,
   cs: CompiledSpec,
   argmatchDestSet: ReadonlySet<string>,
@@ -333,7 +338,7 @@ function setValueFlag(
 // The values the bag holds for one dest. The bare boolean form of an
 // optional-value flag is exempt from the per-value checks, so it reads as
 // no value at all.
-function bagValues(flags: Record<string, FlagValue>, destName: string): string[] {
+function bagValues(flags: Record<string, ParsedFlagValue>, destName: string): string[] {
   const value = flags[destName]
   if (Array.isArray(value)) return value
   return typeof value === 'string' ? [value] : []
@@ -368,7 +373,11 @@ function rebase(
 // Record a boolean flag occurrence under its canonical dest. A count flag
 // accumulates occurrences into a number (`-vvv` and `-v -v -v` both land
 // as 3); every other boolean flag is sticky true.
-function setBoolFlag(flags: Record<string, FlagValue>, cs: CompiledSpec, spelling: string): void {
+function setBoolFlag(
+  flags: Record<string, ParsedFlagValue>,
+  cs: CompiledSpec,
+  spelling: string,
+): void {
   const name = cs.destOf(spelling)
   flagOccurrences(flags).push([name, true])
   if (cs.countDests.has(name)) {
@@ -391,6 +400,12 @@ interface MixedCluster {
 // cluster as its value, as getopt does, so `date -uIs` is `-u -Is`; with
 // nothing after it, it is one more bool flag. Returns null when any character
 // is unknown or no value flag terminates it.
+// An attached short-option value, one leading `=` dropped for a program that
+// reads `-x=VALUE` as `VALUE` (EQUALS_SHORT_VALUES).
+function attached(value: string, equals: boolean): string {
+  return equals && value.startsWith('=') ? value.slice(1) : value
+}
+
 function matchMixedCluster(tok: string, cs: CompiledSpec): MixedCluster | null {
   const bools: string[] = []
   const chars = tok.slice(1)
@@ -482,7 +497,7 @@ export function parseCommand(
   const scanArgv = old !== null ? old.argv : argv
   const scanOrigins = old !== null ? old.origins : argv.map((_, idx) => idx)
 
-  const flags: Record<string, FlagValue> = {}
+  const flags: Record<string, ParsedFlagValue> = {}
   // Every scalar value-flag occurrence, in scan order, beside the bag that
   // keeps only the last of each. Appended to by setValueFlag and read by
   // nobody here: it leaves on the parse result.
@@ -526,6 +541,7 @@ export function parseCommand(
   let outsideSoleArgument: boolean
   let lenientDashOperands: boolean
   let digitOptions: boolean
+  let equalsValues: boolean
   const synonyms = new Map<string, string>()
   if (unknownIsOperand) {
     // Where the word goes is still the grammar's to say: it lands in a textual
@@ -539,6 +555,7 @@ export function parseCommand(
     noLongOptionParser = lenientDashOperands
     outsideSoleArgument = false
     digitOptions = false
+    equalsValues = false
   } else {
     // getopt_long, with exactly two exceptions, both named rather than derived
     // from the spec because nothing in a declaration tells them apart: see
@@ -564,6 +581,7 @@ export function parseCommand(
     // Gated the same way: the digit letters and the synonym pairs are the real
     // program's own tables, not facts any declaration states.
     digitOptions = builtin && DIGIT_OPTIONS.has(cmdName)
+    equalsValues = builtin && EQUALS_SHORT_VALUES.has(cmdName)
     if (builtin) {
       for (const [key, same] of LONG_SYNONYMS) {
         const [name, spelling] = key.split(' ')
@@ -743,8 +761,9 @@ export function parseCommand(
           break
         }
         if (tok.startsWith(vf) && tok.length > vf.length) {
-          setValueFlag(flags, refusals, cs, argmatchDestSet, vf, tok.slice(vf.length))
-          base = rebase(flags, cs, vf, tok.slice(vf.length), base)
+          const attachedValue = attached(tok.slice(vf.length), equalsValues)
+          setValueFlag(flags, refusals, cs, argmatchDestSet, vf, attachedValue)
+          base = rebase(flags, cs, vf, attachedValue, base)
           i += 1
           matchedValue = true
           break
@@ -786,9 +805,10 @@ export function parseCommand(
       const mixed = matchMixedCluster(tok, cs)
       if (mixed !== null) {
         if (mixed.attached !== null) {
+          const attachedValue = attached(mixed.attached, equalsValues)
           for (const name of mixed.bools) setBoolFlag(flags, cs, name)
-          setValueFlag(flags, refusals, cs, argmatchDestSet, mixed.valueFlag, mixed.attached)
-          base = rebase(flags, cs, mixed.valueFlag, mixed.attached, base)
+          setValueFlag(flags, refusals, cs, argmatchDestSet, mixed.valueFlag, attachedValue)
+          base = rebase(flags, cs, mixed.valueFlag, attachedValue, base)
           i += 1
           continue
         }
@@ -948,10 +968,12 @@ export function parseCommand(
     if (origIdx !== undefined && origIdx >= 0) wordKinds[origIdx] = kind
   }
 
+  const rawPathFlags: Record<string, ParsedFlagValue> = {}
   const pathFlagValues: string[] = []
   for (const [flagName, kind] of cs.kindByDest) {
     if (kind !== 'path' || !(flagName in flags)) continue
     const val = flags[flagName]
+    if (val !== undefined) rawPathFlags[flagKwargName(flagName)] = val
     if (Array.isArray(val) && cs.pairDests.has(flagName)) {
       // Only the odd slots are the paths: the even ones name them.
       const paired = val.map((part, index) => (index % 2 ? resolvePath(part, cwd) : part))
@@ -968,6 +990,7 @@ export function parseCommand(
       flags[flagName] = resolvedList
       pathFlagValues.push(...resolvedList)
     } else if (typeof val === 'string') {
+      if (cmdName === 'wget' && flagName === '-O' && val === '-') continue
       const resolved = resolvePath(val, cwd)
       flags[flagName] = resolved
       pathFlagValues.push(resolved)
@@ -987,12 +1010,17 @@ export function parseCommand(
 
   for (const occurrence of flagOccurrences(flags)) {
     const [name, value] = occurrence
-    if (cs.kindByDest.get(name) === 'path' && typeof value === 'string')
+    if (
+      cs.kindByDest.get(name) === 'path' &&
+      typeof value === 'string' &&
+      !(cmdName === 'wget' && name === '-O' && value === '-')
+    )
       occurrence[1] = resolvePath(value, cwd)
   }
   return new ParsedArgs({
     flags,
     args: classified,
+    rawPathFlags,
     pathFlagValues,
     rawOperands,
     textFlagValues,
@@ -1014,13 +1042,13 @@ export function parseCommand(
   })
 }
 
-export function parseToKwargs(parsed: ParsedArgs): Record<string, FlagValue> {
-  const result: Record<string, FlagValue> = {}
+export function parseToKwargs(parsed: ParsedArgs): Record<string, ParsedFlagValue> {
+  const result: Record<string, ParsedFlagValue> = {}
   for (const [key, value] of Object.entries(parsed.flags)) {
     result[flagKwargName(key)] = value
   }
   flagOccurrences(result).push(
-    ...flagOccurrences(parsed.flags).map(([name, value]): [string, FlagValue] => [
+    ...flagOccurrences(parsed.flags).map(([name, value]): [string, ParsedFlagValue] => [
       flagKwargName(name),
       value,
     ]),

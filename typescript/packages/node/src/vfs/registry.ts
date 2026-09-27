@@ -201,7 +201,7 @@ const REGISTRY: Record<string, VFSFactory> = {
   },
   slack: async (config) => {
     const { SlackVFS } = await import('./slack/slack.ts')
-    const { normalizeSlackConfig } = await import('@struktoai/mirage-core/core/slack/config')
+    const { normalizeSlackConfig } = await import('@struktoai/mirage-core/vfs/slack/config')
     return new SlackVFS(normalizeSlackConfig(config))
   },
   ssh: async (config) => {
@@ -216,7 +216,7 @@ const REGISTRY: Record<string, VFSFactory> = {
   },
   discord: async (config) => {
     const { DiscordVFS } = await import('./discord/discord.ts')
-    const { normalizeDiscordConfig } = await import('@struktoai/mirage-core/core/discord/config')
+    const { normalizeDiscordConfig } = await import('@struktoai/mirage-core/vfs/discord/config')
     return new DiscordVFS(normalizeDiscordConfig(config))
   },
   trello: async (config) => {

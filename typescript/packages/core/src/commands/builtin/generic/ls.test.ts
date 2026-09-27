@@ -681,7 +681,7 @@ describe('honest per-entry errors', () => {
   it('keeps a ? row and reports the entry when the listing needs its stat', async () => {
     const { code, stdout, stderr } = await run({ args_l: true }, stamped('/apple.txt', 'ENOENT'))
     expect(code).toBe(LS_MINOR_PROBLEM)
-    expect(stdout.split('\n')[2]).toBe('?????????? ? ? ? ?            ? apple.txt')
+    expect(stdout.split('\n')[3]).toBe('?????????? ? ? ? ?            ? apple.txt')
     expect(stderr).toBe("ls: cannot access '/apple.txt': No such file or directory\n")
   })
 
@@ -897,7 +897,7 @@ describe('lsGeneric columns and time styles', () => {
   it('-g -o drop the owner and group, -i and -Z lead with ?', async () => {
     expect(
       await line({ g: true, o: true, inode: true, context: true, time_style: 'long-iso' }),
-    ).toBe('? -rw-r--r-- 1 ? 42 2025-01-15 10:30 a.txt\n')
+    ).toBe('total ?\n? -rw-r--r-- 1 ? 42 2025-01-15 10:30 a.txt\n')
     expect(await line({ inode: true, context: true })).toBe('? ? a.txt\n')
   })
 
@@ -909,16 +909,16 @@ describe('lsGeneric columns and time styles', () => {
     ['+%Y\n%H:%M', '2025'],
   ])('--time-style=%s spells an old time as GNU does', async (style, expected) => {
     expect(await line({ g: true, o: true, time_style: style })).toBe(
-      `-rw-r--r-- 1 42 ${expected} a.txt\n`,
+      `total ?\n-rw-r--r-- 1 42 ${expected} a.txt\n`,
     )
   })
 
   it('--block-size scales and rounds up', async () => {
     expect(await line({ g: true, o: true, block_size: 'K', time_style: '+x' })).toBe(
-      '-rw-r--r-- 1 1K x a.txt\n',
+      'total ?\n-rw-r--r-- 1 1K x a.txt\n',
     )
     expect(await line({ g: true, o: true, block_size: '4', time_style: '+x' })).toBe(
-      '-rw-r--r-- 1 11 x a.txt\n',
+      'total ?\n-rw-r--r-- 1 11 x a.txt\n',
     )
   })
 
@@ -1199,4 +1199,63 @@ describe('ls --block-size refusals are worded as GNU words them', () => {
     expect((caught as UsageError).message).toBe(message)
     expect((caught as UsageError).exitCode).toBe(2)
   })
+})
+
+describe('dot entries respect mount boundaries', () => {
+  for (const prefix of ['', '/data', '/nested/data']) {
+    for (const subdir of [false, true]) {
+      it.each([false, true])(
+        `prefix=${prefix} subdir=${String(subdir)} namespace=%s`,
+        async (namespace) => {
+          const root = prefix || '/'
+          const directory = subdir ? `${prefix}/sub` : root
+          const tree = new Map([
+            [root, new FileStat({ name: 'root', type: FileType.DIRECTORY, mode: 0o751 })],
+            [`${prefix}/sub`, new FileStat({ name: 'sub', type: FileType.DIRECTORY, mode: 0o750 })],
+          ])
+          const backendStat = vi.fn((path: PathSpec): Promise<FileStat> => {
+            const row = tree.get(path.virtual)
+            if (row === undefined) throw new Error(`out-of-mount stat: ${path.virtual}`)
+            expect(path.vfsPath).toBe(mountKey(path.virtual, prefix))
+            return Promise.resolve(row)
+          })
+          const read = (path: PathSpec): Promise<string[]> =>
+            Promise.resolve(path.virtual === root ? [`${prefix}/sub`] : [])
+          const statPath = vi.fn(
+            (path: string): Promise<FileStat> =>
+              Promise.resolve(
+                tree.get(path) ??
+                  new FileStat({
+                    name: 'parent',
+                    type: FileType.DIRECTORY,
+                    mode: 0o700,
+                  }),
+              ),
+          )
+          const options = opts({ all: true, args_l: true })
+          if (namespace) options.statPath = statPath
+          const result = await lsGeneric(
+            [new PathSpec({ virtual: directory, directory, vfsPath: subdir ? 'sub' : '' })],
+            options,
+            read,
+            backendStat,
+          )
+          expect(result?.[1].exitCode).toBe(0)
+          expect(result?.[1].stderr).toBeNull()
+          const output = DEC.decode(result?.[0] as Uint8Array)
+          const dotMode = subdir ? 'drwxr-x---' : 'drwxr-x--x'
+          const parentMode =
+            subdir || !prefix ? 'drwxr-x--x' : namespace ? 'drwx------' : 'drwxr-xr-x'
+          expect(output).toContain(`${dotMode} 1 - - 4096 - .\n`)
+          expect(output).toContain(`${parentMode} 1 - - 4096 - ..\n`)
+          if (namespace) {
+            const parent = subdir ? root : root.slice(0, root.lastIndexOf('/')) || '/'
+            expect(statPath.mock.calls.slice(-2)).toEqual([[directory], [parent]])
+          } else {
+            expect(backendStat).toHaveBeenCalled()
+          }
+        },
+      )
+    }
+  }
 })

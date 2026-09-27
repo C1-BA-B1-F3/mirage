@@ -56,6 +56,8 @@ logger = logging.getLogger(__name__)
 # was widened the same way. Reporting messages the line did not ask for is not
 # a better failure than dropping an operand. One operand or the generic scan.
 SEARCH_HONORED = ("w", )
+# rg spells the same flag by its long name.
+RG_SEARCH_HONORED = ("word_regexp", )
 SEARCH_MAX_RESULTS = 100
 
 
@@ -80,7 +82,7 @@ async def grep(accessor: DiscordAccessor, paths: list[PathSpec],
     operand = pushdown_operand(paths, opts.flags, pattern, SEARCH_HONORED)
     if pattern is not None and operand is not None and fl.as_bool("w"):
         match = detect_scope(operand)
-        if match.kind in NATIVE_KINDS:
+        if not accessor.time_range.bounded and match.kind in NATIVE_KINDS:
             guild_id = match.slots["guild_id"]
             try:
                 msgs = await search_guild(

@@ -401,6 +401,10 @@ export async function handleCommand(
         sharedSpec !== undefined ? registeredSpec(cmdName, sharedSpec) : null,
         cmdName,
         session.cwd,
+        undefined,
+        false,
+        undefined,
+        true,
       )
     const csFlags = csParsed.flagKwargs
     const csTexts = findExprTokens ?? csParsed.texts
@@ -456,6 +460,7 @@ export async function handleCommand(
       ensureOpen,
       csStat,
       mergeSignals(signal, session.abortSignal),
+      dispatch,
     )
     const [csStdout0, csIo, csExec] = await handleCrossMount(
       cmdName,
@@ -624,6 +629,7 @@ export async function handleCommand(
       singleNs,
       singleStat,
       mergeSignals(signal, session.abortSignal),
+      dispatch,
     )
     let fanOut = fanOut0
     if (cmdName === 'find') {

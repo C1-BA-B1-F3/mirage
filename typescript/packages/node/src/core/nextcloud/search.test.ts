@@ -7,6 +7,7 @@ import { searchFiles, supportsQuery, type Bounds } from './search/index.ts'
 import { SEARCH_PAGE_SIZE } from './search/constants.ts'
 import { globToLike, requestBody } from './search/query.ts'
 import { relativePath, searchTarget } from './search/target.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 const NAME_TXT: PredNode = { op: 'name', pattern: '*.txt', icase: false }
 const NAME_NOTES: PredNode = { op: 'name', pattern: 'notes.txt', icase: false }
@@ -16,7 +17,7 @@ const DIRECTORY: PredNode = { op: 'type', kind: 'd' }
 function multistatus(paths: { href: string; directory?: boolean }[]): string {
   const responses = paths
     .map(({ href, directory }) => {
-      const name = href.replace(/\/+$/, '').split('/').pop() ?? ''
+      const name = rstripSlash(href).split('/').pop() ?? ''
       const resourceType = directory === true ? '<d:collection/>' : ''
       return `<d:response><d:href>${href}</d:href><d:propstat><d:prop><d:displayname>${name}</d:displayname><d:resourcetype>${resourceType}</d:resourcetype><d:getcontentlength>42</d:getcontentlength><oc:size>42</oc:size><d:getlastmodified>Sat, 11 Jul 2026 12:00:00 GMT</d:getlastmodified></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`
     })

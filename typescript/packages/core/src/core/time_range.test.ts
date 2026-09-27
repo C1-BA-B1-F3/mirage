@@ -1,0 +1,95 @@
+import { describe, expect, it } from 'vitest'
+import type { ScopeMatch } from './hierarchy/scope.ts'
+import { guardDay, parseTime, TimeRange } from './time_range.ts'
+
+const JUNE_1 = Date.parse('2026-06-01T00:00:00Z') / 1000
+const JUNE_2 = Date.parse('2026-06-02T00:00:00Z') / 1000
+
+function dayMatch(day: string): ScopeMatch {
+  return { kind: 'day', vfsPath: `/c/${day}`, slots: { day }, scope: null, pattern: null }
+}
+
+describe('parseTime', () => {
+  it('honors the offset and milliseconds', () => {
+    expect(parseTime('2026-06-01T00:00:00Z')).toBe(JUNE_1)
+    expect(parseTime('2026-06-01T08:00:00+08:00')).toBe(JUNE_1)
+    expect(parseTime('2026-06-01T00:00:00.250Z')).toBe(JUNE_1 + 0.25)
+  })
+
+  it.each([
+    '2026-06-01',
+    '2026-06-01T00:00:00',
+    '2026-06-01T00:00:00.000001Z',
+    '2026-06-01T24:00:00Z',
+    '2026-02-30T00:00:00Z',
+    '2026-06-01T00:00:00+24:00',
+    '2026-06-01T00:00:00+01:60',
+  ])('refuses %s', (value) => {
+    expect(() => parseTime(value)).toThrow()
+  })
+})
+
+describe('TimeRange', () => {
+  it('is bounded by either end', () => {
+    expect(new TimeRange().bounded).toBe(false)
+    expect(new TimeRange('2026-06-01T00:00:00Z', null).bounded).toBe(true)
+    expect(new TimeRange(null, '2026-06-01T00:00:00Z').bounded).toBe(true)
+  })
+
+  it('clips to the overlap', () => {
+    const scope = new TimeRange('2026-06-01T01:00:00Z', '2026-06-02T00:00:00Z')
+    expect(scope.clip(JUNE_1, JUNE_2 + 3600)).toEqual([JUNE_1 + 3600, JUNE_2])
+    expect(new TimeRange().clip(JUNE_1, JUNE_2)).toEqual([JUNE_1, JUNE_2])
+  })
+
+  it('clips a partial day', () => {
+    const scope = new TimeRange('2026-06-01T01:00:00Z', '2026-06-02T02:00:00Z')
+    expect(scope.dayBounds('2026-06-01')).toEqual([JUNE_1 + 3600, JUNE_2])
+    expect(scope.dayBounds('2026-06-02')).toEqual([JUNE_2, JUNE_2 + 7200])
+  })
+
+  it('refuses a day outside the scope', () => {
+    const scope = new TimeRange('2026-06-01T01:00:00Z', '2026-06-02T00:00:00Z')
+    expect(() => {
+      scope.requireDay('2026-06-01', '/slack/channels/c/2026-06-01')
+    }).not.toThrow()
+    expect(() => {
+      scope.requireDay('2026-06-02', '/slack/channels/c/2026-06-02')
+    }).toThrow(expect.objectContaining({ code: 'ENOENT' }))
+    expect(() => {
+      scope.requireDay('2026-05-31', '/slack/channels/c/2026-05-31')
+    }).toThrow()
+  })
+
+  it('stops listing before an exclusive midnight end', () => {
+    const scope = new TimeRange('2026-05-31T23:59:59Z', '2026-06-02T00:00:00Z')
+    expect(scope.listingDays('2026-05-01', '2026-06-30')).toEqual(['2026-05-31', '2026-06-01'])
+  })
+
+  it('clips a listing to a glob span', () => {
+    const scope = new TimeRange(null, '2026-06-02T00:00:00Z')
+    expect(scope.listingDays('2026-01-01', '2026-06-30', ['2026-05-30', '2026-06-01'])).toEqual([
+      '2026-05-30',
+      '2026-05-31',
+    ])
+  })
+
+  it('states both ends in its prompt', () => {
+    expect(new TimeRange().prompt()).toContain('start_time=unbounded')
+    const prompt = new TimeRange('2026-06-01T00:00:00Z', null).prompt()
+    expect(prompt).toContain('start_time=2026-06-01T00:00:00.000Z (inclusive)')
+    expect(prompt).toContain('end_time=unbounded (exclusive)')
+  })
+})
+
+describe('guardDay', () => {
+  it('reads the day slot', async () => {
+    const accessor = { timeRange: new TimeRange('2026-06-01T00:00:00Z', '2026-06-02T00:00:00Z') }
+    await expect(guardDay(accessor, dayMatch('2026-06-01'), '/m/c/2026-06-01')).resolves.toBe(
+      undefined,
+    )
+    expect(() => guardDay(accessor, dayMatch('2026-06-02'), '/m/c/2026-06-02')).toThrow(
+      expect.objectContaining({ code: 'ENOENT' }),
+    )
+  })
+})

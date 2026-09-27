@@ -27,7 +27,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mktemp -p /data/arch | wc -l",
+      "command": "mkdir -p /data/arch && mktemp -p /data/arch | wc -l",
       "expect": {
         "exit": 0,
         "stdout": "1\n",

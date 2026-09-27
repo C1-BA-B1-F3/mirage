@@ -23,7 +23,7 @@ import { ANNOUNCE_RE } from '../kit/typescript/announce.ts'
 import { start } from '../kit/typescript/serve.ts'
 import { DEFAULT_RUN, DEFAULT_TENANT } from '../kit/typescript/tenant.ts'
 import type { JsonValue } from '../kit/typescript/types.ts'
-import { gwsFake } from './fake.ts'
+import { gwsFake, gwsRoutes } from './fake.ts'
 import { cachedState, dropState, withState } from './store/cache.ts'
 import { loadState } from './store/load.ts'
 import { saveState } from './store/save.ts'
@@ -31,7 +31,7 @@ import { saveState } from './store/save.ts'
 import { parseDriveQuery, matchQuery } from './drive/query.ts'
 import { createDriveItem } from './drive/item.ts'
 import { GwsState } from './store/state.ts'
-import { newTab } from './sheets/grid.ts'
+import { newTab, rangeValues, wholeTab, writeValues } from './sheets/grid.ts'
 import { gridData } from './sheets/spreadsheet.ts'
 import { sheetsBatchUpdate } from './sheets/batch.ts'
 import { CELL_DATA, CELL_FORMAT, canonical } from './sheets/fields.ts'
@@ -134,6 +134,7 @@ async function api(
     headers: {
       'Content-Type': 'application/json',
       'x-mirage-tenant': tenant,
+      Authorization: 'Bearer gws-integ-token',
       ...(init.headers ?? {}),
     },
   })
@@ -820,13 +821,272 @@ async function driveMoveHttp(at: string): Promise<void> {
   ])
 }
 
+async function formulasHttp(at: string): Promise<void> {
+  const tenant = 'formulas'
+  await reset(at, { tenants: [tenant], epoch: EPOCH })
+  const made = await post(`${at}/v4/spreadsheets`, tenant, { properties: { title: 'Formulas' } })
+  const base = `${at}/v4/spreadsheets/${String(obj(made.body).spreadsheetId)}`
+  const put = async (
+    range: string,
+    values: JsonValue[][],
+    option = 'USER_ENTERED',
+  ): Promise<void> => {
+    const response = await api(
+      `${base}/values/${encodeURIComponent(range)}?valueInputOption=${option}`,
+      tenant,
+      { method: 'PUT', body: JSON.stringify({ values }) },
+    )
+    assert.equal(response.status, 200)
+  }
+  const get = async (range: string, render = 'FORMATTED_VALUE'): Promise<JsonValue> => {
+    const response = await api(
+      `${base}/values/${encodeURIComponent(range)}?valueRenderOption=${render}`,
+      tenant,
+    )
+    assert.equal(response.status, 200)
+    return obj(response.body).values ?? []
+  }
+  await put('Sheet1!A1:E1', [['1', '2', '=SUM(A1:B1)', '=A1*10', 'true']])
+  assert.deepEqual(await get('Sheet1!A1:E1'), [['1', '2', '3', '10', 'TRUE']])
+  assert.deepEqual(await get('Sheet1!A1:E1', 'UNFORMATTED_VALUE'), [[1, 2, 3, 10, true]])
+  assert.deepEqual(await get('Sheet1!A1:E1', 'FORMULA'), [[1, 2, '=SUM(A1:B1)', '=A1*10', true]])
+  const grid = await api(`${base}?includeGridData=true&ranges=Sheet1!C1`, tenant)
+  const cell = obj(arr(obj(arr(obj(arr(obj(grid.body).sheets)[0]).data)[0]).rowData)[0])
+  const value = obj(arr(cell.values)[0])
+  assert.deepEqual(value.userEnteredValue, { formulaValue: '=SUM(A1:B1)' })
+  assert.deepEqual(value.effectiveValue, { numberValue: 3 })
+  assert.equal(value.formattedValue, '3')
+  await put('Sheet1!A1', [[5]])
+  assert.deepEqual(await get('Sheet1!C1:D1', 'UNFORMATTED_VALUE'), [[7, 50]])
+
+  await post(`${base}:batchUpdate`, tenant, {
+    requests: [
+      { addSheet: { properties: { title: '2025Final' } } },
+      { addSheet: { properties: { title: "2023'Final" } } },
+    ],
+  })
+  await post(`${base}/values:batchUpdate`, tenant, {
+    valueInputOption: 'USER_ENTERED',
+    data: [
+      { range: "'2025Final'!B2", values: [[20]] },
+      { range: "'2023''Final'!B2", values: [[3]] },
+      {
+        range: 'Sheet1!A2:F2',
+        values: [
+          [
+            "='2025Final'!$B$2-'2023''Final'!B2",
+            '=AVERAGE(A1:B1)',
+            '=MIN(A1:B1)',
+            '=MAX(A1:B1)',
+            '=COUNT(A1:E1)',
+            '=-(2+3)*4/2+SUM(1,2)',
+          ],
+        ],
+      },
+    ],
+  })
+  assert.deepEqual(await get('Sheet1!A2:F2', 'UNFORMATTED_VALUE'), [[17, 3.5, 2, 5, 4, -7]])
+  const batch = await api(
+    `${base}/values:batchGet?ranges=Sheet1!A2:B2&valueRenderOption=UNFORMATTED_VALUE`,
+    tenant,
+  )
+  assert.deepEqual(obj(arr(obj(batch.body).valueRanges)[0]).values, [[17, 3.5]])
+  const formulaBatch = await api(
+    `${base}/values:batchGet?ranges=Sheet1!A2&valueRenderOption=FORMULA`,
+    tenant,
+  )
+  assert.deepEqual(obj(arr(obj(formulaBatch.body).valueRanges)[0]).values, [
+    ["='2025Final'!$B$2-'2023''Final'!B2"],
+  ])
+
+  await put('Sheet1!A3:F3', [['=1+1', '007', 'true', 7, true, "'=2+2"]], 'RAW')
+  assert.deepEqual(await get('Sheet1!A3:F3', 'UNFORMATTED_VALUE'), [
+    ['=1+1', '007', 'true', 7, true, "'=2+2"],
+  ])
+  await put('Sheet1!A4:G4', [
+    ['=UNKNOWN(1)', '=1/0', '=A4+1', '=D4', '=Missing!A1', '=1+', '=AVERAGE(Z1:Z2)'],
+  ])
+  assert.deepEqual(await get('Sheet1!A4:G4'), [
+    ['#NAME?', '#DIV/0!', '#NAME?', '#REF!', '#REF!', '#ERROR!', '#DIV/0!'],
+  ])
+  const errorGrid = await api(`${base}?includeGridData=true&ranges=Sheet1!A4`, tenant)
+  const errorCell = obj(
+    arr(obj(arr(obj(arr(obj(arr(obj(errorGrid.body).sheets)[0]).data)[0]).rowData)[0]).values)[0],
+  )
+  assert.equal(obj(obj(errorCell.effectiveValue).errorValue).type, 'NAME')
+  await put('Sheet1!D4', [[9]])
+  assert.deepEqual(await get('Sheet1!D4', 'UNFORMATTED_VALUE'), [[9]])
+
+  await post(`${base}:batchUpdate`, tenant, {
+    requests: [
+      {
+        repeatCell: {
+          range: {
+            sheetId: 0,
+            startRowIndex: 4,
+            endRowIndex: 5,
+            startColumnIndex: 0,
+            endColumnIndex: 1,
+          },
+          cell: {
+            userEnteredValue: { formulaValue: '=SUM(A1:B1)/10' },
+            userEnteredFormat: { numberFormat: { type: 'PERCENT', pattern: '0.0%' } },
+          },
+          fields: 'userEnteredValue,userEnteredFormat.numberFormat',
+        },
+      },
+    ],
+  })
+  assert.deepEqual(await get('Sheet1!A5'), [['70.0%']])
+  assert.deepEqual(await get('Sheet1!A5', 'UNFORMATTED_VALUE'), [[0.7]])
+  await post(`${base}/values/Sheet1!A6:append?valueInputOption=USER_ENTERED`, tenant, {
+    values: [['=SUM(1,2)']],
+  })
+  assert.deepEqual(await get('Sheet1!A6', 'UNFORMATTED_VALUE'), [[3]])
+  await post(`${base}/values/Sheet1!A5:clear`, tenant, {})
+  assert.deepEqual(await get('Sheet1!A5'), [])
+  await put('Sheet1!A5', [['007']], 'RAW')
+  assert.deepEqual(await get('Sheet1!A5', 'UNFORMATTED_VALUE'), [['007']])
+  await put('Sheet1!A10:B13', [
+    ['Score', 'Label'],
+    ["='2025Final'!$B$2", 'high'],
+    ["='2023''Final'!$B$2", 'low'],
+    [10, 'middle'],
+  ])
+  const range = {
+    sheetId: 0,
+    startRowIndex: 9,
+    endRowIndex: 13,
+    startColumnIndex: 0,
+    endColumnIndex: 2,
+  }
+  const condition = { type: 'NUMBER_GREATER', values: [{ userEnteredValue: '5' }] }
+  const filtered = await post(`${base}:batchUpdate`, tenant, {
+    requests: [
+      {
+        setBasicFilter: {
+          filter: {
+            range,
+            sortSpecs: [{ dimensionIndex: 0, sortOrder: 'ASCENDING' }],
+            criteria: { '0': { condition } },
+          },
+        },
+      },
+      {
+        addConditionalFormatRule: {
+          index: 0,
+          rule: {
+            ranges: [{ ...range, startRowIndex: 10, endColumnIndex: 1 }],
+            booleanRule: {
+              condition: { type: 'NUMBER_GREATER', values: [{ userEnteredValue: '15' }] },
+              format: { textFormat: { bold: true } },
+            },
+          },
+        },
+      },
+    ],
+  })
+  assert.equal(filtered.status, 200)
+  assert.deepEqual(await get('Sheet1!A11:B13', 'UNFORMATTED_VALUE'), [
+    [3, 'low'],
+    [10, 'middle'],
+    [20, 'high'],
+  ])
+  const data = async (): Promise<Record<string, JsonValue>> => {
+    const response = await api(`${base}?includeGridData=true&ranges=Sheet1!A10:B13`, tenant)
+    assert.equal(response.status, 200)
+    return obj(arr(obj(arr(obj(response.body).sheets)[0]).data)[0])
+  }
+  const filteredData = await data()
+  assert.deepEqual(
+    arr(filteredData.rowMetadata).map((row) => obj(row).hiddenByFilter ?? false),
+    [false, true, false, false],
+  )
+  const high = obj(arr(obj(arr(filteredData.rowData)[3]).values)[0])
+  assert.equal(obj(obj(high.effectiveFormat).textFormat).bold, true)
+  const sorted = await post(`${base}:batchUpdate`, tenant, {
+    requests: [
+      {
+        sortRange: {
+          range: { ...range, startRowIndex: 10 },
+          sortSpecs: [{ dimensionIndex: 0, sortOrder: 'DESCENDING' }],
+        },
+      },
+    ],
+  })
+  assert.equal(sorted.status, 200)
+  assert.deepEqual(await get('Sheet1!A11:B13', 'UNFORMATTED_VALUE'), [
+    [3, 'low'],
+    [20, 'high'],
+    [10, 'middle'],
+  ])
+  const hidden = await post(`${base}:batchUpdate`, tenant, {
+    requests: [
+      { setBasicFilter: { filter: { range, criteria: { '0': { hiddenValues: ['20'] } } } } },
+    ],
+  })
+  assert.equal(hidden.status, 200)
+  assert.deepEqual(
+    arr((await data()).rowMetadata).map((row) => obj(row).hiddenByFilter ?? false),
+    [false, false, true, false],
+  )
+  await put("'2025Final'!B2", [[2]])
+  const refreshed = await data()
+  assert.deepEqual(
+    arr(refreshed.rowMetadata).map((row) => obj(row).hiddenByFilter ?? false),
+    [false, false, false, false],
+  )
+  const changed = obj(arr(obj(arr(refreshed.rowData)[2]).values)[0])
+  assert.equal(obj(obj(changed.effectiveFormat).textFormat).bold, false)
+  check('cross-sheet formulas drive sort, filters and conditional formatting and recalculate', true)
+
+  const bulk = await post(`${base}:batchUpdate`, tenant, {
+    requests: [{ addSheet: { properties: { title: 'Bulk' } } }],
+  })
+  assert.equal(bulk.status, 200)
+  await put(
+    'Bulk!A1:B1000',
+    Array.from({ length: 1000 }, () => [1, '=SUM(A1:A100)']),
+  )
+  const expected = Array.from({ length: 1000 }, () => [100])
+  assert.deepEqual(await get('Bulk!B1:B1000', 'UNFORMATTED_VALUE'), expected)
+  assert.deepEqual(await get('Bulk!B1000', 'UNFORMATTED_VALUE'), [[100]])
+  const bulkGrid = await api(`${base}?includeGridData=true&ranges=Bulk!B1:B1000`, tenant)
+  assert.equal(bulkGrid.status, 200)
+  const bulkData = obj(arr(obj(arr(obj(bulkGrid.body).sheets)[0]).data)[0])
+  assert.deepEqual(
+    arr(bulkData.rowData).map(
+      (row) => obj(obj(arr(obj(row).values)[0]).effectiveValue).numberValue,
+    ),
+    Array.from({ length: 1000 }, () => 100),
+  )
+  check('large values and grid reads preserve every individually bounded formula result', true)
+  check(
+    'formulas: typed inputs, render options, recalculation, ranges, errors and write paths',
+    true,
+  )
+}
+
+function formulaLimitsDirect(): void {
+  const tab = newTab(0, 'Limits', 100_001)
+  writeValues(wholeTab(tab), [[1, '=SUM(A1:A100001)', '=SUM(A1:A10)', '=C1+1']], 0)
+  const all = rangeValues({ ...wholeTab(tab), startCol: 1 }, [tab], 'UNFORMATTED_VALUE')
+  assert.deepEqual(all, [['#ERROR!', 1, 2]])
+  assert.deepEqual(rangeValues({ ...wholeTab(tab), startCol: 2 }, [tab], 'UNFORMATTED_VALUE'), [
+    [1, 2],
+  ])
+  check('formula work limits apply per root cell without poisoning later reads', true)
+}
+
 async function main(): Promise<void> {
   compatibilityDirect()
   sheetsFormatsDirect()
+  formulaLimitsDirect()
   const fake = await launch()
   const at = fake.endpoint
   const seed = { tenants: ['t1'], epoch: EPOCH, extras: { forms: FORMS } }
   try {
+    await formulasHttp(at)
     await compatibilityHttp(at)
     await gridRangesHttp(at)
     await driveMoveHttp(at)
@@ -1233,7 +1493,10 @@ async function main(): Promise<void> {
       tab.props.set('10000,0', { userEnteredFormat: { textFormat: { bold: true } } })
       tab.cells.delete('10001,0')
       tab.props.set('10001,0', { note: 'formatted, no value' })
-      st.sheets.set(file.id, { title: file.name, tabs: [tab], nextSheetId: 1 })
+      const formulas = newTab(1, 'Formulas')
+      writeValues(wholeTab(formulas), [[2, '=A1*5', '=1+1', '007', true]], 0)
+      writeValues({ ...wholeTab(formulas), startCol: 2 }, [['=1+1', '007']], 0, 'RAW')
+      st.sheets.set(file.id, { title: file.name, tabs: [tab, formulas], nextSheetId: 2 })
       await saveState(db, gwsFake.dmmf, 't1', st)
       const restored = await loadState(db, 't1')
       check(
@@ -1244,6 +1507,16 @@ async function main(): Promise<void> {
         'bulk cell persistence preserves formats, a formatted blank cell included',
         isDeepStrictEqual(restored.sheets.get(file.id)?.tabs[0]?.props, tab.props),
       )
+      const restoredFormulas = restored.sheets.get(file.id)?.tabs[1]
+      assert.ok(restoredFormulas)
+      assert.deepEqual(
+        rangeValues(wholeTab(restoredFormulas), [restoredFormulas], 'UNFORMATTED_VALUE'),
+        [[2, 10, '=1+1', '007', true]],
+      )
+      assert.deepEqual(rangeValues(wholeTab(restoredFormulas), [restoredFormulas], 'FORMULA'), [
+        [2, '=A1*5', '=1+1', '007', true],
+      ])
+      check('formula and RAW value types survive database reload', true)
       tab.cells.set('00,0', 'duplicate primary key')
       let refusal = ''
       try {
@@ -1307,9 +1580,11 @@ async function main(): Promise<void> {
 }
 
 async function testCredentialRuns(): Promise<void> {
+  const pattern = '^draw:(?<run>[^:]+):(?<tenant>[^:]+)$'
   const home = await start({
     ...gwsFake,
-    config: { ...gwsFake.config, runTokenPattern: '^draw:(?<run>[^:]+):(?<tenant>[^:]+)$' },
+    config: { ...gwsFake.config, runTokenPattern: pattern },
+    routes: () => gwsRoutes(pattern),
   })
   try {
     for (const run of ['a', 'b']) await home.runtime.reset({ run, tenants: ['ws'] })
@@ -1333,6 +1608,11 @@ async function testCredentialRuns(): Promise<void> {
     })
     assert.equal(made.status, 200)
     for (const run of ['a', 'b']) {
+      const refreshed = await fetch(`${home.endpoint}/token`, {
+        method: 'POST',
+        body: new URLSearchParams({ refresh_token: `draw:${run}:ws` }),
+      })
+      assert.equal(refreshed.status, 200)
       const files = (await (
         await fetch(`${home.endpoint}/drive/v3/files`, {
           headers: { Authorization: `Bearer draw:${run}:ws` },
@@ -1343,7 +1623,112 @@ async function testCredentialRuns(): Promise<void> {
         run === 'a',
       )
     }
+    // A credential opens the world it was exchanged in and no other.
+    assert.equal(
+      (
+        await fetch(`${home.endpoint}/_run/b/drive/v3/files`, {
+          headers: { Authorization: 'Bearer draw:a:ws' },
+        })
+      ).status,
+      401,
+    )
+    assert.equal(
+      (
+        await fetch(`${home.endpoint}/drive/v3/files`, {
+          headers: { Authorization: 'Bearer draw:a:ws', 'x-mirage-tenant': 'other' },
+        })
+      ).status,
+      401,
+    )
+    // Credential routing exchanges its own credentials, not any string.
+    const invented = await fetch(`${home.endpoint}/token`, {
+      method: 'POST',
+      body: new URLSearchParams({ refresh_token: 'invented' }),
+    })
+    assert.equal(invented.status, 400)
     process.stdout.write('gws credential run regressions passed\n')
+  } finally {
+    await home.close()
+  }
+}
+
+async function testAuthentication(): Promise<void> {
+  const home = await start(gwsFake, 0)
+  try {
+    const made = await post(`${home.endpoint}/v4/spreadsheets`, 'default', {
+      properties: { title: 'private' },
+    })
+    assert.equal(made.status, 200)
+    const id = String(obj(made.body).spreadsheetId)
+    const values = `${home.endpoint}/v4/spreadsheets/${id}/values/Sheet1!A1`
+    assert.equal(
+      (
+        await api(values, 'default', {
+          method: 'PUT',
+          body: JSON.stringify({ values: [['secret']] }),
+        })
+      ).status,
+      200,
+    )
+    for (const authorization of ['', 'Bearer nope', 'Basic nope', 'Bearer']) {
+      for (const method of ['GET', 'PUT']) {
+        const response = await fetch(values, {
+          method,
+          headers: {
+            ...(authorization === '' ? {} : { Authorization: authorization }),
+            'Content-Type': 'application/json',
+          },
+          ...(method === 'PUT' ? { body: JSON.stringify({ values: [['overwritten']] }) } : {}),
+        })
+        assert.equal(response.status, authorization === '' ? 403 : 401)
+        const body = (await response.json()) as { error: { code: number; status: string } }
+        assert.equal(body.error.code, response.status)
+        assert.equal(
+          body.error.status,
+          authorization === '' ? 'PERMISSION_DENIED' : 'UNAUTHENTICATED',
+        )
+      }
+    }
+    assert.deepEqual(obj((await api(values, 'default')).body).values, [['secret']])
+    for (const path of [
+      '/drive/v3/files',
+      '/gmail/v1/users/me/messages',
+      '/calendar/v3/calendars/primary/events',
+      '/v1/documents/missing',
+      '/v1/presentations/missing',
+      '/v1/forms/missing',
+    ]) {
+      assert.equal((await fetch(`${home.endpoint}${path}`)).status, 403)
+      assert.equal(
+        (await fetch(`${home.endpoint}${path}`, { headers: { Authorization: 'Bearer nope' } }))
+          .status,
+        401,
+      )
+    }
+    // A refresh token the fake never issued is not exchanged, so the bearer a
+    // caller spells from it opens nothing either.
+    const invented = await fetch(`${home.endpoint}/token`, {
+      method: 'POST',
+      body: new URLSearchParams({ refresh_token: 'test-refresh' }),
+    })
+    assert.equal(invented.status, 400)
+    assert.equal(obj((await invented.json()) as JsonValue).error, 'invalid_grant')
+    assert.equal(
+      (await fetch(values, { headers: { Authorization: 'Bearer test-refresh' } })).status,
+      401,
+    )
+    const exchange = await fetch(`${home.endpoint}/token`, {
+      method: 'POST',
+      body: new URLSearchParams({ refresh_token: 'gws-integ-token' }),
+    })
+    assert.equal(exchange.status, 200)
+    const token = String(obj((await exchange.json()) as JsonValue).access_token)
+    assert.equal(
+      (await fetch(values, { headers: { Authorization: `Bearer ${token}` } })).status,
+      200,
+    )
+    assert.equal((await fetch(`${home.endpoint}/token`, { method: 'POST' })).status, 400)
+    process.stdout.write('gws authentication regressions passed\n')
   } finally {
     await home.close()
   }
@@ -1351,3 +1736,4 @@ async function testCredentialRuns(): Promise<void> {
 
 await main()
 await testCredentialRuns()
+await testAuthentication()

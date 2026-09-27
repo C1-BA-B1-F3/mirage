@@ -43,6 +43,7 @@ import { TailBuffer, tailCap } from './text.ts'
 import { SpillSink, ensureDirPath, type SpillTarget } from './spill.ts'
 import type {} from './service.ts'
 import type { Refusal } from '@struktoai/mirage-core/types'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 const DEFAULT_TIMEOUT_MS = 120_000
 const MAX_TIMEOUT_MS = 600_000
@@ -69,13 +70,11 @@ let spillCounter = 0
 // no read-only sandbox anywhere does.
 const SINK_PREFIX = '/dev'
 
-// How mirage refuses a write the session's mount grants do not allow.
-// Three spellings, because the refusal is raised in two places: a command
-// names the mount it would not write to, while a redirection or an op below
-// the granted mode is refused in the read-only voice as the file opens.
-// Hide refusals keep `Permission denied`. Only consulted for a call that
-// ran under `read-only`, so the only permission error these can catch is
-// the one this executor just imposed.
+// How mirage refuses a write the session's mount grants do not allow: the
+// write itself is refused, in the read-only voice, whether a command or a
+// redirection made it. Hide refusals keep `Permission denied`. Only
+// consulted for a call that ran under `read-only`, so the only permission
+// error these can catch is the one this executor just imposed.
 const DENIAL_SIGNATURES = ['read-only mount at ', ': Permission denied', ': Read-only file system']
 
 /** Configuration for the mirage shell executor. */
@@ -669,7 +668,7 @@ export class MirageShellExecutor extends ShellExecutor {
     const source = ws.getSession(this.sessionId ?? ws.defaultSessionId)
     const grants: Record<string, string> = {}
     for (const entry of ws.mounts()) {
-      grants[entry.prefix] = entry.prefix.replace(/\/+$/, '') === SINK_PREFIX ? 'exec' : 'read'
+      grants[entry.prefix] = rstripSlash(entry.prefix) === SINK_PREFIX ? 'exec' : 'read'
     }
     const hide = [...(source.hiddenPaths?.paths ?? []), ...(source.hiddenPaths?.patterns ?? [])]
     const twin = ws.createSession(sessionId, {

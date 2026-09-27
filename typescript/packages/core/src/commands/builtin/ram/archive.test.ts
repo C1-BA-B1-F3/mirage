@@ -19,25 +19,19 @@ import { materialize } from '../../../io/types.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import type { LinkView } from '../../../ops/types.ts'
 import { FileStat, FileType, LINK_TARGET_KEY, PathSpec } from '../../../types.ts'
+import { decodeBase64 } from '../../../utils/base64.ts'
 import { CycleError } from '../../../utils/path.ts'
 import { readTar } from '../tar_helper.ts'
 import { UsageError } from '../../errors.ts'
-import { parseFlags } from '../../../workspace/executor/command/flags.ts'
-import { specOf } from '../../spec/builtins.ts'
+import { MountMode } from '../../../types.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
 const RAM_TAR = RAM_COMMANDS.filter((c) => c.name === 'tar' && c.filetype == null)
 const RAM_ZIP = RAM_COMMANDS.filter((c) => c.name === 'zip' && c.filetype == null)
 const RAM_UNZIP = RAM_COMMANDS.filter((c) => c.name === 'unzip' && c.filetype == null)
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
-
-// What a registered command's writes predicate answers for a typed line,
-// read through the same parse the executor hands the mount.
-function writesFor(cmd: RegisteredCommand | undefined, argv: string[]): boolean {
-  if (cmd?.writes == null) throw new Error('the command declares no writes predicate')
-  const parsed = parseFlags(argv, specOf(cmd.name), cmd.name, '/data')
-  return cmd.writes(parsed.flagKwargs, parsed.paths)
-}
 
 // An operand carrying the spelling the user typed, which is what the
 // member names are built from.
@@ -1252,6 +1246,66 @@ describe('unzip -Z (zipinfo mode)', () => {
   })
 })
 
+describe('unzip -v', () => {
+  const M = [PathSpec.fromStrPath('/m.zip')]
+  // a.txt ("abc", stored, 1980 stamp) commented "na\xefve\x13 \xff", in an
+  // archive commented "caf\xe9 \x1b[1m\r\nfin": Latin-1 bytes, ^S, ESC, CR.
+  const LEGACY_COMMENTS =
+    'UEsDBBQAAAAAAAAAIQDCQSQ1AwAAAAMAAAAFAAAAYS50eHRhYmNQSwECFAMUAAAAAAAAACEAwkEkNQMAAAADAAAABQAAAAgAAAAAAAAApIEAAAAAYS50eHRuYe92ZRMg/1BLBQYAAAAAAQABADsAAAAmAAAADgBjYWbpIBtbMW0NCmZpbg=='
+
+  it('lists the verbose table', async () => {
+    const vfs = await makeMulti()
+    const r = await runCmd(RAM_UNZIP, vfs, M, { v: true })
+    const lines = DEC.decode(r.out).split('\n')
+    expect(lines.slice(0, 4)).toEqual([
+      'Archive:  /m.zip',
+      ' Length   Method    Size  Cmpr    Date    Time   CRC-32   Name',
+      '--------  ------  ------- ---- ---------- ----- --------  ----',
+      '       0  Stored        0   0% 1980-01-01 00:00 00000000  d/',
+    ])
+    expect(lines[4]).toMatch(
+      /^ {5}200 {2}Defl:N +\d+ +\d+% 1980-01-01 00:00 599af058 {2}d\/a\.txt$/,
+    )
+    expect(lines[5]).toMatch(/^ {7}1 {2}Defl:N +\d+ +-?\d+% 1980-01-01 00:00 71beeff9 {2}b\.txt$/)
+    expect(lines[6]).toBe('--------          -------  ---                            -------')
+    expect(lines[7]).toMatch(/^ {5}201 +\d+ +-?\d+% {28}3 files$/)
+    expect([r.exitCode, r.stderr.byteLength]).toEqual([0, 0])
+  })
+
+  it('writes comments as stored', async () => {
+    const vfs = new RAMVFS()
+    vfs.store.files.set('/l.zip', decodeBase64(LEGACY_COMMENTS))
+    const r = await runCmd(RAM_UNZIP, vfs, [PathSpec.fromStrPath('/l.zip')], { v: true })
+    expect(String.fromCharCode(...r.out)).toBe(
+      'Archive:  /l.zip\n' +
+        'caf\xe9 ^[[1m\n' +
+        'fin\n' +
+        ' Length   Method    Size  Cmpr    Date    Time   CRC-32   Name\n' +
+        '--------  ------  ------- ---- ---------- ----- --------  ----\n' +
+        '       3  Stored        3   0% 1980-01-01 00:00 352441c2  a.txt\n' +
+        'na\xefve \xff\n' +
+        '--------          -------  ---                            -------\n' +
+        '       3                3   0%                            1 file\n',
+    )
+    expect([r.exitCode, r.stderr.byteLength]).toEqual([0, 0])
+  })
+
+  it('prints the version line without an archive', async () => {
+    const r = await runCmd(RAM_UNZIP, new RAMVFS(), [], { v: true })
+    expect(DEC.decode(r.out)).toMatch(/^unzip \(Mirage\) /)
+    expect(r.exitCode).toBe(0)
+  })
+
+  it.each([[{ args_l: true }], [{ v: true }]])('yields to -t and -p (%o)', async (listing) => {
+    // Info-ZIP lists only when neither -t nor -p picks another mode.
+    const vfs = await makeMulti()
+    const p = await runCmd(RAM_UNZIP, vfs, M, { ...listing, p: true }, ['b.txt'])
+    expect(DEC.decode(p.out)).toBe('b')
+    const t = await runCmd(RAM_UNZIP, vfs, M, { ...listing, t: true })
+    expect(DEC.decode(t.out)).toBe('No errors detected in /m.zip\n')
+  })
+})
+
 describe('unzip -Zm, -Zs and -x', () => {
   const M = [PathSpec.fromStrPath('/m.zip')]
 
@@ -1336,30 +1390,84 @@ describe('unzip -Zm, -Zs and -x', () => {
   })
 })
 
-describe('tar and unzip say which invocations write', () => {
+async function readOnlyShell(
+  seed: string,
+  line: string,
+): Promise<[number, string, string, string[]]> {
+  const vfs = new RAMVFS()
+  const ws = new Workspace(
+    { '/ro/': [vfs, MountMode.WRITE] },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  try {
+    const seeded = await ws.shell(seed)
+    if (seeded.exitCode !== 0) throw new Error(DEC.decode(seeded.stderr))
+    ws.setMountMode('/ro/', MountMode.READ)
+    const before = [...vfs.store.files.keys()].sort()
+    const r = await ws.shell(line)
+    const after = [...vfs.store.files.keys()].sort()
+    expect(after).toEqual(before)
+    return [r.exitCode, DEC.decode(r.stdout), DEC.decode(r.stderr), after]
+  } finally {
+    await ws.close()
+  }
+}
+
+const ARCHIVES =
+  "printf 'hello\\n' > /ro/f.txt && cd /ro && tar -cf a.tar f.txt && zip -q a.zip f.txt && rm f.txt"
+
+describe('tar and unzip on a read-only mount', () => {
   it.each([
-    [['-tf', 'a.tar'], false],
-    [['tf', 'a.tar'], false],
-    [['-xOf', 'a.tar'], false],
-    [['-x', '--to-stdout', '-f', 'a.tar'], false],
-    [['-xf', 'a.tar'], true],
-    [['xf', 'a.tar'], true],
-    [['-cf', 'a.tar', 'f.txt'], true],
-  ])('tar %j writes: %s', (argv, writes) => {
-    expect(writesFor(RAM_TAR[0], argv)).toBe(writes)
+    ['tar -tf /ro/a.tar', 'f.txt\n'],
+    ['cd /ro && tar tf a.tar', 'f.txt\n'],
+    ['tar -xOf /ro/a.tar', 'hello\n'],
+    ['tar -x --to-stdout -f /ro/a.tar', 'hello\n'],
+    ['unzip -p /ro/a.zip f.txt', 'hello\n'],
+    ['unzip -Z -1 /ro/a.zip', 'f.txt\n'],
+  ])('runs %s, which writes nothing', async (line, stdout) => {
+    const [exitCode, out] = await readOnlyShell(ARCHIVES, line)
+    expect([exitCode, out]).toEqual([0, stdout])
   })
 
+  it.each(['unzip -l /ro/a.zip', 'unzip -v /ro/a.zip', 'unzip -t /ro/a.zip', 'unzip -Z /ro/a.zip'])(
+    'runs %s, which writes nothing',
+    async (line) => {
+      const [exitCode] = await readOnlyShell(ARCHIVES, line)
+      expect(exitCode).toBe(0)
+    },
+  )
+
+  // GNU tar 1.35 on a read-only filesystem: each member it cannot create
+  // is its own line and the run goes on; an archive it cannot create is
+  // fatal before any member is read.
+  const extractRefused =
+    'tar: f.txt: Cannot open: Read-only file system\n' +
+    'tar: Exiting with failure status due to previous errors\n'
   it.each([
-    [[], false],
-    [['a.zip'], true],
-    [['-o', 'a.zip'], true],
-    [['-d', 'out', 'a.zip'], true],
-    [['-l', 'a.zip'], false],
-    [['-t', 'a.zip'], false],
-    [['-p', 'a.zip', 'f.txt'], false],
-    [['-Z', 'a.zip'], false],
-    [['-Z', '-1', 'a.zip'], false],
-  ])('unzip %j writes: %s', (argv, writes) => {
-    expect(writesFor(RAM_UNZIP[0], argv)).toBe(writes)
+    ['cd /ro && tar -xf a.tar', 2, extractRefused],
+    ['cd /ro && tar xf a.tar', 2, extractRefused],
+    [
+      'tar -cf /ro/b.tar /ro/a.zip',
+      2,
+      'tar: /ro/b.tar: Cannot open: Read-only file system\n' +
+        'tar: Error is not recoverable: exiting now\n',
+    ],
+    // UnZip 6.00: a member it cannot create is named as it would have made
+    // it (exit 50), an extraction directory it cannot make ends the run
+    // (exit 2). Mirrors test_unzip.py.
+    ['cd /ro && unzip a.zip', 50, 'error:  cannot create f.txt\n        Read-only file system\n'],
+    [
+      'cd /ro && unzip -o a.zip',
+      50,
+      'error:  cannot create f.txt\n        Read-only file system\n',
+    ],
+    [
+      'unzip -q /ro/a.zip -d /ro/out',
+      2,
+      'checkdir:  cannot create extraction directory: /ro/out\n           Read-only file system\n',
+    ],
+  ])('refuses %s at its write', async (line, code, refused) => {
+    const [exitCode, , stderr] = await readOnlyShell(ARCHIVES, line)
+    expect([exitCode, stderr]).toEqual([code, refused])
   })
 })

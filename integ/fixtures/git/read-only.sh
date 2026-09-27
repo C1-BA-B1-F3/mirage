@@ -139,3 +139,14 @@ at 2025-06-01T10:00:00Z
 early=$(git commit-tree "$(git rev-parse main^{tree})" -p "$shared" -m 'skew early')
 at 2025-07-03T10:00:00Z
 git update-ref refs/heads/skew-hidden "$(git commit-tree "$(git rev-parse main^{tree})" -p "$early" -m 'skew hidden')"
+
+at 2025-08-01T10:00:00Z
+git switch -qc authors main
+printf 'bob\n' > bob.txt
+git add bob.txt
+GIT_AUTHOR_NAME=Bob GIT_AUTHOR_EMAIL=bob@example.com git commit -qm 'by Bob'
+git switch -q main
+printf 'staged\n' > staged.txt
+git add staged.txt
+printf 'not staged\n' >> staged.txt
+printf 'unstaged\n' >> README.md

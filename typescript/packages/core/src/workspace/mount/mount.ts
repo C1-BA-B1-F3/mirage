@@ -35,6 +35,7 @@ import { getExtension } from '../../commands/resolve.ts'
 import { resolveLimit } from '../../policy/index.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import { CommandTimeoutError } from '../../commands/errors.ts'
+import { flagOccurrences } from '../../commands/spec/flag_view.ts'
 import type { CommandSpec, FlagValue } from '../../commands/spec/types.ts'
 import { CachableAsyncIterator } from '../../io/cachable_iterator.ts'
 import type { ByteSource } from '../../io/types.ts'
@@ -60,12 +61,11 @@ import {
   MountMode,
   PathSpec,
 } from '../../types.ts'
-import { ebusy, enotsup, erofsReadOnly } from '../../utils/errors.ts'
+import { ebusy, enotsup } from '../../utils/errors.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import {
   effectiveMountMode,
-  effectivePathMode,
-  readonlyBelow,
+  requirePathsWritable,
   runWithMountGate,
   strongestModeUnder,
 } from '../../context/session_context.ts'
@@ -523,17 +523,29 @@ export class MountEntry {
       const isFiletypeCmd =
         extension !== null && extension !== '' && this.cmds.has(cmdKey(cmdName, extension))
 
-      const prefixedPaths = paths.map(
-        (p) =>
-          new PathSpec({
-            virtual: p.virtual,
-            directory: p.directory,
-            pattern: p.pattern,
-            resolved: p.resolved,
-            vfsPath: mountKey(p.virtual, mountPrefix),
-            rawPath: p.rawPath,
-          }),
-      )
+      const stamp = (p: PathSpec): PathSpec =>
+        new PathSpec({
+          virtual: p.virtual,
+          directory: p.directory,
+          pattern: p.pattern,
+          resolved: p.resolved,
+          vfsPath: mountKey(p.virtual, mountPrefix),
+          rawPath: p.rawPath,
+        })
+      const prefixedPaths = paths.map(stamp)
+      // Stamp this mount's backend key onto path-shaped flag values so
+      // backend reads can address them: a single PathSpec (awk -f, tar -f)
+      // or a list (repeated grep -f, jq's --rawfile pairs). Everything else
+      // passes through unchanged. Mirrors Python's execute_cmd.
+      const stampedFlags: Record<string, FlagValue> = { ...flags }
+      flagOccurrences(stampedFlags).push(...flagOccurrences(flags))
+      for (const [key, value] of Object.entries(flags)) {
+        if (value instanceof PathSpec) stampedFlags[key] = stamp(value)
+        else if (Array.isArray(value) && value.some((item) => item instanceof PathSpec)) {
+          const items: readonly (string | PathSpec)[] = value
+          stampedFlags[key] = items.map((item) => (item instanceof PathSpec ? stamp(item) : item))
+        }
+      }
 
       // A pattern operand travels to the handler whole. The handler
       // resolves it once, through the shared adapter, which is where the
@@ -545,7 +557,7 @@ export class MountEntry {
       const accessor = (this.vfs as { accessor?: Accessor }).accessor ?? NOOP_ACCESSOR
       const cmdOpts: CommandOpts = {
         stdin: context.stdin ?? null,
-        flags,
+        flags: stampedFlags,
         filetypeFns: isFiletypeCmd ? null : filetypeFns,
         mountPrefix,
         command: cmdName,
@@ -566,10 +578,8 @@ export class MountEntry {
         ...(context.readdirPath !== undefined ? { readdirPath: context.readdirPath } : {}),
       }
 
-      // What the command tier's mode guard reads: the write-command gate
-      // below admits a command when any shown subtree grants writes, and
-      // this binding is how each write the handler then makes is held to
-      // its own region's mode.
+      // What the command tier's mode guard reads: each write the handler
+      // makes is held to its own region's mode.
       return runWithMountGate(this.prefix, this.mode, () =>
         runWithMountContext(
           () =>
@@ -582,22 +592,24 @@ export class MountEntry {
                     const infoOnly =
                       flags.help === true ||
                       (flags.version === true && hasInjectedVersion(cmd.spec))
+                    // A command whose I/O runs under the path guards is
+                    // refused where it writes, because only the write knows
+                    // whether a line writes: `gzip -c`, `tar -t` and
+                    // `split -n 1/2` read a read-only mount like any reader,
+                    // and `gzip f` is refused at the write of `f.gz`, in
+                    // gzip's own GNU voice. A write command that reaches its
+                    // service some other way (trello's id-addressed card
+                    // writes, a custom backend's own verb) is refused here,
+                    // before it runs, because no door would see its write.
                     // strongestModeUnder, not effectiveMode: a mount whose
-                    // only writable region is a show entry still runs the
-                    // command, and the op door refuses per path. The
-                    // trailing newline is load-bearing: stderr accumulates
-                    // across a line, so two refusals in one list ran
-                    // together as `...at /ro/rm: read-only mount at /ro/`,
-                    // and the node table's twin of this refusal (a symlink
-                    // `rm`, rendered by shared.readOnlyError) concatenates
-                    // with it. An invocation its generic says writes nothing
-                    // (`gzip -c`, `tar -t`) runs like a reader: it has no
-                    // write for the mount to refuse.
+                    // only writable region is a show entry still runs it.
+                    // The trailing newline is load-bearing: stderr
+                    // accumulates across a line.
                     if (
                       cmd.write &&
+                      !cmd.pathGuarded &&
                       !infoOnly &&
-                      strongestModeUnder(this.prefix, this.mode) === MountMode.READ &&
-                      (cmd.writes === null || cmd.writes(flags, paths))
+                      strongestModeUnder(this.prefix, this.mode) === MountMode.READ
                     ) {
                       return [
                         null,
@@ -686,31 +698,11 @@ export class MountEntry {
       if (levels.length === 0) {
         throw enotsup(this.vfs.kind, opName, path)
       }
-      // Per path, not per mount: a show entry can hold one subtree below
-      // `w` on a writable mount, or one writable region on a read mount.
-      // A rename mutates its destination too, so both endpoints answer,
-      // and it relocates whole subtrees in one call, so a read-only
-      // region below either endpoint refuses it too.
       if (levels.some((o) => o.write)) {
-        if (effectivePathMode(path, this.prefix, this.mode) === MountMode.READ) {
-          throw erofsReadOnly(`mount ${this.prefix} is read-only`, path)
-        }
         const dst = kwargs.dst
-        if (
-          dst instanceof PathSpec &&
-          effectivePathMode(dst.virtual, this.prefix, this.mode) === MountMode.READ
-        ) {
-          throw erofsReadOnly(`mount ${this.prefix} is read-only`, dst.virtual)
-        }
-        if (SUBTREE_OPS.has(opName)) {
-          const endpoints = dst instanceof PathSpec ? [path, dst.virtual] : [path]
-          for (const endpoint of endpoints) {
-            const blame = readonlyBelow(endpoint, this.prefix, this.mode)
-            if (blame !== null) {
-              throw erofsReadOnly(`mount ${this.prefix} is read-only`, blame)
-            }
-          }
-        }
+        const endpoints = [PathSpec.fromStrPath(path)]
+        if (dst instanceof PathSpec) endpoints.push(dst)
+        requirePathsWritable(endpoints, this.prefix, this.mode, SUBTREE_OPS.has(opName))
       }
       const mountPrefix = rstripSlash(this.prefix)
       const lastSlash = path.lastIndexOf('/')

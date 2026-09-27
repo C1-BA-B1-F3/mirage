@@ -41,7 +41,7 @@ export class DiscordVFS extends BoundVFS<DiscordAccessor> implements VFS {
   // are rendered at readdir from payloads the listing already fetched, and
   // attachments carry Discord's CDN byte count.
   readonly sizesAlwaysKnown: boolean = true
-  readonly prompt: string = DISCORD_PROMPT
+  readonly prompt: string
   readonly writePrompt: string = DISCORD_WRITE_PROMPT
   readonly config: DiscordConfig
   readonly accessor: DiscordAccessor
@@ -54,7 +54,9 @@ export class DiscordVFS extends BoundVFS<DiscordAccessor> implements VFS {
         proxyUrl: config.proxyUrl,
         ...(config.getHeaders !== undefined ? { getHeaders: config.getHeaders } : {}),
       }),
+      config,
     )
+    this.prompt = DISCORD_PROMPT + this.accessor.timeRange.prompt()
   }
 
   commands(): readonly RegisteredCommand[] {

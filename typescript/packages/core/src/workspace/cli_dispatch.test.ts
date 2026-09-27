@@ -51,7 +51,7 @@ function tokenConfig(input: Record<string, unknown>): { token: string } {
 
 function send(inv: CLIInvocation): [Uint8Array, IOResult] {
   const token = (inv.config as { token: string }).token
-  const to = inv.flags.to
+  const to = inv.flags.to as string | undefined
   const body = inv.texts.join(' ')
   return [new TextEncoder().encode(`sent[${token}] to=${String(to)}: ${body}\n`), new IOResult()]
 }

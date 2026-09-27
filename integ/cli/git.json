@@ -3835,6 +3835,160 @@
         "stdout": "",
         "stderr": "fatal: unrecognized argument: --onel\n"
       }
+    },
+    {
+      "id": "git_issue_1281_shortlog_summary",
+      "seq": 567980,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git shortlog -sne --all)",
+      "expect": {
+        "exit": 0,
+        "stdout": "     4\tInteg Author <integ@example.com>\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_rev_parse_branch",
+      "seq": 567981,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git rev-parse --abbrev-ref HEAD)",
+      "expect": {
+        "exit": 0,
+        "stdout": "main\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_log_author_equals",
+      "seq": 567982,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --all --author='integ@example.com' --format='%h %ae')",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 integ@example.com\n225f39c integ@example.com\n265ec3a integ@example.com\n98b4ffe integ@example.com\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_log_author_separate",
+      "seq": 567983,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --all --author 'integ@example.com' --format='%h %ae')",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 integ@example.com\n225f39c integ@example.com\n265ec3a integ@example.com\n98b4ffe integ@example.com\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_show_oneline",
+      "seq": 567984,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git show --stat --oneline HEAD~1)",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c add docs\n docs/readme.md | 1 +\n 1 file changed, 1 insertion(+)\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_show_unified",
+      "seq": 567985,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git show --format=%s --unified=1 HEAD)",
+      "expect": {
+        "exit": 0,
+        "stdout": "add two\n\ndiff --git a/numbers.txt b/numbers.txt\nindex 5626abf..814f4a4 100644\n--- a/numbers.txt\n+++ b/numbers.txt\n@@ -1 +1,2 @@\n one\n+two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_current_branch",
+      "seq": 567986,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git branch --show-current)",
+      "expect": {
+        "exit": 0,
+        "stdout": "main\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_cached_names",
+      "seq": 567987,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; printf 'staged\\n' > staged.txt; git add staged.txt; printf 'unstaged\\n' >> numbers.txt; git diff --cached --name-only; git reset -q; rm staged.txt; git restore numbers.txt)",
+      "expect": {
+        "exit": 0,
+        "stdout": "staged.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_porcelain_v1",
+      "seq": 567988,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; printf 'staged\\n' > staged.txt; git add staged.txt; printf 'unstaged\\n' >> numbers.txt; git status --porcelain=v1; git reset -q; rm staged.txt; git restore numbers.txt)",
+      "expect": {
+        "exit": 0,
+        "stdout": " M numbers.txt\nA  staged.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_detached_branch",
+      "seq": 567989,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git rev-parse HEAD~1 > .git/HEAD.keep; cp .git/HEAD .git/HEAD.saved; cp .git/HEAD.keep .git/HEAD; git branch --show-current; git rev-parse --abbrev-ref HEAD; mv .git/HEAD.saved .git/HEAD; rm .git/HEAD.keep)",
+      "expect": {
+        "exit": 0,
+        "stdout": "HEAD\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_unborn_index",
+      "seq": 567990,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; printf 'ref: refs/heads/unborn\\n' > .git/HEAD; git branch --show-current; git diff --cached --name-only; printf 'ref: refs/heads/main\\n' > .git/HEAD)",
+      "expect": {
+        "exit": 0,
+        "stdout": "unborn\ndocs/readme.md\nletters.txt\nnumbers.txt\n",
+        "stderr": ""
+      }
     }
   ]
 }

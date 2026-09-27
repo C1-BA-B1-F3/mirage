@@ -12,17 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from mirage.accessor.gcal import GCalAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.core.gcal.client import list_calendars, list_events
-from mirage.core.gcal.day import (WINDOW_AHEAD_DAYS, WINDOW_BACK_DAYS,
-                                  clamped_hhmm, day_bounds, days_covered,
-                                  event_span, window_bounds)
+from mirage.core.gcal.day import (clamped_hhmm, day_bounds, days_covered,
+                                  event_span, window_bounds, zone)
 from mirage.core.gcal.scope import detect_scope
 from mirage.core.hierarchy.scope import ROOT
 from mirage.core.render.json import compact_json_bytes
+from mirage.core.time_range import TimeRange, parse_time
 from mirage.types import JsonValue, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.glob_walk import glob_span
@@ -137,31 +137,53 @@ def bucket_zone(accessor: GCalAccessor,
     return "UTC"
 
 
-def day_span(pattern: str | None, today: date,
-             tz: str) -> tuple[str, str, date, date]:
-    """The listing window, honouring a date glob when one was typed.
-
-    A bare readdir reports a rolling window around today because a calendar
-    is unbounded in both directions and the API offers no descending
-    startTime order. A glob escapes it by pushing its own bounds down.
+def day_span(
+    pattern: str | None, today: date, tz: str,
+    scope: TimeRange = TimeRange()) -> tuple[str | None, str, date, date]:
+    """Resolve a listing's date glob and configured scope.
 
     Args:
-        pattern (str | None): the glob as typed, or None.
-        today (date): the day the default window centres on.
-        tz (str): the bucketing zone.
-
-    Returns:
-        tuple[str, str, date, date]: timeMin, timeMax, first day, last day.
+        pattern (str | None): date glob, if present.
+        today (date): anchor for the finite future horizon.
+        tz (str): mount's bucketing timezone.
+        scope (TimeRange): explicit inclusive/exclusive mount bounds.
     """
     span = glob_span(pattern)
+    lo = scope.start
+    hi = scope.end
     if span is not None:
-        last = span[1] - timedelta(days=1)
-        return day_bounds(span[0].isoformat(),
-                          tz)[0], day_bounds(last.isoformat(),
-                                             tz)[1], span[0], last
-    lo, hi = window_bounds(today, tz)
-    return (lo, hi, today - timedelta(days=WINDOW_BACK_DAYS),
-            today + timedelta(days=WINDOW_AHEAD_DAYS))
+        first, last = day_bounds(span[0].isoformat(), tz)[0], day_bounds(
+            (span[1] - timedelta(days=1)).isoformat(), tz)[1]
+        lo = max(parse_time(first),
+                 lo) if lo is not None else parse_time(first)
+        hi = min(parse_time(last), hi) if hi is not None else parse_time(last)
+    elif hi is None:
+        hi = parse_time(window_bounds(today, tz)[1])
+    lower = datetime.fromtimestamp(
+        lo, timezone.utc).isoformat() if lo is not None else None
+    upper = datetime.fromtimestamp(hi, timezone.utc).isoformat()
+    first_day = datetime.fromtimestamp(
+        lo, zone(tz)).date() if lo is not None else date.min
+    last_day = (datetime.fromtimestamp(hi, zone(tz)) -
+                timedelta(microseconds=1)).date()
+    return lower, upper, first_day, last_day
+
+
+def scoped_day_bounds(accessor: GCalAccessor, day: str, tz: str,
+                      virtual: str) -> tuple[str, str]:
+    """Refuse a day wholly outside the configured mount scope.
+
+    Args:
+        accessor (GCalAccessor): scoped mount accessor.
+        day (str): local date.
+        tz (str): mount timezone.
+        virtual (str): path reported in ENOENT.
+    """
+    lo, hi = day_bounds(day, tz)
+    start, end = accessor.time_range.clip(parse_time(lo), parse_time(hi))
+    if start >= end:
+        raise enoent(virtual)
+    return lo, hi
 
 
 def event_entries(events: list[dict[str, JsonValue]], day: str, tz: str,
@@ -251,9 +273,14 @@ async def readdir(
 
     if match.kind == "calendar":
         time_min, time_max, first, last = day_span(path.pattern,
-                                                   accessor.today(tz), tz)
-        events = await list_events(accessor.token_manager, cal_id, time_min,
-                                   time_max, tz)
+                                                   accessor.today(tz), tz,
+                                                   accessor.time_range)
+        events = await list_events(accessor.token_manager,
+                                   cal_id,
+                                   time_min,
+                                   time_max,
+                                   tz,
+                                   scope=accessor.time_range)
         seen: set[str] = set()
         for event in events:
             span = event_span(event, tz)
@@ -286,9 +313,13 @@ async def readdir(
         return [f"{prefix}/{key}/{name}" for name, _ in rows]
 
     day = match.slots["day"]
-    time_min, time_max = day_bounds(day, tz)
-    events = await list_events(accessor.token_manager, cal_id, time_min,
-                               time_max, tz)
+    time_min, time_max = scoped_day_bounds(accessor, day, tz, path.virtual)
+    events = await list_events(accessor.token_manager,
+                               cal_id,
+                               time_min,
+                               time_max,
+                               tz,
+                               scope=accessor.time_range)
     rows = event_entries(events, day, tz, free_busy)
     await index.set_dir(virtual_key, rows)
     return [f"{prefix}/{key}/{name}" for name, _ in rows]

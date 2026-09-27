@@ -13,6 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import git from 'isomorphic-git'
+import { BreError, searchBre } from '../../../builtin/utils/bre.ts'
+import { GitError } from './errors.ts'
 import { HEAD } from './constants.ts'
 
 import type { FlagView } from '../../../spec/flag_view.ts'
@@ -33,6 +35,7 @@ const REMOTE_PREFIX = 'refs/remotes/'
 
 /** The parsed shape of a `git log` invocation. */
 export interface LogFlags {
+  readonly authors: readonly RegExp[]
   readonly minParents: number | null
   readonly maxParents: number | null
   readonly firstParent: boolean
@@ -104,39 +107,45 @@ function timestamp(value: string | null, flag: string): number | null {
 }
 
 /**
- * The --pretty/--format value, honoring the bare optional form.
- *
- * Both spellings set the same variable in git; `--format` is read first when
- * both appear on one line, an ordering the flag bag cannot preserve. A bare
- * `--pretty` means medium, git's own default, but pretty.c reads `--format`
- * only in its =value form, so the bare spelling gets git's own fatal
- * (pinned: 2.37 and 2.54, exit 128).
+ * Read display formats in command-line order, validating every occurrence.
+ * --oneline sets the format; its abbreviation side effect is read separately.
+ * Bare --pretty resets to medium, while bare --format is always an error
+ * (Git 2.50.1).
  */
-export function prettyValue(fl: FlagView): string | null {
-  for (const key of ['format', 'pretty']) {
-    const raw = fl.raw(key)
-    if (typeof raw === 'string') return raw
-    if (raw === true) {
+export function prettyFormat(fl: FlagView): LogFormat {
+  let pretty: LogFormat = MEDIUM
+  for (const [key, raw] of fl.occurrences('oneline', 'pretty', 'format')) {
+    if (key === 'oneline') {
+      if (raw === true) pretty = { kind: 'oneline', template: null }
+    } else if (typeof raw === 'string') {
+      pretty = parsePretty(raw)
+    } else if (raw === true) {
       if (key === 'format') throw new UnrecognizedArgumentError('--format')
-      return 'medium'
+      pretty = MEDIUM
     }
   }
-  return null
+  return pretty
 }
 
 /** Read the raw log flag kwargs into a frozen struct. */
 export function parseFlags(fl: FlagView): LogFlags {
   const oneline = fl.asBool('oneline')
-  const spelled = prettyValue(fl)
-  let pretty: LogFormat = oneline ? { kind: 'oneline', template: null } : MEDIUM
-  if (spelled !== null) pretty = parsePretty(spelled)
+  const pretty = prettyFormat(fl)
   const graph = fl.asBool('graph')
   if (graph && fl.asBool('reverse')) throw new IncompatibleLogOptionsError('--graph', '--reverse')
   let order: LogFlags['order'] = graph ? 'topo' : 'default'
   for (const name of fl.typedOrder('topo_order', 'date_order')) {
     if (fl.asBool(name)) order = name === 'topo_order' ? 'topo' : 'date'
   }
+  let authors: RegExp[]
+  try {
+    authors = fl.asList('author').map(searchBre)
+  } catch (err) {
+    if (err instanceof BreError) throw new GitError(err.message)
+    throw err
+  }
   return {
+    authors,
     date: fl.asStr('date') ?? 'default',
     decorate: fl.asBool('decorate'),
     maxCount: fl.asInt('n') ?? null,
@@ -443,8 +452,13 @@ function inWindow(commit: CommitFacts, flags: LogFlags): boolean {
   return flags.until === null || commit.committerTime <= flags.until
 }
 
-/** Whether a commit's parent count passes `--merges`, `--no-merges` and kin. */
-function parentsPass(commit: CommitFacts, flags: LogFlags): boolean {
+/** Whether a commit's author and parent count pass `--merges`, `--no-merges` and kin. */
+function filtersPass(commit: CommitFacts, flags: LogFlags): boolean {
+  if (
+    flags.authors.length &&
+    !flags.authors.some((pattern) => pattern.test(`${commit.authorName} <${commit.authorEmail}>`))
+  )
+    return false
   if (flags.minParents !== null && commit.parents.length < flags.minParents) return false
   return !(
     flags.maxParents !== null &&
@@ -487,12 +501,12 @@ export async function walked(
   if (flags.order !== 'default') {
     const window: CommitFacts[] = []
     for await (const commit of source) if (inWindow(commit, flags)) window.push(commit)
-    for (const commit of window) if (parentsPass(commit, flags)) interesting.add(commit.oid)
+    for (const commit of window) if (filtersPass(commit, flags)) interesting.add(commit.oid)
     source = sortCommits(window, flags.order)
   }
   let printed = 0
   for await (const commit of source) {
-    if (!inWindow(commit, flags) || !parentsPass(commit, flags)) continue
+    if (!inWindow(commit, flags) || !filtersPass(commit, flags)) continue
     const shown =
       flags.search === null || (await touches(repo, commit.oid, commit.parents, flags.search))
     steps.push({ commit, shown })

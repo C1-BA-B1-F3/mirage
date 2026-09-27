@@ -17,7 +17,7 @@
 
 import { Accessor } from '../../accessor/base.ts'
 import { PathSpec } from '../../types.ts'
-import { stripSlash } from '../../utils/slash.ts'
+import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import type {
   ChildEntry,
@@ -117,7 +117,7 @@ export function makeDriver(
         yield { key, kind: 'marker' }
         continue
       }
-      const relative = key.slice(pfx.length).replace(/\/+$/, '')
+      const relative = rstripSlash(key.slice(pfx.length))
       const slash = relative.indexOf('/')
       if (slash === -1 && !key.endsWith('/')) {
         yield {
@@ -259,6 +259,7 @@ export class FakeManager {
   }
 
   readonly writes: string[] = []
+  readonly ancestors: string[] = []
   readonly unlinks: string[] = []
   readonly subtrees: string[] = []
 
@@ -269,6 +270,11 @@ export class FakeManager {
 
   invalidateAfterUnlink(path: string | PathSpec): Promise<void> {
     this.unlinks.push(typeof path === 'string' ? path : path.mountPath)
+    return Promise.resolve()
+  }
+
+  invalidateAncestors(path: PathSpec): Promise<void> {
+    this.ancestors.push(path.virtual)
     return Promise.resolve()
   }
 

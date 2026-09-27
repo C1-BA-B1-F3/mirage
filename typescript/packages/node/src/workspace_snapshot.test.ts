@@ -31,6 +31,7 @@ import { MountKey } from '@struktoai/mirage-core/workspace/snapshot/keys'
 import { buildMountArgs, toStateDict } from '@struktoai/mirage-core/workspace/snapshot/state'
 import { buildVfs, register } from './vfs/registry.ts'
 import { Workspace } from './workspace.ts'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 const ENC = new TextEncoder()
 
@@ -41,11 +42,11 @@ class NotesAccessor extends Accessor {
 }
 
 function key(path: PathSpec): string {
-  return path.vfsPath.replace(/^\/+|\/+$/g, '')
+  return stripSlash(path.vfsPath)
 }
 
 function readdir(accessor: NotesAccessor, path: PathSpec): Promise<string[]> {
-  const parent = path.virtual.replace(/\/+$/, '')
+  const parent = rstripSlash(path.virtual)
   return Promise.resolve(
     Object.keys(accessor.pages)
       .sort()
@@ -61,7 +62,7 @@ function readBytes(accessor: NotesAccessor, path: PathSpec): Promise<Uint8Array>
 
 function stat(accessor: NotesAccessor, path: PathSpec): Promise<FileStat> {
   const k = key(path)
-  const name = path.virtual.replace(/\/+$/, '').split('/').pop() ?? '/'
+  const name = rstripSlash(path.virtual).split('/').pop() ?? '/'
   if (k === '')
     return Promise.resolve(new FileStat({ name: '/', size: null, type: FileType.DIRECTORY }))
   const page = accessor.pages[k]

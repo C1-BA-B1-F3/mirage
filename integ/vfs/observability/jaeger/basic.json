@@ -272,6 +272,19 @@
         "stdout": "",
         "stderr": "stat: /j/services/search-api/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1.json: No such file or directory\n"
       }
+    },
+    {
+      "id": "jg_rm_unavailable_continues_after_directory",
+      "seq": 610099,
+      "targets": [
+        "jaeger"
+      ],
+      "command": "rm -rf /j/services /j/services/checkout-api/operations.json",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "rm: cannot remove '/j/services': Operation not supported\nrm: cannot remove '/j/services/checkout-api/operations.json': Operation not supported\n"
+      }
     }
   ]
 }

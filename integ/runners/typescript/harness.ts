@@ -19,6 +19,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Outcome, Scope } from '@struktoai/mirage-core/policy/index'
 import type { SessionProfile } from '@struktoai/mirage-core/policy/profile'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 // integ/runtime holds the runtime suite (its own schema and runners,
 // integ/runtime/run.{py,ts} + cli.sh), not battery cases; keep it out.
@@ -225,7 +226,7 @@ export interface HarnessStat {
 }
 
 export interface ExecWorkspace {
-  execute(cmd: string, opts?: { stdin?: Uint8Array; sessionId?: string }): Promise<ExecResult>
+  shell(cmd: string, opts?: { stdin?: Uint8Array; sessionId?: string }): Promise<ExecResult>
   dispatch(
     opName: string,
     path: string,
@@ -374,10 +375,12 @@ export function loadCases(root: string): Case[] {
     }
     for (const file of files) {
       const rel = relative(root, file)
-      const data = JSON.parse(readFileSync(file, 'utf8')) as { cases: Case[] }
+      const data = JSON.parse(readFileSync(file, 'utf8')) as {
+        targets?: string[]
+        cases: (Omit<Case, 'targets'> & { targets?: string[] })[]
+      }
       for (const c of data.cases) {
-        c._source = rel
-        cases.push(c)
+        cases.push({ targets: data.targets ?? [], ...c, _source: rel })
       }
     }
   }
@@ -400,6 +403,13 @@ export function validateCases(root: string, cases: Case[]): void {
   const duplicates: string[] = []
   const unknown: string[] = []
   for (const c of cases) {
+    if (
+      !Array.isArray(c.targets) ||
+      c.targets.length === 0 ||
+      c.targets.some((t) => typeof t !== 'string')
+    ) {
+      throw new Error(`case ${c.id}: targets must be a nonempty string list`)
+    }
     const first = seen.get(c.id)
     if (first !== undefined) duplicates.push(`${c.id} (${first} and ${c._source ?? '?'})`)
     else seen.set(c.id, c._source ?? '?')
@@ -461,7 +471,7 @@ export async function seedFixture(
 async function seedFrom(ws: ExecWorkspace, base: string, mountPath: string): Promise<void> {
   for (const file of walkFiles(base)) {
     const rel = relative(base, file).split(sep).join('/')
-    const dest = `${mountPath.replace(/\/+$/, '')}/${rel}`
+    const dest = `${rstripSlash(mountPath)}/${rel}`
     const parent = dest.slice(0, dest.lastIndexOf('/'))
     await ws.shell(`mkdir -p ${parent}`)
     await ws.shell(`tee ${dest} > /dev/null`, { stdin: new Uint8Array(readFileSync(file)) })
@@ -476,7 +486,7 @@ export async function seedMountRoot(ws: ExecWorkspace, mountPath: string): Promi
   // marker file rides the same workspace plumbing fixture seeding uses:
   // the upload auto-creates the folder chain and the delete leaves the
   // folders behind, so the mount lists as empty like every other target.
-  const marker = `${mountPath.replace(/\/+$/, '')}/.seed`
+  const marker = `${rstripSlash(mountPath)}/.seed`
   await ws.shell(`tee ${marker} > /dev/null`, { stdin: ENC.encode('seed\n') })
   await ws.shell(`rm ${marker}`)
 }
@@ -535,7 +545,7 @@ export async function runConsistencyCase(
     return {
       exitCode: NO_SHADOW_EXIT,
       out: '',
-      stderr: `[${target.id}] ${c.id}: ${target.mounts[0].vfs} adapter has no shadow workspace\n`,
+      stderr: `[${target.id}] ${c.id}: ${target.mounts[0]?.vfs ?? 'unknown'} adapter has no shadow workspace\n`,
     }
   }
   try {
@@ -613,7 +623,7 @@ function provisionLine(r: ProvisionInfo): string {
 // base URL, which is only known once the server has bound a port.
 export function bindMount(c: Case, mountPath: string): Case {
   const tokens: ReadonlyArray<readonly [string, string]> = [
-    ['{mount}', mountPath.replace(/\/+$/, '')],
+    ['{mount}', rstripSlash(mountPath)],
     ['{http}', process.env.HTTP_ENDPOINT ?? ''],
   ]
   const subst = (text: string): string =>
@@ -819,7 +829,7 @@ export async function runCase(
     // and charging that to the dry run would fail every ask case.
     recorded = ws.decisions.pending().length - before
   }
-  const result = await ws.shell(c.command, { sessionId: c.session })
+  const result = await ws.shell(c.command, c.session === undefined ? {} : { sessionId: c.session })
   const elapsed = (performance.now() - start) / 1000
   const out = DEC.decode(result.stdout)
   const err = DEC.decode(result.stderr)

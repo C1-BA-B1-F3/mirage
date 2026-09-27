@@ -14,7 +14,7 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
+import { mountKey, mountPrefixOf, underPath } from '../../../utils/key_prefix.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import { FileStat, FileType, PathSpec, type LsSortBy, type LsTimeKind } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
@@ -37,7 +37,7 @@ import { identityOf, type Identity } from '../utils/identity.ts'
 import { gnuStrerror, isEacces, isWalkError } from '../../../utils/errors.ts'
 import { failureText } from '../../../errors/classify.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
-import { CycleError, respellOne } from '../../../utils/path.ts'
+import { CycleError, respellOne, posixNormpath } from '../../../utils/path.ts'
 import { formatRecords } from '../utils/output.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 import { contentSize } from '../../../utils/stat_view.ts'
@@ -659,6 +659,7 @@ async function sortOperands(
 export interface LsFlags {
   readonly long: boolean
   readonly all: boolean
+  readonly showDotEntries: boolean
   readonly human: boolean
   readonly reverse: boolean
   readonly classify: boolean
@@ -856,6 +857,7 @@ export function parseFlags(fl: FlagView): LsFlags {
   return Object.freeze({
     long,
     all: fl.asBool('all') || fl.asBool('almost_all'),
+    showDotEntries: fl.asBool('all'),
     human: fl.asBool('human_readable'),
     reverse: fl.asBool('reverse'),
     classify: fl.asBool('classify'),
@@ -1013,11 +1015,42 @@ export async function lsGeneric(
   appendListing(rows, render, lines, flags.hyperlink ? rowed.map((o) => o.path.virtual) : null)
   let printed = rows.length > 0
   for (const operand of operands) {
-    for (const [dirSpec, entries] of operand.groups) {
+    for (const [dirSpec, group] of operand.groups) {
+      let entries = group
+      if (flags.showDotEntries) {
+        const dots: FileStat[] = []
+        const prefix = mountPrefixOf(dirSpec.virtual, dirSpec.vfsPath)
+        for (const name of ['.', '..']) {
+          const target = posixNormpath(`${dirSpec.virtual}/${name}`)
+          let row = new FileStat({ name, type: FileType.DIRECTORY })
+          // Only the namespace can stat a parent outside this mount.
+          // Without that door, keep the synthetic directory row.
+          if (statNeeded(flags) && (opts.statPath !== undefined || underPath(target, prefix))) {
+            try {
+              const found =
+                opts.statPath !== undefined
+                  ? await opts.statPath(target)
+                  : await stat(childSpec(target, prefix))
+              if (found !== null) row = found.with({ name })
+            } catch (err) {
+              if (!isWalkError(err)) throw err
+              row = statFailedRow(name)
+              warnings.push({
+                message: `ls: cannot access '${name}': ${errText(err)}`,
+                serious: false,
+              })
+            }
+          }
+          dots.push(row)
+        }
+        entries = sortStats([...dots, ...entries], sortBy, reverse, timeKind, groupDirsFirst)
+      }
       if (headed) {
         if (printed) lines.push('')
         lines.push(`${respellOne(dirSpec.virtual, operand.path.virtual, operand.path.rawPath)}:`)
       }
+      // GNU 9.7 prints allocated blocks; VFS has no allocation metadata.
+      if (long) lines.push(entries.length > 0 ? 'total ?' : 'total 0')
       appendListing(
         entries,
         render,

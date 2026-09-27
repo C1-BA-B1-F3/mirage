@@ -23,13 +23,13 @@ Reading the tree:
 
 - `ls <mount>/` lists the calendars. The primary one is always spelled
   `primary`; every other directory ends in `__<calendarId>`.
-- `ls <mount>/primary/` lists ONLY the days that have an event, and ONLY
-  within a rolling window around today (30 days back, 90 forward). This is
-  a window, not the whole calendar. To look outside it, glob a date:
-  `ls <mount>/primary/2025-12-*` pushes its own range down to the API.
-- Any well-formed date resolves even when it holds nothing, so
-  `ls <mount>/primary/2027-03-04/` succeeds and prints nothing. An empty
-  listing means the day is free, not that the day is missing.
+- `ls <mount>/primary/` lists days with events from all available history
+  through today +90 days unless end_time is configured. start_time/end_time
+  restrict this mount, including direct paths, date globs and event reads.
+  A date glob such as `ls <mount>/primary/2027-03-*` selects its own
+  listing range within that scope, beyond the default future horizon.
+- A well-formed date inside the configured scope is a directory even when
+  it holds no events. Dates outside the scope are absent.
 - A file name is `<eventId>__<HHMM-HHMM>_<Title>.gcal.json`. The times are
   clamped to that day, so an event running through it reads `0000-2400`.
   A multi-day event appears under every day it covers.

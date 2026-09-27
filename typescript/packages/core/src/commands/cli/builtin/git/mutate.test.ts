@@ -47,6 +47,7 @@ import {
 } from './io.ts'
 import type { MountView } from '../../../../ops/types.ts'
 import type { Dispatch } from './types.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 const BUILDER = fileURLToPath(
   new URL('../../../../../../../../integ/fixtures/git/build.sh', import.meta.url),
@@ -84,7 +85,7 @@ function walkDisk(root: string, base = root): string[] {
 async function walkMount(dispatch: Dispatch, root: string, base = root): Promise<string[]> {
   const out: string[] = []
   for (const entry of await readNames(dispatch, root)) {
-    const name = entry.replace(/\/+$/, '').split('/').pop() ?? ''
+    const name = rstripSlash(entry).split('/').pop() ?? ''
     if (name === '') continue
     const full = `${root}/${name}`
     const data = await readOptional(dispatch, full)

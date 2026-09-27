@@ -7,6 +7,7 @@
   // (calling http.Server's closeAllConnections on a net.Server) shipped that way.
   "include": [
     "server/**/*.ts",
+    "watch/cache/**/*.ts",
     "wandb/**/*.ts",
     "slack_atlas.ts",
     "airtable_atlas.ts",

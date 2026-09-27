@@ -43,6 +43,7 @@ import { fetchTree } from '../../../../core/hf_hub/tree.ts'
 import { isDirEntry, type TreeEntry } from '../../../../core/hf_hub/tree_entry.ts'
 import { hubFor, repoTypeOf, requireOperands, textOut } from './accessor.ts'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /**
  * Which repo paths a download line asks for.
@@ -82,7 +83,7 @@ export function selected(
  */
 export async function ensureDir(dispatch: DispatchFn, path: string): Promise<void> {
   const missing: string[] = []
-  let current = path.replace(/\/+$/, '')
+  let current = rstripSlash(path)
   while (current !== '' && current !== '/') {
     try {
       await dispatch('stat', PathSpec.fromStrPath(current))
@@ -378,7 +379,7 @@ export async function downloadCmd(inv: CLIInvocation): Promise<CommandFnResult> 
     // A named local directory downloads straight into it, with no cache in
     // between; that is what upstream does too, which is why --force-download
     // only means anything in cache mode.
-    base = localDir.replace(/\/+$/, '')
+    base = rstripSlash(localDir)
     written = await fetchAll(dispatch, accessor, paths, base, workers)
   } else {
     ;[base, written] = await fetchIntoCache(
@@ -386,7 +387,7 @@ export async function downloadCmd(inv: CLIInvocation): Promise<CommandFnResult> 
       accessor,
       tree,
       paths,
-      (cacheDir ?? '').replace(/\/+$/, ''),
+      rstripSlash(cacheDir ?? ''),
       fl.asBool('force_download'),
       workers,
     )

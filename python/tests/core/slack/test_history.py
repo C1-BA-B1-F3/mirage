@@ -19,6 +19,7 @@ import pytest
 
 from mirage.core.slack.config import SlackConfig
 from mirage.core.slack.history import get_history_jsonl
+from mirage.core.time_range import TimeRange
 
 
 @pytest.fixture
@@ -49,7 +50,8 @@ async def test_get_history_jsonl(config):
             new_callable=AsyncMock,
             return_value=mock_data,
     ):
-        result = await get_history_jsonl(config, "C001", "2023-11-14")
+        result = await get_history_jsonl(config, "C001", "2023-11-14",
+                                         TimeRange())
 
     lines = result.decode().strip().split("\n")
     assert len(lines) == 2
@@ -72,6 +74,7 @@ async def test_get_history_empty(config):
             new_callable=AsyncMock,
             return_value=mock_data,
     ):
-        result = await get_history_jsonl(config, "C001", "2023-11-14")
+        result = await get_history_jsonl(config, "C001", "2023-11-14",
+                                         TimeRange())
 
     assert result == b""

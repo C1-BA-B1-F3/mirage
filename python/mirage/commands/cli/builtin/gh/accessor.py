@@ -98,41 +98,25 @@ def csv_values(values: Iterable[str]) -> list[str]:
     ]
 
 
-def _dash_option(inv: CLIInvocation[GhConfig], options: tuple[str,
-                                                              ...]) -> bool:
-    return any(
-        word == f"{option}=-" or (len(option) == 2 and word == f"{option}-") or
-        (word == option and index + 1 < len(inv.argv) and inv.argv[index +
-                                                                   1] == "-")
-        for option in options for index, word in enumerate(inv.argv))
-
-
 async def read_cli_file(inv: CLIInvocation[GhConfig], raw: FlagValue,
-                        option: str, *aliases: str) -> bytes:
+                        option: str) -> bytes:
     """Read a path-valued CLI option from the VFS, or `-` from stdin."""
-    if isinstance(raw, PathSpec):
-        path = "-" if raw.raw_path == "-" or _dash_option(
-            inv, (option, *aliases)) else raw.virtual
-        spec = raw
-    elif isinstance(raw, str):
-        path = raw
-        cwd = inv.env.get("PWD", "/")
-        virtual = path if path.startswith("/") else posixpath.normpath(
-            posixpath.join(cwd, path))
-        spec = PathSpec.from_str_path(virtual)
-    else:
+    if not isinstance(raw, (str, PathSpec)):
         raise ValueError(f"{option} expects a file")
+    path = raw.raw_path if isinstance(raw, PathSpec) else raw
     if path == "-":
         if inv.stdin is None:
             raise ValueError(f"{option} needs standard input")
         return await materialize(inv.stdin)
+    spec = raw if isinstance(raw, PathSpec) else PathSpec.from_str_path(
+        posixpath.normpath(posixpath.join(inv.env.get("PWD", "/"), raw)))
     if inv.doors is None or inv.doors.dispatch is None:
         raise ValueError(f"{option} needs a workspace to read files from")
     try:
         data, _ = await inv.doors.dispatch("read", spec)
+        return await materialize(data)
     except (FileNotFoundError, NotADirectoryError) as exc:
         raise ValueError(f"read {path}: {fs_strerror(exc)}") from None
-    return data if isinstance(data, bytes) else bytes(data)
 
 
 async def body_value(inv: CLIInvocation[GhConfig],
@@ -150,8 +134,8 @@ async def body_value(inv: CLIInvocation[GhConfig],
     if inline is not None:
         return inline
     if source is not None:
-        return (await read_cli_file(inv, source, f"--{file.replace('_', '-')}",
-                                    "-F")).decode()
+        return (await read_cli_file(inv, source,
+                                    f"--{file.replace('_', '-')}")).decode()
     if required:
         raise ValueError(f"--{value.replace('_', '-')} or "
                          f"--{file.replace('_', '-')} is required")

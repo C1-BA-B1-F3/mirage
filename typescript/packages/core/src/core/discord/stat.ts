@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { guardDay } from '../time_range.ts'
 import type { DiscordAccessor } from '../../accessor/discord.ts'
 import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
@@ -24,6 +25,7 @@ import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { entryStat, makeStat } from '../hierarchy/stat.ts'
 import { readdir, snowflakeToIso } from './readdir.ts'
 import { detectScope } from './scope.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 function dirStat(_match: ScopeMatch, _path: PathSpec, entry: IndexEntry): FileStat {
   return new FileStat({ name: entry.vfsName, type: FileType.DIRECTORY })
@@ -69,7 +71,7 @@ async function channelProven(
   index: IndexCacheStore | undefined,
   up: number,
 ): Promise<void> {
-  let virtual = path.virtual.replace(/\/+$/, '')
+  let virtual = rstripSlash(path.virtual)
   for (let i = 0; i < up; i++) virtual = virtual.split('/').slice(0, -1).join('/')
   const prefix = mountPrefixOf(path.virtual, path.vfsPath)
   const spec = new PathSpec({
@@ -96,6 +98,7 @@ async function statDay(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
+  await guardDay(accessor, match, path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry !== null) {
     return new FileStat({ name: entry.vfsName, type: FileType.DIRECTORY })
@@ -112,10 +115,11 @@ async function statDay(
  */
 async function statChat(
   accessor: DiscordAccessor,
-  _match: ScopeMatch,
+  match: ScopeMatch,
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
+  await guardDay(accessor, match, path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry !== null) {
     return new FileStat({
@@ -130,6 +134,7 @@ async function statChat(
 }
 
 export const stat = makeStat<DiscordAccessor>(detectScope, readdir, {
+  guards: { messages: guardDay, files: guardDay, file_blob: guardDay },
   entryStats: {
     guild: guildStat,
     channels_dir: dirStat,

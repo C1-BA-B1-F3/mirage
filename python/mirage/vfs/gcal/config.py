@@ -13,9 +13,10 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.core.google.config import GoogleConfig
+from mirage.core.time_config import TimeRangeConfig
 
 
-class GCalConfig(GoogleConfig):
+class GCalConfig(GoogleConfig, TimeRangeConfig):
     # One zone for the whole mount, not one per calendar: the Calendar UI
     # draws its whole grid in the primary zone, and per-calendar bucketing
     # would make the same day directory name mean different 24-hour windows

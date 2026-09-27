@@ -26,9 +26,8 @@ export const config = parseConfig({
 
 export const DEFAULT_BRANCH = 'main'
 export const DEFAULT_LOGIN = 'integ-user'
-// Every branch has a root commit, so "the latest commit" is answerable before
-// anything is written. Its date is fixed rather than now, because a golden
-// renders it.
+// Fixture branches seeded with files have a synthetic root commit. Its date
+// is fixed rather than now, because a golden renders it.
 export const ROOT_COMMIT_DATE = '1970-01-01T00:00:00Z'
 // What an `author`/`committer` that names no date is dated. The vendor uses the
 // current time; this uses a constant for the same reason ROOT_COMMIT_DATE does,
@@ -38,5 +37,5 @@ export const WRITE_COMMIT_DATE = '2026-01-01T00:00:00Z'
 // A file at or over this size is not indexed for code search, which is
 // GitHub's own documented limit.
 export const SEARCH_SIZE_LIMIT = 384 * 1024
-// The Enterprise mount serves every route a second time under this prefix.
+// Enterprise REST routes use /api/v3; GraphQL uses /api/graphql.
 export const API_PREFIXES = ['', '/api/v3']

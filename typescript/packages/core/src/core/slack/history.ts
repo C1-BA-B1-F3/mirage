@@ -25,46 +25,29 @@ export interface SlackMessage {
 
 const encoder = new TextEncoder()
 
-function dayBoundsUtc(dateStr: string): { oldest: string; latest: string } {
-  const parts = dateStr.split('-').map((s) => Number.parseInt(s, 10))
-  const y = parts[0]
-  const m = parts[1]
-  const d = parts[2]
-  if (
-    y === undefined ||
-    m === undefined ||
-    d === undefined ||
-    !Number.isFinite(y) ||
-    !Number.isFinite(m) ||
-    !Number.isFinite(d)
-  ) {
-    throw new Error(`Invalid date_str: ${dateStr}`)
-  }
-  const start = Date.UTC(y, m - 1, d, 0, 0, 0) / 1000
-  const end = Date.UTC(y, m - 1, d, 23, 59, 59) / 1000
-  return { oldest: String(start), latest: String(end) }
-}
-
-export function streamMessagesForDay(
+export async function* streamMessagesForDay(
   accessor: SlackAccessor,
   channelId: string,
   dateStr: string,
   options: { limit?: number } = {},
 ): AsyncIterableIterator<SlackMessage[]> {
   const limit = options.limit ?? 200
-  const { oldest, latest } = dayBoundsUtc(dateStr)
-  return cursorPages<SlackMessage>(
+  const [oldest, latest] = accessor.timeRange.dayBounds(dateStr)
+  if (oldest >= latest) return
+  for await (const page of cursorPages<SlackMessage>(
     accessor.transport,
     'conversations.history',
     {
       channel: channelId,
-      oldest,
-      latest,
+      oldest: oldest.toFixed(6),
+      latest: latest.toFixed(6),
       limit: String(limit),
       inclusive: 'true',
     },
     'messages',
-  )
+  )) {
+    yield page.filter((message) => Number(message.ts) >= oldest && Number(message.ts) < latest)
+  }
 }
 
 export async function fetchMessagesForDay(

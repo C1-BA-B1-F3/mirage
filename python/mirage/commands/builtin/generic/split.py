@@ -17,7 +17,9 @@ from mirage.commands.spec.usage import extra_operand_error
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
-from mirage.utils.key_prefix import mount_spec
+from mirage.utils.errors import FS_ERRORS, fs_strerror
+from mirage.utils.key_prefix import mount_key
+from mirage.utils.path import resolve_path
 
 
 class ChunkKind(Enum):
@@ -436,11 +438,19 @@ async def split(
     additional_suffix: str = "",
     separator: bytes = b"\n",
     mount_prefix: str = "",
+    cwd: str = "/",
+    relay: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 2:
         raise extra_operand_error(CommandName.SPLIT, paths[2].raw_path
                                   or paths[2].virtual)
-    prefix_name = paths[1].mount_path if len(paths) >= 2 else "/x"
+    # An output is the prefix operand, or `x` in the working directory,
+    # plus its suffix, wherever the input lives: GNU writes `xaa` to the
+    # cwd, names it as it formed it (`split: xaa`, `split: /ro/preaa`),
+    # and stops at the first one it cannot create.
+    prefix_virtual = (paths[1].virtual if len(paths) >= 2 else resolve_path(
+        "x", cwd))
+    typed_prefix = paths[1].raw_path if len(paths) >= 2 else "x"
     if lines_per_file == 0 and byte_limit == 0 and chunks is None:
         lines_per_file = 1000
     suffix_fn = partial(
@@ -461,6 +471,22 @@ async def split(
     writes: dict[str, ByteSource] = {}
     file_idx = 0
 
+    async def emit(name: str, data: bytes) -> None:
+        virtual = prefix_virtual + name
+        spec = PathSpec.from_str_path(virtual,
+                                      mount_key(virtual, mount_prefix))
+        try:
+            await write_bytes(spec, data)
+        except FS_ERRORS as exc:
+            raise UsageError(
+                f"split: {typed_prefix + name}: "
+                f"{fs_strerror(exc)}", 1) from exc
+        if not relay:
+            # Relay writes land on whichever mount owns each path and
+            # invalidate through the dispatcher; keying them here would
+            # have the runner prefix them onto this mount.
+            writes[spec.mount_path] = data
+
     if chunks is not None:
         all_data = b"".join([chunk async for chunk in source])
         if chunks.only is not None:
@@ -470,26 +496,22 @@ async def split(
         # Every chunk gets its file, an empty one included: GNU creates
         # N files for `-n N` however short the input is.
         for i, part in enumerate(chunk_parts(all_data, chunks, separator)):
-            out_path = (prefix_name + suffix_fn(i) + additional_suffix)
-            await write_bytes(mount_spec(mount_prefix, out_path), part)
-            writes[out_path] = part
+            name = suffix_fn(i) + additional_suffix
+            await emit(name, part)
     elif byte_limit > 0:
         buf = bytearray()
         async for chunk in source:
             buf.extend(chunk)
             while len(buf) >= byte_limit:
-                out_path = (prefix_name + suffix_fn(file_idx) +
-                            additional_suffix)
+                name = suffix_fn(file_idx) + additional_suffix
                 data = bytes(buf[:byte_limit])
-                await write_bytes(mount_spec(mount_prefix, out_path), data)
-                writes[out_path] = data
+                await emit(name, data)
                 buf = buf[byte_limit:]
                 file_idx += 1
         if buf:
-            out_path = (prefix_name + suffix_fn(file_idx) + additional_suffix)
+            name = suffix_fn(file_idx) + additional_suffix
             data = bytes(buf)
-            await write_bytes(mount_spec(mount_prefix, out_path), data)
-            writes[out_path] = data
+            await emit(name, data)
     else:
         line_buf: list[bytes] = []
         if separator == b"\n":
@@ -500,18 +522,15 @@ async def split(
         async for line in records:
             line_buf.append(line)
             if len(line_buf) >= lines_per_file:
-                out_path = (prefix_name + suffix_fn(file_idx) +
-                            additional_suffix)
+                name = suffix_fn(file_idx) + additional_suffix
                 data = separator.join(line_buf) + separator
-                await write_bytes(mount_spec(mount_prefix, out_path), data)
-                writes[out_path] = data
+                await emit(name, data)
                 line_buf = []
                 file_idx += 1
         if line_buf:
-            out_path = (prefix_name + suffix_fn(file_idx) + additional_suffix)
+            name = suffix_fn(file_idx) + additional_suffix
             data = separator.join(line_buf) + separator
-            await write_bytes(mount_spec(mount_prefix, out_path), data)
-            writes[out_path] = data
+            await emit(name, data)
 
     return None, IOResult(writes=writes)
 

@@ -17,10 +17,11 @@ from typing import Any
 from mirage.accessor.discord import DiscordAccessor
 from mirage.commands.builtin.discord import COMMANDS
 from mirage.commands.builtin.discord.io import IO
-from mirage.core.discord.config import DiscordConfig
+from mirage.core.time_range import TimeRange
 from mirage.ops.discord import OPS as DISCORD_VFS_OPS
 from mirage.types import VFSName
 from mirage.vfs.bound import BoundVFS
+from mirage.vfs.discord.config import DiscordConfig
 from mirage.vfs.discord.prompt import PROMPT, WRITE_PROMPT
 
 
@@ -39,7 +40,10 @@ class DiscordVFS(BoundVFS):
     def __init__(self, config: DiscordConfig) -> None:
         super().__init__(io=IO)
         self.config = config
-        self.accessor = DiscordAccessor(self.config)
+        self.accessor = DiscordAccessor(
+            self.config,
+            TimeRange.from_strings(config.start_time, config.end_time))
+        self.PROMPT = PROMPT + self.accessor.time_range.prompt()
         for fn in COMMANDS:
             self.register(fn)
         for fn in DISCORD_VFS_OPS:

@@ -39,7 +39,8 @@ def test_write_puts_and_invalidates_every_ancestor_listing(accessor):
         make_write_bytes(make_driver(store))(accessor, spec("/a/b/c.txt"),
                                              b"hi"))
     assert store.objects == {"a/b/c.txt": b"hi"}
-    assert manager.writes == ["/a/b/c.txt", "/a/b", "/a"]
+    assert manager.writes == ["/a/b/c.txt"]
+    assert manager.ancestors == ["/mnt/a/b/c.txt"]
 
 
 def test_write_at_mount_root_invalidates_only_itself(accessor):
@@ -54,7 +55,8 @@ def test_create_puts_empty_and_invalidates_ancestors(accessor):
     manager = _managed(
         make_create(make_driver(store))(accessor, spec("/a/b/c.txt")))
     assert store.objects == {"a/b/c.txt": b""}
-    assert manager.writes == ["/a/b/c.txt", "/a/b", "/a"]
+    assert manager.writes == ["/a/b/c.txt"]
+    assert manager.ancestors == ["/mnt/a/b/c.txt"]
 
 
 def test_truncate_pads_with_nul_and_invalidates_ancestors(accessor):
@@ -62,7 +64,8 @@ def test_truncate_pads_with_nul_and_invalidates_ancestors(accessor):
     manager = _managed(
         make_truncate(make_driver(store))(accessor, spec("/a/f.bin"), 4))
     assert store.objects["a/f.bin"] == b"0123"
-    assert manager.writes == ["/a/f.bin", "/a"]
+    assert manager.writes == ["/a/f.bin"]
+    assert manager.ancestors == ["/mnt/a/f.bin"]
 
 
 def test_truncate_extends_a_missing_key(accessor):
@@ -78,7 +81,8 @@ def test_mkdir_writes_a_marker_and_parents_gate_ancestors(accessor):
     assert manager.writes == ["/a/b"]
     deep = _managed(
         make_mkdir(make_driver(store))(accessor, spec("/x/y"), parents=True))
-    assert deep.writes == ["/x/y", "/x"]
+    assert deep.writes == ["/x/y"]
+    assert deep.ancestors == ["/mnt/x/y"]
 
 
 def test_mkdir_without_marker_support_is_a_no_op(accessor):

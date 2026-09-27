@@ -47,7 +47,8 @@ def test_rename_moves_a_file(accessor):
         _rename_for(store)(accessor, spec("/a/src.txt"), spec("/b/dst.txt")))
     assert store.objects == {"b/dst.txt": b"hi"}
     assert manager.subtrees == ["/b/dst.txt", "/a/src.txt"]
-    assert manager.writes == ["/b", "/a"]
+    assert manager.writes == []
+    assert manager.ancestors == ["/mnt/b/dst.txt", "/mnt/a/src.txt"]
 
 
 def test_rename_falls_back_to_the_prefix_walk(accessor):

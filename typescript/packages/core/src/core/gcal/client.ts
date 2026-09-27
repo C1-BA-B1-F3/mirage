@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { TimeRange, parseTime } from '../time_range.ts'
+import { eventSpan } from './day.ts'
 import type { JsonValue } from '../../types.ts'
 import { calendarBase, googleDelete, googleGet, type TokenManager } from '../google/client.ts'
 
@@ -54,6 +56,7 @@ export async function listCalendars(
     token = nextToken(data)
     if (token === null) break
   }
+  if (token !== null) throw new Error('gcal: listing exceeded 50 pages; narrow the date range')
   return items
 }
 
@@ -71,22 +74,25 @@ export async function listCalendars(
 export async function listEvents(
   tokenManager: TokenManager,
   calendarId: string,
-  timeMin: string,
+  timeMin: string | null,
   timeMax: string,
   timeZone?: string,
+  scope: TimeRange = new TimeRange(),
 ): Promise<Record<string, JsonValue>[]> {
   // The id is one path segment and several real ones are not URL-safe: a
   // holiday calendar is "en.usa#holiday@group.v.calendar.google.com", and an
   // unencoded "#" opens a fragment, so the request would reach
   // /calendars/en.usa instead.
   const url = `${calendarBase(tokenManager)}/calendars/${encodeURIComponent(calendarId)}/events`
+  const [lo, hi] = scope.clip(timeMin === null ? -Infinity : parseTime(timeMin), parseTime(timeMax))
+  if (lo >= hi) return []
   const base: Record<string, string> = {
-    timeMin,
-    timeMax,
+    timeMax: new Date(Math.ceil(hi) * 1000).toISOString(),
     singleEvents: 'true',
     orderBy: 'startTime',
     maxResults: '2500',
   }
+  if (Number.isFinite(lo)) base.timeMin = new Date(Math.floor(lo) * 1000).toISOString()
   if (timeZone !== undefined && timeZone !== '') base.timeZone = timeZone
   const items: Record<string, JsonValue>[] = []
   let token: string | null = null
@@ -97,7 +103,17 @@ export async function listEvents(
     token = nextToken(data)
     if (token === null) break
   }
-  return items
+  if (token !== null) throw new Error('gcal: listing exceeded 50 pages; narrow the date range')
+  return scope.bounded
+    ? items.filter((event) => {
+        const span = eventSpan(event, timeZone ?? 'UTC')
+        return (
+          span !== null &&
+          span[0] / 1000 < hi &&
+          (span[1] / 1000 > lo || (span[0] === span[1] && span[0] / 1000 >= lo))
+        )
+      })
+    : items
 }
 
 /** Delete one event. */

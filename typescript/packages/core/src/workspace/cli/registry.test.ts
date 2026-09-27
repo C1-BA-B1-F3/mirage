@@ -259,3 +259,20 @@ describe('builtin CLI configs install from the python spelling', () => {
     })
   }
 })
+
+describe('account CLIs take no mount time scope', () => {
+  for (const [name, spec] of [
+    ['slack', SLACK],
+    ['discord', DISCORD],
+  ] as const) {
+    it(`${name} refuses start_time and end_time`, () => {
+      expect(() =>
+        new CLIRegistry().install(name, spec, {
+          token: 'x',
+          start_time: '2026-06-01T00:00:00Z',
+          end_time: '2026-06-02T00:00:00Z',
+        }),
+      ).toThrow(`CLI '${name}': unknown config keys: end_time, start_time`)
+    })
+  }
+})

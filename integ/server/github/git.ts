@@ -25,6 +25,7 @@ import {
   commitsBySha,
   headOf,
   reaches,
+  repoIsEmpty,
   stageTree,
   stagedTree,
   treeOfBranch,
@@ -33,6 +34,7 @@ import {
 import type { RepoRow } from './store.ts'
 import { authedRoute, everywhere, fail, jsonBodyOf, param, route, str, withRepo } from './http.ts'
 import { recordCommit, writeFile } from './contents.ts'
+import { stripSlash } from '../kit/typescript/index.ts'
 
 async function blobBySha(
   db: C,
@@ -73,7 +75,7 @@ const createTree = withRepo(async (ctx, repo) => {
   for (const raw of entries) {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) continue
     const entry = raw as Record<string, unknown>
-    const path = String(entry.path ?? '').replace(/^\/+|\/+$/g, '')
+    const path = stripSlash(String(entry.path ?? ''))
     if (path === '') continue
     if ('sha' in entry && entry.sha === null) {
       files.delete(path)
@@ -164,7 +166,7 @@ const createCommit = withRepo(async (ctx, repo) => {
 // perfectly real.
 const createRef = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
-  const ref = str(body, 'ref').replace(/^\/+|\/+$/g, '')
+  const ref = stripSlash(str(body, 'ref'))
   if (!ref.startsWith('refs/heads/')) return fail(422, 'Invalid request.\n\n"ref" is invalid.')
   const name = ref.slice('refs/heads/'.length)
   if (name === '') return fail(422, 'Invalid request.\n\n"ref" is invalid.')
@@ -230,7 +232,7 @@ const createRef = withRepo(async (ctx, repo) => {
 // a fast forward is one where the branch's current head is still reachable by
 // walking first parents back from the requested commit.
 const updateRef = withRepo(async (ctx, repo) => {
-  const ref = param(ctx, 'ref').replace(/^\/+|\/+$/g, '')
+  const ref = stripSlash(param(ctx, 'ref'))
   const name = ref.startsWith('heads/') ? ref.slice('heads/'.length) : ''
   const names = await branchNames(ctx.db, ctx.tenant, repo)
   if (name === '' || !names.includes(name)) return fail(422, 'Reference does not exist')
@@ -309,26 +311,31 @@ async function headSha(ctx: Ctx<C>, repo: RepoRow, branch: string): Promise<stri
 // whichever it expects, so serving only the singular makes the plural read as
 // "no such ref". A prefix that matches nothing is a 404 rather than an empty
 // list, which is what the vendor answers.
+//
+// An empty repository has no refs at all, and both endpoints say so with a 409
+// before reading the ref, whatever it names: a branch, a tag, nothing that
+// exists, or no prefix. Answering from the branch row instead reported the
+// default branch at an empty sha, which no client can resolve. For the same
+// reason a branch nothing has been committed to is no ref once the repository
+// has others: a ref names a commit, so that branch is missing, not at "".
 const showRef = withRepo(async (ctx, repo) => {
-  const ref = param(ctx, 'ref').replace(/^\/+|\/+$/g, '')
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
+  const ref = stripSlash(param(ctx, 'ref'))
   const name = ref.startsWith('heads/') ? ref.slice('heads/'.length) : ''
   const names = await branchNames(ctx.db, ctx.tenant, repo)
-  if (!names.includes(name)) return fail(404, 'Not Found')
-  return {
-    status: 200,
-    body: { ref: `refs/${ref}`, object: { sha: await headSha(ctx, repo, name), type: 'commit' } },
-  }
+  const sha = names.includes(name) ? await headSha(ctx, repo, name) : ''
+  if (sha === '') return fail(404, 'Not Found')
+  return { status: 200, body: { ref: `refs/${ref}`, object: { sha, type: 'commit' } } }
 })
 
 const listRefs = withRepo(async (ctx, repo) => {
-  const prefix = param(ctx, 'ref').replace(/^\/+|\/+$/g, '')
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
+  const prefix = stripSlash(param(ctx, 'ref'))
   const items: JsonValue[] = []
   for (const name of await branchNames(ctx.db, ctx.tenant, repo)) {
     if (!`heads/${name}`.startsWith(prefix)) continue
-    items.push({
-      ref: `refs/heads/${name}`,
-      object: { sha: await headSha(ctx, repo, name), type: 'commit' },
-    })
+    const sha = await headSha(ctx, repo, name)
+    if (sha !== '') items.push({ ref: `refs/heads/${name}`, object: { sha, type: 'commit' } })
   }
   if (items.length === 0) return fail(404, 'Not Found')
   return { status: 200, body: items }
@@ -346,6 +353,9 @@ export function gitRoutes(): KitRoute<C>[] {
       write: true,
     }),
     route<C>('GET', `${p}/repos/:owner/:repo/git/ref/*ref`, authedRoute(showRef)),
+    // Bare as well as with a prefix: the vendor lists every ref at `git/refs`,
+    // and the splat below needs at least the slash.
+    route<C>('GET', `${p}/repos/:owner/:repo/git/refs`, authedRoute(listRefs)),
     route<C>('GET', `${p}/repos/:owner/:repo/git/refs/*ref`, authedRoute(listRefs)),
   ])
 }

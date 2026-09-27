@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { guardDay } from '../time_range.ts'
 import type { SlackAccessor } from '../../accessor/slack.ts'
 import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
@@ -25,6 +26,7 @@ import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { makeStat } from '../hierarchy/stat.ts'
 import { readdir } from './readdir.ts'
 import { detectScope } from './scope.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 function slackModified(remoteTime: string): string | null {
   if (remoteTime === '') return null
@@ -96,11 +98,12 @@ async function statDay(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
+  await guardDay(accessor, match, path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry !== null) {
     return new FileStat({ name: entry.vfsName, type: FileType.DIRECTORY })
   }
-  const virtual = path.virtual.replace(/\/+$/, '').split('/').slice(0, -1).join('/')
+  const virtual = rstripSlash(path.virtual).split('/').slice(0, -1).join('/')
   const prefix = mountPrefixOf(path.virtual, path.vfsPath)
   const channelSpec = new PathSpec({
     virtual,
@@ -114,6 +117,7 @@ async function statDay(
 }
 
 export const stat = makeStat<SlackAccessor>(detectScope, readdir, {
+  guards: { messages: guardDay, files: guardDay, file_blob: guardDay },
   entryStats: {
     channel: channelStat,
     user: userStat,

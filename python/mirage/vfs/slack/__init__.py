@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.slack.config import SlackConfig
+from mirage.vfs.slack.config import SlackConfig
 
 __all__ = ["SlackConfig", "SlackVFS"]
 

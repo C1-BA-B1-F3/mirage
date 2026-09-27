@@ -15,6 +15,7 @@
 from dataclasses import replace
 
 from mirage.commands.spec import SPECS
+from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandSpec, Operand, Option
 from mirage.workspace.executor.command.flags import (option_error, parse_flags,
                                                      synthesize_path_spec)
@@ -223,3 +224,31 @@ def test_the_two_argmatch_refusals_differ_only_in_the_first_line():
     assert ambiguous is not None and invalid is not None
     assert ambiguous[0].split(b"\n", 1)[1] == invalid[0].split(b"\n", 1)[1]
     assert ambiguous[1] == invalid[1] == 1
+
+
+def test_unclassified_path_options_retain_scalar_repeated_and_pair_spellings():
+    spec = CommandSpec(options=(
+        Option(short="-o", long="--output", type="path"),
+        Option(short="-I", long="--include", type="path", multiple=True),
+        Option(long="--rawfile", type="path", pair=True),
+    ))
+    parsed = parse_flags([
+        "-o",
+        "-",
+        "--output=./out",
+        "-I./same",
+        "--include",
+        "same",
+        "--rawfile",
+        "body",
+        "./same",
+    ], spec, "reader", "/data")
+    fl = FlagView(parsed.flag_kwargs, spec=spec)
+    assert [(p.virtual, p.raw_path)
+            for p in fl.as_paths("output")] == [("/data/out", "./out")]
+    assert [(p.virtual, p.raw_path)
+            for p in fl.as_paths("include")] == [("/data/same", "./same"),
+                                                 ("/data/same", "same")]
+    assert fl.as_list("rawfile")[0] == "body"
+    assert [(p.virtual, p.raw_path)
+            for p in fl.as_paths("rawfile")] == [("/data/same", "./same")]

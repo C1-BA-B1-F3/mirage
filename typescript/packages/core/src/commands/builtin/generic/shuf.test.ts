@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { specOf } from '../../spec/builtins.ts'
 import { parseCommand, parseToKwargs } from '../../spec/parser.ts'
 import { materialize } from '../../../io/types.ts'
+import { PathSpec } from '../../../types.ts'
 import type { FlagValue } from '../../spec/types.ts'
 import type { CommandOpts } from '../../config.ts'
 import {
@@ -263,7 +264,7 @@ describe('shuf parseFlags is the one flag read', () => {
       zeroTerminated: true,
       withReplacement: true,
       inputRange: '1-3',
-      output: '/data/out.txt',
+      output: PathSpec.fromStrPath('/data/out.txt'),
     })
   })
 

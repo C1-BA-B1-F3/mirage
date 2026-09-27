@@ -20,23 +20,13 @@ import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import { PathSpec } from '../../../types.ts'
 import { gzip as gzipUtil, gunzip as gunzipUtil } from '../../../utils/compress.ts'
 import { MountMode } from '../../../types.ts'
-import { parseFlags } from '../../../workspace/executor/command/flags.ts'
 import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
 import { Workspace } from '../../../workspace/workspace/workspace.ts'
-import { specOf } from '../../spec/builtins.ts'
 const RAM_GZIP = RAM_COMMANDS.filter((c) => c.name === 'gzip' && c.filetype == null)
 const RAM_GUNZIP = RAM_COMMANDS.filter((c) => c.name === 'gunzip' && c.filetype == null)
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
-
-// What a registered command's writes predicate answers for a typed line,
-// read through the same parse the executor hands the mount.
-function writesFor(cmd: RegisteredCommand | undefined, argv: string[]): boolean {
-  if (cmd?.writes == null) throw new Error('the command declares no writes predicate')
-  const parsed = parseFlags(argv, specOf(cmd.name), cmd.name, '/data')
-  return cmd.writes(parsed.flagKwargs, parsed.paths)
-}
 
 async function runCmd(
   reg: readonly RegisteredCommand[],
@@ -102,53 +92,60 @@ describe('gzip / gunzip', () => {
   })
 })
 
-describe('gzip and gunzip say which invocations write', () => {
+async function readOnlyShell(line: string): Promise<[number, string, string, string[]]> {
+  const vfs = new RAMVFS()
+  vfs.store.files.set('/f.txt', ENC.encode('hello\n'))
+  vfs.store.files.set('/f.txt.gz', await gzipUtil(ENC.encode('hello\n')))
+  vfs.store.files.set('/g.txt', ENC.encode('fresh\n'))
+  const ws = new Workspace(
+    { '/ro/': [vfs, MountMode.READ] },
+    { shellParser: await getTestParser() },
+  )
+  try {
+    const r = await ws.shell(line)
+    return [
+      r.exitCode,
+      DEC.decode(r.stdout),
+      DEC.decode(r.stderr),
+      [...vfs.store.files.keys()].sort(),
+    ]
+  } finally {
+    await ws.close()
+  }
+}
+
+describe('gzip and gunzip on a read-only mount', () => {
   it.each([
-    [[], false],
-    [['-d'], false],
-    [['-c', 'f.txt'], false],
-    [['-dc', 'f.txt.gz'], false],
-    [['f.txt'], true],
-    [['-k', 'f.txt'], true],
-    [['-d', 'f.txt.gz'], true],
-  ])('gzip %j writes: %s', (argv, writes) => {
-    expect(writesFor(RAM_GZIP[0], argv)).toBe(writes)
+    ["cd /ro && printf 'x\\n' | gzip | gunzip", 'x\n'],
+    ['gzip -c /ro/f.txt | gunzip', 'hello\n'],
+    ['gzip -dc /ro/f.txt.gz', 'hello\n'],
+    ["cd /ro && printf 'x\\n' | gzip - | gunzip -", 'x\n'],
+    ['gunzip -c /ro/f.txt.gz', 'hello\n'],
+    ['gunzip -t /ro/f.txt.gz && echo ok', 'ok\n'],
+    ['cd /ro && gunzip < f.txt.gz', 'hello\n'],
+    ['cd /ro && gunzip - < f.txt.gz', 'hello\n'],
+  ])('runs %s, which writes nothing', async (line, stdout) => {
+    expect(await readOnlyShell(line)).toEqual([0, stdout, '', ['/f.txt', '/f.txt.gz', '/g.txt']])
   })
 
+  // Nothing refuses the command before it runs: the write of the
+  // replacement file is what the mount refuses, in the command's own
+  // voice, and the operand it would have replaced is left in place. An
+  // output already there is left alone without -f (a warning); -f's refused
+  // replace goes on to the next operand, and an output that cannot be
+  // created ends the run with write_error's leading newline. Pinned against
+  // gzip 1.13 on a read-only tmpfs; mirrors test_gzip.py.
+  const exists = 'gzip: /ro/f.txt.gz already exists;\tnot overwritten\n'
   it.each([
-    [[], false],
-    [['-c', 'f.txt.gz'], false],
-    [['-t', 'f.txt.gz'], false],
-    [['f.txt.gz'], true],
-    [['-k', 'f.txt.gz'], true],
-  ])('gunzip %j writes: %s', (argv, writes) => {
-    expect(writesFor(RAM_GUNZIP[0], argv)).toBe(writes)
-  })
-})
-
-describe('gzip on a read-only mount', () => {
-  it('runs where it writes nothing and refuses an in-place write', async () => {
-    const vfs = new RAMVFS()
-    vfs.store.files.set('/f.txt', ENC.encode('hello\n'))
-    const ws = new Workspace(
-      { '/ro/': [vfs, MountMode.READ] },
-      { shellParser: await getTestParser() },
-    )
-    try {
-      const piped = await ws.shell("cd /ro && printf 'x\\n' | gzip | gunzip")
-      expect([piped.exitCode, DEC.decode(piped.stdout), DEC.decode(piped.stderr)]).toEqual([
-        0,
-        'x\n',
-        '',
-      ])
-      const toStdout = await ws.shell('gzip -c /ro/f.txt | gunzip')
-      expect([toStdout.exitCode, DEC.decode(toStdout.stdout)]).toEqual([0, 'hello\n'])
-      const inPlace = await ws.shell('gzip /ro/f.txt')
-      expect(inPlace.exitCode).toBe(1)
-      expect(DEC.decode(inPlace.stderr)).toBe('gzip: read-only mount at /ro/\n')
-      expect([...vfs.store.files.keys()].sort()).toEqual(['/f.txt'])
-    } finally {
-      await ws.close()
-    }
+    ['gzip /ro/f.txt', 2, exists],
+    ['gzip -k /ro/f.txt', 2, exists],
+    ['gzip -f /ro/f.txt', 1, 'gzip: /ro/f.txt.gz: Read-only file system\n'],
+    ['gzip /ro/g.txt', 1, '\ngzip: /ro/g.txt.gz: Read-only file system\n'],
+    ['gzip /ro/f.txt /ro/g.txt', 1, exists + '\ngzip: /ro/g.txt.gz: Read-only file system\n'],
+    ['gzip -d /ro/f.txt.gz', 1, 'gzip: /ro/f.txt: Read-only file system\n'],
+    ['gunzip /ro/f.txt.gz', 1, 'gunzip: /ro/f.txt: Read-only file system\n'],
+    ['gunzip -k /ro/f.txt.gz', 1, 'gunzip: /ro/f.txt: Read-only file system\n'],
+  ])('refuses %s at its write', async (line, code, stderr) => {
+    expect(await readOnlyShell(line)).toEqual([code, '', stderr, ['/f.txt', '/f.txt.gz', '/g.txt']])
   })
 })

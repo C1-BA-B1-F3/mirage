@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { guardDay } from '../time_range.ts'
 import type { SlackAccessor } from '../../accessor/slack.ts'
 import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
@@ -25,13 +26,14 @@ import { getHistoryJsonl } from './history.ts'
 import { readdir } from './readdir.ts'
 import { getUserProfile, userJsonBytes } from './users.ts'
 import { detectScope } from './scope.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 async function channelEntry(
   accessor: SlackAccessor,
   path: PathSpec,
   index: IndexCacheStore | undefined,
 ): Promise<IndexEntry | null> {
-  const virtual = path.virtual.replace(/\/+$/, '').split('/').slice(0, -2).join('/')
+  const virtual = rstripSlash(path.virtual).split('/').slice(0, -2).join('/')
   const prefix = mountPrefixOf(path.virtual, path.vfsPath)
   const spec = new PathSpec({
     virtual,
@@ -53,6 +55,7 @@ async function readChat(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<Uint8Array> {
+  await guardDay(accessor, match, path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   let channelId: string
   if (entry !== null) {
@@ -84,6 +87,7 @@ async function blobUrl(
   path: PathSpec,
   index: IndexCacheStore | undefined,
 ): Promise<string> {
+  await guardDay(accessor, detectScope(path), path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry === null) throw enoent(path)
   const url =

@@ -322,9 +322,34 @@
         "runtimes": [
           "quickjs",
           "workspace"
-        ]
+        ],
+        "mounts": {
+          "/ram": {
+            "vfs": "ram"
+          }
+        },
+        "profiles": {
+          "default": {
+            "commands": {
+              "deny": [
+                {
+                  "reason": "sealed",
+                  "paths": [
+                    "/ram/*"
+                  ]
+                }
+              ]
+            }
+          }
+        }
       },
       "steps": [
+        {
+          "command": "cd /ram",
+          "expect": {
+            "exit": 0
+          }
+        },
         {
           "command": "echo 'console.log(scriptArgs.join(\",\"))' | node - a b",
           "expect": {
@@ -344,6 +369,15 @@
           "expect": {
             "exit": 0,
             "stdout": "-m\n"
+          }
+        },
+        {
+          "command": "js -- - arg -e",
+          "stdin": "console.log(scriptArgs.join(\",\"))",
+          "expect": {
+            "exit": 0,
+            "stdout": "arg,-e\n",
+            "stderr": ""
           }
         }
       ]

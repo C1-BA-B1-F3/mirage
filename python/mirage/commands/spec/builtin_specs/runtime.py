@@ -88,17 +88,30 @@ _PYTHON_OPTIONS: tuple[Option, ...] = (
            description="Show version information and exit."),
 )
 
+# CPython's own synopsis, `[-c cmd | -m mod | file | -] [arg] ...`: the
+# first operand is a file the interpreter reads, unless a -c or -m
+# already named the program, and the words after it are the program's
+# argv. The slot has to say so, because a runtime that reads the script
+# itself (a sandbox, a host process) is outside every op door, so the
+# admission gate is the one place a path rule can see the file.
+_PYTHON_SCRIPT = Operand(type="path", provided_by=("-c", "-m"))
+
+# node's `[script.js | -e "script" | -] [arguments]`, the same shape.
+_JS_SCRIPT = Operand(type="path", provided_by=("-e", ))
+
 SPECS: dict[str, CommandSpec] = {
     'python':
     CommandSpec(
         description="Run Python on the workspace's bound runtime.",
         options=_PYTHON_OPTIONS,
+        positional=(_PYTHON_SCRIPT, ),
         rest=Operand(type="str", remainder=True),
     ),
     'python3':
     CommandSpec(
         description="Run Python on the workspace's bound runtime.",
         options=_PYTHON_OPTIONS,
+        positional=(_PYTHON_SCRIPT, ),
         rest=Operand(type="str", remainder=True),
     ),
     # js and node take the remainder for the same reason python does: the
@@ -122,6 +135,7 @@ SPECS: dict[str, CommandSpec] = {
                                 "import/export/await); .mjs files "
                                 "select this automatically.")),
         ),
+        positional=(_JS_SCRIPT, ),
         rest=Operand(type="str", remainder=True),
     ),
     'node':
@@ -140,6 +154,7 @@ SPECS: dict[str, CommandSpec] = {
                                 "import/export/await); .mjs files "
                                 "select this automatically.")),
         ),
+        positional=(_JS_SCRIPT, ),
         rest=Operand(type="str", remainder=True),
     ),
     'mktemp':

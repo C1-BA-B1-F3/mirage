@@ -126,12 +126,13 @@ async def truncate(
     """
     if not paths:
         raise UsageError("truncate: missing file operand" + _TRY_HELP, 1)
-    err = b""
+    errors: list[str] = []
     for path in paths:
         try:
             await _truncate_one(path, flags, stat, truncate_fn)
         except FS_ERRORS as exc:
-            err += fs_error_line("truncate", path, exc).encode()
+            errors.append(fs_error_line("truncate", path, exc))
+    err = "".join(errors).encode()
     return None, IOResult(exit_code=1 if err else 0, stderr=err or None)
 
 

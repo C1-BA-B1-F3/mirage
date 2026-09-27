@@ -82,8 +82,8 @@ class _Hunk:
         flip = {"-": "+", "+": "-"}
         return _Hunk(
             self.new_start, self.old_start, self.note,
-            tuple(flip.get(line[:1], line[:1]) + line[1:]
-                  for line in self.body))
+            tuple(
+                flip.get(line[:1], line[:1]) + line[1:] for line in self.body))
 
     def pattern(self) -> list[str]:
         return [line[1:] for line in self.body if line[:1] != "+"]
@@ -103,8 +103,7 @@ class _Hunk:
     def context(self) -> tuple[int, int]:
         """The context lines before its first change and after its last."""
         kinds = [line[:1] for line in self.body]
-        prefix = next((i for i, k in enumerate(kinds) if k != " "),
-                      len(kinds))
+        prefix = next((i for i, k in enumerate(kinds) if k != " "), len(kinds))
         suffix = next((i for i, k in enumerate(reversed(kinds)) if k != " "),
                       len(kinds))
         return prefix, suffix
@@ -191,8 +190,7 @@ def _parse_hunks(lines: list[str], index: int) -> tuple[list[_Hunk], int]:
         while index < len(lines) and lines[index].startswith("\\"):
             index += 1
         hunks.append(
-            _Hunk(int(match.group(1)), int(match.group(3)), note,
-                  tuple(body)))
+            _Hunk(int(match.group(1)), int(match.group(3)), note, tuple(body)))
     return hunks, index
 
 
@@ -275,6 +273,12 @@ def _locate(lines: list[str], hunk: _Hunk, in_offset: int, fuzz: int,
         else:
             return None
     if suffix_fuzz < 0:
+        # GNU's rule, kept on purpose: diff writes a shorter trailing
+        # context only at the end of a file, so a hunk with less context
+        # after its change than before belongs at the end, even where its
+        # lines also sit at the line its header names. GNU patch 2.8 edits
+        # the last occurrence then, and fuzzes or fails a hunk the end of
+        # the file no longer matches.
         at_end = len(lines) - len(pattern) + 1
         if first - at_end <= max_neg and _matches(lines, pattern, at_end,
                                                   prefix_fuzz, 0):
@@ -379,8 +383,8 @@ def _reversed_notes(reverse: bool, forward: bool) -> list[str]:
         reverse (bool): ``-R`` was given.
         forward (bool): ``-N`` was given.
     """
-    seen = ("Unreversed patch detected!" if reverse else
-            "Reversed (or previously applied) patch detected!")
+    seen = ("Unreversed patch detected!"
+            if reverse else "Reversed (or previously applied) patch detected!")
     if forward:
         return [f"{seen}  Skipping patch."]
     ask = "Ignore" if reverse else "Assume"
@@ -586,16 +590,16 @@ async def _patch_file(section: _Section, spec: PathSpec, shown: str, *,
     except IsADirectoryError:
         report.append(f"File {shown} is not a regular file -- refusing "
                       "to patch")
-        await _save_rejects(section, _as_tried(section.hunks, reverse),
-                            "ignored", spec, shown, reverse, write_bytes,
-                            report, writes)
+        await _save_rejects(section, _as_tried(section.hunks,
+                                               reverse), "ignored", spec,
+                            shown, reverse, write_bytes, report, writes)
         return True
     except FileNotFoundError:
         pass
     report.append(f"patching file {shown}")
     outcome = _apply_section(
-        split_lines((original or b"").decode(errors="replace")),
-        section.hunks, reverse, forward)
+        split_lines((original or b"").decode(errors="replace")), section.hunks,
+        reverse, forward)
     report.extend(outcome.notes)
     if outcome.lines is not None:
         if not outcome.exact and spec.virtual not in written:
@@ -613,8 +617,8 @@ async def _patch_file(section: _Section, spec: PathSpec, shown: str, *,
     if not outcome.rejected:
         return False
     await _save_rejects(section, outcome.rejected,
-                        "ignored" if outcome.lines is None else "FAILED",
-                        spec, shown, reverse, write_bytes, report, writes)
+                        "ignored" if outcome.lines is None else "FAILED", spec,
+                        shown, reverse, write_bytes, report, writes)
     return True
 
 

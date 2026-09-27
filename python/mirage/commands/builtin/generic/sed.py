@@ -296,10 +296,9 @@ async def sed_generic(
     if parsed.in_place and write_bytes is None:
         # A backend with no write op refuses the edit itself, not a file:
         # the line names no operand, so sed's step wording is not it.
-        return None, IOResult(
-            exit_code=1,
-            stderr=b"sed: -i not supported on this backend: "
-            b"Permission denied\n")
+        return None, IOResult(exit_code=1,
+                              stderr=b"sed: -i not supported on this backend: "
+                              b"Permission denied\n")
     operands = list(paths)
     if flag_script:
         # With -e/-f the positional operand is a file, not the script.

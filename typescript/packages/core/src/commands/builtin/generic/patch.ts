@@ -258,6 +258,12 @@ function locate(
     }
   }
   if (suffixFuzz < 0) {
+    // GNU's rule, kept on purpose: diff writes a shorter trailing context
+    // only at the end of a file, so a hunk with less context after its
+    // change than before belongs at the end, even where its lines also sit
+    // at the line its header names. GNU patch 2.8 edits the last occurrence
+    // then, and fuzzes or fails a hunk the end of the file no longer
+    // matches. Mirrors Python's _locate.
     const atEnd = lines.length - pattern.length + 1
     if (first - atEnd <= maxNeg && matches(lines, pattern, atEnd, prefixFuzz, 0)) return atEnd
     return null
@@ -266,7 +272,11 @@ function locate(
   for (let offset = 0; offset <= maxOffset; offset++) {
     if (offset <= maxPos && matches(lines, pattern, first + offset, prefixFuzz, suffixFuzz))
       return first + offset
-    if (offset > 0 && offset <= maxNeg && matches(lines, pattern, first - offset, prefixFuzz, suffixFuzz))
+    if (
+      offset > 0 &&
+      offset <= maxNeg &&
+      matches(lines, pattern, first - offset, prefixFuzz, suffixFuzz)
+    )
       return first - offset
   }
   return null
@@ -475,7 +485,15 @@ async function patchFile(
   } catch (err) {
     if (isEisdir(err)) {
       sink.report.push(`File ${shown} is not a regular file -- refusing to patch`)
-      await saveRejects(section, asTried(section.hunks, reverse), 'ignored', spec, shown, reverse, sink)
+      await saveRejects(
+        section,
+        asTried(section.hunks, reverse),
+        'ignored',
+        spec,
+        shown,
+        reverse,
+        sink,
+      )
       return true
     }
     if (!isEnoent(err)) throw err

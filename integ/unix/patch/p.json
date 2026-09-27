@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "( cd /data && patch -p1 -i poem.diff > /dev/null ) && cat /data/poem.txt",
+      "command": "( cd /data && patch -p1 -i poem.diff > /dev/null ) && cat /data/poem.txt && printf 'a\\nb\\nc\\na\\nb\\n' > /data/pe.txt && printf -- '--- pe.txt\\n+++ pe.txt\\n@@ -1,2 +1,3 @@\\n a\\n b\\n+NEW\\n' | patch /data/pe.txt && cat /data/pe.txt && rm /data/pe.txt /data/pe.txt.orig",
       "expect": {
         "exit": 0,
-        "stdout": "roses are red\nviolets are dark\nsugar is sweet\n",
+        "stdout": "roses are red\nviolets are dark\nsugar is sweet\npatching file /data/pe.txt\nHunk #1 succeeded at 4 (offset 3 lines).\na\nb\nc\na\nb\nNEW\n",
         "stderr": ""
       },
       "flags": [

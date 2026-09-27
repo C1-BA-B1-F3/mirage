@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { randomUUID } from 'node:crypto'
 import { PathSpec } from '@struktoai/mirage-core/types'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RedisAccessor } from '@struktoai/mirage-core/accessor/redis'
@@ -39,11 +40,10 @@ describe.skipIf(skip)('core/redis rename', () => {
   let acc: RedisAccessor
 
   beforeEach(async () => {
-    store = new RedisStore(
-      REDIS_URL !== undefined
-        ? { url: REDIS_URL, keyPrefix: 'test:rename:' }
-        : { keyPrefix: 'test:rename:' },
-    )
+    // One prefix per test: a shared one lets a parallel run's clear() wipe
+    // what this test has just written.
+    const keyPrefix = `test:rename:${randomUUID()}:`
+    store = new RedisStore(REDIS_URL !== undefined ? { url: REDIS_URL, keyPrefix } : { keyPrefix })
     await store.clear()
     const enc = new TextEncoder()
     await store.addDir('/')

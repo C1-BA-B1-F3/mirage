@@ -25,8 +25,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def workspace():
-    vfs = RedisVFS(url=REDIS_URL, key_prefix="test:tree:")
+async def workspace(redis_prefix):
+    vfs = RedisVFS(url=REDIS_URL, key_prefix=redis_prefix)
     await vfs._store.clear()
     await vfs._store.add_dir("/")
     ws = Workspace({"/": vfs}, mode=MountMode.WRITE)

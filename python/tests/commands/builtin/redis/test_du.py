@@ -25,8 +25,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def workspace():
-    vfs = RedisVFS(url=REDIS_URL, key_prefix="test:du:")
+async def workspace(redis_prefix):
+    vfs = RedisVFS(url=REDIS_URL, key_prefix=redis_prefix)
     await vfs._store.clear()
     ws = Workspace({"/": vfs}, mode=MountMode.WRITE)
     yield ws
@@ -85,14 +85,14 @@ async def test_du_without_operand_measures_the_working_directory(workspace):
 
 
 @pytest.mark.asyncio
-async def test_du_reads_an_unstattable_mount_root():
+async def test_du_reads_an_unstattable_mount_root(redis_prefix):
     """Redis never materialises the root entry, but the tree is real.
 
     A failed stat is not proof of absence, so du must still report the
     subtree instead of calling the operand unreadable. Mounted away from
     ``/`` so the operand does not fan out across sibling mounts.
     """
-    vfs = RedisVFS(url=REDIS_URL, key_prefix="test:du:root:")
+    vfs = RedisVFS(url=REDIS_URL, key_prefix=f"{redis_prefix}root:")
     await vfs._store.clear()
     ws = Workspace({"/data": vfs}, mode=MountMode.WRITE)
     try:

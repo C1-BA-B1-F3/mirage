@@ -24,8 +24,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def store():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:store:")
+async def store(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=redis_prefix)
     await s.clear()
     await s.add_dir("/")
     yield s
@@ -139,16 +139,17 @@ async def test_clear(store):
 
 
 @pytest.mark.asyncio
-async def test_clear_drops_a_browser_staging_key(store):
-    await store._client.set("test:store:tmp:/big:abc", b"partial")
+async def test_clear_drops_a_browser_staging_key(redis_prefix, store):
+    staging = f"{redis_prefix}tmp:/big:abc"
+    await store._client.set(staging, b"partial")
     await store.clear()
-    assert await store._client.exists("test:store:tmp:/big:abc") == 0
+    assert await store._client.exists(staging) == 0
 
 
 @pytest.mark.asyncio
-async def test_prefix_with_glob_metacharacters_matches_literally():
-    mine = RedisStore(url=REDIS_URL, key_prefix="test:[ab]?:")
-    neighbour = RedisStore(url=REDIS_URL, key_prefix="test:ax:")
+async def test_prefix_with_glob_metacharacters_matches_literally(redis_prefix):
+    mine = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}[ab]?:")
+    neighbour = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}ax:")
     try:
         await mine.clear()
         await neighbour.clear()

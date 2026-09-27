@@ -27,8 +27,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def accessor():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:write:")
+async def accessor(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=redis_prefix)
     await s.clear()
     await s.add_dir("/")
     await s.add_dir("/sub")
@@ -65,8 +65,8 @@ async def test_write_bytes_overwrite(accessor):
 
 
 @pytest.mark.asyncio
-async def test_write_bytes_parent_not_found():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:write:p:")
+async def test_write_bytes_parent_not_found(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}p:")
     await s.clear()
     await s.add_dir("/")
     a = RedisAccessor(s)
@@ -84,8 +84,8 @@ async def test_write_bytes_parent_not_found():
 
 
 @pytest.mark.asyncio
-async def test_write_bytes_under_a_plain_file_is_not_a_directory():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:write:nd:")
+async def test_write_bytes_under_a_plain_file_is_not_a_directory(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}nd:")
     await s.clear()
     await s.add_dir("/")
     await s.set_file("/plain", b"x")
@@ -102,8 +102,9 @@ async def test_write_bytes_under_a_plain_file_is_not_a_directory():
 
 
 @pytest.mark.asyncio
-async def test_write_bytes_deep_under_a_plain_file_is_not_a_directory():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:write:ndd:")
+async def test_write_bytes_deep_under_a_plain_file_is_not_a_directory(
+        redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}ndd:")
     await s.clear()
     await s.add_dir("/")
     await s.set_file("/plain", b"x")
@@ -137,8 +138,8 @@ async def test_write_bytes_to_subdir(accessor):
 
 
 @pytest.mark.asyncio
-async def test_write_bytes_root_parent():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:write:r:")
+async def test_write_bytes_root_parent(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}r:")
     await s.clear()
     await s.add_dir("/")
     a = RedisAccessor(s)

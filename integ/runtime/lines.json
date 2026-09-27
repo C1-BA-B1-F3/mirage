@@ -140,6 +140,93 @@
       ]
     },
     {
+      "id": "external_capture_expands_text_slot_globs",
+      "world": {
+        "register_runtimes": {
+          "processbox": "processbox"
+        },
+        "runtimes": [
+          {
+            "name": "processbox",
+            "captures": [
+              "grep",
+              "python3"
+            ]
+          }
+        ],
+        "mounts": {
+          "/ram": {
+            "vfs": "ram",
+            "files": {
+              "a.txt": "a\n",
+              "b.txt": "b\n",
+              "secret.txt": "secret\n"
+            }
+          }
+        },
+        "profiles": {
+          "default": {
+            "commands": {
+              "deny": [
+                {
+                  "reason": "protected",
+                  "commands": {
+                    "grep": [
+                      "/ram/secret.txt"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /ram",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 s.py *.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"python3\",\"s.py\",\"a.txt\",\"b.txt\",\"secret.txt\"]\n"
+          }
+        },
+        {
+          "command": "python3 -c p /ram/?.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"python3\",\"-c\",\"p\",\"/ram/a.txt\",\"/ram/b.txt\"]\n"
+          }
+        },
+        {
+          "command": "python3 s.py '*.txt' \\*.txt *.none",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"python3\",\"s.py\",\"*.txt\",\"*.txt\",\"*.none\"]\n"
+          }
+        },
+        {
+          "command": "grep *.txt",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "grep: secret.txt: protected\n"
+          }
+        },
+        {
+          "command": "grep s*.txt a.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"grep\",\"secret.txt\",\"a.txt\"]\n"
+          }
+        }
+      ]
+    },
+    {
       "id": "interpreter_script_path_policy",
       "note": "An interpreter's script operand is a file the runtime reads on its own machine, so the gate types it as a path and a path rule refuses it before the line is handed over, whatever option run precedes it. The words after the script, and every operand once -c, -m or -e named the program, are the program's argv and reach the runtime as typed. A lone dash selects stdin and carries no path, while ./-, absolute dash filenames and stdin redirects still name protected files.",
       "world": {

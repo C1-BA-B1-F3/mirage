@@ -70,6 +70,12 @@ import { SandlockRuntime } from '@struktoai/mirage-node';
 const runtime = new SandlockRuntime({ captures: [EXTERNAL_COMMANDS] });
 ```
 
+A delegated program receives its words the way bash hands them over: every
+unquoted glob is expanded against the workspace first, whatever operand it
+fills, so `python3 job.py *.csv` runs `python3 job.py a.csv b.csv`, and a
+quoted or escaped glob stays literal. Command rules then judge that expanded
+argv: `grep *.txt` is refused when a match that grep reads as a file is protected.
+
 ## The workspace inside the sandbox
 
 For the job to see your mounts as ordinary files, the sandbox must serve

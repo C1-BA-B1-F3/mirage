@@ -475,6 +475,87 @@ async def test_external_spec_preserves_text_words_and_shell_globs(kind):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
+@pytest.mark.parametrize("line, tokens", [
+    ("python3 s.py *.txt", ("python3", "s.py", "a.txt", "b.txt")),
+    ("python3 -c p /work/*.txt",
+     ("python3", "-c", "p", "/work/a.txt", "/work/b.txt")),
+    ("python3 s.py ../work/?.txt",
+     ("python3", "s.py", "../work/a.txt", "../work/b.txt")),
+    ("python3 s.py '*.txt' \\*.txt", ("python3", "s.py", "*.txt", "*.txt")),
+    ("python3 s.py *.none", ("python3", "s.py", "*.none")),
+    ("shopt -s nullglob; python3 s.py *.none x", ("python3", "s.py", "x")),
+    ("set -f; python3 s.py *.txt", ("python3", "s.py", "*.txt")),
+])
+async def test_external_text_slot_globs_expand_like_bash(kind, line, tokens):
+    probe = kind(captures=("python3", ))
+    async with workspace({"/work": RAMVFS()},
+                         runtimes=[probe],
+                         mode=MountMode.EXEC) as ws:
+        await ws.shell("touch /work/a.txt /work/b.txt")
+        await ws.shell("cd /work")
+        result = await ws.shell(line)
+        assert result.exit_code == 0
+        if isinstance(probe, ProcessProbe):
+            assert probe.requests[0].argv == tokens
+        else:
+            assert shlex.split(probe.lines[0]) == list(tokens)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
+async def test_external_text_slot_glob_obeys_failglob(kind):
+    probe = kind(captures=("python3", ))
+    async with workspace({"/work": RAMVFS()},
+                         runtimes=[probe],
+                         mode=MountMode.EXEC) as ws:
+        await ws.shell("cd /work")
+        await ws.shell("shopt -s failglob")
+        result = await ws.shell("python3 s.py *.none")
+        assert result.exit_code == 1
+        assert await result.stderr_str() == "bash: no match: *.none\n"
+        assert not (probe.requests
+                    if isinstance(probe, ProcessProbe) else probe.lines)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
+async def test_external_admission_reads_the_expanded_argv(kind):
+    probe = kind(captures=("grep", "python3"))
+    policy = RulePolicy(
+        CommandRule(reason="protected",
+                    commands=("grep", "python3"),
+                    paths=("/work/secret.txt", )))
+    async with workspace({"/work": RAMVFS()},
+                         runtimes=[probe],
+                         policies=[policy],
+                         mode=MountMode.EXEC) as ws:
+        assert (await
+                ws.shell("echo secret > /work/secret.txt")).exit_code == 0
+        assert (await
+                ws.shell("echo public > /work/public.txt")).exit_code == 0
+        await ws.shell("cd /work")
+        # One word fills grep's pattern and its file operand, so the
+        # match that lands in the file slot is a path the gate reads.
+        refused = await ws.shell("grep *.txt")
+        assert refused.exit_code != 0
+        assert "protected" in await refused.stderr_str()
+        assert not (probe.requests
+                    if isinstance(probe, ProcessProbe) else probe.lines)
+        # A match in a text slot is text, as the word typed by hand is.
+        for line, tokens in (
+            ("grep s*.txt public.txt", ("grep", "secret.txt", "public.txt")),
+            ("python3 s.py s*.txt", ("python3", "s.py", "secret.txt")),
+        ):
+            result = await ws.shell(line)
+            assert result.exit_code == 0, line
+            if isinstance(probe, ProcessProbe):
+                assert probe.requests[-1].argv == tokens
+            else:
+                assert shlex.split(probe.lines[-1]) == list(tokens)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [ProcessProbe, ShellProbe])
 @pytest.mark.parametrize("line", [
     "python3 /work/steal.py",
     "python3 steal.py",

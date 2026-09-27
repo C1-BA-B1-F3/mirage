@@ -17,7 +17,7 @@ import type { SessionView } from '../../ops/types.ts'
 import { scopesPaths } from '../../policy/match/reads.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { PathSpec, wordText } from '../../types.ts'
-import { literalWord, markGlobs, unmarkGlobs } from '../../utils/glob_walk.ts'
+import { hasGlob, literalWord, markGlobs, unmarkGlobs } from '../../utils/glob_walk.ts'
 import type { MountRegistry } from '../mount/registry.ts'
 import {
   Consumer,
@@ -33,7 +33,7 @@ import type { NamespaceLinks } from '../../ops/config.ts'
 import { globNeedsShell, globOptions, resolveGlobs } from './globs.ts'
 import { type ExecuteFn } from './node.ts'
 import { expandWords } from './parts.ts'
-import { type ValueType } from '../../commands/spec/types.ts'
+import { type CommandSpec, type ValueType } from '../../commands/spec/types.ts'
 import { specForCommand, specWordBases, specWordKinds } from './spec_hints.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 
@@ -96,7 +96,9 @@ export class Argv {
  *
  * Uses the cwd mount's CommandSpec (when it has one for the command) to
  * decide which words are TEXT (skip classification) and which are PATH
- * (classify even bare filenames).
+ * (classify even bare filenames). A native program's line is globbed
+ * whatever the slots, as bash globs it, and its words are then
+ * classified for the slots the expanded words fill.
  */
 export async function expandArgv(
   parts: TSNodeLike[],
@@ -134,14 +136,28 @@ export async function expandArgv(
   const lineWords = [...expanded.slice(0, consumed), ...tail]
 
   const policy = wordPolicy(consumer)
+  // A native program gets its words the way bash hands them over, with
+  // every unquoted glob already expanded, whatever slot the word fills.
+  const native = consumer === Consumer.EXTERNAL && !refused
+  let spec: CommandSpec | null = null
   let wordKinds: (ValueType | null)[] | null = null
   let wordBases: (string | null)[] | null = null
   // Native captures still need the spec's path roles for admission.
   if (policy === WordPolicy.MOUNT || consumer === Consumer.EXTERNAL) {
-    const spec = specForCommand(name, registry, session.cwd)
+    spec = specForCommand(name, registry, session.cwd)
     if (spec !== null) {
       const extra: (ValueType | null)[] = new Array<ValueType | null>(consumed - 1).fill('str')
-      wordKinds = [...extra, ...specWordKinds(spec, lineWords.slice(consumed), name)]
+      const program = lineWords.slice(consumed)
+      let kinds = specWordKinds(spec, program, name)
+      // A text slot does not keep a native program's pattern literal:
+      // bash expands `python3 s.py *.txt` before python reads a word of
+      // it, so an unquoted glob is classified by its shape like any
+      // shell word and resolved below. A quoted one carries marks rather
+      // than glob characters, so it stays text.
+      if (native) {
+        kinds = kinds.map((kind, i) => (kind !== 'path' && hasGlob(program[i] ?? '') ? null : kind))
+      }
+      wordKinds = [...extra, ...kinds]
       const bases = specWordBases(spec, lineWords.slice(consumed), session.cwd)
       if (bases !== null) {
         wordBases = [...new Array<string | null>(consumed - 1).fill(null), ...bases]
@@ -159,7 +175,7 @@ export async function expandArgv(
   // only later matches under the rule's path would pass a gate its
   // matches fail.
   const globOpts = globOptions(session)
-  const words =
+  let words =
     !refused &&
     (policy === WordPolicy.SHELL || globNeedsShell(globOpts) || scopesPaths(session.commands, name))
       ? await resolveGlobs(classified, registry, false, namespace, globOpts)
@@ -169,6 +185,9 @@ export async function expandArgv(
         classified.map((item) =>
           item instanceof PathSpec && item.pattern !== null ? item : literalWord(item),
         )
+  if (native && spec !== null) {
+    words = programWords(words, spec, name, consumed, registry, session.cwd)
+  }
   // The text view renders words as typed (rawPath): bash hands
   // programs their words unchanged, so `echo sub/file.txt` prints the
   // relative form, not the resolved absolute path. Quote removal is part
@@ -180,4 +199,54 @@ export async function expandArgv(
     words.slice(consumed),
     expanded.slice(0, consumed).map(unmarkGlobs),
   )
+}
+
+/**
+ * Classify a native program's words for the argv it receives.
+ *
+ * bash expands every glob before the program parses its argv, so a
+ * match can fill a slot of another kind than the word it came from:
+ * `grep *.txt` hands grep its pattern and its files out of one word, and
+ * a glob's extra matches push every later word into a later slot. The
+ * spec therefore reads the expanded words, which are literal from here
+ * on, and each word is classified for the slot it now fills. Admission
+ * then judges the paths the program opens, and a match in a text slot is
+ * text, exactly like the same word typed by hand. A glob that matched
+ * nothing keeps the pattern spec the resolver left in a path slot, and is
+ * its typed text in a text slot.
+ */
+function programWords(
+  words: readonly (string | PathSpec)[],
+  spec: CommandSpec,
+  name: string,
+  consumed: number,
+  registry: MountRegistry,
+  cwd: string,
+): (string | PathSpec)[] {
+  const literal = words.map((w) => markGlobs(wordText(w)))
+  const kinds: (ValueType | null)[] = [
+    ...new Array<ValueType | null>(consumed - 1).fill('str'),
+    ...specWordKinds(spec, literal.slice(consumed), name),
+  ]
+  const bases = specWordBases(spec, literal.slice(consumed), cwd)
+  const reread = classifyParts(
+    literal,
+    registry,
+    cwd,
+    kinds,
+    bases === null ? null : [...new Array<string | null>(consumed - 1).fill(null), ...bases],
+  )
+  const out: (string | PathSpec)[] = [words[0] ?? '']
+  for (let i = 1; i < words.length; i++) {
+    const word = words[i] ?? ''
+    const kind = kinds[i - 1] ?? null
+    if (!(word instanceof PathSpec && word.pattern !== null)) {
+      out.push(literalWord(reread[i] ?? ''))
+    } else if (kind === null || kind === 'path') {
+      out.push(word)
+    } else {
+      out.push(literalWord(wordText(word)))
+    }
+  }
+  return out
 }

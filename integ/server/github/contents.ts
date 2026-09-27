@@ -27,10 +27,11 @@ import {
 } from './wire.ts'
 import type { GitPerson } from './wire.ts'
 import {
+  blobBySha,
   branchFor,
-  branchNames,
   commitList,
   directoriesOf,
+  keepTree,
   repoIsEmpty,
   stageTree,
   submodulesOf,
@@ -200,6 +201,7 @@ export async function writeFile(
     })
     return
   }
+  await keepTree(db, tenant, repo, branch)
   await db.githubFile.update({ where: { pk: existing.pk }, data: { data: bytes } })
 }
 
@@ -295,6 +297,7 @@ const deleteContents = withRepo(async (ctx, repo) => {
     return fail(409, `${path} does not match`)
   }
   const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
+  await keepTree(ctx.db, ctx.tenant, repo, branch)
   await ctx.db.githubFile.delete({ where: { pk: row.pk } })
   const message = str(body, 'message') === '' ? `Delete ${path}` : str(body, 'message')
   const commit = await recordCommit(
@@ -351,7 +354,12 @@ const oneCommit = withRepo(async (ctx, repo) => {
 // through `branchFor`, which accepts a commit sha too, because a client that
 // resolves a ref to a commit then asks for the tree by that sha: git accepts
 // it, since a commit names its root tree.
+//
+// An empty repository is answered first, for every form of the request: the
+// recursive and shallow tree of a ref and one directory of it all 409, measured
+// against GitHub (2026-09-27), whatever the ref names.
 const gitTree = withRepo(async (ctx, repo) => {
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = param(ctx, 'ref')
   const subs = await submodulesOf(ctx.db, ctx.tenant, repo)
   // `{ref}:{dir}` names one directory of a ref, the way git's rev syntax does:
@@ -430,23 +438,17 @@ export function contentRoutes(): KitRoute<C>[] {
       `${p}/repos/:owner/:repo/git/blobs/:sha`,
       authedRoute(
         withRepo(async (ctx, repo) => {
-          const want = param(ctx, 'sha')
-          for (const branch of await branchNames(ctx.db, ctx.tenant, repo)) {
-            const files = await treeOfBranch(ctx.db, ctx.tenant, repo, branch)
-            for (const data of files.values()) {
-              if (blobSha(data) !== want) continue
-              return {
-                status: 200,
-                body: {
-                  sha: want,
-                  size: data.length,
-                  content: wrapped(data),
-                  encoding: 'base64',
-                },
-              }
-            }
+          // Answered before the sha is looked at, as a tree is.
+          if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) {
+            return fail(409, 'Git Repository is empty.')
           }
-          return fail(404, 'Not Found')
+          const want = param(ctx, 'sha')
+          const data = await blobBySha(ctx.db, ctx.tenant, repo, want)
+          if (data === null) return fail(404, 'Not Found')
+          return {
+            status: 200,
+            body: { sha: want, size: data.length, content: wrapped(data), encoding: 'base64' },
+          }
         }),
       ),
     ),

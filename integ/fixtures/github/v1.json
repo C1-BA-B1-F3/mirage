@@ -27,7 +27,7 @@
       "owner": "integ",
       "name": "data-v1",
       "defaultBranch": "main",
-      "sourceDir": ""
+      "sourceDir": "github/data-v1"
     }
   ],
   "settings": [

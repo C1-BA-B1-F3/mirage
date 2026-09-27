@@ -128,6 +128,16 @@ const REF_PATHS = [
   'git/refs/tags',
 ]
 
+// Object reads an empty repository refuses the same way, measured against
+// GitHub (2026-09-27): the recursive and shallow tree of a ref, one directory
+// of it, and a blob, here the empty blob every git repository could name.
+const OBJECT_PATHS = [
+  'git/trees/main?recursive=1',
+  'git/trees/main',
+  'git/trees/main%3Adocs',
+  'git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391',
+]
+
 // One staged tree holding one file, which is what a commit needs to exist.
 async function stage(at: string, path: string, content: string): Promise<string> {
   const tree = await post(`${at}/repos/${REPO}/git/trees`, {
@@ -175,7 +185,7 @@ async function metadataRepository(): Promise<void> {
           'Git Repository is empty.',
         )
         eq('metadata-only tags list is empty', await get(`${repo}/tags`), [])
-        for (const path of REF_PATHS) {
+        for (const path of [...REF_PATHS, ...OBJECT_PATHS]) {
           eq(`metadata-only ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
             409,
             'Git Repository is empty.',
@@ -250,7 +260,7 @@ async function emptyRepository(at: string): Promise<void> {
       404,
       'This repository is empty.',
     ])
-    for (const path of REF_PATHS) {
+    for (const path of [...REF_PATHS, ...OBJECT_PATHS]) {
       eq(`empty ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
         409,
         'Git Repository is empty.',
@@ -413,12 +423,57 @@ async function seededHistory(at: string): Promise<void> {
   }
 }
 
+// Git keeps an object once it is written, so a blob sha an old listing named
+// still reads its own bytes after its path changes: overwritten or deleted,
+// whether the bytes came from the seed or from a commit. Measured against
+// GitHub (2026-09-27): a superseded blob answers 200 with its old bytes.
+async function supersededBlobs(at: string): Promise<void> {
+  const run = 'superseded-blobs'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const send = async (method: string, body: JsonValue): Promise<JsonValue> => {
+    const r = await fetch(`${repo}/contents/README.md`, {
+      method,
+      headers: HEADERS,
+      body: JSON.stringify(body),
+    })
+    eq(`the ${method} of README.md succeeds`, r.status, 200)
+    return (await r.json()) as JsonValue
+  }
+  const blob = async (sha: JsonValue): Promise<JsonValue> => {
+    const r = await fetch(`${repo}/git/blobs/${String(sha)}`, { headers: HEADERS })
+    if (r.status !== 200) return r.status
+    return Buffer.from(String(field((await r.json()) as JsonValue, 'content')), 'base64').toString()
+  }
+  const seeded = await get(`${repo}/contents/README.md`)
+  const seededText = Buffer.from(String(field(seeded, 'content')), 'base64').toString()
+  const one = await send('PUT', {
+    message: 'Replace the seed',
+    content: Buffer.from('one').toString('base64'),
+    sha: field(seeded, 'sha'),
+  })
+  eq('a seeded blob a write replaced still reads', await blob(field(seeded, 'sha')), seededText)
+  const oneSha = field(field(one, 'content'), 'sha')
+  const two = await send('PUT', {
+    message: 'Replace the commit',
+    content: Buffer.from('two').toString('base64'),
+    sha: oneSha,
+  })
+  eq('a committed blob a write replaced still reads', await blob(oneSha), 'one')
+  const twoSha = field(field(two, 'content'), 'sha')
+  await send('DELETE', { message: 'Remove it', sha: twoSha })
+  eq('a deleted blob still reads', await blob(twoSha), 'two')
+  eq('a sha no tree ever held is not found', await blob('0'.repeat(40)), 404)
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
   try {
     await emptyRepository(at)
     await seededHistory(at)
+    await supersededBlobs(at)
     const reset = await fetch(`${at}/reset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

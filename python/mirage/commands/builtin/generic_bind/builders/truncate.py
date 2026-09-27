@@ -26,6 +26,7 @@ async def truncate(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         size=size,
         stat=bound_op(ops.stat, accessor, opts.index),
         truncate_fn=partial(truncate_fn, accessor),
+        no_create=fl.as_bool("no_create"),
     )
 
 

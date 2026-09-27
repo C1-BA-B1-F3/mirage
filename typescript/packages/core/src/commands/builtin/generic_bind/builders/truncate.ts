@@ -7,7 +7,8 @@ export const TRUNCATE_BUILDER: Builder = {
   name: 'truncate',
   write: true,
   fn: async (ops, accessor, paths, _texts, opts) => {
-    const sizeValue = new FlagView(opts.flags, specOf('truncate')).asStr('size')
+    const fl = new FlagView(opts.flags, specOf('truncate'))
+    const sizeValue = fl.asStr('size')
     if (sizeValue === undefined) {
       throw new Error("truncate: you must specify either '--size' or '-s'")
     }
@@ -19,6 +20,7 @@ export const TRUNCATE_BUILDER: Builder = {
       sizeValue,
       (path) => ops.stat(accessor, path, index),
       (path, length) => truncate(accessor, path, length),
+      fl.asBool('no_create'),
     )
   },
 }

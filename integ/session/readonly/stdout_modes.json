@@ -371,6 +371,36 @@
       }
     },
     {
+      "id": "sro_truncate_c_leaves_a_missing_file_alone",
+      "seq": 1231064,
+      "session": "narrowed",
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s 0 /res/sro/gone.txt; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_truncate_c_still_refuses_an_existing_file",
+      "seq": 1231065,
+      "session": "narrowed",
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s 0 /res/sro/f.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "truncate: cannot open '/res/sro/f.txt' for writing: Read-only file system\n"
+      }
+    },
+    {
       "id": "sro_unlink_is_refused",
       "seq": 1231062,
       "session": "narrowed",

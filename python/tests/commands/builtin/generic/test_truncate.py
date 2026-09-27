@@ -16,7 +16,7 @@ import pytest
 
 from mirage.commands.builtin.generic.truncate import parse_size, truncate
 from mirage.commands.errors import UsageError
-from mirage.types import PathSpec
+from mirage.types import FileStat, FileType, PathSpec
 
 
 def test_plain_and_operation_sizes():
@@ -199,3 +199,59 @@ async def test_a_failed_open_is_reported_and_the_rest_still_run():
                          b"No such file or directory\n"
                          b"truncate: cannot open \"it's/x\" for writing: "
                          b"No such file or directory\n")
+
+
+@pytest.mark.asyncio
+async def test_no_create_leaves_a_missing_operand_alone():
+    # -c opens without O_CREAT: the open's ENOENT is silence whether the
+    # file or its parent is missing, a parent that is a file is still
+    # refused, and an operand that is there is truncated.
+    lengths: list[tuple[str, int]] = []
+
+    async def stat(path):
+        if path.raw_path == "f.txt/x":
+            raise NotADirectoryError(path.virtual)
+        if path.raw_path == "have":
+            return FileStat(name="have", size=6, type=FileType.FILE)
+        raise FileNotFoundError(path.virtual)
+
+    async def truncate_fn(path, length) -> None:
+        lengths.append((path.raw_path, length))
+
+    _, io = await truncate([
+        _operand("/gone", "gone"),
+        _operand("/nope/x", "nope/x"),
+        _operand("/f.txt/x", "f.txt/x"),
+        _operand("/have", "have"),
+    ],
+                           size="-2",
+                           stat=stat,
+                           truncate_fn=truncate_fn,
+                           no_create=True)
+    assert lengths == [("have", 4)]
+    assert io.exit_code == 1
+    assert io.stderr == (b"truncate: cannot open 'f.txt/x' for writing: "
+                         b"Not a directory\n")
+
+
+@pytest.mark.asyncio
+async def test_a_bad_size_is_refused_before_any_operand_is_looked_at():
+    # GNU parses -s with its options, so -c skipping every operand does
+    # not skip the refusal.
+    looked_at: list[str] = []
+
+    async def stat(path):
+        looked_at.append(path.raw_path)
+        raise FileNotFoundError(path.virtual)
+
+    async def truncate_fn(path, length) -> None:
+        looked_at.append(path.raw_path)
+
+    with pytest.raises(UsageError) as exc:
+        await truncate([_operand("/gone", "gone")],
+                       size="<abc",
+                       stat=stat,
+                       truncate_fn=truncate_fn,
+                       no_create=True)
+    assert str(exc.value) == "truncate: Invalid number: 'abc'"
+    assert looked_at == []

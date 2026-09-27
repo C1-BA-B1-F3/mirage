@@ -67,11 +67,15 @@ function parseSize(value: string, current: number): number {
 async function currentSize(
   stat: (path: PathSpec) => Promise<FileStat>,
   path: PathSpec,
-): Promise<number> {
+  noCreate: boolean,
+): Promise<number | null> {
   try {
     return (await stat(path)).size ?? 0
   } catch (err) {
-    if (isEnoent(err) || isEnotdir(err)) return 0
+    // -c opens without O_CREAT, so a name that is not there is left alone,
+    // missing parent or not.
+    if (isEnoent(err)) return noCreate ? null : 0
+    if (isEnotdir(err) && !noCreate) return 0
     throw err
   }
 }
@@ -83,18 +87,25 @@ async function currentSize(
 // here only because a relative spec needs it, so a stat that misses is not
 // the verdict; the truncate op answers, as the open would. A failure is GNU's
 // per-operand line, `cannot open 'x' for writing` (a read-only region
-// answers there too), and the remaining operands still run.
+// answers there too), and the remaining operands still run. `-c` opens
+// without O_CREAT: the open's ENOENT leaves the operand alone in silence,
+// and every other refusal is still reported.
 export async function truncateGeneric(
   paths: readonly PathSpec[],
   size: string,
   stat: (path: PathSpec) => Promise<FileStat>,
   truncate: (path: PathSpec, length: number) => Promise<void>,
+  noCreate = false,
 ): Promise<CommandFnResult> {
   if (paths.length === 0) throw new Error('truncate: missing file operand')
+  // GNU reads -s while it parses its options, so a bad size is refused before
+  // any operand is looked at, even when -c then skips them all.
+  parseSize(size, 0)
   let errors = ''
   for (const path of paths) {
     try {
-      const current = await currentSize(stat, path)
+      const current = await currentSize(stat, path, noCreate)
+      if (current === null) continue
       await truncate(path, parseSize(size, current))
     } catch (err) {
       if (!isFsError(err)) throw err

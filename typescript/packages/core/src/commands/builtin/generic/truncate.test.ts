@@ -233,4 +233,57 @@ describe('truncate operands', () => {
         'truncate: cannot open "it\'s/x" for writing: No such file or directory\n',
     )
   })
+
+  it('leaves a missing operand alone under -c', async () => {
+    // -c opens without O_CREAT: the open's ENOENT is silence whether the file
+    // or its parent is missing, a parent that is a file is still refused, and
+    // an operand that is there is truncated.
+    const lengths: [string, number][] = []
+    const stat = (path: PathSpec): Promise<FileStat> => {
+      if (path.rawPath === 'f.txt/x') return Promise.reject(enotdir(path))
+      if (path.rawPath === 'have') {
+        return Promise.resolve(new FileStat({ name: 'have', type: FileType.FILE, size: 6 }))
+      }
+      return Promise.reject(enoent(path))
+    }
+    const truncate = (path: PathSpec, length: number): Promise<void> => {
+      lengths.push([path.rawPath, length])
+      return Promise.resolve()
+    }
+    const [, io] = (await truncateGeneric(
+      [
+        operand('/gone', 'gone'),
+        operand('/nope/x', 'nope/x'),
+        operand('/f.txt/x', 'f.txt/x'),
+        operand('/have', 'have'),
+      ],
+      '-2',
+      stat,
+      truncate,
+      true,
+    )) as [ByteSource | null, IOResult]
+    expect(lengths).toEqual([['have', 4]])
+    expect(io.exitCode).toBe(1)
+    expect(new TextDecoder().decode(io.stderr as Uint8Array)).toBe(
+      "truncate: cannot open 'f.txt/x' for writing: Not a directory\n",
+    )
+  })
+
+  it('refuses a bad size before any operand is looked at', async () => {
+    // GNU parses -s with its options, so -c skipping every operand does not
+    // skip the refusal.
+    const lookedAt: string[] = []
+    const stat = (path: PathSpec): Promise<FileStat> => {
+      lookedAt.push(path.rawPath)
+      return Promise.reject(enoent(path))
+    }
+    const truncate = (path: PathSpec): Promise<void> => {
+      lookedAt.push(path.rawPath)
+      return Promise.resolve()
+    }
+    await expect(
+      truncateGeneric([operand('/gone', 'gone')], '<abc', stat, truncate, true),
+    ).rejects.toThrow(new UsageError("truncate: Invalid number: 'abc'", 1))
+    expect(lookedAt).toEqual([])
+  })
 })

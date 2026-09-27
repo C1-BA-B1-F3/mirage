@@ -71,10 +71,16 @@ def parse_size(value: str, current: int) -> int:
 
 
 async def _current_size(stat: Callable[[PathSpec], Awaitable[FileStat]],
-                        path: PathSpec) -> int:
+                        path: PathSpec, no_create: bool) -> int | None:
     try:
         return (await stat(path)).size or 0
-    except (FileNotFoundError, NotADirectoryError):
+    except FileNotFoundError:
+        # -c opens without O_CREAT, so a name that is not there is left
+        # alone, missing parent or not.
+        return None if no_create else 0
+    except NotADirectoryError:
+        if no_create:
+            raise
         return 0
 
 
@@ -84,6 +90,7 @@ async def truncate(
     size: str,
     stat: Callable[[PathSpec], Awaitable[FileStat]],
     truncate_fn: Callable[[PathSpec, int], Awaitable[None]],
+    no_create: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
     """Set each operand's length, GNU ``truncate -s``.
 
@@ -95,7 +102,9 @@ async def truncate(
     a stat that misses is not the verdict; the truncate op answers, as the
     open would. A failure is GNU's per-operand line, ``cannot open 'x' for
     writing`` (a read-only region answers there too), and the remaining
-    operands still run.
+    operands still run. ``-c`` opens without O_CREAT: the open's ENOENT
+    leaves the operand alone in silence, and every other refusal is still
+    reported.
 
     Args:
         paths (list[PathSpec]): the file operands.
@@ -103,13 +112,19 @@ async def truncate(
         stat (Callable): stats a path; raises when missing.
         truncate_fn (Callable): sets a path's length in bytes, creating
             the file when it is missing.
+        no_create (bool): ``-c``; leave a missing operand alone.
     """
     if not paths:
         raise ValueError("truncate: missing file operand")
+    # GNU reads -s while it parses its options, so a bad size is refused
+    # before any operand is looked at, even when -c then skips them all.
+    parse_size(size, 0)
     errors = b""
     for path in paths:
         try:
-            current = await _current_size(stat, path)
+            current = await _current_size(stat, path, no_create)
+            if current is None:
+                continue
             await truncate_fn(path, parse_size(size, current))
         except FS_ERRORS as exc:
             errors += fs_error_line("truncate", path, exc).encode()

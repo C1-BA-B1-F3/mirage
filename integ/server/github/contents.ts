@@ -31,6 +31,7 @@ import {
   branchNames,
   commitList,
   directoriesOf,
+  repoIsEmpty,
   stageTree,
   submodulesOf,
   treeItems,
@@ -202,14 +203,15 @@ export async function writeFile(
   await db.githubFile.update({ where: { pk: existing.pk }, data: { data: bytes } })
 }
 
+// An empty repository is answered before the ref is resolved, so every ref
+// gets the same 404 there, including one that names nothing. Only once
+// something has been committed is an unknown ref the ref's own fault, and the
+// refusal names it the way the vendor's does.
 const contents = withRepo(async (ctx, repo) => {
-  const branch = await branchFor(ctx.db, ctx.tenant, repo, ctx.query.get('ref') ?? '')
-  if (branch === null) return fail(404, 'No commit found for the ref')
-  if ((await commitList(ctx.db, ctx.tenant, repo, branch)).length === 0) {
-    return fail(404, 'This repository is empty.')
-  }
-  const files = await treeOf(ctx.db, ctx.tenant, repo, ctx.query.get('ref') ?? '')
-  if (files === null) return fail(404, 'No commit found for the ref')
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(404, 'This repository is empty.')
+  const ref = ctx.query.get('ref') ?? ''
+  const files = await treeOf(ctx.db, ctx.tenant, repo, ref)
+  if (files === null) return fail(404, `No commit found for the ref ${ref}`)
   const path = param(ctx, 'path').replace(/^\/+|\/+$/g, '')
   const hit = files.get(path)
   if (hit !== undefined) return { status: 200, body: fileJson(path, hit) }
@@ -317,20 +319,25 @@ const readme = withRepo(async (ctx, repo) => {
 // `/commits/{ref}` and `/git/commits/{sha}` are different endpoints: this one
 // takes a branch name as well as a sha and reports the file list, which is what
 // a caller asking "what changed" reads.
+//
+// Emptiness comes first here too, so every ref gets the 409 in an empty
+// repository. Past that, a ref that names no commit is a 422 quoting the ref
+// as it was asked, whether it looks like a sha or like a branch: the vendor
+// says "SHA" either way.
 const oneCommit = withRepo(async (ctx, repo) => {
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = param(ctx, 'ref')
   const branch = await branchFor(ctx.db, ctx.tenant, repo, ref)
-  const history = await commitList(ctx.db, ctx.tenant, repo, branch ?? repo.defaultBranch)
-  if (history.length === 0) return fail(409, 'Git Repository is empty.')
+  const history = branch === null ? [] : await commitList(ctx.db, ctx.tenant, repo, branch)
   const rendered: Array<Record<string, JsonValue>> = history.map((entry) => ({
     ...(commitJson(entry) as Record<string, JsonValue>),
     files: commitFiles(pathsOf(entry)),
   }))
-  const exact = rendered.find((entry) => entry.sha === ref)
-  if (exact !== undefined) return { status: 200, body: exact }
-  // Any spelling branchFor resolves (bare, HEAD, refs/heads/...) names the head.
-  if (branch !== null) return { status: 200, body: rendered[0] ?? null }
-  return fail(404, 'Not Found')
+  // A sha names its own commit; any other spelling branchFor resolves (bare,
+  // HEAD, refs/heads/...) names the head.
+  const hit = rendered.find((entry) => entry.sha === ref) ?? rendered[0]
+  if (hit === undefined) return fail(422, `No commit found for SHA: ${ref}`)
+  return { status: 200, body: hit }
 })
 
 // The backend passes either a ref name (a recursive whole-tree fetch) or a tree

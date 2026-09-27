@@ -25,6 +25,7 @@ import {
   commitsBySha,
   headOf,
   reaches,
+  repoIsEmpty,
   stageTree,
   stagedTree,
   treeOfBranch,
@@ -309,7 +310,13 @@ async function headSha(ctx: Ctx<C>, repo: RepoRow, branch: string): Promise<stri
 // whichever it expects, so serving only the singular makes the plural read as
 // "no such ref". A prefix that matches nothing is a 404 rather than an empty
 // list, which is what the vendor answers.
+//
+// An empty repository has no refs at all, and both endpoints say so with a 409
+// before reading the ref, whatever it names: a branch, a tag, nothing that
+// exists, or no prefix. Answering from the branch row instead reported the
+// default branch at an empty sha, which no client can resolve.
 const showRef = withRepo(async (ctx, repo) => {
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = param(ctx, 'ref').replace(/^\/+|\/+$/g, '')
   const name = ref.startsWith('heads/') ? ref.slice('heads/'.length) : ''
   const names = await branchNames(ctx.db, ctx.tenant, repo)
@@ -321,6 +328,7 @@ const showRef = withRepo(async (ctx, repo) => {
 })
 
 const listRefs = withRepo(async (ctx, repo) => {
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const prefix = param(ctx, 'ref').replace(/^\/+|\/+$/g, '')
   const items: JsonValue[] = []
   for (const name of await branchNames(ctx.db, ctx.tenant, repo)) {
@@ -346,6 +354,9 @@ export function gitRoutes(): KitRoute<C>[] {
       write: true,
     }),
     route<C>('GET', `${p}/repos/:owner/:repo/git/ref/*ref`, authedRoute(showRef)),
+    // Bare as well as with a prefix: the vendor lists every ref at `git/refs`,
+    // and the splat below needs at least the slash.
+    route<C>('GET', `${p}/repos/:owner/:repo/git/refs`, authedRoute(listRefs)),
     route<C>('GET', `${p}/repos/:owner/:repo/git/refs/*ref`, authedRoute(listRefs)),
   ])
 }

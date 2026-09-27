@@ -18,17 +18,15 @@ import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { GitError } from './errors.ts'
 import {
-  MEDIUM,
   needsDecorations,
   oneline,
-  parsePretty,
   presetBlock,
   renderTemplate,
   type CommitFacts,
   type Decorations,
   type LogFormat,
 } from './format.ts'
-import { decorations, prettyValue } from './history.ts'
+import { decorations, prettyFormat } from './history.ts'
 import {
   joinOutput,
   commitOutput,
@@ -55,16 +53,11 @@ interface ShowFlags {
 
 /** Read the raw show flag kwargs into a frozen struct. */
 function parseShowFlags(fl: FlagView, defaultRenames = true, quotePathFully = true): ShowFlags {
-  const spelled = prettyValue(fl)
+  const pretty = prettyFormat(fl)
   return {
     date: fl.asStr('date') ?? 'default',
     diff: parseDiffFlags(fl, true, 'dense-combined', true, defaultRenames, quotePathFully),
-    pretty:
-      spelled !== null
-        ? parsePretty(spelled)
-        : fl.asBool('oneline')
-          ? { kind: 'oneline', template: null }
-          : MEDIUM,
+    pretty,
   }
 }
 

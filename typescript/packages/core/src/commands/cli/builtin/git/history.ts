@@ -107,32 +107,30 @@ function timestamp(value: string | null, flag: string): number | null {
 }
 
 /**
- * The --pretty/--format value, honoring the bare optional form.
- *
- * Both spellings set the same variable in git; `--format` is read first when
- * both appear on one line, an ordering the flag bag cannot preserve. A bare
- * `--pretty` means medium, git's own default, but pretty.c reads `--format`
- * only in its =value form, so the bare spelling gets git's own fatal
- * (pinned: 2.37 and 2.54, exit 128).
+ * Read display formats in command-line order, validating every occurrence.
+ * --oneline sets the format; its abbreviation side effect is read separately.
+ * Bare --pretty resets to medium, while bare --format is always an error
+ * (Git 2.50.1).
  */
-export function prettyValue(fl: FlagView): string | null {
-  for (const key of ['format', 'pretty']) {
-    const raw = fl.raw(key)
-    if (typeof raw === 'string') return raw
-    if (raw === true) {
+export function prettyFormat(fl: FlagView): LogFormat {
+  let pretty: LogFormat = MEDIUM
+  for (const [key, raw] of fl.occurrences('oneline', 'pretty', 'format')) {
+    if (key === 'oneline') {
+      if (raw === true) pretty = { kind: 'oneline', template: null }
+    } else if (typeof raw === 'string') {
+      pretty = parsePretty(raw)
+    } else if (raw === true) {
       if (key === 'format') throw new UnrecognizedArgumentError('--format')
-      return 'medium'
+      pretty = MEDIUM
     }
   }
-  return null
+  return pretty
 }
 
 /** Read the raw log flag kwargs into a frozen struct. */
 export function parseFlags(fl: FlagView): LogFlags {
   const oneline = fl.asBool('oneline')
-  const spelled = prettyValue(fl)
-  let pretty: LogFormat = oneline ? { kind: 'oneline', template: null } : MEDIUM
-  if (spelled !== null) pretty = parsePretty(spelled)
+  const pretty = prettyFormat(fl)
   const graph = fl.asBool('graph')
   if (graph && fl.asBool('reverse')) throw new IncompatibleLogOptionsError('--graph', '--reverse')
   let order: LogFlags['order'] = graph ? 'topo' : 'default'

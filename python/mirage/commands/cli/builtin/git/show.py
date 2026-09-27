@@ -24,12 +24,11 @@ from mirage.commands.cli.builtin.git.diff_output import (DiffFlags,
                                                          parse_diff_flags,
                                                          renames_enabled)
 from mirage.commands.cli.builtin.git.errors import GitError, NoWorkspaceError
-from mirage.commands.cli.builtin.git.format import (MEDIUM, Decorations,
-                                                    LogFormat,
+from mirage.commands.cli.builtin.git.format import (Decorations, LogFormat,
                                                     needs_decorations, oneline,
-                                                    parse_pretty, preset_block,
+                                                    preset_block,
                                                     render_template)
-from mirage.commands.cli.builtin.git.history import decorations, pretty_value
+from mirage.commands.cli.builtin.git.history import decorations, pretty_format
 from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.revparse import resolve_commit
@@ -61,15 +60,14 @@ def parse_show_flags(fl: FlagView,
         default_renames (bool): ``diff.renames``.
         quote_path_fully (bool): ``core.quotePath``.
     """
-    spelled = pretty_value(fl)
+    pretty = pretty_format(fl)
     return ShowFlags(
         diff=parse_diff_flags(fl,
                               default_merge="dense-combined",
                               default_renames=default_renames,
                               quote_path_fully=quote_path_fully),
         date=fl.as_str("date") or "default",
-        pretty=parse_pretty(spelled) if spelled is not None else LogFormat(
-            kind="oneline") if fl.as_bool("oneline") else MEDIUM,
+        pretty=pretty,
     )
 
 

@@ -49,7 +49,7 @@ const REVISION = new Operand({ type: 'str' })
 // --pretty and --format set the same variable in git; both take git's
 // optional-value form, so a bare --pretty means medium and a detached next
 // word is a revision, never a format. A bare --format stays parseable too,
-// but only so prettyValue can answer it with git's own fatal (pretty.c reads
+// but only so prettyFormat can answer it with git's own fatal (pretty.c reads
 // --format in its =value form alone).
 const PRETTY_OPTION = new Option({
   long: '--pretty',

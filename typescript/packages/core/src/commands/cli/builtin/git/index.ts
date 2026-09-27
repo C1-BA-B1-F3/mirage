@@ -25,6 +25,8 @@ import { mv } from './mv.ts'
 import { reset } from './reset.ts'
 import { restore } from './restore.ts'
 import { rm } from './rm.ts'
+import { revParse } from './inspect.ts'
+import { shortlog } from './shortlog.ts'
 import { config, remote, revList, version, showRef } from './inspect.ts'
 import { show, diffTree } from './show.ts'
 import { status } from './status.ts'
@@ -71,6 +73,12 @@ const DATE_OPTION = new Option({
 })
 
 const DIFF_OPTIONS = [
+  new Option({
+    short: '-U',
+    long: '--unified',
+    type: 'int',
+    description: 'Number of context lines',
+  }),
   new Option({ long: '--name-status', description: 'Show changed paths and status' }),
   new Option({ long: '--name-only', description: 'Show changed paths instead of the patch' }),
   new Option({ long: '--stat', description: 'Show the diffstat table instead of the patch' }),
@@ -103,6 +111,12 @@ const MERGE_OPTIONS = [
 ]
 
 const LOG_OPTIONS = [
+  new Option({
+    long: '--author',
+    type: 'str',
+    multiple: true,
+    description: 'Limit commits to matching authors',
+  }),
   ...MERGE_OPTIONS,
   new Option({
     long: '--after',
@@ -172,11 +186,20 @@ const LOG_OPTIONS = [
   }),
 ]
 
-const SHOW_OPTIONS = [...DIFF_OPTIONS, ...MERGE_OPTIONS, DATE_OPTION, PRETTY_OPTION, FORMAT_OPTION]
+const SHOW_OPTIONS = [
+  new Option({ long: '--oneline', description: 'One abbreviated line per commit' }),
+  ...DIFF_OPTIONS,
+  ...MERGE_OPTIONS,
+  DATE_OPTION,
+  PRETTY_OPTION,
+  FORMAT_OPTION,
+]
 
 const STATUS_OPTIONS = [
   new Option({
     long: '--porcelain',
+    type: 'str',
+    valueOptional: true,
     description: 'Machine-readable output, stable across versions',
   }),
   new Option({ short: '-s', long: '--short', description: 'Give the output in the short format' }),
@@ -352,6 +375,7 @@ const TAG_OPTIONS = [
 ]
 
 const BRANCH_OPTIONS = [
+  new Option({ long: '--show-current', description: 'Show the current branch name' }),
   new Option({
     short: '-v',
     long: '--verbose',
@@ -410,6 +434,27 @@ export const GIT = new CLISpec({
     }),
     new CLISpec({ name: 'show-ref', description: 'List references', fn: showRef, rest: REVISION }),
     new CLISpec({
+      name: 'shortlog',
+      fn: shortlog,
+      description: 'Summarize commit history',
+      options: [
+        ...LOG_OPTIONS.filter((opt) => opt.short !== '-n'),
+        new Option({ short: '-s', long: '--summary', description: 'Show only commit counts' }),
+        new Option({ short: '-e', long: '--email', description: 'Show author email addresses' }),
+        new Option({ short: '-n', long: '--numbered', description: 'Sort by commit count' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'rev-parse',
+      fn: revParse,
+      description: 'Resolve revisions',
+      options: [
+        new Option({ long: '--abbrev-ref', description: 'Show abbreviated reference names' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
       name: 'rev-list',
       description: 'List reachable commits',
       fn: revList,
@@ -451,7 +496,11 @@ export const GIT = new CLISpec({
       name: 'diff',
       description: 'Show changes between commits',
       fn: diff,
-      options: DIFF_OPTIONS,
+      options: [
+        ...DIFF_OPTIONS,
+        new Option({ long: '--cached', description: 'Compare the index with a commit' }),
+        new Option({ long: '--staged', description: 'Alias of --cached' }),
+      ],
       rest: REVISION,
     }),
     new CLISpec({

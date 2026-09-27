@@ -59,7 +59,12 @@ function parseShowFlags(fl: FlagView, defaultRenames = true, quotePathFully = tr
   return {
     date: fl.asStr('date') ?? 'default',
     diff: parseDiffFlags(fl, true, 'dense-combined', true, defaultRenames, quotePathFully),
-    pretty: spelled !== null ? parsePretty(spelled) : MEDIUM,
+    pretty:
+      spelled !== null
+        ? parsePretty(spelled)
+        : fl.asBool('oneline')
+          ? { kind: 'oneline', template: null }
+          : MEDIUM,
   }
 }
 

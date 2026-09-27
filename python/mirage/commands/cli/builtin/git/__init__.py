@@ -18,12 +18,14 @@ from mirage.commands.cli.builtin.git.checkout import checkout
 from mirage.commands.cli.builtin.git.commit import commit
 from mirage.commands.cli.builtin.git.diff import diff
 from mirage.commands.cli.builtin.git.inspect import (config, remote, rev_list,
-                                                     show_ref, version)
+                                                     rev_parse, show_ref,
+                                                     version)
 from mirage.commands.cli.builtin.git.log import log
 from mirage.commands.cli.builtin.git.mv import mv
 from mirage.commands.cli.builtin.git.reset import reset
 from mirage.commands.cli.builtin.git.restore import restore
 from mirage.commands.cli.builtin.git.rm import rm
+from mirage.commands.cli.builtin.git.shortlog import shortlog
 from mirage.commands.cli.builtin.git.show import diff_tree, show
 from mirage.commands.cli.builtin.git.status import status
 from mirage.commands.cli.builtin.git.switch import switch
@@ -64,6 +66,10 @@ DATE_OPTION = Option(long="--date",
                      description="Date display format")
 
 DIFF_OPTIONS = (
+    Option(short="-U",
+           long="--unified",
+           type="int",
+           description="Number of context lines"),
     Option(long="--name-status", description="Show changed paths and status"),
     Option(long="--name-only",
            description="Show changed paths instead of the patch"),
@@ -104,6 +110,10 @@ MERGE_OPTIONS = (
 )
 
 LOG_OPTIONS = (
+    Option(long="--author",
+           type="str",
+           multiple=True,
+           description="Limit commits to matching authors"),
     *MERGE_OPTIONS,
     Option(long="--after",
            type="str",
@@ -155,7 +165,9 @@ LOG_OPTIONS = (
            description="Commits older than a date (ISO-8601 or epoch)"),
 )
 
-SHOW_OPTIONS = (*DIFF_OPTIONS, *MERGE_OPTIONS, DATE_OPTION, PRETTY_OPTION,
+SHOW_OPTIONS = (Option(long="--oneline",
+                       description="One abbreviated line per commit"),
+                *DIFF_OPTIONS, *MERGE_OPTIONS, DATE_OPTION, PRETTY_OPTION,
                 FORMAT_OPTION)
 
 # git's ref-filter options, which `branch` and `tag` share. The four
@@ -203,6 +215,7 @@ REF_FILTER_OPTIONS = (
 )
 
 BRANCH_OPTIONS = (
+    Option(long="--show-current", description="Show the current branch name"),
     Option(short="-v",
            long="--verbose",
            count=True,
@@ -320,6 +333,8 @@ TAG_OPTIONS = (
 
 STATUS_OPTIONS = (
     Option(long="--porcelain",
+           type="str",
+           value_optional=True,
            description="Machine-readable output, stable across versions"),
     Option(short="-s",
            long="--short",
@@ -376,6 +391,27 @@ GIT = CLISpec(
                 description="List references",
                 fn=show_ref,
                 rest=REVISION),
+        CLISpec(name="shortlog",
+                fn=shortlog,
+                description="Summarize commit history",
+                options=(*(opt for opt in LOG_OPTIONS if opt.short != "-n"),
+                         Option(short="-s",
+                                long="--summary",
+                                description="Show only commit counts"),
+                         Option(short="-e",
+                                long="--email",
+                                description="Show author email addresses"),
+                         Option(short="-n",
+                                long="--numbered",
+                                description="Sort by commit count")),
+                rest=REVISION),
+        CLISpec(name="rev-parse",
+                fn=rev_parse,
+                description="Resolve revisions",
+                options=(Option(
+                    long="--abbrev-ref",
+                    description="Show abbreviated reference names"), ),
+                rest=REVISION),
         CLISpec(name="rev-list",
                 description="List reachable commits",
                 fn=rev_list,
@@ -417,7 +453,10 @@ GIT = CLISpec(
             name="diff",
             description="Show changes between commits",
             fn=diff,
-            options=DIFF_OPTIONS,
+            options=(*DIFF_OPTIONS,
+                     Option(long="--cached",
+                            description="Compare the index with a commit"),
+                     Option(long="--staged", description="Alias of --cached")),
             rest=REVISION,
         ),
         CLISpec(

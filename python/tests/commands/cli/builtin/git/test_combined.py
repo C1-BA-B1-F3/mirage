@@ -75,3 +75,9 @@ def test_missing_final_newline_gets_no_marker():
     body = combined_lines([['x\n', 'MAIN'], ['x\n', 'SIDE']], ['x\n', 'BOTH'],
                           dense=True)
     assert body[-3:] == ['- MAIN\n', ' -SIDE\n', '++BOTH\n']
+
+
+def test_zero_context_deletion_keeps_a_valid_empty_result_range():
+    assert combined_lines(
+        [['gone\n'], ['gone\n']], [], dense=True,
+        context=0) == ['@@@ -1,1 -1,1 +1,0 @@@\n', '--gone\n']

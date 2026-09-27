@@ -68,7 +68,8 @@ def parse_show_flags(fl: FlagView,
                               default_renames=default_renames,
                               quote_path_fully=quote_path_fully),
         date=fl.as_str("date") or "default",
-        pretty=parse_pretty(spelled) if spelled is not None else MEDIUM,
+        pretty=parse_pretty(spelled) if spelled is not None else LogFormat(
+            kind="oneline") if fl.as_bool("oneline") else MEDIUM,
     )
 
 

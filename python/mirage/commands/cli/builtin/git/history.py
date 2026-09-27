@@ -14,6 +14,7 @@
 
 import heapq
 import math
+import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Literal
@@ -22,8 +23,10 @@ from dulwich.objects import Commit, ObjectID, Tag
 from dulwich.refs import HEADREF, LOCAL_BRANCH_PREFIX, LOCAL_TAG_PREFIX
 from dulwich.repo import BaseRepo
 
+from mirage.commands.builtin.utils.bre import BreError, search_bre
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    BadDateError, IncompatibleLogOptionsError, UnrecognizedArgumentError)
+    BadDateError, GitError, IncompatibleLogOptionsError,
+    UnrecognizedArgumentError)
 from mirage.commands.cli.builtin.git.format import (MEDIUM, LogFormat,
                                                     parse_pretty)
 from mirage.commands.cli.builtin.git.pickaxe import touches
@@ -47,6 +50,7 @@ class LogFlags:
         search (str | None): ``-S``, the pickaxe string.
         since (float | None): ``--since`` as an epoch second.
         until (float | None): ``--until`` as an epoch second.
+        authors (tuple[re.Pattern[str], ...]): author patterns, ORed together.
         all_refs (bool): ``--all``, start from every ref as well.
         pretty (LogFormat): how each commit renders; medium unless
             ``--oneline`` or ``--pretty``/``--format`` said otherwise.
@@ -63,6 +67,7 @@ class LogFlags:
     search: str | None
     since: float | None
     until: float | None
+    authors: tuple[re.Pattern[str], ...] = ()
     date: str = "default"
     decorate: bool = False
     all_refs: bool = False
@@ -170,7 +175,12 @@ def parse_flags(fl: FlagView) -> LogFlags:
     for name in fl.typed_order("topo_order", "date_order"):
         if fl.as_bool(name):
             order = "topo" if name == "topo_order" else "date"
+    try:
+        authors = tuple(search_bre(value) for value in fl.as_list("author"))
+    except BreError as exc:
+        raise GitError(str(exc)) from exc
     return LogFlags(
+        authors=authors,
         date=fl.as_str("date") or "default",
         decorate=fl.as_bool("decorate"),
         max_count=fl.as_int("n"),
@@ -468,14 +478,18 @@ def _in_window(commit: Commit, flags: LogFlags) -> bool:
     return flags.until is None or commit.commit_time <= flags.until
 
 
-def _parents_pass(commit: Commit, flags: LogFlags) -> bool:
-    """Whether a commit's parent count passes ``--merges``,
+def _filters_pass(commit: Commit, flags: LogFlags) -> bool:
+    """Whether a commit's author and parent count pass ``--merges``,
     ``--no-merges`` and kin.
 
     Args:
         commit (Commit): the commit.
         flags (LogFlags): the parsed invocation.
     """
+    if flags.authors and not any(
+            pattern.search(commit.author.decode("utf-8", "replace"))
+            for pattern in flags.authors):
+        return False
     count = len(commit.parents)
     if flags.min_parents is not None and count < flags.min_parents:
         return False
@@ -521,12 +535,12 @@ def walked(repo: BaseRepo,
     if flags.order != "default":
         window = list(source)
         interesting = frozenset(commit.id for commit in window
-                                if _parents_pass(commit, flags))
+                                if _filters_pass(commit, flags))
         source = iter(_sort_commits(window, flags.order))
     steps: list[WalkStep] = []
     printed = 0
     for commit in source:
-        if not _parents_pass(commit, flags):
+        if not _filters_pass(commit, flags):
             continue
         shown = needle is None or touches(store, commit, needle)
         steps.append(WalkStep(commit, shown))

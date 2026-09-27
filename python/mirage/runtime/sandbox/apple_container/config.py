@@ -22,24 +22,33 @@ class AppleContainerConfig(SandboxConfig):
     """How to reach the user's running containers.
 
     Args:
-        container (str | None): id of the running container a line
-            runs in, which is the ``--name`` it was started with (Apple's
-            tool keeps no separate name). You start it yourself
-            (`container run -d --name my-sandbox ... sleep infinity`);
-            live FUSE mounts need `--cap-add SYS_ADMIN` and an image
-            with mirage installed. Every container already has
-            `/dev/fuse`.
-        containers (dict[str, str]): one container per agent, keyed by
-            session id: a line from session ``agent_a`` runs in
-            ``containers["agent_a"]``, and a session not listed runs in
-            ``container``. Separate containers are separate VMs, so the
-            agents share no filesystem, processes or view.
+        container (str | None): id of the running container for a
+            session with none of its own in ``containers``.
+        containers (dict[str, str]): session id to container id, one
+            container per agent.
     """
 
     container: str | None = None
     containers: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if not self.container and not self.containers:
+        if self.container is None and not self.containers:
             raise ValueError(
                 "apple_container config needs container or containers")
+        if self.container is not None and not nonblank(self.container):
+            raise ValueError("apple_container container must be a nonblank id")
+        blank = sorted(session
+                       for session, container in self.containers.items()
+                       if not nonblank(container))
+        if blank:
+            raise ValueError("apple_container containers must map each "
+                             "session to a nonblank id: " + ", ".join(blank))
+
+
+def nonblank(value: str) -> bool:
+    """Whether a configured id is a string with something in it.
+
+    Args:
+        value (str): the id as configured.
+    """
+    return isinstance(value, str) and bool(value.strip())

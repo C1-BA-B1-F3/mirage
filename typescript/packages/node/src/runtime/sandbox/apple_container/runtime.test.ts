@@ -145,6 +145,14 @@ describe('AppleContainerRuntime', () => {
     expect(() => makeRuntime({ config: {} })).toThrow('container or containers')
   })
 
+  it.each([
+    [{ container: '' }, 'container must be a nonblank id'],
+    [{ containers: { agent_a: '' } }, 'nonblank id: agent_a'],
+    [{ container: 'shared', containers: { b: ' ', a: 'box' } }, 'nonblank id: b'],
+  ])('config %j refuses a blank container id', (config, named) => {
+    expect(() => makeRuntime({ config })).toThrow(named)
+  })
+
   it("registers under the config name 'apple_container'", () => {
     const runtime = buildRuntime('apple_container', { config: { container: 'box' } })
     expect(runtime).toBeInstanceOf(AppleContainerRuntime)

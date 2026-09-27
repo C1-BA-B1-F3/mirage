@@ -17,6 +17,7 @@ import { getCurrentSession } from '@struktoai/mirage-core/context/session_contex
 import { PROCESS_EXECUTOR, type ProcessExecutor } from '@struktoai/mirage-core/runtime/mixin'
 import { RemoteSandbox } from '@struktoai/mirage-core/runtime/sandbox/base'
 import { registerRuntime } from '@struktoai/mirage-core/runtime/table'
+import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import type {
   ProcessExecution,
   RunResult,
@@ -69,8 +70,21 @@ export class AppleContainerRuntime
 
   constructor(options: RuntimeOptions<AppleContainerConfig> | Record<string, unknown> = {}) {
     super(options, APPLE_CONTAINER_CONFIG_KEYS)
-    if (!this.config.container && Object.keys(this.config.containers ?? {}).length === 0) {
+    const { container, containers = {} } = this.config
+    if (container === undefined && Object.keys(containers).length === 0) {
       throw new Error('apple_container config needs container or containers')
+    }
+    if (container !== undefined && !nonblank(container)) {
+      throw new Error('apple_container container must be a nonblank id')
+    }
+    const blank = Object.entries(containers)
+      .filter(([, id]) => !nonblank(id))
+      .map(([session]) => session)
+      .sort(compareCodePoints)
+    if (blank.length > 0) {
+      throw new Error(
+        `apple_container containers must map each session to a nonblank id: ${blank.join(', ')}`,
+      )
     }
   }
 
@@ -123,8 +137,8 @@ export class AppleContainerRuntime
   private async target(signal?: AbortSignal): Promise<string> {
     const sessionId = getCurrentSession()?.sessionId ?? null
     const mapped = sessionId !== null ? this.config.containers?.[sessionId] : undefined
-    const container = mapped !== undefined && mapped !== '' ? mapped : this.config.container
-    if (container === undefined || container === '') throw new Error(noContainerHint(sessionId))
+    const container = mapped ?? this.config.container
+    if (container === undefined) throw new Error(noContainerHint(sessionId))
     let probe = this.probes.get(container)
     if (probe === undefined) {
       probe = this.probe(container).catch((err: unknown) => {
@@ -205,6 +219,11 @@ function inspectedState(payload: unknown): unknown {
     throw new Error('expected [{ status: { state } }]')
   }
   return status.state
+}
+
+/** Whether a configured id is a string with something in it. */
+function nonblank(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== ''
 }
 
 const DECODER = new TextDecoder()

@@ -13,9 +13,10 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { constants as fsConstants } from 'node:fs'
-import { runWithSession } from '@struktoai/mirage-core/context/session_context'
+import { getCurrentSession, runWithSession } from '@struktoai/mirage-core/context/session_context'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { ContentType, FileStat, FileType, MountMode } from '@struktoai/mirage-core/types'
+import { enotsup } from '@struktoai/mirage-core/utils/errors'
 import { DIR_SIZE, mtimeMs } from '@struktoai/mirage-core/utils/stat_view'
 import { describe, expect, it, vi } from 'vitest'
 import { Workspace } from '../workspace.ts'
@@ -34,6 +35,21 @@ async function mkCore(): Promise<MountCore> {
 }
 
 describe('MountCore', () => {
+  it('reads under its session when truncate falls back to read and rewrite', async () => {
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.shell("echo 'hello' > /data/f.txt")
+    const sess = ws.createSession('agent', { profile: {} })
+    vi.spyOn(ws.vfs, 'truncate').mockRejectedValue(enotsup('ram', 'truncate', '/data/f.txt'))
+    const realRead = ws.vfs.readFile.bind(ws.vfs)
+    const readers: (string | null)[] = []
+    vi.spyOn(ws.vfs, 'readFile').mockImplementation((...args) => {
+      readers.push(getCurrentSession()?.sessionId ?? null)
+      return realRead(...args)
+    })
+    await new MountCore(ws.vfs, { session: sess }).truncate('/data/f.txt', 2)
+    expect(readers).toEqual(['agent'])
+  })
+
   it('runs every op under its session with no adapter binding it', async () => {
     // The SFTP door drives MountCore directly, with no FUSE adapter to
     // enter the session context, so the core binds its own session per

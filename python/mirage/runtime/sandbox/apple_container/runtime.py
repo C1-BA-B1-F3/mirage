@@ -104,8 +104,9 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
         session_id = session.session_id if session is not None else None
         container = (self.config.containers.get(session_id)
                      if session_id is not None else None)
-        container = container or self.config.container
-        if not container:
+        if container is None:
+            container = self.config.container
+        if container is None:
             raise RuntimeError(no_container_hint(session_id))
         async with self._probe_lock:
             if container not in self._running:

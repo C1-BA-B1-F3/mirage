@@ -118,6 +118,28 @@ def test_config_needs_a_container():
         AppleContainerRuntime(config={})
 
 
+@pytest.mark.parametrize(("config", "named"), [
+    ({
+        "container": ""
+    }, "container must be a nonblank id"),
+    ({
+        "containers": {
+            "agent_a": ""
+        }
+    }, "nonblank id: agent_a"),
+    ({
+        "container": "shared",
+        "containers": {
+            "b": " ",
+            "a": "box"
+        }
+    }, "nonblank id: b"),
+])
+def test_config_refuses_a_blank_container_id(config, named):
+    with pytest.raises(ValueError, match=named):
+        AppleContainerRuntime(config=config)
+
+
 def test_registers_under_the_config_name():
     runtime = build_runtime("apple_container", config={"container": "box"})
     assert isinstance(runtime, AppleContainerRuntime)

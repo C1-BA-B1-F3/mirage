@@ -1,5 +1,3 @@
-import type { ProcessSupervisor } from '../../process/supervisor.ts'
-import { PathSpec } from '../../types.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,6 +12,8 @@ import { PathSpec } from '../../types.ts'
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { ProcessSupervisor } from '../../process/supervisor.ts'
+import { PathSpec } from '../../types.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import { asyncChain, closeQuietly, discardIo, discardStreams } from '../../io/stream.ts'
 import type { ByteSource } from '../../io/types.ts'

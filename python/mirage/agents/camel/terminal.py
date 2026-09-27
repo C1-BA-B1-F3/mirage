@@ -21,7 +21,7 @@ from mirage.agents.io_text import decode, io_to_str
 from mirage.workspace.workspace import Workspace
 
 
-def _parse_job_id(stdout: str) -> int | None:
+def _parse_pid(stdout: str) -> int | None:
     lines = stdout.strip().splitlines()
     if not lines:
         return None
@@ -52,7 +52,7 @@ class MirageTerminalToolkit(BaseToolkit):
         """Run command in the Mirage workspace.
 
         Args:
-            id (str): Session identifier (mapped to a Mirage job id).
+            id (str): Session identifier (mapped to a Mirage process id).
             command (str): Shell command to execute.
             block (bool): Wait for completion when True; otherwise launch
                 the command in the background via Mirage's & operator.
@@ -65,18 +65,18 @@ class MirageTerminalToolkit(BaseToolkit):
         if block:
             io = self._runner.run(self._ws.shell(command))
             return io_to_str(io)
-        # Launches are silent (non-interactive bash), so the job id
-        # comes from $! rather than a stderr announcement.
+        # Launches are silent (non-interactive bash), so the pid comes
+        # from $! rather than a stderr announcement.
         bg_cmd = f"{command} & echo $!"
         io = self._runner.run(self._ws.shell(bg_cmd))
         stdout = decode(io.stdout if isinstance(io.stdout, bytes) else None)
-        job_id = _parse_job_id(stdout)
-        if job_id is None:
+        pid = _parse_pid(stdout)
+        if pid is None:
             stderr = decode(
                 io.stderr if isinstance(io.stderr, bytes) else None)
             return f"Failed to launch background job: {stderr}"
-        self._sessions[id] = job_id
-        return f"Started session '{id}' as Mirage job [{job_id}]"
+        self._sessions[id] = pid
+        return f"Started session '{id}' as Mirage process {pid}"
 
     def shell_view(self, id: str) -> str:
         """Return the latest output for a session.
@@ -88,15 +88,15 @@ class MirageTerminalToolkit(BaseToolkit):
         Returns:
             str: jobs status if still running, or wait output if completed.
         """
-        job_id = self._sessions.get(id)
-        if job_id is None:
+        pid = self._sessions.get(id)
+        if pid is None:
             return f"Error: no session '{id}'"
         ps_io = self._runner.run(self._ws.shell("ps"))
         ps_out = decode(
             ps_io.stdout if isinstance(ps_io.stdout, bytes) else None)
-        if any(line.startswith(f"{job_id}\t") for line in ps_out.splitlines()):
+        if any(line.startswith(f"{pid}\t") for line in ps_out.splitlines()):
             return ps_out
-        wait_io = self._runner.run(self._ws.shell(f"wait %{job_id}"))
+        wait_io = self._runner.run(self._ws.shell(f"wait {pid}"))
         return io_to_str(wait_io)
 
     def shell_write_to_process(self, id: str, command: str) -> str:
@@ -114,7 +114,7 @@ class MirageTerminalToolkit(BaseToolkit):
                 "'cat <<EOF | yourcmd\\nINPUT\\nEOF'.")
 
     def shell_kill_process(self, id: str) -> str:
-        """Kill the Mirage job for a session.
+        """Kill the Mirage process for a session.
 
         Args:
             id (str): Session identifier from a prior non-blocking
@@ -123,13 +123,13 @@ class MirageTerminalToolkit(BaseToolkit):
         Returns:
             str: Status message.
         """
-        job_id = self._sessions.pop(id, None)
-        if job_id is None:
+        pid = self._sessions.pop(id, None)
+        if pid is None:
             return f"Error: no session '{id}'"
-        io = self._runner.run(self._ws.shell(f"kill %{job_id}"))
+        io = self._runner.run(self._ws.shell(f"kill {pid}"))
         if io.exit_code != 0:
-            return io_to_str(io) or f"kill failed for [{job_id}]"
-        return f"killed session '{id}' (job [{job_id}])"
+            return io_to_str(io) or f"kill failed for process {pid}"
+        return f"killed session '{id}' (process {pid})"
 
     def shell_ask_user_for_help(self, id: str, prompt: str) -> str:
         """Placeholder hook for human-in-the-loop frameworks.

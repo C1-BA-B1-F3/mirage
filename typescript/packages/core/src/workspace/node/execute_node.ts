@@ -1,5 +1,3 @@
-import { PathSpec } from '../../types.ts'
-import { runWithSession } from '../../context/session_context.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,6 +12,8 @@ import { runWithSession } from '../../context/session_context.ts'
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { PathSpec } from '../../types.ts'
+import { runWithSession } from '../../context/session_context.ts'
 import { isProgramInvocation, runAsProgram } from '../../context/session_context.ts'
 import type { ProcessSupervisor } from '../../process/supervisor.ts'
 import type { Runtime } from '../../runtime/base.ts'

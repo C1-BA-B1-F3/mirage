@@ -191,6 +191,20 @@ describe('handlePs', () => {
     const [out] = handlePs(jt, ['ps'])
     expect((out as Uint8Array).byteLength).toBe(0)
   })
+
+  it('lists the stages of a pipeline behind a list', async () => {
+    const ws = buildWs()
+    try {
+      await ws.shell('echo x > /m/f')
+      const rows = stdoutStr(await ws.shell('true && ps < /m/f | cat'))
+        .trim()
+        .split('\n')
+      const commands = rows.map((row) => row.split('\t')[1])
+      expect(commands).toEqual(expect.arrayContaining(['ps', 'cat']))
+    } finally {
+      await ws.close()
+    }
+  })
 })
 
 describe('handleWait with an invocation signal', () => {

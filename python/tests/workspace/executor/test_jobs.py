@@ -352,6 +352,18 @@ async def test_ps_prints_nothing_when_no_job_is_running():
 
 
 @pytest.mark.asyncio
+async def test_ps_lists_the_stages_of_a_pipeline_behind_a_list():
+    ws = _workspace()
+    try:
+        await ws.shell("echo x > /m/f")
+        out = (await ws.shell("true && ps < /m/f | cat")).stdout
+        commands = {row.split(b"\t", 1)[1] for row in out.splitlines()}
+        assert {b"ps", b"cat"} <= commands
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
 async def test_fg_without_an_operand_reports_when_there_is_no_job():
     _, io, _ = await handle_fg(JobTable(), ["fg"])
     assert io.exit_code == 1

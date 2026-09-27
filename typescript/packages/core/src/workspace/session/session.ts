@@ -1,8 +1,3 @@
-import {
-  DEFAULT_PROCESS_PERMISSIONS,
-  parseProcessPermissions,
-  type ProcessPermissions,
-} from '../../process/config.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +12,11 @@ import {
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import {
+  DEFAULT_PROCESS_PERMISSIONS,
+  parseProcessPermissions,
+  type ProcessPermissions,
+} from '../../process/config.ts'
 import type { Limit } from '../../types.ts'
 import { parseCommandLimits, commandLimitsToJSON } from '../../policy/builtin/output_cap.ts'
 import { BIN_PREFIX, RANDOM, RANDOM_UNSET, SHELL_ARGV0 } from '../../shell/constants.ts'

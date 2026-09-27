@@ -50,7 +50,7 @@ function cellAt(
     ...props,
     ...evaluatedCell(tab, row, col, evaluator),
   }
-  const effective = effectiveFormat(tab, grid, row, col, asObj(out.effectiveValue))
+  const effective = effectiveFormat(tab, grid, row, col, out)
   if (effective !== undefined) out.effectiveFormat = effective
   return ordered(out, CELL_DATA)
 }
@@ -123,7 +123,7 @@ export function gridData(range: A1Range, tabs: readonly SheetTab[] = [range.tab]
     }
     rowData.push({ values })
   }
-  const hidden = filterHidden(tab)
+  const hidden = filterHidden(tab, evaluator)
   const span = (start: number, stop: number): number => Math.max(stop - start, 0)
   return {
     ...(b.top > 0 ? { startRow: b.top } : {}),

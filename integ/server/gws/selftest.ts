@@ -947,15 +947,141 @@ async function formulasHttp(at: string): Promise<void> {
   assert.deepEqual(await get('Sheet1!A5'), [])
   await put('Sheet1!A5', [['007']], 'RAW')
   assert.deepEqual(await get('Sheet1!A5', 'UNFORMATTED_VALUE'), [['007']])
+  await put('Sheet1!A10:B13', [
+    ['Score', 'Label'],
+    ["='2025Final'!$B$2", 'high'],
+    ["='2023''Final'!$B$2", 'low'],
+    [10, 'middle'],
+  ])
+  const range = {
+    sheetId: 0,
+    startRowIndex: 9,
+    endRowIndex: 13,
+    startColumnIndex: 0,
+    endColumnIndex: 2,
+  }
+  const condition = { type: 'NUMBER_GREATER', values: [{ userEnteredValue: '5' }] }
+  const filtered = await post(`${base}:batchUpdate`, tenant, {
+    requests: [
+      {
+        setBasicFilter: {
+          filter: {
+            range,
+            sortSpecs: [{ dimensionIndex: 0, sortOrder: 'ASCENDING' }],
+            criteria: { '0': { condition } },
+          },
+        },
+      },
+      {
+        addConditionalFormatRule: {
+          index: 0,
+          rule: {
+            ranges: [{ ...range, startRowIndex: 10, endColumnIndex: 1 }],
+            booleanRule: {
+              condition: { type: 'NUMBER_GREATER', values: [{ userEnteredValue: '15' }] },
+              format: { textFormat: { bold: true } },
+            },
+          },
+        },
+      },
+    ],
+  })
+  assert.equal(filtered.status, 200)
+  assert.deepEqual(await get('Sheet1!A11:B13', 'UNFORMATTED_VALUE'), [
+    [3, 'low'],
+    [10, 'middle'],
+    [20, 'high'],
+  ])
+  const data = async (): Promise<Record<string, JsonValue>> => {
+    const response = await api(`${base}?includeGridData=true&ranges=Sheet1!A10:B13`, tenant)
+    assert.equal(response.status, 200)
+    return obj(arr(obj(arr(obj(response.body).sheets)[0]).data)[0])
+  }
+  const filteredData = await data()
+  assert.deepEqual(
+    arr(filteredData.rowMetadata).map((row) => obj(row).hiddenByFilter ?? false),
+    [false, true, false, false],
+  )
+  const high = obj(arr(obj(arr(filteredData.rowData)[3]).values)[0])
+  assert.equal(obj(obj(high.effectiveFormat).textFormat).bold, true)
+  const sorted = await post(`${base}:batchUpdate`, tenant, {
+    requests: [
+      {
+        sortRange: {
+          range: { ...range, startRowIndex: 10 },
+          sortSpecs: [{ dimensionIndex: 0, sortOrder: 'DESCENDING' }],
+        },
+      },
+    ],
+  })
+  assert.equal(sorted.status, 200)
+  assert.deepEqual(await get('Sheet1!A11:B13', 'UNFORMATTED_VALUE'), [
+    [3, 'low'],
+    [20, 'high'],
+    [10, 'middle'],
+  ])
+  const hidden = await post(`${base}:batchUpdate`, tenant, {
+    requests: [
+      { setBasicFilter: { filter: { range, criteria: { '0': { hiddenValues: ['20'] } } } } },
+    ],
+  })
+  assert.equal(hidden.status, 200)
+  assert.deepEqual(
+    arr((await data()).rowMetadata).map((row) => obj(row).hiddenByFilter ?? false),
+    [false, false, true, false],
+  )
+  await put("'2025Final'!B2", [[2]])
+  const refreshed = await data()
+  assert.deepEqual(
+    arr(refreshed.rowMetadata).map((row) => obj(row).hiddenByFilter ?? false),
+    [false, false, false, false],
+  )
+  const changed = obj(arr(obj(arr(refreshed.rowData)[2]).values)[0])
+  assert.equal(obj(obj(changed.effectiveFormat).textFormat).bold, false)
+  check('cross-sheet formulas drive sort, filters and conditional formatting and recalculate', true)
+
+  const bulk = await post(`${base}:batchUpdate`, tenant, {
+    requests: [{ addSheet: { properties: { title: 'Bulk' } } }],
+  })
+  assert.equal(bulk.status, 200)
+  await put(
+    'Bulk!A1:B1000',
+    Array.from({ length: 1000 }, () => [1, '=SUM(A1:A100)']),
+  )
+  const expected = Array.from({ length: 1000 }, () => [100])
+  assert.deepEqual(await get('Bulk!B1:B1000', 'UNFORMATTED_VALUE'), expected)
+  assert.deepEqual(await get('Bulk!B1000', 'UNFORMATTED_VALUE'), [[100]])
+  const bulkGrid = await api(`${base}?includeGridData=true&ranges=Bulk!B1:B1000`, tenant)
+  assert.equal(bulkGrid.status, 200)
+  const bulkData = obj(arr(obj(arr(obj(bulkGrid.body).sheets)[0]).data)[0])
+  assert.deepEqual(
+    arr(bulkData.rowData).map(
+      (row) => obj(obj(arr(obj(row).values)[0]).effectiveValue).numberValue,
+    ),
+    Array.from({ length: 1000 }, () => 100),
+  )
+  check('large values and grid reads preserve every individually bounded formula result', true)
   check(
     'formulas: typed inputs, render options, recalculation, ranges, errors and write paths',
     true,
   )
 }
 
+function formulaLimitsDirect(): void {
+  const tab = newTab(0, 'Limits', 100_001)
+  writeValues(wholeTab(tab), [[1, '=SUM(A1:A100001)', '=SUM(A1:A10)', '=C1+1']], 0)
+  const all = rangeValues({ ...wholeTab(tab), startCol: 1 }, [tab], 'UNFORMATTED_VALUE')
+  assert.deepEqual(all, [['#ERROR!', 1, 2]])
+  assert.deepEqual(rangeValues({ ...wholeTab(tab), startCol: 2 }, [tab], 'UNFORMATTED_VALUE'), [
+    [1, 2],
+  ])
+  check('formula work limits apply per root cell without poisoning later reads', true)
+}
+
 async function main(): Promise<void> {
   compatibilityDirect()
   sheetsFormatsDirect()
+  formulaLimitsDirect()
   const fake = await launch()
   const at = fake.endpoint
   const seed = { tenants: ['t1'], epoch: EPOCH, extras: { forms: FORMS } }

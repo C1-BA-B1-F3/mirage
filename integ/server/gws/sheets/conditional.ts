@@ -18,7 +18,6 @@ import { asNum, asObj, asObjArr, asStr } from '../wire/json.ts'
 import type { JsonObj } from '../wire/json.ts'
 import { isReply } from '../wire/reply.ts'
 import { CONDITIONAL_RULE, canonical } from './fields.ts'
-import { evaluatedCell, shownAt } from './grid.ts'
 import type { Grid } from './grid.ts'
 import { boundsOf, covers, gridOf, invalid, rangeOn, rectOf, storedRange } from './request.ts'
 import type { At } from './request.ts'
@@ -26,14 +25,13 @@ import type { At } from './request.ts'
 // Whether a BooleanCondition holds for one cell, for the condition types
 // that read the cell's own value: numbers compare as numbers, text compares
 // without case against what the cell shows, and blanks are cells showing
-// nothing. Dates, formulas, lists, URLs and emails need Sheets' evaluator
-// and never hold here.
-export function holds(condition: JsonObj, tab: SheetTab, row: number, col: number): boolean {
+// nothing. Date, custom-formula, list, URL and email conditions remain
+// unmodeled and never hold here.
+export function holds(condition: JsonObj, value: JsonObj): boolean {
   const args = asObjArr(condition.values).map((v) => asStr(v.userEnteredValue) ?? '')
-  const shown = shownAt(tab, row, col)
+  const shown = String(value.formattedValue ?? '')
   const text = shown.toLowerCase()
   const arg = (args[0] ?? '').toLowerCase()
-  const value = evaluatedCell(tab, row, col)
   const number = asNum(asObj(value.effectiveValue).numberValue)
   const [low = NaN, high = NaN] = args.map(Number)
   switch (asStr(condition.type)) {
@@ -80,11 +78,12 @@ export function ruleFormat(
   grid: Grid,
   row: number,
   col: number,
+  value: JsonObj,
 ): JsonObj | undefined {
   for (const rule of tab.conditionalFormats) {
     if (!asObjArr(rule.ranges).some((r) => covers(boundsOf(r, grid), row, col))) continue
     const boolean = asObj(rule.booleanRule)
-    if (holds(asObj(boolean.condition), tab, row, col)) return asObj(boolean.format)
+    if (holds(asObj(boolean.condition), value)) return asObj(boolean.format)
   }
   return undefined
 }

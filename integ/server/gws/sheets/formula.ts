@@ -52,7 +52,7 @@ function extended(value: Scalar): JsonObj {
   return { numberValue: number }
 }
 
-/** A read-scoped evaluator: memoization never survives a mutation. */
+/** Read-scoped grid bounds; each root cell gets its own work budget and memo. */
 export class FormulaEvaluator {
   private readonly active = new Set<string>()
   private readonly memo = new Map<string, JsonObj>()
@@ -79,6 +79,10 @@ export class FormulaEvaluator {
   }
 
   cell(tab: SheetTab, row: number, col: number): JsonObj {
+    if (this.active.size === 0) {
+      this.steps = 0
+      this.memo.clear()
+    }
     const key = `${String(row)},${String(col)}`
     const id = `${String(tab.sheetId)}:${key}`
     const entered = enteredValue(tab, key)

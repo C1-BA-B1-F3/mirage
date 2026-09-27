@@ -180,7 +180,7 @@ export function evaluatedCell(
   tab: SheetTab,
   row: number,
   col: number,
-  evaluator = new FormulaEvaluator([tab]),
+  evaluator: FormulaEvaluator,
 ): JsonObj {
   const key = `${String(row)},${String(col)}`
   if (!tab.cells.has(key) || tab.cells.get(key) === '') return {}
@@ -196,10 +196,6 @@ export function evaluatedCell(
       typeof entered.numberValue === 'number' && /[eE]/.test(tab.cells.get(key) ?? ''),
     ),
   }
-}
-
-export function shownAt(tab: SheetTab, row: number, col: number): string {
-  return String(evaluatedCell(tab, row, col).formattedValue ?? '')
 }
 
 // One CellData's value, back into the text a cell stores; null when it

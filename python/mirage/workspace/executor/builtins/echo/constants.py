@@ -21,7 +21,11 @@ SIMPLE_ESCAPES = {
     "b": "\b",
     "f": "\f",
     "v": "\v",
+    "e": "\x1b",
+    "E": "\x1b",
 }
+
+HEX_ESCAPE_DIGITS = {"x": 2, "u": 4, "U": 8}
 
 HEX = set("0123456789abcdefABCDEF")
 

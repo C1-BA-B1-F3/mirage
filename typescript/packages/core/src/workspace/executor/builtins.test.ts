@@ -403,9 +403,20 @@ describe('handleEcho', () => {
     expect(decode(out as Uint8Array)).toBe('\\z\n')
   })
 
-  it('-e \\c stops output at that point', () => {
+  it('-e \\c stops output at that point, newline included', () => {
     const [out] = handleEcho(['-e', 'hi\\cgone'])
-    expect(decode(out as Uint8Array)).toBe('hi\n')
+    expect(decode(out as Uint8Array)).toBe('hi')
+  })
+
+  it('-e \\c ends the later operands too', () => {
+    expect(decode(handleEcho(['-e', 'a', 'b\\cc', 'd'])[0] as Uint8Array)).toBe('a b')
+    expect(decode(handleEcho(['-e', 'a\\E', '\\cb'])[0] as Uint8Array)).toBe('a\x1b ')
+  })
+
+  it('-e reads \\e and \\E as ESC; -E and plain echo keep them', () => {
+    expect(decode(handleEcho(['-e', 'a\\eb\\Ec'])[0] as Uint8Array)).toBe('a\x1bb\x1bc\n')
+    expect(decode(handleEcho(['-E', 'a\\eb\\Ec'])[0] as Uint8Array)).toBe('a\\eb\\Ec\n')
+    expect(decode(handleEcho(['a\\eb\\Ec'])[0] as Uint8Array)).toBe('a\\eb\\Ec\n')
   })
 
   it('-e reads \\xHH and \\0NNN as bytes', () => {
@@ -413,6 +424,12 @@ describe('handleEcho', () => {
     expect(bytes(['-ne', '\\xff'])).toEqual([0xff])
     expect(bytes(['-ne', '\\0377'])).toEqual([0xff])
     expect(bytes(['-ne', '\\xc3\\xa9'])).toEqual([0xc3, 0xa9])
+  })
+
+  it('-e reads \\u and \\U as code points written in UTF-8', () => {
+    const bytes = (args: string[]): number[] => [...(handleEcho(args)[0] as Uint8Array)]
+    expect(bytes(['-ne', '\\u00e9\\U0001F600'])).toEqual([0xc3, 0xa9, 0xf0, 0x9f, 0x98, 0x80])
+    expect(bytes(['-ne', '\\uD800'])).toEqual([0xed, 0xa0, 0x80])
   })
 })
 

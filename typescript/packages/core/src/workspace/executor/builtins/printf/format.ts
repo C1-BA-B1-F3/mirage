@@ -13,10 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { byteChar, encodeText } from '../../../../shell/bytes.ts'
+import { codePointText } from '../../../../shell/escapes.ts'
 
-// printf's escape grammar is not echo's: it reads \u/\U and a bare
-// \NNN, while `echo -e` wants \0NNN and gives \c a different meaning.
-// Only the simple table overlaps, so each reader keeps its own.
+// printf's escape grammar is not echo's: it reads a bare \NNN, while
+// `echo -e` wants \0NNN and gives \c a different meaning. Only the
+// simple table and \x, \u and \U overlap, so each reader keeps its own.
 const PRINTF_SIMPLE_ESCAPES: Record<string, string> = {
   '\\': '\\',
   n: '\n',
@@ -532,7 +533,7 @@ function readEscape(fmt: string, i: number, bArg: boolean): [string, number, boo
     if (digits) {
       const value = parseInt(digits, 16)
       // \x names a byte; \u and \U name a code point.
-      return [ch === 'x' ? byteChar(value) : String.fromCodePoint(value), j, false]
+      return [ch === 'x' ? byteChar(value) : codePointText(value), j, false]
     }
     return ['\\' + ch, i + 2, false]
   }

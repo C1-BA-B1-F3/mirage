@@ -16,6 +16,7 @@ import math
 import re
 
 from mirage.shell.bytes import byte_char, encode_text
+from mirage.shell.escapes import code_point_text
 
 _PRINTF_INT = re.compile(r"[+-]?(?:0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)")
 
@@ -25,9 +26,9 @@ _PRINTF_CONV = "sdiouxXeEfFgGaAcbq%"
 
 _UINT64_MASK = 0xFFFFFFFFFFFFFFFF
 
-# printf's escape grammar is not echo's: it reads \u/\U and a bare
-# \NNN, while echo -e wants \0NNN and gives \c a different meaning.
-# Only the simple table overlaps, so each reader keeps its own.
+# printf's escape grammar is not echo's: it reads a bare \NNN, while
+# echo -e wants \0NNN and gives \c a different meaning. Only the simple
+# table and \x, \u and \U overlap, so each reader keeps its own.
 _SIMPLE_ESCAPES = {
     "\\": "\\",
     "n": "\n",
@@ -382,7 +383,7 @@ def _read_escape(fmt: str, i: int, b_arg: bool) -> tuple[str, int, bool]:
         if digits:
             value = int("".join(digits), 16)
             # \x names a byte; \u and \U name a code point.
-            text = byte_char(value) if ch == "x" else chr(value)
+            text = byte_char(value) if ch == "x" else code_point_text(value)
             return text, j, False
         return "\\" + ch, i + 2, False
     if ch in _OCT:

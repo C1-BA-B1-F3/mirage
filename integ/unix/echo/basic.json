@@ -67,6 +67,118 @@
         "stdout": "a  b\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "echo_e_reads_backslash_e_as_escape",
+      "seq": 991162,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "echo -e 'a\\eb\\Ec' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 61 1b 62 1b 63 0a\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "echo_capital_e_keeps_backslash_e_literal",
+      "seq": 991163,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "echo -E 'a\\eb\\Ec' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 61 5c 65 62 5c 45 63 0a\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "echo_without_e_keeps_backslash_e_literal",
+      "seq": 991164,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "echo 'a\\eb\\Ec' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 61 5c 65 62 5c 45 63 0a\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "echo_e_reads_escape_at_the_end_of_each_operand",
+      "seq": 991165,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "echo -e 'a\\e' 'b\\E' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 61 1b 20 62 1b 0a\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "echo_e_c_after_escape_drops_the_newline",
+      "seq": 991166,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "echo -e 'a\\E\\cb' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 61 1b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "echo_e_c_ends_the_later_operands",
+      "seq": 991167,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "echo -e 'a' 'b\\cc' 'd' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 61 20 62\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "echo_e_reads_unicode_escapes_as_utf8",
+      "seq": 991168,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "echo -e '\\u00e9\\U0001F600' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " c3 a9 f0 9f 98 80 0a\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "echo_e_unicode_escape_outside_unicode_is_utf8_shaped",
+      "seq": 991169,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "echo -e '\\uD800\\U00110000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " ed a0 80 f4 90 80 80 0a\n",
+        "stderr": ""
+      }
     }
   ]
 }

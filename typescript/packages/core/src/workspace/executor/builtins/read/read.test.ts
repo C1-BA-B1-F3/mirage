@@ -53,6 +53,54 @@ const READ_LEAVES_THE_REST: [string, string][] = [
     'printf \'a\\nb\\nc\\n\' > /data/f; exec < /data/f; read x; read y; echo "[$x][$y]"',
     '[a][b]\n',
   ],
+  [
+    'printf \'a\\nb\\n\' > /data/f; exec < /data/f; read x; exec < /data/f; read y; echo "[$x][$y]"',
+    '[a][a]\n',
+  ],
+  [
+    'printf \'a\\nb\\n\' > /data/f; (exec < /data/f; read x; exec < /data/f; read y; echo "[$x][$y]")',
+    '[a][a]\n',
+  ],
+  [
+    'printf \'a\\nb\\n\' > /data/f; exec < /data/f; read x; (exec < /data/f; read y; echo "[$x][$y]")',
+    '[a][a]\n',
+  ],
+  ['printf \'a\\nb\\n\' > /data/f; exec < /data/f; read x; (read y; echo "[$x][$y]")', '[a][b]\n'],
+  [
+    "printf 'a\\nb\\n' > /data/f; printf 'z\\n' | (read a; exec < /data/f; read b; echo \"[$a][$b]\")",
+    '[z][a]\n',
+  ],
+  [
+    "printf 'a\\nb\\n' > /data/f; printf 'z\\n' | eval 'exec < /data/f; read a; echo \"[$a]\"'",
+    '[a]\n',
+  ],
+  ['printf \'a\\nb\\n\' > /data/f; { exec < /data/f; read a; echo "[$a]"; }', '[a]\n'],
+  [
+    'printf \'a\\nb\\n\' > /data/f; { exec < /data/f; read a; }; read b; echo "[$a][$b]"',
+    '[a][b]\n',
+  ],
+  [
+    "printf 'a\\nb\\n' > /data/f; g() { exec < /data/f; read a; echo \"[$a]\"; }; printf 'z\\n' | g",
+    '[a]\n',
+  ],
+  ['printf \'a\\nb\\n\' > /data/f; g() { exec < /data/f; }; g; read a; echo "[$a]"', '[a]\n'],
+  [
+    'printf \'a\\nb\\n\' > /data/f; exec < /data/f; read a; { exec < /data/f; read b; }; echo "[$a][$b]"',
+    '[a][a]\n',
+  ],
+  [
+    "printf 'a\\nb\\n' > /data/f; printf 'z\\n' | { read a; exec < /data/f; read b; echo \"[$a][$b]\"; }",
+    '[z][a]\n',
+  ],
+  ['printf \'a\\nb\\n\' > /data/f; exec < /data/f && read a && echo "[$a]"', '[a]\n'],
+  [
+    'printf \'a\\nb\\n\' > /data/f; if true; then exec < /data/f; read a; fi; read b; echo "[$a][$b]"',
+    '[a][b]\n',
+  ],
+  [
+    'printf \'a\\nb\\n\' > /data/f; case x in x) exec < /data/f; read a;; esac; read b; echo "[$a][$b]"',
+    '[a][b]\n',
+  ],
   ["read x <<< ''; read y <<< ''; echo \"$? [$y]\"", '0 []\n'],
 ]
 
@@ -65,4 +113,16 @@ describe('read leaves the rest for the next command', () => {
     expect([io.stdoutText, io.exitCode]).toEqual([expected, 0])
     await ws.close()
   })
+})
+
+// fd 0 is the shell's, not the line's: a script's next line reads on from
+// where `exec <` left it.
+it('reads on across lines after exec', async () => {
+  const parser = await getTestParser()
+  const ws = new Workspace({ '/': new RAMVFS() }, { mode: MountMode.WRITE, shellParser: parser })
+  await ws.shell('mkdir -p /data')
+  await ws.shell("printf 'a\\nb\\n' > /data/f; exec < /data/f; read a")
+  const io = await ws.shell('read b; echo "[$a][$b]"')
+  expect(io.stdoutText).toBe('[a][b]\n')
+  await ws.close()
 })

@@ -28,7 +28,7 @@ from mirage.shell.variable import ShellVar
 from mirage.types import PathSpec, word_text
 from mirage.workspace.executor.command.types import ExecuteNodeFn
 from mirage.workspace.executor.jobs import run_statement
-from mirage.workspace.executor.statement import finish_statement
+from mirage.workspace.executor.statement import fd0_binding, finish_statement
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import restore_locals
 from mirage.workspace.types import ExecutionNode
@@ -88,11 +88,12 @@ async def run_shell_function(
         all_stdout: list[Any] = []
         merged_io = IOResult()
         last_exec = ExecutionNode(command=cmd_name, exit_code=0)
+        bound = fd0_binding(session)
         for cmd in func_body:
             try:
                 stdout, io, last_exec = await run_statement(
-                    execute_node, cmd, session, stdin, cs, job_table, agent_id,
-                    handed, decisions)
+                    execute_node, cmd, session, stdin, bound, cs, job_table,
+                    agent_id, handed, decisions)
             except ReturnSignal as sig:
                 if sig.stderr:
                     merged_io = await merged_io.merge(

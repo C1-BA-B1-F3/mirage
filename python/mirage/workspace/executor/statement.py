@@ -16,8 +16,10 @@ from dataclasses import dataclass
 
 from mirage.commands.spec.usage import read_fail_exit
 from mirage.io import IOResult
+from mirage.io.async_line_iterator import SharedInput
 from mirage.io.types import ByteSource, materialize
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
+from mirage.shell.descriptors import unreadable_stdin
 from mirage.shell.node_kind import pipeline_transparent
 from mirage.shell.types import TSNodeLike
 from mirage.utils.errors import format_fs_error
@@ -192,6 +194,48 @@ async def finish_statement(
                   io.exit_code,
                   transparent=node is not None and pipeline_transparent(node))
     return result
+
+
+def fd0_binding(session: SessionState) -> tuple[SharedInput | None, bool]:
+    """What the shell's fd 0 is bound to: the descriptor ``exec <``
+    opened, and whether an ``exec`` left it unreadable (``exec <&-``).
+
+    A construct takes this as it starts, so ``statement_stdin`` can tell
+    an ``exec`` made inside it from one made before it.
+
+    Args:
+        session (SessionState): shell session.
+    """
+    return session.exec_stdin, session.exec_stdin_unreadable
+
+
+def statement_stdin(
+    session: SessionState,
+    stdin: ByteSource | None,
+    bound: tuple[SharedInput | None, bool],
+) -> ByteSource | None:
+    """The stdin one statement of a construct reads.
+
+    bash's fd 0 is one descriptor, so an ``exec <`` replaces whatever a
+    construct was handed: ``printf z | { exec < f; read a; }`` reads
+    ``f``. Every statement-list loop asks this before each statement.
+    The construct's own stdin stands while fd 0 is still what it was
+    when the construct started; a construct handed none reads fd 0,
+    the descriptor ``exec <`` opened or EBADF after ``exec <&-``.
+
+    Args:
+        session (SessionState): shell session.
+        stdin (ByteSource | None): the construct's stdin.
+        bound (tuple[SharedInput | None, bool]): ``fd0_binding`` as the
+            construct started.
+    """
+    if stdin is not None and fd0_binding(session) == bound:
+        return stdin
+    if session.exec_stdin_unreadable:
+        return unreadable_stdin()
+    if session.exec_stdin is not None:
+        return session.exec_stdin
+    return stdin
 
 
 def assignment_status(session: SessionState, seq_before: int) -> int:

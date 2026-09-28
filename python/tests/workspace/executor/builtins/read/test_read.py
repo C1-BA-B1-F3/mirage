@@ -104,6 +104,36 @@ READ_LEAVES_THE_REST = [
     ("{ read x; echo \"[$x]\"; cat; } <<< $'a\\nb'", b"[a]\nb\n"),
     ("printf 'a\\nb\\nc\\n' > /data/f; exec < /data/f; read x; read y; "
      "echo \"[$x][$y]\"", b"[a][b]\n"),
+    ("printf 'a\\nb\\n' > /data/f; exec < /data/f; read x; exec < /data/f; "
+     "read y; echo \"[$x][$y]\"", b"[a][a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; (exec < /data/f; read x; exec < /data/f; "
+     "read y; echo \"[$x][$y]\")", b"[a][a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; exec < /data/f; read x; "
+     "(exec < /data/f; read y; echo \"[$x][$y]\")", b"[a][a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; exec < /data/f; read x; "
+     "(read y; echo \"[$x][$y]\")", b"[a][b]\n"),
+    ("printf 'a\\nb\\n' > /data/f; printf 'z\\n' | "
+     "(read a; exec < /data/f; read b; echo \"[$a][$b]\")", b"[z][a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; printf 'z\\n' | "
+     "eval 'exec < /data/f; read a; echo \"[$a]\"'", b"[a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; { exec < /data/f; read a; echo \"[$a]\"; }",
+     b"[a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; { exec < /data/f; read a; }; read b; "
+     "echo \"[$a][$b]\"", b"[a][b]\n"),
+    ("printf 'a\\nb\\n' > /data/f; g() { exec < /data/f; read a; "
+     "echo \"[$a]\"; }; printf 'z\\n' | g", b"[a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; g() { exec < /data/f; }; g; read a; "
+     "echo \"[$a]\"", b"[a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; exec < /data/f; read a; "
+     "{ exec < /data/f; read b; }; echo \"[$a][$b]\"", b"[a][a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; printf 'z\\n' | "
+     "{ read a; exec < /data/f; read b; echo \"[$a][$b]\"; }", b"[z][a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; exec < /data/f && read a && echo \"[$a]\"",
+     b"[a]\n"),
+    ("printf 'a\\nb\\n' > /data/f; if true; then exec < /data/f; read a; fi; "
+     "read b; echo \"[$a][$b]\"", b"[a][b]\n"),
+    ("printf 'a\\nb\\n' > /data/f; case x in x) exec < /data/f; read a;; "
+     "esac; read b; echo \"[$a][$b]\"", b"[a][b]\n"),
     ("read x <<< ''; read y <<< ''; echo \"$? [$y]\"", b"0 []\n"),
 ]
 
@@ -116,3 +146,13 @@ async def test_read_leaves_the_rest_for_the_next_command(
     io = await ws.shell(line)
     assert await materialize(io.stdout) == expected
     assert io.exit_code == 0
+
+
+# fd 0 is the shell's, not the line's: a script's next line reads on
+# from where `exec <` left it.
+@pytest.mark.asyncio
+async def test_read_after_exec_reads_on_across_lines():
+    ws = await _read_ws()
+    await ws.shell("printf 'a\\nb\\n' > /data/f; exec < /data/f; read a")
+    io = await ws.shell("read b; echo \"[$a][$b]\"")
+    assert await materialize(io.stdout) == b"[a][b]\n"

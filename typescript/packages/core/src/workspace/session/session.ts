@@ -18,6 +18,7 @@ import {
   type ProcessPermissions,
 } from '../../process/config.ts'
 import type { Limit } from '../../types.ts'
+import type { SharedInput } from '../../io/async_line_iterator.ts'
 import { parseCommandLimits, commandLimitsToJSON } from '../../policy/builtin/output_cap.ts'
 import { BIN_PREFIX, RANDOM, RANDOM_UNSET, SHELL_ARGV0 } from '../../shell/constants.ts'
 import { EnvVarSchema, type EnvEntries } from '../../secrets/config.ts'
@@ -69,7 +70,7 @@ export interface ChildShellState {
   execStdoutAppend: boolean
   execStderr: string | null
   execStderrAppend: boolean
-  execStdin: Uint8Array | null
+  execStdin: SharedInput | null
   execStdinUnreadable: boolean
   execStdinIdentity: string | null
   execOpened: Set<string>
@@ -485,12 +486,15 @@ export class SessionState {
   // `exec` redirect-only state: where the shell's own stdout, stderr and
   // stdin point after a bare `exec > file`. Null is the terminal; `""`
   // is a closed descriptor whose writes drop; `execOpened` names targets
-  // already truncated so a later statement appends.
+  // already truncated so a later statement appends. `execStdin` is the
+  // one descriptor an `exec <` opened: every statement after it reads on
+  // from where the one before stopped, across lines and into a child
+  // shell, which shares it as bash's fork shares fd 0.
   execStdout: string | null = null
   execStdoutAppend = false
   execStderr: string | null = null
   execStderrAppend = false
-  execStdin: Uint8Array | null = null
+  execStdin: SharedInput | null = null
   execStdinUnreadable = false
   // What fd 0 holds when it is not its own read end: CLOSED after `exec
   // <&-`, a writing stream's identity after `exec 0<&1`, so a later dup

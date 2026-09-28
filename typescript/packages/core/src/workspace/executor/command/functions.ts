@@ -15,7 +15,7 @@
 import type { ShellVar } from '../../../shell/variable.ts'
 import type { ByteSource } from '../../../io/types.ts'
 import { IOResult } from '../../../io/types.ts'
-import { finishStatement } from '../statement.ts'
+import { fd0Binding, finishStatement } from '../statement.ts'
 import { CallStack } from '../../../shell/call_stack.ts'
 import { ERREXIT_EXEMPT_TYPES } from '../../../shell/constants.ts'
 import type { PathSpec } from '../../../types.ts'
@@ -64,6 +64,7 @@ export async function executeShellFunction(
   const allStdout: (ByteSource | null)[] = []
   let mergedIo = new IOResult()
   let lastExec = new ExecutionNode({ command: cmdName, exitCode: 0 })
+  const bound = fd0Binding(session)
 
   try {
     for (const cmd of body) {
@@ -74,6 +75,7 @@ export async function executeShellFunction(
           cmdNode,
           session,
           bodyStdin,
+          bound,
           cs,
           jobTable,
           agentId,

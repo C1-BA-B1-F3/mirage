@@ -22,7 +22,7 @@ import { PolicyDenied } from '../../policy/errors.ts'
 import { type Policies } from '../../policy/index.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
 import { ArithError, ReadonlyError } from '../../shell/errors.ts'
-import { finishStatement, recordStatus } from './statement.ts'
+import { fd0Binding, finishStatement, recordStatus } from './statement.ts'
 import { pipelineTransparent } from '../../shell/node_kind.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { ERREXIT_EXEMPT_TYPES } from '../../shell/constants.ts'
@@ -87,6 +87,7 @@ async function executeBody(
   const allStdout: (ByteSource | null)[] = []
   let mergedIo = new IOResult()
   let lastExec = new ExecutionNode({ command: '', exitCode: 0 })
+  const bound = fd0Binding(session)
   for (const cmd of body) {
     try {
       const [rawStdout, io, execNode] = await runStatement(
@@ -94,6 +95,7 @@ async function executeBody(
         cmd,
         session,
         stdin,
+        bound,
         callStack,
         jobTable,
         agentId,
@@ -166,12 +168,14 @@ export async function handleIf(
   handed: HandOff | null = null,
   decisions: Decisions | null = null,
 ): Promise<Result> {
+  const bound = fd0Binding(session)
   for (const [condition, body] of branches) {
     const [condStdout, condIo] = await runStatement(
       executeNode,
       condition,
       session,
       stdin,
+      bound,
       callStack,
       jobTable,
       agentId,
@@ -312,6 +316,7 @@ async function conditionLoop(
   let mergedIo = new IOResult()
   const allStdout: (ByteSource | null)[] = []
   let hitLimit = true
+  const bound = fd0Binding(session)
   for (let i = 0; i < MAX_WHILE; i++) {
     if (session.shellOptions.noexec === true) {
       hitLimit = false
@@ -322,6 +327,7 @@ async function conditionLoop(
       condition,
       session,
       stdin,
+      bound,
       callStack,
       jobTable,
       agentId,
@@ -573,6 +579,7 @@ export async function handleCase(
   let lastExec = new ExecutionNode({ command: 'case', exitCode: 0 })
   let ran = false
   let fallthrough = false
+  const bound = fd0Binding(session)
   for (const [patterns, body, terminator] of items) {
     if (!(fallthrough || patterns.some((p) => fnmatch(word, p)))) continue
     ran = true
@@ -582,6 +589,7 @@ export async function handleCase(
         stmt,
         session,
         stdin,
+        bound,
         callStack,
         jobTable,
         agentId,

@@ -52,7 +52,7 @@ from mirage.workspace.executor.pipes import (handle_connection, handle_pipe,
                                              handle_subshell)
 from mirage.workspace.executor.redirect import handle_redirect
 from mirage.workspace.executor.statement import (assignment_status,
-                                                 finish_statement,
+                                                 fd0_binding, finish_statement,
                                                  record_status)
 from mirage.workspace.expand import (expand_and_classify, expand_node,
                                      expand_redirects)
@@ -974,12 +974,13 @@ async def _execute_node(
         all_stdout: list[Any] = []
         merged_io = IOResult()
         last_exec = ExecutionNode(command="{}", exit_code=0)
+        bound = fd0_binding(session)
         for child in node.named_children:
             if child.type == NT.COMMENT:
                 continue
             stdout, io, last_exec = await run_statement(
-                stream, child, session, stdin, cs, job_table, agent_id, handed,
-                registry.decisions)
+                stream, child, session, stdin, bound, cs, job_table, agent_id,
+                handed, registry.decisions)
             stdout = await finish_statement(stdout, io, session, child)
             if stdout is not None:
                 all_stdout.append(stdout)

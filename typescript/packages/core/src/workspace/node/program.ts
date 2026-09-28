@@ -14,7 +14,6 @@
 
 import { CommandTimeoutError } from '../../commands/errors.ts'
 import { isControlFlowError } from '../workspace/failure.ts'
-import { share } from '../../io/async_line_iterator.ts'
 import { asyncChain } from '../../io/stream.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
@@ -24,7 +23,7 @@ import { getText } from '../../shell/helpers.ts'
 import { ERREXIT_EXEMPT_TYPES } from '../../shell/constants.ts'
 import { pipelineTransparent } from '../../shell/node_kind.ts'
 import { NodeType as NT } from '../../shell/types.ts'
-import { recordStatus } from '../executor/statement.ts'
+import { fd0Binding, recordStatus, statementStdin } from '../executor/statement.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import { readFailExitCode } from '../../commands/spec/usage.ts'
 import { formatFsError, isFsError } from '../../utils/errors.ts'
@@ -35,7 +34,6 @@ import { handleBackground } from '../executor/jobs.ts'
 import type { Decisions } from '../../policy/decisions.ts'
 import type { HandOff } from '../../policy/types.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
-import { unreadableStdin } from '../../shell/descriptors.ts'
 import type { SessionState } from '../session/session.ts'
 import { ExecutionNode } from '../types.ts'
 
@@ -111,10 +109,7 @@ async function runProgram(
   // Source lines and the highest one `set -v` has already echoed.
   const sourceLines = getText(node).split('\n')
   let echoedRow = -1
-  // The descriptor `exec < file` opened, one for every statement after
-  // it, and the bytes it was opened on.
-  let execInput: ByteSource | null = null
-  let execSource: Uint8Array | null = null
+  const bound = fd0Binding(session)
 
   let i = 0
   while (i < children.length) {
@@ -223,13 +218,7 @@ async function runProgram(
         // `exec < file` feeds the shell's stdin: a later `read` or
         // `while read` sees it, and each statement reads on from where
         // the one before it stopped.
-        // `exec <&-` or `exec 0<&1` left nothing to read: a reader gets
-        // EBADF, as bash's does.
-        if (session.execStdin !== execSource) {
-          execSource = session.execStdin
-          execInput = share(execSource)
-        }
-        const childStdin = stdin ?? (session.execStdinUnreadable ? unreadableStdin() : execInput)
+        const childStdin = statementStdin(session, stdin, bound)
         ;[s, ioResult, execNode] = await recurse(child, session, childStdin, callStack)
       } catch (err) {
         if (err instanceof ExitSignal) {

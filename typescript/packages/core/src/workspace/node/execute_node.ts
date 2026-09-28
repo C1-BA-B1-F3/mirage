@@ -26,7 +26,12 @@ import type { VFS } from '../../vfs/base.ts'
 import { makeAbortError, mergeSignals } from '../abort.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
-import { assignmentStatus, finishStatement, recordStatus } from '../executor/statement.ts'
+import {
+  assignmentStatus,
+  fd0Binding,
+  finishStatement,
+  recordStatus,
+} from '../executor/statement.ts'
 import {
   getCaseItems,
   getCaseWord,
@@ -1084,6 +1089,7 @@ async function executeNodeBody(
     const allStdout: ByteSource[] = []
     let mergedIo = new IOResult()
     let lastExec = new ExecutionNode({ command: '{}', exitCode: 0 })
+    const bound = fd0Binding(session)
     for (const child of node.namedChildren) {
       if (child.type === NT.COMMENT) continue
       const [rawStdout, io, execNode] = await runStatement(
@@ -1091,6 +1097,7 @@ async function executeNodeBody(
         child,
         session,
         stdin,
+        bound,
         callStack,
         jobTable,
         agentId,

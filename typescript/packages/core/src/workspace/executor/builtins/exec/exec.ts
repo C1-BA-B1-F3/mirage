@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { SharedInput } from '../../../../io/async_line_iterator.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
@@ -244,7 +245,7 @@ async function install(
           // The descriptor holds a file's read end (`exec 1<f`): fd 0
           // takes the same end, read from the file's start, and a later
           // dup from fd 0 copies it on.
-          session.execStdin = await readOpenSource(dispatch, source)
+          session.execStdin = new SharedInput(await readOpenSource(dispatch, source))
           session.execStdinUnreadable = false
           session.execStdinIdentity = source
         } else {
@@ -284,8 +285,9 @@ async function install(
       }
       // fd 0 holds the file's read end, and says so: a dup from it (`exec
       // 1<&0`) keeps the file even after `exec 0<&-`, as bash's copied
-      // descriptor does.
-      session.execStdin = await materialize(data as ByteSource)
+      // descriptor does. Each open is a descriptor of its own, so a
+      // reopen reads from the start.
+      session.execStdin = new SharedInput(await materialize(data as ByteSource))
       session.execStdinUnreadable = false
       session.execStdinIdentity = OPEN_FOR_READING + scope.virtual
       continue

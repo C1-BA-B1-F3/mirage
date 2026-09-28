@@ -16,19 +16,23 @@ import type { ProcessHandle } from '../../process/handle.ts'
 import type { ProcessSupervisor } from '../../process/supervisor.ts'
 import { PathSpec } from '../../types.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
-import { share } from '../../io/async_line_iterator.ts'
 import { asyncChain, closeQuietly, discardIo, discardStreams } from '../../io/stream.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
 import { divertStatement, stdoutToStderr } from './builtins/exec/index.ts'
-import { carryStatus, finishStatement, recordStatus } from './statement.ts'
+import {
+  carryStatus,
+  fd0Binding,
+  finishStatement,
+  recordStatus,
+  statementStdin,
+} from './statement.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { ExitSignal, PipeClosed } from '../../shell/errors.ts'
 import { ERREXIT_EXEMPT_TYPES, FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
-import { unreadableStdin } from '../../shell/descriptors.ts'
 import type { SessionState } from '../session/session.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import { ExecutionNode } from '../types.ts'
@@ -66,7 +70,8 @@ export async function handlePipe(
   const onAbort = (): void => {
     abort.abort(parentSignal?.reason)
     for (const pipe of pipes) pipe.closeReader()
-    void discardStreams(stdin)
+    // The shell's own fd 0 outlives the line, as bash's does.
+    if (stdin !== session.execStdin) void discardStreams(stdin)
   }
   parentSignal?.addEventListener('abort', onAbort, { once: true })
   if (parentSignal?.aborted === true) onAbort()
@@ -177,7 +182,9 @@ export async function handlePipe(
     if (!failed) await settled
     if (failed) {
       for (const io of ios) await discardIo(io)
-      await discardStreams(lastStdout, stdin)
+      // The shell's own fd 0 outlives the line, as bash's does: the next
+      // line reads on from it.
+      await discardStreams(lastStdout, stdin === session.execStdin ? null : stdin)
     }
   }
 
@@ -251,6 +258,7 @@ export async function handleConnection(
   stdin: ByteSource | null = null,
   callStack: CallStack | null = null,
 ): Promise<Result> {
+  const bound = fd0Binding(session)
   const [leftStdout, leftIo, leftExec] = await executeNode(left, session, stdin, callStack)
   const children = [leftExec]
 
@@ -272,7 +280,12 @@ export async function handleConnection(
     let rightIo: IOResult
     let rightExec: ExecutionNode
     try {
-      ;[rightStdout, rightIo, rightExec] = await executeNode(right, session, stdin, callStack)
+      ;[rightStdout, rightIo, rightExec] = await executeNode(
+        right,
+        session,
+        statementStdin(session, stdin, bound),
+        callStack,
+      )
     } catch (err) {
       if (err instanceof ExitSignal) throw await mergeLeftIntoExit(err, leftBytes, leftIo)
       throw err
@@ -298,7 +311,12 @@ export async function handleConnection(
     let rightIo: IOResult
     let rightExec: ExecutionNode
     try {
-      ;[rightStdout, rightIo, rightExec] = await executeNode(right, session, stdin, callStack)
+      ;[rightStdout, rightIo, rightExec] = await executeNode(
+        right,
+        session,
+        statementStdin(session, stdin, bound),
+        callStack,
+      )
     } catch (err) {
       if (err instanceof ExitSignal) throw await mergeLeftIntoExit(err, leftBytes, leftIo)
       throw err
@@ -316,7 +334,12 @@ export async function handleConnection(
   let rightIo: IOResult
   let rightExec: ExecutionNode
   try {
-    ;[rightStdout, rightIo, rightExec] = await executeNode(right, session, stdin, callStack)
+    ;[rightStdout, rightIo, rightExec] = await executeNode(
+      right,
+      session,
+      statementStdin(session, stdin, bound),
+      callStack,
+    )
   } catch (err) {
     if (err instanceof ExitSignal) throw await mergeLeftIntoExit(err, leftBytes, leftIo)
     throw err
@@ -364,10 +387,7 @@ export async function handleSubshell(
     const allStdout: ByteSource[] = []
     let mergedIo = new IOResult()
     let lastExec = new ExecutionNode({ command: '()', exitCode: 0 })
-    // The descriptor `exec < file` opened, as the program loop keeps it:
-    // each statement reads on from where the one before stopped.
-    let execInput: ByteSource | null = null
-    let execSource: Uint8Array | null = null
+    const bound = fd0Binding(session)
     let i = 0
     while (i < body.length) {
       const child = body[i]
@@ -425,11 +445,7 @@ export async function handleSubshell(
       let io: IOResult
       let childExec: ExecutionNode
       try {
-        if (session.execStdin !== execSource) {
-          execSource = session.execStdin
-          execInput = share(execSource)
-        }
-        const childStdin = stdin ?? (session.execStdinUnreadable ? unreadableStdin() : execInput)
+        const childStdin = statementStdin(session, stdin, bound)
         ;[stdout, io, childExec] = await executeNode(child, session, childStdin, callStack)
       } catch (err) {
         if (!(err instanceof ExitSignal)) throw err

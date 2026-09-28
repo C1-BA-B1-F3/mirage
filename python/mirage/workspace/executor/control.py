@@ -32,7 +32,8 @@ from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec, word_text
 from mirage.utils.fnmatch import fnmatch
 from mirage.workspace.executor.jobs import run_statement
-from mirage.workspace.executor.statement import finish_statement, record_status
+from mirage.workspace.executor.statement import (fd0_binding, finish_statement,
+                                                 record_status)
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import session_view
 from mirage.workspace.types import ExecutionNode
@@ -64,11 +65,12 @@ async def _execute_body(
     all_stdout: list[ByteSource | None] = []
     merged_io = IOResult()
     last_exec = ExecutionNode(command="", exit_code=0)
+    bound = fd0_binding(session)
     for cmd in body:
         try:
             stdout, io, last_exec = await run_statement(
-                execute_node, cmd, session, stdin, call_stack, job_table,
-                agent_id, handed, decisions)
+                execute_node, cmd, session, stdin, bound, call_stack,
+                job_table, agent_id, handed, decisions)
         except BreakSignal as sig:
             # The control builtin is a statement the loop leaves through
             # rather than closes, so its own status (0) is recorded here:
@@ -152,9 +154,10 @@ async def handle_if(
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    bound = fd0_binding(session)
     for condition, body in branches:
         cond_stdout, cond_io, _ = await run_statement(execute_node, condition,
-                                                      session, stdin,
+                                                      session, stdin, bound,
                                                       call_stack, job_table,
                                                       agent_id, handed,
                                                       decisions)
@@ -264,12 +267,13 @@ async def _condition_loop(
     merged_io = IOResult()
     all_stdout: list[ByteSource | None] = []
     hit_limit = True
+    bound = fd0_binding(session)
     for _ in range(_MAX_WHILE):
         if session.shell_options.get("noexec"):
             hit_limit = False
             break
         cond_stdout, cond_io, _ = await run_statement(execute_node, condition,
-                                                      session, stdin,
+                                                      session, stdin, bound,
                                                       call_stack, job_table,
                                                       agent_id, handed,
                                                       decisions)
@@ -490,14 +494,15 @@ async def handle_case(
     last_exec = ExecutionNode(command="case", exit_code=0)
     ran = False
     fallthrough = False
+    bound = fd0_binding(session)
     for patterns, body, terminator in items:
         if not (fallthrough or any(fnmatch(word, p) for p in patterns)):
             continue
         ran = True
         for stmt in body:
             stdout, io, last_exec = await run_statement(
-                execute_node, stmt, session, stdin, call_stack, job_table,
-                agent_id, handed, decisions)
+                execute_node, stmt, session, stdin, bound, call_stack,
+                job_table, agent_id, handed, decisions)
             stdout = await finish_statement(stdout, io, session, stmt)
             if stdout is not None:
                 all_stdout.append(stdout)

@@ -16,6 +16,7 @@ import logging
 from typing import Any
 
 from mirage.io import IOResult
+from mirage.io.async_line_iterator import SharedInput
 from mirage.io.stream import materialize
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
@@ -154,8 +155,8 @@ async def _install(dispatch: DispatchFn, session: SessionState,
                     # The descriptor holds a file's read end (`exec 1<f`):
                     # fd 0 takes the same end, read from the file's
                     # start, and a later dup from fd 0 copies it on.
-                    session.exec_stdin = await read_open_source(
-                        dispatch, source)
+                    session.exec_stdin = SharedInput(await read_open_source(
+                        dispatch, source))
                     session.exec_stdin_unreadable = False
                     session.exec_stdin_identity = source
                 else:
@@ -192,8 +193,9 @@ async def _install(dispatch: DispatchFn, session: SessionState,
                 continue
             # fd 0 holds the file's read end, and says so: a dup from it
             # (`exec 1<&0`) keeps the file even after `exec 0<&-`, as
-            # bash's copied descriptor does.
-            session.exec_stdin = await materialize(data) or b""
+            # bash's copied descriptor does. Each open is a descriptor
+            # of its own, so a reopen reads from the start.
+            session.exec_stdin = SharedInput(await materialize(data) or b"")
             session.exec_stdin_unreadable = False
             session.exec_stdin_identity = OPEN_FOR_READING + scope.virtual
             continue

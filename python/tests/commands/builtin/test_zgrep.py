@@ -15,6 +15,8 @@
 import asyncio
 import gzip
 
+import pytest
+
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -36,6 +38,8 @@ def _run_raw(ws, cmd, cwd="/", stdin=None):
 
 
 def _bytes(stdout):
+    if stdout is None:
+        return b""
     if isinstance(stdout, bytes):
         return stdout
     return b"".join(asyncio.run(_collect(stdout)))
@@ -162,6 +166,40 @@ def test_zgrep_searches_a_plain_input_as_it_is():
     assert (_bytes(stdout), io.exit_code) == (b"hello\n", 0)
 
 
+def test_zgrep_i_folds_ascii_only():
+    # zgrep is gzip piped into grep, which folds ASCII only under LC_ALL=C:
+    # neither U+212A nor U+017F matches k or s (gzip 1.13, grep 3.11).
+    ws, _ = _ws()
+    lookalikes = "K\nſ\n".encode()
+    _run_raw(ws, "tee /data/f.gz", stdin=gzip.compress(lookalikes + b"k\n"))
+    for cmd, out, code in (
+        ("zgrep -ci k /data/f.gz", b"1\n", 0),
+        ("zgrep -ci s /data/f.gz", b"0\n", 1),
+        ("zgrep -io k /data/f.gz", b"k\n", 0),
+        ("zgrep -iv k /data/f.gz", lookalikes, 0),
+        ("zgrep -il s /data/f.gz", b"", 1),
+        ("zgrep -iL s /data/f.gz", b"/data/f.gz\n", 1),
+    ):
+        stdout, io = _run_raw(ws, cmd)
+        assert (_bytes(stdout), io.exit_code) == (out, code), cmd
+
+
+def test_zgrep_w_word_boundary_is_ascii():
+    # Under LC_ALL=C neither byte of U+00E9 is a word constituent, so -w
+    # and \b see a boundary beside it (gzip 1.13, grep 3.11).
+    ws, _ = _ws()
+    data = "éab\nab\nabé\n".encode()
+    _run_raw(ws, "tee /data/w.gz", stdin=gzip.compress(data))
+    for cmd, out in (
+        ("zgrep -w ab /data/w.gz", data),
+        ("zgrep -cw ab /data/w.gz", b"3\n"),
+        ("zgrep -ow ab /data/w.gz", b"ab\nab\nab\n"),
+        ("zgrep -c '\\bab' /data/w.gz", b"3\n"),
+    ):
+        stdout, io = _run_raw(ws, cmd)
+        assert (_bytes(stdout), io.exit_code) == (out, 0), cmd
+
+
 def test_zgrep_reports_a_bad_archive_and_exits_2_beside_a_match():
     ws, _ = _ws()
     _run_raw(ws, "tee /data/cut.gz", stdin=gzip.compress(b"hello\n")[:10])
@@ -171,3 +209,39 @@ def test_zgrep_reports_a_bad_archive_and_exits_2_beside_a_match():
     assert _bytes(
         io.stderr) == b"\ngzip: /data/cut.gz: unexpected end of file\n"
     assert io.exit_code == 2
+
+
+@pytest.mark.parametrize("data", [b"", b"hello\n"])
+@pytest.mark.parametrize("mode", ["", "-l", "-L", "-c", "-o", "-q"])
+@pytest.mark.parametrize("pattern, diagnostic", [
+    ("(", "Unmatched ( or \\("),
+    ("[z-a]", "Invalid range end"),
+    ("a{2,1}", "Invalid content of \\{\\}"),
+    ("\\", "Trailing backslash"),
+])
+def test_zgrep_invalid_ere(data, mode, pattern, diagnostic):
+    ws, _ = _ws()
+    stdout, io = _run_raw(ws,
+                          f"zgrep -E {mode} '{pattern}'",
+                          stdin=gzip.compress(data))
+    assert (_bytes(stdout), _bytes(io.stderr),
+            io.exit_code) == (b"", f"grep: {diagnostic}\n".encode(), 2)
+
+
+@pytest.mark.parametrize("pattern", ["hello", "("])
+@pytest.mark.parametrize("mode, output", [
+    ("", b""),
+    ("-l", b""),
+    ("-L", b"-\n"),
+    ("-c", b""),
+    ("-o", b""),
+    ("-v", b""),
+    ("-q -L", b"-\n"),
+])
+def test_zgrep_m0_skips_validation_and_selection(pattern, mode, output):
+    ws, _ = _ws()
+    stdout, io = _run_raw(ws,
+                          f"zgrep -E -m0 {mode} '{pattern}'",
+                          stdin=gzip.compress(b"hello\n"))
+    assert (_bytes(stdout), _bytes(io.stderr), io.exit_code) == (output, b"",
+                                                                 1)

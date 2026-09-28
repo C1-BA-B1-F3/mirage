@@ -37,7 +37,6 @@ function anyLineSelected(data: Uint8Array, pattern: RegExp, invert: boolean): bo
 }
 
 interface ZgrepOpts {
-  ignoreCase: boolean
   invert: boolean
   count: boolean
   lineNumbers: boolean
@@ -115,7 +114,7 @@ export async function zgrepGeneric(
     stream,
   )
   if (resolution.error !== null) {
-    return [null, new IOResult({ exitCode: 2, stderr: new TextEncoder().encode(resolution.error) })]
+    return [null, new IOResult({ exitCode: 2, stderr: ENC.encode(resolution.error) })]
   }
   const neverMatch = resolution.neverMatch
   if (resolution.pattern === null) {
@@ -150,7 +149,11 @@ export async function zgrepGeneric(
   const forceH = fl.asBool('H')
   const hideH = fl.asBool('h')
   const maxCount = fl.asInt('m') ?? null
-  const pattern = compilePattern(rawPattern, ignoreCase, fixedString, wholeWord, basicRegexp)
+  // GNU grep 3.11 skips regex validation and selection under -m0.
+  const pattern =
+    maxCount === 0
+      ? null
+      : compilePattern(rawPattern, ignoreCase, fixedString, wholeWord, basicRegexp)
 
   const multi = paths.length > 1
   const showFilename = forceH || (multi && !hideH)
@@ -166,23 +169,25 @@ export async function zgrepGeneric(
     // reports a bad archive in gzip's own lines.
     const [data, failure] = await gunzipPartial(raw, true)
     if (failure !== null) errors += failure.render(operandLabel(p, 'stdin'))
+    if (pattern === null) {
+      if (filesWithoutMatch) allResults.push(p.rawPath)
+      continue
+    }
     // zgrep hands grep a stdin operand as `-`, so -l and -L list it as `-`
     // while its lines are labelled `(standard input)` (gzip 1.13);
     // /dev/stdin is named as typed either way.
     const fname = showFilename ? operandLabel(p, '(standard input)') : null
     if (filesOnly || filesWithoutMatch) {
       // -L lists the files that selected nothing; the status still
-      // follows the matching, as GNU grep's does. -m0 selects no line at
-      // all, so -l lists nothing and -L lists every archive, exit 1
-      // (zgrep 3.11).
-      const matched = maxCount !== 0 && anyLineSelected(data, pattern, invert)
+      // follows the matching, as GNU grep's does.
+      const matched = anyLineSelected(data, pattern, invert)
       if (matched === filesOnly) allResults.push(p.rawPath)
       anyMatch ||= matched
     } else {
       const [result, hadMatch] = zgrepSearch(
         data,
         pattern,
-        { ignoreCase, invert, count: countOnly, lineNumbers, onlyMatching, maxCount, byteOffsets },
+        { invert, count: countOnly, lineNumbers, onlyMatching, maxCount, byteOffsets },
         fname,
       )
       if (hadMatch) anyMatch = true
@@ -193,7 +198,9 @@ export async function zgrepGeneric(
   // A bad archive is exit 2 even beside a match, -q included (zgrep 3.11).
   const exitCode = errors !== '' ? 2 : anyMatch ? 0 : 1
   const stderr = errors === '' ? null : ENC.encode(errors)
-  if (quiet || allResults.length === 0) return [null, new IOResult({ exitCode, stderr })]
+  // Under -m0, GNU still prints -L's operands even with -q.
+  if ((quiet && maxCount !== 0) || allResults.length === 0)
+    return [null, new IOResult({ exitCode, stderr })]
   const result: ByteSource = formatRecords(allResults)
   return [result, new IOResult({ exitCode, stderr })]
 }

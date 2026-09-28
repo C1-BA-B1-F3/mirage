@@ -169,3 +169,67 @@ describe('zgrep on inputs gzip passes or refuses', () => {
     expect(r).toEqual(['/data/h.gz:hello\n', '\ngzip: /data/cut.gz: unexpected end of file\n', 2])
   })
 })
+
+describe('zgrep matches on ASCII rules, as grep does under LC_ALL=C', () => {
+  // zgrep is gzip piped into grep (gzip 1.13, grep 3.11): neither U+212A
+  // nor U+017F folds to k or s, and neither byte of U+00E9 is a word
+  // constituent, so -w and \b see a boundary beside it.
+  const LOOKALIKES = 'K\nſ\n'
+  const WORD = 'éab\nab\nabé\n'
+  it.each([
+    ['zgrep -ci k /data/f.gz', '1\n', 0],
+    ['zgrep -ci s /data/f.gz', '0\n', 1],
+    ['zgrep -io k /data/f.gz', 'k\n', 0],
+    ['zgrep -iv k /data/f.gz', LOOKALIKES, 0],
+    ['zgrep -il s /data/f.gz', '', 1],
+    ['zgrep -iL s /data/f.gz', '/data/f.gz\n', 1],
+  ] as const)('folds %s on ASCII only', async (line, out, exit) => {
+    const seed = { '/data/f.gz': await gzip(ENC.encode(LOOKALIKES + 'k\n')) }
+    expect(await shell(line, null, seed)).toEqual([out, '', exit])
+  })
+  it.each([
+    ['zgrep -w ab /data/w.gz', WORD],
+    ['zgrep -cw ab /data/w.gz', '3\n'],
+    ['zgrep -ow ab /data/w.gz', 'ab\nab\nab\n'],
+    ["zgrep -c '\\bab' /data/w.gz", '3\n'],
+  ] as const)('finds the word boundary of %s on ASCII only', async (line, out) => {
+    const seed = { '/data/w.gz': await gzip(ENC.encode(WORD)) }
+    expect(await shell(line, null, seed)).toEqual([out, '', 0])
+  })
+})
+
+describe('zgrep invalid extended expressions (GNU grep 3.11)', () => {
+  it.each([
+    ['(', 'Unmatched ( or \\('],
+    ['[z-a]', 'Invalid range end'],
+    ['a{2,1}', 'Invalid content of \\{\\}'],
+    ['\\', 'Trailing backslash'],
+  ])(
+    'reports %s with exit 2 in every output mode, including empty input',
+    async (pattern, diagnostic) => {
+      for (const data of ['', 'hello\n']) {
+        for (const mode of ['', '-l', '-L', '-c', '-o', '-q']) {
+          expect(
+            await shell(`zgrep -E ${mode} '${pattern}'`, await gzip(ENC.encode(data))),
+          ).toEqual(['', `grep: ${diagnostic}\n`, 2])
+        }
+      }
+    },
+  )
+
+  it.each([
+    ['', ''],
+    ['-l', ''],
+    ['-L', '-\n'],
+    ['-c', ''],
+    ['-o', ''],
+    ['-v', ''],
+    ['-q -L', '-\n'],
+  ])('skips regex validation and selection under -m0 %s', async (mode, output) => {
+    for (const pattern of ['hello', '(']) {
+      expect(
+        await shell(`zgrep -E -m0 ${mode} '${pattern}'`, await gzip(ENC.encode('hello\n'))),
+      ).toEqual([output, '', 1])
+    }
+  })
+})

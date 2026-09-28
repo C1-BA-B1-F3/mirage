@@ -5,7 +5,7 @@ from functools import partial
 
 from mirage.commands.builtin.grep_offsets import (decode_line, line_offsets,
                                                   match_offset, prefix_of)
-from mirage.commands.builtin.grep_pattern import (build_pattern_str,
+from mirage.commands.builtin.grep_pattern import (compile_pattern,
                                                   resolve_pattern)
 from mirage.commands.builtin.utils.constants import STDIN_OPERAND
 from mirage.commands.builtin.utils.lines import split_lines
@@ -28,8 +28,7 @@ async def _read_plain(
 
 def _zgrep_search(
     data: bytes,
-    pattern: str,
-    ignore_case: bool,
+    pattern: re.Pattern[str],
     invert: bool,
     count: bool,
     line_numbers: bool,
@@ -42,8 +41,7 @@ def _zgrep_search(
 
     Args:
         data (bytes): the decompressed input.
-        pattern (str): the compiled pattern's source.
-        ignore_case (bool): -i.
+        pattern (re.Pattern[str]): the matcher grep compiles, -i folded in.
         invert (bool): -v.
         count (bool): -c, answer with the count alone.
         line_numbers (bool): -n.
@@ -56,22 +54,19 @@ def _zgrep_search(
     """
     lines = split_lines(decode_line(data))
     offsets = line_offsets(lines) if byte_offsets else []
-    flags = re.IGNORECASE if ignore_case else 0
     matched: list[tuple[int, int, str]] = []
     for idx, line in enumerate(lines, 1):
         start = offsets[idx - 1] if byte_offsets else 0
         if only_matching and not invert:
-            hits = list(re.finditer(pattern, line, flags))
+            hits = list(pattern.finditer(line))
             if hits:
                 for m in hits:
                     matched.append((idx, match_offset(start, line,
                                                       m.start()), m.group()))
                     if max_count is not None and len(matched) >= max_count:
                         break
-            elif invert:
-                matched.append((idx, start, line))
         else:
-            hit = bool(re.search(pattern, line, flags))
+            hit = bool(pattern.search(line))
             if invert:
                 hit = not hit
             if hit:
@@ -92,12 +87,11 @@ def _zgrep_search(
     return result, len(matched) > 0
 
 
-def _files_only_match(data: bytes, pattern: str, ignore_case: bool,
+def _files_only_match(data: bytes, pattern: re.Pattern[str],
                       invert: bool) -> bool:
     text = decode_line(data)
-    flags = re.IGNORECASE if ignore_case else 0
     for line in split_lines(text):
-        hit = bool(re.search(pattern, line, flags))
+        hit = bool(pattern.search(line))
         if invert:
             hit = not hit
         if hit:
@@ -172,8 +166,9 @@ async def zgrep(
         texts, fl, partial(_read_plain, read_bytes),
         "zgrep: usage: zgrep [flags] pattern [path]")
     f = parse_flags(fl, never_match)
-    compiled = build_pattern_str(pattern, f.fixed, f.whole_word,
-                                 f.basic_regexp)
+    # GNU grep 3.11 skips regex validation and selection under -m0.
+    compiled = (None if f.max_count == 0 else compile_pattern(
+        pattern, f.ignore_case, f.fixed, f.whole_word, f.basic_regexp))
     multi = len(paths) > 1
     show_filename = f.force_filename or (multi and not f.suppress_filename)
     any_match = False
@@ -189,24 +184,24 @@ async def zgrep(
         data, failure = gunzip_partial(raw, passthrough=True)
         if failure is not None:
             errors.append(failure.render(operand_label(p, "stdin")))
+        if compiled is None:
+            if f.files_without_match:
+                all_results.append(p.raw_path)
+            continue
         # zgrep hands grep a stdin operand as `-`, so -l and -L list it
         # as `-` while its lines are labelled `(standard input)` (gzip
         # 1.13); /dev/stdin is named as typed either way.
         fname = operand_label(p, "(standard input)") if show_filename else None
         if f.files_only or f.files_without_match:
-            # -m0 selects no line at all, so -l lists nothing and -L
-            # lists every archive, exit 1 (zgrep 3.11).
-            matched = f.max_count != 0 and _files_only_match(
-                data, compiled, f.ignore_case, f.invert)
+            matched = _files_only_match(data, compiled, f.invert)
             # -L lists the files that selected nothing; the status
             # still follows the matching, as GNU grep's does.
             if matched == f.files_only:
                 all_results.append(p.raw_path)
             any_match = any_match or matched
         else:
-            result, had_match = _zgrep_search(data, compiled, f.ignore_case,
-                                              f.invert, f.count,
-                                              f.line_numbers, fname,
+            result, had_match = _zgrep_search(data, compiled, f.invert,
+                                              f.count, f.line_numbers, fname,
                                               f.only_matching, f.max_count,
                                               f.byte_offsets)
             if had_match:
@@ -216,7 +211,8 @@ async def zgrep(
     # A bad archive is exit 2 even beside a match, -q included (zgrep 3.11).
     exit_code = 2 if errors else 0 if any_match else 1
     stderr = "".join(errors).encode() or None
-    if f.quiet or not all_results:
+    # Under -m0, GNU still prints -L's operands even with -q.
+    if (f.quiet and f.max_count != 0) or not all_results:
         return None, IOResult(exit_code=exit_code, stderr=stderr)
     return format_records(all_results), IOResult(exit_code=exit_code,
                                                  stderr=stderr)

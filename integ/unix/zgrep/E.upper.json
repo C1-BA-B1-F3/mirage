@@ -1,32 +1,214 @@
 {
+  "targets": [
+    "ram",
+    "disk",
+    "redis",
+    "opfs",
+    "s3",
+    "databricks",
+    "gridfs",
+    "s3-prefix",
+    "databricks-prefix",
+    "gridfs-prefix",
+    "dropbox",
+    "dropbox-root",
+    "onedrive",
+    "sharepoint",
+    "sharepoint-prefix",
+    "ssh",
+    "nextcloud",
+    "box"
+  ],
   "cases": [
     {
       "id": "zgrep_E_extended",
       "seq": 500505,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "box"
-      ],
       "command": "zgrep -E \"err(or|ata)\" /data/z4/app.log.gz",
       "expect": {
         "exit": 0,
         "stdout": "error: disk full\nerror: timeout\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_invalid_empty",
+      "seq": 991097,
+      "command": "printf '' | gzip | zgrep -E '('",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: Unmatched ( or \\(\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_invalid_listing",
+      "seq": 991098,
+      "command": "printf 'hello\\n' | gzip | zgrep -El '('",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: Unmatched ( or \\(\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_invalid_quiet",
+      "seq": 991099,
+      "command": "printf 'hello\\n' | gzip | zgrep -Eq '('",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: Unmatched ( or \\(\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_invalid_range",
+      "seq": 991100,
+      "command": "printf '' | gzip | zgrep -E '[z-a]'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: Invalid range end\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_invalid_interval",
+      "seq": 991101,
+      "command": "printf '' | gzip | zgrep -E 'a{2,1}'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: Invalid content of \\{\\}\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_trailing_backslash",
+      "seq": 991102,
+      "command": "printf '' | gzip | zgrep -E '\\'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: Trailing backslash\n"
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_m0_invalid_plain",
+      "seq": 991103,
+      "command": "printf 'hello\\n' | gzip | zgrep -E -m0  '('",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_m0_invalid_l",
+      "seq": 991104,
+      "command": "printf 'hello\\n' | gzip | zgrep -E -m0 -l '('",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_m0_invalid_L",
+      "seq": 991105,
+      "command": "printf 'hello\\n' | gzip | zgrep -E -m0 -L '('",
+      "expect": {
+        "exit": 1,
+        "stdout": "-\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_m0_invalid_count",
+      "seq": 991106,
+      "command": "printf 'hello\\n' | gzip | zgrep -E -m0 -c '('",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_m0_invalid_only",
+      "seq": 991107,
+      "command": "printf 'hello\\n' | gzip | zgrep -E -m0 -o '('",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_m0_invalid_quiet",
+      "seq": 991108,
+      "command": "printf 'hello\\n' | gzip | zgrep -E -m0 -q -L '('",
+      "expect": {
+        "exit": 1,
+        "stdout": "-\n",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_m0_valid",
+      "seq": 991109,
+      "command": "printf 'hello\\n' | gzip | zgrep -E -m0 hello",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "E"
+      ]
+    },
+    {
+      "id": "zgrep_E_m0_valid_count",
+      "seq": 991110,
+      "command": "printf 'hello\\n' | gzip | zgrep -E -m0 -c hello",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
         "stderr": ""
       },
       "flags": [

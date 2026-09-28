@@ -125,6 +125,17 @@ always matches your code:
 docker build -f docker/sandbox/Dockerfile --target fuse -t mirage-python-fuse .
 ```
 
+<Note>
+  The shared image uses the Python Mirage CLI to serve workspace mounts
+  inside the sandbox. Your host application can use either SDK, including
+  TypeScript; it communicates with the sandbox through the runtime's
+  transport. The image's implementation and the host SDK are independent.
+
+  When building a custom image, install the programs your captured commands
+  need (for example, Node.js for `node`) and serve workspace mounts at the
+  same paths as the host workspace.
+</Note>
+
 By default it installs the `sandbox` extra, every mountable backend plus
 fuse. Narrow it to just the backends you use for a smaller image, or extend
 it as a base:

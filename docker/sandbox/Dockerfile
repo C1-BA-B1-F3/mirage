@@ -4,6 +4,12 @@
 #   docker build -f docker/sandbox/Dockerfile --target fuse \
 #     -t mirage-python-fuse .
 #
+# This shared image uses the Python Mirage CLI to serve workspace mounts
+# inside the sandbox. Either the Python or TypeScript SDK can control it
+# from the host; the SDK language does not select the guest's implementation.
+# Install any additional programs your captured commands need in a derived
+# image, such as Node.js for commands that invoke node.
+#
 # The fuse target installs the `sandbox` extra: every mountable backend
 # plus fuse3, so one image can FUSE-mount whatever backend a workspace
 # declares, not just S3. It deliberately excludes the agent frameworks

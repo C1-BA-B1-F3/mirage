@@ -24,9 +24,13 @@ container run -d --cap-add SYS_ADMIN \
 `mirage-python-fuse` is the local image name assigned by `-t` during the
 build. The image contains Python, Mirage, and FUSE (Filesystem in Userspace),
 which makes workspace backends accessible as ordinary files inside the
-container. This example uses the Python Mirage CLI inside the container to serve the
-mounts; your host application can use either the Python or TypeScript SDK.
-Apple Container does not require Python.
+container.
+
+<Note>
+  The example reuses Mirage's shared Python image to serve workspace mounts
+  inside the container. Your host application can use either SDK, including
+  TypeScript; the two communicate through `container exec`.
+</Note>
 
 | Part of `container run` | Meaning |
 | --- | --- |

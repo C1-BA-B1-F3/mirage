@@ -28,9 +28,14 @@ container build -f docker/sandbox/Dockerfile --target fuse \
 `--target fuse` selects the Dockerfile's FUSE build stage. `-t mirage-python-fuse`
 assigns a local name to the resulting image, which contains Python, Mirage,
 and FUSE (Filesystem in Userspace). FUSE makes workspace backends accessible
-as ordinary files inside the container. This example uses the Python Mirage CLI inside the container to serve the
-mounts; your host application can use either the Python or TypeScript SDK.
-Apple Container does not require Python.
+as ordinary files inside the container.
+
+<Note>
+  This example reuses Mirage's shared Python image to serve the workspace
+  mounts. You can control it from the TypeScript SDK: the host SDK and the
+  Mirage implementation inside the container are independent. For a custom
+  image, see [The sandbox image](/python/runtime/sandbox#the-sandbox-image).
+</Note>
 
 Start a container from that image:
 

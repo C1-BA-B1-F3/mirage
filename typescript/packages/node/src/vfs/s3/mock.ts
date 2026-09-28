@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mockClient, type AwsStub } from 'aws-sdk-client-mock'
+import { mockClient, type AwsCommand } from 'aws-sdk-client-mock'
 import {
   S3Client,
   GetObjectCommand,
@@ -22,6 +22,7 @@ import {
   DeleteObjectCommand,
   DeleteObjectsCommand,
   CopyObjectCommand,
+  type __MetadataBearer as MetadataBearer,
 } from '@aws-sdk/client-s3'
 import { createHash } from 'node:crypto'
 import { lstripSlash } from '@struktoai/mirage-core/utils/slash'
@@ -172,8 +173,13 @@ export interface S3Mock {
   // How many times one command has been sent, and a way to zero that count
   // without disturbing the stubbed behaviour (`reset` drops the handlers
   // too). A cost claim is asserted in HTTP verbs, which is what the python
-  // twin counts through its own session.
-  commandCalls(command: Parameters<AwsStub<never, never, never>['commandCalls']>[0]): number
+  // twin counts through its own session. `input` narrows the count to the
+  // sends whose input carries those fields, as `{ Bucket }` charges one leg
+  // of a line that reads two buckets.
+  commandCalls<TInput extends object>(
+    command: new (input: TInput) => AwsCommand<TInput, MetadataBearer>,
+    input?: Partial<TInput>,
+  ): number
   resetCalls(): void
 }
 
@@ -296,7 +302,7 @@ export function installS3Mock(
     restore: () => {
       mock.restore()
     },
-    commandCalls: (command) => mock.commandCalls(command).length,
+    commandCalls: (command, input) => mock.commandCalls(command, input).length,
     resetCalls: () => {
       mock.resetHistory()
     },

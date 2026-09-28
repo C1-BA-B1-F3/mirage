@@ -673,6 +673,117 @@ def test_two_mounts_carry_two_different_bounds():
     assert asyncio.run(run()) == (30, 90)
 
 
+def _s3(bucket: str) -> S3VFS:
+    return S3VFS(
+        S3Config(bucket=bucket,
+                 region="us-east-1",
+                 aws_access_key_id="fake",
+                 aws_secret_access_key="fake"))
+
+
+_SHAPES = {
+    "siblings": ("/a", "/b", "grep -r v /a/ /b/"),
+    "nested": ("/x", "/x/y", "grep -r v /x/"),
+    "shared-vfs": ("/a", "/b", "grep -r v /a/ /b/"),
+}
+
+
+@pytest.mark.parametrize("default", [ReadPolicy.FRESH, ReadPolicy.BOUNDED])
+@pytest.mark.parametrize("fresh_side", ["first", "second"])
+@pytest.mark.parametrize("shape", list(_SHAPES))
+def test_one_line_serves_each_mount_under_its_own_policy(
+        shape: str, fresh_side: str, default: ReadPolicy) -> None:
+    """#1101 Design §2: a read policy is a property of the byte source.
+
+    One line reads a `fresh` mount and a `bounded` one after both objects
+    changed out of band, so each leg must answer to its own mount: the
+    fresh leg prints v2 and pays one gate probe plus one refetch, the
+    bounded leg prints v1 and sends nothing at all. The `ls` warm-up is
+    what makes "nothing" true -- after `cat` alone each mount root is
+    still unlisted and the walk pays one listing per leg.
+
+    Every axis separates a wrong implementation the others let pass.
+    `shape` reaches both executor paths (`siblings` goes through the
+    cross-mount handler, `nested` through the traversal fan-out) and
+    `shared-vfs` puts one VFS instance under both prefixes, the only
+    shape a policy keyed by VFS rather than by mount fails. The mount
+    whose policy equals `default` inherits it, so a policy read from the
+    workspace is wrong on the other leg whichever way `default` points.
+    `fresh_side` matters because a manager leaking from the first leg
+    into the second leaves the bytes right when the bounded leg runs
+    first; only the fresh leg's missing probe shows it.
+    """
+    first, second, line = _SHAPES[shape]
+    fresh, bounded = ((first, second) if fresh_side == "first" else
+                      (second, first))
+    fresh_objects = {"f.txt": b"v1\n"}
+    bounded_objects = {"f.txt": b"v1\n"}
+    session = MultiBucketSession({
+        "fresh-bkt": fresh_objects,
+        "bounded-bkt": bounded_objects
+    })
+    client = session._client
+    fresh_vfs = _s3("fresh-bkt")
+    bounded_vfs = fresh_vfs if shape == "shared-vfs" else _s3("bounded-bkt")
+
+    def mount(vfs: S3VFS, read: ReadSpec) -> Mount:
+        if read.policy is default:
+            return Mount(vfs=vfs, mode=MountMode.WRITE)
+        return Mount(vfs=vfs, mode=MountMode.WRITE, read=read)
+
+    ws = Workspace(
+        {
+            fresh:
+            mount(fresh_vfs, ReadSpec(policy=ReadPolicy.FRESH)),
+            bounded:
+            mount(bounded_vfs, ReadSpec(policy=ReadPolicy.BOUNDED, ttl=900)),
+        },
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=default),
+    )
+
+    async def run() -> tuple[int, bytes, list[tuple[str, str]]]:
+        with patch_s3_session(session):
+            await ws.shell(f"ls {first}/ {second}/")
+            await ws.shell(f"cat {first}/f.txt")
+            await ws.shell(f"cat {second}/f.txt")
+            fresh_objects["f.txt"] = b"v2\n"
+            bounded_objects["f.txt"] = b"v2\n"
+            client.calls.clear()
+            client.bucket_calls.clear()
+            mark = len(ws.vfs.network_records)
+            result = await ws.shell(line)
+            out = await result.materialize_stdout()
+            records = [(r.op, r.path) for r in ws.vfs.network_records[mark:]]
+            await ws.close()
+            return result.exit_code, out, records
+
+    code, out, records = asyncio.run(run())
+
+    def version(prefix: str) -> str:
+        return "v2" if prefix == fresh else "v1"
+
+    assert code == 0
+    assert out == (f"{first}/f.txt:{version(first)}\n"
+                   f"{second}/f.txt:{version(second)}\n").encode(), (
+                       "each leg must print what its own policy serves")
+    assert {
+        k: n
+        for k, n in client.bucket_calls.items() if k[1] == "bounded-bkt"
+    } == {}, ("the bounded leg must send nothing; a probe or a refetch "
+              "here means the fresh mount's policy reached it")
+    # One bucket in shared-vfs, so this is the whole line's cost there.
+    assert {
+        k: n
+        for k, n in client.bucket_calls.items() if k[1] == "fresh-bkt"
+    } == {
+        ("head_object", "fresh-bkt"): 1,
+        ("get_object", "fresh-bkt"): 1
+    }, ("the fresh leg pays its gate probe and one refetch, and no listing; "
+        "a missing head_object means it was served without being checked")
+    assert records == [("read", f"{fresh}/f.txt")], (
+        "only the fresh leg's refetch reaches the backend as a read")
+
 def test_the_live_cache_facts_door_reads_the_mounts_bound():
     """``apply_io`` with no captured function is the embedder's door.
 

@@ -31,6 +31,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 import harness  # noqa: E402
 import main as runner_main  # noqa: E402
 
+from mirage.types import (DEFAULT_READ_TTL, MountMode, ReadPolicy,  # noqa: E402
+                          ReadSpec)
+from mirage.vfs.ram import RAMVFS  # noqa: E402
+from mirage.workspace.mount.spec import Mount  # noqa: E402
+
 ROOT = harness.integ_root()
 MAIN = ROOT / "runners" / "python" / "main.py"
 TSX = ROOT / "node_modules" / ".bin" / "tsx"
@@ -133,9 +138,72 @@ def selftest_case_validation() -> None:
     check("cases: an unknown target ref is rejected",
           *raises(lambda: harness.validate_cases(ROOT, unknown), "unknown"))
 
+    unread = [{
+        "id": "unread",
+        "targets": ["ram"],
+        "mount_read": {
+            "/data": "bounded"
+        },
+        "_source": "a.json"
+    }]
+    check("cases: a mount_read without a read is rejected",
+          *raises(lambda: harness.validate_cases(ROOT, unread), "mount_read"))
+
     real = harness.load_cases(ROOT)
     check("cases: the shipped battery passes both gates",
           len(real) > 0, f"loaded {len(real)} cases")
+
+
+def selftest_mount_read() -> None:
+    """A consistency case's per-mount read override, refused and applied.
+
+    A key naming no mount of the target would leave every leg under the
+    workspace policy, so it is refused before anything opens. The wrap
+    keeps a read-only mount's mode and carries the case's ttl, neither
+    of which the shipped cases can see: their mounts are all writable
+    and they set no ttl.
+    """
+    bound = ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45)
+    target = {"id": "t", "mounts": [{"path": "/data", "vfs": "ram"}]}
+    check(
+        "mount_read: an override naming an unmounted prefix is refused",
+        *raises(
+            lambda: asyncio.run(
+                runner_main.adapters.open_consistency(
+                    target, ReadSpec(), {"/nope": bound})), "/nope"))
+
+    bare, moded, kept = RAMVFS(), RAMVFS(), RAMVFS()
+    out = runner_main.adapters.apply_mount_read(
+        {
+            "/data": bare,
+            "/ro": (moded, MountMode.READ),
+            "/keep": kept
+        }, {
+            "/data": bound,
+            "/ro": bound
+        })
+    check("mount_read: a bare mount is wrapped writable under its override",
+          out["/data"] == Mount(vfs=bare, mode=MountMode.WRITE, read=bound),
+          repr(out["/data"]))
+    check("mount_read: a read-only mount keeps its mode",
+          out["/ro"] == Mount(vfs=moded, mode=MountMode.READ, read=bound),
+          repr(out["/ro"]))
+    check("mount_read: a mount the override does not name is untouched",
+          out["/keep"] is kept, repr(out["/keep"]))
+    got = runner_main.mount_read_of({
+        "mount_read": {
+            "/d": "bounded"
+        },
+        "ttl": 45
+    })
+    check("mount_read: the case's ttl rides into each override",
+          got == {"/d": bound}, repr(got))
+    got = runner_main.mount_read_of({"mount_read": {"/d": "bounded"}})
+    check(
+        "mount_read: with no ttl an override takes the default bound",
+        got == {
+            "/d": ReadSpec(policy=ReadPolicy.BOUNDED, ttl=DEFAULT_READ_TTL)
+        }, repr(got))
 
 
 def selftest_case_target_defaults(typescript: bool = False) -> None:
@@ -808,6 +876,73 @@ def selftest_no_shadow_fails() -> None:
           f"got {proc.stdout.strip()!r} {proc.stderr[-200:]}")
 
 
+# The typescript twin of selftest_mount_read and of the mount_read case
+# rule, through the harness and adapter modules themselves.
+MOUNT_READ_PROBE = (
+    "Promise.all([import('./runners/typescript/harness.ts'),\n"
+    "  import('./runners/typescript/adapters/index.ts'),\n"
+    "  import('@struktoai/mirage-node')]).then(async ([h, a, n]) => {\n"
+    "  const out = {}\n"
+    "  try {\n"
+    "    h.validateCases('.', [{ id: 'unread', targets: ['ram'],\n"
+    "      mount_read: { '/data': 'bounded' }, _source: 'a.json' }])\n"
+    "    out.unread = 'accepted'\n"
+    "  } catch (e) { out.unread = String(e.message) }\n"
+    "  const bound = { policy: 'bounded', ttl: 45 }\n"
+    "  const t = { id: 't', hosts: [], mounts: [{ path: '/data', vfs: 'ram' }] }\n"
+    "  try {\n"
+    "    await a.openConsistency(t, bound, { '/nope': bound })\n"
+    "    out.nope = 'opened'\n"
+    "  } catch (e) { out.nope = String(e.message) }\n"
+    "  const bare = new n.RAMVFS(), moded = new n.RAMVFS(), kept = new n.RAMVFS()\n"
+    "  const m = a.applyMountRead({ '/data': bare, '/ro': [moded, 'read'],\n"
+    "    '/keep': kept }, { '/data': bound, '/ro': bound })\n"
+    "  const opts = (x) => [x.vfs === bare || x.vfs === moded, x.options.mode,\n"
+    "    x.options.read.policy, x.options.read.ttl]\n"
+    "  out.data = opts(m['/data'])\n"
+    "  out.ro = opts(m['/ro'])\n"
+    "  out.keep = m['/keep'] === kept\n"
+    "  out.ttl = h.mountReadOf({ mount_read: { '/d': 'bounded' }, ttl: 45 })\n"
+    "  out.nottl = h.mountReadOf({ mount_read: { '/d': 'bounded' } })\n"
+    "  console.log(JSON.stringify(out))\n"
+    "})\n")
+
+
+def selftest_mount_read_typescript() -> None:
+    """selftest_mount_read's claims on the typescript host."""
+    proc = subprocess.run([str(TSX), "--eval", MOUNT_READ_PROBE],
+                          capture_output=True,
+                          text=True,
+                          cwd=ROOT)
+    try:
+        out = json.loads(proc.stdout.strip().splitlines()[-1])
+    except (IndexError, json.JSONDecodeError) as exc:
+        check("mount_read (ts): the probe ran", False,
+              f"{exc}: {proc.stdout[-200:]} {proc.stderr[-400:]}")
+        return
+    check("cases (ts): a mount_read without a read is rejected",
+          "mount_read" in out["unread"], repr(out["unread"]))
+    check("mount_read (ts): an override naming an unmounted prefix is refused",
+          "/nope" in out["nope"], repr(out["nope"]))
+    check("mount_read (ts): a bare mount is wrapped writable",
+          out["data"] == [True, "write", "bounded", 45], repr(out["data"]))
+    check("mount_read (ts): a read-only mount keeps its mode",
+          out["ro"] == [True, "read", "bounded", 45], repr(out["ro"]))
+    check("mount_read (ts): a mount the override does not name is untouched",
+          out["keep"] is True, repr(out["keep"]))
+    check("mount_read (ts): the case's ttl rides into each override",
+          out["ttl"] == {"/d": {
+              "policy": "bounded",
+              "ttl": 45
+          }}, repr(out["ttl"]))
+    check(
+        "mount_read (ts): with no ttl an override takes the default bound",
+        out["nottl"] == {"/d": {
+            "policy": "bounded",
+            "ttl": DEFAULT_READ_TTL
+        }}, repr(out["nottl"]))
+
+
 def selftest_typescript_gates(require: bool) -> None:
     """The same two exits on the typescript host, so the gate is symmetric.
 
@@ -845,6 +980,7 @@ def selftest_typescript_gates(require: bool) -> None:
     selftest_run_ids()
     selftest_plan_run()
     selftest_no_shadow_fails()
+    selftest_mount_read_typescript()
 
     code, err = run_typescript(["--target", "ram", "--target-jobs=0"], {})
     check("--target-jobs=0 is refused (ts)", code == 2, f"exit {code}: {err}")
@@ -868,6 +1004,7 @@ def selftest_typescript_gates(require: bool) -> None:
 def main() -> None:
     selftest_services_table()
     selftest_case_validation()
+    selftest_mount_read()
     selftest_case_target_defaults()
     selftest_strict_exit()
     selftest_fake_ports()

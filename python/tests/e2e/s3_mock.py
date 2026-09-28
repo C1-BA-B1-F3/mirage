@@ -111,13 +111,16 @@ def _slice_range(data: bytes, range_spec: str) -> bytes:
 
 class _MultiBucketPaginator:
 
-    def __init__(self, buckets: dict[str, dict[str, bytes]]) -> None:
+    def __init__(self, buckets: dict[str, dict[str, bytes]],
+                 bucket_calls: Counter[tuple[str, str]]) -> None:
         self.buckets = buckets
+        self.bucket_calls = bucket_calls
 
     async def paginate(self,
                        Bucket: str,
                        Prefix: str = "",
                        Delimiter: str | None = None):
+        self.bucket_calls["list_objects_v2", Bucket] += 1
         objects = self.buckets.get(Bucket, {})
         if Delimiter == "/":
             yield _paginate_directory(objects, Prefix)
@@ -138,6 +141,9 @@ class MultiBucketS3Client:
         # NOT the MD5 of the content.
         self.etag_suffix = etag_suffix
         self.calls: Counter[str] = Counter()
+        # The same calls keyed by bucket, listings included, so a line that
+        # reads two mounts can be charged leg by leg.
+        self.bucket_calls: Counter[tuple[str, str]] = Counter()
         # Keys DeleteObjects refuses, reported under "Errors" in a 200.
         self.undeletable: set[str] = set()
 
@@ -167,6 +173,7 @@ class MultiBucketS3Client:
                          Range: str | None = None,
                          VersionId: str | None = None) -> dict:
         self.calls["get_object"] += 1
+        self.bucket_calls["get_object", Bucket] += 1
         vid_for_resp = self._track(Bucket, Key)
         if VersionId is not None:
             history = self._versions.get((Bucket, Key), [])
@@ -191,6 +198,7 @@ class MultiBucketS3Client:
 
     async def head_object(self, Bucket: str, Key: str) -> dict:
         self.calls["head_object"] += 1
+        self.bucket_calls["head_object", Bucket] += 1
         objects = self._objects(Bucket)
         if Key not in objects:
             raise _mock_s3_error("NoSuchKey")
@@ -208,7 +216,7 @@ class MultiBucketS3Client:
 
     def get_paginator(self, name: str):
         assert name == "list_objects_v2"
-        return _MultiBucketPaginator(self.buckets)
+        return _MultiBucketPaginator(self.buckets, self.bucket_calls)
 
     async def put_object(self, Bucket: str, Key: str, Body: bytes) -> dict:
         self.calls["put_object"] += 1

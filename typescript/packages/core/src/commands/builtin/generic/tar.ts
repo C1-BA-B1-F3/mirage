@@ -22,16 +22,24 @@ import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { readTar, writeTar, type TarEntry } from '../tar_helper.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import {
+  CHILD_NAME,
   CHILD_STATUS,
   COMPRESSION_SIGNATURES,
   CREATE_ERROR_EXIT,
+  EMPTY_PIPE,
   ERROR_TRAILER,
   FATAL_TRAILER,
   INVALID_ARCHIVE,
   TAPE_START,
 } from './tar/constants.ts'
 import { planCreate, type DirProbe, type StatFn, type WalkFn } from './tar/create.ts'
-import { fsStrerror, isEacces, isFsError, type GzipDataError } from '../../../utils/errors.ts'
+import {
+  eisdir,
+  fsStrerror,
+  isEacces,
+  isFsError,
+  type GzipDataError,
+} from '../../../utils/errors.ts'
 import { ensureDir, extractDest } from './archive/extract.ts'
 import type { Compression, CompressionKind, CreateResult, ReadResult } from './tar/types.ts'
 
@@ -208,27 +216,62 @@ function stderrOf(lines: readonly string[]): Uint8Array | null {
   return lines.length > 0 ? ENC.encode(`${lines.join('\n')}\n`) : null
 }
 
-// The archive's bytes, or the run's one fatal line when GNU would stop.
-// GNU opens the archive before it reads a member, so one it cannot open
-// (missing, the empty name, a link loop) ends the run as `Cannot open`; a
-// directory opens and then fails the first read, which GNU words as
-// `Cannot read` at the beginning of the tape. Exit 2 both ways, named as
-// typed (tar 1.35). Mirrors Python's _read_archive.
+// One of tar's own lines, spoken by `who` instead of `tar`.
+function voiced(line: string, who: string): string {
+  return who + line.slice('tar'.length)
+}
+
+/**
+ * The run's fatal lines for an archive tar cannot open or read. GNU opens
+ * the archive before it reads a member, so one it cannot open (missing, the
+ * empty name, a link loop) ends the run as `Cannot open`; a directory opens
+ * and then fails the first read, which GNU words as `Cannot read` at the
+ * beginning of the tape. With a compressor the archive is opened by tar's
+ * child, which names itself on each of those lines, and tar then reports the
+ * child's status. A reading child has already spawned the compressor, which
+ * meets an empty pipe and says so, unless the name was missing. Exit 2 every
+ * way, named as typed (tar 1.35, gzip 1.13, xz 5.4). Mirrors Python's
+ * _open_failure.
+ */
+function openFailure(
+  shown: string,
+  err: unknown,
+  compression: Compression,
+  reading: boolean,
+): IOResult {
+  const who = compression !== null ? CHILD_NAME : 'tar'
+  const code = (err as { code?: string }).code
+  const lines =
+    reading && code === 'EISDIR'
+      ? [`${who}: ${shown}: Cannot read: ${String(fsStrerror(err))}`, voiced(TAPE_START, who)]
+      : [`${who}: ${shown}: Cannot open: ${String(fsStrerror(err))}`]
+  lines.push(voiced(FATAL_TRAILER, who))
+  if (compression !== null) {
+    if (reading && code !== 'ENOENT') lines.push(...(EMPTY_PIPE[compression] ?? []))
+    lines.push(CHILD_STATUS.replace('{}', String(CREATE_ERROR_EXIT)), FATAL_TRAILER)
+  }
+  const stderr = stderrOf(lines)
+  return new IOResult({ exitCode: CREATE_ERROR_EXIT, ...(stderr !== null ? { stderr } : {}) })
+}
+
+// The archive's bytes, or the run's fatal lines when GNU would stop. A
+// backend that keys files alone reports a directory as absent, where GNU
+// opens it and fails the read, so a miss asks `isDir` before it is worded.
+// Mirrors Python's _read_archive.
 async function readArchiveBytes(
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   archive: PathSpec,
+  isDir: DirProbe,
+  compression: Compression,
 ): Promise<Uint8Array | IOResult> {
   try {
     return await materialize(stream(archive))
   } catch (err) {
     if (!isFsError(err)) throw err
-    const shown = archive.rawPath
-    const lines =
-      (err as { code?: string }).code === 'EISDIR'
-        ? [`tar: ${shown}: Cannot read: ${String(fsStrerror(err))}`, TAPE_START, FATAL_TRAILER]
-        : [`tar: ${shown}: Cannot open: ${String(fsStrerror(err))}`, FATAL_TRAILER]
-    const stderr = stderrOf(lines)
-    return new IOResult({ exitCode: CREATE_ERROR_EXIT, ...(stderr !== null ? { stderr } : {}) })
+    const missing = (err as { code?: string }).code === 'ENOENT'
+    const failure =
+      missing && archive.walkError === null && (await isDir(archive)) ? eisdir(archive) : err
+    return openFailure(archive.rawPath, failure, compression, true)
   }
 }
 
@@ -280,14 +323,7 @@ async function writeArchive(
     if (!isFsError(err)) throw err
     // GNU opens the archive before it reads a member, so an archive it
     // cannot create is the whole run's one fatal line.
-    const stderr = stderrOf([
-      `tar: ${archivePath.rawPath}: Cannot open: ${String(fsStrerror(err))}`,
-      FATAL_TRAILER,
-    ])
-    return [
-      null,
-      new IOResult({ exitCode: CREATE_ERROR_EXIT, ...(stderr !== null ? { stderr } : {}) }),
-    ]
+    return [null, openFailure(archivePath.rawPath, err, compression, false)]
   }
   const stderr = stderrOf(notices)
   const stdout = verbose && names.length > 0 ? ENC.encode(`${names.join('\n')}\n`) : null
@@ -379,7 +415,7 @@ export async function tarGeneric(
     if (archiveSpec === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
-    const raw = await readArchiveBytes(deps.stream, archiveSpec)
+    const raw = await readArchiveBytes(deps.stream, archiveSpec, deps.isDir, compression)
     if (raw instanceof IOResult) return [null, raw]
     const { entries, failure, notices } = await readArchive(raw, compression)
     const names = entries.map((e) => (e.isDir === true ? `${rstripSlash(e.name)}/` : e.name))
@@ -406,7 +442,7 @@ export async function tarGeneric(
     if (archiveSpec === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
-    const raw = await readArchiveBytes(deps.stream, archiveSpec)
+    const raw = await readArchiveBytes(deps.stream, archiveSpec, deps.isDir, compression)
     if (raw instanceof IOResult) return [null, raw]
     const { entries, failure, notices } = await readArchive(raw, compression)
     const writes: Record<string, Uint8Array> = {}

@@ -28,6 +28,17 @@ FATAL_TRAILER = "tar: Error is not recoverable: exiting now"
 TAPE_START = "tar: At beginning of tape, quitting now"
 # What tar adds when its gzip -d child fails, after gzip's own lines.
 CHILD_STATUS = "tar: Child returned status {}"
+# With a compressor, the archive is opened by tar's child, which names
+# itself so on every line it prints (tar 1.35).
+CHILD_NAME = "tar (child)"
+# What the compressor the child already spawned says when the child dies
+# before feeding it, which happens for every open failure but a missing
+# name (gzip 1.13, xz 5.4). bzip2's complaint is a paragraph of recovery
+# advice that mirage does not reproduce.
+EMPTY_PIPE = {
+    ":gz": ("", "gzip: stdin: unexpected end of file"),
+    ":xz": ("xz: (stdin): File format not recognized", ),
+}
 INVALID_ARCHIVE = ("tar: This does not look like a tar archive",
                    "tar: Skipping to next header")
 ERROR_TRAILER = "tar: Exiting with failure status due to previous errors"

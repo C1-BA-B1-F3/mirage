@@ -1471,3 +1471,46 @@ describe('tar and unzip on a read-only mount', () => {
     expect([exitCode, stderr]).toEqual([code, refused])
   })
 })
+
+describe('tar -f an archive it cannot open', () => {
+  // tar 1.35 names -f as typed. A directory opens and fails the first read,
+  // where a backend keying files alone reports it absent. With a compressor
+  // tar's child speaks, the reading one's gzip meets an empty pipe unless the
+  // name was missing, and tar reports the child's status. Mirrors
+  // test_tar.py.
+  it.each([
+    [
+      'tar -tf nope.tar',
+      'tar: nope.tar: Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n',
+    ],
+    [
+      'tar -xf d',
+      'tar: d: Cannot read: Is a directory\ntar: At beginning of tape, quitting now\ntar: Error is not recoverable: exiting now\n',
+    ],
+    [
+      'tar -tzf nope.tgz',
+      'tar (child): nope.tgz: Cannot open: No such file or directory\ntar (child): Error is not recoverable: exiting now\ntar: Child returned status 2\ntar: Error is not recoverable: exiting now\n',
+    ],
+    [
+      'tar -tzf d',
+      'tar (child): d: Cannot read: Is a directory\ntar (child): At beginning of tape, quitting now\ntar (child): Error is not recoverable: exiting now\n\ngzip: stdin: unexpected end of file\ntar: Child returned status 2\ntar: Error is not recoverable: exiting now\n',
+    ],
+    [
+      'tar -czf d a',
+      'tar (child): d: Cannot open: Is a directory\ntar (child): Error is not recoverable: exiting now\ntar: Child returned status 2\ntar: Error is not recoverable: exiting now\n',
+    ],
+  ])('%s', async (line, want) => {
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    try {
+      await ws.shell('mkdir -p /data/d && printf a > /data/a')
+      const r = await ws.shell(`cd /data && ${line}`)
+      expect(r.exitCode).toBe(2)
+      expect(new TextDecoder().decode(r.stderr)).toBe(want)
+    } finally {
+      await ws.close()
+    }
+  })
+})

@@ -19,7 +19,7 @@ import { RAMVFS } from '../../../../vfs/ram/ram.ts'
 import { MountMode, PathSpec } from '../../../../types.ts'
 import { getTestParser } from '../../../fixtures/workspace_fixture.ts'
 import { Workspace } from '../../../workspace/workspace.ts'
-import { followPaths, prepareMv, settleMoves } from './links.ts'
+import { followPaths, prepareMv } from './links.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 
@@ -351,61 +351,30 @@ describe('rm and unlink reach a link through the op door', () => {
 })
 
 describe('mv re-anchors what the node table holds', () => {
-  it('hands back the pair whatever the table holds at the source', async () => {
-    // Gated on the source carrying overlay attrs, the pair was withheld
-    // for a directory whose own node is empty, and every link below it
-    // stayed at the emptied name: readable nowhere, since no backend
-    // holds an entry for a link at all.
-    const ws = await makeWs()
-    try {
-      await ws.shell('mkdir -p /data/d; printf t > /data/t')
-      await ws.shell('ln -s /data/t /data/d/link')
-      const prepared = await prepareMv(
-        ws.namespace,
-        dispatchOf(ws),
-        [PathSpec.fromStrPath('/data/d'), PathSpec.fromStrPath('/data/moved')],
-        ['/data/d', '/data/moved'],
-        '/',
-      )
-      expect(prepared.early).toBeNull()
-      expect(prepared.errors).toEqual([])
-      expect(prepared.moves).toEqual([['/data/d', '/data/moved', false]])
-    } finally {
-      await ws.close()
-    }
-  })
-
-  it('reads the destination off the parsed line', async () => {
-    // -T names the destination outright, so no basename is appended to
-    // it, and -t makes every positional a source and the flag's value the
-    // directory they land in, whatever the order of the words.
-    const ws = await makeWs()
-    try {
-      await ws.shell('mkdir -p /data/dst; printf a > /data/a')
-      const pair = [PathSpec.fromStrPath('/data/a'), PathSpec.fromStrPath('/data/dst')]
-      const dispatch = dispatchOf(ws)
-      const into = await prepareMv(ws.namespace, dispatch, pair, ['/data/a', '/data/dst'], '/')
-      expect(into.moves).toEqual([['/data/a', '/data/dst/a', false]])
-      const onto = await prepareMv(
-        ws.namespace,
-        dispatch,
-        pair,
-        ['-T', '/data/a', '/data/dst'],
-        '/',
-      )
-      expect(onto.moves).toEqual([['/data/a', '/data/dst', true]])
-      const many = await prepareMv(
-        ws.namespace,
-        dispatch,
-        pair,
-        ['-t', '/data/dst', '/data/a'],
-        '/',
-      )
-      expect(many.moves).toEqual([['/data/a', '/data/dst/a', false]])
-    } finally {
-      await ws.close()
-    }
-  })
+  it.each(['-n', '--update=none', '--update=none-fail'])(
+    'applies %s to every link operand',
+    async (option) => {
+      for (const operands of [
+        '/data/l /data/dst',
+        '/data/l /data/a /data/dst',
+        '-t /data/dst /data/l /data/a',
+      ]) {
+        const ws = await makeWs()
+        try {
+          await ws.shell(
+            'mkdir /data/dst; echo old > /data/dst/l; ln -s missing /data/l; echo a > /data/a',
+          )
+          expect((await ws.shell(`mv ${option} ${operands}`)).exitCode).toBe(
+            option === '--update=none-fail' ? 1 : 0,
+          )
+          expect(DEC.decode((await ws.shell('cat /data/dst/l')).stdout)).toBe('old\n')
+          expect(DEC.decode((await ws.shell('readlink /data/l')).stdout)).toBe('missing\n')
+        } finally {
+          await ws.close()
+        }
+      }
+    },
+  )
 
   it('follows a linked destination for many sources', async () => {
     // GNU stats the destination of `mv a b dlink` through the link, so the
@@ -433,22 +402,17 @@ describe('mv re-anchors what the node table holds', () => {
         '/data',
       )
       expect(prepared.early).toBeNull()
-      expect(prepared.errors).toEqual([])
       const dst = prepared.items[prepared.items.length - 1]
       expect(dst instanceof PathSpec ? [dst.virtual, dst.rawPath] : null).toEqual([
         '/data/dst',
         'dlink',
-      ])
-      expect(prepared.moves).toEqual([
-        ['/data/a', '/data/dst/a', false],
-        ['/data/b', '/data/dst/b', false],
       ])
     } finally {
       await ws.close()
     }
   })
 
-  it('renames a link source among many', async () => {
+  it('leaves link sources for the generic', async () => {
     // A link has no backend entry for the generic mv to move, so a
     // several-source mv lost it (`mv: cannot stat 'l'`); the namespace
     // renames it into the directory and the rest go to the backend.
@@ -465,42 +429,34 @@ describe('mv re-anchors what the node table holds', () => {
         '/',
       )
       expect(prepared.early).toBeNull()
-      expect(prepared.errors).toEqual([])
-      expect(prepared.items).not.toContain(link)
-      expect(ws.namespace.isLink('/data/dst/l')).toBe(true)
-      expect(ws.namespace.isLink('/data/l')).toBe(false)
-      expect(prepared.moves).toEqual([['/data/a', '/data/dst/a', false]])
+      expect(prepared.items).toContain(link)
+      expect(ws.namespace.isLink('/data/dst/l')).toBe(false)
+      expect(ws.namespace.isLink('/data/l')).toBe(true)
     } finally {
       await ws.close()
     }
   })
 
-  it('confirms each move by its landing', async () => {
-    // The source cannot confirm a move: a link left below a moved directory
-    // synthesizes it back. A landing that appeared is a move that happened;
-    // one that was already there waits for exit 0.
-    const ws = await makeWs()
-    try {
-      await ws.shell('mkdir -p /data/src /data/new /data/kept; printf k > /data/k')
-      await ws.shell('ln -s /data/k /data/src/lk')
-      await ws.shell('ln -s /data/k /data/kept/lk')
-      await settleMoves(
-        ws.namespace,
-        dispatchOf(ws),
-        [
-          ['/data/src', '/data/new', false],
-          ['/data/kept', '/data/gone', false],
-          ['/data/kept', '/data/new', true],
-        ],
-        1,
-      )
-      expect(ws.namespace.isLink('/data/new/lk')).toBe(true)
-      expect(ws.namespace.isLink('/data/src/lk')).toBe(false)
-      expect(ws.namespace.isLink('/data/kept/lk')).toBe(true)
-    } finally {
-      await ws.close()
-    }
-  })
+  it.each([false, true])(
+    'reanchors only completed sources in a partial move (skip=%s)',
+    async (skip) => {
+      const ws = await makeWs()
+      try {
+        await ws.shell(
+          'mkdir -p /data/src /data/out/src; echo x > /data/src/f; ln -s f /data/src/l',
+        )
+        expect(
+          (await ws.shell(`mv ${skip ? '-n' : ''} /data/missing /data/src /data/out`)).exitCode,
+        ).toBe(1)
+        const kept = skip ? '/data/src/l' : '/data/out/src/l'
+        const absent = skip ? '/data/out/src/l' : '/data/src/l'
+        expect(DEC.decode((await ws.shell(`cat ${kept}`)).stdout)).toBe('x\n')
+        expect(ws.namespace.isLink(absent)).toBe(false)
+      } finally {
+        await ws.close()
+      }
+    },
+  )
 
   it('moves a link below a renamed directory with it', async () => {
     const ws = await makeWs()

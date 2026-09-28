@@ -77,13 +77,13 @@ export interface CpFlags {
 }
 
 /**
- * The namespace's symlinks as cp meets them, and the door that makes them.
+ * Namespace symlink facts and dispatcher primitives for cp and mv.
  * Links live above every backend, so no copy strategy lists one and a tree
  * copy has to recreate each by name. `relay` and `relayStat` are the door's
  * own transfer primitives, which copy what a followed link leads to on
- * whatever mount it lives. Mirrors Python's CopyLinks.
+ * whatever mount it lives. Mirrors Python's TransferLinks.
  */
-export interface CopyLinks {
+export interface TransferLinks {
   links: LinkView
   dispatch: DispatchFn
   cwd: string
@@ -228,7 +228,7 @@ export function parseFlags(fl: FlagView): CpFlags {
 // router follows an operand through a link before cp runs, which leaves
 // `virtual` at the target and the typed name in `rawPath`. Mirrors Python's
 // typed_link.
-export function typedLink(copies: CopyLinks, path: PathSpec): FileStat | null {
+export function typedLink(copies: TransferLinks, path: PathSpec): FileStat | null {
   return copies.links.statAt(resolvePath(path.rawPath || path.virtual, copies.cwd))
 }
 
@@ -247,36 +247,57 @@ async function entryAt(dispatch: DispatchFn, spec: PathSpec): Promise<FileStat |
   }
 }
 
-/**
- * Create the link `landing` -> `text`, as a copy that does not follow links
- * makes it: what stands at the landing is replaced, a link or any other
- * non-directory alike, and a directory refuses the link (coreutils 9.7). The
- * error line when the link cannot be made, else null. Mirrors Python's
- * make_link.
- */
+/** Stat the entry itself for overwrite and backup decisions. */
+export async function linkStat(copies: TransferLinks, path: PathSpec): Promise<FileStat> {
+  return copies.links.statAt(path.virtual) ?? (await copies.relayStat(path))
+}
+
+export async function renameLink(
+  copies: TransferLinks,
+  src: PathSpec,
+  target: PathSpec,
+): Promise<void> {
+  await copies.dispatch('rename', src, [target])
+}
+
+/** Copy a symlink through the shared overwrite and backup policy. */
 export async function makeLink(
-  copies: CopyLinks,
-  landing: string,
+  copies: TransferLinks,
+  src: PathSpec,
+  target: PathSpec,
   text: string,
-  shown: string,
-): Promise<string | null> {
-  const spec = PathSpec.fromStrPath(landing)
-  if (copies.links.statAt(landing) !== null) {
-    await copies.dispatch('unlink', spec)
-  } else {
-    const there = await entryAt(copies.dispatch, spec)
-    if (there !== null && there.type === FileType.DIRECTORY) {
-      return `cp: cannot overwrite directory '${shown}' with non-directory`
-    }
-    if (there !== null) await copies.dispatch('unlink', spec)
+  policy: TransferPolicy,
+  writes: Record<string, ByteSource>,
+  errors: string[],
+  lines: string[] | undefined,
+): Promise<void> {
+  const stat: StatFn = (path) => linkStat(copies, path)
+  const there = await entryAt(copies.dispatch, target)
+  if (copies.links.statAt(target.virtual) === null && there?.type === FileType.DIRECTORY) {
+    errors.push(`cp: cannot overwrite directory '${target.rawPath}' with non-directory`)
+    return
   }
+  if (!(await overwriteGate(policy, stat, src, target, errors))) return
+  const made = await makeBackup(
+    policy,
+    { rename: (a, b) => renameLink(copies, a, b) },
+    stat,
+    copies.relay.readdir,
+    target,
+    writes,
+    errors,
+  )
+  if (!made.ok) return
   try {
-    await copies.dispatch('symlink', spec, [], { target: text })
+    if (await pathExists(stat, target)) await copies.dispatch('unlink', target)
+    await copies.dispatch('symlink', target, [], { target: text })
   } catch (err) {
     if (!isFsError(err)) throw err
-    return `cp: cannot create symbolic link '${shown}': ${String(fsStrerror(err))}`
+    errors.push(`cp: cannot create symbolic link '${target.rawPath}': ${String(fsStrerror(err))}`)
+    return
   }
-  return null
+  writes[target.mountPath] = new Uint8Array()
+  lines?.push(transferLine(src, target, made.backup))
 }
 
 /**
@@ -290,12 +311,15 @@ export async function makeLink(
  * stops. Mirrors Python's copy_tree_links.
  */
 export async function copyTreeLinks(
-  copies: CopyLinks,
+  copies: TransferLinks,
   deref: CopyDeref,
   src: PathSpec,
   target: PathSpec,
   errors: string[],
   lines: string[] | undefined,
+  policy: TransferPolicy,
+  writes: Record<string, ByteSource>,
+  reads: Record<string, Uint8Array>,
   seen: readonly string[] = [],
 ): Promise<void> {
   const base = rstripSlash(src.virtual) || '/'
@@ -310,9 +334,16 @@ export async function copyTreeLinks(
     if (deref !== 'always') {
       const raw = row.extra[LINK_TARGET_KEY]
       const text = typeof raw === 'string' ? raw : ''
-      const error = await makeLink(copies, landing, text, `${shownDst}/${rel}`)
-      if (error !== null) errors.push(error)
-      else lines?.push(`'${virtual}' -> '${landing}'`)
+      await makeLink(
+        copies,
+        respelled(PathSpec.fromStrPath(virtual), shown),
+        respelled(PathSpec.fromStrPath(landing), `${shownDst}/${rel}`),
+        text,
+        policy,
+        writes,
+        errors,
+        lines,
+      )
       continue
     }
     let resolved: string
@@ -329,7 +360,18 @@ export async function copyTreeLinks(
       continue
     }
     if (leads.type !== FileType.DIRECTORY) {
-      await copyFollowedFile(copies, resolved, landing, shown, errors, lines)
+      const entry = respelled(PathSpec.fromStrPath(resolved), shown)
+      await copyEntries(
+        'cp',
+        copies.relay,
+        copies.relayStat,
+        entry,
+        PathSpec.fromStrPath(landing),
+        [{ path: entry.virtual, isDir: false }],
+        errors,
+        undefined,
+        { policy, writes, reads, lines },
+      )
       continue
     }
     const inside = rstripSlash(resolved) || '/'
@@ -346,6 +388,7 @@ export async function copyTreeLinks(
       undefined,
       'cp',
       errors,
+      copies.links,
     )
     await copyEntries(
       'cp',
@@ -357,6 +400,9 @@ export async function copyTreeLinks(
       errors,
       undefined,
       {
+        policy,
+        writes,
+        reads,
         ...(lines !== undefined ? { lines } : {}),
       },
     )
@@ -367,37 +413,12 @@ export async function copyTreeLinks(
       respelled(placed, `${shownDst}/${rel}`),
       errors,
       lines,
+      policy,
+      writes,
+      reads,
       [...seen, base],
     )
   }
-}
-
-// Copy what a followed link names when it is a file. Mirrors Python's
-// _copy_followed_file.
-async function copyFollowedFile(
-  copies: CopyLinks,
-  resolved: string,
-  landing: string,
-  shown: string,
-  errors: string[],
-  lines: string[] | undefined,
-): Promise<void> {
-  let data: Uint8Array
-  try {
-    data = await copies.relay.readBytes(PathSpec.fromStrPath(resolved))
-  } catch (err) {
-    if (!isFsError(err)) throw err
-    errors.push(`cp: cannot open '${shown}' for reading: ${String(fsStrerror(err))}`)
-    return
-  }
-  try {
-    await copies.relay.write(PathSpec.fromStrPath(landing), data)
-  } catch (err) {
-    if (!isFsError(err)) throw err
-    errors.push(`cp: cannot create regular file '${landing}': ${String(fsStrerror(err))}`)
-    return
-  }
-  lines?.push(`'${resolved}' -> '${landing}'`)
 }
 
 // Split operands into sources and destination, GNU arity errors. With -t
@@ -803,6 +824,7 @@ export async function cpWalk(
   index?: IndexCacheStore,
   cmdName = 'cp',
   errors?: string[],
+  links?: LinkView,
 ): Promise<{ path: string; isDir: boolean }[]> {
   const info = await stat(root, index)
   if (info.type !== FileType.DIRECTORY) return [{ path: root.virtual, isDir: false }]
@@ -821,6 +843,7 @@ export async function cpWalk(
     }
     for (const child of children) {
       const childSpec = descendantPath(root, child)
+      if (links?.statAt(childSpec.virtual) != null) continue
       let childInfo
       try {
         childInfo = await stat(childSpec, index)
@@ -962,7 +985,7 @@ export async function cpGeneric(
   // The namespace's links and the door that makes them, so a link is copied
   // as a link where the policy says to; undefined outside a workspace, where
   // no link can stand.
-  copies?: CopyLinks,
+  copies?: TransferLinks,
 ): Promise<[ByteSource | null, IOResult]> {
   const keyOf = backendKey ?? backendKeyDefault
   const [sources, dstOperand] = splitOperands('cp', paths, flags.targetDir, flags.noTargetDir)
@@ -1005,7 +1028,8 @@ export async function cpGeneric(
     backup: flags.backup,
     suffix: flags.suffix,
   }
-  const perEntryNative = updateGates(flags.update) || backupDisplaces(flags.backup)
+  const perEntryNative =
+    flags.noClobber || updateGates(flags.update) || backupDisplaces(flags.backup)
   const writes: Record<string, ByteSource> = {}
   const reads: Record<string, Uint8Array> = {}
   const lines: string[] = []
@@ -1027,9 +1051,16 @@ export async function cpGeneric(
       }
       const raw = link.extra[LINK_TARGET_KEY]
       const text = typeof raw === 'string' ? raw : ''
-      const error = await makeLink(copies, landing, text, target.rawPath)
-      if (error !== null) errors.push(error)
-      else if (flags.verbose) lines.push(`'${named}' -> '${landing}'`)
+      await makeLink(
+        copies,
+        respelled(PathSpec.fromStrPath(named), src.rawPath),
+        respelled(PathSpec.fromStrPath(landing), target.rawPath),
+        text,
+        policy,
+        writes,
+        errors,
+        flags.verbose ? lines : undefined,
+      )
       continue
     }
     const { exists: srcExists, isDir: srcIsDir, strerror: srcErr } = await sourceKind(stat, src)
@@ -1099,7 +1130,15 @@ export async function cpGeneric(
       const srcBase = rstripSlash(src.mountPath)
       const dstBase = rstripSlash(target.mountPath)
       if (isPrimitiveCopy(strategy)) {
-        const entries = await cpWalk(strategy.readdir, stat, src, index, 'cp', errors)
+        const entries = await cpWalk(
+          strategy.readdir,
+          stat,
+          src,
+          index,
+          'cp',
+          errors,
+          copies?.links,
+        )
         await copyEntries('cp', strategy, stat, src, target, entries, errors, index, {
           policy,
           writes,
@@ -1114,12 +1153,14 @@ export async function cpGeneric(
             target,
             errors,
             flags.verbose ? lines : undefined,
+            policy,
+            writes,
+            reads,
           )
         }
         continue
       }
       if (strategy.dirCopy !== undefined && !perEntryNative) {
-        if (flags.noClobber && targetExists) continue
         await strategy.dirCopy(src, target)
         for (const entryMount of await strategy.find(src, { type: 'f' })) {
           const entryDst = mountedPath(target, dstBase + entryMount.slice(srcBase.length))
@@ -1136,6 +1177,9 @@ export async function cpGeneric(
             target,
             errors,
             flags.verbose ? lines : undefined,
+            policy,
+            writes,
+            reads,
           )
         }
         continue
@@ -1183,6 +1227,9 @@ export async function cpGeneric(
           target,
           errors,
           flags.verbose ? lines : undefined,
+          policy,
+          writes,
+          reads,
         )
       }
       continue

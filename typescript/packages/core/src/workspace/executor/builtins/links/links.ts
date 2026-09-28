@@ -17,23 +17,15 @@ import { FlagView, SPECS, parseCommand } from '../../../../commands/spec/index.t
 import { parseToKwargs } from '../../../../commands/spec/parser.ts'
 import type { FileStat } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
-import {
-  ELOOP_STRERROR,
-  fsStrerror,
-  isEacces,
-  isEnoent,
-  isEnotdir,
-  isErofs,
-  isFsError,
-} from '../../../../utils/errors.ts'
+import { ELOOP_STRERROR, fsStrerror, isEnoent } from '../../../../utils/errors.ts'
 import { CycleError, gnuBasename } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
-import { fail, ok, splitFlags } from '../shared.ts'
+import { fail, splitFlags } from '../shared.ts'
 import { dispatchStat } from '../../../../commands/builtin/utils/paths.ts'
 import { statOrNull } from './probe.ts'
-import type { MvMove, Result } from '../types.ts'
+import type { Result } from '../types.ts'
 import type { FlagValue } from '../../../../commands/spec/types.ts'
 
 export function posixRelative(target: string, startDir: string): string {
@@ -298,28 +290,10 @@ export async function followDirectoryLinks(
 
 export interface PreparedMv {
   items: (string | PathSpec)[]
-  // The pairs whose node entries follow the bytes once each move is confirmed.
-  moves: MvMove[]
-  // Set when the line completed as namespace renames.
   early: Result | null
-  // Lines for link sources the rename refused.
-  errors: string[]
 }
 
-// Adjust an `mv` line for node-meta operands. A link source renames the link
-// entry itself. A destination that is (a link to) a directory receives the
-// move inside it (rename(2) preceded by mv's dst stat); any other destination
-// is replaced, so its node entry, link or overlay attrs alike, drops once the
-// backend move succeeds. A plain source hands back the pair to re-anchor once
-// the backend move succeeds, so whatever the node table holds at it and below
-// it travels with the bytes.
-//
-// This has to be done here: a single-mount `mv` renames through the backend op
-// bound to the accessor rather than through the dispatcher, so the re-anchoring
-// the dispatcher does for every other caller has to be repeated. `-t` and `-T`
-// are read off the parsed line rather than guessed from the parts, since a
-// path-shaped flag value is classified into a PathSpec exactly as an operand
-// is. Mirrors Python's prepare_mv.
+/** Resolve the destination directory without transferring any source. */
 export async function prepareMv(
   namespace: Namespace,
   dispatch: DispatchFn,
@@ -329,67 +303,31 @@ export async function prepareMv(
 ): Promise<PreparedMv> {
   const paths = items.filter((p): p is PathSpec => p instanceof PathSpec)
   const spec = SPECS.mv
-  if (spec === undefined) return { items, moves: [], early: null, errors: [] }
+  if (spec === undefined) return { items, early: null }
   const fl = new FlagView(parseToKwargs(parseCommand(spec, [...args], cwd, 'mv')), spec)
   const target = fl.raw('target_directory')
   if (target !== undefined || paths.length > 2) {
-    return prepareMany(namespace, dispatch, items, paths, target)
+    return prepareMany(namespace, items, paths, target)
   }
   const src = paths[0]
   const dst = paths[1]
   if (paths.length !== 2 || src === undefined || dst === undefined) {
-    return { items, moves: [], early: null, errors: [] }
+    return { items, early: null }
   }
-  return { ...(await preparePair(namespace, dispatch, items, src, dst, fl)), errors: [] }
+  return preparePair(namespace, dispatch, items, src, dst, fl)
 }
 
-/**
- * Carry the node table across the moves the backend completed. A move is
- * confirmed by its landing, because a several-source mv can fail one source
- * and move the rest: a landing that appeared is a move that happened. A
- * landing that was already there (a link included, which shadows whatever
- * lands under its name) is replaced by the move, which only the line's status
- * can confirm. The source cannot confirm anything, since a link left below a
- * moved directory synthesizes that directory back. The landing
- * is replaced the way rename(2) replaces it, node and subtree alike, and then
- * the source's own node and subtree land on it, the same four steps the
- * dispatcher takes for a rename it forwards itself. Mirrors Python's
- * settle_moves.
- */
+/** Re-anchor completed renames, including backups, in execution order. */
 export async function settleMoves(
   namespace: Namespace,
-  dispatch: DispatchFn,
-  moves: readonly MvMove[],
-  exitCode: number,
+  moves: readonly (readonly [string, string])[],
 ): Promise<void> {
-  for (const [src, landing, replaced] of moves) {
-    if (replaced ? exitCode !== 0 : !(await present(dispatch, landing))) continue
+  for (const [src, landing] of moves) {
     await namespace.unlink(landing)
     await namespace.purgeUnder(landing)
     await namespace.rename(src, landing)
     await namespace.renameUnder(src, landing)
   }
-}
-
-// Whether a path resolves to an entry; a link loop resolves to none, which
-// statOrNull already answers as null. Mirrors Python's _present.
-async function present(dispatch: DispatchFn, virtual: string): Promise<boolean> {
-  return (await statOrNull(dispatch, PathSpec.fromStrPath(virtual))) !== null
-}
-
-// Each [source, landing] pair, with whether the landing is already there,
-// which settleMoves reads to confirm the move. Mirrors Python's _moves.
-async function movesOf(
-  namespace: Namespace,
-  dispatch: DispatchFn,
-  pairs: readonly (readonly [PathSpec, string])[],
-): Promise<MvMove[]> {
-  const moves: MvMove[] = []
-  for (const [src, landing] of pairs) {
-    const there = namespace.isLink(landing) || (await present(dispatch, landing))
-    moves.push([src.virtual, landing, there])
-  }
-  return moves
 }
 
 function landingKey(path: string): string {
@@ -407,15 +345,13 @@ function landingKey(path: string): string {
  * one with its node entries re-anchored once the backend confirms the move.
  * Mirrors Python's _prepare_many.
  */
-async function prepareMany(
+function prepareMany(
   namespace: Namespace,
-  dispatch: DispatchFn,
   items: (string | PathSpec)[],
   paths: readonly PathSpec[],
   target: FlagValue | undefined,
-): Promise<PreparedMv> {
+): PreparedMv {
   let dst: PathSpec | undefined
-  let sources: PathSpec[]
   if (target !== undefined) {
     const spelled =
       target instanceof PathSpec ? target.virtual : typeof target === 'string' ? target : null
@@ -423,50 +359,16 @@ async function prepareMany(
       spelled === null
         ? undefined
         : paths.find((p) => landingKey(p.virtual) === landingKey(spelled))
-    sources = paths.filter((p) => p !== dst)
   } else {
     dst = paths[paths.length - 1]
-    sources = paths.slice(0, -1)
   }
   if (dst?.walkError !== null) {
-    return { items, moves: [], early: null, errors: [] }
+    return { items, early: null }
   }
   const followed = followPaths(namespace, [dst])[0]
-  if (!(followed instanceof PathSpec)) return { items, moves: [], early: null, errors: [] }
-  let rewritten = items.map((item) => (item === dst ? followed : item))
-  if (followed.walkError !== null) return { items: rewritten, moves: [], early: null, errors: [] }
-  const stat = await statOrNull(dispatch, PathSpec.fromStrPath(followed.virtual))
-  if (stat?.type !== FileType.DIRECTORY) {
-    return { items: rewritten, moves: [], early: null, errors: [] }
-  }
-  const base = rstripSlash(followed.virtual)
-  const typed = rstripSlash(dst.rawPath)
-  const pairs: [PathSpec, string][] = []
-  const errors: string[] = []
-  for (const src of sources) {
-    if (src.walkError !== null) continue
-    const landing = `${base}/${gnuBasename(rstripSlash(src.virtual))}`
-    if (!namespace.isLink(src.virtual) || src.rawPath.endsWith('/')) {
-      pairs.push([src, landing])
-      continue
-    }
-    // A link has no backend entry for the generic mv to move, so the door
-    // renames it, where every other mv's admission gates apply.
-    rewritten = rewritten.filter((item) => item !== src)
-    try {
-      await dispatch('rename', src, [PathSpec.fromStrPath(landing)])
-    } catch (err) {
-      if (!isFsError(err)) throw err
-      const shown = `${typed}/${gnuBasename(rstripSlash(src.rawPath))}`
-      errors.push(`mv: cannot move '${src.rawPath}' to '${shown}': ${String(fsStrerror(err))}\n`)
-    }
-  }
-  if (!rewritten.some((item) => item instanceof PathSpec && item !== followed)) {
-    // Every source was a link, so the namespace finished the line.
-    const early = errors.length > 0 ? fail('mv', errors.join('')) : ok('mv')
-    return { items: rewritten, moves: [], early, errors: [] }
-  }
-  return { items: rewritten, moves: await movesOf(namespace, dispatch, pairs), early: null, errors }
+  if (!(followed instanceof PathSpec)) return { items, early: null }
+  const rewritten = items.map((item) => (item === dst ? followed : item))
+  return { items: rewritten, early: null }
 }
 
 // A two-operand `mv`: one source and the destination it replaces or lands
@@ -478,7 +380,7 @@ async function preparePair(
   src: PathSpec,
   dst: PathSpec,
   fl: FlagView,
-): Promise<Omit<PreparedMv, 'errors'>> {
+): Promise<PreparedMv> {
   if (src.walkError !== null || dst.walkError !== null) {
     // The walk refused the operand, so there is no entry to move or land
     // on; the generic mv reports it through its own stat, which cannot see
@@ -489,13 +391,13 @@ async function preparePair(
         'mv',
         `mv: cannot overwrite directory '' with non-directory '${src.rawPath}'\n`,
       )
-      return { items, moves: [], early }
+      return { items, early }
     }
     if (dst.walkError === 'ELOOP' && src.walkError === null && namespace.isLink(src.virtual)) {
       const early = fail('mv', `mv: cannot stat '${dst.rawPath}': ${ELOOP_STRERROR}\n`)
-      return { items, moves: [], early }
+      return { items, early }
     }
-    return { items, moves: [], early: null }
+    return { items, early: null }
   }
 
   // Where the move lands: inside a directory destination (followed, so
@@ -513,16 +415,10 @@ async function preparePair(
   const stat = followed === null ? null : await statOrNull(dispatch, PathSpec.fromStrPath(followed))
   const intoDir =
     !fl.asBool('no_target_directory') && stat !== null && stat.type === FileType.DIRECTORY
-  let targetDst = dst.virtual
-  if (intoDir && followed !== null) {
-    const name = src.virtual.slice(src.virtual.lastIndexOf('/') + 1)
-    targetDst = rstripSlash(followed) + '/' + name
-  }
-
   if (namespace.isLink(src.virtual)) {
     if (src.rawPath.endsWith('/')) {
       const early = await slashedLinkRefusal(namespace, dispatch, src, dst, stat)
-      return { items, moves: [], early }
+      return { items, early }
     }
     if (!intoDir && dst.rawPath.endsWith('/')) {
       // rename(2) never follows the source, so a link is not a directory
@@ -539,47 +435,13 @@ async function preparePair(
               'mv',
               `mv: cannot move '${src.rawPath}' to '${dst.rawPath}': ${strerror ?? 'Not a directory'}\n`,
             )
-      return { items, moves: [], early }
+      return { items, early }
     }
-    // The move is a node-table rename, which the door answers: a link
-    // has no backend entry for the generic mv to move. Reaching the
-    // table directly from here would skip the admission gates every
-    // other mv passes, so the dispatch is the point.
-    try {
-      await dispatch('rename', src, [PathSpec.fromStrPath(targetDst)])
-    } catch (err) {
-      const suffix = fsStrerror(err)
-      if (suffix !== null && isEnotdir(err)) {
-        // A plain file in the landing's chain, which GNU meets at the
-        // destination's stat, before any rename.
-        const early: Result = fail(
-          'mv',
-          `mv: cannot stat '${dst.rawPath}': ${suffix}
-`,
-        )
-        return { items, moves: [], early }
-      }
-      if (suffix === null || (!isEacces(err) && !isErofs(err) && !isEnoent(err))) throw err
-      // An absent landing parent, met at the rename as the generic mv words
-      // it for a regular file, or a read-only endpoint or a policy deny,
-      // which GNU voices per operand and the backend mv path voices the
-      // same way.
-      const early: Result = fail(
-        'mv',
-        `mv: cannot move '${src.rawPath}' to '${dst.rawPath}': ${suffix}\n`,
-      )
-      return { items, moves: [], early }
-    }
-    const early: Result = ok('mv')
-    return { items, moves: [], early }
   }
 
-  // Unconditional on what the table holds: a directory source carries a whole
-  // subtree of node entries that no exact-path lookup at the source can see,
-  // and a symlink below it is destroyed rather than merely forgotten when they
-  // are left behind.
-  const moves = await movesOf(namespace, dispatch, [[src, targetDst]])
-
-  const rewritten = intoDir && namespace.isLink(dst.virtual) ? followPaths(namespace, items) : items
-  return { items: rewritten, moves, early: null }
+  const rewritten =
+    intoDir && namespace.isLink(dst.virtual)
+      ? items.map((item) => (item === dst ? (followPaths(namespace, [dst])[0] ?? dst) : item))
+      : items
+  return { items: rewritten, early: null }
 }

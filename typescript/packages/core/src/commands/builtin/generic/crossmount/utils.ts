@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { TransferLinks } from '../cp.ts'
+import type { LinkView } from '../../../../ops/types.ts'
 import { mountKey } from '../../../../utils/key_prefix.ts'
 import { eisdir, fsErrorLine, isFsError } from '../../../../utils/errors.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
@@ -186,4 +188,24 @@ export function streamOp(dispatch: DispatchFn): (p: PathSpec) => AsyncIterable<U
     yield await readBytes(p)
   }
   return gen
+}
+
+export function transferLinksOf(links: LinkView, dispatch: DispatchFn, cwd: string): TransferLinks {
+  const relayStat = statOp(dispatch)
+  return {
+    links,
+    dispatch,
+    cwd,
+    relay: {
+      readBytes: readBytesOp(dispatch),
+      write: async (p: PathSpec, data: Uint8Array) => {
+        await dispatch('write', p, [data])
+      },
+      mkdir: async (p: PathSpec) => {
+        await dispatch('mkdir', p)
+      },
+      readdir: readdirOp(dispatch),
+    },
+    relayStat,
+  }
 }

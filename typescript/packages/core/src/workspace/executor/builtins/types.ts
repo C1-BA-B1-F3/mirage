@@ -58,7 +58,3 @@ export interface BuiltinCall {
 }
 
 export type BuiltinFn = (call: BuiltinCall) => Promise<Result>
-
-// One mv source's move: [source, landing, whether the landing was there],
-// which settleMoves reads to confirm the move happened.
-export type MvMove = readonly [string, string, boolean]

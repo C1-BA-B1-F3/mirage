@@ -14,7 +14,7 @@
 
 from typing import Callable
 
-from mirage.commands.builtin.generic.cp import CopyLinks
+from mirage.commands.builtin.generic.cp import TransferLinks
 from mirage.commands.builtin.generic.cp import cp as generic_cp
 from mirage.commands.builtin.generic.cp import parse_flags
 from mirage.commands.builtin.generic.crossmount.types import CrossResult
@@ -63,9 +63,9 @@ async def run_cp(scopes: list[PathSpec],
         strategy=strategy,
         flags=parse_flags(fl),
         backend_key=storage_key,
-        copies=(CopyLinks(links=ns.links,
-                          dispatch=dispatch,
-                          cwd=cwd,
-                          relay=strategy,
-                          relay_stat=primitives["stat"])
+        copies=(TransferLinks(links=ns.links,
+                              dispatch=dispatch,
+                              cwd=cwd,
+                              relay=strategy,
+                              relay_stat=primitives["stat"])
                 if ns is not None and ns.links is not None else None))

@@ -13,6 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { spawn } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
@@ -746,6 +748,7 @@ async function formulas(origin: string): Promise<void> {
   const features = `${v0}/${ROADMAP}/${FEATURES}`
   await reset(origin, 'formulas')
   const cases: Array<[string, number[]]> = [
+    ['{Name} = "CSV export"', [2]],
     ["{Status} = 'Done'", [1, 3, 7, 8]],
     ["{Status} != 'Done'", [2, 4, 5, 6, 9, 10]],
     ['{Shipped}', [1, 3, 7]],
@@ -772,6 +775,39 @@ async function formulas(origin: string): Promise<void> {
     ["{Ticket} = 'FT-3'", [3]],
     ["{Status} = ''", [9]],
     ['{Notes}', [1, 2, 4, 6, 8, 9, 10]],
+    ['IF({Shipped}, 1, 0)', [1, 3, 7]],
+    ['IF({Priority} = 3, 1, 0)', [2, 7]],
+    ['{Name} = "" & IF({Priority} = 3, {Name}, "___") & ""', [2, 7]],
+    ['IF({Priority} = 3, IF({Shipped}, 0, 1), 0)', [2]],
+    ['SWITCH({Priority}, 3, 1, 5, 1, 0)', [1, 2, 7, 8]],
+    ['SWITCH({Priority}, 3, 1)', [2, 7]],
+    ['{Priority} * 2', [1, 2, 3, 4, 5, 6, 7, 8, 10]],
+    ['{Priority} * 2 = 6', [2, 7]],
+    ['{Priority} + 1 = 6', [1, 8]],
+    ['{Priority} - 1 = 2', [2, 7]],
+    ['{Priority} / 2 = 1.5', [2, 7]],
+    ['{Priority} + 2 * 3 = 9', [2, 7]],
+    ['({Priority} + 2) * 3 = 15', [2, 7]],
+    ['"P" & {Priority} + 1 = "P4"', [2, 7]],
+    ['-{Priority} * -2 = 6', [2, 7]],
+    ['MID({Name}, 1, 3) = "CSV"', [2]],
+    ['LEFT({Name}, 3) = "CSV"', [2]],
+    ['RIGHT({Name}, 4) = "mode"', [3, 5]],
+    ['TRIM(" " & {Name} & " ") = "CSV export"', [2]],
+    ['SUBSTITUTE({Name}, "export", "import") = "CSV import"', [2]],
+    ['CONCATENATE(LEFT({Name}, 3), ":", {Priority}) = "CSV:3"', [2]],
+    ['VALUE(RIGHT({Ticket}, 1)) = 3', [3]],
+    ['{Due} & "" = "2026-07-01T00:00:00.000Z"', [2]],
+    ['MONTH({Due}) = 7', [2]],
+    ['YEAR({Due}) & "-" & MONTH({Due}) & "-" & DAY({Due}) = "2026-7-1"', [2]],
+    ['DATETIME_FORMAT({Due}, "YYYY-MM-DD") = "2026-07-01"', [2]],
+    ['IS_SAME({Due}, "2026-07-01T23:59:59Z", "day")', [2]],
+    ['IS_SAME({Due}, "2026-07-25", "month")', [2]],
+    ['IS_SAME({Due}, "2026-07-01")', [2]],
+    ['if({fldFeatPriority05} = 3, left({Name}, 3) = "CSV", FALSE())', [2]],
+    ['1 / 0', []],
+    ['"x" & (1 / 0)', []],
+    ['IF({Due}, MONTH({Due}) = 7, FALSE())', [2]],
   ]
   for (const [formula, want] of cases) {
     const got = await listAll(features, [['filterByFormula', formula]])
@@ -779,7 +815,7 @@ async function formulas(origin: string): Promise<void> {
   }
   const withView = await listAll(features, [
     ['view', 'Done'],
-    ['filterByFormula', '{Priority} = 5'],
+    ['filterByFormula', 'IF({Priority} * 2 = 10, TRUE(), FALSE())'],
   ])
   eq('a formula narrows a view', withView.ids, [F(1), F(8)])
   eq(
@@ -790,8 +826,20 @@ async function formulas(origin: string): Promise<void> {
   const refused: Array<[string, Json]> = [
     ['{Nope} = 1', formulaUnknown('Nope')],
     ['AND({Nope}, {Zip})', formulaUnknown('Nope, Zip')],
-    ['IF({Shipped}, 1, 0)', FORMULA_INVALID],
-    ['{Priority} * 2', FORMULA_INVALID],
+    ['IF(TRUE(), 1, {Nope} + {Zip})', formulaUnknown('Nope, Zip')],
+    ['SWITCH(1, 1, 2, {Nope})', formulaUnknown('Nope')],
+    ['IF({Shipped})', FORMULA_INVALID],
+    ['IF({Shipped}, 1, 0, 2)', FORMULA_INVALID],
+    ['SWITCH({Priority}, 1)', FORMULA_INVALID],
+    ['{Priority} *', FORMULA_INVALID],
+    ['{Priority} ** 2', FORMULA_INVALID],
+    ['LEFT({Name})', FORMULA_INVALID],
+    ['MID({Name}, 1)', FORMULA_INVALID],
+    ['SUBSTITUTE({Name}, "x")', FORMULA_INVALID],
+    ['YEAR()', FORMULA_INVALID],
+    ['DATETIME_FORMAT({Due})', FORMULA_INVALID],
+    ['IS_SAME({Due})', FORMULA_INVALID],
+    ['UNKNOWN_FUNCTION({Name})', FORMULA_INVALID],
     ['{Status} = ', FORMULA_INVALID],
     ['NOT()', FORMULA_INVALID],
     ["'unterminated", FORMULA_INVALID],
@@ -811,7 +859,7 @@ async function formulas(origin: string): Promise<void> {
     json: {
       view: 'Done',
       fields: ['Name'],
-      filterByFormula: '{Priority} = 5',
+      filterByFormula: 'IF({Priority} + 1 = 6, TRUE(), FALSE())',
       returnFieldsByFieldId: true,
     },
   })
@@ -871,6 +919,173 @@ async function formulas(origin: string): Promise<void> {
     422,
     BODY,
   )
+}
+
+async function formulaFields(): Promise<void> {
+  const nan = { specialValue: 'NaN' }
+  const cases: Array<[string, JsonValue | undefined]> = [
+    ['1 + 2 * 3', 7],
+    ['(1 + 2) * 3', 9],
+    ['20 / 2 / 5', 2],
+    ['10 - 3 - 2', 5],
+    ['2 * -3 + 10 / (3 - 1)', -1],
+    ['--2', 2],
+    ['.5 + 2.5', 3],
+    ['"P" & 2 + 3 * 4 & "!"', 'P14!'],
+    ['BLANK() + 2', 2],
+    ['TRUE() + 2', 3],
+    ['"3" * 2', 6],
+    ['"no number" + 1', nan],
+    ['1 / 0', nan],
+    ['0 / 0', nan],
+    ['"x" & (1 / 0)', nan],
+    ['IF(1 / 0 = 1 / 0, 1, 0)', nan],
+    ['IF(TRUE(), 7, 1 / 0)', 7],
+    ['IF(FALSE(), 1 / 0, "ok")', 'ok'],
+    ['IF(FALSE(), "unused")', undefined],
+    ['IF(ERROR(), 1, 2)', nan],
+    ['IF(ISERROR(1 / 0), "caught", "missed")', 'caught'],
+    ['SWITCH(2, 1, ERROR(), 2, "two", ERROR())', 'two'],
+    ['SWITCH(9, 1, "one", 2, "two", "other")', 'other'],
+    ['SWITCH(9, 1, "one", 2, "two")', undefined],
+    ['SWITCH(1, "1", "same")', 'same'],
+    ['SWITCH(ERROR(), 1, "one", "other")', nan],
+    ['LEFT("A😀BC", 2)', 'A😀'],
+    ['RIGHT("A😀BC", 3)', '😀BC'],
+    ['MID("A😀BC", 2, 2)', '😀B'],
+    ['LEFT("abc", 0)', undefined],
+    ['RIGHT("abc", 0)', undefined],
+    ['MID("abc", 9, 2)', undefined],
+    ['RIGHT("abc", 99)', 'abc'],
+    ['LEFT("abc", -1)', nan],
+    ['MID("abc", 0, 1)', nan],
+    ['LEFT("abc", "bad")', nan],
+    ['LEFT(BLANK(), 3)', undefined],
+    ['LEFT(1234, 2)', '12'],
+    ['TRIM("  a  b  ")', 'a  b'],
+    ['SUBSTITUTE("gold mold", "old", "et")', 'get met'],
+    ['SUBSTITUTE("gold mold", "old", "et", 2)', 'gold met'],
+    ['SUBSTITUTE("gold mold", "old", "et", 9)', 'gold mold'],
+    ['SUBSTITUTE("a.a.a", ".", "$&", 2)', 'a.a$&a'],
+    ['SUBSTITUTE("aaa", "aa", "x")', 'xa'],
+    ['SUBSTITUTE("abc", "", "x")', 'abc'],
+    ['SUBSTITUTE("abc", "a", "x", 0)', nan],
+    ['CONCATENATE("x", 3, TRUE(), BLANK())', 'x31'],
+    ['CONCATENATE("x", ERROR())', nan],
+    ['VALUE("$1,234.50")', 1234.5],
+    ['VALUE(" -12.5 ")', -12.5],
+    ['VALUE("1e2")', 100],
+    ['VALUE("abc")', nan],
+    ['VALUE("")', nan],
+    ['YEAR("2026-01-01T00:30:00+02:00")', 2025],
+    ['MONTH("2026-01-01T00:30:00+02:00")', 12],
+    ['DAY("2026-01-01T00:30:00+02:00")', 31],
+    ['YEAR("2024-02-29")', 2024],
+    ['DAY("2025-02-29")', nan],
+    ['YEAR(BLANK())', nan],
+    ['MONTH("not a date")', nan],
+    ['YEAR(2026)', nan],
+    ['HOUR("2026-07-01T12:34:56Z")', 12],
+    ['MINUTE("2026-07-01T12:34:56Z")', 34],
+    ['SECOND("2026-07-01T12:34:56Z")', 56],
+    ['DATETIME_FORMAT("07/10/19", "YYYY-MM-DD")', '2019-07-10'],
+    ['DATETIME_FORMAT("4 Mar 2017 7:00", "YYYY-MM-DD HH:mm")', '2017-03-04 07:00'],
+    [
+      'DATETIME_FORMAT("2026-07-01T12:34:56.789Z", "dddd, MMMM Do YYYY [at] h:mm:ss.SSS A Z")',
+      'Wednesday, July 1st 2026 at 12:34:56.789 PM +00:00',
+    ],
+    ['DATETIME_FORMAT("2026-07-01", "L [week] W [quarter] Q")', '07/01/2026 week 27 quarter 3'],
+    ['DATETIME_FORMAT("2026-01-01T00:30:00+02:00", "YYYY-MM-DD HH:mm")', '2025-12-31 22:30'],
+    ['DATETIME_FORMAT(BLANK(), "YYYY")', nan],
+    ['DATETIME_FORMAT("bad", "YYYY")', nan],
+    ['IF(IS_SAME("2026-07-01", "2026-07-31", "months"), 1, 0)', 1],
+    ['IF(IS_SAME("2026-07-01", "2025-07-01", "month"), 1, 0)', 0],
+    ['IF(IS_SAME("2026-07-01", "2026-08-01", "quarter"), 1, 0)', 1],
+    ['IF(IS_SAME("2026-07-01", "2026-07-01T23:59:00Z", "days"), 1, 0)', 1],
+    ['IF(IS_SAME("2026-07-01", "2026-07-02", "day"), 1, 0)', 0],
+    ['IF(IS_SAME("2026-07-01T00:00:00.100Z", "2026-07-01T00:00:00.900Z"), 1, 0)', 1],
+    ['IF(IS_SAME("2026-07-01T00:00:00.100Z", "2026-07-01T00:00:01Z"), 1, 0)', 0],
+    ['IF(IS_SAME("2026-01-01T00:30:00+02:00", "2025-12-31", "day"), 1, 0)', 1],
+    ['IS_SAME(BLANK(), "2026-07-01")', nan],
+    ['IS_SAME("2026-07-01", "2026-07-01", "no-unit")', nan],
+  ]
+  const fixture = obj(
+    JSON.parse(await readFile(join(INTEG, 'fixtures/airtable/v1.json'), 'utf8')) as JsonValue,
+  )
+  const base = obj(list(fixture.bases).find((b) => obj(b).id === ROADMAP))
+  const table = obj(list(base.tables).find((t) => obj(t).id === FEATURES))
+  table.fields = [
+    ...list(table.fields),
+    ...cases.map(([formula], i) => ({
+      id: `fldFormula${String(i).padStart(7, '0')}`,
+      name: `Formula ${String(i)}`,
+      type: 'formula',
+      options: { formula },
+    })),
+    {
+      id: 'fldCalculated0001',
+      name: 'Calculated',
+      type: 'formula',
+      options: {
+        formula:
+          'IF({Due}, CONCATENATE(LEFT({Name}, 3), ":", DATETIME_FORMAT({Due}, "YYYY-MM-DD"), ":", {Priority} * 2), BLANK())',
+      },
+    },
+  ]
+  table.views = [
+    {
+      id: 'viwFormula0000001',
+      name: 'Formula view',
+      type: 'grid',
+      filter: 'IF(IS_SAME({Due}, "2026-07-01", "month"), {Priority} * 2 = 6, FALSE())',
+    },
+  ]
+  const root = await mkdtemp(join(tmpdir(), 'airtable-formulas-'))
+  try {
+    await mkdir(join(root, 'airtable'))
+    await writeFile(join(root, 'airtable/formulas.json'), JSON.stringify(fixture))
+    const fake = await start(airtableFake, 0, 'formulas', root)
+    try {
+      const features = `${fake.endpoint}/v0/${ROADMAP}/${FEATURES}`
+      const first = await http(`${features}/${F(1)}`)
+      eq('computed formula fields are readable', first.status, 200)
+      for (const [i, [formula, want]] of cases.entries()) {
+        eq(`formula field ${formula}`, fieldsOf(first.body)[`Formula ${String(i)}`], want)
+      }
+      eq(
+        'a view uses conditional, date and arithmetic expressions',
+        (await listAll(features, [['view', 'Formula view']])).ids,
+        [F(2)],
+      )
+      const filtered = await listAll(features, [
+        ['filterByFormula', '{Calculated} = "CSV:2026-07-01:6"'],
+      ])
+      eq('filters read derived formula fields', filtered.ids, [F(2)])
+      eq(
+        'derived text and date formatting',
+        fieldsOf(filtered.records[0]).Calculated,
+        'CSV:2026-07-01:6',
+      )
+      const changed = await http(`${features}/${F(2)}`, {
+        method: 'PATCH',
+        json: { fields: { Priority: 4 } },
+      })
+      eq(
+        'formula fields recompute on writes',
+        fieldsOf(changed.body).Calculated,
+        'CSV:2026-07-01:8',
+      )
+      eq(
+        'view formulas recompute on writes',
+        (await listAll(features, [['view', 'Formula view']])).ids,
+        [],
+      )
+    } finally {
+      await fake.close()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 }
 
 async function single(origin: string): Promise<void> {
@@ -1657,4 +1872,5 @@ try {
   await fake.close()
 }
 await announce()
+await formulaFields()
 process.stdout.write(`airtable selftest: ${String(checks)} checks passed\n`)

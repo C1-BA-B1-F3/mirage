@@ -12,6 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import moment from 'moment'
+import type { Moment, unitOfTime } from 'moment'
+
 export type FValue = string | number | boolean | null
 
 export class FormulaSyntaxError extends Error {}
@@ -40,20 +43,29 @@ type Node =
   | { kind: 'bin'; op: string; left: Node; right: Node }
   | { kind: 'neg'; arg: Node }
 
-// A deliberately SMALL subset of Airtable's formula language, shared by
+// Airtable's scalar formula subset, shared by
 // filterByFormula, a view's filter and the formula FIELD, so the three cannot
 // disagree about what a formula means. What it accepts:
 //
 //   literals     'text'  "text"  (backslash escapes)  3  2.5  -1
 //   fields       {Field name}  {fldXXXXXXXXXXXXXX}  and a bare single-word
 //                name (`Priority = 3`), which Airtable reads as a field too
-//   operators    =  !=  <  >  <=  >=  &   (comparison binds looser than &)
+//   operators    =  !=  <  >  <=  >=  &  +  -  *  /
+//                precedence: comparison < & < + - < * / < unary -
 //   functions    AND OR NOT TRUE FALSE BLANK RECORD_ID SEARCH FIND LOWER
-//                UPPER LEN   (names are case-insensitive)
+//                UPPER LEN IF SWITCH LEFT RIGHT MID TRIM SUBSTITUTE
+//                CONCATENATE VALUE YEAR MONTH DAY HOUR MINUTE SECOND
+//                DATETIME_FORMAT IS_SAME ERROR ISERROR
+//                (names are case-insensitive)
 //
-// Anything else -- arithmetic, IF, SWITCH, date functions, an unknown
-// function, a syntax error -- is refused as an invalid formula, and a field
+// An unknown function or syntax error is refused as an invalid formula; a field
 // reference that names nothing is refused with the names it could not find.
+// Function semantics: https://support.airtable.com/docs/formula-field-reference.
+// Dates use UTC and Moment's format tokens, as Airtable does. Parsing accepts
+// ISO, RFC 2822 and the US/English dates in the reference, never host-local dates.
+// Runtime errors are NaN (excluded by filters and rendered as specialValue by
+// cells.ts); operators and ordinary calls propagate them. IF and SWITCH only
+// evaluate the selected result, while all branches are validated at compile time.
 // Semantics follow Airtable where the subset reaches: a missing cell is BLANK,
 // which equals '', 0 and FALSE(); SEARCH is case-insensitive and answers
 // blank when it finds nothing, FIND is case-sensitive and answers 0; `=` on
@@ -72,6 +84,25 @@ const FUNCS: Record<string, readonly [number, number]> = {
   LOWER: [1, 1],
   UPPER: [1, 1],
   LEN: [1, 1],
+  IF: [2, 3],
+  SWITCH: [3, Number.POSITIVE_INFINITY],
+  LEFT: [2, 2],
+  RIGHT: [2, 2],
+  MID: [3, 3],
+  TRIM: [1, 1],
+  SUBSTITUTE: [3, 4],
+  CONCATENATE: [1, Number.POSITIVE_INFINITY],
+  VALUE: [1, 1],
+  YEAR: [1, 1],
+  MONTH: [1, 1],
+  DAY: [1, 1],
+  HOUR: [1, 1],
+  MINUTE: [1, 1],
+  SECOND: [1, 1],
+  DATETIME_FORMAT: [2, 2],
+  IS_SAME: [2, 3],
+  ERROR: [0, 0],
+  ISERROR: [1, 1],
 }
 
 const COMPARE = new Set(['=', '!=', '<', '>', '<=', '>='])
@@ -137,7 +168,7 @@ function tokenize(src: string): Tok[] {
       i += 2
       continue
     }
-    if ('=<>&-'.includes(ch)) {
+    if ('=<>&-+*/'.includes(ch)) {
       out.push({ kind: 'op', text: ch })
       i += 1
       continue
@@ -188,10 +219,36 @@ class Parser {
   }
 
   private concat(): Node {
-    let left = this.unary()
+    let left = this.additive()
     for (let tok = this.peek(); tok?.kind === 'op' && tok.text === '&'; tok = this.peek()) {
       this.at += 1
-      left = { kind: 'bin', op: '&', left, right: this.unary() }
+      left = { kind: 'bin', op: '&', left, right: this.additive() }
+    }
+    return left
+  }
+
+  private additive(): Node {
+    let left = this.product()
+    for (
+      let tok = this.peek();
+      tok?.kind === 'op' && (tok.text === '+' || tok.text === '-');
+      tok = this.peek()
+    ) {
+      this.at += 1
+      left = { kind: 'bin', op: tok.text, left, right: this.product() }
+    }
+    return left
+  }
+
+  private product(): Node {
+    let left = this.unary()
+    for (
+      let tok = this.peek();
+      tok?.kind === 'op' && (tok.text === '*' || tok.text === '/');
+      tok = this.peek()
+    ) {
+      this.at += 1
+      left = { kind: 'bin', op: tok.text, left, right: this.unary() }
     }
     return left
   }
@@ -228,7 +285,7 @@ class Parser {
 
   private call(raw: string): Node {
     const name = raw.toUpperCase()
-    const arity = FUNCS[name]
+    const arity = Object.hasOwn(FUNCS, name) ? FUNCS[name] : undefined
     if (arity === undefined) throw new FormulaSyntaxError(`unknown function ${raw}`)
     this.next()
     const args: Node[] = []
@@ -334,7 +391,106 @@ function order(a: FValue, b: FValue): number {
 
 export function truthy(v: FValue): boolean {
   if (v === null || v === false || v === '' || v === 0) return false
-  return !(typeof v === 'number' && Number.isNaN(v))
+  return !isError(v)
+}
+
+function isError(v: FValue): boolean {
+  return typeof v === 'number' && !Number.isFinite(v)
+}
+
+function textSlice(text: FValue, start: FValue, count: FValue, fromRight = false): FValue {
+  const at = Math.trunc(numeric(start) ?? Number.NaN)
+  const n = Math.trunc(numeric(count) ?? Number.NaN)
+  if (!Number.isFinite(at) || !Number.isFinite(n) || at < 1 || n < 0) return Number.NaN
+  const chars = Array.from(toText(text))
+  const begin = fromRight ? Math.max(0, chars.length - n) : at - 1
+  return chars.slice(begin, begin + n).join('')
+}
+
+function substitute(args: FValue[]): FValue {
+  const [text = null, old = null, replacement = null, which = null] = args
+  const source = toText(text)
+  const needle = toText(old)
+  const value = toText(replacement)
+  if (needle === '') return source
+  if (args.length === 3) return source.split(needle).join(value)
+  const occurrence = Math.trunc(numeric(which) ?? Number.NaN)
+  if (!Number.isFinite(occurrence) || occurrence < 1) return Number.NaN
+  let from = 0
+  for (let n = 1; ; n += 1) {
+    const at = source.indexOf(needle, from)
+    if (at === -1) return source
+    if (n === occurrence) return source.slice(0, at) + value + source.slice(at + needle.length)
+    from = at + needle.length
+  }
+}
+
+function valueOf(text: FValue): number {
+  const value = toText(text)
+    .trim()
+    .replace(/[$£€¥,]/g, '')
+  return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value) ? Number(value) : Number.NaN
+}
+
+const DATE_FORMATS = [
+  moment.ISO_8601,
+  moment.RFC_2822,
+  ...[
+    'M/D/YYYY',
+    'MM/DD/YYYY',
+    'M/DD/YYYY',
+    'MM/D/YYYY',
+    'M/D/YY',
+    'MM/DD/YY',
+    'M/DD/YY',
+    'MM/D/YY',
+    'D MMM YYYY',
+    'D MMMM YYYY',
+    'MMM D, YYYY',
+    'MMMM D, YYYY',
+  ].flatMap((day) => [
+    day,
+    `${day} H:mm`,
+    `${day} H:mm:ss`,
+    `${day} HH:mm`,
+    `${day} HH:mm:ss`,
+    `${day} h:mm A`,
+    `${day} h:mm:ss A`,
+  ]),
+]
+
+function dateOf(value: FValue): Moment {
+  return typeof value === 'string'
+    ? moment.utc(value.trim(), DATE_FORMATS, 'en', true)
+    : moment.invalid()
+}
+
+const DATE_UNITS: ReadonlySet<string> = new Set([
+  'year',
+  'quarter',
+  'month',
+  'week',
+  'isoWeek',
+  'day',
+  'hour',
+  'minute',
+  'second',
+  'millisecond',
+])
+
+function isDateUnit(unit: string | undefined): unit is Extract<unitOfTime.StartOf, string> {
+  return unit !== undefined && DATE_UNITS.has(unit)
+}
+
+function sameDate(a: FValue, b: FValue, rawUnit: FValue): FValue {
+  const unit =
+    rawUnit === null ? 'second' : moment.normalizeUnits(toText(rawUnit) as unitOfTime.All)
+  const left = dateOf(a)
+  const right = dateOf(b)
+  if (!left.isValid() || !right.isValid() || !isDateUnit(unit)) {
+    return Number.NaN
+  }
+  return left.isSame(right, unit)
 }
 
 function position(needle: FValue, hay: FValue, start: FValue, fold: boolean): number {
@@ -359,7 +515,18 @@ function run(node: Node, env: Env, c: Compiled): FValue {
     case 'bin': {
       const l = run(node.left, env, c)
       const r = run(node.right, env, c)
+      if (isError(l) || isError(r)) return Number.NaN
       switch (node.op) {
+        case '+':
+          return (numeric(l) ?? Number.NaN) + (numeric(r) ?? Number.NaN)
+        case '-':
+          return (numeric(l) ?? Number.NaN) - (numeric(r) ?? Number.NaN)
+        case '*':
+          return (numeric(l) ?? Number.NaN) * (numeric(r) ?? Number.NaN)
+        case '/':
+          return numeric(r) === 0
+            ? Number.NaN
+            : (numeric(l) ?? Number.NaN) / (numeric(r) ?? Number.NaN)
         case '&':
           return toText(l) + toText(r)
         case '=':
@@ -372,20 +539,40 @@ function run(node: Node, env: Env, c: Compiled): FValue {
           return order(l, r) > 0
         case '<=':
           return order(l, r) <= 0
-        default:
+        case '>=':
           return order(l, r) >= 0
+        default:
+          throw new Error(`unimplemented formula operator ${node.op}`)
       }
     }
     case 'call': {
-      const arg = (i: number): FValue => {
+      const lazyArg = (i: number): FValue => {
         const a = node.args[i]
         return a === undefined ? null : run(a, env, c)
       }
+      if (node.name === 'IF') {
+        const condition = lazyArg(0)
+        return isError(condition) ? Number.NaN : lazyArg(truthy(condition) ? 1 : 2)
+      }
+      if (node.name === 'SWITCH') {
+        const value = lazyArg(0)
+        if (isError(value)) return Number.NaN
+        for (let i = 1; i + 1 < node.args.length; i += 2) {
+          const pattern = lazyArg(i)
+          if (isError(pattern)) return Number.NaN
+          if (equal(value, pattern)) return lazyArg(i + 1)
+        }
+        return node.args.length % 2 === 0 ? lazyArg(node.args.length - 1) : null
+      }
+      const args = node.args.map((a) => run(a, env, c))
+      if (node.name === 'ISERROR') return isError(args[0] ?? null)
+      if (args.some(isError)) return Number.NaN
+      const arg = (i: number): FValue => args[i] ?? null
       switch (node.name) {
         case 'AND':
-          return node.args.every((a) => truthy(run(a, env, c)))
+          return args.every(truthy)
         case 'OR':
-          return node.args.some((a) => truthy(run(a, env, c)))
+          return args.some(truthy)
         case 'NOT':
           return !truthy(arg(0))
         case 'TRUE':
@@ -394,6 +581,8 @@ function run(node: Node, env: Env, c: Compiled): FValue {
           return false
         case 'BLANK':
           return null
+        case 'ERROR':
+          return Number.NaN
         case 'RECORD_ID':
           return env.recordId
         case 'SEARCH': {
@@ -406,8 +595,42 @@ function run(node: Node, env: Env, c: Compiled): FValue {
           return toText(arg(0)).toLowerCase()
         case 'UPPER':
           return toText(arg(0)).toUpperCase()
-        default:
+        case 'LEN':
           return Array.from(toText(arg(0))).length
+        case 'LEFT':
+          return textSlice(arg(0), 1, arg(1))
+        case 'RIGHT':
+          return textSlice(arg(0), 1, arg(1), true)
+        case 'MID':
+          return textSlice(arg(0), arg(1), arg(2))
+        case 'TRIM':
+          return toText(arg(0)).trim()
+        case 'SUBSTITUTE':
+          return substitute(args)
+        case 'CONCATENATE':
+          return args.map(toText).join('')
+        case 'VALUE':
+          return valueOf(arg(0))
+        case 'YEAR':
+          return dateOf(arg(0)).year()
+        case 'MONTH':
+          return dateOf(arg(0)).month() + 1
+        case 'DAY':
+          return dateOf(arg(0)).date()
+        case 'HOUR':
+          return dateOf(arg(0)).hour()
+        case 'MINUTE':
+          return dateOf(arg(0)).minute()
+        case 'SECOND':
+          return dateOf(arg(0)).second()
+        case 'DATETIME_FORMAT': {
+          const date = dateOf(arg(0))
+          return date.isValid() ? date.format(toText(arg(1))) : Number.NaN
+        }
+        case 'IS_SAME':
+          return sameDate(arg(0), arg(1), arg(2))
+        default:
+          throw new Error(`unimplemented formula function ${node.name}`)
       }
     }
     default:
@@ -416,5 +639,6 @@ function run(node: Node, env: Env, c: Compiled): FValue {
 }
 
 export function evaluate(c: Compiled, env: Env): FValue {
-  return run(c.node, env, c)
+  const value = run(c.node, env, c)
+  return isError(value) ? Number.NaN : value
 }

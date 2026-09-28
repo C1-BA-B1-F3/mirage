@@ -545,6 +545,10 @@
       "hf": "Hugging Face has no empty directory markers, so the mkdir-only fixture does not persist. Nonempty -a listings remain covered by ls_a.",
       "hf-prefix": "Hugging Face has no empty directory markers, so the mkdir-only fixture does not persist. Nonempty -a listings remain covered by ls_a.",
       "sharepoint-prefix": "This target mounts a file prefix that cannot create child directories; it is also excluded from the mkdir fixture cases. Nonempty -a listings remain covered by ls_a."
+    },
+    "integ/unix/slash/slash.json :: slash_mkdir_revisits_destination": {
+      "hf": "HF cannot retain empty directories. This case asserts the directories created while revisiting a dotted operand; slash_mkdir_collides still covers its path refusals on HF.",
+      "hf-prefix": "HF cannot retain empty directories. This case asserts the directories created while revisiting a dotted operand; slash_mkdir_collides still covers its path refusals on HF."
     }
   }
 }

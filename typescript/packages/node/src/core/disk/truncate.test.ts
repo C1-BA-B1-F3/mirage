@@ -54,7 +54,6 @@ describe('core/disk/truncate', () => {
   })
 })
 
-
 it('no-create leaves a missing file absent', async () => {
   await truncate(accessor, spec('/missing'), 3, true)
   await expect(readFile(join(root, 'missing'))).rejects.toMatchObject({ code: 'ENOENT' })

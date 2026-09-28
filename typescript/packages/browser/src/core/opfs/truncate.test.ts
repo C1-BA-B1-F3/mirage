@@ -41,7 +41,6 @@ describe('opfs/truncate', () => {
   })
 })
 
-
 it('no-create leaves a missing file absent', async () => {
   const accessor = makeMockAccessor()
   await truncate(accessor, spec('/missing'), 3, true)

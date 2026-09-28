@@ -802,8 +802,11 @@ class WriteFn(Protocol[A_contra]):
 
 class TruncateFn(Protocol[A_contra]):
 
-    def __call__(self, accessor: A_contra, path: PathSpec,
-                 length: int) -> Awaitable[None]:
+    def __call__(self,
+                 accessor: A_contra,
+                 path: PathSpec,
+                 length: int,
+                 no_create: bool = False) -> Awaitable[None]:
         ...
 
 

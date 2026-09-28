@@ -121,8 +121,7 @@ async def truncate(
         paths (list[PathSpec]): the file operands.
         flags (TruncateFlags): the parsed flags.
         stat (Callable): stats a path; raises when missing.
-        truncate_fn (Callable): sets a path's length in bytes, making
-            the file when it is absent.
+        truncate_fn (Callable): sets the length and enforces no_create.
     """
     if not paths:
         raise UsageError("truncate: missing file operand" + _TRY_HELP, 1)
@@ -159,8 +158,7 @@ async def _truncate_one(
         path (PathSpec): the operand.
         flags (TruncateFlags): the parsed flags.
         stat (Callable): stats a path; raises when missing.
-        truncate_fn (Callable): sets a path's length in bytes, creating
-            the file when it is missing.
+        truncate_fn (Callable): sets the length and enforces no_create.
     """
     try:
         current = (await stat(path)).size or 0

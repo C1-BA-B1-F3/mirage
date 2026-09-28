@@ -146,9 +146,11 @@ class RedisStore:
                             length: int,
                             modified: str,
                             no_create: bool = False) -> bool:
-        result = await self._client.eval(TRUNCATE_SCRIPT, 2, self._fk(path),
-                                         self._mk(path), length, modified,
-                                         "1" if no_create else "0")
+        result = await cast(
+            "Awaitable[int]",
+            self._client.eval(TRUNCATE_SCRIPT, 2, self._fk(path),
+                              self._mk(path), length, modified,
+                              "1" if no_create else "0"))
         return bool(result)
 
     async def del_file(self, path: str) -> None:

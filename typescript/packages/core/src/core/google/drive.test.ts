@@ -174,5 +174,7 @@ describe('the Drive field masks carry both content tokens', () => {
     expect(fields).toContain('md5Checksum')
     expect(fields).toContain('headRevisionId')
     expect(fields).not.toContain('files(')
+    expect(fields).toContain('owners')
+    expect(fields).toContain('trashed')
   })
 })

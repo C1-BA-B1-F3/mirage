@@ -132,6 +132,7 @@ export interface Open {
 
 export interface OpenConsistency extends Open {
   mutate: (path: string, content: Uint8Array) => Promise<void>
+  mutateLine: (command: string) => Promise<void>
 }
 
 export interface OpenOptions {
@@ -1799,22 +1800,26 @@ async function openGws(target: Target, options?: OpenOptions): Promise<Open> {
   if (mail !== undefined) await seedGwsMail(base, mail)
   if (calendar !== undefined) await seedGwsCalendar(base, calendar.events)
   const opened = openWorkspaces(build, options)
-  if (target.clis?.includes('gws') === true) {
-    // A target may scope the gws install to one mount's folder, the
-    // configuration where the CLI and the mount are the same folder.
-    const scope = target.cli_scope
-    ;(opened.ws as unknown as Workspace).registerCli('gws', GWS, {
+  // A target may scope the gws install to one mount's folder, the
+  // configuration where the CLI and the mount are the same folder. The shadow
+  // gets it too, so a scenario can edit a file the way another client would.
+  const scope = target.cli_scope
+  const install = (ws: ExecWorkspace): ExecWorkspace => {
+    if (target.clis?.includes('gws') !== true) return ws
+    ;(ws as unknown as Workspace).registerCli('gws', GWS, {
       client_id: 'integ',
       client_secret: 'integ',
       refresh_token: GWS_TOKEN,
       api_base: base,
       ...(scope !== undefined ? { folder_id: folderIds[scope] } : {}),
     })
+    return ws
   }
+  install(opened.ws)
   const cleanup = async (): Promise<void> => {
     await opened.closeAll()
   }
-  return { ws: opened.ws, shadow: opened.shadow, cleanup }
+  return { ws: opened.ws, shadow: () => install(opened.shadow()), cleanup }
 }
 
 // The fake Slack Web API server is external and shared across both hosts;
@@ -2257,14 +2262,23 @@ export async function openConsistency(
     return null
   }
   const shadow = opened.shadow()
-  const tee = async (path: string, content: Uint8Array): Promise<void> => {
-    const result = await shadow.shell(`tee ${path} > /dev/null`, { stdin: content })
+  const onShadow = async (command: string, stdin?: Uint8Array): Promise<void> => {
+    const result = await shadow.shell(command, stdin === undefined ? {} : { stdin })
     if (result.exitCode !== 0) {
-      throw new Error(new TextDecoder().decode(result.stderr))
+      throw new Error(`${command}: ${new TextDecoder().decode(result.stderr)}`)
     }
   }
+  const tee = (path: string, content: Uint8Array): Promise<void> =>
+    onShadow(`tee ${path} > /dev/null`, content)
   // A mount that cannot take a write (a Hub repo, where a change is a commit)
   // brings its own out-of-band change; every other one writes through the
-  // shadow's shell.
-  return { ws: opened.ws, mutate: opened.mutate ?? tee, cleanup: opened.cleanup }
+  // shadow's shell. A file an account CLI edits by id (a Google Doc through
+  // gws) has no bytes to write, so its scenario names the line the shadow
+  // runs: the same line on the read side would drop that side's own caches.
+  return {
+    ws: opened.ws,
+    mutate: opened.mutate ?? tee,
+    mutateLine: (command) => onShadow(command),
+    cleanup: opened.cleanup,
+  }
 }

@@ -166,9 +166,375 @@
       "command": "timeout xx sleep 1 2>&1; echo code=$?",
       "expect": {
         "exit": 0,
-        "stdout": "timeout: invalid time interval 'xx'\ncode=125\n",
+        "stdout": "timeout: invalid time interval 'xx'\nTry 'timeout --help' for more information.\ncode=125\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "timeout_kill_after",
+      "seq": 1300089,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "x=$(timeout -v -s CONT -k 0.1 0.1 sleep 1 2>&1); echo \"[$x] code=$?\"; timeout -v -f -s STOP -k 0.2 0.1 sleep 1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "[timeout: sending signal CONT to command 'sleep'\ntimeout: sending signal KILL to command 'sleep'] code=137\ncode=137\n",
+        "stderr": "timeout: sending signal STOP to command 'sleep'\ntimeout: sending signal KILL to command 'sleep'\n"
+      },
+      "flags": [
+        "v",
+        "s",
+        "k",
+        "f"
+      ]
+    },
+    {
+      "id": "timeout_kill_after_refusals",
+      "seq": 1300090,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout -k x 1 true; echo code=$?; timeout --kill-after=-1 1 true; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=125\ncode=125\n",
+        "stderr": "timeout: invalid time interval 'x'\nTry 'timeout --help' for more information.\ntimeout: invalid time interval '-1'\nTry 'timeout --help' for more information.\n"
+      },
+      "flags": [
+        "k",
+        "kill-after"
+      ]
+    },
+    {
+      "id": "timeout_verbose",
+      "seq": 1300091,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout -v 0.1 sleep 1; echo code=$?; timeout --verb 0.1 sleep 1; echo code=$?; timeout -v 1 true; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=124\ncode=124\ncode=0\n",
+        "stderr": "timeout: sending signal TERM to command 'sleep'\ntimeout: sending signal TERM to command 'sleep'\n"
+      },
+      "flags": [
+        "v",
+        "verb"
+      ]
+    },
+    {
+      "id": "timeout_preserve_status",
+      "seq": 1300092,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout -p 1 sh -c 'exit 5'; echo code=$?; timeout --preserve 0.1 sleep 1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=5\ncode=143\n",
+        "stderr": ""
+      },
+      "flags": [
+        "p",
+        "preserve"
+      ]
+    },
+    {
+      "id": "timeout_foreground",
+      "seq": 1300093,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout -f 1 echo hi; timeout --foreground 0.1 sleep 1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\ncode=124\n",
+        "stderr": ""
+      },
+      "flags": [
+        "f",
+        "foreground"
+      ]
+    },
+    {
+      "id": "timeout_missing_operand",
+      "seq": 1300094,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout; echo code=$?; timeout 1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=125\ncode=125\n",
+        "stderr": "Try 'timeout --help' for more information.\nTry 'timeout --help' for more information.\n"
+      }
+    },
+    {
+      "id": "timeout_duration_syntax",
+      "seq": 1300095,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout 1e-1 sleep 1; echo code=$?; timeout .1s sleep 1; echo code=$?; timeout 0x1p-3 sleep 1; echo code=$?; timeout inf true; echo code=$?; timeout 0.1x true; echo code=$?; timeout 1,5 true; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=124\ncode=124\ncode=124\ncode=0\ncode=125\ncode=125\n",
+        "stderr": "timeout: invalid time interval '0.1x'\nTry 'timeout --help' for more information.\ntimeout: invalid time interval '1,5'\nTry 'timeout --help' for more information.\n"
+      }
+    },
+    {
+      "id": "timeout_command_not_found",
+      "seq": 1300096,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout 1 nosuchcmd; echo code=$?; timeout 1 cd /; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=127\ncode=127\n",
+        "stderr": "timeout: failed to run command 'nosuchcmd': No such file or directory\ntimeout: failed to run command 'cd': No such file or directory\n"
+      }
+    },
+    {
+      "id": "timeout_reads_stdin",
+      "seq": 1300097,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo hi | timeout 1 cat; echo hi | timeout 1 wc -c",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\n3\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "timeout_help_version",
+      "seq": 1300099,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout --hel | head -3; timeout --vers | cut -d' ' -f1,2",
+      "expect": {
+        "exit": 0,
+        "stdout": "timeout: Run a command with a time limit.\n\nUsage: timeout [OPTION] DURATION COMMAND [ARG]...\ntimeout (Mirage)\n",
+        "stderr": ""
+      },
+      "flags": [
+        "hel",
+        "vers"
+      ]
     }
   ]
 }

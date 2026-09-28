@@ -18,7 +18,7 @@ import type * as DriveModule from '../google/drive.ts'
 
 vi.mock('../google/drive.ts', async () => {
   const actual = await vi.importActual<typeof DriveModule>('../google/drive.ts')
-  return { ...actual, listAllFiles: vi.fn() }
+  return { ...actual, listAllFiles: vi.fn(), getFile: vi.fn() }
 })
 
 import { GDocsAccessor } from '../../accessor/gdocs.ts'
@@ -171,6 +171,14 @@ describe('gdocs readdir', () => {
         },
       ],
       complete: true,
+    })
+
+    vi.mocked(drive.getFile).mockResolvedValue({
+      id: 'may1',
+      name: 'MayDoc',
+      mimeType: 'application/vnd.google-apps.document',
+      modifiedTime: '2026-05-15T00:00:00.000Z',
+      owners: [{ me: false }],
     })
 
     const accessor = makeAccessor()

@@ -78,11 +78,13 @@ async def test_stat_deck_from_cache(accessor, index):
     assert result.content == ContentType.JSON
     assert result.extra["doc_id"] == "d1"
     assert result.size == 2048
+    assert result.fingerprint == "2026-04-01T00:00:00.000Z"
 
 
 @pytest.mark.asyncio
-async def test_stat_cache_miss_falls_back_via_readdir(accessor, index):
+async def test_stat_cache_miss_fetches_metadata_by_id(accessor, index):
     files = [{
+        "mimeType": "application/vnd.google-apps.presentation",
         "id": "d1",
         "name": "My Deck",
         "modifiedTime": "2026-04-01T00:00:00.000Z",
@@ -93,9 +95,9 @@ async def test_stat_cache_miss_falls_back_via_readdir(accessor, index):
     }]
     target = "/gslides/owned/2026-04-01_My_Deck__d1.gslide.json"
     with patch(
-            "mirage.core.gslides.readdir.list_all_files",
+            "mirage.core.google.entry.get_file",
             new_callable=AsyncMock,
-            return_value=(files, True),
+            return_value=files[0],
     ) as mock_list:
         result = await stat(
             accessor,
@@ -110,6 +112,7 @@ async def test_stat_cache_miss_falls_back_via_readdir(accessor, index):
 @pytest.mark.asyncio
 async def test_stat_not_found_after_fallback(accessor, index):
     files = [{
+        "mimeType": "application/vnd.google-apps.presentation",
         "id": "d1",
         "name": "Other",
         "modifiedTime": "2026-04-01T00:00:00.000Z",
@@ -118,9 +121,9 @@ async def test_stat_not_found_after_fallback(accessor, index):
         }],
     }]
     with patch(
-            "mirage.core.gslides.readdir.list_all_files",
+            "mirage.core.google.entry.get_file",
             new_callable=AsyncMock,
-            return_value=(files, True),
+            return_value=files[0],
     ):
         with pytest.raises(FileNotFoundError):
             await stat(

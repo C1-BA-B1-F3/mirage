@@ -266,7 +266,7 @@ export async function add(inv: CLIInvocation): Promise<CommandFnResult> {
     checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
     const parsed = parseFlags(fl)
     if (texts.length === 0 && !parsed.every && !parsed.update) throw new NothingSpecifiedError()
-    const repo: Repo = await opened(fl, doors)
+    const repo: Repo = await opened(fl, doors, true)
     const state = await readIndex(repo, dispatch)
     const tracked = new Set(state.entries.keys())
     const found = await scan(
@@ -277,7 +277,7 @@ export async function add(inv: CLIInvocation): Promise<CommandFnResult> {
       UNTRACKED_ALL,
       doors.ns?.links ?? null,
     )
-    const ignores = await loadIgnores(dispatch, repo.location.gitdir, repo.location.worktree)
+    const ignores = await loadIgnores(dispatch, repo.location.commondir, repo.location.worktree)
     const present = new Set(found.files.keys())
     let stage: Set<string>
     let remove: Set<string>

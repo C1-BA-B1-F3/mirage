@@ -244,7 +244,8 @@ async def scan(dispatch: DispatchFn,
             walk lstats as git does. None outside a workspace, where
             there is no namespace to hold a link.
     """
-    ignores = await load_ignores(dispatch, location.gitdir, location.worktree)
+    ignores = await load_ignores(dispatch, location.commondir,
+                                 location.worktree)
     scanner = Scanner(dispatch, stat_path, location.worktree, tracked, mode,
                       links)
     await scanner.walk("", False, ignores)

@@ -24,7 +24,7 @@ from mirage.shell.call_stack import CallStack
 from mirage.shell.errors import ArithError, ExitSignal
 from mirage.shell.escapes import (decode_ansi_c, unescape_dquoted,
                                   unescape_unquoted)
-from mirage.shell.helpers import byte_offset, get_text
+from mirage.shell.helpers import byte_offset, get_text, quoted_parts
 from mirage.shell.parameter import scan_parameter
 from mirage.shell.parse import parse
 from mirage.shell.types import NodeType as NT
@@ -453,23 +453,10 @@ async def expand_node_marked(
         return "".join(parts)
 
     if ntype == NT.STRING:
-        # The newline bytes of a multi-line string belong to no child
-        # token, so each row step re-emits them; the quote tokens
-        # anchor the count, which keeps leading, trailing and blank
-        # lines alive ("a\n\nb" is five bytes in bash).
         parts = []
-        prev_end_row = None
-        for child in ts_node.children:
-            if prev_end_row is not None:
-                parts.append("\n" * (child.start_point[0] - prev_end_row))
-            prev_end_row = child.end_point[0]
-            if child.type == NT.DQUOTE:
-                continue
-            parts.append(await expand_node(child,
-                                           session,
-                                           execute_fn,
-                                           call_stack,
-                                           view=view))
+        for part in quoted_parts(ts_node):
+            parts.append(part if isinstance(part, str) else await expand_node(
+                part, session, execute_fn, call_stack, view=view))
         # Everything the quotes enclose is literal, the text and any
         # value expanded inside it alike: "$p"?.txt globs on the `?`
         # while $p?.txt globs on whatever `p` holds too.

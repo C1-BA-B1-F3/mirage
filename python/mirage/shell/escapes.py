@@ -82,6 +82,23 @@ def _u32_utf8(value: int) -> bytes:
     return b""
 
 
+def code_point_text(value: int) -> str:
+    """The text a ``\\u`` or ``\\U`` escape writes for its value.
+
+    bash writes every value through u32toutf8 under a UTF-8 locale: a
+    valid scalar is its character, while surrogate halves and values
+    past Unicode become raw UTF-8-shaped bytes, and 0x80000000 and past
+    produce nothing. Pinned: ``\\uD800`` is ed a0 80, ``\\U00110000`` is
+    f4 90 80 80, ``\\UFFFFFFFF`` is empty.
+
+    Args:
+        value (int): the value the escape's hex digits name.
+    """
+    if value <= 0x7F or (value <= 0x10FFFF and not 0xD800 <= value <= 0xDFFF):
+        return chr(value)
+    return "".join(byte_char(b) for b in _u32_utf8(value))
+
+
 def decode_ansi_c(content: str) -> str:
     """Decode the body of a $'...' word to the text it names.
 
@@ -144,17 +161,7 @@ def decode_ansi_c(content: str) -> str:
             value = int(digits, 16)
             if value == 0:
                 return "".join(out)
-            # bash writes every value through u32toutf8: a valid scalar
-            # is its character, while surrogate halves and values past
-            # Unicode become raw UTF-8-shaped bytes, and 0x80000000 and
-            # past produce nothing (without truncating). Pinned:
-            # $'\uD800' is ed a0 80, $'\U00110000' is f4 90 80 80,
-            # $'\UFFFFFFFF' is empty.
-            if value <= 0x7F or (value <= 0x10FFFF
-                                 and not 0xD800 <= value <= 0xDFFF):
-                out.append(chr(value))
-            else:
-                out.append("".join(byte_char(b) for b in _u32_utf8(value)))
+            out.append(code_point_text(value))
             i = end
             continue
         if marker == "c":

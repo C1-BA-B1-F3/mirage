@@ -271,6 +271,23 @@ export function program(
 }
 
 /**
+ * Whether a builtin that execs its operand (xargs, timeout) finds it.
+ *
+ * GNU execs the name, so a shell word with no file on PATH (cd, export) is
+ * missing there, as is a name nothing provides. A function runs too, where it
+ * is what the name runs (a shell word shadows one): mirage runs the line in
+ * the shell, which is how these reach it. A path is left to the run, which
+ * reports on it.
+ */
+export function execs(name: string, session: SessionState, registry: MountRegistry): boolean {
+  return (
+    name.includes('/') ||
+    program(name, session, registry) !== null ||
+    lookup(name, session, registry) === Consumer.FUNCTION
+  )
+}
+
+/**
  * What a program's `/usr/bin` file says about it, null when the name is no
  * program.
  *

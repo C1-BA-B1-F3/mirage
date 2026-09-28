@@ -149,6 +149,10 @@ export function compileIn(table: TableRow, src: string): ReturnType<typeof compi
   return compile(src, (ref) => fieldByRef(table, ref)?.id)
 }
 
+// A field as a formula reads it. A formula field in error ({error} or
+// {specialValue}, the only objects formulaValue renders) stays an error, so
+// ISERROR() catches it and operators carry it on, as Airtable does for a
+// referenced #ERROR! (https://support.airtable.com/docs/catching-errors-with-logical-functions).
 export function formulaInput(
   world: World,
   table: TableRow,
@@ -158,7 +162,9 @@ export function formulaInput(
 ): FValue {
   const field = fieldById(table, fieldId)
   if (field === undefined) return null
-  return scalar(world, field, cellValue(world, table, rec, field, depth), depth)
+  const v = cellValue(world, table, rec, field, depth)
+  if (field.type === 'formula' && isObject(v)) return Number.NaN
+  return scalar(world, field, v, depth)
 }
 
 function formulaValue(

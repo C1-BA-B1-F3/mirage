@@ -51,6 +51,7 @@ import {
 } from '../session/state.ts'
 import { homeDir } from '../session/shell_dirs.ts'
 import { decodeAnsiC } from '../../shell/escapes.ts'
+import { sourceParts } from '../../shell/helpers.ts'
 import { fnmatch } from '../../utils/fnmatch.ts'
 import { escapeGlob } from '../../utils/glob_walk.ts'
 
@@ -238,7 +239,7 @@ interface BraceParse {
   lengthOp: boolean
   indirectOp: boolean
   op: string | null
-  groups: TSNodeLike[][]
+  groups: (string | TSNodeLike)[][]
   subscriptNodes: TSNodeLike[]
 }
 
@@ -255,10 +256,14 @@ function parseBraces(node: TSNodeLike): BraceParse {
   let lengthOp = false
   let indirectOp = false
   let op: string | null = null
-  const groups: TSNodeLike[][] = []
+  const groups: (string | TSNodeLike)[][] = []
   let seenVar = false
 
-  for (const c of node.children) {
+  for (const c of sourceParts(node)) {
+    if (typeof c === 'string') {
+      if (op !== null) groups[groups.length - 1]?.push(c)
+      continue
+    }
     if (c.type === '${' || c.type === '}') continue
     if (c.type === '#' && !seenVar) {
       lengthOp = true
@@ -417,7 +422,7 @@ async function expandOperand(
   callStack: CallStack | null,
 ): Promise<string> {
   if (node.type === NT.CONCATENATION) {
-    return expandGroup(node.children, expandChild, patternMode, session, callStack)
+    return expandGroup([...sourceParts(node)], expandChild, patternMode, session, callStack)
   }
   if (patternMode && QUOTED_ARG_TYPES.has(node.type)) {
     // Quoted pattern text matches literally, the same rule case
@@ -431,24 +436,25 @@ async function expandOperand(
   return expandChild(node)
 }
 
-// ${x:?custom msg} carries its message as sibling nodes whose gap (the
-// space) exists only in the source bytes; stitch gaps back from node
-// offsets so multi-word operands round-trip.
+// Expand one operand word, the source text between its nodes included.
+// `${x:- $y}` and `${x:?custom msg}` keep blanks that belong to no node, as
+// `sourceParts` yields them. That text is only ever the scanner's extras:
+// blanks, a line continuation, which vanishes, and an escaped blank, which
+// is the blank as in an unquoted word.
 async function expandGroup(
-  nodes: TSNodeLike[],
+  parts: (string | TSNodeLike)[],
   expandChild: ExpandChild,
   patternMode: boolean,
   session: SessionState,
   callStack: CallStack | null,
 ): Promise<string> {
   const pieces: string[] = []
-  let prevEnd: number | null = null
-  for (const c of nodes) {
-    if (prevEnd !== null && c.startIndex !== undefined && c.startIndex > prevEnd) {
-      pieces.push(' '.repeat(c.startIndex - prevEnd))
-    }
-    pieces.push(await expandOperand(c, expandChild, patternMode, session, callStack))
-    prevEnd = c.endIndex ?? null
+  for (const part of parts) {
+    pieces.push(
+      typeof part === 'string'
+        ? part.replaceAll('\\\n', '').replaceAll('\\', '')
+        : await expandOperand(part, expandChild, patternMode, session, callStack),
+    )
   }
   return pieces.join('')
 }

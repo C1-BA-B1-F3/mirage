@@ -16,13 +16,28 @@ import { compareCodePoints } from '../../utils/sort.ts'
 import { quoteText } from '../quote.ts'
 import { SortKeyError } from './errors.ts'
 
-const HUMAN_SUFFIXES: Record<string, number> = {
-  K: 1e3,
-  M: 1e6,
-  G: 1e9,
-  T: 1e12,
-  P: 1e15,
+// sort.c's `unit_order`: the suffixes -h ranks, lowercase only for k.
+const UNIT_ORDERS: Record<string, number> = {
+  K: 1,
+  k: 1,
+  M: 2,
+  G: 3,
+  T: 4,
+  P: 5,
+  E: 6,
+  Z: 7,
+  Y: 8,
+  R: 9,
+  Q: 10,
 }
+
+// sort.c's `blanks`: isblank() in the C locale plus the newline a -z
+// record can hold. They separate fields, and -b, -n, -h and -M skip them.
+const FIELD_BLANKS = ' \t\n'
+// strnumcmp's number in the C locale: no `+`, exponent or thousands
+// separator. find_unit_order reads the byte after the digits and points.
+const NUMBER_RE = /^[ \t\n]*(-?)([0-9]*)(?:\.([0-9]*))?/
+const UNIT_RE = /^[ \t\n]*(-?)([0-9.]*)(.?)/
 
 const MONTHS: Record<string, number> = {
   jan: 1,
@@ -78,7 +93,14 @@ export interface SortConfig {
   stable: boolean
 }
 
-type SortKey = string | number | (string | number)[]
+/** A decimal with no leading or trailing zeroes; zero is never negative. */
+interface NumericKey {
+  readonly negative: boolean
+  readonly integer: string
+  readonly fraction: string
+}
+
+type SortKey = NumericKey | string | number | (NumericKey | string | number)[]
 
 function isAsciiDigit(char: string): boolean {
   return char >= '0' && char <= '9'
@@ -305,9 +327,9 @@ export function computeFields(line: string, fieldSep: string | null): [number, n
   let i = 0
   while (i < n) {
     const leadStart = i
-    while (i < n && (line[i] === ' ' || line[i] === '\t')) i += 1
+    while (i < n && FIELD_BLANKS.includes(line.charAt(i))) i += 1
     const contentStart = i
-    while (i < n && line[i] !== ' ' && line[i] !== '\t') i += 1
+    while (i < n && !FIELD_BLANKS.includes(line.charAt(i))) i += 1
     fields.push([leadStart, contentStart, i])
   }
   return fields
@@ -339,19 +361,6 @@ export function extract(line: string, fields: [number, number, number][], key: K
   return line.slice(start, Math.max(end, start))
 }
 
-function parseHuman(s: string): number {
-  const trimmed = s.trim()
-  if (trimmed === '') return 0
-  const suffix = trimmed[trimmed.length - 1]?.toUpperCase() ?? ''
-  if (suffix in HUMAN_SUFFIXES) {
-    const num = Number.parseFloat(trimmed.slice(0, -1))
-    if (Number.isNaN(num)) return 0
-    return num * (HUMAN_SUFFIXES[suffix] ?? 1)
-  }
-  const num = Number.parseFloat(trimmed)
-  return Number.isNaN(num) ? 0 : num
-}
-
 function versionKey(s: string): (string | number)[] {
   const parts: (string | number)[] = []
   let m: RegExpExecArray | null
@@ -363,16 +372,26 @@ function versionKey(s: string): (string | number)[] {
   return parts
 }
 
-function leadingNumber(field: string): number {
-  const trimmed = field.replace(/^\s+/, '')
-  let numEnd = 0
-  for (const ch of trimmed) {
-    if (/\d/.test(ch) || ((ch === '.' || ch === '+' || ch === '-') && numEnd === 0)) numEnd += 1
-    else break
-  }
-  if (numEnd === 0) return 0
-  const num = Number.parseFloat(trimmed.slice(0, numEnd))
-  return Number.isNaN(num) ? 0 : num
+/** Read a C-locale GNU -n prefix without losing decimal precision. */
+function leadingNumber(field: string): NumericKey {
+  const match = NUMBER_RE.exec(field)
+  const integer = (match?.[2] ?? '').replace(/^0+/, '')
+  const fraction = (match?.[3] ?? '').replace(/0+$/, '')
+  return { negative: match?.[1] === '-' && (integer !== '' || fraction !== ''), integer, fraction }
+}
+
+/**
+ * sort.c's `human_numcompare` key: the unit's order, then the number.
+ *
+ * The unit is the byte after the run of digits and decimal points, so `5.K`
+ * carries K. Its order is negated for a negative number and is zero for a zero
+ * one, and it outranks the magnitude, so `1500` sorts before `1K`. Mirrors
+ * _human_number in sort_keys.py.
+ */
+function humanNumber(field: string): [number, NumericKey] {
+  const match = UNIT_RE.exec(field)
+  const order = /[1-9]/.test(match?.[2] ?? '') ? (UNIT_ORDERS[match?.[3] ?? ''] ?? 0) : 0
+  return [match?.[1] === '-' ? -order : order, leadingNumber(field)]
 }
 
 function isPrintingCharacter(char: string): boolean {
@@ -397,13 +416,16 @@ function parseGeneralFloat(field: string): number | null {
 function transform(field: string, mods: KeyMods): SortKey {
   if (mods.dictionary)
     field = Array.from(field)
-      .filter((char) => /[\p{L}\p{N} \t]/u.test(char))
+      .filter((char) => /[\p{L}\p{N} \t\n]/u.test(char))
       .join('')
   else if (mods.ignoreNonprinting) {
     field = Array.from(field).filter(isPrintingCharacter).join('')
   }
-  if (mods.month) return MONTHS[field.trim().slice(0, 3).toLowerCase()] ?? 0
-  if (mods.human) return parseHuman(field)
+  if (mods.month) {
+    const name = field.replace(/^[ \t\n]+/, '').slice(0, 3)
+    return MONTHS[name.toLowerCase()] ?? 0
+  }
+  if (mods.human) return humanNumber(field)
   if (mods.version) return versionKey(field)
   if (mods.numeric) return leadingNumber(field)
   if (mods.generalNumeric) {
@@ -425,10 +447,17 @@ function cmpVals(a: SortKey, b: SortKey): number {
     }
     return a.length - b.length
   }
+  if (typeof a === 'object' && !Array.isArray(a) && typeof b === 'object' && !Array.isArray(b)) {
+    if (a.negative !== b.negative) return a.negative ? -1 : 1
+    const order =
+      a.integer.length - b.integer.length ||
+      compareCodePoints(a.integer, b.integer) ||
+      compareCodePoints(a.fraction, b.fraction)
+    return a.negative ? -order : order
+  }
   if (typeof a === 'number' && typeof b === 'number') return a < b ? -1 : a > b ? 1 : 0
-  const sa = String(a)
-  const sb = String(b)
-  return compareCodePoints(sa, sb)
+  if (typeof a === 'string' && typeof b === 'string') return compareCodePoints(a, b)
+  throw new TypeError('sort keys must have the same comparison type')
 }
 
 // GNU sort's `compare`: the keys, then the whole line as a last resort.
@@ -453,15 +482,6 @@ export function compareLines(a: string, b: string, cfg: SortConfig): number {
   return c
 }
 
-function dedupeKeyOf(line: string, cfg: SortConfig): string {
-  const fields = computeFields(line, cfg.fieldSep)
-  const parts = cfg.keys.map((key) => {
-    const value = transform(extract(line, fields, key), key.mods)
-    return Array.isArray(value) ? value.map((x) => String(x)).join('\0') : String(value)
-  })
-  return parts.join('\x01')
-}
-
 export function sortLines(lines: string[], cfg: SortConfig): string[] {
   const indexed = lines.map((l, i) => ({ l, i }))
   indexed.sort((x, y) => {
@@ -470,14 +490,10 @@ export function sortLines(lines: string[], cfg: SortConfig): string[] {
   })
   const ordered = indexed.map((x) => x.l)
   if (!cfg.unique) return ordered
-  const seen = new Set<string>()
   const out: string[] = []
   for (const line of ordered) {
-    const dk = dedupeKeyOf(line, cfg)
-    if (!seen.has(dk)) {
-      seen.add(dk)
-      out.push(line)
-    }
+    const previous = out[out.length - 1]
+    if (previous === undefined || compareLines(previous, line, cfg) !== 0) out.push(line)
   }
   return out
 }

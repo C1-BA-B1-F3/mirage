@@ -25,7 +25,7 @@ import { OpsRegistry } from '../../../../ops/registry.ts'
 import { RAMVFS } from '../../../../vfs/ram/ram.ts'
 import { MountMode } from '../../../../types.ts'
 import { Workspace } from '../../../../workspace/workspace/workspace.ts'
-import { gitFs } from './fs.ts'
+import { configValues, gitFs } from './fs.ts'
 import { ensureDir } from './io.ts'
 import type { Dispatch } from './types.ts'
 
@@ -39,6 +39,7 @@ const BUILDER = fileURLToPath(
 let tmp: string
 let ws: Workspace
 let fs: ReturnType<typeof gitFs>
+let dispatch: Dispatch
 
 /** Every file under a directory, as repository-relative POSIX paths. */
 function walk(root: string, base = root): string[] {
@@ -65,7 +66,7 @@ beforeAll(async () => {
   // dispatcher and not through the filesystem underneath it.
   // The dispatcher's own contract: PathSpec in, [result, io] out, which is what
   // a CLI leaf is handed inside a workspace.
-  const dispatch: Dispatch = async (op, path, args = [], kwargs = {}) => [
+  dispatch = async (op, path, args = [], kwargs = {}) => [
     await ws.dispatch(op, path.virtual, args, kwargs),
     new IOResult(),
   ]
@@ -124,5 +125,26 @@ describe('gitFs', () => {
     const oid = await git.writeBlob({ ...opts(), blob: new TextEncoder().encode('written\n') })
     const back = await git.readBlob({ ...opts(), oid })
     expect(new TextDecoder().decode(back.blob)).toBe('written\n')
+  })
+})
+
+describe('configValues', () => {
+  it("reads every value as written, below isomorphic-git's own casts", async () => {
+    await ensureDir(dispatch, '/repo/cfg')
+    const text =
+      '[core]\n\tbare = 1\n[Core]\n\tBare = yes\n\tbare\n\tbare =\n[core "sub"]\n\tbare = no\n'
+    await ws.dispatch('write', '/repo/cfg/config', [new TextEncoder().encode(text)])
+    const location = {
+      gitdir: '/repo/cfg',
+      commondir: '/repo/cfg',
+      worktree: '/repo',
+      mountRoot: '/repo',
+    }
+    expect(await configValues(dispatch, location, 'core.bare')).toEqual(['1', 'yes', 'true', ''])
+    expect(await configValues(dispatch, location, 'CORE.Bare')).toEqual(['1', 'yes', 'true', ''])
+    expect(await configValues(dispatch, location, 'core.sub.bare')).toEqual(['no'])
+    expect(await configValues(dispatch, location, 'core.worktree')).toEqual([])
+    const nowhere = { ...location, gitdir: '/repo/none', commondir: '/repo/none' }
+    expect(await configValues(dispatch, nowhere, 'core.bare')).toEqual([])
   })
 })

@@ -1,7 +1,7 @@
 {
   "cases": [
     {
-      "id": "timeout_unsupported",
+      "id": "timeout_signal_kill",
       "seq": 429,
       "targets": [
         "ram",
@@ -27,14 +27,202 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "timeout -s KILL 1 sleep 1 2>&1; echo code=$?",
+      "command": "{ timeout -s KILL 0.1 sleep 1; } 2>/dev/null; echo code=$?",
       "expect": {
         "exit": 0,
-        "stdout": "timeout: unsupported option -- '-s'\ncode=125\n",
+        "stdout": "code=137\n",
         "stderr": ""
       },
       "flags": [
         "s"
+      ]
+    },
+    {
+      "id": "timeout_signal_abbreviated",
+      "seq": 1300065,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "{ timeout --si KILL 0.1 sleep 1; } 2>/dev/null; echo code=$?; timeout --sig=int 0.1 sleep 1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=137\ncode=124\n",
+        "stderr": ""
+      },
+      "flags": [
+        "si"
+      ]
+    },
+    {
+      "id": "timeout_signal_outcomes",
+      "seq": 1300086,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout -p 0.1 sleep 1; echo code=$?; timeout -p -s INT 0.1 sleep 1; echo code=$?; timeout -s CONT 0.1 sh -c 'sleep 0.3; exit 3'; echo code=$?; timeout -p -s CONT 0.1 sh -c 'sleep 0.3; exit 3'; echo code=$?; timeout -f -s 32 0.1 sleep 1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=143\ncode=130\ncode=124\ncode=3\ncode=124\n",
+        "stderr": ""
+      },
+      "flags": [
+        "p",
+        "s",
+        "f"
+      ]
+    },
+    {
+      "id": "timeout_signal_names",
+      "seq": 1300087,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout -v -s 143 0.1 sleep 1; timeout -v -s sigint 0.1 sleep 1; timeout -v -s RTMIN+2 0.1 sleep 1; timeout -v -s 60 0.1 sleep 1; timeout -v -s IOT 0.1 sleep 1",
+      "expect": {
+        "exit": 124,
+        "stdout": "",
+        "stderr": "timeout: sending signal TERM to command 'sleep'\ntimeout: sending signal INT to command 'sleep'\ntimeout: sending signal RTMIN+2 to command 'sleep'\ntimeout: sending signal RTMAX-4 to command 'sleep'\ntimeout: sending signal ABRT to command 'sleep'\n"
+      },
+      "flags": [
+        "v",
+        "s"
+      ]
+    },
+    {
+      "id": "timeout_signal_refusals",
+      "seq": 1300088,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout -s FOO 1 true; echo code=$?; timeout -s 65 1 true; echo code=$?; timeout -s '' 1 true; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=125\ncode=125\ncode=125\n",
+        "stderr": "timeout: 'FOO': invalid signal\nTry 'timeout --help' for more information.\ntimeout: '65': invalid signal\nTry 'timeout --help' for more information.\ntimeout: '': invalid signal\nTry 'timeout --help' for more information.\n"
+      },
+      "flags": [
+        "s"
+      ]
+    },
+    {
+      "id": "timeout_ambiguous_options",
+      "seq": 1300098,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "timeout --v 1 true; echo code=$?; timeout --=x 1 true; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=125\ncode=125\n",
+        "stderr": "timeout: option '--v' is ambiguous; possibilities: '--verbose' '--version'\nTry 'timeout --help' for more information.\ntimeout: option '--=x' is ambiguous; possibilities: '--foreground' '--kill-after' '--preserve-status' '--signal' '--verbose' '--help' '--version'\nTry 'timeout --help' for more information.\n"
+      },
+      "flags": [
+        "v"
       ]
     }
   ]

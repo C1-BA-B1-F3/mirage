@@ -100,8 +100,8 @@
       "command": "gh api repos/integ/repo-cli/contents/NOTES.md -X PUT -f message=again -f content=b3RoZXIK",
       "expect": {
         "exit": 1,
-        "stdout": "",
-        "stderr": "gh api: NOTES.md does not match\n"
+        "stdout": "{\"message\":\"NOTES.md does not match\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: NOTES.md does not match (HTTP 409)\n"
       }
     },
     {
@@ -113,8 +113,8 @@
       "command": "gh api repos/integ/repo-cli/contents/ABSENT.md -X PUT -f message=x -f content=eAo= -f sha=deadbeef",
       "expect": {
         "exit": 1,
-        "stdout": "",
-        "stderr": "gh api: Invalid request.\n\n\"sha\" wasn't supplied.\n"
+        "stdout": "{\"message\":\"Invalid request.\\n\\n\\\"sha\\\" wasn't supplied.\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Invalid request.\n\n\"sha\" wasn't supplied. (HTTP 422)\n"
       }
     },
     {
@@ -139,8 +139,8 @@
       "command": "gh api repos/integ/nope",
       "expect": {
         "exit": 1,
-        "stdout": "",
-        "stderr": "gh api: Not Found\n"
+        "stdout": "{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Not Found (HTTP 404)\n"
       }
     },
     {
@@ -334,8 +334,8 @@
       "command": "gh api user/repos -f name=fresh-repo",
       "expect": {
         "exit": 1,
-        "stdout": "",
-        "stderr": "gh api: Resource not accessible by personal access token\n"
+        "stdout": "{\"message\":\"Resource not accessible by personal access token\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Resource not accessible by personal access token (HTTP 403)\n"
       }
     },
     {
@@ -1323,6 +1323,162 @@
       "expect": {
         "exit": 0,
         "stdout": "relative body\n\nlast\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_error_silent",
+      "seq": 569300,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/nope --silent",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_api_error_ignores_jq",
+      "seq": 569301,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/nope --jq .message",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_api_search_validation_body",
+      "seq": 569302,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api 'search/issues?q=repo:integ/missing'",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"message\":\"Validation Failed\",\"errors\":[{\"message\":\"The listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.\",\"resource\":\"Search\",\"field\":\"q\",\"code\":\"invalid\"}],\"documentation_url\":\"https://docs.github.com/v3/search/\",\"status\":\"422\"}",
+        "stderr": "gh: Validation Failed (HTTP 422)\n"
+      }
+    },
+    {
+      "id": "gh_search_issues_validation_reason",
+      "seq": 569303,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh search issues needle --repo integ/missing",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Invalid search query \"needle repo:integ/missing type:issue\".\nThe listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.\n"
+      }
+    },
+    {
+      "id": "gh_search_prs_validation_reason",
+      "seq": 569304,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh search prs needle --repo integ/missing",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Invalid search query \"needle repo:integ/missing type:pr\".\nThe listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.\n"
+      }
+    },
+    {
+      "id": "gh_search_code_missing_repo_is_empty",
+      "seq": 569305,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh search code needle --repo integ/missing --json path",
+      "expect": {
+        "exit": 0,
+        "stdout": "[]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_search_commits_validation_reason",
+      "seq": 569306,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh search commits needle --repo integ/missing",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Invalid search query \"needle repo:integ/missing\".\nThe listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.\n"
+      }
+    },
+    {
+      "id": "gh_api_error_slurp",
+      "seq": 569307,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/nope --paginate --slurp",
+      "expect": {
+        "exit": 1,
+        "stdout": "[{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\"}]",
+        "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_api_graphql_field_error",
+      "seq": 569308,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api graphql -f query='{ repository(owner: \"integ\", name: \"missing\") { name } }'",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"errors\":[{\"message\":\"Could not resolve to a Repository with the name 'integ/missing'.\",\"locations\":[{\"line\":1,\"column\":3}],\"path\":[\"repository\"]}],\"data\":{\"repository\":null}}",
+        "stderr": "gh: Could not resolve to a Repository with the name 'integ/missing'.\n"
+      }
+    },
+    {
+      "id": "gh_api_graphql_error_ignores_jq",
+      "seq": 569309,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api graphql -f query='{ repository(owner: \"integ\", name: \"missing\") { name } }' --jq .data",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"errors\":[{\"message\":\"Could not resolve to a Repository with the name 'integ/missing'.\",\"locations\":[{\"line\":1,\"column\":3}],\"path\":[\"repository\"]}],\"data\":{\"repository\":null}}",
+        "stderr": "gh: Could not resolve to a Repository with the name 'integ/missing'.\n"
+      }
+    },
+    {
+      "id": "gh_api_graphql_validation_error",
+      "seq": 569310,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api graphql -f query='{ viewer { bogus } }'",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"errors\":[{\"message\":\"Cannot query field \\\"bogus\\\" on type \\\"RepositoryOwner\\\". Did you mean \\\"login\\\"?\",\"locations\":[{\"line\":1,\"column\":12}]}]}",
+        "stderr": "gh: Cannot query field \"bogus\" on type \"RepositoryOwner\". Did you mean \"login\"?\n"
+      }
+    },
+    {
+      "id": "gh_api_graphql_answer",
+      "seq": 569311,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login",
+      "expect": {
+        "exit": 0,
+        "stdout": "integ-user\n",
         "stderr": ""
       }
     }

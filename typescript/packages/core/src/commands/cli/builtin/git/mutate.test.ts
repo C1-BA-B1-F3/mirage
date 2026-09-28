@@ -15,6 +15,7 @@
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -492,6 +493,34 @@ describe('git commit', () => {
       '',
       "fatal: bad boolean config value 'junk' for 'core.quotepath'\n",
     ])
+  })
+
+  it.each(['[Core]\n\tBare = yes\n', '[core]\n\tbare = 1\n'])(
+    'reads core.bare as git does in %j',
+    async (spelling) => {
+      const h = await harness((repo) => {
+        appendFileSync(join(repo, '.git', 'config'), spelling)
+      })
+      expect(await h.run('status')).toEqual([
+        128,
+        '',
+        'fatal: this operation must be run in a work tree\n',
+      ])
+      expect(await h.run('add -A')).toEqual([
+        128,
+        '',
+        'fatal: this operation must be run in a work tree\n',
+      ])
+    },
+  )
+
+  it('refuses every verb over a core.bare git cannot read', async () => {
+    const h = await harness((repo) => {
+      appendFileSync(join(repo, '.git', 'config'), '[core]\n\tbare = maybe\n\tbare = false\n')
+    })
+    const refusal = "fatal: bad boolean config value 'maybe' for 'core.bare'\n"
+    expect(await h.run('log --oneline -1')).toEqual([128, '', refusal])
+    expect(await h.run('--work-tree=. status')).toEqual([128, '', refusal])
   })
 
   it('records the index, and git reads the commit back', async () => {

@@ -13,18 +13,22 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { byteChar } from '../../../../shell/bytes.ts'
-import { HEX, OCT, SIMPLE_ESCAPES } from './constants.ts'
+import { codePointText } from '../../../../shell/escapes.ts'
+import { HEX, HEX_ESCAPE_DIGITS, OCT, SIMPLE_ESCAPES } from './constants.ts'
 
 /**
  * Process C-style escape sequences for `echo -e`.
  *
  * Single-pass to handle `\\` correctly (`\\b` → a literal `\b`). Supports
- * `\\ \n \t \r \a \b \f \v`, `\xHH` (hex), `\0NNN` (octal) and `\c` (stop
- * output); an unknown escape like `\z` passes through as `\z`. `tr` has
- * its own reader (`commands/builtin/utils/escapes.ts`) because only the
- * shell writes bytes: `\xHH` here names a byte, not a code point.
+ * `\\ \n \t \r \a \b \f \v`, `\e` and `\E` (ESC), `\xHH` (a byte),
+ * `\uHHHH` and `\UHHHHHHHH` (a code point), `\0NNN` (octal) and `\c`
+ * (stop output); an unknown escape like `\z` passes through as `\z`.
+ * Returns the text and whether `\c` stopped the output, which also drops
+ * echo's newline. `tr` has its own reader
+ * (`commands/builtin/utils/escapes.ts`) because only the shell writes
+ * bytes: `\xHH` here names a byte, not a code point.
  */
-export function interpretEscapes(text: string): string {
+export function interpretEscapes(text: string): [string, boolean] {
   const out: string[] = []
   let i = 0
   const n = text.length
@@ -36,23 +40,25 @@ export function interpretEscapes(text: string): string {
     }
     const ch = text.charAt(i + 1)
     const simple = SIMPLE_ESCAPES[ch]
+    const limit = HEX_ESCAPE_DIGITS[ch]
     if (simple !== undefined) {
       out.push(simple)
       i += 2
     } else if (ch === 'c') {
-      break
-    } else if (ch === 'x') {
+      return [out.join(''), true]
+    } else if (limit !== undefined) {
       let digits = ''
       let j = i + 2
-      while (j < n && digits.length < 2 && HEX.has(text.charAt(j))) {
+      while (j < n && digits.length < limit && HEX.has(text.charAt(j))) {
         digits += text.charAt(j)
         j += 1
       }
       if (digits !== '') {
-        out.push(byteChar(parseInt(digits, 16)))
+        const value = parseInt(digits, 16)
+        out.push(ch === 'x' ? byteChar(value) : codePointText(value))
         i = j
       } else {
-        out.push('\\x')
+        out.push('\\' + ch)
         i += 2
       }
     } else if (ch === '0') {
@@ -70,5 +76,5 @@ export function interpretEscapes(text: string): string {
       i += 2
     }
   }
-  return out.join('')
+  return [out.join(''), false]
 }

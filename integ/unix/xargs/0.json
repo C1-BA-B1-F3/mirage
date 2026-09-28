@@ -1,0 +1,115 @@
+{
+  "cases": [
+    {
+      "id": "xargs_null_keeps_empty_items",
+      "seq": 1300026,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\0\\0b\\0' | xargs -0 echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a  b\n",
+        "stderr": ""
+      },
+      "flags": [
+        "0"
+      ]
+    },
+    {
+      "id": "xargs_null_abbreviated",
+      "seq": 1300052,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a b\\0c\\0' | xargs --nu echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a b c\n",
+        "stderr": ""
+      },
+      "flags": [
+        "nu"
+      ]
+    },
+    {
+      "id": "xargs_eof_string_ignored_with_null",
+      "seq": 1300069,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\0S\\0' | xargs -0 -E S echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a S\n",
+        "stderr": "xargs: warning: the -E option has no effect if -0 or -d is used.\n\n"
+      },
+      "flags": [
+        "E"
+      ]
+    }
+  ]
+}

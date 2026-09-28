@@ -201,14 +201,19 @@ export class IgnoreStack {
  * names a path on whichever machine git ran on, and a mount has no way to reach
  * that machine's home directory; honoring it would mean reading the operator's
  * own file and applying it to somebody else's repository.
+ *
+ * @param dispatch workspace op dispatcher
+ * @param commondir the shared git directory, whose `info` a linked worktree
+ *   reads too
+ * @param worktree the working tree root
  */
 export async function loadIgnores(
   dispatch: Dispatch,
-  gitdir: string,
+  commondir: string,
   worktree: string,
 ): Promise<IgnoreStack> {
   let stack = new IgnoreStack()
-  const private_ = await readOptional(dispatch, under(gitdir, INFO_EXCLUDE))
+  const private_ = await readOptional(dispatch, under(commondir, INFO_EXCLUDE))
   if (private_ !== null) stack = stack.push('', private_)
   const root = await readOptional(dispatch, under(worktree, GITIGNORE))
   if (root !== null) stack = stack.push('', root)

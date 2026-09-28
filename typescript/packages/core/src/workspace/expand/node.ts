@@ -14,6 +14,7 @@
 
 import type { SessionView } from '../../ops/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
+import { quotedParts } from '../../shell/helpers.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { ByteSource, IOResult } from '../../io/types.ts'
 import type { SessionState } from '../session/session.ts'
@@ -47,6 +48,7 @@ export type ExecuteFn = (
   command: string,
   opts: {
     sessionId: string
+    session?: SessionState
     stdin?: ByteSource | null
     signal?: AbortSignal
     node?: TSNodeLike
@@ -468,19 +470,13 @@ export async function expandNodeMarked(
   }
 
   if (ntype === NT.STRING) {
-    // The newline bytes of a multi-line string belong to no child token,
-    // so each row step re-emits them; the quote tokens anchor the count,
-    // which keeps leading, trailing and blank lines alive ("a\n\nb" is
-    // five bytes in bash).
     const parts: string[] = []
-    let prevEndRow: number | null = null
-    for (const child of tsNode.children) {
-      if (prevEndRow !== null) {
-        parts.push('\n'.repeat(Math.max(0, (child.startPosition?.row ?? 0) - prevEndRow)))
-      }
-      prevEndRow = child.endPosition?.row ?? 0
-      if (child.type === NT.DQUOTE) continue
-      parts.push(await expandNode(child, session, executeFn, callStack, view))
+    for (const child of quotedParts(tsNode)) {
+      parts.push(
+        typeof child === 'string'
+          ? child
+          : await expandNode(child, session, executeFn, callStack, view),
+      )
     }
     // Everything the quotes enclose is literal, the text and any value
     // expanded inside it alike: "$p"?.txt globs on the `?` while

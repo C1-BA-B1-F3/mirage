@@ -13,10 +13,12 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { byteChar, encodeText } from '../../../../shell/bytes.ts'
+import { codePointText } from '../../../../shell/escapes.ts'
 
-// printf's escape grammar is not echo's: it reads \u/\U and a bare
-// \NNN, while `echo -e` wants \0NNN and gives \c a different meaning.
-// Only the simple table overlaps, so each reader keeps its own.
+// printf's escape grammar is not echo's: it reads a bare \NNN, while
+// `echo -e` wants \0NNN and gives \c a different meaning. Only the
+// simple table and \x, \u and \U overlap, and only printf warns when
+// those three have no digits, so each reader keeps its own.
 const PRINTF_SIMPLE_ESCAPES: Record<string, string> = {
   '\\': '\\',
   n: '\n',
@@ -504,8 +506,27 @@ function formatHexFloat(
   return applyPad(prefix, body, flags, width, flags.includes('0'))
 }
 
-/** Interpret a backslash escape at `fmt[i]`. Returns emitted text, next index, and whether output should stop (`\c`). */
-function readEscape(fmt: string, i: number): [string, number, boolean] {
+/**
+ * Interpret a backslash escape at `fmt[i]`, the format string or a `%b`
+ * argument (`bArg`). Returns emitted text, next index, and whether output
+ * should stop (`\c`).
+ *
+ * An octal escape in the format is `\NNN`, one to three digits. A `%b`
+ * argument also takes `\0NNN`: after a leading `0`, up to three more
+ * digits. bash 5.2.37 writes `printf '\0003'` as NUL then `3` and
+ * `printf %b '\0003'` as the byte 3.
+ *
+ * A `\x`, `\u` or `\U` with no hex digit after it is written as it
+ * stands, and bash's warning for it goes to `warnings`, in the order bash
+ * writes them to stderr. bash's tescape reports it with builtin_error and
+ * leaves the exit status alone, so `printf '\x'` still exits 0.
+ */
+function readEscape(
+  fmt: string,
+  i: number,
+  warnings: string[],
+  bArg: boolean,
+): [string, number, boolean] {
   const n = fmt.length
   if (i + 1 >= n) return ['\\', i + 1, false]
   const ch = fmt.charAt(i + 1)
@@ -523,31 +544,29 @@ function readEscape(fmt: string, i: number): [string, number, boolean] {
     if (digits) {
       const value = parseInt(digits, 16)
       // \x names a byte; \u and \U name a code point.
-      return [ch === 'x' ? byteChar(value) : String.fromCodePoint(value), j, false]
+      return [ch === 'x' ? byteChar(value) : codePointText(value), j, false]
     }
+    const kind = ch === 'x' ? 'hex' : 'unicode'
+    warnings.push(`printf: missing ${kind} digit for \\${ch}\n`)
     return ['\\' + ch, i + 2, false]
   }
   if (OCT_DIGIT.test(ch)) {
-    let digits = ''
-    let j = i + 1
-    if (fmt.charAt(j) === '0') j += 1
-    while (j < n && digits.length < 3 && OCT_DIGIT.test(fmt.charAt(j))) {
-      digits += fmt.charAt(j)
-      j += 1
-    }
-    if (!digits) return ['\0', j, false]
-    return [byteChar(parseInt(digits, 8)), j, false]
+    const start = i + 1
+    const limit = bArg && ch === '0' ? 4 : 3
+    let j = start
+    while (j < n && j - start < limit && OCT_DIGIT.test(fmt.charAt(j))) j += 1
+    return [byteChar(parseInt(fmt.slice(start, j), 8)), j, false]
   }
   return ['\\' + ch, i + 2, false]
 }
 
-function expandEscapes(s: string): [string, boolean] {
+function expandEscapes(s: string, warnings: string[]): [string, boolean] {
   let out = ''
   let i = 0
   const n = s.length
   while (i < n) {
     if (s.charAt(i) === '\\') {
-      const [text, ni, stop] = readEscape(s, i)
+      const [text, ni, stop] = readEscape(s, i, warnings, true)
       out += text
       i = ni
       if (stop) return [out, true]
@@ -625,11 +644,12 @@ function convert(
   flags: string,
   width: number | null,
   precision: number | null,
+  warnings: string[],
 ): [string, string | null, boolean] {
   if (conv === 's') return [formatPrintfStr(raw ?? '', flags, width, precision), null, false]
   if (conv === 'c') return [formatChar(raw ?? '', flags, width), null, false]
   if (conv === 'b') {
-    const [expanded, stop] = expandEscapes(raw ?? '')
+    const [expanded, stop] = expandEscapes(raw ?? '', warnings)
     const text = precision !== null ? expanded.slice(0, precision) : expanded
     return [applyPad('', text, flags, width, false), null, stop]
   }
@@ -664,11 +684,19 @@ function convert(
  * Apply GNU printf's format-reuse semantics: scan `fmt` once per cycle,
  * consuming arguments; repeat while arguments remain and a cycle
  * consumed at least one (so a conversion-less format prints once and
- * excess args are dropped). Returns the output and any error messages.
+ * excess args are dropped). Returns the output, the stderr messages in the
+ * order bash writes them, and whether a conversion failed. An invalid
+ * number fails (exit status 1); a missing-digit escape warning does not.
+ *
+ * A `\c` in a `%b` argument returns at once and reports no failure. bash's
+ * `%b` returns there with the status it has so far, and only the end of
+ * the builtin folds an invalid number into it, so bash 5.2.37 exits 0 for
+ * `printf '%d%b' abc '\c'`.
  */
-export function runPrintf(fmt: string, args: string[]): [string, string[]] {
+export function runPrintf(fmt: string, args: string[]): [string, string[], boolean] {
   const out: string[] = []
-  const errors: string[] = []
+  const messages: string[] = []
+  let failed = false
   let argI = 0
   const total = args.length
   let stop = false
@@ -679,7 +707,7 @@ export function runPrintf(fmt: string, args: string[]): [string, string[]] {
     while (i < n && !stop) {
       const ch = fmt.charAt(i)
       if (ch === '\\') {
-        const [text, ni, stopHere] = readEscape(fmt, i)
+        const [text, ni, stopHere] = readEscape(fmt, i, messages, false)
         out.push(text)
         i = ni
         stop = stopHere
@@ -720,12 +748,13 @@ export function runPrintf(fmt: string, args: string[]): [string, string[]] {
         }
         const raw = argI < total ? (args[argI] ?? '') : null
         if (raw !== null) argI += 1
-        const [text, err, stopHere] = convert(conv, raw, flags, width, precision)
-        if (err !== null) errors.push(err)
-        out.push(text)
-        if (stopHere) {
-          stop = true
+        const [text, err, stopHere] = convert(conv, raw, flags, width, precision, messages)
+        if (err !== null) {
+          messages.push(err)
+          failed = true
         }
+        out.push(text)
+        if (stopHere) return [out.join(''), messages, false]
         continue
       }
       out.push(ch)
@@ -733,5 +762,5 @@ export function runPrintf(fmt: string, args: string[]): [string, string[]] {
     }
     if (stop || argI >= total || argI === consumedStart) break
   }
-  return [out.join(''), errors]
+  return [out.join(''), messages, failed]
 }

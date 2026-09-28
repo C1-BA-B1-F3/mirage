@@ -317,6 +317,61 @@ describe('unique stops at the keys', () => {
   })
 })
 
+// -n and -h in the C locale, pinned against GNU sort 9.7. Mirrors
+// TestNumericKeys in test_sort_keys.py.
+describe('numeric keys', () => {
+  it('takes a newline as a blank before a number', () => {
+    // A -z record may hold one; sort.c's blanks table counts it.
+    expect(sortLines(['\n5', '3', '\n-5', '-4'], configOf({ n: true }))).toEqual([
+      '\n-5',
+      '-4',
+      '3',
+      '\n5',
+    ])
+  })
+
+  it('separates fields at a newline', () => {
+    expect(sortLines(['b\n1', 'a\n2'], configOf({ k: '2,2n' }))).toEqual(['b\n1', 'a\n2'])
+  })
+
+  it('ranks the unit above the magnitude', () => {
+    expect(lines('1500\n1.5K\n2000\n1K', { h: true })).toEqual(['1500', '2000', '1K', '1.5K'])
+  })
+
+  it('takes only k as a unit in lowercase', () => {
+    expect(lines('1m\n1M\n2\n1k', { h: true })).toEqual(['1m', '2', '1k', '1M'])
+  })
+
+  it('negates a negative number unit and gives zero none', () => {
+    expect(lines('-1K\n-2\n1\n-1M\n0\n-0K\n0K', { h: true })).toEqual([
+      '-1M',
+      '-1K',
+      '-2',
+      '-0K',
+      '0',
+      '0K',
+      '1',
+    ])
+  })
+
+  it('reads the unit after the digits and points', () => {
+    expect(lines('5.K\n3K\n.5K\n3\nK', { h: true, s: true })).toEqual([
+      'K',
+      '3',
+      '.5K',
+      '3K',
+      '5.K',
+    ])
+  })
+
+  it('compares human numbers exactly', () => {
+    expect(lines('1.000000000000000002K\n1.000000000000000001K', { h: true, s: true })).toEqual([
+      '1.000000000000000001K',
+      '1.000000000000000002K',
+    ])
+  })
+})
+
 // Mirrors TestMergeLines in test_sort_keys.py.
 describe('mergeLines', () => {
   it('never reorders a run', () => {

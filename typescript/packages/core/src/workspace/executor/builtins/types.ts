@@ -30,7 +30,12 @@ export type Result = [ByteSource | null, IOResult, ExecutionNode]
  */
 export type ExecuteStringFn = (
   script: string,
-  opts: { sessionId: string; stdin?: ByteSource | null; signal?: AbortSignal },
+  opts: {
+    sessionId: string
+    session?: SessionState
+    stdin?: ByteSource | null
+    signal?: AbortSignal
+  },
 ) => Promise<IOResult>
 
 /**

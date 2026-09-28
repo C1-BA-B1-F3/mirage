@@ -81,6 +81,26 @@ def test_inner_lines_read_the_words_that_run_other_words(head, args, expected):
     assert got == expected
 
 
+@pytest.mark.parametrize("head, args, missing", [
+    ("xargs", ["-n", "1", "rm", "-f"
+               ], "xargs: rm: No such file or directory\n"),
+    ("xargs", [], "xargs: echo: No such file or directory\n"),
+    ("timeout", ["-s", "KILL", "5", "rm", "/x"],
+     "timeout: failed to run command 'rm': No such file or directory\n"),
+    ("env", ["rm", "/x"], None),
+    ("command", ["rm", "/x"], None),
+    ("find", ["/r", "-exec", "rm", "{}", ";"], None),
+    ("eval", ["rm", "/x"], None),
+])
+def test_a_builtin_that_looks_the_name_up_reports_a_miss_itself(
+        head, args, missing):
+    # xargs and timeout look the name up before they run it, as GNU's
+    # exec does, so a name the session cannot see is theirs to report;
+    # the rest hand the words back to the shell, which reports it.
+    (inner, ) = inner_lines(head, _words(*args))
+    assert inner.missing == missing
+
+
 def test_inner_words_keep_what_the_gate_could_not_read():
     # A dynamic word rides into the inner command as itself, raw text
     # and no literal, so the inner admission still sees it as unread.

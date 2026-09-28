@@ -41,17 +41,20 @@ def repo_relative(location: RepoLocation, start: str, operand: str) -> str:
 
     Empty string for the working tree root itself, which is what
     ``git add .`` from the top resolves to and means "everything".
+    Git uses the work tree as the base when invoked from outside it,
+    as is possible with --git-dir and --work-tree.
 
     Args:
         location (RepoLocation): the discovered repository.
         start (str): absolute virtual path git is running in.
         operand (str): the operand as the user spelled it.
     """
-    absolute = absolute_operand(start, operand)
     root = location.worktree.rstrip("/") or "/"
+    prefix = root if root.endswith("/") else f"{root}/"
+    base = start if start == root or start.startswith(prefix) else root
+    absolute = absolute_operand(base, operand)
     if absolute == root:
         return ""
-    prefix = root if root.endswith("/") else f"{root}/"
     if not absolute.startswith(prefix):
         raise OutsideRepositoryError(operand, root)
     return absolute[len(prefix):]

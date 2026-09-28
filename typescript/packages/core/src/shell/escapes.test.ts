@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { encodeText } from './bytes.ts'
-import { decodeAnsiC } from './escapes.ts'
+import { codePointText, decodeAnsiC } from './escapes.ts'
 
 // Direct port of tests/shell/test_escapes.py. Expectations pinned
 // against bash 5.2.37 in docker (debian:stable-slim, LC_ALL=C.UTF-8).
@@ -112,5 +112,22 @@ describe('decodeAnsiC', () => {
     )
     expect(decodeAnsiC('x\\UFFFFFFFFy')).toBe('xy')
     expect(decodeAnsiC('x\\U80000000y')).toBe('xy')
+  })
+})
+
+describe('codePointText', () => {
+  // $'...', echo -e and printf all write \u and \U through this; only
+  // $'...' cuts at NUL, before it gets here.
+  it.each([
+    [0x41, [0x41]],
+    [0, [0x00]],
+    [0xe9, [0xc3, 0xa9]],
+    [0x1f600, [0xf0, 0x9f, 0x98, 0x80]],
+    [0xd800, [0xed, 0xa0, 0x80]],
+    [0x110000, [0xf4, 0x90, 0x80, 0x80]],
+    [0x7fffffff, [0xfd, 0xbf, 0xbf, 0xbf, 0xbf, 0xbf]],
+    [0x80000000, []],
+  ])('writes %s through u32toutf8', (value, expected) => {
+    expect([...encodeText(codePointText(value))]).toEqual(expected)
   })
 })

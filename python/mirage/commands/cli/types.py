@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Callable, Generic, Literal, TypeVar
 
@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from mirage.commands.cli.compile import validate_cli
 from mirage.commands.spec.types import (CommandSpec, FlagValue,
                                         ParsedFlagValue, UsageStyle)
-from mirage.io.types import ByteSource
+from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import NamespaceView, SessionView, StatPath
 from mirage.process.types import ProcessView
 from mirage.runtime.types import DispatchFn, ScriptSource
@@ -118,6 +118,11 @@ class CLIInvocation(Generic[ConfigT]):
         doors (CLIDoors | None): one door per state plane, None outside
             a workspace and for every CLI that reaches a service
             instead of a filesystem.
+        shell (Callable[[str], Awaitable[IOResult]] | None): evaluate a
+            nested line in this invocation's exact session. Host callbacks
+            use this for portable re-entry, including after awaits and in
+            forks. Valid until the handler settles or is cancelled; await
+            each call before returning. None outside a workspace.
         spec (CLISpec | None): the leaf the line resolved to, the
             grammar its argv was parsed against. A verb reads it to
             answer in its original's terms (git names the first switch
@@ -134,6 +139,7 @@ class CLIInvocation(Generic[ConfigT]):
     env: Mapping[str, str] = field(default_factory=dict)
     doors: CLIDoors | None = None
     spec: "CLISpec | None" = None
+    shell: Callable[[str], Awaitable[IOResult]] | None = None
 
 
 @dataclass(frozen=True)

@@ -36,7 +36,7 @@ import { SHELL_ONLY_BUILTINS } from '../lookup/constants.ts'
 import { lookupAll } from '../lookup/lookup.ts'
 import { Consumer } from '../lookup/types.ts'
 import type { NamespaceView, StatPath } from '../../ops/types.ts'
-import { yieldBytes } from '../../io/stream.ts'
+import { SharedStdin } from '../../io/stream.ts'
 import { FileType } from '../../types.ts'
 import {
   execActions,
@@ -152,62 +152,6 @@ async function headState(
   // both for the run.
   const shadowed = layers.includes(Consumer.FUNCTION) || head in sess.aliases
   return [!program, shadowed]
-}
-
-/**
- * Run one `-exec` invocation, collecting its streams. A command that
- * cannot be found is GNU's `find: 'cmd': No such file or directory` rather
- * than the shell's `command not found`, and counts as a failed run. That
- * is decided by looking the head word up before the line runs (GNU fails
- * in `execvp`), never from the exit status: a program that exists and
- * exits 127 keeps its own stderr and is just a failed run. Returns
- * whether the run succeeded, which is the action's truth value.
- */
-/**
- * find's own input, shared by its `-exec` children as one cursor. GNU's
- * children inherit find's stdin descriptor, so its offset moves only
- * when a child reads: `-exec true \; -exec cat \;` leaves the bytes for
- * cat, while two cats see them once. The same object rides into every
- * child as its stdin, and the first read drains it.
- */
-export class SharedStdin implements AsyncIterable<Uint8Array> {
-  private chunks: AsyncIterator<Uint8Array> | null
-  private buffer: Uint8Array = new Uint8Array()
-  private pos = 0
-
-  constructor(source: ByteSource) {
-    this.chunks = (source instanceof Uint8Array ? yieldBytes(source) : source)[
-      Symbol.asyncIterator
-    ]()
-  }
-
-  // The source is pulled only as a child reads: find itself never reads
-  // its stdin, so a walk with no reading child (`yes | find d -maxdepth
-  // 0`) must not wait on it, and a child that reads a little of an
-  // unbounded input (`-exec head -c 1`) must get its byte without waiting
-  // for EOF. One byte per pull, so a child that stops reading early
-  // leaves the rest at the cursor for the next child, the way a shared
-  // descriptor's offset does; the next source chunk is pulled only once
-  // the buffered one is spent.
-  [Symbol.asyncIterator](): AsyncIterator<Uint8Array> {
-    return {
-      next: async () => {
-        while (this.pos >= this.buffer.byteLength) {
-          if (this.chunks === null) return { done: true, value: undefined }
-          const step = await this.chunks.next()
-          if (step.done === true) {
-            this.chunks = null
-            return { done: true, value: undefined }
-          }
-          this.buffer = step.value
-          this.pos = 0
-        }
-        const chunk = this.buffer.subarray(this.pos, this.pos + 1)
-        this.pos += 1
-        return { done: false, value: chunk }
-      },
-    }
-  }
 }
 
 async function runExec(

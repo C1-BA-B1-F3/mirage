@@ -1479,17 +1479,11 @@ async function main(): Promise<void> {
       await hits(`repo:integ/repo-cli repo:integ/no-such ${MARK}`),
       [CLI],
     )
-    // Live answers this 200 with nothing; the 404 predates unscoped search and
-    // is kept.
+    eq('a query naming only a missing repo is empty', await hits(`repo:integ/no-such ${MARK}`), [])
     eq(
-      'a query naming only a missing repo is 404',
-      await hits(`repo:integ/no-such ${MARK}`),
-      'HTTP 404',
-    )
-    eq(
-      'and an owner does not turn that 404 into an answer',
+      'an owner does not widen a missing repository',
       await hits(`repo:integ/no-such user:integ ${MARK}`),
-      'HTTP 404',
+      [],
     )
     eq('a `repo:` value is taken verbatim', await hits(`repo:${OTHER}/Repo-Mixed ${MARK}`), [MIXED])
 

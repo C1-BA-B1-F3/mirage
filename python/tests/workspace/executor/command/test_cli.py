@@ -845,3 +845,56 @@ async def test_profile_and_workspace_override_a_cli_deadline():
         ws.create_session("short", profile="short")
         assert (await ws.shell("prog")).exit_code == 0
         assert (await ws.shell("prog", session_id="short")).exit_code == 124
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fails", [False, True])
+async def test_invocation_shell_is_revoked_after_handler_settles(fails):
+    saved = []
+    calls = []
+
+    async def evaluate(line):
+        calls.append(line)
+        return IOResult()
+
+    async def probe(inv):
+        saved.append(inv.shell)
+        await inv.shell("echo allowed")
+        if fails:
+            raise RuntimeError("handler failed")
+        return None, IOResult()
+
+    spec = CLISpec(name="probe", fn=probe)
+    await handle_cli(CLIInstall(name="probe", spec=spec, config=None),
+                     ["probe"],
+                     SessionState(session_id="s"),
+                     context=CLIContext(shell=evaluate))
+    with pytest.raises(RuntimeError, match="no longer active"):
+        await saved[0]("echo late")
+    assert calls == ["echo allowed"]
+
+
+@pytest.mark.asyncio
+async def test_invocation_shell_is_revoked_after_cancellation():
+    entered = asyncio.Event()
+    saved = []
+
+    async def evaluate(line):
+        raise AssertionError("cancelled callback must not run a line")
+
+    async def probe(inv):
+        saved.append(inv.shell)
+        entered.set()
+        await asyncio.Event().wait()
+
+    spec = CLISpec(name="probe", fn=probe)
+    task = asyncio.create_task(
+        handle_cli(CLIInstall(name="probe", spec=spec, config=None), ["probe"],
+                   SessionState(session_id="s"),
+                   context=CLIContext(shell=evaluate)))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    with pytest.raises(RuntimeError, match="no longer active"):
+        await saved[0]("echo late")

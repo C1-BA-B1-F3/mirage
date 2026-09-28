@@ -23,9 +23,9 @@ from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.lookup import (SHELL_CONSUMERS, Consumer,
-                                     command_visible, lookup, lookup_all,
-                                     program, program_note, programs,
-                                     verb_visible)
+                                     command_visible, execs, lookup,
+                                     lookup_all, program, program_note,
+                                     programs, verb_visible)
 from mirage.workspace.session import SessionState
 
 
@@ -226,6 +226,17 @@ def test_program_is_what_a_real_system_ships_as_a_file():
     # The shell's own words, reserved words and unknowns have none.
     for name in ("cd", "export", "if", "nope-xyz", "/bin/ls"):
         assert program(name, session, registry) is None
+
+
+def test_execs_finds_programs_functions_and_paths():
+    session, ws = _fixture()
+    registry = ws._registry
+    session.functions["myfn"] = []
+    session.functions["cd"] = []
+    for name in ("cat", "echo", "xargs", "myfn", "./run.sh", "/data/x"):
+        assert execs(name, session, registry)
+    for name in ("cd", "export", "if", "nope-xyz"):
+        assert not execs(name, session, registry)
 
 
 def test_program_keeps_the_file_under_a_shadowing_function():

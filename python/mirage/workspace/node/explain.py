@@ -72,22 +72,27 @@ def _unreadable(raw: str) -> Explanation:
                        refusal=refusal_of(deny))
 
 
-def _from_refusal(name: str, args: tuple[str, ...],
-                  refusal: Refused) -> Explanation:
+def _from_refusal(name: str,
+                  args: tuple[str, ...],
+                  refusal: Refused,
+                  missing: str | None = None) -> Explanation:
     """The explanation of a head word the session cannot see.
 
     Args:
         name (str): the head word.
         args (tuple[str, ...]): the words after it.
         refusal (Refused): what the gate answered.
+        missing (str | None): how the command running the word reports
+            it (``InnerLine.missing``), None for the gate's own words.
     """
-    return Explanation(command=name,
-                       argv=args,
-                       outcome=Outcome.DENY,
-                       source="commands.allow",
-                       exit_code=refusal.exit_code,
-                       stderr=refusal.stderr.decode(),
-                       refusal=refusal.refusal)
+    return Explanation(
+        command=name,
+        argv=args,
+        outcome=Outcome.DENY,
+        source="commands.allow",
+        exit_code=refusal.exit_code,
+        stderr=refusal.stderr.decode() if missing is None else missing,
+        refusal=refusal.refusal)
 
 
 def _explained(ctx: CommandContext, session: SessionState,
@@ -174,6 +179,7 @@ async def _judge_words(
     agent_id: str = "",
     redirect_words: tuple[Word, ...] = (),
     stated: bool = True,
+    missing: str | None = None,
 ) -> list[Judged]:
     """Explain one command and whatever lines it runs in turn, each
     with its occurrence.
@@ -205,6 +211,10 @@ async def _judge_words(
             read them; False under a command the runtime completes,
             since a line built from its words (``eval``) or run on its
             operands (``xargs``) is completed with them.
+        missing (str | None): how the command that runs these words
+            reports a name the session cannot see, None for the gate's
+            own words. ``xargs`` and ``timeout`` look the name up before
+            the gate reads it, so the run prints theirs.
     """
     head = words[0]
     if head.text is None:
@@ -224,7 +234,8 @@ async def _judge_words(
                                                 session.cwd))
     if isinstance(gated, Refused):
         return [
-            Judged(_from_refusal(name, tuple(args), gated), occurrence, stated)
+            Judged(_from_refusal(name, tuple(args), gated, missing),
+                   occurrence, stated)
         ]
     ctx, asked = gated
     out = [
@@ -248,7 +259,8 @@ async def _judge_words(
                                           registry,
                                           namespace,
                                           agent_id,
-                                          stated=stated and not inner.open))
+                                          stated=stated and not inner.open,
+                                          missing=inner.missing))
     return out
 
 

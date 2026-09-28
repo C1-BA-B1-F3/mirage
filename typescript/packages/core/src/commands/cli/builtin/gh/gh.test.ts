@@ -15,7 +15,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type * as AccessorModule from './accessor.ts'
 import { bodyValue, readCliFile, repoNumber } from './accessor.ts'
-import { type GitHubResponse, type GitHubTransport } from '../../../../core/github/client.ts'
+import {
+  GitHubApiError,
+  type GitHubResponse,
+  type GitHubTransport,
+} from '../../../../core/github/client.ts'
 import { cliSpecFor } from '../../specs.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
@@ -24,7 +28,7 @@ import { issueComments } from '../../../../core/github/issue.ts'
 import { commentsFor, commentsText } from './issue.ts'
 import { GH } from './index.ts'
 import { PathSpec } from '../../../../types.ts'
-import { IOResult } from '../../../../io/types.ts'
+import { IOResult, materialize } from '../../../../io/types.ts'
 import { api } from './api.ts'
 import { fork, listCmd, rename, summary, view } from './repo.ts'
 
@@ -654,4 +658,134 @@ it('formats deleted authors, edited/minimized comments and nonzero reactions lik
   expect(commentsText(rows ?? [])).toBe(
     'author:\t\nassociation:\tcontributor\nedited:\ttrue\nstatus:\toutdated\n--\ncomment\n--\n',
   )
+})
+
+it.each([
+  [{}, ' {"message":"Not Found"}\n', ' {"message":"Not Found"}\n', 'gh: Not Found (HTTP 404)\n'],
+  [{ silent: true }, '{"message":"Not Found"}', '', 'gh: Not Found (HTTP 404)\n'],
+  [
+    { jq: '.message' },
+    '{"message":"Not Found"}',
+    '{"message":"Not Found"}',
+    'gh: Not Found (HTTP 404)\n',
+  ],
+  [{}, 'not found\n', 'not found\n', 'gh: HTTP 404\n'],
+  [{}, '', '', 'gh: HTTP 404\n'],
+] as const)('keeps HTTP error responses with flags %s', async (flags, body, stdout, stderr) => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockRejectedValue(new GitHubApiError('Not Found', 404, body))
+  try {
+    const result = await api(inv(['repos/o/missing'], flags))
+    if (result === null) throw new Error('missing API result')
+    expect(DEC.decode(await materialize(result[0]))).toBe(stdout)
+    expect(DEC.decode(await materialize(result[1].stderr))).toBe(stderr)
+    expect(result[1].exitCode).toBe(1)
+  } finally {
+    request.mockRestore()
+  }
+})
+
+it.each([
+  ['{"message":"Validation Failed","errors":"bad thing"}', 'gh: bad thing (Validation Failed)\n'],
+  ['{"errors":"bad thing"}', 'gh: bad thing\n'],
+  [
+    '{"message":"Validation Failed","errors":[{"message":"one"}]}',
+    'gh: Validation Failed (HTTP 422)\n',
+  ],
+  ['{"errors":[{"message":"one"},"two"]}', 'gh: one\ntwo\n'],
+  ['{"errors":[{"code":"x"}]}', 'gh: HTTP 422\n'],
+  ['{"errors":[]}', 'gh: HTTP 422\n'],
+  ['{"message":""}', 'gh: HTTP 422\n'],
+  ['["not", "an", "object"]', 'gh: HTTP 422\n'],
+] as const)('names what gh reads off an error body: %s', async (body, stderr) => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockRejectedValue(new GitHubApiError('Validation Failed', 422, body))
+  try {
+    const result = await api(inv(['repos/o/r']))
+    if (result === null) throw new Error('missing API result')
+    expect(DEC.decode(await materialize(result[0]))).toBe(body)
+    expect(DEC.decode(await materialize(result[1].stderr))).toBe(stderr)
+    expect(result[1].exitCode).toBe(1)
+  } finally {
+    request.mockRestore()
+  }
+})
+
+it.each([
+  [
+    { jq: '.value' },
+    '{"message":"Validation Failed"}',
+    'first\n{"message":"Validation Failed"}',
+    'gh: Validation Failed (HTTP 422)\n',
+  ],
+  [
+    { slurp: true },
+    '{"message":"Validation Failed"}',
+    '[{"value":"first"},{"message":"Validation Failed"}]',
+    'gh: Validation Failed (HTTP 422)\n',
+  ],
+  [
+    { slurp: true },
+    'upstream unavailable\n',
+    '[{"value":"first"},upstream unavailable\n]',
+    'gh: HTTP 422\n',
+  ],
+  [{ slurp: true }, '', '[{"value":"first"},]', 'gh: HTTP 422\n'],
+  [{ silent: true }, '{"message":"Validation Failed"}', '', 'gh: Validation Failed (HTTP 422)\n'],
+] as const)(
+  'keeps rendered pages when a later request fails: %s %j',
+  async (flags, body, stdout, stderr) => {
+    const request = vi
+      .spyOn(FakeTransport.prototype, 'requestWithResponse')
+      .mockResolvedValueOnce({
+        data: { value: 'first' },
+        status: 200,
+        headers: { link: '</page2>; rel="next"' },
+      })
+      .mockRejectedValueOnce(new GitHubApiError('Validation Failed', 422, body))
+    try {
+      const result = await api(inv(['page1'], { paginate: true, ...flags }))
+      if (result === null) throw new Error('missing API result')
+      expect(DEC.decode(await materialize(result[0]))).toBe(stdout)
+      expect(DEC.decode(await materialize(result[1].stderr))).toBe(stderr)
+      expect(result[1].exitCode).toBe(1)
+      expect(request).toHaveBeenCalledTimes(2)
+    } finally {
+      request.mockRestore()
+    }
+  },
+)
+
+it.each([
+  [{}, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'],
+  [{ jq: '.data' }, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'],
+  [{ silent: true }, ''],
+] as const)('fails a graphql answer carrying errors as gh does: %j', async (flags, stdout) => {
+  reset()
+  RESPONSES = [
+    {
+      data: { errors: [{ message: 'one' }, { message: 'two' }], data: null },
+      status: 200,
+      headers: {},
+    },
+  ]
+  const result = await api(
+    inv(['graphql'], { raw_field: ['query={ viewer { login } }'], ...flags }),
+  )
+  if (result === null) throw new Error('missing API result')
+  expect(DEC.decode(await materialize(result[0]))).toBe(stdout)
+  expect(DEC.decode(await materialize(result[1].stderr))).toBe('gh: one\ntwo\n')
+  expect(result[1].exitCode).toBe(1)
+})
+
+it('reads graphql errors only off the graphql endpoint', async () => {
+  const data = { errors: [{ message: 'one' }] }
+  reset()
+  RESPONSES = [{ data, status: 200, headers: {} }]
+  const result = await api(inv(['repos/o/r']))
+  if (result === null) throw new Error('missing API result')
+  expect(JSON.parse(DEC.decode(await materialize(result[0])))).toEqual(data)
+  expect(result[1].exitCode).toBe(0)
 })

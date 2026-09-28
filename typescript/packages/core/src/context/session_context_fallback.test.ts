@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   getAdmission,
   getCurrentSessionFor,
+  getCurrentSession,
   getOpPolicies,
   mountGateFor,
   pathAllowed,
@@ -30,6 +31,10 @@ import {
   runWithSuspendedOpPolicies,
   sessionUmask,
 } from './session_context.ts'
+import { CLISpec } from '../commands/cli/types.ts'
+import { IOResult, materialize } from '../io/types.ts'
+import { handleXargs } from '../workspace/executor/builtins/xargs/xargs.ts'
+import { seedVar, sessionView } from '../workspace/session/state.ts'
 import type { EntryGate } from '../types.ts'
 import { MountMode, PathSpec } from '../types.ts'
 import type { CommandRule } from '../policy/types.ts'
@@ -410,6 +415,298 @@ describe('a named facade session on the fallback storage', () => {
       release()
       await holding
     } finally {
+      await ws.close()
+    }
+  })
+})
+
+describe('xargs session isolation on the fallback storage', () => {
+  it.each<[number, string]>([
+    [0, 'a'],
+    [0, 'a b'],
+    [2, 'a'],
+    [2, 'a b'],
+  ])('-P%i forks each invocation for %s while serializing execution', async (procs, data) => {
+    const parent = new SessionState({ sessionId: 'xargs' })
+    seedVar(parent, 'X', 'outer')
+    const seen: string[] = []
+    let active = 0
+    let peak = 0
+    const execute = async (line: string): Promise<IOResult> => {
+      const current = getCurrentSession()
+      if (current === null) throw new Error('missing session')
+      seen.push(current.env.X ?? '')
+      active += 1
+      peak = Math.max(peak, active)
+      await sessionView(current).set('X', line)
+      await Promise.resolve()
+      active -= 1
+      async function* stream(kind: string) {
+        await Promise.resolve()
+        expect(getCurrentSession()).toBe(current)
+        yield new TextEncoder().encode(`${kind}:${getCurrentSession()?.env.X ?? ''}\n`)
+      }
+      return new IOResult({ stdout: stream('out'), stderr: stream('err') })
+    }
+    await runWithSession(parent, async () => {
+      const [out, io] = await handleXargs(
+        execute,
+        [`-P${String(procs)}`, '-n1', 'echo'],
+        parent,
+        new TextEncoder().encode(data),
+      )
+      expect(getCurrentSession()).toBe(parent)
+      expect(new TextDecoder().decode(await materialize(out))).toBe(
+        data
+          .split(' ')
+          .map((word) => `out:echo ${word}\n`)
+          .join(''),
+      )
+      expect(new TextDecoder().decode(await materialize(io.stderr))).toBe(
+        data
+          .split(' ')
+          .map((word) => `err:echo ${word}\n`)
+          .join(''),
+      )
+      expect(io.exitCode).toBe(0)
+    })
+    expect(seen).toEqual(data.split(' ').map(() => 'outer'))
+    expect(peak).toBe(1)
+    expect(parent.env.X).toBe('outer')
+    expect(getCurrentSession()).toBeNull()
+  })
+
+  it('restores the parent when a single invocation throws', async () => {
+    const parent = new SessionState({ sessionId: 'xargs' })
+    seedVar(parent, 'X', 'outer')
+    const execute = async (): Promise<IOResult> => {
+      const current = getCurrentSession()
+      if (current === null) throw new Error('missing session')
+      await sessionView(current).set('X', 'inner')
+      throw new Error('command failed')
+    }
+    await runWithSession(parent, async () => {
+      await expect(
+        handleXargs(execute, ['-P2', 'echo'], parent, new TextEncoder().encode('a')),
+      ).rejects.toThrow('command failed')
+      expect(getCurrentSession()).toBe(parent)
+      expect(parent.env.X).toBe('outer')
+    })
+    expect(getCurrentSession()).toBeNull()
+  })
+
+  it.each([0, 2])('-P%i keeps shell variables local to each invocation', async (procs) => {
+    const parser = await getTestParser()
+    const ws = new Workspace({}, { shellParser: parser })
+    try {
+      const io = await ws.shell(
+        `X=outer; change() { echo "$X"; X=inner; }; printf 'a\\nb\\n' | xargs -P${String(procs)} -n1 change; echo "$X"`,
+      )
+      expect(new TextDecoder().decode(io.stdout)).toBe('outer\nouter\nouter\n')
+      expect(new TextDecoder().decode(io.stderr)).toBe('')
+      expect(io.exitCode).toBe(0)
+    } finally {
+      await ws.close()
+    }
+  })
+})
+
+describe('overlapping shell calls beside xargs', () => {
+  it('keeps another foreground call queued and honors its abort', async () => {
+    const parser = await getTestParser()
+    const ws = new Workspace({}, { shellParser: parser })
+    const child = ws.shell('printf a | xargs -P2 -I{} sleep 0.3')
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await expect(
+        ws.shell('Y=leaked', {
+          sessionId: ws.defaultSessionId,
+          signal: AbortSignal.timeout(100),
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' })
+    } finally {
+      await child
+      expect(ws.getSession(ws.defaultSessionId).env.Y).toBeUndefined()
+      await ws.close()
+    }
+  })
+
+  it.each(['again', 'printf a | xargs -P2 -I{} again', 'again | cat'])(
+    'lets a host callback re-enter its own session: %s',
+    async (line) => {
+      const parser = await getTestParser()
+      const ws = new Workspace({}, { shellParser: parser })
+      ws.registerCli(
+        'again',
+        new CLISpec({
+          name: 'again',
+          fn: async (inv) => {
+            await Promise.resolve()
+            if (inv.shell === undefined) throw new Error('missing invocation shell')
+            const inner = await inv.shell('Z=inner; echo inner')
+            return [inner.stdout, inner]
+          },
+        }),
+      )
+      try {
+        const io = await ws.shell(line)
+        expect(io.stdoutText).toBe('inner\n')
+        expect(ws.getSession(ws.defaultSessionId).env.Z).toBe(
+          line === 'again' ? 'inner' : undefined,
+        )
+      } finally {
+        await ws.close()
+      }
+    },
+  )
+
+  it.each([false, true])(
+    'queues unrelated calls while a callback re-enters (named=%s)',
+    async (named) => {
+      const parser = await getTestParser()
+      const ws = new Workspace({}, { shellParser: parser })
+      const [entered, enter] = gate()
+      const [held, release] = gate()
+      let expired: ((command: string) => Promise<IOResult>) | undefined
+      ws.registerCli(
+        'again',
+        new CLISpec({
+          name: 'again',
+          fn: async (inv) => {
+            expired = inv.shell
+            enter()
+            await held
+            if (inv.shell === undefined) throw new Error('missing invocation shell')
+            const inner = await inv.shell('X=inner; echo "$X"')
+            return [inner.stdout, inner]
+          },
+        }),
+      )
+      try {
+        const outer = ws.shell('X=outer; again; echo "$X"')
+        await entered
+        let finished = false
+        const unrelated = ws
+          .shell('echo "$X"; X=other', named ? { sessionId: ws.defaultSessionId } : {})
+          .then((result) => {
+            finished = true
+            return result
+          })
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        expect(finished).toBe(false)
+        await expect(
+          ws.shell('X=leaked', { signal: AbortSignal.timeout(20) }),
+        ).rejects.toMatchObject({ name: 'AbortError' })
+        release()
+        expect((await outer).stdoutText).toBe('inner\ninner\n')
+        expect((await unrelated).stdoutText).toBe('inner\n')
+        expect(ws.getSession(ws.defaultSessionId).env.X).toBe('other')
+        if (expired === undefined) throw new Error('missing saved shell')
+        await expect(expired('X=leaked')).rejects.toThrow('no longer active')
+        expect(ws.getSession(ws.defaultSessionId).env.X).toBe('other')
+      } finally {
+        release()
+        await ws.close()
+      }
+    },
+  )
+
+  it('admits nothing through a host callback of a line that has ended', async () => {
+    const parser = await getTestParser()
+    const ws = new Workspace({}, { shellParser: parser })
+    const [entered, enter] = gate()
+    const [held, release] = gate()
+    ws.registerCli(
+      'hold',
+      new CLISpec({
+        name: 'hold',
+        fn: async () => {
+          enter()
+          await held
+          return [null, new IOResult()]
+        },
+      }),
+    )
+    try {
+      await ws.shell('hold &')
+      await entered
+      const running = ws.shell('sleep 0.3')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await expect(
+        ws.shell('Y=leaked', { signal: AbortSignal.timeout(100) }),
+      ).rejects.toMatchObject({ name: 'AbortError' })
+      await running
+      expect(ws.getSession(ws.defaultSessionId).env.Y).toBeUndefined()
+    } finally {
+      release()
+      await ws.jobTable.wait(1, ws.defaultSessionId)
+      await ws.close()
+    }
+  })
+
+  it.each(
+    [0, 2].flatMap((procs) =>
+      [false, true].flatMap((named) =>
+        [false, true].map((childFirst) => ({ procs, named, childFirst })),
+      ),
+    ),
+  )('keeps sessions separate: %j', async ({ procs, named, childFirst }) => {
+    const parser = await getTestParser()
+    const ws = new Workspace({}, { shellParser: parser })
+    const [childEntered, enterChild] = gate()
+    const [childHeld, releaseChild] = gate()
+    const [otherEntered, enterOther] = gate()
+    const [otherHeld, releaseOther] = gate()
+    ws.registerCli(
+      'holdchild',
+      new CLISpec({
+        name: 'holdchild',
+        fn: async () => {
+          enterChild()
+          await childHeld
+          return [null, new IOResult()]
+        },
+      }),
+    )
+    ws.registerCli(
+      'holdother',
+      new CLISpec({
+        name: 'holdother',
+        fn: async () => {
+          enterOther()
+          await otherHeld
+          return [null, new IOResult()]
+        },
+      }),
+    )
+    try {
+      await ws.shell('X=outer; child() { holdchild; eval "X=child"; echo "$X"; }')
+      await ws.shell(`printf a | xargs -P${String(procs)} -I{} child &`)
+      const child = ws.jobTable.wait(1, ws.defaultSessionId)
+      await childEntered
+      const other = ws.shell(
+        'holdother; eval "Y=kept"; echo "$X:$Y"',
+        named ? { sessionId: ws.defaultSessionId } : {},
+      )
+      await otherEntered
+      if (childFirst) {
+        releaseChild()
+        await child
+        releaseOther()
+      } else {
+        releaseOther()
+        await other
+        releaseChild()
+      }
+      const [childResult, otherResult] = await Promise.all([child, other])
+      expect(new TextDecoder().decode(await childResult.console.snapshot())).toBe('child\n')
+      expect(otherResult.stdoutText).toBe('outer:kept\n')
+      expect(childResult.exitCode).toBe(0)
+      expect(otherResult.exitCode).toBe(0)
+      expect((await ws.shell('echo "$X:$Y"')).stdoutText).toBe('outer:kept\n')
+    } finally {
+      releaseChild()
+      releaseOther()
       await ws.close()
     }
   })

@@ -212,6 +212,9 @@ async def handle_command(
             session,
             stdin,
             CLIContext(
+                shell=(functools.partial(execute_fn,
+                                         session_id=session.session_id)
+                       if execute_fn is not None else None),
                 command_limits=registry.command_limits,
                 entries=registry.runtime_entries,
                 dispatch=dispatch,

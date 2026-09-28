@@ -221,6 +221,7 @@ export async function handleCommand(
   // leaf and a command handler see one plane alike.
   const cliInstall = registry.clis.get(cmdName)
   if (cliInstall !== null) {
+    const cliSignal = mergeSignals(signal, session.abortSignal)
     // A leaf that waits on its service keeps running; the caller's abort
     // releases the invocation, as it does for `wait`.
     return abortable(
@@ -230,6 +231,17 @@ export async function handleCommand(
         session,
         stdin,
         {
+          ...(executeFn !== undefined
+            ? {
+                shell: (command: string) =>
+                  executeFn(command, {
+                    sessionId: session.sessionId,
+                    session,
+                    ...(cliSignal !== undefined ? { signal: cliSignal } : {}),
+                  }),
+              }
+            : {}),
+          ...(cliSignal !== undefined ? { signal: cliSignal } : {}),
           commandLimits: registry.commandLimits,
           entries: registry.runtimeEntries,
           dispatch,

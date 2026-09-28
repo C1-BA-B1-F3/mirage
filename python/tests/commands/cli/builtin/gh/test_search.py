@@ -4,7 +4,10 @@ import pytest
 
 from mirage.commands.cli.builtin.gh.search import search_cmd, search_spec
 from mirage.commands.cli.types import CLIInvocation
+from mirage.core.github.client import GitHubApiError
 from mirage.core.github.config import GhConfig
+
+URL = "https://api.example.test/search/issues?q=needle+type%3Aissue"
 
 
 @pytest.mark.asyncio
@@ -56,3 +59,36 @@ async def test_search_qualifiers_match_native_gh(monkeypatch, kind, flags,
                       },
                       spec=leaf))
     assert fetch.await_args.args[2] == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status,message,body,stderr", [
+    (422, "Validation Failed",
+     '{"message":"Validation Failed","errors":[{"message":"bad repo"}]}',
+     'Invalid search query "needle type:issue".\nbad repo\n'),
+    (422, "Validation Failed",
+     '{"message":"Validation Failed","errors":[{"code":"x"}]}',
+     'Invalid search query "needle type:issue".\n\n'),
+    (422, "Validation Failed", '{"message":"Validation Failed"}',
+     f"HTTP 422: Validation Failed ({URL})\n"),
+    (500, "Internal Server Error", '{"foo":1}', f"HTTP 500:  ({URL})\n"),
+    (502, "Bad Gateway", "upstream unavailable\n",
+     f"HTTP 502: 502 Bad Gateway ({URL})\n"),
+])
+async def test_search_failure_reads_as_gh_words_it(monkeypatch, status,
+                                                   message, body, stderr):
+    fetch = AsyncMock(
+        side_effect=GitHubApiError(message, status, body=body, url=URL))
+    monkeypatch.setitem(search_cmd.__globals__, "search", fetch)
+    leaf = next(item for item in search_spec().subcommands
+                if item.name == "issues")
+    out, io = await search_cmd(
+        "issues",
+        CLIInvocation(config=GhConfig(token="t"),
+                      argv=("search", "issues", "needle"),
+                      texts=("needle", ),
+                      flags={"limit": "30"},
+                      spec=leaf))
+    assert out is None
+    assert io.exit_code == 1
+    assert await io.stderr_str() == stderr

@@ -30,6 +30,8 @@ async def handle_echo(
     ``-[neE]+`` only. The first word that does not match (including
     ``-x`` or a repeated ``hi -n``) ends option parsing and prints
     literally. Within clusters the last of -e/-E wins; -n sticks.
+    Under -e a ``\\c`` ends the output where it stands, newline
+    included.
 
     Args:
         args (list[str]): words after the command name, as typed.
@@ -49,9 +51,10 @@ async def handle_echo(
                 escapes = False
         idx += 1
     text = " ".join(args[idx:])
+    stop = False
     if escapes:
-        text = interpret_escapes(text)
-    if not no_newline:
+        text, stop = interpret_escapes(text)
+    if not no_newline and not stop:
         text += "\n"
     out = encode_text(text)
     return out, IOResult(), ExecutionNode(command="echo", exit_code=0)

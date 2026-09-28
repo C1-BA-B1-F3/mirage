@@ -25,7 +25,8 @@ import type { BuiltinCall, Result } from '../types.ts'
  * GNU echo is not getopt: options are LEADING words matching `-[neE]+`
  * only. The first word that does not match (including `-x` or a
  * repeated `hi -n`) ends option parsing and prints literally. Within
- * clusters the last of -e/-E wins; -n sticks.
+ * clusters the last of -e/-E wins; -n sticks. Under -e a `\c` ends the
+ * output where it stands, newline included.
  */
 export function handleEcho(args: string[]): Result {
   let noNewline = false
@@ -41,8 +42,9 @@ export function handleEcho(args: string[]): Result {
     idx += 1
   }
   let text = args.slice(idx).join(' ')
-  if (escapes) text = interpretEscapes(text)
-  if (!noNewline) text += '\n'
+  let stop = false
+  if (escapes) [text, stop] = interpretEscapes(text)
+  if (!noNewline && !stop) text += '\n'
   const out = encodeText(text)
   return [out, new IOResult(), new ExecutionNode({ command: 'echo', exitCode: 0 })]
 }

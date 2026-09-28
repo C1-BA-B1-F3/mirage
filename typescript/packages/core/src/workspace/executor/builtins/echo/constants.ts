@@ -21,6 +21,14 @@ export const SIMPLE_ESCAPES: Readonly<Record<string, string>> = Object.freeze({
   b: '\b',
   f: '\f',
   v: '\v',
+  e: '\x1b',
+  E: '\x1b',
+})
+
+export const HEX_ESCAPE_DIGITS: Readonly<Record<string, number>> = Object.freeze({
+  x: 2,
+  u: 4,
+  U: 8,
 })
 
 export const HEX = new Set('0123456789abcdefABCDEF')

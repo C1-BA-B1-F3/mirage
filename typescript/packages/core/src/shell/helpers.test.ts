@@ -46,6 +46,8 @@ import {
   getWhileParts,
   isBackgrounded,
   literalWord,
+  quotedParts,
+  sourceParts,
   splitEnvPrefix,
 } from './helpers.ts'
 import { NodeType as NT, type Redirect, RedirectKind } from './types.ts'
@@ -656,5 +658,60 @@ describe('byteOffset', () => {
     // the three bytes of U+FFFD.
     expect(byteOffset('a\udcffb', 2)).toBe(2)
     expect(byteOffset('a\udcffb', 3)).toBe(3)
+  })
+})
+
+describe('sourceParts', () => {
+  function spelled(parts: Iterable<string | TSNodeLike>): (string | [string, string])[] {
+    return [...parts].map((part) => (typeof part === 'string' ? part : [part.type, part.text]))
+  }
+
+  function argument(parser: ShellParser, line: string): TSNodeLike {
+    const node = parser.parse(line).children[0]?.children[1]
+    if (node === undefined) throw new Error('no argument')
+    return node
+  }
+
+  it.each<[string, (string | [string, string])[]]>([
+    [
+      'echo "😀界\n $x \t\n "',
+      ['', ['string_content', '😀界'], '\n', ['simple_expansion', ' $x'], ' \t\n', ' '],
+    ],
+    ['echo "a\\\n $x"', ['', ['string_content', 'a\\\n '], ['simple_expansion', '$x'], '']],
+  ])('keeps the text between the children of %j', async (line, parts) => {
+    // web-tree-sitter counts offsets in UTF-16 code units, so a surrogate
+    // pair before a gap must not shift the slice.
+    expect(spelled(quotedParts(argument(await getTestParser(), line)))).toEqual(parts)
+  })
+
+  it.each<[string, (string | [string, string])[]]>([
+    [
+      'echo "${u:-\t$f}"',
+      [
+        ['${', '${'],
+        ['variable_name', 'u'],
+        [':-', ':-'],
+        '\t',
+        ['simple_expansion', '$f'],
+        ['}', '}'],
+      ],
+    ],
+    [
+      'echo "${f/x/\\ $f}"',
+      [
+        ['${', '${'],
+        ['variable_name', 'f'],
+        ['/', '/'],
+        ['regex', 'x'],
+        ['/', '/'],
+        '\\ ',
+        ['simple_expansion', '$f'],
+        ['}', '}'],
+      ],
+    ],
+  ])('yields the text no child of %j owns', async (line, parts) => {
+    const expansion = argument(await getTestParser(), line).children[1]
+    if (expansion === undefined) throw new Error('no expansion')
+    expect(spelled(sourceParts(expansion))).toEqual(parts)
   })
 })

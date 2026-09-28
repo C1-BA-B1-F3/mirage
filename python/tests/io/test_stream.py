@@ -14,7 +14,9 @@
 
 import asyncio
 
-from mirage.io.stream import (async_chain, drain, exit_on_empty,
+import pytest
+
+from mirage.io.stream import (SharedStdin, async_chain, drain, exit_on_empty,
                               merge_stdout_stderr, quiet_match)
 from mirage.io.types import IOResult
 
@@ -343,3 +345,27 @@ def test_chain_cachables_early_stop_leaves_later_untouched():
         assert not b.exhausted
 
     asyncio.run(_run())
+
+
+@pytest.mark.asyncio
+async def test_shared_stdin_preserves_unread_bytes_and_serializes_readers():
+    pulls = []
+
+    async def source():
+        for chunk in [b"", b"abc", b"", b"def"]:
+            await asyncio.sleep(0)
+            pulls.append(chunk)
+            yield chunk
+
+    shared = SharedStdin(source())
+    assert not pulls
+    first = aiter(shared)
+    assert await anext(first) == b"a"
+    second = aiter(shared)
+    results = await asyncio.gather(*(anext(second) for _ in range(5)))
+    assert b"".join(results) == b"bcdef"
+    with pytest.raises(StopAsyncIteration):
+        await anext(first)
+    with pytest.raises(StopAsyncIteration):
+        await anext(second)
+    assert pulls == [b"", b"abc", b"", b"def"]

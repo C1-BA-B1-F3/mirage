@@ -50,11 +50,24 @@ class GitHubApiError(Exception):
     Args:
         message (str): what GitHub said, its own wording where it gave one.
         status (int): the HTTP status.
+        body (str): the response text, preserved for CLI output.
+        url (str): the final request URL, including query parameters.
     """
 
-    def __init__(self, message: str, status: int) -> None:
+    def __init__(self,
+                 message: str,
+                 status: int,
+                 *,
+                 body: str = "",
+                 url: str = "") -> None:
         super().__init__(message)
         self.status = status
+        self.body = body
+        self.url = url
+        try:
+            self.data: JsonValue = json.loads(body) if body else None
+        except ValueError:
+            self.data = body
 
 
 async def github_get(token: SecretStr,
@@ -151,7 +164,10 @@ async def github_request_response(token: SecretStr,
 
 
 def _error_of(resp: aiohttp.ClientResponse, text: str) -> Exception:
-    return GitHubApiError(_api_message(text, resp.reason), resp.status)
+    return GitHubApiError(_api_message(text, resp.reason),
+                          resp.status,
+                          body=text,
+                          url=str(resp.url))
 
 
 def _api_message(text: str, reason: str | None) -> str:

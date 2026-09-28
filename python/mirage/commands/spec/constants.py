@@ -394,6 +394,7 @@ USAGE_EXIT = {
     "curl": 2,
     "patch": 2,
     "tar": 64,
+    "timeout": 125,
     "python": 2,
     "python3": 2,
 }

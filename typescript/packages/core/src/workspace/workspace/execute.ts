@@ -24,6 +24,7 @@ import type { OpRecord } from '../../observe/record.ts'
 import { Channel } from '../../shell/console/types.ts'
 import type { JobConsole } from '../../shell/console/job_console.ts'
 import type { VFS } from '../../vfs/base.ts'
+import { asyncContextIsolatesTasks } from '../../utils/async_context.ts'
 import { getCurrentSessionFor, runWithSession } from '../../context/session_context.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
 import {
@@ -295,20 +296,16 @@ async function runLine(
     )
   }
   const rootNode = root as unknown as TSNodeLike
-  // A re-entrant execute (the evaluator's $(), eval, source, xargs, or
-  // an embedder callback fired mid-line) continues in the live ambient
-  // session unless it names a different one. An id cannot say that: it
-  // names a registered session, never the ephemeral per-call fork the
-  // outer line actually runs in, and re-resolving through the manager
-  // is how a nested line used to escape the fork and its confinement.
-  // Only this workspace's own binding counts: a session carries one
-  // workspace's cwd, env and mount grants, so a callback reaching a
-  // second workspace must resolve that workspace's session instead.
-  const ambient = getCurrentSessionFor(env.sessions)
+  // Evaluator calls carry their exact session, including ephemeral forks.
+  // Ambient re-entry is safe only with task-local storage: the browser
+  // fallback's newest frame may belong to an unrelated shell call.
+  const ambient = asyncContextIsolatesTasks ? getCurrentSessionFor(env.sessions) : null
   const targetSession =
-    ambient !== null && (options.sessionId === undefined || options.sessionId === ambient.sessionId)
+    options.session ??
+    (ambient !== null &&
+    (options.sessionId === undefined || options.sessionId === ambient.sessionId)
       ? ambient
-      : env.sessions.get(options.sessionId ?? env.sessions.defaultId)
+      : env.sessions.get(options.sessionId ?? env.sessions.defaultId))
   frame.session = targetSession
   if (targetSession.processId === null) {
     const abort = new AbortController()
@@ -387,6 +384,7 @@ async function runLine(
     const innerOpts: ExecuteOptions & { provision?: false } = {
       record: false,
       sessionId: opts.sessionId,
+      session: opts.session ?? effectiveSession,
     }
     // A builtin that bounds its inner line (`timeout`) hands a signal
     // of its own, merged with the line's so either can end the run.

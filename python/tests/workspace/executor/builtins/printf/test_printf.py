@@ -365,3 +365,75 @@ async def test_printf_v_keeps_exit_1_on_bad_number_but_still_assigns():
     out, io, node = await handle_printf(["-v", "V", "%d", "notanum"], session)
     assert node.exit_code == 1
     assert session.env["V"] == "0"
+
+
+# bash 5.2.37: an escape missing its digits writes builtin_error's
+# warning to stderr and leaves the status alone.
+@pytest.mark.asyncio
+async def test_printf_missing_digit_warns_and_exits_0():
+    out, io, node = await handle_printf(["\\x|"],
+                                        SessionState(session_id="s1"))
+    assert out == b"\\x|"
+    assert io.exit_code == 0
+    assert io.stderr == b"printf: missing hex digit for \\x\n"
+    assert node.exit_code == 0
+    assert node.stderr == b"printf: missing hex digit for \\x\n"
+
+
+@pytest.mark.asyncio
+async def test_printf_v_missing_digit_warns_and_still_assigns():
+    session = SessionState(session_id="s1")
+    out, io, node = await handle_printf(["-v", "V", "%b", "\\U"], session)
+    assert out is None
+    assert node.exit_code == 0
+    assert io.stderr == b"printf: missing unicode digit for \\U\n"
+    assert session.env["V"] == "\\U"
+
+
+@pytest.mark.asyncio
+async def test_printf_v_readonly_writes_the_warning_before_the_refusal():
+    session = SessionState(session_id="s1")
+    seed_var(session, "R", "orig")
+    set_attr(session, "R", VarAttr.READONLY)
+    out, io, node = await handle_printf(["-v", "R", "\\x"], session)
+    assert node.exit_code == 1
+    assert io.stderr == (b"printf: missing hex digit for \\x\n"
+                         b"bash: R: readonly variable\n")
+    assert session.env["R"] == "orig"
+
+
+# bash 5.2.37: %b's \c returns before an invalid number reaches the
+# status, with or without -v; a readonly -v target still fails.
+@pytest.mark.asyncio
+async def test_printf_stop_from_b_exits_0_after_an_invalid_number():
+    out, io, node = await handle_printf(["%d%b", "abc", "\\c"],
+                                        SessionState(session_id="s1"))
+    assert out == b"0"
+    assert io.exit_code == 0
+    assert io.stderr == b"printf: abc: invalid number\n"
+    assert node.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_printf_v_stop_from_b_exits_0_and_still_assigns():
+    session = SessionState(session_id="s1")
+    out, io, node = await handle_printf(
+        ["-v", "V", "%d%b", "abc", "x", "def", "\\c"], session)
+    assert out is None
+    assert node.exit_code == 0
+    assert io.stderr == (b"printf: abc: invalid number\n"
+                         b"printf: def: invalid number\n")
+    assert session.env["V"] == "0x0"
+
+
+@pytest.mark.asyncio
+async def test_printf_v_readonly_still_fails_after_a_stop_from_b():
+    session = SessionState(session_id="s1")
+    seed_var(session, "R", "orig")
+    set_attr(session, "R", VarAttr.READONLY)
+    out, io, node = await handle_printf(["-v", "R", "%d%b", "abc", "\\c"],
+                                        session)
+    assert node.exit_code == 1
+    assert io.stderr == (b"printf: abc: invalid number\n"
+                         b"bash: R: readonly variable\n")
+    assert session.env["R"] == "orig"

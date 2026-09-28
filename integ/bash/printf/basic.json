@@ -2169,6 +2169,161 @@
         "stdout": " f0 90 82 80 ff\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "printf_unicode_surrogate_half_is_utf8_shaped",
+      "seq": 991170,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf '\\uD800' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " ed a0 80\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_unicode_escape_past_unicode_is_utf8_shaped",
+      "seq": 991171,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf '\\U00110000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " f4 90 80 80\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_unicode_escape_past_0x7fffffff_writes_nothing",
+      "seq": 991172,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf 'x\\UFFFFFFFFy' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 78 79\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_unicode_low_surrogate_is_not_a_raw_byte",
+      "seq": 991173,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf '\\uDC80\\xff' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " ed b2 80 ff\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_conversion_writes_unicode_escapes_the_same_way",
+      "seq": 991174,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf '%b|%b' '\\uD800' '\\U00110000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " ed a0 80 7c f4 90 80 80\n",
+        "stderr": ""
+      }
     }
   ]
 }

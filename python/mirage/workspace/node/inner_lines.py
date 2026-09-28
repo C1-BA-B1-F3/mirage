@@ -17,6 +17,8 @@ from dataclasses import dataclass
 
 from mirage.commands.spec.shell import SHELL_SPECS, parse_shell_options
 from mirage.workspace.executor.builtins.script.bash import parse_bash_args
+from mirage.workspace.executor.builtins.timeout.timeout import timeout_missing
+from mirage.workspace.executor.builtins.xargs.xargs import xargs_missing
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,11 +61,16 @@ class InnerLine:
         open (bool): whether the runtime appends operands the gate
             cannot read (``xargs``'s items, ``find``'s ``{}`` paths,
             the index and record ``mapfile -C`` hands its callback).
+        missing (str | None): what the command writes when the session
+            cannot see the name it runs: ``xargs`` and ``timeout`` look
+            the name up themselves and report it in GNU's words. None
+            where the shell reports it (``command not found``).
     """
 
     line: str | None = None
     argv: tuple[Word, ...] = ()
     open: bool = False
+    missing: str | None = None
 
     @property
     def readable(self) -> bool:
@@ -138,7 +145,8 @@ def _spec_operands(name: str, args: Sequence[Word]) -> tuple[Word, ...] | None:
     """The operands of a shell builtin with a spec, as Words; None
     when the line fails its own option parse."""
     parsed = parse_shell_options(SHELL_SPECS[name], [w.value for w in args])
-    if parsed.invalid is not None or parsed.needs_value is not None:
+    if (parsed.invalid is not None or parsed.needs_value is not None
+            or parsed.unexpected_value is not None):
         return None
     return _tail(args, len(parsed.operands))
 
@@ -148,7 +156,10 @@ def _timeout_inner(args: Sequence[Word]) -> list[InnerLine]:
     operands = _spec_operands("timeout", args)
     if operands is None or len(operands) < 2:
         return []
-    return [InnerLine(argv=operands[1:])]
+    return [
+        InnerLine(argv=operands[1:],
+                  missing=timeout_missing(operands[1].value))
+    ]
 
 
 def _xargs_inner(args: Sequence[Word]) -> list[InnerLine]:
@@ -157,7 +168,10 @@ def _xargs_inner(args: Sequence[Word]) -> list[InnerLine]:
     operands = _spec_operands("xargs", args)
     if operands is None:
         return []
-    return [InnerLine(argv=operands or (Word("echo", "echo"), ), open=True)]
+    argv = operands or (Word("echo", "echo"), )
+    return [
+        InnerLine(argv=argv, open=True, missing=xargs_missing(argv[0].value))
+    ]
 
 
 def _mapfile_inner(args: Sequence[Word]) -> list[InnerLine]:

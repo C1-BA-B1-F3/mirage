@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { ProcessView } from '../../process/types.ts'
-import type { ByteSource } from '../../io/types.ts'
+import type { ByteSource, IOResult } from '../../io/types.ts'
 import type { Limit, PathSpec } from '../../types.ts'
 import type { NamespaceView, SessionView, StatPath } from '../../ops/types.ts'
 import type { ScriptSource } from '../../runtime/routing/types.ts'
@@ -124,6 +124,13 @@ export interface CLIInvocation<ConfigT = unknown> {
    * executor built the record.
    */
   spec?: CLISpec
+  /**
+   * Evaluate a nested line in this invocation's exact session. Host callbacks
+   * use this instead of Workspace.shell for portable re-entry, including after
+   * awaits and inside forks. Valid only until the handler settles or aborts;
+   * await each call before returning. Absent outside a workspace.
+   */
+  shell?: (command: string) => Promise<IOResult>
 }
 
 /**

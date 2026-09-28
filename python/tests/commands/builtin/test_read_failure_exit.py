@@ -68,7 +68,9 @@ GNU_READ_EXIT = {
     "awk '{{print}}' {p}": (2, 2),
     "jq . {p}": (2, 2),
     "grep x {p}": (2, 2),
-    "cmp {p} {p}": (2, 2),
+    # One file named twice is equal unread, so the second operand is
+    # another file.
+    "cmp {p} /ram/dir/inner.txt": (2, 2),
     "sed -n p {p}": (4, 2),
     "gzip -c {p}": (2, 1),
     "gunzip -c {p}": (2, 1),

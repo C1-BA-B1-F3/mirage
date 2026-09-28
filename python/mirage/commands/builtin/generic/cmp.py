@@ -137,14 +137,30 @@ async def cmp_cmd(
         return None, IOResult()
     names = (p0.raw_path or p0.virtual, p1.raw_path or p1.virtual)
     read = stdin_bytes(read_bytes, stdin)
-    try:
-        data1 = await read(p0)
-        data2 = await read(p1)
-    except FS_ERRORS as exc:
-        # GNU cmp reserves exit 1 for "files differ"; trouble (a missing
-        # or unreadable operand) is exit 2.
+    # GNU cmp reserves exit 1 for "files differ"; trouble is exit 2.
+    # diffutils 3.10 opens both operands before it reads either, and -s
+    # drops the message only for an operand it cannot open: a directory
+    # opens, fails at its first read, and is reported whatever -s says,
+    # unless both operands name it, which is the same file at the same
+    # offset and so equal unread.
+    data: list[bytes] = []
+    unread: IsADirectoryError | None = None
+    for p in (p0, p1):
+        try:
+            data.append(await read(p))
+        except IsADirectoryError as exc:
+            unread = unread or exc
+            data.append(b"")
+        except FS_ERRORS as exc:
+            return None, IOResult(
+                exit_code=2,
+                stderr=None if silent else format_fs_error("cmp", exc, paths))
+    if p0.virtual == p1.virtual and skip[0] == skip[1]:
+        return None, IOResult()
+    if unread is not None:
         return None, IOResult(exit_code=2,
-                              stderr=format_fs_error("cmp", exc, paths))
+                              stderr=format_fs_error("cmp", unread, paths))
+    data1, data2 = data
     sizes = [len(data1) - skip[0]] if not is_stdin(p0) else []
     if not is_stdin(p1):
         sizes.append(len(data2) - skip[1])
@@ -236,13 +252,19 @@ class CmpFlags:
 
 def parse_flags(flags: Mapping[str, FlagValue]) -> CmpFlags:
     fl = FlagView(flags, spec=SPECS["cmp"])
-    n_raw = fl.as_str("n")
-    i_raw = fl.as_str("i")
+    silent = fl.as_bool("quiet") or fl.as_bool("silent")
+    verbose = fl.as_bool("verbose")
+    if silent and verbose:
+        # diffutils refuses the pair while it reads the options, so ahead
+        # of any operand check.
+        raise UsageError(f"cmp: options -l and -s are incompatible{_TRY_HELP}")
+    n_raw = fl.as_str("bytes")
+    i_raw = fl.as_str("ignore_initial")
     return CmpFlags(
-        silent=fl.as_bool("s"),
-        verbose=fl.as_bool("args_l"),
+        silent=silent,
+        verbose=verbose,
         limit=parse_count(n_raw, "--bytes") if n_raw is not None else None,
-        print_bytes=fl.as_bool("b"),
+        print_bytes=fl.as_bool("print_bytes"),
         skip=parse_skip(i_raw) if i_raw is not None else (0, 0),
     )
 

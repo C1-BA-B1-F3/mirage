@@ -155,11 +155,12 @@ SPECS: dict[str, CommandSpec] = {
     'cmp':
     CommandSpec(
         options=(
-            Option(short="-l"),
-            Option(short="-s"),
-            Option(short="-n", type="str"),
-            Option(short="-b"),
-            Option(short="-i", type="str"),
+            Option(short="-l", long="--verbose"),
+            Option(short="-s", long="--quiet"),
+            Option(long="--silent"),
+            Option(short="-n", long="--bytes", type="str"),
+            Option(short="-b", long="--print-bytes"),
+            Option(short="-i", long="--ignore-initial", type="str"),
         ),
         positional=(
             Operand(type="path"),

@@ -178,7 +178,7 @@ export function unknownOptionError(cmdName: string, token: string): [Uint8Array,
   const line = token.startsWith('--')
     ? `${cmdName}: unrecognized option '${token}'\n`
     : `${cmdName}: invalid option -- '${token}'\n`
-  const hint = `Try '${cmdName} --help' for more information.\n`
+  const hint = usageHint(cmdName) + '\n'
   return [new TextEncoder().encode(line + hint), usageExitCode(cmdName)]
 }
 
@@ -217,7 +217,7 @@ export function unexpectedValueError(cmdName: string, token: string): [Uint8Arra
   if (NOT_GETOPT_LONG.has(cmdName)) return unknownOptionError(cmdName, token)
   const option = token.split('=', 1)[0] ?? token
   const line = `${cmdName}: option '${option}' doesn't allow an argument\n`
-  const hint = `Try '${cmdName} --help' for more information.\n`
+  const hint = usageHint(cmdName) + '\n'
   return [new TextEncoder().encode(line + hint), usageExitCode(cmdName)]
 }
 
@@ -236,7 +236,7 @@ export function ambiguousOptionError(
 ): [Uint8Array, number] {
   const listed = candidates.map((c) => `'${c}'`).join(' ')
   const line = `${cmdName}: option '${token}' is ambiguous; possibilities: ${listed}\n`
-  const hint = `Try '${cmdName} --help' for more information.\n`
+  const hint = usageHint(cmdName) + '\n'
   return [new TextEncoder().encode(line + hint), usageExitCode(cmdName)]
 }
 
@@ -254,7 +254,7 @@ export function invalidIntError(
   value: string,
 ): [Uint8Array, number] {
   const line = `${cmdName}: invalid int value: '${value}' for '${option}'\n`
-  const hint = `Try '${cmdName} --help' for more information.\n`
+  const hint = usageHint(cmdName) + '\n'
   return [new TextEncoder().encode(line + hint), usageExitCode(cmdName)]
 }
 
@@ -272,7 +272,7 @@ export function invalidFloatError(
     return curlOptionError(`curl: option ${option}: expected a proper numerical parameter\n`)
   }
   const line = `${cmdName}: invalid float value: '${value}' for '${option}'\n`
-  const hint = `Try '${cmdName} --help' for more information.\n`
+  const hint = usageHint(cmdName) + '\n'
   return [new TextEncoder().encode(line + hint), usageExitCode(cmdName)]
 }
 
@@ -289,7 +289,7 @@ export function missingValueError(cmdName: string, token: string): [Uint8Array, 
   const line = token.startsWith('--')
     ? `${cmdName}: option '${token}' requires an argument\n`
     : `${cmdName}: option requires an argument -- '${token}'\n`
-  const hint = `Try '${cmdName} --help' for more information.\n`
+  const hint = usageHint(cmdName) + '\n'
   return [new TextEncoder().encode(line + hint), usageExitCode(cmdName)]
 }
 
@@ -310,7 +310,7 @@ export function missingValueError(cmdName: string, token: string): [Uint8Array, 
  */
 export function oldOptionError(cmdName: string, letter: string): [Uint8Array, number] {
   const line = `${cmdName}: Old option '${letter}' requires an argument.\n`
-  const hint = `Try '${cmdName} --help' for more information.\n`
+  const hint = usageHint(cmdName) + '\n'
   return [new TextEncoder().encode(line + hint), OLD_OPTION_EXIT]
 }
 
@@ -378,7 +378,7 @@ export function invalidArgumentError(
   kind: ArgmatchKind = 'invalid',
 ): [Uint8Array, number] {
   const line = `${argmatchLine(cmdName, option, value, kind)}\n${argmatchValidBlock(choices)}\n`
-  const hint = `Try '${cmdName} --help' for more information.\n`
+  const hint = usageHint(cmdName) + '\n'
   const code = exitCode ?? usageExitCode(cmdName)
   return [new TextEncoder().encode(line + hint), code]
 }
@@ -414,7 +414,7 @@ export function argmatchError(
  */
 export function missingRequiredError(cmdName: string, option: string): [Uint8Array, number] {
   const line = `${cmdName}: option '${option}' is required\n`
-  const hint = `Try '${cmdName} --help' for more information.\n`
+  const hint = usageHint(cmdName) + '\n'
   return [new TextEncoder().encode(line + hint), usageExitCode(cmdName)]
 }
 

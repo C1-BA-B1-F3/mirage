@@ -81,6 +81,26 @@ describe('innerLines', () => {
     expect(shapes(head, args)).toEqual(expected)
   })
 
+  it.each<[string, string[], string | null]>([
+    ['xargs', ['-n', '1', 'rm', '-f'], 'xargs: rm: No such file or directory\n'],
+    ['xargs', [], 'xargs: echo: No such file or directory\n'],
+    [
+      'timeout',
+      ['-s', 'KILL', '5', 'rm', '/x'],
+      "timeout: failed to run command 'rm': No such file or directory\n",
+    ],
+    ['env', ['rm', '/x'], null],
+    ['command', ['rm', '/x'], null],
+    ['find', ['/r', '-exec', 'rm', '{}', ';'], null],
+    ['eval', ['rm', '/x'], null],
+  ])('leaves a miss to a builtin that looks the name up itself: %s %j', (head, args, missing) => {
+    // xargs and timeout look the name up before they run it, as GNU's
+    // exec does, so a name the session cannot see is theirs to report;
+    // the rest hand the words back to the shell, which reports it.
+    const [inner] = innerLines(head, words(...args))
+    expect(inner?.missing).toBe(missing)
+  })
+
   it('keeps what the gate could not read', () => {
     // A dynamic word rides into the inner command as itself, raw text
     // and no literal, so the inner admission still sees it as unread.

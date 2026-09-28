@@ -75,6 +75,16 @@ def _refuse(stderr: bytes,
                                                         exit_code=exit_code)
 
 
+def timeout_missing(name: str) -> str:
+    """GNU's report of a command timeout finds nothing to run for.
+
+    Args:
+        name (str): the command word.
+    """
+    return (f"timeout: failed to run command '{quote_text(name)}': "
+            "No such file or directory\n")
+
+
 def parse_duration(raw: str) -> float | None:
     """GNU timeout's parse_duration: a C float plus an optional s/m/h/d.
 
@@ -251,9 +261,7 @@ async def handle_timeout(
 
     command = parse.operands[1:]
     if registry is not None and not execs(command[0], session, registry):
-        stderr = (f"timeout: failed to run command '{quote_text(command[0])}'"
-                  ": No such file or directory\n").encode()
-        return _refuse(stderr, 127)
+        return _refuse(timeout_missing(command[0]).encode(), 127)
     return await _supervise(execute_fn, shlex.join(command), session, stdin,
                             seconds, signal, kill_after, parse.flags,
                             command[0])

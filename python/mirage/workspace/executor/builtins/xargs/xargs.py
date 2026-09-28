@@ -464,6 +464,15 @@ def _trace(line: list[bytes]) -> str:
         shell_quote(word.decode(errors="replace")) for word in line) + "\n"
 
 
+def xargs_missing(name: str) -> str:
+    """GNU's report of a command xargs finds nothing to run for.
+
+    Args:
+        name (str): the command word.
+    """
+    return f"xargs: {name}: No such file or directory\n"
+
+
 async def _run_lines(
         execute_fn: Callable[..., Any],
         events: list[str | list[bytes]],
@@ -542,9 +551,9 @@ async def _run_lines(
             if trace:
                 results[index].append(IOResult(stderr=_trace(event).encode()))
             if registry is not None and not execs(words[0], session, registry):
-                missing = f"xargs: {words[0]}: No such file or directory\n"
                 results[index].append(
-                    IOResult(stderr=missing.encode(), exit_code=127))
+                    IOResult(stderr=xargs_missing(words[0]).encode(),
+                             exit_code=127))
                 stop = 127
                 return
             try:

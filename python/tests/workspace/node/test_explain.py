@@ -140,6 +140,36 @@ async def test_a_word_the_session_cannot_see_is_deny_at_127(ws):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("line, said", [
+    ("echo x | xargs gerp", "xargs: gerp: No such file or directory\n"),
+    ("timeout 5 gerp x",
+     "timeout: failed to run command 'gerp': No such file or directory\n"),
+])
+async def test_a_hidden_word_a_builtin_runs_is_reported_in_its_words(
+        line, said):
+    # xargs and timeout look the name up before they run it, as GNU's
+    # exec does, so the run reports a word the session cannot see in
+    # their words, and the dry run must say what the run says.
+    workspace = Workspace(
+        {"/data/": RAMVFS()},
+        mode=MountMode.WRITE,
+        profiles={"r": {
+            "commands": {
+                "allow": ["echo", "xargs", "timeout"]
+            }
+        }})
+    workspace.create_session("s", profile="r")
+    try:
+        ran = await workspace.shell(line, session_id="s")
+        missing = (await workspace.explain(line, "s"))[-1]
+    finally:
+        await workspace.close()
+    assert (ran.exit_code, ran.stderr) == (127, said.encode())
+    assert (missing.exit_code, missing.stderr) == (127, said)
+    assert (missing.command, missing.source) == ("gerp", "commands.allow")
+
+
+@pytest.mark.asyncio
 async def test_explain_reads_every_command_of_a_line(ws):
     first, second = await ws.explain("cat /data/a.txt && rm /data/prod/x.txt",
                                      "s")

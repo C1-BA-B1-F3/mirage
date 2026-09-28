@@ -80,6 +80,11 @@ function usageError(message: string): Result {
   return refuse(ENCODER.encode(`timeout: ${message}\n${usageHint('timeout')}\n`))
 }
 
+/** GNU's report of a command timeout finds nothing to run for. */
+export function timeoutMissing(name: string): string {
+  return `timeout: failed to run command '${quoteText(name)}': No such file or directory\n`
+}
+
 function hexFloat(body: string): number {
   const match = /^0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]*))?(?:[pP]([+-]?[0-9]+))?$/.exec(body)
   const whole = match?.[1] ?? ''
@@ -310,12 +315,7 @@ export async function handleTimeout(
   if (seconds === null) return usageError(`invalid time interval '${quoteText(raw)}'`)
   const name = command[0] ?? ''
   if (registry !== null && !execs(name, session, registry)) {
-    return refuse(
-      ENCODER.encode(
-        `timeout: failed to run command '${quoteText(name)}': No such file or directory\n`,
-      ),
-      127,
-    )
+    return refuse(ENCODER.encode(timeoutMissing(name)), 127)
   }
 
   const drained: Uint8Array[] = []

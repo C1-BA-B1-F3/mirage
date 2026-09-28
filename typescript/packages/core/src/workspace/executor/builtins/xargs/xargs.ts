@@ -235,6 +235,11 @@ function trace(line: readonly Uint8Array[]): string {
   return `${line.map((word) => shellQuote(decode(word))).join(' ')}\n`
 }
 
+/** GNU's report of a command xargs finds nothing to run for. */
+export function xargsMissing(name: string): string {
+  return `xargs: ${name}: No such file or directory\n`
+}
+
 interface BuilderOptions {
   delim: number | null
   eof: Uint8Array | null
@@ -607,12 +612,7 @@ async function runLines(
       const name = words[0] ?? ''
       if (opts.trace === true) slot.push(new IOResult({ stderr: ENCODER.encode(trace(event)) }))
       if (registry !== null && !execs(name, session, registry)) {
-        slot.push(
-          new IOResult({
-            stderr: ENCODER.encode(`xargs: ${name}: No such file or directory\n`),
-            exitCode: 127,
-          }),
-        )
+        slot.push(new IOResult({ stderr: ENCODER.encode(xargsMissing(name)), exitCode: 127 }))
         stop = 127
         return
       }

@@ -128,7 +128,17 @@ function unreadableWord(raw: string): Explanation {
   }
 }
 
-function fromRefusal(name: string, args: readonly string[], refusal: Refused): Explanation {
+/**
+ * The explanation of a head word the session cannot see. `missing` is
+ * how the command running the word reports it (`InnerLine.missing`),
+ * null for the gate's own words.
+ */
+function fromRefusal(
+  name: string,
+  args: readonly string[],
+  refusal: Refused,
+  missing: string | null = null,
+): Explanation {
   return {
     command: name,
     argv: args,
@@ -139,7 +149,7 @@ function fromRefusal(name: string, args: readonly string[], refusal: Refused): E
     matchedPath: null,
     paths: [],
     exitCode: refusal.exitCode,
-    stderr: DECODER.decode(refusal.stderr),
+    stderr: missing ?? DECODER.decode(refusal.stderr),
     refusal: refusal.refusal,
   }
 }
@@ -206,7 +216,10 @@ async function explained(
  * nested evaluation will stand when it runs. `stated` is whether the
  * words reach here as the gate will read them; false under a command
  * the runtime completes, since a line built from its words (`eval`) or
- * run on its operands (`xargs`) is completed with them.
+ * run on its operands (`xargs`) is completed with them. `missing` is
+ * how the command that runs these words reports a name the session
+ * cannot see, null for the gate's own words: `xargs` and `timeout` look
+ * the name up before the gate reads it, so the run prints theirs.
  */
 async function judgeWords(
   words: readonly Word[],
@@ -218,6 +231,7 @@ async function judgeWords(
   reparse: (line: string) => TSNodeLike,
   redirectWords: readonly Word[] = [],
   stated = true,
+  missing: string | null = null,
 ): Promise<Judged[]> {
   const head = words[0]
   if (head === undefined) return []
@@ -240,7 +254,7 @@ async function judgeWords(
     redirectPaths(redirectWords, registry, session.cwd),
   )
   if (!Array.isArray(gated)) {
-    return [{ explanation: fromRefusal(name, args, gated), occurrence, stated: literal }]
+    return [{ explanation: fromRefusal(name, args, gated, missing), occurrence, stated: literal }]
   }
   const [ctx, asked] = gated
   const out: Judged[] = [
@@ -274,6 +288,7 @@ async function judgeWords(
           reparse,
           [],
           literal && !inner.open,
+          inner.missing,
         )),
       )
     }

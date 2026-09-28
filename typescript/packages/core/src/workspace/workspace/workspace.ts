@@ -1419,7 +1419,10 @@ export class Workspace {
    * inline: it already holds the session, and waiting on itself would
    * deadlock. Evaluators carry their session explicitly. Ambient re-entry
    * is accepted only with task-local storage, just as in `executeLine`:
-   * the fallback's newest binding may belong to another call.
+   * the fallback's newest binding may belong to another call. There a
+   * host callback cannot be told from any other caller, so while the
+   * line holding the session waits on one of its callbacks, a call for
+   * that session runs inline rather than deadlocking behind it.
    *
    * @param sessionId the session named by the caller, or undefined for
    *   the default.
@@ -1436,19 +1439,32 @@ export class Workspace {
     if (ambient !== null && (sessionId === undefined || sessionId === ambient.sessionId)) {
       return run()
     }
+    if (!asyncContextIsolatesTasks) {
+      const holder = this.registeredSession(sessionId ?? this.sessionManager.defaultId)
+      if ((holder?.lineHold?.callbacks ?? 0) > 0) return run()
+    }
     // Hydrate first: a workspace on a shared store adopts the persisted
     // default id there, and a key taken before that names a session no
     // later line would wait on.
     await abortable(this.ensureSessionsLoaded(), signal)
     let started = false
-    const gate = this.lineLock.withLock(sessionId ?? this.sessionManager.defaultId, async () => {
+    const key = sessionId ?? this.sessionManager.defaultId
+    const gate = this.lineLock.withLock(key, async () => {
       // A line queued behind a running one wakes after close may have
       // started, or after its caller was released; it runs nothing,
       // like a line that arrived after.
       if (this.isShuttingDown()) throw new Error('Workspace is closed')
       if (hasAborted(signal)) throw makeAbortError(signal)
       started = true
-      return run()
+      const held = this.registeredSession(key)
+      if (held === null) return run()
+      const hold = { callbacks: 0 }
+      held.lineHold = hold
+      try {
+        return await run()
+      } finally {
+        if (held.lineHold === hold) held.lineHold = null
+      }
     })
     if (signal === undefined) return gate
     // The wait is the caller's to abandon; the run is not. Once the line
@@ -1463,6 +1479,11 @@ export class Workspace {
         signal.removeEventListener('abort', onAbort)
       })
     })
+  }
+
+  /** The registered session named `sessionId`, or null when there is none. */
+  private registeredSession(sessionId: string): SessionState | null {
+    return this.sessionManager.list().find((s) => s.sessionId === sessionId) ?? null
   }
 
   /**

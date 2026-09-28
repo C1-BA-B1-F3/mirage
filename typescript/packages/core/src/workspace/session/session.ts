@@ -455,6 +455,13 @@ export class SessionState {
   // one channel. Python needs no equivalent: kill cancels the asyncio
   // task and cancellation is ambient.
   abortSignal: AbortSignal | null = null
+  // The foreground line's hold on this session, while one holds its line
+  // lock: how many host callbacks the line is waiting on. Where async
+  // context does not isolate tasks, a callback's own `ws.shell` looks
+  // like any other call, so the line lets same-session calls in only
+  // while it waits on one of its callbacks. Transient like `abortSignal`;
+  // fork() carries it, so an xargs child or a pipeline stage is the line.
+  lineHold: { callbacks: number } | null = null
   // Command-substitution tracking for assignment statements: how many
   // substitutions have run in this session, and the status of the
   // most recent one. An assignment statement snapshots the count
@@ -606,6 +613,7 @@ export class SessionState {
     forked.getoptsPos = this.getoptsPos
     forked.getoptsOptind = this.getoptsOptind
     forked.abortSignal = this.abortSignal
+    forked.lineHold = this.lineHold
     forked.cmdsubSeq = this.cmdsubSeq
     forked.cmdsubStatus = this.cmdsubStatus
     forked.shopts = { ...this.shopts }

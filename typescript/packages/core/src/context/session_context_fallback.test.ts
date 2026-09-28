@@ -515,6 +515,50 @@ describe('overlapping shell calls beside xargs', () => {
   it('keeps another foreground call queued and honors its abort', async () => {
     const parser = await getTestParser()
     const ws = new Workspace({}, { shellParser: parser })
+    const child = ws.shell('printf a | xargs -P2 -I{} sleep 0.3')
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await expect(
+        ws.shell('Y=leaked', {
+          sessionId: ws.defaultSessionId,
+          signal: AbortSignal.timeout(100),
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' })
+    } finally {
+      await child
+      expect(ws.getSession(ws.defaultSessionId).env.Y).toBeUndefined()
+      await ws.close()
+    }
+  })
+
+  it.each(['again', 'printf a | xargs -P2 -I{} again', 'again | cat'])(
+    'lets a host callback re-enter its own session: %s',
+    async (line) => {
+      const parser = await getTestParser()
+      const ws = new Workspace({}, { shellParser: parser })
+      ws.registerCli(
+        'again',
+        new CLISpec({
+          name: 'again',
+          fn: async () => {
+            const inner = await ws.shell('Z=inner; echo inner')
+            return [inner.stdout, new IOResult({ exitCode: inner.exitCode })]
+          },
+        }),
+      )
+      try {
+        const io = await ws.shell(line)
+        expect(io.stdoutText).toBe('inner\n')
+        expect(ws.getSession(ws.defaultSessionId).env.Z).toBe('inner')
+      } finally {
+        await ws.close()
+      }
+    },
+  )
+
+  it('admits nothing through a host callback of a line that has ended', async () => {
+    const parser = await getTestParser()
+    const ws = new Workspace({}, { shellParser: parser })
     const [entered, enter] = gate()
     const [held, release] = gate()
     ws.registerCli(
@@ -528,19 +572,19 @@ describe('overlapping shell calls beside xargs', () => {
         },
       }),
     )
-    const child = ws.shell('printf a | xargs -P2 -I{} hold')
     try {
+      await ws.shell('hold &')
       await entered
+      const running = ws.shell('sleep 0.3')
+      await new Promise((resolve) => setTimeout(resolve, 20))
       await expect(
-        ws.shell('Y=leaked', {
-          sessionId: ws.defaultSessionId,
-          signal: AbortSignal.timeout(100),
-        }),
+        ws.shell('Y=leaked', { signal: AbortSignal.timeout(100) }),
       ).rejects.toMatchObject({ name: 'AbortError' })
+      await running
+      expect(ws.getSession(ws.defaultSessionId).env.Y).toBeUndefined()
     } finally {
       release()
-      await child
-      expect(ws.getSession(ws.defaultSessionId).env.Y).toBeUndefined()
+      await ws.jobTable.wait(1, ws.defaultSessionId)
       await ws.close()
     }
   })

@@ -374,7 +374,17 @@ export async function handleCli(
     // Defer the call into the promise: a synchronously-thrown leaf
     // error must land in the catch arms below, exactly as when the
     // call sat inside the try.
-    body = (async () => fn(inv))()
+    // The line waits on its host while the callback runs, so it lends
+    // its session to the callback's own lines (see `SessionState.lineHold`).
+    const hold = session.lineHold
+    body = (async () => {
+      if (hold !== null) hold.callbacks += 1
+      try {
+        return await fn(inv)
+      } finally {
+        if (hold !== null) hold.callbacks -= 1
+      }
+    })()
   }
   // The leaf's declared limit bounds the handler body and its
   // streams, exactly like mount dispatch: without the wrap a blocking

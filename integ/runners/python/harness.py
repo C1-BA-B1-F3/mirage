@@ -598,8 +598,9 @@ async def run_case(
 
 
 async def run_scenario(read_ws, mutate, mutate_line,
-                       steps: list[dict]) -> tuple[int, str]:
+                       steps: list[dict]) -> tuple[int, str, str]:
     outs: list[str] = []
+    errs: list[str] = []
     exit_code = 0
     for step in steps:
         if "mutate" in step:
@@ -611,8 +612,9 @@ async def run_scenario(read_ws, mutate, mutate_line,
             continue
         result = await read_ws.shell(step["command"])
         outs.append(await result.stdout_str())
+        errs.append(await result.stderr_str())
         exit_code = result.exit_code
-    return exit_code, "".join(outs)
+    return exit_code, "".join(outs), "".join(errs)
 
 
 def compare(case: dict,

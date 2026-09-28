@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from types import ModuleType
+from unittest.mock import AsyncMock
 
 import boto3
 import moto.s3.models
@@ -1264,3 +1265,28 @@ def test_the_contract_goes_red_on_github_stamping_another_kind(monkeypatch):
     assert holds_read_token
     assert fingerprint == blob_sha(SEED)
     assert not fresh
+
+
+@pytest.mark.parametrize("name", ["gdocs", "gsheets", "gslides"])
+def test_partial_search_cannot_evict_live_app_bytes_or_overlay(
+        name, monkeypatch):
+    with _fake(name, "root", SEED, monkeypatch) as fake:
+        virtual = "/m/" + fake.key
+
+        async def run():
+            ws = _fresh_workspace(fake.vfs)
+            try:
+                await _line(ws, f"cat {virtual}")
+                await _line(ws, f"chmod 600 {virtual}")
+                search = AsyncMock(return_value=([], False))
+                monkeypatch.setattr(
+                    f"mirage.core.{name}.readdir.list_all_files", search)
+                before = fake.fetches()
+                assert await _line(ws, f"cat {virtual}") == SEED
+                assert await _line(ws, f"stat -c %a {virtual}") == b"600\n"
+                assert fake.fetches() == before
+                search.assert_not_awaited()
+            finally:
+                await ws.close()
+
+        asyncio.run(run())

@@ -81,8 +81,9 @@ async def test_stat_sheet_from_cache(accessor, index):
 
 
 @pytest.mark.asyncio
-async def test_stat_cache_miss_falls_back_via_readdir(accessor, index):
+async def test_stat_cache_miss_fetches_metadata_by_id(accessor, index):
     files = [{
+        "mimeType": "application/vnd.google-apps.spreadsheet",
         "id": "s1",
         "name": "My Sheet",
         "modifiedTime": "2026-04-01T00:00:00.000Z",
@@ -93,9 +94,9 @@ async def test_stat_cache_miss_falls_back_via_readdir(accessor, index):
     }]
     target = "/gsheets/owned/2026-04-01_My_Sheet__s1.gsheet.json"
     with patch(
-            "mirage.core.gsheets.readdir.list_all_files",
+            "mirage.core.google.entry.get_file",
             new_callable=AsyncMock,
-            return_value=(files, True),
+            return_value=files[0],
     ) as mock_list:
         result = await stat(
             accessor,
@@ -110,6 +111,7 @@ async def test_stat_cache_miss_falls_back_via_readdir(accessor, index):
 @pytest.mark.asyncio
 async def test_stat_not_found_after_fallback(accessor, index):
     files = [{
+        "mimeType": "application/vnd.google-apps.spreadsheet",
         "id": "s1",
         "name": "Other",
         "modifiedTime": "2026-04-01T00:00:00.000Z",
@@ -118,9 +120,9 @@ async def test_stat_not_found_after_fallback(accessor, index):
         }],
     }]
     with patch(
-            "mirage.core.gsheets.readdir.list_all_files",
+            "mirage.core.google.entry.get_file",
             new_callable=AsyncMock,
-            return_value=(files, True),
+            return_value=files[0],
     ):
         with pytest.raises(FileNotFoundError):
             await stat(

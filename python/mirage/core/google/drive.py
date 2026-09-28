@@ -279,8 +279,10 @@ async def download_file(
 
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
-ITEM_FIELDS = ("id,name,mimeType,driveId,size,quotaBytesUsed,"
-               "createdTime,modifiedTime,md5Checksum,headRevisionId,parents")
+ITEM_FIELDS = (
+    "id,name,mimeType,driveId,size,quotaBytesUsed,"
+    "createdTime,modifiedTime,md5Checksum,headRevisionId,parents,owners,trashed"
+)
 DEFAULT_UPLOAD_MIME = "application/octet-stream"
 
 

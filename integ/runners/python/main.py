@@ -80,10 +80,9 @@ async def run_consistency_case(target: dict, case: dict,
     read_ws, mutate, mutate_line, cleanup = await adapters.open_consistency(
         target, spec)
     try:
-        exit_code, out = await harness.run_scenario(read_ws, mutate,
-                                                    mutate_line,
-                                                    case["scenario"])
-        _emit_or_record(emit, report, target["id"], case, exit_code, out, "",
+        exit_code, out, err = await harness.run_scenario(
+            read_ws, mutate, mutate_line, case["scenario"])
+        _emit_or_record(emit, report, target["id"], case, exit_code, out, err,
                         0.0)
     finally:
         await cleanup()

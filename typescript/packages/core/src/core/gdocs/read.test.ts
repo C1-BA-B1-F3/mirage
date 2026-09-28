@@ -19,7 +19,7 @@ import type * as ClientModule from '../google/client.ts'
 
 vi.mock('../google/drive.ts', async () => {
   const actual = await vi.importActual<typeof DriveModule>('../google/drive.ts')
-  return { ...actual, listAllFiles: vi.fn() }
+  return { ...actual, listAllFiles: vi.fn(), getFile: vi.fn() }
 })
 
 vi.mock('../google/client.ts', async () => {
@@ -47,17 +47,13 @@ function makeAccessor(): GDocsAccessor {
 }
 
 describe('gdocs read auto-bootstrap', () => {
-  it('refetches owned listing when entry is evicted from index', async () => {
-    vi.mocked(drive.listAllFiles).mockResolvedValue({
-      files: [
-        {
-          id: 'doc1',
-          name: 'Notes',
-          modifiedTime: '2026-04-01T00:00:00.000Z',
-          owners: [{ me: true }],
-        },
-      ],
-      complete: true,
+  it('fetches metadata by ID when entry is evicted from index', async () => {
+    vi.mocked(drive.getFile).mockResolvedValue({
+      mimeType: 'application/vnd.google-apps.document',
+      id: 'doc1',
+      name: 'Notes',
+      modifiedTime: '2026-04-01T00:00:00.000Z',
+      owners: [{ me: true }],
     })
     vi.mocked(client.googleGet).mockResolvedValue({ documentId: 'doc1' })
 
@@ -72,8 +68,10 @@ describe('gdocs read auto-bootstrap', () => {
     expect(new TextDecoder().decode(out)).toContain('doc1')
   })
 
-  it('throws ENOENT when file missing even after recursion', async () => {
-    vi.mocked(drive.listAllFiles).mockResolvedValue({ files: [], complete: true })
+  it('throws ENOENT when file missing by ID', async () => {
+    vi.mocked(drive.getFile).mockRejectedValue(
+      Object.assign(new Error('missing'), { code: 'ENOENT' }),
+    )
     vi.mocked(client.googleGet).mockRejectedValue(new Error('should not call googleGet'))
 
     const accessor = makeAccessor()
@@ -88,8 +86,8 @@ describe('gdocs read auto-bootstrap', () => {
 
   // The Drive-item read family (gdocs/gsheets/gslides) shares this shape:
   // only an absent parent may collapse into the operand's ENOENT.
-  it('propagates a failed parent listing instead of reporting ENOENT', async () => {
-    vi.mocked(drive.listAllFiles).mockRejectedValue(new Error('google unavailable'))
+  it('propagates a failed metadata request instead of reporting ENOENT', async () => {
+    vi.mocked(drive.getFile).mockRejectedValue(new Error('google unavailable'))
     vi.mocked(client.googleGet).mockRejectedValue(new Error('should not call googleGet'))
 
     const accessor = makeAccessor()

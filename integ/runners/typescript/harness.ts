@@ -498,8 +498,9 @@ export async function runScenario(
   mutate: (path: string, content: Uint8Array) => Promise<void>,
   mutateLine: (command: string) => Promise<void>,
   steps: ScenarioStep[],
-): Promise<{ exitCode: number; out: string }> {
+): Promise<{ exitCode: number; out: string; err: string }> {
   const outputs: string[] = []
+  const errors: string[] = []
   let exitCode = 0
   for (const step of steps) {
     if ('mutate' in step) {
@@ -510,9 +511,10 @@ export async function runScenario(
     }
     const result = await ws.shell(step.command)
     outputs.push(DEC.decode(result.stdout))
+    errors.push(DEC.decode(result.stderr))
     exitCode = result.exitCode
   }
-  return { exitCode, out: outputs.join('') }
+  return { exitCode, out: outputs.join(''), err: errors.join('') }
 }
 
 /** The two workspaces a consistency scenario runs across, and their teardown. */
@@ -559,13 +561,13 @@ export async function runConsistencyCase(
     // every workspace a case can run against, or a consistency scenario would
     // silently run under a different one.
     opened.ws.env = { ...opened.ws.env, ...(target.env ?? {}) }
-    const { exitCode, out } = await runScenario(
+    const { exitCode, out, err } = await runScenario(
       opened.ws,
       opened.mutate,
       opened.mutateLine,
       c.scenario ?? [],
     )
-    return { exitCode, out, stderr: '' }
+    return { exitCode, out, stderr: err }
   } finally {
     await opened.cleanup()
   }

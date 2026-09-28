@@ -16,13 +16,13 @@ import type { GSlidesAccessor } from '../../accessor/gslides.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { record, startOp } from '../../observe/context.ts'
 import type { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
 import { slidesBase, type TokenManager, googleGet } from '../google/client.ts'
-import { resolveEntry } from '../hierarchy/probe.ts'
+import { resolveAppEntry } from '../google/entry.ts'
+import { MIME } from './constants.ts'
+import { makeFilename } from '../../vfs/gslides/slide_entry.ts'
 import { makeRead } from '../hierarchy/read.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { compactJsonBytes } from '../render/json.ts'
-import { readdir } from './readdir.ts'
 import { detectScope } from './scope.ts'
 
 export async function readPresentation(
@@ -36,12 +36,19 @@ export async function readPresentation(
 
 async function readFile(
   accessor: GSlidesAccessor,
-  _match: ScopeMatch,
+  match: ScopeMatch,
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<Uint8Array> {
-  const entry = await resolveEntry(readdir, accessor, path, index)
-  if (entry === null) throw enoent(path.virtual)
+  const entry = await resolveAppEntry(
+    accessor.tokenManager,
+    match,
+    path,
+    index,
+    MIME,
+    'gslides/file',
+    makeFilename,
+  )
   const timer = startOp()
   const data = await readPresentation(accessor.tokenManager, entry.id)
   record('read', path.virtual, 'gslides', data.length, timer, {

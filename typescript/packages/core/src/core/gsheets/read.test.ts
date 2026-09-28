@@ -19,7 +19,7 @@ import type * as ClientModule from '../google/client.ts'
 
 vi.mock('../google/drive.ts', async () => {
   const actual = await vi.importActual<typeof DriveModule>('../google/drive.ts')
-  return { ...actual, listAllFiles: vi.fn() }
+  return { ...actual, listAllFiles: vi.fn(), getFile: vi.fn() }
 })
 
 vi.mock('../google/client.ts', async () => {
@@ -47,17 +47,13 @@ function makeAccessor(): GSheetsAccessor {
 }
 
 describe('gsheets read auto-bootstrap', () => {
-  it('refetches owned listing when entry is evicted from index', async () => {
-    vi.mocked(drive.listAllFiles).mockResolvedValue({
-      files: [
-        {
-          id: 'sheet1',
-          name: 'Budget',
-          modifiedTime: '2026-04-01T00:00:00.000Z',
-          owners: [{ me: true }],
-        },
-      ],
-      complete: true,
+  it('fetches metadata by ID when entry is evicted from index', async () => {
+    vi.mocked(drive.getFile).mockResolvedValue({
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+      id: 'sheet1',
+      name: 'Budget',
+      modifiedTime: '2026-04-01T00:00:00.000Z',
+      owners: [{ me: true }],
     })
     vi.mocked(client.googleGet).mockResolvedValue({ spreadsheetId: 'sheet1' })
 
@@ -72,8 +68,10 @@ describe('gsheets read auto-bootstrap', () => {
     expect(new TextDecoder().decode(out)).toContain('sheet1')
   })
 
-  it('throws ENOENT when file missing even after recursion', async () => {
-    vi.mocked(drive.listAllFiles).mockResolvedValue({ files: [], complete: true })
+  it('throws ENOENT when file missing by ID', async () => {
+    vi.mocked(drive.getFile).mockRejectedValue(
+      Object.assign(new Error('missing'), { code: 'ENOENT' }),
+    )
     vi.mocked(client.googleGet).mockRejectedValue(new Error('should not call googleGet'))
 
     const accessor = makeAccessor()

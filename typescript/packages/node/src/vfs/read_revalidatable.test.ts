@@ -22,6 +22,7 @@ import type * as ContextModule from '@struktoai/mirage-core/observe/context'
 import type { OpRecord } from '@struktoai/mirage-core/observe/record'
 import type * as ClientModule from '../core/gridfs/client.ts'
 import type * as DriveModule from '@struktoai/mirage-core/core/google/drive'
+import * as googleDrive from '@struktoai/mirage-core/core/google/drive'
 import type * as DriveVersionsModule from '@struktoai/mirage-core/core/gdrive/versions'
 import type * as DocsReadModule from '@struktoai/mirage-core/core/gdocs/read'
 import type * as GoogleClientModule from '@struktoai/mirage-core/core/google/client'
@@ -1474,6 +1475,28 @@ describe('the read-token contract', () => {
       expect(stat.fingerprint).toBe(sha1Blob(SEED))
       expect(await ws.cache.isFresh(virtual, stat.fingerprint ?? '')).toBe(false)
     } finally {
+      await ws.close()
+    }
+  })
+})
+
+describe('partial searches cannot evict live app bytes or overlays', () => {
+  it.each(['gdocs', 'gsheets', 'gslides'])('%s', async (name) => {
+    const fake = await makeFake(name, 'root', SEED)
+    const virtual = `/m/${fake.key}`
+    const ws = freshWorkspace(fake.vfs)
+    const search = vi.spyOn(googleDrive, 'listAllFiles')
+    try {
+      await line(ws, `cat ${virtual}`)
+      await line(ws, `chmod 600 ${virtual}`)
+      search.mockClear().mockResolvedValue({ files: [], complete: false })
+      const before = fake.fetches()
+      expect(await line(ws, `cat ${virtual}`)).toEqual(SEED)
+      expect(new TextDecoder().decode(await line(ws, `stat -c %a ${virtual}`))).toBe('600\n')
+      expect(fake.fetches()).toBe(before)
+      expect(search).not.toHaveBeenCalled()
+    } finally {
+      search.mockRestore()
       await ws.close()
     }
   })

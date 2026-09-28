@@ -69,6 +69,7 @@ _PATCH_TARGETS = {
     # only a target that no longer resolves, so an unlisted binding would
     # keep pointing at the real Drive API (#684's shape).
     "get_file": [
+        "mirage.core.google.entry.get_file",
         "mirage.core.gdrive.stat.get_file",
         "mirage.core.gdrive.resolve.get_file",
     ],

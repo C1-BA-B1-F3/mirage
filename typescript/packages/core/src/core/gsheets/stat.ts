@@ -12,14 +12,32 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { IndexEntry } from '../../cache/index/config.ts'
+import type { GSheetsAccessor } from '../../accessor/gsheets.ts'
+import type { IndexCacheStore } from '../../cache/index/store.ts'
+import { MIME } from './constants.ts'
+import { resolveAppEntry } from '../google/entry.ts'
+import { makeFilename } from '../../vfs/gsheets/sheet_entry.ts'
 import { ContentType, FileStat, FileType, type PathSpec } from '../../types.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { makeStat } from '../hierarchy/stat.ts'
 import { readdir } from './readdir.ts'
 import { detectScope } from './scope.ts'
 
-function fileStat(_match: ScopeMatch, _path: PathSpec, entry: IndexEntry): FileStat {
+async function fileStat(
+  accessor: GSheetsAccessor,
+  match: ScopeMatch,
+  path: PathSpec,
+  index?: IndexCacheStore,
+): Promise<FileStat> {
+  const entry = await resolveAppEntry(
+    accessor.tokenManager,
+    match,
+    path,
+    index,
+    MIME,
+    'gsheets/file',
+    makeFilename,
+  )
   return new FileStat({
     name: entry.vfsName !== '' ? entry.vfsName : entry.name,
     type: FileType.FILE,
@@ -35,4 +53,4 @@ function fileStat(_match: ScopeMatch, _path: PathSpec, entry: IndexEntry): FileS
   })
 }
 
-export const stat = makeStat(detectScope, readdir, { entryStats: { file: fileStat } })
+export const stat = makeStat(detectScope, readdir, { overrides: { file: fileStat } })

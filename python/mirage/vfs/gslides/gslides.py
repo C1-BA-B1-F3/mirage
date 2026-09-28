@@ -34,9 +34,7 @@ class GSlidesVFS(BoundVFS):
     # provider a full re-walk every 10 minutes. Mirrors the TypeScript
     # VFS.
     index_ttl: float = 86_400
-    # stat and read both stamp the file's Drive modifiedTime, off the same
-    # listing. An entry listed before an edit stamps the older value, which
-    # only makes the next check refetch.
+    # Reads stamp listing metadata; a fresh stat checks Drive by file ID.
     READ_REVALIDATABLE: bool = True
     PROMPT: str = PROMPT
     WRITE_PROMPT: str = WRITE_PROMPT

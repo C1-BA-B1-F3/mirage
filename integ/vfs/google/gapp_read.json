@@ -13,19 +13,40 @@
           "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
         },
         {
+          "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
+        },
+        {
           "mutate": {
             "command": "gws docs documents batchUpdate --params '{\"documentId\": \"doc0001\"}' --json '{\"requests\": [{\"replaceAllText\": {\"containsText\": {\"text\": \"hello\"}, \"replaceText\": \"HELLO\"}}]}' > /dev/null && gws sheets write --spreadsheet sheet0001 --range 'Sheet1!B2' --json-values '[[\"999\"]]' > /dev/null && gws slides presentations batchUpdate --params '{\"presentationId\": \"pres0001\"}' --json '{\"requests\": [{\"createSlide\": {}}]}' > /dev/null"
           }
         },
         {
           "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
+        },
+        {
+          "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
+        },
+        {
+          "mutate": {
+            "command": "gws drive files update --params '{\"fileId\":\"doc0001\"}' --json '{\"trashed\":true}' > /dev/null && gws drive files update --params '{\"fileId\":\"sheet0001\"}' --json '{\"name\":\"Renamed\"}' > /dev/null && gws drive files delete --params '{\"fileId\":\"pres0001\"}' > /dev/null"
+          }
+        },
+        {
+          "command": "cat /docs/owned/2026-01-01_Q1_Plan__doc0001.gdoc.json > /dev/null"
+        },
+        {
+          "command": "cat /sheets/owned/2026-01-01_Metrics__sheet0001.gsheet.json > /dev/null"
+        },
+        {
+          "command": "cat /slides/owned/2026-01-01_Launch_Deck__pres0001.gslide.json > /dev/null"
         }
       ],
       "expect": {
         "exit": 0,
-        "stdout": "hello gdoc\n\n\"120\"\n1\nhello gdoc\n\n\"120\"\n1\n",
+        "stdout": "hello gdoc\n\n\"120\"\n1\nhello gdoc\n\n\"120\"\n1\nhello gdoc\n\n\"120\"\n1\nhello gdoc\n\n\"120\"\n1\n",
         "stderr": ""
-      }
+      },
+      "note": "Repeated warm and post-edit reads check stable caching. A shadow trash, rename and permanent delete must keep bounded bytes but make fresh reads report the old paths missing."
     },
     {
       "id": "gapp_read_fresh_revalidates",
@@ -39,20 +60,40 @@
           "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
         },
         {
+          "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
+        },
+        {
           "mutate": {
             "command": "gws docs documents batchUpdate --params '{\"documentId\": \"doc0001\"}' --json '{\"requests\": [{\"replaceAllText\": {\"containsText\": {\"text\": \"hello\"}, \"replaceText\": \"HELLO\"}}]}' > /dev/null && gws sheets write --spreadsheet sheet0001 --range 'Sheet1!B2' --json-values '[[\"999\"]]' > /dev/null && gws slides presentations batchUpdate --params '{\"presentationId\": \"pres0001\"}' --json '{\"requests\": [{\"createSlide\": {}}]}' > /dev/null"
           }
         },
         {
           "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
+        },
+        {
+          "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
+        },
+        {
+          "mutate": {
+            "command": "gws drive files update --params '{\"fileId\":\"doc0001\"}' --json '{\"trashed\":true}' > /dev/null && gws drive files update --params '{\"fileId\":\"sheet0001\"}' --json '{\"name\":\"Renamed\"}' > /dev/null && gws drive files delete --params '{\"fileId\":\"pres0001\"}' > /dev/null"
+          }
+        },
+        {
+          "command": "cat /docs/owned/2026-01-01_Q1_Plan__doc0001.gdoc.json > /dev/null"
+        },
+        {
+          "command": "cat /sheets/owned/2026-01-01_Metrics__sheet0001.gsheet.json > /dev/null"
+        },
+        {
+          "command": "cat /slides/owned/2026-01-01_Launch_Deck__pres0001.gslide.json > /dev/null"
         }
       ],
       "expect": {
-        "exit": 0,
-        "stdout": "hello gdoc\n\n\"120\"\n1\nHELLO gdoc\n\n\"999\"\n2\n",
-        "stderr": ""
+        "exit": 1,
+        "stdout": "hello gdoc\n\n\"120\"\n1\nhello gdoc\n\n\"120\"\n1\nHELLO gdoc\n\n\"999\"\n2\nHELLO gdoc\n\n\"999\"\n2\n",
+        "stderr": "cat: /docs/owned/2026-01-01_Q1_Plan__doc0001.gdoc.json: No such file or directory\ncat: /sheets/owned/2026-01-01_Metrics__sheet0001.gsheet.json: No such file or directory\ncat: /slides/owned/2026-01-01_Launch_Deck__pres0001.gslide.json: No such file or directory\n"
       },
-      "note": "A gws edit made by another client leaves this workspace's cached render behind it: bounded serves the old bytes for its ttl, and fresh finds each file's Drive modifiedTime moved and renders again. The edit runs on the shadow workspace because a gws write on the read side drops that side's caches itself. The target mounts only the three apps because a workspace-wide fresh refuses a RAM mount."
+      "note": "A gws edit made by another client leaves this workspace's cached render behind it: bounded serves the old bytes for its ttl, and fresh finds each file's Drive modifiedTime moved and renders again. The edit runs on the shadow workspace because a gws write on the read side drops that side's caches itself. The target mounts only the three apps because a workspace-wide fresh refuses a RAM mount. Repeated warm and post-edit reads check stable caching. A shadow trash, rename and permanent delete must keep bounded bytes but make fresh reads report the old paths missing."
     }
   ]
 }

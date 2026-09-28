@@ -131,6 +131,7 @@ async def test_read_via_index(accessor, index):
 @pytest.mark.asyncio
 async def test_read_auto_bootstraps_from_empty_index(accessor, index):
     files = [{
+        "mimeType": "application/vnd.google-apps.document",
         "id": "doc1",
         "name": "Notes",
         "modifiedTime": "2026-04-01T00:00:00.000Z",
@@ -140,9 +141,9 @@ async def test_read_auto_bootstraps_from_empty_index(accessor, index):
     }]
     with (
             patch(
-                "mirage.core.gdocs.readdir.list_all_files",
+                "mirage.core.google.entry.get_file",
                 new_callable=AsyncMock,
-                return_value=(files, True),
+                return_value=files[0],
             ),
             patch(
                 "mirage.core.gdocs.read.read_doc",
@@ -161,12 +162,12 @@ async def test_read_auto_bootstraps_from_empty_index(accessor, index):
 
 
 @pytest.mark.asyncio
-async def test_read_missing_file_raises_after_recursion(accessor, index):
+async def test_read_missing_file_raises_by_id(accessor, index):
     with (
             patch(
-                "mirage.core.gdocs.readdir.list_all_files",
+                "mirage.core.google.entry.get_file",
                 new_callable=AsyncMock,
-                return_value=([], True),
+                side_effect=FileNotFoundError("missing"),
             ),
             patch(
                 "mirage.core.gdocs.read.read_doc",
@@ -185,10 +186,10 @@ async def test_read_missing_file_raises_after_recursion(accessor, index):
 
 
 @pytest.mark.asyncio
-async def test_read_propagates_parent_refresh_failure(accessor, index):
+async def test_read_propagates_metadata_failure(accessor, index):
     with (
             patch(
-                "mirage.core.gdocs.readdir.list_all_files",
+                "mirage.core.google.entry.get_file",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("google unavailable"),
             ),

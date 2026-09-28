@@ -20,7 +20,7 @@ from mirage.ops.types import SessionView
 from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import SET_OPTION_DEFAULTS
 from mirage.shell.escapes import unescape_unquoted
-from mirage.shell.helpers import get_text
+from mirage.shell.helpers import get_text, quoted_parts
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec
@@ -65,8 +65,9 @@ async def _expand_string_with_array(
                            view=view)
     fragments: list[str] = [""]
     splat_yielded = False
-    for child in node.children:
-        if child.type == NT.DQUOTE:
+    for child in quoted_parts(node):
+        if isinstance(child, str):
+            fragments[-1] += child
             continue
         if is_multiword_at(child):
             words = await expand_array_at(child,

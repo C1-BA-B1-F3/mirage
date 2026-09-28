@@ -41,33 +41,6 @@ function unquotedPattern(text: string): string {
 }
 
 /**
- * A double-quoted pattern segment: everything in it is literal.
- *
- * Mirrors expandNode's string walk (dquote skipping), but the value of each
- * piece - string content and quoted expansions alike - is escaped so its
- * glob characters match themselves.
- */
-async function quotedStringPattern(
-  tsNode: TSNodeLike,
-  session: SessionState,
-  executeFn: ExecuteFn,
-  callStack: CallStack | null,
-  view?: SessionView,
-): Promise<string> {
-  const parts: string[] = []
-  let prevEndRow: number | null = null
-  for (const child of tsNode.children) {
-    if (prevEndRow !== null) {
-      parts.push('\n'.repeat(Math.max(0, (child.startPosition?.row ?? 0) - prevEndRow)))
-    }
-    prevEndRow = child.endPosition?.row ?? 0
-    if (child.type === NT.DQUOTE) continue
-    parts.push(escapeGlob(await expandNode(child, session, executeFn, callStack, view)))
-  }
-  return parts.join('')
-}
-
-/**
  * Expand one pattern word into the matcher's glob dialect.
  *
  * bash 5.2 semantics, shared by case patterns, the `[[ == ]]` right side
@@ -92,11 +65,12 @@ export async function expandPattern(
   }
   if (ntype === NT.RAW_STRING) return escapeGlob(tsNode.text.slice(1, -1))
   if (ntype === NT.ANSI_C_STRING) return escapeGlob(decodeAnsiC(tsNode.text.slice(2, -1)))
-  if (ntype === NT.STRING) return quotedStringPattern(tsNode, session, executeFn, callStack, view)
+  if (ntype === NT.STRING)
+    return escapeGlob(await expandNode(tsNode, session, executeFn, callStack, view))
   if (ntype === NT.TRANSLATED_STRING) {
     for (const child of tsNode.namedChildren) {
       if (child.type === NT.STRING) {
-        return quotedStringPattern(child, session, executeFn, callStack, view)
+        return escapeGlob(await expandNode(child, session, executeFn, callStack, view))
       }
     }
     return ''

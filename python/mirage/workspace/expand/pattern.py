@@ -46,43 +46,6 @@ def _unquoted_pattern(text: str) -> str:
     return "".join(out)
 
 
-async def _quoted_string_pattern(
-    ts_node: TSNodeLike,
-    session: SessionState,
-    execute_fn: Callable[..., Any],
-    call_stack: CallStack | None,
-    view: SessionView | None = None,
-) -> str:
-    """A double-quoted pattern segment: everything in it is literal.
-
-    Mirrors expand_node's string walk (dquote skipping, the multi-line
-    newline re-emit), but the value of each piece - string content and
-    quoted expansions alike - is escaped so its glob characters match
-    themselves.
-
-    Args:
-        ts_node (TSNodeLike): the string node.
-        session (SessionState): shell session state.
-        execute_fn (Callable): evaluator for command substitutions.
-        call_stack (CallStack | None): function-call scope, if any.
-    """
-    parts: list[str] = []
-    prev_end_row = None
-    for child in ts_node.children:
-        if prev_end_row is not None:
-            parts.append("\n" * (child.start_point[0] - prev_end_row))
-        prev_end_row = child.end_point[0]
-        if child.type == NT.DQUOTE:
-            continue
-        expanded = await expand_node(child,
-                                     session,
-                                     execute_fn,
-                                     call_stack,
-                                     view=view)
-        parts.append(escape_glob(expanded))
-    return "".join(parts)
-
-
 async def expand_pattern(
     ts_node: TSNodeLike,
     session: SessionState,
@@ -117,19 +80,19 @@ async def expand_pattern(
     if ntype == NT.ANSI_C_STRING:
         return escape_glob(decode_ansi_c(get_text(ts_node)[2:-1]))
     if ntype == NT.STRING:
-        return await _quoted_string_pattern(ts_node,
-                                            session,
-                                            execute_fn,
-                                            call_stack,
-                                            view=view)
+        return escape_glob(await expand_node(ts_node,
+                                             session,
+                                             execute_fn,
+                                             call_stack,
+                                             view=view))
     if ntype == NT.TRANSLATED_STRING:
         for child in ts_node.named_children:
             if child.type == NT.STRING:
-                return await _quoted_string_pattern(child,
-                                                    session,
-                                                    execute_fn,
-                                                    call_stack,
-                                                    view=view)
+                return escape_glob(await expand_node(child,
+                                                     session,
+                                                     execute_fn,
+                                                     call_stack,
+                                                     view=view))
         return ""
     if ntype == NT.CONCATENATION:
         parts = []

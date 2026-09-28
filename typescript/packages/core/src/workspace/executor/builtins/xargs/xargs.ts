@@ -105,7 +105,9 @@ export async function handleXargs(
   let exitCode = 0
   for (const batch of batches) {
     const inner = shellJoin([...command, ...batch])
-    const io = await executeFn(inner, { sessionId: session.sessionId })
+    // GNU xargs consumes its input as arguments and gives every child
+    // /dev/null, represented by an explicit empty source here.
+    const io = await executeFn(inner, { sessionId: session.sessionId, stdin: new Uint8Array() })
     if (io.stdout !== null) stdouts.push(io.stdout)
     merged = await merged.merge(io)
     if (io.exitCode === 126 || io.exitCode === 127) {

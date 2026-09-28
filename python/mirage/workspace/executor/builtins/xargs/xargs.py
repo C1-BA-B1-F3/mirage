@@ -110,7 +110,9 @@ async def handle_xargs(
     exit_code = 0
     for batch in batches:
         inner = shlex.join([*command, *batch])
-        io = await execute_fn(inner, session_id=session.session_id)
+        # GNU xargs consumes its input as arguments and gives every child
+        # /dev/null, represented by an explicit empty source here.
+        io = await execute_fn(inner, session_id=session.session_id, stdin=b"")
         if io.stdout is not None:
             stdouts.append(io.stdout)
         merged = await merged.merge(io)

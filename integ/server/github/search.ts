@@ -29,7 +29,7 @@ import {
   treeOfBranch,
 } from './store.ts'
 import type { RepoRow } from './store.ts'
-import { authedRoute, everywhere, fail, route, paged } from './http.ts'
+import { authedRoute, everywhere, fail, route, paged, type Handler } from './http.ts'
 import { repoJson } from './repos.ts'
 
 const TOKEN_RE = /[A-Za-z0-9_]+/g
@@ -153,8 +153,8 @@ function codeQuery(query: string): CodeQuery {
 // usually `total_count: 0`. A `repo:` group disjoint from the owner group
 // answers empty where live refuses it with a query-parse 422. Live refuses an
 // empty qualifier value the same way; here it is dropped, which widens. A
-// query naming only repositories none of which exists keeps its 404, although
-// live answers it 200 with nothing. An empty `q` is refused as live refuses
+// query naming only missing repositories answers 200 with nothing. An empty
+// `q` is refused as live refuses
 // it, without the `errors` array, which no caller reads.
 async function searchCode(ctx: Ctx<C>): Promise<Reply> {
   const query = (ctx.query.get('q') ?? '').trim()
@@ -164,7 +164,6 @@ async function searchCode(ctx: Ctx<C>): Promise<Reply> {
   if (repos.length > 0) {
     const named = await Promise.all(repos.map((name) => repoByName(ctx.db, ctx.tenant, name)))
     scope = named.filter((repo): repo is RepoRow => repo !== null)
-    if (scope.length === 0) return fail(404, 'Not Found')
   } else {
     scope = await allRepos(ctx.db, ctx.tenant)
   }
@@ -216,11 +215,39 @@ async function searchCode(ctx: Ctx<C>): Promise<Reply> {
   return searchReply(ctx, items)
 }
 
+function validatedSearch(handler: Handler): Handler {
+  return async (ctx) => {
+    const { qualifiers } = tokens(ctx.query.get('q') ?? '')
+    const names = qualifiers.get('repo') ?? []
+    const repos = await Promise.all(names.map((name) => repoByName(ctx.db, ctx.tenant, name)))
+    if (names.length > 0 && repos.every((repo) => repo === null)) {
+      return {
+        status: 422,
+        body: {
+          message: 'Validation Failed',
+          errors: [
+            {
+              message:
+                'The listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.',
+              resource: 'Search',
+              field: 'q',
+              code: 'invalid',
+            },
+          ],
+          documentation_url: 'https://docs.github.com/v3/search/',
+          status: '422',
+        },
+      }
+    }
+    return handler(ctx)
+  }
+}
+
 export function searchRoutes(): KitRoute<C>[] {
   return everywhere<C>(API_PREFIXES, (p) => [
     route('GET', `${p}/meta`, async () => ({ status: 200, body: { installed_version: '3.16.0' } })),
-    route<C>('GET', `${p}/search/issues`, authedRoute(searchIssues)),
-    route<C>('GET', `${p}/search/commits`, authedRoute(searchCommits)),
+    route<C>('GET', `${p}/search/issues`, authedRoute(validatedSearch(searchIssues))),
+    route<C>('GET', `${p}/search/commits`, authedRoute(validatedSearch(searchCommits))),
     route<C>('GET', `${p}/search/code`, authedRoute(searchCode)),
     route<C>('GET', `${p}/search/repositories`, authedRoute(searchRepos)),
   ])

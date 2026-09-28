@@ -373,10 +373,15 @@ class SessionState:
     # is the one descriptor an `exec <` opened: every statement after
     # it reads on from where the one before stopped, across lines and
     # into a child shell, which shares it as bash's fork shares fd 0.
+    # `exec_stdout_input` and `exec_stderr_input` are the read end a
+    # stream holds after `exec 1<f` or `exec 1<&0`, which a dup shares
+    # the offset of.
     exec_stdout: str | None = None
     exec_stdout_append: bool = False
+    exec_stdout_input: SharedInput | None = None
     exec_stderr: str | None = None
     exec_stderr_append: bool = False
+    exec_stderr_input: SharedInput | None = None
     exec_stdin: SharedInput | None = None
     exec_stdin_unreadable: bool = False
     # What fd 0 holds when it is not its own read end: `CLOSED` after

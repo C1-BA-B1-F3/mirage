@@ -469,10 +469,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "printf 'a\\nb\\nc\\n' > /data/rf; ( exec < /data/rf; read x; echo \"[$x]\"; cat ); printf 'z\\n' | ( read a; exec < /data/rf; read b; echo \"[$a][$b]\" ); ( exec < /data/rf; read x; exec < /data/rf; read y; { exec < /data/rf; read z; }; read w; echo \"[$x][$y][$z][$w]\" ); rm /data/rf",
+      "command": "printf 'a\\nb\\nc\\n' > /data/rf; ( exec < /data/rf; read x; echo \"[$x]\"; cat ); printf 'z\\n' | ( read a; exec < /data/rf; read b; echo \"[$a][$b]\" ); ( exec < /data/rf; read x; exec < /data/rf; read y; { exec < /data/rf; read z; }; read w; echo \"[$x][$y][$z][$w]\" ); ( exec < /data/rf; exec 2<&0; read x; exec < /data/rf; exec 0<&2; read y; read z <&2; echo \"[$x][$y][$z]\" ); rm /data/rf",
       "expect": {
         "exit": 0,
-        "stdout": "[a]\nb\nc\n[z][a]\n[a][a][a][b]\n",
+        "stdout": "[a]\nb\nc\n[z][a]\n[a][a][a][b]\n[a][b][c]\n",
         "stderr": ""
       }
     },

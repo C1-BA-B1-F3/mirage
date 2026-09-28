@@ -257,6 +257,15 @@ describe('SharedInput', () => {
     expect(decode(await materialize(shared))).toBe('b\n')
   })
 
+  it('dups another descriptor on the same offset', async () => {
+    const shared = new SharedInput(encode('a\nb\nc\n'))
+    const copy = shared.dup()
+    expect(copy).not.toBe(shared)
+    expect(decode((await shared.lines.readline()) ?? new Uint8Array())).toBe('a')
+    expect(decode((await copy.lines.readline()) ?? new Uint8Array())).toBe('b')
+    expect(decode(await materialize(shared))).toBe('c\n')
+  })
+
   it('leaves the rest when a reader stops early', async () => {
     const shared = new SharedInput(fromChunks([encode('a\n'), encode('b\n')]))
     const reader = chunks(shared)

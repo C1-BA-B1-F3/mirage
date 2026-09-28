@@ -224,6 +224,16 @@ async def test_shared_input_reads_bytes():
 
 
 @pytest.mark.asyncio
+async def test_a_dup_is_another_descriptor_on_the_same_offset():
+    shared = SharedInput(b"a\nb\nc\n")
+    copy = shared.dup()
+    assert copy is not shared
+    assert await shared.lines.readline() == b"a"
+    assert await copy.lines.readline() == b"b"
+    assert await materialize(shared) == b"c\n"
+
+
+@pytest.mark.asyncio
 async def test_a_reader_that_stops_early_leaves_the_rest():
     shared = SharedInput(_chunks([b"a\n", b"b\n"]))
     reader = chunks(shared)

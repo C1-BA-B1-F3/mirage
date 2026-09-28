@@ -131,11 +131,10 @@ async def _install(dispatch: DispatchFn, session: SessionState,
                 # (`0<&1`), has nothing to read: the next reader gets
                 # EBADF, as bash's does, until `exec < file` binds a
                 # file again. A dup of stdin onto itself keeps the file
-                # an earlier `exec <f` bound, and so does a dup from a
-                # descriptor that itself holds stdin's read end
-                # (`exec 1<&0; exec 0<&1`), which bash reads from as
-                # before. Not modelled: a stdin rebound between the two
-                # dups, which bash's fd 1 would still hold the old end of.
+                # an earlier `exec <f` bound, and a dup from a
+                # descriptor that holds a read end (`exec 1<&0; exec
+                # 0<&1`) takes that end, offset and all, whatever fd 0
+                # was bound to in between.
                 if r.target == FD_CLOSE:
                     session.exec_stdin = None
                     session.exec_stdin_unreadable = True
@@ -149,14 +148,11 @@ async def _install(dispatch: DispatchFn, session: SessionState,
                 if source == CLOSED:
                     return bad_descriptor_line(r.target)
                 if source == TO_STDIN:
+                    session.exec_stdin = None
                     session.exec_stdin_unreadable = False
                     session.exec_stdin_identity = None
                 elif source.startswith(OPEN_FOR_READING):
-                    # The descriptor holds a file's read end (`exec 1<f`):
-                    # fd 0 takes the same end, read from the file's
-                    # start, and a later dup from fd 0 copies it on.
-                    session.exec_stdin = SharedInput(await read_open_source(
-                        dispatch, source))
+                    session.exec_stdin = _read_end(session, r.target)
                     session.exec_stdin_unreadable = False
                     session.exec_stdin_identity = source
                 else:
@@ -175,7 +171,8 @@ async def _install(dispatch: DispatchFn, session: SessionState,
                 # A dup from a closed descriptor is refused, as bash's
                 # `exec 0<&-; exec 1<&0` is with `0: Bad file descriptor`.
                 return bad_descriptor_line(r.target)
-            _bind(session, r.fd, identity, append)
+            _bind(session, r.fd, identity, append,
+                  _read_end(session, r.target))
             continue
         scope = _to_scope(r.target) if isinstance(r.target, str) else r.target
         if r.kind == RedirectKind.STDIN:
@@ -189,7 +186,8 @@ async def _install(dispatch: DispatchFn, session: SessionState,
                 # (`echo: write error: Bad file descriptor`), a dup onto
                 # fd 0 (`exec 0<&1`) reads the file, and so does a
                 # transient `<&1`.
-                _bind(session, r.fd, OPEN_FOR_READING + scope.virtual, False)
+                _bind(session, r.fd, OPEN_FOR_READING + scope.virtual, False,
+                      SharedInput(await materialize(data) or b""))
                 continue
             # fd 0 holds the file's read end, and says so: a dup from it
             # (`exec 1<&0`) keeps the file even after `exec 0<&-`, as
@@ -218,6 +216,7 @@ async def _install(dispatch: DispatchFn, session: SessionState,
         for stream in streams:
             setattr(session, f"exec_{stream}", path)
             setattr(session, f"exec_{stream}_append", r.append)
+            setattr(session, f"exec_{stream}_input", None)
     return None
 
 
@@ -301,28 +300,6 @@ def _exec_failure(
                                                     stderr=err or b"")
 
 
-async def read_open_source(dispatch: DispatchFn, identity: str) -> bytes:
-    """The bytes a read through a read-open stream yields.
-
-    The file an `OPEN_FOR_READING` identity names, from its start:
-    mirage keeps no offset on a descriptor, where bash's second read
-    through the same end would be at EOF. A file gone since `exec`
-    opened it reads empty, where bash's still-open end would keep the
-    old bytes.
-
-    Args:
-        dispatch (DispatchFn): op dispatcher.
-        identity (str): the stream's binding, `<` then the path.
-    """
-    scope = _to_scope(identity[len(OPEN_FOR_READING):])
-    try:
-        data, _ = await dispatch("read", scope)
-        return await materialize(data) or b""
-    except FS_ERRORS as exc:
-        logger.debug("exec read-open source gone for %s: %s", identity, exc)
-        return b""
-
-
 def _identity(session: SessionState, fd: int) -> tuple[str, bool]:
     """What a descriptor points at right now, named so a dup can copy it.
 
@@ -353,7 +330,25 @@ def _identity(session: SessionState, fd: int) -> tuple[str, bool]:
             session.exec_stdout_append)
 
 
-def _bind(session: SessionState, fd: int, identity: str, append: bool) -> None:
+def _read_end(session: SessionState, fd: int) -> SharedInput | None:
+    """A new descriptor on the read end a descriptor holds, as a dup
+    makes one: it shares the offset, so a read through either moves
+    both. None when the descriptor holds no file's read end.
+
+    Args:
+        session (SessionState): shell session state.
+        fd (int): the descriptor being copied.
+    """
+    held = (session.exec_stdin if fd == FD_STDIN else session.exec_stderr_input
+            if fd == FD_STDERR else session.exec_stdout_input)
+    return held.dup() if held is not None else None
+
+
+def _bind(session: SessionState,
+          fd: int,
+          identity: str,
+          append: bool,
+          read_end: SharedInput | None = None) -> None:
     """Point a writing stream at an identity.
 
     A stream on its own terminal end is stored as None, the undiverted
@@ -364,13 +359,17 @@ def _bind(session: SessionState, fd: int, identity: str, append: bool) -> None:
         fd (int): the descriptor being bound, 1 or 2.
         identity (str): what `_identity` named, or `CLOSED`.
         append (bool): whether writes append, for a path.
+        read_end (SharedInput | None): the file's read end, for an
+            `OPEN_FOR_READING` identity.
     """
     if fd == FD_STDERR:
         session.exec_stderr = None if identity == TO_STDERR else identity
         session.exec_stderr_append = append
+        session.exec_stderr_input = read_end
     else:
         session.exec_stdout = None if identity == TO_STDOUT else identity
         session.exec_stdout_append = append
+        session.exec_stdout_input = read_end
 
 
 async def _route(

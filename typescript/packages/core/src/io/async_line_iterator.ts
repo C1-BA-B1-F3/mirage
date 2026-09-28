@@ -319,12 +319,20 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
 export class SharedInput implements AsyncIterableIterator<Uint8Array> {
   readonly lines: AsyncLineIterator
 
-  constructor(source: ByteSource) {
-    this.lines = new AsyncLineIterator(source)
+  /** `source` is what the descriptor reads, or the line buffer of the
+   * descriptor it duplicates. */
+  constructor(source: ByteSource | AsyncLineIterator) {
+    this.lines = source instanceof AsyncLineIterator ? source : new AsyncLineIterator(source)
   }
 
   [Symbol.asyncIterator](): AsyncIterableIterator<Uint8Array> {
     return this
+  }
+
+  /** Another descriptor on the same open file, as `dup` makes: a read
+   * through either moves the one offset. */
+  dup(): SharedInput {
+    return new SharedInput(this.lines)
   }
 
   async next(): Promise<IteratorResult<Uint8Array>> {

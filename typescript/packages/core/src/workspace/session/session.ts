@@ -68,8 +68,10 @@ export interface ChildShellState {
   umask: number
   execStdout: string | null
   execStdoutAppend: boolean
+  execStdoutInput: SharedInput | null
   execStderr: string | null
   execStderrAppend: boolean
+  execStderrInput: SharedInput | null
   execStdin: SharedInput | null
   execStdinUnreadable: boolean
   execStdinIdentity: string | null
@@ -489,11 +491,15 @@ export class SessionState {
   // already truncated so a later statement appends. `execStdin` is the
   // one descriptor an `exec <` opened: every statement after it reads on
   // from where the one before stopped, across lines and into a child
-  // shell, which shares it as bash's fork shares fd 0.
+  // shell, which shares it as bash's fork shares fd 0. `execStdoutInput`
+  // and `execStderrInput` are the read end a stream holds after `exec
+  // 1<f` or `exec 1<&0`, which a dup shares the offset of.
   execStdout: string | null = null
   execStdoutAppend = false
+  execStdoutInput: SharedInput | null = null
   execStderr: string | null = null
   execStderrAppend = false
+  execStderrInput: SharedInput | null = null
   execStdin: SharedInput | null = null
   execStdinUnreadable = false
   // What fd 0 holds when it is not its own read end: CLOSED after `exec
@@ -637,8 +643,10 @@ export class SessionState {
     forked.umask = this.umask
     forked.execStdout = this.execStdout
     forked.execStdoutAppend = this.execStdoutAppend
+    forked.execStdoutInput = this.execStdoutInput
     forked.execStderr = this.execStderr
     forked.execStderrAppend = this.execStderrAppend
+    forked.execStderrInput = this.execStderrInput
     forked.execStdin = this.execStdin
     forked.execStdinUnreadable = this.execStdinUnreadable
     forked.execStdinIdentity = this.execStdinIdentity
@@ -728,8 +736,10 @@ export class SessionState {
       umask: this.umask,
       execStdout: this.execStdout,
       execStdoutAppend: this.execStdoutAppend,
+      execStdoutInput: this.execStdoutInput,
       execStderr: this.execStderr,
       execStderrAppend: this.execStderrAppend,
+      execStderrInput: this.execStderrInput,
       execStdin: this.execStdin,
       execStdinUnreadable: this.execStdinUnreadable,
       execStdinIdentity: this.execStdinIdentity,
@@ -773,8 +783,10 @@ export class SessionState {
     this.umask = state.umask
     this.execStdout = state.execStdout
     this.execStdoutAppend = state.execStdoutAppend
+    this.execStdoutInput = state.execStdoutInput
     this.execStderr = state.execStderr
     this.execStderrAppend = state.execStderrAppend
+    this.execStderrInput = state.execStderrInput
     this.execStdin = state.execStdin
     this.execStdinUnreadable = state.execStdinUnreadable
     this.execStdinIdentity = state.execStdinIdentity

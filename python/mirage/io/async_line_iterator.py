@@ -271,14 +271,21 @@ class SharedInput:
     source closes it, and a failed line discards it.
 
     Args:
-        source (ByteSource): what the descriptor reads.
+        source (ByteSource | AsyncLineIterator): what the descriptor
+            reads, or the line buffer of the descriptor it duplicates.
     """
 
-    def __init__(self, source: ByteSource) -> None:
-        self.lines = AsyncLineIterator(source)
+    def __init__(self, source: ByteSource | AsyncLineIterator) -> None:
+        self.lines = (source if isinstance(source, AsyncLineIterator) else
+                      AsyncLineIterator(source))
 
     def __aiter__(self) -> "SharedInput":
         return self
+
+    def dup(self) -> "SharedInput":
+        """Another descriptor on the same open file, as ``dup`` makes:
+        a read through either moves the one offset."""
+        return SharedInput(self.lines)
 
     async def __anext__(self) -> bytes:
         chunk = await self.lines.read_chunk()

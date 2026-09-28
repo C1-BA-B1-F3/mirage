@@ -72,12 +72,6 @@ async def rm(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
             errors.append(
                 f"rm: cannot remove '{p.raw_path}': {fs_strerror(exc)}")
             continue
-        except FS_ERRORS as exc:
-            # Anything else the stat meets (a link loop above the name)
-            # is reported whatever -f says: -f ignores only the missing.
-            errors.append(f"rm: cannot remove '{p.raw_path}': "
-                          f"{fs_strerror(exc)}")
-            continue
         entry_lines: list[str] = []
         try:
             if s.type == FileType.DIRECTORY:

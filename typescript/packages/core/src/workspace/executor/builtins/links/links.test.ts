@@ -100,6 +100,22 @@ describe('followPaths and a link loop', () => {
   })
 })
 
+it.each(['missing', 'a.txt', 'l1'])('mv replaces a loop with a symlink to %s', async (source) => {
+  const ws = await makeWs()
+  try {
+    await ws.shell(
+      `echo a > /data/a.txt; ln -s l2 /data/l1; ln -s l1 /data/l2; ln -s ${source} /data/src`,
+    )
+    const result = await ws.shell('mv /data/src /data/l1')
+    expect(result.exitCode).toBe(0)
+    expect(err(result)).toBe('')
+    expect(ws.namespace.isLink('/data/src')).toBe(false)
+    expect(DEC.decode((await ws.shell('readlink /data/l1')).stdout)).toBe(`${source}\n`)
+  } finally {
+    await ws.close()
+  }
+})
+
 describe('ln -f on the same file', () => {
   it('refuses the same file before removing it', async () => {
     // Pinned on coreutils 9.7: `ln -sf a a` and `ln -f a a` are refused

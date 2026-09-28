@@ -81,6 +81,21 @@ async def test_mv_onto_a_loop_replaces_the_link():
     assert (await ws.shell("cat /data/l1")).stdout == b"b\n"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["missing", "a.txt", "l1"])
+async def test_mv_symlink_onto_a_loop_replaces_destination(source):
+    ws = _ws()
+    await ws.shell("echo a > /data/a.txt; "
+                   "ln -s l2 /data/l1; ln -s l1 /data/l2; "
+                   f"ln -s {source} /data/src")
+    result = await ws.shell("mv /data/src /data/l1")
+    assert result.exit_code == 0
+    assert not result.stderr
+    assert not ws.namespace.is_link("/data/src")
+    assert (await
+            ws.shell("readlink /data/l1")).stdout == f"{source}\n".encode()
+
+
 def test_accepts_line_refuses_what_the_command_layer_would():
     good = [PathSpec.from_str_path("/data/dlink")]
     assert accepts_line("rm", ("/data/dlink", ), good, "/data")

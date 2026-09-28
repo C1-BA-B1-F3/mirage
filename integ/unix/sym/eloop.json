@@ -841,7 +841,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cd /data && ln -s archive-loop-t archive-loop-t && tar -tf archive-loop-t a.txt",
+      "command": "(cd /data && ln -s archive-loop-t archive-loop-t && tar -tf archive-loop-t a.txt)",
       "expect": {
         "exit": 2,
         "stdout": "",
@@ -875,7 +875,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cd /data && ln -s archive-loop-x archive-loop-x && tar -xf archive-loop-x a.txt",
+      "command": "(cd /data && ln -s archive-loop-x archive-loop-x && tar -xf archive-loop-x a.txt)",
       "expect": {
         "exit": 2,
         "stdout": "",
@@ -909,7 +909,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cd /data && ln -s archive-loop-c archive-loop-c && tar -cf archive-loop-c a.txt",
+      "command": "(cd /data && ln -s archive-loop-c archive-loop-c && tar -cf archive-loop-c a.txt)",
       "expect": {
         "exit": 2,
         "stdout": "",
@@ -943,11 +943,45 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cd /data && ln -s move-loop move-loop && ln -s missing move-source && mv move-source move-loop/child",
+      "command": "(cd /data && ln -s move-loop move-loop && ln -s missing move-source && mv move-source move-loop/child)",
       "expect": {
         "exit": 1,
         "stdout": "",
         "stderr": "mv: cannot stat 'move-loop/child': Too many levels of symbolic links\n"
+      }
+    },
+    {
+      "id": "sym_eloop_mv_link_onto",
+      "seq": 635,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && ln -s replace-loop replace-loop && ln -s missing replace-source && mv replace-source replace-loop && readlink replace-loop && test ! -L replace-source)",
+      "expect": {
+        "exit": 0,
+        "stdout": "missing\n",
+        "stderr": ""
       }
     }
   ]

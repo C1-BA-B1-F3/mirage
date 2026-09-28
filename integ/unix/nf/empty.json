@@ -979,7 +979,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cd /data && tar -tf '' a.txt",
+      "command": "(cd /data && tar -tf '' a.txt)",
       "expect": {
         "exit": 2,
         "stdout": "",
@@ -1013,7 +1013,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cd /data && tar -xf '' a.txt",
+      "command": "(cd /data && tar -xf '' a.txt)",
       "expect": {
         "exit": 2,
         "stdout": "",
@@ -1047,7 +1047,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cd /data && tar -cf '' a.txt",
+      "command": "(cd /data && tar -cf '' a.txt)",
       "expect": {
         "exit": 2,
         "stdout": "",

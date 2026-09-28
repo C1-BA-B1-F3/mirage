@@ -80,10 +80,15 @@ def make_rm(vfs: str, io: CommandIO) -> Callable[..., Any]:
             line (or None when removed / skipped under ``-f``) and the
             verbose lines.
         """
-        label = path.virtual
+        label = path.raw_path
         try:
             s = await stat(accessor, path, index=index)
-        except (FileNotFoundError, ValueError):
+        except FS_ERRORS as exc:
+            if force and isinstance(exc,
+                                    (FileNotFoundError, NotADirectoryError)):
+                return None, []
+            return f"rm: cannot remove '{label}': {fs_strerror(exc)}", []
+        except ValueError:
             if force:
                 return None, []
             return (f"rm: cannot remove '{label}': "

@@ -31,6 +31,7 @@ import type { RuntimeEntry } from '../../runtime/base.ts'
 import type { Mount } from '../mount/spec.ts'
 import type { NamespaceStore } from '../mount/namespace/store.ts'
 import type { SessionProfile } from '../../policy/profile.ts'
+import type { SessionState } from '../session/session.ts'
 import type { SessionStore } from '../session/store.ts'
 import type { WorkspaceStateStore } from '../store/base.ts'
 
@@ -217,6 +218,8 @@ export interface ExecuteOptions {
   stdin?: ByteSource | null
   provision?: boolean
   sessionId?: string
+  /** @internal The exact session carried by an evaluator, including an unregistered fork. */
+  session?: SessionState
   agentId?: string
   /**
    * Abort the in-progress execution. Observed cooperatively at recursion

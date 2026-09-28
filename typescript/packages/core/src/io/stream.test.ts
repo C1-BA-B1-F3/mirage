@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import { SharedInput } from './async_line_iterator.ts'
 import { CachableAsyncIterator } from './cachable_iterator.ts'
 import {
+  SharedStdin,
   asyncChain,
   closeQuietly,
   discardStreams,
@@ -198,4 +199,27 @@ describe('quietMatch', () => {
     await collect(quietMatch(fromChunks([]), io))
     expect(io.exitCode).toBe(1)
   })
+})
+
+it('shares a lazy cursor across early exit and concurrent readers', async () => {
+  const pulls: string[] = []
+  async function* source() {
+    for (const chunk of ['', 'abc', '', 'def']) {
+      await Promise.resolve()
+      pulls.push(chunk)
+      yield new TextEncoder().encode(chunk)
+    }
+  }
+  const shared = new SharedStdin(source())
+  expect(pulls).toEqual([])
+  for await (const byte of shared) {
+    expect(new TextDecoder().decode(byte)).toBe('a')
+    break
+  }
+  const other = shared[Symbol.asyncIterator]()
+  const bytes = await Promise.all(Array.from({ length: 5 }, () => other.next()))
+  expect(bytes.map((step) => new TextDecoder().decode(step.value)).join('')).toBe('bcdef')
+  expect((await other.next()).done).toBe(true)
+  expect((await shared[Symbol.asyncIterator]().next()).done).toBe(true)
+  expect(pulls).toEqual(['', 'abc', '', 'def'])
 })

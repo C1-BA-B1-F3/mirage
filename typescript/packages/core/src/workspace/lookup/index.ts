@@ -25,6 +25,7 @@ export {
 } from './constants.ts'
 export {
   commandVisible,
+  execs,
   isTool,
   listed,
   lookup,

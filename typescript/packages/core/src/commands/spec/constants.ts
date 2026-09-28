@@ -246,6 +246,7 @@ export const USAGE_EXIT: Readonly<Record<string, number>> = Object.freeze({
   curl: 2,
   patch: 2,
   tar: 64,
+  timeout: 125,
   python: 2,
   python3: 2,
 })

@@ -27,6 +27,7 @@ import {
   SHELL_CONSUMERS,
   commandVisible,
   dereferences,
+  execs,
   readsSubtrees,
   lookup,
   lookupAll,
@@ -292,6 +293,18 @@ describe('program', () => {
     // The shell's own words, reserved words and unknowns have none.
     for (const name of ['cd', 'export', 'if', 'nope-xyz', '/bin/ls']) {
       expect(program(name, session, ws.registry)).toBeNull()
+    }
+  })
+
+  it('execs finds programs, functions and paths', () => {
+    const { session, ws } = fixture()
+    session.functions.myfn = 'myfn() { :; }'
+    session.functions.cd = 'cd() { :; }'
+    for (const name of ['cat', 'echo', 'xargs', 'myfn', './run.sh', '/data/x']) {
+      expect(execs(name, session, ws.registry)).toBe(true)
+    }
+    for (const name of ['cd', 'export', 'if', 'nope-xyz']) {
+      expect(execs(name, session, ws.registry)).toBe(false)
     }
   })
 

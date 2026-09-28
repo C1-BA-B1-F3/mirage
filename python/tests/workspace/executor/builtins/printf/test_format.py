@@ -24,6 +24,25 @@ _OCTAL_PINS = [
     ("\\0400", "20 30", "00"),
 ]
 
+# bash 5.2.37 under LC_ALL=C.UTF-8 through `od -An -tx1`: the format and
+# a %b argument write \u and \U through u32toutf8, so a surrogate half
+# and a value past Unicode come out UTF-8-shaped, and 0x80000000 and
+# past come out as nothing.
+_UNICODE_PINS = [
+    ("\\uD800", "ed a0 80"),
+    ("\\uDC80", "ed b2 80"),
+    ("\\uDFFF", "ed bf bf"),
+    ("\\uD83D\\uDE00", "ed a0 bd ed b8 80"),
+    ("\\U00110000", "f4 90 80 80"),
+    ("\\U0010FFFF", "f4 8f bf bf"),
+    ("\\U7FFFFFFF", "fd bf bf bf bf bf"),
+    ("\\U80000000", ""),
+    ("\\UFFFFFFFF", ""),
+    ("x\\UFFFFFFFFy", "78 79"),
+    ("a\\u0000b", "61 00 62"),
+    ("\\uDC80\\xff", "ed b2 80 ff"),
+]
+
 
 def _od(text: str) -> str:
     return encode_text(text).hex(" ")
@@ -90,6 +109,14 @@ def test_octal_reads_three_digits_in_the_format_and_zero_plus_three_in_b(
     b_out, b_messages, b_failed, _ = run_printf("%b", [escape])
     assert (_od(fmt_out), fmt_messages, fmt_failed) == (in_format, [], False)
     assert (_od(b_out), b_messages, b_failed) == (in_b_arg, [], False)
+
+
+@pytest.mark.parametrize("escape,expected", _UNICODE_PINS)
+def test_unicode_escapes_write_through_u32toutf8(escape, expected):
+    fmt_out, fmt_messages, fmt_failed, _ = run_printf(escape, [])
+    b_out, b_messages, b_failed, _ = run_printf("%b", [escape])
+    assert (_od(fmt_out), fmt_messages, fmt_failed) == (expected, [], False)
+    assert (_od(b_out), b_messages, b_failed) == (expected, [], False)
 
 
 _HEX_WARNING = "printf: missing hex digit for \\x\n"

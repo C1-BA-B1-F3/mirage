@@ -88,6 +88,22 @@ function u32Utf8(value: number): number[] {
 }
 
 /**
+ * The text a `\u` or `\U` escape writes for its value.
+ *
+ * bash writes every value through u32toutf8 under a UTF-8 locale: a
+ * valid scalar is its character, while surrogate halves and values past
+ * Unicode become raw UTF-8-shaped bytes, and 0x80000000 and past produce
+ * nothing. Pinned: `\uD800` is ed a0 80, `\U00110000` is f4 90 80 80,
+ * `\UFFFFFFFF` is empty.
+ */
+export function codePointText(value: number): string {
+  if (value <= 0x7f || (value <= UNICODE_MAX && !(value >= 0xd800 && value <= 0xdfff))) {
+    return String.fromCodePoint(value)
+  }
+  return u32Utf8(value).map(byteChar).join('')
+}
+
+/**
  * Decode the body of a $'...' word to the text it names.
  *
  * Follows bash 5.2 (lib/sh/strtrans.c, under a UTF-8 locale): simple
@@ -150,16 +166,7 @@ export function decodeAnsiC(content: string): string {
       }
       const value = parseInt(digits, 16)
       if (value === 0) return out.join('')
-      // bash writes every value through u32toutf8: a valid scalar is
-      // its character, while surrogate halves and values past Unicode
-      // become raw UTF-8-shaped bytes, and 0x80000000 and past produce
-      // nothing (without truncating). Pinned: $'\uD800' is ed a0 80,
-      // $'\U00110000' is f4 90 80 80, $'\UFFFFFFFF' is empty.
-      if (value <= 0x7f || (value <= UNICODE_MAX && !(value >= 0xd800 && value <= 0xdfff))) {
-        out.push(String.fromCodePoint(value))
-      } else {
-        out.push(u32Utf8(value).map(byteChar).join(''))
-      }
+      out.push(codePointText(value))
       i += 2 + digits.length
       continue
     }

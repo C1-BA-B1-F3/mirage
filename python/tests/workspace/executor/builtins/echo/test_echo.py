@@ -43,6 +43,36 @@ async def test_capital_e_disables_escapes():
 
 
 @pytest.mark.asyncio
+async def test_e_reads_escape_as_esc():
+    assert await echo_bytes(["-e", "a\\eb\\Ec"]) == b"a\x1bb\x1bc\n"
+
+
+@pytest.mark.asyncio
+async def test_capital_e_and_plain_echo_keep_escape_literal():
+    assert await echo_bytes(["-E", "a\\eb\\Ec"]) == b"a\\eb\\Ec\n"
+    assert await echo_bytes(["a\\eb\\Ec"]) == b"a\\eb\\Ec\n"
+
+
+@pytest.mark.asyncio
+async def test_stop_drops_the_newline():
+    assert await echo_bytes(["-e", "hello\\cworld"]) == b"hello"
+    assert await echo_bytes(["-e", "a\\E\\cb"]) == b"a\x1b"
+
+
+@pytest.mark.asyncio
+async def test_stop_ends_later_operands():
+    assert await echo_bytes(["-e", "a", "b\\cc", "d"]) == b"a b"
+    assert await echo_bytes(["-e", "a\\E", "\\cb"]) == b"a\x1b "
+
+
+@pytest.mark.asyncio
+async def test_unicode_escapes_write_utf8():
+    assert await echo_bytes(["-ne",
+                             "\\u00e9\\U0001F600"]) == "é\U0001F600".encode()
+    assert await echo_bytes(["-ne", "\\uD800"]) == b"\xed\xa0\x80"
+
+
+@pytest.mark.asyncio
 async def test_last_of_e_and_E_wins_within_cluster():
     assert await echo_bytes(["-eE", "a\\tb"]) == b"a\\tb\n"
     assert await echo_bytes(["-Ee", "a\\tb"]) == b"a\tb\n"

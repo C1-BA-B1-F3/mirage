@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import shlex
-from collections.abc import AsyncIterator
 
 from mirage.commands.builtin.constants import EXEC_PLACEHOLDER
 from mirage.commands.builtin.find_parse import FindExpr, parse_find_expression
@@ -27,14 +26,13 @@ from mirage.commands.errors import is_entry_error
 from mirage.context import (get_current_session, reset_program_invocation,
                             set_program_invocation)
 from mirage.errors.classify import failure_text
-from mirage.io.stream import materialize
+from mirage.io.stream import SharedStdin, materialize
 from mirage.io.types import ByteSource
 from mirage.ops.types import NamespaceView, StatPath
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent, fs_strerror
 from mirage.utils.path import resolve_path
-from mirage.utils.stream import ensure_stream
 from mirage.workspace.lookup.constants import SHELL_ONLY_BUILTINS
 from mirage.workspace.lookup.lookup import lookup_all
 from mirage.workspace.lookup.types import Consumer
@@ -122,58 +120,11 @@ async def _head_state(head: str, registry: MountRegistry, cwd: str,
     return not program, shadowed
 
 
-class _SharedStdin:
-    """find's own input, shared by its ``-exec`` children as one cursor.
-
-    GNU's children inherit find's stdin descriptor, so its offset moves
-    only when a child reads: ``-exec true \\; -exec cat \\;`` leaves the
-    bytes for cat, while two cats see them once. The same object rides
-    into every child as its stdin, and the source is pulled only as a
-    child reads: find itself never reads its stdin, so a walk with no
-    reading child (``yes | find d -maxdepth 0``) must not wait on it,
-    and a child that reads a little of an unbounded input
-    (``-exec head -c 1``) must get its byte without waiting for EOF.
-
-    Args:
-        source (ByteSource): find's own input, unread.
-    """
-
-    __slots__ = ("_chunks", "_buffer", "_pos")
-
-    def __init__(self, source: ByteSource) -> None:
-        self._chunks: AsyncIterator[bytes] | None = ensure_stream(source)
-        self._buffer = b""
-        self._pos = 0
-
-    def __aiter__(self) -> AsyncIterator[bytes]:
-        return self._drain()
-
-    async def _drain(self) -> AsyncIterator[bytes]:
-        # One byte per pull, so a child that stops reading early (`head
-        # -c 1`) leaves the rest at the cursor for the next child, the
-        # way a shared descriptor's offset does; the next source chunk
-        # is pulled only once the buffered one is spent.
-        while True:
-            if self._pos >= len(self._buffer):
-                if self._chunks is None:
-                    return
-                try:
-                    self._buffer = await anext(self._chunks)
-                except StopAsyncIteration:
-                    self._chunks = None
-                    return
-                self._pos = 0
-                continue
-            chunk = self._buffer[self._pos:self._pos + 1]
-            self._pos += 1
-            yield chunk
-
-
 async def _run_exec(execute_fn: ExecuteLine, session_id: str,
                     registry: MountRegistry, cwd: str,
                     stat_path: StatPath | None, action: ExecAction,
                     paths: list[str], out: list[bytes], errors: list[bytes],
-                    stdin: _SharedStdin | None) -> bool:
+                    stdin: SharedStdin | None) -> bool:
     """Run one ``-exec`` invocation, collecting its streams.
 
     A command that cannot be found is GNU's ``find: 'cmd': No such file
@@ -194,7 +145,7 @@ async def _run_exec(execute_fn: ExecuteLine, session_id: str,
         paths (list[str]): the match, or every match for a batched run.
         out (list[bytes]): where the run's stdout is appended.
         errors (list[bytes]): where its stderr is appended.
-        stdin (_SharedStdin | None): find's own input, one cursor shared
+        stdin (SharedStdin | None): find's own input, one cursor shared
             by every child; None keeps the ambient stdin.
     """
     # GNU substitutes the matches into the words and only then hands
@@ -521,7 +472,7 @@ async def _apply_find_actions(
             GNU statted when it opened the walk; None or empty means the
             working directory.
     """
-    once = _SharedStdin(stdin) if stdin is not None else None
+    once = SharedStdin(stdin) if stdin is not None else None
     expr = parse_find_expression(list(texts))
     reorders = expr.depth_first
     if stdout is None or not (_has_actions(expr) or reorders):

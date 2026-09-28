@@ -12,9 +12,50 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { KeyLock } from '../cache/lock.ts'
 import { SharedInput } from './async_line_iterator.ts'
 import { CachableAsyncIterator } from './cachable_iterator.ts'
 import { type ByteSource, type IOResult, materialize } from './types.ts'
+
+/**
+ * One lazy byte cursor shared by commands inheriting an input descriptor.
+ * Serializing reads prevents concurrent consumers from replaying bytes or
+ * pulling the source simultaneously. A consumer stopping early leaves the
+ * cursor open; byte-sized pulls preserve the unread suffix for its successor.
+ */
+export class SharedStdin implements AsyncIterable<Uint8Array> {
+  private chunks: AsyncIterator<Uint8Array> | null
+  private buffer: Uint8Array = new Uint8Array()
+  private pos = 0
+  private readonly lock = new KeyLock()
+
+  constructor(source: ByteSource) {
+    this.chunks = (source instanceof Uint8Array ? yieldBytes(source) : source)[
+      Symbol.asyncIterator
+    ]()
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<Uint8Array, undefined> {
+    return {
+      next: () =>
+        this.lock.withLock('read', async () => {
+          while (this.pos >= this.buffer.byteLength) {
+            if (this.chunks === null) return { done: true, value: undefined }
+            const step = await this.chunks.next()
+            if (step.done === true) {
+              this.chunks = null
+              return { done: true, value: undefined }
+            }
+            this.buffer = step.value
+            this.pos = 0
+          }
+          const chunk = this.buffer.subarray(this.pos, this.pos + 1)
+          this.pos += 1
+          return { done: false, value: chunk }
+        }),
+    }
+  }
+}
 
 export async function* mergeStdoutStderr(
   stdout: ByteSource | null,

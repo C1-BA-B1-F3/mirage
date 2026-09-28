@@ -17,9 +17,9 @@ import asyncio
 import pytest
 
 from mirage.io.async_line_iterator import SharedInput
-from mirage.io.stream import (async_chain, close_quietly, discard_streams,
-                              drain, exit_on_empty, merge_stdout_stderr,
-                              quiet_match)
+from mirage.io.stream import (SharedStdin, async_chain, close_quietly,
+                              discard_streams, drain, exit_on_empty,
+                              merge_stdout_stderr, quiet_match)
 from mirage.io.types import IOResult
 
 
@@ -369,3 +369,27 @@ async def test_a_shared_input_outlives_a_close_and_not_a_discard():
     await discard_streams(shared)
     assert closed
     assert await shared.lines.readline() is None
+
+
+@pytest.mark.asyncio
+async def test_shared_stdin_preserves_unread_bytes_and_serializes_readers():
+    pulls = []
+
+    async def source():
+        for chunk in [b"", b"abc", b"", b"def"]:
+            await asyncio.sleep(0)
+            pulls.append(chunk)
+            yield chunk
+
+    shared = SharedStdin(source())
+    assert not pulls
+    first = aiter(shared)
+    assert await anext(first) == b"a"
+    second = aiter(shared)
+    results = await asyncio.gather(*(anext(second) for _ in range(5)))
+    assert b"".join(results) == b"bcdef"
+    with pytest.raises(StopAsyncIteration):
+        await anext(first)
+    with pytest.raises(StopAsyncIteration):
+        await anext(second)
+    assert pulls == [b"", b"abc", b"", b"def"]

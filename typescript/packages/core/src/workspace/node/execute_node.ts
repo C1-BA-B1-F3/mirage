@@ -791,7 +791,10 @@ async function executeNodeBody(
           opts?: ExecuteNodeOpts,
         ): Promise<Result> => executeNode(withOpts(deps, opts), n, s, i, cs)
 
-  const { dispatch, registry, jobTable, executeFn, agentId } = deps
+  const { dispatch, registry, jobTable, agentId } = deps
+  // Capture the walker's session before any await; a concurrent line's
+  // ambient frame cannot identify this node's nested evaluations.
+  const executeFn: ExecuteFn = (cmd, opts) => deps.executeFn(cmd, { session, ...opts })
   const kind = nodeKind(node)
 
   // The statements a construct runs all read one descriptor, as bash's

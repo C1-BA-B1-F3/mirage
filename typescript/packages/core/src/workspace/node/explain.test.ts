@@ -185,6 +185,28 @@ describe('explain', () => {
     expect(missing?.stderr).toBe('gerp: command not found\n')
   })
 
+  it.each([
+    ['echo x | xargs gerp', 'xargs: gerp: No such file or directory\n'],
+    ['timeout 5 gerp x', "timeout: failed to run command 'gerp': No such file or directory\n"],
+  ])('reports a hidden word a builtin runs in its words: %s', async (line, said) => {
+    // xargs and timeout look the name up before they run it, as GNU's
+    // exec does, so the run reports a word the session cannot see in
+    // their words, and the dry run must say what the run says.
+    const parser = await getTestParser()
+    const profile = parseSessionProfile({ commands: { allow: ['echo', 'xargs', 'timeout'] } })
+    const w = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: parser, profiles: { r: profile } },
+    )
+    open.push(w)
+    w.createSession('s', { profile: 'r' })
+    const ran = await w.shell(line, { sessionId: 's' })
+    const missing = (await w.explain(line, 's')).at(-1)
+    expect([ran.exitCode, DEC.decode(ran.stderr)]).toEqual([127, said])
+    expect([missing?.exitCode, missing?.stderr]).toEqual([127, said])
+    expect([missing?.command, missing?.source]).toEqual(['gerp', 'commands.allow'])
+  })
+
   it('reads every command of a line', async () => {
     const w = await ws()
     const [first, second] = await w.explain('cat /data/a.txt && rm /data/prod/x.txt', 's')

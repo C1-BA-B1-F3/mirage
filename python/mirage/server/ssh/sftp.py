@@ -30,7 +30,7 @@ from asyncssh.constants import (FILEXFER_TYPE_DIRECTORY, FILEXFER_TYPE_REGULAR,
 from mirage.fuse.core import MountCore
 from mirage.fuse.errors import classify_error
 from mirage.server.registry import WorkspaceEntry, WorkspaceRegistry
-from mirage.server.ssh.session import new_session_id, open_session
+from mirage.server.ssh.session import key_profile, new_session_id, open_session
 from mirage.server.ssh.stream import ENCODING, ERRORS
 from mirage.utils.errors import NoMountError
 
@@ -246,10 +246,10 @@ class MirageSFTPServer(asyncssh.SFTPServer):
     """SFTP (and scp) onto a workspace, through the MountCore FUSE uses.
 
     Every request lands on one MountCore bound to a session of its own,
-    so SFTP sees exactly the tree, modes and policies a shell in that
-    session sees. The core is synchronous (FUSE calls it from a single
-    thread), so calls run one at a time in a worker thread, and the core
-    runs each op on the workspace's own loop.
+    under the login key's profile, so SFTP sees exactly the tree, modes
+    and policies a shell in that session sees. The core is synchronous
+    (FUSE calls it from a single thread), so calls run one at a time in a
+    worker thread, and the core runs each op on the workspace's own loop.
 
     asyncssh's base class serves the host's real filesystem from every
     method a subclass leaves alone, so this class overrides all of them
@@ -267,6 +267,7 @@ class MirageSFTPServer(asyncssh.SFTPServer):
         super().__init__(chan)
         self._registry = registry
         self._workspace_id: str = chan.get_extra_info("username")
+        self._conn = chan.get_connection()
         self._session_id = new_session_id()
         self._entry: WorkspaceEntry | None = None
         self._core: MountCore | None = None
@@ -280,7 +281,9 @@ class MirageSFTPServer(asyncssh.SFTPServer):
                 f"no such workspace: {self._workspace_id}")
         entry = self._registry.get(self._workspace_id)
         ws = entry.runner.ws
-        await entry.runner.call(open_session(ws, self._session_id))
+        profile = key_profile(self._conn)
+        await entry.runner.call(
+            open_session(ws, self._session_id, profile=profile))
         self._entry = entry
         self._core = MountCore(ws.vfs,
                                session=ws.get_session(self._session_id),

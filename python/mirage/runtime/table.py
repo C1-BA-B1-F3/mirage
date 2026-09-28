@@ -82,6 +82,8 @@ NAMED[SandlockRuntime.name] = SandlockRuntime
 # eagerly would put that cost on every `import mirage`, so the table
 # holds module paths and imports the class only when the name is built.
 SANDBOX_MODULES: dict[str, str] = {
+    "apple_container":
+    "mirage.runtime.sandbox.apple_container:AppleContainerRuntime",
     "daytona": "mirage.runtime.sandbox.daytona:DaytonaRuntime",
     "docker": "mirage.runtime.sandbox.docker:DockerRuntime",
     "e2b": "mirage.runtime.sandbox.e2b:E2BRuntime",

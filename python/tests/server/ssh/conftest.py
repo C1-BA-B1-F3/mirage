@@ -99,3 +99,36 @@ async def ssh_readonly(tmp_path):
     harness = await start_harness(tmp_path, ram_workspace(MountMode.READ))
     yield harness
     await stop_harness(harness)
+
+
+def bind_key(harness: SSHHarness, options: str) -> asyncssh.SSHKey:
+    """Authorize a fresh client key whose line carries ``options``.
+
+    Args:
+        harness (SSHHarness): the running door; its keys file is read
+            again on every login.
+        options (str): the OpenSSH options field, e.g.
+            ``mirage-profile="guarded"``.
+    """
+    key = asyncssh.generate_private_key("ssh-ed25519")
+    public = key.export_public_key().decode().strip()
+    with harness.config.authorized_keys_file.open("a") as keys:
+        keys.write(f"{options} {public}\n")
+    return key
+
+
+async def vault_workspace() -> Workspace:
+    """A workspace whose ``guarded`` profile seals ``/vault``."""
+    ws = Workspace({"/": (RAMVFS(), MountMode.WRITE)},
+                   profiles={
+                       "guarded": {
+                           "commands": {
+                               "deny": [{
+                                   "reason": "the vault is sealed",
+                                   "paths": ["/vault/*"]
+                               }]
+                           }
+                       }
+                   })
+    await ws.shell("mkdir -p /vault && echo token > /vault/secret")
+    return ws

@@ -13,13 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { constants as fsConstants } from 'node:fs'
-import { runWithSession } from '@struktoai/mirage-core/context/session_context'
+import { getCurrentSession, runWithSession } from '@struktoai/mirage-core/context/session_context'
 import { RAMVFS } from '@struktoai/mirage-core/vfs/ram/ram'
 import { ContentType, FileStat, FileType, MountMode } from '@struktoai/mirage-core/types'
+import { enotsup } from '@struktoai/mirage-core/utils/errors'
 import { DIR_SIZE, mtimeMs } from '@struktoai/mirage-core/utils/stat_view'
 import { describe, expect, it, vi } from 'vitest'
 import { Workspace } from '../workspace.ts'
 import { MountCore } from './core.ts'
+import { errnoError } from './errors.ts'
 
 const NAIVE_STAMP = '2026-01-02T03:04:05'
 
@@ -34,6 +36,66 @@ async function mkCore(): Promise<MountCore> {
 }
 
 describe('MountCore', () => {
+  it.each([
+    [0, ''],
+    [2, 'he'],
+    [8, 'hello\n\0\0'],
+  ])('resizes to %i under its session when truncate falls back', async (size, expected) => {
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.shell("echo 'hello' > /data/f.txt")
+    const sess = ws.createSession('agent', { profile: {} })
+    vi.spyOn(ws.vfs, 'truncate').mockRejectedValue(enotsup('ram', 'truncate', '/data/f.txt'))
+    const realRead = ws.vfs.readFile.bind(ws.vfs)
+    const readers: (string | null)[] = []
+    vi.spyOn(ws.vfs, 'readFile').mockImplementation((...args) => {
+      readers.push(getCurrentSession()?.sessionId ?? null)
+      return realRead(...args)
+    })
+    await new MountCore(ws.vfs, { session: sess }).truncate('/data/f.txt', size)
+    expect(readers).toEqual(['agent'])
+    expect(new TextDecoder().decode(await realRead('/data/f.txt'))).toBe(expected)
+  })
+
+  it.each(['EACCES', 'EIO', 'ENOENT'] as const)(
+    'preserves bytes when the truncate fallback read fails with %s',
+    async (code) => {
+      const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+      await ws.shell("echo 'hello' > /data/f.txt")
+      const sess = ws.createSession('agent', { profile: {} })
+      const core = new MountCore(ws.vfs, { session: sess })
+      const realRead = ws.vfs.readFile.bind(ws.vfs)
+      const write = vi.spyOn(ws.vfs, 'writeFile')
+      const error = errnoError(code, 'fallback read failed')
+      vi.spyOn(ws.vfs, 'truncate').mockRejectedValue(enotsup('ram', 'truncate', '/data/f.txt'))
+      vi.spyOn(ws.vfs, 'readFile').mockRejectedValueOnce(error)
+
+      await expect(core.truncate('/data/f.txt', 2)).rejects.toBe(error)
+      expect(write).not.toHaveBeenCalled()
+      expect(new TextDecoder().decode(await realRead('/data/f.txt'))).toBe('hello\n')
+      await core.truncate('/data/f.txt', 2)
+      expect(new TextDecoder().decode(await realRead('/data/f.txt'))).toBe('he')
+    },
+  )
+
+  it('runs every op under its session with no adapter binding it', async () => {
+    // The SFTP door drives MountCore directly, with no FUSE adapter to
+    // enter the session context, so the core binds its own session per
+    // op, as Python's MountCore does.
+    const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+    await ws.shell("echo 'token' > /data/secret.txt")
+    const sess = ws.createSession('agent', {
+      profile: { commands: { deny: [{ reason: 'sealed', paths: ['/data/secret.txt'] }] } },
+    })
+    const readAll = async (core: MountCore): Promise<string> => {
+      const fd = await core.open('/data/secret.txt')
+      return new TextDecoder().decode(await core.read('/data/secret.txt', fd, 0, 64))
+    }
+    expect(await readAll(new MountCore(ws.vfs))).toBe('token\n')
+    await expect(readAll(new MountCore(ws.vfs, { session: sess }))).rejects.toMatchObject({
+      code: 'EACCES',
+    })
+  })
+
   it('refuses a symlink on hidden turf for a scoped session', async () => {
     // The R8 hole: a session-scoped kernel mount could create a link on
     // a mount the profile hides, because the FUSE symlink path wrote the

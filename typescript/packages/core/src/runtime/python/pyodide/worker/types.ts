@@ -46,6 +46,6 @@ export type WorkerMessage = VfsRequest | WorkerResult | { kind: 'ready' }
 export interface WorkerPort {
   post(message: unknown): void
   onMessage(receive: (message: WorkerMessage) => void): void
-  onError(receive: (error: Error) => void): void
+  onError(receive: (error: unknown) => void): void
   terminate(): void
 }

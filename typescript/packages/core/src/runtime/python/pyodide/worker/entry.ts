@@ -19,6 +19,7 @@ import type { BridgeDispatchFn } from '../../../types.ts'
 import type { VFSEntry, VFSStat } from '../../../vfs.ts'
 import { PyodideRuntime } from '../runtime.ts'
 import type { FlushFailure, SyncVFS } from '../vfs/types.ts'
+import { failureText } from './failure.ts'
 import { requestSync } from './transport.ts'
 import type { ExecuteRequest, VfsRequest, WorkerMessage } from './types.ts'
 
@@ -86,7 +87,7 @@ async function execute(request: ExecuteRequest): Promise<void> {
   } catch (error) {
     post({
       kind: 'error',
-      message: error instanceof Error ? error.message : String(error),
+      message: failureText(error),
       name: error instanceof Error ? error.name : 'Error',
       syntax: (error as { syntax?: boolean } | null)?.syntax ?? false,
       ...((error as { seconds?: number } | null)?.seconds !== undefined

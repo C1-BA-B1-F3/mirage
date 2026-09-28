@@ -26,6 +26,11 @@ AUTHORIZED_KEYS_NAME = "authorized_keys"
 # `ssh` extra, so the daemon loads it by path only once a port is set.
 SERVER_MODULE = "mirage.server.ssh.server:start_ssh_server"
 
+# The authorized_keys option that binds a key to one of the workspace's
+# profiles (`mirage-profile="guarded" ssh-ed25519 AAAA...`). The server
+# reads it, never the client, so a key cannot pick a looser profile.
+PROFILE_OPTION = "mirage-profile"
+
 SSH_ENV_KEYS = {
     "ssh_port": ENV_SSH_PORT,
     "ssh_host": ENV_SSH_HOST,

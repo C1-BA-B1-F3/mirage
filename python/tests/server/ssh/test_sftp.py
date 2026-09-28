@@ -20,6 +20,8 @@ import asyncssh
 import pytest
 
 from mirage.server.ssh.sftp import MirageSFTPServer, filetype, to_attrs
+from tests.server.ssh.conftest import (bind_key, start_harness, stop_harness,
+                                       vault_workspace)
 
 # The base-class members that never touch the host filesystem: accessors
 # and formatting helpers. Every other method of asyncssh.SFTPServer serves
@@ -288,3 +290,21 @@ async def test_refused_rename_keeps_the_open_file(ssh):
             assert await f.read() == "retained"
         async with sftp.open("/taken") as f:
             assert await f.read() == "untouched"
+
+
+@pytest.mark.asyncio
+async def test_sftp_runs_under_the_key_profile(tmp_path):
+    harness = await start_harness(tmp_path, await vault_workspace())
+    guarded = bind_key(harness, 'mirage-profile="guarded"')
+    try:
+        async with harness.connect() as conn, conn.start_sftp_client() as sftp:
+            async with sftp.open("/vault/secret", "rb") as f:
+                content = await f.read()
+        async with harness.connect(key=guarded) as conn:
+            async with conn.start_sftp_client() as sftp:
+                with pytest.raises(asyncssh.SFTPPermissionDenied):
+                    async with sftp.open("/vault/secret", "rb") as f:
+                        await f.read()
+    finally:
+        await stop_harness(harness)
+    assert content == b"token\n"

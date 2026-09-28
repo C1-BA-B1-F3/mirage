@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MountMode } from '@struktoai/mirage-core/types'
@@ -31,6 +31,7 @@ interface Harness {
   entry: WorkspaceEntry
   listener: SSHListener
   privateKey: string
+  keysFile: string
 }
 
 interface Run {
@@ -57,12 +58,18 @@ async function startHarness(ws?: Workspace): Promise<Harness> {
     hostKeyFile: join(dir, 'host_key'),
     authorizedKeysFile: join(dir, 'authorized_keys'),
   })
-  const harness = { registry, entry, listener, privateKey: pair.private }
+  const harness = {
+    registry,
+    entry,
+    listener,
+    privateKey: pair.private,
+    keysFile: join(dir, 'authorized_keys'),
+  }
   open.push(harness)
   return harness
 }
 
-function connect(h: Harness, username = 'demo'): Promise<Client> {
+function connect(h: Harness, username = 'demo', privateKey = h.privateKey): Promise<Client> {
   return new Promise((resolve, reject) => {
     const client = new ssh2.Client()
     clients.push(client)
@@ -70,8 +77,30 @@ function connect(h: Harness, username = 'demo'): Promise<Client> {
       resolve(client)
     })
     client.on('error', reject)
-    client.connect({ host: '127.0.0.1', port: h.listener.port, username, privateKey: h.privateKey })
+    client.connect({ host: '127.0.0.1', port: h.listener.port, username, privateKey })
   })
+}
+
+/** Authorize a fresh client key whose line carries `options`. */
+function bindKey(h: Harness, options: string): string {
+  const pair = mintKeyPair(ssh2.utils)
+  appendFileSync(h.keysFile, `${options} ${pair.public}\n`)
+  return pair.private
+}
+
+/** A workspace whose `guarded` profile seals `/vault`. */
+async function vaultWorkspace(): Promise<Workspace> {
+  const ws = new Workspace(
+    { '/': new RAMVFS() },
+    {
+      mode: MountMode.WRITE,
+      profiles: {
+        guarded: { commands: { deny: [{ reason: 'the vault is sealed', paths: ['/vault/*'] }] } },
+      },
+    },
+  )
+  await ws.shell('mkdir -p /vault && echo token > /vault/secret')
+  return ws
 }
 
 function collect(stream: ClientChannel, stdin?: string): Promise<Run> {
@@ -166,6 +195,7 @@ describe('loginEnv', () => {
   it('is what sshd hands a login', () => {
     const request = {
       username: 'demo',
+      profile: [],
       command: null,
       term: 'xterm-256color',
       peer: { address: '10.0.0.5', port: 40000 },
@@ -373,5 +403,32 @@ it('refuses an oversized plain shell line without executing it', async () => {
     stdout: '',
     stderr: 'mirage: shell input line too long\n',
     code: 1,
+  })
+})
+
+describe('key profiles', () => {
+  it('run a key bound to a profile under it', async () => {
+    const h = await startHarness(await vaultWorkspace())
+    const guarded = bindKey(h, 'mirage-profile="guarded"')
+    const unsealed = await exec(await connect(h), 'cat /vault/secret')
+    const sealed = await exec(await connect(h, 'demo', guarded), 'cat /vault/secret')
+    expect(unsealed.stdout).toBe('token\n')
+    expect(sealed.code).toBe(1)
+    expect(sealed.stderr).toContain('the vault is sealed')
+  })
+
+  it.each([
+    ['mirage-profile="nope"', 'nope'],
+    ['mirage-profile="a",mirage-profile="b"', 'exactly one profile'],
+    ['mirage-profile=""', 'exactly one profile'],
+    ['mirage-profile', 'exactly one profile'],
+  ])('refuse a key carrying %s', async (options, reason) => {
+    const h = await startHarness(await vaultWorkspace())
+    const bad = bindKey(h, options)
+    const run = await exec(await connect(h, 'demo', bad), 'echo never')
+    expect(run.code).toBe(1)
+    expect(run.stdout).toBe('')
+    expect(run.stderr).toContain('cannot open a session')
+    expect(run.stderr).toContain(reason)
   })
 })

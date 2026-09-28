@@ -178,9 +178,6 @@ export interface Case {
   // takes a bound.
   read?: 'fresh' | 'bounded'
   ttl?: number
-  // The same selector per mount: each named prefix runs under its own
-  // policy and every other mount inherits `read`, which is the only way a
-  // case can put two policies on one line. `ttl` bounds each.
   mount_read?: Record<string, 'fresh' | 'bounded'>
   session?: string
   // The host's answer to every approval waiting on the workspace, given
@@ -435,7 +432,12 @@ export function validateCases(root: string, cases: Case[]): void {
   }
 }
 
-/** The per-mount policies a scenario case overrides its default with. */
+/**
+ * The per-mount policies a scenario case overrides its default with. Each
+ * named prefix runs under its own policy and every other mount inherits
+ * `read`, the only way a case can put two policies on one line; `ttl`
+ * bounds each.
+ */
 export function mountReadOf(c: Pick<Case, 'mount_read' | 'ttl'>): Record<string, ReadSpec> {
   const out: Record<string, ReadSpec> = {}
   for (const [prefix, policy] of Object.entries(c.mount_read ?? {})) {

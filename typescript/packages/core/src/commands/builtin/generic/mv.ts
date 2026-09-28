@@ -26,7 +26,13 @@ import {
 import { UsageError } from '../../errors.ts'
 import { backupControl, siblingPath } from '../utils/backup.ts'
 import { DEFAULT_BACKUP_SUFFIX } from '../utils/constants.ts'
-import { backendKeyDefault, copyTargets, pathExists, type BackendKeyFn } from '../utils/copy.ts'
+import {
+  STAT_REFUSALS,
+  backendKeyDefault,
+  copyTargets,
+  pathExists,
+  type BackendKeyFn,
+} from '../utils/copy.ts'
 import { fsStrerror, isFsError } from '../../../utils/errors.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import {
@@ -352,6 +358,17 @@ export async function mvGeneric(
       errors.push(`mv: cannot stat '${src.rawPath}': ${String(srcErr)}`)
       continue
     }
+    if (target.walkError !== null && target.rawPath === '') {
+      // GNU stats an empty destination as the directory it is typed in
+      // (gnulib reads the name as `.`): a file cannot overwrite it, and a
+      // directory renamed onto it is busy (coreutils 9.7).
+      errors.push(
+        srcIsDir
+          ? `mv: cannot move '${src.rawPath}' to '': Device or resource busy`
+          : `mv: cannot overwrite directory '' with non-directory '${src.rawPath}'`,
+      )
+      continue
+    }
     if (keyOf(src) === keyOf(target)) {
       errors.push(`mv: '${src.virtual}' and '${target.virtual}' are the same file`)
       continue
@@ -384,8 +401,8 @@ export async function mvGeneric(
     // below, which answers ENOENT in the same words (and on a dirless
     // store may well succeed), unless a slash asked for a directory a
     // file source can never be.
-    if (targetErr === 'Not a directory') {
-      errors.push(`mv: cannot stat '${target.rawPath}': Not a directory`)
+    if (targetErr !== null && STAT_REFUSALS.has(targetErr)) {
+      errors.push(`mv: cannot stat '${target.rawPath}': ${targetErr}`)
       continue
     }
     if (slashRefusesFile(target, targetExists, srcIsDir)) {

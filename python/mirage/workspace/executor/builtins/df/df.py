@@ -20,7 +20,8 @@ from mirage.commands.builtin.utils.paths import (dispatch_stat,
                                                  nearest_ancestor, typed_spec)
 from mirage.runtime.types import DispatchFn
 from mirage.types import CapacityResult, CapacityState, PathSpec
-from mirage.utils.errors import DotWalkError, enoent, enotdir, fs_error_line
+from mirage.utils.errors import (DotWalkError, enoent, enotdir, fs_error_line,
+                                 walk_refusal)
 from mirage.workspace.executor.builtins.df.constants import (BLOCK_SUFFIX,
                                                              SI_UNITS)
 from mirage.workspace.executor.builtins.shared import (fail, ok, operand_text,
@@ -234,6 +235,12 @@ async def _target_mounts(
     errors: list[str] = []
     for op in operands:
         spec = typed_spec(op, session.cwd)
+        if spec.walk_error is not None:
+            # The empty name reads as the working directory in `virtual`,
+            # which may well be a mount root, and a link loop reaches no
+            # filesystem at all.
+            errors.append(fs_error_line("df", spec, walk_refusal(spec)))
+            continue
         virtual = spec.virtual
         if virtual in ("", "/"):
             for m in ordered:

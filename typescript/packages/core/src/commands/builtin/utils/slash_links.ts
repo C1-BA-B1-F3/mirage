@@ -14,6 +14,8 @@
 
 import type { LinkView } from '../../../ops/types.ts'
 import { FileType, type PathSpec } from '../../../types.ts'
+import { ELOOP_STRERROR } from '../../../utils/errors.ts'
+import { CycleError } from '../../../utils/path.ts'
 
 // Whether an operand typed with a trailing slash names a symlink.
 export function isSlashedLink(p: PathSpec, links: LinkView | null): boolean {
@@ -64,6 +66,16 @@ export async function mkdirLinkRefusal(
 ): Promise<{ taken: boolean; message: string | null }> {
   if (links?.statAt(p.virtual) == null) {
     return { taken: false, message: null }
+  }
+  if (opts.parents) {
+    // -p stats the name mkdir(2) found taken, to see whether it is the
+    // directory asked for, and a loop fails that stat.
+    try {
+      links.resolve(p.virtual)
+    } catch (err) {
+      if (!(err instanceof CycleError)) throw err
+      return { taken: true, message: `mkdir: cannot stat '${p.rawPath}': ${ELOOP_STRERROR}` }
+    }
   }
   const target = await links.targetStat(p.virtual)
   if (opts.parents && target !== null && target.type === FileType.DIRECTORY) {

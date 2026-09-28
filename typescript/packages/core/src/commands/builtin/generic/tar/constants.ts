@@ -26,7 +26,13 @@ export const COMPRESSION_SIGNATURES: Readonly<Record<CompressionKind, readonly n
 // usage.oldOptionError gives (mirage's tar serves no --usage).
 export const USAGE_HINT = "Try 'tar --help' for more information."
 export const EMPTY_ARCHIVE = 'tar: Cowardly refusing to create an empty archive'
+// GNU normalizes an empty operand to `.` before it stats it, says so, and
+// then still names the operand as typed when the stat fails (tar 1.35).
+export const EMPTY_MEMBER = "tar: Substituting `.' for empty member name"
 export const FATAL_TRAILER = 'tar: Error is not recoverable: exiting now'
+// What GNU adds when the archive opened but its first read failed (a
+// directory given to -f).
+export const TAPE_START = 'tar: At beginning of tape, quitting now'
 // What tar adds when its gzip -d child fails, after gzip's own lines.
 export const CHILD_STATUS = 'tar: Child returned status {}'
 export const INVALID_ARCHIVE = [

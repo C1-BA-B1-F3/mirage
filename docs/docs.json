@@ -215,6 +215,7 @@
                   "home/setup/runtime/sandbox",
                   "home/setup/runtime/sandbox/sandlock",
                   "home/setup/runtime/sandbox/docker",
+                  "home/setup/runtime/sandbox/apple_container",
                   "home/setup/runtime/sandbox/smolvm",
                   "home/setup/runtime/sandbox/daytona",
                   "home/setup/runtime/sandbox/e2b",
@@ -414,6 +415,7 @@
                   "python/runtime/sandbox",
                   "python/runtime/sandbox/sandlock",
                   "python/runtime/sandbox/docker",
+                  "python/runtime/sandbox/apple_container",
                   "python/runtime/sandbox/smolvm",
                   "python/runtime/sandbox/daytona",
                   "python/runtime/sandbox/e2b",
@@ -611,6 +613,7 @@
                 "pages": [
                   "typescript/runtime/sandbox",
                   "typescript/runtime/sandbox/docker",
+                  "typescript/runtime/sandbox/apple_container",
                   "typescript/runtime/sandbox/smolvm",
                   "typescript/runtime/sandbox/daytona",
                   "typescript/runtime/sandbox/e2b",

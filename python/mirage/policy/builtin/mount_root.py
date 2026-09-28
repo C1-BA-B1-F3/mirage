@@ -104,6 +104,21 @@ def has_parents_flag(argv: tuple[str, ...]) -> bool:
     return False
 
 
+def names_root(query: MountRootQuery, path: PathSpec) -> bool:
+    """Whether an operand names a mount root.
+
+    An operand the kernel walk refused (``walk_error``) names nothing,
+    whatever its ``virtual`` reads as: the empty name simplifies to the
+    working directory, which can be a mount root, and the command
+    reports it ENOENT rather than busy.
+
+    Args:
+        query (MountRootQuery): the mount-root oracle.
+        path (PathSpec): the operand.
+    """
+    return path.walk_error is None and query.is_mount_root(path.virtual)
+
+
 def first_root(query: MountRootQuery,
                paths: Sequence[PathSpec]) -> PathSpec | None:
     """The first of these paths that is a mount root, if any.
@@ -113,7 +128,7 @@ def first_root(query: MountRootQuery,
         paths (Sequence[PathSpec]): paths to test, in operand order.
     """
     for path in paths:
-        if query.is_mount_root(path.virtual):
+        if names_root(query, path):
             return path
     return None
 
@@ -153,7 +168,7 @@ class MountRootPolicy(Policy):
         cmd = ctx.command
         if cmd in ("rm", "rmdir"):
             for p in ctx.paths:
-                if ctx.registry.is_mount_root(p.virtual):
+                if names_root(ctx.registry, p):
                     if cmd == "rmdir":
                         msg = (f"failed to remove '{p.virtual}': "
                                f"Device or resource busy")
@@ -162,31 +177,34 @@ class MountRootPolicy(Policy):
                                f"Device or resource busy")
                     return Deny(msg, DenyScope.OPERAND)
         elif cmd == "mv":
-            if ctx.registry.is_mount_root(ctx.paths[0].virtual):
+            # The source is a slot, so it is read off the positionals:
+            # `mv -t /mnt f` moves INTO a mount root, which is ordinary.
+            if ctx.operands and names_root(ctx.registry, ctx.operands[0]):
                 dst = ctx.paths[1].virtual if len(ctx.paths) > 1 else "?"
                 return Deny(
-                    f"cannot move '{ctx.paths[0].virtual}' to '{dst}': "
+                    f"cannot move '{ctx.operands[0].virtual}' to '{dst}': "
                     f"Device or resource busy", DenyScope.OPERAND)
         elif cmd == "mkdir":
             # GNU mkdir -p makes "already exists" a no-op.
             if has_parents_flag(ctx.argv):
                 return None
             for p in ctx.paths:
-                if ctx.registry.is_mount_root(p.virtual):
+                if names_root(ctx.registry, p):
                     return Deny(
                         f"cannot create directory '{p.virtual}': "
                         f"File exists", DenyScope.OPERAND)
         elif cmd == "touch":
-            for p in ctx.paths:
-                if ctx.registry.is_mount_root(p.virtual):
+            # Positionals only: `-r REF` is read, never touched.
+            for p in ctx.operands:
+                if names_root(ctx.registry, p):
                     return Deny(f"cannot touch '{p.virtual}': Is a directory",
                                 DenyScope.OPERAND)
         elif cmd == "ln":
             # A mount root is refused only as the link NAME. Without -T
             # a directory operand is the directory to link into, GNU's
             # rule, and creating inside a mount is ordinary.
-            if has_no_target_flag(ctx.argv) and ctx.registry.is_mount_root(
-                    ctx.paths[-1].virtual):
+            if has_no_target_flag(ctx.argv) and names_root(
+                    ctx.registry, ctx.paths[-1]):
                 kind = ("symbolic link"
                         if has_symlink_flag(ctx.argv) else "link")
                 return Deny(

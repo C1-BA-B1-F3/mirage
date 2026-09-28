@@ -93,12 +93,12 @@ def make_rm(
                     continue
                 # GNU rm reports the operand and keeps removing the rest.
                 errors.append(
-                    f"rm: cannot remove '{p.virtual}': {fs_strerror(exc)}")
+                    f"rm: cannot remove '{p.raw_path}': {fs_strerror(exc)}")
                 continue
             except ValueError:
                 if f:
                     continue
-                errors.append(f"rm: cannot remove '{p.virtual}': "
+                errors.append(f"rm: cannot remove '{p.raw_path}': "
                               "No such file or directory")
                 continue
             removed[p.mount_path] = b""

@@ -33,7 +33,13 @@ import {
 } from '../../../core/awk/index.ts'
 import { UsageError } from '../../errors.ts'
 import { FS_ESCAPES, USAGE, type AwkFlags } from './awk_types.ts'
-import { fsStrerror, isEnotdir, isMissingPath, isWalkError } from '../../../utils/errors.ts'
+import {
+  fsStrerror,
+  isEnotdir,
+  isFsError,
+  isMissingPath,
+  isWalkError,
+} from '../../../utils/errors.ts'
 import { resolvePath } from '../../../utils/path.ts'
 import { resolveSource } from '../utils/stream.ts'
 
@@ -42,7 +48,9 @@ const DEC = new TextDecoder('utf-8', { fatal: false })
 
 type Stream = (p: PathSpec) => AsyncIterable<Uint8Array>
 
-type Source = readonly [name: string, bytes: AsyncIterable<Uint8Array>]
+// Each input opens when its turn comes, so one that cannot be opened is
+// reported after the output of those before it.
+type Source = readonly [name: string, open: () => AsyncIterable<Uint8Array>]
 
 function parseFlags(opts: CommandOpts): AwkFlags {
   const fl = new FlagView(opts.flags, specOf('awk'))
@@ -195,11 +203,11 @@ async function* awkStream(
     if (failed) return
   }
   if (!exited && interp.hasMainRules()) {
-    for (const [name, source] of sources) {
+    for (const [name, open] of sources) {
       if (exited) break
       interp.startFile(name)
       try {
-        for await (const record of records(source, interp)) {
+        for await (const record of records(open(), interp)) {
           interp.runRecord(record)
           const [chunk, failed] = await settle(io, interp, null, opts)
           if (chunk.length > 0) yield chunk
@@ -212,6 +220,15 @@ async function* awkStream(
           exited = true
         } else if (isFatal(err)) {
           const [chunk] = await settle(io, interp, err, opts)
+          yield chunk
+          return
+        } else if (isFsError(err)) {
+          // An input awk cannot open ends the run there, END and the
+          // files after it unread (mawk 1.3.4, exit 2).
+          const failure = new AwkRuntimeError(
+            `awk: cannot open "${name}" (${fsStrerror(err) ?? ''})`,
+          )
+          const [chunk] = await settle(io, interp, failure, opts)
           yield chunk
           return
         } else throw err
@@ -283,12 +300,15 @@ export async function awkGeneric(
 
   let sources: Source[]
   let cache: string[]
-  if (paths.length > 0) {
+  // An empty operand names no file and mawk skips it, reading stdin when
+  // nothing else is left.
+  const files = paths.filter((p) => p.rawPath !== '')
+  if (files.length > 0) {
     // FILENAME reports the operand as typed, matching every awk.
-    sources = paths.map((p) => [p.rawPath, stream(p)] as const)
-    cache = paths.filter((p) => !isStdin(p)).map((p) => p.mountPath)
+    sources = files.map((p) => [p.rawPath, () => stream(p)] as const)
+    cache = files.filter((p) => !isStdin(p)).map((p) => p.mountPath)
   } else {
-    sources = [['', resolveSource(opts.stdin)]]
+    sources = [['', () => resolveSource(opts.stdin)]]
     cache = []
   }
   const io = new IOResult({ cache })

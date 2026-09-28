@@ -242,6 +242,9 @@ export async function handleCommand(
           statPath: (path: string) => pathStat(dispatch, path, null),
           ns: namespaceViewOf(registry, namespace ?? null, dispatch),
           sessionView: sessionView(session, registry.policies),
+          ...(registry.processView === undefined
+            ? {}
+            : { processes: registry.processView(session) }),
         },
         dropsMountCaches(cliInstall.spec) ? () => dropMountCaches(registry) : null,
       ),
@@ -347,7 +350,14 @@ export async function handleCommand(
   // Path-valued flags (e.g. shuf --output=/dst/out) own a mount just like
   // positional operands, so they join routing and mount validation instead of
   // being dropped whenever a positional path is also present.
-  const routingScopes = mergeScopes(pathScopes, pathFlagScopes(cmdName, rawArgv, session.cwd))
+  // The empty name joins onto the working directory in `virtual` but names
+  // no path there, so it routes nowhere: the line runs where its other
+  // operands (or the cwd) put it, and that run's op guards refuse it. A line
+  // is not cross-mount because one of its words is empty.
+  const routingScopes = mergeScopes(
+    pathScopes,
+    pathFlagScopes(cmdName, rawArgv, session.cwd),
+  ).filter((s) => s.walkError !== 'ENOENT')
 
   let findExprTokens: string[] | null = null
   if (cmdName === 'find') {
@@ -413,7 +423,7 @@ export async function handleCommand(
         undefined,
         false,
         undefined,
-        true,
+        cmdName !== 'tar',
       )
     const csFlags = csParsed.flagKwargs
     const csTexts = findExprTokens ?? csParsed.texts

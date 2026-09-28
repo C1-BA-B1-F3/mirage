@@ -17,6 +17,7 @@ import { recordStatus } from '@struktoai/mirage-core/workspace/executor/statemen
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
 import type { ServerChannel } from 'ssh2'
 import type { WorkspaceEntry, WorkspaceRegistry } from '../registry.ts'
+import { PROFILE_OPTION } from './constants.ts'
 import { ChannelInput, ChannelOutput, Mark, channelStdin, deliver } from './stream.ts'
 
 const AGENT_ID = 'ssh'
@@ -57,6 +58,8 @@ export interface Endpoint {
 /** What the server knows about one channel's login. */
 export interface ChannelRequest {
   username: string
+  /** The login key's `mirage-profile` values; empty when it has none. */
+  profile: readonly string[]
   command: string | null
   term: string | null
   peer: Endpoint | null
@@ -88,18 +91,35 @@ function shellQuote(value: string): string {
 }
 
 /**
- * Create the session a channel runs as, under the default profile. The
- * login environment is exported by an unrecorded line, so every name
- * clears the session's `pre_session` gate like any `export` would, and a
- * name the profile already set keeps its value.
+ * The profile the login's authorized key is bound to, if any. The key's
+ * line names it with `mirage-profile="<name>"`; a key without the option
+ * runs under the workspace's default profile. A bare, empty or repeated
+ * option is refused.
+ */
+export function keyProfile(values: readonly string[]): string | null {
+  if (values.length === 0) return null
+  const [name] = values
+  if (values.length !== 1 || name === undefined || name === '') {
+    throw new Error(`${PROFILE_OPTION} must name exactly one profile`)
+  }
+  return name
+}
+
+/**
+ * Create the session a channel runs as, under `profile` (the login key's),
+ * else the workspace's default profile; a profile the workspace does not
+ * define is refused. The login environment is exported by an unrecorded
+ * line, so every name clears the session's `pre_session` gate like any
+ * `export` would, and a name the profile already set keeps its value.
  */
 export async function openSession(
   ws: Workspace,
   sessionId: string,
   env: Record<string, string> = {},
+  profile: string | null = null,
 ): Promise<void> {
   await ws.ensureSessionsLoaded()
-  const session = ws.createSession(sessionId)
+  const session = ws.createSession(sessionId, profile === null ? {} : { profile })
   try {
     const missing = Object.entries(env).filter(([name]) => !(name in session.env))
     if (missing.length === 0) return
@@ -283,7 +303,7 @@ export async function handleChannel(
   const entry = registry.get(request.username)
   const sessionId = newSessionId()
   try {
-    await openSession(entry.runner.ws, sessionId, loginEnv(request))
+    await openSession(entry.runner.ws, sessionId, loginEnv(request), keyProfile(request.profile))
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.warn(`ssh: cannot open a session on ${request.username}: ${message}`)

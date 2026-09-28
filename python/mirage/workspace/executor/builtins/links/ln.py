@@ -34,7 +34,7 @@ from mirage.context import path_allowed
 from mirage.io.stream import materialize
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec, word_text
-from mirage.utils.errors import FS_ERRORS, fs_strerror
+from mirage.utils.errors import FS_ERRORS, DotWalkLoop, fs_strerror
 from mirage.utils.path import CycleError
 from mirage.workspace.executor.builtins.links.probe import (link_target_stat,
                                                             miss_strerror,
@@ -257,6 +257,41 @@ def _operand_abs(namespace: Namespace, arg: str | PathSpec, cwd: str) -> str:
         return virtual
 
 
+def _walk_verdict(namespace: Namespace,
+                  word: str | PathSpec,
+                  cwd: str,
+                  follow_last: bool = False) -> str | None:
+    """The strerror the kernel walk answers for an operand before any op.
+
+    An empty name resolves nowhere, and a link loop stops the walk in
+    front of the final name; ``follow_last`` asks for that name too, for
+    an operand that has to be a directory. None when the walk gets
+    there, and for a hidden path, which the door answers like any other
+    absent one. ln's relative words arrive unclassified, so the verdict
+    cannot be read off a PathSpec.
+
+    Args:
+        namespace (Namespace): the link table.
+        word (str | PathSpec): the operand.
+        cwd (str): session working directory.
+        follow_last (bool): whether the final name is followed as well.
+    """
+    if word_text(word) == "":
+        return _ENOENT_TEXT
+    virtual = abs_path(word, cwd)
+    if not path_allowed(virtual):
+        return None
+    trimmed = virtual.rstrip("/") or "/"
+    try:
+        if follow_last:
+            namespace.follow(trimmed)
+        else:
+            namespace.follow_parent(trimmed)
+    except CycleError:
+        return _ELOOP_TEXT
+    return None
+
+
 async def _listed_by_parent(dispatch: DispatchFn, virtual: str) -> bool:
     """Whether a path's own name is in its parent's listing.
 
@@ -378,6 +413,9 @@ async def plan_links(
     hint = usage_hint("ln") + "\n"
     if target_dir is not None:
         typed = target_typed if target_typed is not None else target_dir
+        why = _walk_verdict(namespace, typed, cwd, follow_last=True)
+        if why is not None:
+            return [], f"ln: failed to access '{typed}': {why}\n"
         unwalked = await dot_refusal(partial(dispatch_stat, dispatch),
                                      typed_spec(typed, cwd))
         if unwalked is not None:
@@ -407,15 +445,22 @@ async def plan_links(
         ], None
     last = operands[-1]
     last_abs = _operand_abs(namespace, last, cwd)
-    resolved, stat = await _dir_at(namespace, dispatch, last_abs,
-                                   flags.no_dereference)
+    # The empty name reads as the working directory in `last_abs`, and it
+    # is no directory to link into.
+    resolved, stat = ((last_abs, None)
+                      if word_text(last) == "" else await _dir_at(
+                          namespace, dispatch, last_abs, flags.no_dereference))
     is_dir = stat is not None and stat.type == FileType.DIRECTORY
     if len(operands) == 2 and not is_dir:
         return [LinkPlan(operands[0], last_abs, word_text(last))], None
     if not is_dir:
         if stat is None:
-            return [], (f"ln: target '{word_text(last)}': "
-                        f"{await miss_strerror(dispatch, resolved)}\n")
+            # A link standing at the name that leads nowhere, dangling or
+            # looping, is ENOENT to GNU; a loop above it is ELOOP.
+            why = (_ENOENT_TEXT if word_text(last) == ""
+                   or _visible_link(namespace, last_abs) else await
+                   miss_strerror(dispatch, resolved))
+            return [], f"ln: target '{word_text(last)}': {why}\n"
         return [], f"ln: target '{word_text(last)}': Not a directory\n"
     return [_into(op, resolved, word_text(last)) for op in operands[:-1]], None
 
@@ -509,6 +554,23 @@ async def make_link(
     # has to be there. A symlink's target is stored as typed and never
     # walked; a hard link's is the file it names.
     walker = partial(dispatch_stat, dispatch)
+    # What the walk answers before any op, in GNU's order: symlink(2)
+    # refuses an empty target ahead of the name, and then GNU names the
+    # target alongside; a hard link's source is reached first; the name
+    # last, as the call that makes it would meet it.
+    if flags.symbolic and target_typed == "":
+        errors.append(f"ln: failed to create symbolic link '{typed}' -> '': "
+                      f"{_ENOENT_TEXT}\n")
+        return
+    if not flags.symbolic:
+        why = _walk_verdict(namespace, plan.source, cwd, flags.logical)
+        if why is not None:
+            errors.append(f"ln: failed to access '{target_typed}': {why}\n")
+            return
+    why = _walk_verdict(namespace, typed, cwd)
+    if why is not None:
+        errors.append(_refused(flags, typed, target_typed, why))
+        return
     if not flags.symbolic:
         unwalked = await dot_refusal(walker, typed_spec(plan.source, cwd))
         if unwalked is not None:
@@ -632,7 +694,7 @@ async def make_link(
         except IsADirectoryError:
             errors.append(f"ln: {typed}: cannot overwrite directory\n")
             return
-        except CycleError:
+        except DotWalkLoop:
             errors.append(_refused(flags, typed, target_typed, _ELOOP_TEXT))
             return
         occupied = False
@@ -662,7 +724,7 @@ async def make_link(
             _refused(flags, typed, target_typed,
                      fs_strerror(exc) or _ENOENT_TEXT))
         return
-    except CycleError:
+    except DotWalkLoop:
         errors.append(_refused(flags, typed, target_typed, _ELOOP_TEXT))
         return
     except FileExistsError:

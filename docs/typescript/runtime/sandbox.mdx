@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Run captured programs inside a sandbox (Docker, smolvm, Daytona, e2b, or any machine over SSH) you provision yourself.
+description: Run captured programs inside a sandbox (Docker, Apple Container, smolvm, Daytona, e2b, or any machine over SSH) you provision yourself.
 icon: server
 ---
 
@@ -10,21 +10,23 @@ runs it inside a separate machine, a local container or microVM or a cloud
 sandbox. Reach for it when a line needs a real OS, heavy packages, or a GPU
 that the in-process interpreters cannot give it.
 
-Five sandbox runtimes ship from `@struktoai/mirage-node`, all with the same
+Six sandbox runtimes ship from `@struktoai/mirage-node`, all with the same
 surface:
 
 | Runtime | Connects to | Config |
 | --- | --- | --- |
 | [`docker`](/typescript/runtime/sandbox/docker) | A container you started (`docker run`) | `container` |
+| [`apple_container`](/typescript/runtime/sandbox/apple_container) | A container you started with Apple's [`container`](https://github.com/apple/container), or one per agent | `container`, `containers` |
 | [`smolvm`](/typescript/runtime/sandbox/smolvm) | A [smolvm](https://smolmachines.com) microVM you started | `machine` |
 | [`daytona`](/typescript/runtime/sandbox/daytona) | A [Daytona](https://www.daytona.io) sandbox you created | `sandboxId`, `apiKey` |
 | [`e2b`](/typescript/runtime/sandbox/e2b) | An [E2B](https://e2b.dev) sandbox you created | `sandboxId`, `apiKey` |
 | [`ssh`](/typescript/runtime/sandbox/ssh) | Any machine running sshd | `host`, `username`, `identityFile` |
 
-`docker` and `smolvm` run on your own machine, Daytona and e2b in the
-cloud, and `ssh` reaches anything you can already `ssh` into. The isolation
-differs too: a container shares your kernel, a smolvm microVM boots its
-own, and an ssh machine is whatever machine you point it at.
+`docker`, `apple_container` and `smolvm` run on your own machine, Daytona
+and e2b in the cloud, and `ssh` reaches anything you can already `ssh` into.
+The isolation differs too: a Docker container shares its host's kernel, an
+Apple Container and a smolvm microVM each boot their own, and an ssh machine
+is whatever machine you point it at.
 
 <Note>
   Looking for Sandlock? Mirage's
@@ -145,6 +147,17 @@ always matches your code:
 docker build -f docker/sandbox/Dockerfile --target fuse -t mirage-python-fuse .
 ```
 
+<Note>
+  The shared image uses the Python Mirage CLI to serve workspace mounts
+  inside the sandbox. Your host application can use either SDK, including
+  TypeScript; it communicates with the sandbox through the runtime's
+  transport. The image's implementation and the host SDK are independent.
+
+  When building a custom image, install the programs your captured commands
+  need (for example, Node.js for `node`) and serve workspace mounts at the
+  same paths as the host workspace.
+</Note>
+
 By default it installs every mountable backend plus fuse. Narrow it to just
 the backends you use for a smaller image, or extend it as a base:
 
@@ -154,8 +167,9 @@ docker build -f docker/sandbox/Dockerfile --target fuse \
 ```
 
 The one image is the shared base for every machine provider: run it directly
-under Docker or smolvm, use it as a Daytona `image`/`snapshot` source, or use
-it as an E2B template base. Continue with the provider page in the Sandbox
+under Docker, Apple's `container` (build it with `container build`, same
+flags) or smolvm, use it as a Daytona `image`/`snapshot` source, or use it as
+an E2B template base. Continue with the provider page in the Sandbox
 sidebar for connection and configuration details.
 
 ## Selecting in YAML

@@ -47,6 +47,9 @@ export function relativeSpec(
       rawPath: word,
     })
   }
+  // The empty name joins onto the directory as the directory itself, a
+  // path the kernel walk never reaches (POSIX: a null pathname does not
+  // resolve), so it rides along refused rather than as the cwd.
   return new PathSpec({
     vfsPath: stripSlash(path),
     virtual: path,
@@ -54,5 +57,6 @@ export function relativeSpec(
     resolved: true,
     rawPath: word,
     dotted: dottedSpelling(word, cwd),
+    walkError: word === '' ? 'ENOENT' : null,
   })
 }

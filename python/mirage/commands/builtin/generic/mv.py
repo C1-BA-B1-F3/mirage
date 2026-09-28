@@ -18,7 +18,8 @@ from typing import Callable
 
 from mirage.commands.builtin.utils.backup import backup_control, sibling_path
 from mirage.commands.builtin.utils.constants import DEFAULT_BACKUP_SUFFIX
-from mirage.commands.builtin.utils.copy import (backend_key_default,
+from mirage.commands.builtin.utils.copy import (STAT_REFUSALS,
+                                                backend_key_default,
                                                 copy_targets, path_exists)
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
@@ -363,6 +364,16 @@ async def mv(
         if not src_exists:
             errors.append(f"mv: cannot stat '{src.raw_path}': {src_err}")
             continue
+        if target.walk_error is not None and target.raw_path == "":
+            # GNU stats an empty destination as the directory it is typed
+            # in (gnulib reads the name as `.`): a file cannot overwrite
+            # it, and a directory renamed onto it is busy (coreutils 9.7).
+            errors.append(
+                f"mv: cannot move '{src.raw_path}' to '': "
+                "Device or resource busy" if src_is_dir else
+                "mv: cannot overwrite directory '' with non-directory "
+                f"'{src.raw_path}'")
+            continue
         if key_of(src) == key_of(target):
             errors.append(f"mv: '{src.virtual}' and '{target.virtual}' "
                           "are the same file")
@@ -386,9 +397,9 @@ async def mv(
         # backend rename below, which answers ENOENT in the same words
         # (and on a dirless store may well succeed), unless a slash
         # asked for a directory a file source can never be.
-        if target_err == "Not a directory":
+        if target_err in STAT_REFUSALS:
             errors.append(f"mv: cannot stat '{target.raw_path}': "
-                          "Not a directory")
+                          f"{target_err}")
             continue
         if slash_refuses_file(target, target_exists, src_is_dir):
             errors.append(f"mv: cannot move '{src.raw_path}' to "

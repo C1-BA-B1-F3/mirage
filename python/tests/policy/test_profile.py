@@ -28,6 +28,7 @@ from mirage.policy.errors import PolicyError
 from mirage.policy.match import Outcome
 from mirage.policy.profile import SessionProfile
 from mirage.policy.types import CommandRule, HideReason
+from mirage.process.config import ProcessPermissions
 from mirage.runtime.base import Runtime
 from mirage.runtime.mixin import LineExecutorMixin
 from mirage.runtime.types import RunResult, ScriptSource
@@ -245,6 +246,35 @@ def test_commands_block_refuses_scalars_blank_patterns_and_mount(bad):
     # about or deny every command; `mount` is the compiler's field.
     with pytest.raises(ValidationError):
         SessionProfile.model_validate({"commands": bad})
+
+
+def test_processes_takes_a_scope_or_its_fields():
+    whole = SessionProfile.model_validate({"processes": "workspace"})
+    assert whole.processes == ProcessPermissions(list="workspace",
+                                                 kill="workspace")
+    capped = SessionProfile.model_validate({"processes": {"max": 4}})
+    assert capped.processes == ProcessPermissions(max=4)
+
+
+@pytest.mark.parametrize("bad", [
+    "none",
+    {
+        "list": "session",
+        "kill": "workspace"
+    },
+    {
+        "max": 0
+    },
+    {
+        "max": True
+    },
+    {
+        "spawn": False
+    },
+])
+def test_processes_refuses_what_typescript_refuses(bad):
+    with pytest.raises(ValidationError):
+        SessionProfile.model_validate({"processes": bad})
 
 
 def test_profile_is_frozen():

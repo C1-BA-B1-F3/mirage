@@ -31,7 +31,11 @@ export async function handleSource(
   args: string[] = [],
 ): Promise<Result> {
   const raw = scopePath(path)
-  if (raw === '') return scriptError('source', SOURCE_USAGE, 2)
+  if (wordText(path) === '') {
+    // The empty name is a filename bash tries to open, not a missing
+    // argument, so it fails like any file that is not there.
+    return scriptError('source', ': No such file or directory', 1, 'source ')
+  }
   let script: string
   try {
     script = await readScriptText(dispatch, raw, session.cwd)
@@ -61,7 +65,8 @@ export async function handleSource(
  */
 export async function sourceBuiltin(call: BuiltinCall): Promise<Result> {
   const operands = [...call.argv.operands]
-  const target = operands[0] ?? ''
+  const target = operands[0]
+  if (target === undefined) return scriptError('source', SOURCE_USAGE, 2)
   const sourceArgs = operands.slice(1).map((o) => wordText(o))
   return handleSource(call.dispatch, call.executeFn, target, call.session, sourceArgs)
 }

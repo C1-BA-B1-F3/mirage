@@ -314,7 +314,7 @@ def _expand_escapes(s: str) -> tuple[str, bool]:
     n = len(s)
     while i < n:
         if s[i] == "\\":
-            text, i, stop = _read_escape(s, i)
+            text, i, stop = _read_escape(s, i, b_arg=True)
             out.append(text)
             if stop:
                 return "".join(out), True
@@ -350,13 +350,19 @@ def _quote_shell(s: str) -> str:
     return "".join(out)
 
 
-def _read_escape(fmt: str, i: int) -> tuple[str, int, bool]:
+def _read_escape(fmt: str, i: int, b_arg: bool) -> tuple[str, int, bool]:
     """Interpret a backslash escape at ``fmt[i]``. Returns the emitted
     text, the next index, and whether output should stop (``\\c``).
 
+    An octal escape in the format is ``\\NNN``, one to three digits. A
+    ``%b`` argument also takes ``\\0NNN``: after a leading ``0``, up to
+    three more digits. bash 5.2.37 writes ``printf '\\0003'`` as NUL
+    then ``3`` and ``printf %b '\\0003'`` as the byte 3.
+
     Args:
-        fmt (str): the format string.
+        fmt (str): the format string, or a ``%b`` argument.
         i (int): index of the backslash.
+        b_arg (bool): whether ``fmt`` is a ``%b`` argument.
     """
     n = len(fmt)
     if i + 1 >= n:
@@ -380,16 +386,12 @@ def _read_escape(fmt: str, i: int) -> tuple[str, int, bool]:
             return text, j, False
         return "\\" + ch, i + 2, False
     if ch in _OCT:
-        digits = []
-        j = i + 1
-        if fmt[j] == "0":
+        start = i + 1
+        limit = 4 if b_arg and ch == "0" else 3
+        j = start
+        while j < n and j - start < limit and fmt[j] in _OCT:
             j += 1
-        while j < n and len(digits) < 3 and fmt[j] in _OCT:
-            digits.append(fmt[j])
-            j += 1
-        if not digits:
-            return "\0", j, False
-        return byte_char(int("".join(digits), 8)), j, False
+        return byte_char(int(fmt[start:j], 8)), j, False
     return "\\" + ch, i + 2, False
 
 
@@ -462,7 +464,7 @@ def run_printf(fmt: str, args: list[str]) -> tuple[str, list[str]]:
         while i < n and not stop:
             ch = fmt[i]
             if ch == "\\":
-                text, i, stop = _read_escape(fmt, i)
+                text, i, stop = _read_escape(fmt, i, b_arg=False)
                 out.append(text)
                 continue
             if ch == "%":

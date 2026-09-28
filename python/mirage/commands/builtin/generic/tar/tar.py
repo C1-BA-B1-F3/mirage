@@ -3,7 +3,7 @@ import logging
 import tarfile
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from mirage.commands.builtin.generic.archive.extract import (ensure_dir,
                                                              extract_dest)
@@ -11,7 +11,7 @@ from mirage.commands.builtin.generic.archive.walk import (DirProbe, StatFn,
                                                           WalkFn)
 from mirage.commands.builtin.generic.tar.constants import (  # yapf: disable
     CHILD_STATUS, CREATE_ERROR_EXIT, ERROR_TRAILER, FATAL_TRAILER,
-    INVALID_ARCHIVE, READ_MODES, WRITE_MODES)
+    INVALID_ARCHIVE, READ_MODES, TAPE_START, WRITE_MODES)
 from mirage.commands.builtin.generic.tar.create import plan_create
 from mirage.commands.builtin.generic.tar.types import (CompressionSuffix,
                                                        CreateResult, Member,
@@ -234,7 +234,7 @@ async def _create_archive(
     except FS_ERRORS as exc:
         # GNU opens the archive before it reads a member, so an archive
         # it cannot create is the whole run's one fatal line.
-        shown = archive_path.raw_path or archive_path.virtual
+        shown = archive_path.raw_path
         return None, IOResult(exit_code=CREATE_ERROR_EXIT,
                               stderr=_stderr([
                                   f"tar: {shown}: Cannot open: "
@@ -246,6 +246,34 @@ async def _create_archive(
                             exit_code=exit_code)
 
 
+async def _read_archive(
+        archive_path: PathSpec,
+        read_bytes: Callable[..., Awaitable[bytes]]) -> bytes | IOResult:
+    """The archive's bytes, or the run's one fatal line when GNU would stop.
+
+    GNU opens the archive before it reads a member, so one it cannot open
+    (missing, the empty name, a link loop) ends the run as ``Cannot
+    open``; a directory opens and then fails the first read, which GNU
+    words as ``Cannot read`` at the beginning of the tape. Exit 2 both
+    ways, named as typed (tar 1.35).
+
+    Args:
+        archive_path (PathSpec): the ``-f`` operand.
+        read_bytes (Callable[..., Awaitable[bytes]]): the backend read.
+    """
+    try:
+        return await read_bytes(archive_path)
+    except FS_ERRORS as exc:
+        shown = archive_path.raw_path
+        lines = ([
+            f"tar: {shown}: Cannot read: {fs_strerror(exc)}", TAPE_START,
+            FATAL_TRAILER
+        ] if isinstance(exc, IsADirectoryError) else [
+            f"tar: {shown}: Cannot open: {fs_strerror(exc)}", FATAL_TRAILER
+        ])
+        return IOResult(exit_code=CREATE_ERROR_EXIT, stderr=_stderr(lines))
+
+
 async def _list_archive(
     archive_path: PathSpec,
     mode_suffix: CompressionSuffix,
@@ -253,7 +281,10 @@ async def _list_archive(
     read_bytes: Callable[..., Awaitable[bytes]],
 ) -> tuple[ByteSource | None, IOResult]:
     names: list[str] = []
-    with _open_archive(await read_bytes(archive_path), mode_suffix) as result:
+    data = await _read_archive(archive_path, read_bytes)
+    if isinstance(data, IOResult):
+        return None, data
+    with _open_archive(data, mode_suffix) as result:
         tf, failure = result.archive, result.failure
         if tf is not None:
             names = [
@@ -297,7 +328,10 @@ async def _extract_archive(
     # reported by its own name and the run goes on to the next one,
     # closing with the one trailer and exit 2.
     failed = False
-    with _open_archive(await read_bytes(archive_path), mode_suffix) as result:
+    data = await _read_archive(archive_path, read_bytes)
+    if isinstance(data, IOResult):
+        return None, data
+    with _open_archive(data, mode_suffix) as result:
         tf, failure = result.archive, result.failure
         if tf is not None:
             members = tf.getmembers()
@@ -429,7 +463,7 @@ async def tar(
         # Relay doors address by full virtual path (flat_scopes'
         # convention), not by the mount-relative key the wrapper's
         # accessor stamped.
-        archive = PathSpec.from_str_path(archive.virtual)
+        archive = replace(archive, vfs_path=archive.virtual.strip("/"))
     # Only the last -C is a destination; create checks every one.
     dest_path = extract_dest(C[-1] if C else None, cwd, relay)
     chosen = list(selectors or [])

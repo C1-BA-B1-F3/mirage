@@ -116,3 +116,31 @@ async def test_a_tar_parse_error_does_not_mask_the_gzip_failure(flags, size):
     assert r == (2, b"", b"gzip: stdin: invalid compressed data--crc error\n"
                  b"gzip: stdin: invalid compressed data--length error\n" +
                  notices + CHILD_FAILED)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["t", "x", "c"])
+@pytest.mark.parametrize("name, reason",
+                         [("", "No such file or directory"),
+                          ("loop", "Too many levels of symbolic links")])
+async def test_archive_walk_refusals_keep_the_typed_name(mode, name, reason):
+    result = await _shell(
+        f"cd /data; ln -s loop loop; tar -{mode}f '{name}' a.txt",
+        {"/data/a.txt": b"hello\n"})
+    assert result == (2, b"",
+                      f"tar: {name}: Cannot open: {reason}\n".encode() +
+                      b"tar: Error is not recoverable: exiting now\n")
+
+
+@pytest.mark.asyncio
+async def test_cross_mount_tar_keeps_the_empty_archive_refusal():
+    ws = Workspace({
+        "/data": RAMVFS(),
+        "/other": RAMVFS()
+    },
+                   mode=MountMode.WRITE)
+    await ws.shell("echo hello > /other/a.txt")
+    result = await ws.shell("cd /data; tar -cf '' /other/a.txt")
+    assert result.exit_code == 2
+    assert result.stderr == (b"tar: : Cannot open: No such file or directory\n"
+                             b"tar: Error is not recoverable: exiting now\n")

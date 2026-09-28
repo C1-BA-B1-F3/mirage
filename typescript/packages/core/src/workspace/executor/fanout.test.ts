@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { IOResult, materialize } from '../../io/types.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { FileStat, FileType, MountMode, PathSpec } from '../../types.ts'
@@ -22,7 +22,7 @@ import { SessionState } from '../session/session.ts'
 import type { ExecuteNodeFn } from './jobs.ts'
 import type { DispatchFn } from './cross_mount.ts'
 import { handleCommand } from './command.ts'
-import { filterUnderPrefixes } from './fanout.ts'
+import { fanOutTraversal, filterUnderPrefixes } from './fanout.ts'
 import { basename } from '../../core/ram/utils.ts'
 import { OpsRegistry } from '../../ops/registry.ts'
 import { getTestParser, stdoutStr } from '../fixtures/workspace_fixture.ts'
@@ -793,4 +793,93 @@ describe('fanOutTraversal context across a nested mount', () => {
   ])('applies rg %s across the whole tree', async (options, expected) => {
     expect(await runLine(`rg ${options} hit /base`)).toBe(expected)
   })
+})
+
+it.each(["'' /base", "/base ''", 'loop/child /base', '/base loop/child'])(
+  'walks nested mounts with refused operands: %s',
+  async (operands) => {
+    const ws = new Workspace(
+      { '/base': new RAMVFS(), '/base/inner': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    try {
+      await ws.shell(
+        "printf 'x\\nhit\\ny\\n' > /base/top.txt; printf 'hit\\nz\\n' > /base/inner/real.txt; cd /base; ln -s loop loop",
+      )
+      for (const [command, expected, exitCode] of [
+        ['find', '/base\n/base/inner\n/base/inner/real.txt\n/base/loop\n/base/top.txt\n', 1],
+        ['du -s', '18\t/base\n', 1],
+        ['grep -rl hit', '/base/top.txt\n/base/inner/real.txt\n', 2],
+        ['rg -l hit', '/base/top.txt\n/base/inner/real.txt\n', 2],
+      ] as const) {
+        const io = await ws.shell(`cd /base; ${command} ${operands}`)
+        expect(stdoutStr(io)).toBe(expected)
+        expect(io.exitCode).toBe(exitCode)
+        expect(new TextDecoder().decode(io.stderr)).not.toBe('')
+      }
+    } finally {
+      await ws.close()
+    }
+  },
+)
+
+it.each([
+  ['find', 1],
+  ['du', 1],
+  ['grep', 2],
+  ['rg', 2],
+] as const)('keeps a failed mount status for %s', async (command, code) => {
+  const reg = new MountRegistry({ '/': new RAMVFS(), '/data': new RAMVFS() }, MountMode.WRITE)
+  const primary = reg.tryMountFor('/')
+  const child = reg.tryMountFor('/data')
+  if (primary === null || child === null) throw new Error('missing test mount')
+  vi.spyOn(primary, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  vi.spyOn(child, 'executeCmd').mockResolvedValue([
+    null,
+    new IOResult({ exitCode: code, stderr: new TextEncoder().encode('backend failed\n') }),
+  ])
+  const [, io] = await fanOutTraversal(
+    command,
+    [PathSpec.fromStrPath('/')],
+    [],
+    {},
+    reg,
+    primary,
+    '/',
+    command,
+    null,
+    undefined,
+  )
+  expect(io.exitCode).toBe(code)
+  expect(new TextDecoder().decode(await materialize(io.stderr))).toBe('backend failed\n')
+})
+
+it('keeps every producing mount when the last operand is refused', async () => {
+  const reg = new MountRegistry({ '/': new RAMVFS(), '/data': new RAMVFS() }, MountMode.WRITE)
+  wireRegistry(reg)
+  const primary = reg.tryMountFor('/')
+  const child = reg.tryMountFor('/data')
+  if (primary === null || child === null) throw new Error('missing test mount')
+  vi.spyOn(primary, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  vi.spyOn(child, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  const refused = new PathSpec({
+    virtual: '/',
+    directory: '/',
+    vfsPath: '',
+    rawPath: '',
+    walkError: 'ENOENT',
+  })
+  const [, io] = await fanOutTraversal(
+    'find',
+    [PathSpec.fromStrPath('/'), refused],
+    [],
+    {},
+    reg,
+    primary,
+    '/',
+    'find',
+    null,
+    undefined,
+  )
+  expect(io.producer?.prefixes).toEqual(expect.arrayContaining(['/', '/data/']))
 })

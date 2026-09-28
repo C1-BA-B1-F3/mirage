@@ -842,6 +842,11 @@ export interface PrimitiveMove {
 
 export type MoveStrategy = NativeMove | PrimitiveMove
 
+// What the kernel walk answers for a path it cannot resolve at all: the
+// empty name (POSIX never resolves a null pathname) or a symlink loop.
+// Mirrors Python's WalkErrno.
+export type WalkErrno = 'ENOENT' | 'ELOOP'
+
 export interface PathSpecInit {
   virtual: string
   directory: string
@@ -850,6 +855,7 @@ export interface PathSpecInit {
   resolved?: boolean
   rawPath?: string
   dotted?: string | null
+  walkError?: WalkErrno | null
 }
 
 export class PathSpec {
@@ -863,6 +869,13 @@ export class PathSpec {
   readonly rawPath: string
   // Absolute spelling before dot normalization; excluded from identity.
   readonly dotted: string | null
+  // What the kernel walk already answered for an operand it cannot
+  // resolve at all, known before the command runs: ENOENT for the empty
+  // name, whose `virtual` reads as the working directory, and ELOOP for
+  // one a symlink loop stands in, which `followPaths` leaves unrewritten.
+  // Every op that reaches it refuses (`walkRefusal`), so each command
+  // words the refusal as its own. Mirrors Python's PathSpec.walk_error.
+  readonly walkError: WalkErrno | null
 
   constructor(init: PathSpecInit) {
     this.virtual = init.virtual
@@ -872,6 +885,7 @@ export class PathSpec {
     this.resolved = init.resolved ?? true
     this.rawPath = init.rawPath ?? init.virtual
     this.dotted = init.dotted ?? null
+    this.walkError = init.walkError ?? null
     Object.freeze(this)
   }
 

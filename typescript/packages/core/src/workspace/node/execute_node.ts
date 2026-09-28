@@ -12,6 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { PathSpec } from '../../types.ts'
+import { runWithSession } from '../../context/session_context.ts'
+import { isProgramInvocation, runAsProgram } from '../../context/session_context.ts'
+import type { ProcessHandle } from '../../process/handle.ts'
+import type { ProcessSupervisor } from '../../process/supervisor.ts'
 import type { Runtime } from '../../runtime/base.ts'
 import type { RouteDecision } from '../../runtime/routing/index.ts'
 import { asyncChain } from '../../io/stream.ts'
@@ -40,7 +45,7 @@ import {
   getWhileParts,
 } from '../../shell/helpers.ts'
 import { JobTable } from '../../shell/job_table/index.ts'
-import { ERREXIT_EXEMPT_TYPES } from '../../shell/constants.ts'
+import { ERREXIT_EXEMPT_TYPES, FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
 import { NodeType as NT, type PipelineStages, Redirect, RedirectKind } from '../../shell/types.ts'
 import { NodeKind, nodeKind, pipelineTransparent } from '../../shell/node_kind.ts'
 import { expandRedirects } from '../expand/redirects.ts'
@@ -227,6 +232,8 @@ async function recurseReassociated(
   registry: MountRegistry,
   redirects: readonly Redirect[],
   right: TSNodeLike,
+  signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
@@ -241,6 +248,8 @@ async function recurseReassociated(
     registry,
     right,
     [...redirects],
+    signal,
+    processes,
     session,
     stdin,
     callStack,
@@ -260,6 +269,7 @@ async function recurseLifted(
   stages: PipelineStages,
   right: TSNodeLike,
   signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
@@ -277,6 +287,7 @@ async function recurseLifted(
     stdin,
     callStack,
     signal,
+    processes,
   )
 }
 
@@ -294,6 +305,8 @@ async function recurseStage(
   registry: MountRegistry,
   stages: PipelineStages,
   targets: readonly TSNodeLike[],
+  signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
@@ -327,6 +340,8 @@ async function recurseStage(
     registry,
     node,
     bound,
+    signal,
+    processes,
     session,
     stdin,
     callStack,
@@ -350,6 +365,7 @@ async function runPipeline(
   stdin: ByteSource | null,
   callStack: CallStack | null,
   signal?: AbortSignal,
+  processes?: ProcessSupervisor,
 ): Promise<Result> {
   if (stages.lead !== null) {
     const [left, op, right] = stages.lead
@@ -362,6 +378,7 @@ async function runPipeline(
       { ...stages, lead: null },
       right,
       signal,
+      processes,
     )
     return handleConnection(wrapped, left, op, right, session, stdin, callStack)
   }
@@ -374,6 +391,8 @@ async function runPipeline(
     registry,
     stages,
     targets,
+    signal,
+    processes,
   )
   const [stdout, io, execNode] = await handlePipe(
     pipeRecurse,
@@ -383,6 +402,7 @@ async function runPipeline(
     stdin,
     callStack,
     signal,
+    processes,
   )
   if (!stages.negated) return [stdout, io, execNode]
   const flipped = new IOResult({
@@ -449,6 +469,8 @@ async function runRedirected(
   registry: MountRegistry,
   command: TSNodeLike | null,
   redirects: Redirect[],
+  signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
   session: SessionState,
   stdin: ByteSource | null,
   callStack: CallStack | null,
@@ -471,6 +493,8 @@ async function runRedirected(
       registry,
       redirects,
       right,
+      signal,
+      processes,
     )
     return handleConnection(wrapped, left, op, right, session, stdin, callStack)
   }
@@ -484,6 +508,8 @@ async function runRedirected(
       session,
       stdin,
       callStack,
+      signal,
+      processes,
     )
   }
   if (command !== null && command.type === NT.NEGATED_COMMAND) {
@@ -498,6 +524,8 @@ async function runRedirected(
       registry,
       inner,
       redirects,
+      signal,
+      processes,
       session,
       stdin,
       callStack,
@@ -856,6 +884,7 @@ async function executeNodeBody(
       stdin,
       callStack,
       deps.signal,
+      jobTable.processes,
     )
   }
 
@@ -879,6 +908,8 @@ async function executeNodeBody(
       registry,
       command,
       redirects,
+      deps.signal,
+      jobTable.processes,
     )
     if (continuation.length === 0) return runLeft(session, stdin, callStack)
     return runContinuation(recurse, runLeft, node, continuation, session, stdin, callStack)
@@ -888,8 +919,14 @@ async function executeNodeBody(
     // A subshell is its own shell: background jobs started inside live
     // in a private job table (`$!`/`wait`/`kill` in the body see them;
     // the parent's table never does), mirroring bash's forked process.
-    const subTable = new JobTable()
-    const subDeps: ExecuteNodeDeps = { ...deps, jobTable: subTable }
+    const subTable = new JobTable(null, jobTable.processes)
+    const abort = new AbortController()
+    const subDeps: ExecuteNodeDeps = {
+      ...deps,
+      jobTable: subTable,
+      signal:
+        deps.signal === undefined ? abort.signal : AbortSignal.any([deps.signal, abort.signal]),
+    }
     // The opts parameter is load-bearing, not decoration: a job started
     // inside the subshell body hands `handleBackground` its own console
     // and abort signal through it. Dropping it (a 4-parameter closure
@@ -903,18 +940,49 @@ async function executeNodeBody(
       cs: CallStack | null,
       opts?: ExecuteNodeOpts,
     ): Promise<Result> => executeNode(withOpts(subDeps, opts), n, s, inp, cs)
-    return handleSubshell(
-      subRecurse,
-      node.children,
-      session,
-      stdin,
-      callStack,
-      subTable,
-      agentId,
-      dispatch,
-      deps.handed ?? null,
-      registry.decisions,
-    )
+    const childSession = session.fork()
+    const asProgram = isProgramInvocation(session)
+    let result: Result | undefined
+    let process: ProcessHandle
+    try {
+      process = subTable.processes.start({
+        sessionId: session.sessionId,
+        command: node.text,
+        cwd: PathSpec.fromStrPath(session.cwd),
+        parentPid: session.processId,
+        cancel: () => {
+          abort.abort()
+        },
+        limit: session.processes.max,
+        run: async () => {
+          const body = () =>
+            handleSubshell(
+              subRecurse,
+              node.children,
+              childSession,
+              stdin,
+              callStack,
+              subTable,
+              agentId,
+              dispatch,
+              deps.handed ?? null,
+              registry.decisions,
+            )
+          result = await runWithSession(childSession, () =>
+            asProgram ? runAsProgram(childSession, body) : body(),
+          )
+          return result[1].exitCode
+        },
+      })
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'EAGAIN')
+        throw new ExitSignal(FORK_FAILED_STATUS, new TextEncoder().encode(FORK_FAILED))
+      throw error
+    }
+    childSession.processId = process.info.pid
+    await process.task
+    if (result === undefined) throw new Error('subshell completed without a result')
+    return result
   }
 
   if (kind === NodeKind.COMPOUND && node.children[0]?.type === NT.ARITH_OPEN) {

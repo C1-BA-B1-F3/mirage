@@ -18,6 +18,7 @@ import type * as Ssh2Mod from 'ssh2'
 import type { AuthContext, Connection, ParsedKey, PseudoTtyInfo, ServerChannel } from 'ssh2'
 import type { WorkspaceRegistry } from '../registry.ts'
 import type { SSHConfig } from './config.ts'
+import { PROFILE_OPTION } from './constants.ts'
 import { SSHConfigError } from './errors.ts'
 import { loadHostKey } from './keys.ts'
 import {
@@ -48,14 +49,27 @@ async function loadSsh2(): Promise<typeof Ssh2Mod> {
   return mod.default ?? mod
 }
 
+/** A key allowed to log in, with the profile its line binds it to. */
+export interface AuthorizedKey {
+  key: ParsedKey
+  /** The line's `mirage-profile` values; empty when it has none. */
+  profile: readonly string[]
+}
+
+interface KeyOption {
+  name: string
+  value: string | null
+}
+
 /**
  * The public keys allowed to log in, read fresh for every attempt so a key
- * added or revoked takes effect on the next login. A line ssh2 cannot read
- * is skipped with a warning; that includes a line carrying OpenSSH key
- * options (`command=`, `from=`, ...), which this door does not honor and
- * so will not accept as if they were absent.
+ * added or revoked takes effect on the next login. A line that cannot be
+ * read is skipped with a warning. `mirage-profile` is the one OpenSSH-style
+ * key option this door reads; a line carrying any other (`command=`,
+ * `from=`, ...) is skipped too, since the door does not honor it and so
+ * will not accept the key as if it were absent.
  */
-export function readAuthorizedKeys(path: string, utils: typeof Ssh2Mod.utils): ParsedKey[] {
+export function readAuthorizedKeys(path: string, utils: typeof Ssh2Mod.utils): AuthorizedKey[] {
   let text: string
   try {
     text = readFileSync(path, 'utf-8')
@@ -64,11 +78,11 @@ export function readAuthorizedKeys(path: string, utils: typeof Ssh2Mod.utils): P
     console.warn(`ssh: refusing logins, cannot read ${path}: ${message}`)
     return []
   }
-  const keys: ParsedKey[] = []
+  const keys: AuthorizedKey[] = []
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     if (line === '' || line.startsWith('#')) continue
-    const parsed = utils.parseKey(line)
+    const parsed = authorizedKey(line, utils)
     if (parsed instanceof Error) {
       console.warn(`ssh: skipping an authorized key that cannot be read: ${parsed.message}`)
       continue
@@ -79,29 +93,92 @@ export function readAuthorizedKeys(path: string, utils: typeof Ssh2Mod.utils): P
 }
 
 /**
+ * One authorized_keys line as its key and `mirage-profile` values. A line
+ * ssh2 reads as it stands carries no options; otherwise its leading
+ * options field is split off the way OpenSSH reads it.
+ */
+function authorizedKey(line: string, utils: typeof Ssh2Mod.utils): AuthorizedKey | Error {
+  const plain = utils.parseKey(line)
+  if (!(plain instanceof Error)) return { key: plain, profile: [] }
+  const split = splitOptions(line)
+  if (split === null) return plain
+  const profile: string[] = []
+  for (const option of split.options) {
+    if (option.name.toLowerCase() !== PROFILE_OPTION) {
+      return new Error(`unsupported key option ${option.name}`)
+    }
+    profile.push(option.value ?? '')
+  }
+  const key = utils.parseKey(split.rest)
+  return key instanceof Error ? key : { key, profile }
+}
+
+/**
+ * The comma-separated options field that leads an authorized_keys line
+ * (`name` or `name="value"`, `\"` escaping a quote) and the key after it,
+ * or null when the line does not start with one.
+ */
+function splitOptions(line: string): { options: KeyOption[]; rest: string } | null {
+  const options: KeyOption[] = []
+  let at = 0
+  for (;;) {
+    const name = /^[A-Za-z0-9-]+/.exec(line.slice(at))?.[0]
+    if (name === undefined) return null
+    at += name.length
+    let value: string | null = null
+    if (line[at] === '=') {
+      if (line[at + 1] !== '"') return null
+      at += 2
+      value = ''
+      while (at < line.length && line[at] !== '"') {
+        if (line[at] === '\\' && line[at + 1] === '"') at += 1
+        value += line.charAt(at)
+        at += 1
+      }
+      if (at >= line.length) return null
+      at += 1
+    }
+    options.push({ name, value })
+    const next = line[at]
+    if (next === ',') {
+      at += 1
+      continue
+    }
+    if (next === ' ' || next === '\t') return { options, rest: line.slice(at).trim() }
+    return null
+  }
+}
+
+/**
  * Admit a public key in the authorized keys, and nothing else: no
  * passwords, no keyboard-interactive. A key the client only offers is
  * accepted as usable; a signed attempt must verify.
  */
-function authenticate(ctx: AuthContext, keysFile: string, utils: typeof Ssh2Mod.utils): boolean {
+function authenticate(
+  ctx: AuthContext,
+  keysFile: string,
+  utils: typeof Ssh2Mod.utils,
+): AuthorizedKey | null {
   if (ctx.method !== 'publickey') {
     ctx.reject(['publickey'])
-    return false
+    return null
   }
   const offered = ctx.key.data
-  const match = readAuthorizedKeys(keysFile, utils).find((k) => k.getPublicSSH().equals(offered))
+  const match = readAuthorizedKeys(keysFile, utils).find((k) =>
+    k.key.getPublicSSH().equals(offered),
+  )
   if (match === undefined) {
     ctx.reject(['publickey'])
-    return false
+    return null
   }
   if (ctx.signature !== undefined && ctx.blob !== undefined) {
-    if (!match.verify(ctx.blob, ctx.signature, ctx.hashAlgo)) {
+    if (!match.key.verify(ctx.blob, ctx.signature, ctx.hashAlgo)) {
       ctx.reject(['publickey'])
-      return false
+      return null
     }
   }
   ctx.accept()
-  return true
+  return match
 }
 
 function serveConnection(
@@ -113,8 +190,13 @@ function serveConnection(
   local: Endpoint,
 ): void {
   let username = ''
+  let profile: readonly string[] = []
   client.on('authentication', (ctx) => {
-    if (authenticate(ctx, config.authorizedKeysFile, utils)) username = ctx.username
+    const match = authenticate(ctx, config.authorizedKeysFile, utils)
+    if (match !== null) {
+      username = ctx.username
+      profile = match.profile
+    }
   })
   client.on('ready', () => {
     client.on('session', (accept) => {
@@ -122,7 +204,7 @@ function serveConnection(
       let term: string | null = null
       let shell: ShellChannel | null = null
       const start = (channel: ServerChannel, command: string | null): void => {
-        const request: ChannelRequest = { username, command, term, peer, local }
+        const request: ChannelRequest = { username, profile, command, term, peer, local }
         void handleChannel(registry, channel, request, (s) => {
           shell = s
         })
@@ -145,7 +227,7 @@ function serveConnection(
         start(acceptExec(), info.command)
       })
       session.on('sftp', (acceptSftp) => {
-        serveSFTP(registry, username, acceptSftp())
+        serveSFTP(registry, username, profile, acceptSftp())
       })
       session.on('subsystem', (acceptSubsystem, _reject, info) => {
         refuseSubsystem(acceptSubsystem(), info.name)

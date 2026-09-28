@@ -108,6 +108,27 @@ describe('parseSessionProfile', () => {
     )
   })
 
+  it('processes takes a scope or its fields', () => {
+    expect(parseSessionProfile({ processes: 'workspace' }).processes).toEqual({
+      list: 'workspace',
+      kill: 'workspace',
+      max: null,
+    })
+    expect(parseSessionProfile({ processes: { max: 4 } }).processes).toEqual({
+      list: 'session',
+      kill: 'session',
+      max: 4,
+    })
+    for (const bad of [
+      'none',
+      { list: 'session', kill: 'workspace' },
+      { max: 0 },
+      { max: true },
+      { spawn: false },
+    ])
+      expect(() => parseSessionProfile({ processes: bad })).toThrow(/processes/)
+  })
+
   it('the commands block takes allow, ask and deny', () => {
     const p = parseSessionProfile({
       commands: {

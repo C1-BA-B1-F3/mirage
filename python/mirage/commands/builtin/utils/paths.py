@@ -112,7 +112,8 @@ def typed_spec(word: str | PathSpec, cwd: str) -> PathSpec:
                     directory=virtual[:virtual.rfind("/") + 1] or "/",
                     vfs_path=virtual.strip("/"),
                     raw_path=word,
-                    dotted=dotted_spelling(word, cwd))
+                    dotted=dotted_spelling(word, cwd),
+                    walk_error="ENOENT" if word == "" else None)
 
 
 async def stat_or_enoent(stat_path: StatPath, path: PathSpec) -> FileStat:

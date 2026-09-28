@@ -35,7 +35,8 @@ from mirage.ops.types import ChildMounts, LinkTargetStat, StatOverlay
 from mirage.policy.policies import Policies, pre_ops_gate
 from mirage.types import FileStat, FileType, MountMode, PathSpec, WalkProbe
 from mirage.utils.errors import (MISS_ERRORS, DotWalkError, ReadOnlyError,
-                                 eexist, eisdir, enoent, enotdir, enotsup)
+                                 eexist, eisdir, enoent, enotdir, enotsup,
+                                 walk_refusal)
 from mirage.utils.glob_walk import DEFAULT_MAX_GLOB_MATCHES, make_resolve_glob
 from mirage.utils.hidden import move_reveals
 from mirage.utils.path import norm, parent
@@ -72,6 +73,8 @@ async def overlaid_stat(stat: OperationFn, overlay: StatOverlay,
         path (PathSpec): entry being statted.
         index (IndexCacheStore): cache index threaded through.
     """
+    if path.walk_error is not None:
+        raise walk_refusal(path)
     _refuse_hidden(path, create=False)
     return overlay(path.virtual, await stat(path, index))
 
@@ -648,6 +651,8 @@ def _walked_call(walk: WalkProbe | None, fn: OperationFn, *args: Any,
     passes through, an awaitable awaited after the walk and a stream
     drained after it, so a refused walk never starts the op. An operand
     with no dotted spelling, the common case, costs one attribute read.
+    One the walk already refused (``walk_error``) raises at call time,
+    before anything else reads it.
 
     Args:
         walk (WalkProbe | None): the wrap-time probe, else the one bound
@@ -656,6 +661,9 @@ def _walked_call(walk: WalkProbe | None, fn: OperationFn, *args: Any,
         *args: the call's positionals, PathSpecs among them.
         **kwargs: forwarded untouched.
     """
+    for arg in args:
+        if isinstance(arg, PathSpec) and arg.walk_error is not None:
+            raise walk_refusal(arg)
     specs = [
         arg for arg in args
         if isinstance(arg, PathSpec) and arg.dotted is not None

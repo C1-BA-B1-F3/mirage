@@ -51,9 +51,13 @@ async def tar(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                  walk_of(ops, accessor, opts.index),
                                  is_dir_of(ops, accessor, opts.index),
                                  relay=True)
+    # Archive output follows links even when the member scan preserves them.
+    archive_write = (transfer_primitives(opts.dispatch)["write"]
+                     if opts.dispatch is not None else partial(
+                         ops.require(Operation.WRITE), accessor))
     return await tar_generic(resolved, list(texts), opts,
                              bound_op(ops.read_bytes, accessor, opts.index),
-                             partial(ops.require(Operation.WRITE), accessor),
+                             archive_write,
                              partial(ops.require(Operation.MKDIR), accessor),
                              bound_op(ops.stat, accessor, opts.index),
                              walk_of(ops, accessor, opts.index),

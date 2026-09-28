@@ -137,7 +137,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "awk: /data/rfdir: Is a directory\n"
+        "stderr": "awk: cannot open \"/data/rfdir\" (Is a directory)\n"
       }
     },
     {
@@ -151,7 +151,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "awk: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "awk: cannot open \"/data/rfnope.txt\" (No such file or directory)\n"
       }
     },
     {

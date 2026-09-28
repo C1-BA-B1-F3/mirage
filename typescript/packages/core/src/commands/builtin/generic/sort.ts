@@ -361,6 +361,7 @@ export async function sortGeneric(
       vfsPath: mountKey(parsed.output.virtual, opts.mountPrefix ?? ''),
       rawPath: parsed.output.rawPath,
       dotted: parsed.output.dotted,
+      walkError: parsed.output.walkError,
     })
     try {
       await write(outputPath, output)

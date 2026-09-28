@@ -26,10 +26,11 @@ import {
 import type { TokenManager } from './client.ts'
 import type { ByteWindow } from '../../utils/ranges.ts'
 
+// md5Checksum and headRevisionId are a file's token (driveFingerprint).
 const FIELDS =
   'nextPageToken,' +
   'files(id,name,mimeType,driveId,size,quotaBytesUsed,' +
-  'createdTime,modifiedTime,' +
+  'createdTime,modifiedTime,md5Checksum,headRevisionId,' +
   'owners,capabilities/canEdit,parents)'
 
 // A search across every corpus is answered best-effort, so Drive reports
@@ -67,6 +68,9 @@ export interface DriveFile {
   quotaBytesUsed?: string
   createdTime?: string
   modifiedTime?: string
+  md5Checksum?: string
+  headRevisionId?: string
+  trashed?: boolean
   owners?: DriveOwner[]
   capabilities?: { canEdit?: boolean }
   parents?: string[]
@@ -248,7 +252,8 @@ export async function* downloadFileStream(
 }
 
 export const FOLDER_MIME = 'application/vnd.google-apps.folder'
-const ITEM_FIELDS = 'id,name,mimeType,driveId,size,quotaBytesUsed,createdTime,modifiedTime,parents'
+const ITEM_FIELDS =
+  'id,name,mimeType,driveId,size,quotaBytesUsed,createdTime,modifiedTime,md5Checksum,headRevisionId,parents,owners,trashed'
 const DEFAULT_UPLOAD_MIME = 'application/octet-stream'
 
 // Escape a value for a Drive API query string literal.

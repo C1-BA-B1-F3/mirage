@@ -21,6 +21,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type * as ContextModule from '@struktoai/mirage-core/observe/context'
 import type { OpRecord } from '@struktoai/mirage-core/observe/record'
 import type * as ClientModule from '../core/gridfs/client.ts'
+import type * as DriveModule from '@struktoai/mirage-core/core/google/drive'
+import * as googleDrive from '@struktoai/mirage-core/core/google/drive'
+import type * as DriveVersionsModule from '@struktoai/mirage-core/core/gdrive/versions'
+import type * as DocsReadModule from '@struktoai/mirage-core/core/gdocs/read'
+import type * as GoogleClientModule from '@struktoai/mirage-core/core/google/client'
+import type * as JsonRenderModule from '@struktoai/mirage-core/core/render/json'
 import type { Accessor } from '@struktoai/mirage-core/accessor/base'
 import type { S3Accessor } from '@struktoai/mirage-core/accessor/s3'
 import { applyIo } from '@struktoai/mirage-core/cache/file/io'
@@ -32,6 +38,12 @@ import { ONEDRIVE_IO } from '@struktoai/mirage-core/commands/builtin/onedrive/io
 import { SHAREPOINT_IO } from '@struktoai/mirage-core/commands/builtin/sharepoint/io'
 import type { OneDriveAccessor } from '@struktoai/mirage-core/accessor/onedrive'
 import type { SharePointAccessor } from '@struktoai/mirage-core/accessor/sharepoint'
+import { GDOCS_IO } from '@struktoai/mirage-core/commands/builtin/gdocs/io'
+import { GDRIVE_IO } from '@struktoai/mirage-core/commands/builtin/gdrive/io'
+import { GSHEETS_IO } from '@struktoai/mirage-core/commands/builtin/gsheets/io'
+import { GSLIDES_IO } from '@struktoai/mirage-core/commands/builtin/gslides/io'
+import type { CommandIO } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
+import type { GDriveAccessor } from '@struktoai/mirage-core/accessor/gdrive'
 import { GITHUB_IO } from '@struktoai/mirage-core/commands/builtin/github/io'
 import { stream as githubStream } from '@struktoai/mirage-core/core/github/read'
 import type { GitHubAccessor } from '@struktoai/mirage-core/accessor/github'
@@ -75,11 +87,23 @@ import { SupabaseVFS } from './supabase/supabase.ts'
 import { TencentVFS } from './tencent/tencent.ts'
 import { WasabiVFS } from './wasabi/wasabi.ts'
 import { GDriveVFS } from '@struktoai/mirage-core/vfs/gdrive/gdrive'
+import { makeFilename as docFilename } from '@struktoai/mirage-core/vfs/gdocs/doc_entry'
+import { makeFilename as sheetFilename } from '@struktoai/mirage-core/vfs/gsheets/sheet_entry'
+import { makeFilename as slideFilename } from '@struktoai/mirage-core/vfs/gslides/slide_entry'
 import { GridFSVFS } from './gridfs/gridfs.ts'
 import { SSHVFS } from './ssh/ssh.ts'
 import { readRevalidatable, type VFS } from '@struktoai/mirage-core/vfs/base'
 import { checkReadCapability } from '@struktoai/mirage-core/workspace/mount/read_policy'
 import { DEFAULT_READ_TTL, ReadPolicy } from '@struktoai/mirage-core/types'
+
+interface GDriveItem {
+  id: string
+  name: string
+  mimeType: string
+  parents: string[]
+  modifiedTime: string
+  content: Uint8Array
+}
 
 interface GridFSDoc {
   _id: { toString(): string }
@@ -97,6 +121,11 @@ const H = vi.hoisted(() => ({
   captured: [] as OpRecord[],
   gridfs: new Map<string, GridFSDoc>(),
   opened: 0,
+  // A Drive folder tree keyed by id, served through the mocked Drive calls
+  // below; the counters are what the rows assert a warm read avoids.
+  gdrive: new Map<string, GDriveItem>(),
+  gdriveDownloads: 0,
+  gdriveRenders: 0,
   reach: [] as string[],
   // Replaces the token a read records, to stage a backend stamping a token of
   // another kind than its stat's.
@@ -187,6 +216,129 @@ vi.mock('../core/gridfs/client.ts', async () => {
   }
 })
 
+const GDRIVE_FOLDER = 'application/vnd.google-apps.folder'
+const GDRIVE_NATIVE = new Set([
+  'application/vnd.google-apps.document',
+  'application/vnd.google-apps.spreadsheet',
+  'application/vnd.google-apps.presentation',
+])
+
+// Drive serves md5Checksum and headRevisionId only for a file with binary
+// content, and computes them from what is stored now.
+async function gdriveResource(item: GDriveItem): Promise<Record<string, unknown>> {
+  const { createHash: hash } = await import('node:crypto')
+  const out: Record<string, unknown> = {
+    id: item.id,
+    name: item.name,
+    mimeType: item.mimeType,
+    parents: item.parents,
+    modifiedTime: item.modifiedTime,
+    size: String(item.content.byteLength),
+  }
+  if (item.mimeType !== GDRIVE_FOLDER && !GDRIVE_NATIVE.has(item.mimeType)) {
+    out.md5Checksum = hash('md5').update(item.content).digest('hex')
+    out.headRevisionId = `${item.id}-r1`
+  }
+  return out
+}
+
+vi.mock('@struktoai/mirage-core/core/google/drive', async (importOriginal) => {
+  const actual = await importOriginal<typeof DriveModule>()
+  const item = (id: string): GDriveItem => {
+    const found = H.gdrive.get(id)
+    if (found === undefined) throw new Error(`no drive item ${id}`)
+    return found
+  }
+  return {
+    ...actual,
+    listFiles: async (_tm: unknown, opts: { folderId?: string; name?: string | null } = {}) => {
+      const folder = opts.folderId ?? 'root'
+      const children = [...H.gdrive.values()].filter(
+        (i) =>
+          i.parents.includes(folder) &&
+          (opts.name === undefined || opts.name === null || i.name === opts.name),
+      )
+      return Promise.all(children.map(gdriveResource))
+    },
+    listSharedDrives: () => Promise.resolve([]),
+    // Each of gdocs, gsheets and gslides lists only its own kind.
+    listAllFiles: async (_tm: unknown, opts: { mimeType?: string | null } = {}) => ({
+      files: await Promise.all(
+        [...H.gdrive.values()]
+          .filter(
+            (i) =>
+              i.mimeType !== GDRIVE_FOLDER &&
+              (opts.mimeType === undefined ||
+                opts.mimeType === null ||
+                i.mimeType === opts.mimeType),
+          )
+          .map(gdriveResource),
+      ),
+      complete: true,
+    }),
+    getFile: async (_tm: unknown, id: string) => gdriveResource(item(id)),
+    downloadFile: (_tm: unknown, id: string) => {
+      H.gdriveDownloads += 1
+      return Promise.resolve(item(id).content)
+    },
+  }
+})
+
+vi.mock('@struktoai/mirage-core/core/gdrive/versions', async (importOriginal) => {
+  const actual = await importOriginal<typeof DriveVersionsModule>()
+  return {
+    ...actual,
+    captureFileMetadata: async (_tm: unknown, id: string) => {
+      const found = H.gdrive.get(id)
+      if (found === undefined) throw new Error(`no drive item ${id}`)
+      const r = await gdriveResource(found)
+      return [r.md5Checksum ?? null, r.headRevisionId ?? null]
+    },
+  }
+})
+
+vi.mock('@struktoai/mirage-core/core/gdocs/read', async (importOriginal) => {
+  const actual = await importOriginal<typeof DocsReadModule>()
+  return {
+    ...actual,
+    readDoc: (_tm: unknown, id: string) => {
+      const found = H.gdrive.get(id)
+      if (found === undefined) throw new Error(`no drive item ${id}`)
+      H.gdriveRenders += 1
+      return Promise.resolve(found.content)
+    },
+  }
+})
+
+// gdocs, gsheets and gslides render inside their own module, where a mocked
+// export does not reach, so the fake stands in at the two seams the render
+// crosses: the editor API hands back the stored bytes, and the renderer passes
+// bytes through. python patches the render functions themselves.
+const EDITOR_GET = /\/(?:documents|spreadsheets|presentations)\/([^/?]+)$/
+
+vi.mock('@struktoai/mirage-core/core/google/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof GoogleClientModule>()
+  return {
+    ...actual,
+    googleGet: (_tm: unknown, url: string) => {
+      const id = EDITOR_GET.exec(url)?.[1]
+      const found = id === undefined ? undefined : H.gdrive.get(id)
+      if (found === undefined) throw new Error(`unrouted google get ${url}`)
+      H.gdriveRenders += 1
+      return Promise.resolve(found.content)
+    },
+  }
+})
+
+vi.mock('@struktoai/mirage-core/core/render/json', async (importOriginal) => {
+  const actual = await importOriginal<typeof JsonRenderModule>()
+  return {
+    ...actual,
+    compactJsonBytes: (value: unknown) =>
+      value instanceof Uint8Array ? value : actual.compactJsonBytes(value),
+  }
+})
+
 // Python declares READ_REVALIDATABLE as a class attribute, so its twin asserts
 // it straight off each alias class. A TypeScript class field is per-instance,
 // so the equivalent proof is structural: the flag is declared once on S3VFS,
@@ -257,13 +409,10 @@ describe('readRevalidatable', () => {
 // stub object cast to VFS. Rule 2 has real backends behind it
 // (fingerprint_spike.test.ts uses DiskVFS and RAMVFS), so this is the
 // hole. Roughly 25 node backends set cachesReads and not readRevalidatable;
-// these two are the documented cases: ssh stamps nothing on a read, and
-// gdrive's stat returns a timestamp where its read returns an md5.
+// ssh is the documented case: it stamps nothing at all on a read.
+//
 describe('a backend that caches but cannot revalidate refuses fresh', () => {
-  const CASES: [string, () => VFS][] = [
-    ['ssh', () => new SSHVFS({ host: 'h', username: 'u' })],
-    ['gdrive', () => new GDriveVFS({ clientId: 'c', clientSecret: 's', refreshToken: 'r' })],
-  ]
+  const CASES: [string, () => VFS][] = [['ssh', () => new SSHVFS({ host: 'h', username: 'u' })]]
 
   for (const [name, make] of CASES) {
     it(`${name} caches reads, does not revalidate, and is refused`, () => {
@@ -275,6 +424,17 @@ describe('a backend that caches but cannot revalidate refuses fresh', () => {
       }).toThrow(/comparable content token/)
     })
   }
+
+  it('gdrive declares the flag and is allowed fresh', () => {
+    // The other side of the pair: one backend refused, one allowed, so the
+    // verdict is shown to discriminate rather than merely to refuse.
+    const vfs = new GDriveVFS({ clientId: 'c', clientSecret: 's', refreshToken: 'r' })
+    expect(vfs.cachesReads).toBe(true)
+    expect(readRevalidatable(vfs)).toBe(true)
+    expect(() => {
+      checkReadCapability('/gd/', vfs, { policy: ReadPolicy.FRESH, ttl: DEFAULT_READ_TTL })
+    }).not.toThrow()
+  })
 })
 
 // The read-token contract (#1165). The flag is a claim that stat and an
@@ -306,10 +466,20 @@ const HF_FAMILY: Record<string, string> = {
   hf_spaces: 'spaces',
 }
 
-const HARNESSES: Record<
-  string,
-  's3' | 'gridfs' | 'hf_models' | 'onedrive' | 'sharepoint' | 'hf_buckets' | 'github'
-> = {
+type Family =
+  | 's3'
+  | 'gridfs'
+  | 'hf_models'
+  | 'onedrive'
+  | 'sharepoint'
+  | 'hf_buckets'
+  | 'github'
+  | 'gdrive'
+  | 'gdocs'
+  | 'gsheets'
+  | 'gslides'
+
+const HARNESSES: Record<string, Family> = {
   ...Object.fromEntries(S3_FAMILY.map((name) => [name, 's3' as const])),
   gridfs: 'gridfs',
   ...Object.fromEntries(Object.keys(HF_FAMILY).map((name) => [name, 'hf_models' as const])),
@@ -317,10 +487,22 @@ const HARNESSES: Record<
   sharepoint: 'sharepoint',
   hf_buckets: 'hf_buckets',
   github: 'github',
+  gdrive: 'gdrive',
+  gdocs: 'gdocs',
+  gsheets: 'gsheets',
+  gslides: 'gslides',
 }
 
-// github has no key_prefix, so the prefixed shape has nothing to test there.
-const SHAPES: Record<string, Shape[]> = { github: ['root', 'nested'] }
+// The mounts that render a Drive file through its editor API: the mime type
+// they list, the door, and the name their listing gives the file.
+const GAPPS: Record<
+  string,
+  [string, CommandIO, (title: string, id: string, modified: string) => string]
+> = {
+  gdocs: ['application/vnd.google-apps.document', GDOCS_IO as CommandIO, docFilename],
+  gsheets: ['application/vnd.google-apps.spreadsheet', GSHEETS_IO as CommandIO, sheetFilename],
+  gslides: ['application/vnd.google-apps.presentation', GSLIDES_IO as CommandIO, slideFilename],
+}
 
 // The drive each Graph backend addresses in the fake: OneDrive the signed-in
 // user's own, SharePoint one library of one site, mounted scoped so the keys
@@ -333,6 +515,7 @@ const GRAPH: Record<string, string> = { onedrive: ME, sharepoint: DRIVE_ID }
 const S3_CONFIG = { bucket: 'b', region: 'us-east-1', endpoint_url: 'http://127.0.0.1:9000' }
 const S3_EXTRA: Record<string, Record<string, string>> = { oci: { namespace: 'ns' } }
 const GRIDFS_CONFIG = { uri: 'mongodb://127.0.0.1:27017', database: 'd' }
+const GDRIVE_CONFIG = { client_id: 'i', client_secret: 's', refresh_token: 'r' }
 
 const PREFIX = 'pfx/'
 
@@ -366,6 +549,28 @@ const COMMANDS: Record<Row, (v: string) => string> = {
 }
 const SLOTS: Record<Row, string> = { bytes: 'bytes', stream: 'stream', drain: 'stream' }
 
+const ALL_SHAPES: Shape[] = ['root', 'nested', 'prefixed']
+const ALL_ROWS: Row[] = ['bytes', 'stream', 'drain']
+
+// What each family can run, fixed when the rows are built. github and gdrive
+// have no key_prefix, and their stream is their read handed over whole, one
+// chunk, so a drain row would pass without draining. The GAPPS mounts also
+// have one flat listing, so only one shape.
+const FAMILY_SHAPES: Partial<Record<Family, Shape[]>> = {
+  github: ['root', 'nested'],
+  gdrive: ['root', 'nested'],
+  gdocs: ['root'],
+  gsheets: ['root'],
+  gslides: ['root'],
+}
+const FAMILY_ROWS: Partial<Record<Family, Row[]>> = {
+  github: ['bytes', 'stream'],
+  gdrive: ['bytes', 'stream'],
+  gdocs: ['bytes', 'stream'],
+  gsheets: ['bytes', 'stream'],
+  gslides: ['bytes', 'stream'],
+}
+
 const SPEC_VFS = resolve(
   fileURLToPath(import.meta.url),
   '../../../../../../spec/typescript/node/vfs.json',
@@ -380,8 +585,8 @@ interface Fake {
   readBytes: (path: PathSpec) => Promise<Uint8Array>
   readStream: (path: PathSpec) => AsyncIterable<Uint8Array>
   stat: (path: PathSpec) => Promise<FileStat>
-  // The slot a stream read records in: github's stream delegates to its
-  // whole read, which records through `record`.
+  // The slot a stream read records in: github's and gdrive's streams are
+  // their whole read handed over, which records through `record`.
   streamSlot: 'stream' | 'bytes'
 }
 
@@ -487,6 +692,48 @@ let s3: S3Mock
 let hubs: FakeHub[] = []
 let graphs: FakeGraph[] = []
 
+let gdriveIds = 0
+
+function gdriveAdd(
+  path: string,
+  content: Uint8Array,
+  mimeType = 'application/octet-stream',
+): GDriveItem {
+  const parts = path.split('/').filter((p) => p !== '')
+  let parent = 'root'
+  for (const dir of parts.slice(0, -1)) {
+    const existing = [...H.gdrive.values()].find(
+      (i) => i.name === dir && i.parents.includes(parent) && i.mimeType === GDRIVE_FOLDER,
+    )
+    if (existing !== undefined) {
+      parent = existing.id
+      continue
+    }
+    gdriveIds += 1
+    const id = `d${String(gdriveIds)}`
+    H.gdrive.set(id, {
+      id,
+      name: dir,
+      mimeType: GDRIVE_FOLDER,
+      parents: [parent],
+      modifiedTime: '2026-04-16T00:00:00Z',
+      content: new Uint8Array(0),
+    })
+    parent = id
+  }
+  gdriveIds += 1
+  const item: GDriveItem = {
+    id: `f${String(gdriveIds)}`,
+    name: parts[parts.length - 1] ?? '',
+    mimeType,
+    parents: [parent],
+    modifiedTime: '2026-04-16T00:00:00Z',
+    content,
+  }
+  H.gdrive.set(item.id, item)
+  return item
+}
+
 async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<Fake> {
   if (HARNESSES[name] === 'github') {
     // The nested key's parent is two or more lowercase letters, the spelling
@@ -585,6 +832,59 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       readStream: (p) => SHAREPOINT_IO.readStream(accessor, p),
       stat: (p) => SHAREPOINT_IO.stat(accessor, p),
       streamSlot: 'stream',
+    }
+  }
+  if (HARNESSES[name] === 'gdrive') {
+    const item = gdriveAdd(key, data)
+    const vfs = await buildVfs('gdrive', GDRIVE_CONFIG)
+    const accessor = vfs.accessor as GDriveAccessor
+    expect(readRevalidatable(vfs)).toBe(true)
+    // An id-addressed backend resolves a path only through an index, so its
+    // raw reads take one; stat takes none and answers from its own request.
+    const index = new RAMIndexCacheStore()
+    const before = H.gdriveDownloads
+    return {
+      vfs,
+      accessor,
+      key,
+      fetches: () => H.gdriveDownloads - before,
+      rewrite: (next) => {
+        item.content = next
+      },
+      readBytes: (p) => GDRIVE_IO.readBytes(accessor, p, index),
+      readStream: (p) => GDRIVE_IO.readStream(accessor, p, index),
+      stat: (p) => GDRIVE_IO.stat(accessor, p),
+      streamSlot: 'bytes',
+    }
+  }
+  const gapp = GAPPS[name]
+  if (gapp !== undefined) {
+    const [mime, io, filename] = gapp
+    const item = gdriveAdd('a', data, mime)
+    const vfs = await buildVfs(name, GDRIVE_CONFIG)
+    const accessor = vfs.accessor
+    if (accessor === undefined) throw new Error(`${name} built no accessor`)
+    expect(readRevalidatable(vfs)).toBe(true)
+    // The fake names no owner, so the file lists under shared/. A rewrite
+    // moves modifiedTime within the same day, which keeps the name.
+    const fileKey = `shared/${filename('a', item.id, item.modifiedTime)}`
+    const index = new RAMIndexCacheStore()
+    const before = H.gdriveRenders
+    let edits = 0
+    return {
+      vfs,
+      accessor,
+      key: fileKey,
+      fetches: () => H.gdriveRenders - before,
+      rewrite: (next) => {
+        edits += 1
+        item.content = next
+        item.modifiedTime = `2026-04-16T00:00:${String(edits).padStart(2, '0')}Z`
+      },
+      readBytes: (p) => io.readBytes(accessor, p, index),
+      readStream: (p) => io.readStream(accessor, p, index),
+      stat: (p) => io.stat(accessor, p),
+      streamSlot: 'bytes',
     }
   }
   if (HARNESSES[name] === 'hf_buckets') {
@@ -736,9 +1036,12 @@ function cases(rows: readonly Row[]): Case[] {
   for (const [name, family] of Object.entries(HARNESSES)) {
     // The aliases share every read and stat path with s3, so the key
     // shapes run once per family.
-    const shapes: Shape[] =
-      name === family ? (SHAPES[name] ?? ['root', 'nested', 'prefixed']) : ['root']
-    for (const shape of shapes) for (const row of rows) out.push({ name, shape, row })
+    const shapes: Shape[] = name === family ? (FAMILY_SHAPES[family] ?? ALL_SHAPES) : ['root']
+    for (const shape of shapes)
+      for (const row of rows) {
+        if (!(FAMILY_ROWS[family] ?? ALL_ROWS).includes(row)) continue
+        out.push({ name, shape, row })
+      }
   }
   return out
 }
@@ -838,6 +1141,9 @@ describe('the read-token contract', () => {
     H.slots.length = 0
     H.captured.length = 0
     H.gridfs.clear()
+    H.gdrive.clear()
+    H.gdriveDownloads = 0
+    H.gdriveRenders = 0
     H.reach.length = 0
     H.stampOverride = null
   })
@@ -873,6 +1179,63 @@ describe('the read-token contract', () => {
       .map(([name]) => name)
     expect(declared.length).toBeGreaterThan(0)
     expect(Object.keys(HARNESSES).sort()).toEqual(declared.sort())
+  })
+
+  it('each family runs exactly its rows', () => {
+    // The per-family table filters the rows as they are built, so a filter
+    // bug drops a row silently or hands a whole-read stream a drain row that
+    // passes without draining. Pin the ids outright rather than the count.
+    const aliases = [...S3_FAMILY.filter((n) => n !== 's3'), 'hf_datasets', 'hf_spaces']
+    // Literals, not ALL_SHAPES / ALL_ROWS: the expectation must not move with
+    // the tables it checks.
+    const shapes = ['root', 'nested', 'prefixed']
+    const rows = ['bytes', 'stream', 'drain']
+    const expectedA = new Set<string>([
+      's3-listed-stream',
+      'onedrive-listed-stream',
+      'sharepoint-listed-stream',
+    ])
+    for (const family of ['s3', 'gridfs', 'hf_models', 'onedrive', 'sharepoint', 'hf_buckets'])
+      for (const shape of shapes) for (const row of rows) expectedA.add(`${family}-${shape}-${row}`)
+    for (const n of aliases) for (const row of rows) expectedA.add(`${n}-root-${row}`)
+    for (const family of ['github', 'gdrive'])
+      for (const shape of ['root', 'nested'])
+        for (const row of ['bytes', 'stream']) expectedA.add(`${family}-${shape}-${row}`)
+    for (const family of ['gdocs', 'gsheets', 'gslides'])
+      for (const row of ['bytes', 'stream']) expectedA.add(`${family}-root-${row}`)
+    const ids = (cs: Case[]): Set<string> => new Set(cs.map((c) => `${c.name}-${c.shape}-${c.row}`))
+    expect(ids(A_CASES)).toEqual(expectedA)
+    expect(ids(B_CASES)).toEqual(
+      new Set([...expectedA].filter((i) => !i.endsWith('-drain') && !i.endsWith('-listed-stream'))),
+    )
+    const whole = ['github', 'gdrive', 'gdocs', 'gsheets', 'gslides']
+    expect(cases(['drain']).some((c) => whole.includes(c.name))).toBe(false)
+  })
+
+  it('a native gdoc under fresh renders once until it changes', async () => {
+    // A native file has no md5 and no head revision; its token is the
+    // listing's modifiedTime, and it reaches the cache only through the
+    // native read's own record. Twin of the python e2e row.
+    const doc = gdriveAdd('doc', ENC.encode('{"v": 1}'), 'application/vnd.google-apps.document')
+    const vfs = await buildVfs('gdrive', GDRIVE_CONFIG)
+    const ws = freshWorkspace(vfs)
+    try {
+      expect(await line(ws, 'cat /m/doc.gdoc.json')).toEqual(ENC.encode('{"v": 1}'))
+      // The positive control: without it the warm assertion below would also
+      // pass if `cat` stopped reaching the counted renderer entirely.
+      expect(H.gdriveRenders).toBe(1)
+      expect(await line(ws, 'cat /m/doc.gdoc.json')).toEqual(ENC.encode('{"v": 1}'))
+      expect(H.gdriveRenders).toBe(1)
+      doc.content = ENC.encode('{"v": 2}')
+      doc.modifiedTime = '2026-05-01T00:00:00Z'
+      expect(await line(ws, 'cat /m/doc.gdoc.json')).toEqual(ENC.encode('{"v": 2}'))
+      expect(H.gdriveRenders).toBe(2)
+      // The refetch has to stamp the new token, or every later read renders.
+      expect(await line(ws, 'cat /m/doc.gdoc.json')).toEqual(ENC.encode('{"v": 2}'))
+      expect(H.gdriveRenders).toBe(2)
+    } finally {
+      await ws.close()
+    }
   })
 
   for (const { name, shape, row } of A_CASES) {
@@ -997,11 +1360,9 @@ describe('the read-token contract', () => {
   }
 
   it('the contract goes red on a backend with two token kinds', async () => {
-    // The python twin forces gdrive to claim the flag. Its fake cannot back
-    // a node Workspace (captureFileMetadata calls an unmocked googleGet), so
-    // this stats a timestamp while the read returns the ETag, which is the
-    // same mismatch. The contract must fail it, or it could not tell a
-    // backend that keeps the promise from one that only makes it.
+    // s3 forced to stat a timestamp while its read stamps the ETag: both
+    // tokens exist and differ. The contract must fail it, or it could not
+    // tell a backend that keeps the promise from one that only makes it.
     const fake = await makeFake('s3', 'root', SEED)
     const head = S3_DRIVER.head
     vi.spyOn(S3_DRIVER, 'head').mockImplementation(async (conn, key) => {
@@ -1116,5 +1477,26 @@ describe('the read-token contract', () => {
     } finally {
       await ws.close()
     }
+  })
+
+  describe('partial searches cannot evict live app bytes or overlays', () => {
+    it.each(['gdocs', 'gsheets', 'gslides'])('%s', async (name) => {
+      const fake = await makeFake(name, 'root', SEED)
+      const virtual = `/m/${fake.key}`
+      const ws = freshWorkspace(fake.vfs)
+      const search = vi.spyOn(googleDrive, 'listAllFiles')
+      try {
+        await line(ws, `cat ${virtual}`)
+        await line(ws, `chmod 600 ${virtual}`)
+        search.mockClear().mockResolvedValue({ files: [], complete: false })
+        const before = fake.fetches()
+        expect(await line(ws, `cat ${virtual}`)).toEqual(SEED)
+        expect(new TextDecoder().decode(await line(ws, `stat -c %a ${virtual}`))).toBe('600\n')
+        expect(fake.fetches()).toBe(before)
+        expect(search).not.toHaveBeenCalled()
+      } finally {
+        await ws.close()
+      }
+    })
   })
 })

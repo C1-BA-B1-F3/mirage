@@ -596,6 +596,10 @@ describe('savedVfsBuild', () => {
       'sharepoint',
       'hf_buckets',
       'github',
+      'gdrive',
+      'gdocs',
+      'gsheets',
+      'gslides',
     ]) {
       expect(restoresAsFreshRAM(saved(revalidatable, null))).toBe(false)
     }

@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { classify } from '../../../../errors/index.ts'
+import { failureText } from './failure.ts'
 import type { VfsRequest } from './types.ts'
 
 const CAPACITY = 64 * 1024
@@ -80,7 +81,7 @@ export async function respond(
     format = 2
     bytes = ENC.encode(
       JSON.stringify({
-        message: error instanceof Error ? error.message : String(error),
+        message: failureText(error),
         code: classify(error),
       }),
     )

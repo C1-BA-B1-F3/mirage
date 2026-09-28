@@ -20,7 +20,7 @@ import { EACCES, ENOENT, EROFS, errnoError } from '@struktoai/mirage-node/fuse/e
 import type { Attributes, FileEntry, SFTPWrapper } from 'ssh2'
 import type { WorkspaceEntry, WorkspaceRegistry } from '../registry.ts'
 import { SFTPStatusError } from './errors.ts'
-import { newSessionId, openSession } from './session.ts'
+import { keyProfile, newSessionId, openSession } from './session.ts'
 
 // SFTP v3 open flags and status codes, fixed by the protocol draft.
 const OPEN = {
@@ -163,6 +163,7 @@ class MirageSFTPServer {
   constructor(
     private readonly registry: WorkspaceRegistry,
     private readonly workspaceId: string,
+    private readonly profile: readonly string[],
     private readonly sftp: SFTPWrapper,
   ) {}
 
@@ -253,7 +254,7 @@ class MirageSFTPServer {
     }
     const entry = this.registry.get(this.workspaceId)
     const ws = entry.runner.ws
-    await openSession(ws, this.sessionId)
+    await openSession(ws, this.sessionId, {}, keyProfile(this.profile))
     this.entry = entry
     this.core = new MountCore(ws.vfs, { session: ws.getSession(this.sessionId) })
     return this.core
@@ -439,11 +440,15 @@ class MirageSFTPServer {
   }
 }
 
-/** Serve SFTP (and so modern scp) for one channel onto its workspace. */
+/**
+ * Serve SFTP (and so modern scp) for one channel onto its workspace, as a
+ * session under the login key's profile.
+ */
 export function serveSFTP(
   registry: WorkspaceRegistry,
   workspaceId: string,
+  profile: readonly string[],
   sftp: SFTPWrapper,
 ): void {
-  new MirageSFTPServer(registry, workspaceId, sftp).attach()
+  new MirageSFTPServer(registry, workspaceId, profile, sftp).attach()
 }

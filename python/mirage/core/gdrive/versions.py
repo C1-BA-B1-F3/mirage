@@ -67,15 +67,19 @@ async def download_revision(token_manager: TokenManager,
 
 async def capture_file_metadata(token_manager: TokenManager,
                                 file_id: str) -> tuple[str | None, str | None]:
-    """Fetch the (fingerprint, revision) pair for a file at read time.
+    """Fetch a file's md5 and head revision at read time.
 
-    The head revision ID doubles as the pinnable revision; the MD5 checksum
-    is the content fingerprint (falls back to the head revision ID for
-    types without one).
+    Returned raw rather than coalesced, because the caller checks the md5
+    against the bytes it downloads. The head revision doubles as the
+    pinnable revision.
 
     Args:
         token_manager (TokenManager): OAuth2 token manager.
         file_id (str): file ID.
+
+    Returns:
+        tuple[str | None, str | None]: the md5 checksum and the head
+        revision id, each absent as None.
     """
     url = f"{drive_base(token_manager)}/files/{file_id}"
     item = await google_get(
@@ -86,6 +90,4 @@ async def capture_file_metadata(token_manager: TokenManager,
             "supportsAllDrives": "true",
         },
     )
-    revision = item.get("headRevisionId")
-    fingerprint = item.get("md5Checksum") or revision
-    return fingerprint, revision
+    return item.get("md5Checksum"), item.get("headRevisionId")

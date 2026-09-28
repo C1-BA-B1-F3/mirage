@@ -79,15 +79,17 @@ export function enotdir(path: string | { virtual: string }): FsError {
 }
 
 /**
- * A path its own `.` and `..` do not resolve (`dotRefusal`): ENOENT or
- * ENOTDIR at a name in front of a dot.
+ * A path the kernel walk does not resolve: its own `.` and `..`
+ * (`dotRefusal`), ENOENT or ENOTDIR at a name in front of a dot, or an
+ * operand whose `walkError` the walk answered before the command ran
+ * (`walkRefusal`), the empty name's ENOENT or a link loop's ELOOP.
  *
  * Final, which is why it is marked: a keyed store's plain miss can still be
  * an implicit directory, and the layers that ask (the read commands'
  * directory probes) re-read ENOENT that way, but a name in front of a dot
- * that is missing or a plain file is not a directory under any reading.
- * Every catch site keyed on the code still sees its own. Mirrors Python's
- * DotWalkError.
+ * that is missing or a plain file is not a directory under any reading, and
+ * neither is the empty name or a link loop. Every catch site keyed on the
+ * code still sees its own. Mirrors Python's DotWalkError.
  */
 export interface DotWalkError extends FsError {
   readonly dotWalk: true
@@ -95,9 +97,32 @@ export interface DotWalkError extends FsError {
 
 export function dotWalkError(
   path: string | { virtual: string },
-  code: 'ENOENT' | 'ENOTDIR',
+  code: 'ENOENT' | 'ENOTDIR' | 'ELOOP',
 ): DotWalkError {
   return Object.assign(fsError(path, code), { dotWalk: true as const })
+}
+
+export const ELOOP_STRERROR = 'Too many levels of symbolic links'
+
+/** What an op raises for an operand the kernel walk did not resolve, named
+ * as typed (the empty name included), since that is what the command
+ * reports and `virtual` names the working directory for it. Mirrors
+ * Python's walk_refusal. */
+export function walkRefusal(path: {
+  virtual: string
+  rawPath: string
+  walkError: 'ENOENT' | 'ELOOP' | null
+}): DotWalkError {
+  return dotWalkError(path, path.walkError ?? 'ENOENT')
+}
+
+/** ELOOP: a link loop stands in the path's walk. A walk refusal, so final
+ * for every layer that re-reads a miss, and a coded fs error, so a
+ * per-operand catch words it where the namespace's own CycleError escaped
+ * every one. The door throws it for a loop above any name it is handed.
+ * Mirrors Python's eloop. */
+export function eloop(path: string | { virtual: string }): DotWalkError {
+  return dotWalkError(path, 'ELOOP')
 }
 
 export function isDotWalkError(err: unknown): err is DotWalkError {
@@ -352,8 +377,10 @@ export function erofsReadOnly(
 // The phrases live once, in the posix table. The DOMAIN here stays
 // deliberately narrower than the vocabulary: these are the per-operand
 // codes a read-family command skips-and-reports, and widening it (say
-// to ELOOP or EIO) would widen isFsError's swallow set, which mirrors
-// python's typed FS_ERRORS tuple, not the whole condition enum.
+// to EIO) would widen isFsError's swallow set, which mirrors python's
+// typed FS_ERRORS tuple, not the whole condition enum. ELOOP is in it
+// because a link loop is a walk refusal met per operand (python's
+// DotWalkLoop), widened in both languages together.
 const STRERROR: Record<string, string> = {
   // A read from a closed or write-only descriptor (`cat 0<&1`), raised
   // only by the shell's own unreadable stdin, not by any backend.
@@ -361,6 +388,7 @@ const STRERROR: Record<string, string> = {
   ENOENT: gnuPhrase('ENOENT'),
   ENOTDIR: gnuPhrase('ENOTDIR'),
   EISDIR: gnuPhrase('EISDIR'),
+  ELOOP: gnuPhrase('ELOOP'),
   EROFS: gnuPhrase('EROFS'),
   EACCES: gnuPhrase('EACCES'),
   EEXIST: gnuPhrase('EEXIST'),
@@ -524,6 +552,12 @@ export const FAILURE_WORDING: ReadonlyMap<string, readonly [string | null, strin
 // The command's own template for this failure, null for the plain line: no
 // entry, no template for the step, or standard input, whose `-` line is the
 // one GNU prints when it closes a stdin it could not read.
+// GNU wc and du vet every name the way their --files0-from reader does,
+// and refuse an empty one in these words before any open could answer
+// ENOENT for it (coreutils 9.7). Mirrors Python's ZERO_LENGTH_NAME.
+export const ZERO_LENGTH_NAME = 'invalid zero-length file name'
+const VETS_EMPTY_NAMES: ReadonlySet<string> = new Set(['du', 'wc'])
+
 function stepWording(cmdName: string, label: string, code: string | undefined): string | null {
   const wording = FAILURE_WORDING.get(cmdName)
   if (wording === undefined || label === '-') return null
@@ -543,8 +577,9 @@ export function fsErrorLine(
   err: unknown,
 ): string {
   const code = (err as { code?: string }).code
-  const strerror = gnuStrerror(code)
   const typed = virtualOf(path)
+  if (typed === '' && VETS_EMPTY_NAMES.has(cmdName)) return `${cmdName}: ${ZERO_LENGTH_NAME}\n`
+  const strerror = gnuStrerror(code)
   const template = stepWording(cmdName, typed, code)
   if (template !== null && strerror !== null) {
     // One pass, so a name that spells a placeholder is never substituted.

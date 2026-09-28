@@ -27,7 +27,7 @@ from mirage.commands.spec.synopsis import SYNOPSES
 from mirage.commands.spec.usage import usage_hint
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import WALK_ERRORS, fs_strerror
+from mirage.utils.errors import WALK_ERRORS, fs_strerror, walk_refusal
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 from mirage.utils.path import respell_one
 
@@ -216,6 +216,8 @@ async def grep(
                                                     or f.files_without_match):
         p = paths[0]
         try:
+            if p.walk_error is not None:
+                raise walk_refusal(p)
             info = FileStat(name="-",
                             type=FileType.FIFO) if is_stdin(p) else await st(
                                 p.virtual)
@@ -248,6 +250,10 @@ async def grep(
     async def scan(p: PathSpec, walked: bool = False) -> AsyncIterator[bytes]:
         nonlocal matched, printed
         try:
+            # The probes below go by `virtual`, which cannot carry the
+            # walk's verdict on an operand it refused.
+            if p.walk_error is not None:
+                raise walk_refusal(p)
             info = FileStat(name="-",
                             type=FileType.FIFO) if is_stdin(p) else await st(
                                 p.virtual)

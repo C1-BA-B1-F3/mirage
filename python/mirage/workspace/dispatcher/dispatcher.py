@@ -38,10 +38,11 @@ from mirage.policy import post_ops_gate, pre_ops_gate
 from mirage.policy.errors import PolicyDenied, PolicyError
 from mirage.types import (DEFAULT_READ_TTL, CacheFacts, FileStat, FileType,
                           PathSpec, VFSName)
-from mirage.utils.errors import MISS_ERRORS, enoent, no_mount
+from mirage.utils.errors import (MISS_ERRORS, eloop, enoent, no_mount,
+                                 walk_refusal)
 from mirage.utils.hidden import move_reveals
 from mirage.utils.key_prefix import mount_key
-from mirage.utils.path import norm, norm_dir, owner_prefix, parent
+from mirage.utils.path import CycleError, norm, norm_dir, owner_prefix, parent
 from mirage.utils.ranges import slice_window
 from mirage.utils.remnants import remove_remnants, visible_below
 from mirage.workspace.dispatcher.lineage import require_turf_writable
@@ -294,6 +295,11 @@ class Dispatcher:
         if (op == "rename" and isinstance(dst, PathSpec)
                 and not path_allowed(dst.virtual)):
             raise hidden_refusal(dst.virtual, True)
+        # An operand the walk already refused (the empty name, a link
+        # loop) names nothing an op can reach, whatever `virtual` says.
+        for walked in (path, dst):
+            if isinstance(walked, PathSpec) and walked.walk_error is not None:
+                raise walk_refusal(walked)
         # A `.` or `..` resolves against the directory it sits in, so
         # every name in front of one has to be a directory: `virtual`
         # simplified the dots away and reaches `f` through a missing
@@ -346,7 +352,10 @@ class Dispatcher:
         # on a link entry itself (chown -h writing the link's own attrs)
         # keeps the typed path. Consumed here, never forwarded.
         if op not in NO_FOLLOW_OPS and not kwargs.pop("nofollow", False):
-            followed = self._namespace.follow(path.virtual)
+            try:
+                followed = self._namespace.follow(path.virtual)
+            except CycleError:
+                raise eloop(path) from None
             if followed != path.virtual:
                 path = PathSpec.from_str_path(followed)
                 if not path_allowed(path.virtual):
@@ -677,9 +686,13 @@ class Dispatcher:
                 the voice a hidden landing answers in.
 
         Raises:
-            CycleError: when a link above the name loops (ELOOP).
+            DotWalkLoop: when a link above the name loops (ELOOP), as the
+                OSError every caller's per-operand catch words.
         """
-        walked = self._namespace.follow_parent(path.virtual)
+        try:
+            walked = self._namespace.follow_parent(path.virtual)
+        except CycleError:
+            raise eloop(path) from None
         if walked == path.virtual:
             return path
         if not path_allowed(walked):

@@ -550,6 +550,7 @@ export class MountEntry {
           vfsPath: mountKey(p.virtual, mountPrefix),
           rawPath: p.rawPath,
           dotted: p.dotted,
+          walkError: p.walkError,
         })
       const prefixedPaths = paths.map(stamp)
       // Stamp this mount's backend key onto path-shaped flag values so
@@ -586,6 +587,7 @@ export class MountEntry {
         ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
         ...(context.env !== undefined ? { env: context.env } : {}),
         ...(context.sessionView !== undefined ? { sessionView: context.sessionView } : {}),
+        ...(context.processes !== undefined ? { processes: context.processes } : {}),
         ...(context.execAllowed !== undefined ? { execAllowed: context.execAllowed } : {}),
         ...(context.execPathAllowed !== undefined
           ? { execPathAllowed: context.execPathAllowed }

@@ -212,6 +212,8 @@ async def handle_command(
                            if dispatch is not None else None),
                 ns=namespace_view_of(registry, namespace, dispatch),
                 session_view=session_view(session, registry.policies),
+                processes=registry.process_view(session)
+                if registry.process_view is not None else None,
             ),
             drop_caches=(functools.partial(drop_mount_caches, registry)
                          if drops_mount_caches(cli_install.spec) else None),
@@ -290,8 +292,15 @@ async def handle_command(
     # Path-valued flags (e.g. shuf --output=/dst/out) own a mount just like
     # positional operands, so they join routing and mount validation instead
     # of being dropped whenever a positional path is also present.
-    routing_scopes = merge_scopes(
-        path_scopes, path_flag_scopes(cmd_name, raw_argv, session.cwd))
+    # The empty name joins onto the working directory in `virtual` but
+    # names no path there, so it routes nowhere: the line runs where its
+    # other operands (or the cwd) put it, and that run's op guards refuse
+    # it. A line is not cross-mount because one of its words is empty.
+    routing_scopes = [
+        s for s in merge_scopes(
+            path_scopes, path_flag_scopes(cmd_name, raw_argv, session.cwd))
+        if s.walk_error != "ENOENT"
+    ]
 
     find_expr_tokens: list[str] | None = None
     if cmd_name == "find":
@@ -338,7 +347,7 @@ async def handle_command(
             if shared_spec is not None else None,
             cmd_name,
             session.cwd,
-            str_flag_paths=True)
+            str_flag_paths=cmd_name != "tar")
         cross_texts = (find_expr_tokens
                        if find_expr_tokens is not None else cross_parsed.texts)
         cross_refusal = option_error(cmd_name, cross_parsed)

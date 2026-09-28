@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignoreBinaries": ["diskutil", "fusermount", "smolvm", "sandlock"],
+  "ignoreBinaries": ["container", "diskutil", "fusermount", "smolvm", "sandlock"],
   "workspaces": {
     ".": {
       "entry": []

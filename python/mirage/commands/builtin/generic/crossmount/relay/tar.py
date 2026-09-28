@@ -63,17 +63,18 @@ async def run_tar(scopes: list[PathSpec], text_args: list[str],
         scopes (list[PathSpec]): Path words in command-line order.
         text_args (list[str]): The -t/-x member selectors, as typed.
         flag_kwargs (dict): Flags parsed against the shared tar spec,
-            with path-valued flags as resolved virtual strings.
+            with path-valued flags retaining their PathSpec metadata.
         dispatch (DispatchFn): Workspace operation dispatcher.
         ns (NamespaceView | None): The symlinks and mount boundaries the
             create scan merges into each walk.
     """
     fl = FlagView(flag_kwargs, spec=SPECS["tar"])
     prim = transfer_primitives(dispatch)
-    archive = fl.as_str("f")
-    directories = [str(part) for part in fl.as_list("C")]
+    archive = next(iter(fl.as_paths("f")), None)
+    directories = fl.as_paths("C")
     create = fl.as_bool("c")
-    operands = (_operands(scopes, [archive, *directories])
+    operands = (_operands(scopes,
+                          [archive.virtual, *[d.virtual for d in directories]])
                 if create and archive else [])
     return await tar(
         flat_scopes(operands),
@@ -94,8 +95,8 @@ async def run_tar(scopes: list[PathSpec], text_args: list[str],
         v=fl.as_bool("v"),
         h=fl.as_bool("h"),
         to_stdout=fl.as_bool("to_stdout"),
-        f=PathSpec.from_str_path(archive) if archive else None,
-        C=[PathSpec.from_str_path(d) for d in directories] or None,
+        f=archive,
+        C=directories or None,
         strip_components=fl.as_str("strip_components"),
         exclude=fl.as_str("exclude"),
         links=ns.links if ns is not None else None,

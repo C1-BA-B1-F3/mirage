@@ -26,6 +26,7 @@ import {
   fsErrorLine,
   isDotWalkError,
   isMissingPath,
+  walkRefusal,
 } from '../../../../utils/errors.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
@@ -183,6 +184,13 @@ async function targetMounts(
   const errors: string[] = []
   for (const op of operands) {
     const spec = typedSpec(op, session.cwd)
+    if (spec.walkError !== null) {
+      // The empty name reads as the working directory in `virtual`, which
+      // may well be a mount root, and a link loop reaches no filesystem
+      // at all.
+      errors.push(fsErrorLine('df', spec, walkRefusal(spec)))
+      continue
+    }
     const virtual = spec.virtual
     if (virtual === '' || virtual === '/') {
       for (const m of ordered) {

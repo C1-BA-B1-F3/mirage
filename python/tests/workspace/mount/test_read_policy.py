@@ -26,8 +26,12 @@ from mirage.vfs.disk.disk import DiskVFS
 from mirage.vfs.dropbox.config import DropboxConfig
 from mirage.vfs.dropbox.dropbox import DropboxVFS
 from mirage.vfs.gcs.gcs import GCSVFS
+from mirage.vfs.gdocs import GDocsConfig, GDocsVFS
+from mirage.vfs.gdrive import GoogleDriveConfig, GoogleDriveVFS
 from mirage.vfs.gridfs import GridFSConfig
 from mirage.vfs.gridfs.gridfs import GridFSVFS
+from mirage.vfs.gsheets import GSheetsConfig, GSheetsVFS
+from mirage.vfs.gslides import GSlidesConfig, GSlidesVFS
 from mirage.vfs.hf_buckets import HfBucketsConfig, HfBucketsVFS
 from mirage.vfs.lancedb import LanceDBConfig, LanceDBVFS
 from mirage.vfs.loader import load_attr
@@ -270,6 +274,30 @@ def test_gridfs_is_allowed_fresh_on_a_constructed_instance():
     assert check_read_capability("/g/", vfs, FRESH) is None
 
 
+def test_gdrive_is_allowed_fresh_on_a_constructed_instance():
+    # The flag on the class is one line asserting itself; running the
+    # verdict on an instance is what proves gdrive can declare `fresh`. The
+    # token behind the claim is pinned by the read-token contract,
+    # tests/vfs/test_read_revalidatable.py.
+    assert GoogleDriveVFS.READ_REVALIDATABLE is True
+    vfs = GoogleDriveVFS(
+        GoogleDriveConfig(client_id="c", client_secret="s", refresh_token="r"))
+    assert vfs.caches_reads is True
+    assert check_read_capability("/gd/", vfs, FRESH) is None
+
+
+@pytest.mark.parametrize(("cls", "config"), [(GDocsVFS, GDocsConfig),
+                                             (GSheetsVFS, GSheetsConfig),
+                                             (GSlidesVFS, GSlidesConfig)])
+def test_google_apps_are_allowed_fresh_on_a_constructed_instance(cls, config):
+    # Each stamps the file's Drive modifiedTime on stat and read; the
+    # read-token contract pins that the two agree.
+    assert cls.READ_REVALIDATABLE is True
+    vfs = cls(config(client_id="c", client_secret="s", refresh_token="r"))
+    assert vfs.caches_reads is True
+    assert check_read_capability("/g/", vfs, FRESH) is None
+
+
 def test_hf_buckets_is_allowed_fresh_on_a_constructed_instance():
     # The token behind the claim -- stat's paths-info xetHash equals the
     # download's ETag -- is pinned in tests/core/hf_buckets and by the
@@ -293,8 +321,9 @@ def test_bounded_is_allowed_on_a_backend_that_cannot_revalidate():
 REVALIDATABLE = {
     "s3", "aliyun", "backblaze", "ceph", "digitalocean", "gcs", "minio", "oci",
     "qingstor", "r2", "scaleway", "seaweedfs", "supabase", "tencent", "wasabi",
-    "gridfs", "hf_models", "hf_datasets", "hf_spaces", "onedrive",
-    "sharepoint", "hf_buckets", "github"
+    "gridfs", "gdrive", "gdocs", "gsheets", "gslides", "hf_models",
+    "hf_datasets", "hf_spaces", "onedrive", "sharepoint", "hf_buckets",
+    "github"
 }
 
 

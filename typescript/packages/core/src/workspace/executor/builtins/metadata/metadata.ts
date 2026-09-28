@@ -18,7 +18,7 @@ import { FileType, PathSpec } from '../../../../types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import { dispatchStat, dotRefusal } from '../../../../commands/builtin/utils/paths.ts'
-import { fsStrerror, isEnoent, isEnotdir } from '../../../../utils/errors.ts'
+import { fsStrerror, isEnoent, isEnotdir, walkRefusal } from '../../../../utils/errors.ts'
 import { CycleError } from '../../../../utils/path.ts'
 
 export function parseOwner(text: string): [number | string | null, number | string | null] {
@@ -162,7 +162,10 @@ export async function resolveOperand(
   target: PathSpec,
   errors: string[],
 ): Promise<[PathSpec, FileStat] | null> {
-  const refusal = await dotRefusal(dispatchStat(dispatch), target, (v) => namespace.follow(v))
+  const refusal =
+    target.walkError !== null
+      ? walkRefusal(target)
+      : await dotRefusal(dispatchStat(dispatch), target, (v) => namespace.follow(v))
   if (refusal !== null) {
     errors.push(
       `${cmd}: cannot access '${target.rawPath}': ${fsStrerror(refusal) ?? 'No such file or directory'}\n`,

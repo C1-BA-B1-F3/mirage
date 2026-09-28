@@ -66,6 +66,7 @@ export function typedSpec(word: string | PathSpec, cwd: string): PathSpec {
     vfsPath: stripSlash(virtual),
     rawPath: word,
     dotted: dottedSpelling(word, cwd),
+    walkError: word === '' ? 'ENOENT' : null,
   })
 }
 

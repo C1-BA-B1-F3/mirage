@@ -396,6 +396,11 @@ export { SandlockRuntime } from './runtime/sandbox/sandlock/runtime.ts'
 export type { SandlockConfig } from './runtime/sandbox/sandlock/config.ts'
 export { SmolvmRuntime } from './runtime/sandbox/smolvm/runtime.ts'
 export { SMOLVM_CONFIG_KEYS, type SmolvmConfig } from './runtime/sandbox/smolvm/config.ts'
+export { AppleContainerRuntime } from './runtime/sandbox/apple_container/runtime.ts'
+export {
+  APPLE_CONTAINER_CONFIG_KEYS,
+  type AppleContainerConfig,
+} from './runtime/sandbox/apple_container/config.ts'
 export { SSHRuntime } from './runtime/sandbox/ssh/runtime.ts'
 export { SSH_RUNTIME_CONFIG_KEYS, type SSHRuntimeConfig } from './runtime/sandbox/ssh/config.ts'
 export {

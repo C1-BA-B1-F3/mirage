@@ -68,7 +68,8 @@ async def start_ssh_server(registry: WorkspaceRegistry,
     ``ssh <workspace-id>@host`` opens a shell in that workspace,
     ``ssh <workspace-id>@host cmd`` runs one line, and ``sftp``/``scp``
     reach its files. Each channel runs as a fresh mirage session under
-    the workspace's default profile.
+    the profile its key is bound to (``mirage-profile`` in the
+    authorized keys), else the workspace's default profile.
 
     Args:
         registry (WorkspaceRegistry): the daemon's workspaces.

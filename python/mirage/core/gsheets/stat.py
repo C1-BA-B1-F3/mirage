@@ -12,22 +12,29 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.cache.index import IndexEntry
+from mirage.accessor.gsheets import GSheetsAccessor
+from mirage.cache.index import IndexCacheStore
+from mirage.core.google.entry import resolve_app_entry
+from mirage.core.gsheets.constants import MIME
 from mirage.core.gsheets.readdir import readdir
 from mirage.core.gsheets.scope import detect_scope
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.hierarchy.stat import make_stat
 from mirage.types import ContentType, FileStat, FileType, PathSpec
+from mirage.vfs.gsheets.sheet_entry import make_filename
 
 
-def _file_stat(match: ScopeMatch, path: PathSpec,
-               entry: IndexEntry) -> FileStat:
+async def _file_stat(accessor: GSheetsAccessor, match: ScopeMatch,
+                     path: PathSpec, index: IndexCacheStore) -> FileStat:
+    entry = await resolve_app_entry(accessor.token_manager, match, path, index,
+                                    MIME, "gsheets/file", make_filename)
     return FileStat(
         name=entry.vfs_name,
         type=FileType.FILE,
         content=ContentType.JSON,
         modified=entry.remote_time,
         size=entry.size,
+        fingerprint=entry.remote_time or None,
         extra={
             "doc_id": entry.id,
             "doc_name": entry.name,
@@ -36,4 +43,4 @@ def _file_stat(match: ScopeMatch, path: PathSpec,
     )
 
 
-stat = make_stat(detect_scope, readdir, entry_stats={"file": _file_stat})
+stat = make_stat(detect_scope, readdir, overrides={"file": _file_stat})

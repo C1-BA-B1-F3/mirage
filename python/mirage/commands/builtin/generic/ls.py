@@ -23,7 +23,7 @@ from mirage.errors.classify import failure_text
 from mirage.io.types import IOResult
 from mirage.ops.types import ChildMounts, LinkView, MountView, StatPath
 from mirage.types import FileStat, FileType, LsSortBy, LsTimeKind, PathSpec
-from mirage.utils.errors import DotWalkError, fs_strerror
+from mirage.utils.errors import DotWalkError, DotWalkLoop, fs_strerror
 from mirage.utils.key_prefix import mount_prefix_of, rekey, under_path
 from mirage.utils.path import CycleError, respell_one
 from mirage.utils.stat_view import content_size
@@ -939,6 +939,13 @@ async def probe_operand(
         if isinstance(exc, DotWalkError):
             # The operand did not resolve, so neither the path it
             # simplifies to nor the names the namespace owes it answer.
+            # A command-line link whose stat loops is the exception: GNU
+            # lstats it then and lists the link itself, unless -L asked
+            # for the target (ls.c's gobble_file, coreutils 9.7).
+            if isinstance(exc, DotWalkLoop) and command_line_arg and not deref:
+                link_row = _link_row(path, links)
+                if link_row is not None:
+                    return Operand(path, link_row, []), warnings
             warnings.append(
                 LsWarning(
                     f"ls: cannot access '{path.raw_path}': "
@@ -1083,7 +1090,8 @@ async def walk(
         try:
             listed = await stat(path, index)
         except (OSError, ValueError) as exc:
-            if child_mounts is not None and child_mounts(path.virtual):
+            if (not isinstance(exc, DotWalkError) and child_mounts is not None
+                    and child_mounts(path.virtual)):
                 # No backend serves it, but the namespace owes it
                 # children, so the door stats it as a directory and -d
                 # must print the same row.

@@ -17,7 +17,7 @@ import { stdinStream, stdinStat } from '../utils/stream.ts'
 import { guardInput } from '../utils/limit.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { fsStrerror, isWalkError } from '../../../utils/errors.ts'
+import { fsStrerror, isWalkError, walkRefusal } from '../../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
 import { respellOne } from '../../../utils/path.ts'
 import { cacheAwareStream } from '../../../cache/read_through.ts'
@@ -239,6 +239,7 @@ export async function grepGeneric(
   const st = mountParentStat((p: string) => stat(makeSpec(p, first)), mounts)
   if (!f.recursive && paths.length === 1 && !(f.filesOnly || f.quiet || f.filesWithoutMatch)) {
     try {
+      if (first.walkError !== null) throw walkRefusal(first)
       const info = isStdin(first) ? await stat(first) : await st(first.virtual)
       if (info.type === FileType.DIRECTORY)
         return [
@@ -288,6 +289,9 @@ export async function grepGeneric(
 
   async function* scan(p: PathSpec, walked = false): AsyncIterable<Uint8Array> {
     try {
+      // The probes below go by `virtual`, which cannot carry the walk's
+      // verdict on an operand it refused.
+      if (p.walkError !== null) throw walkRefusal(p)
       const info = isStdin(p) ? await stat(p) : await st(p.virtual)
       if (info.type === FileType.DIRECTORY) {
         if (!f.recursive) {

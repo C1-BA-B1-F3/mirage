@@ -61,8 +61,15 @@ async def handle_readlink(
     walker = partial(dispatch_stat, dispatch)
     for op in operands:
         abs_op = abs_path(op, session.cwd)
-        if walks and await dot_refusal(walker, typed_spec(
-                op, session.cwd)) is not None:
+        spec = typed_spec(op, session.cwd)
+        # The walk refused the operand before readlink ran: the empty
+        # name answers ENOENT in every mode, a link loop in every mode
+        # but -m, which leaves it unresolved as spelled (coreutils 9.7).
+        if spec.walk_error == "ENOENT" or (spec.walk_error is not None
+                                           and walks):
+            exit_code = 1
+            continue
+        if walks and await dot_refusal(walker, spec) is not None:
             exit_code = 1
             continue
         if canonical:
@@ -80,8 +87,10 @@ async def handle_readlink(
             try:
                 resolved = posixpath.normpath(namespace.follow(abs_op))
             except CycleError:
-                exit_code = 1
-                continue
+                if walks:
+                    exit_code = 1
+                    continue
+                resolved = posixpath.normpath(abs_op)
             probe = (resolved if "e" in flags else
                      posixpath.dirname(resolved) if "f" in flags else None)
             if probe is not None and not await path_exists(dispatch, probe):
@@ -91,8 +100,9 @@ async def handle_readlink(
             continue
         # The link entry is namespace state behind the op door: session
         # grants and admission policies decide whether this session may
-        # read the target at all. EINVAL (not a link) and a refusal both
-        # land on GNU readlink's silent exit 1.
+        # read the target at all. EINVAL (not a link), a refusal and a
+        # loop above the name (the door's walk) all land on GNU
+        # readlink's silent exit 1.
         try:
             target, _ = await dispatch("readlink",
                                        PathSpec.from_str_path(abs_op))

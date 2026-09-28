@@ -20,10 +20,11 @@ from mirage.errors import FsCondition, classify
 from mirage.types import PathSpec
 
 from mirage.utils.errors import (  # isort: skip
-    FS_ERRORS, BadDescriptorError, FileTooLargeError, NoMountError,
-    OperationNotSupportedError, eacces, efbig, eisdir, eloop, enoent, enotdir,
-    enotempty, enotsup, error_path, exdev, format_fs_error, fs_error_line,
-    fs_strerror, listing_error, no_mount, readdir_error, revoice_fs_error_line)
+    FS_ERRORS, BadDescriptorError, DotWalkError, DotWalkLoop, DotWalkMissing,
+    FileTooLargeError, NoMountError, OperationNotSupportedError, eacces, efbig,
+    eisdir, eloop, enoent, enotdir, enotempty, enotsup, error_path, exdev,
+    format_fs_error, fs_error_line, fs_strerror, listing_error, no_mount,
+    readdir_error, revoice_fs_error_line, walk_refusal)
 
 
 def test_fs_strerror_known_types():
@@ -441,3 +442,54 @@ def test_read_cap_failure_names_the_read_at_the_chokepoint(cmd):
     assert format_fs_error(cmd, efbig(spec), [
         spec
     ]) == (f"{cmd}: error reading '/records.jsonl': File too large\n".encode())
+
+
+def test_walk_refusal_names_the_empty_operand_as_typed():
+    # `virtual` reads the empty name as the working directory, so the
+    # refusal carries the spelling the command reports.
+    spec = PathSpec(virtual="/data",
+                    directory="/",
+                    vfs_path="",
+                    raw_path="",
+                    walk_error="ENOENT")
+    exc = walk_refusal(spec)
+    assert isinstance(exc, DotWalkMissing)
+    assert error_path(exc) == ""
+    assert fs_error_line("cat", spec,
+                         exc) == ("cat: '': No such file or directory\n")
+    assert format_fs_error("cat",
+                           exc) == (b"cat: '': No such file or directory\n")
+
+
+def test_walk_refusal_of_a_loop_is_a_final_per_operand_error():
+    spec = PathSpec(virtual="/data/l1",
+                    directory="/data/",
+                    vfs_path="l1",
+                    raw_path="l1",
+                    walk_error="ELOOP")
+    exc = walk_refusal(spec)
+    assert isinstance(exc, DotWalkLoop)
+    assert isinstance(exc, DotWalkError)
+    assert isinstance(exc, FS_ERRORS)
+    assert classify(exc) is FsCondition.ELOOP
+    assert fs_error_line("head", spec,
+                         exc) == ("head: cannot open 'l1' for reading: "
+                                  "Too many levels of symbolic links\n")
+
+
+def test_eloop_is_typed_and_classified():
+    exc = eloop(PathSpec.from_str_path("/data/l1"))
+    assert isinstance(exc, DotWalkLoop)
+    assert exc.errno == errno.ELOOP
+    assert fs_strerror(exc) == "Too many levels of symbolic links"
+
+
+@pytest.mark.parametrize("cmd", ["wc", "du"])
+def test_wc_and_du_vet_the_empty_name(cmd):
+    assert fs_error_line(
+        cmd, "", enoent("")) == (f"{cmd}: invalid zero-length file name\n")
+
+
+def test_other_commands_name_the_empty_operand_quoted():
+    assert fs_error_line("tail", "", enoent("")) == (
+        "tail: cannot open '' for reading: No such file or directory\n")

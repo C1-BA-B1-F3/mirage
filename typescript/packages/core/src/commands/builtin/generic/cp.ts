@@ -35,6 +35,7 @@ import { modifiedTs } from '../../../core/generic/find.ts'
 import { backupControl, backupTarget } from '../utils/backup.ts'
 import { DEFAULT_BACKUP_SUFFIX } from '../utils/constants.ts'
 import {
+  STAT_REFUSALS,
   backendKeyDefault,
   copyTargets,
   isDirectory,
@@ -42,6 +43,7 @@ import {
   type BackendKeyFn,
 } from '../utils/copy.ts'
 import {
+  ELOOP_STRERROR,
   fsStrerror,
   isDotWalkError,
   isEacces,
@@ -228,6 +230,9 @@ export async function targetDirError(
     info = await stat(target)
   } catch (err) {
     if (isEnotdir(err)) return `${cmdName}: target directory '${target.rawPath}': Not a directory`
+    if ((err as { code?: unknown }).code === 'ELOOP') {
+      return `${cmdName}: target directory '${target.rawPath}': ${ELOOP_STRERROR}`
+    }
     if (!isMissingPath(err)) throw err
     return `${cmdName}: target directory '${target.rawPath}': No such file or directory`
   }
@@ -280,6 +285,7 @@ export async function destKind(
   } catch (err) {
     const code = (err as { code?: unknown }).code
     if (code === 'ENOTDIR') return { exists: false, isDir: false, strerror: 'Not a directory' }
+    if (code === 'ELOOP') return { exists: false, isDir: false, strerror: ELOOP_STRERROR }
     // Its `..` passes a name that is not there: the chain of the path it
     // simplifies to says nothing about this one.
     if (isDotWalkError(err)) {
@@ -325,6 +331,7 @@ export async function sourceKind(
   } catch (err) {
     const code = (err as { code?: unknown }).code
     if (code === 'ENOTDIR') return { exists: false, isDir: false, strerror: 'Not a directory' }
+    if (code === 'ELOOP') return { exists: false, isDir: false, strerror: ELOOP_STRERROR }
     if (!isMissingPath(err)) throw err
   }
   if (info !== null) return slashAwareKind(path, info)
@@ -790,6 +797,15 @@ export async function cpGeneric(
       errors.push(`cp: cannot stat '${src.rawPath}': ${String(srcErr)}`)
       continue
     }
+    if (flags.noTargetDir && !srcIsDir && target.walkError !== null && target.rawPath === '') {
+      // Under -T, GNU stats an empty destination as the directory it is
+      // typed in, which a file cannot overwrite (coreutils 9.7). A
+      // directory source it merges into the working directory; mirage
+      // refuses that at the create, since reading the empty name as the
+      // working directory is what `walkError` is for.
+      errors.push(`cp: cannot overwrite directory '' with non-directory '${src.rawPath}'`)
+      continue
+    }
     if (keyOf(src) === keyOf(target)) {
       errors.push(`cp: '${src.virtual}' and '${target.virtual}' are the same file`)
       continue
@@ -808,8 +824,8 @@ export async function cpGeneric(
         : await destKind(stat, target)
     const { exists: targetExists, isDir: targetIsDir } = probe
     let targetErr = probe.strerror
-    if (targetErr === 'Not a directory') {
-      errors.push(`cp: cannot stat '${target.rawPath}': Not a directory`)
+    if (targetErr !== null && STAT_REFUSALS.has(targetErr)) {
+      errors.push(`cp: cannot stat '${target.rawPath}': ${targetErr}`)
       continue
     }
     // The create fails on the absent parent before the slash matters, so a

@@ -48,7 +48,7 @@ import type { TSNodeLike } from '../../shell/types.ts'
 import { PathSpec, type Refusal } from '../../types.ts'
 import type { EntryGate } from '../../types.ts'
 import { isGlob } from '../../utils/hidden.ts'
-import { CycleError, resolvePath } from '../../utils/path.ts'
+import { resolvePath } from '../../utils/path.ts'
 import { makeAbortError } from '../abort.ts'
 import { toScope } from '../executor/builtins/scope.ts'
 import { followPaths } from '../executor/builtins/links/links.ts'
@@ -223,17 +223,12 @@ export function policyScopes(
     scopes.unshift(toScope(resolvePath(name, cwd)))
   }
   if (namespace !== null && namespace.nodes.size > 0 && operands.length > 0) {
-    let followed: (string | PathSpec)[] = []
-    try {
-      followed = followPaths(
-        namespace,
-        [...operands],
-        followsLastComponent(name, [name, ...args]),
-        !SLASH_KEEPS_LAST.has(name),
-      )
-    } catch (err) {
-      if (!(err instanceof CycleError)) throw err
-    }
+    const followed = followPaths(
+      namespace,
+      [...operands],
+      followsLastComponent(name, [name, ...args]),
+      !SLASH_KEEPS_LAST.has(name),
+    )
     const seen = new Set(scopes.map((p) => p.virtual))
     for (const item of followed) {
       if (item instanceof PathSpec && !seen.has(item.virtual)) {
@@ -248,12 +243,7 @@ export function policyScopes(
   if (redirects.length > 0) {
     const targets: (string | PathSpec)[] = [...redirects]
     if (namespace !== null && namespace.nodes.size > 0) {
-      let followed: (string | PathSpec)[] = []
-      try {
-        followed = followPaths(namespace, [...redirects], true)
-      } catch (err) {
-        if (!(err instanceof CycleError)) throw err
-      }
+      const followed = followPaths(namespace, [...redirects], true)
       targets.push(...followed.filter((p) => p instanceof PathSpec))
     }
     const seen = new Set(scopes.map((p) => p.virtual))

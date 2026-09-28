@@ -20,9 +20,11 @@ import shlex
 from collections.abc import Mapping
 
 import asyncssh
+from asyncssh.connection import SSHConnection
 
 from mirage import Workspace
 from mirage.server.registry import WorkspaceEntry, WorkspaceRegistry
+from mirage.server.ssh.constants import PROFILE_OPTION
 from mirage.server.ssh.stream import (ChannelInput, ChannelOutput, LoopStdin,
                                       Mark, Send, decode, deliver, encode,
                                       loop_sender)
@@ -80,22 +82,56 @@ def login_env(process: asyncssh.SSHServerProcess[str]) -> dict[str, str]:
     return env
 
 
+def key_profile(conn: SSHConnection) -> str | None:
+    """The profile the login's authorized key is bound to, if any.
+
+    The key's line in authorized_keys names it with
+    ``mirage-profile="<name>"``; a key without the option runs under the
+    workspace's default profile.
+
+    Args:
+        conn (SSHConnection): the authenticated login's connection.
+
+    Raises:
+        TypeError: ``conn`` is not the server side of a connection.
+        ValueError: the option is bare, empty or given more than once.
+    """
+    if not isinstance(conn, asyncssh.SSHServerConnection):
+        raise TypeError("a key's profile is read off a server connection")
+    values = conn.get_key_option(PROFILE_OPTION)
+    if values is None:
+        return None
+    names = values if isinstance(values, list) else [values]
+    name = names[0] if len(names) == 1 else None
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"{PROFILE_OPTION} must name exactly one profile")
+    return name
+
+
 async def open_session(ws: Workspace,
                        session_id: str,
-                       env: Mapping[str, str] | None = None) -> None:
-    """Create the session a channel runs as, under the default profile.
+                       env: Mapping[str, str] | None = None,
+                       profile: str | None = None) -> None:
+    """Create the session a channel runs as.
 
-    The login environment is exported by an unrecorded line, so every
-    name clears the session's ``pre_session`` gate like any ``export``
-    would, and a name the profile already set keeps its value.
+    The session runs under ``profile`` (the login key's), else the
+    workspace's default profile. The login environment is exported by
+    an unrecorded line, so every name clears the session's
+    ``pre_session`` gate like any ``export`` would, and a name the
+    profile already set keeps its value.
 
     Args:
         ws (Workspace): the workspace, on its own loop.
         session_id (str): the new session's id.
         env (Mapping[str, str] | None): the login environment.
+        profile (str | None): the profile the login key is bound to;
+            None for the workspace default.
+
+    Raises:
+        PolicyError: the workspace has no such profile.
     """
     await ws.ensure_sessions_loaded()
-    session = ws.create_session(session_id)
+    session = ws.create_session(session_id, profile=profile)
     try:
         missing = {
             k: v
@@ -337,8 +373,9 @@ async def handle_process(registry: WorkspaceRegistry,
     session_id = new_session_id()
     runner = entry.runner
     try:
+        profile = key_profile(process.channel.get_connection())
         await runner.call(
-            open_session(runner.ws, session_id, login_env(process)))
+            open_session(runner.ws, session_id, login_env(process), profile))
     except Exception as exc:
         logger.warning("ssh: cannot open a session on %s: %r", workspace_id,
                        exc)

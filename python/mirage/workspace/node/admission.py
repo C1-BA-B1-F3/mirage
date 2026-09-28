@@ -35,7 +35,7 @@ from mirage.shell.types import NodeType as NT
 from mirage.shell.types import RedirectKind
 from mirage.types import PathSpec, Refusal
 from mirage.utils.hidden import is_glob
-from mirage.utils.path import CycleError, resolve_path
+from mirage.utils.path import resolve_path
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.executor.builtins.links.links import follow_paths
 from mirage.workspace.executor.builtins.scope import _to_scope
@@ -189,14 +189,10 @@ def policy_scopes(
         # would never see it without this row.
         scopes.insert(0, _to_scope(resolve_path(name, cwd)))
     if namespace is not None and namespace.nodes and operands:
-        try:
-            followed = follow_paths(namespace,
-                                    list(operands),
-                                    follows_last_component(
-                                        name, [name, *args]),
-                                    slash_follows=name not in SLASH_KEEPS_LAST)
-        except CycleError:
-            followed = []
+        followed = follow_paths(namespace,
+                                list(operands),
+                                follows_last_component(name, [name, *args]),
+                                slash_follows=name not in SLASH_KEEPS_LAST)
         seen = {p.virtual for p in scopes}
         for item in followed:
             if isinstance(item, PathSpec) and item.virtual not in seen:
@@ -210,10 +206,7 @@ def policy_scopes(
     if redirects:
         targets: list[str | PathSpec] = list(redirects)
         if namespace is not None and namespace.nodes:
-            try:
-                followed = follow_paths(namespace, list(redirects), True)
-            except CycleError:
-                followed = []
+            followed = follow_paths(namespace, list(redirects), True)
             targets.extend(p for p in followed if isinstance(p, PathSpec))
         seen = {p.virtual for p in scopes}
         for item in targets:

@@ -22,6 +22,13 @@ export const SSH_DIR = 'ssh'
 export const HOST_KEY_NAME = 'host_ed25519_key'
 export const AUTHORIZED_KEYS_NAME = 'authorized_keys'
 
+/**
+ * The authorized_keys option that binds a key to one of the workspace's
+ * profiles (`mirage-profile="guarded" ssh-ed25519 AAAA...`). The server
+ * reads it, never the client, so a key cannot pick a looser profile.
+ */
+export const PROFILE_OPTION = 'mirage-profile'
+
 export const SSH_ENV_KEYS = {
   ssh_port: ENV_SSH_PORT,
   ssh_host: ENV_SSH_HOST,

@@ -2801,6 +2801,22 @@ async def mutate_write(shadow_ws: Workspace, path: str,
     await shadow_ws.vfs.write(path, content)
 
 
+async def mutate_line(shadow_ws: Workspace, command: str) -> None:
+    """Change the backend by running one line on the shadow workspace.
+
+    A file an account CLI edits by id (a Google Doc through ``gws``) has
+    no bytes to write, and the same line on the read workspace would drop
+    that workspace's own caches, so the other client runs it.
+
+    Args:
+        shadow_ws (Workspace): the workspace the case does not read from.
+        command (str): the line to run.
+    """
+    result = await shadow_ws.shell(command)
+    if result.exit_code != 0:
+        raise RuntimeError(f"{command}: {await result.stderr_str()}")
+
+
 async def mutate_commit(shadow_ws: Workspace, path: str,
                         content: bytes) -> None:
     """Change a Hub file the way the Hub changes: one commit.
@@ -2985,6 +3001,7 @@ async def open_consistency(
 ) -> tuple[
         Workspace,
         Callable[[str, bytes], Awaitable[None]],
+        Callable[[str], Awaitable[None]],
         Callable[[], Awaitable[None]],
 ]:
     run_id = uuid.uuid4().hex[:8]
@@ -2999,10 +3016,17 @@ async def open_consistency(
     # would silently run under a different one.
     read_ws.env = {**read_ws.env, **target.get("env", {})}
     shadow_ws.env = {**shadow_ws.env, **target.get("env", {})}
+    # And its CLIs, as open_target installs them, so a scenario can change
+    # a file through the shadow's CLI the way another client would.
+    for cli_name in target.get("clis", []):
+        spec, config = cli_install(service, cli_name)
+        read_ws.register_cli(cli_name, spec, config)
+        shadow_ws.register_cli(cli_name, spec, config)
     mutate = MUTATORS.get(target.get("service") or "", mutate_write)
     return (
         read_ws,
         functools.partial(mutate, shadow_ws),
+        functools.partial(mutate_line, shadow_ws),
         functools.partial(teardown_target, [read_ws, shadow_ws],
                           [*read_cleanups, *shadow_cleanups], service),
     )

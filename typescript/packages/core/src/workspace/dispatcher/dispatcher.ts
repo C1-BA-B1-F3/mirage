@@ -32,15 +32,17 @@ import {
   isEnotdir,
   isMissError,
   isMissingOp,
+  eloop,
   noMount,
   noXattr,
+  walkRefusal,
   type FsError,
 } from '../../utils/errors.ts'
 import { Policies, PolicyDenied, postOpsGate, preOpsGate } from '../../policy/index.ts'
 import { PolicyError } from '../../policy/errors.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { normDir, ownerPrefix, rstripSlash } from '../../utils/slash.ts'
-import { norm, parent } from '../../utils/path.ts'
+import { CycleError, norm, parent } from '../../utils/path.ts'
 import { record, runWithMountContext, runWithRevisions, startOp } from '../../observe/context.ts'
 import { wrapOpStream } from '../mount/mount.ts'
 import type { OpRecord } from '../../observe/record.ts'
@@ -170,6 +172,18 @@ function memoryAnswered(report: OpReport | undefined, moved: number | null = nul
   report?.served(VFSName.RAM, moved)
 }
 
+/** The door's link follow of one path, the final name too (`last`) or
+ * only the names above it, with a loop thrown as ELOOP rather than the
+ * namespace's CycleError. */
+function followOrLoop(namespace: Namespace, path: PathSpec, last: boolean): string {
+  try {
+    return last ? namespace.follow(path.virtual) : namespace.followParent(path.virtual)
+  } catch (err) {
+    if (err instanceof CycleError) throw eloop(path.virtual)
+    throw err
+  }
+}
+
 export class Dispatcher {
   private readonly namespace: Namespace
   private readonly cache: FileCache & VFS
@@ -247,6 +261,13 @@ export class Dispatcher {
     if (opName === 'rename' && dstArg instanceof PathSpec && !pathAllowed(dstArg.virtual)) {
       throw hiddenRefusal(dstArg.virtual, true)
     }
+    // An operand the walk already refused (the empty name, a link loop)
+    // names nothing an op can reach, whatever `virtual` says.
+    for (const walkedArg of [path, dstArg]) {
+      if (walkedArg instanceof PathSpec && walkedArg.walkError !== null) {
+        throw walkRefusal(walkedArg)
+      }
+    }
     // A `.` or `..` resolves against the directory it sits in, so every
     // name in front of one has to be a directory: `virtual` simplified the
     // dots away and reaches `f` through a missing `nope/..`, the typed
@@ -318,7 +339,7 @@ export class Dispatcher {
     }
     let p = path
     if (!NO_FOLLOW_OPS.has(opName) && !nofollow) {
-      const followed = this.namespace.follow(path.virtual)
+      const followed = followOrLoop(this.namespace, path, true)
       if (followed !== path.virtual) {
         p = PathSpec.fromStrPath(followed)
         if (!pathAllowed(p.virtual)) throw hiddenRefusal(p.virtual, HIDDEN_CREATE_OPS.has(opName))
@@ -814,11 +835,12 @@ export class Dispatcher {
    *
    * The walked path answers to the session's hides as the typed one did,
    * the rule the follow of the final name applies too: a visible link must
-   * not lead into hidden space. Throws CycleError when a link above the
-   * name loops (ELOOP). Mirrors Python's Dispatcher._walked.
+   * not lead into hidden space. Throws `eloop` when a link above the name
+   * loops (ELOOP), as the coded error every caller's per-operand catch
+   * words. Mirrors Python's Dispatcher._walked.
    */
   private walked(path: PathSpec, create: boolean): PathSpec {
-    const walked = this.namespace.followParent(path.virtual)
+    const walked = followOrLoop(this.namespace, path, false)
     if (walked === path.virtual) return path
     if (!pathAllowed(walked)) throw hiddenRefusal(walked, create)
     return PathSpec.fromStrPath(walked)

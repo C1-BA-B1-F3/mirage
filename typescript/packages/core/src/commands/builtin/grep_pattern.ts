@@ -185,5 +185,25 @@ export function compilePattern(
   wholeWord = false,
   basic = false,
 ): RegExp {
-  return new RegExp(buildPatternStr(pattern, fixedString, wholeWord, basic), ignoreCase ? 'i' : '')
+  const source = buildPatternStr(pattern, fixedString, wholeWord, basic)
+  try {
+    return new RegExp(source, ignoreCase ? 'i' : '')
+  } catch (err) {
+    if (!(err instanceof SyntaxError)) throw err
+    // GNU grep 3.11 diagnostics, also used by zgrep. Syntax outside
+    // our supported dialect gets a stable generic refusal.
+    let message = 'Invalid regular expression'
+    for (const [suffix, diagnostic] of [
+      ['Unterminated group', 'Unmatched ( or \\('],
+      ['Range out of order in character class', 'Invalid range end'],
+      ['numbers out of order in {} quantifier', 'Invalid content of \\{\\}'],
+      ['\\ at end of pattern', 'Trailing backslash'],
+    ] as const) {
+      if (err.message.endsWith(suffix)) {
+        message = diagnostic
+        break
+      }
+    }
+    throw new UsageError(`grep: ${message}`)
+  }
 }

@@ -10,7 +10,7 @@ from mirage.commands.builtin.rg_search import RgFlags
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.types import ContentType, FileStat, FileType, PathSpec
+from mirage.types import ContentType, FileStat, FileType, PathSpec, WalkErrno
 from mirage.utils.key_prefix import mount_key
 
 
@@ -692,6 +692,59 @@ async def test_rg_multi_file_missing_operand_reports_and_continues():
     decoded = (await _drain_async(output)).decode()
     assert decoded == "/a.txt:hello\n/a.txt:world\n"
     assert io.stderr == b"rg: /nope.txt: No such file or directory\n"
+    assert io.exit_code == 2
+
+
+def _walk_refused(virtual: str, raw: str, verdict: WalkErrno) -> PathSpec:
+    return PathSpec(vfs_path=virtual.strip("/"),
+                    virtual=virtual,
+                    directory=virtual,
+                    resolved=True,
+                    raw_path=raw,
+                    walk_error=verdict)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operand, message", [
+    (("/", "", "ENOENT"), b"rg: : No such file or directory\n"),
+    (("/lp1", "lp1", "ELOOP"),
+     b"rg: lp1: Too many levels of symbolic links\n"),
+])
+async def test_rg_refuses_an_operand_the_walk_refused(operand, message):
+    # ripgrep 14.1.1: `rg o ''` and `rg o lp1` (a loop) refuse the operand
+    # by name with exit 2. The empty name's `virtual` is the cwd it joined
+    # onto, which must not be walked.
+    readdir, stat, rb, rs = _make_backend({"/a.txt": b"hello\n"})
+    for paths, want in (([_walk_refused(*operand)], b""),
+                        ([_spec("/a.txt"),
+                          _walk_refused(*operand)], b"/a.txt:hello\n")):
+        output, io = await rg(paths, ["o"],
+                              CommandOpts(),
+                              readdir=readdir,
+                              stat=stat,
+                              read_bytes=rb,
+                              read_stream=rs)
+        assert await _drain_async(output) == want
+        assert io.stderr == message
+        assert io.exit_code == 2
+
+
+@pytest.mark.asyncio
+async def test_rg_typed_empty_operand_is_not_the_implicit_cwd():
+    # A bare `rg PAT` searches a synthetic cwd operand spelled '' too, so
+    # only the walk's verdict tells a typed '' apart. A line that named
+    # paths earns no "No files were searched" notice (ripgrep 14.1.1:
+    # `cd /data && rg o '' ''`).
+    readdir, stat, rb, rs = _make_backend({"/a.txt": b"hello\n"})
+    empty = _walk_refused("/", "", "ENOENT")
+    output, io = await rg([empty, empty], ["o"],
+                          CommandOpts(),
+                          readdir=readdir,
+                          stat=stat,
+                          read_bytes=rb,
+                          read_stream=rs)
+    assert await _drain_async(output) == b""
+    assert io.stderr == b"rg: : No such file or directory\n" * 2
     assert io.exit_code == 2
 
 

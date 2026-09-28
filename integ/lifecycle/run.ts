@@ -61,6 +61,7 @@ type Step = (
   | { op: 'unmount' | 'read' | 'readdir' | 'stat' | 'cached'; path: string }
   | { op: 'write'; path: string; data: string }
   | { op: 'exec'; command: string; session?: string }
+  | { op: 'spawn'; argv: string[]; session?: string }
   | { op: 'set_mode'; path: string; mode: MountMode }
   | { op: 'session'; id: string; profile?: Record<string, unknown> }
   | { op: 'close_session'; id: string }
@@ -82,7 +83,7 @@ type Step = (
       reason: string
     }
   | { op: 'unregister_policy'; id: string }
-  | { op: 'mounts' | 'clis' | 'close' | 'snapshot' | 'checkout' }
+  | { op: 'mounts' | 'clis' | 'close' | 'snapshot' | 'checkout' | 'drain_processes' }
   | { op: 'concurrent'; steps: Step[] }
 ) & { expect?: Record<string, unknown>; session?: string }
 
@@ -234,6 +235,14 @@ async function action(
     case 'stat': {
       const row = await ws.vfs.stat(step.path)
       return { type: row.type, size: row.size }
+    }
+    case 'drain_processes':
+      await ws.processes.drain()
+      break
+    case 'spawn': {
+      const child = ws.spawn({ argv: step.argv }, step.session)
+      child.stdin.close()
+      return child.pid
     }
     case 'exec': {
       const result = await ws.shell(

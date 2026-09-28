@@ -225,10 +225,27 @@ def compile_pattern(
     # `re.ASCII` because GNU's word boundary and its case folding are the
     # ASCII ones under `LC_ALL=C` while python's defaults are Unicode, and
     # because a non-`u` RegExp is ASCII for both, so the TypeScript twin
-    # was already answering GNU's way. Without it `grep -w ab` matched
-    # `éab`, `grep -w a` matched `aé`, and `grep -i k` and
+    # was already answering GNU's way. Without it `grep -w ab` missed
+    # `éab`, `grep -w a` missed `aé`, and `grep -i k` and
     # `grep -i s` matched U+212A and U+017F. `compile_bre` in
     # `utils/bre.py` already passes it; this was grep's own gap.
     flags = re.ASCII | (re.IGNORECASE if ignore_case else 0)
-    return re.compile(
-        build_pattern_str(pattern, fixed_string, whole_word, basic), flags)
+    source = build_pattern_str(pattern, fixed_string, whole_word, basic)
+    try:
+        return re.compile(source, flags)
+    except re.error as exc:
+        # GNU grep 3.11 diagnostics, also used by zgrep. Syntax outside
+        # our supported dialect gets a stable generic refusal.
+        message = "Invalid regular expression"
+        for prefix, diagnostic in (
+            ("missing ), unterminated subpattern", "Unmatched ( or \\("),
+            ("bad character range", "Invalid range end"),
+            ("min repeat greater than max repeat",
+             "Invalid content of \\{\\}"),
+            ("bad escape (end of pattern)", "Trailing backslash"),
+            ("invalid group reference", "Invalid back reference"),
+        ):
+            if exc.msg.startswith(prefix):
+                message = diagnostic
+                break
+        raise UsageError(f"grep: {message}") from exc

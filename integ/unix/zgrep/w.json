@@ -65,6 +65,72 @@
       "flags": [
         "w"
       ]
+    },
+    {
+      "id": "zgrep_w_word_boundary_is_ascii",
+      "seq": 500535,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf '\\303\\251ab\\n' | gzip > /data/zgw1.gz; zgrep -w ab /data/zgw1.gz",
+      "expect": {
+        "exit": 0,
+        "stdout": "éab\n",
+        "stderr": ""
+      },
+      "flags": [
+        "w"
+      ]
+    },
+    {
+      "id": "zgrep_w_word_boundary_is_ascii_after_the_word",
+      "seq": 500536,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'a\\303\\251\\n' | gzip > /data/zgw2.gz; zgrep -w a /data/zgw2.gz",
+      "expect": {
+        "exit": 0,
+        "stdout": "aé\n",
+        "stderr": ""
+      },
+      "flags": [
+        "w"
+      ]
     }
   ]
 }

@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from dataclasses import replace
+
 import pytest
 
 from mirage.cache.index import NULL_INDEX
@@ -147,3 +149,16 @@ async def test_rm_verbose_reports_each_removal():
     assert "removed '/owned/b.gdoc.json'" in text
     assert result.exit_code == 0
     assert not files
+
+
+@pytest.mark.asyncio
+async def test_rm_empty_operand_keeps_its_spelling():
+    calls: list[tuple] = []
+    rm = _make_rm(set(), calls)
+    path = replace(PathSpec.from_str_path('/owned'),
+                   raw_path='',
+                   walk_error='ENOENT')
+    _, result = await rm(FakeAccessor(), [path], [], CommandOpts())
+    assert result.stderr == (b"rm: cannot remove '': "
+                             b"No such file or directory\n")
+    assert calls == []

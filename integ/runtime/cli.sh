@@ -11,7 +11,8 @@
 # read_op, facade — the last calls ws.vfs directly) or a runner-local
 # test runtime (echobox, named as a string or a mapping, or registered
 # through world.register_runtimes), generated file catalogs, runner-local
-# code policies (world.policies), or non-ram mounts are skipped as sdk-only. Expect semantics: exit and
+# code policies (world.policies), or non-ram mounts are skipped as sdk-only,
+# as is a case that states why it must be in `sdk_only`. Expect semantics: exit and
 # stdout are exact, stderr is a containment check (the CLI owns its
 # stderr framing), and the SDK-side expectations (ops_contain,
 # ops_absent, value) are not checked because the op ledger has no CLI
@@ -54,7 +55,8 @@ requirement_met() {
 cli_expressible() {
   local case_json="$1"
   jq -e '
-    ((.world.mounts // {"/ram": {"vfs": "ram"}})
+    (has("sdk_only") | not)
+    and ((.world.mounts // {"/ram": {"vfs": "ram"}})
       | to_entries | all(.value.vfs == "ram"))
     and (((.world.mounts // {}) | to_entries) | all(.value.generated_files == null))
     and (((.world.mounts // {}) | to_entries) | all(.value.failing == null))

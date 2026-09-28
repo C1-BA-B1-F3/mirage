@@ -19,6 +19,7 @@ import type { BridgeDispatchFn, EvalResult, RunResult, RuntimeContext } from '..
 import { RuntimeVFS } from '../../../vfs.ts'
 import { applyMutation } from '../vfs/journal.ts'
 import type { FlushFailure } from '../vfs/types.ts'
+import { failureText } from './failure.ts'
 import { respond } from './transport.ts'
 import type {
   ExecuteRequest,
@@ -83,6 +84,16 @@ async function createPort(): Promise<WorkerPort | null> {
   }
 }
 
+/**
+ * What a crashed worker reported, as an Error a command can print. A
+ * worker's uncaught exception arrives structured-cloned: an Error stays
+ * one, but anything else arrives as a plain value whose String() may be
+ * `[object Object]`.
+ */
+export function workerFailure(value: unknown): Error {
+  return value instanceof Error ? value : new Error(`pyodide worker crashed: ${failureText(value)}`)
+}
+
 export class PyodideWorkerClient {
   private startup: { resolve: () => void; reject: (error: Error) => void } | null = null
   private readonly ready = new Promise<void>((resolve, reject) => {
@@ -113,7 +124,7 @@ export class PyodideWorkerClient {
       }
     })
     port.onError((error) => {
-      this.fail(error)
+      this.fail(workerFailure(error))
     })
   }
 
@@ -201,11 +212,14 @@ export class PyodideWorkerClient {
     this.port.terminate()
   }
 
+  // The first failure is the one to report: a worker that throws is also
+  // reported as exited right after, which says less about why.
   private fail(error: Error): void {
-    this.failure = error
-    this.startup?.reject(error)
+    this.failure ??= error
+    const failure = this.failure
+    this.startup?.reject(failure)
     this.startup = null
-    this.waiter?.reject(error)
+    this.waiter?.reject(failure)
     this.waiter = null
     for (const buffer of this.buffers) {
       const cells = new Int32Array(buffer, 0, 4)

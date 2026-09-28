@@ -49,10 +49,11 @@ from mirage.workspace.expand.classify.path import classify_bare_path
 from mirage.workspace.expand.spec_hints import (spec_for_command,
                                                 spec_word_bases,
                                                 spec_word_kinds)
-from mirage.workspace.lookup import (SHELL_NAMES, SLASH_KEEPS_LAST, WordPolicy,
-                                     follows_last_component, is_tool, listed,
-                                     lookup, reads_subtrees, walks_mounts,
-                                     word_policy)
+from mirage.workspace.lookup import (SHELL_NAMES, SLASH_KEEPS_LAST, Consumer,
+                                     WordPolicy, follows_last_component,
+                                     is_tool, listed, lookup, reads_subtrees,
+                                     walks_mounts, word_policy)
+from mirage.workspace.lookup.constants import INTERPRETER_NAMES
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.node.inner_lines import Word, inner_lines
@@ -447,6 +448,15 @@ def _word_hints(
     (tar's ``-C``) resolves later words against the wrong base, so a
     rule and the run would disagree about the paths the line names.
 
+    A mount command's spec is read, and so is a native capture's and an
+    interpreter's: ``python3 steal.py`` runs on the runtime's own disk
+    or a host process, where no op door follows the read, so the
+    script slot the spec declares is the one place a path rule can see
+    the file. The tree's gate reads a native capture the same way
+    (``expand_argv``) and leaves an interpreter it runs itself to the
+    op door; here the hints reach no runtime word, since the line runs
+    as typed, so there is nothing to lose by reading them.
+
     Args:
         line (list[str]): the literal words, name first.
         session (SessionState): the session running the line.
@@ -454,8 +464,10 @@ def _word_hints(
     """
     consumed = registry.match_command_prefix(line)
     joined = " ".join(line[:consumed])
-    if (joined in session.functions or word_policy(
-            lookup(joined, session, registry)) is not WordPolicy.MOUNT):
+    consumer = lookup(joined, session, registry)
+    if joined in session.functions or not (
+            word_policy(consumer) is WordPolicy.MOUNT
+            or consumer is Consumer.EXTERNAL or joined in INTERPRETER_NAMES):
         return None, None
     spec = spec_for_command(joined, registry, session.cwd)
     if not spec:

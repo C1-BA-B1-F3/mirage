@@ -249,6 +249,47 @@ async def test_admit_line_classifies_bare_operands_with_the_spec():
 
 
 @pytest.mark.asyncio
+async def test_admit_line_reads_an_interpreters_script_as_a_path():
+    # The runtime that takes the line runs the interpreter itself, where
+    # no op door follows the script read, so the gate types the script
+    # slot from the interpreter's spec as it does a mount command's: a
+    # bare name under the cwd is the file it names, and once -c or -e
+    # names the program no operand is a path.
+    ws = Workspace({"/data/": (RAMVFS(), MountMode.WRITE)},
+                   mode=MountMode.WRITE,
+                   profiles={
+                       "default": {
+                           "commands": {
+                               "deny": [{
+                                   "reason": "sealed",
+                                   "paths": ["/data/secret*"]
+                               }]
+                           }
+                       }
+                   })
+    try:
+        await ws.shell("cd /data")
+        session = ws._session_mgr.get(ws._session_mgr.default_id)
+        registry, namespace = ws._registry, ws._namespace
+        refusal = await admit_line(parse("python3 secret.py"), session,
+                                   registry, namespace)
+        assert refusal is not None
+        assert (refusal.exit_code,
+                refusal.stderr) == (1, b"python3: secret.py: sealed\n")
+        refusal = await admit_line(parse("node -- secret.js"), session,
+                                   registry, namespace)
+        assert refusal is not None
+        assert (refusal.exit_code,
+                refusal.stderr) == (1, b"node: secret.js: sealed\n")
+        for text in ("python3 -c 'print(1)' secret.py", "node -e 1 secret.js",
+                     "python3 open.py"):
+            assert await admit_line(parse(text), session, registry,
+                                    namespace) is None, text
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
 async def test_admit_line_refuses_a_walk_or_a_glob_under_a_path_rule():
     # Every line executor acts outside the entry gate (a sandbox's own
     # disk), so a command a path rule reads must not reach it with a

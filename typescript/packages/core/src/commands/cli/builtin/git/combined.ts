@@ -2,6 +2,8 @@ import { getOpcodes } from '../../../builtin/diff_format.ts'
 import { DiffOpTag } from '../../../builtin/diff_types.ts'
 import { FUNCNAME_START, GIT_SPACE } from './constants.ts'
 
+// Git 2.50.1 underflows the result count for -U0 combined deletions.
+// Keep the valid zero-length range instead of its unsigned-size overflow.
 const CONTEXT = 3
 const COMMENT_BYTES = 40
 const ENC = new TextEncoder()
@@ -22,7 +24,12 @@ type Lost = [string, number][]
  * @param dense - `--cc`, which drops a hunk whose every change comes from
  *   the same proper subset of the parents.
  */
-export function combinedLines(parents: string[][], result: string[], dense: boolean): string[] {
+export function combinedLines(
+  parents: string[][],
+  result: string[],
+  dense: boolean,
+  context = CONTEXT,
+): string[] {
   const size = result.length
   const added = Array<number>(size + 1).fill(0)
   const lost: Lost[] = Array.from({ length: size + 1 }, () => [])
@@ -40,8 +47,8 @@ export function combinedLines(parents: string[][], result: string[], dense: bool
     }
   })
   const marked = added.map((bits, at) => bits !== 0 || (lost[at]?.length ?? 0) > 0)
-  if (dense) dropOneSided(added, lost, marked, (1 << parents.length) - 1)
-  const hidden = giveContext(added, marked)
+  if (dense) dropOneSided(added, lost, marked, (1 << parents.length) - 1, context)
+  const hidden = giveContext(added, marked, context)
   return dump(result, added, lost, marked, hidden, parents.length)
 }
 
@@ -54,7 +61,13 @@ function find(marked: boolean[], at: number, want: boolean): number {
   return at
 }
 
-function dropOneSided(added: number[], lost: Lost[], marked: boolean[], everyone: number): void {
+function dropOneSided(
+  added: number[],
+  lost: Lost[],
+  marked: boolean[],
+  everyone: number,
+  context: number,
+): void {
   const size = marked.length - 1
   let at = 0
   for (;;) {
@@ -64,7 +77,7 @@ function dropOneSided(added: number[], lost: Lost[], marked: boolean[], everyone
     let end = at + 1
     while (end <= size) {
       if (!marked[end]) {
-        const reach = Math.min(tail(added, begin, end) + CONTEXT, size + 1)
+        const reach = Math.min(tail(added, begin, end) + context, size + 1)
         let ahead = -1
         for (let k = reach - 1; k >= end; k--)
           if (marked[k]) {
@@ -86,12 +99,12 @@ function dropOneSided(added: number[], lost: Lost[], marked: boolean[], everyone
   }
 }
 
-function giveContext(added: number[], marked: boolean[]): Set<number> {
+function giveContext(added: number[], marked: boolean[], context: number): Set<number> {
   const size = marked.length - 1
   const hidden = new Set<number>()
   let at = find(marked, 0, true)
   while (at <= size) {
-    for (let k = Math.max(0, at - CONTEXT); k < at; k++) {
+    for (let k = Math.max(0, at - context); k < at; k++) {
       if (!marked[k]) hidden.add(k)
       marked[k] = true
     }
@@ -101,12 +114,12 @@ function giveContext(added: number[], marked: boolean[]): Set<number> {
       if (gap > size) return hidden
       ahead = find(marked, gap, true)
       gap = tail(added, at, gap)
-      if (ahead >= gap + CONTEXT) break
+      if (ahead >= gap + context) break
       marked.fill(true, gap, ahead)
       at = ahead
     }
     at = ahead
-    marked.fill(true, gap, Math.min(gap + CONTEXT, size + 1))
+    marked.fill(true, gap, Math.min(gap + context, size + 1))
   }
   return hidden
 }

@@ -14,6 +14,7 @@
 
 import base64
 import importlib.util
+import logging
 import os
 import tempfile
 import uuid
@@ -40,6 +41,8 @@ from mirage.vfs.hf_buckets import HfBucketsConfig, HfBucketsVFS
 from mirage.vfs.onedrive import OneDriveConfig, OneDriveVFS
 from mirage.vfs.s3 import S3VFS, S3Config
 from mirage.vfs.ssh import SSHVFS, SSHConfig
+
+logger = logging.getLogger(__name__)
 
 SERVER_DIR = Path(__file__).resolve().parents[1] / "server"
 GITHUB_OWNER = "integ"
@@ -152,9 +155,21 @@ class GitHubWriter:
         self._ref = ref
 
     async def _tree(self) -> dict[str, TreeEntry]:
-        """The ref's recursive tree, which names every blob's sha."""
-        tree, _truncated = await fetch_tree(self._config, self._owner,
-                                            self._repo, self._ref)
+        """The ref's recursive tree, which names every blob's sha.
+
+        A repository nothing was committed to has no tree, and GitHub
+        answers 409 "Git Repository is empty." for it: to a committer that
+        is an empty listing, and the first PUT creates the tree.
+        """
+        try:
+            tree, _truncated = await fetch_tree(self._config, self._owner,
+                                                self._repo, self._ref)
+        except aiohttp.ClientResponseError as exc:
+            if exc.status != 409:
+                raise
+            logger.debug("%s/%s has no tree yet: %s", self._owner, self._repo,
+                         exc)
+            return {}
         return tree
 
     async def _commit(self, method: str, path: str, body: dict[str,

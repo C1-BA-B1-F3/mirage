@@ -15,14 +15,17 @@
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { recordStream } from '@struktoai/mirage-core/observe/context'
 import type { PathSpec } from '@struktoai/mirage-core/types'
-import { enoent } from '@struktoai/mirage-core/utils/errors'
-import type { HfAccessor } from '../../accessor/hf.ts'
-import { DEFAULT_CHUNK_SIZE } from './constants.ts'
-import { read } from './read.ts'
-import { hfKey, isNotFound, rawPathOf } from './util.ts'
+import { eisdir, enoent } from '@struktoai/mirage-core/utils/errors'
+import { stripSlash } from '@struktoai/mirage-core/utils/slash'
+import type { HfBucketsAccessor } from '../../accessor/hf.ts'
+import { hubStream } from '../hf_hub/client.ts'
+import { REFUSED_STATUSES } from '../hf_hub/constants.ts'
+import { asRefusal } from '../hf_hub/lookup.ts'
+import { readToken, resolveUrl } from './hub.ts'
+import { isMissing, read } from './read.ts'
 
 export async function rangeRead(
-  accessor: HfAccessor,
+  accessor: HfBucketsAccessor,
   path: PathSpec,
   start: number,
   end: number,
@@ -30,30 +33,26 @@ export async function rangeRead(
   return read(accessor, path, undefined, { offset: start, size: end - start })
 }
 
+/** Stream a bucket file from the Hub, stamped with its ETag. */
 export async function* stream(
-  accessor: HfAccessor,
+  accessor: HfBucketsAccessor,
   path: PathSpec,
   _index?: IndexCacheStore,
-  chunkSize: number = DEFAULT_CHUNK_SIZE,
 ): AsyncIterable<Uint8Array> {
-  const virtual = path.virtual
-  const rawPath = rawPathOf(path)
-  const key = hfKey(rawPath)
-  const op = await accessor.operator()
-  const rec = recordStream('read', virtual, accessor.vfsName)
-  let reader
-  try {
-    reader = await op.reader(key)
-  } catch (err) {
-    if (isNotFound(err)) throw enoent(path)
-    throw err
+  const rel = path.mountPath
+  if (stripSlash(rel) === '') throw eisdir(path)
+  const rec = recordStream('read', path.virtual, accessor.vfsName)
+  const stamp = (headers: Record<string, string>): void => {
+    if (rec !== null) rec.fingerprint = readToken(headers.etag ?? '')
   }
-  const buf = Buffer.alloc(chunkSize)
-  for (;;) {
-    const n = Number(await reader.read(buf))
-    if (n <= 0) break
-    const chunk = new Uint8Array(buf.subarray(0, n))
-    if (rec !== null) rec.bytes += chunk.byteLength
-    yield chunk
+  try {
+    const url = resolveUrl(accessor, rel)
+    for await (const chunk of hubStream(accessor.token, url, stamp, accessor.timeoutMs)) {
+      if (rec !== null) rec.bytes += chunk.byteLength
+      yield chunk
+    }
+  } catch (err) {
+    if (isMissing(err)) throw enoent(path)
+    throw asRefusal(path, err, REFUSED_STATUSES)
   }
 }

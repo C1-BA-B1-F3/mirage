@@ -26,6 +26,7 @@ import { elementIsSet } from '../../../session/elements.ts'
 import { FILE_PAIR_BINARY, FILE_UNARY, INT_COMPARATORS, UNSUPPORTED_UNARY } from './constants.ts'
 import { CondError } from './types.ts'
 import type { CondContext } from './types.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 /** Resolve a file operand to an addressable scope. */
 function operandScope(ctx: CondContext, val: string | PathSpec): PathSpec {
@@ -184,8 +185,7 @@ export async function applyFilePair(
   if (op === '-ef') {
     if (lstat === null || rstat === null) return false
     return (
-      operandScope(ctx, left).virtual.replace(/\/+$/, '') ===
-      operandScope(ctx, right).virtual.replace(/\/+$/, '')
+      rstripSlash(operandScope(ctx, left).virtual) === rstripSlash(operandScope(ctx, right).virtual)
     )
   }
   if (op === '-ot') [lstat, rstat] = [rstat, lstat]

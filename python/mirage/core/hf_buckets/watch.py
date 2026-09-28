@@ -12,22 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.accessor._hf import _HfAccessor
+from mirage.accessor.hf_buckets import HfBucketsAccessor
 from mirage.core.opendal.watch import OpendalWalk
 from mirage.watch.base import DeltaHook
 from mirage.watch.delta import ListingDeltaHook
 
 
-def build_delta_hook(accessor: _HfAccessor) -> DeltaHook:
-    """Build the delta hook shared by every Hugging Face VFS.
+def build_delta_hook(accessor: HfBucketsAccessor) -> DeltaHook:
+    """Build the delta hook of a Hugging Face bucket mount.
 
     One recursive tree listing per pull, fingerprinted on the Hub's
-    ETag. A mount pinned to an immutable ``revision`` cannot report a
-    change, because the revision it reads is frozen by definition; the
-    hook is only meaningful against a moving ref such as ``main``.
+    ETag.
 
     Args:
-        accessor (_HfAccessor): Backend handle for any of the four hf
-            VFS classes.
+        accessor (HfBucketsAccessor): the mount's accessor.
     """
     return ListingDeltaHook(OpendalWalk(accessor))

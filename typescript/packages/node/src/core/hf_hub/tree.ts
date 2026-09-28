@@ -23,6 +23,7 @@ import { MAX_TREE_PAGES, TREE_PAGE_SIZE, TREE_PAGE_SIZE_EXPANDED } from './const
 import type { TreeEntry } from './tree_entry.ts'
 import { isDirEntry } from './tree_entry.ts'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 // `Link: <url>; rel="next"`, which is how the tree endpoint hands back its
 // cursor. Bounded repetition on the URL body so a pathological header cannot
@@ -83,7 +84,7 @@ export function treeUrl(accessor: HfHubAccessor): string {
   let suffix = `/tree/${revSegment(accessor.revision)}`
   // The prefix is normalized with a trailing slash, which the tree endpoint
   // reads as a path segment of its own.
-  const stem = accessor.keyPrefix.replace(/^\/+|\/+$/g, '')
+  const stem = stripSlash(accessor.keyPrefix)
   if (stem !== '') suffix += `/${stem}`
   return apiUrl(accessor.endpoint, accessor.repoType, accessor.repoId, suffix)
 }
@@ -117,10 +118,13 @@ export async function fetchPath(
   rel: string,
 ): Promise<Map<string, TreeEntry>> {
   const asked = accessor.repoPath(rel)
-  const answer = await hubPost(accessor.token, pathsInfoUrl(accessor), {
-    paths: [asked],
-    expand: accessor.expandCommits === true,
-  })
+  const answer = await hubPost(
+    accessor.token,
+    pathsInfoUrl(accessor),
+    { paths: [asked], expand: accessor.expandCommits === true },
+    undefined,
+    accessor.timeoutMs,
+  )
   // Only an empty list says the path is missing; an answer of any other shape
   // is one the client cannot read, not an absence.
   if (!Array.isArray(answer)) {
@@ -141,7 +145,7 @@ export async function fetchPath(
 
 /** Fold one page of tree rows into the mount's listing. */
 export function collect(rows: unknown, prefix: string, into: Map<string, TreeEntry>): void {
-  const stem = prefix.replace(/\/+$/, '')
+  const stem = rstripSlash(prefix)
   for (const item of Array.isArray(rows) ? rows : []) {
     if (typeof item !== 'object' || item === null) continue
     const entry = parseEntry(item as Record<string, unknown>)
@@ -183,7 +187,7 @@ export async function walkPages(
   for (let page = 0; page < limit; page += 1) {
     let response
     try {
-      response = await hubGetResponse(accessor.token, target, query)
+      response = await hubGetResponse(accessor.token, target, query, accessor.timeoutMs)
     } catch (err) {
       // Only a request carrying first-page params can learn that the subtree
       // is missing; a cursor page failing means the listing broke part way,
@@ -261,7 +265,7 @@ export function indexDirs(
   tree: Map<string, TreeEntry>,
   prefix: string,
 ): Map<string, [string, IndexEntry][]> {
-  const stem = prefix.replace(/\/+$/, '')
+  const stem = rstripSlash(prefix)
   const dirs = new Map<string, [string, IndexEntry][]>()
   // The repository root always exists, so it gets a row even when the tree is
   // empty. Without it an empty repo is byte for byte a dropped index and every
@@ -306,7 +310,7 @@ export function indexRows(tree: Map<string, TreeEntry>, prefix: string): RowTabl
   const entries = new Map<string, IndexEntry>()
   const children = new Map<string, string[]>()
   for (const [parent, rows] of indexDirs(tree, prefix)) {
-    const base = parent.replace(/\/+$/, '')
+    const base = rstripSlash(parent)
     for (const [name, row] of rows) entries.set(`${base}/${name}`, row)
     children.set(parent, rows.map(([name]) => `${base}/${name}`).sort(compareCodePoints))
   }
@@ -348,7 +352,7 @@ export async function refillIndex(
   accessor.rowsCache = null
   accessor.refills += 1
   // Refilling replaces the snapshot; merging would retain deleted paths.
-  await index.invalidatePrefix(prefix.replace(/\/+$/, '') || '/')
+  await index.invalidatePrefix(rstripSlash(prefix) || '/')
   await seedIndex(accessor, index, prefix)
   return true
 }
@@ -367,7 +371,7 @@ export async function ensureLiveIndex(
   index: IndexCacheStore,
   prefix: string,
 ): Promise<boolean> {
-  const root = prefix.replace(/\/+$/, '')
+  const root = rstripSlash(prefix)
   const listing = await index.listDir(root === '' ? '/' : root)
   if (listing.status !== LookupStatus.NOT_FOUND && listing.status !== LookupStatus.EXPIRED)
     return false
@@ -393,7 +397,7 @@ export async function ensureTree(
   }
   const run = (async () => {
     if (index !== undefined) {
-      await withIndexLock(index, prefix.replace(/\/+$/, '') || '/', async () => {
+      await withIndexLock(index, rstripSlash(prefix) || '/', async () => {
         if (!accessor.treeLoaded) await refillIndex(accessor, index, prefix)
       })
       return

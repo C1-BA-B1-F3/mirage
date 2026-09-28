@@ -15,6 +15,7 @@
 import type { Minter } from '../kit/typescript/index.ts'
 import { DEFAULT_REVISION, type C } from './config.ts'
 import { gitOid, repoKey, type Blob, type Ref, type Repo } from './wire.ts'
+import { rstripSlash } from '../kit/typescript/index.ts'
 
 /**
  * A commit sha, minted rather than hashed.
@@ -204,7 +205,7 @@ export async function commitChanges(
   }
   for (const change of changes) {
     if (change.deletedFolder === true) {
-      const prefix = `${change.path.replace(/\/+$/, '')}/`
+      const prefix = `${rstripSlash(change.path)}/`
       for (const path of [...carried.keys()]) {
         if (path.startsWith(prefix)) carried.delete(path)
       }

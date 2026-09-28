@@ -16,9 +16,10 @@ import { Accessor } from '@struktoai/mirage-core/accessor/index'
 import type { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
 import { VFSName } from '@struktoai/mirage-core/types'
 import * as kp from '@struktoai/mirage-core/utils/key_prefix'
-import { HF_ENDPOINT, type HfRepoConfig } from '../vfs/hf_buckets/config.ts'
+import { HF_ENDPOINT, HF_TIMEOUT_MS, type HfRepoConfig } from '../vfs/hf_buckets/config.ts'
 import { DEFAULT_REVISION } from '../core/hf_hub/constants.ts'
 import type { TreeEntry } from '../core/hf_hub/tree_entry.ts'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export interface RowTables {
   entries: Map<string, IndexEntry>
@@ -79,6 +80,11 @@ export class HfHubAccessor extends Accessor {
     return this.config.token
   }
 
+  /** How long one Hub request may go without progress. */
+  get timeoutMs(): number {
+    return this.config.timeoutMs ?? HF_TIMEOUT_MS
+  }
+
   /**
    * The revision this mount reads.
    *
@@ -114,10 +120,10 @@ export class HfHubAccessor extends Accessor {
    */
   repoPath(rel: string): string {
     const prefix = this.keyPrefix
-    const stem = rel.replace(/^\/+|\/+$/g, '')
+    const stem = stripSlash(rel)
     if (prefix === '') return stem
-    if (stem === '') return prefix.replace(/\/+$/, '')
-    return kp.apply(prefix, rel).replace(/\/+$/, '')
+    if (stem === '') return rstripSlash(prefix)
+    return rstripSlash(kp.apply(prefix, rel))
   }
 }
 

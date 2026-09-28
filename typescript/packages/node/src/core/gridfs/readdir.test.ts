@@ -26,6 +26,7 @@ import type { GridFSConfig } from '../../vfs/gridfs/config.ts'
 import type { GridFSFileDoc } from './client.ts'
 import * as clientMod from './client.ts'
 import { readdir } from './readdir.ts'
+import { stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 const TREE = ['a.txt', 'dir/f.txt', 'dir/sub/g.txt', 'empty/']
 
@@ -62,7 +63,7 @@ function mockBucket(names: string[]): void {
 
 function spec(virtual: string): PathSpec {
   return new PathSpec({
-    vfsPath: virtual.replace(/^\/+|\/+$/g, ''),
+    vfsPath: stripSlash(virtual),
     virtual,
     directory: virtual,
   })

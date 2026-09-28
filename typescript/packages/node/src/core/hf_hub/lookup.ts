@@ -22,6 +22,7 @@ import { HfHubError } from './client.ts'
 import { ABSENT_STATUSES } from './constants.ts'
 import { ensureLiveIndex, fetchPath, indexRows, localRows, refillIndex } from './tree.ts'
 import { withIndexLock } from '@struktoai/mirage-core/cache/index/lock'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /**
  * What sits at one mount-absolute key.
@@ -69,7 +70,7 @@ export async function lookup(
     const parent =
       key === keyOf(prefix, '')
         ? listing
-        : await index.listDir(key.replace(/\/+$/, '').replace(/\/[^/]+$/, '') || '/')
+        : await index.listDir(rstripSlash(key).replace(/\/[^/]+$/, '') || '/')
     // The index is the whole listing rather than a cache in front of one, so an
     // *expired* answer means the tree aged out, not that the path is gone.
     // Refetch once and ask again; a miss against a live index is a real absence
@@ -168,8 +169,8 @@ export function asRefusal(
 
 /** The mount-absolute key for a mount-local path. */
 export function keyOf(prefix: string, local: string): string {
-  const rel = local.replace(/^\/+|\/+$/g, '')
-  const stem = prefix.replace(/\/+$/, '')
+  const rel = stripSlash(local)
+  const stem = rstripSlash(prefix)
   if (rel === '') return stem === '' ? '/' : stem
   return stem === '' ? `/${rel}` : `${stem}/${rel}`
 }
@@ -197,7 +198,7 @@ export async function probeDir(
 
 /** A row for a directory the tree implies but has no row for. */
 export function dirStatEntry(key: string): IndexEntry {
-  const trimmed = key.replace(/\/+$/, '')
+  const trimmed = rstripSlash(key)
   const cut = trimmed.lastIndexOf('/')
   return new IndexEntry({
     id: '',

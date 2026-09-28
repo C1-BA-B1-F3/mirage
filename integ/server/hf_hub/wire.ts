@@ -15,6 +15,7 @@
 import { createHash } from 'node:crypto'
 import type { JsonValue, Reply } from '../kit/typescript/index.ts'
 import { RESOLVE_SEGMENT } from './config.ts'
+import { rstripSlash } from '../kit/typescript/index.ts'
 
 export interface Repo {
   tenant: string
@@ -150,6 +151,6 @@ export function dirRow(path: string, expand: boolean, oid: string, date: string)
 /** The web url of a repository, which the create endpoint answers with. */
 export function repoUrl(origin: string, kind: string, namespace: string, name: string): string {
   const segment = RESOLVE_SEGMENT[kind] ?? ''
-  const base = `${origin.replace(/\/+$/, '')}/${segment === '' ? '' : `${segment}/`}`
+  const base = `${rstripSlash(origin)}/${segment === '' ? '' : `${segment}/`}`
   return `${base}${namespace}/${name}`
 }

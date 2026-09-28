@@ -9,7 +9,9 @@ from mirage.commands.cli.builtin.git.errors import GitError
 from mirage.commands.cli.builtin.git.history import (LogFlags, parse_flags,
                                                      ref_commits, select)
 from mirage.commands.cli.builtin.git.io import read_file
-from mirage.commands.cli.builtin.git.revparse import split_revisions
+from mirage.commands.cli.builtin.git.refs import read_head
+from mirage.commands.cli.builtin.git.revparse import (resolve_object,
+                                                      split_revisions)
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.util import (check_operands, escaped,
                                                   fatal, start_point)
@@ -157,3 +159,54 @@ def config_key(key: str) -> str:
     parts[0] = parts[0].lower()
     parts[-1] = parts[-1].lower()
     return '.'.join(parts)
+
+
+def _parse_revision(repo: BaseRepo, revision: str, abbrev: bool,
+                    head_ref: str | None) -> bytes:
+    """Resolve an object or its abbreviated symbolic name.
+
+    Args:
+        repo (BaseRepo): repository to read.
+        revision (str): the requested revision.
+        abbrev (bool): emit a ref name instead of an object id.
+        head_ref (str | None): symbolic HEAD target, if any.
+    """
+    oid = resolve_object(repo, revision).id
+    if not abbrev:
+        return oid + b'\n'
+    if revision == 'HEAD':
+        return (
+            (head_ref.removeprefix('refs/heads/') if head_ref else 'HEAD') +
+            '\n').encode()
+    refs = repo.refs.allkeys()
+    for name in (revision, 'refs/' + revision, 'refs/tags/' + revision,
+                 'refs/heads/' + revision, 'refs/remotes/' + revision):
+        if name.encode() in refs:
+            for prefix in ('refs/heads/', 'refs/tags/', 'refs/remotes/'):
+                if name.startswith(prefix):
+                    return (name.removeprefix(prefix) + '\n').encode()
+            return (name + '\n').encode()
+    return b''
+
+
+async def rev_parse(
+        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    """Resolve revisions supplied to rev-parse.
+
+    Args:
+        inv (CLIInvocation[None]): the parsed invocation.
+    """
+    fl = FlagView(inv.flags)
+    try:
+        check_operands(inv.texts, marked=escaped(inv.argv))
+        doors = inv.doors or CLIDoors()
+        repo, location = await opened(fl, doors)
+        assert doors.dispatch is not None
+        head = await read_head(doors.dispatch, location.gitdir)
+        out = b''
+        for revision in inv.texts:
+            out += await asyncio.to_thread(_parse_revision, repo, revision,
+                                           fl.as_bool('abbrev_ref'), head.ref)
+        return out, IOResult()
+    except GitError as exc:
+        return fatal(exc)

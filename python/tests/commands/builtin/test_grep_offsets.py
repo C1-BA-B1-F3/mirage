@@ -85,6 +85,7 @@ def test_incremental_offsets_preserve_unicode_and_escaped_bytes():
 
 
 @pytest.mark.parametrize("raw,expected", [
+    (b"\xef\xbb\xbfa", "\ufeffa"),
     (b"\xc0\xaf\xc1\xbf", "\udcc0\udcaf\udcc1\udcbf"),
     (b"\xe0\x80\x80\xed\xa0\x80", "\udce0\udc80\udc80\udced\udca0\udc80"),
     (b"\xf0\x80\x80\x80", "\udcf0\udc80\udc80\udc80"),

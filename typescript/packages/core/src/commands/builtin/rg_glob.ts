@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { UsageError } from '../errors.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 // globset's own words for a glob it cannot compile (ripgrep 14.1.1).
 export const UNCLOSED_CLASS = "unclosed character class; missing ']'"
@@ -267,7 +268,7 @@ export class Overrides {
 export function walkCandidate(shown: string, cwd: string): string {
   const path = shown.startsWith('./') ? shown.slice(2) : shown
   if (!path.startsWith('/')) return path
-  const root = cwd.replace(/\/+$/, '')
+  const root = rstripSlash(cwd)
   if (root === '') return path.replace(/^\/+/, '')
   if (path.startsWith(root + '/')) return path.slice(root.length + 1)
   return path

@@ -28,6 +28,7 @@ import { getTestParser, stdoutStr } from '../workspace/fixtures/workspace_fixtur
 import { buildMountArgs, toStateDict } from '../workspace/snapshot/state.ts'
 import { Workspace } from '../workspace/workspace/workspace.ts'
 import { GenericVFS, type GenericVFSOptions } from './generic.ts'
+import { rstripSlash } from '../utils/slash.ts'
 
 const ENC = new TextEncoder()
 
@@ -62,7 +63,7 @@ function node(pages: Tree, key: string): Tree | string {
 function readdir(accessor: WikiAccessor, path: PathSpec): Promise<string[]> {
   const found = node(accessor.pages, path.vfsPath)
   if (typeof found === 'string') throw new Error(`ENOTDIR: ${path.virtual}`)
-  const parent = path.virtual.replace(/\/+$/, '')
+  const parent = rstripSlash(path.virtual)
   return Promise.resolve(
     Object.entries(found).map(
       ([name, child]) => `${parent}/${name}${typeof child === 'string' ? '' : '/'}`,
@@ -78,7 +79,7 @@ function readBytes(accessor: WikiAccessor, path: PathSpec): Promise<Uint8Array> 
 
 function stat(accessor: WikiAccessor, path: PathSpec): Promise<FileStat> {
   const found = node(accessor.pages, path.vfsPath)
-  const trimmed = path.virtual.replace(/\/+$/, '')
+  const trimmed = rstripSlash(path.virtual)
   const name = trimmed.slice(trimmed.lastIndexOf('/') + 1) || '/'
   if (typeof found !== 'string')
     return Promise.resolve(new FileStat({ name, size: null, type: FileType.DIRECTORY }))

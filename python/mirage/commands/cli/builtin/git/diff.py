@@ -16,20 +16,25 @@ import asyncio
 
 from dulwich.repo import BaseRepo
 
+from mirage.commands.cli.builtin.git.changes import head_entries
 from mirage.commands.cli.builtin.git.constants import HEAD
-from mirage.commands.cli.builtin.git.diff_output import (DiffFlags,
+from mirage.commands.cli.builtin.git.diff_output import (DiffFlags, compare,
                                                          parse_diff_flags,
                                                          renames_enabled,
+                                                         render_changes,
                                                          tree_output)
 from mirage.commands.cli.builtin.git.errors import (GitError,
                                                     InvalidOptionError,
                                                     NoMergeBaseError,
                                                     NoWorkspaceError)
+from mirage.commands.cli.builtin.git.index import read_index, refuse_unresolved
 from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.revparse import (merge_bases,
                                                       range_commits,
                                                       resolve_commit)
 from mirage.commands.cli.builtin.git.session import opened
+from mirage.commands.cli.builtin.git.summary import tree_entries
+from mirage.commands.cli.builtin.git.types import IndexState
 from mirage.commands.cli.builtin.git.util import (  # yapf: disable
     check_operands, escaped, fatal)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
@@ -88,13 +93,36 @@ def _render(repo: BaseRepo, texts: tuple[str, ...],
     return tree_output(repo, old.tree, new.tree, flags), warning
 
 
+def _cached(repo: BaseRepo, texts: tuple[str, ...], state: IndexState,
+            flags: DiffFlags) -> bytes:
+    """Compare a commit tree with staged entries.
+
+    Args:
+        repo (BaseRepo): repository to read.
+        texts (tuple[str, ...]): optional base revision.
+        state (IndexState): staged entries.
+        flags (DiffFlags): output options.
+    """
+    if len(texts) > 1:
+        raise GitError("--cached accepts at most one revision")
+    before = tree_entries(
+        repo.object_store,
+        resolve_commit(repo,
+                       texts[0]).tree) if texts else head_entries(repo) or {}
+    after: dict[bytes, tuple[int, bytes]] = {
+        path: (entry.mode, entry.sha)
+        for path, entry in state.entries.items()
+    }
+    return render_changes(repo, compare(repo, before, after, flags.renames),
+                          flags)
+
+
 async def diff(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
-    """Diff two commits.
+    """Diff commits or compare staged content with a commit.
 
     One revision diffs it against HEAD's tree, two diff against each
-    other. The working tree is not a party to this yet: comparing
-    against it needs the index and the worktree scan, which is where
-    unstaged and staged diffs live.
+    other. With --cached or --staged, compare the index with the named
+    revision, HEAD by default, or the empty tree on an unborn branch.
 
     Args:
         inv (CLIInvocation[None]): the line's invocation record.
@@ -107,21 +135,29 @@ async def diff(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     texts = inv.texts
     flags = inv.flags
     fl = FlagView(flags)
-    if not texts:
+    cached = fl.as_bool("cached") or fl.as_bool("staged")
+    if not texts and not cached:
         return None, IOResult()
     try:
         if dispatch is None:
             raise NoWorkspaceError()
         check_operands(texts, InvalidOptionError, escaped(inv.argv))
         repo, _location = await opened(fl, doors)
-        body, warning = await asyncio.to_thread(
-            _render, repo, tuple(texts),
-            parse_diff_flags(fl,
-                             default_renames=await
-                             renames_enabled(dispatch, _location),
-                             quote_path_fully=await
-                             config_bool(dispatch, _location, b"core",
-                                         b"quotepath", True)))
+        parsed = parse_diff_flags(fl,
+                                  default_renames=await
+                                  renames_enabled(dispatch, _location),
+                                  quote_path_fully=await
+                                  config_bool(dispatch, _location, b"core",
+                                              b"quotepath", True))
+        if cached:
+            state = await read_index(dispatch, _location.gitdir)
+            refuse_unresolved(state)
+            body = await asyncio.to_thread(_cached, repo, tuple(texts), state,
+                                           parsed)
+            warning = b""
+        else:
+            body, warning = await asyncio.to_thread(_render, repo,
+                                                    tuple(texts), parsed)
     except GitError as exc:
         return fatal(exc)
     result = IOResult(stderr=warning) if warning else IOResult()

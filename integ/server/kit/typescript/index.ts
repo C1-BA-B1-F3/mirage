@@ -84,6 +84,7 @@ export { SEQ_FIELD, delegateFor, delegateName, seedFixture } from './seed.ts'
 export type { Dmmf, DmmfField, DmmfModel, SeedOptions } from './seed.ts'
 export { serve, start } from './serve.ts'
 export type { Arm, Started } from './serve.ts'
+export { rstripSlash, stripSlash } from './slash.ts'
 export type {
   Announce,
   JsonValue,

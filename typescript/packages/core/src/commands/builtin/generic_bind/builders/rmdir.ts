@@ -15,7 +15,7 @@
 import { UsageError } from '../../../errors.ts'
 import { IOResult } from '../../../../io/types.ts'
 import { FileType } from '../../../../types.ts'
-import { fsStrerror, isEnotdir } from '../../../../utils/errors.ts'
+import { fsStrerror, isFsError } from '../../../../utils/errors.ts'
 import { formatRecords } from '../../utils/output.ts'
 import { specOf } from '../../../spec/builtins.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
@@ -52,8 +52,8 @@ export const RMDIR_BUILDER: Builder = {
         const st = await ops.stat(accessor, p, idx)
         isDir = st.type === FileType.DIRECTORY
       } catch (exc) {
-        const detail = isEnotdir(exc) ? 'Not a directory' : 'No such file or directory'
-        errors.push(`rmdir: failed to remove '${p.rawPath}': ${detail}`)
+        if (!isFsError(exc)) throw exc
+        errors.push(`rmdir: failed to remove '${p.rawPath}': ${fsStrerror(exc) ?? String(exc)}`)
         continue
       }
       if (!isDir) {

@@ -16,6 +16,7 @@ import { apiRequest } from '@struktoai/mirage-core/core/api/client'
 import type { ApiResponse, RetryPolicy } from '@struktoai/mirage-core/core/api/client'
 import type { ByteWindow } from '@struktoai/mirage-core/utils/ranges'
 import { API_SEGMENTS, MAX_RETRIES, RESOLVE_SEGMENTS, RETRY_STATUSES } from './constants.ts'
+import { lstripSlash, rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export const RETRY: RetryPolicy = {
   statuses: RETRY_STATUSES,
@@ -52,6 +53,67 @@ export class HfHubError extends Error {
  * serves every public repo without a token, so a mount with no credential
  * reads normally and only the write path needs one.
  */
+/**
+ * A fetch that gives up on a request making no progress for `ms`.
+ *
+ * The clock runs while connecting and waiting for the answer, and restarts on
+ * every chunk of the body, so a large download that keeps flowing is never
+ * cut off; a total bound would fail any file that takes longer than it to
+ * arrive. It is what huggingface_hub's own timeout means, and the python twin
+ * is `stall_timeout`, which aiohttp spells as sock_connect and sock_read. A
+ * bound of zero or less is none, as aiohttp reads a zero.
+ */
+export function stallFetch(ms: number): typeof fetch {
+  if (ms <= 0) return fetch
+  return async (input, init) => {
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const arm = (): void => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        controller.abort(new DOMException(`no progress for ${String(ms)}ms`, 'TimeoutError'))
+      }, ms)
+      // A body the caller stopped reading must not hold the process open.
+      timer.unref()
+    }
+    arm()
+    const signal =
+      init?.signal == null ? controller.signal : AbortSignal.any([init.signal, controller.signal])
+    let response: Response
+    try {
+      response = await fetch(input, { ...init, signal })
+    } catch (err) {
+      clearTimeout(timer)
+      throw err
+    }
+    if (response.body === null) {
+      clearTimeout(timer)
+      return response
+    }
+    const body = response.body.pipeThrough(
+      new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, sink) {
+          arm()
+          sink.enqueue(chunk)
+        },
+        flush() {
+          clearTimeout(timer)
+        },
+      }),
+    )
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    })
+  }
+}
+
+/** The fetch a call rides: bounded by the mount's timeout when it has one. */
+function fetchFor(timeoutMs: number | undefined): typeof fetch | undefined {
+  return timeoutMs === undefined ? undefined : stallFetch(timeoutMs)
+}
+
 export function hubHeaders(token: string | undefined): Record<string, string> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (token !== undefined && token !== '') headers.Authorization = `Bearer ${token}`
@@ -61,7 +123,7 @@ export function hubHeaders(token: string | undefined): Record<string, string> {
 /** The /api URL for one repository-scoped endpoint. */
 export function apiUrl(endpoint: string, repoType: string, repoId: string, suffix: string): string {
   const segment = API_SEGMENTS[repoType] ?? 'models'
-  return `${endpoint.replace(/\/+$/, '')}/api/${segment}/${repoId}${suffix}`
+  return `${rstripSlash(endpoint)}/api/${segment}/${repoId}${suffix}`
 }
 
 /**
@@ -96,7 +158,7 @@ export function revSegment(revision: string): string {
 
 export function repoUrl(endpoint: string, repoType: string, repoId: string): string {
   const segment = RESOLVE_SEGMENTS[repoType] ?? ''
-  const base = `${endpoint.replace(/\/+$/, '')}/${segment === '' ? '' : `${segment}/`}`
+  const base = `${rstripSlash(endpoint)}/${segment === '' ? '' : `${segment}/`}`
   return `${base}${repoId}`
 }
 
@@ -108,13 +170,21 @@ export function resolveUrl(
   path: string,
 ): string {
   const segment = RESOLVE_SEGMENTS[repoType] ?? ''
-  const base = `${endpoint.replace(/\/+$/, '')}/${segment === '' ? '' : `${segment}/`}`
-  const encoded = path
-    .replace(/^\/+/, '')
+  const base = `${rstripSlash(endpoint)}/${segment === '' ? '' : `${segment}/`}`
+  return `${base}${repoId}/resolve/${revSegment(revision)}/${encodePath(path)}`
+}
+
+/**
+ * A repo-relative path percent-encoded per segment, with no leading slash.
+ *
+ * A Hub repo or bucket may hold a file whose name carries a space or a "#",
+ * and pasting it raw truncates the URL at the fragment.
+ */
+export function encodePath(path: string): string {
+  return lstripSlash(path)
     .split('/')
     .map((part) => encodeURIComponent(part))
     .join('/')
-  return `${base}${repoId}/resolve/${revSegment(revision)}/${encoded}`
 }
 
 /**
@@ -138,12 +208,14 @@ export async function hubGet(
   token: string | undefined,
   url: string,
   params?: Record<string, string>,
+  timeoutMs?: number,
 ): Promise<unknown> {
   return apiRequest('GET', url, {
     errorOf,
     headers: hubHeaders(token),
     params,
     retry: RETRY,
+    fetchFn: fetchFor(timeoutMs),
   })
 }
 
@@ -152,6 +224,7 @@ export async function hubGetResponse(
   token: string | undefined,
   url: string,
   params?: Record<string, string>,
+  timeoutMs?: number,
 ): Promise<ApiResponse> {
   return (await apiRequest('GET', url, {
     errorOf,
@@ -159,6 +232,7 @@ export async function hubGetResponse(
     params,
     retry: RETRY,
     read: 'response',
+    fetchFn: fetchFor(timeoutMs),
   })) as ApiResponse
 }
 
@@ -167,6 +241,7 @@ export async function hubPost(
   url: string,
   body: unknown,
   params?: Record<string, string>,
+  timeoutMs?: number,
 ): Promise<unknown> {
   // fetch labels an untyped string body text/plain, and the Hub answers a
   // paths-info body without a JSON type with 400; python's aiohttp sets it.
@@ -176,6 +251,7 @@ export async function hubPost(
     params,
     json: body,
     retry: RETRY,
+    fetchFn: fetchFor(timeoutMs),
   })
 }
 
@@ -203,6 +279,7 @@ export async function hubPostNdjson(
   url: string,
   payload: Uint8Array,
   params?: Record<string, string>,
+  timeoutMs?: number,
 ): Promise<unknown> {
   return apiRequest('POST', url, {
     errorOf,
@@ -210,6 +287,7 @@ export async function hubPostNdjson(
     params,
     body: payload,
     retry: RETRY,
+    fetchFn: fetchFor(timeoutMs),
   })
 }
 
@@ -244,6 +322,7 @@ export async function hubBytesTagged(
   token: string | undefined,
   url: string,
   window?: ByteWindow,
+  timeoutMs?: number,
 ): Promise<[Uint8Array, string]> {
   const response = (await apiRequest('GET', url, {
     errorOf,
@@ -251,6 +330,7 @@ export async function hubBytesTagged(
     retry: RETRY,
     read: 'bytes_response',
     window,
+    fetchFn: fetchFor(timeoutMs),
   })) as ApiResponse
   return [response.data as Uint8Array, response.headers.etag ?? '']
 }
@@ -274,8 +354,9 @@ export async function* hubStream(
   token: string | undefined,
   url: string,
   onResponse?: (headers: Record<string, string>) => void,
+  timeoutMs?: number,
 ): AsyncIterable<Uint8Array> {
-  const response = await fetch(url, { headers: hubHeaders(token) })
+  const response = await (fetchFor(timeoutMs) ?? fetch)(url, { headers: hubHeaders(token) })
   if (response.status >= 400) throw errorOf(response, await response.text())
   if (onResponse !== undefined) {
     const headers: Record<string, string> = {}

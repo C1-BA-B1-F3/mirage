@@ -59,11 +59,12 @@ export async function filePatch(
   score: number | null,
   width: number,
   fully = true,
+  count = HUNK_CONTEXT,
 ): Promise<string> {
   if (before && after && before.mode.slice(0, 3) !== after.mode.slice(0, 3))
     return (
-      (await filePatch(repo, path, oldPath, before, null, score, width, fully)) +
-      (await filePatch(repo, path, oldPath, null, after, score, width, fully))
+      (await filePatch(repo, path, oldPath, before, null, score, width, fully, count)) +
+      (await filePatch(repo, path, oldPath, null, after, score, width, fully, count))
     )
   const source = quotePath(`a/${oldPath}`, false, fully),
     target = quotePath(`b/${path}`, false, fully)
@@ -89,7 +90,7 @@ export async function filePatch(
     to = after ? target : DEV_NULL
   if ([old, fresh].some((data) => data.subarray(0, BINARY_SNIFF).includes(0)))
     return text([...head, `Binary files ${from} and ${to} differ`])
-  const body = hunks(lines(old), lines(fresh))
+  const body = hunks(lines(old), lines(fresh), count)
   return (
     text(body ? [...head, `--- ${from}${labelTab(from)}`, `+++ ${to}${labelTab(to)}`] : head) + body
   )
@@ -110,11 +111,11 @@ function text(rows: readonly string[]): string {
  * letter, `_` or `$` (git's default funcname), and keeps the previous hunk's
  * when none lies between the two.
  */
-function hunks(old: readonly string[], fresh: readonly string[]): string {
+function hunks(old: readonly string[], fresh: readonly string[], count: number): string {
   const out: string[] = []
   let context = ''
   let searched = -1
-  for (const group of groupOpcodes(getOpcodes(old, fresh), HUNK_CONTEXT)) {
+  for (const group of groupOpcodes(getOpcodes(old, fresh), count)) {
     const first = group[0],
       last = group.at(-1)
     if (first === undefined || last === undefined) continue

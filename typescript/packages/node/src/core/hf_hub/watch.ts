@@ -19,6 +19,7 @@ import { ListingDeltaHook } from '@struktoai/mirage-core/watch/delta'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { fetchTree } from './tree.ts'
 import { isDirEntry } from './tree_entry.ts'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /**
  * One tree fetch feeding the generic listing differ.
@@ -43,12 +44,11 @@ function hfHubWalk(accessor: HfHubAccessor) {
     accessor.tree = tree
     accessor.treeLoaded = true
     accessor.rowsCache = null
-    const stem = root.mountPath.replace(/^\/+|\/+$/g, '')
+    const stem = stripSlash(root.mountPath)
     const base = stem === '' ? '' : `${stem}/`
     for (const entry of tree.values()) {
       if (base !== '' && !entry.path.startsWith(base)) continue
-      const virtual =
-        prefix === '' ? `/${entry.path}` : `${prefix.replace(/\/+$/, '')}/${entry.path}`
+      const virtual = prefix === '' ? `/${entry.path}` : `${rstripSlash(prefix)}/${entry.path}`
       if (isDirEntry(entry)) {
         yield { virtual, isDir: true, fingerprint: null }
         continue

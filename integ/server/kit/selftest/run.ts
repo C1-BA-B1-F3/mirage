@@ -27,6 +27,8 @@ import { Prisma } from '../../../generated/selftest/index.js'
 import { clearTenants, deleteOrder, untenanted } from '../typescript/clear.ts'
 import type { Dmmf } from '../typescript/seed.ts'
 import { unroutedLine } from '../typescript/unrouted.ts'
+import { rstripSlash, stripSlash } from '../typescript/slash.ts'
+import * as core from '@struktoai/mirage-core/utils/slash'
 import type { JsonValue } from '../typescript/types.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -1021,6 +1023,26 @@ async function main(): Promise<void> {
     } finally {
       hooked.child.kill('SIGTERM')
     }
+
+    // The fakes keep their own copy so they never import the product they
+    // stand in front of; this pins the copy to core's helpers.
+    process.stdout.write('\n23. the slash helpers match core\n')
+    const samples = [
+      '',
+      '/',
+      '//',
+      '///',
+      'a',
+      '/a',
+      'a/',
+      '/a/',
+      '//a//',
+      'a/b/c',
+      '/a/b/c/',
+      'a//b',
+    ]
+    eq('stripSlash matches core', samples.map(stripSlash), samples.map(core.stripSlash))
+    eq('rstripSlash matches core', samples.map(rstripSlash), samples.map(core.rstripSlash))
 
     process.stdout.write(`\nselftest: ${String(checks)} checks passed\n`)
   } finally {

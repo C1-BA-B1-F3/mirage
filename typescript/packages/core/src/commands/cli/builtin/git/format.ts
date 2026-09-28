@@ -181,7 +181,7 @@ function gitDate(timestamp: number, offsetMinutes: number, mode = 'default'): st
 }
 
 /** The first line of a commit message. */
-function subject(commit: CommitFacts): string {
+export function subject(commit: CommitFacts): string {
   return (commit.message.split('\n', 1)[0] ?? '').replace(/\s+$/, '')
 }
 

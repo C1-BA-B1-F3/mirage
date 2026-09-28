@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from mirage.commands.builtin.grep_offsets import (MatchOffsets, decode_line,
                                                   encode_line, prefix_of)
+from mirage.commands.builtin.grep_prefilter import required_needles
 from mirage.commands.builtin.grep_select import WalkFilters
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.stream import close_quietly
@@ -178,10 +179,21 @@ async def grep_input(source: AsyncIterator[bytes],
     # to cover the terminator the iterator strips. The extra byte past a
     # final line with no newline is never read.
     byte_pos = 0
+    needle = (required_needles(pat) if not f.invert and
+              (not has_context or f.count_only or f.quiet or f.files_only
+               or f.files_without_match) else None)
     input_stream = binary.read(source)
     lines = AsyncLineIterator(input_stream)
     try:
-        async for raw in lines:
+        while True:
+            if needle is not None:
+                skipped, size = lines.skip_nonmatching_lines(
+                    needle, bool(pat.flags & re.IGNORECASE))
+                number += skipped
+                byte_pos += size
+            raw = await lines.readline()
+            if raw is None:
+                break
             if binary.nul and f.binary_mode == "without-match":
                 break
             number += 1

@@ -23,6 +23,7 @@ import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { etagValue, hubBytesTagged, resolveUrl } from './client.ts'
 import { REFUSED_STATUSES } from './constants.ts'
 import { isDir, keyOf, lookupRetrying, refusalsDenied } from './lookup.ts'
+import { stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export interface HfHubReadOptions {
   offset?: number
@@ -43,7 +44,7 @@ export async function resolveEntry(
 ): Promise<IndexEntry> {
   const virtual = pathSpec.virtual
   const prefix = mountPrefixOf(pathSpec.virtual, pathSpec.vfsPath)
-  const rel = pathSpec.mountPath.replace(/^\/+|\/+$/g, '')
+  const rel = stripSlash(pathSpec.mountPath)
   if (rel === '') throw eisdir(virtual)
   const found = await refusalsDenied(pathSpec, () =>
     lookupRetrying(accessor, index, prefix, keyOf(prefix, rel)),
@@ -96,7 +97,7 @@ export async function read(
   const timer = startOp()
   const [data, etag] = await refusalsDenied(
     path,
-    () => hubBytesTagged(accessor.token, url, window),
+    () => hubBytesTagged(accessor.token, url, window, accessor.timeoutMs),
     REFUSED_STATUSES,
   )
   record('read', path.virtual, accessor.vfsName, data.length, timer, {

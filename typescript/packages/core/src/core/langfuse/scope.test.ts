@@ -16,13 +16,14 @@ import { describe, expect, it } from 'vitest'
 import { PathSpec } from '../../types.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { SEARCH_KINDS, detectScope } from './scope.ts'
+import { stripSlash } from '../../utils/slash.ts'
 
 // A mount-relative operand, the way a command hands one to a scope.
 // detectScope declares PathSpec and reads only mountPath; passing the bare
 // string relied on its string fallback, which is the raw-string path
 // CLAUDE.md forbids.
 function spec(path: string): PathSpec {
-  const key = path.replace(/^\/+|\/+$/g, '')
+  const key = stripSlash(path)
   return new PathSpec({
     vfsPath: key,
     virtual: `/langfuse/${key}`,

@@ -16,7 +16,6 @@ import asyncio
 import contextlib
 import math
 import re
-import shlex
 from collections.abc import Callable
 from typing import Any
 
@@ -32,6 +31,7 @@ from mirage.context import reset_program_invocation, set_program_invocation
 from mirage.io import IOResult
 from mirage.io.stream import materialize, yield_bytes
 from mirage.io.types import ByteSource
+from mirage.shell.join import shell_join
 from mirage.utils.stream import ensure_stream
 from mirage.workspace.executor.builtins.timeout.constants import (
     CONTINUE_SIGNALS, SELF_KILLING_SIGNALS, SIGCHLD, SIGKILL, SIGNAL_NAMES,
@@ -197,7 +197,7 @@ async def handle_timeout(
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run `timeout [OPTION] DURATION COMMAND [ARG...]` (GNU timeout).
 
-    The inner line is built with shlex.join so already-expanded words
+    The inner line is built with shell_join so already-expanded words
     survive re-parsing as one token each (GNU timeout execs the command
     without a shell). The command reads timeout's stdin. At the deadline
     the command gets -s's signal (TERM by default), and a command here
@@ -263,7 +263,7 @@ async def handle_timeout(
     command = parse.operands[1:]
     if registry is not None and not execs(command[0], session, registry):
         return _refuse(timeout_missing(command[0]).encode(), 127)
-    return await _supervise(execute_fn, shlex.join(command), session, stdin,
+    return await _supervise(execute_fn, shell_join(command), session, stdin,
                             seconds, signal, kill_after, parse.flags,
                             command[0])
 

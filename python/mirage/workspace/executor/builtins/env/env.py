@@ -12,13 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import shlex
 from collections.abc import Callable
 from typing import Any
 
 from mirage.context import reset_program_invocation, set_program_invocation
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
+from mirage.shell.join import shell_join
 from mirage.workspace.executor.builtins.env.constants import ENV_HELP_HINT
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
@@ -150,7 +150,7 @@ async def handle_env(
     # as the program.
     token = set_program_invocation(session)
     try:
-        io = await execute_fn(shlex.join(command),
+        io = await execute_fn(shell_join(command),
                               session_id=session.session_id,
                               stdin=stdin)
     finally:

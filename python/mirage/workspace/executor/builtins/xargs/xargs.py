@@ -14,10 +14,10 @@
 
 import asyncio
 import re
-import shlex
 from collections.abc import Callable
 from typing import Any
 
+from mirage.commands.builtin.grep_offsets import decode_line
 from mirage.commands.config import version_line
 from mirage.commands.quote import quote_text
 from mirage.commands.spec.help import render_help
@@ -31,9 +31,11 @@ from mirage.io import IOResult
 from mirage.io.stream import SharedStdin, async_chain, materialize, yield_bytes
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
+from mirage.shell.bytes import encode_text
+from mirage.shell.join import shell_join
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.utils.quote import shell_quote
-from mirage.workspace.executor.builtins.script.script import read_script_text
+from mirage.workspace.executor.builtins.script.script import read_script_bytes
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.lookup.lookup import execs
 from mirage.workspace.mount.registry import MountRegistry
@@ -515,7 +517,7 @@ async def _run_lines(
     feed = SharedStdin(stdin) if stdin is not None else b""
 
     async def run(words: list[str]) -> IOResult:
-        line = shlex.join(words)
+        line = shell_join(words)
         extra = {"stdin": feed}
         io: IOResult
         # xargs execs its command, so a builtin that is also a program
@@ -558,12 +560,12 @@ async def _run_lines(
             if isinstance(event, str):
                 results[index].append(IOResult(stderr=event.encode()))
                 continue
-            words = [word.decode(errors="replace") for word in event]
+            words = [decode_line(word) for word in event]
             if trace:
                 results[index].append(IOResult(stderr=_trace(event).encode()))
             if registry is not None and not execs(words[0], session, registry):
                 results[index].append(
-                    IOResult(stderr=xargs_missing(words[0]).encode(),
+                    IOResult(stderr=encode_text(xargs_missing(words[0])),
                              exit_code=127))
                 stop = 127
                 return
@@ -577,7 +579,7 @@ async def _run_lines(
                 aborted = (f"xargs: {words[0]}: exited with status 255; "
                            "aborting\n")
                 results[index].append(
-                    IOResult(stderr=aborted.encode(), exit_code=255))
+                    IOResult(stderr=encode_text(aborted), exit_code=255))
                 stop = 124
 
     runs = sum(1 for event in events if not isinstance(event, str))
@@ -611,7 +613,7 @@ async def handle_xargs(
 
     GNU xargs execs the command directly, so every input word must
     reach it as exactly one argv token. The inner line is built with
-    shlex.join: a plain join would be re-parsed by the shell, splitting
+    shell_join: a plain join would be re-parsed by the shell, splitting
     words with whitespace and executing $(...) found in input.
 
     Args:
@@ -741,8 +743,7 @@ async def handle_xargs(
         try:
             if dispatch is None:
                 raise FileNotFoundError(arg_file)
-            data = (await read_script_text(dispatch, arg_file,
-                                           session.cwd)).encode()
+            data = await read_script_bytes(dispatch, arg_file, session.cwd)
         except FS_ERRORS as exc:
             return _refuse(warnings + "xargs: Cannot open input file "
                            f"'{quote_text(arg_file)}': {fs_strerror(exc)}\n")

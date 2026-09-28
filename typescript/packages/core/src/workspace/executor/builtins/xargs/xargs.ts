@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { decodeLine } from '../../../../commands/builtin/grep_offsets.ts'
 import { versionLine } from '../../../../commands/config.ts'
 import { quoteText } from '../../../../commands/quote.ts'
 import { runAsProgram, runWithSession } from '../../../../context/session_context.ts'
@@ -28,6 +29,7 @@ import { IOResult, materialize } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import { SharedStdin, asyncChain, yieldBytes } from '../../../../io/stream.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
+import { encodeText } from '../../../../shell/bytes.ts'
 import { shellJoin } from '../../../../shell/join.ts'
 import { asyncContextIsolatesTasks } from '../../../../utils/async_context.ts'
 import { fsStrerror } from '../../../../utils/errors.ts'
@@ -38,7 +40,7 @@ import { varsFromEnv } from '../../../session/session.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { envSnapshot } from '../../../session/state.ts'
 import { ExecutionNode } from '../../../types.ts'
-import { readScriptText } from '../script/script.ts'
+import { readScriptBytes } from '../script/script.ts'
 import type { BuiltinCall, ExecuteStringFn, Result } from '../types.ts'
 
 const SYNOPSIS = 'xargs [OPTION]... COMMAND [INITIAL-ARGS]...'
@@ -614,11 +616,11 @@ async function runLines(
         slot.push(new IOResult({ stderr: ENCODER.encode(event) }))
         continue
       }
-      const words = event.map(decode)
+      const words = event.map(decodeLine)
       const name = words[0] ?? ''
       if (opts.trace === true) slot.push(new IOResult({ stderr: ENCODER.encode(trace(event)) }))
       if (registry !== null && !execs(name, session, registry)) {
-        slot.push(new IOResult({ stderr: ENCODER.encode(xargsMissing(name)), exitCode: 127 }))
+        slot.push(new IOResult({ stderr: encodeText(xargsMissing(name)), exitCode: 127 }))
         stop = 127
         return
       }
@@ -633,7 +635,7 @@ async function runLines(
       if (io.exitCode === 255 && !stopped()) {
         slot.push(
           new IOResult({
-            stderr: ENCODER.encode(`xargs: ${name}: exited with status 255; aborting\n`),
+            stderr: encodeText(`xargs: ${name}: exited with status 255; aborting\n`),
             exitCode: 255,
           }),
         )
@@ -801,7 +803,7 @@ export async function handleXargs(
       if (doors.dispatch === undefined || doors.dispatch === null) {
         throw Object.assign(new Error(argFile), { code: 'ENOENT' })
       }
-      data = ENCODER.encode(await readScriptText(doors.dispatch, argFile, session.cwd))
+      data = await readScriptBytes(doors.dispatch, argFile, session.cwd)
     } catch (err) {
       const strerror = fsStrerror(err)
       if (strerror === null) throw err

@@ -2053,6 +2053,12 @@ describe('handleXargs', () => {
     expect(shell.lines).toEqual(["echo 'a b' c"])
   })
 
+  it('hands a raw byte to the command as itself', async () => {
+    const shell = fakeShell()
+    await handleXargs(shell.fn, ['printf', '%s'], session, new Uint8Array([0x61, 0xff, 0x62, 0x0a]))
+    expect(shell.lines).toEqual(["printf %s 'a'$'\\xff''b'"])
+  })
+
   it('-d splits on the delimiter', async () => {
     const shell = fakeShell()
     await handleXargs(shell.fn, ['-d,', 'echo'], session, new TextEncoder().encode('a,b,c'))

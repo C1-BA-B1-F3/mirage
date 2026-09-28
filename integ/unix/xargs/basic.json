@@ -1330,10 +1330,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "(cd /data && printf 'a b\\nc\\n' > xargs_args.txt && echo in | xargs -a xargs_args.txt sh -c 'cat; echo \"$@\"' sh && xargs --arg-file=xargs_args.txt echo x; rc=$?; rm -f xargs_args.txt; exit $rc)",
+      "command": "(cd /data && printf 'a b\\nc\\n' > xargs_args.txt && echo in | xargs -a xargs_args.txt sh -c 'cat; echo \"$@\"' sh && xargs --arg-file=xargs_args.txt echo x && printf 'a\\377b\\n' > xargs_args.txt && xargs -a xargs_args.txt printf '%s\\n' | od -An -tx1 && printf 'a\\377b\\n' | xargs printf '%s\\n' | od -An -tx1; rc=$?; rm -f xargs_args.txt; exit $rc)",
       "expect": {
         "exit": 0,
-        "stdout": "in\na b c\nx a b c\n",
+        "stdout": "in\na b c\nx a b c\n 61 ff 62 0a\n 61 ff 62 0a\n",
         "stderr": ""
       },
       "flags": [

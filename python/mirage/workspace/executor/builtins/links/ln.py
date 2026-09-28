@@ -447,9 +447,9 @@ async def plan_links(
     last_abs = _operand_abs(namespace, last, cwd)
     # The empty name reads as the working directory in `last_abs`, and it
     # is no directory to link into.
-    resolved, stat = ((last_abs, None) if word_text(last) == "" else await
-                      _dir_at(namespace, dispatch, last_abs,
-                              flags.no_dereference))
+    resolved, stat = ((last_abs, None)
+                      if word_text(last) == "" else await _dir_at(
+                          namespace, dispatch, last_abs, flags.no_dereference))
     is_dir = stat is not None and stat.type == FileType.DIRECTORY
     if len(operands) == 2 and not is_dir:
         return [LinkPlan(operands[0], last_abs, word_text(last))], None

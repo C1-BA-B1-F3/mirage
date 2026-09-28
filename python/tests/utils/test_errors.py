@@ -455,10 +455,10 @@ def test_walk_refusal_names_the_empty_operand_as_typed():
     exc = walk_refusal(spec)
     assert isinstance(exc, DotWalkMissing)
     assert error_path(exc) == ""
-    assert fs_error_line("cat", spec, exc) == (
-        "cat: '': No such file or directory\n")
-    assert format_fs_error("cat", exc) == (
-        b"cat: '': No such file or directory\n")
+    assert fs_error_line("cat", spec,
+                         exc) == ("cat: '': No such file or directory\n")
+    assert format_fs_error("cat",
+                           exc) == (b"cat: '': No such file or directory\n")
 
 
 def test_walk_refusal_of_a_loop_is_a_final_per_operand_error():
@@ -472,9 +472,9 @@ def test_walk_refusal_of_a_loop_is_a_final_per_operand_error():
     assert isinstance(exc, DotWalkError)
     assert isinstance(exc, FS_ERRORS)
     assert classify(exc) is FsCondition.ELOOP
-    assert fs_error_line("head", spec, exc) == (
-        "head: cannot open 'l1' for reading: "
-        "Too many levels of symbolic links\n")
+    assert fs_error_line("head", spec,
+                         exc) == ("head: cannot open 'l1' for reading: "
+                                  "Too many levels of symbolic links\n")
 
 
 def test_eloop_is_typed_and_classified():
@@ -486,8 +486,8 @@ def test_eloop_is_typed_and_classified():
 
 @pytest.mark.parametrize("cmd", ["wc", "du"])
 def test_wc_and_du_vet_the_empty_name(cmd):
-    assert fs_error_line(cmd, "", enoent("")) == (
-        f"{cmd}: invalid zero-length file name\n")
+    assert fs_error_line(
+        cmd, "", enoent("")) == (f"{cmd}: invalid zero-length file name\n")
 
 
 def test_other_commands_name_the_empty_operand_quoted():

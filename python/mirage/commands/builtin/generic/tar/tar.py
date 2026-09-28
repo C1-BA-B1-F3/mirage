@@ -268,8 +268,9 @@ async def _read_archive(
         lines = ([
             f"tar: {shown}: Cannot read: {fs_strerror(exc)}", TAPE_START,
             FATAL_TRAILER
-        ] if isinstance(exc, IsADirectoryError) else
-                 [f"tar: {shown}: Cannot open: {fs_strerror(exc)}", FATAL_TRAILER])
+        ] if isinstance(exc, IsADirectoryError) else [
+            f"tar: {shown}: Cannot open: {fs_strerror(exc)}", FATAL_TRAILER
+        ])
         return IOResult(exit_code=CREATE_ERROR_EXIT, stderr=_stderr(lines))
 
 

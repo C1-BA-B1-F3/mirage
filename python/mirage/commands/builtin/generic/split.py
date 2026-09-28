@@ -421,7 +421,6 @@ def _suffix_name(index: int, alphabet: str, auto: bool, width: int,
     return _to_base(value, alphabet, width)
 
 
-
 def _prefix_virtual(prefix: PathSpec) -> str:
     """Where a PREFIX operand's pieces go, as the string they extend.
 
@@ -438,6 +437,7 @@ def _prefix_virtual(prefix: PathSpec) -> str:
     if prefix.raw_path == "" or prefix.raw_path.endswith("/"):
         return prefix.virtual.rstrip("/") + "/"
     return prefix.virtual
+
 
 async def split(
     paths: list[PathSpec],

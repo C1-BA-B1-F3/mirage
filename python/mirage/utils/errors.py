@@ -152,7 +152,6 @@ class DotWalkLoop(DotWalkError):
 
 ELOOP_STRERROR = "Too many levels of symbolic links"
 
-
 _FS_STRERROR: list[tuple[type[OSError], str]] = [
     (BadDescriptorError, "Bad file descriptor"),
     (FileNotFoundError, "No such file or directory"),
@@ -487,7 +486,6 @@ FAILURE_WORDING: dict[str, tuple[str | None, str | None]] = {
     "tsort": (None, "{shown}: read error: {strerror}"),
     "uniq": (None, "error reading {quoted}: {strerror}"),
 }
-
 
 # GNU wc and du vet every name the way their --files0-from reader does,
 # and refuse an empty one in these words before any open could answer

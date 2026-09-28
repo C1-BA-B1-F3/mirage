@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { SHELL_SPECS, parseShellOptions } from '../../../../commands/spec/shell.ts'
+import { runAsProgram } from '../../../../context/session_context.ts'
 import { IOResult } from '../../../../io/types.ts'
 import { shellJoin } from '../../../../shell/join.ts'
 import type { SessionState } from '../../../session/session.ts'
@@ -150,7 +151,11 @@ export async function handleTimeout(
   // `tail -f` from polling on after 124 was already returned (python's
   // wait_for cancels the drain the same way).
   const abort = new AbortController()
-  const run = executeDrained(executeFn, inner, session.sessionId, drained, held, abort.signal)
+  // timeout execs its command, so a builtin that is also a program answers
+  // as the program.
+  const run = runAsProgram(session, () =>
+    executeDrained(executeFn, inner, session.sessionId, drained, held, abort.signal),
+  )
   const result = seconds > 0 ? await raceDeadline(run, seconds) : await run
   if (result === TIMED_OUT) {
     abort.abort()

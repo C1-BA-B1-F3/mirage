@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { SHELL_SPECS, parseShellOptions } from '../../../../commands/spec/shell.ts'
+import { runAsProgram } from '../../../../context/session_context.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import { asyncChain } from '../../../../io/stream.ts'
@@ -105,7 +106,9 @@ export async function handleXargs(
   let exitCode = 0
   for (const batch of batches) {
     const inner = shellJoin([...command, ...batch])
-    const io = await executeFn(inner, { sessionId: session.sessionId })
+    // xargs execs its command, so a builtin that is also a program answers
+    // as the program.
+    const io = await runAsProgram(session, () => executeFn(inner, { sessionId: session.sessionId }))
     if (io.stdout !== null) stdouts.push(io.stdout)
     merged = await merged.merge(io)
     if (io.exitCode === 126 || io.exitCode === 127) {

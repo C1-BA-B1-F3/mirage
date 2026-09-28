@@ -669,9 +669,11 @@ function convert(
  * Apply GNU printf's format-reuse semantics: scan `fmt` once per cycle,
  * consuming arguments; repeat while arguments remain and a cycle
  * consumed at least one (so a conversion-less format prints once and
- * excess args are dropped). Returns the output and any error messages.
+ * excess args are dropped). Returns the output, any error messages and
+ * the first argument dropped, which coreutils printf names in a warning
+ * (null when every argument was used or `\c` ended the output).
  */
-export function runPrintf(fmt: string, args: string[]): [string, string[]] {
+export function runPrintf(fmt: string, args: string[]): [string, string[], string | null] {
   const out: string[] = []
   const errors: string[] = []
   let argI = 0
@@ -738,5 +740,6 @@ export function runPrintf(fmt: string, args: string[]): [string, string[]] {
     }
     if (stop || argI >= total || argI === consumedStart) break
   }
-  return [out.join(''), errors]
+  const excess = !stop && argI < total ? (args[argI] ?? null) : null
+  return [out.join(''), errors, excess]
 }

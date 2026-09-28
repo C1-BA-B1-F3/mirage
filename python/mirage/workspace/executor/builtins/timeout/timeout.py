@@ -19,6 +19,7 @@ from collections.abc import Callable
 from typing import Any
 
 from mirage.commands.spec.shell import SHELL_SPECS, parse_shell_options
+from mirage.context import reset_program_invocation, set_program_invocation
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.utils.stream import ensure_stream
@@ -95,6 +96,9 @@ async def handle_timeout(
     inner = shlex.join(parse.operands[1:])
     drained: list[bytes] = []
     held: list[IOResult] = []
+    # timeout execs its command, so a builtin that is also a program
+    # answers as the program.
+    token = set_program_invocation(session)
     try:
         stdout, io = await asyncio.wait_for(
             _execute_drained(execute_fn, inner, session.session_id, drained,
@@ -112,6 +116,8 @@ async def handle_timeout(
             exit_code=124,
             stderr=stderr if isinstance(stderr, bytes) else None,
         ), ExecutionNode(command="timeout", exit_code=124)
+    finally:
+        reset_program_invocation(token)
     return stdout, io, ExecutionNode(command="timeout", exit_code=io.exit_code)
 
 

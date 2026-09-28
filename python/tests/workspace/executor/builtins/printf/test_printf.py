@@ -1,7 +1,10 @@
 import pytest
 
+from mirage import RAMVFS, MountMode, Workspace
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.help import render_help
+from mirage.context import reset_program_invocation, set_program_invocation
+from mirage.io.stream import materialize
 from mirage.shell.bytes import byte_char
 from mirage.shell.variable import VarAttr
 from mirage.workspace.executor.builtins.printf import handle_printf
@@ -365,3 +368,71 @@ async def test_printf_v_keeps_exit_1_on_bad_number_but_still_assigns():
     out, io, node = await handle_printf(["-v", "V", "%d", "notanum"], session)
     assert node.exit_code == 1
     assert session.env["V"] == "0"
+
+
+async def program_printf(args: list[str]) -> tuple[bytes | None, bytes, int]:
+    session = SessionState(session_id="s1")
+    token = set_program_invocation(session)
+    try:
+        out, io, node = await handle_printf(args, session)
+    finally:
+        reset_program_invocation(token)
+    assert io.exit_code == node.exit_code
+    return (out if isinstance(out, bytes) else None, await
+            materialize(io.stderr), node.exit_code)
+
+
+def _excess(word: str) -> bytes:
+    return ("printf: warning: ignoring excess arguments, starting with "
+            f"{word}\n").encode()
+
+
+# coreutils 9.7 (debian:stable-slim), which a program run answers as.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args, out, err", [
+    (["x\n", "a", "b"], b"x\n", _excess("'a'")),
+    (["%%s\n", "x"], b"%s\n", _excess("'x'")),
+    (["", "a"], b"", _excess("'a'")),
+    (["x\n", "it's"], b"x\n", _excess("'it\\'s'")),
+    (["x\n", "é"], b"x\n", _excess("'\\303\\251'")),
+    (["x\n", "a\tb"], b"x\n", _excess("'a\\tb'")),
+    (["x\n", ""], b"x\n", _excess("''")),
+    (["--", "x\n", "a"], b"x\n", _excess("'a'")),
+    (["-v", "v", "x\n"], b"-v", _excess("'v'")),
+    (["%s-%s\n", "a", "b", "c"], b"a-b\nc-\n", b""),
+    (["x\\c", "a"], b"x", b""),
+])
+async def test_printf_run_as_a_program_warns_about_what_it_drops(
+        args: list[str], out: bytes, err: bytes):
+    assert await program_printf(args) == (out, err, 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args", [[], ["--"]])
+async def test_printf_run_as_a_program_needs_a_format(args: list[str]):
+    assert await program_printf(args) == (
+        None, b"printf: missing operand\n"
+        b"Try 'printf --help' for more information.\n", 1)
+
+
+@pytest.mark.asyncio
+async def test_printf_builtin_drops_excess_arguments_silently():
+    out, io, _ = await handle_printf(["x\n", "a"], SessionState("s1"))
+    assert (out, io.stderr, io.exit_code) == (b"x\n", None, 0)
+
+
+# Each of these execs its command, so printf is coreutils' there.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, word", [
+    ("env printf 'x\\n' a", "a"),
+    ("echo a | xargs printf 'x\\n'", "a"),
+    ("timeout 5 printf 'x\\n' a", "a"),
+    ("find /data -maxdepth 0 -exec printf 'x\\n' {} \\;", "/data"),
+])
+async def test_printf_under_a_command_runner_is_the_program(
+        line: str, word: str):
+    ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
+    io = await ws.shell(line)
+    assert await materialize(io.stdout) == b"x\n"
+    assert await materialize(io.stderr) == _excess(f"'{word}'")
+    assert io.exit_code == 0

@@ -442,11 +442,13 @@ def _read_conversion(
     return None
 
 
-def run_printf(fmt: str, args: list[str]) -> tuple[str, list[str]]:
+def run_printf(fmt: str, args: list[str]) -> tuple[str, list[str], str | None]:
     """Apply GNU printf's format-reuse semantics: scan ``fmt`` once per
     cycle, consuming arguments; repeat while arguments remain and a cycle
     consumed at least one (so a conversion-less format prints once and
-    excess args are dropped). Returns the output and any error messages.
+    excess args are dropped). Returns the output, any error messages and
+    the first argument dropped, which coreutils printf names in a warning
+    (None when every argument was used or ``\\c`` ended the output).
 
     Args:
         fmt (str): the format string.
@@ -507,7 +509,8 @@ def run_printf(fmt: str, args: list[str]) -> tuple[str, list[str]]:
             i += 1
         if stop or arg_i >= total or arg_i == consumed_start:
             break
-    return "".join(out), errors
+    excess = args[arg_i] if not stop and arg_i < total else None
+    return "".join(out), errors, excess
 
 
 def _convert(conv: str, raw: str | None, flags: str, width: int | None,

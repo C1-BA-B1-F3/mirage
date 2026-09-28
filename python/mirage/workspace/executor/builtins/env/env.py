@@ -16,6 +16,7 @@ import shlex
 from collections.abc import Callable
 from typing import Any
 
+from mirage.context import reset_program_invocation, set_program_invocation
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.workspace.executor.builtins.env.constants import ENV_HELP_HINT
@@ -145,11 +146,15 @@ async def handle_env(
         for name, var in saved.items()
         if not isinstance(var.value, str) and var.managed is None
     } | vars_from_env(base)
+    # env execs its command, so a builtin that is also a program answers
+    # as the program.
+    token = set_program_invocation(session)
     try:
         io = await execute_fn(shlex.join(command),
                               session_id=session.session_id,
                               stdin=stdin)
     finally:
+        reset_program_invocation(token)
         session.vars = saved
     return io.stdout, io, ExecutionNode(command="env", exit_code=io.exit_code)
 

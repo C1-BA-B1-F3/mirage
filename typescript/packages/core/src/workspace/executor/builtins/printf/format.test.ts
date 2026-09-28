@@ -51,20 +51,29 @@ describe('runPrintf', () => {
 
   it('ends the reuse when a cycle consumes nothing', () => {
     // `a%%b` has no conversion, so the first cycle consumes no argument
-    // and the excess args are dropped rather than looping forever.
-    expect(runPrintf('a%%b\n', ['x', 'y', 'z'])).toEqual(['a%b\n', []])
+    // and the excess args are dropped rather than looping forever; the
+    // first one dropped comes back for coreutils' warning.
+    expect(runPrintf('a%%b\n', ['x', 'y', 'z'])).toEqual(['a%b\n', [], 'x'])
   })
 
   it('drops every argument for an empty format', () => {
-    expect(runPrintf('', ['a', 'b', 'c'])).toEqual(['', []])
+    expect(runPrintf('', ['a', 'b', 'c'])).toEqual(['', [], 'a'])
+  })
+
+  it('drops nothing when the format is reused', () => {
+    expect(runPrintf('%s-%s\n', ['a', 'b', 'c'])).toEqual(['a-b\nc-\n', [], null])
+  })
+
+  it('drops nothing to warn about after \\c in the format', () => {
+    expect(runPrintf('x\\c', ['a'])).toEqual(['x', [], null])
   })
 
   it('suppresses the rest of the format after a stop from %b', () => {
-    expect(runPrintf('[%b][%s]\n', ['ab\\ccd', 'tail'])).toEqual(['[ab', []])
+    expect(runPrintf('[%b][%s]\n', ['ab\\ccd', 'tail'])).toEqual(['[ab', [], null])
   })
 
   it('ends every cycle when the stop lands on a later one', () => {
-    expect(runPrintf('<%b>', ['one', 'tw\\co', 'three'])).toEqual(['<one><tw', []])
+    expect(runPrintf('<%b>', ['one', 'tw\\co', 'three'])).toEqual(['<one><tw', [], null])
   })
 
   it.each([
@@ -73,11 +82,11 @@ describe('runPrintf', () => {
     ['2.5', '2'],
     ['3.5', '4'],
   ])('rounds %s half-to-even at fixed precision', (value, expected) => {
-    expect(runPrintf('%.0f', [value])).toEqual([expected, []])
+    expect(runPrintf('%.0f', [value])).toEqual([expected, [], null])
   })
 
   it('renders a missing argument as the empty string or zero', () => {
-    expect(runPrintf('[%s][%d]', [])).toEqual(['[][0]', []])
+    expect(runPrintf('[%s][%d]', [])).toEqual(['[][0]', [], null])
   })
 
   it.each(OCTAL_PINS)(

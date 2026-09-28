@@ -17,6 +17,7 @@ from collections.abc import Callable
 from typing import Any
 
 from mirage.commands.spec.shell import SHELL_SPECS, parse_shell_options
+from mirage.context import reset_program_invocation, set_program_invocation
 from mirage.io import IOResult
 from mirage.io.stream import async_chain, materialize
 from mirage.io.types import ByteSource
@@ -110,7 +111,13 @@ async def handle_xargs(
     exit_code = 0
     for batch in batches:
         inner = shlex.join([*command, *batch])
-        io = await execute_fn(inner, session_id=session.session_id)
+        # xargs execs its command, so a builtin that is also a program
+        # answers as the program.
+        token = set_program_invocation(session)
+        try:
+            io = await execute_fn(inner, session_id=session.session_id)
+        finally:
+            reset_program_invocation(token)
         if io.stdout is not None:
             stdouts.append(io.stdout)
         merged = await merged.merge(io)

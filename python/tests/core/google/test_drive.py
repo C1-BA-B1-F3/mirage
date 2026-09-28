@@ -367,3 +367,5 @@ async def test_get_file_asks_for_both_content_tokens_unwrapped(token_manager):
     assert "md5Checksum" in fields
     assert "headRevisionId" in fields
     assert "files(" not in fields
+    assert "owners" in fields
+    assert "trashed" in fields

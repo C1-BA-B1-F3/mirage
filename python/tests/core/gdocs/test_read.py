@@ -22,6 +22,8 @@ from mirage.cache.index import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.gdocs.client import TokenManager
 from mirage.core.gdocs.read import read, read_doc
+from mirage.core.gdocs.stat import stat
+from mirage.observe.context import RecordingScope
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
 from mirage.vfs.gdocs.config import GDocsConfig
@@ -129,6 +131,7 @@ async def test_read_via_index(accessor, index):
 @pytest.mark.asyncio
 async def test_read_auto_bootstraps_from_empty_index(accessor, index):
     files = [{
+        "mimeType": "application/vnd.google-apps.document",
         "id": "doc1",
         "name": "Notes",
         "modifiedTime": "2026-04-01T00:00:00.000Z",
@@ -138,9 +141,9 @@ async def test_read_auto_bootstraps_from_empty_index(accessor, index):
     }]
     with (
             patch(
-                "mirage.core.gdocs.readdir.list_all_files",
+                "mirage.core.google.entry.get_file",
                 new_callable=AsyncMock,
-                return_value=(files, True),
+                return_value=files[0],
             ),
             patch(
                 "mirage.core.gdocs.read.read_doc",
@@ -159,12 +162,12 @@ async def test_read_auto_bootstraps_from_empty_index(accessor, index):
 
 
 @pytest.mark.asyncio
-async def test_read_missing_file_raises_after_recursion(accessor, index):
+async def test_read_missing_file_raises_by_id(accessor, index):
     with (
             patch(
-                "mirage.core.gdocs.readdir.list_all_files",
+                "mirage.core.google.entry.get_file",
                 new_callable=AsyncMock,
-                return_value=([], True),
+                side_effect=FileNotFoundError("missing"),
             ),
             patch(
                 "mirage.core.gdocs.read.read_doc",
@@ -183,10 +186,10 @@ async def test_read_missing_file_raises_after_recursion(accessor, index):
 
 
 @pytest.mark.asyncio
-async def test_read_propagates_parent_refresh_failure(accessor, index):
+async def test_read_propagates_metadata_failure(accessor, index):
     with (
             patch(
-                "mirage.core.gdocs.readdir.list_all_files",
+                "mirage.core.google.entry.get_file",
                 new_callable=AsyncMock,
                 side_effect=RuntimeError("google unavailable"),
             ),
@@ -204,3 +207,40 @@ async def test_read_propagates_parent_refresh_failure(accessor, index):
         )
         with pytest.raises(RuntimeError, match="google unavailable"):
             await read(accessor, path, index)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stamp", "token"),
+    [("2026-04-01T00:00:00.000Z", "2026-04-01T00:00:00.000Z"), ("", None)])
+async def test_read_records_the_token_stat_reports(accessor, index, stamp,
+                                                   token):
+    # read: fresh compares this record with stat's fingerprint, so both take
+    # the entry's modified stamp, and an entry without one stamps nothing.
+    name = "2026-04-01_My_Doc__doc1.gdoc.json"
+    target = "/gdocs/owned/" + name
+    await index.set_dir("/gdocs/owned", [
+        (name,
+         IndexEntry(id="doc1",
+                    name="My Doc",
+                    resource_type="gdocs/file",
+                    remote_time=stamp,
+                    vfs_name=name)),
+    ])
+    path = PathSpec(vfs_path=mount_key(target, "/gdocs"),
+                    virtual=target,
+                    directory=target)
+    scope = RecordingScope()
+    try:
+        with patch("mirage.core.gdocs.read.read_doc",
+                   new_callable=AsyncMock,
+                   return_value=b'{"documentId":"doc1"}'):
+            data = await read(accessor, path, index)
+    finally:
+        scope.close()
+    info = await stat(accessor, path, index)
+
+    assert [
+        (r.op, r.path, r.source, r.bytes, r.fingerprint) for r in scope.records
+    ] == [("read", target, "gdocs", len(data), token)]
+    assert info.fingerprint == token

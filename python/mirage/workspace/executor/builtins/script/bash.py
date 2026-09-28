@@ -20,6 +20,7 @@ from mirage.io import IOResult
 from mirage.io.stream import materialize
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
+from mirage.shell.constants import IFS_DEFAULT
 from mirage.shell.options import parse_option_word
 from mirage.workspace.executor.builtins.script.constants import (
     BASH_LONG_OPTIONS, BASH_START_FLAGS)
@@ -28,6 +29,7 @@ from mirage.workspace.executor.builtins.script.script import (read_script_file,
 from mirage.workspace.executor.builtins.script.types import BashArgs
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
+from mirage.workspace.session.state import seed_var
 from mirage.workspace.types import ExecutionNode
 
 
@@ -144,6 +146,9 @@ async def handle_bash(
     saved = session.snapshot()
     session.positional_args = positional
     session.script_name = script_name
+    # bash starts every shell with the default IFS and never reads one
+    # from its environment, so `IFS=, bash -c ...` splits on blanks.
+    seed_var(session, "IFS", IFS_DEFAULT)
     # A child shell is outside every `source` its caller is inside, so a
     # top-level `return` in the script it runs is the error bash reports
     # rather than an early exit the program loop absorbs.

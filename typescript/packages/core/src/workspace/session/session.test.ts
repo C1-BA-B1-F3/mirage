@@ -26,8 +26,8 @@ describe('SessionState', () => {
     const s = new SessionState({ sessionId: 'x' })
     expect(s.cwd).toBe('/')
     // bash exports $PWD from startup, so even a session that never ran
-    // `cd` has one, and a PATH when the environment gives none.
-    expect(s.env).toEqual({ PWD: '/', PATH: '/usr/bin' })
+    // `cd` has one, a PATH when the environment gives none, and IFS.
+    expect(s.env).toEqual({ PWD: '/', PATH: '/usr/bin', IFS: ' \t\n' })
     expect(s.functions).toEqual({})
     expect(s.lastExitCode).toBe(0)
   })
@@ -46,7 +46,7 @@ describe('SessionState', () => {
     expect(json).toEqual({
       session_id: 'x',
       cwd: '/a',
-      env: { K: 'V', PWD: '/a', PATH: '/usr/bin' },
+      env: { K: 'V', PWD: '/a', PATH: '/usr/bin', IFS: ' \t\n' },
       // The attributes ride beside the values rather than being guessed
       // on the way back in: `varsFromEnv` exports what it seeds, so both
       // names carry `x` here, while the seeded PATH, like a plain `Y=1`,
@@ -71,7 +71,7 @@ describe('SessionState', () => {
     )
     expect(restored.sessionId).toBe('x')
     expect(restored.cwd).toBe('/a')
-    expect(restored.env).toEqual({ K: 'V', PWD: '/a', PATH: '/usr/bin' })
+    expect(restored.env).toEqual({ K: 'V', PWD: '/a', PATH: '/usr/bin', IFS: ' \t\n' })
   })
 
   it('round-trips mountModes through toJSON/fromJSON', () => {
@@ -169,7 +169,7 @@ describe('SessionState.fork', () => {
     const forked = original.fork({})
     expect(forked.sessionId).toBe('orig')
     expect(forked.cwd).toBe('/disk')
-    expect(forked.env).toEqual({ FOO: 'bar', PWD: '/disk', PATH: '/usr/bin' })
+    expect(forked.env).toEqual({ FOO: 'bar', PWD: '/disk', PATH: '/usr/bin', IFS: ' \t\n' })
     expect(forked.mountModes).toBe(original.mountModes)
     expect(forked.shellOptions).toEqual({ errexit: true })
     expect(forked.readonlyVars.has('HOME')).toBe(true)
@@ -187,9 +187,9 @@ describe('SessionState.fork', () => {
     const forked = original.fork({ cwd: '/ram', vars: varsFromEnv({ BAZ: 'qux' }) })
     expect(forked.cwd).toBe('/ram')
     // $PWD follows the caller-supplied cwd rather than staying stale.
-    expect(forked.env).toEqual({ BAZ: 'qux', PWD: '/ram', PATH: '/usr/bin' })
+    expect(forked.env).toEqual({ BAZ: 'qux', PWD: '/ram', PATH: '/usr/bin', IFS: ' \t\n' })
     expect(original.cwd).toBe('/disk')
-    expect(original.env).toEqual({ FOO: 'bar', PWD: '/disk', PATH: '/usr/bin' })
+    expect(original.env).toEqual({ FOO: 'bar', PWD: '/disk', PATH: '/usr/bin', IFS: ' \t\n' })
   })
 
   // A caller-supplied cwd has no typed spelling behind it, so carrying the

@@ -1251,10 +1251,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "pt2=world; pref1=pt2; echo ${!pref1}",
+      "command": "pt2=world; pref1=pt2; echo ${!pref1}; (set -- a b c; echo \"${#} ${!#}\"; f() { echo \"f:$#:${1-u}:[$*]\"; [ $# -eq 0 ] || echo \"last:${!#}\"; }; f; f p q)",
       "expect": {
         "exit": 0,
-        "stdout": "world\n",
+        "stdout": "world\n3 c\nf:0:u:[]\nf:2:p:[p q]\nlast:q\n",
         "stderr": ""
       }
     },

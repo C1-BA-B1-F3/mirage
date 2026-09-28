@@ -299,10 +299,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "unset u; f=x; printf \"[%s]\\n\" \"${u:- $f}\"",
+      "command": "unset u; f=x; printf \"[%s]\\n\" \"${u:- $f}\" \"${u:-a\\ $f}\" \"${u:-\\ $f}\" \"${u:-a\\xb}\" \"${u:-'q r'}\" \"${u:-a\\}b}\" \"${u:-\"a\\ b\"}\" \"${u:-\"'q'\"}\"",
       "expect": {
         "exit": 0,
-        "stdout": "[ x]\n",
+        "stdout": "[ x]\n[a\\ x]\n[\\ x]\n[a\\xb]\n['q r']\n[a}b]\n[a b]\n['q']\n",
         "stderr": ""
       }
     },
@@ -503,10 +503,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "unset u; f=x; printf \"[%s]\\n\" ${u:- $f}",
+      "command": "unset u; f=x; printf \"[%s]\\n\" ${u:- $f} ${u:-a\\ b} ${u:-a\\ $f} ${u:-\\ $f} ${u:-'q r'} ${u:-\"q r\"} ${u:-\"a\\xb\"} ${u:-a b}",
       "expect": {
         "exit": 0,
-        "stdout": "[x]\n",
+        "stdout": "[x]\n[a b]\n[a x]\n[ x]\n[q r]\n[q r]\n[a\\xb]\n[a]\n[b]\n",
         "stderr": ""
       }
     },
@@ -537,10 +537,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "f=x; printf \"[%s]\\n\" \"${f/x/ $f}\"",
+      "command": "f=x; printf \"[%s]\\n\" \"${f/x/ $f}\" \"${f/x/\\ $f}\" \"${f/x/\\\\}\" \"${f/x/\"\\ \"}\" ${f/x/\\ $f} ${f/x/\\\\}",
       "expect": {
         "exit": 0,
-        "stdout": "[ x]\n",
+        "stdout": "[ x]\n[ x]\n[\\]\n[\\ ]\n[x]\n[\\]\n",
         "stderr": ""
       }
     },
@@ -775,10 +775,44 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "(f=x; unset u; printf \"[%s]\\n\" \"${f+\"a  \"}\" \"${u-\"  \"}\" \"${u:=\" a \"}\" \"$u\")",
+      "command": "(f=x; unset u; printf \"[%s]\\n\" \"${f+\"a  \"}\" \"${u-\"  \"}\" \"${u:=\" a \"}\" \"$u\"; unset u; printf \"[%s]\\n\" \"${u:=a\\ b}\" \"$u\"; unset u; printf \"[%s]\\n\" ${u:=a\\ b} \"$u\")",
       "expect": {
         "exit": 0,
-        "stdout": "[a  ]\n[  ]\n[ a ]\n[ a ]\n",
+        "stdout": "[a  ]\n[  ]\n[ a ]\n[ a ]\n[a\\ b]\n[a\\ b]\n[a]\n[b]\n[a b]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "param_operand_special_parameters",
+      "seq": 932115,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(set -- a b; IFS=,; f=x; printf \"[%s]\\n\" \"${u:-$*}\" ${u:-$*} \"${u:-\"$@\"}\" \"${f/x/$*}\" ${u:-$#} \"${u:-a$*b}\" \"${u:-$@}\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "[a,b]\n[a]\n[b]\n[a]\n[b]\n[a,b]\n[2]\n[aa,bb]\n[a]\n[b]\n",
         "stderr": ""
       }
     }

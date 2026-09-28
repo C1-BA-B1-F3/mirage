@@ -15,6 +15,7 @@
 import { IOResult } from '../../../../io/types.ts'
 import type { CallStack } from '../../../../shell/call_stack.ts'
 import type { SessionState } from '../../../session/session.ts'
+import { positionalParams, setPositionalParams } from '../../../session/state.ts'
 import { ExecutionNode } from '../../../types.ts'
 import { isCountWord } from '../shared.ts'
 import type { BuiltinCall, Result } from '../types.ts'
@@ -28,7 +29,7 @@ import type { BuiltinCall, Result } from '../types.ts'
 export function handleShift(
   args: readonly string[],
   callStack: CallStack | null,
-  session: SessionState | null = null,
+  session: SessionState,
 ): Result {
   if (args.length > 1) {
     const err = new TextEncoder().encode('shift: too many arguments\n')
@@ -56,19 +57,16 @@ export function handleShift(
       new ExecutionNode({ command: 'shift', exitCode: 1 }),
     ]
   }
+  const params = positionalParams(session, callStack)
   // bash: a count past `$#` shifts nothing and returns 1, silently.
-  const silentOne: Result = [
-    null,
-    new IOResult({ exitCode: 1 }),
-    new ExecutionNode({ command: 'shift', exitCode: 1 }),
-  ]
-  if (callStack !== null && callStack.getAllPositional().length > 0) {
-    if (n > callStack.getPositionalCount()) return silentOne
-    callStack.shift(n)
-  } else if (session !== null) {
-    if (n > session.positionalArgs.length) return silentOne
-    session.positionalArgs = session.positionalArgs.slice(n)
+  if (n > params.length) {
+    return [
+      null,
+      new IOResult({ exitCode: 1 }),
+      new ExecutionNode({ command: 'shift', exitCode: 1 }),
+    ]
   }
+  setPositionalParams(session, callStack, params.slice(n))
   return [null, new IOResult(), new ExecutionNode({ command: 'shift', exitCode: 0 })]
 }
 

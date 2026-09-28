@@ -677,10 +677,11 @@ describe('sourceParts', () => {
       'echo "😀界\n $x \t\n "',
       ['', ['string_content', '😀界'], '\n', ['simple_expansion', ' $x'], ' \t\n', ' '],
     ],
-    ['echo "a\\\n $x"', ['', ['string_content', 'a\\\n '], ['simple_expansion', '$x'], '']],
+    ['echo "a\\\n $x"', ['', ['string_content', 'a '], ['simple_expansion', '$x'], '']],
   ])('keeps the text between the children of %j', async (line, parts) => {
     // web-tree-sitter counts offsets in UTF-16 code units, so a surrogate
-    // pair before a gap must not shift the slice.
+    // pair before a gap must not shift the slice. The reader joins a line
+    // continuation before the grammar sees it.
     expect(spelled(quotedParts(argument(await getTestParser(), line)))).toEqual(parts)
   })
 

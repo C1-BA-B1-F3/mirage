@@ -843,11 +843,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "v='a b'; [ $v = 'a b' ]; echo $?",
+      "command": "v='a b'; [ $v = 'a b' ]; echo $?; (IFS=,; w=a,b; [ $w = a ] 2>/dev/null; echo $?; [ q$w ]; echo $?; [ $u = x ] 2>/dev/null; echo $?)",
       "expect": {
         "exit": 0,
-        "stdout": "2\n",
-        "stderr": "[: too many arguments\n"
+        "stdout": "2\n2\n2\n2\n",
+        "stderr": "[: too many arguments\n[: qa: unary operator expected\n"
       }
     },
     {

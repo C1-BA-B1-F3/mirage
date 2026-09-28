@@ -12,10 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { ShellVar } from '../../shell/variable.ts'
 import { sessionEntry, setSessionEntry } from '../session/session.ts'
 import { seedVar, setAttr } from '../session/state.ts'
-import { VarAttr } from '../../shell/variable.ts'
+import { TempEnv, VarAttr } from '../../shell/variable.ts'
 import {
   redirectPathsFor,
   runWithAdmission,
@@ -216,9 +215,9 @@ export async function executeCommand(
   for (const [k, v] of prefixAssignments) {
     // The hidden gate runs first, as in setVar: calling a hidden name
     // "readonly" would leak that it exists. Both branches below write
-    // session.env raw (a function-call prefix on purpose never
-    // restores), so ungated they would let a narrowed session clobber
-    // the host's value.
+    // session.env raw (an `export` inside a function keeps its prefix
+    // past the call), so ungated they would let a narrowed session
+    // clobber the host's value.
     try {
       ensureVarVisible(session, k)
       // ...and `preSession` right after, with the value, because a
@@ -260,21 +259,30 @@ export async function executeCommand(
     return [null, new IOResult(), new ExecutionNode({ command: cmdLabel, exitCode: 0 })]
   }
 
-  const isFunctionCall = name !== '' && session.functions[name] !== undefined
-  const savedEnvOverrides = new Map<string, ShellVar | null>()
-  for (const [k, v] of prefixAssignments) {
-    if (!isFunctionCall) savedEnvOverrides.set(k, sessionEntry(session.vars, k) ?? null)
-    // Exported for the duration, which is the whole point of the form:
-    // `TOKEN=x printenv TOKEN` prints `x` because bash puts a prefix
-    // assignment in the *command's environment*, not merely in the
-    // shell. Seeding it plain left it invisible to every reader of
-    // `envSnapshot` — the command's own env, an installed CLI, a guest
-    // runtime — once that view narrowed to the exported set. The saved
-    // record is put back below, so the attribute does not outlive the
-    // command; a function call deliberately saves nothing and keeps the
-    // assignment, as bash does.
-    seedVar(session, k, v)
-    setAttr(session, k, VarAttr.Export)
+  const savedEnvOverrides = new TempEnv()
+  // Seeded once the command's words are expanded, since bash expands them
+  // with the values from before the assignment: `x=new echo $x` prints the
+  // old x and `IFS=, cmd $v` splits on the old IFS.
+  const seedPrefix = (command: string): void => {
+    for (const [k, v] of prefixAssignments) {
+      if (!savedEnvOverrides.has(k)) {
+        savedEnvOverrides.set(k, sessionEntry(session.vars, k) ?? null)
+      }
+      // Exported for the duration, which is the whole point of the form:
+      // `TOKEN=x printenv TOKEN` prints `x` because bash puts a prefix
+      // assignment in the *command's environment*, not merely in the
+      // shell. Seeding it plain left it invisible to every reader of
+      // `envSnapshot` — the command's own env, an installed CLI, a guest
+      // runtime — once that view narrowed to the exported set. The saved
+      // record is put back below, so neither the value nor the attribute
+      // outlives the command.
+      seedVar(session, k, v)
+      setAttr(session, k, VarAttr.Export)
+    }
+    // A function runs with the prefix as its temporary environment, a
+    // scope under its own locals: `unset` inside reveals the caller's
+    // value and `export` keeps the name.
+    if (session.functions[command] !== undefined) session.localFrames.push(savedEnvOverrides)
   }
 
   try {
@@ -297,8 +305,11 @@ export async function executeCommand(
       signal,
       agentId,
       handed,
+      seedPrefix,
     )
   } finally {
+    const frames = session.localFrames
+    if (frames[frames.length - 1] === savedEnvOverrides) frames.pop()
     for (const [k, prev] of savedEnvOverrides) {
       if (prev === null) {
         // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
@@ -334,6 +345,7 @@ async function runCommandBody(
   signalIn?: AbortSignal,
   agentId = '',
   handed?: HandOff,
+  seedPrefix?: (command: string) => void,
 ): Promise<Result> {
   let stdin = stdinIn
   // A background job's kill channel rides the session; fold it in so
@@ -411,6 +423,7 @@ async function runCommandBody(
       sessionView(session, registry.policies),
       routingDecision,
     )
+    seedPrefix?.(argv.name)
 
     // Limits resolve against the expanded name, so `$CMD`-style
     // invocations get their real command's policy.

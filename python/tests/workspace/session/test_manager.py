@@ -51,8 +51,9 @@ def test_manager_default_cwd():
 
 def test_manager_default_env():
     mgr = SessionManager("default")
-    # A fresh session carries the seeded `$PWD` and `$PATH`, nothing else.
-    assert mgr.env == {"PWD": "/", "PATH": "/usr/bin"}
+    # A fresh session carries the seeded `$PWD`, `$PATH` and `$IFS`, nothing
+    # else.
+    assert mgr.env == {"PWD": "/", "PATH": "/usr/bin", "IFS": " \t\n"}
     mgr.env = {"A": "1"}
     assert mgr.env == {"A": "1"}
     assert mgr.get("default").env == {"A": "1"}
@@ -169,7 +170,7 @@ async def test_manager_hydrates_from_store():
     await mgr.ensure_loaded()
     s = mgr.get("restored")
     assert s.cwd == "/w"
-    assert s.env == {"K": "v", "PWD": "/w", "PATH": "/usr/bin"}
+    assert s.env == {"K": "v", "PWD": "/w", "PATH": "/usr/bin", "IFS": " \t\n"}
     assert s.mount_modes == {"/data": MountMode.READ}
 
 
@@ -197,7 +198,12 @@ async def test_manager_default_adopts_stored_fields():
     mgr = SessionManager("default", store=store)
     await mgr.ensure_loaded()
     assert mgr.cwd == "/w"
-    assert mgr.env == {"A": "1", "PWD": "/w", "PATH": "/usr/bin"}
+    assert mgr.env == {
+        "A": "1",
+        "PWD": "/w",
+        "PATH": "/usr/bin",
+        "IFS": " \t\n"
+    }
 
 
 @pytest.mark.asyncio

@@ -163,10 +163,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "ar5=(one two three); echo ${ar5[*]}",
+      "command": "ar5=(one two three); echo ${ar5[*]}; (IFS=,; printf \"[%s]\\n\" \"${ar5[*]}\" \"p ${ar5[*]}\" \"${ar5[*]/o/0}\" \"${!ar5[*]}\" \"${ar5[*]:1}\" ${ar5[*]}; x=${ar5[*]}; printf \"[%s]\\n\" \"$x\"; IFS=; printf \"[%s]\\n\" \"${ar5[*]}\")",
       "expect": {
         "exit": 0,
-        "stdout": "one two three\n",
+        "stdout": "one two three\n[one,two,three]\n[p one,two,three]\n[0ne,tw0,three]\n[0,1,2]\n[two,three]\n[one]\n[two]\n[three]\n[one,two,three]\n[onetwothree]\n",
         "stderr": ""
       }
     },

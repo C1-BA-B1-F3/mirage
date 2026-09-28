@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { CHAR_SEQ, INERT_CLOSE, INERT_OPEN, NUM_SEQ } from './constants.ts'
+import { type Chunk, piece } from './types.ts'
 
 // Encode an already-expanded chunk as an opaque template atom. Inert
 // atoms never contribute brace metacharacters, matching bash's ordering
@@ -23,23 +24,22 @@ export function makeInert(index: number): string {
   return `${INERT_OPEN}${String(index)}${INERT_CLOSE}`
 }
 
-// Replace inert atoms in an expanded template word with their values.
-export function substitute(word: string, values: string[]): string {
-  if (!word.includes(INERT_OPEN)) return word
-  const out: string[] = []
+// Replace inert atoms in an expanded template word with their pieces. The
+// template's own text is literal and never splits; an atom keeps the
+// pieces its expansion produced. An empty word has no pieces, so it is no
+// word at all: `{,x}` is `x`.
+export function substitute(word: string, values: Chunk[][]): Chunk[] {
+  const out: Chunk[] = []
   let i = 0
   for (;;) {
     const j = word.indexOf(INERT_OPEN, i)
-    if (j < 0) {
-      out.push(word.slice(i))
-      break
-    }
-    out.push(word.slice(i, j))
+    const literal = j < 0 ? word.slice(i) : word.slice(i, j)
+    if (literal !== '') out.push(piece(literal))
+    if (j < 0) return out
     const k = word.indexOf(INERT_CLOSE, j)
-    out.push(values[Number(word.slice(j + 1, k))] ?? '')
+    out.push(...(values[Number(word.slice(j + 1, k))] ?? []))
     i = k + 1
   }
-  return out.join('')
 }
 
 function isPadded(text: string): boolean {

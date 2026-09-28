@@ -16,6 +16,10 @@ ARITH_OPEN_TOKEN = "(("
 
 QUOTES = (b"'", b'"')
 
+# Nodes whose backslashes escape nothing, so a backslash-newline in one
+# is text rather than a line continuation.
+VERBATIM_TYPES = frozenset({"raw_string", "ansi_c_string", "comment"})
+
 BASH_KEYWORDS = frozenset({
     "if",
     "then",

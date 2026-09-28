@@ -14,7 +14,9 @@
 
 import type { PathSpec } from '../../../../types.ts'
 import { fsStrerror } from '../../../../utils/errors.ts'
+import type { CallStack } from '../../../../shell/call_stack.ts'
 import type { SessionState } from '../../../session/session.ts'
+import { positionalParams, setPositionalParams } from '../../../session/state.ts'
 import { ExecutionNode } from '../../../types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import { scopePath } from '../scope.ts'
@@ -29,6 +31,7 @@ export async function handleSource(
   path: string | PathSpec,
   session: SessionState,
   args: string[] = [],
+  callStack: CallStack | null = null,
 ): Promise<Result> {
   const raw = scopePath(path)
   if (wordText(path) === '') {
@@ -44,18 +47,19 @@ export async function handleSource(
     if (strerror === null) throw err
     return scriptError('source', `${raw}: ${strerror}`, 1, `source ${raw}`)
   }
-  let savedPositional: string[] | null = null
-  if (args.length > 0) {
-    savedPositional = session.positionalArgs
-    session.positionalArgs = args
-  }
+  // The file runs as a line of its own, which reads the shell's
+  // parameters, so the ones in scope stand in for them while it runs.
+  const shellParams = session.positionalArgs
+  session.positionalArgs = args.length > 0 ? args : positionalParams(session, callStack)
   session.sourceDepth += 1
   try {
     const io = await executeFn(script, { sessionId: session.sessionId })
     return [io.stdout, io, new ExecutionNode({ command: `source ${raw}`, exitCode: io.exitCode })]
   } finally {
     session.sourceDepth -= 1
-    if (savedPositional !== null) session.positionalArgs = savedPositional
+    const scoped = session.positionalArgs
+    session.positionalArgs = shellParams
+    if (args.length === 0) setPositionalParams(session, callStack, scoped)
   }
 }
 
@@ -68,5 +72,12 @@ export async function sourceBuiltin(call: BuiltinCall): Promise<Result> {
   const target = operands[0]
   if (target === undefined) return scriptError('source', SOURCE_USAGE, 2)
   const sourceArgs = operands.slice(1).map((o) => wordText(o))
-  return handleSource(call.dispatch, call.executeFn, target, call.session, sourceArgs)
+  return handleSource(
+    call.dispatch,
+    call.executeFn,
+    target,
+    call.session,
+    sourceArgs,
+    call.callStack,
+  )
 }

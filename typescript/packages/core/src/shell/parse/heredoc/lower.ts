@@ -94,3 +94,37 @@ export function rebaseSource(source: HeredocSource, repaired: string): HeredocSo
     documents: source.documents.map(([start, doc]) => [starts.get(start) ?? start, doc]),
   }
 }
+
+/** `text` without the characters at the ascending `dropped` offsets. */
+export function dropChars(text: string, dropped: readonly number[]): string {
+  if (dropped.length === 0) return text
+  let out = ''
+  let cursor = 0
+  for (const offset of dropped) {
+    out += text.slice(cursor, offset)
+    cursor = offset + 1
+  }
+  return out + text.slice(cursor)
+}
+
+/**
+ * Delete lowered characters and keep every location pointing where it
+ * did: each surviving character keeps its original location, and each
+ * document anchor moves back by the characters deleted ahead of it.
+ */
+export function dropSourceChars(source: HeredocSource, dropped: readonly number[]): HeredocSource {
+  if (dropped.length === 0) return source
+  const gone = new Set(dropped)
+  const offsets = source.offsets.filter(
+    (_, index) => index === source.source.length || !gone.has(index),
+  )
+  return {
+    ...source,
+    source: dropChars(source.source, dropped),
+    offsets,
+    documents: source.documents.map(([start, doc]) => [
+      start - dropped.filter((offset) => offset < start).length,
+      doc,
+    ]),
+  }
+}

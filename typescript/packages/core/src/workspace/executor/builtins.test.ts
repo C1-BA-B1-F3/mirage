@@ -1220,7 +1220,7 @@ describe('handleShift', () => {
   it('shifts call-stack positional args', () => {
     const cs = new CallStack()
     cs.push(['a', 'b', 'c', 'd'])
-    handleShift(['2'], cs, null)
+    handleShift(['2'], cs, new SessionState({ sessionId: 'test' }))
     expect(cs.getAllPositional()).toEqual(['c', 'd'])
   })
 
@@ -1432,7 +1432,30 @@ describe('handleSet', () => {
   it('no args → print env', () => {
     const s = new SessionState({ sessionId: 'test', vars: varsFromEnv({ A: '1' }) })
     const [out] = handleSet([], s)
-    expect(decode(out as Uint8Array)).toBe('A=1\nPATH=/usr/bin\nPWD=/\n')
+    expect(decode(out as Uint8Array)).toBe("A=1\nIFS=$' \\t\\n'\nPATH=/usr/bin\nPWD=/\n")
+  })
+
+  it.each([
+    ['a,b', 'a,b'],
+    ['', ''],
+    ['a b', "'a b'"],
+    ["it's", "'it'\\''s'"],
+    ['~x', "'~x'"],
+    ['x=~y', "'x=~y'"],
+    ['x~', 'x~'],
+    ['#c', "'#c'"],
+    ['x#', 'x#'],
+    [' \t\n', "$' \\t\\n'"],
+  ])('no args quotes %j as bash does', (value, listed) => {
+    const s = new SessionState({ sessionId: 'test', vars: varsFromEnv({ V: value }) })
+    const [out] = handleSet([], s)
+    expect(decode(out as Uint8Array).split('\n')).toContain(`V=${listed}`)
+  })
+
+  it('no args sorts by name', () => {
+    const s = new SessionState({ sessionId: 'test', vars: varsFromEnv({ B2: '1', B: '2' }) })
+    const lines = decode(handleSet([], s)[0] as Uint8Array).split('\n')
+    expect(lines.indexOf('B=2')).toBeLessThan(lines.indexOf('B2=1'))
   })
 
   it('"-- a b" sets positional args', () => {

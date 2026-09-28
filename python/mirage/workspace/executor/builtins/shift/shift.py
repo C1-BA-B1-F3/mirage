@@ -18,13 +18,15 @@ from mirage.shell.call_stack import CallStack
 from mirage.workspace.executor.builtins.shared import is_count_word
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
+from mirage.workspace.session.state import (positional_params,
+                                            set_positional_params)
 from mirage.workspace.types import ExecutionNode
 
 
 async def handle_shift(
     args: list[str],
     call_stack: CallStack | None,
-    session: SessionState | None = None,
+    session: SessionState,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Shift positional parameters, with bash's argument checks.
 
@@ -36,7 +38,7 @@ async def handle_shift(
         args (list[str]): words after the command name; at most one,
             the shift count.
         call_stack (CallStack | None): function-call positional frames.
-        session (SessionState | None): shell session state.
+        session (SessionState): shell session state.
     """
     if len(args) > 1:
         err = b"shift: too many arguments\n"
@@ -54,17 +56,12 @@ async def handle_shift(
         return None, IOResult(exit_code=1,
                               stderr=err), ExecutionNode(command="shift",
                                                          exit_code=1)
+    params = positional_params(session, call_stack)
     # bash: a count past `$#` shifts nothing and returns 1, silently.
-    if call_stack is not None and call_stack.get_all_positional():
-        if n > call_stack.get_positional_count():
-            return None, IOResult(exit_code=1), ExecutionNode(command="shift",
-                                                              exit_code=1)
-        call_stack.shift(n)
-    elif session is not None:
-        if n > len(session.positional_args):
-            return None, IOResult(exit_code=1), ExecutionNode(command="shift",
-                                                              exit_code=1)
-        session.positional_args = session.positional_args[n:]
+    if n > len(params):
+        return None, IOResult(exit_code=1), ExecutionNode(command="shift",
+                                                          exit_code=1)
+    set_positional_params(session, call_stack, params[n:])
     return None, IOResult(), ExecutionNode(command="shift", exit_code=0)
 
 

@@ -537,10 +537,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "f=x; printf \"[%s]\\n\" \"$f \"y",
+      "command": "f=x; printf \"[%s]\\n\" \"$f \"y; (g='a  b'; printf \"[%s]\\n\" q$g ${g}r \"q$g\")",
       "expect": {
         "exit": 0,
-        "stdout": "[x y]\n",
+        "stdout": "[x y]\n[qa]\n[b]\n[a]\n[br]\n[qa  b]\n",
         "stderr": ""
       }
     },
@@ -2033,10 +2033,112 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "(set -- \"a \" b; printf '[%s]\\n' \"$1\" \"$*\" \"$* \")",
+      "command": "(set -- \"a \" b; printf '[%s]\\n' \"$1\" \"$*\" \"$* \"; IFS=; printf '[%s]\\n' \"$* \" $*; IFS=,; printf '[%s]\\n' \"$* \" $*)",
       "expect": {
         "exit": 0,
-        "stdout": "[a ]\n[a  b]\n[a  b ]\n",
+        "stdout": "[a ]\n[a  b]\n[a  b ]\n[a b ]\n[a ]\n[b]\n[a ,b ]\n[a ]\n[b]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "expansion_spacing_ifs_fields",
+      "seq": 932035,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(IFS=,; x=',a,,b, '; printf '[%s]\\n' $x q$x \"$x\"; IFS=', '; y=' a , b ,,c '; printf '[%s]\\n' $y; a=($y); printf '<%s>' \"${#a[@]}\" \"${a[@]}\"; echo; for i in $y; do printf '{%s}' \"$i\"; done; echo)",
+      "expect": {
+        "exit": 0,
+        "stdout": "[]\n[a]\n[]\n[b]\n[ ]\n[q]\n[a]\n[]\n[b]\n[ ]\n[,a,,b, ]\n[a]\n[b]\n[]\n[c]\n<4><a><b><><c>\n{a}{b}{}{c}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "expansion_spacing_ifs_whitespace_subsets",
+      "seq": 932036,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(IFS=$'\\n'; x=$'a b\\nc'; printf '[%s]\\n' $x; IFS=' '; y=$'d\\te f'; printf '[%s]\\n' $y; IFS=; printf '[%s]\\n' $x $(echo g h); IFS=2; printf '[%s]\\n' $((12+0)) $((1+1)))",
+      "expect": {
+        "exit": 0,
+        "stdout": "[a b]\n[c]\n[d\te]\n[f]\n[a b\nc]\n[g h]\n[1]\n[]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "expansion_spacing_ifs_local",
+      "seq": 932037,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(f() { local IFS=,; printf '[%s]\\n' \"$*\" $1; }; f a,b c; x='d,e f'; printf '[%s]\\n' $x; g() { local IFS; printf '[%s]\\n' \"${IFS-unset}\" $x; }; IFS=,; g; printf '[%s]\\n' $x)",
+      "expect": {
+        "exit": 0,
+        "stdout": "[a,b,c]\n[a]\n[b]\n[d,e]\n[f]\n[unset]\n[d,e]\n[f]\n[d]\n[e f]\n",
         "stderr": ""
       }
     },

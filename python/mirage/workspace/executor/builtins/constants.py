@@ -20,3 +20,9 @@ IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 # A subscript must be non-empty: bash rejects `a[]` as an invalid
 # identifier, while `a[ ]` is a valid arithmetic 0.
 TARGET_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)(?:\[(.+)\])?\Z")
+
+# What makes bash's bare `set` single-quote a value: IFS whitespace,
+# quoting and control characters, reserved-word and glob characters, and
+# the expansion introducers (`sh_contains_shell_metas`). A `~` counts at
+# the start or after `=` or `:`, and a `#` only at the start.
+SET_QUOTED_CHARS = frozenset(" \t\n'\"\\|&;()<>!{}*[?]^$`")

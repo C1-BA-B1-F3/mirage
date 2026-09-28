@@ -198,7 +198,8 @@ async def _gunzipped(p: PathSpec, source: Callable[[PathSpec],
     raw = b"" if opened is None else await materialize(opened.stream)
     data, failure = gunzip_partial(raw, passthrough=True)
     if failure is not None and failure.exit_code != 2:
-        errors.append(failure.render(operand_label(p, "stdin")))
+        name = opened.name if opened is not None else p
+        errors.append(failure.render(operand_label(name, "stdin")))
         failed = True
     return data, failed
 

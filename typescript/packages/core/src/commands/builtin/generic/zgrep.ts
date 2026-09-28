@@ -133,7 +133,7 @@ async function gunzipped(
   const raw = found === null ? new Uint8Array() : await materialize(found.stream)
   const [data, failure] = await gunzipPartial(raw, true)
   if (failure !== null && failure.exitCode !== 2) {
-    errors += failure.render(operandLabel(p, 'stdin'))
+    errors += failure.render(operandLabel(found?.name ?? p, 'stdin'))
     failed = true
   }
   return [data, failed, errors]

@@ -24,10 +24,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "mkdir -p /data/xm2ctree/sub && echo ca | tee /data/xm2ctree/ca.txt > /dev/null && echo cb | tee /data/xm2ctree/sub/cb.txt > /dev/null && ln -s missing /data/xm2ctree/link && cp -r /data/xm2ctree /data2/xm2ccopy && cat /data2/xm2ccopy/ca.txt /data2/xm2ccopy/sub/cb.txt && cat /data/xm2ctree/ca.txt && readlink /data2/xm2ccopy/link && echo keep > /data2/xm2ccopy/extra && ln -s second /data/xm2ctree/extra && cp -rnT /data/xm2ctree /data2/xm2ccopy && cat /data2/xm2ccopy/extra && cp -rbT /data/xm2ctree /data2/xm2ccopy && readlink /data2/xm2ccopy/extra && cat /data2/xm2ccopy/extra~",
+      "command": "mkdir -p /data/xm2ctree/sub && echo ca | tee /data/xm2ctree/ca.txt > /dev/null && echo cb | tee /data/xm2ctree/sub/cb.txt > /dev/null && ln -s missing /data/xm2ctree/link && cp -r /data/xm2ctree /data2/xm2ccopy && cat /data2/xm2ccopy/ca.txt /data2/xm2ccopy/sub/cb.txt && cat /data/xm2ctree/ca.txt && readlink /data2/xm2ccopy/link && echo keep > /data2/xm2ccopy/extra && ln -s second /data/xm2ctree/extra && cp -rnT /data/xm2ctree /data2/xm2ccopy && cat /data2/xm2ccopy/extra && cp -rbT /data/xm2ctree /data2/xm2ccopy && readlink /data2/xm2ccopy/extra && cat /data2/xm2ccopy/extra~ && cp -bP /data/xm2ctree/extra /data2/xm2ccopy/extra && readlink /data2/xm2ccopy/extra~ && echo local > /data/xm2ctree/local && cp -bP /data/xm2ctree/extra /data/xm2ctree/local && readlink /data/xm2ctree/local && cat /data/xm2ctree/local~ && cp -bP /data/xm2ctree/extra /data/xm2ctree/local && readlink /data/xm2ctree/local~",
       "expect": {
         "exit": 0,
-        "stdout": "ca\ncb\nca\nmissing\nkeep\nsecond\nkeep\n",
+        "stdout": "ca\ncb\nca\nmissing\nkeep\nsecond\nkeep\nsecond\nsecond\nlocal\nsecond\n",
         "stderr": ""
       }
     }

@@ -265,8 +265,9 @@ export async function makeLink(
   lines: string[] | undefined,
 ): Promise<boolean> {
   const stat: StatFn = (path) => linkStat(copies, path)
-  const there = await entryAt(copies.dispatch, target)
-  if (copies.links.statAt(target.virtual) === null && there?.type === FileType.DIRECTORY) {
+  const targetLink = copies.links.statAt(target.virtual)
+  const there = targetLink ?? (await entryAt(copies.dispatch, target))
+  if (there?.type === FileType.DIRECTORY) {
     errors.push(
       `${policy.cmdName}: cannot overwrite directory '${target.rawPath}' with non-directory`,
     )
@@ -275,7 +276,7 @@ export async function makeLink(
   if (!(await overwriteGate(policy, stat, src, target, errors))) return false
   const made = await makeBackup(
     policy,
-    { rename: (a, b) => renameLink(copies, a, b) },
+    targetLink === null ? copies.relay : { rename: (a, b) => renameLink(copies, a, b) },
     stat,
     copies.relay.readdir,
     target,

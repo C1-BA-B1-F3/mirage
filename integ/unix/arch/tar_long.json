@@ -321,10 +321,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "(mkdir -p /data/tlo131104 && ln -s /data/a.txt /data/tlo131104/l && tar --create --dereference -f /data/tlo131104/a.tar -C /data/tlo131104 l && tar -x -O -f /data/tlo131104/a.tar | head -n 2; rc=$?; rm -r /data/tlo131104; exit $rc)",
+      "command": "(mkdir -p /data/tlo131104 && head -n 2 /data/a.txt > /data/tlo131104/source && ln -s source /data/tlo131104/l && tar --create --dereference --file=/data/tlo131104/a.tar --directory=/data/tlo131104 l && tar --extract --to-stdout --file=/data/tlo131104/a.tar && readlink /data/tlo131104/l; rc=$?; rm -r /data/tlo131104; exit $rc)",
       "expect": {
         "exit": 0,
-        "stdout": "hello\nworld\n",
+        "stdout": "hello\nworld\nsource\n",
         "stderr": ""
       }
     }

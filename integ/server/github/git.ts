@@ -15,15 +15,17 @@
 import type { Ctx, JsonValue, KitRoute } from '../kit/typescript/index.ts'
 import { API_PREFIXES } from './config.ts'
 import type { C } from './config.ts'
-import { INVALID_PERSON, blobSha, bodyPerson, commitPeople, personJson, treeSha } from './wire.ts'
+import { INVALID_PERSON, bodyPerson, commitPeople, personJson, treeSha } from './wire.ts'
 import type { CommitRow } from './wire.ts'
 import {
   addBranch,
+  blobBySha,
   branchFor,
   branchNames,
   commitList,
   commitsBySha,
   headOf,
+  keepTree,
   reaches,
   repoIsEmpty,
   stageTree,
@@ -35,19 +37,6 @@ import type { RepoRow } from './store.ts'
 import { authedRoute, everywhere, fail, jsonBodyOf, param, route, str, withRepo } from './http.ts'
 import { recordCommit, writeFile } from './contents.ts'
 import { stripSlash } from '../kit/typescript/index.ts'
-
-async function blobBySha(
-  db: C,
-  tenant: string,
-  repo: RepoRow,
-  sha: string,
-): Promise<Buffer | null> {
-  for (const branch of await branchNames(db, tenant, repo)) {
-    const files = await treeOfBranch(db, tenant, repo, branch)
-    for (const data of files.values()) if (blobSha(data) === sha) return data
-  }
-  return null
-}
 
 // Build a tree from a base plus the caller's entries. A null sha is git's
 // delete, `content` is the inline form, and a bare sha names a blob the caller
@@ -257,6 +246,7 @@ const updateRef = withRepo(async (ctx, repo) => {
     where: { tenant: ctx.tenant, repo: repo.fullName, name },
     data: { headSha: sha },
   })
+  await keepTree(ctx.db, ctx.tenant, repo, name)
   await ctx.db.githubFile.deleteMany({
     where: { tenant: ctx.tenant, repo: repo.fullName, branch: name },
   })

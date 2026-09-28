@@ -100,6 +100,41 @@
         "n",
         "byte_offset"
       ]
+    },
+    {
+      "id": "rg_prefilter_null_data_offsets",
+      "seq": 1287014,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "seq 1 20000 | tr '\\n' '\\000' > /data/prefilter.z; printf 'NEEDLE\\000needle\\000other\\000needleX\\000' >> /data/prefilter.z; rg --null-data -nb 'needle|other' /data/prefilter.z",
+      "expect": {
+        "exit": 0,
+        "stdout": "20002:108901:needle\u000020003:108908:other\u000020004:108914:needleX\u0000",
+        "stderr": ""
+      },
+      "flags": [
+        "null_data",
+        "n",
+        "byte_offset"
+      ]
     }
   ]
 }

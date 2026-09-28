@@ -367,7 +367,6 @@ warn_return_any = true
 # never add one. A new module is checked the day it lands.
 [[tool.mypy.overrides]]
 module = [
-    "mirage.accessor._hf",
     "mirage.accessor.gdocs",
     "mirage.accessor.gdrive",
     "mirage.accessor.gmail",

@@ -12,12 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { searchPrefilter } from './search_prefilter.ts'
 import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import { discardStreams } from '../../io/stream.ts'
 import { YieldBudget } from '../../io/yield_budget.ts'
 import { encodeText } from '../../shell/bytes.ts'
 import { byteOffset } from '../../shell/helpers.ts'
+import { requiredNeedles } from './grep_prefilter.ts'
 import { decodeLine, encodeLine } from './grep_offsets.ts'
 import type { TypeChange, TypeSelection } from './rg_filetypes.ts'
 
@@ -627,10 +627,25 @@ export function nonmatchStop(f: RgFlags): NonmatchStop {
   return new NonmatchStop(f.stopOnNonmatch, f.invert && !f.passthru)
 }
 
-function recordPrefilter(pat: RegExp, f: RgFlags): string | RegExp | null {
+// The needles a record must hold to be selected, or null when every record
+// is read: -v, --stop-on-nonmatch, --passthru and printed context print or
+// stop at a record that holds none.
+function recordNeedles(pat: RegExp, f: RgFlags): string[] | null {
   return f.invert || f.stopOnNonmatch || f.passthru || printsContext(f)
     ? null
-    : searchPrefilter(pat)
+    : requiredNeedles(pat)
+}
+
+// Skip the buffered records before the next one that could be selected;
+// returns the records and bytes passed over.
+function skipRecords(
+  lines: AsyncLineIterator,
+  needles: string[] | null,
+  pat: RegExp,
+  f: RgFlags,
+): [number, number] {
+  if (needles === null) return [0, 0]
+  return lines.skipNonmatchingLines(needles, pat.ignoreCase, f.nullData ? 0 : 0x0a)
 }
 
 async function readRecord(
@@ -638,7 +653,8 @@ async function readRecord(
   f: RgFlags,
   signal?: AbortSignal,
 ): Promise<Uint8Array | null> {
-  const [raw, terminated] = await lines.readUntil(f.nullData ? 0 : 10, signal)
+  if (!f.nullData) return lines.readline(signal)
+  const [raw, terminated] = await lines.readUntil(0, signal)
   return terminated || raw.length > 0 ? raw : null
 }
 
@@ -651,9 +667,9 @@ async function listing(
   tally: Tally,
   signal?: AbortSignal,
 ): Promise<void> {
-  const prefilter = recordPrefilter(pat, f)
+  const needles = recordNeedles(pat, f)
   for (;;) {
-    if (prefilter !== null) lines.skipNonmatchingLines(prefilter, f.nullData ? 0 : 10)
+    skipRecords(lines, needles, pat, f)
     const raw = await readRecord(lines, f, signal)
     if (raw === null) break
     if (selects(pat, decodeLine(raw), f.invert)) {
@@ -674,9 +690,9 @@ async function count(
   let total = 0
   let selected = 0
   const stop = nonmatchStop(f)
-  const prefilter = recordPrefilter(pat, f)
+  const needles = recordNeedles(pat, f)
   for (;;) {
-    if (prefilter !== null) lines.skipNonmatchingLines(prefilter, f.nullData ? 0 : 10)
+    skipRecords(lines, needles, pat, f)
     const raw = await readRecord(lines, f, signal)
     if (raw === null) break
     const text = decodeLine(raw)
@@ -730,13 +746,11 @@ async function* printedLines(
   let lastPrinted = -1
   let afterLeft = 0
   const stop = nonmatchStop(f)
-  const prefilter = recordPrefilter(pat, f)
+  const needles = recordNeedles(pat, f)
   for (;;) {
-    if (prefilter !== null) {
-      const [skipped, bytes] = lines.skipNonmatchingLines(prefilter, f.nullData ? 0 : 10)
-      index += skipped
-      position += bytes
-    }
+    const [skipped, bytes] = skipRecords(lines, needles, pat, f)
+    index += skipped
+    position += bytes
     const raw = await readRecord(lines, f, signal)
     if (raw === null) break
     index += 1

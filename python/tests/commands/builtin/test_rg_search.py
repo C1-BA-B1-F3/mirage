@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import re
+from unittest.mock import patch
 
 import pytest
 
@@ -233,20 +234,31 @@ async def test_null_data_anchors_match_embedded_newlines(flags):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    'pattern', ['needle', 'needle|other', 'nee.le', '(?:needle|other)+'])
-@pytest.mark.parametrize('flags', [{
-    'count': True
+    "pattern",
+    ["needle", "needle|qqzzyy", "nee.le", r"\bneedle\b", "(?:needle|other)+"])
+@pytest.mark.parametrize("flags", [{
+    "count": True
 }, {
-    'files_with_matches': True
+    "files_with_matches": True
 }, {}, {
-    'ignore_case': True,
-    'count': True
+    "ignore_case": True,
+    "count": True
 }, {
-    'word_regexp': True,
-    'count': True
+    "ignore_case": True,
+    "files_with_matches": True
 }, {
-    'null_data': True,
-    'count': True
+    "ignore_case": True
+}, {
+    "word_regexp": True,
+    "count": True
+}, {
+    "line_regexp": True,
+    "count": True
+}, {
+    "null_data": True,
+    "count": True
+}, {
+    "null_data": True
 }])
 async def test_block_search_skips_records(pattern, flags, monkeypatch):
     reads = 0
@@ -257,54 +269,112 @@ async def test_block_search_skips_records(pattern, flags, monkeypatch):
         reads += 1
         return await read_until(self, delimiter)
 
-    monkeypatch.setattr(AsyncLineIterator, 'read_until', counted)
-    data = (b'abcdefg' + (b'\0' if flags.get('null_data') else b'\n')) * 40000
-    result, selected = await _search(data, pattern, **flags)
-    assert (result, selected) == ('', False)
+    monkeypatch.setattr(AsyncLineIterator, "read_until", counted)
+    data = (b"abcdefg" + (b"\0" if flags.get("null_data") else b"\n")) * 40000
+    assert await _search(data, pattern, **flags) == ("", False)
     assert reads < 50
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('size', [1, 7, 16384, 65536])
+@pytest.mark.parametrize("size", [1, 7, 16384, 65536])
 async def test_block_search_preserves_records(size):
-    data = (('abcdefg\n' *
-             (200 if size < 10 else 9000)) + 'é NEEDLE\nother\n' +
-            ('abcdefg\n' * (200 if size < 10 else 9000)) + 'needle').encode()
+    data = (("abcdefg\n" *
+             (200 if size < 10 else 9000)) + "é NEEDLE\nother\n" +
+            ("abcdefg\n" * (200 if size < 10 else 9000)) + "needle").encode()
 
     async def source():
         for at in range(0, len(data), size):
             yield data[at:at + size]
 
     for flags in [{
-            'line_number': True,
-            'byte_offset': True,
-            'ignore_case': True
+            "line_number": True,
+            "byte_offset": True,
+            "ignore_case": True
     }, {
-            'count': True,
-            'ignore_case': True
+            "count": True,
+            "ignore_case": True
     }, {
-            'files_with_matches': True,
-            'ignore_case': True
+            "files_with_matches": True,
+            "ignore_case": True
     }, {
-            'after_context': 1,
-            'before_context': 1,
-            'ignore_case': True
+            "after_context": 1,
+            "before_context": 1,
+            "ignore_case": True
     }, {
-            'invert_match': True,
-            'count': True
+            "invert_match": True,
+            "count": True
     }, {
-            'stop_on_nonmatch': True,
-            'ignore_case': True
+            "stop_on_nonmatch": True,
+            "ignore_case": True
     }]:
         f = _flags(**flags)
-        pat = rg_matcher('needle|other', False, f)
+        pat = rg_matcher("needle|other", False, f)
         fast, slow = Tally(), Tally()
-        actual = b''.join([
-            c async for c in search_haystack(source(), pat, f, 'f', None, fast)
+        actual = b"".join([
+            c async for c in search_haystack(source(), pat, f, "f", None, fast)
         ])
-        reference = re.compile(f'(?P<reference>{pat.pattern})', pat.flags)
-        expected = b''.join([
-            c async for c in search_haystack(source(), reference, f, 'f', None,
-                                             slow)
-        ])
+        with patch.object(AsyncLineIterator,
+                          "skip_nonmatching_lines",
+                          return_value=(0, 0)):
+            expected = b"".join([
+                c async for c in search_haystack(source(), pat, f, "f", None,
+                                                 slow)
+            ])
         assert (actual, fast) == (expected, slow)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags", [
+    {},
+    {
+        "count": True
+    },
+    {
+        "count_matches": True
+    },
+    {
+        "files_with_matches": True
+    },
+    {
+        "files_without_match": True
+    },
+    {
+        "quiet": True
+    },
+    {
+        "max_count": 1
+    },
+    {
+        "invert_match": True
+    },
+    {
+        "context": 2
+    },
+    {
+        "passthru": True
+    },
+    {
+        "stop_on_nonmatch": True
+    },
+    {
+        "null_data": True
+    },
+    {
+        "only_matching": True
+    },
+    {
+        "word_regexp": True
+    },
+])
+async def test_rg_prefilter_preserves_output_and_offsets(flags):
+    data = ("abc\n" * 200 + "NEEDLE\nnone\nneedle needle\nſ\nK\nİ\nı\n" +
+            "abc\n" * 200 + "needle").encode()
+    opts = dict(flags, ignore_case=True, line_number=True, byte_offset=True)
+    for pattern in [
+            "needle|qqzzyy", "nee.le", r"\bneedle\b", "(?:needle)?", "s|k|i"
+    ]:
+        with patch.object(AsyncLineIterator,
+                          "skip_nonmatching_lines",
+                          return_value=(0, 0)):
+            expected = await _search(data, pattern, **opts)
+        assert await _search(data, pattern, **opts) == expected

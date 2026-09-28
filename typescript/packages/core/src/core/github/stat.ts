@@ -12,23 +12,28 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { GitHubAccessor } from '../../accessor/github.ts'
+import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
+import type { PathSpec } from '../../types.ts'
+import { FileStat, FileType } from '../../types.ts'
+import { enoent } from '../../utils/errors.ts'
 import { contentTypeForPath } from '../../utils/filetype.ts'
-import { FileStat, FileType, PathSpec } from '../../types.ts'
-import { readdirUnlocked as coreReaddir } from './readdir.ts'
-import { withIndexLock } from '../../cache/index/lock.ts'
-import { rstripSlash, stripSlash } from '../../utils/slash.ts'
-import { enoent, isEnoent } from '../../utils/errors.ts'
+import { locate, lookupRetrying, pointLookup } from './lookup.ts'
 
-function stripPrefix(path: PathSpec): string {
-  const prefix = mountPrefixOf(path.virtual, path.vfsPath)
-  let p = path.virtual
-  if (prefix !== '' && p.startsWith(prefix)) {
-    p = p.slice(prefix.length) || '/'
+// Render one tree row as a FileStat, the same from either route.
+function statOf(entry: IndexEntry): FileStat {
+  if (entry.resourceType === 'folder') {
+    return new FileStat({ name: entry.name, type: FileType.DIRECTORY })
   }
-  return p
+  return new FileStat({
+    name: entry.name,
+    size: entry.size,
+    type: FileType.FILE,
+    content: contentTypeForPath(entry.name),
+    fingerprint: entry.id,
+    extra: { sha: entry.id },
+  })
 }
 
 export async function stat(
@@ -36,47 +41,16 @@ export async function stat(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
-  const prefix = mountPrefixOf(path.virtual, path.vfsPath)
-  const p = stripPrefix(path)
-  const trimmed = stripSlash(p)
-  if (trimmed === '') {
+  const { prefix, rel, key } = locate(path)
+  if (rel === '') {
     return new FileStat({ name: '/', type: FileType.DIRECTORY })
   }
   if (index === undefined) throw enoent(path)
-  const ikey = `${rstripSlash(prefix)}/${trimmed}`
-  return withIndexLock(index, rstripSlash(prefix) || '/', async () => {
-    // Entries survive invalidation and replacement listings. Only the
-    // parent's current listing establishes freshness and membership.
-    const parentPath = ikey.slice(0, ikey.lastIndexOf('/')) || '/'
-    let children: string[]
-    try {
-      children = await coreReaddir(
-        accessor,
-        new PathSpec({
-          virtual: parentPath,
-          directory: parentPath,
-          resolved: false,
-          vfsPath: mountKey(parentPath, prefix),
-        }),
-        index,
-      )
-    } catch (error) {
-      if (isEnoent(error)) throw enoent(path)
-      throw error
-    }
-    if (!children.includes(ikey)) throw enoent(path)
-    const result = await index.get(ikey)
-    if (result.entry === undefined || result.entry === null) throw enoent(path)
-    if (result.entry.resourceType === 'folder') {
-      return new FileStat({ name: result.entry.name, type: FileType.DIRECTORY })
-    }
-    return new FileStat({
-      name: result.entry.name,
-      size: result.entry.size,
-      type: FileType.FILE,
-      content: contentTypeForPath(result.entry.name),
-      fingerprint: result.entry.id,
-      extra: { sha: result.entry.id },
-    })
-  })
+  // A probe through a throwaway index asks for this one path; everything
+  // else answers from the mount's listing, filling it if need be.
+  const found =
+    (await pointLookup(accessor, index, prefix, rel)) ??
+    (await lookupRetrying(accessor, index, prefix, key))
+  if (found.entry === null) throw enoent(path)
+  return statOf(found.entry)
 }

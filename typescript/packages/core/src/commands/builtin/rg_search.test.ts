@@ -12,9 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { describe, expect, it, vi } from 'vitest'
 import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import { materialize } from '../../io/types.ts'
-import { describe, expect, it, vi } from 'vitest'
 import { specOf } from '../spec/builtins.ts'
 import { FlagView } from '../spec/flag_view.ts'
 import type { FlagValue } from '../spec/types.ts'
@@ -223,7 +223,7 @@ it.each([{}, { line_regexp: true }])(
   },
 )
 
-describe.each(['needle', 'needle|other', 'nee.le', '(?:needle|other)+'])(
+describe.each(['needle', 'needle|qqzzyy', 'nee.le', '\\bneedle\\b', '(?:needle|other)+'])(
   'block search %s',
   (pattern) => {
     it.each([
@@ -231,17 +231,22 @@ describe.each(['needle', 'needle|other', 'nee.le', '(?:needle|other)+'])(
       { files_with_matches: true },
       {},
       { ignore_case: true, count: true },
+      { ignore_case: true, files_with_matches: true },
+      { ignore_case: true },
       { word_regexp: true, count: true },
+      { line_regexp: true, count: true },
       { null_data: true, count: true },
+      { null_data: true },
     ])('does not read each nonmatching record: %j', async (flags) => {
-      const reads = vi.spyOn(AsyncLineIterator.prototype, 'readUntil')
+      const lines = vi.spyOn(AsyncLineIterator.prototype, 'readline')
+      const records = vi.spyOn(AsyncLineIterator.prototype, 'readUntil')
       try {
         const data = ('abcdefg' + ('null_data' in flags ? '\0' : '\n')).repeat(40000)
-        const result = await search(data, pattern, flags)
-        expect(result).toBe('')
-        expect(reads.mock.calls.length).toBeLessThan(50)
+        expect(await search(data, pattern, flags)).toBe('')
+        expect(lines.mock.calls.length + records.mock.calls.length).toBeLessThan(50)
       } finally {
-        reads.mockRestore()
+        lines.mockRestore()
+        records.mockRestore()
       }
     })
   },
@@ -273,17 +278,52 @@ it.each([1, 7, 16384, 65536])(
       const fast = { selected: false },
         slow = { selected: false }
       const actual = await materialize(searchHaystack(input(), pat, f, 'f', null, fast))
-      const expected = await materialize(
-        searchHaystack(
-          input(),
-          new RegExp(`(?<reference>${pat.source})`, pat.flags),
-          f,
-          'f',
-          null,
-          slow,
-        ),
-      )
+      const skip = vi
+        .spyOn(AsyncLineIterator.prototype, 'skipNonmatchingLines')
+        .mockReturnValue([0, 0])
+      let expected: Uint8Array
+      try {
+        expected = await materialize(searchHaystack(input(), pat, f, 'f', null, slow))
+      } finally {
+        skip.mockRestore()
+      }
       expect([actual, fast]).toEqual([expected, slow])
     }
   },
 )
+
+it.each([
+  {},
+  { count: true },
+  { count_matches: true },
+  { files_with_matches: true },
+  { files_without_match: true },
+  { quiet: true },
+  { max_count: 1 },
+  { invert_match: true },
+  { context: 2 },
+  { passthru: true },
+  { stop_on_nonmatch: true },
+  { null_data: true },
+  { only_matching: true },
+  { word_regexp: true },
+])('preserves rg output and offsets with filtering disabled: %j', async (flags) => {
+  const data =
+    'abc\n'.repeat(200) +
+    'NEEDLE\nnone\nneedle needle\nſ\nK\nİ\nı\n' +
+    'abc\n'.repeat(200) +
+    'needle'
+  const opts = { ...flags, ignore_case: true, line_number: true, byte_offset: true }
+  for (const pattern of ['needle|qqzzyy', 'nee.le', '\\bneedle\\b', '(?:needle)?', 's|k|i']) {
+    const skip = vi
+      .spyOn(AsyncLineIterator.prototype, 'skipNonmatchingLines')
+      .mockReturnValue([0, 0])
+    let expected: string
+    try {
+      expected = await search(data, pattern, opts)
+    } finally {
+      skip.mockRestore()
+    }
+    expect(await search(data, pattern, opts)).toBe(expected)
+  }
+})

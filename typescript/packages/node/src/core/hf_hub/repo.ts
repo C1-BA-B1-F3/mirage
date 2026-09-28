@@ -18,7 +18,7 @@ import { apiUrl, HfHubError, hubGet, revSegment } from './client.ts'
 /** The repository's branches, tags and conversion refs. */
 export async function fetchRefs(accessor: HfHubAccessor): Promise<Record<string, unknown>> {
   const url = apiUrl(accessor.endpoint, accessor.repoType, accessor.repoId, '/refs')
-  const data = await hubGet(accessor.token, url)
+  const data = await hubGet(accessor.token, url, undefined, accessor.timeoutMs)
   return typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {}
 }
 
@@ -36,7 +36,7 @@ export async function fetchRefs(accessor: HfHubAccessor): Promise<Record<string,
  * finds the snapshot already there and serves dev's bytes.
  */
 export async function headCommit(accessor: HfHubAccessor): Promise<string> {
-  const data = await hubGet(accessor.token, revisionUrl(accessor))
+  const data = await hubGet(accessor.token, revisionUrl(accessor), undefined, accessor.timeoutMs)
   if (data === null || typeof data !== 'object' || Array.isArray(data)) return ''
   const sha = (data as Record<string, unknown>).sha
   return typeof sha === 'string' ? sha : ''
@@ -73,7 +73,7 @@ export function revisionUrl(accessor: HfHubAccessor): string {
  */
 export async function classifyAbsence(accessor: HfHubAccessor): Promise<Absence> {
   try {
-    await hubGet(accessor.token, revisionUrl(accessor))
+    await hubGet(accessor.token, revisionUrl(accessor), undefined, accessor.timeoutMs)
   } catch (err) {
     if (err instanceof HfHubError) {
       if (err.errorCode === 'RepoNotFound') return Absence.REPO

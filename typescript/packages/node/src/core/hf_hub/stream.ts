@@ -50,7 +50,7 @@ export async function* stream(
     if (rec !== null) rec.fingerprint = rowToken(entry, headers.etag ?? '')
   }
   try {
-    for await (const chunk of hubStream(accessor.token, url, stamp)) {
+    for await (const chunk of hubStream(accessor.token, url, stamp, accessor.timeoutMs)) {
       if (rec !== null) rec.bytes += chunk.length
       yield chunk
     }

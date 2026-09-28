@@ -213,8 +213,9 @@ async def handle_printf(
                                   stderr=err), ExecutionNode(command="printf",
                                                              exit_code=2)
         return b"", IOResult(), ExecutionNode(command="printf", exit_code=0)
-    output, errors = run_printf(args[0], args[1:])
-    err_bytes = "".join(errors).encode() if errors else b""
+    output, messages, failed = run_printf(args[0], args[1:])
+    err_bytes = "".join(messages).encode() if messages else b""
+    exit_code = 1 if failed else 0
     if target is not None and parsed is not None:
         base, subscript = parsed.group(1), parsed.group(2)
         try:
@@ -246,16 +247,16 @@ async def handle_printf(
                 exit_code=1, stderr=err_bytes), ExecutionNode(command="printf",
                                                               exit_code=1,
                                                               stderr=err_bytes)
-        exit_code = 1 if errors else 0
         return None, IOResult(exit_code=exit_code, stderr=err_bytes
                               or None), ExecutionNode(command="printf",
                                                       exit_code=exit_code)
     out = encode_text(output)
-    if errors:
-        return out, IOResult(exit_code=1,
-                             stderr=err_bytes), ExecutionNode(command="printf",
-                                                              exit_code=1,
-                                                              stderr=err_bytes)
+    if messages:
+        return out, IOResult(exit_code=exit_code,
+                             stderr=err_bytes), ExecutionNode(
+                                 command="printf",
+                                 exit_code=exit_code,
+                                 stderr=err_bytes)
     return out, IOResult(), ExecutionNode(command="printf", exit_code=0)
 
 

@@ -308,13 +308,13 @@ def _format_char(value: str, flags: str, width: int | None) -> str:
     return _apply_pad("", ch, flags, width, False)
 
 
-def _expand_escapes(s: str) -> tuple[str, bool]:
+def _expand_escapes(s: str, warnings: list[str]) -> tuple[str, bool]:
     out: list[str] = []
     i = 0
     n = len(s)
     while i < n:
         if s[i] == "\\":
-            text, i, stop = _read_escape(s, i, b_arg=True)
+            text, i, stop = _read_escape(s, i, warnings, b_arg=True)
             out.append(text)
             if stop:
                 return "".join(out), True
@@ -350,7 +350,8 @@ def _quote_shell(s: str) -> str:
     return "".join(out)
 
 
-def _read_escape(fmt: str, i: int, b_arg: bool) -> tuple[str, int, bool]:
+def _read_escape(fmt: str, i: int, warnings: list[str],
+                 b_arg: bool) -> tuple[str, int, bool]:
     """Interpret a backslash escape at ``fmt[i]``. Returns the emitted
     text, the next index, and whether output should stop (``\\c``).
 
@@ -359,9 +360,16 @@ def _read_escape(fmt: str, i: int, b_arg: bool) -> tuple[str, int, bool]:
     three more digits. bash 5.2.37 writes ``printf '\\0003'`` as NUL
     then ``3`` and ``printf %b '\\0003'`` as the byte 3.
 
+    A ``\\x``, ``\\u`` or ``\\U`` with no hex digit after it is written
+    as it stands, and bash's warning for it goes to ``warnings``. bash's
+    tescape reports it with builtin_error and leaves the exit status
+    alone, so ``printf '\\x'`` still exits 0.
+
     Args:
         fmt (str): the format string, or a ``%b`` argument.
         i (int): index of the backslash.
+        warnings (list[str]): collects the warnings, in the order bash
+            writes them to stderr.
         b_arg (bool): whether ``fmt`` is a ``%b`` argument.
     """
     n = len(fmt)
@@ -384,6 +392,8 @@ def _read_escape(fmt: str, i: int, b_arg: bool) -> tuple[str, int, bool]:
             # \x names a byte; \u and \U name a code point.
             text = byte_char(value) if ch == "x" else chr(value)
             return text, j, False
+        kind = "hex" if ch == "x" else "unicode"
+        warnings.append(f"printf: missing {kind} digit for \\{ch}\n")
         return "\\" + ch, i + 2, False
     if ch in _OCT:
         start = i + 1
@@ -442,18 +452,27 @@ def _read_conversion(
     return None
 
 
-def run_printf(fmt: str, args: list[str]) -> tuple[str, list[str]]:
+def run_printf(fmt: str, args: list[str]) -> tuple[str, list[str], bool]:
     """Apply GNU printf's format-reuse semantics: scan ``fmt`` once per
     cycle, consuming arguments; repeat while arguments remain and a cycle
     consumed at least one (so a conversion-less format prints once and
-    excess args are dropped). Returns the output and any error messages.
+    excess args are dropped). Returns the output, the stderr messages in
+    the order bash writes them, and whether a conversion failed. An
+    invalid number fails (exit status 1); a missing-digit escape warning
+    does not.
+
+    A ``\\c`` in a ``%b`` argument returns at once and reports no
+    failure. bash's ``%b`` returns there with the status it has so far,
+    and only the end of the builtin folds an invalid number into it, so
+    bash 5.2.37 exits 0 for ``printf '%d%b' abc '\\c'``.
 
     Args:
         fmt (str): the format string.
         args (list[str]): remaining positional arguments.
     """
     out: list[str] = []
-    errors: list[str] = []
+    messages: list[str] = []
+    failed = False
     arg_i = 0
     total = len(args)
     stop = False
@@ -464,7 +483,7 @@ def run_printf(fmt: str, args: list[str]) -> tuple[str, list[str]]:
         while i < n and not stop:
             ch = fmt[i]
             if ch == "\\":
-                text, i, stop = _read_escape(fmt, i, b_arg=False)
+                text, i, stop = _read_escape(fmt, i, messages, b_arg=False)
                 out.append(text)
                 continue
             if ch == "%":
@@ -498,20 +517,24 @@ def run_printf(fmt: str, args: list[str]) -> tuple[str, list[str]]:
                     arg_i += 1
                 w = width if isinstance(width, int) else None
                 p = precision if isinstance(precision, int) else None
-                text, err, stop = _convert(conv, raw, flags, w, p)
+                text, err, stop = _convert(conv, raw, flags, w, p, messages)
                 if err is not None:
-                    errors.append(err)
+                    messages.append(err)
+                    failed = True
                 out.append(text)
+                if stop:
+                    return "".join(out), messages, False
                 continue
             out.append(ch)
             i += 1
         if stop or arg_i >= total or arg_i == consumed_start:
             break
-    return "".join(out), errors
+    return "".join(out), messages, failed
 
 
 def _convert(conv: str, raw: str | None, flags: str, width: int | None,
-             precision: int | None) -> tuple[str, str | None, bool]:
+             precision: int | None,
+             warnings: list[str]) -> tuple[str, str | None, bool]:
     """Render one conversion. Returns (text, error message or None, stop),
     where ``stop`` requests that all further output be suppressed (a
     ``\\c`` inside a ``%b`` argument).
@@ -522,6 +545,8 @@ def _convert(conv: str, raw: str | None, flags: str, width: int | None,
         flags (str): active flags.
         width (int | None): resolved field width.
         precision (int | None): resolved precision.
+        warnings (list[str]): collects the escape warnings of a ``%b``
+            argument.
     """
     if conv == "s":
         return _format_printf_str(raw or "", flags, width, precision), None, \
@@ -529,7 +554,7 @@ def _convert(conv: str, raw: str | None, flags: str, width: int | None,
     if conv == "c":
         return _format_char(raw or "", flags, width), None, False
     if conv == "b":
-        text, stop = _expand_escapes(raw or "")
+        text, stop = _expand_escapes(raw or "", warnings)
         if precision is not None:
             text = text[:precision]
         return _apply_pad("", text, flags, width, False), None, stop

@@ -110,3 +110,33 @@ describe('direct lookup after incomplete search', () => {
     await index.close()
   })
 })
+
+describe('only a complete live listing proves absence', () => {
+  it.each(['complete', 'partial', 'expired'])('%s', async (listing) => {
+    vi.mocked(getFile).mockReset().mockResolvedValue(ITEM)
+    const index = new RAMIndexCacheStore()
+    try {
+      if (listing === 'partial') await index.setPartialDir('/docs/owned', [])
+      else await index.setDir('/docs/owned', [])
+      if (listing === 'expired') await index.invalidate()
+      const result = resolveAppEntry(
+        TM,
+        detectScope(PATH),
+        PATH,
+        index,
+        ITEM.mimeType,
+        'gdocs/file',
+        makeFilename,
+      )
+      if (listing === 'complete') {
+        await expect(result).rejects.toMatchObject({ code: 'ENOENT' })
+        expect(getFile).not.toHaveBeenCalled()
+      } else {
+        expect((await result).id).toBe(ITEM.id)
+        expect(getFile).toHaveBeenCalledExactlyOnceWith(TM, 'doc1')
+      }
+    } finally {
+      await index.close()
+    }
+  })
+})

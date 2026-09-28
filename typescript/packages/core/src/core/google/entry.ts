@@ -32,6 +32,9 @@ export async function resolveAppEntry(
 ): Promise<IndexEntry> {
   const parent = path.virtual.slice(0, path.virtual.lastIndexOf('/'))
   const listing = await index?.listDir(parent)
+  if (listing?.entries != null && !listing.entries.includes(path.virtual)) {
+    throw enoent(path.virtual)
+  }
   const hit = await index?.get(path.virtual)
   if (hit?.entry && (listing?.entries ?? listing?.partialEntries ?? []).includes(path.virtual)) {
     return hit.entry

@@ -117,3 +117,38 @@ async def test_direct_lookup_after_incomplete_search(backend, outcome):
         await index.close()
         if client is not None:
             await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backend", ["ram", "redis"])
+@pytest.mark.parametrize("listing", ["complete", "partial", "expired"])
+async def test_only_complete_live_listing_proves_absence(backend, listing):
+    client = FakeRedis() if backend == "redis" else None
+    index = RAMIndexCacheStore() if client is None else RedisIndexCacheStore(
+        client=client)
+    try:
+        if listing == "partial":
+            await index.set_partial_dir("/docs/owned", [])
+        else:
+            await index.set_dir("/docs/owned", [])
+        if listing == "expired":
+            await index.invalidate()
+        with patch("mirage.core.google.entry.get_file",
+                   new_callable=AsyncMock,
+                   return_value=ITEM) as get:
+            if listing == "complete":
+                with pytest.raises(FileNotFoundError):
+                    await resolve_app_entry(None, MATCH, PATH, index,
+                                            ITEM["mimeType"], "gdocs/file",
+                                            make_filename)
+                get.assert_not_awaited()
+            else:
+                entry = await resolve_app_entry(None, MATCH, PATH, index,
+                                                ITEM["mimeType"], "gdocs/file",
+                                                make_filename)
+                assert entry.id == ITEM["id"]
+                get.assert_awaited_once_with(None, "doc1")
+    finally:
+        await index.close()
+        if client is not None:
+            await client.aclose()

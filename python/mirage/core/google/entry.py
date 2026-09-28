@@ -41,6 +41,8 @@ async def resolve_app_entry(
     """
     parent = path.virtual.rsplit("/", 1)[0]
     listing = await index.list_dir(parent)
+    if listing.entries is not None and path.virtual not in listing.entries:
+        raise enoent(path.virtual)
     hit = await index.get(path.virtual)
     if hit.entry is not None and path.virtual in (listing.entries
                                                   or listing.partial_entries

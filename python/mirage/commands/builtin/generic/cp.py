@@ -312,7 +312,7 @@ async def make_link(copies: TransferLinks, src: PathSpec, target: PathSpec,
                        if target_link is not None else copies.relay)
     backup, ok = await make_backup(policy, backup_strategy, stat,
                                    copies.relay.readdir, target, writes,
-                                   errors)
+                                   errors, copies)
     if not ok:
         return False
     try:
@@ -404,7 +404,8 @@ async def copy_tree_links(
                                policy=policy,
                                writes=writes,
                                reads=reads,
-                               lines=lines)
+                               lines=lines,
+                               copies=copies)
             continue
         inside = resolved.rstrip("/") or "/"
         if any(inside == d or d.startswith(inside.rstrip("/") + "/")
@@ -425,7 +426,8 @@ async def copy_tree_links(
                            policy=policy,
                            writes=writes,
                            reads=reads,
-                           lines=lines)
+                           lines=lines,
+                           copies=copies)
         await copy_tree_links(copies, deref, replace(followed, raw_path=shown),
                               replace(placed,
                                       raw_path=f"{shown_dst}/{rel}"), errors,
@@ -746,6 +748,30 @@ async def _duplicate_for_backup(
     return True
 
 
+async def _restore_backup_link(copies: TransferLinks, backup: PathSpec,
+                               link: FileStat, cmd_name: str,
+                               errors: list[str]) -> None:
+    """Restore a displaced backup link, removing any partial copy first.
+
+    Args:
+        copies (TransferLinks): Namespace facts and transfer doors.
+        backup (PathSpec): Backup entry to restore.
+        link (FileStat): The original link's row.
+        cmd_name (str): Command name for error prefixes.
+        errors (list[str]): Collected errors, including restoration failures.
+    """
+    try:
+        if await path_exists(partial(link_stat, copies), backup):
+            await copies.dispatch("unlink", backup)
+        await copies.dispatch("symlink",
+                              backup,
+                              target=str(
+                                  link.extra.get(LINK_TARGET_KEY) or ""))
+    except FS_ERRORS as exc:
+        errors.append(f"{cmd_name}: cannot restore backup "
+                      f"'{backup.virtual}': {fs_strerror(exc)}")
+
+
 async def make_backup(
     policy: TransferPolicy,
     strategy: CopyStrategy | PrimitiveMove | NativeMove,
@@ -754,6 +780,7 @@ async def make_backup(
     target: PathSpec,
     writes: dict[str, ByteSource],
     errors: list[str],
+    copies: TransferLinks | None = None,
 ) -> tuple[PathSpec | None, bool]:
     """Back up an existing target before it is overwritten.
 
@@ -765,6 +792,7 @@ async def make_backup(
         target (PathSpec): The destination being replaced.
         writes (dict[str, ByteSource]): Recorded writes, updated in place.
         errors (list[str]): Collected stderr lines, appended in place.
+        copies (TransferLinks | None): Namespace facts and transfer doors.
 
     Returns:
         tuple[PathSpec | None, bool]: The backup path (None when no
@@ -777,21 +805,34 @@ async def make_backup(
     try:
         # A failed version scan must not degrade to ".~1~"/the simple
         # suffix: that would overwrite existing backup history.
-        backup = await backup_target(readdir, target, policy.backup,
-                                     policy.suffix)
+        backup = await backup_target(
+            copies.relay.readdir if copies is not None else readdir, target,
+            policy.backup, policy.suffix)
     except FS_ERRORS as exc:
         errors.append(f"{policy.cmd_name}: cannot backup "
                       f"'{target.virtual}': {fs_strerror(exc)}")
         return None, False
     if backup is None:
         return None, True
+    backup_link = (copies.links.stat_at(backup.virtual) if copies is not None
+                   and not isinstance(strategy, NativeMove) else None)
+    removed_link = False
+    made = False
     try:
+        if copies is not None and backup_link is not None:
+            await copies.dispatch("unlink", backup)
+            removed_link = True
         made = await _duplicate_for_backup(strategy, stat, target, backup,
                                            errors, policy.cmd_name)
     except FS_ERRORS as exc:
         errors.append(f"{policy.cmd_name}: cannot backup "
                       f"'{target.virtual}': {fs_strerror(exc)}")
         return None, False
+    finally:
+        if removed_link and not made and copies is not None \
+                and backup_link is not None:
+            await _restore_backup_link(copies, backup, backup_link,
+                                       policy.cmd_name, errors)
     if not made:
         return None, False
     writes[backup.mount_path] = b""
@@ -1069,7 +1110,7 @@ async def copy_entries(
                 continue
             backup, ok = await make_backup(
                 policy, strategy, stat, strategy.readdir, entry_dst,
-                writes if writes is not None else {}, errors)
+                writes if writes is not None else {}, errors, copies)
             if not ok:
                 copied_all = False
                 continue
@@ -1280,7 +1321,8 @@ async def cp(
                                    policy=policy,
                                    writes=writes,
                                    reads=reads,
-                                   lines=lines if flags.verbose else None)
+                                   lines=lines if flags.verbose else None,
+                                   copies=copies)
                 if copies is not None:
                     await copy_tree_links(copies, flags.dereference, src,
                                           target, errors,
@@ -1317,7 +1359,8 @@ async def cp(
                                             errors):
                     continue
                 backup, ok = await make_backup(policy, strategy, stat, readdir,
-                                               entry_dst, writes, errors)
+                                               entry_dst, writes, errors,
+                                               copies)
                 if not ok:
                     continue
                 await strategy.copy(entry, entry_dst)
@@ -1332,7 +1375,7 @@ async def cp(
         if not await overwrite_gate(policy, stat, src, target, errors):
             continue
         backup, ok = await make_backup(policy, strategy, stat, readdir, target,
-                                       writes, errors)
+                                       writes, errors, copies)
         if not ok:
             continue
         if isinstance(strategy, PrimitiveCopy):

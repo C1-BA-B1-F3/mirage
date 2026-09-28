@@ -479,6 +479,7 @@ export async function mvGeneric(
       writes,
       errors,
       index,
+      copies,
     )
     if (!made.ok) continue
     if (made.backup !== null && copies === undefined && !isPrimitiveMove(strategy)) {

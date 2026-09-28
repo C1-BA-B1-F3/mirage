@@ -624,3 +624,82 @@ async def test_mv_directory_backup_keeps_links_only_in_backup(destination):
             ws.shell(f"cat {destination}/dst/new "
                      f"{destination}/dst~/link/file")).stdout == b"newold"
     assert (await ws.shell(f"test -e {destination}/dst/sub")).exit_code == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("destination", ["/data", "/other"])
+@pytest.mark.parametrize("source_link", [False, True])
+@pytest.mark.parametrize("backup_target", ["safe", "missing", "dst~", "dir"])
+async def test_cp_backup_replaces_link_without_touching_its_referent(
+        destination, source_link, backup_target):
+    ws = Workspace({
+        "/data": RAMVFS(),
+        "/other": RAMVFS()
+    },
+                   mode=MountMode.WRITE)
+    setup = await ws.shell(
+        f"mkdir -p {destination}/dir; printf safe > {destination}/safe; "
+        f"printf child > {destination}/dir/file; "
+        f"printf old > {destination}/dst; "
+        f"ln -s {backup_target} {destination}/dst~; " +
+        ("ln -s absent /data/src" if source_link else "printf new > /data/src")
+    )
+    assert setup.exit_code == 0
+    result = await ws.shell(f"cp -Pb /data/src {destination}/dst")
+    assert result.exit_code == 0
+    assert result.stderr is None
+    assert not ws.namespace.is_link(f"{destination}/dst~")
+    assert (await
+            ws.shell(f"cat {destination}/dst~ {destination}/safe "
+                     f"{destination}/dir/file")).stdout == b"oldsafechild"
+    assert (await ws.shell(f"test -e {destination}/missing")).exit_code == 1
+    if source_link:
+        assert ws.namespace.readlink(f"{destination}/dst") == "absent"
+    else:
+        assert (await ws.shell(f"cat {destination}/dst")).stdout == b"new"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source_link", [False, True])
+async def test_cp_refused_backup_unlink_preserves_destination(source_link):
+    ws = Workspace({
+        "/data": RAMVFS(),
+        "/other": RAMVFS()
+    },
+                   mode=MountMode.WRITE,
+                   policies=[PinLinks()])
+    setup = await ws.shell(
+        "printf safe > /other/safe; printf old > /other/dst; "
+        "ln -s safe /other/dst.pinned; " +
+        ("ln -s absent /data/src" if source_link else "printf new > /data/src")
+    )
+    assert setup.exit_code == 0
+    result = await ws.shell("cp -Pb --suffix=.pinned /data/src /other/dst")
+    assert result.exit_code == 1
+    assert result.stderr == (b"cp: cannot backup '/other/dst': "
+                             b"Permission denied\n")
+    assert ws.namespace.readlink("/other/dst.pinned") == "safe"
+    assert (await ws.shell("cat /other/dst /other/safe")).stdout == b"oldsafe"
+    assert (await
+            ws.shell("test -e /data/src || test -L /data/src")).exit_code == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command", ["cp -P", "mv"])
+@pytest.mark.parametrize("destination", ["/data", "/other"])
+async def test_numbered_backup_counts_namespace_links(command, destination):
+    ws = Workspace({
+        "/data": RAMVFS(),
+        "/other": RAMVFS()
+    },
+                   mode=MountMode.WRITE)
+    setup = await ws.shell(
+        f"printf old > {destination}/dst; "
+        f"ln -s missing {destination}/dst.~1~; printf new > /data/src")
+    assert setup.exit_code == 0
+    result = await ws.shell(
+        f"{command} --backup=numbered /data/src {destination}/dst")
+    assert result.exit_code == 0
+    assert ws.namespace.readlink(f"{destination}/dst.~1~") == "missing"
+    assert (await ws.shell(f"cat {destination}/dst {destination}/dst.~2~")
+            ).stdout == b"newold"

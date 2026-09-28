@@ -460,7 +460,7 @@ async def mv(
         backup_strategy = (NativeMove(rename=partial(rename_link, copies))
                            if copies is not None else strategy)
         backup, ok = await make_backup(policy, backup_strategy, stat, readdir,
-                                       target, writes, errors)
+                                       target, writes, errors, copies)
         if not ok:
             continue
         if backup is not None and copies is None and isinstance(

@@ -244,6 +244,9 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-u', long: '--unrestricted', count: true }),
       new Option({ short: '-d', long: '--max-depth', type: 'str' }),
       new Option({ long: '--max-filesize', type: 'str' }),
+      // -L follows a link the walk meets; one named on the line is
+      // followed either way (ripgrep 14.1.1).
+      new Option({ short: '-L', long: '--follow' }),
       // A mount is mirage's filesystem boundary: this keeps the walk
       // out of every mount below the one it starts in.
       new Option({ long: '--one-file-system' }),
@@ -261,10 +264,9 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ long: '--no-messages' }),
       new Option({ long: '--messages' }),
       // Accepted no-ops: mirage reads no ignore files and no config
-      // file, runs one search at a time, never follows a link while
-      // walking, and never writes to a tty, so its output is already
-      // what these ask for; the negations restore defaults of
-      // features it does not have.
+      // file, runs one search at a time, and never writes to a tty,
+      // so its output is already what these ask for; the negations
+      // restore defaults of features it does not have.
       new Option({ long: '--no-ignore' }),
       new Option({ long: '--ignore' }),
       new Option({ long: '--no-ignore-dot' }),
@@ -293,6 +295,7 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ long: '--no-block-buffered' }),
       new Option({ long: '--mmap' }),
       new Option({ long: '--no-mmap' }),
+      // -L's negation, the last of the two winning.
       new Option({ long: '--no-follow' }),
       new Option({ long: '--no-stats' }),
       new Option({ long: '--no-crlf' }),

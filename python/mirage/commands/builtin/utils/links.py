@@ -19,7 +19,8 @@ from mirage.commands.config import CommandOpts
 from mirage.ops.types import LinkView
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, PathSpec
-from mirage.utils.path import resolve_path
+from mirage.utils.errors import eloop
+from mirage.utils.path import CycleError, resolve_path
 
 
 def name_location(links: LinkView, path: PathSpec, cwd: str) -> str | None:
@@ -108,6 +109,54 @@ class LinkDoor:
         where = name_location(self.links, path, self.cwd)
         return (where is not None and where != path.virtual
                 and self.links.stat_at(where) is None)
+
+    def children(self, directory: str) -> list[str]:
+        """The links standing directly in a directory, as virtual paths.
+
+        What a walker merges into a backend's listing, which never holds
+        a link.
+
+        Args:
+            directory (str): the directory's virtual path, every link
+                above it resolved, which is how the table keys its links.
+        """
+        base = directory.rstrip("/")
+        return [f"{base}/{row.name}" for row in self.links.children(directory)]
+
+    def target(self, link: str) -> str:
+        """Where a link leads, every link on the way followed.
+
+        Args:
+            link (str): the link's virtual path.
+
+        Raises:
+            DotWalkLoop: the chain loops (ELOOP), an OSError a walker
+                reports as it reports any failed stat.
+        """
+        try:
+            return self.links.resolve(link)
+        except CycleError:
+            raise eloop(link) from None
+
+    async def stat(self, virtual: str) -> FileStat:
+        """What a name leads to, its stat through the door.
+
+        Args:
+            virtual (str): the name's virtual path, on any mount.
+        """
+        stat: FileStat
+        stat, _ = await self.dispatch("stat", PathSpec.from_str_path(virtual))
+        return stat
+
+    async def readdir(self, virtual: str) -> list[str]:
+        """A directory's entries through the door, links among them.
+
+        Args:
+            virtual (str): the directory's virtual path, on any mount.
+        """
+        entries, _ = await self.dispatch("readdir",
+                                         PathSpec.from_str_path(virtual))
+        return list(entries)
 
     async def lstat(self, path: PathSpec) -> FileStat:
         """A name's own stat through the door: a link's, not its target's.

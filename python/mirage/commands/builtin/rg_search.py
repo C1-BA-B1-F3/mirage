@@ -88,6 +88,7 @@ class RgFlags:
     hidden: bool
     max_depth: int | None
     max_filesize: int | None
+    follow: bool
     one_file_system: bool
     binary: bool
     sort: str | None

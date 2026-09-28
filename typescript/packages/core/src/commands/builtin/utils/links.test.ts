@@ -18,6 +18,8 @@ import { IOResult } from '../../../io/types.ts'
 import type { LinkView } from '../../../ops/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
 import { FileStat, FileType, PathSpec, type WalkErrno } from '../../../types.ts'
+import { isDotWalkError } from '../../../utils/errors.ts'
+import { CycleError } from '../../../utils/path.ts'
 import type { CommandOpts } from '../../config.ts'
 import { LinkDoor, linkDoor, nameLocation, typedLink } from './links.ts'
 
@@ -39,9 +41,13 @@ function links(table: Record<string, string>): LinkView {
       path in table
         ? new FileStat({ name: path.split('/').pop() ?? '', type: FileType.SYMLINK })
         : null,
-    children: () => [],
+    children: (directory) =>
+      Object.keys(table)
+        .filter((link) => link.slice(0, link.lastIndexOf('/')) === directory.replace(/\/+$/, ''))
+        .map((link) => new FileStat({ name: link.split('/').pop() ?? '', type: FileType.SYMLINK })),
     subtree: () => [],
     resolve: (path) => {
+      if (table[path] === path) throw new CycleError(path)
       for (const [link, target] of Object.entries(table)) {
         if (path === link || path.startsWith(link + '/')) return target + path.slice(link.length)
       }
@@ -84,6 +90,8 @@ function recorder(): [DispatchFn, [string, string, readonly unknown[], Record<st
     calls.push([op, path.virtual, args, kwargs])
     if (op === 'read')
       return Promise.resolve([new TextEncoder().encode('through the door'), new IOResult()])
+    if (op === 'readdir')
+      return Promise.resolve([[`${path.virtual}/a`, `${path.virtual}/b`], new IOResult()])
     return Promise.resolve([new FileStat({ name: 'n', type: FileType.SYMLINK }), new IOResult()])
   }
   return [dispatch, calls]
@@ -115,6 +123,37 @@ describe('the link door', () => {
     expect(door.vanished(followed)).toBe(true)
     expect(door.linkAt(followed)).toBeNull()
     expect(door.vanished(spec('/data/t.gz', 't.gz'))).toBe(false)
+  })
+
+  it('lists and stats by the name it is handed', async () => {
+    const [dispatch, calls] = recorder()
+    const door = new LinkDoor(LINKS, dispatch, '/data')
+    expect(await door.readdir('/data/dir')).toEqual(['/data/dir/a', '/data/dir/b'])
+    expect((await door.stat('/data/t.gz')).name).toBe('n')
+    expect(calls).toEqual([
+      ['readdir', '/data/dir', [], {}],
+      ['stat', '/data/t.gz', [], {}],
+    ])
+  })
+
+  it('merges the links standing in a directory for a walker', () => {
+    const [dispatch] = recorder()
+    const door = new LinkDoor(LINKS, dispatch, '/data')
+    expect(door.children('/data/dir/')).toEqual(['/data/dir/tl.gz'])
+    expect(door.children('/data/w')).toEqual([])
+  })
+
+  it('leads where the table resolves a link, and a loop is ELOOP', () => {
+    const [dispatch] = recorder()
+    expect(new LinkDoor(LINKS, dispatch, '/data').target('/data/dir/tl.gz')).toBe('/data/t.gz')
+    const looped = new LinkDoor(links({ '/data/l': '/data/l' }), dispatch, '/data')
+    let caught: unknown = null
+    try {
+      looped.target('/data/l')
+    } catch (err) {
+      caught = err
+    }
+    expect(isDotWalkError(caught) && caught.code).toBe('ELOOP')
   })
 
   it('is absent without links or a door', () => {

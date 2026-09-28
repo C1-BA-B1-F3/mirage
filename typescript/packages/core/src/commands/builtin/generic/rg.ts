@@ -16,6 +16,7 @@ import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
 import { cacheAwareStream } from '../../../cache/read_through.ts'
 import { mountParentReaddir, mountParentStat } from '../utils/operands.ts'
 import { IOResult } from '../../../io/types.ts'
+import type { MountView } from '../../../ops/types.ts'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
 import { isFsError, isWalkError, walkRefusal } from '../../../utils/errors.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
@@ -31,6 +32,7 @@ import { Overrides } from '../rg_glob.ts'
 import {
   type Haystack,
   WalkFilter,
+  onOtherMount,
   openErrorLine,
   walkErrorLine,
   walkHaystacks,
@@ -44,6 +46,7 @@ import {
   type Tally,
 } from '../rg_search.ts'
 import { STDIN_OPERAND } from '../utils/constants.ts'
+import { type LinkDoor, linkDoor } from '../utils/links.ts'
 import { formatOptionalRecords, formatRecords } from '../utils/output.ts'
 import { isStdin, stdinStream } from '../utils/stream.ts'
 
@@ -89,7 +92,6 @@ const HEX_ESCAPE = /\\x([0-9A-Fa-f]{2})/y
 type Stat = (p: PathSpec) => Promise<FileStat>
 type Readdir = (p: PathSpec) => Promise<string[]>
 type Stream = (p: PathSpec) => AsyncIterable<Uint8Array>
-type Boundary = ((path: string) => boolean) | null
 
 export type { RgFlags } from '../rg_search.ts'
 
@@ -354,6 +356,7 @@ export function parseFlags(fl: FlagView): RgFlags {
     hidden,
     maxDepth: numberFlag(fl, 'max_depth'),
     maxFilesize: filesizeFlag(fl),
+    follow: last(fl, 'follow', 'no_follow') === 'follow',
     oneFileSystem: last(fl, 'one_file_system', 'no_one_file_system') === 'one_file_system',
     binary: binaryOf(fl, unrestricted),
     sort,
@@ -561,11 +564,10 @@ export async function rgGeneric(
       p.walkError === null &&
       (f.oneFileSystem || mounts === undefined || mounts.descendants(p.virtual).length === 0),
   )
-  // A mount root below the operand shadows whatever the backend holds there;
-  // the fan-out that would search the mount itself is off too.
-  const boundary: Boundary =
-    f.oneFileSystem && mounts !== undefined ? (p: string) => mounts.isRoot(p) : null
-  let found = haystacks(paths, rd, st, opts.cwd, walk, f, warnings, boundary)
+  // A mount below the operand shadows whatever the backend holds there; the
+  // fan-out that would search the mount itself is off too.
+  const boundary = f.oneFileSystem ? (mounts ?? null) : null
+  let found = haystacks(paths, rd, st, opts.cwd, walk, f, warnings, boundary, linkDoor(opts))
   if (f.sort !== null && f.sort !== 'none' && !(f.sort === 'path' && !f.sortReverse)) {
     const listed: Haystack[] = []
     for await (const h of found) listed.push(h)
@@ -704,7 +706,10 @@ export function betweenFiles(f: RgFlags): string {
 }
 
 // Every input the line searches, in order: a stdin operand, a named file as
-// itself whatever the filters say, and a directory walked.
+// itself whatever the filters say, and a directory walked. `boundary` is the
+// mounts --one-file-system keeps each walk to its operand's own, null when
+// the walk may enter any directory; `door` the namespace's links and the
+// door past them, which -L walks through.
 async function* haystacks(
   paths: readonly PathSpec[],
   rd: (path: string) => Promise<string[]>,
@@ -713,11 +718,18 @@ async function* haystacks(
   walk: WalkFilter,
   f: RgFlags,
   warnings: string[],
-  boundary: Boundary,
+  boundary: MountView | null,
+  door: LinkDoor | null,
 ): AsyncGenerator<Haystack> {
   for (const p of paths) {
     if (isStdin(p)) {
-      yield { virtual: p.virtual, shown: operandName(p), stat: fifoStat(p.rawPath), spec: p }
+      yield {
+        virtual: p.virtual,
+        shown: operandName(p),
+        stat: fifoStat(p.rawPath),
+        spec: p,
+        door: null,
+      }
       continue
     }
     if (p.walkError !== null) {
@@ -743,8 +755,13 @@ async function* haystacks(
       }
     }
     if (!isDir) {
-      yield { virtual: p.virtual, shown: p.rawPath, stat: s, spec: p }
+      yield { virtual: p.virtual, shown: p.rawPath, stat: s, spec: p, door: null }
       continue
+    }
+    let crosses: ((path: string) => boolean) | null = null
+    if (boundary !== null) {
+      const home = boundary.rootOf(p.virtual)
+      crosses = (path) => onOtherMount((q) => boundary.rootOf(q), home, path)
     }
     yield* walkHaystacks(
       rd,
@@ -755,7 +772,9 @@ async function* haystacks(
       walk,
       f.sort === 'path' && !f.sortReverse,
       warnings,
-      boundary,
+      crosses,
+      door,
+      f.follow,
     )
   }
 }
@@ -825,7 +844,10 @@ async function searchAll(
     const tally: Tally = { selected: false }
     const chunks: Uint8Array[] = []
     try {
-      const source = stream(h.spec ?? makeSpec(h.virtual, template))
+      const source =
+        h.spec === null && h.door !== null
+          ? h.door.read(h.virtual)
+          : stream(h.spec ?? makeSpec(h.virtual, template))
       for await (const c of searchHaystack(source, pat, f, name, label, tally, signal)) {
         chunks.push(c)
       }

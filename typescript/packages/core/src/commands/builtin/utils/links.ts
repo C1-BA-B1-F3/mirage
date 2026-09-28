@@ -16,7 +16,8 @@ import type { CommandOpts } from '../../config.ts'
 import type { LinkView } from '../../../ops/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
 import { type FileStat, PathSpec } from '../../../types.ts'
-import { resolvePath } from '../../../utils/path.ts'
+import { eloop } from '../../../utils/errors.ts'
+import { CycleError, resolvePath } from '../../../utils/path.ts'
 
 /**
  * Where the name an operand was typed as stands, as lstat reaches it.
@@ -86,6 +87,42 @@ export class LinkDoor {
   vanished(path: PathSpec): boolean {
     const where = nameLocation(this.links, path, this.cwd)
     return where !== null && where !== path.virtual && this.links.statAt(where) === null
+  }
+
+  /**
+   * The links standing directly in a directory, as virtual paths: what a
+   * walker merges into a backend's listing, which never holds a link.
+   * `directory` has every link above it resolved, which is how the table
+   * keys its links.
+   */
+  children(directory: string): string[] {
+    const base = directory.replace(/\/+$/, '')
+    return this.links.children(directory).map((row) => `${base}/${row.name}`)
+  }
+
+  /**
+   * Where a link leads, every link on the way followed. A chain that loops
+   * throws ELOOP, an error a walker reports as it reports any failed stat.
+   */
+  target(link: string): string {
+    try {
+      return this.links.resolve(link)
+    } catch (err) {
+      if (err instanceof CycleError) throw eloop(link)
+      throw err
+    }
+  }
+
+  /** What a name leads to, its stat through the door, on any mount. */
+  async stat(virtual: string): Promise<FileStat> {
+    const [stat] = await this.dispatch('stat', PathSpec.fromStrPath(virtual))
+    return stat as FileStat
+  }
+
+  /** A directory's entries through the door, links among them. */
+  async readdir(virtual: string): Promise<string[]> {
+    const [entries] = await this.dispatch('readdir', PathSpec.fromStrPath(virtual))
+    return [...(entries as string[])]
   }
 
   /** A name's own stat through the door: a link's, not its target's. */

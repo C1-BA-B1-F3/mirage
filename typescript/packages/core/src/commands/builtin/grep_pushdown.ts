@@ -213,6 +213,7 @@ const PUSHDOWN_SHAPING_BOOL = [
   'passthrough',
   'binary',
   'sort_files',
+  'follow',
 ] as const
 const PUSHDOWN_SHAPING_INT = ['m', 'A', 'B', 'C'] as const
 // rg's valued options defer on presence alone: a value the generic would
@@ -252,8 +253,9 @@ const PUSHDOWN_FILTER_LIST = [
 // push-down prints each matching record as one whole line, so it cannot honor
 // -v/-n/-b/-c/-l/-w/-o/-m/-A/-B/-C/-q/-H/-h, rg's -I (no filename), -x, -r,
 // --column and the rest of its output options, nor the file filters
-// (--include/--exclude, rg's -g/-t/-T/-d) or the patterns -f adds; the wrapper
-// must defer to the generic scan when any is present.
+// (--include/--exclude, rg's -g/-t/-T/-d), the patterns -f adds, or rg's -L,
+// which walks links no backend can see; the wrapper must defer to the generic
+// scan when any is present.
 //
 // `honored` names the flags this particular push-down implements itself, so
 // their presence is not a reason to defer. Two shapes need it. A provider

@@ -19,7 +19,8 @@ import pytest
 from mirage.commands.builtin.generic.rg import parse_flags
 from mirage.commands.builtin.generic.rg import rg as generic_rg
 from mirage.commands.builtin.generic.rg import walk_filter
-from mirage.commands.builtin.rg_scan import (WalkFilter, open_error_line,
+from mirage.commands.builtin.rg_scan import (WalkFilter, loop_error_line,
+                                             on_other_mount, open_error_line,
                                              os_error_text, walk_candidates,
                                              walk_error_line)
 from mirage.commands.builtin.utils.wrap import to_pathspec
@@ -1099,3 +1100,23 @@ def test_walker_and_searcher_lines_take_ripgreps_two_shapes():
         "No such file or directory (os error 2)")
     assert open_error_line("locked", PermissionError("locked")) == (
         "rg: locked: Permission denied (os error 13)")
+
+
+def test_a_loop_line_names_the_link_then_the_ancestor_it_leads_to():
+    # ripgrep 14.1.1's ignore crate, for a link -L follows back up the walk.
+    assert loop_error_line("s/sub/up", "s") == (
+        "rg: File system loop found: s/sub/up points to an ancestor s")
+
+
+@pytest.mark.parametrize("path, crosses", [
+    ("/data/s", False),
+    ("/data/m", True),
+    ("/ro/sub", True),
+])
+def test_one_file_system_keeps_the_walk_on_the_operands_mount(
+        path: str, crosses: bool):
+    # A directory crosses by being a mount root, a link by leading onto
+    # another mount: both are a different mount root than the operand's.
+    roots = {"/data/m": "/data/m/", "/ro/sub": "/ro/"}
+    assert on_other_mount(lambda p: roots.get(p, "/data/"), "/data/",
+                          path) is crosses

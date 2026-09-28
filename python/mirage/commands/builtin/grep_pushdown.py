@@ -273,7 +273,7 @@ _PUSHDOWN_SHAPING_BOOL = ("v", "n", "byte_offset", "c", "args_l",
                           "no_filename", "line_regexp", "column", "vimgrep",
                           "trim", "null", "count_matches", "include_zero",
                           "files", "type_list", "heading", "passthru",
-                          "passthrough", "binary", "sort_files")
+                          "passthrough", "binary", "sort_files", "follow")
 _PUSHDOWN_SHAPING_INT = ("m", "A", "B", "C")
 # rg's valued options defer on presence alone: a value the generic would
 # refuse in ripgrep's words is not the push-down's to parse.
@@ -296,11 +296,12 @@ def has_search_shaping_flags(
     A search push-down prints each matching record as one whole line, so it
     cannot honor -v/-n/-b/-c/-l/-w/-o/-m/-A/-B/-C/-q/-H/-h, rg's -I (no
     filename), -x, -r, --column and the rest of its output options, nor
-    the file filters (--include/--exclude, rg's -g/-t/-T/-d) or the patterns
-    -f adds; when any is present the wrapper must defer to the generic scan,
-    which applies exact semantics. Reads through a spec-less FlagView so the
-    shared key set works for both the grep and rg specs (each simply never
-    sets the other's keys).
+    the file filters (--include/--exclude, rg's -g/-t/-T/-d), the patterns
+    -f adds, or rg's -L, which walks links no backend can see; when any is
+    present the wrapper must defer to the generic scan, which applies exact
+    semantics. Reads through a spec-less FlagView so the shared key set
+    works for both the grep and rg specs (each simply never sets the
+    other's keys).
 
     ``honored`` names the flags this particular push-down implements itself,
     so their presence is not a reason to defer. Two shapes need it. A provider

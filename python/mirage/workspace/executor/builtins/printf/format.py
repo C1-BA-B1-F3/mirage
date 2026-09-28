@@ -28,7 +28,8 @@ _UINT64_MASK = 0xFFFFFFFFFFFFFFFF
 
 # printf's escape grammar is not echo's: it reads a bare \NNN, while
 # echo -e wants \0NNN and gives \c a different meaning. Only the simple
-# table and \x, \u and \U overlap, so each reader keeps its own.
+# table and \x, \u and \U overlap, and only printf warns when those
+# three have no digits, so each reader keeps its own.
 _SIMPLE_ESCAPES = {
     "\\": "\\",
     "n": "\n",

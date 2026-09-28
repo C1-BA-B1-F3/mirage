@@ -25,8 +25,8 @@ import adapters  # noqa: E402
 import harness  # noqa: E402
 
 from mirage.concurrency import ConcurrencyLimiter  # noqa: E402
-from mirage.types import ReadPolicy  # noqa: E402
-from mirage.types import DEFAULT_READ_TTL, ReadSpec
+from mirage.types import ReadSpec  # noqa: E402
+from mirage.workspace.mount.read_policy import resolve_read_spec  # noqa: E402
 
 HOST = "python"
 
@@ -67,10 +67,7 @@ def read_spec_of(case: dict) -> ReadSpec:
     Args:
         case (dict): the integ case.
     """
-    policy = ReadPolicy(case["read"])
-    ttl = case.get("ttl")
-    return ReadSpec(policy=policy,
-                    ttl=DEFAULT_READ_TTL if ttl is None else int(ttl))
+    return resolve_read_spec(case["read"], case.get("ttl"))
 
 
 def mount_read_of(case: dict) -> dict[str, ReadSpec]:
@@ -83,11 +80,8 @@ def mount_read_of(case: dict) -> dict[str, ReadSpec]:
     Args:
         case (dict): the integ case.
     """
-    ttl = case.get("ttl")
     return {
-        prefix:
-        ReadSpec(policy=ReadPolicy(policy),
-                 ttl=DEFAULT_READ_TTL if ttl is None else int(ttl))
+        prefix: resolve_read_spec(policy, case.get("ttl"))
         for prefix, policy in case.get("mount_read", {}).items()
     }
 

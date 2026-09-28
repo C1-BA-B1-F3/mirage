@@ -2737,8 +2737,8 @@ async def make_service(target: dict, run_id: str) -> "Service | None":
 
 async def build_mounts(
     target: dict, run_id: str, service: "Service | None"
-) -> tuple[dict[str, object], list[Callable[[], Awaitable[None]]]]:
-    mounts: dict[str, object] = {}
+) -> tuple[dict[str, VFSMount], list[Callable[[], Awaitable[None]]]]:
+    mounts: dict[str, VFSMount] = {}
     cleanups: list[Callable[[], Awaitable[None]]] = []
     built: dict[str, object] = {}
     for mount in target["mounts"]:

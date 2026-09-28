@@ -141,7 +141,7 @@ class MultiBucketS3Client:
         # NOT the MD5 of the content.
         self.etag_suffix = etag_suffix
         self.calls: Counter[str] = Counter()
-        # Per (method, bucket), listings included.
+        # Per (method, bucket): every request, listings included.
         self.bucket_calls: Counter[tuple[str, str]] = Counter()
         # Keys DeleteObjects refuses, reported under "Errors" in a 200.
         self.undeletable: set[str] = set()
@@ -219,6 +219,7 @@ class MultiBucketS3Client:
 
     async def put_object(self, Bucket: str, Key: str, Body: bytes) -> dict:
         self.calls["put_object"] += 1
+        self.bucket_calls["put_object", Bucket] += 1
         self._objects(Bucket)[Key] = Body
         # Real PutObject answers the stored object's ETag, so the token a
         # write stamps is the one head_object reports next -- suffix
@@ -231,6 +232,7 @@ class MultiBucketS3Client:
 
     async def delete_object(self, Bucket: str, Key: str) -> None:
         self.calls["delete_object"] += 1
+        self.bucket_calls["delete_object", Bucket] += 1
         self._objects(Bucket).pop(Key, None)
 
     async def copy_object(self, Bucket: str, CopySource: dict,
@@ -239,6 +241,7 @@ class MultiBucketS3Client:
         # non-AWS S3-compatible store might. That is what makes the
         # same-key guard observable in tests (#150).
         self.calls["copy_object"] += 1
+        self.bucket_calls["copy_object", Bucket] += 1
         src_bucket = CopySource.get("Bucket", Bucket)
         src_key = CopySource["Key"]
         src_objects = self._objects(src_bucket)
@@ -249,6 +252,7 @@ class MultiBucketS3Client:
         # Real DeleteObjects answers 200 with per-key results, and reports a
         # key it refused under "Errors" rather than raising. `undeletable`
         # is how a test asks for that half.
+        self.bucket_calls["delete_objects", Bucket] += 1
         objects = self._objects(Bucket)
         deleted: list[dict] = []
         errors: list[dict] = []

@@ -159,10 +159,10 @@ def selftest_mount_read() -> None:
 
     A key naming no mount of the target would leave every leg under the
     workspace policy, so it is refused before anything opens; the needle
-    is the refusal's own wording, which a late KeyError from the wrap
-    does not carry. The wrap keeps a mount's mode and limits and carries
-    the case's ttl, none of which the shipped cases can see: their mounts
-    are bare and they set no ttl.
+    carries the target id, which only that refusal names; the wrap's own
+    ValueError does not. The wrap keeps a mount's mode and limits and
+    carries the case's ttl, none of which the shipped cases can see: their
+    mounts are bare and they set no ttl.
     """
     bound = ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45)
     target = {"id": "t", "mounts": [{"path": "/data", "vfs": "ram"}]}

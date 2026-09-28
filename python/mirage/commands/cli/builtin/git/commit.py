@@ -37,7 +37,7 @@ from mirage.commands.cli.builtin.git.status import render_report
 from mirage.commands.cli.builtin.git.summary import report
 from mirage.commands.cli.builtin.git.types import IndexState
 from mirage.commands.cli.builtin.git.util import (  # yapf: disable
-    check_operands, escaped, fatal, links_of, switches)
+    check_operands, escaped, fatal, links_of, start_point, switches)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
@@ -169,7 +169,7 @@ async def commit(
         message = fl.as_str("message")
         if not message:
             raise MissingMessageError()
-        repo, location = await opened(fl, doors)
+        repo, location = await opened(fl, doors, work_tree=True)
         state = await read_index(dispatch, location.gitdir)
         if state.conflicts:
             raise UnmergedIndexError()
@@ -186,6 +186,7 @@ async def commit(
             raise NothingToCommitError(await
                                        render_report(dispatch, stat_path, repo,
                                                      location, head,
+                                                     start_point(fl),
                                                      links_of(doors)))
         parents = [] if before is None else [repo.refs[HEAD_REF]]
         who = identity(fl, doors.session_view)
@@ -199,7 +200,7 @@ async def commit(
         if staging:
             await write_index(dispatch, location.gitdir, state)
         await record(
-            dispatch, location.gitdir, head.ref,
+            dispatch, location.gitdir, location.commondir, head.ref,
             parents[0] if parents else None, written.id, who, when,
             f"commit{ROOT_NOTE if before is None else ''}: "
             f"{message.splitlines()[0]}")

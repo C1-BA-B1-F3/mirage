@@ -17,8 +17,10 @@ import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { headEntries, workChanges } from './changes.ts'
+import { isBare, requireWorkTree } from './discover.ts'
 import {
   AmbiguousArgumentError,
+  BareResetError,
   GitError,
   NoWorkspaceError,
   RevisionResetError,
@@ -89,6 +91,9 @@ export async function reset(inv: CLIInvocation): Promise<CommandFnResult> {
     }
     checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
     const repo = await opened(fl, doors)
+    const named = fl.asStr('work_tree') !== undefined
+    if (!named && (await isBare(dispatch, repo.location))) throw new BareResetError()
+    await requireWorkTree(dispatch, statPath, repo.location, named)
     const state = await readIndex(repo, dispatch)
     const tree = (await headEntries(repo)) ?? new Map<string, TreeEntry>()
     const start = startPoint(fl)

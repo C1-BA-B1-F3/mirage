@@ -14,14 +14,15 @@
 
 import type { GDocsAccessor } from '../../accessor/gdocs.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
+import { record, startOp } from '../../observe/context.ts'
 import type { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
 import { docsBase, type TokenManager, googleGet } from '../google/client.ts'
-import { resolveEntry } from '../hierarchy/probe.ts'
+import { resolveAppEntry } from '../google/entry.ts'
+import { MIME } from './constants.ts'
+import { makeFilename } from '../../vfs/gdocs/doc_entry.ts'
 import { makeRead } from '../hierarchy/read.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { compactJsonBytes } from '../render/json.ts'
-import { readdir } from './readdir.ts'
 import { detectScope } from './scope.ts'
 
 const TABS_CONTENT_PARAM = 'true'
@@ -43,13 +44,25 @@ export async function readDoc(tm: TokenManager, docId: string): Promise<Uint8Arr
 
 async function readFile(
   accessor: GDocsAccessor,
-  _match: ScopeMatch,
+  match: ScopeMatch,
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<Uint8Array> {
-  const entry = await resolveEntry(readdir, accessor, path, index)
-  if (entry === null) throw enoent(path.virtual)
-  return readDoc(accessor.tokenManager, entry.id)
+  const entry = await resolveAppEntry(
+    accessor.tokenManager,
+    match,
+    path,
+    index,
+    MIME,
+    'gdocs/file',
+    makeFilename,
+  )
+  const timer = startOp()
+  const data = await readDoc(accessor.tokenManager, entry.id)
+  record('read', path.virtual, 'gdocs', data.length, timer, {
+    fingerprint: entry.remoteTime !== '' ? entry.remoteTime : null,
+  })
+  return data
 }
 
 export const read = makeRead<GDocsAccessor>(detectScope, { file: readFile })

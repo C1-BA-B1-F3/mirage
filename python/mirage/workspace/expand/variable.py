@@ -24,7 +24,7 @@ from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import RANDOM
 from mirage.shell.errors import ArithError, ExitSignal
 from mirage.shell.escapes import decode_ansi_c
-from mirage.shell.helpers import get_text
+from mirage.shell.helpers import get_text, source_parts
 from mirage.shell.parameter import scan_parameter
 from mirage.shell.types import ArithWrite
 from mirage.shell.types import NodeType as NT
@@ -311,7 +311,7 @@ class _BraceParse:
     length_op: bool
     indirect_op: bool
     op: str | None
-    groups: tuple[tuple[TSNodeLike, ...], ...]
+    groups: tuple[tuple[str | TSNodeLike, ...], ...]
     subscript_nodes: tuple[TSNodeLike, ...] = ()
 
 
@@ -330,9 +330,13 @@ def _parse_braces(node: TSNodeLike) -> _BraceParse:
     length_op = False
     indirect_op = False
     op = None
-    groups: list[list[TSNodeLike]] = []
+    groups: list[list[str | TSNodeLike]] = []
     seen_var = False
-    for c in node.children:
+    for c in source_parts(node):
+        if isinstance(c, str):
+            if op is not None:
+                groups[-1].append(c)
+            continue
         if c.type == "${" or c.type == "}":
             continue
         if c.type == "#" and not seen_var:
@@ -495,7 +499,7 @@ async def _expand_operand(node: TSNodeLike, expand_child: ExpandChild,
                           pattern_mode: bool, session: SessionState,
                           call_stack: CallStack | None) -> str:
     if node.type == NT.CONCATENATION:
-        return await _expand_group(tuple(node.children), expand_child,
+        return await _expand_group(tuple(source_parts(node)), expand_child,
                                    pattern_mode, session, call_stack)
     if pattern_mode and node.type in _QUOTED_ARG_TYPES:
         # Quoted pattern text matches literally, the same rule case
@@ -507,25 +511,25 @@ async def _expand_operand(node: TSNodeLike, expand_child: ExpandChild,
     return await expand_child(node)
 
 
-async def _expand_group(nodes: tuple[TSNodeLike,
+async def _expand_group(parts: tuple[str | TSNodeLike,
                                      ...], expand_child: ExpandChild,
                         pattern_mode: bool, session: SessionState,
                         call_stack: CallStack | None) -> str:
-    """Expand adjacent operand nodes, preserving inter-node whitespace.
+    """Expand one operand word, the source text between its nodes included.
 
-    ``${x:?custom msg}`` carries its message as sibling nodes whose gap
-    (the space) exists only in the source bytes; stitch gaps back from
-    byte offsets so multi-word operands round-trip.
+    ``${x:- $y}`` and ``${x:?custom msg}`` keep blanks that belong to no
+    node, as ``source_parts`` yields them. That text is only ever the
+    scanner's extras: blanks, a line continuation, which vanishes, and
+    an escaped blank, which is the blank as in an unquoted word.
     """
     pieces: list[str] = []
-    prev = None
-    for c in nodes:
-        if prev is not None and c.start_byte > prev.end_byte:
-            gap = c.start_byte - prev.end_byte
-            pieces.append(" " * gap)
-        pieces.append(await _expand_operand(c, expand_child, pattern_mode,
-                                            session, call_stack))
-        prev = c
+    for part in parts:
+        if isinstance(part, str):
+            pieces.append(part.replace("\\\n", "").replace("\\", ""))
+        else:
+            pieces.append(await
+                          _expand_operand(part, expand_child, pattern_mode,
+                                          session, call_stack))
     return "".join(pieces)
 
 

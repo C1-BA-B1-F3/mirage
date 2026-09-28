@@ -426,7 +426,7 @@ async def mv(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         flags = parse_flags(fl)
         if len(texts) < 2:
             raise MoveUsageError()
-        repo, location = await opened(fl, doors)
+        repo, location = await opened(fl, doors, work_tree=True)
         state = await read_index(dispatch, location.gitdir)
         conflicted = {
             path.decode("utf-8", errors="replace")

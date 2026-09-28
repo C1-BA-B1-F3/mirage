@@ -210,8 +210,9 @@ export async function handlePrintf(
     }
     return [new Uint8Array(), new IOResult(), new ExecutionNode({ command: 'printf', exitCode: 0 })]
   }
-  const [output, errors, excess] = runPrintf(args[0] ?? '', args.slice(1))
-  const errBytes = errors.length > 0 ? new TextEncoder().encode(errors.join('')) : null
+  const [output, messages, failed, excess] = runPrintf(args[0] ?? '', args.slice(1))
+  const errBytes = messages.length > 0 ? new TextEncoder().encode(messages.join('')) : null
+  const exitCode = failed ? 1 : 0
   if (target !== null && parsed !== null) {
     const base = parsed[1] ?? ''
     let status: 'ok' | 'denied' | 'readonly' | 'subscript'
@@ -221,7 +222,7 @@ export async function handlePrintf(
       if (err instanceof ArithError) {
         // The target carries `-i` and the formatted text does not
         // evaluate; bash voices the evaluator after the builtin name.
-        const bad = new TextEncoder().encode(errors.join('') + `bash: printf: ${err.message}\n`)
+        const bad = new TextEncoder().encode(messages.join('') + `bash: printf: ${err.message}\n`)
         return [
           null,
           new IOResult({ exitCode: 1, stderr: bad }),
@@ -229,7 +230,7 @@ export async function handlePrintf(
         ]
       }
       if (!(err instanceof PolicyDenied)) throw err
-      const denied = new TextEncoder().encode(errors.join('') + `bash: ${err.message}\n`)
+      const denied = new TextEncoder().encode(messages.join('') + `bash: ${err.message}\n`)
       return [
         null,
         new IOResult({ exitCode: 1, stderr: denied }),
@@ -243,14 +244,13 @@ export async function handlePrintf(
           : status === 'denied'
             ? `bash: ${base}: permission denied\n`
             : `bash: ${target}: bad array subscript\n`
-      const err = new TextEncoder().encode(errors.join('') + detail)
+      const err = new TextEncoder().encode(messages.join('') + detail)
       return [
         null,
         new IOResult({ exitCode: 1, stderr: err }),
         new ExecutionNode({ command: 'printf', exitCode: 1, stderr: err }),
       ]
     }
-    const exitCode = errors.length > 0 ? 1 : 0
     if (errBytes !== null) {
       return [
         null,
@@ -268,16 +268,16 @@ export async function handlePrintf(
     excess !== null && isProgramInvocation(session)
       ? `printf: warning: ignoring excess arguments, starting with '${quoteText(excess)}'\n`
       : ''
-  if (errBytes !== null) {
-    const stderr = new TextEncoder().encode(errors.join('') + warning)
+  const text = messages.join('') + warning
+  if (text !== '') {
+    const stderr = new TextEncoder().encode(text)
     return [
       out,
-      new IOResult({ exitCode: 1, stderr }),
-      new ExecutionNode({ command: 'printf', exitCode: 1, stderr }),
+      new IOResult({ exitCode, stderr }),
+      new ExecutionNode({ command: 'printf', exitCode, stderr }),
     ]
   }
-  const stderr = warning !== '' ? new TextEncoder().encode(warning) : null
-  return [out, new IOResult({ stderr }), new ExecutionNode({ command: 'printf', exitCode: 0 })]
+  return [out, new IOResult(), new ExecutionNode({ command: 'printf', exitCode: 0 })]
 }
 
 /** The `printf` arm. */

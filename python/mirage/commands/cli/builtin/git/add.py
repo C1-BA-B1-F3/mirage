@@ -309,7 +309,7 @@ async def add(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         parsed = parse_flags(fl)
         if not texts and not parsed.every and not parsed.update:
             raise NothingSpecifiedError()
-        _repo, location = await opened(fl, doors)
+        _repo, location = await opened(fl, doors, work_tree=True)
         state = await read_index(dispatch, location.gitdir)
         tracked = {
             path.decode("utf-8", errors="replace")
@@ -317,7 +317,7 @@ async def add(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         }
         found = await scan(dispatch, stat_path, location, tracked,
                            UNTRACKED_ALL, links_of(doors))
-        ignores = await load_ignores(dispatch, location.gitdir,
+        ignores = await load_ignores(dispatch, location.commondir,
                                      location.worktree)
         if parsed.update:
             scope = (_update_scope(location, start_point(fl), tracked,

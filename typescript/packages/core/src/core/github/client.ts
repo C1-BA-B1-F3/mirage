@@ -117,6 +117,7 @@ export class HttpGitHubTransport implements GitHubTransport {
     params?: Record<string, string>,
     headers?: Record<string, string>,
   ): Promise<GitHubResponse> {
+    let failed: Response | undefined
     try {
       // Octokit reads loose parameters off the same object that carries
       // `url`, `method` and `headers`, so a field the agent typed would
@@ -130,6 +131,14 @@ export class HttpGitHubTransport implements GitHubTransport {
         method: method.toUpperCase(),
         url: escapeRoute(path) + (query === '' ? '' : `${path.includes('?') ? '&' : '?'}${query}`),
         headers: { 'X-GitHub-Api-Version': GITHUB_API_VERSION, ...headers },
+        request: {
+          fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+            failed = undefined
+            const response = await globalThis.fetch(input, init)
+            if (response.status >= 400) failed = response.clone()
+            return response
+          },
+        },
         ...(body === undefined ? {} : { data: body }),
       })
       // 204 and an empty 202 decode to '' rather than a body; the caller gets
@@ -149,22 +158,62 @@ export class HttpGitHubTransport implements GitHubTransport {
         // The suffix is octokit's, not GitHub's: the service says only the
         // message, real gh prints only the message, and the python client
         // reports only the message. Read it off the body rather than
-        // trimming the composed string.
-        const data = err.response?.data as { message?: string } | undefined
-        const message = typeof data?.message === 'string' ? data.message : err.message
-        throw new GitHubApiError(message, err.status)
+        // trimming the composed string. The body itself travels verbatim,
+        // since `gh api` prints it.
+        if (failed === undefined) throw new GitHubApiError(err.message, err.status)
+        const body = await failed.text()
+        throw new GitHubApiError(
+          apiMessage(body, failed.statusText),
+          err.status,
+          body,
+          failed.url || err.request.url,
+        )
       }
       throw err
     }
   }
 }
 
+/** A response body decoded as JSON, the text itself when it is not JSON. */
+function decodedBody(body: string): unknown {
+  if (body === '') return null
+  try {
+    return JSON.parse(body)
+  } catch {
+    return body
+  }
+}
+
+/**
+ * GitHub's own wording for a failure, or the status reason, the twin of
+ * python's `_api_message`.
+ */
+function apiMessage(body: string, reason: string): string {
+  const data = decodedBody(body)
+  const message =
+    typeof data === 'object' && data !== null ? (data as { message?: unknown }).message : undefined
+  return typeof message === 'string' ? message : reason || body
+}
+
+/**
+ * A GitHub call that answered with a status the caller cannot use.
+ *
+ * `body` is the response text as it arrived, `data` that text decoded (the
+ * text itself when it is not JSON) and `url` the final request URL, query
+ * included.
+ */
 export class GitHubApiError extends Error {
   readonly status: number
-  constructor(message: string, status: number) {
+  readonly body: string
+  readonly url: string
+  readonly data: unknown
+  constructor(message: string, status: number, body = '', url = '') {
     super(message)
     this.name = 'GitHubApiError'
     this.status = status
+    this.body = body
+    this.url = url
+    this.data = decodedBody(body)
   }
 }
 

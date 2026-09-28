@@ -734,6 +734,73 @@ describe('handlePrintf', () => {
     expect(io.exitCode).toBe(1)
     expect(s.env.V).toBe('0')
   })
+
+  // bash 5.2.37: an escape missing its digits writes builtin_error's
+  // warning to stderr and leaves the status alone. Mirrors test_printf.py.
+  it('warns for an escape missing its digits and exits 0', async () => {
+    const [out, io, node] = await handlePrintf(['\\x|'], new SessionState({ sessionId: 'test' }))
+    expect(decode(out as Uint8Array)).toBe('\\x|')
+    expect(io.exitCode).toBe(0)
+    expect(decode(io.stderr as Uint8Array)).toBe('printf: missing hex digit for \\x\n')
+    expect(node.exitCode).toBe(0)
+    expect(decode(node.stderr)).toBe('printf: missing hex digit for \\x\n')
+  })
+
+  it('-v warns for an escape missing its digits and still assigns', async () => {
+    const s = new SessionState({ sessionId: 'test' })
+    const [out, io] = await handlePrintf(['-v', 'V', '%b', '\\U'], s)
+    expect(out).toBeNull()
+    expect(io.exitCode).toBe(0)
+    expect(decode(io.stderr as Uint8Array)).toBe('printf: missing unicode digit for \\U\n')
+    expect(s.env.V).toBe('\\U')
+  })
+
+  it('-v on a readonly name writes the warning before the refusal', async () => {
+    const s = new SessionState({ sessionId: 'test', vars: varsFromEnv({ R: 'orig' }) })
+    setAttr(s, 'R', VarAttr.Readonly)
+    const [, io] = await handlePrintf(['-v', 'R', '\\x'], s)
+    expect(io.exitCode).toBe(1)
+    expect(decode(io.stderr as Uint8Array)).toBe(
+      'printf: missing hex digit for \\x\nbash: R: readonly variable\n',
+    )
+    expect(s.env.R).toBe('orig')
+  })
+
+  // bash 5.2.37: %b's \c returns before an invalid number reaches the
+  // status, with or without -v; a readonly -v target still fails.
+  // Mirrors test_printf.py.
+  it('exits 0 when %b stops after an invalid number', async () => {
+    const [out, io, node] = await handlePrintf(
+      ['%d%b', 'abc', '\\c'],
+      new SessionState({ sessionId: 'test' }),
+    )
+    expect(decode(out as Uint8Array)).toBe('0')
+    expect(io.exitCode).toBe(0)
+    expect(decode(io.stderr as Uint8Array)).toBe('printf: abc: invalid number\n')
+    expect(node.exitCode).toBe(0)
+  })
+
+  it('-v exits 0 when %b stops after an invalid number and still assigns', async () => {
+    const s = new SessionState({ sessionId: 'test' })
+    const [out, io] = await handlePrintf(['-v', 'V', '%d%b', 'abc', 'x', 'def', '\\c'], s)
+    expect(out).toBeNull()
+    expect(io.exitCode).toBe(0)
+    expect(decode(io.stderr as Uint8Array)).toBe(
+      'printf: abc: invalid number\nprintf: def: invalid number\n',
+    )
+    expect(s.env.V).toBe('0x0')
+  })
+
+  it('-v on a readonly name still fails after %b stops', async () => {
+    const s = new SessionState({ sessionId: 'test', vars: varsFromEnv({ R: 'orig' }) })
+    setAttr(s, 'R', VarAttr.Readonly)
+    const [, io] = await handlePrintf(['-v', 'R', '%d%b', 'abc', '\\c'], s)
+    expect(io.exitCode).toBe(1)
+    expect(decode(io.stderr as Uint8Array)).toBe(
+      'printf: abc: invalid number\nbash: R: readonly variable\n',
+    )
+    expect(s.env.R).toBe('orig')
+  })
 })
 
 describe('handleSleep', () => {

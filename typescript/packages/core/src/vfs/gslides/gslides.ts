@@ -38,6 +38,8 @@ export class GSlidesVFS extends BoundVFS<GSlidesAccessor> implements VFS {
   readonly kind: string = VFSName.GSLIDES
   readonly cachesReads: boolean = true
   override readonly indexTtl: number = 86_400
+  // Reads stamp listing metadata; a fresh stat checks Drive by file ID.
+  readonly readRevalidatable: boolean = true
   readonly prompt: string = GSLIDES_PROMPT
   readonly writePrompt: string = GSLIDES_WRITE_PROMPT
   readonly config: GSlidesConfig

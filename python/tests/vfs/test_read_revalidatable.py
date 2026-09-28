@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from types import ModuleType
+from unittest.mock import AsyncMock
 
 import boto3
 import moto.s3.models
@@ -28,6 +29,7 @@ from bson import ObjectId
 from moto.server import ThreadedMotoServer
 
 import mirage.cache.file.io as cache_io
+import mirage.core.gdocs.read as gdocs_read
 import mirage.core.gdrive.read as gdrive_read
 import mirage.core.github.read as github_read
 import mirage.core.gridfs.client as gridfs_client
@@ -35,6 +37,8 @@ import mirage.core.gridfs.driver as gridfs_driver
 import mirage.core.gridfs.read as gridfs_read
 import mirage.core.gridfs.stream as gridfs_stream
 import mirage.core.gridfs.watch as gridfs_watch
+import mirage.core.gsheets.read as gsheets_read
+import mirage.core.gslides.read as gslides_read
 import mirage.core.hf_buckets.read as hf_buckets_read
 import mirage.core.hf_buckets.stream as hf_buckets_stream
 import mirage.core.hf_hub.read as hf_read
@@ -43,10 +47,13 @@ import mirage.core.msgraph.drive_ops as drive_ops
 import mirage.core.s3.read as s3_read
 import mirage.core.s3.stream as s3_stream
 from mirage.cache.index import IndexCacheStore, RAMIndexCacheStore
+from mirage.commands.builtin.gdocs.io import IO as GDOCS_IO
 from mirage.commands.builtin.gdrive.io import IO as GDRIVE_IO
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
 from mirage.commands.builtin.github.io import IO as GITHUB_IO
 from mirage.commands.builtin.gridfs.io import IO as GRIDFS_IO
+from mirage.commands.builtin.gsheets.io import IO as GSHEETS_IO
+from mirage.commands.builtin.gslides.io import IO as GSLIDES_IO
 from mirage.commands.builtin.hf_buckets.io import IO as HF_BUCKETS_IO
 from mirage.commands.builtin.hf_hub.io import IO as HF_IO
 from mirage.commands.builtin.onedrive.io import IO as ONEDRIVE_IO
@@ -60,6 +67,9 @@ from mirage.observe.context import OpTimer, RecordingScope, active_recorder
 from mirage.observe.record import OpRecord
 from mirage.types import FileStat, MountMode, PathSpec, ReadPolicy, ReadSpec
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.gdocs.doc_entry import make_filename as doc_filename
+from mirage.vfs.gsheets.sheet_entry import make_filename as sheet_filename
+from mirage.vfs.gslides.slide_entry import make_filename as slide_filename
 from mirage.vfs.loader import load_attr
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.registry import REGISTRY, build_vfs, known_vfs_names
@@ -100,6 +110,9 @@ HARNESSES = {
     "hf_buckets": "hf_buckets",
     "github": "github",
     "gdrive": "gdrive",
+    "gdocs": "gdocs",
+    "gsheets": "gsheets",
+    "gslides": "gslides",
 }
 
 # The drive each Graph backend addresses in the fake: OneDrive the signed-in
@@ -113,11 +126,37 @@ GRAPH = {
 ALL_SHAPES = ("root", "nested", "prefixed")
 ALL_ROWS = ("bytes", "stream", "drain")
 
+# The mounts that render a Drive file through its editor API: the mime type
+# they list, the module whose `record` a read stamps through, and the door.
+GAPPS = {
+    "gdocs": ("application/vnd.google-apps.document", gdocs_read, GDOCS_IO,
+              doc_filename),
+    "gsheets": ("application/vnd.google-apps.spreadsheet", gsheets_read,
+                GSHEETS_IO, sheet_filename),
+    "gslides": ("application/vnd.google-apps.presentation", gslides_read,
+                GSLIDES_IO, slide_filename),
+}
+
 # What each family can run, fixed at collection. github and gdrive have no
 # key_prefix, and their stream is their read handed over whole, one chunk,
-# so a drain row would pass without draining anything.
-FAMILY_SHAPES = {"github": ("root", "nested"), "gdrive": ("root", "nested")}
-FAMILY_ROWS = {"github": ("bytes", "stream"), "gdrive": ("bytes", "stream")}
+# so a drain row would pass without draining anything. The GAPPS mounts
+# also have one flat listing, so only one shape.
+FAMILY_SHAPES = {
+    "github": ("root", "nested"),
+    "gdrive": ("root", "nested"),
+    **{
+        name: ("root", )
+        for name in GAPPS
+    },
+}
+FAMILY_ROWS = {
+    "github": ("bytes", "stream"),
+    "gdrive": ("bytes", "stream"),
+    **{
+        name: ("bytes", "stream")
+        for name in GAPPS
+    },
+}
 
 # One document per family, identical in the TypeScript twin. oci is the one
 # alias with a required field beyond these; every other one-of (r2's
@@ -417,6 +456,30 @@ def _gdrive_fake(shape: str, data: bytes) -> Iterator[Fake]:
 
 
 @contextmanager
+def _gapps_fake(name: str, data: bytes) -> Iterator[Fake]:
+    mime, read_mod, io, filename = GAPPS[name]
+    drive = FakeGDrive()
+    file_id = drive.add_file("a", data, mime)
+    listed = drive.find_entry(file_id)
+    assert listed is not None
+    # The fake names no owner, so the file lists under shared/. A rewrite
+    # moves modifiedTime within the same day, which keeps the name.
+    key = "shared/" + filename("a", file_id, listed["modifiedTime"])
+    with patch_gdrive(drive):
+        vfs = build_vfs(name, GDRIVE_CONFIG)
+        yield Fake(vfs=vfs,
+                   key=key,
+                   fetches=lambda: drive.calls["render"],
+                   rewrite=lambda new: drive.add_file("a", new, mime),
+                   reach=[],
+                   io=io,
+                   read_mod=read_mod,
+                   stream_mod=None,
+                   index=RAMIndexCacheStore(),
+                   stat_indexed=False)
+
+
+@contextmanager
 def _hf_buckets_fake(shape: str, data: bytes) -> Iterator[Fake]:
     key = KEYS[shape]
     prefix = PREFIX if shape == "prefixed" else None
@@ -510,6 +573,10 @@ def _fake(name: str, shape: str, data: bytes,
         return
     if HARNESSES[name] == "gdrive":
         with _gdrive_fake(shape, data) as fake:
+            yield fake
+        return
+    if HARNESSES[name] in GAPPS:
+        with _gapps_fake(name, data) as fake:
             yield fake
         return
     if HARNESSES[name] == "hf_models":
@@ -672,6 +739,10 @@ def test_each_family_runs_exactly_its_rows():
                   for family in ("github", "gdrive")
                   for shape in ("root", "nested")
                   for row in ("bytes", "stream")
+              } | {
+                  f"{family}-root-{row}"
+                  for family in ("gdocs", "gsheets", "gslides")
+                  for row in ("bytes", "stream")
               }
     expected_b = {
         i
@@ -681,7 +752,8 @@ def test_each_family_runs_exactly_its_rows():
     assert {c.id for c in A_CASES} == expected_a
     assert {c.id for c in B_CASES} == expected_b
     assert not any(
-        c.id.startswith(("github-", "gdrive-")) for c in _cases(("drain", )))
+        c.id.startswith(("github-", "gdrive-", "gdocs-", "gsheets-",
+                         "gslides-")) for c in _cases(("drain", )))
 
 
 def test_every_declaring_backend_has_a_harness():
@@ -1193,3 +1265,28 @@ def test_the_contract_goes_red_on_github_stamping_another_kind(monkeypatch):
     assert holds_read_token
     assert fingerprint == blob_sha(SEED)
     assert not fresh
+
+
+@pytest.mark.parametrize("name", ["gdocs", "gsheets", "gslides"])
+def test_partial_search_cannot_evict_live_app_bytes_or_overlay(
+        name, monkeypatch):
+    with _fake(name, "root", SEED, monkeypatch) as fake:
+        virtual = "/m/" + fake.key
+
+        async def run():
+            ws = _fresh_workspace(fake.vfs)
+            try:
+                await _line(ws, f"cat {virtual}")
+                await _line(ws, f"chmod 600 {virtual}")
+                search = AsyncMock(return_value=([], False))
+                monkeypatch.setattr(
+                    f"mirage.core.{name}.readdir.list_all_files", search)
+                before = fake.fetches()
+                assert await _line(ws, f"cat {virtual}") == SEED
+                assert await _line(ws, f"stat -c %a {virtual}") == b"600\n"
+                assert fake.fetches() == before
+                search.assert_not_awaited()
+            finally:
+                await ws.close()
+
+        asyncio.run(run())

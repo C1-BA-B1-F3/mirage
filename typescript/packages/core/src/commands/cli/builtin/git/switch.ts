@@ -112,7 +112,7 @@ export async function switchBranch(inv: CLIInvocation): Promise<CommandFnResult>
     if (!creating && first === undefined && !flags.detach) {
       throw new MissingBranchArgumentError()
     }
-    const repo = await opened(fl, doors)
+    const repo = await opened(fl, doors, true)
     const head = await readHead(dispatch, repo.location.gitdir)
     const known = await loadRefs(dispatch, repo.location.gitdir, repo.location.commondir)
     let target: string

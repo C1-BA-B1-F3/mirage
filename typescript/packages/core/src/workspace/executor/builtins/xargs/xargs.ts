@@ -107,8 +107,11 @@ export async function handleXargs(
   for (const batch of batches) {
     const inner = shellJoin([...command, ...batch])
     // xargs execs its command, so a builtin that is also a program answers
-    // as the program.
-    const io = await runAsProgram(session, () => executeFn(inner, { sessionId: session.sessionId }))
+    // as the program. GNU xargs consumes its input as arguments and gives
+    // every child /dev/null, represented by an explicit empty source here.
+    const io = await runAsProgram(session, () =>
+      executeFn(inner, { sessionId: session.sessionId, stdin: new Uint8Array() }),
+    )
     if (io.stdout !== null) stdouts.push(io.stdout)
     merged = await merged.merge(io)
     if (io.exitCode === 126 || io.exitCode === 127) {

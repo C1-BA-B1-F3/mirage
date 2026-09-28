@@ -226,8 +226,9 @@ async def handle_printf(
                                   stderr=err), ExecutionNode(command="printf",
                                                              exit_code=2)
         return b"", IOResult(), ExecutionNode(command="printf", exit_code=0)
-    output, errors, excess = run_printf(args[0], args[1:])
-    err_bytes = "".join(errors).encode() if errors else b""
+    output, messages, failed, excess = run_printf(args[0], args[1:])
+    err_bytes = "".join(messages).encode() if messages else b""
+    exit_code = 1 if failed else 0
     if target is not None and parsed is not None:
         base, subscript = parsed.group(1), parsed.group(2)
         try:
@@ -259,7 +260,6 @@ async def handle_printf(
                 exit_code=1, stderr=err_bytes), ExecutionNode(command="printf",
                                                               exit_code=1,
                                                               stderr=err_bytes)
-        exit_code = 1 if errors else 0
         return None, IOResult(exit_code=exit_code, stderr=err_bytes
                               or None), ExecutionNode(command="printf",
                                                       exit_code=exit_code)
@@ -270,13 +270,13 @@ async def handle_printf(
         # warning, so the status stays the format's own.
         err_bytes += ("printf: warning: ignoring excess arguments, "
                       f"starting with '{quote_text(excess)}'\n").encode()
-    if errors:
-        return out, IOResult(exit_code=1,
-                             stderr=err_bytes), ExecutionNode(command="printf",
-                                                              exit_code=1,
-                                                              stderr=err_bytes)
-    return out, IOResult(stderr=err_bytes or None), ExecutionNode(
-        command="printf", exit_code=0)
+    if err_bytes:
+        return out, IOResult(exit_code=exit_code,
+                             stderr=err_bytes), ExecutionNode(
+                                 command="printf",
+                                 exit_code=exit_code,
+                                 stderr=err_bytes)
+    return out, IOResult(), ExecutionNode(command="printf", exit_code=0)
 
 
 async def printf_builtin(call: BuiltinCall) -> Result:

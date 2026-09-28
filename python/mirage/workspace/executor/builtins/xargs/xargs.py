@@ -112,10 +112,14 @@ async def handle_xargs(
     for batch in batches:
         inner = shlex.join([*command, *batch])
         # xargs execs its command, so a builtin that is also a program
-        # answers as the program.
+        # answers as the program. GNU xargs consumes its input as
+        # arguments and gives every child /dev/null, represented by an
+        # explicit empty source here.
         token = set_program_invocation(session)
         try:
-            io = await execute_fn(inner, session_id=session.session_id)
+            io = await execute_fn(inner,
+                                  session_id=session.session_id,
+                                  stdin=b"")
         finally:
             reset_program_invocation(token)
         if io.stdout is not None:

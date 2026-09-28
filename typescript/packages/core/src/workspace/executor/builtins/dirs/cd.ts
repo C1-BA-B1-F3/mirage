@@ -12,13 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { resolvePath } from '../../../../utils/path.ts'
+import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
+import { dottedSpelling, resolvePath } from '../../../../utils/path.ts'
+import { fsStrerror } from '../../../../utils/errors.ts'
 import { IOResult } from '../../../../io/types.ts'
-import { PathSpec } from '../../../../types.ts'
+import { PathSpec, type StatFn } from '../../../../types.ts'
 import { FileType } from '../../../../types.ts'
 import { CycleError } from '../../../../utils/path.ts'
 import { posixNormpath } from '../../../../utils/path.ts'
-import { fsStrerror } from '../../../../utils/errors.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { changeDir, logicalCwd } from '../../../session/shell_dirs.ts'
 import { ExecutionNode } from '../../../types.ts'
@@ -39,25 +40,40 @@ function cdpathSearchable(target: string): boolean {
 }
 
 // `cwd` is the directory a relative operand joins to: the logical cwd
-// under -L, the physical one under -P.
+// under -L, the physical one under -P. Each candidate carries the spelling
+// whose `.` and `..` bash checks (`dottedSpelling`), taken against the
+// candidate's own base.
 function cdCandidates(
   raw: string,
   cdpathTarget: string | null,
   session: SessionState,
   cwd: string,
-): [string, boolean][] {
-  const fallback = joinPath(raw, cwd)
+): [string, boolean, string | null][] {
+  const fallback: [string, boolean, string | null] = [
+    joinPath(raw, cwd),
+    false,
+    dottedSpelling(raw, cwd),
+  ]
   const cdpath = session.env.CDPATH
   if (!cdpath || !cdpathTarget || !cdpathSearchable(cdpathTarget)) {
-    return [[fallback, false]]
+    return [fallback]
   }
-  const out: [string, boolean][] = []
+  const out: [string, boolean, string | null][] = []
   for (const entry of cdpath.split(':')) {
     const base = entry ? resolvePath(entry, cwd) : cwd
-    out.push([joinPath(cdpathTarget, base), entry !== ''])
+    out.push([joinPath(cdpathTarget, base), entry !== '', dottedSpelling(cdpathTarget, base)])
   }
-  out.push([fallback, false])
+  out.push(fallback)
   return out
+}
+
+// Stat a name the way cd resolves one, through its link table: the walk
+// that proves a name in front of `..` a directory has to see the links the
+// operand itself is resolved through. Mirrors Python's _linked_stat.
+function linkedStat(dispatch: DispatchFn, links: Map<string, string>): StatFn {
+  const stat = dispatchStat(dispatch)
+  return (path: PathSpec) =>
+    stat(links.size > 0 ? PathSpec.fromStrPath(resolveTarget(path.virtual, links, true)) : path)
 }
 
 export async function handleCd(
@@ -71,6 +87,7 @@ export async function handleCd(
   physical = false,
 ): Promise<Result> {
   const raw = scopePath(path)
+  const named = typedPath(path)
   const table = links ?? new Map<string, string>()
   // -L joins a relative operand to the name the shell is *spelling*, -P
   // to the one it resolves to: from a logical /data/lk whose target is
@@ -79,7 +96,25 @@ export async function handleCd(
   const base = physical ? session.cwd : logicalCwd(session)
   const candidates = cdCandidates(typedPath(path), cdpathTarget, session, base)
   let error: string | null = null
-  for (const [candidate, announce] of candidates) {
+  for (const [candidate, announce, dotted] of candidates) {
+    // bash simplifies `..` textually under -L, but only once each name in
+    // front of one is proved a directory, the check its own
+    // canonicalization makes; `cd nope/..` does not reach the cwd.
+    if (dotted !== null) {
+      const walk = typedSpec(dotted, '/')
+      let refusal: Error | null
+      try {
+        refusal = await dotRefusal(linkedStat(dispatch, table), walk)
+      } catch (exc) {
+        if (!(exc instanceof CycleError)) throw exc
+        error = `cd: ${named}: Too many levels of symbolic links\n`
+        continue
+      }
+      if (refusal !== null) {
+        error = `cd: ${named}: ${String(fsStrerror(refusal))}\n`
+        continue
+      }
+    }
     // The logical name is the candidate with `..` simplified textually
     // and links left alone; the physical one follows them. -P collapses
     // the pair, which is why `cd -P .` re-spells the cwd.
@@ -91,7 +126,7 @@ export async function handleCd(
         resolved = resolveTarget(candidate, table, physical)
       } catch (exc) {
         if (exc instanceof CycleError) {
-          error = `cd: ${raw}: Too many levels of symbolic links\n`
+          error = `cd: ${named}: Too many levels of symbolic links\n`
           continue
         }
         throw exc
@@ -113,7 +148,8 @@ export async function handleCd(
       if (code === 'ENOENT' || /not found|no such file/i.test(msg)) {
         notFound = true
       } else {
-        error = `cd: ${raw}: ${fsStrerror(exc) ?? msg}\n`
+        error = `cd: ${named}: ${fsStrerror(exc) ?? msg}
+`
         continue
       }
     }
@@ -121,16 +157,16 @@ export async function handleCd(
       if (isMountRoot(resolved)) {
         return cdSuccess(session, resolved, logical, spelled, raw, printPath || announce)
       }
-      error = `cd: ${raw}: No such file or directory\n`
+      error = `cd: ${named}: No such file or directory\n`
       continue
     }
     if (stat.type !== FileType.DIRECTORY) {
-      error = `cd: ${raw}: Not a directory\n`
+      error = `cd: ${named}: Not a directory\n`
       continue
     }
     return cdSuccess(session, resolved, logical, spelled, raw, printPath || announce)
   }
-  const err = new TextEncoder().encode(error ?? `cd: ${raw}: No such file or directory\n`)
+  const err = new TextEncoder().encode(error ?? `cd: ${named}: No such file or directory\n`)
   return [
     null,
     new IOResult({ exitCode: 1, stderr: err }),

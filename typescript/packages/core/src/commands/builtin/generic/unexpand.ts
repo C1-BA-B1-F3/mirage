@@ -84,11 +84,10 @@ export async function unexpandGeneric(
     const [ok, err] = await readOperands(paths, stream, 'unexpand')
     const io = operandsIo(err)
     if (ok.length === 0 && err !== '') return [null, io]
-    const parts: string[] = []
-    for (const o of ok) {
-      const data = DEC.decode(o.data)
-      for (const ln of splitLinesKeepEnds(data)) parts.push(unexpandLine(ln, tabsize, allSpaces))
-    }
+    // GNU reads its operands as one stream, so a line a file leaves
+    // unfinished continues into the next one, column and all.
+    const text = ok.map((o) => DEC.decode(o.data)).join('')
+    const parts = splitLinesKeepEnds(text).map((ln) => unexpandLine(ln, tabsize, allSpaces))
     const result: ByteSource = ENC.encode(parts.join(''))
     return [result, io]
   }

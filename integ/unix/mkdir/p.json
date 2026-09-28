@@ -58,10 +58,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/pmkd2/a/b/c && test -d /data/pmkd2/a/b/c && echo ok",
+      "command": "mkdir -p /data/pmkd2/a/b/c && test -d /data/pmkd2/a/b/c && echo ok && mkdir -p /data/pmkd2/nope/../m && ln -s a /data/pmkd2/lnk && mkdir -p /data/pmkd2/lnk/nd/../m2 && rm /data/pmkd2/lnk && ls /data/pmkd2 && ls /data/pmkd2/a",
       "expect": {
         "exit": 0,
-        "stdout": "ok\n",
+        "stdout": "ok\na\nm\nnope\nb\nm2\nnd\n",
         "stderr": ""
       },
       "flags": [

@@ -26,8 +26,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def ws():
-    vfs = RedisVFS(url=REDIS_URL, key_prefix="test:integ:")
+async def ws(redis_prefix):
+    vfs = RedisVFS(url=REDIS_URL, key_prefix=redis_prefix)
     await vfs._store.clear()
     await vfs._store.add_dir("/")
     w = Workspace(
@@ -194,9 +194,9 @@ async def test_data_persists_across_commands(ws):
 
 
 @pytest.mark.asyncio
-async def test_get_state_reads_only_a_metacharacter_prefix():
-    mine = RedisVFS(url=REDIS_URL, key_prefix="test:[ab]?:")
-    neighbour = RedisVFS(url=REDIS_URL, key_prefix="test:ax:")
+async def test_get_state_reads_only_a_metacharacter_prefix(redis_prefix):
+    mine = RedisVFS(url=REDIS_URL, key_prefix=f"{redis_prefix}[ab]?:")
+    neighbour = RedisVFS(url=REDIS_URL, key_prefix=f"{redis_prefix}ax:")
     try:
         await mine._store.clear()
         await neighbour._store.clear()

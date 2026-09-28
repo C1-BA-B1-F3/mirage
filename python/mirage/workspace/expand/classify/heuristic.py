@@ -18,6 +18,7 @@ import re
 from mirage.types import PathSpec
 from mirage.utils.glob_walk import has_glob, unmark_globs
 from mirage.utils.key_prefix import mount_key
+from mirage.utils.path import dotted_spelling
 from mirage.workspace.expand.classify.relative import relative_spec
 from mirage.workspace.mount import MountRegistry
 
@@ -60,7 +61,9 @@ def classify_word(word: str, registry: MountRegistry,
         vfs_path = mount_key(path, mount.prefix.rstrip("/"))
         # `raw_path` keeps the spelling as typed, the way `relative_spec`
         # does: `virtual` has already lost any `..`, and `cd -P` has to
-        # resolve the link a `..` follows before applying it.
+        # resolve the link a `..` follows before applying it. `dotted`
+        # keeps it for the walk that proves each `..` a directory; a
+        # pattern leaves it textual, as its matches are respelled.
         if word_has_glob:
             last_slash = path.rfind("/")
             return PathSpec(
@@ -76,7 +79,8 @@ def classify_word(word: str, registry: MountRegistry,
                             directory=path + "/",
                             vfs_path=vfs_path,
                             raw_path=word,
-                            resolved=False)
+                            resolved=False,
+                            dotted=dotted_spelling(word))
         last_slash = path.rfind("/")
         return PathSpec(
             virtual=path,
@@ -84,6 +88,7 @@ def classify_word(word: str, registry: MountRegistry,
             vfs_path=vfs_path,
             raw_path=word,
             resolved=True,
+            dotted=dotted_spelling(word),
         )
 
     # Relative glob: a pattern under cwd, a bare `*`, `?` or `[a-z]`

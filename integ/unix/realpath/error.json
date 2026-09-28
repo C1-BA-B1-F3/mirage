@@ -24,11 +24,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/qrp && printf 'x' > /data/qrp/sh.txt && realpath -m /data/qrp/no/../sh.txt",
+      "command": "mkdir -p /data/qrp && printf 'x' > /data/qrp/sh.txt && realpath -m /data/qrp/no/../sh.txt; realpath /data/qrp/no/../sh.txt /data/qrp/sh.txt/.. /data/qrp/no/x; realpath -e /data/qrp/no/../sh.txt",
       "expect": {
-        "exit": 0,
+        "exit": 1,
         "stdout": "/data/qrp/sh.txt\n",
-        "stderr": ""
+        "stderr": "realpath: /data/qrp/no/../sh.txt: No such file or directory\nrealpath: /data/qrp/sh.txt/..: Not a directory\nrealpath: /data/qrp/no/x: No such file or directory\nrealpath: /data/qrp/no/../sh.txt: No such file or directory\n"
       },
       "flags": [
         "m"

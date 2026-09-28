@@ -214,7 +214,7 @@ export const FLOAT_VALUE = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
 // (plus ripgrep and jq upstream docs). Everything else exits 1.
 // Commands whose `Try '--help'` hint line is prefixed with the command
 // name (GNU diffutils style: `diff: Try 'diff --help' ...`).
-export const USAGE_HINT_PREFIX: ReadonlySet<string> = new Set(['diff', 'cmp'])
+export const USAGE_HINT_PREFIX: ReadonlySet<string> = new Set(['diff', 'cmp', 'patch'])
 
 // An old-style cluster letter left without its argument exits 2, not
 // USAGE_EXIT's 64: tar reads the cluster itself and raises its own fatal
@@ -244,6 +244,7 @@ export const USAGE_EXIT: Readonly<Record<string, number>> = Object.freeze({
   awk: 2,
   jq: 2,
   curl: 2,
+  patch: 2,
   tar: 64,
   python: 2,
   python3: 2,

@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cat /data/tabbed.txt | expand",
+      "command": "cat /data/tabbed.txt | expand; expand /data/one_byte.txt /data/tabbed.txt",
       "expect": {
         "exit": 0,
-        "stdout": "a       1\nb       2\nc       3\n",
+        "stdout": "a       1\nb       2\nc       3\nxa      1\nb       2\nc       3\n",
         "stderr": ""
       }
     }

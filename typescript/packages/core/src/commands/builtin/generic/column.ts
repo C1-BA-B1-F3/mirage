@@ -18,6 +18,7 @@ import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { readStdinAsync } from '../utils/stream.ts'
+import { joinFileBytes } from '../utils/lines.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -79,9 +80,11 @@ export async function columnGeneric(
   const oFlag = fl.asStr('o') ?? '  '
   let raw: Uint8Array
   if (paths.length > 0) {
-    const first = paths[0]
-    if (first === undefined) return [null, new IOResult()]
-    raw = await materialize(stream(first))
+    // Every operand is read, as one run of lines in which a file's last line
+    // ends where the next file begins. Mirrors Python's column.
+    const parts: Uint8Array[] = []
+    for (const path of paths) parts.push(await materialize(stream(path)))
+    raw = joinFileBytes(parts, 0x0a)
   } else {
     const stdinData = await readStdinAsync(opts.stdin)
     raw = stdinData ?? new Uint8Array(0)

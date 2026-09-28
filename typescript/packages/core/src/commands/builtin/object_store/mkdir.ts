@@ -15,12 +15,12 @@
 import type { Accessor } from '../../../accessor/base.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
-import { errorVirtualPath, fsStrerror, isFsError, operandSpelling } from '../../../utils/errors.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import type { RegisteredCommand } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { requireOp } from '../generic_bind/adapter.ts'
+import { makeDirectory } from '../generic_bind/builders/mkdir.ts'
 import { resolveGlobOf, type CommandIO } from '../generic_bind/index.ts'
 import { mkdirLinkRefusal } from '../utils/slash_links.ts'
 
@@ -56,14 +56,9 @@ export function makeMkdir<A extends Accessor>(vfs: string, io: CommandIO<A>): Re
         if (collision.message !== null) errors.push(collision.message)
         continue
       }
-      try {
-        await mkdirImpl(accessor, path, parents)
-      } catch (err) {
-        // GNU reports the operand (or, under -p, the component it tripped
-        // on) and still makes the rest, as the generic builder does.
-        if (!isFsError(err)) throw err
-        const named = operandSpelling(errorVirtualPath(err), path)
-        errors.push(`mkdir: cannot create directory '${named}': ${String(fsStrerror(err))}`)
+      const failed = await makeDirectory(mkdirImpl, accessor, path, parents, links)
+      if (failed !== null) {
+        errors.push(failed)
         continue
       }
       writes[path.mountPath] = new Uint8Array()

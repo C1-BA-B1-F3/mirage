@@ -13,7 +13,10 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import posixpath
+from functools import partial
 
+from mirage.commands.builtin.utils.paths import (dispatch_stat, dot_refusal,
+                                                 typed_spec)
 from mirage.io import IOResult
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
@@ -52,8 +55,16 @@ async def handle_readlink(
     canonical = any(f in flags for f in "fem")
     lines: list[str] = []
     exit_code = 0
+    # -m alone canonicalizes without asking for anything to be there, so
+    # it is the one mode whose path is never walked.
+    walks = not canonical or "e" in flags or "f" in flags
+    walker = partial(dispatch_stat, dispatch)
     for op in operands:
         abs_op = abs_path(op, session.cwd)
+        if walks and await dot_refusal(walker, typed_spec(
+                op, session.cwd)) is not None:
+            exit_code = 1
+            continue
         if canonical:
             # -f/-e/-m canonicalize: resolve every symlink (including a
             # trailing one) and normalize the path, GNU realpath-style.

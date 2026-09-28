@@ -17,7 +17,9 @@ import type { FileStat, SetAttrFields } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
-import { fsStrerror } from '../../../../utils/errors.ts'
+import { dispatchStat, dotRefusal } from '../../../../commands/builtin/utils/paths.ts'
+import { fsStrerror, isEnoent, isEnotdir } from '../../../../utils/errors.ts'
+import { CycleError } from '../../../../utils/path.ts'
 
 export function parseOwner(text: string): [number | string | null, number | string | null] {
   const sep = text.indexOf(':')
@@ -148,6 +150,49 @@ export async function setattrLink(
 // chmod -R changes neither a traversed link nor its referent, and the
 // skip must come before the stat because stat follows a link and would
 // descend through a directory link.
+/**
+ * Follow symlinks and stat one operand, collecting GNU's errors: the dots
+ * the operand was typed with walk first, then the links, then the stat.
+ * Mirrors Python's resolve_operand.
+ */
+export async function resolveOperand(
+  namespace: Namespace,
+  dispatch: DispatchFn,
+  cmd: string,
+  target: PathSpec,
+  errors: string[],
+): Promise<[PathSpec, FileStat] | null> {
+  const refusal = await dotRefusal(dispatchStat(dispatch), target, (v) => namespace.follow(v))
+  if (refusal !== null) {
+    errors.push(
+      `${cmd}: cannot access '${target.rawPath}': ${fsStrerror(refusal) ?? 'No such file or directory'}\n`,
+    )
+    return null
+  }
+  let virtual: string
+  try {
+    virtual = namespace.follow(target.virtual)
+  } catch (err) {
+    if (err instanceof CycleError) {
+      errors.push(`${cmd}: cannot access '${target.rawPath}': Too many levels of symbolic links\n`)
+      return null
+    }
+    throw err
+  }
+  const resolved = PathSpec.fromStrPath(virtual)
+  try {
+    const [result] = await dispatch('stat', resolved)
+    return [resolved, result as FileStat]
+  } catch (err) {
+    const strerror = isEnoent(err) || isEnotdir(err) ? fsStrerror(err) : null
+    if (strerror !== null) {
+      errors.push(`${cmd}: cannot access '${target.rawPath}': ${strerror}\n`)
+      return null
+    }
+    throw err
+  }
+}
+
 export async function walkStats(
   namespace: Namespace,
   dispatch: DispatchFn,

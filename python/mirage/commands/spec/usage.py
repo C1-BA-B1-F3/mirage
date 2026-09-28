@@ -507,8 +507,10 @@ def extra_operand_error(cmd_name: str, operand: str) -> UsageError:
     """GNU-shaped usage error for an operand past a command's arity.
 
     Shapes pinned against real GNU: ``<cmd>: extra operand '<arg>'`` with
-    the ``Try '--help'`` hint (diff and cmp prefix the hint line with the
-    command name; mktemp says ``too many templates`` with no operand).
+    the ``Try '--help'`` hint (diff, cmp and patch prefix the hint line
+    with the command name; mktemp says ``too many templates`` with no
+    operand, and patch names the operand first, bare: ``patch: x: extra
+    operand``).
     The operand must be the as-typed spelling (``raw_path``), never the
     resolved path.
 
@@ -518,6 +520,8 @@ def extra_operand_error(cmd_name: str, operand: str) -> UsageError:
     """
     if cmd_name == CommandName.MKTEMP:
         line = "mktemp: too many templates"
+    elif cmd_name == CommandName.PATCH:
+        line = f"patch: {operand}: extra operand"
     else:
         line = f"{cmd_name}: extra operand '{operand}'"
     return UsageError(f"{line}\n{usage_hint(cmd_name)}",

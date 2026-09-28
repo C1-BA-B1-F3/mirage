@@ -23,7 +23,7 @@ from mirage.errors.classify import failure_text
 from mirage.io.types import IOResult
 from mirage.ops.types import ChildMounts, LinkView, MountView, StatPath
 from mirage.types import FileStat, FileType, LsSortBy, LsTimeKind, PathSpec
-from mirage.utils.errors import fs_strerror
+from mirage.utils.errors import DotWalkError, fs_strerror
 from mirage.utils.key_prefix import mount_prefix_of, rekey, under_path
 from mirage.utils.path import CycleError, respell_one
 from mirage.utils.stat_view import content_size
@@ -936,6 +936,14 @@ async def probe_operand(
     try:
         names = await readdir(path, index)
     except (OSError, ValueError) as exc:
+        if isinstance(exc, DotWalkError):
+            # The operand did not resolve, so neither the path it
+            # simplifies to nor the names the namespace owes it answer.
+            warnings.append(
+                LsWarning(
+                    f"ls: cannot access '{path.raw_path}': "
+                    f"{fs_strerror(exc)}", command_line_arg))
+            return Operand(path, None, []), warnings
         row = await _file_entry(path, stat, index)
         if row is not None:
             return Operand(path, row, []), warnings

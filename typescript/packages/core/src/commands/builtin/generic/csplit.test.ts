@@ -109,7 +109,7 @@ describe('csplit with stdin', () => {
       'cd /data && csplit /dev/stdin 2; ls /dev',
       new TextEncoder().encode('a\nb\nc\n'),
     )
-    expect(r[1]).toBe('csplit: /dev/stdin: No such file or directory\n')
+    expect(r[1]).toBe("csplit: cannot open '/dev/stdin' for reading: No such file or directory\n")
     expect(r[0]).not.toContain('xx00')
   })
 })

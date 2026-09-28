@@ -1,6 +1,6 @@
 from collections.abc import Awaitable, Callable
 
-from mirage.commands.builtin.utils.lines import split_lines
+from mirage.commands.builtin.utils.lines import map_lines
 from mirage.commands.builtin.utils.operands import (materialized_read,
                                                     merge_split_errors,
                                                     split_readable)
@@ -18,21 +18,23 @@ async def rev(
     stdin: ByteSource | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     if paths:
-        all_lines: list[str] = []
-        for p in paths:
-            data = (await read_bytes(p)).decode(errors="replace")
-            all_lines.extend(split_lines(data))
-        reversed_lines = [line[::-1] for line in all_lines]
-        return (("\n".join(reversed_lines) +
-                 "\n").encode() if all_lines else b""), IOResult()
+        # Each file is reversed on its own and keeps its own line ends, so
+        # a last line with no newline stays without one (util-linux rev).
+        parts = [
+            map_lines((await read_bytes(p)).decode(errors="replace"),
+                      _reversed) for p in paths
+        ]
+        return "".join(parts).encode(), IOResult()
 
     raw = await read_stdin_async(stdin)
     if raw is None:
         raise ValueError("rev: missing operand")
-    lines = split_lines(raw.decode(errors="replace"))
-    reversed_lines = [line[::-1] for line in lines]
-    return (("\n".join(reversed_lines) +
-             "\n").encode() if lines else b""), IOResult()
+    return map_lines(raw.decode(errors="replace"),
+                     _reversed).encode(), IOResult()
+
+
+def _reversed(line: str) -> str:
+    return line[::-1]
 
 
 async def rev_generic(

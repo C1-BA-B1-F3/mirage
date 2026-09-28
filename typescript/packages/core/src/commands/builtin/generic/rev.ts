@@ -26,10 +26,16 @@ function reverseString(s: string): string {
   return Array.from(s).reverse().join('')
 }
 
+// A newline is written where the input had one and nowhere else
+// (util-linux rev), so a last line with none stays without one; each file
+// is reversed on its own. Mirrors Python's rev.
 async function* revStream(source: AsyncIterable<Uint8Array>): AsyncIterable<Uint8Array> {
   const iter = new AsyncLineIterator(source)
-  for await (const line of iter) {
-    yield ENC.encode(reverseString(DEC.decode(line)) + '\n')
+  for (;;) {
+    const [line, found] = await iter.readUntil(0x0a)
+    if (!found && line.byteLength === 0) return
+    yield ENC.encode(reverseString(DEC.decode(line)) + (found ? '\n' : ''))
+    if (!found) return
   }
 }
 

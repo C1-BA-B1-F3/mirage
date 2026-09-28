@@ -1,7 +1,8 @@
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from functools import partial
 
-from mirage.commands.builtin.utils.lines import split_lines
+from mirage.commands.builtin.utils.lines import map_lines
 from mirage.commands.builtin.utils.operands import (materialized_read,
                                                     merge_split_errors,
                                                     split_readable)
@@ -74,29 +75,28 @@ async def fold(
     break_spaces: bool = False,
     count_bytes: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
+    fold_line = partial(_fold_line, width=width, break_spaces=break_spaces)
     if paths:
-        all_lines: list[str] = []
+        # GNU folds each file on its own, a column fresh at its start, and
+        # writes a newline only where the file had one: `ab` then `cd` fold
+        # to `abcd`, not to two lines.
+        parts: list[bytes] = []
         for p in paths:
             raw = await read_bytes(p)
             if count_bytes:
-                all_lines.append(
-                    _fold_bytes(raw,
-                                width).decode(errors="replace").rstrip("\n"))
+                parts.append(_fold_bytes(raw, width))
                 continue
-            data = raw.decode(errors="replace")
-            for line in split_lines(data):
-                all_lines.append(_fold_line(line, width, break_spaces))
-        return (("\n".join(all_lines) +
-                 "\n").encode() if all_lines else b""), IOResult()
+            parts.append(
+                map_lines(raw.decode(errors="replace"), fold_line).encode())
+        return b"".join(parts), IOResult()
 
     stdin_raw = await read_stdin_async(stdin)
     if stdin_raw is None:
         raise ValueError("fold: missing operand")
     if count_bytes:
         return _fold_bytes(stdin_raw, width), IOResult()
-    lines = split_lines(stdin_raw.decode(errors="replace"))
-    result = [_fold_line(ln, width, break_spaces) for ln in lines]
-    return (("\n".join(result) + "\n").encode() if result else b""), IOResult()
+    return map_lines(stdin_raw.decode(errors="replace"),
+                     fold_line).encode(), IOResult()
 
 
 async def fold_generic(

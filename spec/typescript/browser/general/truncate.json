@@ -242,6 +242,11 @@
   },
   "options": [
     {
+      "long": "--no-create",
+      "short": "-c",
+      "type": "bool"
+    },
+    {
       "long": "--size",
       "short": "-s",
       "type": "str"

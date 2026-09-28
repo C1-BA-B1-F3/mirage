@@ -135,7 +135,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /vault/d/inner: No such file or directory\n"
+        "stderr": "stat: cannot statx '/vault/d/inner': No such file or directory\n"
       }
     },
     {

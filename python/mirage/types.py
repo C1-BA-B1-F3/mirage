@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, StrEnum
 from typing import (TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Protocol,
@@ -187,6 +187,26 @@ MoveFn: TypeAlias = Callable[..., Awaitable[None]]
 FindFn: TypeAlias = Callable[..., Awaitable[list[str]]]
 ReaddirFn: TypeAlias = Callable[..., Awaitable[list[str]]]
 StatFn: TypeAlias = Callable[..., Awaitable["FileStat"]]
+
+
+@dataclass(frozen=True, slots=True)
+class WalkProbe:
+    """What proving a running command's ``.`` and ``..`` reads.
+
+    The command tier reaches its backend past the dispatcher's door, so
+    ``Mount.execute_cmd`` binds the door's facts for it. The kernel walk
+    (``follow_paths``) rewrites an operand to its link's target before
+    the handler runs; ``follow`` is how that operand is still known for
+    the one its dotted spelling names.
+
+    Args:
+        stat (StatFn): the door's stat, raising when nothing is there.
+        follow (Callable[[str], str] | None): resolve a path through the
+            namespace's links (open(2) semantics), None while it holds
+            none.
+    """
+    stat: StatFn
+    follow: Callable[[str], str] | None = None
 
 
 class CapacityState(StrEnum):
@@ -581,8 +601,8 @@ class Limit(BaseModel):
         if not present:
             return None
         kwargs: dict[str, Any] = {}
-        for name, field in cls.model_fields.items():
-            rule = next((m for m in field.metadata if isinstance(m, Aggr)),
+        for name, info in cls.model_fields.items():
+            rule = next((m for m in info.metadata if isinstance(m, Aggr)),
                         None)
             values = [getattr(s, name) for s in present]
             kwargs[name] = rule.reduce(
@@ -715,6 +735,12 @@ class PathSpec:
     raw_path: str
     pattern: str | None = None
     resolved: bool = True
+    # The typed spelling with its `.` and `..` kept, absolute, when a
+    # named component precedes one (`dotted_spelling`); None otherwise.
+    # `virtual` has simplified them away, so this is what the walk that
+    # proves each such component a directory reads. Out of equality:
+    # it says how the path was reached, not which path it is.
+    dotted: str | None = field(default=None, compare=False)
 
     def __init__(
         self,
@@ -724,6 +750,7 @@ class PathSpec:
         pattern: str | None = None,
         resolved: bool = True,
         raw_path: str | None = None,
+        dotted: str | None = None,
     ) -> None:
         """Create a path whose stored spelling is always concrete.
 
@@ -735,6 +762,8 @@ class PathSpec:
             resolved (bool): Whether glob resolution is complete.
             raw_path (str | None): Spelling supplied by the user; defaults
                 to ``virtual`` only at the construction boundary.
+            dotted (str | None): The absolute spelling a dot walk proves,
+                from ``dotted_spelling``.
         """
         object.__setattr__(self, "virtual", virtual)
         object.__setattr__(self, "directory", directory)
@@ -743,6 +772,7 @@ class PathSpec:
         object.__setattr__(self, "resolved", resolved)
         object.__setattr__(self, "raw_path",
                            virtual if raw_path is None else raw_path)
+        object.__setattr__(self, "dotted", dotted)
 
     @property
     def mount_path(self) -> str:

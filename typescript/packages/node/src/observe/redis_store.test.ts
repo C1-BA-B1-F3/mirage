@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { randomUUID } from 'node:crypto'
 import { Observer } from '@struktoai/mirage-core/observe/observer'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RedisObserverStore } from './redis_store.ts'
@@ -30,7 +31,9 @@ describe.skipIf(REDIS_URL === '')('RedisObserverStore', () => {
   let store: RedisObserverStore
 
   beforeEach(async () => {
-    store = new RedisObserverStore({ url: REDIS_URL, keyPrefix: 'test:observer:' })
+    // One prefix per test: a shared one lets a parallel run's clear() wipe
+    // what this test has just written.
+    store = new RedisObserverStore({ url: REDIS_URL, keyPrefix: `test:observer:${randomUUID()}:` })
     await store.clear()
   })
 

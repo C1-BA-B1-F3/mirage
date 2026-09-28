@@ -61,11 +61,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "stat -c '%F' /data/slashd/dlink/f2",
+      "command": "stat -c '%F' /data/slashd/dlink/f2 /data/slashd/dlink/../reg /data/slashd/flink/..",
       "expect": {
-        "exit": 0,
-        "stdout": "regular file\n",
-        "stderr": ""
+        "exit": 1,
+        "stdout": "regular file\nregular file\n",
+        "stderr": "stat: cannot statx '/data/slashd/flink/..': Not a directory\n"
       }
     },
     {
@@ -333,10 +333,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "ls /data/slashd/flink/ 2>&1",
+      "command": "ls /data/slashd/flink/ /data/slashd/flink/.. /data/slashd/nope/.. 2>&1",
       "expect": {
         "exit": 2,
-        "stdout": "ls: cannot access '/data/slashd/flink/': Not a directory\n",
+        "stdout": "ls: cannot access '/data/slashd/flink/': Not a directory\nls: cannot access '/data/slashd/flink/..': Not a directory\nls: cannot access '/data/slashd/nope/..': No such file or directory\n",
         "stderr": ""
       }
     },
@@ -367,10 +367,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cat /data/slashd/reg/ 2>&1",
+      "command": "cat /data/slashd/sub/../reg /data/slashd/dlink/./f2 /data/slashd/reg/ /data/slashd/reg/. /data/slashd/nope/../reg /data/slashd/dlink/nope/../f2 2>&1",
       "expect": {
         "exit": 1,
-        "stdout": "cat: /data/slashd/reg/: Not a directory\n",
+        "stdout": "hi\nhello\ncat: /data/slashd/reg/: Not a directory\ncat: /data/slashd/reg/.: Not a directory\ncat: /data/slashd/nope/../reg: No such file or directory\ncat: /data/slashd/dlink/nope/../f2: No such file or directory\n",
         "stderr": ""
       }
     },
@@ -401,10 +401,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "find /data/slashd/dangle/ 2>&1",
+      "command": "find /data/slashd/dangle/ /data/slashd/dangle/.. 2>&1",
       "expect": {
         "exit": 1,
-        "stdout": "find: '/data/slashd/dangle/': No such file or directory\n",
+        "stdout": "find: '/data/slashd/dangle/': No such file or directory\nfind: '/data/slashd/dangle/..': No such file or directory\n",
         "stderr": ""
       }
     },
@@ -601,10 +601,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/slashd/dangle 2>&1",
+      "command": "mkdir -p /data/slashd/dangle 2>&1; mkdir /data/slashd/reg/../m /data/slashd/nope/../m 2>&1; mkdir -p /data/slashd/flink/../m /data/slashd/dangle/../m /data/slashd/dlink/nd/../m2 2>&1; test ! -e /data/slashd/m && echo clean",
       "expect": {
-        "exit": 1,
-        "stdout": "mkdir: cannot create directory '/data/slashd/dangle': File exists\n",
+        "exit": 0,
+        "stdout": "mkdir: cannot create directory '/data/slashd/dangle': File exists\nmkdir: cannot create directory '/data/slashd/reg/../m': Not a directory\nmkdir: cannot create directory '/data/slashd/nope/../m': No such file or directory\nmkdir: cannot create directory '/data/slashd/flink': Not a directory\nmkdir: cannot create directory '/data/slashd/dangle': File exists\nclean\n",
         "stderr": ""
       }
     },

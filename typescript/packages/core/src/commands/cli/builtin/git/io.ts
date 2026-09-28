@@ -90,6 +90,9 @@ export async function restoreEntry(
   const linked = links !== null && links.statAt(path) !== null
   if (mode === SYMLINK_MODE) {
     await removeFile(dispatch, path)
+    // symlink(2) needs the directory above the entry, as the write below
+    // does, so a link alone in a new directory gets one too.
+    await ensureDir(dispatch, parent(path))
     await dispatch('symlink', PathSpec.fromStrPath(path), [], {
       target: new TextDecoder().decode(blob),
     })

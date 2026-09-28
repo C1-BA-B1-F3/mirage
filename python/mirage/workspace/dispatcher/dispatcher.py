@@ -24,6 +24,7 @@ from typing import Any
 from mirage.cache.file import io as cache_io
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import apply_op_limit
+from mirage.commands.builtin.utils.paths import dot_refusal
 from mirage.context import (get_current_session, hidden_paths_intersect,
                             hidden_refusal, path_allowed)
 from mirage.errors import POSIX, FsCondition
@@ -40,7 +41,7 @@ from mirage.types import (DEFAULT_READ_TTL, CacheFacts, FileStat, FileType,
 from mirage.utils.errors import MISS_ERRORS, enoent, no_mount
 from mirage.utils.hidden import move_reveals
 from mirage.utils.key_prefix import mount_key
-from mirage.utils.path import norm_dir, owner_prefix
+from mirage.utils.path import norm, norm_dir, owner_prefix, parent
 from mirage.utils.ranges import slice_window
 from mirage.utils.remnants import remove_remnants, visible_below
 from mirage.workspace.dispatcher.lineage import require_turf_writable
@@ -98,6 +99,22 @@ def _visible_entries(entries: list[str], parent: str) -> list[str]:
         e for e in entries
         if path_allowed(f"{base}/{e.rstrip('/').rsplit('/', 1)[-1]}")
     ]
+
+
+def _lists(listing: list[str], virtual: str) -> bool:
+    """Whether a backend listing holds the final name of `virtual`.
+
+    Compared on the final segment, because backends disagree on entry
+    shape: bare names, a trailing slash to mark a directory, or full
+    paths. The same normalization ``merge_readdir`` dedupes on.
+
+    Args:
+        listing (list[str]): the parent's entries.
+        virtual (str): the path whose name to look for.
+    """
+    name = virtual.rstrip("/").rsplit("/", 1)[-1]
+    return any(
+        str(entry).rstrip("/").rsplit("/", 1)[-1] == name for entry in listing)
 
 
 def _session_id() -> str:
@@ -277,7 +294,27 @@ class Dispatcher:
         if (op == "rename" and isinstance(dst, PathSpec)
                 and not path_allowed(dst.virtual)):
             raise hidden_refusal(dst.virtual, True)
+        # A `.` or `..` resolves against the directory it sits in, so
+        # every name in front of one has to be a directory: `virtual`
+        # simplified the dots away and reaches `f` through a missing
+        # `nope/..`, the typed spelling (`dotted`) does not.
+        follow = self._namespace.follow
+        refusal = await dot_refusal(self._walk_stat, path, follow)
+        if refusal is None and op == "rename" and isinstance(dst, PathSpec):
+            refusal = await dot_refusal(self._walk_stat, dst, follow)
+        if refusal is not None:
+            raise refusal
+        # The kernel walks a path before the call sees it: every link
+        # above the final name is followed, whatever the op then does
+        # with the name. Command dispatch walks the operands it
+        # classifies; this is the same walk for every other caller (a
+        # relative word ln resolves itself, the ops facade, a runtime's
+        # os.symlink), so a link made, read or removed under a linked
+        # directory lands in the directory the link names, not under a
+        # name nothing else would look up.
+        path = self._walked(path, op in HIDDEN_CREATE_OPS)
         if op == "rename" and isinstance(dst, PathSpec):
+            dst = kwargs["dst"] = self._walked(dst, True)
             # A rename re-anchors everything below its source while the
             # hides stay where they are written, so hidden content would
             # land at paths the session can see. Destroying hidden
@@ -612,6 +649,43 @@ class Dispatcher:
         await pre_ops_gate(self._namespace.registry.policies, op, path, True,
                            mount.prefix, _session_id())
 
+    async def _walk_stat(self, path: PathSpec) -> FileStat:
+        """The door's own stat in the shape a chain walk reads.
+
+        Raises when nothing is there, so a dot walk judges a name
+        through every plane the door does: the node table, a mount root,
+        another mount, a link it follows.
+
+        Args:
+            path (PathSpec): the path to stat.
+        """
+        row, _ = await self.dispatch("stat", path)
+        if row is None:
+            raise enoent(path)
+        return row
+
+    def _walked(self, path: PathSpec, create: bool) -> PathSpec:
+        """``path`` with the links above its final name followed.
+
+        The walked path answers to the session's hides as the typed one
+        did, the rule the follow of the final name applies too: a visible
+        link must not lead into hidden space.
+
+        Args:
+            path (PathSpec): the path as the caller named it.
+            create (bool): whether the op creates at the path, which picks
+                the voice a hidden landing answers in.
+
+        Raises:
+            CycleError: when a link above the name loops (ELOOP).
+        """
+        walked = self._namespace.follow_parent(path.virtual)
+        if walked == path.virtual:
+            return path
+        if not path_allowed(walked):
+            raise hidden_refusal(walked, create)
+        return PathSpec.from_str_path(walked)
+
     def _table_answers(self, op: str, virtual: str, kwargs: dict[str,
                                                                  Any]) -> bool:
         """Whether the node table answers this op instead of a backend.
@@ -694,19 +768,27 @@ class Dispatcher:
             await pre_ops_gate(policies, op, dst, True, dst_owner,
                                _session_id())
             require_turf_writable(dst_mount, dst)
+            # The name the link moves to must have a directory above it,
+            # as for a new link: the table alone would file it under an
+            # absent parent and synthesize the directories above it.
+            refusal = await self._parent_refusal(dst)
+            if refusal is not None:
+                raise refusal
             await self._namespace.unlink(dst.virtual)
             await self._namespace.rename(path.virtual, dst.virtual)
         elif op == "symlink":
             target = str(kwargs["target"])
-            # symlink(2) refuses an occupied name, and the door is the
-            # only place that can tell: the node table sees a link, and
-            # a probe sees the file or directory a backend holds. Left
-            # unchecked, the new node shadowed live data (the bytes
-            # stayed, the name read as a link) and could bury a mount
-            # root, which is the one name a deployment configured.
-            if await self._path_present(path):
-                raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST),
-                                      path.virtual)
+            # symlink(2) refuses an occupied name and a name its parent
+            # cannot hold, and the door is the only place that can tell:
+            # the node table sees a link, and a probe sees what a backend
+            # holds. Left unchecked, the new node shadowed live data (the
+            # bytes stayed, the name read as a link), could bury a mount
+            # root, which is the one name a deployment configured, and
+            # under an absent parent was an orphan that invented the
+            # directories above it.
+            refusal = await self._symlink_refusal(path)
+            if refusal is not None:
+                raise refusal
             await self._namespace.symlink(path.virtual, target, time.time())
         elif op == "stat":
             row = self._namespace.link_stat_at(path.virtual)
@@ -745,14 +827,16 @@ class Dispatcher:
         Args:
             path (PathSpec): the path the readlink named.
         """
-        if await self._path_present(path):
+        present, _ = await self._occupancy(path)
+        if present:
             return OSError(errno.EINVAL, os.strerror(errno.EINVAL),
                            path.virtual)
         return FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
                                  path.virtual)
 
-    async def _path_present(self, path: PathSpec) -> bool:
-        """Whether anything at all is at `path`.
+    async def _occupancy(self,
+                         path: PathSpec) -> tuple[bool, list[str] | None]:
+        """Whether anything at all is at `path`, and the parent's listing.
 
         Four channels, asked in the order of what they prove. The
         namespace goes first: a link, and a directory that exists only
@@ -770,52 +854,144 @@ class Dispatcher:
         ``resolve_path_stat``: that dispatches, and the door is what
         dispatch is inside of.
 
+        The parent's listing comes back beside the answer, None when no
+        probe reached it or it gave none, because a listing with entries
+        in it also proves the parent a directory: a create in a directory
+        that holds anything costs no round trip beyond this one.
+
         Args:
             path (PathSpec): the path to probe.
         """
         if self._namespace.is_link(path.virtual):
-            return True
+            return True, None
         prefixes = [m.prefix for m in self._namespace.registry.mounts()]
         if namespace_stat(prefixes, self._namespace, path.virtual) is not None:
-            return True
+            return True, None
         mount = self._namespace.try_mount_for(path.virtual)
         if mount is None:
-            return False
+            return False, None
         if norm_dir(mount.prefix) == norm_dir(path.virtual):
-            return True
+            return True, None
         try:
             row = await self._probe_op("stat", mount, path)
             if row is not None and row.type is not FileType.DIRECTORY:
-                return True
-            return await self._listed_by_parent(path)
+                return True, None
+            listing = await self._parent_listing(path)
         except (PolicyError, PolicyDenied):
             # A channel that refuses to answer is not evidence of
             # absence. Reporting "present" keeps the answer at the EINVAL
             # every miss gave before the split, which asserts nothing the
             # policy is withholding; reporting absence would assert a
             # fact this door was not allowed to check.
-            return True
+            return True, None
+        return listing is not None and _lists(listing, path.virtual), listing
 
-    async def _listed_by_parent(self, path: PathSpec) -> bool:
-        """Whether the path's own name is in its parent's listing.
+    async def _symlink_refusal(self, path: PathSpec) -> OSError | None:
+        """What symlink(2) answers instead of making a link at `path`.
 
-        Compared on the final segment, because backends disagree on
-        entry shape: bare names, a trailing slash to mark a directory,
-        or full paths. The same normalization ``merge_readdir`` dedupes
-        on.
+        None when the link can be made. The name must be free (EEXIST)
+        and its parent a directory (``_parent_refusal``), both read off
+        the probes ``_occupancy`` makes: a parent whose listing answered
+        with entries is a directory, so only an empty or silent parent is
+        walked, which is the failure path nearly always.
 
         Args:
-            path (PathSpec): the path to look for.
+            path (PathSpec): the link's own path, the links above it
+                already walked.
         """
-        parent, _, name = path.virtual.rstrip("/").rpartition("/")
-        mount = self._namespace.try_mount_for(parent or "/")
+        present, listing = await self._occupancy(path)
+        if present:
+            return FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST),
+                                   path.virtual)
+        if listing:
+            return None
+        return await self._parent_refusal(path)
+
+    async def _parent_refusal(self, path: PathSpec) -> OSError | None:
+        """The errno the parent chain of a name being created answers.
+
+        symlink(2) and rename(2) resolve the directory a name goes in
+        before they look at the name: ENOENT when it is absent and
+        ENOTDIR when a non-directory stands anywhere in the chain. The
+        chain is walked upward until something is there, as ``dest_kind``
+        walks a copy's destination, because a store answers a path under
+        a plain file with the same miss as an absent one: the parent
+        itself being a directory is the one clean answer, a directory
+        higher up means the components below it are absent, and anything
+        else is ENOTDIR. None when the parent is a directory, and when a
+        policy closes a channel, which proves nothing either way.
+
+        Args:
+            path (PathSpec): the name being created, the links above it
+                already walked.
+        """
+        immediate = parent(norm(path.virtual))
+        node = immediate
+        try:
+            kind = await self._entry_type(node)
+            while kind is None:
+                node = parent(node)
+                kind = await self._entry_type(node)
+        except NotADirectoryError:
+            # A store that sees the file in the chain answers the probe
+            # itself with ENOTDIR, which is the verdict.
+            kind = FileType.FILE
+        except (PolicyError, PolicyDenied):
+            return None
+        if kind is not FileType.DIRECTORY:
+            return NotADirectoryError(errno.ENOTDIR,
+                                      os.strerror(errno.ENOTDIR), path.virtual)
+        if node != immediate:
+            return FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
+                                     path.virtual)
+        return None
+
+    async def _entry_type(self, virtual: str) -> FileType | None:
+        """The type of what stands at `virtual`, None when nothing does.
+
+        The channels ``_occupancy`` asks, for a path the walk above a new
+        name reaches: namespace structure and a mount root are
+        directories, then the backend's row, then the path's own entry in
+        its parent's listing, which is how a prefix store holds a
+        directory that is nothing but a set of keys.
+
+        Args:
+            virtual (str): a normalized absolute virtual path.
+        """
+        if virtual == "/":
+            return FileType.DIRECTORY
+        prefixes = [m.prefix for m in self._namespace.registry.mounts()]
+        if namespace_stat(prefixes, self._namespace, virtual) is not None:
+            return FileType.DIRECTORY
+        mount = self._namespace.try_mount_for(virtual)
+        if mount is None:
+            return None
+        if norm_dir(mount.prefix) == norm_dir(virtual):
+            return FileType.DIRECTORY
+        spec = PathSpec.from_str_path(virtual)
+        row = await self._probe_op("stat", mount, spec)
+        if row is not None:
+            return row.type
+        listing = await self._parent_listing(spec)
+        if listing is not None and _lists(listing, virtual):
+            return FileType.DIRECTORY
+        return None
+
+    async def _parent_listing(self, path: PathSpec) -> list[str] | None:
+        """The backend listing of the directory `path` sits in.
+
+        None when no mount serves that directory, its backend lists
+        nothing there, or the path has no name to sit in one.
+
+        Args:
+            path (PathSpec): the path whose parent to list.
+        """
+        above, _, name = path.virtual.rstrip("/").rpartition("/")
+        mount = self._namespace.try_mount_for(above or "/")
         if not name or mount is None:
-            return False
-        listing = await self._probe_op("readdir", mount,
-                                       PathSpec.from_str_path(parent or "/"))
-        return any(
-            str(entry).rstrip("/").rsplit("/", 1)[-1] == name
-            for entry in listing or ())
+            return None
+        return await self._probe_op("readdir", mount,
+                                    PathSpec.from_str_path(above or "/"))
 
     async def _probe_op(self, op: str, mount: MountEntry,
                         path: PathSpec) -> Any:

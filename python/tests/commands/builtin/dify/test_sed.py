@@ -45,7 +45,10 @@ async def test_sed_rejects_in_place(monkeypatch, dify_accessor, dify_index,
                                     guide_path):
     monkeypatch.setattr(tree, "list_all_documents", list_documents)
 
-    with pytest.raises(PermissionError,
-                       match="-i not supported on this backend"):
-        await sed(dify_accessor, [guide_path], ['s/alpha/gamma/'],
-                  CommandOpts(index=dify_index, flags={'i': True}))
+    stdout, io = await sed(dify_accessor, [guide_path], ['s/alpha/gamma/'],
+                           CommandOpts(index=dify_index, flags={'i': True}))
+
+    assert stdout is None
+    assert io.exit_code == 1
+    assert io.stderr == (b"sed: -i not supported on this backend: "
+                         b"Permission denied\n")

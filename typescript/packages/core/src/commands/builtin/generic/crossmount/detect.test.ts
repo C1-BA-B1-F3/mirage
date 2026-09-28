@@ -28,13 +28,13 @@ describe('strategyFor — mirrors tests/commands/builtin/generic/crossmount/test
   })
 
   it('streams the whole-content commands', () => {
-    for (const name of [Cmd.CAT, Cmd.NL, Cmd.CUT, Cmd.REV]) {
+    for (const name of [Cmd.CAT, Cmd.NL, Cmd.CUT, Cmd.AWK]) {
       expect(strategyFor(name, {})).toBe(Strategy.STREAM)
     }
   })
 
   it('fans out the per-operand commands', () => {
-    for (const name of [Cmd.GREP, Cmd.SHA256SUM, Cmd.RM, Cmd.TEE]) {
+    for (const name of [Cmd.GREP, Cmd.SHA256SUM, Cmd.RM, Cmd.TEE, Cmd.REV]) {
       expect(strategyFor(name, {})).toBe(Strategy.FANOUT)
     }
   })

@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "sort /data/a.txt",
+      "command": "sort /data/a.txt; sort /data/no_nl.txt /data/one_byte.txt /data/b.txt",
       "expect": {
         "exit": 0,
-        "stdout": "bar\nbaz\nfoo\nhello\nworld\n",
+        "stdout": "bar\nbaz\nfoo\nhello\nworld\n1\n2\n3\nno trailing newline\nx\n",
         "stderr": ""
       }
     },

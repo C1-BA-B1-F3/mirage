@@ -17,6 +17,7 @@ import posixpath
 from mirage.types import PathSpec
 from mirage.utils.glob_walk import has_glob
 from mirage.utils.key_prefix import mount_key
+from mirage.utils.path import dotted_spelling
 from mirage.workspace.mount import MountRegistry
 
 
@@ -26,9 +27,11 @@ def relative_spec(word: str, registry: MountRegistry,
 
     The typed word and the cwd it was typed under are two halves of one
     path: ``virtual`` resolves the pair to an absolute path, ``raw_path``
-    keeps the typed spelling for display. Glob chars in the word make a
-    pattern spec (unresolved); words whose resolved path has no mount
-    stay plain text.
+    keeps the typed spelling for display, and ``dotted`` the spelling a
+    walk proves when the word steps through a name with ``.`` or ``..``.
+    Glob chars in the word make a pattern spec (unresolved), whose dots
+    stay textual as its matches are respelled from the walk; words whose
+    resolved path has no mount stay plain text.
 
     Args:
         word (str): the word as typed (already unescaped).
@@ -56,4 +59,5 @@ def relative_spec(word: str, registry: MountRegistry,
         vfs_path=vfs_path,
         resolved=True,
         raw_path=word,
+        dotted=dotted_spelling(word, cwd),
     )

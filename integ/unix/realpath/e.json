@@ -67,7 +67,7 @@
       "command": "realpath -e /data/rpe/nope.txt 2>&1",
       "expect": {
         "exit": 1,
-        "stdout": "realpath: '/data/rpe/nope.txt': No such file or directory\n",
+        "stdout": "realpath: /data/rpe/nope.txt: No such file or directory\n",
         "stderr": ""
       },
       "flags": [

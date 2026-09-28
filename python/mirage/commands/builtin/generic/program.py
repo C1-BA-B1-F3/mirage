@@ -9,7 +9,7 @@ from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
-from mirage.utils.errors import FS_ERRORS, fs_error_line
+from mirage.utils.errors import FS_ERRORS, fs_error_line, fs_strerror
 
 PROGRAM_FILE_COMMANDS = frozenset({"grep", "rg", "sed", "awk", "jq"})
 # The dest each command's spec gives its program file.
@@ -91,10 +91,12 @@ async def prepare_program(
                 pieces.append(await materialize(data))
         except FS_ERRORS as exc:
             # Match GNU's fatal script-open status; ordinary input-file
-            # failures still belong to the native command handlers.
-            line = fs_error_line(name, path, exc)
-            if name == "sed":
-                line = line.replace("sed: ", "sed: couldn't open file ", 1)
+            # failures still belong to the native command handlers. sed
+            # names this step apart from an input's (`couldn't open file`
+            # against `can't read`).
+            line = (f"sed: couldn't open file {path.raw_path or path.virtual}"
+                    f": {fs_strerror(exc)}\n"
+                    if name == "sed" else fs_error_line(name, path, exc))
             return texts, flags, stdin, IOResult(
                 exit_code=4 if name == "sed" else 2, stderr=line.encode())
     if taken and any(p.raw_path == "-" for p in operands):

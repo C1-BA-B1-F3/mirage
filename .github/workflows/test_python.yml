@@ -127,29 +127,16 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
           MONGODB_URI: mongodb://localhost:27017
         run: |
-          redis_serial=(
-            tests/cache/file/test_redis_cache.py
-            tests/cache/index/test_redis.py
-            tests/cache/index/test_redis_order.py
-            tests/commands/builtin/redis
-            tests/core/redis
-            tests/observe/test_redis_store.py
-            tests/ops/redis
-            tests/vfs/redis
-            tests/shell/console/redis/test_store.py
-          )
-          ignore_args=(--ignore=tests/agents/camel)
-          for path in "${redis_serial[@]}"; do
-            ignore_args+=("--ignore=$path")
-          done
           # worksteal, not loadscope. Measured as sibling jobs at one commit,
           # n=4 each: worksteal 398s median with a 13s spread, loadscope 420s
           # with a 91s spread. loadscope pins a module to one worker, so a
           # heavy module leaves the others idle and the run time depends on
           # which worker drew it; worksteal rebalances, which is why its tail
-          # is 58s better even though the medians are close.
-          uv run pytest -n 4 --dist worksteal "${ignore_args[@]}"
-          uv run pytest "${redis_serial[@]}"
+          # is 58s better even though the medians are close. The redis-backed
+          # tests share this pass and the one server: each takes a key prefix
+          # of its own (`redis_prefix`, tests/conftest.py), so no two tests
+          # can race on a keyspace, whichever worker draws them.
+          uv run pytest -n 4 --dist worksteal --ignore=tests/agents/camel
 
       # Each truth file owns the command it was captured against, so this
       # list is paths only and cannot drift from what is asserted. The

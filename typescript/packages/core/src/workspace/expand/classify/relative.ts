@@ -15,7 +15,7 @@
 import { PathSpec } from '../../../types.ts'
 import type { MountRegistry } from '../../mount/registry.ts'
 import { hasGlob } from '../../../utils/glob_walk.ts'
-import { posixNormpath } from '../../../utils/path.ts'
+import { dottedSpelling, posixNormpath } from '../../../utils/path.ts'
 import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
 
 /**
@@ -23,9 +23,11 @@ import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
  *
  * The typed word and the cwd it was typed under are two halves of one
  * path: `virtual` resolves the pair to an absolute path, `rawPath`
- * keeps the typed spelling for display. Glob chars in the word make a
- * pattern spec (unresolved); words whose resolved path has no mount
- * stay plain text.
+ * keeps the typed spelling for display, and `dotted` the spelling a walk
+ * proves when the word steps through a name with `.` or `..`. Glob chars
+ * in the word make a pattern spec (unresolved), whose dots stay textual as
+ * its matches are respelled; words whose resolved path has no mount stay
+ * plain text.
  */
 export function relativeSpec(
   word: string,
@@ -51,5 +53,6 @@ export function relativeSpec(
     directory: path.slice(0, lastSlash + 1),
     resolved: true,
     rawPath: word,
+    dotted: dottedSpelling(word, cwd),
   })
 }

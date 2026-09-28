@@ -23,7 +23,7 @@ from mirage.utils.errors import (  # isort: skip
     FS_ERRORS, BadDescriptorError, FileTooLargeError, NoMountError,
     OperationNotSupportedError, eacces, efbig, eisdir, eloop, enoent, enotdir,
     enotempty, enotsup, error_path, exdev, format_fs_error, fs_error_line,
-    fs_strerror, listing_error, no_mount, readdir_error)
+    fs_strerror, listing_error, no_mount, readdir_error, revoice_fs_error_line)
 
 
 def test_fs_strerror_known_types():
@@ -73,27 +73,73 @@ def test_format_fs_error_prefers_exc_filename():
     assert err == b"cat: /a/gone.txt: No such file or directory\n"
 
 
-@pytest.mark.parametrize("cmd", ["head", "tail"])
-def test_open_failure_line_names_the_failed_open(cmd):
-    line = fs_error_line(cmd, "/data/nope.txt", enoent("/data/nope.txt"))
-    assert line == (f"{cmd}: cannot open '/data/nope.txt' for reading: "
-                    "No such file or directory\n")
+_ENOENT = "No such file or directory"
 
 
-@pytest.mark.parametrize("cmd", ["head", "tail"])
-def test_open_failure_line_names_a_directory_read(cmd):
-    line = fs_error_line(cmd, "/data/sub", eisdir("/data/sub"))
-    assert line == f"{cmd}: error reading '/data/sub': Is a directory\n"
+@pytest.mark.parametrize("cmd,line", [
+    ("head", f"head: cannot open '/data/nope.txt' for reading: {_ENOENT}\n"),
+    ("tail", f"tail: cannot open '/data/nope.txt' for reading: {_ENOENT}\n"),
+    ("fmt", f"fmt: cannot open '/data/nope.txt' for reading: {_ENOENT}\n"),
+    ("split", f"split: cannot open '/data/nope.txt' for reading: {_ENOENT}\n"),
+    ("csplit",
+     f"csplit: cannot open '/data/nope.txt' for reading: {_ENOENT}\n"),
+    ("tac", f"tac: failed to open '/data/nope.txt' for reading: {_ENOENT}\n"),
+    ("truncate",
+     f"truncate: cannot open '/data/nope.txt' for writing: {_ENOENT}\n"),
+    ("stat", f"stat: cannot statx '/data/nope.txt': {_ENOENT}\n"),
+    ("sed", f"sed: can't read /data/nope.txt: {_ENOENT}\n"),
+    ("uniq", f"uniq: /data/nope.txt: {_ENOENT}\n"),
+])
+def test_open_failure_line_names_the_failed_open(cmd, line):
+    assert fs_error_line(cmd, "/data/nope.txt",
+                         enoent("/data/nope.txt")) == line
 
 
-def test_open_failure_line_quotes_the_operand_as_typed():
+@pytest.mark.parametrize("cmd,line", [
+    ("head", "head: error reading '/data/sub': Is a directory\n"),
+    ("tail", "tail: error reading '/data/sub': Is a directory\n"),
+    ("uniq", "uniq: error reading '/data/sub': Is a directory\n"),
+    ("tac", "tac: /data/sub: read error: Is a directory\n"),
+    ("tsort", "tsort: /data/sub: read error: Is a directory\n"),
+    ("sed", "sed: read error on /data/sub: Is a directory\n"),
+    ("truncate", "truncate: cannot open '/data/sub' for writing: "
+     "Is a directory\n"),
+    ("fmt", "fmt: /data/sub: Is a directory\n"),
+    ("base64", "base64: /data/sub: Is a directory\n"),
+])
+def test_open_failure_line_names_a_directory_read(cmd, line):
+    # GNU's own fmt and base64 lines (`fmt: read error`, `base64: read
+    # error: Is a directory`) name no operand, so those keep the plain one.
+    assert fs_error_line(cmd, "/data/sub", eisdir("/data/sub")) == line
+
+
+@pytest.mark.parametrize("cmd,line", [
+    ("head", f"head: cannot open \"it's.txt\" for reading: {_ENOENT}\n"),
+    ("stat", f"stat: cannot statx \"it's.txt\": {_ENOENT}\n"),
+    ("sed", f"sed: can't read it's.txt: {_ENOENT}\n"),
+])
+def test_open_failure_line_quotes_the_operand_as_typed(cmd, line):
     spec = PathSpec(virtual="/data/it's.txt",
                     directory="/data/",
                     vfs_path="it's.txt",
                     raw_path="it's.txt")
-    line = fs_error_line("head", spec, enoent(spec))
-    assert line == ("head: cannot open \"it's.txt\" for reading: "
-                    "No such file or directory\n")
+    assert fs_error_line(cmd, spec, enoent(spec)) == line
+
+
+@pytest.mark.parametrize("line,said", [
+    ("cat: /b/nope: No such file or directory",
+     "sed: can't read /b/nope: No such file or directory"),
+    ("cat: '/b/a b': Is a directory", "sed: read error on /b/a b: "
+     "Is a directory"),
+    ("cat: /b/other: No such file or directory",
+     "sed: /b/other: No such file or directory"),
+    ("unrelated", "unrelated"),
+])
+def test_revoice_says_a_fetch_line_in_the_real_command_voice(line, said):
+    # A line that is cat's own for the operand is said again from its
+    # strerror; one about another path only has its prefix swapped.
+    operand = "/b/a b" if "a b" in line else "/b/nope"
+    assert revoice_fs_error_line(line, "cat", "sed", operand) == said
 
 
 def test_open_failure_line_leaves_standard_input_bare():

@@ -27,11 +27,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "patch",
+      "command": "patch; echo rc=$?; patch /data/poem.txt /data/nope.diff; echo rc=$?; patch -i '/data/no such.diff' /data/poem.txt; echo rc=$?; patch -i /data/sub /data/poem.txt; echo rc=$?; patch /data/poem.txt /data/poem.diff /data/x; echo rc=$?; cat /data/poem.txt",
       "expect": {
         "exit": 0,
-        "stdout": "",
-        "stderr": ""
+        "stdout": "rc=0\nrc=2\nrc=2\nrc=2\nrc=2\nroses are red\nviolets are blue\nsugar is sweet\n",
+        "stderr": "patch: **** Can't open patch file /data/nope.diff : No such file or directory\npatch: **** Can't open patch file '/data/no such.diff' : No such file or directory\npatch: **** read error : Is a directory\npatch: /data/x: extra operand\npatch: Try 'patch --help' for more information.\n"
       }
     }
   ]

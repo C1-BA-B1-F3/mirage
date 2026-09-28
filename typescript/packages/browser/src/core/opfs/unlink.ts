@@ -14,7 +14,7 @@
 
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import type { OPFSAccessor } from '../../accessor/opfs.ts'
-import { isNotFound, resolveParentDirHandle } from './utils.ts'
+import { destError, isNotFound, resolveParentDirHandle } from './utils.ts'
 
 export async function unlink(accessor: OPFSAccessor, path: PathSpec): Promise<void> {
   const root = accessor.rootHandle
@@ -26,7 +26,9 @@ export async function unlink(accessor: OPFSAccessor, path: PathSpec): Promise<vo
   } catch (err) {
     if (isNotFound(err)) return
     if (err instanceof Error && err.message.startsWith('no parent directory')) return
-    throw err
+    // A plain file in the chain is ENOTDIR, which the callers read as a
+    // name that cannot be there; the raw TypeMismatchError named no errno.
+    throw destError(err, path)
   }
   try {
     await parentDir.removeEntry(name)

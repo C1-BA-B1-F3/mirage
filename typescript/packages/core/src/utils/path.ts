@@ -60,6 +60,84 @@ export function posixNormpath(path: string): string {
   return joined === '' ? '.' : joined
 }
 
+const DOTS = new Set(['.', '..'])
+
+/**
+ * The absolute spelling of a typed path whose dots a walk proves.
+ *
+ * The kernel resolves `.` and `..` against the directory they sit in, so
+ * every component in front of one has to be a directory, while the textual
+ * simplification a virtual path gets lets `nope/../f` reach `f` past a
+ * missing `nope`. This keeps the spelling a walk needs. Null when no dot
+ * follows a named component: a leading climb (`../x`) only walks up from
+ * `base`, a directory already, so the common `cd ..` and `cat ../f` cost
+ * nothing. Mirrors Python's dotted_spelling.
+ */
+export function dottedSpelling(word: string, base = '/'): string | null {
+  const parts = word.split('/').filter((part) => part !== '')
+  let lead = 0
+  while (lead < parts.length && DOTS.has(parts[lead] ?? '')) lead += 1
+  const rest = parts.slice(lead)
+  if (!rest.some((part) => DOTS.has(part))) return null
+  const start = resolvePath(
+    parts.slice(0, lead).join('/') || '.',
+    word.startsWith('/') ? '/' : base,
+  )
+  return `${rstripSlash(start)}/${rest.join('/')}`
+}
+
+/**
+ * The directories a walk of `dotted` has to find, in walk order.
+ *
+ * Whatever stands in front of a `.` or `..` is where it resolves, so it has
+ * to be a directory; each is spelled as the walk has simplified it so far,
+ * and the root, always one, is left out. Mirrors Python's dot_prefixes.
+ */
+export function dotPrefixes(dotted: string): string[] {
+  let current = '/'
+  const found: string[] = []
+  for (const part of dotted.split('/').filter((p) => p !== '')) {
+    if (DOTS.has(part)) {
+      if (current !== '/' && !found.includes(current)) found.push(current)
+      if (part === '..') current = parent(current)
+      continue
+    }
+    current = `${rstripSlash(current)}/${part}`
+  }
+  return found
+}
+
+/**
+ * The names a walk of `dotted` enters, each with its spelling in `raw`.
+ *
+ * What `mkdir -p` creates on the way and names when it cannot: GNU makes each
+ * component as it reaches it, so `mkdir -p nope/../m` leaves `nope` behind as
+ * well as `m`, and a plain file in the way is quoted as the operand spells it
+ * (`'a.txt'`, not the absolute path). Only the typed components are entered:
+ * the directory a relative word starts from is there already. Mirrors
+ * Python's walk_nodes.
+ */
+export function walkNodes(dotted: string, raw: string): [string, string][] {
+  const typed = raw.split('/').filter((part) => part !== '')
+  let lead = 0
+  while (lead < typed.length && DOTS.has(typed[lead] ?? '')) lead += 1
+  const parts = dotted.split('/').filter((part) => part !== '')
+  const start = parts.slice(0, parts.length - (typed.length - lead))
+  let current = `/${start.join('/')}`
+  const head = raw.startsWith('/') ? '/' : ''
+  const entered: [string, string][] = []
+  for (let index = lead; index < typed.length; index++) {
+    const part = typed[index] ?? ''
+    if (DOTS.has(part)) {
+      if (part === '..') current = parent(current)
+      continue
+    }
+    current = `${rstripSlash(current)}/${part}`
+    entered.push([current, head + typed.slice(0, index + 1).join('/')])
+  }
+  return entered
+}
+
 export function expandTilde(word: string, home: string | null): string {
   if (home === null) return word
   if (word === '~') return home

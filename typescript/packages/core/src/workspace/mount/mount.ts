@@ -29,6 +29,7 @@ import type {
 import { hasInjectedVersion } from '../../commands/config.ts'
 import { ROOT_CWD } from '../../commands/constants.ts'
 import type { OpKwargs } from '../../ops/registry.ts'
+import type { LinkView } from '../../ops/types.ts'
 
 const NOOP_ACCESSOR = new NOOPAccessor()
 import { getExtension } from '../../commands/resolve.ts'
@@ -67,8 +68,11 @@ import {
   effectiveMountMode,
   requirePathsWritable,
   runWithMountGate,
+  runWithWalkProbe,
   strongestModeUnder,
 } from '../../context/session_context.ts'
+import { dispatchStat, linkFollow } from '../../commands/builtin/utils/paths.ts'
+import type { DispatchFn } from '../../runtime/types.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 
 type CmdKey = string
@@ -103,6 +107,20 @@ export interface MountInit {
   mode?: MountMode
   /** How this mount's cached bytes are revalidated. */
   read?: ReadSpec
+}
+
+// What the command tier's walk guard proves an operand's `.` and `..` with:
+// the handler reaches its backend past the door, so the door's stat and link
+// follow are bound around it. No dispatcher (a mount driven directly) binds
+// nothing. Mirrors the Python set_walk_probe binding in Mount.execute_cmd.
+function withWalkProbe<T>(
+  prefix: string,
+  dispatch: DispatchFn | undefined,
+  links: LinkView | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (dispatch === undefined) return fn()
+  return runWithWalkProbe(prefix, { stat: dispatchStat(dispatch), follow: linkFollow(links) }, fn)
 }
 
 export class MountEntry {
@@ -531,6 +549,7 @@ export class MountEntry {
           resolved: p.resolved,
           vfsPath: mountKey(p.virtual, mountPrefix),
           rawPath: p.rawPath,
+          dotted: p.dotted,
         })
       const prefixedPaths = paths.map(stamp)
       // Stamp this mount's backend key onto path-shaped flag values so
@@ -580,106 +599,109 @@ export class MountEntry {
       // What the command tier's mode guard reads: each write the handler
       // makes is held to its own region's mode.
       return runWithMountGate(this.prefix, this.mode, () =>
-        runWithMountContext(
-          () =>
-            runWithCacheManager(this.cacheManager, () =>
-              runWithRevisions(
-                this.revisions.size > 0 ? this.revisions : null,
-                async (): Promise<[ByteSource | null, IOResult]> => {
-                  for (const cmd of handlers) {
-                    // Only wrapper-owned responses bypass the write guard.
-                    const infoOnly =
-                      flags.help === true ||
-                      (flags.version === true && hasInjectedVersion(cmd.spec))
-                    // A command whose I/O runs under the path guards is
-                    // refused where it writes, because only the write knows
-                    // whether a line writes: `gzip -c`, `tar -t` and
-                    // `split -n 1/2` read a read-only mount like any reader,
-                    // and `gzip f` is refused at the write of `f.gz`, in
-                    // gzip's own GNU voice. A write command that reaches its
-                    // service some other way (trello's id-addressed card
-                    // writes, a custom backend's own verb) is refused here,
-                    // before it runs, because no door would see its write.
-                    // strongestModeUnder, not effectiveMode: a mount whose
-                    // only writable region is a show entry still runs it.
-                    // The trailing newline is load-bearing: stderr
-                    // accumulates across a line.
-                    if (
-                      cmd.write &&
-                      !cmd.pathGuarded &&
-                      !infoOnly &&
-                      strongestModeUnder(this.prefix, this.mode) === MountMode.READ
-                    ) {
-                      return [
-                        null,
-                        new IOResult({
-                          exitCode: 1,
-                          stderr: new TextEncoder().encode(
-                            `${cmdName}: read-only mount at ${this.prefix}\n`,
-                          ),
-                        }),
-                      ]
-                    }
-                    // The dispatch-level guard only sees default limits
-                    // (the mount is unknown before routing), so the
-                    // mount-resolved timeout must also bound the command
-                    // body: eager commands do their work inside cmd.fn,
-                    // where the stream-consumption guard never runs.
-                    // limitOverride is the caller's profile, mount and
-                    // workspace entry; a null one is "no opinion" and must
-                    // not shadow this mount's own table.
-                    const resolvedLimit = resolveLimit(
-                      cmdName,
-                      [],
-                      cmd.limit,
-                      context.limitOverride ?? this.commandLimits.get(cmdName) ?? null,
-                    )
-                    const cmdTimeout = resolvedLimit !== null ? resolvedLimit.timeoutSeconds : null
-                    // runWithTimeout abandons the promise, it cannot cancel
-                    // it; the aborted signal lets a runtime kill what it
-                    // spawned (python cancels the task instead). The ambient
-                    // context.signal is a background job's kill channel, folded
-                    // into the same wire. timeoutSeconds rides along so an
-                    // engine that executes on the event loop (quickjs) can
-                    // interrupt itself when the timer cannot fire.
-                    const guard =
-                      cmdTimeout !== null && cmdTimeout > 0 ? new AbortController() : null
-                    const runSignal = mergeSignals(guard?.signal, context.signal)
-                    const runOpts =
-                      runSignal !== undefined
-                        ? {
-                            ...cmdOpts,
-                            signal: runSignal,
-                            ...(cmdTimeout !== null && cmdTimeout > 0
-                              ? { timeoutSeconds: cmdTimeout }
-                              : {}),
-                          }
-                        : cmdOpts
-                    let result: CommandFnResult
-                    try {
-                      result = await runWithTimeout(
-                        Promise.resolve(cmd.fn(accessor, prefixedPaths, texts, runOpts)),
-                        cmdTimeout,
-                        cmdName,
-                      )
-                    } catch (err) {
-                      if (guard !== null && err instanceof CommandTimeoutError) guard.abort()
-                      throw err
-                    }
-                    if (result !== null) {
-                      result[1].producer = {
-                        command: cmdName,
-                        prefixes: [this.prefix],
-                        declared: cmd.limit ?? null,
+        withWalkProbe(this.prefix, context.dispatch, context.ns?.links, () =>
+          runWithMountContext(
+            () =>
+              runWithCacheManager(this.cacheManager, () =>
+                runWithRevisions(
+                  this.revisions.size > 0 ? this.revisions : null,
+                  async (): Promise<[ByteSource | null, IOResult]> => {
+                    for (const cmd of handlers) {
+                      // Only wrapper-owned responses bypass the write guard.
+                      const infoOnly =
+                        flags.help === true ||
+                        (flags.version === true && hasInjectedVersion(cmd.spec))
+                      // A command whose I/O runs under the path guards is
+                      // refused where it writes, because only the write knows
+                      // whether a line writes: `gzip -c`, `tar -t` and
+                      // `split -n 1/2` read a read-only mount like any reader,
+                      // and `gzip f` is refused at the write of `f.gz`, in
+                      // gzip's own GNU voice. A write command that reaches its
+                      // service some other way (trello's id-addressed card
+                      // writes, a custom backend's own verb) is refused here,
+                      // before it runs, because no door would see its write.
+                      // strongestModeUnder, not effectiveMode: a mount whose
+                      // only writable region is a show entry still runs it.
+                      // The trailing newline is load-bearing: stderr
+                      // accumulates across a line.
+                      if (
+                        cmd.write &&
+                        !cmd.pathGuarded &&
+                        !infoOnly &&
+                        strongestModeUnder(this.prefix, this.mode) === MountMode.READ
+                      ) {
+                        return [
+                          null,
+                          new IOResult({
+                            exitCode: 1,
+                            stderr: new TextEncoder().encode(
+                              `${cmdName}: read-only mount at ${this.prefix}\n`,
+                            ),
+                          }),
+                        ]
                       }
-                      return wrapMountStreams(result, this.mountId, this.activity)
+                      // The dispatch-level guard only sees default limits
+                      // (the mount is unknown before routing), so the
+                      // mount-resolved timeout must also bound the command
+                      // body: eager commands do their work inside cmd.fn,
+                      // where the stream-consumption guard never runs.
+                      // limitOverride is the caller's profile, mount and
+                      // workspace entry; a null one is "no opinion" and must
+                      // not shadow this mount's own table.
+                      const resolvedLimit = resolveLimit(
+                        cmdName,
+                        [],
+                        cmd.limit,
+                        context.limitOverride ?? this.commandLimits.get(cmdName) ?? null,
+                      )
+                      const cmdTimeout =
+                        resolvedLimit !== null ? resolvedLimit.timeoutSeconds : null
+                      // runWithTimeout abandons the promise, it cannot cancel
+                      // it; the aborted signal lets a runtime kill what it
+                      // spawned (python cancels the task instead). The ambient
+                      // context.signal is a background job's kill channel, folded
+                      // into the same wire. timeoutSeconds rides along so an
+                      // engine that executes on the event loop (quickjs) can
+                      // interrupt itself when the timer cannot fire.
+                      const guard =
+                        cmdTimeout !== null && cmdTimeout > 0 ? new AbortController() : null
+                      const runSignal = mergeSignals(guard?.signal, context.signal)
+                      const runOpts =
+                        runSignal !== undefined
+                          ? {
+                              ...cmdOpts,
+                              signal: runSignal,
+                              ...(cmdTimeout !== null && cmdTimeout > 0
+                                ? { timeoutSeconds: cmdTimeout }
+                                : {}),
+                            }
+                          : cmdOpts
+                      let result: CommandFnResult
+                      try {
+                        result = await runWithTimeout(
+                          Promise.resolve(cmd.fn(accessor, prefixedPaths, texts, runOpts)),
+                          cmdTimeout,
+                          cmdName,
+                        )
+                      } catch (err) {
+                        if (guard !== null && err instanceof CommandTimeoutError) guard.abort()
+                        throw err
+                      }
+                      if (result !== null) {
+                        result[1].producer = {
+                          command: cmdName,
+                          prefixes: [this.prefix],
+                          declared: cmd.limit ?? null,
+                        }
+                        return wrapMountStreams(result, this.mountId, this.activity)
+                      }
                     }
-                  }
-                  return [null, new IOResult()]
-                },
+                    return [null, new IOResult()]
+                  },
+                ),
               ),
-            ),
-          this.mountId,
+            this.mountId,
+          ),
         ),
       )
     })

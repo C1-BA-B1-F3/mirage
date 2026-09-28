@@ -181,7 +181,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /data/homepage: No such file or directory\n"
+        "stderr": "stat: cannot statx '/data/homepage': No such file or directory\n"
       }
     },
     {
@@ -233,7 +233,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /repo/extern: No such file or directory\n"
+        "stderr": "stat: cannot statx '/repo/extern': No such file or directory\n"
       }
     },
     {
@@ -298,7 +298,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /trunc/docs/vendored: No such file or directory\n"
+        "stderr": "stat: cannot statx '/trunc/docs/vendored': No such file or directory\n"
       }
     },
     {

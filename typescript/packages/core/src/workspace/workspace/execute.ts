@@ -12,6 +12,10 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { PathSpec } from '../../types.ts'
+import { literalTree } from '../../shell/literal.ts'
+import { FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
+import type { ProcessHandle } from '../../process/handle.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import { runWithRecording } from '../../observe/context.ts'
@@ -195,10 +199,11 @@ export async function executeLine(
   env: ExecuteEnv,
   command: string,
   options: ExecuteOptions,
+  argv?: readonly string[],
 ): Promise<ExecuteResult | ProvisionResult> {
   const frame: LineFrame = { session: null, statusBefore: null, writer: newStatusWriter() }
   try {
-    let result = await runLine(env, command, options, frame)
+    let result = await runLine(env, command, options, frame, argv)
     // A provision run answers with a plan, not output, so it has nothing
     // to stream. The drain is the last await of the line, and a stalled
     // store would hold `shell` open past an abort; it joins under the
@@ -250,6 +255,7 @@ async function runLine(
   command: string,
   options: ExecuteOptions,
   frame: LineFrame,
+  argv?: readonly string[],
 ): Promise<ExecuteResult | ProvisionResult> {
   if (options.signal?.aborted === true) {
     throw makeAbortError(options.signal)
@@ -259,11 +265,14 @@ async function runLine(
   await abortable(preflight(env), options.signal)
   const stdin = options.stdin ?? null
   const parser = await abortable(env.parser(), options.signal)
-  const root = parser.parse(command)
+  const root = argv === undefined ? parser.parse(command) : literalTree(argv)
   // tree-sitter accepts an unclosed backtick as a complete command, so
   // the region is scanned separately.
   const offending =
-    findSyntaxError(root, (source) => parser.parse(source)) ?? findUnterminatedBacktick(root.text)
+    argv === undefined
+      ? (findSyntaxError(root, (source) => parser.parse(source)) ??
+        findUnterminatedBacktick(root.text))
+      : null
   if (offending !== null) {
     // The gate runs before the provision branch, mirroring Python: a
     // provision run of unparseable input reports the syntax error
@@ -301,6 +310,49 @@ async function runLine(
       ? ambient
       : env.sessions.get(options.sessionId ?? env.sessions.defaultId)
   frame.session = targetSession
+  if (targetSession.processId === null) {
+    const abort = new AbortController()
+    const combined =
+      options.signal === undefined ? abort.signal : AbortSignal.any([options.signal, abort.signal])
+    let result: ExecuteResult | ProvisionResult | undefined
+    let process: ProcessHandle
+    try {
+      process = env.jobTable.processes.start({
+        sessionId: targetSession.sessionId,
+        limit: targetSession.processes.max,
+        command,
+        cwd: PathSpec.fromStrPath(options.cwd ?? targetSession.cwd),
+        cancel: () => {
+          abort.abort()
+        },
+        run: async () => {
+          result = await runWithSession(
+            targetSession,
+            () => runLine(env, command, { ...options, signal: combined }, frame, argv),
+            env.sessions,
+          )
+          return result instanceof ExecuteResult ? result.exitCode : 0
+        },
+      })
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 'EAGAIN') throw error
+      recordStatus(targetSession, FORK_FAILED_STATUS)
+      return new ExecuteResult(
+        new Uint8Array(),
+        new TextEncoder().encode(FORK_FAILED),
+        FORK_FAILED_STATUS,
+      )
+    }
+    targetSession.processId = process.info.pid
+    targetSession.shellPid ??= process.info.pid
+    try {
+      await process.task
+      if (result === undefined) throw new Error('process completed without a result')
+      return result
+    } finally {
+      targetSession.processId = null
+    }
+  }
   frame.statusBefore = snapshotStatus(targetSession)
   let routingDecision: RouteDecision | null
   try {

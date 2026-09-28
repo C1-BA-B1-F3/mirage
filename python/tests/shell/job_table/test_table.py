@@ -274,3 +274,96 @@ async def test_load_restores_a_job_into_its_session():
     assert _submit(table, "a").id == 4
     assert _submit(table, "b").id == 1
     await table.kill_all()
+
+
+@pytest.mark.asyncio
+async def test_disowned_job_keeps_process_identity_until_runner_really_exits():
+    table = JobTable()
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def run(job):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await release.wait()
+        return IOResult(exit_code=0), ExecutionNode()
+
+    job = table.submit(command="long", run=run, cwd="/", session_id="a")
+    await entered.wait()
+    process = job.process
+    assert process is not None
+    view = table.processes.view("a")
+    assert table.disown(job.id, "a")
+    assert table.list_jobs("a") == []
+    assert view.get(process.info.pid) is not None
+    await table.kill_all()
+    assert job.status == JobStatus.KILLED
+    assert view.get(process.info.pid).state == "stopping"
+    release.set()
+    result = await process.join()
+    assert result.exit_code == 0
+    assert result.cancellation_requested
+    assert view.list() == ()
+
+
+@pytest.mark.asyncio
+async def test_process_ids_do_not_restart_with_shell_job_numbers():
+    table = JobTable()
+    a = _submit(table, "a")
+    b = _submit(table, "b")
+    assert a.id == b.id == 1
+    assert a.process.info.pid != b.process.info.pid
+    await table.kill(a.id, "a")
+    table.reap(a.id, "a")
+    replacement = _submit(table, "a")
+    assert replacement.id == 1
+    assert replacement.process.info.pid > b.process.info.pid
+    await table.kill_all()
+    await asyncio.gather(a.process.join(), b.process.join(),
+                         replacement.process.join())
+
+
+@pytest.mark.asyncio
+async def test_refused_job_never_allocates_a_factory_console():
+    stores: list[RAMConsoleStore] = []
+    table = JobTable(console_factory=partial(_tracked_ram_console, stores))
+    release = asyncio.Event()
+
+    async def run(job):
+        await release.wait()
+        return IOResult(), ExecutionNode()
+
+    job = table.submit(command='held', run=run, cwd='/', limit=1)
+    try:
+        for _ in range(3):
+            with pytest.raises(BlockingIOError):
+                table.submit(command='refused', run=run, cwd='/', limit=1)
+        assert len(stores) == 1
+        assert table.list_jobs() == [job]
+    finally:
+        release.set()
+        await table.processes.drain()
+        await table.close_consoles()
+    assert stores[0].closed
+
+
+@pytest.mark.asyncio
+async def test_factory_failure_never_enters_job_runner():
+    entered = []
+
+    def factory(job_id):
+        entered.append(job_id)
+        raise ValueError('console unavailable')
+
+    async def run(job):
+        entered.append('runner')
+        return IOResult(), ExecutionNode()
+
+    table = JobTable(console_factory=factory)
+    with pytest.raises(ValueError, match='console unavailable'):
+        table.submit(command='refused', run=run, cwd='/', limit=1)
+    await table.processes.drain()
+    assert table.list_jobs() == []
+    assert table.processes.live() == ()
+    assert entered == [1]

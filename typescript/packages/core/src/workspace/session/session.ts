@@ -12,6 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import {
+  DEFAULT_PROCESS_PERMISSIONS,
+  parseProcessPermissions,
+  type ProcessPermissions,
+} from '../../process/config.ts'
 import type { Limit } from '../../types.ts'
 import { parseCommandLimits, commandLimitsToJSON } from '../../policy/builtin/output_cap.ts'
 import { BIN_PREFIX, RANDOM, RANDOM_UNSET, SHELL_ARGV0 } from '../../shell/constants.ts'
@@ -173,6 +178,10 @@ export interface SessionInit {
    */
   profile?: string | null
   commandLimits?: Readonly<Record<string, Limit>>
+  processes?: ProcessPermissions
+  processId?: number | null
+  shellPid?: number | null
+  processDepth?: number
   /**
    * The host's standing answers to asked lines (design 3.9): session
    * state like functions and cwd, persisted, read and written through
@@ -507,6 +516,10 @@ export class SessionState {
   profile: string | null
   commandLimits: Readonly<Record<string, Limit>>
   terminalOutput = true
+  processes: ProcessPermissions
+  processId: number | null
+  shellPid: number | null
+  processDepth: number
   decisions: readonly Decision[]
   generation: number
   pipelineTimeoutSeconds: number | null
@@ -532,8 +545,12 @@ export class SessionState {
     this.hideReasons = init.hideReasons ?? []
     this.commands = init.commands ?? null
     this.script = init.script ?? null
+    this.processId = init.processId ?? null
+    this.shellPid = init.shellPid ?? null
+    this.processDepth = init.processDepth ?? 0
     this.profile = init.profile ?? null
     this.commandLimits = { ...init.commandLimits }
+    this.processes = parseProcessPermissions(init.processes ?? DEFAULT_PROCESS_PERMISSIONS)
     this.decisions = init.decisions ?? []
     this.generation = init.generation ?? 0
     this.pipelineTimeoutSeconds = init.pipelineTimeoutSeconds ?? null
@@ -596,11 +613,16 @@ export class SessionState {
       script: overrides.script ?? this.script,
       profile: overrides.profile ?? this.profile,
       commandLimits: overrides.commandLimits ?? this.commandLimits,
+      processes: overrides.processes ?? this.processes,
+      processId: overrides.processId ?? this.processId,
+      shellPid: overrides.shellPid ?? this.shellPid,
+      processDepth: overrides.processDepth ?? this.processDepth,
       decisions: overrides.decisions ?? this.decisions,
       generation: overrides.generation ?? this.generation,
       pipelineTimeoutSeconds: overrides.pipelineTimeoutSeconds ?? this.pipelineTimeoutSeconds,
       lastBgJobId: overrides.lastBgJobId ?? this.lastBgJobId,
     })
+    if (this.randomSeed === RANDOM_UNSET) forked.randomSeed = RANDOM_UNSET
     forked.terminalOutput = this.terminalOutput
     forked.pipeStatus = [...this.pipeStatus]
     forked.getoptsPos = this.getoptsPos
@@ -849,6 +871,8 @@ export class SessionState {
     if (this.script !== null) data.script = scriptToJSON(this.script)
     if (Object.keys(this.commandLimits).length > 0)
       data.command_limits = commandLimitsToJSON(this.commandLimits)
+    if (JSON.stringify(this.processes) !== JSON.stringify(DEFAULT_PROCESS_PERMISSIONS))
+      data.processes = this.processes
     if (this.profile !== null) data.profile = this.profile
     if (this.decisions.length > 0) data.decisions = this.decisions.map(decisionToJSON)
     return data
@@ -870,6 +894,7 @@ export class SessionState {
     script?: ScriptJSON | null
     profile?: string | null
     command_limits?: unknown
+    processes?: ProcessPermissions
     decisions?: DecisionJSON[] | null
     generation?: number
   }): SessionState {
@@ -911,6 +936,7 @@ export class SessionState {
       script: data.script != null ? scriptFromJSON(data.script) : null,
       profile: data.profile ?? null,
       commandLimits: parseCommandLimits(data.command_limits),
+      processes: parseProcessPermissions(data.processes ?? DEFAULT_PROCESS_PERMISSIONS),
       decisions: data.decisions != null ? data.decisions.map(decisionFromJSON) : [],
     })
   }

@@ -78,6 +78,18 @@ async def test_wait_wakes_on_append(store):
 
 
 @pytest.mark.asyncio
+async def test_refuses_commands_after_close_instead_of_reconnecting(prefix):
+    s = RedisConsoleStore(url=REDIS_URL, key_prefix=prefix)
+    await s.append(Channel.STDOUT, b"one")
+    await s.clear()
+    await s.close()
+    with pytest.raises(RuntimeError, match="RedisConsoleStore is closed"):
+        await s.append(Channel.STDOUT, b"two")
+    with pytest.raises(RuntimeError, match="RedisConsoleStore is closed"):
+        await s.read_from(0)
+
+
+@pytest.mark.asyncio
 async def test_close_releases_parked_waiter(prefix):
     s = RedisConsoleStore(url=REDIS_URL, key_prefix=prefix)
     waiter = asyncio.create_task(s.wait(0))

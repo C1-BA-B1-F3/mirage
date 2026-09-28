@@ -17,6 +17,7 @@ import type { VFS } from '../../vfs/base.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
 import type { MountRegistry } from '../mount/registry.ts'
 import type { WorkspaceStateStore } from '../store/base.ts'
+import { ABORT_JOIN_MS } from '../abort.ts'
 import type { WatchManager } from './watch.ts'
 
 export interface CloseDeps {
@@ -48,12 +49,13 @@ export async function closeWorkspace(deps: CloseDeps): Promise<void> {
   // Settle jobs rather than merely aborting them: killAll records the
   // outcome and finishes each console, which is what releases a reader
   // parked on waitFinished; a bare abort leaves the job RUNNING with no
-  // ending chunk and that reader waits forever. It never joins the
-  // runner, so this cannot block shutdown on a job mid-write, and it
-  // happens before any VFS closes so a job cannot keep touching one
-  // that is already gone.
+  // ending chunk and that reader waits forever. The supervisor then joins the
+  // managed runners before their mounts are released, for as long as a
+  // cancelled line is given (`joinOrAbort`): a JS promise cannot be
+  // cancelled, so a runner that never observes its abort is left stopping
+  // rather than holding close forever.
   await deps.jobTable.killAll()
-  await deps.jobTable.closeConsoles()
+  deps.jobTable.processes.stop()
   // Runtimes next, and before the cache or any VFS closes. A runtime
   // that was interrupted mid-run still has a journal to replay, and that
   // replay writes to mounts: draining it after the cache had gone made every
@@ -74,6 +76,19 @@ export async function closeWorkspace(deps: CloseDeps): Promise<void> {
     }
   }
   try {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([
+      deps.jobTable.processes.drain(),
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ABORT_JOIN_MS)
+      }),
+    ]).finally(() => {
+      clearTimeout(timer)
+    })
+    // Consoles close once the runners have joined: a runner still unwinding
+    // writes its ending chunk as it settles. One left stopping past the
+    // grace finds its console discarded, and its writes are dropped.
+    await deps.jobTable.closeConsoles()
     const retirements = await Promise.allSettled([...deps.registry.retiringMounts.values()])
     for (const result of retirements) {
       if (result.status === 'rejected') throw result.reason as Error

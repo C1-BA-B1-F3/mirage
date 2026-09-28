@@ -93,6 +93,9 @@ export class RedisConsoleStore implements ConsoleStore {
   }
 
   private async client(): Promise<RedisClientType> {
+    // close() nulls the promise; building a new one here would open a
+    // client that nothing quits, and in Node it holds the process alive.
+    if (this.isClosed) throw new Error('RedisConsoleStore is closed')
     this.clientPromise ??= (async () => {
       const mod = await loadOptionalPeer(
         () =>

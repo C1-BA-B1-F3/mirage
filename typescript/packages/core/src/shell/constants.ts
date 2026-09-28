@@ -104,6 +104,15 @@ export const SHELL_ARGV0 = 'mirage'
 // report.
 export const BIN_PREFIX = '/usr/bin'
 
+// What bash says when fork(2) fails with EAGAIN, as at `ulimit -u`: the
+// forking shell abandons the rest of its line with status 254 (bash 5.2,
+// pinned in debian:stable-slim), and a subshell dying of it reports 254 to
+// its parent. A session's `processes.max` is the cap here. bash first
+// retries with backoff, printing `fork: retry:`; the refusal here is
+// immediate.
+export const FORK_FAILED = 'bash: fork: Resource temporarily unavailable\n'
+export const FORK_FAILED_STATUS = 254
+
 // Node types whose failure never triggers `set -e` by shape alone.
 // Lists are NOT exempt: bash exits when the command after the final
 // `&&`/`||` fails; short-circuit failures set SessionState.errexitImmune

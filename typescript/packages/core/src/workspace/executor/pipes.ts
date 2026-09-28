@@ -12,6 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { ProcessHandle } from '../../process/handle.ts'
+import type { ProcessSupervisor } from '../../process/supervisor.ts'
+import { PathSpec } from '../../types.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import { asyncChain, closeQuietly, discardIo, discardStreams } from '../../io/stream.ts'
 import type { ByteSource } from '../../io/types.ts'
@@ -21,7 +24,7 @@ import { divertStatement, stdoutToStderr } from './builtins/exec/index.ts'
 import { carryStatus, finishStatement, recordStatus } from './statement.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { ExitSignal, PipeClosed } from '../../shell/errors.ts'
-import { ERREXIT_EXEMPT_TYPES } from '../../shell/constants.ts'
+import { ERREXIT_EXEMPT_TYPES, FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
 import { unreadableStdin } from '../../shell/descriptors.ts'
@@ -48,6 +51,7 @@ export async function handlePipe(
   stdin: ByteSource | null = null,
   callStack: CallStack | null = null,
   signal?: AbortSignal,
+  processes?: ProcessSupervisor,
 ): Promise<Result> {
   // Reassociated pipelines can enter here without executeNode resetting
   // the parent. An exemption belongs to the preceding statement only;
@@ -67,7 +71,8 @@ export async function handlePipe(
   if (parentSignal?.aborted === true) onAbort()
 
   let failed = false
-  const tasks = commands.map((cmd, i) => {
+  const tasks: Promise<void>[] = []
+  const launch = (cmd: TSNodeLike, i: number): Promise<void> => {
     const child = session.fork()
     child.terminalOutput = session.terminalOutput && i === commands.length - 1
     child.abortSignal = mergeSignals(session.abortSignal, abort.signal) ?? abort.signal
@@ -111,13 +116,42 @@ export async function handlePipe(
         if (failed) await discardIo(io)
       }
     }
-    return asyncContextIsolatesTasks ? runWithSession(child, run) : run()
-  })
-  const completed = Promise.all(tasks)
-  // Attach the rejection handler before reading the last segment: an
-  // upstream failure must settle the pipeline even if nobody reads it.
+    const execute = () => (asyncContextIsolatesTasks ? runWithSession(child, run) : run())
+    if (processes === undefined) return execute()
+    let process: ProcessHandle
+    try {
+      process = processes.start({
+        sessionId: session.sessionId,
+        command: cmd.text,
+        cwd: PathSpec.fromStrPath(child.cwd),
+        parentPid: session.processId,
+        cancel: () => {
+          abort.abort()
+        },
+        run: async () => {
+          await execute()
+          return ios[i]?.exitCode ?? 0
+        },
+        limit: session.processes.max,
+      })
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'EAGAIN')
+        throw new ExitSignal(FORK_FAILED_STATUS, new TextEncoder().encode(FORK_FAILED))
+      throw error
+    }
+    child.processId = process.info.pid
+    return process.task.then(() => undefined)
+  }
   let lastStdout: ByteSource | null = null
   try {
+    // A stage the session cannot fork ends the pipeline: the stages
+    // already started are aborted below, as bash kills the pipeline.
+    commands.forEach((cmd, i) => {
+      tasks.push(launch(cmd, i))
+    })
+    const completed = Promise.all(tasks)
+    // Attach the rejection handler before reading the last segment: an
+    // upstream failure must settle the pipeline even if nobody reads it.
     const result = await runWithTimeout(
       abortable(
         Promise.all([materialize(pipes[pipes.length - 1]?.stream() ?? null), completed]),
@@ -342,18 +376,37 @@ export async function handleSubshell(
       // option from leaking to the parent.
       const isBg = body[i + 1]?.type === NT.BACKGROUND
       if (isBg && jobTable !== null) {
-        const [bgStdout, bgIo, bgExec] = await handleBackground(
-          executeNode,
-          child,
-          null,
-          session,
-          jobTable,
-          agentId ?? '',
-          stdin,
-          callStack,
-          handed,
-          decisions,
-        )
+        let launched: Result
+        try {
+          launched = await handleBackground(
+            executeNode,
+            child,
+            null,
+            session,
+            jobTable,
+            agentId ?? '',
+            stdin,
+            callStack,
+            handed,
+            decisions,
+          )
+        } catch (err) {
+          if (!(err instanceof ExitSignal)) throw err
+          // A job the subshell cannot fork ends the subshell only, its
+          // status the subshell's.
+          mergedIo = await mergedIo.merge(
+            new IOResult({ exitCode: err.containedCode, stderr: err.stderr }),
+          )
+          mergedIo.exitCode = err.containedCode
+          recordStatus(session, err.containedCode)
+          lastExec = new ExecutionNode({
+            command: '()',
+            exitCode: err.containedCode,
+            stderr: err.stderr,
+          })
+          break
+        }
+        const [bgStdout, bgIo, bgExec] = launched
         if (bgStdout !== null) allStdout.push(bgStdout)
         mergedIo = await mergedIo.merge(bgIo)
         // Seed $? for later body commands (mirrors program loop).

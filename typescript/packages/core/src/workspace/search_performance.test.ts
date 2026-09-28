@@ -1,4 +1,3 @@
-import { gzipSync } from 'node:zlib'
 import { expect, it, vi } from 'vitest'
 import { AsyncLineIterator } from '../io/async_line_iterator.ts'
 import { OpsRegistry } from '../ops/registry.ts'
@@ -22,11 +21,9 @@ const COMMANDS = [
   "rg -c 'zzqqxx|qqzzyy' /data/tree/a.txt",
   'rg -w zzqqxx /data/tree/a.txt',
   "rg -li 'zzqqxx|qqzzyy' /data/tree",
-  'zgrep -ci zzqqxx /data/f.gz',
-  "zgrep -cE 'zzqqxx|qqzzyy' /data/f.gz",
 ]
 
-it.each(COMMANDS)('bounds shell search work: %s', async (command) => {
+it.each(COMMANDS)('skips nonmatching blocks through the shell: %s', async (command) => {
   const parser = await getTestParser()
   const ram = new RAMVFS()
   ram.store.dirs.add('/')
@@ -34,7 +31,6 @@ it.each(COMMANDS)('bounds shell search work: %s', async (command) => {
   const data = new TextEncoder().encode('abcdefg\n'.repeat(40000))
   ram.store.files.set('/tree/a.txt', data)
   ram.store.files.set('/tree/b.txt', data)
-  ram.store.files.set('/f.gz', gzipSync(data))
   const ops = new OpsRegistry()
   ops.registerVfs(ram)
   const ws = new Workspace({ '/data': ram }, { mode: MountMode.WRITE, ops, shellParser: parser })

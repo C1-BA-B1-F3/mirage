@@ -303,13 +303,13 @@ async def grep_stream(
     # iterator strips included; the byte past a final unterminated line is
     # never read.
     byte_pos = 0
+    needles = None if invert else required_needles(pat)
+    fold = bool(pat.flags & re.IGNORECASE)
     lines = AsyncLineIterator(source)
-    needle = required_needles(pat) if not invert else None
     try:
         while True:
-            if needle is not None:
-                skipped, size = lines.skip_nonmatching_lines(
-                    needle, bool(pat.flags & re.IGNORECASE))
+            if needles is not None:
+                skipped, size = lines.skip_nonmatching_lines(needles, fold)
                 line_num += skipped
                 byte_pos += size
             raw_line = await lines.readline()

@@ -1,8 +1,10 @@
 from functools import partial
+from unittest.mock import patch
 
 import pytest
 
 from mirage.commands.builtin.grep_pattern import compile_pattern
+from mirage.commands.builtin.grep_prefilter import required_needles
 from mirage.commands.builtin.grep_scan import (grep_files_only, grep_lines,
                                                grep_recursive, grep_stream)
 from mirage.commands.builtin.utils.wrap import (call_read_bytes, call_readdir,
@@ -12,7 +14,8 @@ from mirage.core.ram.read import read
 from mirage.core.ram.readdir import readdir
 from mirage.core.ram.stat import stat
 from mirage.core.ram.write import write_bytes as _async_write_bytes
-from mirage.io.types import IOResult
+from mirage.io.async_line_iterator import AsyncLineIterator
+from mirage.io.types import IOResult, materialize
 from mirage.types import ContentType, FileStat, FileType
 
 
@@ -769,3 +772,95 @@ class TestOffsetsOverSmuggledBytes:
         rows = grep_lines("/f.txt", ["\udcffa"], compile_pattern("a"), False,
                           False, False, False, False, None, None, True)
         assert rows == ["0:\udcffa"]
+
+
+SKIP_PATTERNS = [
+    "zzqqxx", "zzqqxx|qqzzyy", "zz.qxx", r"\bzzqqxx\b", "^zzqqxx$",
+    "zz[abc]qxx", "(zzqqxx|qqzzyy)+", "(zz)?qqxx", "zzq{2,3}xx", r"zz\.qxx"
+]
+
+
+async def _scan(data, pat, size=65536, **options):
+    """grep_stream's output and status over ``data`` fed in ``size`` chunks.
+
+    Args:
+        data (bytes): the input.
+        pat (re.Pattern[str]): the compiled pattern.
+        size (int): the chunk size the source yields.
+        **options (bool | int): grep_stream's keyword options.
+    """
+
+    async def source():
+        for at in range(0, len(data), size):
+            yield data[at:at + size]
+
+    io = IOResult(exit_code=1)
+    out = await materialize(grep_stream(source(), pat, io=io, **options))
+    return out, io.exit_code
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("record", [b"abcdefg\n", b"\xffabcdef\n"])
+@pytest.mark.parametrize("pattern", SKIP_PATTERNS)
+@pytest.mark.parametrize("ignore_case", [False, True])
+async def test_stream_reads_lines_without_a_needle_by_block(
+        record, pattern, ignore_case, monkeypatch):
+    reads = 0
+    readline = AsyncLineIterator.readline
+
+    async def counted(self):
+        nonlocal reads
+        reads += 1
+        return await readline(self)
+
+    monkeypatch.setattr(AsyncLineIterator, "readline", counted)
+    assert await _scan(record * 40000,
+                       compile_pattern(pattern, ignore_case),
+                       count_only=True) == (b"0\n", 1)
+    assert reads < 50
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size", [7, 16384, 65536])
+@pytest.mark.parametrize("options", [
+    {},
+    {
+        "line_numbers": True,
+        "byte_offsets": True
+    },
+    {
+        "line_numbers": True,
+        "byte_offsets": True,
+        "only_matching": True
+    },
+    {
+        "byte_offsets": True,
+        "only_matching": True,
+        "pieces": True
+    },
+    {
+        "line_numbers": True,
+        "max_count": 1
+    },
+    {
+        "count_only": True
+    },
+    {
+        "count_only": True,
+        "only_matching": True,
+        "pieces": True
+    },
+])
+async def test_stream_skipping_preserves_output(size, options):
+    padding = "é other\n".encode() * 5000
+    data = (padding + "é ZZQQXX 😀\n".encode() + b"zz\xffqxx\nzz\0qxx\n" +
+            padding + b"tail zzqqxx")
+    pat = compile_pattern("zz.qxx", ignore_case=True)
+    assert required_needles(pat) is not None
+    with patch.object(AsyncLineIterator,
+                      "skip_nonmatching_lines",
+                      return_value=(0, 0)):
+        expected = await _scan(data, pat, size, **options)
+    actual = await _scan(data, pat, size, **options)
+    assert actual == expected
+    assert actual[0] and actual[1] == 0

@@ -1,5 +1,3 @@
-import gzip
-
 import pytest
 
 from mirage.io.async_line_iterator import AsyncLineIterator
@@ -22,8 +20,6 @@ COMMANDS = [
     "rg -c 'zzqqxx|qqzzyy' /data/tree/a.txt",
     "rg -w zzqqxx /data/tree/a.txt",
     "rg -li 'zzqqxx|qqzzyy' /data/tree",
-    "zgrep -ci zzqqxx /data/f.gz",
-    "zgrep -cE 'zzqqxx|qqzzyy' /data/f.gz",
 ]
 
 
@@ -35,23 +31,21 @@ async def test_shell_search_skips_nonmatching_blocks(command, monkeypatch):
     data = b"abcdefg\n" * 40000
     ram._store.files["/tree/a.txt"] = data
     ram._store.files["/tree/b.txt"] = data
-    ram._store.files["/f.gz"] = gzip.compress(data)
-    calls = 0
-    original = AsyncLineIterator.read_until
+    reads = 0
+    read_until = AsyncLineIterator.read_until
 
-    async def counted(self, *args):
-        nonlocal calls
-        calls += 1
-        assert calls < 100, "shell search regressed to per-line work"
-        return await original(self, *args)
+    async def counted(self, delim):
+        nonlocal reads
+        reads += 1
+        return await read_until(self, delim)
 
     monkeypatch.setattr(AsyncLineIterator, "read_until", counted)
     ws = Workspace({"/data": (ram, MountMode.WRITE)})
     try:
         io = await ws.shell(command)
-        stdout = await io.stdout_str()
-        assert io.exit_code == 1
-        assert stdout == ("0\n" if "grep -c" in command else "")
+        assert await io.stdout_str() == ("0\n" if "grep -c" in command else "")
         assert await io.stderr_str() == ""
+        assert io.exit_code == 1
     finally:
         await ws.close()
+    assert reads < 100

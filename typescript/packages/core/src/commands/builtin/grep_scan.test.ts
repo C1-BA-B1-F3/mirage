@@ -12,9 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
-import { IOResult } from '../../io/types.ts'
+import { Buffer } from 'node:buffer'
+import { describe, expect, it, vi } from 'vitest'
+import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
+import { IOResult, materialize } from '../../io/types.ts'
 import { ContentType, FileStat, FileType } from '../../types.ts'
+import { compilePattern } from './grep_pattern.ts'
+import { requiredNeedles } from './grep_prefilter.ts'
 import {
   grepFilesOnly,
   grepLines,
@@ -497,5 +501,83 @@ describe('offsets over a smuggled byte', () => {
     expect(
       grepLines('/f.txt', ['\udcffa'], /a/, lineOpts({ onlyMatching: false, byteOffsets: true })),
     ).toEqual(['0:\udcffa'])
+  })
+})
+
+const SKIP_PATTERNS = [
+  'zzqqxx',
+  'zzqqxx|qqzzyy',
+  'zz.qxx',
+  String.raw`\bzzqqxx\b`,
+  '^zzqqxx$',
+  'zz[abc]qxx',
+  '(zzqqxx|qqzzyy)+',
+  '(zz)?qqxx',
+  'zzq{2,3}xx',
+  String.raw`zz\.qxx`,
+]
+
+// grepStream's output and status over `data` fed in `size` chunks.
+async function scan(
+  data: Uint8Array,
+  pat: RegExp,
+  overrides: Partial<GrepStreamOptions>,
+  size = 65536,
+): Promise<[Uint8Array, number]> {
+  async function* source(): AsyncIterable<Uint8Array> {
+    await Promise.resolve()
+    for (let at = 0; at < data.length; at += size) yield data.subarray(at, at + size)
+  }
+  const io = new IOResult()
+  const out = await materialize(
+    grepStream(source(), pat, streamOpts({ onlyMatching: false, ...overrides, io })),
+  )
+  return [out, io.exitCode]
+}
+
+describe('grepStream skips lines that hold no needle', () => {
+  it.each(SKIP_PATTERNS)('reads nonmatching input by block for %s', async (pattern) => {
+    for (const record of ['abcdefg\n', '\xffabcdef\n'])
+      for (const ignoreCase of [false, true]) {
+        const data = Buffer.from(record.repeat(40000), 'latin1')
+        const reads = vi.spyOn(AsyncLineIterator.prototype, 'readline')
+        try {
+          const pat = compilePattern(pattern, ignoreCase)
+          expect(await scan(data, pat, { countOnly: true })).toEqual([ENC.encode('0\n'), 1])
+          expect(reads.mock.calls.length, `${record} ${String(pat)}`).toBeLessThan(50)
+        } finally {
+          reads.mockRestore()
+        }
+      }
+  })
+
+  it.each([7, 16384, 65536])('prints the line-by-line output at chunk size %i', async (size) => {
+    const padding = 'é other\n'.repeat(5000)
+    const data = Buffer.concat([
+      ENC.encode(padding + 'é ZZQQXX 😀\n'),
+      Buffer.from('zz\xffqxx\nzz\0qxx\n', 'latin1'),
+      ENC.encode(padding + 'tail zzqqxx'),
+    ])
+    const pat = compilePattern('zz.qxx', true)
+    expect(requiredNeedles(pat)).not.toBeNull()
+    for (const overrides of [
+      {},
+      { lineNumbers: true, byteOffsets: true },
+      { lineNumbers: true, byteOffsets: true, onlyMatching: true },
+      { byteOffsets: true, onlyMatching: true, pieces: true },
+      { lineNumbers: true, maxCount: 1 },
+      { countOnly: true },
+      { countOnly: true, onlyMatching: true, pieces: true },
+    ]) {
+      const skip = vi
+        .spyOn(AsyncLineIterator.prototype, 'skipNonmatchingLines')
+        .mockReturnValue([0, 0])
+      const expected = await scan(data, pat, overrides, size)
+      skip.mockRestore()
+      const actual = await scan(data, pat, overrides, size)
+      expect(actual, JSON.stringify(overrides)).toEqual(expected)
+      expect(actual[0].length).toBeGreaterThan(0)
+      expect(actual[1]).toBe(0)
+    }
   })
 })

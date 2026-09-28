@@ -225,8 +225,8 @@ def compile_pattern(
     # `re.ASCII` because GNU's word boundary and its case folding are the
     # ASCII ones under `LC_ALL=C` while python's defaults are Unicode, and
     # because a non-`u` RegExp is ASCII for both, so the TypeScript twin
-    # was already answering GNU's way. Without it `grep -w ab` matched
-    # `éab`, `grep -w a` matched `aé`, and `grep -i k` and
+    # was already answering GNU's way. Without it `grep -w ab` missed
+    # `éab`, `grep -w a` missed `aé`, and `grep -i k` and
     # `grep -i s` matched U+212A and U+017F. `compile_bre` in
     # `utils/bre.py` already passes it; this was grep's own gap.
     flags = re.ASCII | (re.IGNORECASE if ignore_case else 0)

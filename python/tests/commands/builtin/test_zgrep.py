@@ -162,6 +162,40 @@ def test_zgrep_searches_a_plain_input_as_it_is():
     assert (_bytes(stdout), io.exit_code) == (b"hello\n", 0)
 
 
+def test_zgrep_i_folds_ascii_only():
+    # zgrep is gzip piped into grep, which folds ASCII only under LC_ALL=C:
+    # neither U+212A nor U+017F matches k or s (gzip 1.13, grep 3.11).
+    ws, _ = _ws()
+    lookalikes = "K\nſ\n".encode()
+    _run_raw(ws, "tee /data/f.gz", stdin=gzip.compress(lookalikes + b"k\n"))
+    for cmd, out, code in (
+        ("zgrep -ci k /data/f.gz", b"1\n", 0),
+        ("zgrep -ci s /data/f.gz", b"0\n", 1),
+        ("zgrep -io k /data/f.gz", b"k\n", 0),
+        ("zgrep -iv k /data/f.gz", lookalikes, 0),
+        ("zgrep -il s /data/f.gz", b"", 1),
+        ("zgrep -iL s /data/f.gz", b"/data/f.gz\n", 1),
+    ):
+        stdout, io = _run_raw(ws, cmd)
+        assert (_bytes(stdout), io.exit_code) == (out, code), cmd
+
+
+def test_zgrep_w_word_boundary_is_ascii():
+    # Under LC_ALL=C neither byte of U+00E9 is a word constituent, so -w
+    # and \b see a boundary beside it (gzip 1.13, grep 3.11).
+    ws, _ = _ws()
+    data = "éab\nab\nabé\n".encode()
+    _run_raw(ws, "tee /data/w.gz", stdin=gzip.compress(data))
+    for cmd, out in (
+        ("zgrep -w ab /data/w.gz", data),
+        ("zgrep -cw ab /data/w.gz", b"3\n"),
+        ("zgrep -ow ab /data/w.gz", b"ab\nab\nab\n"),
+        ("zgrep -c '\\bab' /data/w.gz", b"3\n"),
+    ):
+        stdout, io = _run_raw(ws, cmd)
+        assert (_bytes(stdout), io.exit_code) == (out, 0), cmd
+
+
 def test_zgrep_reports_a_bad_archive_and_exits_2_beside_a_match():
     ws, _ = _ws()
     _run_raw(ws, "tee /data/cut.gz", stdin=gzip.compress(b"hello\n")[:10])

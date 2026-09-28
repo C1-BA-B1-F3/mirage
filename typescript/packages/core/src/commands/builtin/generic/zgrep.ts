@@ -37,7 +37,6 @@ function anyLineSelected(data: Uint8Array, pattern: RegExp, invert: boolean): bo
 }
 
 interface ZgrepOpts {
-  ignoreCase: boolean
   invert: boolean
   count: boolean
   lineNumbers: boolean
@@ -185,7 +184,7 @@ export async function zgrepGeneric(
       const [result, hadMatch] = zgrepSearch(
         data,
         pattern,
-        { ignoreCase, invert, count: countOnly, lineNumbers, onlyMatching, maxCount, byteOffsets },
+        { invert, count: countOnly, lineNumbers, onlyMatching, maxCount, byteOffsets },
         fname,
       )
       if (hadMatch) anyMatch = true

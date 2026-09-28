@@ -133,3 +133,25 @@ export function md5Hex(bytes: Uint8Array): string {
   while (!result.done) result = blocks.next()
   return toHex(result.value)
 }
+
+// The yielding twin of md5Hex, for hashing bytes a caller just received.
+// This is pure-JS MD5 (WebCrypto has none, and core cannot import
+// node:crypto), so one long hash would block the loop a TypeScript FUSE mount
+// is served from. md5Blocks yields once per 16 KiB, so this hands the loop
+// back about every MiB.
+const MD5_SLICES_PER_YIELD = 64
+
+export async function md5HexAsync(bytes: Uint8Array): Promise<string> {
+  const blocks = md5Blocks(bytes)
+  let result = blocks.next()
+  let sinceYield = 0
+  while (!result.done) {
+    result = blocks.next()
+    sinceYield += 1
+    if (sinceYield >= MD5_SLICES_PER_YIELD) {
+      sinceYield = 0
+      await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    }
+  }
+  return toHex(result.value)
+}

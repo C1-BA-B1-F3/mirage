@@ -33,9 +33,10 @@ class GoogleFileSuffix(str, Enum):
     GMAIL = ".gmail.json"
 
 
+# md5Checksum and headRevisionId are a file's token (`drive_fingerprint`).
 FIELDS = ("nextPageToken,"
           "files(id,name,mimeType,driveId,size,quotaBytesUsed,"
-          "createdTime,modifiedTime,"
+          "createdTime,modifiedTime,md5Checksum,headRevisionId,"
           "owners,capabilities/canEdit,parents)")
 
 # A search across every corpus is answered best-effort, so Drive reports
@@ -279,7 +280,7 @@ async def download_file(
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
 ITEM_FIELDS = ("id,name,mimeType,driveId,size,quotaBytesUsed,"
-               "createdTime,modifiedTime,parents")
+               "createdTime,modifiedTime,md5Checksum,headRevisionId,parents")
 DEFAULT_UPLOAD_MIME = "application/octet-stream"
 
 

@@ -14,7 +14,8 @@
         "sharepoint-prefix",
         "ssh",
         "hf-hub",
-        "github"
+        "github",
+        "gdrive"
       ],
       "read": "bounded",
       "ttl": 600,
@@ -56,7 +57,8 @@
         "hf",
         "hf-prefix",
         "hf-hub",
-        "github"
+        "github",
+        "gdrive"
       ],
       "read": "fresh",
       "scenario": [
@@ -84,7 +86,7 @@
         "stdout": "v1\nv2\n",
         "stderr": ""
       },
-      "note": "Narrowed to the backends that may declare `read: fresh` (the S3 family, OneDrive and SharePoint, the Hugging Face buckets, flat and key-prefixed, the Hub repos, whose hf-hub target changes the file by commit, and GitHub, whose target changes it by a contents PUT): the other two cache reads but stamp no comparable content token, so the mount-time verdict refuses the policy and the workspace never constructs. The bounded control keeps the full list, hf-prefix included so the pair measures the same buckets. The github fake is one shared world, and needs no reset: every scenario starts by writing v1, create or update."
+      "note": "Narrowed to the backends that may declare `read: fresh` (the S3 family, OneDrive and SharePoint, the Hugging Face buckets, flat and key-prefixed, the Hub repos, whose hf-hub target changes the file by commit, GitHub, whose target changes it by a contents PUT, and Google Drive, whose token is the file's md5): the other two cache reads but stamp no comparable content token, so the mount-time verdict refuses the policy and the workspace never constructs. The bounded control keeps the full list, hf-prefix included so the pair measures the same buckets. The github fake is one shared world, and needs no reset: every scenario starts by writing v1, create or update."
     }
   ]
 }

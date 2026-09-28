@@ -44,10 +44,11 @@ describe('gdrive versions', () => {
     expect(call?.[1]).toContain('/files/f1/revisions/r1?alt=media')
   })
 
-  it('captureFileMetadata prefers md5, falls back to head revision', async () => {
+  it('captureFileMetadata returns the md5 and head revision raw', async () => {
+    // Raw, not coalesced: the caller checks the md5 against the bytes.
     vi.mocked(googleGet).mockResolvedValueOnce({ headRevisionId: 'r9', md5Checksum: 'abc' })
     expect(await captureFileMetadata(TM, 'f1')).toEqual(['abc', 'r9'])
     vi.mocked(googleGet).mockResolvedValueOnce({ headRevisionId: 'r9' })
-    expect(await captureFileMetadata(TM, 'f1')).toEqual(['r9', 'r9'])
+    expect(await captureFileMetadata(TM, 'f1')).toEqual([null, 'r9'])
   })
 })

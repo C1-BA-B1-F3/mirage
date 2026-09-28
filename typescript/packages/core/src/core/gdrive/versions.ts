@@ -57,10 +57,9 @@ export async function downloadRevision(
   return googleGetBytes(tm, url, window)
 }
 
-// Fetch the (fingerprint, revision) pair for a file at read time. The head
-// revision ID doubles as the pinnable revision; the MD5 checksum is the
-// content fingerprint (falls back to the head revision ID for types
-// without one).
+// Fetch a file's md5 and head revision at read time, raw rather than
+// coalesced, because the caller checks the md5 against the bytes it
+// downloads. The head revision doubles as the pinnable revision.
 export async function captureFileMetadata(
   tm: TokenManager,
   fileId: string,
@@ -70,7 +69,5 @@ export async function captureFileMetadata(
     fields: 'headRevisionId,md5Checksum',
     supportsAllDrives: 'true',
   })) as { headRevisionId?: string; md5Checksum?: string }
-  const revision = item.headRevisionId ?? null
-  const fingerprint = item.md5Checksum ?? revision
-  return [fingerprint, revision]
+  return [item.md5Checksum ?? null, item.headRevisionId ?? null]
 }

@@ -20,13 +20,20 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.cache.index.warm import entry_or_warm
 from mirage.core.gdrive import DIRECTORY_RESOURCE_TYPES
 from mirage.core.gdrive.resolve import root_context
-from mirage.core.google.drive import (MIME_TO_EXT, list_files,
+from mirage.core.google.drive import (FOLDER_MIME, MIME_TO_EXT, list_files,
                                       list_shared_drives)
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 
 logger = logging.getLogger(__name__)
+
+_RESOURCE_TYPES = {
+    FOLDER_MIME: "gdrive/folder",
+    "application/vnd.google-apps.document": "gdrive/gdoc",
+    "application/vnd.google-apps.spreadsheet": "gdrive/gsheet",
+    "application/vnd.google-apps.presentation": "gdrive/gslide",
+}
 
 
 def unique_shared_drive_name(name: str, existing_names: set[str]) -> str:
@@ -38,6 +45,15 @@ def unique_shared_drive_name(name: str, existing_names: set[str]) -> str:
         filename = f"{name} [Shared Drive {suffix}]"
         suffix += 1
     return filename
+
+
+def resource_type_for(mime: str) -> str:
+    """The gdrive resource type of a Drive MIME type.
+
+    Args:
+        mime (str): the item's ``mimeType``.
+    """
+    return _RESOURCE_TYPES.get(mime, "gdrive/file")
 
 
 async def readdir(
@@ -91,19 +107,15 @@ async def readdir(
             filename = f"{name}{ext}"
         else:
             filename = name
-        is_dir = mime == "application/vnd.google-apps.folder"
-        if is_dir:
-            rt = "gdrive/folder"
-        elif mime == "application/vnd.google-apps.document":
-            rt = "gdrive/gdoc"
-        elif mime == "application/vnd.google-apps.spreadsheet":
-            rt = "gdrive/gsheet"
-        elif mime == "application/vnd.google-apps.presentation":
-            rt = "gdrive/gslide"
-        else:
-            rt = "gdrive/file"
+        rt = resource_type_for(mime)
+        is_dir = rt == "gdrive/folder"
         source_size = int(f.get("size") or f.get("quotaBytesUsed") or 0)
         extra = {"drive_id": f.get("driveId")} if f.get("driveId") else {}
+        # Carried so stat answers the read's token without a request.
+        if f.get("md5Checksum"):
+            extra["md5_checksum"] = f["md5Checksum"]
+        if f.get("headRevisionId"):
+            extra["head_revision_id"] = f["headRevisionId"]
         # Binary files download raw, so Drive's size is the rendered byte
         # length and stays. Google-apps files (gdoc/gsheet/gslide) render to
         # JSON, so Drive's source size must not become FileStat.size

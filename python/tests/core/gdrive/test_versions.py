@@ -16,10 +16,16 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from mirage.cache.index import IndexEntry
 from mirage.core.gdrive.read import read_file_versioned
 from mirage.core.gdrive.versions import (capture_file_metadata,
                                          download_revision, list_revisions)
 from mirage.observe.context import push_revisions, reset_revisions
+
+ENTRY = IndexEntry(id="f1",
+                   name="f.txt",
+                   resource_type="gdrive/file",
+                   vfs_name="f.txt")
 
 
 @pytest.mark.asyncio
@@ -69,9 +75,9 @@ async def test_capture_file_metadata(gdrive_accessor):
                 "md5Checksum": "abc"
             },
     ):
-        fingerprint, revision = await capture_file_metadata(
-            gdrive_accessor.token_manager, "f1")
-    assert (fingerprint, revision) == ("abc", "r9")
+        captured = await capture_file_metadata(gdrive_accessor.token_manager,
+                                               "f1")
+    assert captured == ("abc", "r9")
 
 
 @pytest.mark.asyncio
@@ -81,9 +87,10 @@ async def test_capture_falls_back_to_head_revision(gdrive_accessor):
             new_callable=AsyncMock,
             return_value={"headRevisionId": "r9"},
     ):
-        fingerprint, revision = await capture_file_metadata(
-            gdrive_accessor.token_manager, "f1")
-    assert (fingerprint, revision) == ("r9", "r9")
+        captured = await capture_file_metadata(gdrive_accessor.token_manager,
+                                               "f1")
+    # Raw, not coalesced: the caller checks the md5 against the bytes.
+    assert captured == (None, "r9")
 
 
 @pytest.mark.asyncio
@@ -99,7 +106,7 @@ async def test_read_file_versioned_pinned(gdrive_accessor):
                 new_callable=AsyncMock,
         ) as live_read:
             data = await read_file_versioned(gdrive_accessor.token_manager,
-                                             "f1", "/data/f.txt")
+                                             "f1", "/data/f.txt", ENTRY)
     finally:
         reset_revisions(token)
     assert data == b"pinned"
@@ -119,7 +126,7 @@ async def test_read_file_versioned_unpinned_reads_live(gdrive_accessor):
             new_callable=AsyncMock,
     ) as capture:
         data = await read_file_versioned(gdrive_accessor.token_manager, "f1",
-                                         "/data/f.txt")
+                                         "/data/f.txt", ENTRY)
     assert data == b"live"
     # No active recorder: the extra metadata call is skipped.
     capture.assert_not_awaited()

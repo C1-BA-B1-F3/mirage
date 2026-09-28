@@ -14,6 +14,7 @@
 
 import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { GDriveAccessor } from '../../accessor/gdrive.ts'
+import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { entryOrWarm } from '../../cache/index/warm.ts'
 import { PathSpec } from '../../types.ts'
@@ -24,25 +25,44 @@ import { captureFileMetadata, downloadRevision } from './versions.ts'
 import { readSpreadsheet } from '../gsheets/read.ts'
 import { readPresentation } from '../gslides/read.ts'
 import type { TokenManager } from '../google/client.ts'
-import { DIRECTORY_RESOURCE_TYPES, readdir } from './readdir.ts'
+import { driveFingerprint, entryFingerprint } from './fingerprint.ts'
+import { md5HexAsync } from '../../utils/hash.ts'
+import { DIRECTORY_RESOURCE_TYPES, NATIVE_RESOURCE_TYPES, readdir } from './readdir.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import { eisdir, enoent } from '../../utils/errors.ts'
 import { sliceWindow, windowFor } from '../../utils/ranges.ts'
 
+// Whether a read returned the whole object rather than a window. A token
+// describes the whole object, so a window stamped with one would read as
+// fresh for the life of the entry.
+function wholeFile(offset: number, size: number | null): boolean {
+  return offset === 0 && size === null
+}
+
+// Whether Drive's md5 names other bytes than the ones just read. The metadata
+// and the download are two requests, so a write between them leaves metadata
+// that predates the bytes.
+async function staleMd5(md5: unknown, data: Uint8Array): Promise<boolean> {
+  return typeof md5 === 'string' && md5 !== '' && (await md5HexAsync(data)) !== md5
+}
+
 // Download a binary file honouring snapshot revision pins. A pinned path
-// reads that revision's content; an actively recorded read captures
-// (fingerprint, revision) so snapshots can pin it later. An unrecorded read
-// captures nothing, which is one reason gdrive does not declare
-// readRevalidatable.
+// reads that revision's content. Otherwise the token comes from a capture when
+// a recorder is bound and from the index entry when none is, so it never
+// depends on the recorder; the entry's revision is not pinned, since it can be
+// a TTL old. Either md5 is checked against the bytes, and a stale one drops
+// the token and the revision with it.
 export async function readFileVersioned(
   tm: TokenManager,
   fileId: string,
   virtual: string,
+  entry: IndexEntry,
   offset = 0,
   size: number | null = null,
 ): Promise<Uint8Array> {
   const pinned = revisionFor(virtual)
   const window = windowFor(offset, size)
+  const whole = wholeFile(offset, size)
   const timer = startOp()
   let fingerprint: string | null = null
   let revision: string | null = pinned
@@ -50,10 +70,16 @@ export async function readFileVersioned(
   if (pinned !== null) {
     data = await downloadRevision(tm, fileId, pinned, window)
   } else if (recordingActive()) {
-    ;[fingerprint, revision] = await captureFileMetadata(tm, fileId)
+    const [md5, captured] = await captureFileMetadata(tm, fileId)
+    revision = captured
     data = await downloadFile(tm, fileId, window)
+    if (whole && (await staleMd5(md5, data))) revision = null
+    else if (whole)
+      fingerprint = driveFingerprint(entry.resourceType, md5, revision, entry.remoteTime)
   } else {
     data = await downloadFile(tm, fileId, window)
+    if (whole && !(await staleMd5(entry.extra.md5_checksum, data)))
+      fingerprint = entryFingerprint(entry)
   }
   record('read', virtual, 'gdrive', data.length, timer, { fingerprint, revision })
   return data
@@ -95,13 +121,20 @@ export async function read(
   if (entry === null) throw enoent(path.virtual)
   const rt = entry.resourceType
   if (DIRECTORY_RESOURCE_TYPES.has(rt)) throw eisdir(path.virtual)
-  if (rt === 'gdrive/gdoc')
-    return sliceWindow(await readDoc(accessor.tokenManager, entry.id), offset, size)
-  if (rt === 'gdrive/gsheet')
-    return sliceWindow(await readSpreadsheet(accessor.tokenManager, entry.id), offset, size)
-  if (rt === 'gdrive/gslide')
-    return sliceWindow(await readPresentation(accessor.tokenManager, entry.id), offset, size)
-  return readFileVersioned(accessor.tokenManager, entry.id, path.virtual, offset, size)
+  if (!NATIVE_RESOURCE_TYPES.has(rt))
+    return readFileVersioned(accessor.tokenManager, entry.id, path.virtual, entry, offset, size)
+  const timer = startOp()
+  let rendered: Uint8Array
+  if (rt === 'gdrive/gdoc') rendered = await readDoc(accessor.tokenManager, entry.id)
+  else if (rt === 'gdrive/gsheet') rendered = await readSpreadsheet(accessor.tokenManager, entry.id)
+  else rendered = await readPresentation(accessor.tokenManager, entry.id)
+  const sliced = sliceWindow(rendered, offset, size)
+  // No revision: a pin would replace the drift check a render relies on.
+  record('read', path.virtual, 'gdrive', sliced.length, timer, {
+    fingerprint: wholeFile(offset, size) ? entryFingerprint(entry) : null,
+    revision: null,
+  })
+  return sliced
 }
 
 export async function* stream(

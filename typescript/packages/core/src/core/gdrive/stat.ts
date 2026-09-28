@@ -17,17 +17,12 @@ import type { GDriveAccessor } from '../../accessor/gdrive.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { entryOrWarm } from '../../cache/index/warm.ts'
 import { FileStat, FileType, PathSpec } from '../../types.ts'
-import { DIRECTORY_RESOURCE_TYPES, readdir as coreReaddir } from './readdir.ts'
+import { driveFingerprint, entryFingerprint } from './fingerprint.ts'
+import { DIRECTORY_RESOURCE_TYPES, readdir as coreReaddir, resourceTypeFor } from './readdir.ts'
 import { enoent } from '../../utils/errors.ts'
 import { FOLDER_MIME, MIME_TO_EXT, getFile } from '../google/drive.ts'
 import { contentTypeForPath } from '../../utils/filetype.ts'
 import { resolveKey } from './resolve.ts'
-
-const MIME_TO_RT: Readonly<Record<string, string>> = {
-  'application/vnd.google-apps.document': 'gdrive/gdoc',
-  'application/vnd.google-apps.spreadsheet': 'gdrive/gsheet',
-  'application/vnd.google-apps.presentation': 'gdrive/gslide',
-}
 
 // Resolve a stat with direct Drive queries when the index can't answer.
 // Generic write commands (cp/mv/rm) stat without an index, and gdrive is
@@ -49,6 +44,7 @@ async function statFromApi(
       extra: { file_id: node.id },
     })
   }
+  const resourceType = resourceTypeFor(node.mimeType)
   const ext = MIME_TO_EXT[node.mimeType]
   const vfsName = ext !== undefined ? `${node.name}${ext}` : node.name
   // Native renders are size-unknown (see the CLAUDE.md FileStat.size rule).
@@ -59,10 +55,10 @@ async function statFromApi(
     type: FileType.FILE,
     content: contentTypeForPath(vfsName),
     modified,
-    fingerprint: modified !== '' ? modified : null,
+    fingerprint: driveFingerprint(resourceType, item.md5Checksum, item.headRevisionId, modified),
     extra: {
       file_id: node.id,
-      resource_type: MIME_TO_RT[node.mimeType] ?? 'gdrive/file',
+      resource_type: resourceType,
     },
   })
 }
@@ -111,7 +107,7 @@ export async function stat(
     type: FileType.FILE,
     content: contentTypeForPath(entry.vfsName),
     modified: entry.remoteTime,
-    fingerprint: entry.remoteTime !== '' ? entry.remoteTime : null,
+    fingerprint: entryFingerprint(entry),
     extra: {
       file_id: entry.id,
       resource_type: entry.resourceType,

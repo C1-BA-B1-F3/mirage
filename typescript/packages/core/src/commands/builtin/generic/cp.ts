@@ -701,6 +701,25 @@ async function duplicateForBackup(
   return true
 }
 
+async function restoreBackupLink(
+  copies: TransferLinks,
+  backup: PathSpec,
+  link: FileStat,
+  cmdName: string,
+  errors: string[],
+): Promise<void> {
+  try {
+    if (await pathExists((path) => linkStat(copies, path), backup)) {
+      await copies.dispatch('unlink', backup)
+    }
+    const raw = link.extra[LINK_TARGET_KEY]
+    await copies.dispatch('symlink', backup, [], { target: typeof raw === 'string' ? raw : '' })
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    errors.push(`${cmdName}: cannot restore backup '${backup.virtual}': ${String(fsStrerror(err))}`)
+  }
+}
+
 // Back up an existing target before it is overwritten. Returns the backup
 // path (null when no backup was needed) and whether the transfer may
 // proceed.
@@ -733,20 +752,24 @@ export async function makeBackup(
     return { backup: null, ok: false }
   }
   if (backup === null) return { backup: null, ok: true }
-  let made: boolean
+  const backupLink =
+    copies !== undefined && !('rename' in strategy) ? copies.links.statAt(backup.virtual) : null
+  let removedLink = false
+  let made = false
   try {
-    if (
-      copies !== undefined &&
-      !('rename' in strategy) &&
-      copies.links.statAt(backup.virtual) !== null
-    ) {
+    if (copies !== undefined && backupLink !== null) {
       await copies.dispatch('unlink', backup)
+      removedLink = true
     }
     made = await duplicateForBackup(strategy, stat, target, backup, errors, policy.cmdName, index)
   } catch (err) {
     if (!isFsError(err)) throw err
     errors.push(`${policy.cmdName}: cannot backup '${target.virtual}': ${String(fsStrerror(err))}`)
     return { backup: null, ok: false }
+  } finally {
+    if (removedLink && !made && copies !== undefined && backupLink !== null) {
+      await restoreBackupLink(copies, backup, backupLink, policy.cmdName, errors)
+    }
   }
   if (!made) return { backup: null, ok: false }
   writes[backup.mountPath] = new Uint8Array()

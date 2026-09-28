@@ -762,6 +762,30 @@ async def _duplicate_for_backup(
     return True
 
 
+async def _restore_backup_link(copies: TransferLinks, backup: PathSpec,
+                               link: FileStat, cmd_name: str,
+                               errors: list[str]) -> None:
+    """Restore a displaced backup link, removing any partial copy first.
+
+    Args:
+        copies (TransferLinks): Namespace facts and transfer doors.
+        backup (PathSpec): Backup entry to restore.
+        link (FileStat): The original link's row.
+        cmd_name (str): Command name for error prefixes.
+        errors (list[str]): Collected errors, including restoration failures.
+    """
+    try:
+        if await path_exists(partial(link_stat, copies), backup):
+            await copies.dispatch("unlink", backup)
+        await copies.dispatch("symlink",
+                              backup,
+                              target=str(
+                                  link.extra.get(LINK_TARGET_KEY) or ""))
+    except FS_ERRORS as exc:
+        errors.append(f"{cmd_name}: cannot restore backup "
+                      f"'{backup.virtual}': {fs_strerror(exc)}")
+
+
 async def make_backup(
     policy: TransferPolicy,
     strategy: CopyStrategy | PrimitiveMove | NativeMove,
@@ -804,16 +828,25 @@ async def make_backup(
         return None, False
     if backup is None:
         return None, True
+    backup_link = (copies.links.stat_at(backup.virtual) if copies is not None
+                   and not isinstance(strategy, NativeMove) else None)
+    removed_link = False
+    made = False
     try:
-        if copies is not None and not isinstance(strategy, NativeMove) \
-                and copies.links.stat_at(backup.virtual) is not None:
+        if copies is not None and backup_link is not None:
             await copies.dispatch("unlink", backup)
+            removed_link = True
         made = await _duplicate_for_backup(strategy, stat, target, backup,
                                            errors, policy.cmd_name)
     except FS_ERRORS as exc:
         errors.append(f"{policy.cmd_name}: cannot backup "
                       f"'{target.virtual}': {fs_strerror(exc)}")
         return None, False
+    finally:
+        if removed_link and not made and copies is not None \
+                and backup_link is not None:
+            await _restore_backup_link(copies, backup, backup_link,
+                                       policy.cmd_name, errors)
     if not made:
         return None, False
     writes[backup.mount_path] = b""

@@ -16,6 +16,7 @@ import dataclasses
 import functools
 from typing import Any, cast
 
+from mirage.commands.builtin.generic.cp import TransferLinks
 from mirage.commands.builtin.generic.crossmount.types import (Cmd, OperandRun,
                                                               RunSingle)
 from mirage.commands.builtin.generic.grep import \
@@ -31,8 +32,9 @@ from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import read_fail_exit
 from mirage.io import IOResult
 from mirage.io.stream import materialize
+from mirage.ops.types import LinkView
 from mirage.runtime.types import DispatchFn
-from mirage.types import FileType, PathSpec
+from mirage.types import FileType, PathSpec, PrimitiveCopy
 from mirage.utils.errors import FS_ERRORS, fs_error_line
 
 
@@ -195,3 +197,23 @@ def transfer_primitives(dispatch: DispatchFn) -> dict[str, Any]:
         mkdir=p(relay, dispatch, "mkdir"),
         readdir=p(relay, dispatch, "readdir"),
     )
+
+
+def transfer_links(links: LinkView, dispatch: DispatchFn,
+                   cwd: str) -> TransferLinks:
+    """Namespace links with the dispatcher primitives shared by cp and mv.
+
+    Args:
+        links (LinkView): the namespace's symlink facts.
+        dispatch (DispatchFn): the op door.
+        cwd (str): the directory a typed operand resolves against.
+    """
+    prim = transfer_primitives(dispatch)
+    return TransferLinks(links=links,
+                         dispatch=dispatch,
+                         cwd=cwd,
+                         relay=PrimitiveCopy(read_bytes=prim["read_bytes"],
+                                             write=prim["write"],
+                                             mkdir=prim["mkdir"],
+                                             readdir=prim["readdir"]),
+                         relay_stat=prim["stat"])

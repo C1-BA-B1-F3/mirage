@@ -64,7 +64,7 @@ export async function runRelay(
   if (cmdName === Cmd.SORT) return runSort(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.LS) return runLs(scopes, flagKwargs, dispatch, ns, sessionView)
   if (cmdName === Cmd.CP) return runCp(scopes, flagKwargs, dispatch, storageKey, ns, cwd)
-  if (cmdName === Cmd.MV) return runMv(scopes, flagKwargs, dispatch, storageKey)
+  if (cmdName === Cmd.MV) return runMv(scopes, flagKwargs, dispatch, storageKey, ns)
   if (cmdName === Cmd.DIFF) return runDiff(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.PASTE) return runPaste(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.COMM) return runComm(scopes, flagKwargs, dispatch, stdin)

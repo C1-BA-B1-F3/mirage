@@ -79,7 +79,6 @@ import {
   settleMoves,
   stripLinkOperands,
 } from '../executor/builtins/index.ts'
-import type { MvMove } from '../executor/builtins/types.ts'
 import { BUILTINS } from '../executor/builtins/table.ts'
 import { globPattern } from '../../utils/glob_walk.ts'
 import { CycleError } from '../../utils/path.ts'
@@ -812,7 +811,6 @@ async function routeArgv(
 
   // Symlink-aware dispatch: reads follow links (open(2)); rm/mv act on
   // the link entry itself (lstat semantics).
-  let mvMoves: MvMove[] = []
   let linkErrors: string[] = []
   let dispatchArgv = argv
   if (namespace.nodes.size > 0) {
@@ -851,8 +849,6 @@ async function routeArgv(
       } else if (name === 'mv') {
         const prepared = await prepareMv(namespace, dispatch, operands, argv.args, session.cwd)
         operands = prepared.items
-        mvMoves = prepared.moves
-        linkErrors = prepared.errors
         if (prepared.early !== null) return prepared.early
       }
     } catch (err) {
@@ -921,7 +917,7 @@ async function routeArgv(
       }
     }
   }
-  if (mvMoves.length > 0) await settleMoves(namespace, dispatch, mvMoves, io.exitCode)
+  if (name === 'mv' && io.renames.length > 0) await settleMoves(namespace, io.renames)
   if (linkErrors.length > 0) {
     // A refused link operand fails the line the way a refused backend
     // operand does: its lines lead (they were reported first) and any

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { transferLinksOf } from '../../generic/crossmount/utils.ts'
 import type { PathSpec } from '../../../../types.ts'
 import { mvGeneric, parseFlags } from '../../generic/mv.ts'
 import type { Builder } from '../adapter.ts'
@@ -36,6 +37,9 @@ export const MV_BUILDER: Builder = {
       undefined,
       (p: PathSpec) => ops.readdir(accessor, p, idx),
       refuseReveal,
+      opts.ns?.links == null || opts.dispatch == null
+        ? undefined
+        : transferLinksOf(opts.ns.links, opts.dispatch, opts.cwd),
     )
   },
 }

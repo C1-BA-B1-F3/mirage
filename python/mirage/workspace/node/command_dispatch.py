@@ -37,7 +37,7 @@ from mirage.utils.path import CycleError
 from mirage.vfs.dev.dev import DevVFS
 from mirage.workspace.executor.builtins.alias import alias_command_text
 from mirage.workspace.executor.builtins.table import BUILTINS
-from mirage.workspace.executor.builtins.types import BuiltinCall, MvMove
+from mirage.workspace.executor.builtins.types import BuiltinCall
 from mirage.workspace.executor.command import handle_command
 from mirage.workspace.executor.command.external import run_external
 from mirage.workspace.expand import expand_node
@@ -641,7 +641,6 @@ async def _route_argv(
 
     # ── symlink-aware dispatch: reads follow links (open(2)); rm/mv act
     #    on the link entry itself (lstat semantics) ──
-    mv_moves: list[MvMove] = []
     link_errors: list[str] = []
     if namespace.nodes:
         try:
@@ -667,8 +666,9 @@ async def _route_argv(
                                                                 exit_code=1,
                                                                 stderr=err)
             elif name == "mv":
-                operands, mv_moves, early, link_errors = await prepare_mv(
-                    namespace, dispatch, operands, argv.args, session.cwd)
+                operands, early = await prepare_mv(namespace, dispatch,
+                                                   operands, argv.args,
+                                                   session.cwd)
                 if early is not None:
                     return early
         except CycleError as exc:
@@ -726,8 +726,8 @@ async def _route_argv(
                 else:
                     await namespace.unlink(item.virtual)
                     await namespace.purge_under(item.virtual)
-    if mv_moves:
-        await settle_moves(namespace, dispatch, mv_moves, io.exit_code)
+    if name == "mv" and io.renames:
+        await settle_moves(namespace, io.renames)
     if link_errors:
         # A refused link operand fails the line the way a refused
         # backend operand does: its lines lead (they were reported

@@ -7,7 +7,7 @@ from mirage.workspace import Workspace
 from mirage.workspace.executor.builtins.links import (accepts_line,
                                                       follow_parent,
                                                       follow_paths, link_flags,
-                                                      prepare_mv, settle_moves)
+                                                      prepare_mv)
 
 
 def _ws() -> Workspace:
@@ -320,46 +320,20 @@ async def test_every_refused_operand_speaks_in_one_voice():
 
 
 @pytest.mark.asyncio
-async def test_prepare_mv_hands_back_the_pair_whatever_the_table_holds():
-    # Gated on the source carrying overlay attrs, the pair was withheld
-    # for a directory whose own node is empty, and every link below it
-    # stayed at the emptied name: readable nowhere, since the backend
-    # holds no entry for a link at all.
+@pytest.mark.parametrize("option",
+                         ["-n", "--update=none", "--update=none-fail"])
+@pytest.mark.parametrize("operands", [
+    "/data/l /data/dst", "/data/l /data/a /data/dst",
+    "-t /data/dst /data/l /data/a"
+])
+async def test_mv_link_obeys_overwrite_policy(option, operands):
     ws = _ws()
-    await ws.shell("mkdir -p /data/d; printf 't\\n' > /data/t")
-    await ws.shell("ln -s /data/t /data/d/link")
-    _items, moves, early, errors = await prepare_mv(
-        ws.namespace, ws.dispatch, [
-            PathSpec.from_str_path("/data/d"),
-            PathSpec.from_str_path("/data/moved")
-        ], ("/data/d", "/data/moved"), "/")
-    assert early is None
-    assert errors == []
-    assert moves == [("/data/d", "/data/moved", False)]
-
-
-@pytest.mark.asyncio
-async def test_prepare_mv_reads_the_destination_off_the_parsed_line():
-    # -T names the destination outright, so the basename is not appended
-    # to it, and -t makes every positional a source and the flag's value
-    # the directory they land in, whatever the order of the words.
-    ws = _ws()
-    await ws.shell("mkdir -p /data/dst; printf 'a\\n' > /data/a")
-    pair = [
-        PathSpec.from_str_path("/data/a"),
-        PathSpec.from_str_path("/data/dst")
-    ]
-    _items, into, _early, _errors = await prepare_mv(ws.namespace, ws.dispatch,
-                                                     pair,
-                                                     ("/data/a", "/data/dst"),
-                                                     "/")
-    assert into == [("/data/a", "/data/dst/a", False)]
-    _items, onto, _early, _errors = await prepare_mv(
-        ws.namespace, ws.dispatch, pair, ("-T", "/data/a", "/data/dst"), "/")
-    assert onto == [("/data/a", "/data/dst", True)]
-    _items, target_dir, _early, _errors = await prepare_mv(
-        ws.namespace, ws.dispatch, pair, ("-t", "/data/dst", "/data/a"), "/")
-    assert target_dir == [("/data/a", "/data/dst/a", False)]
+    await ws.shell("mkdir /data/dst; echo old > /data/dst/l; "
+                   "ln -s missing /data/l; echo a > /data/a")
+    result = await ws.shell(f"mv {option} {operands}")
+    assert result.exit_code == (1 if option == "--update=none-fail" else 0)
+    assert (await ws.shell("cat /data/dst/l")).stdout == b"old\n"
+    assert (await ws.shell("readlink /data/l")).stdout == b"missing\n"
 
 
 @pytest.mark.asyncio
@@ -379,20 +353,16 @@ async def test_prepare_mv_follows_a_linked_destination_for_many_sources():
                  directory="/data/",
                  raw_path="dlink")
     ]
-    rewritten, moves, early, errors = await prepare_mv(ws.namespace,
-                                                       ws.dispatch, items,
-                                                       ("a", "b", "dlink"),
-                                                       "/data")
-    assert early is None and errors == []
+    rewritten, early = await prepare_mv(ws.namespace, ws.dispatch, items,
+                                        ("a", "b", "dlink"), "/data")
+    assert early is None
     dst = rewritten[-1]
     assert isinstance(dst, PathSpec)
     assert (dst.virtual, dst.raw_path) == ("/data/dst", "dlink")
-    assert moves == [("/data/a", "/data/dst/a", False),
-                     ("/data/b", "/data/dst/b", False)]
 
 
 @pytest.mark.asyncio
-async def test_prepare_mv_renames_a_link_source_among_many():
+async def test_prepare_mv_leaves_link_sources_for_the_generic():
     # A link has no backend entry for the generic mv to move, so a
     # several-source mv lost it (`mv: cannot stat 'l'`); the namespace
     # renames it into the directory and the rest go to the backend.
@@ -405,34 +375,28 @@ async def test_prepare_mv_renames_a_link_source_among_many():
         PathSpec.from_str_path("/data/a"),
         PathSpec.from_str_path("/data/dst")
     ]
-    rewritten, moves, early, errors = await prepare_mv(
-        ws.namespace, ws.dispatch, items, ("/data/l", "/data/a", "/data/dst"),
-        "/")
-    assert early is None and errors == []
-    assert link not in rewritten
-    assert ws.namespace.is_link("/data/dst/l")
-    assert not ws.namespace.is_link("/data/l")
-    assert moves == [("/data/a", "/data/dst/a", False)]
+    rewritten, early = await prepare_mv(ws.namespace, ws.dispatch, items,
+                                        ("/data/l", "/data/a", "/data/dst"),
+                                        "/")
+    assert early is None
+    assert link in rewritten
+    assert not ws.namespace.is_link("/data/dst/l")
+    assert ws.namespace.is_link("/data/l")
 
 
 @pytest.mark.asyncio
-async def test_settle_moves_confirms_each_move_by_its_landing():
-    # The source cannot confirm a move: a link left below a moved
-    # directory synthesizes it back. A landing that appeared is a move
-    # that happened; one that was already there waits for exit 0.
+@pytest.mark.parametrize("skip", [False, True])
+async def test_partial_mv_only_reanchors_completed_sources(skip):
     ws = _ws()
-    await ws.shell(
-        "mkdir -p /data/src /data/new /data/kept; printf k > /data/k")
-    await ws.shell("ln -s /data/k /data/src/lk")
-    await ws.shell("ln -s /data/k /data/kept/lk")
-    await settle_moves(ws.namespace, ws.dispatch, [
-        ("/data/src", "/data/new", False),
-        ("/data/kept", "/data/gone", False),
-        ("/data/kept", "/data/new", True),
-    ], 1)
-    assert ws.namespace.is_link("/data/new/lk")
-    assert not ws.namespace.is_link("/data/src/lk")
-    assert ws.namespace.is_link("/data/kept/lk")
+    await ws.shell("mkdir -p /data/src /data/out/src; echo x > /data/src/f; "
+                   "ln -s f /data/src/l")
+    result = await ws.shell(
+        f"mv {'-n' if skip else ''} /data/missing /data/src /data/out")
+    assert result.exit_code == 1
+    kept = "/data/src/l" if skip else "/data/out/src/l"
+    absent = "/data/out/src/l" if skip else "/data/src/l"
+    assert (await ws.shell(f"cat {kept}")).stdout == b"x\n"
+    assert not ws.namespace.is_link(absent)
 
 
 @pytest.mark.asyncio
@@ -569,3 +533,94 @@ async def test_follow_paths_collapses_a_relative_target_and_keeps_the_name():
     assert await r.materialize_stdout() == b"2 sub/al\n"
     assert await r.materialize_stderr() == (
         b"cat: sub/d: No such file or directory\n")
+
+
+class RefuseLinkCreation(Policy):
+
+    async def pre_ops(self, ctx: OpsContext) -> Action | None:
+        if ctx.op == "symlink" and ctx.path.virtual == "/other/tree/loop":
+            return Deny("sealed")
+        return None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [None, "read", "unlink", "symlink"])
+async def test_crossmount_mv_preserves_tree_links_and_partial_transfers(
+        failure):
+    policies = ([SealReads()]
+                if failure == "read" else [PinLinks()] if failure == "unlink"
+                else [RefuseLinkCreation()] if failure == "symlink" else [])
+    ws = Workspace({
+        "/data": RAMVFS(),
+        "/other": RAMVFS()
+    },
+                   mode=MountMode.WRITE,
+                   policies=policies)
+    setup = await ws.shell(
+        "mkdir -p /data/tree/sub; printf kept > /data/tree/sub/file; "
+        "printf sealed > /data/tree/file.sealed; "
+        "ln -s sub /data/tree/dir; ln -s sub/file /data/tree/file; "
+        "ln -s missing /data/tree/dangling; ln -s loop /data/tree/loop; "
+        "ln -s sub /data/tree/link.pinned")
+    assert setup.exit_code == 0
+    result = await ws.shell("mv /data/tree /other/tree")
+    assert result.exit_code == (0 if failure is None else 1)
+    expected_error = {
+        None:
+        None,
+        "read": (b"mv: cannot open '/data/tree/file.sealed' for reading: "
+                 b"Permission denied\n"),
+        "unlink":
+        b"mv: cannot remove '/data/tree/link.pinned': Permission denied\n",
+        "symlink": (b"mv: cannot create symbolic link '/other/tree/loop': "
+                    b"Permission denied\n"),
+    }
+    assert result.stderr == expected_error[failure]
+    links = {
+        "dir": "sub",
+        "file": "sub/file",
+        "dangling": "missing",
+        "loop": "loop",
+        "link.pinned": "sub"
+    }
+    for name, target in links.items():
+        if failure == "symlink" and name == "loop":
+            assert not ws.namespace.is_link(f"/other/tree/{name}")
+        else:
+            assert ws.namespace.readlink(f"/other/tree/{name}") == target
+        assert ws.namespace.is_link(f"/data/tree/{name}") == (
+            failure in ("read", "symlink")
+            or failure == "unlink" and name == "link.pinned")
+    assert (await ws.shell("cat /other/tree/dir/file /other/tree/file")
+            ).stdout == b"keptkept"
+    assert (await ws.shell("test -e /data/tree")).exit_code == (1 if failure
+                                                                is None else 0)
+    assert (await ws.shell("test -e /data/tree/sub/file")).exit_code == (
+        0 if failure in ("read", "symlink") else 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("destination", ["/data", "/other"])
+async def test_mv_directory_backup_keeps_links_only_in_backup(destination):
+    ws = Workspace({
+        "/data": RAMVFS(),
+        "/other": RAMVFS()
+    },
+                   mode=MountMode.WRITE)
+    setup = await ws.shell(f"mkdir -p /data/src {destination}/dst/sub; "
+                           f"printf old > {destination}/dst/sub/file; "
+                           f"ln -s sub {destination}/dst/link; "
+                           f"ln -s missing {destination}/dst/dangling; "
+                           "printf new > /data/src/new")
+    assert setup.exit_code == 0
+    result = await ws.shell(f"mv -bT /data/src {destination}/dst")
+    assert result.exit_code == 0
+    assert result.stderr is None
+    assert ws.namespace.readlink(f"{destination}/dst~/link") == "sub"
+    assert ws.namespace.readlink(f"{destination}/dst~/dangling") == "missing"
+    assert not ws.namespace.is_link(f"{destination}/dst/link")
+    assert not ws.namespace.is_link(f"{destination}/dst/dangling")
+    assert (await
+            ws.shell(f"cat {destination}/dst/new "
+                     f"{destination}/dst~/link/file")).stdout == b"newold"
+    assert (await ws.shell(f"test -e {destination}/dst/sub")).exit_code == 1

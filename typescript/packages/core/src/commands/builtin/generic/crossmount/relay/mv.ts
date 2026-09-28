@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { NamespaceView } from '../../../../../ops/types.ts'
+import { transferLinksOf } from '../utils.ts'
 import type { PathSpec } from '../../../../../types.ts'
 import { refuseReveal } from '../../../generic_bind/adapter.ts'
 import { mvGeneric, parseFlags } from '../../mv.ts'
@@ -32,6 +34,7 @@ export async function runMv(
   // two prefixes over one store would copy the object onto itself and
   // then unlink the source, destroying it.
   storageKey?: (path: PathSpec) => string,
+  ns?: NamespaceView,
 ): Promise<CrossResult> {
   const flat = flatten(scopes)
   const stat = statOp(dispatch)
@@ -58,5 +61,6 @@ export async function runMv(
     storageKey,
     undefined,
     refuseReveal,
+    ns?.links == null ? undefined : transferLinksOf(ns.links, dispatch, '/'),
   )
 }

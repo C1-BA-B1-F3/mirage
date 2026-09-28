@@ -89,7 +89,7 @@ async def run_relay(cmd_name: str,
         return await run_cp(scopes, flag_kwargs, dispatch, storage_key, ns,
                             cwd)
     if cmd_name == Cmd.MV:
-        return await run_mv(scopes, flag_kwargs, dispatch, storage_key)
+        return await run_mv(scopes, flag_kwargs, dispatch, storage_key, ns)
     if cmd_name == Cmd.DIFF:
         return await run_diff(scopes, flag_kwargs, dispatch, stdin)
     if cmd_name == Cmd.PASTE:

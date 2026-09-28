@@ -17,11 +17,9 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore
-from mirage.commands.builtin.generic.cp import CopyLinks
 from mirage.commands.builtin.generic.cp import cp as generic_cp
 from mirage.commands.builtin.generic.cp import parse_flags
-from mirage.commands.builtin.generic.crossmount.utils import \
-    transfer_primitives
+from mirage.commands.builtin.generic.crossmount.utils import transfer_links
 from mirage.commands.builtin.generic.find import parse_find_args, walk_find
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           Operation, bound_op,
@@ -32,8 +30,7 @@ from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.context import hidden_paths_intersect, path_rules_active
 from mirage.io.types import ByteSource, IOResult
-from mirage.ops.types import LinkView, StatOverlay
-from mirage.runtime.types import DispatchFn
+from mirage.ops.types import StatOverlay
 from mirage.types import NativeCopy, PathSpec, PrimitiveCopy
 from mirage.utils.key_prefix import rekey
 from mirage.vfs.types import OperationFn
@@ -142,27 +139,8 @@ async def cp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         readdir=bound_op(ops.readdir, accessor, opts.index),
         link_at=(partial(typed_link, links, cwd=cwd)
                  if links is not None else None),
-        copies=(_copy_links(links, opts.dispatch, cwd)
+        copies=(transfer_links(links, opts.dispatch, cwd)
                 if links is not None and opts.dispatch is not None else None))
-
-
-def _copy_links(links: LinkView, dispatch: DispatchFn, cwd: str) -> CopyLinks:
-    """The namespace's links for cp, with the door's transfer primitives.
-
-    Args:
-        links (LinkView): the namespace's symlink facts.
-        dispatch (DispatchFn): the op door.
-        cwd (str): the directory a typed operand resolves against.
-    """
-    prim = transfer_primitives(dispatch)
-    return CopyLinks(links=links,
-                     dispatch=dispatch,
-                     cwd=cwd,
-                     relay=PrimitiveCopy(read_bytes=prim["read_bytes"],
-                                         write=prim["write"],
-                                         mkdir=prim["mkdir"],
-                                         readdir=prim["readdir"]),
-                     relay_stat=prim["stat"])
 
 
 BUILDER = Builder('cp', cp, write=True)

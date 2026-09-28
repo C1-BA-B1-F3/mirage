@@ -151,19 +151,11 @@ interface OpenedWorkspaces {
 }
 
 /**
- * The workspace an adapter hands back, plus the shadow factory.
- *
- * `build` must return fresh mounts on every call: two workspaces sharing
- * VFS instances share their caches, and a consistency scenario mutating
- * through one would invalidate the other's — which is exactly the thing the
- * scenario is there to observe.
- */
-/**
  * The mount table with each named prefix under its own read policy.
  *
- * A mount keeps everything its builder gave it but the policy: a bare VFS is
- * writable, as the workspace it joins is, and a `[vfs, mode]` pair keeps its
- * mode. A prefix the override does not name is left exactly as built, so it
+ * A mount keeps everything its builder gave it but the policy: a bare VFS
+ * still takes the workspace's mode, a `[vfs, mode]` pair keeps its mode and
+ * limits. A prefix the override does not name is left exactly as built, so it
  * inherits the workspace's policy.
  */
 export function applyMountRead(mounts: MountMap, mountRead: Record<string, ReadSpec>): MountMap {
@@ -173,7 +165,7 @@ export function applyMountRead(mounts: MountMap, mountRead: Record<string, ReadS
     if (entry === undefined) throw new Error(`mount_read names no mount: ${prefix}`)
     if (entry instanceof CoreMount) {
       out[prefix] = new CoreMount(entry.vfs, { ...entry.options, read })
-    } else if (Array.isArray(entry)) {
+    } else if (isMountPair(entry)) {
       const [vfs, mode, commandLimits] = entry
       out[prefix] = new CoreMount(vfs, {
         mode,
@@ -181,12 +173,26 @@ export function applyMountRead(mounts: MountMap, mountRead: Record<string, ReadS
         read,
       })
     } else {
-      out[prefix] = new CoreMount(entry, { mode: MountMode.WRITE, read })
+      out[prefix] = new CoreMount(entry, { read })
     }
   }
   return out
 }
 
+function isMountPair(
+  entry: MountMap[string],
+): entry is Extract<MountMap[string], readonly unknown[]> {
+  return Array.isArray(entry)
+}
+
+/**
+ * The workspace an adapter hands back, plus the shadow factory.
+ *
+ * `build` must return fresh mounts on every call: two workspaces sharing
+ * VFS instances share their caches, and a consistency scenario mutating
+ * through one would invalidate the other's — which is exactly the thing the
+ * scenario is there to observe.
+ */
 function openWorkspaces(build: () => MountMap, options?: OpenOptions): OpenedWorkspaces {
   const opened: Workspace[] = []
   const make = (read?: ReadSpec, mountRead?: Record<string, ReadSpec>): ExecWorkspace => {

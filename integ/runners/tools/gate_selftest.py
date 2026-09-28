@@ -31,10 +31,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 import harness  # noqa: E402
 import main as runner_main  # noqa: E402
 
-from mirage.types import ReadPolicy  # noqa: E402
-from mirage.types import DEFAULT_READ_TTL, MountMode, ReadSpec
-from mirage.vfs.ram import RAMVFS  # noqa: E402
-from mirage.workspace.mount.spec import Mount  # noqa: E402
+from mirage.types import (DEFAULT_READ_TTL, Limit, MountMode, ReadPolicy,
+                          ReadSpec)
+from mirage.vfs.ram import RAMVFS
+from mirage.workspace.mount.spec import Mount
 
 ROOT = harness.integ_root()
 MAIN = ROOT / "runners" / "python" / "main.py"
@@ -158,10 +158,11 @@ def selftest_mount_read() -> None:
     """A consistency case's per-mount read override, refused and applied.
 
     A key naming no mount of the target would leave every leg under the
-    workspace policy, so it is refused before anything opens. The wrap
-    keeps a read-only mount's mode and carries the case's ttl, neither
-    of which the shipped cases can see: their mounts are all writable
-    and they set no ttl.
+    workspace policy, so it is refused before anything opens; the needle
+    is the refusal's own wording, which a late KeyError from the wrap
+    does not carry. The wrap keeps a mount's mode and limits and carries
+    the case's ttl, none of which the shipped cases can see: their mounts
+    are bare and they set no ttl.
     """
     bound = ReadSpec(policy=ReadPolicy.BOUNDED, ttl=45)
     target = {"id": "t", "mounts": [{"path": "/data", "vfs": "ram"}]}
@@ -170,24 +171,32 @@ def selftest_mount_read() -> None:
         *raises(
             lambda: asyncio.run(
                 runner_main.adapters.open_consistency(target, ReadSpec(
-                ), {"/nope": bound})), "/nope"))
+                ), {"/nope": bound})), "names no mount: /nope"))
 
-    bare, moded, kept = RAMVFS(), RAMVFS(), RAMVFS()
+    bare, moded, limited, kept = RAMVFS(), RAMVFS(), RAMVFS(), RAMVFS()
+    limits = {"cat": Limit(timeout_seconds=5)}
     out = runner_main.adapters.apply_mount_read(
         {
             "/data": bare,
             "/ro": (moded, MountMode.READ),
+            "/lim": (limited, MountMode.READ, limits),
             "/keep": kept
         }, {
             "/data": bound,
-            "/ro": bound
+            "/ro": bound,
+            "/lim": bound
         })
-    check("mount_read: a bare mount is wrapped writable under its override",
-          out["/data"] == Mount(vfs=bare, mode=MountMode.WRITE, read=bound),
-          repr(out["/data"]))
+    check("mount_read: a bare mount keeps the workspace's mode",
+          out["/data"] == Mount(vfs=bare, read=bound), repr(out["/data"]))
     check("mount_read: a read-only mount keeps its mode",
           out["/ro"] == Mount(vfs=moded, mode=MountMode.READ, read=bound),
           repr(out["/ro"]))
+    check(
+        "mount_read: a mount keeps its command limits",
+        out["/lim"] == Mount(vfs=limited,
+                             mode=MountMode.READ,
+                             command_limits=limits,
+                             read=bound), repr(out["/lim"]))
     check("mount_read: a mount the override does not name is untouched",
           out["/keep"] is kept, repr(out["/keep"]))
     got = runner_main.mount_read_of({
@@ -896,13 +905,18 @@ MOUNT_READ_PROBE = (
     "  } catch (e) { out.nope = String(e.message) }\n"
     "  const bare = new n.RAMVFS()\n"
     "  const moded = new n.RAMVFS()\n"
+    "  const limited = new n.RAMVFS()\n"
     "  const kept = new n.RAMVFS()\n"
+    "  const limits = { cat: { timeoutSeconds: 5 } }\n"
     "  const m = a.applyMountRead({ '/data': bare, '/ro': [moded, 'read'],\n"
-    "    '/keep': kept }, { '/data': bound, '/ro': bound })\n"
-    "  const opts = (x, vfs) => [x.vfs === vfs, x.options.mode,\n"
+    "    '/lim': [limited, 'read', limits], '/keep': kept },\n"
+    "    { '/data': bound, '/ro': bound, '/lim': bound })\n"
+    "  const opts = (x, vfs) => [x.vfs === vfs, x.options.mode ?? null,\n"
     "    x.options.read.policy, x.options.read.ttl]\n"
     "  out.data = opts(m['/data'], bare)\n"
     "  out.ro = opts(m['/ro'], moded)\n"
+    "  out.lim = [...opts(m['/lim'], limited),\n"
+    "    m['/lim'].options.commandLimits === limits]\n"
     "  out.keep = m['/keep'] === kept\n"
     "  out.ttl = h.mountReadOf({ mount_read: { '/d': 'bounded' }, ttl: 45 })\n"
     "  out.nottl = h.mountReadOf({ mount_read: { '/d': 'bounded' } })\n"
@@ -925,11 +939,13 @@ def selftest_mount_read_typescript() -> None:
     check("cases (ts): a mount_read without a read is rejected", "mount_read"
           in out["unread"], repr(out["unread"]))
     check("mount_read (ts): an override naming an unmounted prefix is refused",
-          "/nope" in out["nope"], repr(out["nope"]))
-    check("mount_read (ts): a bare mount is wrapped writable",
-          out["data"] == [True, "write", "bounded", 45], repr(out["data"]))
+          "names no mount: /nope" in out["nope"], repr(out["nope"]))
+    check("mount_read (ts): a bare mount keeps the workspace's mode",
+          out["data"] == [True, None, "bounded", 45], repr(out["data"]))
     check("mount_read (ts): a read-only mount keeps its mode",
           out["ro"] == [True, "read", "bounded", 45], repr(out["ro"]))
+    check("mount_read (ts): a mount keeps its command limits",
+          out["lim"] == [True, "read", "bounded", 45, True], repr(out["lim"]))
     check("mount_read (ts): a mount the override does not name is untouched",
           out["keep"] is True, repr(out["keep"]))
     check("mount_read (ts): the case's ttl rides into each override",

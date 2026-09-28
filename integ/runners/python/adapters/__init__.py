@@ -3004,9 +3004,12 @@ def apply_mount_read(mounts: dict[str, VFSMount],
     """The mount table with each named prefix under its own read policy.
 
     A mount keeps everything its builder gave it but the policy: a bare
-    VFS is writable, as the workspace it joins is, and a ``(vfs, mode)``
-    pair keeps its mode. A prefix the override does not name is left
-    exactly as built, so it inherits the workspace's policy.
+    VFS still takes the workspace's mode, a ``(vfs, mode)`` pair keeps its
+    mode and limits. A prefix the override does not name is left exactly
+    as built, so it inherits the workspace's policy.
+
+    Raises:
+        ValueError: an override names no mount in ``mounts``.
 
     Args:
         mounts (dict[str, VFSMount]): ``build_mounts`` output.
@@ -3014,7 +3017,9 @@ def apply_mount_read(mounts: dict[str, VFSMount],
     """
     out = dict(mounts)
     for prefix, spec in mount_read.items():
-        entry = out[prefix]
+        entry = out.get(prefix)
+        if entry is None:
+            raise ValueError(f"mount_read names no mount: {prefix}")
         if isinstance(entry, Mount):
             out[prefix] = dataclasses.replace(entry, read=spec)
         elif isinstance(entry, tuple):
@@ -3024,7 +3029,7 @@ def apply_mount_read(mounts: dict[str, VFSMount],
                 command_limits=(entry[2] if len(entry) == 3 else {}),
                 read=spec)
         else:
-            out[prefix] = Mount(vfs=entry, mode=MountMode.WRITE, read=spec)
+            out[prefix] = Mount(vfs=entry, read=spec)
     return out
 
 

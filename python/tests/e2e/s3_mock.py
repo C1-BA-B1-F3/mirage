@@ -273,6 +273,7 @@ class MultiBucketS3Client:
                               MaxKeys: int = 1000,
                               **kwargs) -> dict:
         del MaxKeys, kwargs
+        self.bucket_calls["list_objects_v2", Bucket] += 1
         objects = self._objects(Bucket)
         if Delimiter == "/":
             return _paginate_directory(objects, Prefix)

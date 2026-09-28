@@ -210,6 +210,10 @@ describe('S3 cache consistency (mocked)', () => {
   // wrong on the other leg either way. `freshSide` matters because a manager
   // leaking from the first leg into the second leaves the bytes right when
   // the bounded leg runs first; only the fresh leg's missing probe shows it.
+  // The closing `cat` of the bounded leg is the other door: a single-mount
+  // read reconciles at routing, which a walk over directory operands never
+  // reaches, so a routing reconcile reading the workspace's `fresh` would
+  // refetch v2 there and nothing above would notice.
   // The python twin is in test_fingerprint_spike.py.
   const SHAPES = {
     siblings: ['/a', '/b', 'grep -r v /a/ /b/'],
@@ -272,6 +276,11 @@ describe('S3 cache consistency (mocked)', () => {
         expect(ws.networkRecords.slice(mark).map((r) => [r.op, r.path])).toEqual([
           ['read', `${fresh}/f.txt`],
         ])
+        mock.resetCalls()
+        const single = await ws.shell(`cat ${bounded}/f.txt`)
+        expect(DEC.decode(single.stdout)).toBe('v1\n')
+        // v2 or any send here means the routing door read another policy.
+        expect([...ledger('fresh-bkt'), ...ledger('bounded-bkt')]).toEqual([0, 0, 0, 0, 0, 0])
       } finally {
         await ws.close()
       }

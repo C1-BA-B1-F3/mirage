@@ -712,6 +712,12 @@ def test_one_line_serves_each_mount_under_its_own_policy(
     `fresh_side` matters because a manager leaking from the first leg
     into the second leaves the bytes right when the bounded leg runs
     first; only the fresh leg's missing probe shows it.
+
+    The closing `cat` of the bounded leg is the other door: a
+    single-mount read reconciles at routing, which a walk over directory
+    operands never reaches, so a routing reconcile reading the
+    workspace's `fresh` would refetch v2 there and nothing above would
+    notice.
     """
     first, second, line = _SHAPES[shape]
     fresh, bounded = ((first, second) if fresh_side == "first" else
@@ -742,7 +748,8 @@ def test_one_line_serves_each_mount_under_its_own_policy(
         read=ReadSpec(policy=default),
     )
 
-    async def run() -> tuple[int, bytes, list[tuple[str, str]]]:
+    async def run() -> tuple[int, bytes, list[tuple[str, str]], dict[tuple[
+        str, str], int], bytes, dict[tuple[str, str], int]]:
         with patch_s3_session(session):
             await ws.shell(f"ls {first}/ {second}/")
             await ws.shell(f"cat {first}/f.txt")
@@ -755,10 +762,17 @@ def test_one_line_serves_each_mount_under_its_own_policy(
             result = await ws.shell(line)
             out = await result.materialize_stdout()
             records = [(r.op, r.path) for r in ws.vfs.network_records[mark:]]
+            line_calls = dict(client.bucket_calls)
+            client.bucket_calls.clear()
+            single = await ws.shell(f"cat {bounded}/f.txt")
+            single_out = await single.materialize_stdout()
+            single_calls = dict(client.bucket_calls)
             await ws.close()
-            return result.exit_code, out, records
+            return (result.exit_code, out, records, line_calls, single_out,
+                    single_calls)
 
-    code, out, records = asyncio.run(run())
+    (code, out, records, line_calls, single_out,
+     single_calls) = asyncio.run(run())
 
     def version(prefix: str) -> str:
         return "v2" if prefix == fresh else "v1"
@@ -769,21 +783,23 @@ def test_one_line_serves_each_mount_under_its_own_policy(
                        "each leg must print what its own policy serves")
     assert {
         k: n
-        for k, n in client.bucket_calls.items() if k[1] == "bounded-bkt"
+        for k, n in line_calls.items() if k[1] == "bounded-bkt"
     } == {}, ("the bounded leg must send nothing; a probe or a refetch "
               "here means the fresh mount's policy reached it")
     # One bucket in shared-vfs, so this is the whole line's cost there.
     assert {
         k: n
-        for k, n in client.bucket_calls.items() if k[1] == "fresh-bkt"
+        for k, n in line_calls.items() if k[1] == "fresh-bkt"
     } == {
         ("head_object", "fresh-bkt"): 1,
         ("get_object", "fresh-bkt"): 1
     }, ("the fresh leg pays its gate probe and one refetch, and no listing; "
         "a missing head_object means it was served without being checked")
-    assert records == [
-        ("read", f"{fresh}/f.txt")
-    ], ("only the fresh leg's refetch reaches the backend as a read")
+    assert records == [("read", f"{fresh}/f.txt")
+                       ], "only the fresh leg's refetch reaches the backend"
+    assert (single_out, single_calls) == (b"v1\n", {}), (
+        "a single-mount read of the bounded leg must not reconcile at "
+        "routing; v2 here means the routing door read another policy")
 
 
 def test_the_live_cache_facts_door_reads_the_mounts_bound():

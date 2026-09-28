@@ -33,6 +33,13 @@ def test_double_dash_ends_options():
     assert parse.operands == ["-r", "echo"]
 
 
+def test_flags_keep_the_order_last_given():
+    parse = parse_shell_options(SHELL_SPECS["xargs"],
+                                ["-L1", "-I", "{}", "-n2", "-L3", "echo"])
+    assert list(parse.flags.items()) == [("I", "{}"), ("n", "2"), ("L", "3")]
+    assert parse.operands == ["echo"]
+
+
 def test_invalid_short_option_reported():
     parse = parse_shell_options(SHELL_SPECS["xargs"], ["-q", "echo"])
     assert parse.invalid == "q"

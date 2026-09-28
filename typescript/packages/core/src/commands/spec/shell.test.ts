@@ -48,6 +48,16 @@ describe('parseShellOptions', () => {
     expect(parse.operands).toEqual(['-r', 'echo'])
   })
 
+  it('keeps flags in the order last given', () => {
+    const parse = parseShellOptions(SHELL_SPECS.xargs, ['-L1', '-I', '{}', '-n2', '-L3', 'echo'])
+    expect(Object.entries(parse.flags)).toEqual([
+      ['I', '{}'],
+      ['n', '2'],
+      ['L', '3'],
+    ])
+    expect(parse.operands).toEqual(['echo'])
+  })
+
   it('reports an invalid short option', () => {
     const parse = parseShellOptions(SHELL_SPECS.xargs, ['-q', 'echo'])
     expect(parse.invalid).toBe('q')

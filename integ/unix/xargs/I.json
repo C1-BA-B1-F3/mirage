@@ -1,0 +1,600 @@
+{
+  "cases": [
+    {
+      "id": "xargs_I_per_line",
+      "seq": 1300001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | xargs -I{} echo x{}y",
+      "expect": {
+        "exit": 0,
+        "stdout": "xay\nxby\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_separate_value",
+      "seq": 1300002,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | xargs -I {} echo x{}y",
+      "expect": {
+        "exit": 0,
+        "stdout": "xay\nxby\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_whole_line",
+      "seq": 1300003,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'one two\\n  three\\n' | xargs -I{} echo '[{}]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[one two]\n[three]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_every_occurrence",
+      "seq": 1300004,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | xargs -I{} echo {} {}-{} x{}{}y",
+      "expect": {
+        "exit": 0,
+        "stdout": "a a-a xaay\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_sh_c",
+      "seq": 1300005,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | xargs -I% sh -c 'echo --- %; echo %%'",
+      "expect": {
+        "exit": 0,
+        "stdout": "--- a\naa\n--- b\nbb\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_skips_blank_lines",
+      "seq": 1300006,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n\\n   \\nb\\n' | xargs -I{} echo x{}y",
+      "expect": {
+        "exit": 0,
+        "stdout": "xay\nxby\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_empty_input",
+      "seq": 1300007,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '' | xargs -I{} echo x{}y; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_quotes_processed",
+      "seq": 1300008,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '\"a b\"  \\n' | xargs -I{} echo '[{}]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[a b  ]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_null_items",
+      "seq": 1300009,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a b\\0\\0c\\0' | xargs -0 -I{} echo '[{}]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[a b]\n[]\n[c]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "0",
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_delimiter",
+      "seq": 1300010,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a,b' | xargs -d, -I{} echo '[{}]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[a]\n[b]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "d,",
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_failure_exits_123",
+      "seq": 1300011,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | xargs -I{} sh -c 'test {} = a'; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=123\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_unmatched_quote",
+      "seq": 1300012,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf \"a\\nb 'c\\n\" | xargs -I{} echo '[{}]'; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "[a]\ncode=1\n",
+        "stderr": "xargs: unmatched single quote; by default quotes are special to xargs unless you use the -0 option\n"
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_n1_is_ignored",
+      "seq": 1300013,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a b\\nc\\n' | xargs -I{} -n1 echo '[{}]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[a b]\n[c]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I",
+        "n1"
+      ]
+    },
+    {
+      "id": "xargs_I_after_n_warns",
+      "seq": 1300014,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a b\\nc\\n' | xargs -n1 -I{} echo '[{}]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[a b]\n[c]\n",
+        "stderr": "xargs: warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value\n"
+      },
+      "flags": [
+        "n1",
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_mount_operand",
+      "seq": 1300015,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo /data/a.txt | xargs -I{} wc -l {}",
+      "expect": {
+        "exit": 0,
+        "stdout": "5 /data/a.txt\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_I_inside_path",
+      "seq": 1300016,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo a | xargs -I{} wc -l /data/{}.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "5 /data/a.txt\n",
+        "stderr": ""
+      },
+      "flags": [
+        "I"
+      ]
+    }
+  ]
+}

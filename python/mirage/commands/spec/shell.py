@@ -37,8 +37,12 @@ SHELL_SPECS: dict[str, CommandSpec] = {
                    description="Do not run the command on empty input."),
             Option(short="-I",
                    type="str",
-                   description="Replace occurrences of the token "
-                   "(not supported)."),
+                   description="Replace this string in the initial "
+                   "arguments with each input line."),
+            Option(short="-L",
+                   type="str",
+                   description="Use at most N non-blank input lines per "
+                   "command line."),
             Option(short="-P",
                    long="--max-procs",
                    type="str",
@@ -148,7 +152,9 @@ class ShellParse:
 
     Args:
         flags (dict[str, str | bool]): parsed options keyed by their
-            dashless short or long name.
+            dashless short or long name, each where it was last
+            given, so options that cancel one another (xargs -I,
+            -L, -n) replay in order.
         operands (list[str]): everything from the first non-option on.
         invalid (str | None): unknown option char or long token.
         needs_value (str | None): value option with no value.
@@ -182,6 +188,11 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
             (long_bool if opt.type == "bool" else long_value).add(long)
             alias[long] = name
     flags: dict[str, str | bool] = {}
+
+    def record(key: str, value: str | bool) -> None:
+        flags.pop(key, None)
+        flags[key] = value
+
     i = 0
     while i < len(argv):
         tok = argv[i]
@@ -191,13 +202,13 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
         if tok.startswith("--") and len(tok) > 2:
             name, eq, value = tok[2:].partition("=")
             if name in long_bool:
-                flags[alias[name]] = True
+                record(alias[name], True)
             elif name in long_value:
                 if eq:
-                    flags[alias[name]] = value
+                    record(alias[name], value)
                 elif i + 1 < len(argv):
                     i += 1
-                    flags[alias[name]] = argv[i]
+                    record(alias[name], argv[i])
                 else:
                     return ShellParse(flags=flags,
                                       operands=list(argv[i + 1:]),
@@ -214,16 +225,16 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
             while j < len(chars):
                 ch = chars[j]
                 if ch in short_bool:
-                    flags[alias[ch]] = True
+                    record(alias[ch], True)
                     j += 1
                     continue
                 if ch in short_value:
                     rest = chars[j + 1:]
                     if rest:
-                        flags[alias[ch]] = rest
+                        record(alias[ch], rest)
                     elif i + 1 < len(argv):
                         i += 1
-                        flags[alias[ch]] = argv[i]
+                        record(alias[ch], argv[i])
                     else:
                         return ShellParse(flags=flags,
                                           operands=list(argv[i + 1:]),

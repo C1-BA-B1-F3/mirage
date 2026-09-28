@@ -223,9 +223,9 @@ describe('argv dispatch regressions', () => {
     await ws.close()
   })
 
-  it('xargs survives a quote character in input', async () => {
+  it('xargs passes an escaped quote in input on as a quote', async () => {
     const { ws } = buildWorkspace()
-    const res = await ws.shell('echo "don\'t" | xargs echo')
+    const res = await ws.shell(String.raw`echo "don\'t" | xargs echo`)
     expect(new TextDecoder().decode(res.stdout)).toBe("don't\n")
     await ws.close()
   })

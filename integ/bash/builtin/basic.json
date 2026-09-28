@@ -511,40 +511,6 @@
       }
     },
     {
-      "id": "blt_xargs_replace_unsupported",
-      "seq": 502315,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "printf 'a\\n' | xargs -I{} echo x{}; echo $?",
-      "expect": {
-        "exit": 0,
-        "stdout": "1\n",
-        "stderr": "xargs: unsupported option -- 'I'\n"
-      }
-    },
-    {
       "id": "blt_xargs_parallel_unsupported",
       "seq": 502316,
       "targets": [

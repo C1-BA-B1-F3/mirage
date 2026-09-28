@@ -43,7 +43,12 @@ export const SHELL_SPECS = Object.freeze({
       new Option({
         short: '-I',
         type: 'str',
-        description: 'Replace occurrences of the token (not supported).',
+        description: 'Replace this string in the initial arguments with each input line.',
+      }),
+      new Option({
+        short: '-L',
+        type: 'str',
+        description: 'Use at most N non-blank input lines per command line.',
       }),
       new Option({
         short: '-P',
@@ -117,7 +122,9 @@ export const SHELL_SPECS = Object.freeze({
  * the mount-command parser scans the whole line and warns-ignores
  * unknown flags, which is wrong on both counts here. The builtin owns
  * the error message and exit code (GNU shapes differ per tool), so
- * the parse only reports what went wrong.
+ * the parse only reports what went wrong. `flags` holds each option
+ * where it was last given, so options that cancel one another (xargs
+ * -I, -L, -n) replay in order.
  */
 export interface ShellParse {
   flags: Record<string, string | boolean>
@@ -147,6 +154,10 @@ export function parseShellOptions(spec: CommandSpec, argv: readonly string[]): S
     }
   }
   const flags: Record<string, string | boolean> = {}
+  const record = (key: string, value: string | boolean): void => {
+    Reflect.deleteProperty(flags, key)
+    flags[key] = value
+  }
   let i = 0
   while (i < argv.length) {
     const tok = argv[i]
@@ -159,17 +170,17 @@ export function parseShellOptions(spec: CommandSpec, argv: readonly string[]): S
       const eq = tok.indexOf('=')
       const name = eq >= 0 ? tok.slice(2, eq) : tok.slice(2)
       if (longBool.has(name)) {
-        flags[alias.get(name) ?? name] = true
+        record(alias.get(name) ?? name, true)
       } else if (longValue.has(name)) {
         if (eq >= 0) {
-          flags[alias.get(name) ?? name] = tok.slice(eq + 1)
+          record(alias.get(name) ?? name, tok.slice(eq + 1))
         } else {
           const value = argv[i + 1]
           if (value === undefined) {
             return { flags, operands: argv.slice(i + 1), invalid: null, needsValue: name }
           }
           i += 1
-          flags[alias.get(name) ?? name] = value
+          record(alias.get(name) ?? name, value)
         }
       } else {
         return { flags, operands: argv.slice(i + 1), invalid: tok, needsValue: null }
@@ -184,21 +195,21 @@ export function parseShellOptions(spec: CommandSpec, argv: readonly string[]): S
         const ch = chars[j]
         if (ch === undefined) break
         if (shortBool.has(ch)) {
-          flags[alias.get(ch) ?? ch] = true
+          record(alias.get(ch) ?? ch, true)
           j += 1
           continue
         }
         if (shortValue.has(ch)) {
           const rest = chars.slice(j + 1)
           if (rest !== '') {
-            flags[alias.get(ch) ?? ch] = rest
+            record(alias.get(ch) ?? ch, rest)
           } else {
             const value = argv[i + 1]
             if (value === undefined) {
               return { flags, operands: argv.slice(i + 1), invalid: null, needsValue: ch }
             }
             i += 1
-            flags[alias.get(ch) ?? ch] = value
+            record(alias.get(ch) ?? ch, value)
           }
           break
         }

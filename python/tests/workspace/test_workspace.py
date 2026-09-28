@@ -2448,9 +2448,9 @@ def test_xargs_input_words_stay_literal():
 
 
 def test_xargs_input_quote_char():
-    """A quote character in input does not break the inner command."""
+    """An escaped quote in input reaches the inner command as a quote."""
     ws = _ws()
-    io = _exec(ws, 'echo "don\'t" | xargs echo')
+    io = _exec(ws, r"""echo "don\'t" | xargs echo""")
     assert _stdout(io) == b"don't\n"
 
 

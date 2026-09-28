@@ -21,7 +21,17 @@ import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
 import type { BuiltinCall, ExecuteStringFn, Result } from '../types.ts'
 
-const UNSUPPORTED = ['I', 'P']
+const UNSUPPORTED = ['P']
+const BLANKS = new Set([' ', '\t'])
+const SPACES = new Set([' ', '\t', '\n', '\v', '\f', '\r'])
+const QUOTES = new Map([
+  ["'", 'single'],
+  ['"', 'double'],
+])
+const NUMBER = /^[ \t\n\v\f\r]*[+-]?[0-9]+$/
+
+type ReadState = 'norm' | 'space' | 'quote' | 'backslash'
+type Read = [words: string[], counted: boolean]
 
 function usageError(message: string): Result {
   const stderr = new TextEncoder().encode(`xargs: ${message}\n`)
@@ -32,28 +42,143 @@ function usageError(message: string): Result {
   ]
 }
 
-function splitItems(data: Uint8Array, flags: Record<string, string | boolean>): string[] {
-  if (flags['0'] === true) {
-    return new TextDecoder()
-      .decode(data)
-      .split('\0')
-      .filter((s) => s !== '')
-  }
-  const rawDelim = flags.d
-  if (typeof rawDelim === 'string') {
-    const delim = rawDelim.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
-    let text = new TextDecoder().decode(data)
-    if (text.endsWith(delim)) text = text.slice(0, -delim.length)
-    return text === '' ? [] : text.split(delim)
-  }
-  return new TextDecoder()
-    .decode(data)
-    .split(/\s+/)
-    .filter((s) => s !== '')
+/** GNU's refusal of a -n or -L count, null for a valid one. */
+function countError(raw: string, name: string): string | null {
+  if (!NUMBER.test(raw)) return `invalid number "${raw}" for -${name} option`
+  if (Number(raw.trim()) < 1) return `value ${raw} for -${name} option should be >= 1`
+  return null
+}
+
+function exclusive(option: string, offending: string): string {
+  return `xargs: warning: options ${offending} and ${option} are mutually exclusive, ignoring previous ${offending} value\n`
+}
+
+function delimiter(flags: Record<string, string | boolean>): string | null {
+  if (flags['0'] === true) return '\0'
+  const delim = flags.d
+  if (typeof delim === 'string') return delim.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+  return null
+}
+
+/** GNU's read_string: every delimiter ends an item, empty ones too. */
+function readItems(text: string, delim: string): string[] {
+  const items = text.split(delim)
+  if (items[items.length - 1] === '') items.pop()
+  return items
+}
+
+function unmatched(quote: string): string {
+  return `xargs: unmatched ${QUOTES.get(quote) ?? ''} quote; by default quotes are special to xargs unless you use the -0 option\n`
 }
 
 /**
- * Run a command with words read from stdin appended (GNU xargs).
+ * GNU's read_line over the whole input.
+ *
+ * One entry per read: the words it pushed and whether the newline
+ * ending it counts as a line for -L. Blanks separate words and a
+ * newline ends the read; quotes and backslashes are removed; leading
+ * blanks and blank lines are skipped, and a line whose last character
+ * is a blank runs on into the next one. Under -I only a newline ends
+ * the word, so the read is the whole line. An unmatched quote ends the
+ * reading with GNU's refusal, after the reads before it and the words
+ * its own read had pushed; the refusal is empty otherwise.
+ */
+function readLines(text: string, replace: boolean): [Read[], string] {
+  const reads: Read[] = []
+  let words: string[] = []
+  let buf = ''
+  let state: ReadState = 'space'
+  let quote = ''
+  let prev = ''
+  for (const c of text) {
+    const before = prev
+    prev = c
+    if (state === 'space') {
+      if (SPACES.has(c)) continue
+      state = 'norm'
+    }
+    if (state === 'norm') {
+      if (c === '\n') {
+        words.push(buf)
+        reads.push([words, !BLANKS.has(before)])
+        words = []
+        buf = ''
+        state = 'space'
+        continue
+      }
+      if (!replace && BLANKS.has(c)) {
+        words.push(buf)
+        buf = ''
+        state = 'space'
+        continue
+      }
+      if (c === '\\') {
+        state = 'backslash'
+        continue
+      }
+      if (QUOTES.has(c)) {
+        state = 'quote'
+        quote = c
+        continue
+      }
+    } else if (state === 'quote') {
+      if (c === '\n') {
+        reads.push([words, false])
+        return [reads, unmatched(quote)]
+      }
+      if (c === quote) {
+        state = 'norm'
+        continue
+      }
+    } else {
+      state = 'norm'
+    }
+    buf += c
+  }
+  if (buf !== '' && state === 'quote') {
+    reads.push([words, false])
+    return [reads, unmatched(quote)]
+  }
+  if (buf !== '') words.push(buf)
+  if (words.length > 0) reads.push([words, false])
+  return [reads, '']
+}
+
+/**
+ * GNU's exec points without -I, and the words left pending.
+ *
+ * A batch runs once it holds -n words or -L lines.
+ */
+function batchReads(reads: Read[], maxLines: number, maxArgs: number): [string[][], string[]] {
+  const batches: string[][] = []
+  let pending: string[] = []
+  let lines = 0
+  for (const [words, counted] of reads) {
+    for (const word of words) {
+      pending.push(word)
+      if (maxArgs > 0 && pending.length === maxArgs) {
+        batches.push(pending)
+        pending = []
+      }
+    }
+    if (counted) lines += 1
+    if (maxLines > 0 && lines >= maxLines) {
+      batches.push(pending)
+      pending = []
+      lines = 0
+    }
+  }
+  return [batches, pending]
+}
+
+/**
+ * Run a command with words read from stdin (GNU xargs).
+ *
+ * The words are appended to the initial arguments, or with -I each
+ * input line takes the place of the string in them. -I, -L and -n
+ * cancel each other, the later one winning with GNU's warning; an
+ * option given twice counts where it was last given, so it warns once
+ * where GNU warns for each occurrence.
  *
  * GNU xargs execs the command directly, so every input word must reach
  * it as exactly one argv token. The inner line is built with shellJoin:
@@ -77,35 +202,76 @@ export async function handleXargs(
   for (const name of UNSUPPORTED) {
     if (name in parse.flags) return usageError(`unsupported option -- '${name}'`)
   }
-  let maxArgs: number | null = null
-  const rawN = parse.flags.n
-  if (typeof rawN === 'string') {
-    if (!/^\d+$/.test(rawN)) return usageError(`invalid number "${rawN}" for -n option`)
-    maxArgs = Number(rawN)
-    if (maxArgs < 1) return usageError(`value ${rawN} for -n option should be >= 1`)
+  let replace: string | null = null
+  let maxLines = 0
+  let maxArgs = 0
+  const warnings: string[] = []
+  for (const [name, value] of Object.entries(parse.flags)) {
+    if (typeof value !== 'string' || !['I', 'L', 'n'].includes(name)) continue
+    if (name === 'I') {
+      if (maxArgs > 0) warnings.push(exclusive('--replace/-I/-i', '--max-args'))
+      if (maxLines > 0) warnings.push(exclusive('--replace/-I/-i', '--max-lines'))
+      replace = value
+      maxLines = 0
+      maxArgs = 0
+      continue
+    }
+    const error = countError(value, name)
+    if (error !== null) return usageError(error)
+    const count = Number(value.trim())
+    if (name === 'L') {
+      if (maxArgs > 0) warnings.push(exclusive('-L', '--max-args'))
+      if (replace !== null) warnings.push(exclusive('-L', '--replace'))
+      replace = null
+      maxLines = count
+      maxArgs = 0
+      continue
+    }
+    if (maxLines > 0) warnings.push(exclusive('--max-args/-n', '--max-lines'))
+    maxLines = 0
+    // GNU reads `-I {} -n1` as plain -I.
+    if (replace !== null && count === 1) continue
+    if (replace !== null) warnings.push(exclusive('--max-args/-n', '--replace'))
+    replace = null
+    maxArgs = count
   }
 
-  const data = await materialize(stdin)
-  const items = splitItems(data, parse.flags)
-  if (items.length === 0 && parse.flags.r === true) {
-    return [null, new IOResult(), new ExecutionNode({ command: 'xargs', exitCode: 0 })]
-  }
+  const text = new TextDecoder().decode(await materialize(stdin))
+  const delim = delimiter(parse.flags)
+  const [reads, quoteError]: [Read[], string] =
+    delim === null
+      ? readLines(text, replace !== null)
+      : [readItems(text, delim).map((item): Read => [[item], true]), '']
 
   const command = parse.operands.length > 0 ? parse.operands : ['echo']
-  const batches: string[][] = []
-  if (maxArgs === null) {
-    batches.push(items)
+  const runs: string[][] = []
+  if (replace !== null) {
+    const pattern = replace
+    const items = reads.flatMap(([words]) => words)
+    if (items.length > 0 && pattern === '' && command.length > 1) {
+      return usageError('command too long')
+    }
+    const [head = 'echo', ...initial] = command
+    for (const item of items) {
+      runs.push([head, ...initial.map((arg) => arg.replaceAll(pattern, () => item))])
+    }
   } else {
-    for (let i = 0; i < items.length; i += maxArgs) batches.push(items.slice(i, i + maxArgs))
-    if (batches.length === 0) batches.push([])
+    const [batches, pending] = batchReads(reads, maxLines, maxArgs)
+    if (quoteError !== '') {
+      // GNU runs what it had read unless -L holds whole lines.
+      if (pending.length > 0 && maxLines === 0) batches.push(pending)
+    } else if (pending.length > 0 || !(batches.length > 0 || parse.flags.r === true)) {
+      batches.push(pending)
+    }
+    for (const batch of batches) runs.push([...command, ...batch])
   }
 
   const stdouts: ByteSource[] = []
-  let merged = new IOResult()
+  const warned = warnings.join('')
+  let merged = new IOResult(warned === '' ? {} : { stderr: new TextEncoder().encode(warned) })
   let exitCode = 0
-  for (const batch of batches) {
-    const inner = shellJoin([...command, ...batch])
-    const io = await executeFn(inner, { sessionId: session.sessionId })
+  for (const run of runs) {
+    const io = await executeFn(shellJoin(run), { sessionId: session.sessionId })
     if (io.stdout !== null) stdouts.push(io.stdout)
     merged = await merged.merge(io)
     if (io.exitCode === 126 || io.exitCode === 127) {
@@ -117,6 +283,10 @@ export async function handleXargs(
       // GNU exits 123 when any invocation fails, but keeps going.
       exitCode = 123
     }
+  }
+  if (quoteError !== '' && exitCode !== 126 && exitCode !== 127) {
+    merged = await merged.merge(new IOResult({ stderr: new TextEncoder().encode(quoteError) }))
+    exitCode = 1
   }
   merged.exitCode = exitCode
   const out = stdouts.length > 0 ? asyncChain(...stdouts) : null

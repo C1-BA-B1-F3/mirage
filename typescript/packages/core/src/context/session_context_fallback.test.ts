@@ -31,6 +31,7 @@ import {
   runWithSuspendedOpPolicies,
   sessionUmask,
 } from './session_context.ts'
+import { CLISpec } from '../commands/cli/types.ts'
 import { IOResult, materialize } from '../io/types.ts'
 import { handleXargs } from '../workspace/executor/builtins/xargs/xargs.ts'
 import { seedVar, sessionView } from '../workspace/session/state.ts'
@@ -505,6 +506,108 @@ describe('xargs session isolation on the fallback storage', () => {
       expect(new TextDecoder().decode(io.stderr)).toBe('')
       expect(io.exitCode).toBe(0)
     } finally {
+      await ws.close()
+    }
+  })
+})
+
+describe('overlapping shell calls beside xargs', () => {
+  it('keeps another foreground call queued and honors its abort', async () => {
+    const parser = await getTestParser()
+    const ws = new Workspace({}, { shellParser: parser })
+    const [entered, enter] = gate()
+    const [held, release] = gate()
+    ws.registerCli(
+      'hold',
+      new CLISpec({
+        name: 'hold',
+        fn: async () => {
+          enter()
+          await held
+          return [null, new IOResult()]
+        },
+      }),
+    )
+    const child = ws.shell('printf a | xargs -P2 -I{} hold')
+    try {
+      await entered
+      await expect(
+        ws.shell('Y=leaked', {
+          sessionId: ws.defaultSessionId,
+          signal: AbortSignal.timeout(100),
+        }),
+      ).rejects.toMatchObject({ name: 'AbortError' })
+    } finally {
+      release()
+      await child
+      expect(ws.getSession(ws.defaultSessionId).env.Y).toBeUndefined()
+      await ws.close()
+    }
+  })
+
+  it.each(
+    [0, 2].flatMap((procs) =>
+      [false, true].flatMap((named) =>
+        [false, true].map((childFirst) => ({ procs, named, childFirst })),
+      ),
+    ),
+  )('keeps sessions separate: %j', async ({ procs, named, childFirst }) => {
+    const parser = await getTestParser()
+    const ws = new Workspace({}, { shellParser: parser })
+    const [childEntered, enterChild] = gate()
+    const [childHeld, releaseChild] = gate()
+    const [otherEntered, enterOther] = gate()
+    const [otherHeld, releaseOther] = gate()
+    ws.registerCli(
+      'holdchild',
+      new CLISpec({
+        name: 'holdchild',
+        fn: async () => {
+          enterChild()
+          await childHeld
+          return [null, new IOResult()]
+        },
+      }),
+    )
+    ws.registerCli(
+      'holdother',
+      new CLISpec({
+        name: 'holdother',
+        fn: async () => {
+          enterOther()
+          await otherHeld
+          return [null, new IOResult()]
+        },
+      }),
+    )
+    try {
+      await ws.shell('X=outer; child() { holdchild; eval "X=child"; echo "$X"; }')
+      await ws.shell(`printf a | xargs -P${String(procs)} -I{} child &`)
+      const child = ws.jobTable.wait(1, ws.defaultSessionId)
+      await childEntered
+      const other = ws.shell(
+        'holdother; eval "Y=kept"; echo "$X:$Y"',
+        named ? { sessionId: ws.defaultSessionId } : {},
+      )
+      await otherEntered
+      if (childFirst) {
+        releaseChild()
+        await child
+        releaseOther()
+      } else {
+        releaseOther()
+        await other
+        releaseChild()
+      }
+      const [childResult, otherResult] = await Promise.all([child, other])
+      expect(new TextDecoder().decode(await childResult.console.snapshot())).toBe('child\n')
+      expect(otherResult.stdoutText).toBe('outer:kept\n')
+      expect(childResult.exitCode).toBe(0)
+      expect(otherResult.exitCode).toBe(0)
+      expect((await ws.shell('echo "$X:$Y"')).stdoutText).toBe('outer:kept\n')
+    } finally {
+      releaseChild()
+      releaseOther()
       await ws.close()
     }
   })

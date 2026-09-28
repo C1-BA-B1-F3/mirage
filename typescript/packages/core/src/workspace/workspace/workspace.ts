@@ -1400,8 +1400,11 @@ export class Workspace {
     // A line admitted before close may still recurse through eval/source/$(),
     // but no continuation can start after teardown has finished.
     if (this.closed) throw new Error('Workspace is closed')
-    return this.serializeLine(options.sessionId, options.signal, () =>
-      executeLine(this.executeEnv(), command, options),
+    return this.serializeLine(
+      options.sessionId,
+      options.signal,
+      () => executeLine(this.executeEnv(), command, options),
+      options.session,
     )
   }
 
@@ -1414,10 +1417,9 @@ export class Workspace {
    * values. A nested line (`eval`, `source`, `$()`, `xargs`, a host
    * callback fired mid-line) is the same shell continuing and runs
    * inline: it already holds the session, and waiting on itself would
-   * deadlock. The ambient binding decides, by the same rule
-   * `executeLine` uses to pick the session a line runs as, so the lock
-   * key and the executed session never disagree; a background job's
-   * fork keeps its parent's id and continues inline too.
+   * deadlock. Evaluators carry their session explicitly. Ambient re-entry
+   * is accepted only with task-local storage, just as in `executeLine`:
+   * the fallback's newest binding may belong to another call.
    *
    * @param sessionId the session named by the caller, or undefined for
    *   the default.
@@ -1427,8 +1429,10 @@ export class Workspace {
     sessionId: string | undefined,
     signal: AbortSignal | undefined,
     run: () => Promise<T>,
+    session?: SessionState,
   ): Promise<T> {
-    const ambient = getCurrentSessionFor(this.sessionManager)
+    if (session !== undefined) return run()
+    const ambient = asyncContextIsolatesTasks ? getCurrentSessionFor(this.sessionManager) : null
     if (ambient !== null && (sessionId === undefined || sessionId === ambient.sessionId)) {
       return run()
     }

@@ -163,22 +163,10 @@ export async function handleBackground(
       }
       return [io, execNode]
     }
-    // The runner's task inherits the OUTER ambient session from its
-    // creation context, and the fork keeps its parent's id, so without
-    // this rebind a nested eval inside the job resolves the ambient
-    // outer session and escapes the fork.
-    //
-    // A job runs concurrently with the rest of the line, so the bind is
-    // only safe where the async context isolates tasks. On the fallback
-    // storage (a browser with no AsyncLocalStorage) the fork's frame
-    // would stay live beside the foreground's under the same owner and
-    // manager, with nothing to say whose read is whose: newest-wins
-    // reads would hand the fork to the rest of the line, and the
-    // restrictive folds would hold the line to the fork's view. There
-    // the job's inner evals resolve by id instead, which is what they
-    // did before ambient sessions existed: a job that leaks into its
-    // own nested eval is narrower than a job that leaks into the whole
-    // line.
+    // Task-local bindings keep op doors and host callbacks in the job's
+    // fork. The fallback cannot attribute ambient reads to a task, so
+    // it keeps the outer binding; nested shell evaluations carry the
+    // walker's exact session explicitly on both runtimes.
     try {
       return await (asyncContextIsolatesTasks ? runWithSession(bgSession, body) : body())
     } finally {

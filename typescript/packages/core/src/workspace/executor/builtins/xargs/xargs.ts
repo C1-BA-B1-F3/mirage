@@ -231,9 +231,10 @@ async function runLines(
   let stopped = false
   const forked = procs !== 1
   const run = async (line: string): Promise<IOResult> => {
-    if (!forked) return executeFn(line, { sessionId: session.sessionId })
-    return runWithSession(session.fork(), async () => {
-      const io = await executeFn(line, { sessionId: session.sessionId })
+    if (!forked) return executeFn(line, { sessionId: session.sessionId, session })
+    const child = session.fork()
+    return runWithSession(child, async () => {
+      const io = await executeFn(line, { sessionId: child.sessionId, session: child })
       await io.materializeStdout()
       await io.materializeStderr()
       return io

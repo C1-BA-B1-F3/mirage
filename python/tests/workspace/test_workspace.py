@@ -16,6 +16,8 @@ import asyncio
 
 import pytest
 
+from mirage.commands.cli.types import CLISpec
+from mirage.io import IOResult
 from mirage.runtime.python import LocalRuntime
 from mirage.types import FileType, MountMode, ReadPolicy, ReadSpec
 from mirage.vfs.ram import RAMVFS
@@ -3061,4 +3063,82 @@ async def test_live_default_profile_updates_unbound_policy():
         assert ws.get_session(ws.default_session_id) is session
         assert await ws.vfs.read("/data/file") == b"kept"
     finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("procs", [0, 2])
+@pytest.mark.parametrize("named", [False, True])
+@pytest.mark.parametrize("child_first", [False, True])
+async def test_xargs_overlapping_shell_sessions(procs, named, child_first):
+    ws = Workspace({})
+    child_entered = asyncio.Event()
+    child_held = asyncio.Event()
+    other_entered = asyncio.Event()
+    other_held = asyncio.Event()
+
+    async def hold_child(_inv):
+        child_entered.set()
+        await child_held.wait()
+        return None, IOResult()
+
+    async def hold_other(_inv):
+        other_entered.set()
+        await other_held.wait()
+        return None, IOResult()
+
+    ws.register_cli("holdchild", CLISpec(name="holdchild", fn=hold_child))
+    ws.register_cli("holdother", CLISpec(name="holdother", fn=hold_other))
+    try:
+        await ws.shell(
+            'X=outer; child() { holdchild; eval "X=child"; echo "$X"; }')
+        await ws.shell(f"printf a | xargs -P{procs} -I{{}} child &")
+        child = asyncio.create_task(ws.job_table.wait(1,
+                                                      ws.default_session_id))
+        await asyncio.wait_for(child_entered.wait(), 5)
+        other = asyncio.create_task(
+            ws.shell('holdother; eval "Y=kept"; echo "$X:$Y"',
+                     session_id=ws.default_session_id if named else None))
+        await asyncio.wait_for(other_entered.wait(), 5)
+        if child_first:
+            child_held.set()
+            await child
+            other_held.set()
+        else:
+            other_held.set()
+            await other
+            child_held.set()
+        child_result, other_result = await asyncio.gather(child, other)
+        assert await child_result.console.snapshot() == b"child\n"
+        assert _stdout(other_result) == b"outer:kept\n"
+        assert child_result.exit_code == other_result.exit_code == 0
+        assert _stdout(await ws.shell('echo "$X:$Y"')) == b"outer:kept\n"
+    finally:
+        child_held.set()
+        other_held.set()
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_xargs_keeps_foreground_call_queued_until_cancelled():
+    ws = Workspace({})
+    entered = asyncio.Event()
+    held = asyncio.Event()
+
+    async def hold(_inv):
+        entered.set()
+        await held.wait()
+        return None, IOResult()
+
+    ws.register_cli("hold", CLISpec(name="hold", fn=hold))
+    child = asyncio.create_task(ws.shell("printf a | xargs -P2 -I{} hold"))
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(
+                ws.shell("Y=leaked", session_id=ws.default_session_id), 0.1)
+    finally:
+        held.set()
+        await child
+        assert "Y" not in ws.get_session(ws.default_session_id).env
         await ws.close()

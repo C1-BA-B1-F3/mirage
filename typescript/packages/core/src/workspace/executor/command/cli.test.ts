@@ -754,3 +754,37 @@ it('keeps a custom CLI grammar when it uses Git usage formatting', async () => {
   expect(io.exitCode).toBe(0)
   expect(dec.decode(await materialize(stdout))).toBe('sent[tok]\n')
 })
+
+it.each(['success', 'error', 'abort'] as const)(
+  'revokes the invocation shell after %s',
+  async (outcome) => {
+    const abort = new AbortController()
+    const evaluate = vi.fn(() => Promise.resolve(new IOResult()))
+    let saved: CLIInvocation['shell']
+    const spec = new CLISpec({
+      name: 'probe',
+      fn: async (inv) => {
+        saved = inv.shell
+        if (inv.shell === undefined) throw new Error('missing invocation shell')
+        if (outcome === 'abort') {
+          abort.abort()
+          await expect(inv.shell('echo denied')).rejects.toThrow('no longer active')
+        } else {
+          await inv.shell('echo allowed')
+        }
+        if (outcome === 'error') throw new Error('handler failed')
+        return [null, new IOResult()]
+      },
+    })
+    await handleCli(
+      { name: 'probe', spec, config: null },
+      ['probe'],
+      new SessionState({ sessionId: 's' }),
+      null,
+      { shell: evaluate, signal: abort.signal },
+    )
+    if (saved === undefined) throw new Error('missing saved shell')
+    await expect(saved('echo late')).rejects.toThrow('no longer active')
+    expect(evaluate).toHaveBeenCalledTimes(outcome === 'abort' ? 0 : 1)
+  },
+)

@@ -15,7 +15,7 @@
 import pytest
 
 from mirage.shell.bytes import encode_text
-from mirage.shell.escapes import decode_ansi_c
+from mirage.shell.escapes import code_point_text, decode_ansi_c
 
 # Expectations pinned against bash 5.2.37 in docker (debian:stable-slim,
 # LC_ALL=C.UTF-8): echo $'<case>' | od -An -tx1.
@@ -116,3 +116,19 @@ def test_values_past_unicode_encode_or_vanish():
         decode_ansi_c(r"\U7FFFFFFF")) == b"\xfd\xbf\xbf\xbf\xbf\xbf"
     assert decode_ansi_c(r"x\UFFFFFFFFy") == "xy"
     assert decode_ansi_c(r"x\U80000000y") == "xy"
+
+
+@pytest.mark.parametrize("value,expected", [
+    (0x41, b"A"),
+    (0, b"\0"),
+    (0xE9, b"\xc3\xa9"),
+    (0x1F600, b"\xf0\x9f\x98\x80"),
+    (0xD800, b"\xed\xa0\x80"),
+    (0x110000, b"\xf4\x90\x80\x80"),
+    (0x7FFFFFFF, b"\xfd\xbf\xbf\xbf\xbf\xbf"),
+    (0x80000000, b""),
+])
+def test_code_point_text_writes_through_u32toutf8(value: int, expected: bytes):
+    # $'...', echo -e and printf all write \u and \U through this; only
+    # $'...' cuts at NUL, before it gets here.
+    assert encode_text(code_point_text(value)) == expected

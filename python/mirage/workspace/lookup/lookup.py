@@ -274,6 +274,24 @@ def program(name: str, session: SessionState,
     return None
 
 
+def execs(name: str, session: SessionState, registry: MountRegistry) -> bool:
+    """Whether a builtin that execs its operand (xargs, timeout) finds it.
+
+    GNU execs the name, so a shell word with no file on PATH (cd,
+    export) is missing there, as is a name nothing provides. A function
+    runs too, where it is what the name runs (a shell word shadows
+    one): mirage runs the line in the shell, which is how these reach
+    it. A path is left to the run, which reports on it.
+
+    Args:
+        name (str): the command word.
+        session (SessionState): the session it would run in.
+        registry (MountRegistry): mount registry (command registration).
+    """
+    return ("/" in name or program(name, session, registry) is not None
+            or lookup(name, session, registry) is Consumer.FUNCTION)
+
+
 def program_note(name: str, session: SessionState,
                  registry: MountRegistry) -> str | None:
     """What a program's ``/usr/bin`` file says about it, None when the

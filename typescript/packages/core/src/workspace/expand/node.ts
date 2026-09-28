@@ -50,6 +50,7 @@ export type ExecuteFn = (
   command: string,
   opts: {
     sessionId: string
+    session?: SessionState
     stdin?: ByteSource | null
     signal?: AbortSignal
     node?: TSNodeLike

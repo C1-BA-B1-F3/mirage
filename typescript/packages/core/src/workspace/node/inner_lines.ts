@@ -14,6 +14,8 @@
 
 import { SHELL_SPECS, parseShellOptions } from '../../commands/spec/shell.ts'
 import { parseBashArgs } from '../executor/builtins/script/bash.ts'
+import { timeoutMissing } from '../executor/builtins/timeout/timeout.ts'
+import { xargsMissing } from '../executor/builtins/xargs/xargs.ts'
 
 /**
  * One word of a line as the gate reads it: `raw` as typed, `text` what
@@ -45,22 +47,26 @@ function valueAt(args: readonly Word[], index: number): string {
  * is a line the gate cannot read at all (a sourced file, a script, a
  * program from stdin). `open` says the runtime appends operands the
  * gate cannot read (`xargs`'s items, `find`'s `{}` paths, the index and
- * record `mapfile -C` hands its callback).
+ * record `mapfile -C` hands its callback). `missing` is what the command
+ * writes when the session cannot see the name it runs: `xargs` and
+ * `timeout` look the name up themselves and report it in GNU's words;
+ * null where the shell reports it (`command not found`).
  */
 export interface InnerLine {
   readonly line: string | null
   readonly argv: readonly Word[]
   readonly open: boolean
+  readonly missing: string | null
 }
 
-const UNREADABLE: InnerLine = { line: null, argv: [], open: false }
+const UNREADABLE: InnerLine = { line: null, argv: [], open: false, missing: null }
 
 function asLine(line: string, open = false): InnerLine {
-  return { line, argv: [], open }
+  return { line, argv: [], open, missing: null }
 }
 
-function asArgv(argv: readonly Word[], open = false): InnerLine[] {
-  return argv.length > 0 ? [{ line: null, argv, open }] : []
+function asArgv(argv: readonly Word[], open = false, missing: string | null = null): InnerLine[] {
+  return argv.length > 0 ? [{ line: null, argv, open, missing }] : []
 }
 
 /** Whether the gate can read what runs. */
@@ -136,7 +142,9 @@ function envInner(args: readonly Word[]): InnerLine[] {
 // line fails its own option parse.
 function specOperands(spec: 'timeout' | 'xargs', args: readonly Word[]): Word[] | null {
   const parsed = parseShellOptions(SHELL_SPECS[spec], args.map(wordValue))
-  if (parsed.invalid !== null || parsed.needsValue !== null) return null
+  if (parsed.invalid !== null || parsed.needsValue !== null || parsed.unexpectedValue !== null) {
+    return null
+  }
   return tail(args, parsed.operands.length)
 }
 
@@ -144,7 +152,7 @@ function specOperands(spec: 'timeout' | 'xargs', args: readonly Word[]): Word[] 
 function timeoutInner(args: readonly Word[]): InnerLine[] {
   const operands = specOperands('timeout', args)
   if (operands === null || operands.length < 2) return []
-  return asArgv(operands.slice(1))
+  return asArgv(operands.slice(1), false, timeoutMissing(valueAt(operands, 1)))
 }
 
 // `xargs [OPTION]... [COMMAND [INITIAL-ARGS]]`, `echo` when none, items
@@ -152,7 +160,8 @@ function timeoutInner(args: readonly Word[]): InnerLine[] {
 function xargsInner(args: readonly Word[]): InnerLine[] {
   const operands = specOperands('xargs', args)
   if (operands === null) return []
-  return asArgv(operands.length > 0 ? operands : [{ raw: 'echo', text: 'echo' }], true)
+  const argv = operands.length > 0 ? operands : [{ raw: 'echo', text: 'echo' }]
+  return asArgv(argv, true, xargsMissing(valueAt(argv, 0)))
 }
 
 // `mapfile -C callback`: the callback is evaluated per quantum.

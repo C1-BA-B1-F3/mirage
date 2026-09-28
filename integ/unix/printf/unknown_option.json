@@ -265,6 +265,300 @@
         "stdout": " 00\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "printf_format_x_without_digits_warns_and_exits_0",
+      "seq": 991140,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x|' | od -An -tc",
+      "expect": {
+        "exit": 0,
+        "stdout": "   \\   x   |\n",
+        "stderr": "printf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_b_x_without_digits_warns_and_exits_0",
+      "seq": 991141,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\x|' | od -An -tc",
+      "expect": {
+        "exit": 0,
+        "stdout": "   \\   x   |\n",
+        "stderr": "printf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_format_u_and_U_without_digits_warn_in_order",
+      "seq": 991142,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\u|\\U|' | od -An -tc",
+      "expect": {
+        "exit": 0,
+        "stdout": "   \\   u   |   \\   U   |\n",
+        "stderr": "printf: missing unicode digit for \\u\nprintf: missing unicode digit for \\U\n"
+      }
+    },
+    {
+      "id": "printf_format_x_u_U_without_digits_warn_in_order",
+      "seq": 991143,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x\\u\\U\\n'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\x\\u\\U\n",
+        "stderr": "printf: missing hex digit for \\x\nprintf: missing unicode digit for \\u\nprintf: missing unicode digit for \\U\n"
+      }
+    },
+    {
+      "id": "printf_warning_comes_before_a_later_invalid_number",
+      "seq": 991144,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x%d\\n' abc",
+      "expect": {
+        "exit": 1,
+        "stdout": "\\x0\n",
+        "stderr": "printf: missing hex digit for \\x\nprintf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_invalid_number_comes_before_a_later_warning",
+      "seq": 991145,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d\\x\\n' abc",
+      "expect": {
+        "exit": 1,
+        "stdout": "0\\x\n",
+        "stderr": "printf: abc: invalid number\nprintf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_b_warning_follows_an_earlier_invalid_number",
+      "seq": 991146,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d%b\\n' abc '\\x'",
+      "expect": {
+        "exit": 1,
+        "stdout": "0\\x\n",
+        "stderr": "printf: abc: invalid number\nprintf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_reused_format_warns_once_per_pass",
+      "seq": 991147,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x%s\\n' a b",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\xa\n\\xb\n",
+        "stderr": "printf: missing hex digit for \\x\nprintf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_format_without_conversions_warns_once",
+      "seq": 991148,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x\\n' a b",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\x\n",
+        "stderr": "printf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_b_stops_before_a_later_x_and_does_not_warn",
+      "seq": 991149,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b\\n' 'a\\cb\\x'",
+      "expect": {
+        "exit": 0,
+        "stdout": "a",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_warns_before_its_precision_cuts",
+      "seq": 991150,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%.1b\\n' '\\xy'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\\n",
+        "stderr": "printf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_v_warns_and_still_assigns",
+      "seq": 991151,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf -v v '\\x|'; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n\\x|\n",
+        "stderr": "printf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_v_warning_and_invalid_number_exit_1",
+      "seq": 991152,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf -v v '\\x%d' abc; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n\\x0\n",
+        "stderr": "printf: missing hex digit for \\x\nprintf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_b_stop_exits_0_after_an_invalid_number",
+      "seq": 991153,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d%b' abc '\\c'; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "0 rc=0\n",
+        "stderr": "printf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_b_stop_mid_argument_exits_0_after_an_invalid_number",
+      "seq": 991154,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d%b\\n' abc 'x\\cy'; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "0x rc=0\n",
+        "stderr": "printf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_b_stop_in_a_later_pass_exits_0",
+      "seq": 991155,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d%b' abc x def '\\c'; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "0x0 rc=0\n",
+        "stderr": "printf: abc: invalid number\nprintf: def: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_b_stop_before_an_invalid_number_never_reads_it",
+      "seq": 991156,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b%d' '\\c' abc; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": " rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_invalid_number_without_a_b_stop_exits_1",
+      "seq": 991157,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d%b' abc x; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "0x rc=1\n",
+        "stderr": "printf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_warning_and_invalid_number_then_b_stop_exit_0",
+      "seq": 991158,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x%d%b' abc '\\c'; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\x0 rc=0\n",
+        "stderr": "printf: missing hex digit for \\x\nprintf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_v_b_stop_exits_0_after_an_invalid_number",
+      "seq": 991159,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf -v v '%d%b' abc '\\c'; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n0\n",
+        "stderr": "printf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_v_b_stop_in_a_later_pass_exits_0",
+      "seq": 991160,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf -v v '%d%b' abc x def '\\c'; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n0x0\n",
+        "stderr": "printf: abc: invalid number\nprintf: def: invalid number\n"
+      }
     }
   ]
 }

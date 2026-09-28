@@ -13,12 +13,34 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
+import { encodeText } from '../../../../shell/bytes.ts'
 import { runPrintf } from './format.ts'
 
 // GNU pins taken in debian:stable-slim. `handlePrintf` collapses the
 // error list into one stderr blob and a status, so the list itself —
 // order and count — is only observable here. Mirrors python's
 // tests/workspace/executor/builtins/printf/test_format.py.
+
+// bash 5.2.37 through `od -An -tx1`: the format reads \NNN, one to three
+// octal digits, and a %b argument also reads \0NNN, a leading 0 and up
+// to three more.
+const OCTAL_PINS: [string, string, string][] = [
+  ['\\0003', '00 33', '03'],
+  ['\\0', '00', '00'],
+  ['\\00', '00', '00'],
+  ['\\000', '00', '00'],
+  ['\\0000', '00 30', '00'],
+  ['\\08', '00 38', '00 38'],
+  ['\\101', '41', '41'],
+  ['\\1011', '41 31', '41 31'],
+  ['\\0101', '08 31', '41'],
+  ['\\400', '00', '00'],
+  ['\\0400', '20 30', '00'],
+]
+
+function od(text: string): string {
+  return Array.from(encodeText(text), (b) => b.toString(16).padStart(2, '0')).join(' ')
+}
 
 describe('runPrintf', () => {
   it('returns errors as a list in argument order', () => {
@@ -57,4 +79,14 @@ describe('runPrintf', () => {
   it('renders a missing argument as the empty string or zero', () => {
     expect(runPrintf('[%s][%d]', [])).toEqual(['[][0]', []])
   })
+
+  it.each(OCTAL_PINS)(
+    'reads %s as three digits in the format and a zero plus three in %%b',
+    (escape, inFormat, inBArg) => {
+      const [fmtOut, fmtErrors] = runPrintf(escape, [])
+      const [bOut, bErrors] = runPrintf('%b', [escape])
+      expect([od(fmtOut), fmtErrors]).toEqual([inFormat, []])
+      expect([od(bOut), bErrors]).toEqual([inBArg, []])
+    },
+  )
 })

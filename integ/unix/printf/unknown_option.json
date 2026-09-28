@@ -27,6 +27,244 @@
         "stdout": "printf: printf [-v var] format [arguments]\n    Formats and prints ARGUMENTS under control of the FORMAT.\n    \n    Options:\n      -v var\tassign the output to shell variable VAR rather than\n    \t\tdisplay it on the standard output\n    \n    FORMAT is a character string which contains three types of objects: plain\n    characters, which are simply copied to standard output; character escape\n    sequences, which are converted and copied to the standard output; and\n    format specifications, each of which causes printing of the next successive\n    argument.\n    \n    In addition to the standard format specifications described in printf(1),\n    printf interprets:\n    \n      %b\texpand backslash escape sequences in the corresponding argument\n      %q\tquote the argument in a way that can be reused as shell input\n    \n    The format is re-used as necessary to consume all of the arguments.  If\n    there are fewer arguments than the format requires,  extra format\n    specifications behave as if a zero value or null string, as appropriate,\n    had been supplied.\n    \n    Exit Status:\n    Returns success unless an invalid option is given or a write or assignment\n    error occurs.\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "printf_format_octal_0003_is_nul_then_3",
+      "seq": 991110,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\0003' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00 33\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_0003_is_byte_3",
+      "seq": 991111,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\0003' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 03\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_0_is_nul",
+      "seq": 991112,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\0' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_0_is_nul",
+      "seq": 991113,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\0' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_00_is_nul",
+      "seq": 991114,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\00' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_00_is_nul",
+      "seq": 991115,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\00' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_000_is_nul",
+      "seq": 991116,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_000_is_nul",
+      "seq": 991117,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_0000_is_nul_then_0",
+      "seq": 991118,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\0000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00 30\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_0000_is_one_nul",
+      "seq": 991119,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\0000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_08_is_nul_then_8",
+      "seq": 991120,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\08' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00 38\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_08_is_nul_then_8",
+      "seq": 991121,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\08' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00 38\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_101_is_A",
+      "seq": 991122,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\101' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 41\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_101_is_A",
+      "seq": 991123,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\101' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 41\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_1011_is_A_then_1",
+      "seq": 991124,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\1011' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 41 31\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_1011_is_A_then_1",
+      "seq": 991125,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\1011' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 41 31\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_400_keeps_the_low_byte",
+      "seq": 991126,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\400' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
     }
   ]
 }

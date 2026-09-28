@@ -267,15 +267,14 @@ async def resolve_operand(
         target (PathSpec): the operand as typed.
         errors (list[str]): per-operand error accumulator.
     """
-    refusal = (walk_refusal(target) if target.walk_error is not None else
-               await dot_refusal(partial(dispatch_stat, dispatch), target,
-                                 namespace.follow))
+    refusal = (walk_refusal(target)
+               if target.walk_error is not None else await dot_refusal(
+                   partial(dispatch_stat, dispatch), target, namespace.follow))
     if refusal is not None:
         errors.append(f"{cmd}: cannot access '{target.raw_path}': "
                       f"{fs_strerror(refusal)}\n")
         return None
-    resolved = follow_operand(namespace, cmd, "cannot access", target,
-                              errors)
+    resolved = follow_operand(namespace, cmd, "cannot access", target, errors)
     if resolved is None:
         return None
     try:

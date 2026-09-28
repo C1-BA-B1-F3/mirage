@@ -13,11 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { DEFAULT_UMASK } from '../../../../context/session_context.ts'
-import {
-  dispatchStat,
-  dotRefusal,
-  typedSpec,
-} from '../../../../commands/builtin/utils/paths.ts'
+import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { FileStat, SetAttrFields } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'

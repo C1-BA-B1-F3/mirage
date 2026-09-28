@@ -225,7 +225,9 @@ async function* awkStream(
         } else if (isFsError(err)) {
           // An input awk cannot open ends the run there, END and the
           // files after it unread (mawk 1.3.4, exit 2).
-          const failure = new AwkRuntimeError(`awk: cannot open "${name}" (${fsStrerror(err) ?? ''})`)
+          const failure = new AwkRuntimeError(
+            `awk: cannot open "${name}" (${fsStrerror(err) ?? ''})`,
+          )
           const [chunk] = await settle(io, interp, failure, opts)
           yield chunk
           return

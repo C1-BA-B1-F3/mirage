@@ -217,6 +217,82 @@
       "flags": [
         "m"
       ]
+    },
+    {
+      "id": "sort_decimal_merge_unique",
+      "seq": 1302014,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box",
+        "databricks",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "sharepoint-prefix"
+      ],
+      "command": "printf '4.5\\n4.9\\n4.90\\n' | sort -nmu",
+      "expect": {
+        "exit": 0,
+        "stdout": "4.5\n4.9\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_h_merge_unique",
+      "seq": 1302030,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '%s\\n' 1K 1.0K 1000 | sort -hmu",
+      "expect": {
+        "exit": 0,
+        "stdout": "1K\n1000\n",
+        "stderr": ""
+      },
+      "flags": [
+        "h",
+        "m",
+        "u"
+      ]
     }
   ]
 }

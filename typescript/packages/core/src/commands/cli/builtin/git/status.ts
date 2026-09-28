@@ -21,10 +21,11 @@ import { collect } from './changes.ts'
 import { GitError, NoWorkspaceError } from './errors.ts'
 import { short } from './format.ts'
 import { readHead } from './refs.ts'
-import { branchLine, longFormat, shortFormat } from './render.ts'
+import { branchLine, longFormat, relativeEntries, shortFormat } from './render.ts'
 import { configBool, opened, type Repo } from './repo.ts'
-import type { Dispatch, HeadRef } from './types.ts'
-import { fatal } from './util.ts'
+import type { Dispatch, HeadRef, StatusEntry } from './types.ts'
+import { fatal, startPoint } from './util.ts'
+import { repoRelative } from './pathspec.ts'
 import { UNTRACKED_ALL, UNTRACKED_NO, UNTRACKED_NORMAL } from './worktree.ts'
 import { encodeText } from '../../../../shell/bytes.ts'
 
@@ -61,23 +62,44 @@ function parseFlags(fl: FlagView): StatusFlags {
 }
 
 /**
+ * Status rows as a person reads them, relative to where git runs.
+ *
+ * git's human formats name paths from the invocation directory unless
+ * `status.relativePaths` is false; porcelain never does. From outside the work
+ * tree they stay relative to its root.
+ */
+async function displayed(repo: Repo, start: string, rows: StatusEntry[]): Promise<StatusEntry[]> {
+  if (!(await configBool(repo, 'status.relativePaths', true))) return rows
+  return relativeEntries(rows, repoRelative(repo.location, start, '.'))
+}
+
+/**
  * The default status report, as a string.
  *
  * Split out so `commit` can print it when it has nothing to commit: git shows
  * the whole status there rather than a one-line refusal, and two renderings of
- * the same thing would drift.
+ * the same thing would drift. Its paths are relative to `start`, where git runs.
  */
 export async function renderReport(
   repo: Repo,
   dispatch: Dispatch,
   statPath: StatPath,
   head: HeadRef,
+  start: string,
   links: LinkView | null = null,
 ): Promise<string> {
   const [rows, state, noCommits] = await collect(repo, dispatch, statPath, UNTRACKED_NORMAL, links)
   const fully = await configBool(repo, 'core.quotepath', true)
   const commit = head.commit === null ? null : short(head.commit, repo.abbrev)
-  return longFormat(rows, head.branch, commit, noCommits, state.merging, false, fully)
+  return longFormat(
+    await displayed(repo, start, rows),
+    head.branch,
+    commit,
+    noCommits,
+    state.merging,
+    false,
+    fully,
+  )
 }
 
 /**
@@ -98,7 +120,7 @@ export async function status(inv: CLIInvocation): Promise<CommandFnResult> {
       throw new NoWorkspaceError()
     }
     const parsed = parseFlags(fl)
-    const repo = await opened(fl, doors)
+    const repo = await opened(fl, doors, true)
     const head = await readHead(dispatch, repo.location.gitdir)
     const [rows, state, noCommits] = await collect(
       repo,
@@ -108,12 +130,13 @@ export async function status(inv: CLIInvocation): Promise<CommandFnResult> {
       doors.ns?.links ?? null,
     )
     const fully = await configBool(repo, 'core.quotepath', true)
+    const shown = parsed.porcelain ? rows : await displayed(repo, startPoint(fl), rows)
     const commit = head.commit === null ? null : short(head.commit, repo.abbrev)
     const body =
       parsed.porcelain || parsed.short
-        ? shortFormat(rows, parsed.branch ? branchLine(head.branch, noCommits) : null, fully)
+        ? shortFormat(shown, parsed.branch ? branchLine(head.branch, noCommits) : null, fully)
         : longFormat(
-            rows,
+            shown,
             head.branch,
             commit,
             noCommits,

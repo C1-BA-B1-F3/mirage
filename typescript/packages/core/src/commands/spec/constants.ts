@@ -38,6 +38,15 @@ export const VERSION_OPTION = new Option({
 // every operand name: the brackets are the renderer's.
 export const ARG_PLACEHOLDER = 'ARG'
 
+// CPython and node read the script from stdin for a lone `-`, including
+// after `--`. Explicit `./-` still names a file (CPython 3.12, node 22).
+export const STDIN_SCRIPT_COMMANDS: ReadonlySet<string> = new Set([
+  'python',
+  'python3',
+  'js',
+  'node',
+])
+
 const AMBIGUOUS_NAMES: Readonly<Record<string, string>> = Object.freeze({
   l: 'args_l',
   O: 'args_O',

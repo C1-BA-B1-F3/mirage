@@ -14,6 +14,7 @@
 
 import errno
 import os
+from dataclasses import replace
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
@@ -116,6 +117,11 @@ async def make_directory(mkdir_fn: OperationFn,
                                     links)
         if failed is not None:
             return failed
+        # The walk has entered every name the spelling passes through, so
+        # the operand is made by its resolved path alone: walking it again
+        # would ask a store that shows no empty directory (hf) for one the
+        # walk just made.
+        path = replace(path, dotted=None)
     try:
         await mkdir_fn(accessor, path, parents=parents)
     except FS_ERRORS as exc:

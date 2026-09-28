@@ -19,10 +19,20 @@ export const STREAM_COMMANDS: ReadonlySet<string> = new Set([
   Cmd.NL,
   Cmd.CUT,
   Cmd.SED,
-  Cmd.REV,
+  Cmd.AWK,
+])
+// The stream commands that read their input as lines: GNU ends a file's
+// unterminated last line where the next file begins (`sed -n 2p` on `ab` then
+// `cd` prints `cd`), so the merged stream carries that newline. `cat` joins
+// the bytes as they are. Mirrors Python's LINE_STREAM_COMMANDS.
+export const LINE_STREAM_COMMANDS: ReadonlySet<string> = new Set([
+  Cmd.NL,
+  Cmd.CUT,
+  Cmd.SED,
   Cmd.AWK,
 ])
 const FANOUT_COMMANDS: ReadonlySet<string> = new Set([
+  Cmd.REV,
   Cmd.GREP,
   Cmd.RG,
   Cmd.HEAD,

@@ -13,7 +13,68 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { makeWorkspace, stderrStr, stdoutStr } from '../../fixtures/workspace_fixture.ts'
+import { parseSessionProfile } from '../../../policy/profile.ts'
+import { MontyRuntime } from '../../../runtime/python/monty/runtime.ts'
+import { MountMode } from '../../../types.ts'
+import { RAMVFS } from '../../../vfs/ram/ram.ts'
+import {
+  getTestParser,
+  makeWorkspace,
+  stderrStr,
+  stdoutStr,
+} from '../../fixtures/workspace_fixture.ts'
+import { Workspace } from '../../workspace/workspace.ts'
+
+const GUARDED = parseSessionProfile({
+  commands: { deny: [{ reason: 'protected', commands: { python3: ['/secret.py'] } }] },
+})
+
+async function guarded(): Promise<Workspace> {
+  return new Workspace(
+    { '/': new RAMVFS() },
+    {
+      mode: MountMode.EXEC,
+      shellParser: await getTestParser(),
+      runtimes: [new MontyRuntime(), 'workspace'],
+      profiles: { default: GUARDED },
+    },
+  )
+}
+
+describe('python3: a rule on the script', () => {
+  it.each([
+    ['python3 secret.py', 'secret.py'],
+    ['python3 ./secret.py', './secret.py'],
+    ['python3 -u -- secret.py', 'secret.py'],
+  ])('reads %s however it is typed', async (line, shown) => {
+    const ws = await guarded()
+    try {
+      await ws.shell("printf 'print(1)\\n' > /secret.py")
+      const io = await ws.shell(line)
+      expect(io.exitCode).toBe(1)
+      expect(stdoutStr(io)).toBe('')
+      expect(stderrStr(io)).toBe(`python3: ${shown}: protected\n`)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it.each([
+    'python3 s.py secret.py',
+    "python3 -c 'print(argv[1:])' secret.py",
+    "echo 'print(argv[1:])' | python3 - secret.py",
+  ])('keeps the words after the script as its argv: %s', async (line) => {
+    const ws = await guarded()
+    try {
+      await ws.shell("printf 'print(argv[1:])\\n' > /s.py")
+      const io = await ws.shell(line)
+      expect(io.exitCode).toBe(0)
+      expect(stdoutStr(io)).toBe("['secret.py']\n")
+    } finally {
+      await ws.close()
+    }
+  })
+})
 
 // All tests in this file are direct ports of Python mirage's python3 tests
 // in tests/workspace/test_workspace.py. Citations are in the `it()` title.

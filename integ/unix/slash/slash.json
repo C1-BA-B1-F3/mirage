@@ -601,13 +601,12 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/slashd/sub/nd /data/slashd/sub/m2; touch /data/slashd/sub/nd/.keep /data/slashd/sub/m2/.keep; mkdir -p /data/slashd/dangle 2>&1; mkdir /data/slashd/reg/../m /data/slashd/nope/../m 2>&1; mkdir -p /data/slashd/flink/../m /data/slashd/dangle/../m /data/slashd/dlink/nd/../m2 2>&1; test ! -e /data/slashd/m && ls /data/slashd/sub",
+      "command": "mkdir -p /data/slashd/dangle 2>&1; mkdir /data/slashd/reg/../m /data/slashd/nope/../m 2>&1; mkdir -p /data/slashd/flink/../m /data/slashd/dangle/../m /data/slashd/dlink/nd/../m2 2>&1; test ! -e /data/slashd/m && echo clean",
       "expect": {
         "exit": 0,
-        "stdout": "mkdir: cannot create directory '/data/slashd/dangle': File exists\nmkdir: cannot create directory '/data/slashd/reg/../m': Not a directory\nmkdir: cannot create directory '/data/slashd/nope/../m': No such file or directory\nmkdir: cannot create directory '/data/slashd/flink': Not a directory\nmkdir: cannot create directory '/data/slashd/dangle': File exists\nf2\nm2\nnd\n",
+        "stdout": "mkdir: cannot create directory '/data/slashd/dangle': File exists\nmkdir: cannot create directory '/data/slashd/reg/../m': Not a directory\nmkdir: cannot create directory '/data/slashd/nope/../m': No such file or directory\nmkdir: cannot create directory '/data/slashd/flink': Not a directory\nmkdir: cannot create directory '/data/slashd/dangle': File exists\nclean\n",
         "stderr": ""
-      },
-      "note": "Materialize the traversed directories on markerless stores; creation of missing dotted components is covered separately on stores that retain empty directories."
+      }
     },
     {
       "id": "slash_unlink_extra_operand",

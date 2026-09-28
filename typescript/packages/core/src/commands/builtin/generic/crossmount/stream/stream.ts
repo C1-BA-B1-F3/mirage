@@ -17,6 +17,7 @@ import { readFailExitCodeFromLine } from '../../../../spec/usage.ts'
 import { IOResult, materialize, type ByteSource } from '../../../../../io/types.ts'
 import type { PathSpec } from '../../../../../types.ts'
 import { revoiceFsErrorLine } from '../../../../../utils/errors.ts'
+import { LINE_STREAM_COMMANDS } from '../constants.ts'
 import { Cmd, type CrossResult, type RunSingle } from '../types.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
 
@@ -25,6 +26,19 @@ const DEC = new TextDecoder()
 
 function hasActiveFlags(flagKwargs: Record<string, FlagValue>): boolean {
   return Object.values(flagKwargs).some((v) => v !== false)
+}
+
+// One operand's bytes, its last line ended where the file ends: what a line
+// reader sees at a file boundary, so `ab` followed by the next file's `cd` is
+// two lines, the way the single-mount commands join their operands. Mirrors
+// Python's _line_ended.
+async function* lineEnded(source: ByteSource): AsyncIterable<Uint8Array> {
+  let last = 0x0a
+  for await (const chunk of asyncChain(source)) {
+    if (chunk.byteLength > 0) last = chunk[chunk.byteLength - 1] ?? 0x0a
+    yield chunk
+  }
+  if (last !== 0x0a) yield Uint8Array.of(0x0a)
 }
 
 // The per-operand fetch is a native Cmd.CAT sub-run, so its error lines
@@ -90,7 +104,11 @@ export async function runStream(
     return [null, mergedIo]
   }
 
-  const body: ByteSource = asyncChain(...sources)
+  const merged =
+    LINE_STREAM_COMMANDS.has(cmdName) && sources.length > 0
+      ? [...sources.slice(0, -1).map(lineEnded), ...sources.slice(-1)]
+      : sources
+  const body: ByteSource = asyncChain(...merged)
 
   if (cmdName === Cmd.CAT && !hasActiveFlags(flagKwargs)) {
     if (failed) mergedIo.exitCode = mergedIo.exitCode || failCode || 1

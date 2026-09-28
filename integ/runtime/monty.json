@@ -1293,6 +1293,78 @@
       ]
     },
     {
+      "id": "script_operand_obeys_policy",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/ram": {
+            "vfs": "ram",
+            "files": {
+              "secret.py": "print('secret')\n",
+              "s.py": "print(argv[1:])\n"
+            }
+          }
+        },
+        "profiles": {
+          "default": {
+            "commands": {
+              "deny": [
+                {
+                  "reason": "protected",
+                  "commands": {
+                    "python3": [
+                      "/ram/secret.py"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /ram",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 secret.py",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "python3: secret.py: protected\n"
+          }
+        },
+        {
+          "command": "python3 -u -- secret.py",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "python3: secret.py: protected\n"
+          }
+        },
+        {
+          "command": "python3 s.py secret.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "['secret.py']\n"
+          }
+        },
+        {
+          "command": "echo 'print(argv[1:])' | python3 - secret.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "['secret.py']\n"
+          }
+        }
+      ]
+    },
+    {
       "id": "cwd_chdir_js_binding_requires_namedtuple",
       "hosts": [
         "typescript"

@@ -34,6 +34,14 @@
       "type": "bool"
     }
   ],
+  "positional": [
+    {
+      "provided_by": [
+        "-e"
+      ],
+      "type": "path"
+    }
+  ],
   "rest": {
     "remainder": true,
     "type": "str"

@@ -75,9 +75,7 @@ function parseSize(value: string, current: number): number {
 const ENC = new TextEncoder()
 
 export interface TruncateFlags {
-  // The -s spec, as typed.
   readonly size: string
-  // -c: an absent name stays absent, silently.
   readonly noCreate: boolean
 }
 

@@ -12,6 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import AsyncIterator
+
+from mirage.commands.builtin.generic.crossmount.constants import \
+    LINE_STREAM_COMMANDS
 from mirage.commands.builtin.generic.crossmount.types import (Cmd, CrossResult,
                                                               RunSingle)
 from mirage.commands.spec.types import FlagValue
@@ -25,6 +29,25 @@ from mirage.utils.errors import revoice_fs_error_line
 
 def _has_active_flags(flag_kwargs: dict[str, FlagValue]) -> bool:
     return any(v not in (None, False) for v in flag_kwargs.values())
+
+
+async def _line_ended(source: ByteSource) -> AsyncIterator[bytes]:
+    """One operand's bytes, its last line ended where the file ends.
+
+    What a line reader sees at a file boundary: ``ab`` followed by the
+    next file's ``cd`` is two lines, the way the single-mount commands
+    join their operands.
+
+    Args:
+        source (ByteSource): the operand's bytes.
+    """
+    last = b"\n"
+    async for chunk in async_chain(source):
+        if chunk:
+            last = chunk[-1:]
+        yield chunk
+    if last != b"\n":
+        yield b"\n"
 
 
 def _respell_fetch_stderr(stderr: bytes, cmd_name: str,
@@ -94,6 +117,9 @@ async def run_stream(cmd_name: str, scopes: list[PathSpec],
         merged_io.exit_code = merged_io.exit_code or fail_code or 1
         return None, merged_io
 
+    if cmd_name in LINE_STREAM_COMMANDS and sources:
+        ended: list[ByteSource] = [_line_ended(s) for s in sources[:-1]]
+        sources = ended + sources[-1:]
     body: ByteSource = async_chain(*sources)
 
     if cmd_name == Cmd.CAT and not _has_active_flags(flag_kwargs):

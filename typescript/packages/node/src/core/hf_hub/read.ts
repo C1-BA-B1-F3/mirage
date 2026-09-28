@@ -97,7 +97,7 @@ export async function read(
   const timer = startOp()
   const [data, etag] = await refusalsDenied(
     path,
-    () => hubBytesTagged(accessor.token, url, window),
+    () => hubBytesTagged(accessor.token, url, window, accessor.timeoutMs),
     REFUSED_STATUSES,
   )
   record('read', path.virtual, accessor.vfsName, data.length, timer, {

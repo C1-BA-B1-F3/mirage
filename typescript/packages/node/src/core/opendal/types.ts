@@ -15,7 +15,7 @@
 import type { Operator } from 'opendal'
 
 // An accessor that reaches its backend through an opendal operator.
-// NextcloudAccessor and the four HfAccessor subclasses satisfy this
+// NextcloudAccessor and HfBucketsAccessor satisfy this
 // structurally, which is what lets one walk serve both.
 export interface OperatorAccessor {
   operator(): Promise<Operator>

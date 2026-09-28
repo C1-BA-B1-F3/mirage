@@ -42,6 +42,10 @@ AMBIGUOUS_NAMES = {"l": "args_l", "O": "args_O", "I": "args_I", "1": "args_1"}
 # every operand name: the brackets are the renderer's.
 ARG_PLACEHOLDER = "ARG"
 
+# CPython and node read the script from stdin for a lone `-`, including
+# after `--`. Explicit `./-` still names a file (CPython 3.12, node 22).
+STDIN_SCRIPT_COMMANDS = frozenset({"python", "python3", "js", "node"})
+
 # Numeric shorthand token like `-5` (head/tail count), never a flag
 # cluster or a path.
 NUMERIC_SHORT = re.compile(r"^-[0-9]+$")

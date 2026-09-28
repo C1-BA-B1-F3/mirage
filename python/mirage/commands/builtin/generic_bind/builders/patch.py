@@ -17,7 +17,8 @@ from functools import partial
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.patch import patch_generic
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation, bound_op)
+                                                          Operation, bound_op,
+                                                          dir_aware_stat)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
@@ -26,8 +27,18 @@ from mirage.types import PathSpec
 async def patch(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                 texts: list[str],
                 opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
-    return await patch_generic(paths, list(texts), opts,
-                               bound_op(ops.read_bytes, accessor, opts.index),
+    stat = dir_aware_stat(ops, accessor, opts)
+    read = bound_op(ops.read_bytes, accessor, opts.index)
+
+    async def read_file(path: PathSpec) -> bytes:
+        # Stat first, as GNU patch does: a directory is refused before it
+        # is read, because a store whose read of a collection answers a
+        # page (nextcloud) never raises for one.
+        await stat(path)
+        data: bytes = await read(path)
+        return data
+
+    return await patch_generic(paths, list(texts), opts, read_file,
                                partial(ops.require(Operation.WRITE), accessor),
                                ops.is_mounted(accessor))
 

@@ -38,6 +38,59 @@ async def ws_cpython():
     await workspace.close()
 
 
+GUARDED = {
+    "commands": {
+        "deny": [{
+            "reason": "protected",
+            "commands": {
+                "python3": ["/secret.py"]
+            }
+        }]
+    }
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, shown", [
+    ("python3 secret.py", "secret.py"),
+    ("python3 ./secret.py", "./secret.py"),
+    ("python3 -u -- secret.py", "secret.py"),
+])
+async def test_a_rule_on_the_script_reads_it_however_it_is_typed(line, shown):
+    ws = Workspace({"/": RAMVFS()},
+                   mode=MountMode.EXEC,
+                   profiles={"guarded": GUARDED})
+    try:
+        await ws.shell("printf 'print(1)\\n' > /secret.py")
+        agent = await ws.session("agent", profile="guarded")
+        io = await agent.shell(line)
+        assert io.exit_code == 1
+        assert await io.stdout_str() == ""
+        assert await io.stderr_str() == f"python3: {shown}: protected\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line", [
+    "python3 s.py secret.py",
+    "python3 -c 'print(argv[1:])' secret.py",
+    "echo 'print(argv[1:])' | python3 - secret.py",
+])
+async def test_the_words_after_the_script_stay_its_argv(line):
+    ws = Workspace({"/": RAMVFS()},
+                   mode=MountMode.EXEC,
+                   profiles={"guarded": GUARDED})
+    try:
+        await ws.shell("printf 'print(argv[1:])\\n' > /s.py")
+        agent = await ws.session("agent", profile="guarded")
+        io = await agent.shell(line)
+        assert io.exit_code == 0
+        assert await io.stdout_str() == "['secret.py']\n"
+    finally:
+        await ws.close()
+
+
 @pytest.mark.asyncio
 async def test_dash_u_before_a_script_is_a_flag_not_the_script(ws):
     await ws.shell("printf 'print(42)\\n' > /s.py")

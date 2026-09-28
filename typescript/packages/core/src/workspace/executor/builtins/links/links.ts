@@ -26,7 +26,7 @@ import {
   isErofs,
   isFsError,
 } from '../../../../utils/errors.ts'
-import { CycleError, gnuBasename } from '../../../../utils/path.ts'
+import { CycleError, gnuBasename, posixNormpath } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
@@ -90,9 +90,9 @@ export function followPaths(
       continue
     }
     const last = followLast || (slashFollows && item.rawPath.endsWith('/'))
-    let virtual: string
+    let followed: string
     try {
-      virtual = last ? namespace.follow(item.virtual) : followParent(namespace, item.virtual)
+      followed = last ? namespace.follow(item.virtual) : followParent(namespace, item.virtual)
     } catch (err) {
       if (!(err instanceof CycleError)) throw err
       out.push(
@@ -109,6 +109,12 @@ export function followPaths(
       )
       continue
     }
+    // A relative target climbs from the link's own directory, which is a real
+    // one, so its `..` collapses the way resolveLink collapses it; left in,
+    // the path no longer matched the word that spelled it and the operand lost
+    // its typed name (`wc -c sub/al` printed `/data/sub/../a`).
+    let virtual = posixNormpath(followed)
+    if (followed.endsWith('/') && virtual !== '/') virtual += '/'
     if (virtual === item.virtual) {
       out.push(item)
       continue

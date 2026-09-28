@@ -53,6 +53,7 @@ import {
   isFsError,
   isMissingPath,
 } from '../../../utils/errors.ts'
+import { typedLink } from '../utils/links.ts'
 import { absentDestStrerror, descendantPath, nearestAncestor } from '../utils/paths.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
@@ -222,14 +223,6 @@ export function parseFlags(fl: FlagView): CpFlags {
     noTargetDir,
     dereference,
   })
-}
-
-// The link standing at the name an operand was typed as, its own row: the
-// router follows an operand through a link before cp runs, which leaves
-// `virtual` at the target and the typed name in `rawPath`. Mirrors Python's
-// typed_link.
-export function typedLink(copies: CopyLinks, path: PathSpec): FileStat | null {
-  return copies.links.statAt(resolvePath(path.rawPath || path.virtual, copies.cwd))
 }
 
 // What stands at a path, asked through the door; null where nothing does,
@@ -1012,7 +1005,9 @@ export async function cpGeneric(
   const errors: string[] = []
   for (const [src, target] of copyTargets(sources, dst, dstIsDir, dstExists, dstErr)) {
     const link =
-      copies !== undefined && flags.dereference === 'never' ? typedLink(copies, src) : null
+      copies !== undefined && flags.dereference === 'never'
+        ? typedLink(copies.links, src, copies.cwd)
+        : null
     if (copies !== undefined && link !== null) {
       // The router followed the operand, but the policy copies the link
       // itself, whatever it leads to (coreutils 9.7). Onto a destination that

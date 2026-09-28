@@ -552,3 +552,20 @@ async def test_mv_link_into_loop_reports_destination_and_keeps_source(source):
     assert result.stderr == (b"mv: cannot stat 'loop/child': "
                              b"Too many levels of symbolic links\n")
     assert ws.namespace.is_link("/data/src")
+
+
+@pytest.mark.asyncio
+async def test_follow_paths_collapses_a_relative_target_and_keeps_the_name():
+    # `../a` climbs from the link's own directory; left uncollapsed the
+    # followed path no longer matched the word that spelled it, and every
+    # command named the operand `/data/sub/../a`.
+    ws = _ws()
+    await ws.shell("mkdir -p /data/sub && printf 'x\\n' > /data/a && "
+                   "ln -s ../a /data/sub/al && ln -s ../nowhere /data/sub/d")
+    followed = follow_paths(ws.namespace,
+                            [PathSpec.from_str_path("/data/sub/al")])
+    assert followed[0].virtual == "/data/a"
+    r = await ws.shell("cd /data && wc -c sub/al && cat sub/d")
+    assert await r.materialize_stdout() == b"2 sub/al\n"
+    assert await r.materialize_stderr() == (
+        b"cat: sub/d: No such file or directory\n")

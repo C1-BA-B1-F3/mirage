@@ -14,17 +14,25 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { fsStrerror, isEisdir, isFsError } from '../../../utils/errors.ts'
-import { pathExists } from '../utils/copy.ts'
+import { fsStrerror, isFsError } from '../../../utils/errors.ts'
 import type { StatFn } from './archive/walk.ts'
 import { mountedPath } from '../../../utils/key_prefix.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import { gzip } from '../../../utils/compress.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
+import { linkDoor } from '../utils/links.ts'
 import { resolveSource, stdinStream } from '../utils/stream.ts'
 import { GZIP_SUFFIX } from '../constants.ts'
-import { decompressInputs, gzipSuffix, suffixRefusal } from './decompress.ts'
+import {
+  besideLink,
+  decompressInputs,
+  gzipSuffix,
+  openGzipInput,
+  outputTaken,
+  replaceOutput,
+  suffixRefusal,
+} from './decompress.ts'
 
 function concat(chunks: Uint8Array[]): Uint8Array {
   let total = 0
@@ -54,6 +62,8 @@ export async function gzipGeneric(
   const quiet = fl.asBool('q')
   const suffix = fl.asStr('S') ?? GZIP_SUFFIX
 
+  const door = linkDoor(opts)
+
   const refused = suffixRefusal(suffix)
   if (refused !== null) return [null, refused]
   if (decompress)
@@ -67,6 +77,7 @@ export async function gzipGeneric(
       write,
       unlink,
       ...(stat !== undefined ? { stat } : {}),
+      door,
     })
   if (paths.length === 0) {
     const result: ByteSource = await gzip(await materialize(resolveSource(opts.stdin)))
@@ -77,29 +88,42 @@ export async function gzipGeneric(
   const stdout: Uint8Array[] = []
   const lines: string[] = []
   let exitCode = 0
+  const report = (line: string, code: number, warning: boolean): void => {
+    if (!(warning && quiet)) lines.push(line.replace(/\n$/, ''))
+    if (exitCode !== 1) exitCode = code
+  }
   for (const p of paths) {
     const inPlace = !(stdoutMode || p.rawPath === '-')
-    // An input gzip cannot read is reported and skipped, and the run goes on
+    // An input gzip cannot open is reported and skipped, and the run goes on
     // to the next operand (a directory is a warning, exit 2, silent under
-    // -q); so is an input that already has a suffix, without -f and with no
-    // exit code of its own, an output already there without -f, and a
+    // -q, and a link without -c or -f is ELOOP); so is an input that already
+    // has a suffix, without -f and with no exit code of its own, an output
+    // already there without -f, a link standing there included, and a
     // replace -f is refused. An output it cannot create is fatal: gzip's
     // write_error leads with a newline and exits, leaving later operands
     // untouched. Pinned against gzip 1.13 (debian:stable-slim). Mirrors
     // gzip.py.
     let raw: Uint8Array
-    try {
-      raw = await materialize(inPlace ? stream(p) : read(p))
-    } catch (err) {
-      if (isEisdir(err)) {
-        if (!quiet) lines.push(`gzip: ${p.rawPath} is a directory -- ignored`)
-        if (exitCode === 0) exitCode = 2
+    let link: string | null = null
+    if (p.rawPath === '-') {
+      try {
+        raw = await materialize(read(p))
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        report(`gzip: ${p.rawPath}: ${String(fsStrerror(err))}`, 1, false)
         continue
       }
-      if (!isFsError(err)) throw err
-      lines.push(`gzip: ${p.rawPath}: ${String(fsStrerror(err))}`)
-      exitCode = 1
-      continue
+    } else {
+      const found = await openGzipInput(p, inPlace ? stream : read, report, {
+        suffix,
+        decompress: false,
+        follow: stdoutMode || force,
+        ...(stat !== undefined ? { stat } : {}),
+        door,
+      })
+      if (found === null) continue
+      raw = await materialize(found.stream)
+      link = found.link
     }
     const known = inPlace ? gzipSuffix(p.rawPath, suffix) : null
     if (known !== null && !force) {
@@ -112,15 +136,15 @@ export async function gzipGeneric(
       continue
     }
     const outPath = p.mountPath + suffix
-    const out = mountedPath(p, outPath)
-    const existed = stat !== undefined && (await pathExists(stat, out))
+    const out = link === null ? mountedPath(p, outPath) : besideLink(link, p.rawPath + suffix)
+    const existed = await outputTaken(out, stat, door)
     if (existed && !force) {
       lines.push(`gzip: ${p.rawPath}${suffix} already exists;\tnot overwritten`)
       if (exitCode === 0) exitCode = 2
       continue
     }
     try {
-      await write(out, data)
+      await replaceOutput(out, data, write, door, link !== null)
     } catch (err) {
       if (!isFsError(err)) throw err
       lines.push(`${existed ? '' : '\n'}gzip: ${p.rawPath}${suffix}: ${String(fsStrerror(err))}`)
@@ -128,8 +152,11 @@ export async function gzipGeneric(
       if (existed) continue
       break
     }
-    writes[outPath] = data
-    if (!keep) await unlink(p)
+    if (link === null) writes[outPath] = data
+    if (!keep) {
+      if (link === null || door === null) await unlink(p)
+      else await door.unlink(link)
+    }
   }
   const stderr = lines.length > 0 ? new TextEncoder().encode(lines.join('\n') + '\n') : null
   return [

@@ -113,3 +113,33 @@ async def test_a_dash_goes_to_stdout_while_files_compress_in_place():
     r = await ws.shell("cd /data && gzip - a.txt | gzip -dc; ls",
                        stdin=b"hi\n")
     assert await r.materialize_stdout() == b"hi\na.txt.gz\n"
+
+
+async def _with_link(line: str) -> tuple[Workspace, str, int]:
+    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
+                   mode=MountMode.WRITE)
+    await ws.shell("cd /data && printf 'hello\\n' > a.txt && ln -s a.txt al")
+    r = await ws.shell(f"cd /data && {line}")
+    return ws, (await r.materialize_stderr()).decode(), r.exit_code
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line", ["gzip al", "gzip -k al", "gzip -q al"])
+async def test_compressing_in_place_refuses_a_link(line: str):
+    ws, stderr, code = await _with_link(line)
+    assert (stderr, code) == ("gzip: al: Too many levels of symbolic links\n",
+                              1)
+    r = await ws.shell("cd /data && ls -F")
+    assert await r.materialize_stdout() == b"a.txt\nal@\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,listing", [
+    ("gzip -f al", b"a.txt\nal.gz\n"),
+    ("gzip -kf al", b"a.txt\nal@\nal.gz\n"),
+])
+async def test_f_compresses_beside_the_link(line: str, listing: bytes):
+    ws, stderr, code = await _with_link(line)
+    r = await ws.shell("cd /data && ls -F && gunzip -c al.gz")
+    assert (stderr, code) == ("", 0)
+    assert await r.materialize_stdout() == listing + b"hello\n"

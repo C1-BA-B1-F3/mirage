@@ -20,8 +20,10 @@ from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
 from mirage.types import (ContentType, CopyDeref, FileStat, FileType,
-                          NativeCopy, PathSpec, PrimitiveCopy)
+                          MountMode, NativeCopy, PathSpec, PrimitiveCopy)
 from mirage.utils.errors import enotsup
+from mirage.vfs.ram import RAMVFS
+from mirage.workspace import Workspace
 
 
 def _spec(path: str) -> PathSpec:
@@ -924,3 +926,17 @@ def test_the_last_link_option_wins_and_recursion_defaults_to_never(
     # last one wins; with none, a recursive copy copies links as links and
     # any other copy follows them.
     assert _cp_flags(*argv).dereference is deref
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flag", ["-P", "-d"])
+async def test_a_link_reached_through_a_linked_directory_copies_as_a_link(
+        flag):
+    # The table keys a link by its resolved directory, so `dl/al` stands
+    # at `dir/al`; coreutils 9.7 copies the link itself.
+    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
+                   mode=MountMode.WRITE)
+    await ws.shell("cd /data && mkdir dir w && printf 'x\\n' > a.txt && "
+                   "ln -s ../a.txt dir/al && ln -s dir dl")
+    r = await ws.shell(f"cd /data && cp {flag} dl/al w/x && ls -F w")
+    assert (r.exit_code, await r.materialize_stdout()) == (0, b"x@\n")

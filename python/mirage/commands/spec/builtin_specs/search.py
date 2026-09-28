@@ -359,6 +359,10 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-m", type="str"),
             Option(short="-o"),
             Option(short="-q"),
+            # An accepted no-op: zgrep hands -s to grep, which reads a
+            # pipe and has no file to complain about, and gzip's own
+            # lines are gzip's (gzip 1.13).
+            Option(short="-s"),
             Option(short="-w"),
         ),
         positional=(Operand(type="str", provided_by=("-e", "-f")), ),

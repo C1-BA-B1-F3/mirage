@@ -233,3 +233,40 @@ describe('zgrep invalid extended expressions (GNU grep 3.11)', () => {
     }
   })
 })
+
+describe('zgrep opens each operand as gzip -cdfq does', () => {
+  // /data holds a.txt, x.gz (a.txt compressed), a directory and a link to
+  // x.gz, as zgrep 1.13 was pinned. Mirrors python's
+  // test_zgrep_opens_each_operand_as_gzip_cdfq_does.
+  it.each([
+    // gzip retries a missing name with each suffix, a link included.
+    ['zgrep hello x', 'hello\n', '', 0],
+    ['zgrep hello xl', 'hello\n', '', 0],
+    ['zgrep -l hello x', 'x\n', '', 0],
+    ['zgrep hello nope', '', 'gzip: nope.gz: No such file or directory\n', 2],
+    ["zgrep hello ''", '', 'gzip: .gz: No such file or directory\n', 2],
+    // A failed open is empty input to grep, and the run goes on.
+    [
+      'zgrep hello nope x a.txt',
+      'x:hello\na.txt:hello\n',
+      'gzip: nope.gz: No such file or directory\n',
+      2,
+    ],
+    ['zgrep -c hello nope x', 'nope:0\nx:1\n', 'gzip: nope.gz: No such file or directory\n', 2],
+    ['zgrep -L hello nope', 'nope\n', 'gzip: nope.gz: No such file or directory\n', 2],
+    // gzip -q keeps a directory's warning to itself.
+    ['zgrep hello dir', '', '', 1],
+    ['zgrep -c hello dir a.txt', 'dir:0\na.txt:1\n', '', 0],
+    ['zgrep -L hello dir', 'dir\n', '', 1],
+    ['zgrep hello a.txt/x', '', 'gzip: a.txt/x: Not a directory\n', 2],
+    ['zgrep hello x.gz/', '', 'gzip: x.gz/: Not a directory\n', 2],
+    ['zgrep -s hello nope', '', 'gzip: nope.gz: No such file or directory\n', 2],
+  ] as const)('%s', async (line, out, err, code) => {
+    const text = ENC.encode('hello\nworld\n')
+    const r = await shell(`mkdir /data/dir && cd /data && ln -s x.gz xl.gz && ${line}`, null, {
+      '/data/a.txt': text,
+      '/data/x.gz': await gzip(text),
+    })
+    expect(r).toEqual([out, err, code])
+  })
+})

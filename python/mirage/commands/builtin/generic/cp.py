@@ -21,6 +21,7 @@ from mirage.commands.builtin.utils.copy import (STAT_REFUSALS,
                                                 backend_key_default,
                                                 copy_targets, is_directory,
                                                 path_exists)
+from mirage.commands.builtin.utils.links import typed_link
 from mirage.commands.builtin.utils.paths import (absent_dest_strerror,
                                                  descendant_path,
                                                  nearest_ancestor)
@@ -239,20 +240,6 @@ def parse_flags(fl: FlagView) -> CpFlags:
         no_target_dir=no_target,
         dereference=dereference,
     )
-
-
-def typed_link(copies: CopyLinks, path: PathSpec) -> FileStat | None:
-    """The link standing at the name an operand was typed as, its own row.
-
-    The router follows an operand through a link before cp runs, which
-    leaves ``virtual`` at the target and the typed name in ``raw_path``.
-
-    Args:
-        copies (CopyLinks): the namespace's links and door.
-        path (PathSpec): the operand.
-    """
-    return copies.links.stat_at(
-        resolve_path(path.raw_path or path.virtual, copies.cwd))
 
 
 async def _entry_at(dispatch: DispatchFn, spec: PathSpec) -> FileStat | None:
@@ -1139,7 +1126,7 @@ async def cp(
     errors: list[str] = []
     for src, target in copy_targets(sources, dst, dst_is_dir, dst_exists,
                                     dst_err):
-        link = (typed_link(copies, src) if copies is not None
+        link = (typed_link(copies.links, src, copies.cwd) if copies is not None
                 and flags.dereference is CopyDeref.NEVER else None)
         if copies is not None and link is not None:
             # The router followed the operand, but the policy copies the

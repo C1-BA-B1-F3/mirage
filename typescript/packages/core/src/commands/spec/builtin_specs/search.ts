@@ -368,6 +368,10 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-m', type: 'str' }),
       new Option({ short: '-o' }),
       new Option({ short: '-q' }),
+      // An accepted no-op: zgrep hands -s to grep, which reads a pipe and
+      // has no file to complain about, and gzip's own lines are gzip's
+      // (gzip 1.13).
+      new Option({ short: '-s' }),
       new Option({ short: '-w' }),
     ],
     positional: [new Operand({ type: 'str', providedBy: ['-e', '-f'] })],

@@ -117,3 +117,97 @@ describe('gunzip on a damaged member', () => {
     }
   })
 })
+
+// Run `line` in /data beside t.gz and a link tl.gz naming it, with a
+// read-only /ro holding f.gz, as gzip 1.13 was pinned.
+async function linked(line: string): Promise<[Workspace, string, string, number]> {
+  const ro = new RAMVFS()
+  const seed = new Workspace(
+    { '/ro/': ro },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  await seed.shell('tee /ro/f.gz > /dev/null', {
+    stdin: await gzip(new TextEncoder().encode('ro\n')),
+  })
+  const ws = new Workspace(
+    { '/data/': new RAMVFS(), '/ro/': [ro, MountMode.READ] },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  await ws.shell('tee /data/t.gz > /dev/null', {
+    stdin: await gzip(new TextEncoder().encode('hello\n')),
+  })
+  await ws.shell('mkdir /data/dir && cd /data && ln -s t.gz tl.gz')
+  const io = await ws.shell(`cd /data && ${line}`)
+  const dec = new TextDecoder()
+  return [ws, dec.decode(io.stdout), dec.decode(io.stderr), io.exitCode]
+}
+
+async function out(ws: Workspace, line: string): Promise<string> {
+  return new TextDecoder().decode((await ws.shell(line)).stdout)
+}
+
+describe('gunzip on a link in place (O_NOFOLLOW unless -c or -f)', () => {
+  it.each([
+    ['gunzip tl.gz', 'gzip: tl.gz: Too many levels of symbolic links\n'],
+    ['gunzip -k -q tl.gz', 'gzip: tl.gz: Too many levels of symbolic links\n'],
+    ['gzip -d tl.gz', 'gzip: tl.gz: Too many levels of symbolic links\n'],
+    ['ln -s nowhere d.gz && gunzip d.gz', 'gzip: d.gz: Too many levels of symbolic links\n'],
+    ['ln -s dir dl && gunzip dl', 'gzip: dl: Too many levels of symbolic links\n'],
+    ['ln -s t.gz x.gz && gunzip x', 'gzip: x.gz: Too many levels of symbolic links\n'],
+  ])('%s refuses the link', async (line, err) => {
+    const [ws, , stderr, code] = await linked(line)
+    expect([stderr, code]).toEqual([err, 1])
+    expect(await out(ws, 'ls /data')).toContain('t.gz')
+    await ws.close()
+  })
+
+  it('decodes beside the link under -f and removes the link', async () => {
+    const [ws, , stderr, code] = await linked('gunzip -f tl.gz')
+    expect([stderr, code]).toEqual(['', 0])
+    expect(await out(ws, 'cd /data && ls -F && cat tl')).toBe('dir/\nt.gz\ntl\nhello\n')
+    await ws.close()
+  })
+
+  it('keeps the link under -k -f', async () => {
+    const [ws, , , code] = await linked('gunzip -kf tl.gz')
+    expect(code).toBe(0)
+    expect(await out(ws, 'cd /data && ls -F')).toBe('dir/\nt.gz\ntl\ntl.gz@\n')
+    await ws.close()
+  })
+
+  it('follows -c and a retried link through the door', async () => {
+    const [ws, stdout, , code] = await linked('ln -s t.gz x.gz && gunzip -c tl.gz x')
+    expect([stdout, code]).toEqual(['hello\nhello\n', 0])
+    await ws.close()
+  })
+
+  it('writes beside a link into a read-only mount', async () => {
+    const [ws, , stderr, code] = await linked('ln -s /ro/f.gz rl.gz && gunzip -f rl')
+    expect([stderr, code]).toEqual(['', 0])
+    expect(await out(ws, 'cat /data/rl && ls /ro')).toBe('ro\nf.gz\n')
+    await ws.close()
+  })
+
+  it('counts a link at the output name as an output already there', async () => {
+    const [ws, , stderr, code] = await linked('ln -s dir t && gunzip t.gz')
+    expect([stderr, code]).toEqual(['gzip: t already exists;\tnot overwritten\n', 2])
+    await ws.close()
+    const [forced, , , forcedCode] = await linked('ln -s dir t && gunzip -f t.gz')
+    expect(forcedCode).toBe(0)
+    expect(await out(forced, 'cd /data && ls -F && cat t')).toBe('dir/\nt\ntl.gz@\nhello\n')
+    await forced.close()
+  })
+
+  it('needs a name typed with a slash to be a directory', async () => {
+    const [ws, , stderr, code] = await linked('gunzip -c t.gz/')
+    expect([stderr, code]).toEqual(['gzip: t.gz/: Not a directory\n', 1])
+    await ws.close()
+  })
+
+  it('finds a link an earlier operand removed missing at its turn', async () => {
+    const [ws, , stderr, code] = await linked('gunzip -f tl.gz tl.gz')
+    expect([stderr, code]).toEqual(['gzip: tl.gz: No such file or directory\n', 1])
+    expect(await out(ws, 'cd /data && ls')).toBe('dir\nt.gz\ntl\n')
+    await ws.close()
+  })
+})

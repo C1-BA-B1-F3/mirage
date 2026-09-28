@@ -1,5 +1,5 @@
-from mirage.commands.builtin.grep_select import (NO_FILTERS, FileGlob,
-                                                 WalkFilters, file_admitted,
+from mirage.commands.builtin.grep_select import (FileGlob, WalkFilters,
+                                                 file_admitted,
                                                  parse_file_globs)
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -28,7 +28,7 @@ def test_file_admitted_no_match_default_follows_the_first_rule():
 
 
 def test_file_admitted_empty_rules_admit_everything():
-    assert file_admitted("/d/a.bin", NO_FILTERS)
+    assert file_admitted("/d/a.bin", WalkFilters())
 
 
 def test_parse_file_globs_reads_dests_in_typed_order():

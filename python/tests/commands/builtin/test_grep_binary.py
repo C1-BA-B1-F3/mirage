@@ -8,7 +8,6 @@ import pytest
 from mirage.commands.builtin import grep_offsets
 from mirage.commands.builtin.generic.grep import parse_flags
 from mirage.commands.builtin.grep_binary import PROBE_BLOCK_BYTES, grep_input
-from mirage.commands.builtin.grep_scan import grep_stream
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -663,8 +662,7 @@ async def test_only_matching_encodes_at_most_one_prefix_pass(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scanner", ["binary", "stream"])
-async def test_cancellation_during_single_line_matches(monkeypatch, scanner):
+async def test_cancellation_during_single_line_matches(monkeypatch):
     data = b"needle " * 100000 + b"\n"
     closed = False
     calls = 0
@@ -692,12 +690,8 @@ async def test_cancellation_during_single_line_matches(monkeypatch, scanner):
             "o": True,
             "byte_offset": True
         }, spec=SPECS["grep"]), False)
-    scanned = (grep_input(source(), re.compile("needle"), flags, "large.json",
-                          False, IOResult())
-               if scanner == "binary" else grep_stream(source(),
-                                                       re.compile("needle"),
-                                                       only_matching=True,
-                                                       byte_offsets=True))
+    scanned = grep_input(source(), re.compile("needle"), flags, "large.json",
+                         False, IOResult())
     with pytest.raises(asyncio.CancelledError):
         async for _ in scanned:
             pass

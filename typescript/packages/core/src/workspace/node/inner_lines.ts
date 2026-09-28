@@ -136,7 +136,9 @@ function envInner(args: readonly Word[]): InnerLine[] {
 // line fails its own option parse.
 function specOperands(spec: 'timeout' | 'xargs', args: readonly Word[]): Word[] | null {
   const parsed = parseShellOptions(SHELL_SPECS[spec], args.map(wordValue))
-  if (parsed.invalid !== null || parsed.needsValue !== null) return null
+  if (parsed.invalid !== null || parsed.needsValue !== null || parsed.unexpectedValue !== null) {
+    return null
+  }
   return tail(args, parsed.operands.length)
 }
 

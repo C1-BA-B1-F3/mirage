@@ -22,7 +22,9 @@ from typing import Any
 from mirage.commands.config import version_line
 from mirage.commands.spec.help import render_help
 from mirage.commands.spec.shell import SHELL_SPECS, parse_shell_options
-from mirage.commands.spec.usage import (missing_value_error,
+from mirage.commands.spec.usage import (ambiguous_option_error,
+                                        missing_value_error,
+                                        unexpected_value_error,
                                         unknown_option_error, usage_hint)
 from mirage.io import IOResult
 from mirage.io.stream import async_chain, materialize, yield_bytes
@@ -34,6 +36,9 @@ from mirage.workspace.types import ExecutionNode
 
 _SYNOPSIS = "xargs [OPTION]... COMMAND [INITIAL-ARGS]..."
 _PROCS_MAX = 2147483647
+_UNSUPPORTED = frozenset({
+    "a", "E", "e", "o", "p", "s", "t", "show-limits", "x", "process-slot-var"
+})
 _BLANKS = frozenset(" \t")
 _SPACES = frozenset(" \t\n\v\f\r")
 _QUOTES = {"'": "single", '"': "double"}
@@ -282,7 +287,9 @@ async def handle_xargs(
     input line takes the place of the string in them. Options act in
     the order given, as GNU's getopt loop reads them: -I, -L and -n
     cancel each other with GNU's warning, and --help or --version
-    answers where it stands.
+    answers where it stands. The spec declares every option GNU's table
+    has, so an abbreviated long option resolves exactly as GNU's does;
+    the ones mirage does not implement are refused as unsupported.
 
     GNU xargs execs the command directly, so every input word must
     reach it as exactly one argv token. The inner line is built with
@@ -316,6 +323,10 @@ async def handle_xargs(
                     "the delimiter must be either a single character or an "
                     "escape sequence starting with \\.\n")
             delim = value.replace("\\n", "\n").replace("\\t", "\t")
+        if name in _UNSUPPORTED:
+            dashes = "--" if len(name) > 1 else "-"
+            return _refuse(warnings +
+                           f"xargs: unsupported option -- '{dashes}{name}'\n")
         if name in ("I", "i"):
             if max_args:
                 warnings += _exclusive("--replace/-I/-i", "--max-args")
@@ -353,7 +364,12 @@ async def handle_xargs(
             warnings += _exclusive("--max-args/-n", "--replace")
         replace, max_args = None, count
     if parse.invalid is not None:
-        stderr, code = unknown_option_error("xargs", parse.invalid)
+        stderr, code = (ambiguous_option_error(
+            "xargs", parse.invalid, parse.candidates) if parse.candidates else
+                        unknown_option_error("xargs", parse.invalid))
+        return _refuse(warnings.encode() + stderr, code)
+    if parse.unexpected_value is not None:
+        stderr, code = unexpected_value_error("xargs", parse.unexpected_value)
         return _refuse(warnings.encode() + stderr, code)
     if parse.needs_value is not None:
         stderr, code = missing_value_error("xargs", parse.needs_value)

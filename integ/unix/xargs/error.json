@@ -222,6 +222,196 @@
         "n0",
         "help"
       ]
+    },
+    {
+      "id": "xargs_ambiguous_long_opt",
+      "seq": 1300060,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo a | xargs --max 1 echo 2>&1; echo a | xargs --ver 2>&1; echo a | xargs --n echo 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: option '--max' is ambiguous; possibilities: '--max-lines' '--max-args' '--max-chars' '--max-procs'\nTry 'xargs --help' for more information.\nxargs: option '--ver' is ambiguous; possibilities: '--verbose' '--version'\nTry 'xargs --help' for more information.\nxargs: option '--n' is ambiguous; possibilities: '--null' '--no-run-if-empty'\nTry 'xargs --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "max",
+        "ver",
+        "n"
+      ]
+    },
+    {
+      "id": "xargs_ambiguous_empty_name",
+      "seq": 1300061,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo a | xargs --=x echo 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: option '--=x' is ambiguous; possibilities: '--null' '--arg-file' '--delimiter' '--eof' '--replace' '--max-lines' '--max-args' '--open-tty' '--interactive' '--no-run-if-empty' '--max-chars' '--verbose' '--show-limits' '--exit' '--max-procs' '--process-slot-var' '--version' '--help'\nTry 'xargs --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "="
+      ]
+    },
+    {
+      "id": "xargs_no_argument_long_opt_value",
+      "seq": 1300062,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo a | xargs --null=x echo 2>&1; echo a | xargs --nu=x echo 2>&1; echo a | xargs --help=x 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: option '--null' doesn't allow an argument\nTry 'xargs --help' for more information.\nxargs: option '--null' doesn't allow an argument\nTry 'xargs --help' for more information.\nxargs: option '--help' doesn't allow an argument\nTry 'xargs --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "null",
+        "help"
+      ]
+    },
+    {
+      "id": "xargs_missing_value_abbreviated",
+      "seq": 1300063,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo a | xargs --max-p 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: option '--max-procs' requires an argument\nTry 'xargs --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "max-p"
+      ]
+    },
+    {
+      "id": "xargs_reserved_options_unsupported",
+      "seq": 1300064,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo a | xargs -t echo 2>&1; echo a | xargs --verb echo 2>&1; echo a | xargs --show echo 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: unsupported option -- '-t'\nxargs: unsupported option -- '-t'\nxargs: unsupported option -- '--show-limits'\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "t",
+        "verb",
+        "show"
+      ]
     }
   ]
 }

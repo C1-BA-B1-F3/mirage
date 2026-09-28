@@ -1996,7 +1996,66 @@ describe('handleXargs', () => {
     expect(shell.lines).toEqual([])
   })
 
-  it.each([[['--help']], [['--help', '-q']], [['-r', '--help', 'echo']]])(
+  it.each([
+    [
+      ['--max', '1', 'echo'],
+      "xargs: option '--max' is ambiguous; possibilities: '--max-lines' '--max-args' '--max-chars' '--max-procs'\n",
+    ],
+    [['--ver'], "xargs: option '--ver' is ambiguous; possibilities: '--verbose' '--version'\n"],
+    [['--nu=x', 'echo'], "xargs: option '--null' doesn't allow an argument\n"],
+    [['--help=x'], "xargs: option '--help' doesn't allow an argument\n"],
+    [['--max-p'], "xargs: option '--max-procs' requires an argument\n"],
+  ])('long option refusals as getopt_long words them (%j)', async (args, message) => {
+    const shell = fakeShell()
+    const [, io] = await handleXargs(shell.fn, args, session, enc('x'))
+    expect(io.exitCode).toBe(1)
+    expect(decode(await materialize(io.stderr))).toBe(message + TRY)
+    expect(shell.lines).toEqual([])
+  })
+
+  it.each<[string[], string[]]>([
+    [
+      ['--max-a=1', 'echo'],
+      ['echo a', 'echo b'],
+    ],
+    [
+      ['--max-a', '1', 'echo'],
+      ['echo a', 'echo b'],
+    ],
+    [['--rep', 'echo', '[{}]'], ["echo '[a b]'"]],
+    [['--rep=Z', 'echo', '[Z]'], ["echo '[a b]'"]],
+    [['--max-l', 'echo'], ['echo a b']],
+    [
+      ['--max-p=2', '-n1', 'echo'],
+      ['echo a', 'echo b'],
+    ],
+  ])('abbreviated long options resolve (%j)', async (args, lines) => {
+    const shell = fakeShell()
+    const [, io] = await handleXargs(shell.fn, args, session, enc('a b\n'))
+    expect(shell.lines).toEqual(lines)
+    expect(io.exitCode).toBe(0)
+  })
+
+  it.each([
+    [['-t', 'echo'], '-t'],
+    [['--verb', 'echo'], '-t'],
+    [['-x', 'echo'], '-x'],
+    [['-s', '100', 'echo'], '-s'],
+    [['-E', 'END', 'echo'], '-E'],
+    [['--eof', 'echo'], '-e'],
+    [['--show', 'echo'], '--show-limits'],
+    [['--process-slot-var=S', 'echo'], '--process-slot-var'],
+  ])('reserved GNU options are unsupported (%j)', async (args, spelling) => {
+    const shell = fakeShell()
+    const [, io] = await handleXargs(shell.fn, args, session, enc('a\n'))
+    expect(io.exitCode).toBe(1)
+    expect(decode(await materialize(io.stderr))).toBe(
+      `xargs: unsupported option -- '${spelling}'\n`,
+    )
+    expect(shell.lines).toEqual([])
+  })
+
+  it.each([[['--help']], [['--help', '-q']], [['-r', '--help', 'echo']], [['--hel']], [['--h']]])(
     '--help prints the page where it stands (%j)',
     async (args) => {
       const shell = fakeShell()
@@ -2410,7 +2469,16 @@ describe('handleTimeout', () => {
   it.each([
     [['-s'], "timeout: option requires an argument -- 's'\n"],
     [['--signal'], "timeout: option '--signal' requires an argument\n"],
-  ])('a missing option value exits 125 (%j)', async (args, message) => {
+    [['--si'], "timeout: option '--signal' requires an argument\n"],
+    [
+      ['--=x', '1', 'true'],
+      "timeout: option '--=x' is ambiguous; possibilities: '--signal' '--kill-after' '--preserve-status'\n",
+    ],
+    [
+      ['--preserve-status=x', '1', 'true'],
+      "timeout: option '--preserve-status' doesn't allow an argument\n",
+    ],
+  ])('option refusals exit 125 (%j)', async (args, message) => {
     const shell = fakeShell()
     const [, io] = await handleTimeout(shell.fn, args, session)
     expect(io.exitCode).toBe(125)

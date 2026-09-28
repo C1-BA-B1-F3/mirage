@@ -86,8 +86,14 @@ async def test_missing_operand_exits_125():
 @pytest.mark.parametrize("args, message", [
     (["-s"], b"timeout: option requires an argument -- 's'\n"),
     (["--signal"], b"timeout: option '--signal' requires an argument\n"),
+    (["--si"], b"timeout: option '--signal' requires an argument\n"),
+    (["--=x", "1", "true"
+      ], b"timeout: option '--=x' is ambiguous; possibilities: '--signal' "
+     b"'--kill-after' '--preserve-status'\n"),
+    (["--preserve-status=x", "1", "true"
+      ], b"timeout: option '--preserve-status' doesn't allow an argument\n"),
 ])
-async def test_missing_option_value_exits_125(args, message):
+async def test_option_refusals_exit_125(args, message):
     shell = FakeShell()
     _, io, _ = await handle_timeout(shell, args, make_session())
     assert io.exit_code == 125

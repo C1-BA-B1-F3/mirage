@@ -123,8 +123,16 @@ export async function handleTimeout(
 ): Promise<Result> {
   const parse = parseShellOptions(SHELL_SPECS.timeout, args)
   if (parse.invalid !== null) {
+    if (parse.candidates.length > 0) {
+      const listed = parse.candidates.map((c) => `'${c}'`).join(' ')
+      return usageError(`option '${parse.invalid}' is ambiguous; possibilities: ${listed}`)
+    }
     if (parse.invalid.startsWith('--')) return usageError(`unrecognized option '${parse.invalid}'`)
     return usageError(`invalid option -- '${parse.invalid}'`)
+  }
+  if (parse.unexpectedValue !== null) {
+    const option = parse.unexpectedValue.split('=', 1)[0] ?? parse.unexpectedValue
+    return usageError(`option '${option}' doesn't allow an argument`)
   }
   if (parse.needsValue !== null) {
     if (parse.needsValue.startsWith('--')) {

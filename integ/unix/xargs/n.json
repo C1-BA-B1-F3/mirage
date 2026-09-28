@@ -212,6 +212,43 @@
         "stdout": "[a b]\n[c]\n",
         "stderr": "xargs: warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value\n"
       }
+    },
+    {
+      "id": "xargs_max_args_abbreviated",
+      "seq": 1300051,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a b\\n' | xargs --max-a=1 echo; printf 'c d\\n' | xargs --max-a 1 echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\nc\nd\n",
+        "stderr": ""
+      },
+      "flags": [
+        "max-a"
+      ]
     }
   ]
 }

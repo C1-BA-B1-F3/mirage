@@ -138,7 +138,8 @@ def _spec_operands(name: str, args: Sequence[Word]) -> tuple[Word, ...] | None:
     """The operands of a shell builtin with a spec, as Words; None
     when the line fails its own option parse."""
     parsed = parse_shell_options(SHELL_SPECS[name], [w.value for w in args])
-    if parsed.invalid is not None or parsed.needs_value is not None:
+    if (parsed.invalid is not None or parsed.needs_value is not None
+            or parsed.unexpected_value is not None):
         return None
     return _tail(args, len(parsed.operands))
 

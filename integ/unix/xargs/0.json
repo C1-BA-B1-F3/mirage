@@ -36,6 +36,43 @@
       "flags": [
         "0"
       ]
+    },
+    {
+      "id": "xargs_null_abbreviated",
+      "seq": 1300052,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a b\\0c\\0' | xargs --nu echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a b c\n",
+        "stderr": ""
+      },
+      "flags": [
+        "nu"
+      ]
     }
   ]
 }

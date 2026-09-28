@@ -75,6 +75,38 @@ describe('parseShellOptions', () => {
 
   it('keeps the dashes of a long value flag missing its value', () => {
     expect(parseShellOptions(SHELL_SPECS.xargs, ['--max-args']).needsValue).toBe('--max-args')
+    expect(parseShellOptions(SHELL_SPECS.xargs, ['--max-p']).needsValue).toBe('--max-procs')
+  })
+
+  it('resolves an abbreviated long option', () => {
+    const spec = SHELL_SPECS.xargs
+    expect(parseShellOptions(spec, ['--max-a=1', 'e']).given).toEqual([['n', '1']])
+    const parse = parseShellOptions(spec, ['--max-a', '1', 'e'])
+    expect(parse.given).toEqual([['n', '1']])
+    expect(parse.operands).toEqual(['e'])
+    expect(parseShellOptions(spec, ['--hel']).given).toEqual([['help', true]])
+    expect(parseShellOptions(spec, ['--rep=Z']).given).toEqual([['i', 'Z']])
+    expect(parseShellOptions(SHELL_SPECS.timeout, ['--si', 'KILL']).given).toEqual([['s', 'KILL']])
+  })
+
+  it('names every candidate of an ambiguous abbreviation in order', () => {
+    const spec = SHELL_SPECS.xargs
+    const parse = parseShellOptions(spec, ['--max', '1'])
+    expect(parse.invalid).toBe('--max')
+    expect(parse.candidates).toEqual(['--max-lines', '--max-args', '--max-chars', '--max-procs'])
+    expect(parseShellOptions(spec, ['--ver']).candidates).toEqual(['--verbose', '--version'])
+    const empty = parseShellOptions(spec, ['--=x'])
+    expect(empty.invalid).toBe('--=x')
+    expect(empty.candidates.slice(0, 2)).toEqual(['--null', '--arg-file'])
+    const unknown = parseShellOptions(spec, ['--bogus'])
+    expect(unknown.invalid).toBe('--bogus')
+    expect(unknown.candidates).toEqual([])
+  })
+
+  it('reports a value on a no-argument long option', () => {
+    const spec = SHELL_SPECS.xargs
+    expect(parseShellOptions(spec, ['--nu=x']).unexpectedValue).toBe('--null=x')
+    expect(parseShellOptions(spec, ['--help=x']).unexpectedValue).toBe('--help=x')
   })
 
   it.each(['-q', '--max-args'])('preserves aliases, clusters and options before %s', (tail) => {

@@ -17,7 +17,9 @@ import { runWithSession } from '../../../../context/session_context.ts'
 import { renderHelp } from '../../../../commands/spec/help.ts'
 import { SHELL_SPECS, parseShellOptions } from '../../../../commands/spec/shell.ts'
 import {
+  ambiguousOptionError,
   missingValueError,
+  unexpectedValueError,
   unknownOptionError,
   usageHint,
 } from '../../../../commands/spec/usage.ts'
@@ -32,6 +34,18 @@ import type { BuiltinCall, ExecuteStringFn, Result } from '../types.ts'
 
 const SYNOPSIS = 'xargs [OPTION]... COMMAND [INITIAL-ARGS]...'
 const PROCS_MAX = 2147483647
+const UNSUPPORTED = new Set([
+  'a',
+  'E',
+  'e',
+  'o',
+  'p',
+  's',
+  't',
+  'show-limits',
+  'x',
+  'process-slot-var',
+])
 const BLANKS = new Set([' ', '\t'])
 const SPACES = new Set([' ', '\t', '\n', '\v', '\f', '\r'])
 const QUOTES = new Map([
@@ -268,7 +282,9 @@ async function runLines(
  * input line takes the place of the string in them. Options act in the
  * order given, as GNU's getopt loop reads them: -I, -L and -n cancel
  * each other with GNU's warning, and --help or --version answers where
- * it stands.
+ * it stands. The spec declares every option GNU's table has, so an
+ * abbreviated long option resolves exactly as GNU's does; the ones
+ * mirage does not implement are refused as unsupported.
  *
  * GNU xargs execs the command directly, so every input word must reach
  * it as exactly one argv token. The inner line is built with shellJoin:
@@ -299,6 +315,10 @@ export async function handleXargs(
         )
       }
       delim = value.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+    }
+    if (UNSUPPORTED.has(name)) {
+      const dashes = name.length > 1 ? '--' : '-'
+      return refuse(`${warnings}xargs: unsupported option -- '${dashes}${name}'\n`)
     }
     if (name === 'I' || name === 'i') {
       if (maxArgs > 0) warnings += exclusive('--replace/-I/-i', '--max-args')
@@ -335,7 +355,14 @@ export async function handleXargs(
     maxArgs = count
   }
   if (parse.invalid !== null) {
-    const [stderr, code] = unknownOptionError('xargs', parse.invalid)
+    const [stderr, code] =
+      parse.candidates.length > 0
+        ? ambiguousOptionError('xargs', parse.invalid, parse.candidates)
+        : unknownOptionError('xargs', parse.invalid)
+    return refuse(concat(warnings, stderr), code)
+  }
+  if (parse.unexpectedValue !== null) {
+    const [stderr, code] = unexpectedValueError('xargs', parse.unexpectedValue)
     return refuse(concat(warnings, stderr), code)
   }
   if (parse.needsValue !== null) {

@@ -14,6 +14,7 @@
 
 from dataclasses import dataclass, field
 
+from mirage.commands.spec.compile import compile_spec, expand_long
 from mirage.commands.spec.constants import HELP_OPTION, VERSION_OPTION
 from mirage.commands.spec.types import CommandSpec, Operand, Option
 
@@ -22,20 +23,26 @@ SHELL_SPECS: dict[str, CommandSpec] = {
     CommandSpec(
         description="Build and run command lines from standard input.",
         options=(
-            Option(short="-n",
-                   long="--max-args",
+            Option(short="-0",
+                   long="--null",
+                   description="Input items are terminated by NUL."),
+            Option(short="-a",
+                   long="--arg-file",
                    type="str",
-                   description="Use at most N arguments per command line."),
+                   description="Read items from this file (not supported)."),
             Option(short="-d",
                    long="--delimiter",
                    type="str",
                    description="Input items are separated by this character."),
-            Option(short="-0",
-                   long="--null",
-                   description="Input items are terminated by NUL."),
-            Option(short="-r",
-                   long="--no-run-if-empty",
-                   description="Do not run the command on empty input."),
+            Option(short="-E",
+                   type="str",
+                   description="Stop reading at this logical end-of-file "
+                   "string (not supported)."),
+            Option(short="-e",
+                   long="--eof",
+                   type="str",
+                   value_optional=True,
+                   description="Same as -E (not supported)."),
             Option(short="-I",
                    type="str",
                    description="Replace this string in the initial "
@@ -56,13 +63,48 @@ SHELL_SPECS: dict[str, CommandSpec] = {
                    value_optional=True,
                    description="Same as -L, with 1 when no count is "
                    "attached."),
+            Option(short="-n",
+                   long="--max-args",
+                   type="str",
+                   description="Use at most N arguments per command line."),
+            Option(short="-o",
+                   long="--open-tty",
+                   description="Reopen stdin as the terminal in each "
+                   "command (not supported)."),
+            Option(short="-p",
+                   long="--interactive",
+                   description="Prompt before running each command "
+                   "(not supported)."),
+            Option(short="-r",
+                   long="--no-run-if-empty",
+                   description="Do not run the command on empty input."),
+            Option(short="-s",
+                   long="--max-chars",
+                   type="str",
+                   description="Limit a command line to N characters "
+                   "(not supported)."),
+            Option(short="-t",
+                   long="--verbose",
+                   description="Print each command before running it "
+                   "(not supported)."),
+            Option(long="--show-limits",
+                   description="Show the command-line length limits "
+                   "(not supported)."),
+            Option(short="-x",
+                   long="--exit",
+                   description="Exit if a command line exceeds the size "
+                   "limit (not supported)."),
             Option(short="-P",
                    long="--max-procs",
                    type="str",
                    description="Run up to N commands at a time; 0 runs "
                    "them all at once."),
-            HELP_OPTION,
+            Option(long="--process-slot-var",
+                   type="str",
+                   description="Set this variable to each command's slot "
+                   "number (not supported)."),
             VERSION_OPTION,
+            HELP_OPTION,
         ),
         rest=Operand(type="str"),
     ),
@@ -175,21 +217,30 @@ class ShellParse:
             (xargs -I, -L and -n cancel one another).
         operands (list[str]): everything from the first non-option on.
         invalid (str | None): unknown option char or long token.
+        candidates (tuple[str, ...]): the long options an ambiguous
+            abbreviation in ``invalid`` names, in declaration order;
+            empty when ``invalid`` names none.
         needs_value (str | None): value option with no value: the short
             char, or the long token with its dashes.
+        unexpected_value (str | None): a no-argument long option given a
+            value, as its full spelling and the value (``--null=x``).
     """
     flags: dict[str, str | bool] = field(default_factory=dict)
     given: list[tuple[str, str | bool]] = field(default_factory=list)
     operands: list[str] = field(default_factory=list)
     invalid: str | None = None
+    candidates: tuple[str, ...] = ()
     needs_value: str | None = None
+    unexpected_value: str | None = None
 
 
 def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
     """Scan leading options the way getopt does for a shell builtin.
 
     An optional-value option takes its value only when attached
-    (``-iR``, ``--replace=R``), as getopt's ``::`` does.
+    (``-iR``, ``--replace=R``), as getopt's ``::`` does, and a long
+    option may be abbreviated to any prefix that names one option, as
+    getopt_long reads it; an empty name (``--=x``) prefixes every one.
 
     Args:
         spec (CommandSpec): options table (SHELL_SPECS entry).
@@ -214,6 +265,7 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
             (long_bool if opt.type == "bool" else
              long_optional if opt.value_optional else long_value).add(long)
             alias[long] = name
+    compiled = compile_spec(spec)
     flags: dict[str, str | bool] = {}
     given: list[tuple[str, str | bool]] = []
 
@@ -228,8 +280,22 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
             i += 1
             break
         if tok.startswith("--") and len(tok) > 2:
-            name, eq, value = tok[2:].partition("=")
+            typed, eq, value = tok.partition("=")
+            matches = (compiled.long_spellings
+                       if typed == "--" else expand_long(compiled, typed))
+            if len(matches) != 1:
+                return ShellParse(flags=flags,
+                                  given=given,
+                                  operands=list(argv[i + 1:]),
+                                  invalid=tok,
+                                  candidates=tuple(matches))
+            name = matches[0][2:]
             if name in long_bool:
+                if eq:
+                    return ShellParse(flags=flags,
+                                      given=given,
+                                      operands=list(argv[i + 1:]),
+                                      unexpected_value=f"--{name}={value}")
                 record(alias[name], True)
             elif name in long_optional:
                 record(alias[name], value if eq else True)
@@ -244,11 +310,6 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
                                       given=given,
                                       operands=list(argv[i + 1:]),
                                       needs_value=f"--{name}")
-            else:
-                return ShellParse(flags=flags,
-                                  given=given,
-                                  operands=list(argv[i + 1:]),
-                                  invalid=tok)
             i += 1
             continue
         if tok.startswith("-") and len(tok) > 1:

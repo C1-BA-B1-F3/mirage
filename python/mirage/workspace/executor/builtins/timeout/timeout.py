@@ -75,9 +75,16 @@ async def handle_timeout(
     """
     parse = parse_shell_options(SHELL_SPECS["timeout"], args or [])
     if parse.invalid is not None:
+        if parse.candidates:
+            listed = " ".join(f"'{c}'" for c in parse.candidates)
+            return _usage_error(f"option '{parse.invalid}' is ambiguous; "
+                                f"possibilities: {listed}")
         if parse.invalid.startswith("--"):
             return _usage_error(f"unrecognized option '{parse.invalid}'")
         return _usage_error(f"invalid option -- '{parse.invalid}'")
+    if parse.unexpected_value is not None:
+        option = parse.unexpected_value.split("=", 1)[0]
+        return _usage_error(f"option '{option}' doesn't allow an argument")
     if parse.needs_value is not None:
         if parse.needs_value.startswith("--"):
             return _usage_error(

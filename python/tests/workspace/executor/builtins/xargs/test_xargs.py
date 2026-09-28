@@ -149,8 +149,65 @@ async def test_option_refusals_carry_the_help_hint(args, message):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "args", [["--help"], ["--help", "-q"], ["-r", "--help", "echo"]])
+@pytest.mark.parametrize("args, message", [
+    (["--max", "1", "echo"
+      ], b"xargs: option '--max' is ambiguous; possibilities: '--max-lines' "
+     b"'--max-args' '--max-chars' '--max-procs'\n"),
+    (["--ver"], b"xargs: option '--ver' is ambiguous; possibilities: "
+     b"'--verbose' '--version'\n"),
+    (["--nu=x", "echo"
+      ], b"xargs: option '--null' doesn't allow an argument\n"),
+    (["--help=x"], b"xargs: option '--help' doesn't allow an argument\n"),
+    (["--max-p"], b"xargs: option '--max-procs' requires an argument\n"),
+])
+async def test_long_option_refusals_as_getopt_long_words_them(args, message):
+    shell = FakeShell()
+    _, io, _ = await handle_xargs(shell, args, make_session(), b"x")
+    assert io.exit_code == 1
+    assert await materialize(io.stderr) == message + TRY
+    assert shell.lines == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args, lines", [
+    (["--max-a=1", "echo"], ["echo a", "echo b"]),
+    (["--max-a", "1", "echo"], ["echo a", "echo b"]),
+    (["--rep", "echo", "[{}]"], ["echo '[a b]'"]),
+    (["--rep=Z", "echo", "[Z]"], ["echo '[a b]'"]),
+    (["--max-l", "echo"], ["echo a b"]),
+    (["--max-p=2", "-n1", "echo"], ["echo a", "echo b"]),
+])
+async def test_abbreviated_long_options_resolve(args, lines):
+    shell = FakeShell()
+    _, io, _ = await handle_xargs(shell, args, make_session(), b"a b\n")
+    assert shell.lines == lines
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args, spelling", [
+    (["-t", "echo"], "-t"),
+    (["--verb", "echo"], "-t"),
+    (["-x", "echo"], "-x"),
+    (["-s", "100", "echo"], "-s"),
+    (["-E", "END", "echo"], "-E"),
+    (["--eof", "echo"], "-e"),
+    (["--show", "echo"], "--show-limits"),
+    (["--process-slot-var=S", "echo"], "--process-slot-var"),
+])
+async def test_reserved_gnu_options_are_unsupported(args, spelling):
+    shell = FakeShell()
+    _, io, _ = await handle_xargs(shell, args, make_session(), b"a\n")
+    assert io.exit_code == 1
+    assert await materialize(
+        io.stderr) == f"xargs: unsupported option -- '{spelling}'\n".encode()
+    assert shell.lines == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args",
+                         [["--help"], ["--help", "-q"],
+                          ["-r", "--help", "echo"], ["--hel"], ["--h"]])
 async def test_help_prints_the_page_where_it_stands(args):
     shell = FakeShell()
     out, io, _ = await handle_xargs(shell, args, make_session(), b"x")

@@ -1005,6 +1005,117 @@
         "stdout": "child:inner\nouter:unset\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "xargs_max_procs_abbreviated",
+      "seq": 1300057,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\nc\\n' | xargs --max-p=2 -n1 echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\nc\n",
+        "stderr": ""
+      },
+      "flags": [
+        "max-p"
+      ]
+    },
+    {
+      "id": "xargs_help_abbreviated",
+      "seq": 1300058,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "xargs --hel | head -3; xargs --h | head -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: Build and run command lines from standard input.\n\nUsage: xargs [OPTION]... COMMAND [INITIAL-ARGS]...\nxargs: Build and run command lines from standard input.\n",
+        "stderr": ""
+      },
+      "flags": [
+        "hel"
+      ]
+    },
+    {
+      "id": "xargs_version_abbreviated",
+      "seq": 1300059,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "xargs --vers | cut -d' ' -f1,2",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs (Mirage)\n",
+        "stderr": ""
+      },
+      "flags": [
+        "vers"
+      ]
     }
   ]
 }

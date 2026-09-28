@@ -57,6 +57,43 @@ def test_optional_value_is_taken_only_when_attached():
 def test_long_value_flag_missing_value_keeps_its_dashes():
     parse = parse_shell_options(SHELL_SPECS["xargs"], ["--max-args"])
     assert parse.needs_value == "--max-args"
+    parse = parse_shell_options(SHELL_SPECS["xargs"], ["--max-p"])
+    assert parse.needs_value == "--max-procs"
+
+
+def test_long_option_resolves_an_abbreviation():
+    spec = SHELL_SPECS["xargs"]
+    assert parse_shell_options(spec, ["--max-a=1", "e"]).given == [("n", "1")]
+    parse = parse_shell_options(spec, ["--max-a", "1", "e"])
+    assert parse.given == [("n", "1")]
+    assert parse.operands == ["e"]
+    assert parse_shell_options(spec, ["--hel"]).given == [("help", True)]
+    assert parse_shell_options(spec, ["--rep=Z"]).given == [("i", "Z")]
+    assert parse_shell_options(SHELL_SPECS["timeout"],
+                               ["--si", "KILL"]).given == [("s", "KILL")]
+
+
+def test_ambiguous_abbreviation_names_every_candidate_in_order():
+    spec = SHELL_SPECS["xargs"]
+    parse = parse_shell_options(spec, ["--max", "1"])
+    assert parse.invalid == "--max"
+    assert parse.candidates == ("--max-lines", "--max-args", "--max-chars",
+                                "--max-procs")
+    assert parse_shell_options(spec, ["--ver"]).candidates == ("--verbose",
+                                                               "--version")
+    empty = parse_shell_options(spec, ["--=x"])
+    assert empty.invalid == "--=x"
+    assert empty.candidates[:2] == ("--null", "--arg-file")
+    unknown = parse_shell_options(spec, ["--bogus"])
+    assert unknown.invalid == "--bogus"
+    assert unknown.candidates == ()
+
+
+def test_value_on_a_no_argument_long_option_is_reported():
+    spec = SHELL_SPECS["xargs"]
+    assert parse_shell_options(spec, ["--nu=x"]).unexpected_value == "--null=x"
+    assert parse_shell_options(spec,
+                               ["--help=x"]).unexpected_value == "--help=x"
 
 
 def test_invalid_short_option_reported():

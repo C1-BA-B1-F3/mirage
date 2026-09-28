@@ -83,6 +83,18 @@ async def test_missing_operand_exits_125():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("args, message", [
+    (["-s"], b"timeout: option requires an argument -- 's'\n"),
+    (["--signal"], b"timeout: option '--signal' requires an argument\n"),
+])
+async def test_missing_option_value_exits_125(args, message):
+    shell = FakeShell()
+    _, io, _ = await handle_timeout(shell, args, make_session())
+    assert io.exit_code == 125
+    assert await materialize(io.stderr) == message
+
+
+@pytest.mark.asyncio
 async def test_signal_option_rejected():
     shell = FakeShell()
     _, io, _ = await handle_timeout(shell, ["-s", "KILL", "1", "sleep", "3"],

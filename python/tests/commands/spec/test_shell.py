@@ -33,11 +33,30 @@ def test_double_dash_ends_options():
     assert parse.operands == ["-r", "echo"]
 
 
-def test_flags_keep_the_order_last_given():
+def test_given_lists_every_option_in_order():
     parse = parse_shell_options(SHELL_SPECS["xargs"],
                                 ["-L1", "-I", "{}", "-n2", "-L3", "echo"])
-    assert list(parse.flags.items()) == [("I", "{}"), ("n", "2"), ("L", "3")]
+    assert parse.given == [("L", "1"), ("I", "{}"), ("n", "2"), ("L", "3")]
+    assert parse.flags == {"L": "3", "I": "{}", "n": "2"}
     assert parse.operands == ["echo"]
+
+
+def test_optional_value_is_taken_only_when_attached():
+    spec = SHELL_SPECS["xargs"]
+    assert parse_shell_options(spec, ["-iZ", "echo"]).flags == {"i": "Z"}
+    bare = parse_shell_options(spec, ["-i", "Z"])
+    assert bare.flags == {"i": True}
+    assert bare.operands == ["Z"]
+    assert parse_shell_options(spec, ["--replace=Z", "x"]).flags == {"i": "Z"}
+    long_bare = parse_shell_options(spec, ["--max-lines", "2"])
+    assert long_bare.flags == {"l": True}
+    assert long_bare.operands == ["2"]
+    assert parse_shell_options(spec, ["-ri"]).flags == {"r": True, "i": True}
+
+
+def test_long_value_flag_missing_value_keeps_its_dashes():
+    parse = parse_shell_options(SHELL_SPECS["xargs"], ["--max-args"])
+    assert parse.needs_value == "--max-args"
 
 
 def test_invalid_short_option_reported():

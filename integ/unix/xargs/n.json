@@ -104,7 +104,7 @@
       "command": "echo x | xargs -n0 echo 2>&1; echo code=$?",
       "expect": {
         "exit": 0,
-        "stdout": "xargs: value 0 for -n option should be >= 1\ncode=1\n",
+        "stdout": "xargs: value 0 for -n option should be >= 1\nTry 'xargs --help' for more information.\ncode=1\n",
         "stderr": ""
       },
       "flags": [

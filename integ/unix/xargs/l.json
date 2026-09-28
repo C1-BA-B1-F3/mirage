@@ -36,6 +36,192 @@
       "flags": [
         "l"
       ]
+    },
+    {
+      "id": "xargs_l_default_one_line",
+      "seq": 1300036,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\nc\\n' | xargs -l echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\nc\n",
+        "stderr": ""
+      },
+      "flags": [
+        "l"
+      ]
+    },
+    {
+      "id": "xargs_l_attached_count",
+      "seq": 1300037,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\nc\\n' | xargs -l2 echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a b\nc\n",
+        "stderr": ""
+      },
+      "flags": [
+        "l2"
+      ]
+    },
+    {
+      "id": "xargs_max_lines_long",
+      "seq": 1300038,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\nc\\n' | xargs --max-lines echo; printf 'a\\nb\\nc\\n' | xargs --max-lines=2 echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\nc\na b\nc\n",
+        "stderr": ""
+      },
+      "flags": [
+        "max-lines"
+      ]
+    },
+    {
+      "id": "xargs_l_zero",
+      "seq": 1300039,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo x | xargs -l0 echo 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: value 0 for -l option should be >= 1\nTry 'xargs --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "l0"
+      ]
+    },
+    {
+      "id": "xargs_l_after_n_warns",
+      "seq": 1300040,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a b\\nc\\n' | xargs -n2 -l echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a b\nc\n",
+        "stderr": "xargs: warning: options --max-args and --max-lines/-l are mutually exclusive, ignoring previous --max-args value\n"
+      },
+      "flags": [
+        "n2",
+        "l"
+      ]
     }
   ]
 }

@@ -511,7 +511,7 @@
       }
     },
     {
-      "id": "blt_xargs_parallel_unsupported",
+      "id": "blt_xargs_parallel",
       "seq": 502316,
       "targets": [
         "ram",
@@ -540,8 +540,8 @@
       "command": "printf 'a\\n' | xargs -P2 echo; echo $?",
       "expect": {
         "exit": 0,
-        "stdout": "1\n",
-        "stderr": "xargs: unsupported option -- 'P'\n"
+        "stdout": "a\n0\n",
+        "stderr": ""
       }
     },
     {

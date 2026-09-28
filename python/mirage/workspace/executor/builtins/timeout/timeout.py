@@ -79,6 +79,9 @@ async def handle_timeout(
             return _usage_error(f"unrecognized option '{parse.invalid}'")
         return _usage_error(f"invalid option -- '{parse.invalid}'")
     if parse.needs_value is not None:
+        if parse.needs_value.startswith("--"):
+            return _usage_error(
+                f"option '{parse.needs_value}' requires an argument")
         return _usage_error(
             f"option requires an argument -- '{parse.needs_value}'")
     for name in _UNSUPPORTED:

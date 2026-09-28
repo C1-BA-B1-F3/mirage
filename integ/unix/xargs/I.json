@@ -595,6 +595,192 @@
       "flags": [
         "I"
       ]
+    },
+    {
+      "id": "xargs_i_default_string",
+      "seq": 1300030,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | xargs -i echo x{}y",
+      "expect": {
+        "exit": 0,
+        "stdout": "xay\nxby\n",
+        "stderr": ""
+      },
+      "flags": [
+        "i"
+      ]
+    },
+    {
+      "id": "xargs_i_attached_string",
+      "seq": 1300031,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | xargs -iZ echo xZy",
+      "expect": {
+        "exit": 0,
+        "stdout": "xay\nxby\n",
+        "stderr": ""
+      },
+      "flags": [
+        "i"
+      ]
+    },
+    {
+      "id": "xargs_i_detached_word_is_the_command",
+      "seq": 1300032,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | xargs -i echo echo x{}",
+      "expect": {
+        "exit": 0,
+        "stdout": "echo xa\n",
+        "stderr": ""
+      },
+      "flags": [
+        "i"
+      ]
+    },
+    {
+      "id": "xargs_replace_long",
+      "seq": 1300033,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | xargs --replace echo x{}y; printf 'a\\n' | xargs --replace=Z echo xZy",
+      "expect": {
+        "exit": 0,
+        "stdout": "xay\nxby\nxay\n",
+        "stderr": ""
+      },
+      "flags": [
+        "replace"
+      ]
+    },
+    {
+      "id": "xargs_I_repeated_n_warns_once",
+      "seq": 1300034,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | xargs -n1 -I{} -n1 echo '[{}]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[x]\n",
+        "stderr": "xargs: warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value\n"
+      },
+      "flags": [
+        "n1",
+        "I"
+      ]
     }
   ]
 }

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { HELP_OPTION, VERSION_OPTION } from './constants.ts'
 import { CommandSpec, Operand, Option } from './types.ts'
 
 export const SHELL_SPECS = Object.freeze({
@@ -46,16 +47,32 @@ export const SHELL_SPECS = Object.freeze({
         description: 'Replace this string in the initial arguments with each input line.',
       }),
       new Option({
+        short: '-i',
+        long: '--replace',
+        type: 'str',
+        valueOptional: true,
+        description: 'Same as -I, with {} when no string is attached.',
+      }),
+      new Option({
         short: '-L',
         type: 'str',
         description: 'Use at most N non-blank input lines per command line.',
       }),
       new Option({
+        short: '-l',
+        long: '--max-lines',
+        type: 'str',
+        valueOptional: true,
+        description: 'Same as -L, with 1 when no count is attached.',
+      }),
+      new Option({
         short: '-P',
         long: '--max-procs',
         type: 'str',
-        description: 'Run up to N processes (not supported).',
+        description: 'Run up to N commands at a time; 0 runs them all at once.',
       }),
+      HELP_OPTION,
+      VERSION_OPTION,
     ],
     rest: new Operand({ type: 'str' }),
   }),
@@ -122,41 +139,52 @@ export const SHELL_SPECS = Object.freeze({
  * the mount-command parser scans the whole line and warns-ignores
  * unknown flags, which is wrong on both counts here. The builtin owns
  * the error message and exit code (GNU shapes differ per tool), so
- * the parse only reports what went wrong. `flags` holds each option
- * where it was last given, so options that cancel one another (xargs
- * -I, -L, -n) replay in order.
+ * the parse only reports what went wrong. An optional-value option given
+ * bare is `true` in `flags`; `given` lists every option in the order it
+ * was given, for a builtin whose options act in turn (xargs -I, -L and
+ * -n cancel one another). `needsValue` is the short char, or the long
+ * token with its dashes.
  */
 export interface ShellParse {
   flags: Record<string, string | boolean>
+  given: [string, string | boolean][]
   operands: string[]
   invalid: string | null
   needsValue: string | null
 }
 
-/** Scan leading options the way getopt does for a shell builtin. */
+/**
+ * Scan leading options the way getopt does for a shell builtin.
+ *
+ * An optional-value option takes its value only when attached (`-iR`,
+ * `--replace=R`), as getopt's `::` does.
+ */
 export function parseShellOptions(spec: CommandSpec, argv: readonly string[]): ShellParse {
   const shortBool = new Set<string>()
   const shortValue = new Set<string>()
+  const shortOptional = new Set<string>()
   const longBool = new Set<string>()
   const longValue = new Set<string>()
+  const longOptional = new Set<string>()
   const alias = new Map<string, string>()
   for (const opt of spec.options) {
     const short = opt.short === null ? null : opt.short.replace(/^-+/, '')
     const long = opt.long === null ? null : opt.long.replace(/^-+/, '')
     const name = short ?? long ?? ''
     if (short !== null) {
-      ;(opt.type === 'bool' ? shortBool : shortValue).add(short)
+      ;(opt.type === 'bool' ? shortBool : opt.valueOptional ? shortOptional : shortValue).add(short)
       alias.set(short, name)
     }
     if (long !== null) {
-      ;(opt.type === 'bool' ? longBool : longValue).add(long)
+      ;(opt.type === 'bool' ? longBool : opt.valueOptional ? longOptional : longValue).add(long)
       alias.set(long, name)
     }
   }
   const flags: Record<string, string | boolean> = {}
+  const given: [string, string | boolean][] = []
   const record = (key: string, value: string | boolean): void => {
-    Reflect.deleteProperty(flags, key)
     flags[key] = value
+    given.push([key, value])
   }
   let i = 0
   while (i < argv.length) {
@@ -171,19 +199,27 @@ export function parseShellOptions(spec: CommandSpec, argv: readonly string[]): S
       const name = eq >= 0 ? tok.slice(2, eq) : tok.slice(2)
       if (longBool.has(name)) {
         record(alias.get(name) ?? name, true)
+      } else if (longOptional.has(name)) {
+        record(alias.get(name) ?? name, eq >= 0 ? tok.slice(eq + 1) : true)
       } else if (longValue.has(name)) {
         if (eq >= 0) {
           record(alias.get(name) ?? name, tok.slice(eq + 1))
         } else {
           const value = argv[i + 1]
           if (value === undefined) {
-            return { flags, operands: argv.slice(i + 1), invalid: null, needsValue: name }
+            return {
+              flags,
+              given,
+              operands: argv.slice(i + 1),
+              invalid: null,
+              needsValue: `--${name}`,
+            }
           }
           i += 1
           record(alias.get(name) ?? name, value)
         }
       } else {
-        return { flags, operands: argv.slice(i + 1), invalid: tok, needsValue: null }
+        return { flags, given, operands: argv.slice(i + 1), invalid: tok, needsValue: null }
       }
       i += 1
       continue
@@ -199,6 +235,11 @@ export function parseShellOptions(spec: CommandSpec, argv: readonly string[]): S
           j += 1
           continue
         }
+        if (shortOptional.has(ch)) {
+          const attached = chars.slice(j + 1)
+          record(alias.get(ch) ?? ch, attached === '' ? true : attached)
+          break
+        }
         if (shortValue.has(ch)) {
           const rest = chars.slice(j + 1)
           if (rest !== '') {
@@ -206,19 +247,19 @@ export function parseShellOptions(spec: CommandSpec, argv: readonly string[]): S
           } else {
             const value = argv[i + 1]
             if (value === undefined) {
-              return { flags, operands: argv.slice(i + 1), invalid: null, needsValue: ch }
+              return { flags, given, operands: argv.slice(i + 1), invalid: null, needsValue: ch }
             }
             i += 1
             record(alias.get(ch) ?? ch, value)
           }
           break
         }
-        return { flags, operands: argv.slice(i + 1), invalid: ch, needsValue: null }
+        return { flags, given, operands: argv.slice(i + 1), invalid: ch, needsValue: null }
       }
       i += 1
       continue
     }
     break
   }
-  return { flags, operands: argv.slice(i), invalid: null, needsValue: null }
+  return { flags, given, operands: argv.slice(i), invalid: null, needsValue: null }
 }

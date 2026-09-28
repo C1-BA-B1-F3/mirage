@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from mirage.io import IOResult
@@ -19,8 +21,37 @@ class FakeShell:
         return IOResult(stdout=f"ran:{line}\n".encode(), exit_code=code)
 
 
+class SlowShell:
+
+    def __init__(self,
+                 delays: dict[str, float] | None = None,
+                 exit_codes: dict[str, int] | None = None):
+        self.lines: list[str] = []
+        self.active = 0
+        self.peak = 0
+        self.delays = delays or {}
+        self.exit_codes = exit_codes or {}
+
+    async def __call__(self, line: str, session_id: str) -> IOResult:
+        self.lines.append(line)
+        self.active += 1
+        self.peak = max(self.peak, self.active)
+        await asyncio.sleep(self.delays.get(line, 0.01))
+        self.active -= 1
+        return IOResult(stdout=f"ran:{line}\n".encode(),
+                        exit_code=self.exit_codes.get(line, 0))
+
+
+TRY = b"Try 'xargs --help' for more information.\n"
+
+
 def make_session() -> SessionState:
     return SessionState(session_id="s1")
+
+
+def warned(option: str, offending: str) -> bytes:
+    return (f"xargs: warning: options {offending} and {option} are mutually "
+            f"exclusive, ignoring previous {offending} value\n").encode()
 
 
 @pytest.mark.asyncio
@@ -93,17 +124,52 @@ async def test_invalid_option_exits_1():
     shell = FakeShell()
     _, io, _ = await handle_xargs(shell, ["-q", "echo"], make_session(), b"x")
     assert io.exit_code == 1
-    assert await materialize(io.stderr) == b"xargs: invalid option -- 'q'\n"
+    assert await materialize(io.stderr
+                             ) == (b"xargs: invalid option -- 'q'\n" + TRY)
     assert shell.lines == []
 
 
 @pytest.mark.asyncio
-async def test_unsupported_option_exits_1():
+@pytest.mark.parametrize("args, message", [
+    (["--bogus", "echo"], b"xargs: unrecognized option '--bogus'\n"),
+    (["-n"], b"xargs: option requires an argument -- 'n'\n"),
+    (["--max-args"], b"xargs: option '--max-args' requires an argument\n"),
+    (["-I"], b"xargs: option requires an argument -- 'I'\n"),
+])
+async def test_option_refusals_carry_the_help_hint(args, message):
     shell = FakeShell()
-    _, io, _ = await handle_xargs(shell, ["-P2", "echo"], make_session(), b"x")
+    _, io, _ = await handle_xargs(shell, args, make_session(), b"x")
     assert io.exit_code == 1
-    assert await materialize(io.stderr
-                             ) == b"xargs: unsupported option -- 'P'\n"
+    assert await materialize(io.stderr) == message + TRY
+    assert shell.lines == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "args", [["--help"], ["--help", "-q"], ["-r", "--help", "echo"]])
+async def test_help_prints_the_page_where_it_stands(args):
+    shell = FakeShell()
+    out, io, _ = await handle_xargs(shell, args, make_session(), b"x")
+    page = (await materialize(out)).decode()
+    assert page.startswith(
+        "xargs: Build and run command lines from standard input.\n\n"
+        "Usage: xargs [OPTION]... COMMAND [INITIAL-ARGS]...\n")
+    assert "  -P, --max-procs <text>" in page
+    assert io.exit_code == 0
+    assert shell.lines == []
+
+
+@pytest.mark.asyncio
+async def test_version_and_an_earlier_refusal():
+    shell = FakeShell()
+    out, io, _ = await handle_xargs(shell, ["--version"], make_session(), b"x")
+    assert (await materialize(out)).startswith(b"xargs (Mirage) ")
+    assert io.exit_code == 0
+    _, io, _ = await handle_xargs(shell, ["-n0", "--help"], make_session(),
+                                  b"x")
+    assert io.exit_code == 1
+    assert await materialize(
+        io.stderr) == (b"xargs: value 0 for -n option should be >= 1\n" + TRY)
     assert shell.lines == []
 
 
@@ -112,9 +178,8 @@ async def test_n_zero_rejected():
     shell = FakeShell()
     _, io, _ = await handle_xargs(shell, ["-n0", "echo"], make_session(), b"x")
     assert io.exit_code == 1
-    assert (await
-            materialize(io.stderr
-                        )) == b"xargs: value 0 for -n option should be >= 1\n"
+    assert (await materialize(
+        io.stderr)) == (b"xargs: value 0 for -n option should be >= 1\n" + TRY)
 
 
 @pytest.mark.asyncio
@@ -272,48 +337,110 @@ async def test_max_lines_unmatched_quote_drops_the_partial_line():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value, message", [
-    ("0", b"xargs: value 0 for -L option should be >= 1\n"),
-    ("-1", b"xargs: value -1 for -L option should be >= 1\n"),
-    ("x", b'xargs: invalid number "x" for -L option\n'),
-    ("2 ", b'xargs: invalid number "2 " for -L option\n'),
+@pytest.mark.parametrize("args, message", [
+    (["-L", "0"], b"xargs: value 0 for -L option should be >= 1\n"),
+    (["-L", "-1"], b"xargs: value -1 for -L option should be >= 1\n"),
+    (["-L", "x"], b'xargs: invalid number "x" for -L option\n'),
+    (["-L", "2 "], b'xargs: invalid number "2 " for -L option\n'),
+    (["-l0"], b"xargs: value 0 for -l option should be >= 1\n"),
+    (["--max-lines=x"], b'xargs: invalid number "x" for -l option\n'),
+    (["-l1r"], b'xargs: invalid number "1r" for -l option\n'),
+    (["-P", "x"], b'xargs: invalid number "x" for -P option\n'),
+    (["-P", "-1"], b"xargs: value -1 for -P option should be >= 0\n"),
+    (["-P", "99999999999"
+      ], b"xargs: value 99999999999 for -P option should be <= 2147483647\n"),
 ])
-async def test_max_lines_refuses_a_bad_count(value, message):
+async def test_counts_are_refused_with_the_help_hint(args, message):
     shell = FakeShell()
-    _, io, _ = await handle_xargs(shell, ["-L", value, "echo"], make_session(),
+    _, io, _ = await handle_xargs(shell, [*args, "echo"], make_session(),
                                   b"a\n")
     assert io.exit_code == 1
-    assert await materialize(io.stderr) == message
+    assert await materialize(io.stderr) == message + TRY
     assert shell.lines == []
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args, lines, warning", [
-    (["-I{}", "-n1", "echo", "[{}]"], ["echo '[a b]'", "echo '[c]'"], b""),
-    (["-n1", "-I{}", "echo", "[{}]"], ["echo '[a b]'", "echo '[c]'"],
-     b"options --max-args and --replace/-I/-i"),
-    (["-L2", "-I{}", "echo", "[{}]"], ["echo '[a b]'", "echo '[c]'"],
-     b"options --max-lines and --replace/-I/-i"),
+@pytest.mark.parametrize("args, lines", [
+    (["-i", "echo", "x{}y"], ["echo xay", "echo xby"]),
+    (["-iZ", "echo", "xZy"], ["echo xay", "echo xby"]),
+    (["--replace", "echo", "x{}y"], ["echo xay", "echo xby"]),
+    (["--replace=Z", "echo", "xZy"], ["echo xay", "echo xby"]),
+    (["-i", "Z", "x{}"], ["Z xa", "Z xb"]),
+    (["-ri", "echo", "{}"], ["echo a", "echo b"]),
+    (["-il", "echo", "{}"], ["echo '{}'", "echo '{}'"]),
+    (["-l", "echo"], ["echo a", "echo b"]),
+    (["-l2", "echo"], ["echo a b"]),
+    (["--max-lines", "echo"], ["echo a", "echo b"]),
+    (["--max-lines=2", "echo"], ["echo a b"]),
+    (["-l", "2"], ["2 a", "2 b"]),
+])
+async def test_optional_value_replace_and_max_lines(args, lines):
+    shell = FakeShell()
+    _, io, _ = await handle_xargs(shell, args, make_session(), b"a\nb\n")
+    assert shell.lines == lines
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_max_procs_runs_side_by_side_in_input_order():
+    shell = SlowShell(delays={"echo a": 0.05})
+    out, io, _ = await handle_xargs(shell, ["-P2", "-n1", "echo"],
+                                    make_session(), b"a b c d")
+    assert shell.lines == ["echo a", "echo b", "echo c", "echo d"]
+    assert shell.peak == 2
+    assert await materialize(out) == (
+        b"ran:echo a\nran:echo b\nran:echo c\nran:echo d\n")
+    assert io.exit_code == 0
+    shell = SlowShell()
+    await handle_xargs(shell, ["-P0", "-n1", "echo"], make_session(),
+                       b"a b c d")
+    assert shell.peak == 4
+    shell = SlowShell()
+    await handle_xargs(shell, ["-n1", "echo"], make_session(), b"a b c d")
+    assert shell.peak == 1
+
+
+@pytest.mark.asyncio
+async def test_max_procs_starts_nothing_after_a_command_cannot_run():
+    shell = SlowShell(delays={"nope b": 0.05}, exit_codes={"nope a": 127})
+    _, io, _ = await handle_xargs(shell, ["-P2", "-n1", "nope"],
+                                  make_session(), b"a b c d")
+    assert shell.lines == ["nope a", "nope b"]
+    assert io.exit_code == 127
+    shell = SlowShell(exit_codes={"nope c": 1})
+    _, io, _ = await handle_xargs(shell, ["-P3", "-n1", "nope"],
+                                  make_session(), b"a b c d")
+    assert io.exit_code == 123
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("args, lines, warnings", [
+    (["-I{}", "-n1", "echo", "[{}]"], ["echo '[a b]'", "echo '[c]'"], []),
+    (["-n1", "-I{}", "echo", "[{}]"], ["echo '[a b]'", "echo '[c]'"
+                                       ], [("--replace/-I/-i", "--max-args")]),
+    (["-L2", "-I{}", "echo", "[{}]"
+      ], ["echo '[a b]'", "echo '[c]'"], [("--replace/-I/-i", "--max-lines")]),
     (["-I{}", "-L2", "echo", "[{}]"], ["echo '[{}]' a b c"
-                                       ], b"options --replace and -L"),
-    (["-I{}", "-n2", "echo", "[{}]"], ["echo '[{}]' a b", "echo '[{}]' c"],
-     b"options --replace and --max-args/-n"),
+                                       ], [("-L", "--replace")]),
+    (["-I{}", "-n2", "echo", "[{}]"], ["echo '[{}]' a b", "echo '[{}]' c"
+                                       ], [("--max-args/-n", "--replace")]),
     (["-L1", "-n2", "echo"], ["echo a b", "echo c"
-                              ], b"options --max-lines and --max-args/-n"),
-    (["-n2", "-L1", "echo"], ["echo a b", "echo c"
-                              ], b"options --max-args and -L"),
+                              ], [("--max-args/-n", "--max-lines")]),
+    (["-n2", "-L1", "echo"], ["echo a b", "echo c"], [("-L", "--max-args")]),
+    (["-n2", "-l", "echo"], ["echo a b", "echo c"
+                             ], [("--max-lines/-l", "--max-args")]),
+    (["-i", "-l", "echo", "{}"], ["echo '{}' a b", "echo '{}' c"
+                                  ], [("--max-lines/-l", "--replace")]),
     (["-L1", "-n2", "-L1", "echo"], ["echo a b", "echo c"
-                                     ], b"options --max-args and -L"),
+                                     ], [("--max-args/-n", "--max-lines"),
+                                         ("-L", "--max-args")]),
+    (["-n1", "-I{}", "-n1", "echo", "[{}]"
+      ], ["echo '[a b]'", "echo '[c]'"], [("--replace/-I/-i", "--max-args")]),
 ])
 async def test_replace_max_lines_and_max_args_cancel_in_order(
-        args, lines, warning):
+        args, lines, warnings):
     shell = FakeShell()
     _, io, _ = await handle_xargs(shell, args, make_session(), b"a b\nc\n")
     assert shell.lines == lines
     stderr = await materialize(io.stderr) or b""
-    if warning:
-        assert stderr == (b"xargs: warning: " + warning +
-                          b" are mutually exclusive, ignoring previous " +
-                          warning.split()[1] + b" value\n")
-    else:
-        assert stderr == b""
+    assert stderr == b"".join(warned(o, off) for o, off in warnings)

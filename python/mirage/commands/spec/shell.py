@@ -14,6 +14,7 @@
 
 from dataclasses import dataclass, field
 
+from mirage.commands.spec.constants import HELP_OPTION, VERSION_OPTION
 from mirage.commands.spec.types import CommandSpec, Operand, Option
 
 SHELL_SPECS: dict[str, CommandSpec] = {
@@ -39,14 +40,29 @@ SHELL_SPECS: dict[str, CommandSpec] = {
                    type="str",
                    description="Replace this string in the initial "
                    "arguments with each input line."),
+            Option(short="-i",
+                   long="--replace",
+                   type="str",
+                   value_optional=True,
+                   description="Same as -I, with {} when no string is "
+                   "attached."),
             Option(short="-L",
                    type="str",
                    description="Use at most N non-blank input lines per "
                    "command line."),
+            Option(short="-l",
+                   long="--max-lines",
+                   type="str",
+                   value_optional=True,
+                   description="Same as -L, with 1 when no count is "
+                   "attached."),
             Option(short="-P",
                    long="--max-procs",
                    type="str",
-                   description="Run up to N processes (not supported)."),
+                   description="Run up to N commands at a time; 0 runs "
+                   "them all at once."),
+            HELP_OPTION,
+            VERSION_OPTION,
         ),
         rest=Operand(type="str"),
     ),
@@ -152,14 +168,18 @@ class ShellParse:
 
     Args:
         flags (dict[str, str | bool]): parsed options keyed by their
-            dashless short or long name, each where it was last
-            given, so options that cancel one another (xargs -I,
-            -L, -n) replay in order.
+            dashless short or long name; an optional-value option
+            given bare is True.
+        given (list[tuple[str, str | bool]]): every option in the order
+            it was given, for a builtin whose options act in turn
+            (xargs -I, -L and -n cancel one another).
         operands (list[str]): everything from the first non-option on.
         invalid (str | None): unknown option char or long token.
-        needs_value (str | None): value option with no value.
+        needs_value (str | None): value option with no value: the short
+            char, or the long token with its dashes.
     """
     flags: dict[str, str | bool] = field(default_factory=dict)
+    given: list[tuple[str, str | bool]] = field(default_factory=list)
     operands: list[str] = field(default_factory=list)
     invalid: str | None = None
     needs_value: str | None = None
@@ -168,30 +188,38 @@ class ShellParse:
 def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
     """Scan leading options the way getopt does for a shell builtin.
 
+    An optional-value option takes its value only when attached
+    (``-iR``, ``--replace=R``), as getopt's ``::`` does.
+
     Args:
         spec (CommandSpec): options table (SHELL_SPECS entry).
         argv (list[str]): builtin arguments, command name excluded.
     """
     short_bool: set[str] = set()
     short_value: set[str] = set()
+    short_optional: set[str] = set()
     long_bool: set[str] = set()
     long_value: set[str] = set()
+    long_optional: set[str] = set()
     alias: dict[str, str] = {}
     for opt in spec.options:
         short = opt.short.lstrip("-") if opt.short else None
         long = opt.long.lstrip("-") if opt.long else None
         name = short or long or ""
         if short is not None:
-            (short_bool if opt.type == "bool" else short_value).add(short)
+            (short_bool if opt.type == "bool" else
+             short_optional if opt.value_optional else short_value).add(short)
             alias[short] = name
         if long is not None:
-            (long_bool if opt.type == "bool" else long_value).add(long)
+            (long_bool if opt.type == "bool" else
+             long_optional if opt.value_optional else long_value).add(long)
             alias[long] = name
     flags: dict[str, str | bool] = {}
+    given: list[tuple[str, str | bool]] = []
 
     def record(key: str, value: str | bool) -> None:
-        flags.pop(key, None)
         flags[key] = value
+        given.append((key, value))
 
     i = 0
     while i < len(argv):
@@ -203,6 +231,8 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
             name, eq, value = tok[2:].partition("=")
             if name in long_bool:
                 record(alias[name], True)
+            elif name in long_optional:
+                record(alias[name], value if eq else True)
             elif name in long_value:
                 if eq:
                     record(alias[name], value)
@@ -211,10 +241,12 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
                     record(alias[name], argv[i])
                 else:
                     return ShellParse(flags=flags,
+                                      given=given,
                                       operands=list(argv[i + 1:]),
-                                      needs_value=name)
+                                      needs_value=f"--{name}")
             else:
                 return ShellParse(flags=flags,
+                                  given=given,
                                   operands=list(argv[i + 1:]),
                                   invalid=tok)
             i += 1
@@ -228,6 +260,9 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
                     record(alias[ch], True)
                     j += 1
                     continue
+                if ch in short_optional:
+                    record(alias[ch], chars[j + 1:] or True)
+                    break
                 if ch in short_value:
                     rest = chars[j + 1:]
                     if rest:
@@ -237,13 +272,15 @@ def parse_shell_options(spec: CommandSpec, argv: list[str]) -> ShellParse:
                         record(alias[ch], argv[i])
                     else:
                         return ShellParse(flags=flags,
+                                          given=given,
                                           operands=list(argv[i + 1:]),
                                           needs_value=ch)
                     break
                 return ShellParse(flags=flags,
+                                  given=given,
                                   operands=list(argv[i + 1:]),
                                   invalid=ch)
             i += 1
             continue
         break
-    return ShellParse(flags=flags, operands=list(argv[i:]))
+    return ShellParse(flags=flags, given=given, operands=list(argv[i:]))

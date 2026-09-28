@@ -240,6 +240,193 @@
         "stdout": "a b c\ncode=1\n",
         "stderr": "xargs: unmatched single quote; by default quotes are special to xargs unless you use the -0 option\n"
       }
+    },
+    {
+      "id": "xargs_max_procs_keeps_input_order",
+      "seq": 1300041,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\nc\\nd\\n' | xargs -P2 -n1 echo; printf 'a\\nb\\nc\\n' | xargs --max-procs=0 -n1 echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\nc\nd\na\nb\nc\n",
+        "stderr": ""
+      },
+      "flags": [
+        "P2"
+      ]
+    },
+    {
+      "id": "xargs_max_procs_failure_exits_123",
+      "seq": 1300042,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | xargs -P2 -I{} sh -c 'test {} = a'; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=123\n",
+        "stderr": ""
+      },
+      "flags": [
+        "P2",
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_max_procs_commands_do_not_share_variables",
+      "seq": 1300043,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "x=outer; printf 'a\\nb\\nc\\n' | xargs -P3 -I{} sh -c 'x={}; echo $x'; echo $x",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\nc\nouter\n",
+        "stderr": ""
+      },
+      "flags": [
+        "P3",
+        "I"
+      ]
+    },
+    {
+      "id": "xargs_help_page",
+      "seq": 1300044,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "xargs --help | head -3; xargs --help -q >/dev/null; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: Build and run command lines from standard input.\n\nUsage: xargs [OPTION]... COMMAND [INITIAL-ARGS]...\ncode=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "help"
+      ]
+    },
+    {
+      "id": "xargs_version_line",
+      "seq": 1300045,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "xargs --version | cut -d' ' -f1,2",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs (Mirage)\n",
+        "stderr": ""
+      },
+      "flags": [
+        "version"
+      ]
     }
   ]
 }

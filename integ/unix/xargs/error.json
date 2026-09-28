@@ -30,11 +30,197 @@
       "command": "echo hi | xargs -q echo 2>&1; echo code=$?",
       "expect": {
         "exit": 0,
-        "stdout": "xargs: invalid option -- 'q'\ncode=1\n",
+        "stdout": "xargs: invalid option -- 'q'\nTry 'xargs --help' for more information.\ncode=1\n",
         "stderr": ""
       },
       "flags": [
         "q"
+      ]
+    },
+    {
+      "id": "xargs_unrecognized_long_opt",
+      "seq": 1300046,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo hi | xargs --bogus echo 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: unrecognized option '--bogus'\nTry 'xargs --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "bogus"
+      ]
+    },
+    {
+      "id": "xargs_missing_value_short",
+      "seq": 1300047,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo hi | xargs -n 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: option requires an argument -- 'n'\nTry 'xargs --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "xargs_missing_value_long",
+      "seq": 1300048,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo hi | xargs --max-args 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: option '--max-args' requires an argument\nTry 'xargs --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "max-args"
+      ]
+    },
+    {
+      "id": "xargs_max_procs_invalid",
+      "seq": 1300049,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo hi | xargs -P x echo 2>&1; echo hi | xargs -P -1 echo 2>&1; echo hi | xargs -P 99999999999 echo 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: invalid number \"x\" for -P option\nTry 'xargs --help' for more information.\nxargs: value -1 for -P option should be >= 0\nTry 'xargs --help' for more information.\nxargs: value 99999999999 for -P option should be <= 2147483647\nTry 'xargs --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "P"
+      ]
+    },
+    {
+      "id": "xargs_refusal_before_help",
+      "seq": 1300050,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo hi | xargs -n0 --help 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "xargs: value 0 for -n option should be >= 1\nTry 'xargs --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n0",
+        "help"
       ]
     }
   ]

@@ -1716,6 +1716,40 @@ describe('handleMan', () => {
   })
 })
 
+function slowShell(
+  delays: Record<string, number> = {},
+  exitCodes: Record<string, number> = {},
+): {
+  lines: string[]
+  peak: () => number
+  fn: (script: string, opts: { sessionId: string }) => Promise<IOResult>
+} {
+  const lines: string[] = []
+  let active = 0
+  let peak = 0
+  return {
+    lines,
+    peak: () => peak,
+    fn: async (script: string) => {
+      lines.push(script)
+      active += 1
+      peak = Math.max(peak, active)
+      await new Promise((resolve) => setTimeout(resolve, delays[script] ?? 10))
+      active -= 1
+      return new IOResult({
+        stdout: new TextEncoder().encode(`ran:${script}\n`),
+        exitCode: exitCodes[script] ?? 0,
+      })
+    },
+  }
+}
+
+const TRY = "Try 'xargs --help' for more information.\n"
+
+function warned(option: string, offending: string): string {
+  return `xargs: warning: options ${offending} and ${option} are mutually exclusive, ignoring previous ${offending} value\n`
+}
+
 function fakeShell(exitCodes: number[] = []): {
   lines: string[]
   fn: (script: string, opts: { sessionId: string }) => Promise<IOResult>
@@ -1917,7 +1951,7 @@ describe('handleXargs', () => {
     const shell = fakeShell()
     const [, io] = await handleXargs(shell.fn, ['-q', 'echo'], session, ab())
     expect(io.exitCode).toBe(1)
-    expect(decode(await materialize(io.stderr))).toBe("xargs: invalid option -- 'q'\n")
+    expect(decode(await materialize(io.stderr))).toBe(`xargs: invalid option -- 'q'\n${TRY}`)
     expect(shell.lines).toEqual([])
   })
 
@@ -1926,17 +1960,53 @@ describe('handleXargs', () => {
     const [, io] = await handleXargs(shell.fn, ['-n0', 'echo'], session, ab())
     expect(io.exitCode).toBe(1)
     expect(decode(await materialize(io.stderr))).toBe(
-      'xargs: value 0 for -n option should be >= 1\n',
+      `xargs: value 0 for -n option should be >= 1\n${TRY}`,
     )
   })
 
   const enc = (text: string): Uint8Array => new TextEncoder().encode(text)
 
-  it('-P is unsupported', async () => {
+  it.each([
+    [['--bogus', 'echo'], "xargs: unrecognized option '--bogus'\n"],
+    [['-n'], "xargs: option requires an argument -- 'n'\n"],
+    [['--max-args'], "xargs: option '--max-args' requires an argument\n"],
+    [['-I'], "xargs: option requires an argument -- 'I'\n"],
+  ])('option refusals carry the help hint (%j)', async (args, message) => {
     const shell = fakeShell()
-    const [, io] = await handleXargs(shell.fn, ['-P2', 'echo'], session, ab())
+    const [, io] = await handleXargs(shell.fn, args, session, enc('x'))
     expect(io.exitCode).toBe(1)
-    expect(decode(await materialize(io.stderr))).toBe("xargs: unsupported option -- 'P'\n")
+    expect(decode(await materialize(io.stderr))).toBe(message + TRY)
+    expect(shell.lines).toEqual([])
+  })
+
+  it.each([[['--help']], [['--help', '-q']], [['-r', '--help', 'echo']]])(
+    '--help prints the page where it stands (%j)',
+    async (args) => {
+      const shell = fakeShell()
+      const [out, io] = await handleXargs(shell.fn, args, session, enc('x'))
+      const page = decode(await materialize(out))
+      expect(
+        page.startsWith(
+          'xargs: Build and run command lines from standard input.\n\n' +
+            'Usage: xargs [OPTION]... COMMAND [INITIAL-ARGS]...\n',
+        ),
+      ).toBe(true)
+      expect(page).toContain('  -P, --max-procs <text>')
+      expect(io.exitCode).toBe(0)
+      expect(shell.lines).toEqual([])
+    },
+  )
+
+  it('--version, and a refusal read before --help', async () => {
+    const shell = fakeShell()
+    let [out, io] = await handleXargs(shell.fn, ['--version'], session, enc('x'))
+    expect(decode(await materialize(out)).startsWith('xargs (Mirage) ')).toBe(true)
+    expect(io.exitCode).toBe(0)
+    ;[out, io] = await handleXargs(shell.fn, ['-n0', '--help'], session, enc('x'))
+    expect(io.exitCode).toBe(1)
+    expect(decode(await materialize(io.stderr))).toBe(
+      `xargs: value 0 for -n option should be >= 1\n${TRY}`,
+    )
     expect(shell.lines).toEqual([])
   })
 
@@ -2070,49 +2140,145 @@ describe('handleXargs', () => {
     expect(io.exitCode).toBe(1)
   })
 
-  it.each([
-    ['0', 'xargs: value 0 for -L option should be >= 1\n'],
-    ['-1', 'xargs: value -1 for -L option should be >= 1\n'],
-    ['x', 'xargs: invalid number "x" for -L option\n'],
-    ['2 ', 'xargs: invalid number "2 " for -L option\n'],
-  ])('-L refuses the count %j', async (value, message) => {
+  it.each<[string[], string]>([
+    [['-L', '0'], 'xargs: value 0 for -L option should be >= 1\n'],
+    [['-L', '-1'], 'xargs: value -1 for -L option should be >= 1\n'],
+    [['-L', 'x'], 'xargs: invalid number "x" for -L option\n'],
+    [['-L', '2 '], 'xargs: invalid number "2 " for -L option\n'],
+    [['-l0'], 'xargs: value 0 for -l option should be >= 1\n'],
+    [['--max-lines=x'], 'xargs: invalid number "x" for -l option\n'],
+    [['-l1r'], 'xargs: invalid number "1r" for -l option\n'],
+    [['-P', 'x'], 'xargs: invalid number "x" for -P option\n'],
+    [['-P', '-1'], 'xargs: value -1 for -P option should be >= 0\n'],
+    [['-P', '99999999999'], 'xargs: value 99999999999 for -P option should be <= 2147483647\n'],
+  ])('counts are refused with the help hint (%j)', async (args, message) => {
     const shell = fakeShell()
-    const [, io] = await handleXargs(shell.fn, ['-L', value, 'echo'], session, enc('a\n'))
+    const [, io] = await handleXargs(shell.fn, [...args, 'echo'], session, enc('a\n'))
     expect(io.exitCode).toBe(1)
-    expect(decode(await materialize(io.stderr))).toBe(message)
+    expect(decode(await materialize(io.stderr))).toBe(message + TRY)
     expect(shell.lines).toEqual([])
   })
 
-  it.each<[string[], string[], string]>([
-    [['-I{}', '-n1', 'echo', '[{}]'], ["echo '[a b]'", "echo '[c]'"], ''],
+  it.each<[string[], string[]]>([
+    [
+      ['-i', 'echo', 'x{}y'],
+      ['echo xay', 'echo xby'],
+    ],
+    [
+      ['-iZ', 'echo', 'xZy'],
+      ['echo xay', 'echo xby'],
+    ],
+    [
+      ['--replace', 'echo', 'x{}y'],
+      ['echo xay', 'echo xby'],
+    ],
+    [
+      ['--replace=Z', 'echo', 'xZy'],
+      ['echo xay', 'echo xby'],
+    ],
+    [
+      ['-i', 'Z', 'x{}'],
+      ['Z xa', 'Z xb'],
+    ],
+    [
+      ['-ri', 'echo', '{}'],
+      ['echo a', 'echo b'],
+    ],
+    [
+      ['-il', 'echo', '{}'],
+      ["echo '{}'", "echo '{}'"],
+    ],
+    [
+      ['-l', 'echo'],
+      ['echo a', 'echo b'],
+    ],
+    [['-l2', 'echo'], ['echo a b']],
+    [
+      ['--max-lines', 'echo'],
+      ['echo a', 'echo b'],
+    ],
+    [['--max-lines=2', 'echo'], ['echo a b']],
+    [
+      ['-l', '2'],
+      ['2 a', '2 b'],
+    ],
+  ])('optional-value -i and -l (%j)', async (args, lines) => {
+    const shell = fakeShell()
+    const [, io] = await handleXargs(shell.fn, args, session, enc('a\nb\n'))
+    expect(shell.lines).toEqual(lines)
+    expect(io.exitCode).toBe(0)
+  })
+
+  it('-P runs side by side and keeps input order', async () => {
+    let shell = slowShell({ 'echo a': 50 })
+    const [out, io] = await handleXargs(shell.fn, ['-P2', '-n1', 'echo'], session, enc('a b c d'))
+    expect(shell.lines).toEqual(['echo a', 'echo b', 'echo c', 'echo d'])
+    expect(shell.peak()).toBe(2)
+    expect(decode(await materialize(out))).toBe('ran:echo a\nran:echo b\nran:echo c\nran:echo d\n')
+    expect(io.exitCode).toBe(0)
+    shell = slowShell()
+    await handleXargs(shell.fn, ['-P0', '-n1', 'echo'], session, enc('a b c d'))
+    expect(shell.peak()).toBe(4)
+    shell = slowShell()
+    await handleXargs(shell.fn, ['-n1', 'echo'], session, enc('a b c d'))
+    expect(shell.peak()).toBe(1)
+  })
+
+  it('-P starts nothing after a command cannot run', async () => {
+    let shell = slowShell({ 'nope b': 50 }, { 'nope a': 127 })
+    let [, io] = await handleXargs(shell.fn, ['-P2', '-n1', 'nope'], session, enc('a b c d'))
+    expect(shell.lines).toEqual(['nope a', 'nope b'])
+    expect(io.exitCode).toBe(127)
+    shell = slowShell({}, { 'nope c': 1 })
+    ;[, io] = await handleXargs(shell.fn, ['-P3', '-n1', 'nope'], session, enc('a b c d'))
+    expect(io.exitCode).toBe(123)
+  })
+
+  it.each<[string[], string[], [string, string][]]>([
+    [['-I{}', '-n1', 'echo', '[{}]'], ["echo '[a b]'", "echo '[c]'"], []],
     [
       ['-n1', '-I{}', 'echo', '[{}]'],
       ["echo '[a b]'", "echo '[c]'"],
-      'options --max-args and --replace/-I/-i',
+      [['--replace/-I/-i', '--max-args']],
     ],
     [
       ['-L2', '-I{}', 'echo', '[{}]'],
       ["echo '[a b]'", "echo '[c]'"],
-      'options --max-lines and --replace/-I/-i',
+      [['--replace/-I/-i', '--max-lines']],
     ],
-    [['-I{}', '-L2', 'echo', '[{}]'], ["echo '[{}]' a b c"], 'options --replace and -L'],
+    [['-I{}', '-L2', 'echo', '[{}]'], ["echo '[{}]' a b c"], [['-L', '--replace']]],
     [
       ['-I{}', '-n2', 'echo', '[{}]'],
       ["echo '[{}]' a b", "echo '[{}]' c"],
-      'options --replace and --max-args/-n',
+      [['--max-args/-n', '--replace']],
     ],
-    [['-L1', '-n2', 'echo'], ['echo a b', 'echo c'], 'options --max-lines and --max-args/-n'],
-    [['-n2', '-L1', 'echo'], ['echo a b', 'echo c'], 'options --max-args and -L'],
-    [['-L1', '-n2', '-L1', 'echo'], ['echo a b', 'echo c'], 'options --max-args and -L'],
-  ])('-I, -L and -n cancel in order (%j)', async (args, lines, warning) => {
+    [['-L1', '-n2', 'echo'], ['echo a b', 'echo c'], [['--max-args/-n', '--max-lines']]],
+    [['-n2', '-L1', 'echo'], ['echo a b', 'echo c'], [['-L', '--max-args']]],
+    [['-n2', '-l', 'echo'], ['echo a b', 'echo c'], [['--max-lines/-l', '--max-args']]],
+    [
+      ['-i', '-l', 'echo', '{}'],
+      ["echo '{}' a b", "echo '{}' c"],
+      [['--max-lines/-l', '--replace']],
+    ],
+    [
+      ['-L1', '-n2', '-L1', 'echo'],
+      ['echo a b', 'echo c'],
+      [
+        ['--max-args/-n', '--max-lines'],
+        ['-L', '--max-args'],
+      ],
+    ],
+    [
+      ['-n1', '-I{}', '-n1', 'echo', '[{}]'],
+      ["echo '[a b]'", "echo '[c]'"],
+      [['--replace/-I/-i', '--max-args']],
+    ],
+  ])('-I, -L and -n cancel in order (%j)', async (args, lines, warnings) => {
     const shell = fakeShell()
     const [, io] = await handleXargs(shell.fn, args, session, enc('a b\nc\n'))
     expect(shell.lines).toEqual(lines)
-    const offending = warning.split(' ')[1] ?? ''
     expect(decode(await materialize(io.stderr))).toBe(
-      warning === ''
-        ? ''
-        : `xargs: warning: ${warning} are mutually exclusive, ignoring previous ${offending} value\n`,
+      warnings.map(([option, offending]) => warned(option, offending)).join(''),
     )
   })
 })
@@ -2222,6 +2388,16 @@ describe('handleTimeout', () => {
     const [, io] = await handleTimeout(shell.fn, ['5'], session)
     expect(io.exitCode).toBe(125)
     expect(decode(await materialize(io.stderr))).toBe('timeout: missing operand\n')
+  })
+
+  it.each([
+    [['-s'], "timeout: option requires an argument -- 's'\n"],
+    [['--signal'], "timeout: option '--signal' requires an argument\n"],
+  ])('a missing option value exits 125 (%j)', async (args, message) => {
+    const shell = fakeShell()
+    const [, io] = await handleTimeout(shell.fn, args, session)
+    expect(io.exitCode).toBe(125)
+    expect(decode(await materialize(io.stderr))).toBe(message)
   })
 
   it('signal option is rejected', async () => {

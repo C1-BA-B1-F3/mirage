@@ -12,16 +12,26 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { versionLine } from '../../../../commands/config.ts'
+import { runWithSession } from '../../../../context/session_context.ts'
+import { renderHelp } from '../../../../commands/spec/help.ts'
 import { SHELL_SPECS, parseShellOptions } from '../../../../commands/spec/shell.ts'
+import {
+  missingValueError,
+  unknownOptionError,
+  usageHint,
+} from '../../../../commands/spec/usage.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
-import { asyncChain } from '../../../../io/stream.ts'
+import { asyncChain, yieldBytes } from '../../../../io/stream.ts'
 import { shellJoin } from '../../../../shell/join.ts'
+import { asyncContextIsolatesTasks } from '../../../../utils/async_context.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
 import type { BuiltinCall, ExecuteStringFn, Result } from '../types.ts'
 
-const UNSUPPORTED = ['P']
+const SYNOPSIS = 'xargs [OPTION]... COMMAND [INITIAL-ARGS]...'
+const PROCS_MAX = 2147483647
 const BLANKS = new Set([' ', '\t'])
 const SPACES = new Set([' ', '\t', '\n', '\v', '\f', '\r'])
 const QUOTES = new Map([
@@ -33,20 +43,51 @@ const NUMBER = /^[ \t\n\v\f\r]*[+-]?[0-9]+$/
 type ReadState = 'norm' | 'space' | 'quote' | 'backslash'
 type Read = [words: string[], counted: boolean]
 
-function usageError(message: string): Result {
-  const stderr = new TextEncoder().encode(`xargs: ${message}\n`)
+function refuse(stderr: string | Uint8Array, exitCode = 1): Result {
+  const data = typeof stderr === 'string' ? new TextEncoder().encode(stderr) : stderr
   return [
     null,
-    new IOResult({ exitCode: 1, stderr }),
-    new ExecutionNode({ command: 'xargs', exitCode: 1 }),
+    new IOResult({ exitCode, stderr: data }),
+    new ExecutionNode({ command: 'xargs', exitCode }),
   ]
 }
 
-/** GNU's refusal of a -n or -L count, null for a valid one. */
-function countError(raw: string, name: string): string | null {
-  if (!NUMBER.test(raw)) return `invalid number "${raw}" for -${name} option`
-  if (Number(raw.trim()) < 1) return `value ${raw} for -${name} option should be >= 1`
-  return null
+function concat(head: string, tail: Uint8Array): Uint8Array {
+  const lead = new TextEncoder().encode(head)
+  const out = new Uint8Array(lead.length + tail.length)
+  out.set(lead)
+  out.set(tail, lead.length)
+  return out
+}
+
+/** GNU's parse_num refusal of a count, null for a valid one. */
+function countError(
+  raw: string,
+  name: string,
+  least = 1,
+  most: number | null = null,
+): string | null {
+  let message: string
+  if (!NUMBER.test(raw)) message = `invalid number "${raw}" for -${name} option`
+  else if (Number(raw.trim()) < least)
+    message = `value ${raw} for -${name} option should be >= ${String(least)}`
+  else if (most !== null && Number(raw.trim()) > most) {
+    message = `value ${raw} for -${name} option should be <= ${String(most)}`
+  } else return null
+  return `xargs: ${message}\n${usageHint('xargs')}\n`
+}
+
+/** xargs's answer to --help or --version: stdout, exit 0. */
+function standardResponse(option: string, warnings: string): Result {
+  const text =
+    option === 'help'
+      ? renderHelp('xargs', SHELL_SPECS.xargs, [], undefined, SYNOPSIS)
+      : versionLine('xargs')
+  return [
+    yieldBytes(new TextEncoder().encode(text)),
+    new IOResult(warnings === '' ? {} : { stderr: new TextEncoder().encode(warnings) }),
+    new ExecutionNode({ command: 'xargs', exitCode: 0 }),
+  ]
 }
 
 function exclusive(option: string, offending: string): string {
@@ -172,13 +213,65 @@ function batchReads(reads: Read[], maxLines: number, maxArgs: number): [string[]
 }
 
 /**
+ * Run the command lines, at most `procs` at a time.
+ *
+ * GNU starts no command once one could not run (126, 127) and waits for
+ * those already running. Commands that run side by side each get a fork
+ * of the session, as GNU's children are separate processes, so one
+ * cannot see another's variables, and each drains inside its fork, since
+ * a stream can still read the ambient session. Where the async context
+ * cannot keep concurrent forks apart (a browser without
+ * AsyncLocalStorage) the lines run one at a time, as a background job's
+ * nested evals fall back there. The results come back in input order,
+ * which is the order their output is written in.
+ */
+async function runLines(
+  executeFn: ExecuteStringFn,
+  lines: string[],
+  session: SessionState,
+  procs: number,
+): Promise<IOResult[]> {
+  const results: (IOResult | null)[] = lines.map(() => null)
+  let next = 0
+  let stopped = false
+  const forked = procs !== 1 && lines.length > 1 && asyncContextIsolatesTasks
+  const run = async (line: string): Promise<IOResult> => {
+    if (!forked) return executeFn(line, { sessionId: session.sessionId })
+    return runWithSession(session.fork(), async () => {
+      const io = await executeFn(line, { sessionId: session.sessionId })
+      await io.materializeStdout()
+      await io.materializeStderr()
+      return io
+    })
+  }
+  const worker = async (): Promise<void> => {
+    while (!stopped && next < lines.length) {
+      const index = next
+      next += 1
+      let io: IOResult
+      try {
+        io = await run(lines[index] ?? '')
+      } catch (err) {
+        stopped = true
+        throw err
+      }
+      results[index] = io
+      if (io.exitCode === 126 || io.exitCode === 127) stopped = true
+    }
+  }
+  const width = forked ? (procs === 0 ? lines.length : Math.min(procs, lines.length)) : 1
+  await Promise.all(Array.from({ length: width }, worker))
+  return results.filter((io): io is IOResult => io !== null)
+}
+
+/**
  * Run a command with words read from stdin (GNU xargs).
  *
  * The words are appended to the initial arguments, or with -I each
- * input line takes the place of the string in them. -I, -L and -n
- * cancel each other, the later one winning with GNU's warning; an
- * option given twice counts where it was last given, so it warns once
- * where GNU warns for each occurrence.
+ * input line takes the place of the string in them. Options act in the
+ * order given, as GNU's getopt loop reads them: -I, -L and -n cancel
+ * each other with GNU's warning, and --help or --version answers where
+ * it stands.
  *
  * GNU xargs execs the command directly, so every input word must reach
  * it as exactly one argv token. The inner line is built with shellJoin:
@@ -192,48 +285,54 @@ export async function handleXargs(
   stdin: ByteSource | null,
 ): Promise<Result> {
   const parse = parseShellOptions(SHELL_SPECS.xargs, args)
-  if (parse.invalid !== null) {
-    if (parse.invalid.startsWith('--')) return usageError(`unrecognized option '${parse.invalid}'`)
-    return usageError(`invalid option -- '${parse.invalid}'`)
-  }
-  if (parse.needsValue !== null) {
-    return usageError(`option requires an argument -- '${parse.needsValue}'`)
-  }
-  for (const name of UNSUPPORTED) {
-    if (name in parse.flags) return usageError(`unsupported option -- '${name}'`)
-  }
   let replace: string | null = null
   let maxLines = 0
   let maxArgs = 0
-  const warnings: string[] = []
-  for (const [name, value] of Object.entries(parse.flags)) {
-    if (typeof value !== 'string' || !['I', 'L', 'n'].includes(name)) continue
-    if (name === 'I') {
-      if (maxArgs > 0) warnings.push(exclusive('--replace/-I/-i', '--max-args'))
-      if (maxLines > 0) warnings.push(exclusive('--replace/-I/-i', '--max-lines'))
-      replace = value
+  let procs = 1
+  let warnings = ''
+  for (const [name, value] of parse.given) {
+    if (name === 'help' || name === 'version') return standardResponse(name, warnings)
+    if (name === 'I' || name === 'i') {
+      if (maxArgs > 0) warnings += exclusive('--replace/-I/-i', '--max-args')
+      if (maxLines > 0) warnings += exclusive('--replace/-I/-i', '--max-lines')
+      replace = typeof value === 'string' ? value : '{}'
       maxLines = 0
       maxArgs = 0
       continue
     }
-    const error = countError(value, name)
-    if (error !== null) return usageError(error)
-    const count = Number(value.trim())
-    if (name === 'L') {
-      if (maxArgs > 0) warnings.push(exclusive('-L', '--max-args'))
-      if (replace !== null) warnings.push(exclusive('-L', '--replace'))
+    if (!['L', 'l', 'n', 'P'].includes(name)) continue
+    const raw = typeof value === 'string' ? value : '1'
+    const error = name === 'P' ? countError(raw, name, 0, PROCS_MAX) : countError(raw, name)
+    if (error !== null) return refuse(warnings + error)
+    const count = Number(raw.trim())
+    if (name === 'P') {
+      procs = count
+      continue
+    }
+    if (name === 'L' || name === 'l') {
+      const option = name === 'L' ? '-L' : '--max-lines/-l'
+      if (maxArgs > 0) warnings += exclusive(option, '--max-args')
+      if (replace !== null) warnings += exclusive(option, '--replace')
       replace = null
       maxLines = count
       maxArgs = 0
       continue
     }
-    if (maxLines > 0) warnings.push(exclusive('--max-args/-n', '--max-lines'))
+    if (maxLines > 0) warnings += exclusive('--max-args/-n', '--max-lines')
     maxLines = 0
     // GNU reads `-I {} -n1` as plain -I.
     if (replace !== null && count === 1) continue
-    if (replace !== null) warnings.push(exclusive('--max-args/-n', '--replace'))
+    if (replace !== null) warnings += exclusive('--max-args/-n', '--replace')
     replace = null
     maxArgs = count
+  }
+  if (parse.invalid !== null) {
+    const [stderr, code] = unknownOptionError('xargs', parse.invalid)
+    return refuse(concat(warnings, stderr), code)
+  }
+  if (parse.needsValue !== null) {
+    const [stderr, code] = missingValueError('xargs', parse.needsValue)
+    return refuse(concat(warnings, stderr), code)
   }
 
   const text = new TextDecoder().decode(await materialize(stdin))
@@ -249,7 +348,7 @@ export async function handleXargs(
     const pattern = replace
     const items = reads.flatMap(([words]) => words)
     if (items.length > 0 && pattern === '' && command.length > 1) {
-      return usageError('command too long')
+      return refuse(`${warnings}xargs: command too long\n`)
     }
     const [head = 'echo', ...initial] = command
     for (const item of items) {
@@ -266,24 +365,17 @@ export async function handleXargs(
     for (const batch of batches) runs.push([...command, ...batch])
   }
 
+  const ios = await runLines(executeFn, runs.map(shellJoin), session, procs)
   const stdouts: ByteSource[] = []
-  const warned = warnings.join('')
-  let merged = new IOResult(warned === '' ? {} : { stderr: new TextEncoder().encode(warned) })
-  let exitCode = 0
-  for (const run of runs) {
-    const io = await executeFn(shellJoin(run), { sessionId: session.sessionId })
+  let merged = new IOResult(warnings === '' ? {} : { stderr: new TextEncoder().encode(warnings) })
+  for (const io of ios) {
     if (io.stdout !== null) stdouts.push(io.stdout)
     merged = await merged.merge(io)
-    if (io.exitCode === 126 || io.exitCode === 127) {
-      // GNU xargs stops when the command cannot run or is missing.
-      exitCode = io.exitCode
-      break
-    }
-    if (io.exitCode !== 0) {
-      // GNU exits 123 when any invocation fails, but keeps going.
-      exitCode = 123
-    }
   }
+  // GNU xargs stops when the command cannot run or is missing, and exits
+  // 123 when any invocation fails but keeps going.
+  const stop = ios.find((io) => io.exitCode === 126 || io.exitCode === 127)
+  let exitCode = stop !== undefined ? stop.exitCode : ios.some((io) => io.exitCode !== 0) ? 123 : 0
   if (quoteError !== '' && exitCode !== 126 && exitCode !== 127) {
     merged = await merged.merge(new IOResult({ stderr: new TextEncoder().encode(quoteError) }))
     exitCode = 1

@@ -12,21 +12,28 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import re
 import shlex
 from collections.abc import Callable
 from enum import Enum
 from typing import Any
 
+from mirage.commands.config import version_line
+from mirage.commands.spec.help import render_help
 from mirage.commands.spec.shell import SHELL_SPECS, parse_shell_options
+from mirage.commands.spec.usage import (missing_value_error,
+                                        unknown_option_error, usage_hint)
 from mirage.io import IOResult
-from mirage.io.stream import async_chain, materialize
+from mirage.io.stream import async_chain, materialize, yield_bytes
 from mirage.io.types import ByteSource
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
-from mirage.workspace.session import SessionState
+from mirage.workspace.session import (SessionState, reset_current_session,
+                                      set_current_session)
 from mirage.workspace.types import ExecutionNode
 
-_UNSUPPORTED = ("P", )
+_SYNOPSIS = "xargs [OPTION]... COMMAND [INITIAL-ARGS]..."
+_PROCS_MAX = 2147483647
 _BLANKS = frozenset(" \t")
 _SPACES = frozenset(" \t\n\v\f\r")
 _QUOTES = {"'": "single", '"': "double"}
@@ -40,25 +47,52 @@ class _State(Enum):
     BACKSLASH = "backslash"
 
 
-def _usage_error(message: str) -> tuple[None, IOResult, ExecutionNode]:
-    stderr = f"xargs: {message}\n".encode()
-    return None, IOResult(exit_code=1,
-                          stderr=stderr), ExecutionNode(command="xargs",
-                                                        exit_code=1)
+def _refuse(stderr: str | bytes,
+            exit_code: int = 1) -> tuple[None, IOResult, ExecutionNode]:
+    data = stderr.encode() if isinstance(stderr, str) else stderr
+    return None, IOResult(exit_code=exit_code,
+                          stderr=data), ExecutionNode(command="xargs",
+                                                      exit_code=exit_code)
 
 
-def _count_error(raw: str, name: str) -> str | None:
-    """GNU's refusal of a -n or -L count, None for a valid one.
+def _count_error(raw: str,
+                 name: str,
+                 least: int = 1,
+                 most: int | None = None) -> str | None:
+    """GNU's parse_num refusal of a count, None for a valid one.
 
     Args:
         raw (str): the option's value as typed.
         name (str): the option letter.
+        least (int): the smallest count the option takes.
+        most (int | None): the largest, None when unbounded.
     """
     if not _NUMBER.fullmatch(raw):
-        return f'invalid number "{raw}" for -{name} option'
-    if int(raw) < 1:
-        return f"value {raw} for -{name} option should be >= 1"
-    return None
+        message = f'invalid number "{raw}" for -{name} option'
+    elif int(raw) < least:
+        message = f"value {raw} for -{name} option should be >= {least}"
+    elif most is not None and int(raw) > most:
+        message = f"value {raw} for -{name} option should be <= {most}"
+    else:
+        return None
+    return f"xargs: {message}\n{usage_hint('xargs')}\n"
+
+
+def _standard_response(
+        option: str,
+        warnings: str) -> tuple[ByteSource, IOResult, ExecutionNode]:
+    """xargs's answer to --help or --version: stdout, exit 0.
+
+    Args:
+        option (str): "help" or "version".
+        warnings (str): the option warnings printed before it.
+    """
+    text = (render_help("xargs", SHELL_SPECS["xargs"],
+                        synopsis=_SYNOPSIS).encode()
+            if option == "help" else version_line("xargs"))
+    return yield_bytes(text), IOResult(
+        stderr=warnings.encode() or None), ExecutionNode(command="xargs",
+                                                         exit_code=0)
 
 
 def _exclusive(option: str, offending: str) -> str:
@@ -186,6 +220,63 @@ def _batch_reads(reads: list[tuple[list[str], bool]], max_lines: int,
     return batches, pending
 
 
+async def _run_lines(execute_fn: Callable[..., Any], lines: list[str],
+                     session: SessionState, procs: int) -> list[IOResult]:
+    """Run the command lines, at most ``procs`` at a time.
+
+    GNU starts no command once one could not run (126, 127) and waits
+    for those already running. Commands that run side by side each get
+    a fork of the session, as GNU's children are separate processes,
+    so one cannot see another's variables, and each drains inside its
+    fork, since a stream can still read the ambient session. The
+    results come back in input order, which is the order their output
+    is written in.
+
+    Args:
+        execute_fn (Callable): shell evaluator for each line.
+        lines (list[str]): the command lines, in input order.
+        session (SessionState): the session the lines run in.
+        procs (int): the -P count; 0 runs every line at once.
+    """
+    results: list[IOResult | None] = [None] * len(lines)
+    upcoming = iter(range(len(lines)))
+    stopped = False
+    forked = procs != 1 and len(lines) > 1
+
+    async def run(line: str) -> IOResult:
+        io: IOResult
+        if not forked:
+            io = await execute_fn(line, session_id=session.session_id)
+            return io
+        token = set_current_session(session.fork())
+        try:
+            io = await execute_fn(line, session_id=session.session_id)
+            await io.materialize_stdout()
+            await io.materialize_stderr()
+            return io
+        finally:
+            reset_current_session(token)
+
+    async def worker() -> None:
+        nonlocal stopped
+        while not stopped:
+            index = next(upcoming, None)
+            if index is None:
+                return
+            try:
+                io = await run(lines[index])
+            except BaseException:
+                stopped = True
+                raise
+            results[index] = io
+            if io.exit_code in (126, 127):
+                stopped = True
+
+    width = (min(procs, len(lines)) if procs else len(lines)) if forked else 1
+    await asyncio.gather(*(worker() for _ in range(width)))
+    return [io for io in results if io is not None]
+
+
 async def handle_xargs(
     execute_fn: Callable[..., Any],
     args: list[str],
@@ -195,10 +286,10 @@ async def handle_xargs(
     """Run a command with words read from stdin (GNU xargs).
 
     The words are appended to the initial arguments, or with -I each
-    input line takes the place of the string in them. -I, -L and -n
-    cancel each other, the later one winning with GNU's warning; an
-    option given twice counts where it was last given, so it warns
-    once where GNU warns for each occurrence.
+    input line takes the place of the string in them. Options act in
+    the order given, as GNU's getopt loop reads them: -I, -L and -n
+    cancel each other with GNU's warning, and --help or --version
+    answers where it stands.
 
     GNU xargs execs the command directly, so every input word must
     reach it as exactly one argv token. The inner line is built with
@@ -213,49 +304,56 @@ async def handle_xargs(
         stdin (ByteSource | None): input whose words become arguments.
     """
     parse = parse_shell_options(SHELL_SPECS["xargs"], args or [])
-    if parse.invalid is not None:
-        if parse.invalid.startswith("--"):
-            return _usage_error(f"unrecognized option '{parse.invalid}'")
-        return _usage_error(f"invalid option -- '{parse.invalid}'")
-    if parse.needs_value is not None:
-        return _usage_error(
-            f"option requires an argument -- '{parse.needs_value}'")
-    for name in _UNSUPPORTED:
-        if name in parse.flags:
-            return _usage_error(f"unsupported option -- '{name}'")
     replace: str | None = None
     max_lines = 0
     max_args = 0
-    warnings: list[str] = []
-    for name, value in parse.flags.items():
-        if not isinstance(value, str) or name not in ("I", "L", "n"):
-            continue
-        if name == "I":
+    procs = 1
+    warnings = ""
+    for name, value in parse.given:
+        if name in ("help", "version"):
+            return _standard_response(name, warnings)
+        if name in ("I", "i"):
             if max_args:
-                warnings.append(_exclusive("--replace/-I/-i", "--max-args"))
+                warnings += _exclusive("--replace/-I/-i", "--max-args")
             if max_lines:
-                warnings.append(_exclusive("--replace/-I/-i", "--max-lines"))
-            replace, max_lines, max_args = value, 0, 0
+                warnings += _exclusive("--replace/-I/-i", "--max-lines")
+            replace = value if isinstance(value, str) else "{}"
+            max_lines, max_args = 0, 0
             continue
-        error = _count_error(value, name)
+        if name not in ("L", "l", "n", "P"):
+            continue
+        raw = value if isinstance(value, str) else "1"
+        least, most = (0, _PROCS_MAX) if name == "P" else (1, None)
+        error = _count_error(raw, name, least, most)
         if error is not None:
-            return _usage_error(error)
-        if name == "L":
+            return _refuse(warnings + error)
+        count = int(raw)
+        if name == "P":
+            procs = count
+            continue
+        if name in ("L", "l"):
+            option = "-L" if name == "L" else "--max-lines/-l"
             if max_args:
-                warnings.append(_exclusive("-L", "--max-args"))
+                warnings += _exclusive(option, "--max-args")
             if replace is not None:
-                warnings.append(_exclusive("-L", "--replace"))
-            replace, max_lines, max_args = None, int(value), 0
+                warnings += _exclusive(option, "--replace")
+            replace, max_lines, max_args = None, count, 0
             continue
         if max_lines:
-            warnings.append(_exclusive("--max-args/-n", "--max-lines"))
+            warnings += _exclusive("--max-args/-n", "--max-lines")
         max_lines = 0
-        if replace is not None and int(value) == 1:
+        if replace is not None and count == 1:
             # GNU reads `-I {} -n1` as plain -I.
             continue
         if replace is not None:
-            warnings.append(_exclusive("--max-args/-n", "--replace"))
-        replace, max_args = None, int(value)
+            warnings += _exclusive("--max-args/-n", "--replace")
+        replace, max_args = None, count
+    if parse.invalid is not None:
+        stderr, code = unknown_option_error("xargs", parse.invalid)
+        return _refuse(warnings.encode() + stderr, code)
+    if parse.needs_value is not None:
+        stderr, code = missing_value_error("xargs", parse.needs_value)
+        return _refuse(warnings.encode() + stderr, code)
 
     data = await materialize(stdin)
     text = (data or b"").decode(errors="replace")
@@ -270,7 +368,7 @@ async def handle_xargs(
     if replace is not None:
         items = [word for words, _ in reads for word in words]
         if items and not replace and len(command) > 1:
-            return _usage_error("command too long")
+            return _refuse(warnings + "xargs: command too long\n")
         runs = [[
             command[0], *(arg.replace(replace, item) for arg in command[1:])
         ] for item in items]
@@ -284,21 +382,19 @@ async def handle_xargs(
             batches.append(pending)
         runs = [[*command, *batch] for batch in batches]
 
+    ios = await _run_lines(execute_fn, [shlex.join(run) for run in runs],
+                           session, procs)
     stdouts: list[ByteSource] = []
-    merged = IOResult(stderr="".join(warnings).encode() or None)
-    exit_code = 0
-    for run in runs:
-        io = await execute_fn(shlex.join(run), session_id=session.session_id)
+    merged = IOResult(stderr=warnings.encode() or None)
+    for io in ios:
         if io.stdout is not None:
             stdouts.append(io.stdout)
         merged = await merged.merge(io)
-        if io.exit_code in (126, 127):
-            # GNU xargs stops when the command cannot run or is missing.
-            exit_code = io.exit_code
-            break
-        if io.exit_code != 0:
-            # GNU exits 123 when any invocation fails, but keeps going.
-            exit_code = 123
+    # GNU xargs stops when the command cannot run or is missing, and
+    # exits 123 when any invocation fails but keeps going.
+    exit_code = next(
+        (io.exit_code for io in ios if io.exit_code in (126, 127)),
+        123 if any(io.exit_code != 0 for io in ios) else 0)
     if quote_error and exit_code not in (126, 127):
         merged = await merged.merge(IOResult(stderr=quote_error.encode()))
         exit_code = 1

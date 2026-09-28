@@ -48,14 +48,33 @@ describe('parseShellOptions', () => {
     expect(parse.operands).toEqual(['-r', 'echo'])
   })
 
-  it('keeps flags in the order last given', () => {
+  it('lists every option in order in given', () => {
     const parse = parseShellOptions(SHELL_SPECS.xargs, ['-L1', '-I', '{}', '-n2', '-L3', 'echo'])
-    expect(Object.entries(parse.flags)).toEqual([
+    expect(parse.given).toEqual([
+      ['L', '1'],
       ['I', '{}'],
       ['n', '2'],
       ['L', '3'],
     ])
+    expect(parse.flags).toEqual({ L: '3', I: '{}', n: '2' })
     expect(parse.operands).toEqual(['echo'])
+  })
+
+  it('takes an optional value only when attached', () => {
+    const spec = SHELL_SPECS.xargs
+    expect(parseShellOptions(spec, ['-iZ', 'echo']).flags).toEqual({ i: 'Z' })
+    const bare = parseShellOptions(spec, ['-i', 'Z'])
+    expect(bare.flags).toEqual({ i: true })
+    expect(bare.operands).toEqual(['Z'])
+    expect(parseShellOptions(spec, ['--replace=Z', 'x']).flags).toEqual({ i: 'Z' })
+    const longBare = parseShellOptions(spec, ['--max-lines', '2'])
+    expect(longBare.flags).toEqual({ l: true })
+    expect(longBare.operands).toEqual(['2'])
+    expect(parseShellOptions(spec, ['-ri']).flags).toEqual({ r: true, i: true })
+  })
+
+  it('keeps the dashes of a long value flag missing its value', () => {
+    expect(parseShellOptions(SHELL_SPECS.xargs, ['--max-args']).needsValue).toBe('--max-args')
   })
 
   it('reports an invalid short option', () => {

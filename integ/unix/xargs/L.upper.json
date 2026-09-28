@@ -291,7 +291,7 @@
       "command": "echo x | xargs -L 0 echo 2>&1; echo code=$?",
       "expect": {
         "exit": 0,
-        "stdout": "xargs: value 0 for -L option should be >= 1\ncode=1\n",
+        "stdout": "xargs: value 0 for -L option should be >= 1\nTry 'xargs --help' for more information.\ncode=1\n",
         "stderr": ""
       },
       "flags": [
@@ -328,11 +328,49 @@
       "command": "echo x | xargs -L x echo 2>&1; echo code=$?",
       "expect": {
         "exit": 0,
-        "stdout": "xargs: invalid number \"x\" for -L option\ncode=1\n",
+        "stdout": "xargs: invalid number \"x\" for -L option\nTry 'xargs --help' for more information.\ncode=1\n",
         "stderr": ""
       },
       "flags": [
         "L"
+      ]
+    },
+    {
+      "id": "xargs_L_repeated_warns_each_time",
+      "seq": 1300035,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a b c\\nd\\n' | xargs -L1 -n2 -L1 echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a b c\nd\n",
+        "stderr": "xargs: warning: options --max-lines and --max-args/-n are mutually exclusive, ignoring previous --max-lines value\nxargs: warning: options --max-args and -L are mutually exclusive, ignoring previous --max-args value\n"
+      },
+      "flags": [
+        "L1",
+        "n2"
       ]
     }
   ]

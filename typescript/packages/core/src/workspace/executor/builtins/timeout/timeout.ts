@@ -127,6 +127,9 @@ export async function handleTimeout(
     return usageError(`invalid option -- '${parse.invalid}'`)
   }
   if (parse.needsValue !== null) {
+    if (parse.needsValue.startsWith('--')) {
+      return usageError(`option '${parse.needsValue}' requires an argument`)
+    }
     return usageError(`option requires an argument -- '${parse.needsValue}'`)
   }
   for (const name of UNSUPPORTED) {

@@ -2454,6 +2454,15 @@ def test_xargs_input_quote_char():
     assert _stdout(io) == b"don't\n"
 
 
+def test_xargs_max_procs_runs_each_command_in_its_own_fork():
+    """Commands side by side cannot see or leak each other's variables."""
+    ws = _ws()
+    io = _exec(
+        ws, "x=outer; printf 'a\\nb\\nc\\n' | "
+        "xargs -P3 -I{} sh -c 'x={}; sleep 0.05; echo $x'; echo $x")
+    assert _stdout(io) == b"a\nb\nc\nouter\n"
+
+
 def test_variable_command_name():
     """$E hi runs the expanded command name (bash expands, then runs)."""
     ws = _ws()

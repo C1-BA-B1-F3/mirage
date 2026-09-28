@@ -230,6 +230,15 @@ describe('argv dispatch regressions', () => {
     await ws.close()
   })
 
+  it('xargs -P runs each command in its own fork', async () => {
+    const { ws } = buildWorkspace()
+    const res = await ws.shell(
+      "x=outer; printf 'a\\nb\\nc\\n' | xargs -P3 -I{} sh -c 'x={}; sleep 0.05; echo $x'; echo $x",
+    )
+    expect(new TextDecoder().decode(res.stdout)).toBe('a\nb\nc\nouter\n')
+    await ws.close()
+  })
+
   it('runs a command named by a variable', async () => {
     const { ws } = buildWorkspace()
     const res = await ws.shell('E=echo; $E hi')

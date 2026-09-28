@@ -5,7 +5,11 @@ import pytest
 from mirage.io import IOResult
 from mirage.io.stream import materialize
 from mirage.workspace.executor.builtins.xargs import handle_xargs
+from mirage.workspace.session import (get_current_session,
+                                      reset_current_session,
+                                      set_current_session)
 from mirage.workspace.session.session import SessionState
+from mirage.workspace.session.state import seed_var, session_view
 
 
 class FakeShell:
@@ -462,3 +466,63 @@ async def test_invalid_occurrence_rejected_before_reading_input(args):
     assert io.exit_code == 1
     assert reads == []
     assert shell.lines == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("procs", [0, 2])
+@pytest.mark.parametrize("data", [b"a", b"a b"])
+async def test_parallel_mode_forks_even_a_single_invocation(procs, data):
+    parent = make_session()
+    seed_var(parent, "X", "outer")
+    seen = []
+
+    async def execute(line, session_id):
+        current = get_current_session()
+        assert current is not None
+        assert current is not parent
+        seen.append(current.env["X"])
+        await session_view(current).set("X", line)
+
+        async def stream(kind):
+            await asyncio.sleep(0)
+            assert get_current_session() is current
+            yield f"{kind}:{current.env['X']}\n".encode()
+
+        return IOResult(stdout=stream("out"), stderr=stream("err"))
+
+    token = set_current_session(parent)
+    try:
+        out, io, _ = await handle_xargs(execute, [f"-P{procs}", "-n1", "echo"],
+                                        parent, data)
+        assert get_current_session() is parent
+        words = data.decode().split()
+        assert await materialize(out) == "".join(f"out:echo {w}\n"
+                                                 for w in words).encode()
+        assert await materialize(io.stderr
+                                 ) == "".join(f"err:echo {w}\n"
+                                              for w in words).encode()
+        assert seen == ["outer"] * len(words)
+        assert parent.env["X"] == "outer"
+    finally:
+        reset_current_session(token)
+
+
+@pytest.mark.asyncio
+async def test_parallel_mode_restores_parent_after_single_invocation_raises():
+    parent = make_session()
+    seed_var(parent, "X", "outer")
+
+    async def execute(line, session_id):
+        current = get_current_session()
+        assert current is not None
+        await session_view(current).set("X", "inner")
+        raise RuntimeError(f"command failed: {line}")
+
+    token = set_current_session(parent)
+    try:
+        with pytest.raises(RuntimeError, match="command failed"):
+            await handle_xargs(execute, ["-P2", "echo"], parent, b"a")
+        assert get_current_session() is parent
+        assert parent.env["X"] == "outer"
+    finally:
+        reset_current_session(token)

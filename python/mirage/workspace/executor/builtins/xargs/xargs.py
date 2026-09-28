@@ -218,8 +218,8 @@ async def _run_lines(execute_fn: Callable[..., Any], lines: list[str],
     """Run the command lines, at most ``procs`` at a time.
 
     GNU starts no command once one could not run (126, 127) and waits
-    for those already running. Commands that run side by side each get
-    a fork of the session, as GNU's children are separate processes,
+    for those already running. Parallel mode gives every command a
+    fork of the session, even a single command,
     so one cannot see another's variables, and each drains inside its
     fork, since a stream can still read the ambient session. The
     results come back in input order, which is the order their output
@@ -234,7 +234,7 @@ async def _run_lines(execute_fn: Callable[..., Any], lines: list[str],
     results: list[IOResult | None] = [None] * len(lines)
     upcoming = iter(range(len(lines)))
     stopped = False
-    forked = procs != 1 and len(lines) > 1
+    forked = procs != 1
 
     async def run(line: str) -> IOResult:
         io: IOResult

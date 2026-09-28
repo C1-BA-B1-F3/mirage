@@ -211,13 +211,13 @@ function batchReads(reads: Read[], maxLines: number, maxArgs: number): [string[]
  * Run the command lines, at most `procs` at a time.
  *
  * GNU starts no command once one could not run (126, 127) and waits for
- * those already running. Commands that run side by side each get a fork
- * of the session, as GNU's children are separate processes, so one
+ * those already running. Parallel mode gives every command a fork
+ * of the session, even a single command, so one
  * cannot see another's variables, and each drains inside its fork, since
  * a stream can still read the ambient session. Where the async context
  * cannot keep concurrent forks apart (a browser without
- * AsyncLocalStorage) the lines run one at a time, as a background job's
- * nested evals fall back there. The results come back in input order,
+ * AsyncLocalStorage) the lines run one at a time, each in its own fork.
+ * The results come back in input order,
  * which is the order their output is written in.
  */
 async function runLines(
@@ -229,7 +229,7 @@ async function runLines(
   const results: (IOResult | null)[] = lines.map(() => null)
   let next = 0
   let stopped = false
-  const forked = procs !== 1 && lines.length > 1 && asyncContextIsolatesTasks
+  const forked = procs !== 1
   const run = async (line: string): Promise<IOResult> => {
     if (!forked) return executeFn(line, { sessionId: session.sessionId })
     return runWithSession(session.fork(), async () => {
@@ -254,7 +254,8 @@ async function runLines(
       if (io.exitCode === 126 || io.exitCode === 127) stopped = true
     }
   }
-  const width = forked ? (procs === 0 ? lines.length : Math.min(procs, lines.length)) : 1
+  const parallel = forked && asyncContextIsolatesTasks
+  const width = parallel ? (procs === 0 ? lines.length : Math.min(procs, lines.length)) : 1
   await Promise.all(Array.from({ length: width }, worker))
   return results.filter((io): io is IOResult => io !== null)
 }

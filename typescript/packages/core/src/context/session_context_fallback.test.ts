@@ -16,6 +16,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   getAdmission,
   getCurrentSessionFor,
+  getCurrentSession,
   getOpPolicies,
   mountGateFor,
   pathAllowed,
@@ -30,6 +31,9 @@ import {
   runWithSuspendedOpPolicies,
   sessionUmask,
 } from './session_context.ts'
+import { IOResult, materialize } from '../io/types.ts'
+import { handleXargs } from '../workspace/executor/builtins/xargs/xargs.ts'
+import { seedVar, sessionView } from '../workspace/session/state.ts'
 import type { EntryGate } from '../types.ts'
 import { MountMode, PathSpec } from '../types.ts'
 import type { CommandRule } from '../policy/types.ts'
@@ -409,6 +413,97 @@ describe('a named facade session on the fallback storage', () => {
       expect(await ws.vfs.readFileText('/data/vault/secret')).toBe('top\n')
       release()
       await holding
+    } finally {
+      await ws.close()
+    }
+  })
+})
+
+describe('xargs session isolation on the fallback storage', () => {
+  it.each<[number, string]>([
+    [0, 'a'],
+    [0, 'a b'],
+    [2, 'a'],
+    [2, 'a b'],
+  ])('-P%i forks each invocation for %s while serializing execution', async (procs, data) => {
+    const parent = new SessionState({ sessionId: 'xargs' })
+    seedVar(parent, 'X', 'outer')
+    const seen: string[] = []
+    let active = 0
+    let peak = 0
+    const execute = async (line: string): Promise<IOResult> => {
+      const current = getCurrentSession()
+      if (current === null) throw new Error('missing session')
+      seen.push(current.env.X ?? '')
+      active += 1
+      peak = Math.max(peak, active)
+      await sessionView(current).set('X', line)
+      await Promise.resolve()
+      active -= 1
+      async function* stream(kind: string) {
+        await Promise.resolve()
+        expect(getCurrentSession()).toBe(current)
+        yield new TextEncoder().encode(`${kind}:${getCurrentSession()?.env.X ?? ''}\n`)
+      }
+      return new IOResult({ stdout: stream('out'), stderr: stream('err') })
+    }
+    await runWithSession(parent, async () => {
+      const [out, io] = await handleXargs(
+        execute,
+        [`-P${String(procs)}`, '-n1', 'echo'],
+        parent,
+        new TextEncoder().encode(data),
+      )
+      expect(getCurrentSession()).toBe(parent)
+      expect(new TextDecoder().decode(await materialize(out))).toBe(
+        data
+          .split(' ')
+          .map((word) => `out:echo ${word}\n`)
+          .join(''),
+      )
+      expect(new TextDecoder().decode(await materialize(io.stderr))).toBe(
+        data
+          .split(' ')
+          .map((word) => `err:echo ${word}\n`)
+          .join(''),
+      )
+      expect(io.exitCode).toBe(0)
+    })
+    expect(seen).toEqual(data.split(' ').map(() => 'outer'))
+    expect(peak).toBe(1)
+    expect(parent.env.X).toBe('outer')
+    expect(getCurrentSession()).toBeNull()
+  })
+
+  it('restores the parent when a single invocation throws', async () => {
+    const parent = new SessionState({ sessionId: 'xargs' })
+    seedVar(parent, 'X', 'outer')
+    const execute = async (): Promise<IOResult> => {
+      const current = getCurrentSession()
+      if (current === null) throw new Error('missing session')
+      await sessionView(current).set('X', 'inner')
+      throw new Error('command failed')
+    }
+    await runWithSession(parent, async () => {
+      await expect(
+        handleXargs(execute, ['-P2', 'echo'], parent, new TextEncoder().encode('a')),
+      ).rejects.toThrow('command failed')
+      expect(getCurrentSession()).toBe(parent)
+      expect(parent.env.X).toBe('outer')
+    })
+    expect(getCurrentSession()).toBeNull()
+  })
+
+  it.each([0, 2])('-P%i keeps shell variables local to each invocation', async (procs) => {
+    const parser = await getTestParser()
+    const ws = new Workspace({}, { shellParser: parser })
+    try {
+      const io = await ws.shell(
+        `X=outer; change() { echo "$X"; X=inner; }; printf 'a\\nb\\n' | xargs -P${String(procs)} -n1 change; echo "$X"`,
+      )
+      expect(new TextDecoder().decode(io.stdout)).toBe('outer\nouter\nouter\n')
+      expect(new TextDecoder().decode(io.stderr)).toBe('')
+      expect(io.exitCode).toBe(0)
     } finally {
       await ws.close()
     }

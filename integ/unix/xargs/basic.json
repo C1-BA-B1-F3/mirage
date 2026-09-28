@@ -801,6 +801,142 @@
         "stdout": "-L0 -d  a\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "xargs_P0_multiple_preserves_session",
+      "seq": 1304100,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "export X=outer; printf 'a\\nb\\n' | xargs -P0 -n1 sh -c 'echo \"$X\"; X=inner'; echo \"$X\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "outer\nouter\nouter\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xargs_P0_single_preserves_session",
+      "seq": 1304101,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "export X=outer; printf 'a\\n' | xargs -P0 -n1 sh -c 'echo \"$X\"; X=inner'; echo \"$X\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "outer\nouter\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xargs_P2_multiple_preserves_session",
+      "seq": 1304102,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "export X=outer; printf 'a\\nb\\n' | xargs -P2 -n1 sh -c 'echo \"$X\"; X=inner'; echo \"$X\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "outer\nouter\nouter\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xargs_P2_single_preserves_session",
+      "seq": 1304103,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "export X=outer; printf 'a\\n' | xargs -P2 -n1 sh -c 'echo \"$X\"; X=inner'; echo \"$X\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "outer\nouter\n",
+        "stderr": ""
+      }
     }
   ]
 }

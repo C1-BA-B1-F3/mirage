@@ -31,7 +31,6 @@ import {
   rustMatches,
 } from './grep_offsets.ts'
 import { compilePattern } from './grep_pattern.ts'
-import { requiredNeedles } from './grep_prefilter.ts'
 import { NO_FILTERS, type WalkFilters, dirAdmitted, fileAdmitted } from './grep_select.ts'
 import { splitLines } from './utils/lines.ts'
 import type { AsyncReadBytesFn, AsyncReaddirFn, AsyncStatFn } from './utils/types.ts'
@@ -259,17 +258,9 @@ export async function* grepStream(
   const reGlobal = opts.onlyMatching
     ? new RegExp(pat.source, pat.flags.includes('g') ? pat.flags : pat.flags + 'g')
     : null
-  const needles = opts.invert ? null : requiredNeedles(pat)
   const iter = new AsyncLineIterator(source)
   try {
-    for (;;) {
-      if (needles !== null) {
-        const [skipped, bytes] = iter.skipNonmatchingLines(needles, pat.ignoreCase)
-        lineNum += skipped
-        bytePos += bytes
-      }
-      const rawLine = await iter.readline(opts.signal)
-      if (rawLine === null) break
+    for await (const rawLine of iter) {
       lineNum += 1
       const lineStart = bytePos
       bytePos += rawLine.byteLength + 1

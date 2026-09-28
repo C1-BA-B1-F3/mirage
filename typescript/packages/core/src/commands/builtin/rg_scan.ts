@@ -15,6 +15,8 @@
 import type { FileStat, PathSpec } from '../../types.ts'
 import { FileType } from '../../types.ts'
 import { fsStrerror, isWalkError } from '../../utils/errors.ts'
+import { classify } from '../../errors/classify.ts'
+import { posixErrno } from '../../errors/posix.ts'
 import { gnuBasename, respellOne } from '../../utils/path.ts'
 import { getExtension } from '../resolve.ts'
 import { BINARY_EXTENSIONS } from './constants.ts'
@@ -79,6 +81,32 @@ function errorText(err: unknown): string {
   return fsStrerror(err) ?? (err instanceof Error ? err.message : String(err))
 }
 
+/**
+ * An OS error the way ripgrep's Rust `io::Error` displays it: the strerror,
+ * then the Linux errno it came from (`No such file or directory (os error
+ * 2)`). A failure the vocabulary cannot number keeps its words alone.
+ * Mirrors Python's os_error_text.
+ */
+export function osErrorText(err: unknown): string {
+  const text = errorText(err)
+  const condition = classify(err)
+  return condition === null ? text : `${text} (os error ${String(posixErrno(condition))})`
+}
+
+// ripgrep's line for a path its walker could not stat or list: the walker's
+// I/O error names the path a second time (ripgrep 14.1.1). Mirrors Python's
+// walk_error_line.
+export function walkErrorLine(shown: string, err: unknown): string {
+  return `rg: ${shown}: IO error for operation on ${shown}: ${osErrorText(err)}`
+}
+
+// ripgrep's line for a file its searcher could not open or read: the bare
+// I/O error, without the walker's preamble (ripgrep 14.1.1). Mirrors
+// Python's open_error_line.
+export function openErrorLine(shown: string, err: unknown): string {
+  return `rg: ${shown}: ${osErrorText(err)}`
+}
+
 // An entry's path without the folder mark some backends append.
 function entryName(entry: string): string {
   return rstripSlash(entry)
@@ -120,7 +148,7 @@ export async function* walkHaystacks(
     entries = await readdirFn(here)
   } catch (err) {
     if (!isWalkError(err)) throw err
-    warnings?.push(`rg: ${respellOne(here, root, shownRoot)}: ${errorText(err)}`)
+    warnings?.push(walkErrorLine(respellOne(here, root, shownRoot), err))
     return
   }
   if (sortByName) entries = [...entries].sort(byName)
@@ -133,7 +161,7 @@ export async function* walkHaystacks(
       s = await statFn(entry)
     } catch (err) {
       if (!isWalkError(err)) throw err
-      warnings?.push(`rg: ${shown}: ${errorText(err)}`)
+      warnings?.push(walkErrorLine(shown, err))
       continue
     }
     const name = gnuBasename(child)

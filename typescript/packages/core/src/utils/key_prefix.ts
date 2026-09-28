@@ -136,6 +136,21 @@ export function mountedPath(root: PathSpec, mountPath: string): PathSpec {
   return PathSpec.fromStrPath(virtual, stripSlash(mountPath))
 }
 
+// `path` spelled as `rawPath`, every other field kept: Python's
+// `dataclasses.replace(path, raw_path=...)`.
+export function respelled(path: PathSpec, rawPath: string): PathSpec {
+  return new PathSpec({
+    virtual: path.virtual,
+    directory: path.directory,
+    vfsPath: path.vfsPath,
+    pattern: path.pattern,
+    resolved: path.resolved,
+    rawPath,
+    dotted: path.dotted,
+    walkError: path.walkError,
+  })
+}
+
 // A PathSpec for a mount-local key on the mount at `mountPrefix` ('' for the
 // root mount). For a handler that names an output only by its key (split's
 // `xaa`): the executing mount's prefix gives it the virtual path the user

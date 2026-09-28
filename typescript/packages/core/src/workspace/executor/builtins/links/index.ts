@@ -12,7 +12,22 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export { acceptsLine, followPaths, linkFlags, prepareMv, stripLinkOperands } from './links.ts'
+export {
+  acceptsLine,
+  followDirectoryLinks,
+  followPaths,
+  linkFlags,
+  prepareMv,
+  settleMoves,
+  stripLinkOperands,
+} from './links.ts'
 export { handleLn } from './ln.ts'
-export { linkTargetStat, pathExists, pathReaddir, pathStat, resolvePathStat } from './probe.ts'
+export {
+  linkTargetStat,
+  resolveLink,
+  pathExists,
+  pathReaddir,
+  pathStat,
+  resolvePathStat,
+} from './probe.ts'
 export { handleReadlink } from './readlink.ts'

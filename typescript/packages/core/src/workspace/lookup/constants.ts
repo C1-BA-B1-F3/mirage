@@ -12,11 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { SPECS } from '../../commands/spec/index.ts'
+import { linkMode } from '../../commands/builtin/generic/ls.ts'
+import { FlagView, SPECS, parseCommand } from '../../commands/spec/index.ts'
+import { parseToKwargs } from '../../commands/spec/parser.ts'
 import { compileSpec } from '../../commands/spec/compile.ts'
 import { BUILTIN_GROUP } from '../../shell/constants.ts'
 import { BuiltinGroup, ShellBuiltin } from '../../shell/types.ts'
-import type { PathSpec } from '../../types.ts'
+import type { LsLinkMode, PathSpec } from '../../types.ts'
 
 // Bash builtins the parser accepts but the executor cannot honor; they
 // still lookup to the shell layer so the error names a capability gap.
@@ -115,7 +117,6 @@ const DEREFERENCE_FLAGS: Record<string, [string, string[]]> = {
   stat: ['L', ['dereference']],
   file: ['L', ['dereference']],
   du: ['L', ['dereference']],
-  ls: ['L', ['dereference']],
 }
 
 // find states its link policy as a leading option rather than a flag,
@@ -126,13 +127,6 @@ const DEREFERENCE_FLAGS: Record<string, [string, string[]]> = {
 // accepts them.
 const LAST_WINS_LINK_OPTIONS: Record<string, Record<string, boolean>> = {
   find: { '-P': false, '-H': true, '-L': true },
-}
-
-// The mirror: flags that make a following command report the link
-// itself. GNU ls dereferences a command-line symlink to a directory,
-// but -l and -d suppress that and show the link's own row instead.
-const NO_FOLLOW_FLAGS: Record<string, [string, string[]]> = {
-  ls: ['ld', ['directory']],
 }
 
 // Whether any of the given options appears among a command's words.
@@ -188,11 +182,18 @@ export function dereferences(name: string, words: readonly (string | PathSpec)[]
   return spec !== undefined && hasOption(words, spec[0], spec[1])
 }
 
-// Whether a following command was asked to report links themselves.
-function reportsLink(name: string, words: readonly (string | PathSpec)[]): boolean {
-  if (dereferences(name, words)) return false
-  const spec = NO_FOLLOW_FLAGS[name]
-  return spec !== undefined && hasOption(words, spec[0], spec[1])
+/**
+ * Which command-line links an `ls` line resolves before it lists. Read off
+ * the parsed line rather than scanned, because ls's own rule turns on the
+ * last of several options, some of them valued and any of them abbreviated
+ * (`--cl`, `--indicator-style=classify`); the rule itself is the ls
+ * generic's `linkMode`. Mirrors Python's ls_link_mode.
+ */
+export function lsLinkMode(words: readonly (string | PathSpec)[]): LsLinkMode {
+  const argv = words.slice(1).map((w) => (typeof w === 'string' ? w : w.rawPath))
+  const spec = SPECS.ls
+  if (spec === undefined) return 'directory'
+  return linkMode(new FlagView(parseToKwargs(parseCommand(spec, argv, '/', 'ls')), spec))
 }
 
 // Commands whose traversal descends into descendant mounts (the
@@ -289,7 +290,11 @@ const SELF_RESOLVING: ReadonlySet<string> = new Set([
 // job because the slash is a property of the operand rather than of the
 // command.
 export function followsLastComponent(name: string, words: readonly (string | PathSpec)[]): boolean {
-  if (reportsLink(name, words) || SELF_RESOLVING.has(name)) return false
+  // A link to a directory is resolved only once a stat has shown where it
+  // leads, which the router does itself; what this answers for ls is whether
+  // the line may resolve one at all.
+  if (name === 'ls') return lsLinkMode(words) !== 'none'
+  if (SELF_RESOLVING.has(name)) return false
   return !NO_FOLLOW_COMMANDS.has(name) || dereferences(name, words)
 }
 

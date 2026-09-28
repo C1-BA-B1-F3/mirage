@@ -64,14 +64,14 @@ describe('tar over a gzip child that fails', () => {
     // GNU tar 1.35 reads -z through a gzip -d child and dies when it
     // fails, after gzip's own line.
     const r = await shell('tar -tzf /data/c.tgz', { '/data/c.tgz': ENC.encode('corrupted\n') })
-    expect(r).toEqual([2, '', 'gzip: stdin: not in gzip format\n' + CHILD_FAILED])
+    expect(r).toEqual([2, '', '\ngzip: stdin: not in gzip format\n' + CHILD_FAILED])
   })
 
   it('still yields every member past a damaged trailer', async () => {
     const seed = { '/data/bad.tgz': DAMAGED }
     const reasons =
-      'gzip: stdin: invalid compressed data--crc error\n' +
-      'gzip: stdin: invalid compressed data--length error\n'
+      '\ngzip: stdin: invalid compressed data--crc error\n' +
+      '\ngzip: stdin: invalid compressed data--length error\n'
     expect(await shell('tar -tzf /data/bad.tgz nomatch', seed)).toEqual([
       2,
       '',
@@ -91,7 +91,7 @@ describe('tar over a gzip child that fails', () => {
     expect(r).toEqual([
       2,
       'd/a.txt\nd/b.txt\n',
-      'gzip: stdin: decompression OK, trailing garbage ignored\n' +
+      '\ngzip: stdin: decompression OK, trailing garbage ignored\n' +
         'tar: Child returned status 2\n' +
         'tar: Error is not recoverable: exiting now\n',
     ])
@@ -99,7 +99,7 @@ describe('tar over a gzip child that fails', () => {
 
   it('yields nothing from a member cut short', async () => {
     const r = await shell('tar -tzf /data/cut.tgz', { '/data/cut.tgz': OK.subarray(0, -40) })
-    expect(r).toEqual([2, '', 'gzip: stdin: unexpected end of file\n' + CHILD_FAILED])
+    expect(r).toEqual([2, '', '\ngzip: stdin: unexpected end of file\n' + CHILD_FAILED])
   })
 })
 
@@ -115,7 +115,7 @@ it.each(['-tzf', '-tf', '-xOzf'])(
       expect(await shell(`tar ${flags} /data/cut.tgz`, { '/data/cut.tgz': data })).toEqual([
         2,
         out,
-        'gzip: stdin: unexpected end of file\n' + CHILD_FAILED,
+        '\ngzip: stdin: unexpected end of file\n' + CHILD_FAILED,
       ])
     }
   },
@@ -126,7 +126,7 @@ it('extracts complete tar members despite a truncated gzip trailer', async () =>
     await shell('tar -xzf /data/cut.tgz -C /data; cat /data/d/*', {
       '/data/cut.tgz': OK.subarray(0, -3),
     }),
-  ).toEqual([0, 'hello\nbee\n', 'gzip: stdin: unexpected end of file\n' + CHILD_FAILED])
+  ).toEqual([0, 'hello\nbee\n', '\ngzip: stdin: unexpected end of file\n' + CHILD_FAILED])
 })
 
 it.each(['-tzf', '-xzf', '-xOzf'])(
@@ -142,8 +142,8 @@ it.each(['-tzf', '-xzf', '-xOzf'])(
       expect(await shell(`tar ${flags} /data/bad.tgz`, { '/data/bad.tgz': bad })).toEqual([
         2,
         '',
-        'gzip: stdin: invalid compressed data--crc error\n' +
-          'gzip: stdin: invalid compressed data--length error\n' +
+        '\ngzip: stdin: invalid compressed data--crc error\n' +
+          '\ngzip: stdin: invalid compressed data--length error\n' +
           notices +
           CHILD_FAILED,
       ])

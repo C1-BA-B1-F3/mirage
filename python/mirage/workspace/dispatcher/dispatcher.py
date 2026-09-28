@@ -787,6 +787,14 @@ class Dispatcher:
             refusal = await self._parent_refusal(dst)
             if refusal is not None:
                 raise refusal
+            if not self._namespace.is_link(dst.virtual):
+                kind = await self._entry_type(dst.virtual)
+                if kind == FileType.DIRECTORY:
+                    raise IsADirectoryError(errno.EISDIR,
+                                            os.strerror(errno.EISDIR),
+                                            dst.virtual)
+                if kind is not None:
+                    await self.dispatch("unlink", dst)
             await self._namespace.unlink(dst.virtual)
             await self._namespace.rename(path.virtual, dst.virtual)
         elif op == "symlink":

@@ -19,7 +19,9 @@ import pytest
 from mirage.commands.builtin.generic.rg import parse_flags
 from mirage.commands.builtin.generic.rg import rg as generic_rg
 from mirage.commands.builtin.generic.rg import walk_filter
-from mirage.commands.builtin.rg_scan import WalkFilter, walk_candidates
+from mirage.commands.builtin.rg_scan import (WalkFilter, open_error_line,
+                                             os_error_text, walk_candidates,
+                                             walk_error_line)
 from mirage.commands.builtin.utils.wrap import to_pathspec
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
@@ -461,7 +463,8 @@ class TestWarnings:
                           warnings=warnings)
         assert result == []
         assert warnings == [
-            "rg: /tmp/nonexistent.txt: No such file or directory"
+            "rg: /tmp/nonexistent.txt: IO error for operation on "
+            "/tmp/nonexistent.txt: No such file or directory (os error 2)"
         ]
 
     @pytest.mark.anyio
@@ -477,7 +480,10 @@ class TestWarnings:
         warnings = []
         result = await rg(backend, "/tmp/nodir", "foo", warnings=warnings)
         assert result == []
-        assert warnings == ["rg: /tmp/nodir: No such file or directory"]
+        assert warnings == [
+            "rg: /tmp/nodir: IO error for operation on /tmp/nodir: "
+            "No such file or directory (os error 2)"
+        ]
 
 
 class TestOnlyMatchingDirectoryWalk:
@@ -1075,3 +1081,21 @@ def test_walk_candidates_prunes_below_the_longest_matching_scope():
         [_candidate("/data/.cfg/a.txt"),
          _candidate("/data/.cfg/.secret")], scopes, _walk(), "/")
     assert [p.virtual for p in kept] == ["/data/.cfg/a.txt"]
+
+
+def test_os_error_text_numbers_what_the_vocabulary_names():
+    # Rust's io::Error display: the strerror, then Linux's errno. A failure
+    # the vocabulary cannot number keeps its own words.
+    assert os_error_text(
+        FileNotFoundError("x")) == "No such file or directory (os error 2)"
+    assert os_error_text(
+        RuntimeError("Server disconnected")) == ("Server disconnected")
+
+
+def test_walker_and_searcher_lines_take_ripgreps_two_shapes():
+    # ripgrep 14.1.1: the walker names the path twice, the searcher once.
+    assert walk_error_line("nope", FileNotFoundError("nope")) == (
+        "rg: nope: IO error for operation on nope: "
+        "No such file or directory (os error 2)")
+    assert open_error_line("locked", PermissionError("locked")) == (
+        "rg: locked: Permission denied (os error 13)")

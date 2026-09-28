@@ -31,7 +31,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gunzip: stdin: unexpected end of file"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       }
     },
     {
@@ -62,7 +62,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gunzip: /data/a.txt: not in gzip format\n"
+        "stderr": "\ngzip: /data/a.txt: not in gzip format\n"
       }
     },
     {
@@ -93,7 +93,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gunzip: stdin: not in gzip format\n"
+        "stderr": "\ngzip: stdin: not in gzip format\n"
       }
     },
     {
@@ -127,7 +127,7 @@
       "expect": {
         "exit": 2,
         "stdout": "hello",
-        "stderr": "gunzip: stdin: decompression OK, trailing garbage ignored\n"
+        "stderr": "\ngzip: stdin: decompression OK, trailing garbage ignored\n"
       }
     },
     {
@@ -161,7 +161,7 @@
       "expect": {
         "exit": 2,
         "stdout": "hello",
-        "stderr": "gzip: stdin: decompression OK, trailing garbage ignored\n"
+        "stderr": "\ngzip: stdin: decompression OK, trailing garbage ignored\n"
       }
     },
     {
@@ -195,7 +195,7 @@
       "expect": {
         "exit": 2,
         "stdout": "hello",
-        "stderr": "zcat: stdin: decompression OK, trailing garbage ignored\n"
+        "stderr": "\ngzip: stdin: decompression OK, trailing garbage ignored\n"
       }
     },
     {
@@ -226,7 +226,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gunzip: gubad.gz: invalid compressed data--crc error\ngunzip: gubad.gz: invalid compressed data--length error\ngunzip: guplain.gz: not in gzip format\n"
+        "stderr": "\ngzip: gubad.gz: invalid compressed data--crc error\n\ngzip: gubad.gz: invalid compressed data--length error\n\ngzip: guplain.gz: not in gzip format\n"
       }
     },
     {
@@ -257,7 +257,7 @@
       "expect": {
         "exit": 1,
         "stdout": "gubad2.gz\n",
-        "stderr": "gunzip: gubad2.gz: invalid compressed data--crc error\ngunzip: gubad2.gz: invalid compressed data--length error\n"
+        "stderr": "\ngzip: gubad2.gz: invalid compressed data--crc error\n\ngzip: gubad2.gz: invalid compressed data--length error\n"
       }
     },
     {
@@ -288,7 +288,7 @@
       "expect": {
         "exit": 1,
         "stdout": "gutwo\nhello\n",
-        "stderr": "gunzip: gutwo.gz: unknown method 7 -- not supported\n"
+        "stderr": "gzip: gutwo.gz: unknown method 7 -- not supported\n"
       }
     },
     {
@@ -322,7 +322,7 @@
       "expect": {
         "exit": 1,
         "stdout": "cut.gz\nlater.gz\n",
-        "stderr": "gunzip: cut.gz: unexpected end of file\n"
+        "stderr": "\ngzip: cut.gz: unexpected end of file\n"
       }
     },
     {
@@ -353,7 +353,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gunzip: stdin: unexpected end of file\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       }
     },
     {
@@ -415,7 +415,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gunzip: stdin: unexpected end of file\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       }
     },
     {

@@ -20,6 +20,7 @@ import { cmpGeneric, parseCount, parseSkip, visible } from './cmp.ts'
 import { UsageError } from '../../errors.ts'
 import { PathSpec } from '../../../types.ts'
 import { materialize } from '../../../io/types.ts'
+import { eisdir, enoent } from '../../../utils/errors.ts'
 import type { CommandOpts } from '../../config.ts'
 
 const DEC = new TextDecoder()
@@ -176,25 +177,25 @@ describe('cmpGeneric', () => {
   it('switches the word to byte under -b', async () => {
     // GNU counts in `byte` under -b and in `char` otherwise.
     const plain = await run(ENC.encode('abc'), ENC.encode('aXc'))
-    const tagged = await run(ENC.encode('abc'), ENC.encode('aXc'), { b: true })
+    const tagged = await run(ENC.encode('abc'), ENC.encode('aXc'), { print_bytes: true })
     expect(plain.out).toBe('/F/one /F/two differ: char 2, line 1\n')
     expect(tagged.out).toBe('/F/one /F/two differ: byte 2, line 1 is 142 b 130 X\n')
   })
 
   it('pads the octal to three columns under -l', async () => {
-    const r = await run(bytes(97, 1, 99), bytes(97, 127, 99), { args_l: true })
+    const r = await run(bytes(97, 1, 99), bytes(97, 127, 99), { verbose: true })
     expect(r.out).toBe('2   1 177\n')
   })
 
   it('adds a four-wide char column under -bl', async () => {
-    const r = await run(ENC.encode('abc'), ENC.encode('aXc'), { args_l: true, b: true })
+    const r = await run(ENC.encode('abc'), ENC.encode('aXc'), { verbose: true, print_bytes: true })
     expect(r.out).toBe('2 142 b    130 X\n')
   })
 
   it('applies the skip per file', async () => {
     // `-i 0:3` keeps all of the first file and drops three bytes of the
     // second, so the very first compared byte differs.
-    const r = await run(ENC.encode('abcdefgh'), ENC.encode('abcXefgh'), { i: '0:3' })
+    const r = await run(ENC.encode('abcdefgh'), ENC.encode('abcXefgh'), { ignore_initial: '0:3' })
     expect(r.out).toBe('/F/one /F/two differ: char 1, line 1\n')
     expect(r.code).toBe(1)
   })
@@ -207,14 +208,14 @@ describe('cmpGeneric', () => {
   })
 
   it('drops the line clause from the EOF diagnostic under -l', async () => {
-    const r = await run(ENC.encode('aXc'), ENC.encode('aYcdef'), { args_l: true })
+    const r = await run(ENC.encode('aXc'), ENC.encode('aYcdef'), { verbose: true })
     expect(r.out).toBe('2 130 131\n')
     expect(r.err).toBe('cmp: EOF on /F/one after byte 3\n')
     expect(r.code).toBe(1)
   })
 
   it('reports no difference for a limit inside the common prefix', async () => {
-    const r = await run(ENC.encode('abcdef'), ENC.encode('abcXef'), { n: '2' })
+    const r = await run(ENC.encode('abcdef'), ENC.encode('abcXef'), { bytes: '2' })
     expect(r).toEqual({ out: '', err: '', code: 0 })
   })
 })
@@ -274,7 +275,10 @@ describe('cmpGeneric with stdin', () => {
     const stream = (p: PathSpec): AsyncIterable<Uint8Array> => {
       throw new Error(`read ${p.virtual}`)
     }
-    const opts = { flags: { i: '0:1' }, stdin: ENC.encode('abc') } as unknown as CommandOpts
+    const opts = {
+      flags: { ignore_initial: '0:1' },
+      stdin: ENC.encode('abc'),
+    } as unknown as CommandOpts
     const [src, io] = await cmpGeneric([DASH, DEV_STDIN], opts, stream)
     expect([src, io.exitCode, io.stderr]).toEqual([null, 0, null])
   })
@@ -285,20 +289,20 @@ describe('cmpGeneric with stdin', () => {
   })
 
   it.each([false, true])('says which is empty for an empty file (-l %s)', async (verbose) => {
-    const r = await run(new Uint8Array(0), ENC.encode('x'), verbose ? { args_l: true } : {})
+    const r = await run(new Uint8Array(0), ENC.encode('x'), verbose ? { verbose: true } : {})
     expect([r.err, r.code]).toEqual(['cmp: EOF on /F/one which is empty\n', 1])
   })
 
   it('pads -l offsets to the smaller regular file', async () => {
     const r = await run(ENC.encode('a'.repeat(11)), ENC.encode('b' + 'a'.repeat(12)), {
-      args_l: true,
+      verbose: true,
     })
     expect(r.out).toBe(' 1 141 142\n')
   })
 
   it('sizes -l offsets by the file, not the stream', async () => {
     const r = await runWithStdin([DASH, P2], 'hello\nx\n', 'hello\nworld\nfoo\nbar\nbaz\n', {
-      args_l: true,
+      verbose: true,
     })
     expect(r.out).toBe(' 7 170 167\n 8  12 157\n')
     expect(r.err).toBe('cmp: EOF on - after byte 8\n')
@@ -334,6 +338,64 @@ describe('parseCount leaves the value unescaped', () => {
         `cmp: invalid --bytes value '${value}'\n` + "cmp: Try 'cmp --help' for more information.",
         2,
       ),
+    )
+  })
+})
+
+describe('cmpGeneric -s', () => {
+  it('keeps exit 2 for an operand it cannot read', async () => {
+    // diffutils 3.10: `cmp -s a.txt nope` prints nothing and exits 2; the
+    // message is what -s drops, not the trouble.
+    // eslint-disable-next-line require-yield
+    async function* missing(p: PathSpec): AsyncIterable<Uint8Array> {
+      await Promise.resolve()
+      throw enoent(p)
+    }
+    for (const [flags, want] of [
+      [{ quiet: true }, ''],
+      [{}, 'cmp: /F/one: No such file or directory\n'],
+    ] as const) {
+      const opts = { flags, stdin: null } as unknown as CommandOpts
+      const [src, io] = await cmpGeneric([P1, P2], opts, missing)
+      expect(src).toBeNull()
+      expect(DEC.decode(await materialize(io.stderr))).toBe(want)
+      expect(io.exitCode).toBe(2)
+    }
+  })
+
+  // diffutils 3.10 opens both operands, then reads: -s drops only a failed
+  // open, a directory opens and fails reading, and one file named twice at
+  // the same offset is equal unread. Mirrors test_cmp.py.
+  it.each([
+    [['dir', 'one'], true, 2, 'cmp: dir: Is a directory\n'],
+    [['one', 'dir'], true, 2, 'cmp: dir: Is a directory\n'],
+    [['dir', 'nope'], true, 2, ''],
+    [['dir', 'nope'], false, 2, 'cmp: nope: No such file or directory\n'],
+    [['dir', 'dir'], false, 0, ''],
+  ] as const)(
+    'reads a directory after both opens: %j silent %s',
+    async (names, silent, code, want) => {
+      async function* read(p: PathSpec): AsyncIterable<Uint8Array> {
+        await Promise.resolve()
+        if (p.virtual === '/F/dir') throw eisdir(p)
+        if (p.virtual.endsWith('nope')) throw enoent(p)
+        yield ENC.encode('a')
+      }
+      const paths = names.map(
+        (n) => new PathSpec({ virtual: `/F/${n}`, directory: '/F', vfsPath: n, rawPath: n }),
+      )
+      const opts = { flags: silent ? { quiet: true } : {}, stdin: null } as unknown as CommandOpts
+      const [, io] = await cmpGeneric(paths, opts, read)
+      expect([DEC.decode(await materialize(io.stderr)), io.exitCode]).toEqual([want, code])
+    },
+  )
+
+  it('refuses -l with -s', async () => {
+    // --verbose is -l and --silent is -s; diffutils refuses the pair while it
+    // reads the options.
+    const call = run(ENC.encode('a'), ENC.encode('b'), { verbose: true, silent: true })
+    await expect(call).rejects.toThrow(
+      "cmp: options -l and -s are incompatible\ncmp: Try 'cmp --help' for more information.",
     )
   })
 })

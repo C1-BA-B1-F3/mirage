@@ -117,7 +117,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "zgrep: stdin: unexpected end of file\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       }
     },
     {
@@ -147,7 +147,7 @@
       "expect": {
         "exit": 2,
         "stdout": "bad.gz:hello\nbad.gz:hello again\ngood.gz:hello\ngood.gz:hello again\n",
-        "stderr": "zgrep: bad.gz: invalid compressed data--crc error\n"
+        "stderr": "\ngzip: bad.gz: invalid compressed data--crc error\n"
       }
     },
     {
@@ -177,7 +177,7 @@
       "expect": {
         "exit": 2,
         "stdout": "bad.gz:2\ngood.gz:2\n",
-        "stderr": "zgrep: bad.gz: invalid compressed data--crc error\n"
+        "stderr": "\ngzip: bad.gz: invalid compressed data--crc error\n"
       }
     },
     {
@@ -207,7 +207,7 @@
       "expect": {
         "exit": 2,
         "stdout": "bad.gz:1:hello\nbad.gz:3:hello again\ngood.gz:1:hello\ngood.gz:3:hello again\n",
-        "stderr": "zgrep: bad.gz: invalid compressed data--crc error\n"
+        "stderr": "\ngzip: bad.gz: invalid compressed data--crc error\n"
       }
     },
     {
@@ -237,7 +237,7 @@
       "expect": {
         "exit": 2,
         "stdout": "bad.gz\ngood.gz\n",
-        "stderr": "zgrep: bad.gz: invalid compressed data--crc error\n"
+        "stderr": "\ngzip: bad.gz: invalid compressed data--crc error\n"
       }
     },
     {
@@ -267,7 +267,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "zgrep: bad.gz: invalid compressed data--crc error\n"
+        "stderr": "\ngzip: bad.gz: invalid compressed data--crc error\n"
       }
     },
     {
@@ -297,7 +297,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "zgrep: bad.gz: invalid compressed data--crc error\n"
+        "stderr": "\ngzip: bad.gz: invalid compressed data--crc error\n"
       }
     },
     {
@@ -327,7 +327,7 @@
       "expect": {
         "exit": 2,
         "stdout": "2\n",
-        "stderr": "zgrep: stdin: unexpected end of file\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       }
     },
     {
@@ -357,7 +357,7 @@
       "expect": {
         "exit": 2,
         "stdout": "2\n",
-        "stderr": "zgrep: stdin: unexpected end of file\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       }
     }
   ]

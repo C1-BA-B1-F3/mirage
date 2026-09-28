@@ -31,7 +31,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "zcat: stdin: unexpected end of file"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       }
     },
     {
@@ -65,7 +65,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "zcat: /data/a.txt: not in gzip format\n"
+        "stderr": "\ngzip: /data/a.txt: not in gzip format\n"
       }
     },
     {
@@ -99,7 +99,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "zcat: stdin: unexpected end of file\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       }
     },
     {
@@ -133,7 +133,7 @@
       "expect": {
         "exit": 1,
         "stdout": "hello\n",
-        "stderr": "zcat: a.txt: not in gzip format\n"
+        "stderr": "\ngzip: a.txt: not in gzip format\n"
       }
     },
     {
@@ -167,7 +167,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "zcat: stdin: unexpected end of file\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       }
     },
     {
@@ -201,7 +201,7 @@
       "expect": {
         "exit": 1,
         "stdout": "hello world\n",
-        "stderr": "zcat: stdin: invalid compressed data--crc error\nzcat: stdin: invalid compressed data--length error\n"
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\n"
       }
     },
     {
@@ -235,7 +235,7 @@
       "expect": {
         "exit": 1,
         "stdout": "hello world\n",
-        "stderr": "zcat: stdin: invalid compressed data--crc error\n"
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n"
       }
     }
   ]

@@ -1,0 +1,188 @@
+{
+  "cases": [
+    {
+      "id": "tar_t_names_a_missing_archive_as_typed",
+      "seq": 1301030,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && tar -tf nope1301.tar)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: nope1301.tar: Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "tar_x_names_a_missing_archive_as_typed",
+      "seq": 1301031,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && tar -xf nope1301.tar)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: nope1301.tar: Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "tar_tz_names_a_missing_archive_as_typed",
+      "seq": 1301032,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && tar -tzf nope1301.tgz)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar (child): nope1301.tgz: Cannot open: No such file or directory\ntar (child): Error is not recoverable: exiting now\ntar: Child returned status 2\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "tar_C_does_not_rebase_the_archive_name",
+      "seq": 1301033,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && tar -C sub -tf nope1301.tar)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: nope1301.tar: Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "tar_t_cannot_read_a_directory_archive",
+      "seq": 1301034,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "tar -tf /data/sub",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: /data/sub: Cannot read: Is a directory\ntar: At beginning of tape, quitting now\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "tar_x_cannot_read_a_directory_archive",
+      "seq": 1301035,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "tar -xf /data/sub",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: /data/sub: Cannot read: Is a directory\ntar: At beginning of tape, quitting now\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "tar_tz_cannot_read_a_directory_archive",
+      "seq": 1301036,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "tar -tzf /data/sub",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar (child): /data/sub: Cannot read: Is a directory\ntar (child): At beginning of tape, quitting now\ntar (child): Error is not recoverable: exiting now\n\ngzip: stdin: unexpected end of file\ntar: Child returned status 2\ntar: Error is not recoverable: exiting now\n"
+      }
+    }
+  ]
+}

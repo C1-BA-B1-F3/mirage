@@ -31,7 +31,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gzip: stdin: unexpected end of file"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       },
       "flags": [
         "d"
@@ -68,7 +68,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gzip: stdin: not in gzip format\n"
+        "stderr": "\ngzip: stdin: not in gzip format\n"
       }
     },
     {
@@ -102,7 +102,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gzip: stdin: unexpected end of file\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
       }
     },
     {
@@ -136,7 +136,7 @@
       "expect": {
         "exit": 1,
         "stdout": "hello world\n",
-        "stderr": "gzip: stdin: invalid compressed data--crc error\ngzip: stdin: invalid compressed data--length error\n"
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\n"
       }
     },
     {

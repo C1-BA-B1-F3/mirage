@@ -41,7 +41,7 @@ function cat(...parts: Uint8Array[]): Uint8Array {
 
 function render(err: unknown): string {
   if (!(err instanceof GzipDataError)) throw err
-  return err.render('gzip', 'f')
+  return err.render('f')
 }
 
 describe('gunzipChecked', () => {
@@ -54,20 +54,20 @@ describe('gunzipChecked', () => {
   // gzip 1.13: no header, or a header gzip does not support, is reported and
   // skipped, while a short, truncated or corrupt input ends the run.
   it.each([
-    ['empty', new Uint8Array(0), 'gzip: f: unexpected end of file\n', true],
-    ['one byte', ENC.encode('x'), 'gzip: f: unexpected end of file\n', true],
-    ['plain', ENC.encode('hello\n'), 'gzip: f: not in gzip format\n', false],
-    ['a bare header', HELLO.subarray(0, 10), 'gzip: f: unexpected end of file\n', true],
+    ['empty', new Uint8Array(0), '\ngzip: f: unexpected end of file\n', true],
+    ['one byte', ENC.encode('x'), '\ngzip: f: unexpected end of file\n', true],
+    ['plain', ENC.encode('hello\n'), '\ngzip: f: not in gzip format\n', false],
+    ['a bare header', HELLO.subarray(0, 10), '\ngzip: f: unexpected end of file\n', true],
     [
       'a cut trailer',
       HELLO.subarray(0, HELLO.length - 3),
-      'gzip: f: unexpected end of file\n',
+      '\ngzip: f: unexpected end of file\n',
       true,
     ],
     [
       'corrupt',
       new Uint8Array([0x1f, 0x8b, 8, 0, ...ENC.encode('garbage-here')]),
-      'gzip: f: invalid compressed data--format violated\n',
+      '\ngzip: f: invalid compressed data--format violated\n',
       true,
     ],
     [
@@ -113,17 +113,20 @@ describe('gunzipChecked', () => {
     [
       'both',
       new Uint8Array(8),
-      ['{}: invalid compressed data--crc error', '{}: invalid compressed data--length error'],
+      [
+        '\ngzip: {}: invalid compressed data--crc error',
+        '\ngzip: {}: invalid compressed data--length error',
+      ],
     ],
     [
       'the CRC',
       cat(new Uint8Array(4), HELLO.subarray(-4)),
-      ['{}: invalid compressed data--crc error'],
+      ['\ngzip: {}: invalid compressed data--crc error'],
     ],
     [
       'the length',
       cat(HELLO.subarray(-8, -4), new Uint8Array(4)),
-      ['{}: invalid compressed data--length error'],
+      ['\ngzip: {}: invalid compressed data--length error'],
     ],
   ] as const)('names %s after the inflated bytes', async (_name, trailer, reasons) => {
     // gzip 1.13 writes what it inflated, then names each mismatch.
@@ -279,7 +282,7 @@ it.each([0x08, 0x10])('consumes long header field %i without growing copies', as
       else
         await expect(decoded).rejects.toMatchObject({
           fatal: true,
-          reasons: ['{}: unexpected end of file'],
+          reasons: ['\ngzip: {}: unexpected end of file'],
         })
       expect(
         copies.mock.contexts.every(

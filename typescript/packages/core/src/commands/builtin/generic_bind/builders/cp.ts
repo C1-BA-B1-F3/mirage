@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { transferLinksOf } from '../../generic/crossmount/utils.ts'
 import type { IndexCacheStore } from '../../../../cache/index/store.ts'
 import type { LinkView, StatOverlay } from '../../../../ops/types.ts'
 import type { Accessor } from '../../../../accessor/base.ts'
@@ -116,6 +117,9 @@ export const CP_BUILDER: Builder = {
       undefined,
       (p: PathSpec) => ops.readdir(accessor, p, idx),
       links === null ? undefined : (p: PathSpec) => typedLink(links, cwd, p),
+      links === null || opts.dispatch === undefined
+        ? undefined
+        : transferLinksOf(links, opts.dispatch, cwd),
     )
   },
 }

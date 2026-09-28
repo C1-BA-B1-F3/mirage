@@ -26,15 +26,16 @@ import { yieldBytes } from '../io/stream.ts'
 import { concat } from '../io/cachable_iterator.ts'
 import { GzipDataError } from './errors.ts'
 
-// gzip 1.13's words for the inputs `gzip -d` refuses, `{}` standing for the
-// input's name.
-const GZIP_NOT_GZIP = '{}: not in gzip format'
-const GZIP_EOF = '{}: unexpected end of file'
-const GZIP_CORRUPT = '{}: invalid compressed data--format violated'
-const GZIP_CRC = '{}: invalid compressed data--crc error'
-const GZIP_LENGTH = '{}: invalid compressed data--length error'
-const GZIP_ENCRYPTED = '{} is encrypted -- not supported'
-const GZIP_TRAILING = '{}: decompression OK, trailing garbage ignored'
+// gzip 1.13's lines for the inputs `gzip -d` refuses, `{}` standing for the
+// input's name. gzip starts the ones its read, inflate and member checks
+// print with a newline, and none of its header refusals.
+const GZIP_NOT_GZIP = '\ngzip: {}: not in gzip format'
+const GZIP_EOF = '\ngzip: {}: unexpected end of file'
+const GZIP_CORRUPT = '\ngzip: {}: invalid compressed data--format violated'
+const GZIP_CRC = '\ngzip: {}: invalid compressed data--crc error'
+const GZIP_LENGTH = '\ngzip: {}: invalid compressed data--length error'
+const GZIP_TRAILING = '\ngzip: {}: decompression OK, trailing garbage ignored'
+const GZIP_ENCRYPTED = 'gzip: {} is encrypted -- not supported'
 // The member layout of gzip.h: method 8 is deflate, the flag bits announce
 // the optional header fields, and the CRC-32 and the length modulo 2**32 of
 // the decoded bytes close the member.
@@ -112,7 +113,10 @@ type HeaderPart = 'fixed' | 'extraLength' | 'extra' | 'name' | 'comment' | 'crc'
  * data. gzip ends the run on a mismatch unless it is only testing
  * (`gzip -t`), and then moves to the next input. A header gzip does not
  * support skips the input, and keeps the members before it when it is not
- * the first.
+ * the first. Under `passthrough` (`gzip -cdf`, and so zcat -f and zgrep)
+ * whatever does not open with the gzip magic where a member could start is
+ * copied as it is, from there to the end: a plain file, or the trailing bytes
+ * after a member.
  */
 class GzipDecoder {
   private part: MemberPart = 'header'
@@ -126,12 +130,16 @@ class GzipDecoder {
   private headerFlags = 0
   private headerCrc = 0
   private extraRemaining = 0
+  private copying = false
 
-  constructor(private readonly test = false) {}
+  constructor(
+    private readonly test = false,
+    private readonly passthrough = false,
+  ) {}
 
   // A refusal that skips the input, keeping any complete member.
   private refusal(reason: string, exitCode = 1): GzipDataError {
-    return new GzipDataError([reason], false, exitCode, this.seen)
+    return new GzipDataError([reason], false, exitCode, this.seen, !this.seen)
   }
 
   // Consume variable fields as they arrive, retaining only incomplete fixed
@@ -148,13 +156,15 @@ class GzipDecoder {
         }
         const method = data[2] ?? 0
         if (available >= 3 && method !== GZIP_DEFLATED) {
-          throw this.refusal(`{}: unknown method ${String(method)} -- not supported`)
+          throw this.refusal(`gzip: {}: unknown method ${String(method)} -- not supported`)
         }
         if (available >= 4) {
           this.headerFlags = data[3] ?? 0
           if (this.headerFlags & GZIP_ENCRYPTED_FLAG) throw this.refusal(GZIP_ENCRYPTED)
           if (this.headerFlags & GZIP_RESERVED) {
-            throw this.refusal(`{} has flags 0x${this.headerFlags.toString(16)} -- not supported`)
+            throw this.refusal(
+              `gzip: {} has flags 0x${this.headerFlags.toString(16)} -- not supported`,
+            )
           }
         }
         if (available < GZIP_FIXED_HEADER) {
@@ -201,7 +211,7 @@ class GzipDecoder {
             const storedHex = stored.toString(16).padStart(4, '0')
             const computedHex = computed.toString(16).padStart(4, '0')
             throw this.refusal(
-              `{}: header checksum 0x${storedHex} != computed checksum 0x${computedHex}`,
+              `gzip: {}: header checksum 0x${storedHex} != computed checksum 0x${computedHex}`,
             )
           }
           offset += 2
@@ -218,11 +228,26 @@ class GzipDecoder {
     let data = this.pending.byteLength > 0 ? concat([this.pending, input]) : input
     this.pending = new Uint8Array()
     while (data.byteLength > 0) {
+      if (this.copying) {
+        yield data
+        return
+      }
       if (this.part === 'header') {
-        if (this.headerPart === 'fixed' && this.seen && (this.padding || data[0] === 0)) {
-          this.padding = true
-          if (data.some((byte) => byte !== 0)) throw this.refusal(GZIP_TRAILING, 2)
-          return
+        if (this.headerPart === 'fixed') {
+          if (this.passthrough) {
+            if (data.byteLength < 2) {
+              this.pending = data.slice()
+              return
+            }
+            if (!hasGzipMagic(data)) {
+              this.copying = true
+              continue
+            }
+          } else if (this.seen && (this.padding || data[0] === 0)) {
+            this.padding = true
+            if (data.some((byte) => byte !== 0)) throw this.refusal(GZIP_TRAILING, 2)
+            return
+          }
         }
         const end = this.readHeader(data)
         if (end === null) return
@@ -290,17 +315,23 @@ class GzipDecoder {
 
   // GNU gzip 1.13 treats a single trailing nonzero byte as fatal EOF;
   // the trailing-garbage warning requires at least two bytes. Missing trailers
-  // or partial next headers leave complete bodies for tar, but stay fatal.
-  finish(): void {
-    if (
-      !this.seen ||
-      this.part !== 'header' ||
-      this.pending.byteLength > 0 ||
-      this.headerPart !== 'fixed'
-    ) {
-      const whole = this.part === 'trailer' || (this.part === 'header' && this.seen)
-      throw new GzipDataError([GZIP_EOF], true, 1, whole)
+  // or partial next headers leave complete bodies for tar, but stay fatal. A
+  // pass-through run owes nothing for an empty input, and copies a lone byte
+  // where a member could start, since it cannot be the magic. Returns the
+  // input a pass-through run still has to copy.
+  finish(): Uint8Array {
+    const boundary = this.part === 'header' && this.headerPart === 'fixed'
+    if (this.copying || (this.passthrough && boundary && this.pending.byteLength < 2)) {
+      const tail = this.pending
+      this.pending = new Uint8Array()
+      return tail
     }
+    if (!this.seen || !boundary || this.pending.byteLength > 0) {
+      const whole = this.part === 'trailer' || (this.part === 'header' && this.seen)
+      const first = !this.seen && this.part === 'header'
+      throw new GzipDataError([GZIP_EOF], true, 1, whole, first)
+    }
+    return new Uint8Array()
   }
 
   close(): void {
@@ -313,11 +344,13 @@ class GzipDecoder {
 export async function* gunzipStream(
   source: AsyncIterable<Uint8Array>,
   test = false,
+  passthrough = false,
 ): AsyncIterable<Uint8Array> {
-  const decoder = new GzipDecoder(test)
+  const decoder = new GzipDecoder(test, passthrough)
   try {
     for await (const chunk of source) yield* decoder.feed(chunk)
-    decoder.finish()
+    const tail = decoder.finish()
+    if (tail.byteLength > 0) yield tail
   } finally {
     decoder.close()
   }
@@ -326,10 +359,11 @@ export async function* gunzipStream(
 /** What `gzip -d` writes from `bytes` before it stops, and why. */
 export async function gunzipPartial(
   bytes: Uint8Array,
+  passthrough = false,
 ): Promise<[Uint8Array, GzipDataError | null]> {
   const parts: Uint8Array[] = []
   try {
-    for await (const part of gunzipStream(yieldBytes(bytes))) parts.push(part)
+    for await (const part of gunzipStream(yieldBytes(bytes), false, passthrough)) parts.push(part)
   } catch (err) {
     if (!(err instanceof GzipDataError)) throw err
     return [concat(parts), err]

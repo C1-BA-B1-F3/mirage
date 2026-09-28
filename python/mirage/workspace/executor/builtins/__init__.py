@@ -26,11 +26,6 @@ from mirage.workspace.executor.builtins.exec import handle_exec_command
 from mirage.workspace.executor.builtins.getopts import handle_getopts
 from mirage.workspace.executor.builtins.history import handle_history
 from mirage.workspace.executor.builtins.let import handle_let
-from mirage.workspace.executor.builtins.links import (accepts_line,
-                                                      follow_paths, handle_ln,
-                                                      handle_readlink,
-                                                      link_flags, prepare_mv,
-                                                      strip_link_operands)
 from mirage.workspace.executor.builtins.lookup import handle_type, handle_which
 from mirage.workspace.executor.builtins.man import (_command_entry,
                                                     _render_man_index,
@@ -61,6 +56,10 @@ from mirage.workspace.executor.builtins.umask import handle_umask
 from mirage.workspace.executor.builtins.unset import handle_unset
 from mirage.workspace.executor.builtins.whoami import handle_whoami
 from mirage.workspace.executor.builtins.xargs import handle_xargs
+
+from mirage.workspace.executor.builtins.links import (  # isort: skip
+    accepts_line, follow_directory_links, follow_paths, handle_ln,
+    handle_readlink, link_flags, prepare_mv, settle_moves, strip_link_operands)
 
 from mirage.workspace.executor.builtins.control import (  # isort: skip
     handle_colon, handle_exit, handle_false, handle_return, handle_true,
@@ -98,6 +97,7 @@ __all__ = [
     'handle_readlink',
     'link_flags',
     'accepts_line',
+    'follow_directory_links',
     'follow_paths',
     'handle_df',
     'handle_chgrp',
@@ -107,6 +107,7 @@ __all__ = [
     'handle_setfattr',
     'handle_touch',
     'prepare_mv',
+    'settle_moves',
     'strip_link_operands',
     'handle_man',
     'handle_mapfile',

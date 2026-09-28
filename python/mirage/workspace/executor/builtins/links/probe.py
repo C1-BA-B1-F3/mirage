@@ -142,6 +142,25 @@ async def path_exists(dispatch: DispatchFn, virtual: str) -> bool:
         return False
 
 
+def resolve_link(namespace: Namespace, virtual: str) -> str:
+    """Where a path really points, as the door can address it.
+
+    The namespace's walk, with a relative target's walk up from the
+    link's own directory (``../a.txt``) collapsed, which the door does
+    not do for a path it is handed whole. The link's directory is a real
+    one, since the table keys every link by its resolved parent, so the
+    ``..`` it names is that directory's parent.
+
+    Args:
+        namespace (Namespace): addressing authority holding the links.
+        virtual (str): absolute virtual path.
+
+    Raises:
+        CycleError: when the chain loops past the hop limit (ELOOP).
+    """
+    return posixpath.normpath(namespace.follow(virtual))
+
+
 async def link_target_stat(namespace: Namespace, dispatch: DispatchFn,
                            virtual: str) -> FileStat | None:
     """The stat of what a link points at, or None when it dangles.
@@ -163,7 +182,7 @@ async def link_target_stat(namespace: Namespace, dispatch: DispatchFn,
         virtual (str): absolute virtual path of the link.
     """
     try:
-        target = namespace.follow(virtual)
+        target = resolve_link(namespace, virtual)
     except CycleError:
         return None
     spec = PathSpec(virtual=target,

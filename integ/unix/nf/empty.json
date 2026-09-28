@@ -303,7 +303,7 @@
       "expect": {
         "exit": 2,
         "stdout": "/data/a.txt:3\n",
-        "stderr": "rg: : No such file or directory\n"
+        "stderr": "rg: : IO error for operation on : No such file or directory (os error 2)\n"
       }
     },
     {
@@ -337,7 +337,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "rg: : No such file or directory\nrg: : No such file or directory\n"
+        "stderr": "rg: : IO error for operation on : No such file or directory (os error 2)\nrg: : IO error for operation on : No such file or directory (os error 2)\n"
       }
     },
     {

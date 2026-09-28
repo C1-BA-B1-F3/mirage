@@ -19,7 +19,9 @@ export {
   handleLn,
   handleReadlink,
   linkFlags,
+  followDirectoryLinks,
   prepareMv,
+  settleMoves,
   stripLinkOperands,
 } from './links/index.ts'
 export { handleDf } from './df/index.ts'

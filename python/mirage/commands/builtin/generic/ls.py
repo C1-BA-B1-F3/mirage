@@ -22,7 +22,8 @@ from mirage.commands.spec.usage import (argmatch_error, argmatch_line,
 from mirage.errors.classify import failure_text
 from mirage.io.types import IOResult
 from mirage.ops.types import ChildMounts, LinkView, MountView, StatPath
-from mirage.types import FileStat, FileType, LsSortBy, LsTimeKind, PathSpec
+from mirage.types import (FileStat, FileType, LsIndicator, LsLinkMode,
+                          LsSortBy, LsTimeKind, PathSpec)
 from mirage.utils.errors import DotWalkError, DotWalkLoop, fs_strerror
 from mirage.utils.key_prefix import mount_prefix_of, rekey, under_path
 from mirage.utils.path import CycleError, respell_one
@@ -49,8 +50,9 @@ class LsFlags:
     reverse: bool = False
     recursive: bool = False
     list_dir: bool = False
-    classify: bool = False
+    indicator: LsIndicator = LsIndicator.NONE
     deref: bool = False
+    follow_args: bool = False
     time_kind: LsTimeKind = LsTimeKind.MTIME
     group_dirs_first: bool = False
     columns: formatting.LsColumns = formatting.DEFAULT_COLUMNS
@@ -85,8 +87,15 @@ _TIME_KINDS = {
     "mtime": LsTimeKind.MTIME,
     "birth": LsTimeKind.BIRTH,
 }
-_HYPERLINK_GROUPS = (("always", "yes", "force"), ("never", "no", "none"),
-                     ("auto", "tty", "if-tty"))
+# GNU's `when` words, shared by --hyperlink and --classify.
+_WHEN_GROUPS = (("always", "yes", "force"), ("never", "no", "none"),
+                ("auto", "tty", "if-tty"))
+_INDICATOR_GROUPS = tuple((style.value, ) for style in LsIndicator)
+# The four spellings of an indicator style; the last one typed wins.
+_INDICATOR_DESTS = ("classify", "file_type", "p", "indicator_style")
+# The three spellings of a command-line link policy; the last one wins.
+_DEREF_DESTS = ("dereference", "dereference_command_line",
+                "dereference_command_line_symlink_to_dir")
 
 
 def _grouped_argument_error(option: str, value: str,
@@ -209,11 +218,87 @@ def _hyperlink_flag(fl: FlagView) -> bool:
     if raw is True:
         return True
     word = str(raw)
-    match = argmatch(word, _HYPERLINK_GROUPS)
+    match = argmatch(word, _WHEN_GROUPS)
     if not isinstance(match, ArgmatchMatch):
-        raise _grouped_argument_error("--hyperlink", word, _HYPERLINK_GROUPS,
+        raise _grouped_argument_error("--hyperlink", word, _WHEN_GROUPS,
                                       match.kind)
     return match.word == "always"
+
+
+def _indicator_word(fl: FlagView, dest: str) -> LsIndicator:
+    """The style one indicator option asks for, checked as GNU checks it.
+
+    ``-F`` and a bare ``--classify`` classify; ``--classify=WHEN`` does
+    for ``always`` and never otherwise, since output here is never a
+    terminal. A refused value is GNU's ARGMATCH refusal, exit 1.
+
+    Args:
+        fl (FlagView): the ls flag view.
+        dest (str): one of the indicator options' dests.
+    """
+    if dest == "p":
+        return LsIndicator.SLASH
+    if dest == "file_type":
+        return LsIndicator.FILE_TYPE
+    raw = fl.raw(dest)
+    if dest == "classify" and raw is True:
+        return LsIndicator.CLASSIFY
+    word = str(raw)
+    option = "--classify" if dest == "classify" else "--indicator-style"
+    groups = _WHEN_GROUPS if dest == "classify" else _INDICATOR_GROUPS
+    match = argmatch(word, groups)
+    if not isinstance(match, ArgmatchMatch):
+        raise _grouped_argument_error(option, word, groups, match.kind)
+    if dest == "indicator_style":
+        return LsIndicator(match.word)
+    return LsIndicator.CLASSIFY if match.word == "always" else (
+        LsIndicator.NONE)
+
+
+def indicator_flag(fl: FlagView) -> LsIndicator:
+    """The indicator style a line asks for.
+
+    The last of ``-F``/``--classify[=WHEN]``, ``-p``, ``--file-type`` and
+    ``--indicator-style`` wins, and every one is checked on the way, as
+    GNU checks each value while it reads the options (coreutils 9.7).
+
+    Args:
+        fl (FlagView): the ls flag view.
+    """
+    style = LsIndicator.NONE
+    for dest in fl.typed_order(*_INDICATOR_DESTS):
+        style = _indicator_word(fl, dest)
+    return style
+
+
+def link_mode(fl: FlagView) -> LsLinkMode:
+    """Which command-line links GNU ls resolves before it lists them.
+
+    ls.c settles it once: the last of ``-L``, ``-H`` and
+    ``--dereference-command-line-symlink-to-dir`` wins, and with none of
+    them ``-d``, a long format or the classify style resolve no link
+    while anything else resolves one that leads to a directory
+    (coreutils 9.7). A value the command refuses leaves the style
+    unclassified, since that line fails before it lists anything.
+
+    Args:
+        fl (FlagView): the ls flag view.
+    """
+    typed = fl.typed_order(*_DEREF_DESTS)
+    if typed:
+        return (LsLinkMode.DIRECTORY
+                if typed[-1] == "dereference_command_line_symlink_to_dir" else
+                LsLinkMode.ALL)
+    long = any(
+        fl.as_bool(dest) for dest in ("args_l", "g", "o", "numeric_uid_gid"))
+    try:
+        classify = indicator_flag(fl) is LsIndicator.CLASSIFY
+    except UsageError as exc:
+        logger.debug("ls: the command refuses this line itself: %s", exc)
+        classify = False
+    if fl.as_bool("directory") or long or classify:
+        return LsLinkMode.NONE
+    return LsLinkMode.DIRECTORY
 
 
 def _block_size_error(text: str, refusal: formatting.BlockSizeRefusal) -> str:
@@ -297,8 +382,11 @@ def parse_flags(flags: Mapping[str, FlagValue]) -> LsFlags:
         reverse=fl.as_bool("reverse"),
         recursive=fl.as_bool("recursive"),
         list_dir=fl.as_bool("directory"),
-        classify=fl.as_bool("classify"),
-        deref=fl.as_bool("dereference"),
+        indicator=indicator_flag(fl),
+        # -L alone dereferences what a listing finds; -H and its sibling
+        # stop at the command line, and the last of the three wins.
+        deref=fl.typed_order(*_DEREF_DESTS)[-1:] == ["dereference"],
+        follow_args=link_mode(fl) is LsLinkMode.ALL,
         time_kind=time_kind,
         group_dirs_first=fl.as_bool("group_directories_first"),
         columns=columns,
@@ -385,32 +473,109 @@ def exit_status_for(warnings: list[LsWarning]) -> int:
     return LS_MINOR_PROBLEM if warnings else LS_OK
 
 
-# GNU -F suffixes: a directory gets "/", a symlink "@". The link mark
-# rides the row's type, so it needs no separate lookup.
-_CLASSIFY_SUFFIX = {FileType.DIRECTORY: "/", FileType.SYMLINK: "@"}
+def type_indicator(entry: FileStat | None, style: LsIndicator) -> str:
+    """The mark GNU appends to a name for a style (ls.c's
+    get_type_indicator, coreutils 9.7).
+
+    A directory is ``/`` in every style but none; ``slash`` marks nothing
+    else. A link is ``@`` and a FIFO ``|``; an executable regular file is
+    ``*``, but only under classify. The mark rides the row's own type and
+    mode, so it needs no separate lookup.
+
+    Args:
+        entry (FileStat | None): the row, or None for an entry nothing
+            could stat (a dangling link's target), which takes no mark.
+        style (LsIndicator): the indicator style.
+    """
+    if entry is None or style is LsIndicator.NONE:
+        return ""
+    if entry.type == FileType.DIRECTORY:
+        return "/"
+    if style is LsIndicator.SLASH:
+        return ""
+    if entry.type == FileType.SYMLINK:
+        return "@"
+    if entry.type == FileType.FIFO:
+        return "|"
+    if (style is LsIndicator.CLASSIFY and entry.type == FileType.FILE
+            and entry.mode is not None and entry.mode & 0o111):
+        return "*"
+    return ""
 
 
 def format_simple(entries: list[FileStat],
                   *,
-                  classify: bool = False,
+                  indicator: LsIndicator = LsIndicator.NONE,
                   columns: formatting.LsColumns = formatting.DEFAULT_COLUMNS,
                   names: list[str] | None = None) -> list[str]:
-    """Short rows: the name, ``-F``'s mark, and ``-i``/``-Z``'s lead.
+    """Short rows: the name, the indicator style's mark, and
+    ``-i``/``-Z``'s lead.
 
     Args:
         entries (list[FileStat]): the rows.
-        classify (bool): ``-F``.
+        indicator (LsIndicator): the indicator style.
         columns (formatting.LsColumns): the requested columns.
         names (list[str] | None): the name per row when the caller
             decorated it (``--hyperlink``), else the row's own.
     """
     lead = formatting.ls_prefix(columns)
+    return [
+        lead + (names[i] if names is not None else e.name) +
+        type_indicator(e, indicator) for i, e in enumerate(entries)
+    ]
+
+
+def long_names(entries: list[FileStat], names: list[str] | None,
+               indicator: LsIndicator,
+               targets: list[FileStat | None]) -> list[str] | None:
+    """The long format's name column with the indicator style's marks.
+
+    GNU marks a row after its name, but a link after its target, with the
+    target's own mark, and only under file-type and classify: ``dl ->
+    sub/``, ``dang -> nowhere`` (coreutils 9.7). None when no mark is
+    asked for, so the row's own column stands.
+
+    Args:
+        entries (list[FileStat]): the rows.
+        names (list[str] | None): the decorated names, if any.
+        indicator (LsIndicator): the indicator style.
+        targets (list[FileStat | None]): what each link row leads to,
+            None for a row that is no link or leads nowhere.
+    """
+    if indicator is LsIndicator.NONE:
+        return names
     out: list[str] = []
     for i, e in enumerate(entries):
-        suffix = ""
-        if classify and e.type is not None:
-            suffix = _CLASSIFY_SUFFIX.get(e.type, "")
-        out.append(lead + (names[i] if names is not None else e.name) + suffix)
+        name = names[i] if names is not None else formatting.ls_name(e)
+        if e.type != FileType.SYMLINK:
+            out.append(name + type_indicator(e, indicator))
+        elif indicator is LsIndicator.SLASH:
+            out.append(name)
+        else:
+            out.append(name + type_indicator(targets[i], indicator))
+    return out
+
+
+async def link_targets(entries: list[FileStat], virtuals: list[str],
+                       links: LinkView | None, long: bool,
+                       indicator: LsIndicator) -> list[FileStat | None]:
+    """What each link row leads to, when the long format marks it.
+
+    Args:
+        entries (list[FileStat]): the rows.
+        virtuals (list[str]): each row's virtual path.
+        links (LinkView | None): the namespace's symlink facts.
+        long (bool): the long format.
+        indicator (LsIndicator): the indicator style.
+    """
+    wanted = long and links is not None and indicator in (
+        LsIndicator.FILE_TYPE, LsIndicator.CLASSIFY)
+    out: list[FileStat | None] = []
+    for e, virtual in zip(entries, virtuals):
+        if wanted and links is not None and e.type == FileType.SYMLINK:
+            out.append(await links.target_stat(virtual))
+        else:
+            out.append(None)
     return out
 
 
@@ -892,6 +1057,7 @@ async def probe_operand(
     index: IndexCacheStore = NULL_INDEX,
     links: LinkView | None = None,
     deref: bool = False,
+    follow_args: bool = False,
     child_mounts: ChildMounts | None = None,
     mounts: MountView | None = None,
     stat_path: StatPath | None = None,
@@ -913,6 +1079,10 @@ async def probe_operand(
             a failure to a minor problem (exit 1).
         index (IndexCacheStore): listing cache.
         links (LinkView | None): the namespace's symlink facts.
+        deref (bool): ``-L``, report what a listed link leads to.
+        follow_args (bool): the command line's links were resolved on
+            request (``-L``, ``-H``), so one that loops is an error
+            rather than a link to list.
         child_mounts (ChildMounts | None): session-filtered child-mount
             names, merged into every listing: a mountpoint is an
             ordinary directory entry of its parent, ``-R`` or not.
@@ -940,9 +1110,10 @@ async def probe_operand(
             # The operand did not resolve, so neither the path it
             # simplifies to nor the names the namespace owes it answer.
             # A command-line link whose stat loops is the exception: GNU
-            # lstats it then and lists the link itself, unless -L asked
-            # for the target (ls.c's gobble_file, coreutils 9.7).
-            if isinstance(exc, DotWalkLoop) and command_line_arg and not deref:
+            # lstats it then and lists the link itself, unless -L or -H
+            # asked for the target (ls.c's gobble_file, coreutils 9.7).
+            if (isinstance(exc, DotWalkLoop) and command_line_arg
+                    and not follow_args):
                 link_row = _link_row(path, links)
                 if link_row is not None:
                     return Operand(path, link_row, []), warnings
@@ -1217,7 +1388,7 @@ def _decorated_names(entries: list[FileStat], hrefs: list[str] | None,
 
 def stat_needed(*, long: bool, sort_by: LsSortBy,
                 columns: formatting.LsColumns, hyperlink: bool,
-                recursive: bool, classify: bool,
+                recursive: bool, indicator: LsIndicator,
                 group_dirs_first: bool) -> bool:
     """Whether GNU's ls would stat a listed entry to print this listing.
 
@@ -1235,12 +1406,13 @@ def stat_needed(*, long: bool, sort_by: LsSortBy,
         columns (formatting.LsColumns): ``-i`` and ``-Z`` ride here.
         hyperlink (bool): ``--hyperlink``.
         recursive (bool): ``-R``.
-        classify (bool): ``-F``.
+        indicator (LsIndicator): the indicator style, which reads the
+            type whatever the style.
         group_dirs_first (bool): ``--group-directories-first``.
     """
     return (long or sort_by in (LsSortBy.TIME, LsSortBy.SIZE) or columns.inode
-            or columns.context or hyperlink or recursive or classify
-            or group_dirs_first)
+            or columns.context or hyperlink or recursive
+            or indicator is not LsIndicator.NONE or group_dirs_first)
 
 
 def _render_group(
@@ -1249,10 +1421,11 @@ def _render_group(
     *,
     long: bool,
     human: bool,
-    classify: bool,
+    indicator: LsIndicator,
     identity: Identity | None,
     columns: formatting.LsColumns = formatting.DEFAULT_COLUMNS,
     hrefs: list[str] | None = None,
+    targets: list[FileStat | None] | None = None,
 ) -> None:
     names = _decorated_names(entries, hrefs, long)
     if long:
@@ -1261,11 +1434,13 @@ def _render_group(
                                       human=human,
                                       identity=identity,
                                       columns=columns,
-                                      names=names))
+                                      names=long_names(
+                                          entries, names, indicator, targets
+                                          or [None] * len(entries))))
     else:
         results.extend(
             format_simple(entries,
-                          classify=classify,
+                          indicator=indicator,
                           columns=columns,
                           names=names))
 
@@ -1290,10 +1465,11 @@ async def ls(
     reverse: bool = False,
     recursive: bool = False,
     list_dir: bool = False,
-    classify: bool = False,
+    indicator: LsIndicator = LsIndicator.NONE,
     index: IndexCacheStore = NULL_INDEX,
     links: LinkView | None = None,
     deref: bool = False,
+    follow_args: bool = False,
     child_mounts: ChildMounts | None = None,
     mounts: MountView | None = None,
     stat_path: StatPath | None = None,
@@ -1337,10 +1513,12 @@ async def ls(
                       rows,
                       long=long,
                       human=human,
-                      classify=classify,
+                      indicator=indicator,
                       identity=identity,
                       columns=columns,
-                      hrefs=row_hrefs if hyperlink else None)
+                      hrefs=row_hrefs if hyperlink else None,
+                      targets=await link_targets(rows, row_hrefs, links, long,
+                                                 indicator))
         return _finish(results, warnings)
 
     needed = stat_needed(long=long,
@@ -1348,7 +1526,7 @@ async def ls(
                          columns=columns,
                          hyperlink=hyperlink,
                          recursive=recursive,
-                         classify=classify,
+                         indicator=indicator,
                          group_dirs_first=group_dirs_first)
     operands: list[Operand] = []
     for p in paths:
@@ -1362,6 +1540,7 @@ async def ls(
                                             index=index,
                                             links=links,
                                             deref=deref,
+                                            follow_args=follow_args,
                                             child_mounts=child_mounts,
                                             mounts=mounts,
                                             stat_path=stat_path,
@@ -1382,16 +1561,17 @@ async def ls(
     # (or under -R); a lone directory operand is listed bare.
     headed = recursive or len(paths) > 1
     rows = [o.row for o in operands if o.row is not None]
-    _render_group(
-        results,
-        rows,
-        long=long,
-        human=human,
-        classify=classify,
-        identity=identity,
-        columns=columns,
-        hrefs=[o.path.virtual for o in operands
-               if o.row is not None] if hyperlink else None)
+    row_paths = [o.path.virtual for o in operands if o.row is not None]
+    _render_group(results,
+                  rows,
+                  long=long,
+                  human=human,
+                  indicator=indicator,
+                  identity=identity,
+                  columns=columns,
+                  hrefs=row_paths if hyperlink else None,
+                  targets=await link_targets(rows, row_paths, links, long,
+                                             indicator))
     printed = bool(rows)
     for operand in operands:
         for dir_spec, entries in operand.groups:
@@ -1442,17 +1622,19 @@ async def ls(
             # metadata, so report unknown instead of inventing a block count.
             if long:
                 results.append("total ?" if entries else "total 0")
+            entry_paths = [
+                posixpath.join(dir_spec.virtual, e.name) for e in entries
+            ]
             _render_group(results,
                           entries,
                           long=long,
                           human=human,
-                          classify=classify,
+                          indicator=indicator,
                           identity=identity,
                           columns=columns,
-                          hrefs=[
-                              posixpath.join(dir_spec.virtual, e.name)
-                              for e in entries
-                          ] if hyperlink else None)
+                          hrefs=entry_paths if hyperlink else None,
+                          targets=await link_targets(entries, entry_paths,
+                                                     links, long, indicator))
             printed = True
 
     return _finish(results, warnings)

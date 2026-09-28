@@ -509,6 +509,20 @@ export type LsSortBy = 'name' | 'time' | 'size' | 'version' | 'extension' | 'wid
  * `-c`/`--time=ctime`, `--time=birth`, else the modification time. */
 export type LsTimeKind = 'mtime' | 'atime' | 'ctime' | 'birth'
 
+// The mark `ls` appends to a name, `--indicator-style`'s words: `-p` is
+// `slash`, `--file-type` is `file-type` and `-F` is `classify`.
+export type LsIndicator = 'none' | 'slash' | 'file-type' | 'classify'
+
+// Which symlinks `cp` follows: every one (`-L`), only the command line's
+// (`-H`), or none, copying each link as a link (`-P`, `-d`, `-a`, and a
+// recursive copy's default).
+export type CopyDeref = 'always' | 'command_line' | 'never'
+
+// Which command-line symlinks `ls` resolves before it lists them: every one
+// (`-L`, `-H`), only one leading to a directory (the default), or none (`-d`,
+// a long format, `-F`).
+export type LsLinkMode = 'all' | 'directory' | 'none'
+
 export const FileType = Object.freeze({
   DIRECTORY: 'directory',
   FILE: 'file',

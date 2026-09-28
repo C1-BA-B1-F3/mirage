@@ -126,6 +126,9 @@ class IOResult:
             or streams.
         writes (dict[str, ByteSource] | None): Paths written with
             content or streams.
+        renames (list[tuple[str, str]] | None): Completed backend moves in
+            execution order, as virtual source/destination paths. Namespace
+            metadata follows these facts, even when another operand fails.
         cache (list[str] | None): Paths worth caching (from reads or
             writes).
         producer (Producer | None): provenance of this result (which
@@ -151,7 +154,9 @@ class IOResult:
                  cache: list[str] | None = None,
                  producer: Producer | None = None,
                  refusal: Refusal | None = None,
-                 matched_runs: list[list[PathSpec]] | None = None) -> None:
+                 matched_runs: list[list[PathSpec]] | None = None,
+                 renames: list[tuple[str, str]] | None = None) -> None:
+        self.renames = renames if renames is not None else []
         self.stdout = stdout
         self.matched_runs = matched_runs
         self.stderr = stderr
@@ -213,6 +218,7 @@ class IOResult:
                 **other.writes
             },
             cache=self.cache + other.cache,
+            renames=self.renames + other.renames,
             producer=other.producer,
             refusal=(other.refusal
                      if other.refusal is not None else self.refusal),

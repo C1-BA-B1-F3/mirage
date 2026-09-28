@@ -77,6 +77,8 @@ export interface IOResultInit {
   exitCode?: number
   reads?: Record<string, ByteSource>
   writes?: Record<string, ByteSource>
+  /** Completed backend moves, in order, for namespace metadata settlement. */
+  renames?: [string, string][]
   cache?: string[]
   producer?: Producer | null
   matchedRuns?: PathSpec[][] | null
@@ -94,6 +96,7 @@ export class IOResult {
   private _exitCode: number
   reads: Record<string, ByteSource>
   writes: Record<string, ByteSource>
+  renames: [string, string][]
   cache: string[]
   // Provenance of this result (which command, spanning which
   // mounts); merge keeps the last command for attribution, not
@@ -118,6 +121,7 @@ export class IOResult {
     this.reads = init.reads ?? {}
     this.writes = init.writes ?? {}
     this.cache = init.cache ?? []
+    this.renames = init.renames ?? []
     this.producer = init.producer ?? null
     this.refusal = init.refusal ?? null
     this.streamSource = null
@@ -177,6 +181,7 @@ export class IOResult {
       reads: { ...this.reads, ...other.reads },
       writes: { ...this.writes, ...other.writes },
       cache: [...this.cache, ...other.cache],
+      renames: [...this.renames, ...other.renames],
       producer: other.producer,
       refusal: other.refusal ?? this.refusal,
     })

@@ -58,12 +58,12 @@ describe('gunzip on inputs gzip refuses', () => {
       '/data/b.txt': 'file\n',
       '/data/p.gz': 'plain\n',
     })
-    expect(r).toEqual(['b.txt\np.gz\n', 'gunzip: p.gz: not in gzip format\n', 0])
+    expect(r).toEqual(['b.txt\np.gz\n', '\ngzip: p.gz: not in gzip format\n', 0])
   })
 
   it('calls plain stdin not in gzip format', async () => {
     const r = await shell('gunzip', new TextEncoder().encode('hello\n'))
-    expect(r).toEqual(['', 'gunzip: stdin: not in gzip format\n', 1])
+    expect(r).toEqual(['', '\ngzip: stdin: not in gzip format\n', 1])
   })
 })
 
@@ -89,8 +89,8 @@ describe('gunzip on a damaged member', () => {
       const dec = new TextDecoder()
       expect([dec.decode(io.stdout), dec.decode(io.stderr), io.exitCode]).toEqual([
         'hello\n',
-        'gunzip: /data/bad.gz: invalid compressed data--crc error\n' +
-          'gunzip: /data/bad.gz: invalid compressed data--length error\n',
+        '\ngzip: /data/bad.gz: invalid compressed data--crc error\n' +
+          '\ngzip: /data/bad.gz: invalid compressed data--length error\n',
         1,
       ])
     } finally {
@@ -110,7 +110,7 @@ describe('gunzip on a damaged member', () => {
       const dec = new TextDecoder()
       expect([dec.decode(io.stdout), dec.decode(io.stderr)]).toEqual([
         'two\nhello\n',
-        'gunzip: two.gz: unknown method 7 -- not supported\n',
+        'gzip: two.gz: unknown method 7 -- not supported\n',
       ])
     } finally {
       await ws.close()

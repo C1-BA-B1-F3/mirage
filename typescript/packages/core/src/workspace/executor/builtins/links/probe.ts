@@ -14,7 +14,7 @@
 
 import { FileStat, FileType, PathSpec } from '../../../../types.ts'
 import { ELOOP_STRERROR, isEnotdir, isMissError } from '../../../../utils/errors.ts'
-import { gnuBasename } from '../../../../utils/path.ts'
+import { gnuBasename, posixNormpath } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { StatOverlay } from '../../../../ops/types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
@@ -147,6 +147,18 @@ export async function pathExists(dispatch: DispatchFn, virtual: string): Promise
 // be namespace state (touch results, observed writes). Python gets the
 // overlay from the ops dispatcher itself; here it is applied on the way
 // out, against the resolved path rather than the link's.
+/**
+ * Where a path really points, as the door can address it: the namespace's
+ * walk, with a relative target's walk up from the link's own directory
+ * (`../a.txt`) collapsed, which the door does not do for a path it is handed
+ * whole. The link's directory is a real one, since the table keys every link
+ * by its resolved parent, so the `..` it names is that directory's parent.
+ * Throws CycleError when the chain loops. Mirrors Python's resolve_link.
+ */
+export function resolveLink(namespace: Namespace, virtual: string): string {
+  return posixNormpath(namespace.follow(virtual))
+}
+
 export async function linkTargetStat(
   namespace: Namespace,
   dispatch: DispatchFn,
@@ -155,7 +167,7 @@ export async function linkTargetStat(
 ): Promise<FileStat | null> {
   let target: string
   try {
-    target = namespace.follow(virtual)
+    target = resolveLink(namespace, virtual)
   } catch {
     // A loop (ELOOP) is one of the two ways a link legitimately has no
     // target; statOrNull maps the other (missing). Every other backend

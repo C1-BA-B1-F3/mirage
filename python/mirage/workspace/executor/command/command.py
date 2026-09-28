@@ -402,7 +402,8 @@ async def handle_command(
             stdin=stdin,
             storage_key=make_storage_key(registry),
             ns=cross_ns,
-            session_view=session_view(session, registry.policies))
+            session_view=session_view(session, registry.policies),
+            cwd=session.cwd)
         if cmd_name == "find":
             stdout = await _finish_find(stdout,
                                         io,

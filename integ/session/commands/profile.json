@@ -81,7 +81,7 @@
       "expect": {
         "exit": 127,
         "stdout": "",
-        "stderr": "rm: command not found\n"
+        "stderr": "xargs: rm: No such file or directory\n"
       }
     },
     {

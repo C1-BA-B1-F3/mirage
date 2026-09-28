@@ -579,3 +579,60 @@ async def test_a_caller_that_aborts_while_queued_never_runs_its_line():
         assert b"mark" not in (await ws.shell("ls /ram")).stdout
     finally:
         await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "line", ["again", "printf a | xargs -P2 -I{} again", "again | cat"])
+async def test_invocation_shell_reenters_exact_session_and_expires(line):
+    ws = _make_ws()
+    saved = []
+
+    async def again(inv):
+        saved.append(inv.shell)
+        await asyncio.sleep(0)
+        inner = await inv.shell("Z=inner; echo inner")
+        return inner.stdout, inner
+
+    ws.register_cli("again", CLISpec(name="again", fn=again))
+    try:
+        io = await ws.shell(line)
+        assert io.stdout == b"inner\n"
+        assert ws.get_session(
+            ws.default_session_id).env.get("Z") == ("inner" if line == "again"
+                                                    else None)
+        with pytest.raises(RuntimeError, match="no longer active"):
+            await saved[0]("Z=leaked")
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("named", [False, True])
+async def test_invocation_shell_does_not_admit_unrelated_calls(named):
+    ws = _make_ws()
+    entered = asyncio.Event()
+    held = asyncio.Event()
+
+    async def again(inv):
+        entered.set()
+        await held.wait()
+        inner = await inv.shell('X=inner; echo "$X"')
+        return inner.stdout, inner
+
+    ws.register_cli("again", CLISpec(name="again", fn=again))
+    try:
+        outer = asyncio.create_task(ws.shell('X=outer; again; echo "$X"'))
+        await entered.wait()
+        options = {"session_id": ws.default_session_id} if named else {}
+        unrelated = asyncio.create_task(
+            ws.shell('echo "$X"; X=other', **options))
+        await asyncio.sleep(0.02)
+        assert not unrelated.done()
+        held.set()
+        assert (await outer).stdout == b"inner\ninner\n"
+        assert (await unrelated).stdout == b"inner\n"
+        assert ws.get_session(ws.default_session_id).env["X"] == "other"
+    finally:
+        held.set()
+        await ws.close()

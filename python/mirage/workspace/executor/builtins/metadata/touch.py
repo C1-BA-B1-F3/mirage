@@ -15,14 +15,14 @@
 from collections.abc import AsyncIterator
 from functools import partial
 
-from mirage.commands.builtin.utils.paths import dispatch_stat, dot_refusal
+from mirage.commands.builtin.utils.paths import (dispatch_stat, dot_refusal,
+                                                 typed_spec)
 from mirage.context import DEFAULT_UMASK
 from mirage.io import IOResult
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileType, PathSpec
 from mirage.utils.errors import (FS_ERRORS, OperationNotSupportedError,
-                                 fs_strerror)
-from mirage.utils.path import resolve_path
+                                 fs_strerror, walk_refusal)
 from mirage.workspace.executor.builtins.metadata.metadata import (
     apply_link_attrs, follow_operand, now_iso, parse_touch_stamp,
     permission_error, setattr_via)
@@ -63,10 +63,12 @@ async def handle_touch(
     except ValueError as exc:
         return fail("touch", f"touch: invalid date format '{exc}'\n", 1)
     if stamp is None and "r" in values:
-        ref = PathSpec.from_str_path(resolve_path(values["r"], session.cwd))
+        # The spelling as typed, so the empty name is refused rather than
+        # read as the working directory.
+        ref = typed_spec(values["r"], session.cwd)
         try:
             ref_stat, _ = await dispatch("stat", ref)
-        except (FileNotFoundError, NotADirectoryError) as exc:
+        except FS_ERRORS as exc:
             return fail(
                 "touch", f"touch: failed to get attributes of "
                 f"'{values['r']}': {fs_strerror(exc)}\n")
@@ -80,10 +82,6 @@ async def handle_touch(
     errors: list[str] = []
     writes: dict[str, bytes | AsyncIterator[bytes]] = {}
     for target in await expand_operands(namespace, operands):
-        if namespace.is_mount_root(target.virtual):
-            errors.append(f"touch: cannot touch '{target.raw_path}': "
-                          f"Is a directory\n")
-            continue
         if "h" in flags and namespace.is_link(target.virtual):
             await apply_link_attrs(dispatch,
                                    "touch",
@@ -91,13 +89,32 @@ async def handle_touch(
                                    errors,
                                    mtime=stamp)
             continue
+        if target.walk_error is not None:
+            # Past -h, which acts on a looping link itself: the empty
+            # name, whose `virtual` is the working directory, and a link
+            # loop name nothing to touch. -c never opens the file, so it
+            # meets the walk when it sets the times, where ENOENT is the
+            # silent miss -c asks for.
+            if "c" in flags and target.walk_error == "ENOENT":
+                continue
+            action = "setting times of" if "c" in flags else "cannot touch"
+            errors.append(f"touch: {action} '{target.raw_path}': "
+                          f"{fs_strerror(walk_refusal(target))}\n")
+            continue
+        if namespace.is_mount_root(target.virtual):
+            errors.append(f"touch: cannot touch '{target.raw_path}': "
+                          f"Is a directory\n")
+            continue
         refusal = await dot_refusal(partial(dispatch_stat, dispatch), target,
                                     namespace.follow)
         if refusal is not None:
             errors.append(f"touch: cannot touch '{target.raw_path}': "
                           f"{fs_strerror(refusal)}\n")
             continue
-        resolved = follow_operand(namespace, "touch", "touch", target, errors)
+        resolved = follow_operand(
+            namespace, "touch",
+            "setting times of" if "c" in flags else "cannot touch", target,
+            errors)
         if resolved is None:
             continue
         # `x/` is `x/.`, so touch never creates through a trailing slash:

@@ -56,6 +56,7 @@ import {
   isDotWalkError,
   isEnoent,
   isMissError,
+  walkRefusal,
 } from '../../../utils/errors.ts'
 import { dotRefusal } from '../utils/paths.ts'
 import type { ChildMounts } from '../../../ops/types.ts'
@@ -513,12 +514,22 @@ function walkProbeOf(
   return probe === null ? null : [probe, specs]
 }
 
+/** Throw the walk's verdict on the first PathSpec positional it refused
+ * before the command ran (the empty name, a link loop), before anything
+ * else reads it. Mirrors the walk_error arm of Python's _walked_call. */
+function refuseUnwalked(args: readonly unknown[]): void {
+  for (const arg of args) {
+    if (arg instanceof PathSpec && arg.walkError !== null) throw walkRefusal(arg)
+  }
+}
+
 /** Call one slot once the dots of its PathSpec positionals walk. */
 function walkedCall<Args extends unknown[], R>(
   bound: WalkProbe | null,
   fn: (...args: Args) => Promise<R>,
 ): (...args: Args) => Promise<R> {
   return async (...args: Args) => {
+    refuseUnwalked(args)
     const walk = walkProbeOf(bound, args)
     if (walk !== null) await walkAdmit(walk[0], walk[1])
     return fn(...args)
@@ -527,11 +538,12 @@ function walkedCall<Args extends unknown[], R>(
 
 /** Drain a read stream once its operand walks, before any byte is pulled. */
 async function* walkedStream(
-  probe: WalkProbe,
+  probe: WalkProbe | null,
   specs: readonly PathSpec[],
   source: AsyncIterable<Uint8Array>,
 ): AsyncIterable<Uint8Array> {
-  await walkAdmit(probe, specs)
+  refuseUnwalked(specs)
+  if (probe !== null) await walkAdmit(probe, specs)
   yield* source
 }
 
@@ -564,6 +576,7 @@ export function withWalkGuard<A extends Accessor = Accessor>(
     stat: walkedCall(bound, ops.stat),
     readStream: (accessor, path, index) => {
       const inner = ops.readStream(accessor, path, index)
+      if (path.walkError !== null) return walkedStream(null, [path], inner)
       const walk = walkProbeOf(bound, [path])
       return walk === null ? inner : walkedStream(walk[0], walk[1], inner)
     },
@@ -585,6 +598,7 @@ export function withWalkGuard<A extends Accessor = Accessor>(
   const sa = ops.setAttrs
   if (sa !== undefined) {
     guarded.setAttrs = async (...args: unknown[]) => {
+      refuseUnwalked(args)
       const walk = walkProbeOf(bound, args)
       if (walk !== null) await walkAdmit(walk[0], walk[1])
       return sa(...args)
@@ -946,8 +960,13 @@ export function overlaidStat(
   stat: (p: PathSpec) => Promise<FileStat>,
   overlay: StatOverlay | undefined,
 ): (p: PathSpec) => Promise<FileStat> {
-  if (overlay === undefined) return stat
-  return async (p) => overlay(p.virtual, await stat(p))
+  // Guarded itself, as Python's overlaid_stat is: a caller may bind a raw
+  // backend stat (the object-store family's core) rather than a slot.
+  return async (p) => {
+    if (p.walkError !== null) throw walkRefusal(p)
+    const row = await stat(p)
+    return overlay === undefined ? row : overlay(p.virtual, row)
+  }
 }
 
 function hiddenCheck(paths: readonly PathSpec[], create = false): void {
@@ -961,6 +980,7 @@ function guardOperation<Args extends unknown[], R>(
 ): (...args: Args) => Promise<R> {
   const access = mutationOf(name)
   const guarded = async (...args: Args): Promise<R> => {
+    refuseUnwalked(args)
     const walk = walkProbeOf(null, args)
     if (walk !== null) await walkAdmit(walk[0], walk[1])
     const specs = pathsOf(args)

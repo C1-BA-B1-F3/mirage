@@ -776,7 +776,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "awk: /ghost: Is a directory\n"
+        "stderr": "awk: cannot open \"/ghost\" (Is a directory)\n"
       }
     },
     {
@@ -1029,6 +1029,32 @@
         "exit": 0,
         "stdout": "/data/top.txt:top\n/data/inner/leaf.txt:deep\n/data/inner/leaf.txt:deep\n/data/top.txt:top\n",
         "stderr": ""
+      }
+    },
+    {
+      "id": "nest_find_empty_operand_0",
+      "seq": 950005,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "cd /data && find '' /data",
+      "expect": {
+        "exit": 1,
+        "stdout": "/data\n/data/inner\n/data/inner/leaf.txt\n/data/top.txt\n",
+        "stderr": "find: '': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nest_find_empty_operand_1",
+      "seq": 950005,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "cd /data && find /data ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "/data\n/data/inner\n/data/inner/leaf.txt\n/data/top.txt\n",
+        "stderr": "find: '': No such file or directory\n"
       }
     }
   ]

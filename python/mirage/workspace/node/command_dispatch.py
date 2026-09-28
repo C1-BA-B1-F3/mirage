@@ -589,20 +589,14 @@ async def _route_argv(
     #    that follows (open(2) rather than lstat(2)) or an operand typed
     #    with a trailing slash, which POSIX reads as `dlink/.`. This runs
     #    ahead of every handler below because the kernel resolves a path
-    #    before the syscall, not inside it.
+    #    before the syscall, not inside it. An operand a link loop stands
+    #    in comes back refused (`walk_error`) rather than failing the
+    #    line: the command meets ELOOP at its op and words it per operand.
     if namespace.nodes and operands:
-        try:
-            operands = follow_paths(namespace,
-                                    operands,
-                                    follows_last_component(name, argv.words),
-                                    slash_follows=name not in SLASH_KEEPS_LAST)
-        except CycleError as exc:
-            err = (f"{name}: {exc}: "
-                   f"Too many levels of symbolic links\n").encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=name,
-                                                             exit_code=1,
-                                                             stderr=err)
+        operands = follow_paths(namespace,
+                                operands,
+                                follows_last_component(name, argv.words),
+                                slash_follows=name not in SLASH_KEEPS_LAST)
         argv = argv.with_operands(operands)
 
     # ── symlinks (namespace-backed; not bash builtins, not mount
@@ -702,6 +696,12 @@ async def _route_argv(
             # the node table matches the pattern itself.
             for item in operands:
                 if not isinstance(item, PathSpec):
+                    continue
+                if item.walk_error is not None:
+                    # The walk refused it, so rm removed nothing there
+                    # (-f only silenced the refusal), and the empty
+                    # name's `virtual` is the working directory: purging
+                    # under it dropped every link the directory held.
                     continue
                 if item.raw_path.endswith("/"):
                     # A trailing slash asked for the directory, and rm

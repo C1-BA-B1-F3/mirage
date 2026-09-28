@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { DEFAULT_UMASK } from '../../../../context/session_context.ts'
-import { dispatchStat, dotRefusal } from '../../../../commands/builtin/utils/paths.ts'
+import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { FileStat, SetAttrFields } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
@@ -23,8 +23,9 @@ import {
   isEnotdir,
   isFsError,
   isMissingOp,
+  walkRefusal,
 } from '../../../../utils/errors.ts'
-import { CycleError, resolvePath } from '../../../../utils/path.ts'
+import { CycleError } from '../../../../utils/path.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import type { SessionState } from '../../../session/session.ts'
@@ -62,16 +63,18 @@ export async function handleTouch(
   }
   const refText = values.get('r')
   if (stamp === null && refText !== undefined) {
-    const ref = PathSpec.fromStrPath(resolvePath(refText, session.cwd))
+    // The spelling as typed, so the empty name is refused rather than read
+    // as the working directory.
+    const ref = typedSpec(refText, session.cwd)
     try {
       const [refStat] = await dispatch('stat', ref)
       stamp = (refStat as FileStat).modified
     } catch (err) {
-      const strerror = isEnoent(err) || isEnotdir(err) ? fsStrerror(err) : null
-      if (strerror !== null) {
-        return fail('touch', `touch: failed to get attributes of '${refText}': ${strerror}\n`)
-      }
-      throw err
+      if (!isFsError(err)) throw err
+      return fail(
+        'touch',
+        `touch: failed to get attributes of '${refText}': ${String(fsStrerror(err))}\n`,
+      )
     }
   }
   stamp ??= nowIso()
@@ -82,12 +85,25 @@ export async function handleTouch(
   const errors: string[] = []
   const writes: Record<string, Uint8Array> = {}
   for (const target of await expandOperands(namespace, operands)) {
-    if (namespace.isMountRoot(target.virtual)) {
-      errors.push(`touch: cannot touch '${target.rawPath}': Is a directory\n`)
-      continue
-    }
     if (flags.has('h') && namespace.isLink(target.virtual)) {
       await setattrLink(dispatch, target, { mtime: stamp })
+      continue
+    }
+    if (target.walkError !== null) {
+      // Past -h, which acts on a looping link itself: the empty name,
+      // whose `virtual` is the working directory, and a link loop name
+      // nothing to touch. -c never opens the file, so it meets the walk
+      // when it sets the times, where ENOENT is the silent miss -c asks
+      // for.
+      if (flags.has('c') && target.walkError === 'ENOENT') continue
+      const action = flags.has('c') ? 'setting times of' : 'cannot touch'
+      errors.push(
+        `touch: ${action} '${target.rawPath}': ${String(fsStrerror(walkRefusal(target)))}\n`,
+      )
+      continue
+    }
+    if (namespace.isMountRoot(target.virtual)) {
+      errors.push(`touch: cannot touch '${target.rawPath}': Is a directory\n`)
       continue
     }
     const unwalked = await dotRefusal(dispatchStat(dispatch), target, (v) => namespace.follow(v))
@@ -100,7 +116,8 @@ export async function handleTouch(
       virtual = namespace.follow(target.virtual)
     } catch (err) {
       if (err instanceof CycleError) {
-        errors.push(`touch: cannot touch '${target.rawPath}': Too many levels of symbolic links\n`)
+        const action = flags.has('c') ? 'setting times of' : 'cannot touch'
+        errors.push(`touch: ${action} '${target.rawPath}': Too many levels of symbolic links\n`)
         continue
       }
       throw err

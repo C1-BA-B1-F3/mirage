@@ -66,3 +66,19 @@ describe('relativeSpec', () => {
     expect(r.virtual).toBe('/ram/sub/a.txt')
   })
 })
+
+describe('relativeSpec: the empty word', () => {
+  it('is refused by the walk rather than read as the cwd', () => {
+    const r = relativeSpec('', setup(), '/ram/sub')
+    if (!(r instanceof PathSpec)) throw new Error('expected PathSpec')
+    expect(r.virtual).toBe('/ram/sub')
+    expect(r.rawPath).toBe('')
+    expect(r.walkError).toBe('ENOENT')
+  })
+
+  it('leaves a named word unrefused', () => {
+    const r = relativeSpec('sub/a.txt', setup(), '/ram')
+    if (!(r instanceof PathSpec)) throw new Error('expected PathSpec')
+    expect(r.walkError).toBeNull()
+  })
+})

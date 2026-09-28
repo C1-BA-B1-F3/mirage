@@ -85,7 +85,7 @@ export function makeRm<A extends Accessor>(
           if (force && (code === 'ENOENT' || code === 'ENOTDIR')) continue
           if (!isFsError(err)) throw err
           // GNU rm reports the operand and keeps removing the rest.
-          errors.push(`rm: cannot remove '${p.virtual}': ${String(fsStrerror(err))}`)
+          errors.push(`rm: cannot remove '${p.rawPath}': ${String(fsStrerror(err))}`)
           continue
         }
         writes[p.mountPath] = new Uint8Array()

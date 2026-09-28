@@ -19,6 +19,7 @@ import {
   ebadfStdin,
   efbig,
   eisdir,
+  eloop,
   erofsReadOnly,
   enoent,
   enotsup,
@@ -32,7 +33,10 @@ import {
   listingError,
   readdirError,
   revoiceFsErrorLine,
+  isDotWalkError,
+  walkRefusal,
 } from './errors.ts'
+import { PathSpec } from '../types.ts'
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 const DEC = new TextDecoder()
@@ -421,4 +425,51 @@ it.each(['head', 'tail'])('%s names a read-cap failure at the chokepoint', (cmd)
   expect(decode(formatFsError(cmd, efbig('/records.jsonl')))).toBe(
     `${cmd}: error reading '/records.jsonl': File too large\n`,
   )
+})
+
+describe('walkRefusal', () => {
+  it('names the empty operand as typed, not as the cwd it reads as', () => {
+    const spec = new PathSpec({
+      virtual: '/data',
+      directory: '/',
+      vfsPath: '',
+      rawPath: '',
+      walkError: 'ENOENT',
+    })
+    const err = walkRefusal(spec)
+    expect(isDotWalkError(err)).toBe(true)
+    expect(fsErrorLine('cat', spec, err)).toBe("cat: '': No such file or directory\n")
+  })
+
+  it('refuses a loop as a final per-operand error', () => {
+    const spec = new PathSpec({
+      virtual: '/data/l1',
+      directory: '/data/',
+      vfsPath: 'l1',
+      rawPath: 'l1',
+      walkError: 'ELOOP',
+    })
+    const err = walkRefusal(spec)
+    expect(isDotWalkError(err)).toBe(true)
+    expect(isFsError(err)).toBe(true)
+    expect(fsErrorLine('head', spec, err)).toBe(
+      "head: cannot open 'l1' for reading: Too many levels of symbolic links\n",
+    )
+  })
+
+  it('types eloop as a walk refusal', () => {
+    const err = eloop('/data/l1')
+    expect(isDotWalkError(err)).toBe(true)
+    expect(fsStrerror(err)).toBe('Too many levels of symbolic links')
+  })
+
+  it.each(['wc', 'du'])('%s vets the empty name', (cmd) => {
+    expect(fsErrorLine(cmd, '', enoent(''))).toBe(`${cmd}: invalid zero-length file name\n`)
+  })
+
+  it('quotes the empty operand for everything else', () => {
+    expect(fsErrorLine('tail', '', enoent(''))).toBe(
+      "tail: cannot open '' for reading: No such file or directory\n",
+    )
+  })
 })

@@ -17,7 +17,7 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import { PathSpec, type StatFn } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { enoent, enotdir, fsErrorLine, isMissingPath } from '../../../utils/errors.ts'
+import { enoent, enotdir, fsErrorLine, isMissingPath, walkRefusal } from '../../../utils/errors.ts'
 import { absentDestStrerror, dotRefusal, linkFollow, statOrEnoent } from '../utils/paths.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 
@@ -57,6 +57,11 @@ async function unresolved(
   mustExist: boolean,
   allowMissing: boolean,
 ): Promise<Error | null> {
+  // The walk refused the operand before realpath ran. The empty name is
+  // refused in every mode, -m included, and a link loop outside -m only:
+  // -m leaves the loop unresolved and prints the path as spelled
+  // (coreutils 9.7).
+  if (p.walkError === 'ENOENT' || (p.walkError !== null && !allowMissing)) return walkRefusal(p)
   if (allowMissing) return null
   if (walk !== null) {
     const refusal = await dotRefusal(walk, p, follow)

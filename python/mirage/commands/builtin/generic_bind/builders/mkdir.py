@@ -28,11 +28,11 @@ from mirage.context import DEFAULT_UMASK, get_walk_probe, session_umask
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView
 from mirage.types import FileType, PathSpec
-from mirage.utils.errors import (FS_ERRORS, error_path, fs_strerror,
-                                 operand_spelling)
+from mirage.utils.errors import (ELOOP_STRERROR, FS_ERRORS, error_path,
+                                 fs_strerror, operand_spelling)
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.mode import DEFAULT_DIR_MODE, parse_chmod
-from mirage.utils.path import walk_nodes
+from mirage.utils.path import CycleError, walk_nodes
 from mirage.vfs.types import OperationFn
 
 
@@ -112,9 +112,12 @@ async def make_directory(mkdir_fn: OperationFn,
         parents (bool): whether ``-p`` makes the missing ancestors.
         links (LinkView | None): the namespace's symlink facts.
     """
-    if parents and path.dotted is not None:
-        failed = await _make_walked(mkdir_fn, accessor, path, path.dotted,
-                                    links)
+    # -p enters the names in front of the operand one at a time, so a
+    # dot among them, or a link loop the walk refused the operand for,
+    # is met at that name and GNU quotes it rather than the operand.
+    if parents and (path.dotted is not None or path.walk_error == "ELOOP"):
+        failed = await _make_walked(mkdir_fn, accessor, path, path.dotted
+                                    or path.virtual, links)
         if failed is not None:
             return failed
         # The walk has entered every name the spelling passes through, so
@@ -170,7 +173,8 @@ async def _enter_node(mkdir_fn: OperationFn, accessor: Accessor,
 
     Judged the way GNU's walk into the name is, before anything is made:
     a directory, or a link to one, is passed through; a plain file, or a
-    link to one, is ENOTDIR; a dangling link is EEXIST. Only a missing
+    link to one, is ENOTDIR; a dangling link is EEXIST, and a looping one
+    ELOOP. Only a missing
     name is made, where its links lead, so no store is asked to make a
     directory over a file or under a link it cannot see. Outside a
     workspace command there is no stat to judge with, and the store's
@@ -185,6 +189,10 @@ async def _enter_node(mkdir_fn: OperationFn, accessor: Accessor,
         links (LinkView | None): the namespace's symlink facts.
     """
     if links is not None and links.stat_at(node) is not None:
+        try:
+            links.resolve(node)
+        except CycleError:
+            return ELOOP_STRERROR
         target = await links.target_stat(node)
         if target is None:
             return os.strerror(errno.EEXIST)

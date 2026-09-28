@@ -209,6 +209,12 @@ async def plan_zip(
     formed: dict[str, list[str]] = {}
     for path in paths:
         raw = path.raw_path
+        if path.walk_error is not None:
+            # The walk refused the operand before zip ran (the empty
+            # name, a link loop above the name), which Info-ZIP matches
+            # to nothing, whatever the errno.
+            warnings.append(NOT_MATCHED + raw)
+            continue
         base = path.virtual.rstrip("/") or "/"
         # Info-ZIP walks a bare `.` with an empty prefix, so what it finds
         # there is named bare: `zip -r out.zip . a.txt` names a.txt once.

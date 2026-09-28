@@ -18,6 +18,7 @@ from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.uniq import uniq as generic_uniq
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           bound_op,
+                                                          dir_aware_stat,
                                                           resolve_or_empty)
 from mirage.commands.config import CommandOpts
 from mirage.io.types import ByteSource, IOResult
@@ -35,6 +36,7 @@ async def uniq(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                      if ops.write is not None else None),
         stdin=opts.stdin,
         flags=opts.flags,
+        stat=dir_aware_stat(ops, accessor, opts),
     )
 
 

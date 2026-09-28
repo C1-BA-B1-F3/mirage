@@ -550,6 +550,7 @@ export class MountEntry {
           vfsPath: mountKey(p.virtual, mountPrefix),
           rawPath: p.rawPath,
           dotted: p.dotted,
+          walkError: p.walkError,
         })
       const prefixedPaths = paths.map(stamp)
       // Stamp this mount's backend key onto path-shaped flag values so

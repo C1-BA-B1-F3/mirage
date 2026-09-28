@@ -150,3 +150,36 @@ it.each(['-tzf', '-xzf', '-xOzf'])(
     }
   },
 )
+
+it.each(['t', 'x', 'c'])('preserves empty and looping archive names for -%sf', async (mode) => {
+  for (const [name, reason] of [
+    ['', 'No such file or directory'],
+    ['loop', 'Too many levels of symbolic links'],
+  ] as const) {
+    const result = await shell(`cd /data; ln -s loop loop; tar -${mode}f '${name}' a.txt`, {
+      '/data/a.txt': ENC.encode('hello\n'),
+    })
+    expect(result).toEqual([
+      2,
+      '',
+      `tar: ${name}: Cannot open: ${reason}\ntar: Error is not recoverable: exiting now\n`,
+    ])
+  }
+})
+
+it('keeps the empty archive refusal across mounts', async () => {
+  const ws = new Workspace(
+    { '/data': new RAMVFS(), '/other': new RAMVFS() },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  try {
+    await ws.shell('echo hello > /other/a.txt')
+    const result = await ws.shell("cd /data; tar -cf '' /other/a.txt")
+    expect(result.exitCode).toBe(2)
+    expect(DEC.decode(result.stderr)).toBe(
+      'tar: : Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n',
+    )
+  } finally {
+    await ws.close()
+  }
+})

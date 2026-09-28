@@ -22,7 +22,7 @@ from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import FS_ERRORS, fs_strerror
+from mirage.utils.errors import ELOOP_STRERROR, FS_ERRORS, fs_strerror
 from mirage.utils.path import CycleError
 from mirage.workspace.executor.builtins.links.probe import stat_or_none
 from mirage.workspace.executor.builtins.shared import fail, ok, split_flags
@@ -76,7 +76,10 @@ def follow_paths(
     Non-path items and paths that resolve to themselves pass through
     untouched. A rewritten spec keeps the user-typed form in ``raw_path``
     so error messages still name the operand as typed; the mount re-stamps
-    ``vfs_path`` at dispatch.
+    ``vfs_path`` at dispatch. A path a link loop stands in resolves to
+    nothing, so it stays as typed with ``walk_error`` set, and the op that
+    reaches it answers ELOOP: GNU reports the one operand in the command's
+    own words and goes on to the next.
 
     Args:
         namespace (Namespace): addressing authority holding the link table.
@@ -86,9 +89,6 @@ def follow_paths(
         slash_follows (bool): whether a trailing slash may override
             ``follow_last``; False only for ``tar``, which strips the
             slash before it stats.
-
-    Raises:
-        CycleError: when a path loops past the hop limit (ELOOP).
     """
     out: list[str | PathSpec] = []
     for item in items:
@@ -100,7 +100,8 @@ def follow_paths(
             virtual = (namespace.follow(item.virtual)
                        if last else follow_parent(namespace, item.virtual))
         except CycleError:
-            raise CycleError(item.raw_path) from None
+            out.append(dataclasses.replace(item, walk_error="ELOOP"))
+            continue
         if virtual == item.virtual:
             out.append(item)
             continue
@@ -244,7 +245,12 @@ async def _slashed_link_refusal(
         dst_stat (FileStat | None): the destination's stat, None when it
             does not exist.
     """
-    followed = namespace.follow(src.virtual)
+    try:
+        followed = namespace.follow(src.virtual)
+    except CycleError:
+        return fail(
+            "mv", f"mv: cannot stat '{src.raw_path}': "
+            f"{ELOOP_STRERROR}\n")
     target = await stat_or_none(dispatch, PathSpec.from_str_path(followed))
     if target is None:
         return fail(
@@ -321,15 +327,36 @@ async def prepare_mv(
     if fl.raw("target_directory") is not None:
         return items, None, None, None
     src, dst = paths
+    if src.walk_error is not None or dst.walk_error is not None:
+        # The walk refused the operand, so there is no entry to move or
+        # land on; the generic mv reports it through its own stat, which
+        # cannot see a link source. A link is a non-directory, and GNU
+        # stats an empty destination as a directory (see mv_generic).
+        if (dst.raw_path == "" and src.walk_error is None
+                and namespace.is_link(src.virtual)):
+            return items, None, None, fail(
+                "mv", "mv: cannot overwrite directory '' with "
+                f"non-directory '{src.raw_path}'\n")
+        if (dst.walk_error == "ELOOP" and src.walk_error is None
+                and namespace.is_link(src.virtual)):
+            return items, None, None, fail(
+                "mv", f"mv: cannot stat '{dst.raw_path}': {ELOOP_STRERROR}\n")
+        return items, None, None, None
 
     # Where the move lands: inside a directory destination (followed, so
     # node-meta keys line up with the followed paths stat merges on), else
-    # the destination itself, replaced like rename(2).
-    followed = namespace.follow(dst.virtual)
-    stat = await stat_or_none(dispatch, PathSpec.from_str_path(followed))
+    # the destination itself, replaced like rename(2). A destination a
+    # link loop stands in stats ELOOP, which mv reads as not a directory:
+    # the rename replaces the link itself (GNU 9.7).
+    try:
+        followed: str | None = namespace.follow(dst.virtual)
+    except CycleError:
+        followed = None
+    stat = (None if followed is None else await stat_or_none(
+        dispatch, PathSpec.from_str_path(followed)))
     into_dir = (not fl.as_bool("no_target_directory") and stat is not None
                 and stat.type == FileType.DIRECTORY)
-    if into_dir:
+    if into_dir and followed is not None:
         target_dst = (followed.rstrip("/") + "/" +
                       posixpath.basename(src.virtual))
     else:

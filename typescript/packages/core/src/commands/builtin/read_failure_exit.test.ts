@@ -97,11 +97,13 @@ describe('a read that fails answers like GNU', () => {
       // FAILURE_WORDING's commands say the step in GNU's words where that
       // still names the operand (head/tail/uniq `error reading 'dir'`,
       // tac/tsort `dir: read error`, sed `read error on dir`); the rest say
-      // the house `<cmd>: <path>: Is a directory` (see the python twin).
+      // the house `<cmd>: <path>: Is a directory`, and awk mawk's `cannot
+      // open "dir" (Is a directory)` (see the python twin).
       expect(
         stderr.includes('/ram/dir: Is a directory') ||
           stderr.includes('/ram/dir: read error: Is a directory') ||
-          stderr.includes("error reading '/ram/dir': Is a directory"),
+          stderr.includes("error reading '/ram/dir': Is a directory") ||
+          stderr.includes('cannot open "/ram/dir" (Is a directory)'),
       ).toBe(true)
       expect(stderr).not.toContain('No such file')
     })

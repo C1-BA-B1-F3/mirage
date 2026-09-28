@@ -17,7 +17,7 @@ import { cacheAwareStream } from '../../../cache/read_through.ts'
 import { mountParentReaddir, mountParentStat } from '../utils/operands.ts'
 import { IOResult } from '../../../io/types.ts'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
-import { fsStrerror, isFsError, isWalkError } from '../../../utils/errors.ts'
+import { fsStrerror, isFsError, isWalkError, walkRefusal } from '../../../utils/errors.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
 import { specOf } from '../../spec/builtins.ts'
@@ -546,10 +546,13 @@ export async function rgGeneric(
   }
   const warnings: string[] = []
   // ripgrep's "nothing searched" speaks for the whole walk, so it waits while
-  // a fan-out searches the mounts below the cwd in runs of its own.
+  // a fan-out searches the mounts below the cwd in runs of its own. A typed ''
+  // shares the synthetic operand's spelling; the walk's verdict is what tells
+  // them apart.
   const implicit = paths.some(
     (p) =>
       p.rawPath === IMPLICIT_CWD &&
+      p.walkError === null &&
       (f.oneFileSystem || mounts === undefined || mounts.descendants(p.virtual).length === 0),
   )
   // A mount root below the operand shadows whatever the backend holds there;
@@ -572,6 +575,13 @@ async function* replay(found: readonly Haystack[]): AsyncGenerator<Haystack> {
   for (const h of found) yield h
 }
 
+// ripgrep's own refusal of an operand it cannot open, exit 2 rather than the
+// shared handler's 1.
+function refused(p: PathSpec, err: unknown, f: RgFlags): CommandFnResult {
+  const stderr = f.noMessages ? null : ENC.encode(`rg: ${p.rawPath}: ${String(fsStrerror(err))}\n`)
+  return [new Uint8Array(0), new IOResult({ exitCode: 2, stderr })]
+}
+
 // One operand that is a file or stdin, streamed, or null for a directory the
 // walk has to answer.
 async function searchSingle(
@@ -584,6 +594,9 @@ async function searchSingle(
   signal?: AbortSignal,
 ): Promise<CommandFnResult | null> {
   if (!isStdin(p)) {
+    // The probes below go by `virtual`, which cannot carry the walk's verdict:
+    // the empty name would read as the cwd and walk it.
+    if (p.walkError !== null) return refused(p, walkRefusal(p), f)
     let s: FileStat
     try {
       s = await st(p.virtual)
@@ -594,12 +607,7 @@ async function searchSingle(
         return null
       } catch (inner) {
         if (!isWalkError(inner)) throw inner
-        // Neither statable nor listable: ripgrep's own refusal rather than
-        // the shared handler's exit 1.
-        const stderr = f.noMessages
-          ? null
-          : ENC.encode(`rg: ${p.rawPath}: ${String(fsStrerror(err))}\n`)
-        return [new Uint8Array(0), new IOResult({ exitCode: 2, stderr })]
+        return refused(p, err, f)
       }
     }
     if (s.type === FileType.DIRECTORY) return null
@@ -686,6 +694,10 @@ async function* haystacks(
   for (const p of paths) {
     if (isStdin(p)) {
       yield { virtual: p.virtual, shown: operandName(p), stat: fifoStat(p.rawPath), spec: p }
+      continue
+    }
+    if (p.walkError !== null) {
+      warnings.push(`rg: ${p.rawPath}: ${String(fsStrerror(walkRefusal(p)))}`)
       continue
     }
     let isDir = false

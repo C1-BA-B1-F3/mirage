@@ -12,8 +12,16 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import errno
+
 from mirage.types import FileType, PathSpec, StatFn
+from mirage.utils.errors import ELOOP_STRERROR, DotWalkLoop
 from mirage.utils.key_prefix import rekey
+
+# The destination verdicts GNU meets at the destination's own stat, before
+# any create or rename: a plain file in its chain, or a link loop in it.
+# cp and mv both word them ``cannot stat 'DST'`` (coreutils 9.7).
+STAT_REFUSALS = ("Not a directory", ELOOP_STRERROR)
 
 _SWALLOW = (FileNotFoundError, ValueError)
 
@@ -59,6 +67,9 @@ def copy_targets(
         list[tuple[PathSpec, PathSpec]]: Source-to-target pairs.
     """
     if len(sources) > 1 and not dst_is_dir:
+        if dst_err == ELOOP_STRERROR:
+            raise DotWalkLoop(errno.ELOOP, ELOOP_STRERROR,
+                              f"target '{dst.raw_path}'")
         if not dst_exists and dst_err != "Not a directory":
             raise FileNotFoundError(f"target '{dst.raw_path}'")
         raise NotADirectoryError(f"target '{dst.raw_path}'")

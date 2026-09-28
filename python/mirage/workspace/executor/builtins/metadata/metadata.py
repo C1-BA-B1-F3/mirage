@@ -20,7 +20,7 @@ from mirage.commands.builtin.utils.paths import dispatch_stat, dot_refusal
 from mirage.policy import PolicyDenied
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import format_fs_error, fs_strerror
+from mirage.utils.errors import format_fs_error, fs_strerror, walk_refusal
 from mirage.utils.path import CycleError
 from mirage.workspace.mount.namespace import Namespace
 
@@ -237,14 +237,15 @@ def follow_operand(
     Args:
         namespace (Namespace): addressing authority.
         cmd (str): command name for the error message.
-        action (str): GNU verb in the message ("access", "touch").
+        action (str): GNU's words for the step that failed ("cannot
+            access", "cannot touch", "setting times of").
         target (PathSpec): the operand as typed.
         errors (list[str]): per-operand error accumulator.
     """
     try:
         virtual = namespace.follow(target.virtual)
     except CycleError:
-        errors.append(f"{cmd}: cannot {action} '{target.raw_path}': "
+        errors.append(f"{cmd}: {action} '{target.raw_path}': "
                       f"Too many levels of symbolic links\n")
         return None
     return PathSpec.from_str_path(virtual)
@@ -266,13 +267,14 @@ async def resolve_operand(
         target (PathSpec): the operand as typed.
         errors (list[str]): per-operand error accumulator.
     """
-    refusal = await dot_refusal(partial(dispatch_stat, dispatch), target,
-                                namespace.follow)
+    refusal = (walk_refusal(target)
+               if target.walk_error is not None else await dot_refusal(
+                   partial(dispatch_stat, dispatch), target, namespace.follow))
     if refusal is not None:
         errors.append(f"{cmd}: cannot access '{target.raw_path}': "
                       f"{fs_strerror(refusal)}\n")
         return None
-    resolved = follow_operand(namespace, cmd, "access", target, errors)
+    resolved = follow_operand(namespace, cmd, "cannot access", target, errors)
     if resolved is None:
         return None
     try:

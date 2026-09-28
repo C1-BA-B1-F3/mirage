@@ -1,8 +1,8 @@
 {
   "cases": [
     {
-      "id": "sym_eloop_cat",
-      "seq": 635,
+      "id": "nf_empty_cat",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -27,50 +27,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "ln -s /data/lp2 /data/lp1 && ln -s /data/lp1 /data/lp2 && cat /data/lp1 2>&1",
-      "expect": {
-        "exit": 1,
-        "stdout": "cat: /data/lp1: Too many levels of symbolic links\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "sym_eloop_cat_multi",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "cat /data/a.txt /data/lp1 /data/b.txt",
+      "command": "cat /data/a.txt '' /data/b.txt",
       "expect": {
         "exit": 1,
         "stdout": "hello\nworld\nfoo\nbar\nbaz\n1\n2\n3\n",
-        "stderr": "cat: /data/lp1: Too many levels of symbolic links\n"
+        "stderr": "cat: '': No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_head",
-      "seq": 635,
+      "id": "nf_empty_head",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -95,16 +61,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "head -n1 /data/lp1",
+      "command": "head -n1 ''",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "head: cannot open '/data/lp1' for reading: Too many levels of symbolic links\n"
+        "stderr": "head: cannot open '' for reading: No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_ls",
-      "seq": 635,
+      "id": "nf_empty_wc",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -129,16 +95,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "ls /data/lp1",
+      "command": "wc -l /data/a.txt ''",
       "expect": {
-        "exit": 0,
-        "stdout": "/data/lp1\n",
-        "stderr": ""
+        "exit": 1,
+        "stdout": " 5 /data/a.txt\n 5 total\n",
+        "stderr": "wc: invalid zero-length file name\n"
       }
     },
     {
-      "id": "sym_eloop_ls_L",
-      "seq": 635,
+      "id": "nf_empty_du",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -163,16 +129,50 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "ls -L /data/lp1",
+      "command": "du ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "du: invalid zero-length file name\n"
+      }
+    },
+    {
+      "id": "nf_empty_ls",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "ls ''",
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "ls: cannot access '/data/lp1': Too many levels of symbolic links\n"
+        "stderr": "ls: cannot access '': No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_stat_L",
-      "seq": 635,
+      "id": "nf_empty_stat",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -197,16 +197,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "stat -L -c %n /data/lp1",
+      "command": "stat -c %n ''",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: cannot statx '/data/lp1': Too many levels of symbolic links\n"
+        "stderr": "stat: cannot statx '': No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_stat_under",
-      "seq": 635,
+      "id": "nf_empty_find",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -231,16 +231,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "stat -c %n /data/lp1/x",
+      "command": "find ''",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: cannot statx '/data/lp1/x': Too many levels of symbolic links\n"
+        "stderr": "find: '': No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_rm_f_under",
-      "seq": 635,
+      "id": "nf_empty_grep",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -265,118 +265,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "rm -f /data/lp1/x",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "rm: cannot remove '/data/lp1/x': Too many levels of symbolic links\n"
-      }
-    },
-    {
-      "id": "sym_eloop_mkdir_p",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "mkdir -p /data/lp1",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "mkdir: cannot stat '/data/lp1': Too many levels of symbolic links\n"
-      }
-    },
-    {
-      "id": "sym_eloop_mkdir_p_under",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "mkdir -p /data/lp1/x/y",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "mkdir: cannot create directory '/data/lp1': Too many levels of symbolic links\n"
-      }
-    },
-    {
-      "id": "sym_eloop_grep",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "grep o /data/b.txt /data/lp1",
+      "command": "grep o /data/b.txt ''",
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "grep: /data/lp1: Too many levels of symbolic links\n"
+        "stderr": "grep: : No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_rg",
-      "seq": 635,
+      "id": "nf_empty_rg",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -401,16 +299,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "rg -c o /data/a.txt /data/lp1",
+      "command": "rg -c o /data/a.txt ''",
       "expect": {
         "exit": 2,
         "stdout": "/data/a.txt:3\n",
-        "stderr": "rg: /data/lp1: Too many levels of symbolic links\n"
+        "stderr": "rg: : No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_sed",
-      "seq": 635,
+      "id": "nf_empty_rg_is_not_implicit",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -435,16 +333,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "sed -n 1p /data/lp1",
+      "command": "(cd /data && rg o '' '')",
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sed: can't read /data/lp1: Too many levels of symbolic links\n"
+        "stderr": "rg: : No such file or directory\nrg: : No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_awk",
-      "seq": 635,
+      "id": "nf_empty_sed",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -469,16 +367,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "awk '{print}' /data/lp1",
+      "command": "sed -n 1p ''",
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "awk: cannot open \"/data/lp1\" (Too many levels of symbolic links)\n"
+        "stderr": "sed: can't read : No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_cp",
-      "seq": 635,
+      "id": "nf_empty_awk",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -503,311 +401,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cp /data/lp1 /data/lp_copy",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "cp: cannot stat '/data/lp1': Too many levels of symbolic links\n"
-      }
-    },
-    {
-      "id": "sym_eloop_touch_c",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "touch -c /data/lp1",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "touch: setting times of '/data/lp1': Too many levels of symbolic links\n"
-      }
-    },
-    {
-      "id": "sym_eloop_find_L",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "find -L /data/lp1",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "find: '/data/lp1': Too many levels of symbolic links\n"
-      }
-    },
-    {
-      "id": "sym_eloop_readlink_m",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "readlink -m /data/lp1",
-      "expect": {
-        "exit": 0,
-        "stdout": "/data/lp1\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "sym_eloop_realpath",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "realpath /data/lp1",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "realpath: /data/lp1: Too many levels of symbolic links\n"
-      }
-    },
-    {
-      "id": "sym_eloop_ln_under",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "ln -s x /data/lp1/y",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "ln: failed to create symbolic link '/data/lp1/y': Too many levels of symbolic links\n"
-      }
-    },
-    {
-      "id": "sym_eloop_redirect",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "cat < /data/lp1",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "/data/lp1: Too many levels of symbolic links\n"
-      }
-    },
-    {
-      "id": "sym_eloop_source",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "source /data/lp1",
-      "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "source: /data/lp1: Too many levels of symbolic links\n"
-      }
-    },
-    {
-      "id": "sym_eloop_tar",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "tar -cf /data/lp.tar /data/lp1/x 2>&1; echo rc=$?; rm -f /data/lp.tar",
-      "expect": {
-        "exit": 0,
-        "stdout": "tar: Removing leading `/' from member names\ntar: /data/lp1/x: Cannot stat: Too many levels of symbolic links\ntar: Exiting with failure status due to previous errors\nrc=2\n",
-        "stderr": ""
-      }
-    },
-    {
-      "id": "sym_eloop_mv_onto",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "cp /data/b.txt /data/lp_mv && mv /data/lp_mv /data/lp1 && cat /data/lp1",
+      "command": "awk '{print}' '' /data/b.txt",
       "expect": {
         "exit": 0,
         "stdout": "1\n2\n3\n",
@@ -815,8 +409,8 @@
       }
     },
     {
-      "id": "sym_eloop_tar_archive_t",
-      "seq": 635,
+      "id": "nf_empty_sort",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -841,16 +435,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "(cd /data && ln -s archive-loop-t archive-loop-t && tar -tf archive-loop-t a.txt)",
+      "command": "sort ''",
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "tar: archive-loop-t: Cannot open: Too many levels of symbolic links\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "sort: cannot read: '': No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_tar_archive_x",
-      "seq": 635,
+      "id": "nf_empty_rm",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -875,84 +469,16 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "(cd /data && ln -s archive-loop-x archive-loop-x && tar -xf archive-loop-x a.txt)",
-      "expect": {
-        "exit": 2,
-        "stdout": "",
-        "stderr": "tar: archive-loop-x: Cannot open: Too many levels of symbolic links\ntar: Error is not recoverable: exiting now\n"
-      }
-    },
-    {
-      "id": "sym_eloop_tar_archive_c",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "(cd /data && ln -s archive-loop-c archive-loop-c && tar -cf archive-loop-c a.txt)",
-      "expect": {
-        "exit": 2,
-        "stdout": "",
-        "stderr": "tar: archive-loop-c: Cannot open: Too many levels of symbolic links\ntar: Error is not recoverable: exiting now\n"
-      }
-    },
-    {
-      "id": "sym_eloop_mv_link_source",
-      "seq": 635,
-      "targets": [
-        "ram",
-        "disk",
-        "redis",
-        "opfs",
-        "s3",
-        "databricks",
-        "gridfs",
-        "s3-prefix",
-        "databricks-prefix",
-        "gridfs-prefix",
-        "hf",
-        "hf-prefix",
-        "dropbox",
-        "dropbox-root",
-        "onedrive",
-        "sharepoint",
-        "sharepoint-prefix",
-        "ssh",
-        "nextcloud",
-        "gdrive",
-        "gdrive-folder",
-        "box"
-      ],
-      "command": "(cd /data && ln -s move-loop move-loop && ln -s missing move-source && mv move-source move-loop/child)",
+      "command": "rm ''",
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "mv: cannot stat 'move-loop/child': Too many levels of symbolic links\n"
+        "stderr": "rm: cannot remove '': No such file or directory\n"
       }
     },
     {
-      "id": "sym_eloop_mv_link_onto",
-      "seq": 635,
+      "id": "nf_empty_mkdir_p",
+      "seq": 645,
       "targets": [
         "ram",
         "disk",
@@ -977,11 +503,555 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "(cd /data && ln -s replace-loop replace-loop && ln -s missing replace-source && mv replace-source replace-loop && readlink replace-loop && test ! -L replace-source)",
+      "command": "mkdir -p ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mkdir: cannot create directory '': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nf_empty_touch",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "touch ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "touch: cannot touch '': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nf_empty_truncate",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "truncate -s0 ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "truncate: cannot open '' for writing: No such file or directory\n"
+      }
+    },
+    {
+      "id": "nf_empty_cp",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cp /data/a.txt ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cp: cannot create regular file '': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nf_empty_mv",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mv /data/a.txt ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mv: cannot overwrite directory '' with non-directory '/data/a.txt'\n"
+      }
+    },
+    {
+      "id": "nf_empty_ln",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "ln -s /data/a.txt ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "ln: failed to create symbolic link '': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nf_empty_chmod",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "chmod 644 ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "chmod: cannot access '': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nf_empty_df",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "df ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "df: '': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nf_empty_realpath",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "realpath ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "realpath: '': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nf_empty_readlink",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "readlink -f ''; echo rc=$?",
       "expect": {
         "exit": 0,
-        "stdout": "missing\n",
+        "stdout": "rc=1\n",
         "stderr": ""
+      }
+    },
+    {
+      "id": "nf_empty_source",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "source ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "source: : No such file or directory\n"
+      }
+    },
+    {
+      "id": "nf_empty_tar",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "tar -cf /data/nf_empty.tar '' 2>&1; echo rc=$?; rm -f /data/nf_empty.tar",
+      "expect": {
+        "exit": 0,
+        "stdout": "tar: Substituting `.' for empty member name\ntar: : Cannot stat: No such file or directory\ntar: Exiting with failure status due to previous errors\nrc=2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nf_empty_rm_rf_keeps_cwd",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "ln -s /data/a.txt /data/sub/nf_l && (cd /data/sub && rm -rf ''); echo rc=$?; readlink /data/sub/nf_l; rm /data/sub/nf_l",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n/data/a.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nf_empty_split_prefix",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data/sub && split -l3 /data/a.txt '' && cat aa && rm aa ab)",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\nworld\nfoo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nf_empty_tar_archive_t",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && tar -tf '' a.txt)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: : Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "nf_empty_tar_archive_x",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && tar -xf '' a.txt)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: : Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "nf_empty_tar_archive_c",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && tar -cf '' a.txt)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: : Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n"
       }
     }
   ]

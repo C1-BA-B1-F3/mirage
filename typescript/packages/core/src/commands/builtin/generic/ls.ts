@@ -574,10 +574,16 @@ async function probeOperand(
   } catch (err) {
     if (!isWalkError(err)) throw err
     // The operand did not resolve, so neither the path it simplifies to
-    // nor a link standing there answers for it.
-    const row = isDotWalkError(err) ? null : await fileEntry(stat, path)
+    // nor a link standing there answers for it. A command-line link whose
+    // stat loops is the exception: GNU lstats it then and lists the link
+    // itself, unless -L asked for the target (ls.c's gobble_file,
+    // coreutils 9.7).
+    const walkRefused = isDotWalkError(err)
+    const looped = walkRefused && (err as { code?: string }).code === 'ELOOP'
+    const row = walkRefused ? null : await fileEntry(stat, path)
     if (row !== null) return { path, row, groups: [] }
-    const link = isDotWalkError(err) ? null : linkRow(path, opts.links)
+    const link =
+      !walkRefused || (looped && commandLineArg && !opts.deref) ? linkRow(path, opts.links) : null
     if (link !== null) return { path, row: link, groups: [] }
     // GNU words a directory it may not read differently from one it
     // cannot stat: the entry is there, opening it is what failed.
@@ -960,7 +966,7 @@ export async function lsGeneric(
         collected.push({ row: asOperand(await stat(p), p), href: p.virtual })
       } catch (err) {
         if (!isWalkError(err)) throw err
-        if ((opts.ns?.childMounts?.(p.virtual) ?? []).length > 0) {
+        if (!isDotWalkError(err) && (opts.ns?.childMounts?.(p.virtual) ?? []).length > 0) {
           // No backend serves it, but the namespace owes it children,
           // so the door stats it as a directory and -d must print the
           // same row.

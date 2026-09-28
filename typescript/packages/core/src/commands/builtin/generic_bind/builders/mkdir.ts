@@ -14,6 +14,7 @@
 
 import { IOResult } from '../../../../io/types.ts'
 import {
+  ELOOP_STRERROR,
   errorVirtualPath,
   fsStrerror,
   isFsError,
@@ -29,7 +30,7 @@ import type { Accessor } from '../../../../accessor/base.ts'
 import type { LinkView } from '../../../../ops/types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
 import { mountPrefixOf } from '../../../../utils/key_prefix.ts'
-import { walkNodes } from '../../../../utils/path.ts'
+import { CycleError, walkNodes } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { MkdirOp } from '../../../../vfs/types.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
@@ -39,7 +40,8 @@ import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
  *
  * Judged the way GNU's walk into the name is, before anything is made: a
  * directory, or a link to one, is passed through; a plain file, or a link to
- * one, is ENOTDIR; a dangling link is EEXIST. Only a missing name is made,
+ * one, is ENOTDIR; a dangling link is EEXIST, and a looping one ELOOP. Only
+ * a missing name is made,
  * where its links lead, so no store is asked to make a directory over a file
  * or under a link it cannot see. Outside a workspace command there is no stat
  * to judge with, and the store's own mkdir answers. Mirrors Python's
@@ -54,6 +56,12 @@ async function enterNode<A extends Accessor>(
   links: LinkView | null,
 ): Promise<string | null> {
   if (links !== null && links.statAt(node) !== null) {
+    try {
+      links.resolve(node)
+    } catch (err) {
+      if (!(err instanceof CycleError)) throw err
+      return ELOOP_STRERROR
+    }
     const target = await links.targetStat(node)
     if (target === null) return 'File exists'
     return target.type === FileType.DIRECTORY ? null : 'Not a directory'
@@ -116,8 +124,11 @@ export async function makeDirectory<A extends Accessor>(
   links: LinkView | null = null,
 ): Promise<string | null> {
   let target = path
-  if (parents && path.dotted !== null) {
-    const failed = await makeWalked(mkdir, accessor, path, path.dotted, links)
+  // -p enters the names in front of the operand one at a time, so a dot
+  // among them, or a link loop the walk refused the operand for, is met at
+  // that name and GNU quotes it rather than the operand.
+  if (parents && (path.dotted !== null || path.walkError === 'ELOOP')) {
+    const failed = await makeWalked(mkdir, accessor, path, path.dotted ?? path.virtual, links)
     if (failed !== null) return failed
     // The walk has entered every name the spelling passes through, so the
     // operand is made by its resolved path alone: walking it again would ask
@@ -129,6 +140,7 @@ export async function makeDirectory<A extends Accessor>(
       pattern: path.pattern,
       resolved: path.resolved,
       rawPath: path.rawPath,
+      walkError: path.walkError,
     })
   }
   try {

@@ -17,7 +17,8 @@ from typing import Callable
 
 from mirage.commands.builtin.utils.backup import backup_control, backup_target
 from mirage.commands.builtin.utils.constants import DEFAULT_BACKUP_SUFFIX
-from mirage.commands.builtin.utils.copy import (backend_key_default,
+from mirage.commands.builtin.utils.copy import (STAT_REFUSALS,
+                                                backend_key_default,
                                                 copy_targets, is_directory,
                                                 path_exists)
 from mirage.commands.builtin.utils.paths import (absent_dest_strerror,
@@ -33,7 +34,8 @@ from mirage.types import (CopyStrategy, FileStat, FileType, NativeCopy,
                           NativeMove, PathSpec, PrimitiveCopy, PrimitiveMove,
                           ReaddirFn, StatFn)
 from mirage.utils.dates import iso_timestamp
-from mirage.utils.errors import FS_ERRORS, DotWalkMissing, fs_strerror
+from mirage.utils.errors import (ELOOP_STRERROR, FS_ERRORS, DotWalkLoop,
+                                 DotWalkMissing, fs_strerror)
 from mirage.utils.key_prefix import mounted_path, rekey
 
 UPDATE_MODES = ("all", "none", "none-fail", "older")
@@ -250,6 +252,9 @@ async def target_dir_error(cmd_name: str, stat: StatFn,
     except NotADirectoryError:
         return (f"{cmd_name}: target directory '{target.raw_path}': "
                 "Not a directory")
+    except DotWalkLoop as exc:
+        return (f"{cmd_name}: target directory '{target.raw_path}': "
+                f"{fs_strerror(exc)}")
     except (FileNotFoundError, ValueError):
         return (f"{cmd_name}: target directory '{target.raw_path}': "
                 "No such file or directory")
@@ -313,6 +318,8 @@ async def dest_kind(stat: StatFn,
         info = await stat(target)
     except NotADirectoryError:
         return False, False, "Not a directory"
+    except DotWalkLoop:
+        return False, False, ELOOP_STRERROR
     except DotWalkMissing:
         # Its `..` passes a name that is not there: the chain of the path
         # it simplifies to says nothing about this one.
@@ -374,6 +381,8 @@ async def source_kind(stat: StatFn,
         info = await stat(path)
     except NotADirectoryError:
         return False, False, "Not a directory"
+    except DotWalkLoop:
+        return False, False, ELOOP_STRERROR
     except (FileNotFoundError, ValueError):
         pass
     else:
@@ -911,6 +920,16 @@ async def cp(
         if not src_exists:
             errors.append(f"cp: cannot stat '{src.raw_path}': {src_err}")
             continue
+        if (flags.no_target_dir and not src_is_dir
+                and target.walk_error is not None and target.raw_path == ""):
+            # Under -T, GNU stats an empty destination as the directory it
+            # is typed in, which a file cannot overwrite (coreutils 9.7).
+            # A directory source it merges into the working directory;
+            # mirage refuses that at the create, since reading the empty
+            # name as the working directory is what `walk_error` is for.
+            errors.append("cp: cannot overwrite directory '' with "
+                          f"non-directory '{src.raw_path}'")
+            continue
         if key_of(src) == key_of(target):
             errors.append(f"cp: '{src.virtual}' and '{target.virtual}' "
                           "are the same file")
@@ -929,9 +948,9 @@ async def cp(
         else:
             target_exists, target_is_dir, target_err = await dest_kind(
                 stat, target)
-        if target_err == "Not a directory":
+        if target_err in STAT_REFUSALS:
             errors.append(f"cp: cannot stat '{target.raw_path}': "
-                          "Not a directory")
+                          f"{target_err}")
             continue
         # The create fails on the absent parent before the slash matters,
         # so a chain verdict keeps its ENOENT (`cp f deep/missing/`).

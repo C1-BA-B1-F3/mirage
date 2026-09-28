@@ -13,7 +13,7 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec, StatFn
-from mirage.utils.errors import enoent, enotdir, fs_error_line
+from mirage.utils.errors import enoent, enotdir, fs_error_line, walk_refusal
 from mirage.utils.key_prefix import mount_prefix_of
 
 
@@ -46,6 +46,12 @@ async def _unresolved(p: PathSpec, resolved: PathSpec, *, stat_fn: StatFn,
         e (bool): ``-e``, every component must exist.
         m (bool): ``-m``, no component has to.
     """
+    # The walk refused the operand before realpath ran. The empty name
+    # is refused in every mode, -m included, and a link loop outside -m
+    # only: -m leaves the loop unresolved and prints the path as spelled
+    # (coreutils 9.7).
+    if p.walk_error == "ENOENT" or (p.walk_error is not None and not m):
+        return walk_refusal(p)
     if m:
         return None
     if walk is not None:

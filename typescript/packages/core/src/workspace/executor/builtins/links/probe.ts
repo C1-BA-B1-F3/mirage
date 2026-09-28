@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { FileStat, FileType, PathSpec } from '../../../../types.ts'
-import { isEnotdir, isMissError } from '../../../../utils/errors.ts'
+import { ELOOP_STRERROR, isEnotdir, isMissError } from '../../../../utils/errors.ts'
 import { gnuBasename } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { StatOverlay } from '../../../../ops/types.ts'
@@ -45,6 +45,10 @@ export async function statOrNull(dispatch: DispatchFn, path: PathSpec): Promise<
 // That holds only while a backend's readdir refuses a path it cannot prove:
 // postgres answered tables/views under any first segment, and every absent
 // schema read as a directory here.
+//
+// A link loop in the path is absence too: the walk reaches nothing there,
+// which is the question this answers, and a diagnostic that has to name
+// the errno asks missStrerror.
 export async function resolvePathStat(
   dispatch: DispatchFn,
   path: PathSpec,
@@ -54,7 +58,7 @@ export async function resolvePathStat(
     const [s] = await dispatch('stat', path)
     stat = s as FileStat | null
   } catch (exc) {
-    if (!isMissError(exc)) throw exc
+    if (!isMissError(exc) && !isEloop(exc)) throw exc
   }
   if (stat !== null) return stat
   let entries: unknown
@@ -62,7 +66,7 @@ export async function resolvePathStat(
     const [raw] = await dispatch('readdir', path)
     entries = raw
   } catch (exc) {
-    if (!isMissError(exc)) throw exc
+    if (!isMissError(exc) && !isEloop(exc)) throw exc
     return null
   }
   if (!Array.isArray(entries) || entries.length === 0) return null
@@ -94,17 +98,23 @@ export async function pathStat(
 // The strerror GNU names for a path pathStat found nothing at. pathStat
 // answers null for both ways a lookup fails, since an existence probe treats
 // them alike, while a diagnostic names the one the stat met: ENOTDIR for a
-// path under a plain file, ENOENT for the rest. Asked only after a miss, so
-// its round trip is on the failure path. Mirrors miss_strerror in probe.py.
+// path under a plain file, ELOOP for one a link loop stands in, ENOENT for
+// the rest. Asked only after a miss, so its round trip is on the failure
+// path. Mirrors miss_strerror in probe.py.
 export async function missStrerror(dispatch: DispatchFn, virtual: string): Promise<string> {
   try {
     await dispatch('stat', PathSpec.fromStrPath(virtual))
   } catch (err) {
     if (isEnotdir(err)) return 'Not a directory'
     if (isMissError(err)) return 'No such file or directory'
+    if (isEloop(err)) return ELOOP_STRERROR
     throw err
   }
   return 'No such file or directory'
+}
+
+function isEloop(err: unknown): boolean {
+  return (err as { code?: string }).code === 'ELOOP'
 }
 
 // List one virtual path through the workspace, as virtual paths.

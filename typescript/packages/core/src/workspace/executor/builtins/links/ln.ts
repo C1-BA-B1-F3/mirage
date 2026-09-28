@@ -248,6 +248,33 @@ function operandAbs(namespace: Namespace, arg: string | PathSpec, cwd: string): 
 const ENOENT_TEXT = 'No such file or directory'
 const ELOOP_TEXT = 'Too many levels of symbolic links'
 
+// The strerror the kernel walk answers for an operand before any op. An
+// empty name resolves nowhere, and a link loop stops the walk in front of
+// the final name; `followLast` asks for that name too, for an operand that
+// has to be a directory. Null when the walk gets there, and for a hidden
+// path, which the door answers like any other absent one. ln's relative
+// words arrive unclassified, so the verdict cannot be read off a PathSpec.
+// Mirrors Python's _walk_verdict.
+function walkVerdict(
+  namespace: Namespace,
+  word: string | PathSpec,
+  cwd: string,
+  followLast = false,
+): string | null {
+  if (wordText(word) === '') return ENOENT_TEXT
+  const virtual = absPath(word, cwd)
+  if (!pathAllowed(virtual)) return null
+  const trimmed = rstripSlash(virtual) || '/'
+  try {
+    if (followLast) namespace.follow(trimmed)
+    else namespace.followParent(trimmed)
+  } catch (err) {
+    if (err instanceof CycleError) return ELOOP_TEXT
+    throw err
+  }
+  return null
+}
+
 // ln's line for a link its name's parent chain would not take. GNU words
 // the step that failed. Under -f or -b it lstats the name before anything
 // else, and an error there other than absence is `failed to access`; the
@@ -316,6 +343,8 @@ export async function planLinks(
   const hint = `${usageHint('ln')}\n`
   if (targetDir !== null) {
     const typed = targetTyped ?? targetDir
+    const why = walkVerdict(namespace, typed, cwd, true)
+    if (why !== null) return [[], `ln: failed to access '${typed}': ${why}\n`]
     const unwalked = await dotRefusal(dispatchStat(dispatch), typedSpec(typed, cwd))
     if (unwalked !== null) {
       return [[], `ln: failed to access '${typed}': ${fsStrerror(unwalked) ?? ENOENT_TEXT}\n`]
@@ -352,14 +381,25 @@ export async function planLinks(
   }
   const last = operands[operands.length - 1] ?? first
   const lastAbs = operandAbs(namespace, last, cwd)
-  const [resolved, stat] = await dirAt(namespace, dispatch, lastAbs, flags.noDereference)
+  // The empty name reads as the working directory in `lastAbs`, and it is
+  // no directory to link into.
+  const [resolved, stat] =
+    wordText(last) === ''
+      ? [lastAbs, null]
+      : await dirAt(namespace, dispatch, lastAbs, flags.noDereference)
   const isDir = stat !== null && stat.type === FileType.DIRECTORY
   if (operands.length === 2 && !isDir) {
     return [[{ source: first, linkAbs: lastAbs, linkTyped: wordText(last) }], null]
   }
   if (!isDir) {
     if (stat === null) {
-      return [[], `ln: target '${wordText(last)}': ${await missStrerror(dispatch, resolved)}\n`]
+      // A link standing at the name that leads nowhere, dangling or
+      // looping, is ENOENT to GNU; a loop above it is ELOOP.
+      const why =
+        wordText(last) === '' || visibleLink(namespace, lastAbs)
+          ? ENOENT_TEXT
+          : await missStrerror(dispatch, resolved)
+      return [[], `ln: target '${wordText(last)}': ${why}\n`]
     }
     return [[], `ln: target '${wordText(last)}': Not a directory\n`]
   }
@@ -436,6 +476,26 @@ export async function makeLink(
   // to be there. A symlink's target is stored as typed and never walked; a
   // hard link's is the file it names.
   const walker = dispatchStat(dispatch)
+  // What the walk answers before any op, in GNU's order: symlink(2)
+  // refuses an empty target ahead of the name, and then GNU names the
+  // target alongside; a hard link's source is reached first; the name
+  // last, as the call that makes it would meet it.
+  if (flags.symbolic && targetTyped === '') {
+    errors.push(`ln: failed to create symbolic link '${typed}' -> '': ${ENOENT_TEXT}\n`)
+    return
+  }
+  if (!flags.symbolic) {
+    const why = walkVerdict(namespace, plan.source, cwd, flags.logical)
+    if (why !== null) {
+      errors.push(`ln: failed to access '${targetTyped}': ${why}\n`)
+      return
+    }
+  }
+  const nameWhy = walkVerdict(namespace, typed, cwd)
+  if (nameWhy !== null) {
+    errors.push(refused(flags, typed, targetTyped, nameWhy))
+    return
+  }
   if (!flags.symbolic) {
     const unwalked = await dotRefusal(walker, typedSpec(plan.source, cwd))
     if (unwalked !== null) {
@@ -586,7 +646,7 @@ export async function makeLink(
         errors.push(`ln: ${typed}: cannot overwrite directory\n`)
         return
       }
-      if (err instanceof CycleError) {
+      if ((err as { code?: string }).code === 'ELOOP') {
         errors.push(refused(flags, typed, targetTyped, ELOOP_TEXT))
         return
       }
@@ -622,7 +682,7 @@ export async function makeLink(
       errors.push(refused(flags, typed, targetTyped, fsStrerror(err) ?? ENOENT_TEXT))
       return
     }
-    if (err instanceof CycleError) {
+    if ((err as { code?: string }).code === 'ELOOP') {
       errors.push(refused(flags, typed, targetTyped, ELOOP_TEXT))
       return
     }

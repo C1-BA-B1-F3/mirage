@@ -268,6 +268,13 @@ async function planZip(
   const formed = new Map<string, string[]>()
   for (const path of paths) {
     const raw = path.rawPath
+    if (path.walkError !== null) {
+      // The walk refused the operand before zip ran (the empty name, a
+      // link loop above the name), which Info-ZIP matches to nothing,
+      // whatever the errno.
+      warnings.push(NOT_MATCHED + raw)
+      continue
+    }
     const base = rstripSlash(path.virtual) || '/'
     // Info-ZIP walks a bare `.` with an empty prefix, so what it finds there
     // is named bare: `zip -r out.zip . a.txt` names a.txt once.

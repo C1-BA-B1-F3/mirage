@@ -749,28 +749,16 @@ async function routeArgv(
   // (open(2) rather than lstat(2)) or an operand typed with a trailing
   // slash, which POSIX reads as `dlink/.`. This runs ahead of every
   // handler below because the kernel resolves a path before the syscall,
-  // not inside it.
+  // not inside it. An operand a link loop stands in comes back refused
+  // (`walkError`) rather than failing the line: the command meets ELOOP at
+  // its op and words it per operand.
   if (namespace.nodes.size > 0 && operands.length > 0) {
-    try {
-      operands = followPaths(
-        namespace,
-        operands,
-        followsLastComponent(name, argv.words),
-        !SLASH_KEEPS_LAST.has(name),
-      )
-    } catch (err) {
-      if (err instanceof CycleError) {
-        const errBytes = new TextEncoder().encode(
-          `${name}: ${err.path}: Too many levels of symbolic links\n`,
-        )
-        return [
-          null,
-          new IOResult({ exitCode: 1, stderr: errBytes }),
-          new ExecutionNode({ command: name, exitCode: 1, stderr: errBytes }),
-        ]
-      }
-      throw err
-    }
+    operands = followPaths(
+      namespace,
+      operands,
+      followsLastComponent(name, argv.words),
+      !SLASH_KEEPS_LAST.has(name),
+    )
     argv = argv.withOperands(operands)
   }
 
@@ -904,6 +892,11 @@ async function routeArgv(
       // table matches the pattern itself.
       for (const item of operands) {
         if (!(item instanceof PathSpec)) continue
+        // The walk refused it, so rm removed nothing there (-f only
+        // silenced the refusal), and the empty name's `virtual` is the
+        // working directory: purging under it dropped every link the
+        // directory held.
+        if (item.walkError !== null) continue
         // A trailing slash asked for the directory, and rm refused (or -f
         // silenced the refusal). Nothing was removed, so nothing may be
         // purged: dropping the node here deleted the very link the slash

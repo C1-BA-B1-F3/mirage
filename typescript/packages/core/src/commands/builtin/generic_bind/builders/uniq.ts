@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { uniqGeneric } from '../../generic/uniq.ts'
-import { type Builder, resolveGlobOf } from '../adapter.ts'
+import { type Builder, dirAwareStat, resolveGlobOf } from '../adapter.ts'
 
 export const UNIQ_BUILDER: Builder = {
   name: 'uniq',
@@ -27,6 +27,7 @@ export const UNIQ_BUILDER: Builder = {
       opts,
       (p) => ops.readStream(accessor, p, idx),
       write === undefined ? undefined : (p, data) => write(accessor, p, data),
+      dirAwareStat(ops, accessor, opts),
     )
   },
 }

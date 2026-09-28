@@ -45,6 +45,57 @@ async def test_follow_paths_follows_the_last_component_only_when_asked():
     assert slashed[0].virtual == "/data/real/"
 
 
+@pytest.mark.asyncio
+async def test_follow_paths_refuses_a_loop_per_operand():
+    # A loop no longer fails the whole line: the operand stays as typed
+    # with the walk's verdict on it, and its neighbours still resolve.
+    ws = _ws()
+    await ws.shell("mkdir -p /data/real; ln -s /data/real /data/dlink; "
+                   "ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2")
+    ns = ws.namespace
+    loop, link = follow_paths(ns, [
+        PathSpec.from_str_path("/data/l1"),
+        PathSpec.from_str_path("/data/dlink")
+    ])
+    assert (loop.virtual, loop.walk_error) == ("/data/l1", "ELOOP")
+    assert (link.virtual, link.walk_error) == ("/data/real", None)
+    under = follow_paths(ns, [PathSpec.from_str_path("/data/l1/x")],
+                         follow_last=False)
+    assert under[0].walk_error == "ELOOP"
+    # lstat semantics never reach the looping name itself.
+    kept = follow_paths(ns, [PathSpec.from_str_path("/data/l1")],
+                        follow_last=False)
+    assert kept[0].walk_error is None
+
+
+@pytest.mark.asyncio
+async def test_mv_onto_a_loop_replaces_the_link():
+    # stat(2) of the destination fails ELOOP, which GNU mv reads as "not
+    # a directory": the rename lands on the link's own name.
+    ws = _ws()
+    await ws.shell("echo b > /data/b.txt; "
+                   "ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2")
+    r = await ws.shell("mv /data/b.txt /data/l1")
+    assert r.exit_code == 0
+    assert not ws.namespace.is_link("/data/l1")
+    assert (await ws.shell("cat /data/l1")).stdout == b"b\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["missing", "a.txt", "l1"])
+async def test_mv_symlink_onto_a_loop_replaces_destination(source):
+    ws = _ws()
+    await ws.shell("echo a > /data/a.txt; "
+                   "ln -s l2 /data/l1; ln -s l1 /data/l2; "
+                   f"ln -s {source} /data/src")
+    result = await ws.shell("mv /data/src /data/l1")
+    assert result.exit_code == 0
+    assert not result.stderr
+    assert not ws.namespace.is_link("/data/src")
+    assert (await
+            ws.shell("readlink /data/l1")).stdout == f"{source}\n".encode()
+
+
 def test_accepts_line_refuses_what_the_command_layer_would():
     good = [PathSpec.from_str_path("/data/dlink")]
     assert accepts_line("rm", ("/data/dlink", ), good, "/data")
@@ -413,3 +464,16 @@ async def test_mv_of_a_link_refuses_a_slashed_destination():
     r = await ws.shell("mv /data/dlnk /data/e/ && readlink /data/e/dlnk")
     assert r.exit_code == 0
     assert r.stdout == b"/data/sd\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["missing", "a.txt", "loop"])
+async def test_mv_link_into_loop_reports_destination_and_keeps_source(source):
+    ws = _ws()
+    await ws.shell(
+        f"cd /data; echo hello > a.txt; ln -s loop loop; ln -s {source} src")
+    result = await ws.shell("cd /data; mv src loop/child")
+    assert result.exit_code == 1
+    assert result.stderr == (b"mv: cannot stat 'loop/child': "
+                             b"Too many levels of symbolic links\n")
+    assert ws.namespace.is_link("/data/src")

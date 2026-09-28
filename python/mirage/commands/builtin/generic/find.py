@@ -22,7 +22,7 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView, StatPath
 from mirage.types import FileStat, FileType, FindType, PathSpec
 from mirage.utils.dates import iso_timestamp, matches_mtime
-from mirage.utils.errors import MISS_ERRORS, fs_strerror
+from mirage.utils.errors import MISS_ERRORS, fs_strerror, walk_refusal
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 from mirage.utils.path import respell_one, respell_raw
 from mirage.utils.stat_view import DIR_SIZE
@@ -175,8 +175,7 @@ def missing_start_line(search_path: PathSpec,
         search_path (PathSpec): the start point, as the operand named it.
         detail (str): the strerror to report.
     """
-    label = search_path.raw_path or search_path.virtual
-    return f"find: '{label}': {detail}"
+    return f"find: '{search_path.raw_path}': {detail}"
 
 
 def is_link(links: LinkView | None, search: PathSpec) -> bool:
@@ -283,6 +282,15 @@ async def resolve_start(
             resolution, which the start point may already have been
             taken through.
     """
+    if search.walk_error is not None:
+        # The walk refused the start point before find ran (the empty
+        # name, a link loop), and every probe below goes by the path it
+        # simplifies to.
+        return StartPoint(walk=False,
+                          results=[],
+                          missing=True,
+                          detail=fs_strerror(walk_refusal(search))
+                          or "No such file or directory")
     if stat_path is None:
         return WALK_START
     # A start point's own `.` and `..` resolve first, link or not: the

@@ -54,14 +54,16 @@ export function makeRm<A extends Accessor>(vfs: string, io: CommandIO<A>): Regis
     opts: RmOpts,
     index: CommandOpts['index'],
   ): Promise<[string | null, string[]]> {
-    const label = path.virtual
+    const label = path.rawPath
     let isDir = false
     try {
       const st = await stat(accessor, path, index ?? undefined)
       isDir = st.type === FileType.DIRECTORY
-    } catch {
-      if (opts.force) return [null, []]
-      return [`rm: cannot remove '${label}': No such file or directory`, []]
+    } catch (err) {
+      if (!isFsError(err)) throw err
+      const code = (err as { code?: string }).code
+      if (opts.force && (code === 'ENOENT' || code === 'ENOTDIR')) return [null, []]
+      return [`rm: cannot remove '${label}': ${String(fsStrerror(err))}`, []]
     }
     try {
       if (isDir) {

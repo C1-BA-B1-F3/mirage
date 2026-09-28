@@ -16,7 +16,7 @@ import { activeCacheManager } from '../../../cache/context.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { modifiedTs } from '../../../core/generic/find.ts'
-import { fsStrerror, isEnoent, isEnotdir, isMissError } from '../../../utils/errors.ts'
+import { fsStrerror, isEnoent, isEnotdir, isMissError, walkRefusal } from '../../../utils/errors.ts'
 import { dotRefusal, linkFollow, statOrEnoent } from '../utils/paths.ts'
 import { failureText } from '../../../errors/classify.ts'
 import { IOResult } from '../../../io/types.ts'
@@ -464,6 +464,15 @@ export function findGeneric(
       // missing case answerable above every backend rather than only where
       // one wires a stat.
       const startStat = opts.statPath
+      if (root.walkError !== null) {
+        // The walk refused the start point before find ran (the empty
+        // name, a link loop), and every probe below goes by the path it
+        // simplifies to. Mirrors Python's resolve_start.
+        missing.push(
+          `find: '${root.rawPath}': ${fsStrerror(walkRefusal(root)) ?? 'No such file or directory'}`,
+        )
+        continue
+      }
       // A start point's own `.` and `..` resolve first, link or not: the
       // lookup below asks about the path they simplify to.
       if (startStat !== undefined) {

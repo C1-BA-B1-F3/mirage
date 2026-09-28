@@ -23,6 +23,9 @@ from mirage.commands.builtin.find_eval import (FindEntry, PredNode, bind_tree,
 from mirage.commands.builtin.find_parse import parse_find_expression
 from mirage.commands.builtin.generic.crossmount.fanout.du import \
     merge_du_blocks
+from mirage.commands.builtin.generic.crossmount.fanout.exit import \
+    combined_exit
+from mirage.commands.builtin.generic.crossmount.fanout.fanout import run_fanout
 from mirage.commands.builtin.generic.crossmount.types import RunSingle
 from mirage.commands.builtin.generic.crossmount.utils import (flat_scopes,
                                                               relay,
@@ -169,15 +172,11 @@ def _should_fan_out(
     -r/-R; or for ls -R. Returns False when there's no descendant
     mount under the path (single-mount dispatch is correct).
     """
-    if not paths:
-        return False
-    target = paths[0].virtual
-    # Gated on the raw registry, not the session view: with every
-    # descendant ungranted, single-mount dispatch would serve the parent
-    # backend's keys shadowed under a hidden mount's prefix, and only
-    # the fan-out's shadow filter drops those. Execution still runs the
-    # allowed descendants only.
-    if not registry.descendant_mounts(target):
+    # Use the raw mount table: hidden descendants still shadow backend keys.
+    # Refused operands name nothing. Every other operand can own nested
+    # mounts, regardless of where it appears in the command line.
+    if not any(p.walk_error is None and registry.descendant_mounts(p.virtual)
+               for p in paths):
         return False
     if cmd_name in _TRAVERSAL_CMDS:
         return True
@@ -534,6 +533,39 @@ async def _fan_out_traversal(
         return stdout, io, ExecutionNode(command=cmd_str,
                                          exit_code=io.exit_code,
                                          stderr=await materialize(io.stderr))
+    if len(paths) > 1:
+
+        async def run_single(
+            name: str,
+            operands: list[PathSpec],
+            words: list[str],
+            flags: dict[str, FlagValue],
+            *,
+            stdin: ByteSource | None = None,
+            resolve_hint: PathSpec | None = None
+        ) -> tuple[ByteSource | None, IOResult]:
+            return await primary_mount.execute_cmd(
+                name, operands, words, flags,
+                ExecContext(stdin=stdin, cwd=cwd, ns=ns, stat_path=stat_path))
+
+        run_operand = functools.partial(run_with_fanout,
+                                        run_single,
+                                        registry,
+                                        cwd,
+                                        ns,
+                                        stat_path,
+                                        dispatch=dispatch)
+        stdout, io = await run_fanout(cmd_name, paths, texts, flag_kwargs,
+                                      run_operand, stdin)
+        prefixes = dict.fromkeys([
+            primary_mount.prefix,
+            *(m.prefix for path in paths if path.walk_error is None
+              for m in _allowed_descendants(registry, path.virtual))
+        ])
+        io.producer = Producer(command=cmd_name, prefixes=tuple(prefixes))
+        return stdout, io, ExecutionNode(command=cmd_str,
+                                         exit_code=io.exit_code,
+                                         stderr=await materialize(io.stderr))
     target_path = paths[0].virtual
     descendants = _allowed_descendants(registry, target_path)
     if cmd_name == "ls":
@@ -581,8 +613,8 @@ async def _fan_out_traversal(
     find_matches: list[list[PathSpec]] = []
     find_matches_complete = True
     merged_io = IOResult()
-    final_exit = 0
-    success_seen = False
+    exit_codes: list[int] = []
+    errored: list[bool] = []
     for mount in [primary_mount] + list(descendants):
         if mount is primary_mount:
             # The du merge re-spells centrally, so the runs answer in
@@ -674,10 +706,8 @@ async def _fan_out_traversal(
                 if cmd_name == "find":
                     find_matches_complete = False
                 all_stdout.append(data)
-        if io.exit_code == 0:
-            success_seen = True
-        elif final_exit == 0:
-            final_exit = io.exit_code
+        exit_codes.append(io.exit_code)
+        errored.append(io.exit_code != 0 and io.stderr is not None)
         merged_io = await merged_io.merge(io)
 
     all_rows: list[PathSpec] = []
@@ -724,12 +754,11 @@ async def _fan_out_traversal(
         combined = sep.join(b.rstrip(b"\n") for b in all_stdout) + b"\n"
     else:
         combined = None
-    # grep exits 0 when ANY mount matched (GNU: "any line was selected");
-    # traversal commands (find/du/tree) keep the first per-mount failure.
-    if cmd_name in ("grep", "rg") and success_seen:
-        final_io_exit = 0
-    else:
-        final_io_exit = final_exit
+    quiet = (cmd_name == "grep"
+             and FlagView(flag_kwargs, spec=SPECS["grep"]).as_bool("q")) or (
+                 cmd_name == "rg"
+                 and FlagView(flag_kwargs, spec=SPECS["rg"]).as_bool("quiet"))
+    final_io_exit = combined_exit(cmd_name, exit_codes, errored, quiet)
 
     if cmd_name == "find":
         # The structured rows ride out for the command boundary, which

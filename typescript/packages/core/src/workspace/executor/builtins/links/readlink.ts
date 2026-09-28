@@ -59,7 +59,15 @@ export async function handleReadlink(
   let exitCode = 0
   for (const op of operands) {
     const absOp = absPath(op, session.cwd)
-    if (walks && (await dotRefusal(walker, typedSpec(op, session.cwd))) !== null) {
+    const spec = typedSpec(op, session.cwd)
+    // The walk refused the operand before readlink ran: the empty name
+    // answers ENOENT in every mode, a link loop in every mode but -m,
+    // which leaves it unresolved as spelled (coreutils 9.7).
+    if (spec.walkError === 'ENOENT' || (spec.walkError !== null && walks)) {
+      exitCode = 1
+      continue
+    }
+    if (walks && (await dotRefusal(walker, spec)) !== null) {
       exitCode = 1
       continue
     }
@@ -83,8 +91,11 @@ export async function handleReadlink(
         resolved = norm(namespace.follow(absOp))
       } catch (err) {
         if (!(err instanceof CycleError)) throw err
-        exitCode = 1
-        continue
+        if (walks) {
+          exitCode = 1
+          continue
+        }
+        resolved = norm(absOp)
       }
       const probe = flags.has('e')
         ? resolved

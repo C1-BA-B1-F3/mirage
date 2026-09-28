@@ -34,7 +34,8 @@ from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import MountIsRoot
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import FS_ERRORS, WALK_ERRORS, fs_strerror
+from mirage.utils.errors import (FS_ERRORS, WALK_ERRORS, fs_strerror,
+                                 walk_refusal)
 from mirage.utils.key_prefix import mount_prefix_of
 
 # ripgrep's own words for a line with no pattern, exit 2 (14.1.1).
@@ -656,8 +657,12 @@ async def rg(
     cwd = opts.cwd.virtual
     # ripgrep's "nothing searched" speaks for the whole walk, so it waits
     # while a fan-out searches the mounts below the cwd in runs of its own.
-    implicit = any(p.raw_path == IMPLICIT_CWD and (f.one_file_system or not (
-        mounts is not None and mounts.descendants(p.virtual))) for p in paths)
+    # A typed '' shares the synthetic operand's spelling; the walk's
+    # verdict is what tells them apart.
+    implicit = any(p.raw_path == IMPLICIT_CWD and p.walk_error is None and (
+        f.one_file_system
+        or not (mounts is not None and mounts.descendants(p.virtual)))
+                   for p in paths)
     # A mount root below the operand shadows whatever the backend holds
     # there; the fan-out that would search the mount itself is off too.
     boundary = mounts.is_root if f.one_file_system and mounts else None
@@ -702,6 +707,10 @@ async def _single(
         operand_stream (Callable): stdin's reader for a `-` operand.
     """
     if not is_stdin(p):
+        # The probes below go by `virtual`, which cannot carry the walk's
+        # verdict: the empty name would read as the cwd and walk it.
+        if p.walk_error is not None:
+            return _refused(p, walk_refusal(p), f)
         try:
             s = await st(p.virtual)
         except WALK_ERRORS as exc:
@@ -709,11 +718,7 @@ async def _single(
                 await rd(p.virtual)
                 return None
             except WALK_ERRORS:
-                # Neither statable nor listable: ripgrep's own refusal
-                # rather than the shared handler's exit 1.
-                stderr = (None if f.no_messages else
-                          f"rg: {p.raw_path}: {fs_strerror(exc)}\n".encode())
-                return b"", IOResult(exit_code=2, stderr=stderr)
+                return _refused(p, exc, f)
         if s.type == FileType.DIRECTORY:
             return None
     name = printed_path(operand_name(p), f)
@@ -729,6 +734,21 @@ async def _single(
     tally = Tally()
     return _settled(search_haystack(source, pat, f, name, label, tally), f,
                     label, tally, io), io
+
+
+def _refused(p: PathSpec, exc: Exception,
+             f: RgFlags) -> tuple[ByteSource | None, IOResult]:
+    """ripgrep's own refusal of an operand it cannot open, exit 2 rather
+    than the shared handler's 1.
+
+    Args:
+        p (PathSpec): the operand.
+        exc (Exception): why it could not be opened.
+        f (RgFlags): the parsed flags, read for --no-messages.
+    """
+    stderr = (None if f.no_messages else
+              f"rg: {p.raw_path}: {fs_strerror(exc)}\n".encode())
+    return b"", IOResult(exit_code=2, stderr=stderr)
 
 
 async def _settled(chunks: AsyncIterator[bytes], f: RgFlags, label: str | None,
@@ -834,6 +854,10 @@ async def _haystacks(paths: list[PathSpec], rd: Callable[[str],
         if is_stdin(p):
             yield Haystack(p.virtual, operand_name(p), fifo_stat(p.raw_path),
                            p)
+            continue
+        if p.walk_error is not None:
+            warnings.append(
+                f"rg: {p.raw_path}: {fs_strerror(walk_refusal(p))}")
             continue
         is_dir = False
         s: FileStat | None = None

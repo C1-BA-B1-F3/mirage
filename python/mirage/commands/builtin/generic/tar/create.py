@@ -6,6 +6,7 @@ from mirage.commands.builtin.generic.tar import constants
 from mirage.commands.builtin.generic.tar.types import CreateResult, Member
 from mirage.ops.types import LinkView, MountView
 from mirage.types import PathSpec
+from mirage.utils.errors import fs_strerror, walk_refusal
 from mirage.utils.fnmatch import fnmatch
 from mirage.utils.path import respell_one
 
@@ -207,6 +208,20 @@ async def plan_create(
     dropped: list[str] = []
     exit_code = 0
     for path in paths:
+        if path.walk_error is not None:
+            # The walk refused the operand before tar ran (the empty
+            # name, a link loop), so nothing is there to scan; the prefix
+            # it would strip is still announced first, as for any operand
+            # it cannot stat.
+            if path.raw_path == "":
+                notices.append(constants.EMPTY_MEMBER)
+            _announce_prefix(
+                strip_prefix(path.raw_path.rstrip("/") or path.raw_path)[1],
+                dropped, notices)
+            notices.append(f"tar: {path.raw_path}: Cannot stat: "
+                           f"{fs_strerror(walk_refusal(path))}")
+            exit_code = constants.CREATE_ERROR_EXIT
+            continue
         # GNU strips a trailing slash off the operand before naming the
         # member, and re-adds one only for a member that really is a
         # directory: `tar -cf a.tar dlink/` stores `dlink`, the symlink,

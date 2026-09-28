@@ -17,6 +17,7 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { fsStrerror, isFsError } from '../../../utils/errors.ts'
 import { mountKey } from '../../../utils/key_prefix.ts'
 import { resolvePath } from '../../../utils/path.ts'
+import { rstripSlash } from '../../../utils/slash.ts'
 import { AsyncLineIterator } from '../../../io/async_line_iterator.ts'
 import { IOResult } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
@@ -430,6 +431,20 @@ function joinRecords(records: readonly Uint8Array[], separator: number): Uint8Ar
   return out
 }
 
+// Where a PREFIX operand's pieces go, as the string they extend. The prefix
+// is glued to each suffix, not walked: an empty one, or one ending in a
+// slash, names the directory whose files are the bare suffixes (GNU's
+// `split f ''` writes `aa` to the cwd, and `split f out/` writes `out/aa`).
+// `virtual` says neither, having normalized the slash away and read the
+// empty name as the directory itself, so the separator is put back.
+// Mirrors Python's _prefix_virtual.
+function prefixVirtualOf(prefix: PathSpec): string {
+  if (prefix.rawPath === '' || prefix.rawPath.endsWith('/')) {
+    return `${rstripSlash(prefix.virtual)}/`
+  }
+  return prefix.virtual
+}
+
 export async function splitGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
@@ -444,7 +459,8 @@ export async function splitGeneric(
   // it as it formed it (`split: xaa`, `split: /ro/preaa`), and stops at the
   // first one it cannot create. Mirrors split.py.
   const prefixOperand = paths.length >= 2 ? paths[1] : undefined
-  const prefixVirtual = prefixOperand?.virtual ?? resolvePath('x', opts.cwd)
+  const prefixVirtual =
+    prefixOperand !== undefined ? prefixVirtualOf(prefixOperand) : resolvePath('x', opts.cwd)
   const typedPrefix = prefixOperand?.rawPath ?? 'x'
   const mountPrefix = opts.mountPrefix ?? ''
   const linesValue = fl.asStr('lines')

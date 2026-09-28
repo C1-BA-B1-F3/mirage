@@ -19,7 +19,7 @@ from mirage.core.object_store.driver import (A, C, MkdirFn, ObjectMeta,
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils import key_prefix as kp
-from mirage.utils.errors import enoent
+from mirage.utils.errors import enoent, enotsup
 
 
 async def _put(driver: ObjectStoreDriver[A, C], conn: C, key: str, data: bytes,
@@ -117,7 +117,12 @@ def make_truncate(driver: ObjectStoreDriver[A, C]) -> TruncateFn[A]:
         driver (ObjectStoreDriver): the store's native surface.
     """
 
-    async def truncate(accessor: A, path_spec: PathSpec, length: int) -> None:
+    async def truncate(accessor: A,
+                       path_spec: PathSpec,
+                       length: int,
+                       no_create: bool = False) -> None:
+        if no_create:
+            raise enotsup(driver.vfs, "truncate --no-create", path_spec)
         path = path_spec.mount_path
         key = kp.apply(driver.key_prefix_of(accessor), path)
         timer = start_op()

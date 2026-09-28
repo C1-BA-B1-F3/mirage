@@ -21,7 +21,10 @@ from mirage.types import PathSpec
 from mirage.utils.path import norm
 
 
-async def truncate(accessor: RAMAccessor, path: PathSpec, length: int) -> None:
+async def truncate(accessor: RAMAccessor,
+                   path: PathSpec,
+                   length: int,
+                   no_create: bool = False) -> None:
     store = accessor.store
     timer = start_op()
     p = norm(path.mount_path)
@@ -30,6 +33,8 @@ async def truncate(accessor: RAMAccessor, path: PathSpec, length: int) -> None:
     if p in store.files:
         data = store.files[p]
     else:
+        if no_create:
+            return
         data = b""
     store.files[p] = data[:length].ljust(length, b"\0")
     store.modified[p] = now_iso()

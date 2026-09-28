@@ -294,7 +294,11 @@ async def sed_generic(
         return None, IOResult(exit_code=1,
                               stderr=f"{SED_MISSING_SCRIPT}\n".encode())
     if parsed.in_place and write_bytes is None:
-        raise PermissionError("-i not supported on this backend")
+        return None, IOResult(
+            exit_code=1,
+            stderr=
+            b"sed: -i not supported on this backend: Permission denied\n",
+        )
     operands = list(paths)
     if flag_script:
         # With -e/-f the positional operand is a file, not the script.

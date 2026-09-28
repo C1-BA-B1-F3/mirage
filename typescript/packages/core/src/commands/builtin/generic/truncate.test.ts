@@ -215,3 +215,16 @@ describe('truncate operands', () => {
     expect(lengths).toHaveLength(2)
   })
 })
+
+
+it('passes no-create to the mutation after a successful stat', async () => {
+  const calls: boolean[] = []
+  const path = PathSpec.fromStrPath('/file')
+  const [, result] = await truncateGeneric(
+    [path], { size: '2', noCreate: true },
+    () => Promise.resolve(new FileStat({ name: 'file', type: FileType.FILE, size: 4 })),
+    (_path, _length, noCreate) => { calls.push(noCreate); return Promise.resolve() },
+  )
+  expect(result.exitCode).toBe(0)
+  expect(calls).toEqual([true])
+})

@@ -54,6 +54,7 @@ export type TruncateFn<A extends Accessor> = (
   accessor: A,
   path: PathSpec,
   length: number,
+  noCreate?: boolean,
 ) => Promise<void>
 
 export type DuEntriesFn<A extends Accessor> = (

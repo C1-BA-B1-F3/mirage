@@ -23,11 +23,13 @@ export async function truncate(
   accessor: RAMAccessor,
   path: PathSpec,
   length: number,
+  noCreate = false,
 ): Promise<void> {
   const timer = startOp()
   const p = norm(path.mountPath)
   checkDestParents(accessor, path, p)
   checkWriteTarget(accessor, path, p)
+  if (noCreate && !accessor.store.files.has(p)) return
   const existing = accessor.store.files.get(p) ?? new Uint8Array()
   const out = new Uint8Array(length)
   out.set(existing.subarray(0, Math.min(existing.byteLength, length)))

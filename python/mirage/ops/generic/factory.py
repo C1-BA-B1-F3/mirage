@@ -20,6 +20,7 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.ops.generic.table import OpFn, OpsTable
 from mirage.ops.registry import RegisteredOp
 from mirage.types import FileType, PathSpec
+from mirage.utils.errors import enotsup
 from mirage.utils.ranges import is_unsatisfiable_range, slice_window
 
 
@@ -161,17 +162,25 @@ def _make_rename(fn: OpFn) -> OpFn:
 
 def _make_truncate(fn: OpFn) -> OpFn:
 
-    async def truncate(accessor: Accessor, path: PathSpec, length: int,
+    async def truncate(accessor: Accessor,
+                       path: PathSpec,
+                       length: int,
+                       no_create: bool = False,
                        **kwargs) -> None:
-        await fn(accessor, path, length)
+        await fn(accessor, path, length, no_create)
 
     return truncate
 
 
 def _make_emulated_truncate(read_bytes: OpFn, write_bytes: OpFn) -> OpFn:
 
-    async def truncate(accessor: Accessor, path: PathSpec, length: int,
+    async def truncate(accessor: Accessor,
+                       path: PathSpec,
+                       length: int,
+                       no_create: bool = False,
                        **kwargs) -> None:
+        if no_create:
+            raise enotsup("emulated", "truncate --no-create", path)
         try:
             data = await read_bytes(accessor, path, index=NULL_INDEX)
         except FileNotFoundError:

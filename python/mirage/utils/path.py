@@ -204,7 +204,7 @@ def dot_prefixes(dotted: str) -> list[str]:
 
 
 def walk_nodes(dotted: str, raw: str) -> list[tuple[str, str]]:
-    """The names a walk of ``dotted`` enters, each with its spelling.
+    """The intermediate names a walk enters, each with its spelling.
 
     What ``mkdir -p`` creates on the way and names when it cannot: GNU
     makes each component as it reaches it, so ``mkdir -p nope/../m``
@@ -226,7 +226,7 @@ def walk_nodes(dotted: str, raw: str) -> list[tuple[str, str]]:
     current = "/" + "/".join(start)
     head = "/" if raw.startswith("/") else ""
     entered: list[tuple[str, str]] = []
-    for index in range(lead, len(typed)):
+    for index in range(lead, len(typed) - 1):
         part = typed[index]
         if part in _DOTS:
             current = parent(current) if part == ".." else current

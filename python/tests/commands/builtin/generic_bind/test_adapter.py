@@ -1103,3 +1103,25 @@ async def test_missing_copy_admits_source_as_read_before_capability_failure():
         assert policy.asked == [("copy", "/data/secret", False)]
     finally:
         reset_op_policies(token)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("is_dir", [False, True])
+async def test_dir_guard_distinguishes_empty_files_from_directory_eof(is_dir):
+    ops = with_dir_guard(
+        _keyed_read_ops(
+            explicit_dirs={"/empty"} if is_dir else set(),
+            files={"/empty": b""},
+        ))
+    path = PathSpec.from_str_path("/empty")
+    if is_dir:
+        with pytest.raises(IsADirectoryError):
+            await ops.read_bytes(None, path)
+        with pytest.raises(IsADirectoryError):
+            await _drain(ops.read_stream(None, path))
+        with pytest.raises(IsADirectoryError):
+            await ops.read_range(None, path)
+    else:
+        assert await ops.read_bytes(None, path) == b""
+        assert await _drain(ops.read_stream(None, path)) == [b""]
+        assert await ops.read_range(None, path) == b""

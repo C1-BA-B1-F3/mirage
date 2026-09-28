@@ -1212,12 +1212,12 @@ _READ_SLOTS = ("read_bytes", "read_stream", "read_range")
 
 async def _read_hit_a_dir(ops: CommandIO, accessor: Accessor,
                           index: IndexCacheStore, path: PathSpec,
-                          exc: BaseException) -> bool:
-    """Whether a read that already failed was really a read of a directory.
+                          exc: BaseException | None) -> bool:
+    """Whether a failed or empty read was a read of a directory.
 
-    Asked only after the read raised, which is what keeps a successful
-    read at exactly one backend call. Nothing is lost by waiting: every
-    backend raises on a directory read. One that knows says so (gdrive,
+    Asked after a failure or EOF without bytes: some drivers report an
+    empty stream for directories. Nonempty reads need no extra probe.
+    One that knows says so (gdrive,
     box, dropbox and disk raise IsADirectoryError), a keyed store answers
     ENOENT because a directory there is a set of keys rather than an
     object, and sftp answers with an opaque non-OSError.
@@ -1249,7 +1249,7 @@ async def _read_hit_a_dir(ops: CommandIO, accessor: Accessor,
         accessor (Accessor): backend handle.
         index (IndexCacheStore): the call's cache index.
         path (PathSpec): the operand whose read failed.
-        exc (BaseException): what the backend raised.
+        exc (BaseException | None): the failure, or None for an empty read.
     """
     if isinstance(exc, IsADirectoryError):
         return True
@@ -1284,13 +1284,17 @@ async def _read_hit_a_dir(ops: CommandIO, accessor: Accessor,
 async def _drain_refusing_dirs(
         ops: CommandIO, accessor: Accessor, index: IndexCacheStore,
         path: PathSpec, source: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    empty = True
     try:
         async for chunk in source:
+            empty = empty and not chunk
             yield chunk
     except Exception as exc:
         if await _read_hit_a_dir(ops, accessor, index, path, exc):
             raise eisdir(path) from None
         raise
+    if empty and await _read_hit_a_dir(ops, accessor, index, path, None):
+        raise eisdir(path)
 
 
 def _guarded_read_stream(ops: CommandIO,
@@ -1320,6 +1324,8 @@ async def _guarded_read(ops: CommandIO,
         if await _read_hit_a_dir(ops, accessor, index, path, exc):
             raise eisdir(path) from None
         raise
+    if not data and await _read_hit_a_dir(ops, accessor, index, path, None):
+        raise eisdir(path)
     return data
 
 
@@ -1333,8 +1339,9 @@ def with_dir_guard(ops: CommandIO) -> CommandIO:
     passed a bare ``bound_op(ops.read_stream, ...)`` instead, so a
     directory on a keyed backend reported ENOENT.
 
-    Refined after the failure, never before it, so a read that succeeds
-    costs exactly what it did. The refusal is built from the operand's
+    Refined after failure or an empty read: some drivers return EOF for
+    directories. Nonempty successful reads need no extra probe.
+    The refusal is built from the operand's
     own PathSpec, so it carries the virtual path: a raw disk error names
     the host path, which is the mount's own business and must not reach a
     user-facing line.

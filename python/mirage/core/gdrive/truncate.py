@@ -17,12 +17,16 @@ from mirage.core.gdrive.resolve import eacces_on_denied, resolve_key
 from mirage.core.gdrive.write import write_bytes
 from mirage.core.google.drive import download_file
 from mirage.types import PathSpec
-from mirage.utils.errors import eisdir
+from mirage.utils.errors import eisdir, enotsup
 
 
 @eacces_on_denied
-async def truncate(accessor: GDriveAccessor, path: PathSpec,
-                   length: int) -> None:
+async def truncate(accessor: GDriveAccessor,
+                   path: PathSpec,
+                   length: int,
+                   no_create: bool = False) -> None:
+    if no_create:
+        raise enotsup("gdrive", "truncate --no-create", path)
     node = await resolve_key(accessor, path.vfs_path)
     if node is not None and node.is_folder:
         raise eisdir(path.virtual)

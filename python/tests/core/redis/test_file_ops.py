@@ -312,3 +312,28 @@ async def test_exists_missing(mk_store):
     assert await exists(
         a, PathSpec(vfs_path="nope", virtual="/nope",
                     directory="/nope")) is False
+
+
+@pytest.mark.asyncio
+async def test_truncate_no_create_after_deletion(accessor, monkeypatch):
+    store = accessor.store
+    mutate = store.truncate_file
+
+    async def delete_then_truncate(path, length, modified, no_create=False):
+        await store.del_file(path)
+        await store.del_modified(path)
+        return await mutate(path, length, modified, no_create)
+
+    monkeypatch.setattr(store, "truncate_file", delete_then_truncate)
+    await truncate(accessor, PathSpec.from_str_path("/file.txt"), 2, True)
+    assert await store.get_file("/file.txt") is None
+    assert await store.get_modified("/file.txt") is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("length", [0, 2, 8])
+async def test_truncate_existing_atomically_resizes(accessor, length):
+    await truncate(accessor, PathSpec.from_str_path("/file.txt"), length, True)
+    assert await accessor.store.get_file(
+        "/file.txt") == b"hello"[:length].ljust(length, b"\0")
+    assert await accessor.store.get_modified("/file.txt") is not None

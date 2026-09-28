@@ -31,7 +31,7 @@ from mirage.utils.errors import (FS_ERRORS, error_path, fs_strerror,
                                  operand_spelling)
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.mode import DEFAULT_DIR_MODE, parse_chmod
-from mirage.utils.path import resolve_path, walk_nodes
+from mirage.utils.path import walk_nodes
 from mirage.vfs.types import OperationFn
 
 
@@ -144,10 +144,7 @@ async def _make_walked(mkdir_fn: OperationFn, accessor: Accessor,
         links (LinkView | None): the namespace's symlink facts.
     """
     root = mount_prefix_of(path.virtual, path.vfs_path).rstrip("/")
-    final = resolve_path(dotted, "/")
     for node, spelled in walk_nodes(dotted, path.raw_path):
-        if node == final:
-            continue
         try:
             why = await _enter_node(mkdir_fn, accessor, path, node, root,
                                     links)

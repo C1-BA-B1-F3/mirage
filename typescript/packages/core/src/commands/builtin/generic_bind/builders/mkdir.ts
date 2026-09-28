@@ -29,7 +29,7 @@ import type { Accessor } from '../../../../accessor/base.ts'
 import type { LinkView } from '../../../../ops/types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
 import { mountPrefixOf } from '../../../../utils/key_prefix.ts'
-import { resolvePath, walkNodes } from '../../../../utils/path.ts'
+import { walkNodes } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { MkdirOp } from '../../../../vfs/types.ts'
 import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
@@ -85,9 +85,7 @@ async function makeWalked<A extends Accessor>(
   links: LinkView | null,
 ): Promise<string | null> {
   const root = rstripSlash(mountPrefixOf(path.virtual, path.vfsPath))
-  const final = resolvePath(dotted, '/')
   for (const [node, spelled] of walkNodes(dotted, path.rawPath)) {
-    if (node === final) continue
     let why: string | null
     try {
       why = await enterNode(mkdir, accessor, path, node, root, links)

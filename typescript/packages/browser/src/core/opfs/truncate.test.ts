@@ -40,3 +40,10 @@ describe('opfs/truncate', () => {
     await expect(truncate(accessor, spec('/a'), 0)).rejects.toMatchObject({ code: 'EISDIR' })
   })
 })
+
+
+it('no-create leaves a missing file absent', async () => {
+  const accessor = makeMockAccessor()
+  await truncate(accessor, spec('/missing'), 3, true)
+  await expect(read(accessor, spec('/missing'))).rejects.toMatchObject({ code: 'ENOENT' })
+})

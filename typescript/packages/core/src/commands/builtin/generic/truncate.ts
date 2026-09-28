@@ -100,7 +100,7 @@ export async function truncateGeneric(
   paths: readonly PathSpec[],
   flags: TruncateFlags,
   stat: (path: PathSpec) => Promise<FileStat>,
-  truncate: (path: PathSpec, length: number) => Promise<void>,
+  truncate: (path: PathSpec, length: number, noCreate: boolean) => Promise<void>,
 ): Promise<[ByteSource | null, IOResult]> {
   if (paths.length === 0) throw new UsageError(`truncate: missing file operand${TRY_HELP}`, 1)
   const errors: string[] = []
@@ -134,7 +134,7 @@ async function truncateOne(
   path: PathSpec,
   flags: TruncateFlags,
   stat: (path: PathSpec) => Promise<FileStat>,
-  truncate: (path: PathSpec, length: number) => Promise<void>,
+  truncate: (path: PathSpec, length: number, noCreate: boolean) => Promise<void>,
 ): Promise<void> {
   let current = 0
   try {
@@ -149,5 +149,5 @@ async function truncateOne(
     if (why !== null) throw enoent(path)
     current = 0
   }
-  await truncate(path, parseSize(flags.size, current))
+  await truncate(path, parseSize(flags.size, current), flags.noCreate)
 }

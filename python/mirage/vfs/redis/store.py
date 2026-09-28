@@ -17,6 +17,8 @@ import weakref
 from collections.abc import Awaitable
 from typing import cast
 
+from mirage.vfs.redis.constants import TRUNCATE_SCRIPT
+
 try:
     import redis as sync_redis
     from redis.asyncio import Redis
@@ -138,6 +140,16 @@ class RedisStore:
 
     async def set_file(self, path: str, data: bytes) -> None:
         await self._client.set(self._fk(path), data)
+
+    async def truncate_file(self,
+                            path: str,
+                            length: int,
+                            modified: str,
+                            no_create: bool = False) -> bool:
+        result = await self._client.eval(TRUNCATE_SCRIPT, 2, self._fk(path),
+                                         self._mk(path), length, modified,
+                                         "1" if no_create else "0")
+        return bool(result)
 
     async def del_file(self, path: str) -> None:
         await self._client.delete(self._fk(path))

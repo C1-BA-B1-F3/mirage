@@ -131,7 +131,8 @@ export interface WriteOps<A extends Accessor = Accessor> {
   rename?: RenameOp<A>
   copy?: CopyOp<A>
   dirCopy?: CopyOp<A>
-  truncate?: (accessor: A, path: PathSpec, length: number) => Promise<void>
+  /** noCreate requires an atomic existence precondition, or ENOTSUP before writing. */
+  truncate?: (accessor: A, path: PathSpec, length: number, noCreate?: boolean) => Promise<void>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setAttrs?: (...args: any[]) => unknown
 }

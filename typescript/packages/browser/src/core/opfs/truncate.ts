@@ -22,6 +22,7 @@ export async function truncate(
   accessor: OPFSAccessor,
   path: PathSpec,
   length: number,
+  noCreate = false,
 ): Promise<void> {
   const timer = startOp()
   const root = accessor.rootHandle
@@ -34,6 +35,7 @@ export async function truncate(
     existing = new Uint8Array(await file.arrayBuffer())
   } catch (err) {
     if (isNotFound(err)) {
+      if (noCreate) return
       try {
         handle = await resolveFileHandle(root, key, { create: true })
       } catch (cerr) {

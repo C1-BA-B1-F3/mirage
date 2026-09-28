@@ -995,11 +995,10 @@ export function requireOp<T extends (...args: never[]) => Promise<unknown>>(
 }
 
 /**
- * Whether a read that already failed was really a read of a directory.
+ * Whether a failed or empty read was a read of a directory.
  *
- * Asked only after the read threw, which is what keeps a successful read
- * at exactly one backend call. Nothing is lost by waiting: every backend
- * throws on a directory read. One that knows says so (gdrive, box,
+ * Asked after failure or EOF without bytes: some drivers return an empty
+ * stream for directories. Nonempty reads need no extra probe. One that knows says so (gdrive, box,
  * dropbox and disk throw EISDIR), a keyed store answers ENOENT because a
  * directory there is a set of keys rather than an object, and sftp
  * answers with an error carrying no errno at all.
@@ -1029,7 +1028,7 @@ async function readHitADir<A extends Accessor>(
   index: IndexCacheStore | undefined,
   err: unknown,
 ): Promise<boolean> {
-  if ((err as { code?: string }).code === 'EISDIR') return true
+  if ((err as { code?: string } | null)?.code === 'EISDIR') return true
   // The path did not resolve at all, which no reading turns into a
   // directory; its parent may well list the name it simplifies to.
   if (isDotWalkError(err)) return false
@@ -1059,12 +1058,17 @@ async function* drainRefusingDirs<A extends Accessor>(
   index: IndexCacheStore | undefined,
   source: AsyncIterable<Uint8Array>,
 ): AsyncIterable<Uint8Array> {
+  let empty = true
   try {
-    yield* source
+    for await (const chunk of source) {
+      empty = empty && chunk.byteLength === 0
+      yield chunk
+    }
   } catch (err) {
     if (await readHitADir(ops, accessor, path, index, err)) throw eisdir(path)
     throw err
   }
+  if (empty && (await readHitADir(ops, accessor, path, index, null))) throw eisdir(path)
 }
 
 /**
@@ -1077,8 +1081,8 @@ async function* drainRefusingDirs<A extends Accessor>(
  * raw `ops.readStream` instead, so a directory on a keyed backend
  * reported ENOENT.
  *
- * Refined after the failure, never before it, so a read that succeeds
- * costs exactly what it did. The refusal is built from the operand's own
+ * Refined after failure or an empty read: some drivers return EOF for
+ * directories. Nonempty successful reads need no extra probe. The refusal is built from the operand's own
  * PathSpec, so it carries the virtual path: a raw disk error names the
  * host path, which is the mount's own business and must not reach a
  * user-facing line.
@@ -1090,7 +1094,11 @@ export function withDirGuard<A extends Accessor = Accessor>(ops: CommandIO<A>): 
     ...ops,
     readBytes: async (accessor, path, index) => {
       try {
-        return await ops.readBytes(accessor, path, index)
+        const data = await ops.readBytes(accessor, path, index)
+        if (data.byteLength === 0 && (await readHitADir(ops, accessor, path, index, null))) {
+          throw eisdir(path)
+        }
+        return data
       } catch (err) {
         if (await readHitADir(ops, accessor, path, index, err)) throw eisdir(path)
         throw err
@@ -1107,7 +1115,11 @@ export function withDirGuard<A extends Accessor = Accessor>(ops: CommandIO<A>): 
   if (readRange !== undefined) {
     guarded.readRange = async (accessor, path, index, offset, size) => {
       try {
-        return await readRange(accessor, path, index, offset, size)
+        const data = await readRange(accessor, path, index, offset, size)
+        if (data.byteLength === 0 && (await readHitADir(ops, accessor, path, index, null))) {
+          throw eisdir(path)
+        }
+        return data
       } catch (err) {
         if (await readHitADir(ops, accessor, path, index, err)) throw eisdir(path)
         throw err

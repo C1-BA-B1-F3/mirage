@@ -126,7 +126,7 @@ export function walkNodes(dotted: string, raw: string): [string, string][] {
   let current = `/${start.join('/')}`
   const head = raw.startsWith('/') ? '/' : ''
   const entered: [string, string][] = []
-  for (let index = lead; index < typed.length; index++) {
+  for (let index = lead; index < typed.length - 1; index++) {
     const part = typed[index] ?? ''
     if (DOTS.has(part)) {
       if (part === '..') current = parent(current)

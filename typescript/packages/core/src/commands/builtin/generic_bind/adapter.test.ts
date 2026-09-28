@@ -1014,3 +1014,26 @@ it('a missing copy admits its source as a read before capability failure', async
   })
   expect(policy.asked).toEqual([['copy', '/data/secret', false]])
 })
+
+describe('directory EOF', () => {
+  it.each([false, true])('distinguishes empty files from directories: %s', async (isDir) => {
+    const ops = withDirGuard(
+      keyedReadOps({
+        explicitDirs: isDir ? ['/empty'] : [],
+        files: { '/empty': '' },
+      }),
+    )
+    const path = PathSpec.fromStrPath('/empty')
+    if (isDir) {
+      await expect(ops.readBytes(accessor, path)).rejects.toMatchObject({ code: 'EISDIR' })
+      await expect(drain(ops.readStream(accessor, path))).rejects.toMatchObject({ code: 'EISDIR' })
+      await expect(ops.readRange?.(accessor, path, undefined, 0, null)).rejects.toMatchObject({
+        code: 'EISDIR',
+      })
+    } else {
+      expect(await ops.readBytes(accessor, path)).toEqual(new Uint8Array())
+      expect(await drain(ops.readStream(accessor, path))).toEqual([new Uint8Array()])
+      expect(await ops.readRange?.(accessor, path, undefined, 0, null)).toEqual(new Uint8Array())
+    }
+  })
+})

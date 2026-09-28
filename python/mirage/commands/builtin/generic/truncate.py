@@ -109,7 +109,7 @@ async def truncate(
     *,
     flags: TruncateFlags,
     stat: Callable[[PathSpec], Awaitable[FileStat]],
-    truncate_fn: Callable[[PathSpec, int], Awaitable[None]],
+    truncate_fn: Callable[[PathSpec, int, bool], Awaitable[None]],
 ) -> tuple[ByteSource | None, IOResult]:
     """Set each operand's length, GNU ``truncate -s``.
 
@@ -140,7 +140,7 @@ async def _truncate_one(
     path: PathSpec,
     flags: TruncateFlags,
     stat: Callable[[PathSpec], Awaitable[FileStat]],
-    truncate_fn: Callable[[PathSpec, int], Awaitable[None]],
+    truncate_fn: Callable[[PathSpec, int, bool], Awaitable[None]],
 ) -> None:
     """One operand, in the order GNU's open settles it.
 
@@ -176,7 +176,7 @@ async def _truncate_one(
         if why is not None:
             raise enoent(path) from exc
         current = 0
-    await truncate_fn(path, parse_size(flags.size, current))
+    await truncate_fn(path, parse_size(flags.size, current), flags.no_create)
 
 
 __all__ = ["TruncateFlags", "parse_flags", "parse_size", "truncate"]

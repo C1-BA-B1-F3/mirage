@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { enotsup } from '../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { BoxAccessor } from '../../accessor/box.ts'
 import {
@@ -244,7 +245,9 @@ export async function truncate(
   accessor: BoxAccessor,
   path: PathSpec,
   length: number,
+  noCreate = false,
 ): Promise<void> {
+  if (noCreate) throw enotsup('box', 'truncate --no-create', path)
   const item = await resolveItem(accessor, pathParts(path))
   const data =
     item !== null && item.type === 'file'

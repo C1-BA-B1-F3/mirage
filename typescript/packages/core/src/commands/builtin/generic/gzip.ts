@@ -1,4 +1,3 @@
-import { decompressInputs } from './decompress.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,6 +23,8 @@ import type { PathSpec } from '../../../types.ts'
 import { gzip } from '../../../utils/compress.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { resolveSource, stdinStream } from '../utils/stream.ts'
+import { GZIP_SUFFIX } from '../constants.ts'
+import { decompressInputs, gzipSuffix, suffixRefusal } from './decompress.ts'
 
 function concat(chunks: Uint8Array[]): Uint8Array {
   let total = 0
@@ -50,15 +51,22 @@ export async function gzipGeneric(
   const keep = fl.asBool('k')
   const force = fl.asBool('f')
   const stdoutMode = fl.asBool('c')
+  const quiet = fl.asBool('q')
+  const suffix = fl.asStr('S') ?? GZIP_SUFFIX
 
+  const refused = suffixRefusal(suffix)
+  if (refused !== null) return [null, refused]
   if (decompress)
     return decompressInputs(paths, stream, {
-      command: 'gzip',
       stdin: opts.stdin,
       keep,
+      force,
+      quiet,
+      suffix,
       toStdout: stdoutMode,
       write,
       unlink,
+      ...(stat !== undefined ? { stat } : {}),
     })
   if (paths.length === 0) {
     const result: ByteSource = await gzip(await materialize(resolveSource(opts.stdin)))
@@ -72,18 +80,19 @@ export async function gzipGeneric(
   for (const p of paths) {
     const inPlace = !(stdoutMode || p.rawPath === '-')
     // An input gzip cannot read is reported and skipped, and the run goes on
-    // to the next operand (a directory is a warning, exit 2, in the house
-    // `<cmd>: <path>: Is a directory` words); so is an output already there
-    // without -f, and a replace -f is refused. An output it cannot create is
-    // fatal: gzip's write_error leads with a newline and exits, leaving later
-    // operands untouched. Pinned against gzip 1.13 (debian:stable-slim).
-    // Mirrors gzip.py.
+    // to the next operand (a directory is a warning, exit 2, silent under
+    // -q); so is an input that already has a suffix, without -f and with no
+    // exit code of its own, an output already there without -f, and a
+    // replace -f is refused. An output it cannot create is fatal: gzip's
+    // write_error leads with a newline and exits, leaving later operands
+    // untouched. Pinned against gzip 1.13 (debian:stable-slim). Mirrors
+    // gzip.py.
     let raw: Uint8Array
     try {
       raw = await materialize(inPlace ? stream(p) : read(p))
     } catch (err) {
       if (isEisdir(err)) {
-        lines.push(`gzip: ${p.rawPath}: ${String(fsStrerror(err))}`)
+        if (!quiet) lines.push(`gzip: ${p.rawPath} is a directory -- ignored`)
         if (exitCode === 0) exitCode = 2
         continue
       }
@@ -92,16 +101,21 @@ export async function gzipGeneric(
       exitCode = 1
       continue
     }
+    const known = inPlace ? gzipSuffix(p.rawPath, suffix) : null
+    if (known !== null && !force) {
+      if (!quiet) lines.push(`gzip: ${p.rawPath} already has ${known} suffix -- unchanged`)
+      continue
+    }
     const data = await gzip(raw)
     if (!inPlace) {
       stdout.push(data)
       continue
     }
-    const outPath = p.mountPath + '.gz'
+    const outPath = p.mountPath + suffix
     const out = mountedPath(p, outPath)
     const existed = stat !== undefined && (await pathExists(stat, out))
     if (existed && !force) {
-      lines.push(`gzip: ${p.rawPath}.gz already exists;\tnot overwritten`)
+      lines.push(`gzip: ${p.rawPath}${suffix} already exists;\tnot overwritten`)
       if (exitCode === 0) exitCode = 2
       continue
     }
@@ -109,7 +123,7 @@ export async function gzipGeneric(
       await write(out, data)
     } catch (err) {
       if (!isFsError(err)) throw err
-      lines.push(`${existed ? '' : '\n'}gzip: ${p.rawPath}.gz: ${String(fsStrerror(err))}`)
+      lines.push(`${existed ? '' : '\n'}gzip: ${p.rawPath}${suffix}: ${String(fsStrerror(err))}`)
       exitCode = 1
       if (existed) continue
       break

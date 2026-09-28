@@ -1,13 +1,14 @@
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
+from mirage.commands.builtin.constants import GZIP_SUFFIX
 from mirage.commands.builtin.generic.decompress import decompress_inputs
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
-from mirage.types import PathSpec
+from mirage.types import PathSpec, StatFn
 
 
 async def gunzip(
@@ -16,19 +17,25 @@ async def gunzip(
     read_bytes: Callable[..., Awaitable[bytes]],
     write_bytes: Callable[..., Awaitable[None]],
     unlink: Callable[..., Awaitable[None]],
+    stat: StatFn | None = None,
     stdin: ByteSource | None = None,
     keep: bool = False,
     force: bool = False,
     to_stdout: bool = False,
     test_only: bool = False,
+    quiet: bool = False,
+    suffix: str = GZIP_SUFFIX,
 ) -> tuple[ByteSource | None, IOResult]:
     return await decompress_inputs(paths,
-                                   command="gunzip",
                                    read=read_bytes,
                                    write=write_bytes,
                                    unlink=unlink,
+                                   stat=stat,
                                    stdin=stdin,
                                    keep=keep,
+                                   force=force,
+                                   quiet=quiet,
+                                   suffix=suffix,
                                    to_stdout=to_stdout,
                                    test_only=test_only)
 
@@ -42,15 +49,20 @@ class GunzipFlags:
     force: bool = False
     to_stdout: bool = False
     test_only: bool = False
+    quiet: bool = False
+    suffix: str = GZIP_SUFFIX
 
 
 def parse_flags(flags: Mapping[str, FlagValue]) -> GunzipFlags:
     fl = FlagView(flags, spec=SPECS["gunzip"])
+    suffix = fl.as_str("S")
     return GunzipFlags(
         keep=fl.as_bool("k"),
         force=fl.as_bool("f"),
         to_stdout=fl.as_bool("c"),
         test_only=fl.as_bool("t"),
+        quiet=fl.as_bool("q"),
+        suffix=GZIP_SUFFIX if suffix is None else suffix,
     )
 
 
@@ -61,14 +73,18 @@ async def gunzip_generic(
     read_bytes: Callable[..., Awaitable[bytes]],
     write_bytes: Callable[..., Awaitable[None]],
     unlink: Callable[..., Awaitable[None]],
+    stat: StatFn | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
     return await gunzip(paths,
                         read_bytes=read_bytes,
                         write_bytes=write_bytes,
                         unlink=unlink,
+                        stat=stat,
                         stdin=opts.stdin,
                         keep=parsed.keep,
                         force=parsed.force,
                         to_stdout=parsed.to_stdout,
-                        test_only=parsed.test_only)
+                        test_only=parsed.test_only,
+                        quiet=parsed.quiet,
+                        suffix=parsed.suffix)

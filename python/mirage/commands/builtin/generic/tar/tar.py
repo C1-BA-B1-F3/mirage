@@ -100,7 +100,7 @@ def _child_failure(failure: GzipDataError, lines: list[str]) -> bytes:
         failure (GzipDataError): why gzip stopped.
         lines (list[str]): tar's own stderr lines from the run.
     """
-    return failure.render("gzip", "stdin").encode() + _stderr(
+    return failure.render("stdin").encode() + _stderr(
         lines + [CHILD_STATUS.format(failure.exit_code), FATAL_TRAILER])
 
 

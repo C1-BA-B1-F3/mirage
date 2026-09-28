@@ -21,6 +21,8 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-f' }),
       new Option({ short: '-c' }),
       new Option({ short: '-t' }),
+      new Option({ short: '-q' }),
+      new Option({ short: '-S', type: 'str' }),
     ],
     rest: new Operand({ type: 'path' }),
   }),
@@ -30,6 +32,8 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-k' }),
       new Option({ short: '-f' }),
       new Option({ short: '-c' }),
+      new Option({ short: '-q' }),
+      new Option({ short: '-S', type: 'str' }),
       new Option({ short: '-1' }),
       new Option({ short: '-2' }),
       new Option({ short: '-3' }),
@@ -108,7 +112,14 @@ export const SPECS: Record<string, CommandSpec> = {
     positional: [new Operand({ type: 'path' })],
     rest: new Operand({ type: 'str' }),
   }),
+  // zcat is `gzip -cd`: -f copies input that is not gzip, -q drops the
+  // warnings, and -S names the suffix a missing name is retried with.
   zcat: new CommandSpec({
+    options: [
+      new Option({ short: '-f' }),
+      new Option({ short: '-q' }),
+      new Option({ short: '-S', type: 'str' }),
+    ],
     rest: new Operand({ type: 'path' }),
   }),
   zip: new CommandSpec({

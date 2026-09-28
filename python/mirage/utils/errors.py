@@ -69,39 +69,43 @@ class GzipDataError(ValueError):
     failure are whole members: after a refusal of a later member, of
     trailing garbage, or of a trailer. An in-place run still writes them
     when the refusal is not fatal, and tar reads them whatever gzip
-    does. The gzip
-    front ends render the reasons under their own name, where GNU's
-    (shell scripts over gzip) say ``gzip:`` and put a blank line before
-    most diagnostics.
+    does. ``first_header`` says gzip stopped inside its first member's
+    header, before it would create an output file or read a body; on
+    stdin that ends the run, as gzip exits there. The reasons are gzip's
+    own lines, the program name and any leading newline included, since
+    gunzip, zcat, zgrep and tar's child all run gzip.
 
     Args:
-        reasons (tuple[str, ...]): gzip's descriptions of the input, each
-            with ``{}`` where the input's name goes.
+        reasons (tuple[str, ...]): gzip's diagnostic lines, each with
+            ``{}`` where the input's name goes.
         fatal (bool): whether gzip stops at this input.
         exit_code (int): One for an error, two for a trailing-data warning.
         keeps_output (bool): whether the bytes decoded before the
             failure are whole members.
+        first_header (bool): whether the failure lies in the first
+            member's header.
     """
 
     def __init__(self,
                  reasons: tuple[str, ...],
                  fatal: bool,
                  exit_code: int = 1,
-                 keeps_output: bool = False) -> None:
+                 keeps_output: bool = False,
+                 first_header: bool = False) -> None:
         super().__init__("\n".join(reasons))
         self.reasons = reasons
         self.fatal = fatal
         self.exit_code = exit_code
         self.keeps_output = keeps_output
+        self.first_header = first_header
 
-    def render(self, command: str, label: str) -> str:
-        """One ``command: ...`` line per reason, the input named ``label``.
+    def render(self, label: str) -> str:
+        """gzip's lines for the failure, the input named ``label``.
 
         Args:
-            command (str): the command reporting the failure.
             label (str): the input as the diagnostic names it.
         """
-        return "".join(f"{command}: {reason.replace('{}', label)}\n"
+        return "".join(f"{reason.replace('{}', label)}\n"
                        for reason in self.reasons)
 
 

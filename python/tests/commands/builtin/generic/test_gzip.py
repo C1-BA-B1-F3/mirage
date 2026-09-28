@@ -85,7 +85,9 @@ _EXISTS = "gzip: /ro/f.txt.gz already exists;\tnot overwritten\n"
     ("gzip /ro/g.txt", 1, "\ngzip: /ro/g.txt.gz: Read-only file system\n"),
     ("gzip /ro/f.txt /ro/g.txt", 1,
      _EXISTS + "\ngzip: /ro/g.txt.gz: Read-only file system\n"),
-    ("gzip -d /ro/f.txt.gz", 1, "gzip: /ro/f.txt: Read-only file system\n"),
+    ("gzip -d /ro/f.txt.gz", 2,
+     "gzip: /ro/f.txt already exists;\tnot overwritten\n"),
+    ("gzip -df /ro/f.txt.gz", 1, "gzip: /ro/f.txt: Read-only file system\n"),
 ])
 def test_a_read_only_mount_refuses_gzip_at_the_write(line: str, code: int,
                                                      stderr: str):

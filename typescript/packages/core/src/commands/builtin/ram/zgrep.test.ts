@@ -166,6 +166,6 @@ describe('zgrep on inputs gzip passes or refuses', () => {
       '/data/cut.gz': hello.subarray(0, 10),
       '/data/h.gz': hello,
     })
-    expect(r).toEqual(['/data/h.gz:hello\n', 'zgrep: /data/cut.gz: unexpected end of file\n', 2])
+    expect(r).toEqual(['/data/h.gz:hello\n', '\ngzip: /data/cut.gz: unexpected end of file\n', 2])
   })
 })

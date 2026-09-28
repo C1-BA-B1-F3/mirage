@@ -123,6 +123,18 @@ SPLIT_DIGITS = re.compile(r"[0-9]+")
 SPLIT_HEX_DIGITS = re.compile(r"[0-9a-f]+")
 SPLIT_TRY_HELP = "\nTry 'split --help' for more information."
 
+# gzip 1.13's file naming. The suffix gzip writes and looks for unless -S
+# names another; the suffixes it always recognizes on a name it
+# decompresses, compared without regard to ASCII case; the ones it tries in
+# turn on a name that does not exist, the -S suffix first; and the longest
+# -S suffix it accepts, in bytes.
+GZIP_SUFFIX = ".gz"
+GZIP_KNOWN_SUFFIXES = (".gz", ".z", ".taz", ".tgz", "-gz", "-z", "_z")
+GZIP_RETRY_SUFFIXES = (".gz", ".z", "-z", ".Z")
+# The suffixes gzip -d turns into .tar rather than dropping.
+GZIP_TAR_SUFFIXES = (".tgz", ".taz")
+GZIP_MAX_SUFFIX = 30
+
 # GNU answers a missing script with its whole thirty-nine line usage block
 # and exit 1; mirage names the problem in one line instead, because the
 # block is GNU's own prose and reproducing it buys a mirage user nothing.

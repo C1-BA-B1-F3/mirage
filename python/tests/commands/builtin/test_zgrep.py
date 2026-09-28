@@ -169,5 +169,5 @@ def test_zgrep_reports_a_bad_archive_and_exits_2_beside_a_match():
     stdout, io = _run_raw(ws, "zgrep hello /data/cut.gz /data/h.gz")
     assert _bytes(stdout) == b"/data/h.gz:hello\n"
     assert _bytes(
-        io.stderr) == b"zgrep: /data/cut.gz: unexpected end of file\n"
+        io.stderr) == b"\ngzip: /data/cut.gz: unexpected end of file\n"
     assert io.exit_code == 2

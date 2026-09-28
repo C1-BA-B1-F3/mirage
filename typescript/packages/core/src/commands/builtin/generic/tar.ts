@@ -201,9 +201,7 @@ async function readArchive(data: Uint8Array, kind: Compression): Promise<ReadRes
  */
 function childFailure(failure: GzipDataError, lines: readonly string[]): Uint8Array {
   const status = CHILD_STATUS.replace('{}', String(failure.exitCode))
-  return ENC.encode(
-    failure.render('gzip', 'stdin') + [...lines, status, FATAL_TRAILER].join('\n') + '\n',
-  )
+  return ENC.encode(failure.render('stdin') + [...lines, status, FATAL_TRAILER].join('\n') + '\n')
 }
 
 function stderrOf(lines: readonly string[]): Uint8Array | null {

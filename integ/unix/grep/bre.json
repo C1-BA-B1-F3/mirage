@@ -307,6 +307,23 @@
         "stdout": "",
         "stderr": "grep: Invalid character class name\n"
       }
+    },
+    {
+      "id": "grep_prefilter_bre_alternation",
+      "seq": 1287002,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "seq 1 20000 > /data/prefilter.txt; printf 'NEEDLE\\nneedle\\nother\\nneedleX\\n' >> /data/prefilter.txt; grep -c 'needle\\|other' /data/prefilter.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
     }
   ]
 }

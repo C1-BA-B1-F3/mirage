@@ -631,7 +631,9 @@ describe.each([
   /nee.le/,
   /\bneedle\b/,
   /(?:needle)|(?:qqzzyy)/,
+  /(?:needle|other)+/,
   /needle[0-9]+/,
+  /(?<!\w)needle(?!\w)/i,
 ])('block search %s', (pat) => {
   it.each(['abcdefg\n', 'abcdefg\0', '\xffabcdef\n'])(
     'rejects short records by buffer without decoding each line: %j',
@@ -668,6 +670,7 @@ describe.each([
   [16384, /needle/i],
   [PROBE_BLOCK_BYTES, /nee.le/],
   [7, /\bneedle\b/],
+  [16384, /(?<!\w)needle(?!\w)/i],
 ] as const)('prefilter at chunk size %i for %s', (size, pat) => {
   it.each([
     {},
@@ -737,9 +740,18 @@ it.each([
   /a/g,
   /a/y,
   /é/,
+  /needle|other/i,
+  /nee.le/,
+  /\bneedle\b/,
+  /needleX?/,
+  /s|k|i/i,
+  /needle|other/iu,
+  /(?<!\w)needle(?!\w)/i,
+  /(?<name>need)le/,
 ])('does not mistake regex syntax or Unicode for an ASCII literal: %s', async (pat) => {
   const data = ENC.encode(
-    'other\n'.repeat(3000) + 'a.b\na+b\na\\b\na b\nab\né\nK\nk\nſ\nS\nİ\nı\nI\n',
+    'other\n'.repeat(3000) +
+      'a.b\na+b\na\\b\na b\nab\né\nK\nk\nſ\nS\nİ\nı\nI\nNEEDLE\nneedleX\nneedle',
   )
   async function* source(): AsyncIterable<Uint8Array> {
     await Promise.resolve()

@@ -175,7 +175,7 @@ export async function* grepInput(
   // terminator the iterator strips. The extra byte past a final line with no
   // newline is never read.
   let bytePos = 0
-  const needle =
+  const needles =
     !f.invert && (!hasContext || f.countOnly || f.quiet || f.filesOnly || f.filesWithoutMatch)
       ? requiredNeedles(pat)
       : null
@@ -183,8 +183,8 @@ export async function* grepInput(
   const lines = new AsyncLineIterator(input)
   try {
     for (;;) {
-      if (needle !== null) {
-        const [skipped, bytes] = lines.skipNonmatchingLines(needle, pat.ignoreCase)
+      if (needles !== null) {
+        const [skipped, bytes] = lines.skipNonmatchingLines(needles, pat.ignoreCase)
         number += skipped
         bytePos += bytes
       }

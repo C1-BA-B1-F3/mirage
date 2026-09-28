@@ -176,3 +176,30 @@ async def test_skip_nonmatching_lines_retains_candidates_across_chunks():
     assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
     assert await lines.readline() == b"tail"
     assert await lines.readline() is None
+
+
+@pytest.mark.asyncio
+async def test_skip_nonmatching_lines_interleaves_needles_under_folding():
+    lines = AsyncLineIterator(_chunks([b"x\nA1\nx\nx\nb2\nx\na3\nx\nB4\nx"]))
+    assert await lines.readline() == b"x"
+    seen = []
+    while True:
+        skipped = lines.skip_nonmatching_lines((b"a", b"b"), True)
+        line = await lines.readline()
+        if line is None:
+            break
+        seen.append((skipped, line))
+    assert seen == [((0, 0), b"A1"), ((2, 4), b"b2"), ((1, 2), b"a3"),
+                    ((1, 2), b"B4"), ((0, 0), b"x")]
+
+
+@pytest.mark.asyncio
+async def test_skip_nonmatching_lines_by_another_delimiter():
+    lines = AsyncLineIterator(_chunks([b"a\nb\0needle\nc\0d\0nee", b"dle\0"]))
+    assert await lines.read_until(b"\0") == (b"a\nb", True)
+    assert lines.skip_nonmatching_lines((b"needle", ), False, b"\0") == (0, 0)
+    assert await lines.read_until(b"\0") == (b"needle\nc", True)
+    assert lines.skip_nonmatching_lines((b"needle", ), False, b"\0") == (1, 2)
+    assert await lines.read_until(b"\0") == (b"needle", True)
+    assert lines.skip_nonmatching_lines((b"needle", ), False, b"\0") == (0, 0)
+    assert await lines.read_until(b"\0") == (b"", False)

@@ -179,16 +179,16 @@ async def grep_input(source: AsyncIterator[bytes],
     # to cover the terminator the iterator strips. The extra byte past a
     # final line with no newline is never read.
     byte_pos = 0
-    needle = (required_needles(pat) if not f.invert and
-              (not has_context or f.count_only or f.quiet or f.files_only
-               or f.files_without_match) else None)
+    needles = (required_needles(pat) if not f.invert and
+               (not has_context or f.count_only or f.quiet or f.files_only
+                or f.files_without_match) else None)
+    fold = bool(pat.flags & re.IGNORECASE)
     input_stream = binary.read(source)
     lines = AsyncLineIterator(input_stream)
     try:
         while True:
-            if needle is not None:
-                skipped, size = lines.skip_nonmatching_lines(
-                    needle, bool(pat.flags & re.IGNORECASE))
+            if needles is not None:
+                skipped, size = lines.skip_nonmatching_lines(needles, fold)
                 number += skipped
                 byte_pos += size
             raw = await lines.readline()

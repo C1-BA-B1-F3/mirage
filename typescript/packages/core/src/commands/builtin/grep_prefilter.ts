@@ -1,130 +1,186 @@
+/**
+ * What every match of a subexpression consumes: `literal` when the text is
+ * fixed, and `needles`, one of which it always contains (none known when
+ * empty).
+ */
 interface Required {
   literal: string | null
-  needles: string[]
+  needles: readonly string[]
 }
 
+const LIMIT = 64
+export const LONGEST = 4096
+const QUANTIFIER = /[*+?]|\{(?<least>[0-9]+)(?:,[0-9]*)?\}/y
+const GROUP = /\?(?:(?<look>=|!|<=|<!)|[:>]|P?<[A-Za-z_$][A-Za-z0-9_$]*>)/y
 const UNKNOWN: Required = { literal: null, needles: [] }
+const EMPTY: Required = { literal: '', needles: [] }
 
 function literal(text: string): Required {
   return { literal: text, needles: text ? [text] : [] }
 }
 
-function strength(needles: readonly string[]): number {
-  return needles.length ? Math.min(...needles.map((s) => s.length)) : 0
+function strength(part: Required): number {
+  return part.needles.length ? Math.min(...part.needles.map((s) => s.length)) : 0
 }
 
-/** A bounded, deliberately partial parser: unsupported syntax disables skipping. */
+function sequence(left: Required, right: Required): Required {
+  if (left.literal !== null && right.literal !== null) return literal(left.literal + right.literal)
+  return { literal: null, needles: (strength(left) >= strength(right) ? left : right).needles }
+}
+
+function either(left: Required, right: Required): Required {
+  if (left.literal !== null && left.literal === right.literal) return left
+  if (left.needles.length === 0 || right.needles.length === 0) return UNKNOWN
+  const needles = [...new Set([...left.needles, ...right.needles])]
+  return needles.length <= LIMIT ? { literal: null, needles } : UNKNOWN
+}
+
+/** A bounded partial parser: syntax it does not know disables skipping. */
 class RequiredLiterals {
   private at = 0
-  valid = true
+  private valid = true
 
   constructor(private readonly source: string) {}
 
-  parse(depth = 0): Required {
-    if (depth > 32) {
+  needles(): readonly string[] {
+    const required = this.alternation(0)
+    return this.valid && this.at === this.source.length ? required.needles : []
+  }
+
+  private peek(): string {
+    return this.source.charAt(this.at)
+  }
+
+  private alternation(depth: number): Required {
+    if (depth > LIMIT) {
       this.valid = false
       return UNKNOWN
     }
-    const branches: Required[] = []
-    let best: string[] = []
-    let run = ''
-    let exact: string | null = ''
-    while (this.at < this.source.length && this.source[this.at] !== ')') {
-      if (this.source[this.at] === '|') {
-        branches.push({ literal: exact, needles: best })
-        best = []
-        run = ''
-        exact = ''
-        this.at++
-        continue
-      }
-      let atom = this.atom(depth)
-      if (!this.valid) return UNKNOWN
-      const rest = this.source.slice(this.at)
-      const quantifier = /^(?:[?*+]|\{([0-9]+)(?:,[0-9]*)?\})/.exec(rest)
-      if (quantifier !== null) {
-        this.at += quantifier[0].length
-        const optional =
-          /^[?*]/.test(quantifier[0]) ||
-          (quantifier[1] !== undefined && Number(quantifier[1]) === 0)
-        atom = optional ? UNKNOWN : { literal: null, needles: atom.needles }
-        if (this.source[this.at] === '?') this.at++
-      }
-      exact = exact !== null && atom.literal !== null ? exact + atom.literal : null
-      run = atom.literal === null ? '' : run + atom.literal
-      const candidate = run ? [run] : atom.needles
-      if (strength(candidate) > strength(best)) best = candidate
+    let required = this.concatenation(depth)
+    while (this.valid && this.peek() === '|') {
+      this.at++
+      required = either(required, this.concatenation(depth))
     }
-    branches.push({ literal: exact, needles: best })
-    if (depth === 0 && this.at !== this.source.length) this.valid = false
-    if (branches.length === 1) return branches[0] ?? UNKNOWN
-    if (branches.some((b) => b.needles.length === 0)) return UNKNOWN
-    const needles = [...new Set(branches.flatMap((b) => b.needles))]
-    return needles.length <= 64 ? { literal: null, needles } : UNKNOWN
+    return required
+  }
+
+  private concatenation(depth: number): Required {
+    let required = EMPTY
+    let run: string[] = []
+    while (this.valid && !['', '|', ')'].includes(this.peek())) {
+      const atom = this.quantified(this.atom(depth))
+      if (atom.literal !== null) run.push(atom.literal)
+      else {
+        required = sequence(sequence(required, literal(run.join(''))), atom)
+        run = []
+      }
+    }
+    return sequence(required, literal(run.join('')))
+  }
+
+  private quantified(atom: Required): Required {
+    if (!['*', '+', '?', '{'].includes(this.peek())) return atom
+    QUANTIFIER.lastIndex = this.at
+    const bound = QUANTIFIER.exec(this.source)
+    if (bound === null) {
+      this.valid = false
+      return UNKNOWN
+    }
+    this.at = QUANTIFIER.lastIndex
+    if (this.peek() === '?') this.at++
+    const least = bound.groups?.least
+    if (bound[0] === '+' || (least !== undefined && Number(least) > 0))
+      return { literal: null, needles: atom.needles }
+    return UNKNOWN
   }
 
   private atom(depth: number): Required {
-    const char = this.source.charAt(this.at++)
-    if (char === '(') {
-      if (this.source.startsWith('?:', this.at)) this.at += 2
-      else if (this.source[this.at] === '?') {
-        this.valid = false
-        return UNKNOWN
-      }
-      const group = this.parse(depth + 1)
-      if (this.source[this.at++] !== ')') this.valid = false
-      return group
-    }
-    if (char === '[') {
-      if (this.source[this.at] === '^') this.at++
-      if (this.source[this.at] === ']') this.at++
-      while (this.at < this.source.length) {
-        const member = this.source[this.at++]
-        if (member === ']') return UNKNOWN
-        if (member === '\\') this.at++
-        if (member === '[') break
-      }
-      this.valid = false
-      return UNKNOWN
-    }
-    if (char === '\\') {
-      const escaped = this.source.charAt(this.at++)
-      if ('bB'.includes(escaped) && escaped) return literal('')
-      if ('dDsSwWnrtfv'.includes(escaped) && escaped) return UNKNOWN
-      if (escaped && !/[a-zA-Z0-9]/.test(escaped)) return literal(escaped)
-      this.valid = false
-      return UNKNOWN
-    }
+    const char = this.peek()
+    this.at++
+    if (char === '(') return this.group(depth)
+    if (char === '[') return this.bracket()
+    if (char === '\\') return this.escape()
     if (char === '.') return UNKNOWN
-    if (char === '^' || char === '$') return literal('')
-    if ('*+?{}'.includes(char)) {
+    if (char === '^' || char === '$') return EMPTY
+    if (['*', '+', '?', '{', '}'].includes(char)) {
       this.valid = false
       return UNKNOWN
     }
     return literal(char)
   }
+
+  /**
+   * A group's requirement; a lookaround consumes nothing. Inline flags,
+   * comments, conditionals and named backreferences are refused.
+   */
+  private group(depth: number): Required {
+    GROUP.lastIndex = this.at
+    const opener = GROUP.exec(this.source)
+    if (opener !== null) this.at = GROUP.lastIndex
+    else if (this.peek() === '?') {
+      this.valid = false
+      return UNKNOWN
+    }
+    const inner = this.alternation(depth + 1)
+    if (this.peek() !== ')') {
+      this.valid = false
+      return UNKNOWN
+    }
+    this.at++
+    return opener?.groups?.look !== undefined ? EMPTY : inner
+  }
+
+  /**
+   * Step over a bracket expression, which requires no literal. A leading
+   * `]` is a member in Python and closes an empty set in JavaScript, and a
+   * `[` inside is a nested set under the `v` flag, so both are refused
+   * rather than guessed.
+   */
+  private bracket(): Required {
+    if (this.peek() === '^') this.at++
+    if (this.peek() === ']') {
+      this.valid = false
+      return UNKNOWN
+    }
+    while (this.at < this.source.length) {
+      const member = this.peek()
+      this.at++
+      if (member === ']') return UNKNOWN
+      if (member === '[') break
+      if (member === '\\') this.at++
+    }
+    this.valid = false
+    return UNKNOWN
+  }
+
+  private escape(): Required {
+    const char = this.peek()
+    this.at++
+    if (char === 'b' || char === 'B') return EMPTY
+    if (['d', 'D', 's', 'S', 'w', 'W', 'n', 'r', 't', 'f', 'v'].includes(char)) return UNKNOWN
+    if (char !== '' && !/[a-zA-Z0-9]/.test(char)) return literal(char)
+    this.valid = false
+    return UNKNOWN
+  }
 }
 
-/** At least one returned byte-view literal occurs in every matching line. */
+/**
+ * Byte-view literals, one of which every line `pat` matches contains.
+ * Under `i` they are lowercase, for a search of a lowercased view. Unicode
+ * case folding (`i` with `u` or `v`) matches non-ASCII spellings of ASCII
+ * letters (`ſ` for `s`), which only the line matcher can see, so a pattern
+ * that folds that way gets none.
+ */
 export function requiredNeedles(pat: RegExp): string[] | null {
-  if (pat.global || pat.sticky || pat.source.length > 4096 || /[^\x20-\x7e]/.test(pat.source))
+  if (
+    pat.global ||
+    pat.sticky ||
+    (pat.ignoreCase && (pat.unicode || pat.flags.includes('v'))) ||
+    pat.source.length > LONGEST ||
+    /[^\x20-\x7e]/.test(pat.source)
+  )
     return null
-  const parser = new RequiredLiterals(pat.source)
-  const required = parser.parse().needles
-  if (!parser.valid || required.length === 0) return null
-  const needles = pat.ignoreCase ? required.map((s) => s.toLowerCase()) : required
-  // Unicode case folding can select a non-ASCII spelling of an ASCII letter.
-  // Keep such lines for the real matcher; this byte view is never output.
-  if (pat.ignoreCase && (pat.unicode || pat.flags.includes('v'))) {
-    const view = new TextDecoder('latin1')
-    const encoder = new TextEncoder()
-    for (const [letter, spelling] of [
-      ['s', 'ſ'],
-      ['k', 'K'],
-    ] as const) {
-      if (needles.some((s) => s.includes(letter)))
-        needles.push(view.decode(encoder.encode(spelling)).toLowerCase())
-    }
-  }
-  return needles
+  const found = new RequiredLiterals(pat.source).needles()
+  const needles = pat.ignoreCase ? [...new Set(found.map((s) => s.toLowerCase()))] : [...found]
+  return needles.length > 0 ? needles : null
 }

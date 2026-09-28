@@ -19,7 +19,7 @@ const RG_STDIN_SEARCHED =
   'rg: error: attempted to read patterns from stdin while also searching stdin\n'
 
 // The dest each command's spec gives its program file.
-const FILE_KEYS: Readonly<Record<string, string>> = {
+export const FILE_KEYS: Readonly<Record<string, string>> = {
   grep: 'file',
   rg: 'file',
   zgrep: 'f',

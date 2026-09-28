@@ -516,3 +516,94 @@ async def test_mv_link_into_loop_reports_destination_and_keeps_source(source):
     assert result.stderr == (b"mv: cannot stat 'loop/child': "
                              b"Too many levels of symbolic links\n")
     assert ws.namespace.is_link("/data/src")
+
+
+class RefuseLinkCreation(Policy):
+
+    async def pre_ops(self, ctx: OpsContext) -> Action | None:
+        if ctx.op == "symlink" and ctx.path.virtual == "/other/tree/loop":
+            return Deny("sealed")
+        return None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [None, "read", "unlink", "symlink"])
+async def test_crossmount_mv_preserves_tree_links_and_partial_transfers(
+        failure):
+    policies = ([SealReads()]
+                if failure == "read" else [PinLinks()] if failure == "unlink"
+                else [RefuseLinkCreation()] if failure == "symlink" else [])
+    ws = Workspace({
+        "/data": RAMVFS(),
+        "/other": RAMVFS()
+    },
+                   mode=MountMode.WRITE,
+                   policies=policies)
+    setup = await ws.shell(
+        "mkdir -p /data/tree/sub; printf kept > /data/tree/sub/file; "
+        "printf sealed > /data/tree/file.sealed; "
+        "ln -s sub /data/tree/dir; ln -s sub/file /data/tree/file; "
+        "ln -s missing /data/tree/dangling; ln -s loop /data/tree/loop; "
+        "ln -s sub /data/tree/link.pinned")
+    assert setup.exit_code == 0
+    result = await ws.shell("mv /data/tree /other/tree")
+    assert result.exit_code == (0 if failure is None else 1)
+    expected_error = {
+        None:
+        None,
+        "read": (b"mv: cannot open '/data/tree/file.sealed' for reading: "
+                 b"Permission denied\n"),
+        "unlink":
+        b"mv: cannot remove '/data/tree/link.pinned': Permission denied\n",
+        "symlink": (b"mv: cannot create symbolic link '/other/tree/loop': "
+                    b"Permission denied\n"),
+    }
+    assert result.stderr == expected_error[failure]
+    links = {
+        "dir": "sub",
+        "file": "sub/file",
+        "dangling": "missing",
+        "loop": "loop",
+        "link.pinned": "sub"
+    }
+    for name, target in links.items():
+        if failure == "symlink" and name == "loop":
+            assert not ws.namespace.is_link(f"/other/tree/{name}")
+        else:
+            assert ws.namespace.readlink(f"/other/tree/{name}") == target
+        assert ws.namespace.is_link(f"/data/tree/{name}") == (
+            failure in ("read", "symlink")
+            or failure == "unlink" and name == "link.pinned")
+    assert (await ws.shell("cat /other/tree/dir/file /other/tree/file")
+            ).stdout == b"keptkept"
+    assert (await ws.shell("test -e /data/tree")).exit_code == (1 if failure
+                                                                is None else 0)
+    assert (await ws.shell("test -e /data/tree/sub/file")).exit_code == (
+        0 if failure in ("read", "symlink") else 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("destination", ["/data", "/other"])
+async def test_mv_directory_backup_keeps_links_only_in_backup(destination):
+    ws = Workspace({
+        "/data": RAMVFS(),
+        "/other": RAMVFS()
+    },
+                   mode=MountMode.WRITE)
+    setup = await ws.shell(f"mkdir -p /data/src {destination}/dst/sub; "
+                           f"printf old > {destination}/dst/sub/file; "
+                           f"ln -s sub {destination}/dst/link; "
+                           f"ln -s missing {destination}/dst/dangling; "
+                           "printf new > /data/src/new")
+    assert setup.exit_code == 0
+    result = await ws.shell(f"mv -bT /data/src {destination}/dst")
+    assert result.exit_code == 0
+    assert result.stderr is None
+    assert ws.namespace.readlink(f"{destination}/dst~/link") == "sub"
+    assert ws.namespace.readlink(f"{destination}/dst~/dangling") == "missing"
+    assert not ws.namespace.is_link(f"{destination}/dst/link")
+    assert not ws.namespace.is_link(f"{destination}/dst/dangling")
+    assert (await
+            ws.shell(f"cat {destination}/dst/new "
+                     f"{destination}/dst~/link/file")).stdout == b"newold"
+    assert (await ws.shell(f"test -e {destination}/dst/sub")).exit_code == 1

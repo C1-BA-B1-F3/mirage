@@ -488,3 +488,118 @@ it.each(['missing', 'a.txt', 'loop'])(
     }
   },
 )
+
+class RefuseLinkCreation implements Policy {
+  preOps(ctx: OpsContext): Action | null {
+    return ctx.op === 'symlink' && ctx.path.virtual === '/other/tree/loop'
+      ? { kind: 'deny', reason: 'sealed' }
+      : null
+  }
+}
+
+it.each([null, 'read', 'unlink', 'symlink'] as const)(
+  'cross-mount mv preserves tree links with %s failure',
+  async (failure) => {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS(), '/other': new RAMVFS() },
+      {
+        mode: MountMode.WRITE,
+        policies:
+          failure === 'read'
+            ? [new SealReads()]
+            : failure === 'unlink'
+              ? [new PinLinks()]
+              : failure === 'symlink'
+                ? [new RefuseLinkCreation()]
+                : [],
+        shellParserFactory: () => Promise.resolve(parser),
+      },
+    )
+    try {
+      const setup = await ws.shell(
+        'mkdir -p /data/tree/sub; printf kept > /data/tree/sub/file; ' +
+          'printf sealed > /data/tree/file.sealed; ' +
+          'ln -s sub /data/tree/dir; ln -s sub/file /data/tree/file; ' +
+          'ln -s missing /data/tree/dangling; ln -s loop /data/tree/loop; ' +
+          'ln -s sub /data/tree/link.pinned',
+      )
+      expect(setup.exitCode).toBe(0)
+      const result = await ws.shell('mv /data/tree /other/tree')
+      expect(result.exitCode).toBe(failure === null ? 0 : 1)
+      expect(err(result)).toBe(
+        failure === 'read'
+          ? "mv: cannot open '/data/tree/file.sealed' for reading: Permission denied\n"
+          : failure === 'unlink'
+            ? "mv: cannot remove '/data/tree/link.pinned': Permission denied\n"
+            : failure === 'symlink'
+              ? "mv: cannot create symbolic link '/other/tree/loop': Permission denied\n"
+              : '',
+      )
+      const links = {
+        dir: 'sub',
+        file: 'sub/file',
+        dangling: 'missing',
+        loop: 'loop',
+        'link.pinned': 'sub',
+      }
+      for (const [name, target] of Object.entries(links)) {
+        if (failure === 'symlink' && name === 'loop') {
+          expect(ws.namespace.isLink(`/other/tree/${name}`)).toBe(false)
+        } else {
+          expect(ws.namespace.readlink(`/other/tree/${name}`)).toBe(target)
+        }
+        expect(ws.namespace.isLink(`/data/tree/${name}`)).toBe(
+          failure === 'read' ||
+            failure === 'symlink' ||
+            (failure === 'unlink' && name === 'link.pinned'),
+        )
+      }
+      expect(DEC.decode((await ws.shell('cat /other/tree/dir/file /other/tree/file')).stdout)).toBe(
+        'keptkept',
+      )
+      expect((await ws.shell('test -e /data/tree')).exitCode).toBe(failure === null ? 1 : 0)
+      expect((await ws.shell('test -e /data/tree/sub/file')).exitCode).toBe(
+        failure === 'read' || failure === 'symlink' ? 0 : 1,
+      )
+    } finally {
+      await ws.close()
+    }
+  },
+)
+
+it.each(['/data', '/other'])(
+  'mv to %s keeps directory links only in the backup',
+  async (destination) => {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS(), '/other': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
+    )
+    try {
+      const setup = await ws.shell(
+        `mkdir -p /data/src ${destination}/dst/sub; ` +
+          `printf old > ${destination}/dst/sub/file; ` +
+          `ln -s sub ${destination}/dst/link; ` +
+          `ln -s missing ${destination}/dst/dangling; ` +
+          'printf new > /data/src/new',
+      )
+      expect(setup.exitCode).toBe(0)
+      const result = await ws.shell(`mv -bT /data/src ${destination}/dst`)
+      expect(result.exitCode).toBe(0)
+      expect(err(result)).toBe('')
+      expect(ws.namespace.readlink(`${destination}/dst~/link`)).toBe('sub')
+      expect(ws.namespace.readlink(`${destination}/dst~/dangling`)).toBe('missing')
+      expect(ws.namespace.isLink(`${destination}/dst/link`)).toBe(false)
+      expect(ws.namespace.isLink(`${destination}/dst/dangling`)).toBe(false)
+      expect(
+        DEC.decode(
+          (await ws.shell(`cat ${destination}/dst/new ${destination}/dst~/link/file`)).stdout,
+        ),
+      ).toBe('newold')
+      expect((await ws.shell(`test -e ${destination}/dst/sub`)).exitCode).toBe(1)
+    } finally {
+      await ws.close()
+    }
+  },
+)

@@ -270,14 +270,16 @@ export async function makeLink(
   writes: Record<string, ByteSource>,
   errors: string[],
   lines: string[] | undefined,
-): Promise<void> {
+): Promise<boolean> {
   const stat: StatFn = (path) => linkStat(copies, path)
   const there = await entryAt(copies.dispatch, target)
   if (copies.links.statAt(target.virtual) === null && there?.type === FileType.DIRECTORY) {
-    errors.push(`cp: cannot overwrite directory '${target.rawPath}' with non-directory`)
-    return
+    errors.push(
+      `${policy.cmdName}: cannot overwrite directory '${target.rawPath}' with non-directory`,
+    )
+    return false
   }
-  if (!(await overwriteGate(policy, stat, src, target, errors))) return
+  if (!(await overwriteGate(policy, stat, src, target, errors))) return false
   const made = await makeBackup(
     policy,
     { rename: (a, b) => renameLink(copies, a, b) },
@@ -287,17 +289,20 @@ export async function makeLink(
     writes,
     errors,
   )
-  if (!made.ok) return
+  if (!made.ok) return false
   try {
     if (await pathExists(stat, target)) await copies.dispatch('unlink', target)
     await copies.dispatch('symlink', target, [], { target: text })
   } catch (err) {
     if (!isFsError(err)) throw err
-    errors.push(`cp: cannot create symbolic link '${target.rawPath}': ${String(fsStrerror(err))}`)
-    return
+    errors.push(
+      `${policy.cmdName}: cannot create symbolic link '${target.rawPath}': ${String(fsStrerror(err))}`,
+    )
+    return false
   }
   writes[target.mountPath] = new Uint8Array()
   lines?.push(transferLine(src, target, made.backup))
+  return true
 }
 
 /**
@@ -885,6 +890,7 @@ export async function copyEntries(
     writes?: Record<string, ByteSource>
     reads?: Record<string, Uint8Array>
     lines?: string[] | undefined
+    copies?: TransferLinks | undefined
   } = {},
 ): Promise<{ copiedAll: boolean; wroteAny: boolean }> {
   const srcBase = rstripSlash(src.virtual)
@@ -913,6 +919,30 @@ export async function copyEntries(
         )
         return { copiedAll: false, wroteAny }
       }
+      continue
+    }
+    const link = opts.copies?.links.statAt(entry)
+    if (opts.copies !== undefined && link != null) {
+      const errorCount = errors.length
+      const raw = link.extra[LINK_TARGET_KEY]
+      const made = await makeLink(
+        opts.copies,
+        entrySpec,
+        entryDstSpec,
+        typeof raw === 'string' ? raw : '',
+        opts.policy ?? {
+          cmdName,
+          noClobber: false,
+          update: null,
+          backup: null,
+          suffix: DEFAULT_BACKUP_SUFFIX,
+        },
+        opts.writes ?? {},
+        errors,
+        opts.lines,
+      )
+      wroteAny = wroteAny || made
+      if (errors.length > errorCount) copiedAll = false
       continue
     }
     let backup: PathSpec | null = null

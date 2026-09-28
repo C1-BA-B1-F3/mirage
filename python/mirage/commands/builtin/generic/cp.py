@@ -296,7 +296,7 @@ async def rename_link(copies: TransferLinks, src: PathSpec,
 async def make_link(copies: TransferLinks, src: PathSpec, target: PathSpec,
                     text: str, policy: TransferPolicy,
                     writes: dict[str, ByteSource], errors: list[str],
-                    lines: list[str] | None) -> None:
+                    lines: list[str] | None) -> bool:
     """Copy a symlink through the shared overwrite and backup policy.
 
     Args:
@@ -308,32 +308,36 @@ async def make_link(copies: TransferLinks, src: PathSpec, target: PathSpec,
         writes (dict[str, ByteSource]): Completed writes.
         errors (list[str]): Per-entry errors.
         lines (list[str] | None): Optional verbose output.
+
+    Returns:
+        bool: Whether the link was created; False on a skip or error.
     """
     stat = partial(link_stat, copies)
     there = await _entry_at(copies.dispatch, target)
     if copies.links.stat_at(target.virtual) is None and there is not None \
             and there.type == FileType.DIRECTORY:
-        errors.append(f"cp: cannot overwrite directory '{target.raw_path}' "
-                      "with non-directory")
-        return
+        errors.append(f"{policy.cmd_name}: cannot overwrite directory "
+                      f"'{target.raw_path}' with non-directory")
+        return False
     if not await overwrite_gate(policy, stat, src, target, errors):
-        return
+        return False
     backup, ok = await make_backup(
         policy, NativeMove(rename=partial(rename_link, copies)), stat,
         copies.relay.readdir, target, writes, errors)
     if not ok:
-        return
+        return False
     try:
         if await path_exists(stat, target):
             await copies.dispatch("unlink", target)
         await copies.dispatch("symlink", target, target=text)
     except FS_ERRORS as exc:
-        errors.append(f"cp: cannot create symbolic link '{target.raw_path}': "
-                      f"{fs_strerror(exc)}")
-        return
+        errors.append(f"{policy.cmd_name}: cannot create symbolic link "
+                      f"'{target.raw_path}': {fs_strerror(exc)}")
+        return False
     writes[target.mount_path] = b""
     if lines is not None:
         lines.append(transfer_line(src, target, backup))
+    return True
 
 
 async def copy_tree_links(
@@ -993,6 +997,7 @@ async def copy_entries(
     writes: dict[str, ByteSource] | None = None,
     reads: dict[str, ByteSource] | None = None,
     lines: list[str] | None = None,
+    copies: TransferLinks | None = None,
 ) -> tuple[bool, bool]:
     """Copy a walked source tree entry by entry with GNU per-entry errors.
 
@@ -1024,6 +1029,7 @@ async def copy_entries(
             virtual path; None skips recording.
         lines (list[str] | None): Verbose ``'src' -> 'dst'`` sink; None
             keeps the copy silent.
+        copies (TransferLinks | None): Namespace links to preserve verbatim.
 
     Returns:
         tuple[bool, bool]: ``(copied_all, wrote_any)`` — whether every
@@ -1053,6 +1059,19 @@ async def copy_entries(
                 errors.append(f"{cmd_name}: cannot create directory "
                               f"'{entry_dst.virtual}': {fs_strerror(exc)}")
                 return False, wrote_any
+            continue
+        link = copies.links.stat_at(
+            entry.virtual) if copies is not None else None
+        if copies is not None and link is not None:
+            error_count = len(errors)
+            made = await make_link(copies, entry, entry_dst,
+                                   str(link.extra.get(LINK_TARGET_KEY) or ""),
+                                   policy or TransferPolicy(cmd_name=cmd_name),
+                                   writes if writes is not None else {},
+                                   errors, lines)
+            wrote_any = wrote_any or made
+            if len(errors) > error_count:
+                copied_all = False
             continue
         backup: PathSpec | None = None
         if policy is not None:

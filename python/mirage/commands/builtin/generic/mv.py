@@ -457,18 +457,14 @@ async def mv(
                 continue
         source_link = copies is not None and copies.links.stat_at(
             src.virtual) is not None
-        target_link = copies is not None and copies.links.stat_at(
-            target.virtual) is not None
-        backup_strategy = (NativeMove(
-            rename=partial(rename_link, copies)) if copies is not None and
-                           (source_link or target_link) else strategy)
+        backup_strategy = (NativeMove(rename=partial(rename_link, copies))
+                           if copies is not None else strategy)
         backup, ok = await make_backup(policy, backup_strategy, stat, readdir,
                                        target, writes, errors)
         if not ok:
             continue
-        if backup is not None and not (source_link
-                                       or target_link) and isinstance(
-                                           strategy, NativeMove):
+        if backup is not None and copies is None and isinstance(
+                strategy, NativeMove):
             renames.append((target.virtual, backup.virtual))
         if copies is not None and source_link:
             try:
@@ -481,9 +477,14 @@ async def mv(
             writes[target.mount_path] = b""
         elif isinstance(strategy, PrimitiveMove):
             entries = await walk(strategy.readdir, stat, src)
-            copied_all, wrote_any = await copy_entries("mv", strategy, stat,
-                                                       src, target, entries,
-                                                       errors)
+            copied_all, wrote_any = await copy_entries("mv",
+                                                       strategy,
+                                                       stat,
+                                                       src,
+                                                       target,
+                                                       entries,
+                                                       errors,
+                                                       copies=copies)
             if wrote_any:
                 writes[target.mount_path] = b""
             if not copied_all:
@@ -511,7 +512,7 @@ async def mv(
                 continue
             writes[src.mount_path] = b""
             writes[target.mount_path] = b""
-        if not source_link:
+        if not source_link and isinstance(strategy, NativeMove):
             renames.append((src.virtual, target.virtual))
         if flags.verbose:
             line = f"renamed '{src.virtual}' -> '{target.virtual}'"

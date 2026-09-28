@@ -466,9 +466,8 @@ export async function mvGeneric(
       }
     }
     const sourceLink = copies !== undefined && copies.links.statAt(src.virtual) !== null
-    const targetLink = copies !== undefined && copies.links.statAt(target.virtual) !== null
     const backupStrategy =
-      copies !== undefined && (sourceLink || targetLink)
+      copies !== undefined
         ? { rename: (a: PathSpec, b: PathSpec) => renameLink(copies, a, b) }
         : strategy
     const made = await makeBackup(
@@ -482,7 +481,7 @@ export async function mvGeneric(
       index,
     )
     if (!made.ok) continue
-    if (made.backup !== null && !(sourceLink || targetLink) && !isPrimitiveMove(strategy)) {
+    if (made.backup !== null && copies === undefined && !isPrimitiveMove(strategy)) {
       renames.push([target.virtual, made.backup.virtual])
     }
     if (copies !== undefined && sourceLink) {
@@ -508,6 +507,7 @@ export async function mvGeneric(
         entries,
         errors,
         index,
+        { copies },
       )
       if (wroteAny) writes[target.mountPath] = new Uint8Array()
       // GNU keeps the whole source tree when any copy failed; the
@@ -535,7 +535,7 @@ export async function mvGeneric(
       writes[src.mountPath] = new Uint8Array()
       writes[target.mountPath] = new Uint8Array()
     }
-    if (!sourceLink) renames.push([src.virtual, target.virtual])
+    if (!sourceLink && !isPrimitiveMove(strategy)) renames.push([src.virtual, target.virtual])
     if (flags.verbose) {
       let line = `renamed '${src.virtual}' -> '${target.virtual}'`
       if (made.backup !== null) line += ` (backup: '${made.backup.virtual}')`

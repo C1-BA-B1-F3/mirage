@@ -247,7 +247,7 @@ async def _exchange_pair(
     """
     if isinstance(strategy, PrimitiveMove):
         errors.append(f"mv: cannot exchange '{src.virtual}' and "
-                      f"'{target.virtual}': Invalid cross-device link")
+                      f"'{target.raw_path}': Invalid cross-device link")
         return
     if not await path_exists(stat, src) \
             or not await path_exists(stat, target):
@@ -271,7 +271,7 @@ async def _exchange_pair(
         restored = await _undo_exchange(strategy, src, target, holding, staged,
                                         swapped)
         errors.append(f"mv: cannot exchange '{src.virtual}' and "
-                      f"'{target.virtual}': {fs_strerror(exc)}")
+                      f"'{target.raw_path}': {fs_strerror(exc)}")
         if not restored:
             writes[holding.mount_path] = b""
             errors.append(f"mv: '{src.virtual}' left at "
@@ -372,7 +372,7 @@ async def mv(
                                  lines if flags.verbose else None)
             continue
         if key_of(target).startswith(key_of(src) + "/"):
-            errors.append(f"mv: cannot move '{src.virtual}' to a "
+            errors.append(f"mv: cannot move '{src.raw_path}' to a "
                           f"subdirectory of itself, '{target.virtual}'")
             continue
         if not flags.no_target_dir and target.virtual == dst.virtual:
@@ -391,7 +391,7 @@ async def mv(
                           "Not a directory")
             continue
         if slash_refuses_file(target, target_exists, src_is_dir):
-            errors.append(f"mv: cannot move '{src.virtual}' to "
+            errors.append(f"mv: cannot move '{src.raw_path}' to "
                           f"'{target.raw_path}': "
                           f"{target_err or 'Not a directory'}")
             continue
@@ -401,8 +401,8 @@ async def mv(
             errors.append(mismatch)
             continue
         if flags.no_copy and isinstance(strategy, PrimitiveMove):
-            errors.append(f"mv: cannot move '{src.virtual}' to "
-                          f"'{target.virtual}': Invalid cross-device link")
+            errors.append(f"mv: cannot move '{src.raw_path}' to "
+                          f"'{target.raw_path}': Invalid cross-device link")
             continue
         if not await overwrite_gate(policy, stat, src, target, errors):
             continue
@@ -433,8 +433,8 @@ async def mv(
             try:
                 guard(src, target)
             except FS_ERRORS as exc:
-                errors.append(f"mv: cannot move '{src.virtual}' to "
-                              f"'{target.virtual}': {fs_strerror(exc)}")
+                errors.append(f"mv: cannot move '{src.raw_path}' to "
+                              f"'{target.raw_path}': {fs_strerror(exc)}")
                 continue
         backup, ok = await make_backup(policy, strategy, stat, readdir, target,
                                        writes, errors)
@@ -467,8 +467,8 @@ async def mv(
                 # parent chain is not all directories) is one failed
                 # operand, not an aborted command: GNU reports it and
                 # keeps going with the remaining sources.
-                errors.append(f"mv: cannot move '{src.virtual}' to "
-                              f"'{target.virtual}': {fs_strerror(exc)}")
+                errors.append(f"mv: cannot move '{src.raw_path}' to "
+                              f"'{target.raw_path}': {fs_strerror(exc)}")
                 continue
             writes[src.mount_path] = b""
             writes[target.mount_path] = b""

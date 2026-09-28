@@ -94,8 +94,11 @@ class MkdirFn(Protocol[A_contra]):
 
 class TruncateFn(Protocol[A_contra]):
 
-    def __call__(self, accessor: A_contra, path_spec: PathSpec,
-                 length: int) -> Awaitable[None]:
+    def __call__(self,
+                 accessor: A_contra,
+                 path_spec: PathSpec,
+                 length: int,
+                 no_create: bool = False) -> Awaitable[None]:
         ...
 
 

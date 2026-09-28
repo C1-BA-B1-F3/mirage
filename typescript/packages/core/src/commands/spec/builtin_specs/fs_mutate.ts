@@ -301,7 +301,10 @@ export const SPECS: Record<string, CommandSpec> = {
     rest: new Operand({ type: 'path' }),
   }),
   truncate: new CommandSpec({
-    options: [new Option({ short: '-s', long: '--size', type: 'str' })],
+    options: [
+      new Option({ short: '-c', long: '--no-create' }),
+      new Option({ short: '-s', long: '--size', type: 'str' }),
+    ],
     rest: new Operand({ type: 'path' }),
   }),
   unlink: new CommandSpec({ rest: new Operand({ type: 'path' }) }),

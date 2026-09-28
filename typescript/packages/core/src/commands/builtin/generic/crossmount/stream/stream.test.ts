@@ -68,9 +68,11 @@ function stderrOf(io: IOResult): string {
 }
 
 describe('runStream', () => {
-  it('keeps byte boundaries invisible for ordinary stream commands', async () => {
+  it('ends a line reader file at its boundary and keeps cat bytewise', async () => {
     const fetches = new Fetches({ '/a/x': 'ab', '/b/y': 'cd' })
     await runStream(Cmd.CUT, scopes('/a/x', '/b/y'), [], {}, fetches.run)
+    expect(DEC.decode(fetches.finalStdin ?? undefined)).toBe('ab\ncd')
+    await runStream(Cmd.CAT, scopes('/a/x', '/b/y'), [], { n: true }, fetches.run)
     expect(DEC.decode(fetches.finalStdin ?? undefined)).toBe('abcd')
   })
   it('reports failures in the command voice and continues', async () => {

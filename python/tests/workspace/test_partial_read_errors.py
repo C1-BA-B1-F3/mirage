@@ -232,7 +232,8 @@ def test_sha256sum_good_then_missing():
 def test_tac_good_then_missing():
     out, err, code = _run(_make_numbered_ws(), "tac /a/f.txt /a/missing.txt")
     assert out == "2\n1\n"
-    assert err == "tac: /a/missing.txt: No such file or directory\n"
+    assert err == ("tac: failed to open '/a/missing.txt' for reading: "
+                   "No such file or directory\n")
     assert code == 1
 
 
@@ -277,7 +278,8 @@ def test_fold_good_then_missing():
 def test_fmt_good_then_missing():
     out, err, code = _run(_make_numbered_ws(), "fmt /a/f.txt /a/missing.txt")
     assert out == "1 2\n"
-    assert err == "fmt: /a/missing.txt: No such file or directory\n"
+    assert err == ("fmt: cannot open '/a/missing.txt' for reading: "
+                   "No such file or directory\n")
     assert code == 1
 
 
@@ -342,7 +344,8 @@ def test_cross_md5_good_then_missing():
 def test_stat_good_then_missing_keeps_row():
     out, err, code = _run(_make_ws(), "stat /a/f.txt /a/missing.txt")
     assert "name=f.txt" in out
-    assert err == "stat: /a/missing.txt: No such file or directory\n"
+    assert err == ("stat: cannot statx '/a/missing.txt': "
+                   "No such file or directory\n")
     assert code == 1
 
 
@@ -352,7 +355,7 @@ def test_sed_good_then_missing_keeps_output():
     out, err, code = _run(_make_numbered_ws(),
                           "sed s/1/X/ /a/f.txt /a/missing.txt")
     assert out == "X\n2\n"
-    assert err == "sed: /a/missing.txt: No such file or directory\n"
+    assert err == "sed: can't read /a/missing.txt: No such file or directory\n"
     assert code == 2
 
 
@@ -364,7 +367,7 @@ def test_cross_sed_good_then_missing_keeps_output():
     out, err, code = _run(_make_cross_numbered_ws(),
                           "sed s/1/X/ /a/f.txt /b/missing.txt")
     assert out == "X\n2\n"
-    assert err == "sed: /b/missing.txt: No such file or directory\n"
+    assert err == "sed: can't read /b/missing.txt: No such file or directory\n"
     assert code == 2
 
 

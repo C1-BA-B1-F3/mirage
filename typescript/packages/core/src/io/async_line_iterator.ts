@@ -28,9 +28,11 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
   private linesSinceCheck = 0
   private pulling = false
   private searchedBuffer: ArrayBufferLike | null = null
-  private searchedText = ''
-  private searchedFolded: string | null = null
   private searchedOffset = 0
+  private searchedText = ''
+  private searchedNeedles: readonly string[] | null = null
+  private searchedFolded = false
+  private hits: number[] = []
   private unskippedAttempts = 0
 
   constructor(private readonly input: AsyncIterable<Uint8Array> | AsyncIterator<Uint8Array>) {
@@ -63,37 +65,56 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
   }
 
   /**
-   * Skip complete buffered lines before a possible match of any nonempty
-   * byte-view literal without a newline. Leave the candidate and any unfinished line
-   * for readline, which joins transport boundaries before decoding. Return
-   * the skipped line and byte counts without pulling more input. The
-   * single-byte view preserves ASCII and byte positions; it is never used
-   * for Unicode matching or output.
+   * Skip complete buffered records before a possible match of any of the
+   * nonempty byte-view literals, none of which holds the delimiter; under
+   * `ignoreCase` they are lowercase and the view is lowercased. Leave the
+   * candidate and any unfinished record for readline and readUntil, which
+   * join transport boundaries before decoding. Return the skipped record
+   * and byte counts without pulling more input. Each needle's next hit is
+   * kept until the buffer is refilled, so the calls between two pulls
+   * search it once, however the hits interleave. The single-byte view
+   * preserves ASCII and byte positions; it is never used for Unicode
+   * matching or output.
    */
-  skipNonmatchingLines(needles: readonly string[], ignoreCase = false): [number, number] {
+  skipNonmatchingLines(
+    needles: readonly string[],
+    ignoreCase = false,
+    delimiter = NEWLINE,
+  ): [number, number] {
     if (this.buf.length === 0) return [0, 0]
-    if (this.searchedBuffer !== this.buf.buffer) {
+    if (
+      this.searchedBuffer !== this.buf.buffer ||
+      this.searchedNeedles !== needles ||
+      this.searchedFolded !== ignoreCase
+    ) {
+      const text = BYTE_VIEW.decode(this.buf)
       this.searchedBuffer = this.buf.buffer
       this.searchedOffset = this.buf.byteOffset
-      this.searchedText = BYTE_VIEW.decode(this.buf)
-      this.searchedFolded = null
+      this.searchedText = ignoreCase ? text.toLowerCase() : text
+      this.searchedNeedles = needles
+      this.searchedFolded = ignoreCase
+      this.hits = needles.map(() => -1)
       this.unskippedAttempts = 0
     }
-    // Bound prefilter work on dense matches; try again with the next buffer.
+    // Dense matches skip nothing; stop trying until the next pull.
     if (this.unskippedAttempts >= 8) return [0, 0]
     const start = this.buf.byteOffset - this.searchedOffset
-    if (ignoreCase) this.searchedFolded ??= this.searchedText.toLowerCase()
-    const text = ignoreCase ? (this.searchedFolded ?? this.searchedText) : this.searchedText
-    let hit = -1
-    for (const needle of needles) {
-      const found = text.indexOf(needle, start)
-      if (found >= 0 && (hit < 0 || found < hit)) hit = found
-    }
-    const end = this.searchedText.lastIndexOf('\n', hit < 0 ? undefined : hit - 1) + 1
+    const text = this.searchedText
+    let hit = text.length
+    needles.forEach((needle, index) => {
+      let at = this.hits[index] ?? -1
+      if (at < start) {
+        at = text.indexOf(needle, start)
+        if (at < 0) at = text.length
+        this.hits[index] = at
+      }
+      hit = Math.min(hit, at)
+    })
+    const end = text.lastIndexOf(String.fromCharCode(delimiter), hit - 1) + 1
     const size = Math.max(0, end - start)
     this.unskippedAttempts = size === 0 ? this.unskippedAttempts + 1 : 0
     let count = 0
-    for (let at = 0; at < size; at++) if (this.buf[at] === NEWLINE) count++
+    for (let at = 0; at < size; at++) if (this.buf[at] === delimiter) count++
     this.buf = this.buf.subarray(size)
     return [count, size]
   }

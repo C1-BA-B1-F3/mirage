@@ -16,7 +16,7 @@ import posixpath
 
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import MISS_ERRORS, enoent
+from mirage.utils.errors import MISS_ERRORS
 from mirage.utils.path import CycleError
 from mirage.workspace.mount.namespace import Namespace
 
@@ -160,23 +160,6 @@ async def link_target_stat(namespace: Namespace, dispatch: DispatchFn,
                     directory=target[:target.rfind("/") + 1] or "/",
                     vfs_path="")
     return await stat_or_none(dispatch, spec)
-
-
-async def dispatch_stat(dispatch: DispatchFn, path: PathSpec) -> FileStat:
-    """Stat a path via dispatch in the shape the generics' probes take.
-
-    ``dest_kind`` and its kin are written against a backend ``stat`` that
-    raises on a miss, so a dispatcher answer of nothing becomes ENOENT.
-
-    Args:
-        dispatch (DispatchFn): op dispatcher.
-        path (PathSpec): path to stat.
-    """
-    stat: FileStat | None
-    stat, _ = await dispatch("stat", path)
-    if stat is None:
-        raise enoent(path)
-    return stat
 
 
 async def stat_or_none(dispatch: DispatchFn,

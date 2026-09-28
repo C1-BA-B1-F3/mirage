@@ -26,8 +26,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def store():
-    s = RedisObserverStore(url=REDIS_URL, key_prefix="test:observer:")
+async def store(redis_prefix):
+    s = RedisObserverStore(url=REDIS_URL, key_prefix=redis_prefix)
     await s.clear()
     yield s
     await s.clear()
@@ -66,9 +66,9 @@ async def test_observer_over_redis_round_trip(store):
     assert events[-1]["session"] == "s1"
 
 
-def test_redis_store_satisfies_protocol():
+def test_redis_store_satisfies_protocol(redis_prefix):
     assert isinstance(
-        RedisObserverStore(url=REDIS_URL, key_prefix="test:observer:"),
+        RedisObserverStore(url=REDIS_URL, key_prefix=redis_prefix),
         ObserverStore)
 
 

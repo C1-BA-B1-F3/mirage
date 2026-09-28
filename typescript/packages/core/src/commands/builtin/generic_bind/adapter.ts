@@ -35,6 +35,7 @@ import {
   liveSessions,
   mountGateFor,
   pathAllowed,
+  walkProbeFor,
 } from '../../../context/session_context.ts'
 import { preOpsGate, type Policies } from '../../../policy/policies.ts'
 import { hasAborted, makeAbortError } from '../../../workspace/abort.ts'
@@ -43,7 +44,7 @@ import { removeRemnants, visibleBelow, type RemnantChannel } from '../../../util
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import type { StatOverlay } from '../../../ops/types.ts'
 
-import { FileType, MountMode, PathSpec, type FileStat } from '../../../types.ts'
+import { FileType, MountMode, PathSpec, type FileStat, type WalkProbe } from '../../../types.ts'
 import {
   eacces,
   eexist,
@@ -52,9 +53,11 @@ import {
   enotdir,
   enotsup,
   erofsReadOnly,
+  isDotWalkError,
   isEnoent,
   isMissError,
 } from '../../../utils/errors.ts'
+import { dotRefusal } from '../utils/paths.ts'
 import type { ChildMounts } from '../../../ops/types.ts'
 import {
   DEFAULT_MAX_GLOB_MATCHES,
@@ -472,8 +475,8 @@ export function withModeGuard<A extends Accessor = Accessor>(ops: CommandIO<A>):
 }
 
 /**
- * Return `ops` under the whole path axis: hides answer ENOENT first,
- * rules refuse next, the mode speaks last.
+ * Return `ops` under the whole path axis: the typed dots walk first,
+ * hides answer ENOENT next, rules refuse, the mode speaks last.
  *
  * The one spelling of the guard chain, used by the commands factory
  * for every generic command and by a bespoke command family that
@@ -481,8 +484,113 @@ export function withModeGuard<A extends Accessor = Accessor>(ops: CommandIO<A>):
  * override enforces the session's path axis exactly like the generic
  * it replaces.
  */
-export function withPathGuards<A extends Accessor = Accessor>(ops: CommandIO<A>): CommandIO<A> {
-  return withHiddenGuard(withRuleGuard(withModeGuard(ops)))
+export function withPathGuards<A extends Accessor = Accessor>(
+  ops: CommandIO<A>,
+  prefix?: string,
+): CommandIO<A> {
+  return withWalkGuard(withHiddenGuard(withRuleGuard(withModeGuard(ops))), prefix)
+}
+
+/** Raise what the first unwalkable operand's dots answer. Mirrors
+ * Python's _walk_admit. */
+async function walkAdmit(probe: WalkProbe, specs: readonly PathSpec[]): Promise<void> {
+  for (const spec of specs) {
+    const refusal = await dotRefusal(probe.stat, spec, probe.follow)
+    if (refusal !== null) throw refusal
+  }
+}
+
+/** The probe a slot call's dotted operands walk with, null when none is
+ * dotted or no command bound one. */
+function walkProbeOf(
+  bound: WalkProbe | null,
+  args: readonly unknown[],
+): [WalkProbe, PathSpec[]] | null {
+  const specs = args.filter((a): a is PathSpec => a instanceof PathSpec && a.dotted !== null)
+  const first = specs[0]
+  if (first === undefined) return null
+  const probe = bound ?? walkProbeFor(first.virtual)
+  return probe === null ? null : [probe, specs]
+}
+
+/** Call one slot once the dots of its PathSpec positionals walk. */
+function walkedCall<Args extends unknown[], R>(
+  bound: WalkProbe | null,
+  fn: (...args: Args) => Promise<R>,
+): (...args: Args) => Promise<R> {
+  return async (...args: Args) => {
+    const walk = walkProbeOf(bound, args)
+    if (walk !== null) await walkAdmit(walk[0], walk[1])
+    return fn(...args)
+  }
+}
+
+/** Drain a read stream once its operand walks, before any byte is pulled. */
+async function* walkedStream(
+  probe: WalkProbe,
+  specs: readonly PathSpec[],
+  source: AsyncIterable<Uint8Array>,
+): AsyncIterable<Uint8Array> {
+  await walkAdmit(probe, specs)
+  yield* source
+}
+
+/**
+ * Return `ops` whose slots walk an operand's `.` and `..`.
+ *
+ * `virtual` simplifies the dots away, so `cat nope/../f` would read `f` past
+ * a missing `nope`; the typed spelling rides `PathSpec.dotted` and
+ * `dotRefusal` proves every name in front of a dot a directory, raising
+ * ENOENT or ENOTDIR at the op boundary so each command words the refusal as
+ * its own miss. Judged at op time, not before the command runs, because a
+ * command can make the directory itself (`mkdir -p nope/../m`, `mkdir d
+ * d/../x`). Every slot that takes a path is walked, presence facts (stat,
+ * exists, the native find) included; `du` is a bundle a du generic reaches
+ * only after it has stat-ed its operand. The probe is the door's stat and
+ * link follow, bound by `Mount.executeCmd`: captured at wrap time for the
+ * wrap site's mount prefix (a lazily drained reader still walks after
+ * dispatch returned), resolved per path at call time otherwise. Mirrors
+ * Python's with_walk_guard.
+ */
+export function withWalkGuard<A extends Accessor = Accessor>(
+  ops: CommandIO<A>,
+  prefix?: string,
+): CommandIO<A> {
+  const bound = prefix !== undefined ? walkProbeFor(prefix) : null
+  const guarded: CommandIO<A> = {
+    ...ops,
+    readdir: walkedCall(bound, ops.readdir),
+    readBytes: walkedCall(bound, ops.readBytes),
+    stat: walkedCall(bound, ops.stat),
+    readStream: (accessor, path, index) => {
+      const inner = ops.readStream(accessor, path, index)
+      const walk = walkProbeOf(bound, [path])
+      return walk === null ? inner : walkedStream(walk[0], walk[1], inner)
+    },
+  }
+  if (ops.readRange !== undefined) guarded.readRange = walkedCall(bound, ops.readRange)
+  if (ops.exists !== undefined) guarded.exists = walkedCall(bound, ops.exists)
+  if (ops.find !== undefined) guarded.find = walkedCall(bound, ops.find)
+  if (ops.write !== undefined) guarded.write = walkedCall(bound, ops.write)
+  if (ops.append !== undefined) guarded.append = walkedCall(bound, ops.append)
+  if (ops.create !== undefined) guarded.create = walkedCall(bound, ops.create)
+  if (ops.truncate !== undefined) guarded.truncate = walkedCall(bound, ops.truncate)
+  if (ops.mkdir !== undefined) guarded.mkdir = walkedCall(bound, ops.mkdir)
+  if (ops.unlink !== undefined) guarded.unlink = walkedCall(bound, ops.unlink)
+  if (ops.rmdir !== undefined) guarded.rmdir = walkedCall(bound, ops.rmdir)
+  if (ops.rmR !== undefined) guarded.rmR = walkedCall(bound, ops.rmR)
+  if (ops.rename !== undefined) guarded.rename = walkedCall(bound, ops.rename)
+  if (ops.copy !== undefined) guarded.copy = walkedCall(bound, ops.copy)
+  if (ops.dirCopy !== undefined) guarded.dirCopy = walkedCall(bound, ops.dirCopy)
+  const sa = ops.setAttrs
+  if (sa !== undefined) {
+    guarded.setAttrs = async (...args: unknown[]) => {
+      const walk = walkProbeOf(bound, args)
+      if (walk !== null) await walkAdmit(walk[0], walk[1])
+      return sa(...args)
+    }
+  }
+  return guarded
 }
 
 /** The policies to consult for one slot call, with the mount prefix
@@ -801,7 +909,7 @@ async function statRefusingDirs<A extends Accessor>(
   try {
     st = await ops.stat(accessor, p, index)
   } catch (e) {
-    if ((e as { code?: string }).code !== 'ENOENT') throw e
+    if ((e as { code?: string }).code !== 'ENOENT' || isDotWalkError(e)) throw e
     if (await isImplicitDir(ops, accessor, p, index)) throw eisdir(p)
     if (isNamespaceDir(opts, p)) throw eisdir(p)
     throw e
@@ -853,6 +961,8 @@ function guardOperation<Args extends unknown[], R>(
 ): (...args: Args) => Promise<R> {
   const access = mutationOf(name)
   const guarded = async (...args: Args): Promise<R> => {
+    const walk = walkProbeOf(null, args)
+    if (walk !== null) await walkAdmit(walk[0], walk[1])
     const specs = pathsOf(args)
     hiddenCheck(specs, access?.create)
     if (access !== undefined) {
@@ -885,11 +995,10 @@ export function requireOp<T extends (...args: never[]) => Promise<unknown>>(
 }
 
 /**
- * Whether a read that already failed was really a read of a directory.
+ * Whether a failed or empty read was a read of a directory.
  *
- * Asked only after the read threw, which is what keeps a successful read
- * at exactly one backend call. Nothing is lost by waiting: every backend
- * throws on a directory read. One that knows says so (gdrive, box,
+ * Asked after failure or EOF without bytes: some drivers return an empty
+ * stream for directories. Nonempty reads need no extra probe. One that knows says so (gdrive, box,
  * dropbox and disk throw EISDIR), a keyed store answers ENOENT because a
  * directory there is a set of keys rather than an object, and sftp
  * answers with an error carrying no errno at all.
@@ -919,7 +1028,10 @@ async function readHitADir<A extends Accessor>(
   index: IndexCacheStore | undefined,
   err: unknown,
 ): Promise<boolean> {
-  if ((err as { code?: string }).code === 'EISDIR') return true
+  if ((err as { code?: string } | null)?.code === 'EISDIR') return true
+  // The path did not resolve at all, which no reading turns into a
+  // directory; its parent may well list the name it simplifies to.
+  if (isDotWalkError(err)) return false
   let st: FileStat | null = null
   try {
     st = await ops.stat(accessor, path, index)
@@ -946,12 +1058,17 @@ async function* drainRefusingDirs<A extends Accessor>(
   index: IndexCacheStore | undefined,
   source: AsyncIterable<Uint8Array>,
 ): AsyncIterable<Uint8Array> {
+  let empty = true
   try {
-    yield* source
+    for await (const chunk of source) {
+      empty = empty && chunk.byteLength === 0
+      yield chunk
+    }
   } catch (err) {
     if (await readHitADir(ops, accessor, path, index, err)) throw eisdir(path)
     throw err
   }
+  if (empty && (await readHitADir(ops, accessor, path, index, null))) throw eisdir(path)
 }
 
 /**
@@ -964,8 +1081,8 @@ async function* drainRefusingDirs<A extends Accessor>(
  * raw `ops.readStream` instead, so a directory on a keyed backend
  * reported ENOENT.
  *
- * Refined after the failure, never before it, so a read that succeeds
- * costs exactly what it did. The refusal is built from the operand's own
+ * Refined after failure or an empty read: some drivers return EOF for
+ * directories. Nonempty successful reads need no extra probe. The refusal is built from the operand's own
  * PathSpec, so it carries the virtual path: a raw disk error names the
  * host path, which is the mount's own business and must not reach a
  * user-facing line.
@@ -977,7 +1094,11 @@ export function withDirGuard<A extends Accessor = Accessor>(ops: CommandIO<A>): 
     ...ops,
     readBytes: async (accessor, path, index) => {
       try {
-        return await ops.readBytes(accessor, path, index)
+        const data = await ops.readBytes(accessor, path, index)
+        if (data.byteLength === 0 && (await readHitADir(ops, accessor, path, index, null))) {
+          throw eisdir(path)
+        }
+        return data
       } catch (err) {
         if (await readHitADir(ops, accessor, path, index, err)) throw eisdir(path)
         throw err
@@ -994,7 +1115,11 @@ export function withDirGuard<A extends Accessor = Accessor>(ops: CommandIO<A>): 
   if (readRange !== undefined) {
     guarded.readRange = async (accessor, path, index, offset, size) => {
       try {
-        return await readRange(accessor, path, index, offset, size)
+        const data = await readRange(accessor, path, index, offset, size)
+        if (data.byteLength === 0 && (await readHitADir(ops, accessor, path, index, null))) {
+          throw eisdir(path)
+        }
+        return data
       } catch (err) {
         if (await readHitADir(ops, accessor, path, index, err)) throw eisdir(path)
         throw err

@@ -71,6 +71,30 @@ describe('UpstashRedisStore', () => {
     expect(await store.hasFile('/nope')).toBe(false)
   })
 
+  it('truncates binary content and updates mtime in one request', async () => {
+    const { fake, store } = make()
+    await store.setFile('/a.bin', ALL_BYTES)
+    for (const length of [128, 260, 0]) {
+      const before = await store.getFile('/a.bin')
+      const expected = new Uint8Array(length)
+      expected.set((before ?? new Uint8Array(0)).subarray(0, length))
+      const start = fake.commands.length
+      expect(await store.truncateFile('/a.bin', length, 'modified', true)).toBe(true)
+      expect(fake.commands.slice(start)).toEqual(['EVAL'])
+      expect(await store.getFile('/a.bin')).toEqual(expected)
+      expect(await store.getModified('/a.bin')).toBe('modified')
+    }
+  })
+
+  it('no-create leaves a missing file and mtime absent', async () => {
+    const { store } = make()
+    expect(await store.truncateFile('/missing', 4, 'modified', true)).toBe(false)
+    expect(await store.getFile('/missing')).toBeNull()
+    expect(await store.getModified('/missing')).toBeNull()
+    expect(await store.truncateFile('/missing', 4, 'modified')).toBe(true)
+    expect(await store.getFile('/missing')).toEqual(new Uint8Array(4))
+  })
+
   it('writes an empty file', async () => {
     const { store } = make()
     await store.setFile('/empty', new Uint8Array(0))

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { enotsup } from '../../utils/errors.ts'
 import type { Accessor } from '../../accessor/base.ts'
 import type { OpKwargs, RegisteredOp } from '../registry.ts'
 import { extractWriteData } from '../write_args.ts'
@@ -246,7 +247,8 @@ export function makeGenericOps<A extends Accessor>(
   if (truncate) {
     emit(
       'truncate',
-      (accessor, path, args) => truncate(asA(accessor), path, expectLength(args[0])),
+      (accessor, path, args, opts) =>
+        truncate(asA(accessor), path, expectLength(args[0]), opts.no_create === true),
       true,
     )
   } else if (options.emulateTruncate) {
@@ -255,7 +257,8 @@ export function makeGenericOps<A extends Accessor>(
     }
     emit(
       'truncate',
-      async (accessor, path, args) => {
+      async (accessor, path, args, opts) => {
+        if (opts.no_create === true) throw enotsup('emulated', 'truncate --no-create', path)
         const length = expectLength(args[0])
         let data: Uint8Array
         try {

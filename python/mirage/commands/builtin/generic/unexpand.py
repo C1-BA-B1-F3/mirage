@@ -73,13 +73,12 @@ async def unexpand(
     if first_only:
         all_spaces = False
     if paths:
-        all_text: list[str] = []
-        for p in paths:
-            data = (await read_bytes(p)).decode(errors="replace")
-            lines = split_lines_keepends(data)
-            all_text.extend(
-                _unexpand_line(ln, tabsize, all_spaces) for ln in lines)
-        return "".join(all_text).encode(), IOResult()
+        # GNU reads its operands as one stream, so a line a file leaves
+        # unfinished continues into the next one, column and all.
+        texts = [(await read_bytes(p)).decode(errors="replace") for p in paths]
+        return "".join(
+            _unexpand_line(ln, tabsize, all_spaces) for ln in
+            split_lines_keepends("".join(texts))).encode(), IOResult()
 
     raw = await read_stdin_async(stdin)
     if raw is None:

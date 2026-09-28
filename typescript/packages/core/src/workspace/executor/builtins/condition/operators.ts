@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { materialize } from '../../../../io/types.ts'
 import { ArithError, ExitSignal } from '../../../../shell/errors.ts'
 import type { ByteSource } from '../../../../io/types.ts'
@@ -46,6 +47,10 @@ async function pathKind(
   ctx: CondContext,
   val: string | PathSpec,
 ): Promise<['dir' | 'file' | 'char' | null, FileStat | null]> {
+  // A path whose `.` and `..` do not resolve names nothing, which is what
+  // every file test reads as false.
+  const walk = typedSpec(val, ctx.session.cwd)
+  if ((await dotRefusal(dispatchStat(ctx.dispatch), walk)) !== null) return [null, null]
   let scope: PathSpec
   try {
     scope = operandScope(ctx, val)

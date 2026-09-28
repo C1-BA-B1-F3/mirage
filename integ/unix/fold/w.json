@@ -101,10 +101,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "fold -w 4 /data/a.txt /data/b.txt",
+      "command": "fold -w 4 /data/a.txt /data/b.txt; fold -w 3 /data/no_nl.txt /data/c.txt",
       "expect": {
         "exit": 0,
-        "stdout": "hell\no\nworl\nd\nfoo\nbar\nbaz\n1\n2\n3\n",
+        "stdout": "hell\no\nworl\nd\nfoo\nbar\nbaz\n1\n2\n3\nno \ntra\nili\nng \nnew\nlin\nealp\nha\nbet\na\ngam\nma\ndel\nta\n",
         "stderr": ""
       },
       "flags": [

@@ -13,7 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import AsyncIterator
+from functools import partial
 
+from mirage.commands.builtin.utils.paths import dispatch_stat, dot_refusal
 from mirage.context import DEFAULT_UMASK
 from mirage.io import IOResult
 from mirage.runtime.types import DispatchFn
@@ -88,6 +90,12 @@ async def handle_touch(
                                    target,
                                    errors,
                                    mtime=stamp)
+            continue
+        refusal = await dot_refusal(partial(dispatch_stat, dispatch), target,
+                                    namespace.follow)
+        if refusal is not None:
+            errors.append(f"touch: cannot touch '{target.raw_path}': "
+                          f"{fs_strerror(refusal)}\n")
             continue
         resolved = follow_operand(namespace, "touch", "touch", target, errors)
         if resolved is None:

@@ -34,7 +34,7 @@ import { isEntryError, UsageError } from '../../errors.ts'
 import { argmatchError, argmatchLine, usageHint } from '../../spec/usage.ts'
 import { type ArgmatchKind, argmatch } from '../../spec/argmatch.ts'
 import { identityOf, type Identity } from '../utils/identity.ts'
-import { gnuStrerror, isEacces, isWalkError } from '../../../utils/errors.ts'
+import { gnuStrerror, isDotWalkError, isEacces, isWalkError } from '../../../utils/errors.ts'
 import { failureText } from '../../../errors/classify.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import { CycleError, respellOne, posixNormpath } from '../../../utils/path.ts'
@@ -455,7 +455,10 @@ async function listDir(
   try {
     entries = await readdir(dir)
   } catch (err) {
-    if (!isWalkError(err) || (childMounts?.(dir.virtual) ?? []).length === 0) throw err
+    // A directory whose own `.` and `..` did not resolve is not one the
+    // namespace can owe children to.
+    if (!isWalkError(err) || isDotWalkError(err) || (childMounts?.(dir.virtual) ?? []).length === 0)
+      throw err
     // No backend serves it, but the namespace owes it children (a
     // nested mount, a link's ancestors), so the door lists it as a
     // directory and ls must agree: the merge below renders those rows
@@ -570,9 +573,11 @@ async function probeOperand(
     structureOnly = listed.structureOnly
   } catch (err) {
     if (!isWalkError(err)) throw err
-    const row = await fileEntry(stat, path)
+    // The operand did not resolve, so neither the path it simplifies to
+    // nor a link standing there answers for it.
+    const row = isDotWalkError(err) ? null : await fileEntry(stat, path)
     if (row !== null) return { path, row, groups: [] }
-    const link = linkRow(path, opts.links)
+    const link = isDotWalkError(err) ? null : linkRow(path, opts.links)
     if (link !== null) return { path, row: link, groups: [] }
     // GNU words a directory it may not read differently from one it
     // cannot stat: the entry is there, opening it is what failed.

@@ -20,8 +20,8 @@ import opendal
 class OperatorAccessor(Protocol):
     """An accessor that reaches its backend through an opendal operator.
 
-    ``NextcloudAccessor`` and the four ``_HfAccessor`` subclasses satisfy
-    this structurally, which is what lets one walk serve both.
+    ``NextcloudAccessor`` and ``HfBucketsAccessor`` satisfy this
+    structurally, which is what lets one walk serve both.
     """
 
     def operator(self) -> opendal.AsyncOperator:

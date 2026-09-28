@@ -197,12 +197,14 @@ async def test_cd_follows_a_chain_of_symlinks_to_the_final_target():
 #   cd -L /link/..      PWD=/            cd -P /link/..      PWD=/deep
 #   cd -L /link/sub/..  PWD=/link        cd -P /link/sub/..  PWD=/deep/real
 # -L simplifies `..` textually against the path as typed; -P resolves the
-# link first, so `..` lands in the target's parent. mirage reports the
+# link first, so `..` lands in the target's parent. Either way the name in
+# front of a `..` has to be a directory, so the targets exist here (bash
+# answers `cd /link/..` over a dangling link with ENOENT). mirage reports the
 # physical name in both modes, so the -L rows above land in the same
 # directory bash does while spelling it /deep/real.
 @pytest.mark.asyncio
 async def test_cd_logical_mode_simplifies_dotdot_before_following_links():
-    dispatch, _ = dispatcher(dirs={"/deep"})
+    dispatch, _ = dispatcher(dirs={"/deep", "/deep/real"})
     sess = session()
     _, io, _ = await handle_cd(dispatch,
                                no_mount_root,
@@ -215,7 +217,7 @@ async def test_cd_logical_mode_simplifies_dotdot_before_following_links():
 
 @pytest.mark.asyncio
 async def test_cd_physical_mode_applies_dotdot_to_the_link_target():
-    dispatch, _ = dispatcher(dirs={"/deep"})
+    dispatch, _ = dispatcher(dirs={"/deep", "/deep/real"})
     sess = session()
     _, io, _ = await handle_cd(dispatch,
                                no_mount_root,
@@ -229,7 +231,7 @@ async def test_cd_physical_mode_applies_dotdot_to_the_link_target():
 
 @pytest.mark.asyncio
 async def test_cd_physical_mode_resolves_a_link_in_the_middle_of_the_path():
-    dispatch, _ = dispatcher(dirs={"/deep/real"})
+    dispatch, _ = dispatcher(dirs={"/deep/real", "/deep/real/sub"})
     sess = session()
     _, io, _ = await handle_cd(dispatch,
                                no_mount_root,

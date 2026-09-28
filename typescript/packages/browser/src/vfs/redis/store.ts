@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { TRUNCATE_SCRIPT } from '@struktoai/mirage-core/vfs/redis/constants'
 import type { RedisRestore, RedisStoreLike } from '@struktoai/mirage-core/vfs/redis/store'
 import type { JsonValue } from '@struktoai/mirage-core/types'
 import { decodeBase64 } from '@struktoai/mirage-core/utils/base64'
@@ -347,6 +348,26 @@ export class UpstashRedisStore implements RedisStoreLike {
       await this.command(['DEL', staging])
       throw err
     }
+  }
+
+  async truncateFile(
+    path: string,
+    length: number,
+    modified: string,
+    noCreate = false,
+  ): Promise<boolean> {
+    return (
+      (await this.command([
+        'EVAL',
+        TRUNCATE_SCRIPT,
+        2,
+        this.fk(path),
+        this.mk(path),
+        length,
+        modified,
+        noCreate ? '1' : '0',
+      ])) === 1
+    )
   }
 
   async delFile(path: string): Promise<void> {

@@ -31,7 +31,41 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /data/missing.txt: No such file or directory\n"
+        "stderr": "stat: cannot statx '/data/missing.txt': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nf_stat_c_keeps_going",
+      "seq": 641,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "stat -c %n /data/a.txt /data/missing.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "/data/a.txt\n",
+        "stderr": "stat: cannot statx '/data/missing.txt': No such file or directory\n"
       }
     }
   ]

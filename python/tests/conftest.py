@@ -14,6 +14,7 @@
 
 import asyncio
 import resource
+import uuid
 
 import aiohttp
 import pytest
@@ -58,6 +59,21 @@ def _drain_session_pools(monkeypatch):
     yield
     if made:
         asyncio.run(_close_pools(made))
+
+
+@pytest.fixture
+def redis_prefix() -> str:
+    """A Redis key prefix that belongs to this one test.
+
+    Every Redis-backed test talks to one server, and pytest-xdist's
+    worksteal hands out single tests, so tests of one module run at once
+    on different workers. A prefix shared by two modules, or by the tests
+    of one, lets one test's ``clear()`` wipe what another just wrote,
+    which then reads as a partial listing. A fresh uuid per test rules
+    that out whichever module, worker or run the other test is in; a test
+    that needs several stores hangs suffixes off it.
+    """
+    return f"test:{uuid.uuid4().hex}:"
 
 
 @pytest.fixture

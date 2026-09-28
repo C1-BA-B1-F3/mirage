@@ -233,25 +233,94 @@ async def test_null_data_anchors_match_embedded_newlines(flags):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("pattern",
-                         ["needle", "needle|qqzzyy", "nee.le", r"\bneedle\b"])
-async def test_skip_nonmatching_buffers_in_each_rg_mode(pattern, monkeypatch):
+@pytest.mark.parametrize(
+    "pattern",
+    ["needle", "needle|qqzzyy", "nee.le", r"\bneedle\b", "(?:needle|other)+"])
+@pytest.mark.parametrize("flags", [{
+    "count": True
+}, {
+    "files_with_matches": True
+}, {}, {
+    "ignore_case": True,
+    "count": True
+}, {
+    "ignore_case": True,
+    "files_with_matches": True
+}, {
+    "ignore_case": True
+}, {
+    "word_regexp": True,
+    "count": True
+}, {
+    "line_regexp": True,
+    "count": True
+}, {
+    "null_data": True,
+    "count": True
+}, {
+    "null_data": True
+}])
+async def test_block_search_skips_records(pattern, flags, monkeypatch):
     reads = 0
     read_until = AsyncLineIterator.read_until
 
-    async def counted_read(self, delimiter):
+    async def counted(self, delimiter):
         nonlocal reads
         reads += 1
         return await read_until(self, delimiter)
 
-    monkeypatch.setattr(AsyncLineIterator, "read_until", counted_read)
-    for flags in [{"count": True}, {"files_with_matches": True}, {}]:
-        reads = 0
-        assert await _search(b"abcdefg\n" * 40000,
-                             pattern,
-                             ignore_case=True,
-                             **flags) == ("", False)
-        assert reads < 50
+    monkeypatch.setattr(AsyncLineIterator, "read_until", counted)
+    data = (b"abcdefg" + (b"\0" if flags.get("null_data") else b"\n")) * 40000
+    assert await _search(data, pattern, **flags) == ("", False)
+    assert reads < 50
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size", [1, 7, 16384, 65536])
+async def test_block_search_preserves_records(size):
+    data = (("abcdefg\n" *
+             (200 if size < 10 else 9000)) + "é NEEDLE\nother\n" +
+            ("abcdefg\n" * (200 if size < 10 else 9000)) + "needle").encode()
+
+    async def source():
+        for at in range(0, len(data), size):
+            yield data[at:at + size]
+
+    for flags in [{
+            "line_number": True,
+            "byte_offset": True,
+            "ignore_case": True
+    }, {
+            "count": True,
+            "ignore_case": True
+    }, {
+            "files_with_matches": True,
+            "ignore_case": True
+    }, {
+            "after_context": 1,
+            "before_context": 1,
+            "ignore_case": True
+    }, {
+            "invert_match": True,
+            "count": True
+    }, {
+            "stop_on_nonmatch": True,
+            "ignore_case": True
+    }]:
+        f = _flags(**flags)
+        pat = rg_matcher("needle|other", False, f)
+        fast, slow = Tally(), Tally()
+        actual = b"".join([
+            c async for c in search_haystack(source(), pat, f, "f", None, fast)
+        ])
+        with patch.object(AsyncLineIterator,
+                          "skip_nonmatching_lines",
+                          return_value=(0, 0)):
+            expected = b"".join([
+                c async for c in search_haystack(source(), pat, f, "f", None,
+                                                 slow)
+            ])
+        assert (actual, fast) == (expected, slow)
 
 
 @pytest.mark.asyncio
@@ -292,6 +361,9 @@ async def test_skip_nonmatching_buffers_in_each_rg_mode(pattern, monkeypatch):
     },
     {
         "only_matching": True
+    },
+    {
+        "word_regexp": True
     },
 ])
 async def test_rg_prefilter_preserves_output_and_offsets(flags):

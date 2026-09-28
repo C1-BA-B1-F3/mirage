@@ -490,9 +490,10 @@ function wordHints(
   // a host process, where no op door follows the read, so the script
   // slot the spec declares is the one place a path rule can see the
   // file. The tree's gate reads a native capture the same way
-  // (`expandArgv`) and leaves an interpreter it runs itself to the op
-  // door; here the hints reach no runtime word, since the line runs as
-  // typed, so there is nothing to lose by reading them.
+  // (`expandArgv`), and an interpreter it runs itself for the script slot
+  // alone, since its other words become the program's argv there; here
+  // the hints reach no runtime word, since the line runs as typed, so
+  // there is nothing to lose by reading them all.
   if (
     Object.hasOwn(session.functions, joined) ||
     !(

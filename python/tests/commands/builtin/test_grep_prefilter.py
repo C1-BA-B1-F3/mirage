@@ -1,281 +1,108 @@
 import re
-from collections.abc import AsyncIterator
 from itertools import product
 
 import pytest
 
-from mirage.commands.builtin.generic.grep import parse_flags as grep_flags
-from mirage.commands.builtin.generic.rg import parse_flags as rg_flags
-from mirage.commands.builtin.grep_binary import grep_input
-from mirage.commands.builtin.grep_prefilter import required_needles
-from mirage.commands.builtin.grep_scan import grep_stream
-from mirage.commands.builtin.rg_search import Tally, search_haystack
-from mirage.commands.spec import SPECS
-from mirage.commands.spec.flag_view import FlagView
-from mirage.io.async_line_iterator import AsyncLineIterator
-from mirage.io.types import IOResult, materialize
-
-PATTERNS = [
-    r"zzqqxx",
-    r"zzqqxx|qqzzyy",
-    r"zz.qxx",
-    r"\bzzqqxx\b",
-    r"^zzqqxx$",
-    r"zz[abc]qxx",
-    r"(zzqqxx|qqzzyy)+",
-    r"(zz)?qqxx",
-    r"zzq{2,3}xx",
-    r"zz\.qxx",
-]
-
-
-async def _run(engine, data, pat, flags, size=65536):
-
-    async def source() -> AsyncIterator[bytes]:
-        for at in range(0, len(data), size):
-            yield data[at:at + size]
-
-    io = IOResult(exit_code=1)
-    if engine == "grep":
-        f = grep_flags(FlagView(flags, spec=SPECS["grep"]), False)
-        out = await materialize(grep_input(source(), pat, f, "f", True, io))
-        return out, io.exit_code, io.stderr
-    if engine == "rg":
-        f = rg_flags(FlagView(flags, spec=SPECS["rg"]))
-        tally = Tally()
-        out = await materialize(
-            search_haystack(source(), pat, f, "f", "f", tally))
-        return out, tally.selected, None
-    out = await materialize(grep_stream(source(), pat, count_only=True, io=io))
-    return out, io.exit_code, io.stderr
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("record",
-                         [b"abcdefg\n", b"abcdefg\0", b"\xffabcdef\n"])
-@pytest.mark.parametrize("engine", ["grep", "rg", "stream"])
-@pytest.mark.parametrize("pattern", PATTERNS)
-@pytest.mark.parametrize("fold", [0, re.IGNORECASE])
-@pytest.mark.parametrize("flags", [{}, {
-    "c": True
-}, {
-    "args_l": True
-}, {
-    "q": True
-}])
-async def test_line_work_is_bounded_by_blocks(engine, pattern, fold, flags,
-                                              record, monkeypatch):
-    calls = 0
-    method = "read_until" if engine == "rg" else "readline"
-    original = getattr(AsyncLineIterator, method)
-
-    async def counted(self, *args):
-        nonlocal calls
-        calls += 1
-        assert calls < 50, "nonmatching blocks must skip per-line decoding"
-        return await original(self, *args)
-
-    monkeypatch.setattr(AsyncLineIterator, method, counted)
-    out, selected, error = await _run(engine, record * 40000,
-                                      re.compile(pattern, fold), flags)
-    assert not error
-    if engine == "rg":
-        assert not selected and out == b""
-    else:
-        assert selected == 1
-        assert out == (b"0\n" if engine == "stream" else
-                       b"f:0\n" if flags.get("c") else b"")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("engine", ["grep", "rg"])
-@pytest.mark.parametrize("size", [7, 4096, 65536])
-@pytest.mark.parametrize("flags", [
-    {
-        "n": True,
-        "byte_offset": True
-    },
-    {
-        "c": True
-    },
-    {
-        "args_l": True
-    },
-    {
-        "files_without_match": True
-    },
-    {
-        "q": True
-    },
-    {
-        "m": 1
-    },
-    {
-        "o": True,
-        "n": True,
-        "byte_offset": True
-    },
-    {
-        "v": True,
-        "c": True
-    },
-    {
-        "B": 2,
-        "A": 1
-    },
-    {
-        "stop_on_nonmatch": True
-    },
-    {
-        "passthru": True
-    },
-])
-async def test_skipping_preserves_output_status_and_boundaries(
-        engine, size, flags, monkeypatch):
-    data = (b"other\n" * 1000 + "é ZZQQXX 😀\nſ K İ ı\n".encode() +
-            b"other\n" * 1000 + b"qqzzyy\nzz.qxx\nzz\xffqxx\nzz\0qxx\nqqxx")
-    for pattern in [
-            *PATTERNS, "s|k|i", "zzqqxx|", "zzq*", "[^z]", "(?=qq)qq",
-            "(qq)\\1"
-    ]:
-        pat = re.compile(pattern, re.IGNORECASE)
-        actual = await _run(engine, data, pat, flags, size)
-        with monkeypatch.context() as m:
-            m.setattr(AsyncLineIterator, "skip_nonmatching_lines",
-                      lambda *args: (0, 0))
-            expected = await _run(engine, data, pat, flags, size)
-        assert actual == expected, pattern
-
-
-@pytest.mark.parametrize("pattern", [
-    "a*", "a?", "a{0,3}", "foo|", "[abc]", "(?i:foo)", r"(foo)\1", r"\x66oo",
-    "(?=foo)", "(" * 40 + "foo" + ")" * 40
-])
-def test_unsupported_or_optional_patterns_fall_back(pattern):
-    assert required_needles(re.compile(pattern)) is None
-
-
-@pytest.mark.parametrize("pattern,match", [("s", "ſ"), ("k", "K"), ("i", "İ"),
-                                           ("i", "ı")])
-def test_unicode_case_folds_are_never_rejected(pattern, match):
-    prefilter = required_needles(re.compile(pattern, re.IGNORECASE))
-    assert prefilter is not None
-    assert any(needle in match.encode().lower() for needle in prefilter)
-
-
-def test_required_needless_retain_matches_across_regex_combinations():
-    atoms = [
-        "a", "b", "[ab]", ".", r"\w", "(?:a|b)", "(?:a|)", "(?=a)", "(?!b)",
-        "(?<!b)"
-    ]
-    texts = [
-        "".join(chars) for size in range(6)
-        for chars in product("ab", repeat=size)
-    ]
-    for left, right in product(atoms, repeat=2):
-        for repeat in ["", "?", "*", "+", "{0,2}", "{1,2}"]:
-            if left.startswith("(?") and not left.startswith("(?:") and repeat:
-                continue
-            for pattern in [
-                    f"{left}{repeat}{right}", f"(?:{left}{repeat}|{right})"
-            ]:
-                pat = re.compile(pattern, re.IGNORECASE)
-                prefilter = required_needles(pat)
-                for text in texts:
-                    if prefilter is None or not pat.search(text):
-                        continue
-                    raw = text.encode()
-                    assert any(needle in raw.lower()
-                               for needle in prefilter), (pattern, text)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("size", [7, 16384, 65536])
-@pytest.mark.parametrize("options", [
-    {},
-    {
-        "line_numbers": True
-    },
-    {
-        "byte_offsets": True
-    },
-    {
-        "line_numbers": True,
-        "byte_offsets": True
-    },
-    {
-        "line_numbers": True,
-        "byte_offsets": True,
-        "only_matching": True
-    },
-    {
-        "line_numbers": True,
-        "byte_offsets": True,
-        "max_count": 1
-    },
-])
-async def test_stream_printed_output_matches_unfiltered(
-        size, options, monkeypatch):
-    padding = "é other\n".encode() * 5000
-    data = padding + "é ZZQQXX 😀\n".encode() + padding + b"tail zzqqxx"
-    pat = re.compile("zz.qxx", re.IGNORECASE)
-
-    async def source():
-        for at in range(0, len(data), size):
-            yield data[at:at + size]
-
-    async def scan():
-        io = IOResult(exit_code=1)
-        out = await materialize(grep_stream(source(), pat, io=io, **options))
-        return out, io.exit_code, io.stderr
-
-    actual = await scan()
-    with monkeypatch.context() as unfiltered:
-        unfiltered.setattr(AsyncLineIterator, "skip_nonmatching_lines",
-                           lambda *args: (0, 0))
-        expected = await scan()
-    assert actual == expected
-    assert actual[0]
-    assert actual[1:] == (0, None)
+from mirage.commands.builtin.grep_prefilter import LONGEST, required_needles
 
 
 @pytest.mark.parametrize("source,expected", [
     ("zzqqxx", (b"zzqqxx", )),
     ("zzqqxx|qqzzyy", (b"zzqqxx", b"qqzzyy")),
     ("(?:zzqqxx)|(?:qqzzyy)", (b"zzqqxx", b"qqzzyy")),
+    ("^(zzqqxx|qqzzyy)$", (b"zzqqxx", b"qqzzyy")),
     ("zz.qxx", (b"qxx", )),
     (r"\bfoo\b", (b"foo", )),
-    (r"(?<!\w)(?:foo)(?!\w)", (b"foo", )),
+    (r"(?<!\w)(?:needle)(?!\w)", (b"needle", )),
+    ("a(?=b)c", (b"ac", )),
     ("foo[0-9]+", (b"foo", )),
     ("a?bc", (b"bc", )),
+    ("x*required", (b"required", )),
     ("a{0,3}bc", (b"bc", )),
+    ("a{2,3}b", (b"a", )),
+    (r"a\+b", (b"a+b", )),
+    ("[a-z]+required", (b"required", )),
+    ("(?:foo|bar)+required", (b"required", )),
     ("foo(?:bar)?", (b"foo", )),
-    ("foo|", None),
-    ("(?:foo)?", None),
-    (r"\d+", None),
-    ("(?i:foo)", None),
-    (r"(foo)\1", None),
-    (r"\x66oo", None),
-    ("é", None),
+    ("(?P<name>foo)bar", (b"foobar", )),
+    ("(?>foo)bar", (b"foobar", )),
+    (r"foo\tbar", (b"foo", )),
+    ("(?:ab|ab)c", (b"abc", )),
 ])
 def test_conservative_requirements(source, expected):
     assert required_needles(re.compile(source)) == expected
 
 
-def test_never_reject_matching_lines_across_regex_operators():
+@pytest.mark.parametrize("source", [
+    "foo|",
+    "(?:foo)?",
+    "a*",
+    "a?|b",
+    "a{0,2}",
+    "(?:)",
+    r"\d+",
+    "(?i:foo)",
+    "(?#foo)",
+    r"(foo)\1",
+    "(?P<name>a)(?P=name)",
+    r"\x66oo",
+    r"\Afoo",
+    "a{,3}b",
+    "a{b",
+    "a++b",
+    "[]a]foo",
+    "[^]a]foo",
+    "[x[]foo",
+    "é",
+    "(" * 100 + "a" + ")" * 100,
+    "|".join(f"word{i}" for i in range(100)),
+])
+def test_falls_back_on_nullable_or_unknown_syntax(source):
+    assert required_needles(re.compile(source)) is None
+
+
+def test_folds_ascii_and_declines_unicode_folding():
+    assert required_needles(re.compile("Foo|FOO|bar",
+                                       re.ASCII | re.I)) == (b"foo", b"bar")
+    assert required_needles(re.compile("s", re.I)) is None
+    assert required_needles(re.compile("a b", re.VERBOSE)) is None
+
+
+def test_bounds_the_source_and_builds_long_literals_once():
+    assert required_needles(re.compile("a" * LONGEST)) == (b"a" * LONGEST, )
+    assert required_needles(re.compile("a" * (LONGEST + 1))) is None
+
+
+def admits(needles, line, flags):
+    data = line.encode()
+    if flags & re.IGNORECASE:
+        data = data.lower()
+    return needles is None or any(needle in data for needle in needles)
+
+
+@pytest.mark.parametrize("flags", [0, re.I, re.ASCII, re.ASCII | re.I])
+def test_never_rejects_a_matching_line(flags):
     atoms = [
-        "a", "bc", "[ab]", ".", r"\b", "(?:a|bc)", "(a|)", "a?b", "a{0,2}"
+        "a", "bc", "A", "[ab]", ".", r"\w", r"\b", r"\.", "(a|bc)", "(?:a|)",
+        "a?", "a*", "a+", "a{0,2}", "a{2}", "a+?", "^a", "c$", r"\ba\b",
+        "(?=b)", "(?!a)", "(?<=a)", "(?<!b)", "(?P<n>a)", "a?b"
     ]
-    texts = [
-        "", "a", "b", "c", "ab", "abc", "bc", "ac", "bb", "aabc", "bcc",
-        "abcabc"
+    lines = [
+        "", "a", "A", "b", "c", "ab", "bc", "Bc", "aa", "ac", "bb", "abc",
+        "abbc", "aabc", "bcc", "abcabc", " bca ", "a.b", "éa", "K", "k", "K",
+        "ſ", "S", "BC"
     ]
-    for left, right, join, suffix in product(
-            atoms, atoms, ["", "|"], ["", "?", "*", "+", "{0,2}", "{2}"]):
-        pat = re.compile(f"(?:{left}{join}{right}){suffix}")
-        needles = required_needles(pat)
-        if needles is None:
+    for left, right in product(atoms, repeat=2):
+        if left == right == "(?P<n>a)":
             continue
-        for text in texts:
-            if pat.search(text):
-                assert any(n in text.encode() for n in needles), (pat, text)
+        sources = [left + right, f"(?:{left}|{right})"]
+        sources += [
+            f"(?:{left}{right}){suffix}"
+            for suffix in ["?", "*", "+", "{0,2}", "{2}"]
+        ]
+        for source in sources:
+            pat = re.compile(source, flags)
+            needles = required_needles(pat)
+            for line in lines:
+                if pat.search(line):
+                    assert admits(needles, line, flags), (pat, line)

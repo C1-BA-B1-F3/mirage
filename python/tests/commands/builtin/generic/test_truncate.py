@@ -14,9 +14,10 @@
 
 import pytest
 
-from mirage.commands.builtin.generic.truncate import parse_size, truncate
+from mirage.commands.builtin.generic.truncate import (TruncateFlags,
+                                                      parse_size, truncate)
 from mirage.commands.errors import UsageError
-from mirage.types import PathSpec
+from mirage.types import FileStat, FileType, PathSpec
 
 
 def test_plain_and_operation_sizes():
@@ -146,24 +147,52 @@ def _operand(path: str, raw: str) -> PathSpec:
 @pytest.mark.asyncio
 async def test_a_slashed_operand_is_settled_by_the_truncate_op():
     # GNU opens with O_CREAT before it stats, so `missing/` and `reg/` are
-    # the open's EISDIR, not the stat's miss; a bare operand keeps its
-    # own ENOENT.
+    # the open's EISDIR, not the stat's miss, and an absent bare name is
+    # made where its directory exists. The chain answers first: under an
+    # absent directory the name is ENOENT and the op never runs, every
+    # operand is still tried, and -c leaves an absent name alone.
     lengths: list[tuple[str, int]] = []
 
     async def stat(path):
         raise FileNotFoundError(path.virtual)
 
-    async def truncate_fn(path, length) -> None:
+    async def truncate_fn(path, length, no_create) -> None:
         lengths.append((path.raw_path, length))
 
-    await truncate([_operand("/missing", "/missing/")],
-                   size="4",
-                   stat=stat,
-                   truncate_fn=truncate_fn)
-    assert lengths == [("/missing/", 4)]
-    with pytest.raises(FileNotFoundError):
-        await truncate([_operand("/missing", "/missing")],
-                       size="4",
-                       stat=stat,
-                       truncate_fn=truncate_fn)
-    assert lengths == [("/missing/", 4)]
+    _, io = await truncate([
+        _operand("/missing", "/missing/"),
+        _operand("/nodir/x", "/nodir/x"),
+        _operand("/missing", "/missing"),
+    ],
+                           flags=TruncateFlags(size="4", no_create=False),
+                           stat=stat,
+                           truncate_fn=truncate_fn)
+    assert lengths == [("/missing/", 4), ("/missing", 4)]
+    assert io.exit_code == 1
+    assert io.stderr == (b"truncate: cannot open '/nodir/x' for writing: "
+                         b"No such file or directory\n")
+    _, io = await truncate([_operand("/missing", "/missing")],
+                           flags=TruncateFlags(size="4", no_create=True),
+                           stat=stat,
+                           truncate_fn=truncate_fn)
+    assert io.exit_code == 0
+    assert lengths == [("/missing/", 4), ("/missing", 4)]
+
+
+@pytest.mark.asyncio
+async def test_no_create_reaches_the_mutation_after_a_successful_stat():
+    calls = []
+
+    async def stat(path):
+        calls.append("stat")
+        return FileStat(name=path.virtual, type=FileType.FILE, size=4)
+
+    async def mutate(path, length, no_create):
+        calls.append((path.virtual, length, no_create))
+
+    _, result = await truncate([PathSpec.from_str_path("/file")],
+                               flags=TruncateFlags("2", True),
+                               stat=stat,
+                               truncate_fn=mutate)
+    assert result.exit_code == 0
+    assert calls == ["stat", ("/file", 2, True)]

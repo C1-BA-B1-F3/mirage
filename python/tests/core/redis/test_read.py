@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import os
-import uuid
 
 import pytest
 import pytest_asyncio
@@ -28,8 +27,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def accessor():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:read:")
+async def accessor(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=redis_prefix)
     await s.clear()
     await s.add_dir("/")
     await s.add_dir("/sub")
@@ -72,8 +71,8 @@ async def test_read_bytes_not_found(accessor):
 
 
 @pytest.mark.asyncio
-async def test_read_bytes_empty_file():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:read:e:")
+async def test_read_bytes_empty_file(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}e:")
     await s.clear()
     await s.set_file("/empty", b"")
     a = RedisAccessor(s)
@@ -85,8 +84,8 @@ async def test_read_bytes_empty_file():
 
 
 @pytest.mark.asyncio
-async def test_read_bytes_binary_data():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:read:b:")
+async def test_read_bytes_binary_data(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}b:")
     await s.clear()
     data = bytes(range(256))
     await s.set_file("/bin", data)
@@ -99,8 +98,8 @@ async def test_read_bytes_binary_data():
 
 
 @pytest.mark.asyncio
-async def test_read_bytes_normalizes_path():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:read:n:")
+async def test_read_bytes_normalizes_path(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}n:")
     await s.clear()
     await s.set_file("/file.txt", b"data")
     a = RedisAccessor(s)
@@ -136,9 +135,9 @@ async def test_read_bytes_window_past_eof_is_empty(accessor):
 
 
 @pytest.mark.asyncio
-async def test_read_bytes_zero_length_is_empty_and_preserves_missing():
-    prefix = f"test:read:zero:{uuid.uuid4()}:"
-    store = RedisStore(url=REDIS_URL, key_prefix=prefix)
+async def test_read_bytes_zero_length_is_empty_and_preserves_missing(
+        redis_prefix):
+    store = RedisStore(url=REDIS_URL, key_prefix=redis_prefix)
     try:
         await store.set_file("/data", b"payload")
         await store.set_file("/empty", b"")

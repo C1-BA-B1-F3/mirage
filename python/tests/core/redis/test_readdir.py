@@ -28,8 +28,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def accessor():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:readdir:")
+async def accessor(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=redis_prefix)
     await s.clear()
     await s.add_dir("/")
     await s.add_dir("/sub")
@@ -73,8 +73,8 @@ async def test_readdir_subdir(accessor, index):
 
 
 @pytest.mark.asyncio
-async def test_readdir_empty_dir(index):
-    s = RedisStore(url=REDIS_URL, key_prefix="test:readdir:e:")
+async def test_readdir_empty_dir(redis_prefix, index):
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}e:")
     await s.clear()
     await s.add_dir("/")
     await s.add_dir("/empty")
@@ -88,8 +88,8 @@ async def test_readdir_empty_dir(index):
 
 
 @pytest.mark.asyncio
-async def test_readdir_not_found(index):
-    s = RedisStore(url=REDIS_URL, key_prefix="test:readdir:n:")
+async def test_readdir_not_found(redis_prefix, index):
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}n:")
     await s.clear()
     await s.add_dir("/")
     a = RedisAccessor(s)
@@ -115,10 +115,10 @@ async def test_readdir_deep(accessor, index):
 
 
 @pytest.mark.asyncio
-async def test_readdir_file_component_is_not_a_directory(index):
+async def test_readdir_file_component_is_not_a_directory(redis_prefix, index):
     # GNU `ls /a.txt/x` -> "Not a directory": a component exists but is a
     # file. Only a missing component is ENOENT.
-    s = RedisStore(url=REDIS_URL, key_prefix="test:readdir:nd:")
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}nd:")
     await s.clear()
     await s.add_dir("/")
     await s.set_file("/a.txt", b"a")
@@ -135,8 +135,9 @@ async def test_readdir_file_component_is_not_a_directory(index):
 
 
 @pytest.mark.asyncio
-async def test_readdir_missing_stays_not_found_at_any_depth(index):
-    s = RedisStore(url=REDIS_URL, key_prefix="test:readdir:nd2:")
+async def test_readdir_missing_stays_not_found_at_any_depth(
+        redis_prefix, index):
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}nd2:")
     await s.clear()
     await s.add_dir("/")
     await s.set_file("/a.txt", b"a")
@@ -152,13 +153,14 @@ async def test_readdir_missing_stays_not_found_at_any_depth(index):
 
 
 @pytest.mark.asyncio
-async def test_readdir_orphan_below_a_missing_dir_is_not_found(index):
+async def test_readdir_orphan_below_a_missing_dir_is_not_found(
+        redis_prefix, index):
     # The store can hold a file whose parent is not in the dir set: a
     # restored snapshot or another client on the same Redis can seed one, so
     # readdir stays defensive about it even though rename and copy now refuse
     # to create one. The walk must stop at /missing instead of reaching the
     # orphan and reporting ENOTDIR.
-    s = RedisStore(url=REDIS_URL, key_prefix="test:readdir:orphan:")
+    s = RedisStore(url=REDIS_URL, key_prefix=f"{redis_prefix}orphan:")
     await s.clear()
     await s.add_dir("/")
     await s.set_file("/missing/a.txt", b"a")

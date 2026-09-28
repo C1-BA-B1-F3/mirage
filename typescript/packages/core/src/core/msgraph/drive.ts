@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { enotsup } from '../../utils/errors.ts'
 import { invalidateAfterWrite } from '../../cache/context.ts'
 import { IndexEntry, ResourceType } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
@@ -699,8 +700,9 @@ export function makeExists<A>(
 export function makeTruncate<A>(
   read: (accessor: A, path: PathSpec) => Promise<Uint8Array>,
   write: (accessor: A, path: PathSpec, data: Uint8Array) => Promise<void>,
-): (accessor: A, path: PathSpec, length: number) => Promise<void> {
-  return async (accessor, path, length) => {
+): (accessor: A, path: PathSpec, length: number, noCreate?: boolean) => Promise<void> {
+  return async (accessor, path, length, noCreate = false) => {
+    if (noCreate) throw enotsup('msgraph', 'truncate --no-create', path)
     let data: Uint8Array
     try {
       data = await read(accessor, path)

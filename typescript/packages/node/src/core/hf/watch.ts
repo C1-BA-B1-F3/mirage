@@ -13,18 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { type DeltaHook, ListingDeltaHook } from '@struktoai/mirage-core/watch/index'
-import type { HfAccessor } from '../../accessor/hf.ts'
+import type { HfBucketsAccessor } from '../../accessor/hf.ts'
 import { OpendalWalk } from '../opendal/watch.ts'
 
 /**
- * Build the delta hook shared by every Hugging Face VFS.
+ * Build the delta hook of a Hugging Face bucket mount.
  *
- * One recursive tree listing per pull, fingerprinted on the Hub's ETag. A
- * mount pinned to an immutable `revision` cannot report a change, because the
- * revision it reads is frozen by definition; the hook is only meaningful
- * against a moving ref such as `main`.
+ * One recursive tree listing per pull, fingerprinted on the Hub's ETag.
  */
-export function buildDeltaHook(accessor: HfAccessor): DeltaHook {
+export function buildDeltaHook(accessor: HfBucketsAccessor): DeltaHook {
   const walk = new OpendalWalk(accessor)
   return new ListingDeltaHook(walk.walk.bind(walk))
 }

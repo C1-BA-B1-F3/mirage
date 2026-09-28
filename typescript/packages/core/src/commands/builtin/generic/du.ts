@@ -22,7 +22,7 @@ import {
   pathAllowed,
   pathRulesActive,
 } from '../../../context/session_context.ts'
-import { isMissingPath } from '../../../utils/errors.ts'
+import { isDotWalkError, isMissingPath } from '../../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
 import { respellRaw } from '../../../utils/path.ts'
 import { lstripSlash, rstripSlash, stripSlash } from '../../../utils/slash.ts'
@@ -261,6 +261,12 @@ async function duOperands(
       // errno it got, so the two cannot share a wording.
       if ((err as { code?: string }).code === 'ENOTDIR') {
         missing.push([path.rawPath, 'Not a directory'])
+        continue
+      }
+      // The operand did not resolve, so no channel asked about the path
+      // it simplifies to can find it there.
+      if (isDotWalkError(err)) {
+        missing.push([path.rawPath, ENOENT_TEXT])
         continue
       }
       if (!isMissingPath(err)) throw err

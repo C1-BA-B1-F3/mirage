@@ -116,7 +116,7 @@
     "$ head /data/missing.json",
     "  exit=1  head: cannot open '/data/missing.json' for reading: No such file or directory",
     "$ stat /data/missing.json",
-    "  exit=1  stat: /data/missing.json: No such file or directory",
+    "  exit=1  stat: cannot statx '/data/missing.json': No such file or directory",
     "=== metadata writes refuse on read-only mounts ===",
     "$ chmod 600 /data/example.json",
     "  exit=1  chmod: changing permissions of '/data/example.json': Read-only file system",

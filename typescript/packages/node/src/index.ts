@@ -119,14 +119,7 @@ export {
   type SupabaseConfigRedacted,
 } from './vfs/supabase/config.ts'
 export { SUPABASE_PROMPT } from './vfs/supabase/prompt.ts'
-export {
-  HF_VFS_NAMES,
-  HfAccessor,
-  HfBucketsAccessor,
-  HfDatasetsAccessor,
-  HfModelsAccessor,
-  HfSpacesAccessor,
-} from './accessor/hf.ts'
+export { HfBucketsAccessor } from './accessor/hf.ts'
 export { HfBucketsVFS, type HfBucketsVFSState } from './vfs/hf_buckets/hf_buckets.ts'
 export {
   assertHfRepoId,

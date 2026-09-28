@@ -15,6 +15,7 @@
 import pytest
 
 from mirage.accessor.hf_hub import HfHubAccessor, HfRepoConfig
+from mirage.core.hf_hub.client import stall_timeout
 
 
 class ModelAccessor(HfHubAccessor):
@@ -66,3 +67,10 @@ def test_a_fresh_accessor_has_hydrated_nothing():
     assert acc.tree == {}
     assert acc.tree_loaded is False
     assert acc.rows_cache is None
+
+
+def test_the_pool_waits_the_configured_timeout_without_progress():
+    assert ModelAccessor(
+        HfRepoConfig(repo_id="a/b")).pool._timeout == stall_timeout(30)
+    assert ModelAccessor(HfRepoConfig(
+        repo_id="a/b", timeout=5)).pool._timeout == stall_timeout(5)

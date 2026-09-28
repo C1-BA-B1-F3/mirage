@@ -12,10 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import opendal
 from pydantic import BaseModel, ConfigDict, SecretStr, field_validator
 
-from mirage.accessor._hf import _HfAccessor
+from mirage.accessor.base import SessionAccessor
+from mirage.core.hf_hub.client import stall_timeout
 from mirage.utils import key_prefix as kp
+from mirage.vfs.secrets import reveal_secret
 
 
 class HfBucketsConfig(BaseModel):
@@ -50,10 +53,77 @@ class HfBucketsConfig(BaseModel):
         return self.bucket.split("/", 1)[1]
 
 
-class HfBucketsAccessor(_HfAccessor):
+class HfBucketsAccessor(SessionAccessor):
+    """A mount onto one Hugging Face bucket.
+
+    Listing and writes go through the opendal operator; stat's point lookup
+    and every read go to the Hub over the pool, because the bucket's
+    content token (its xet hash) comes from paths-info and the resolve
+    download, neither of which the binding exposes.
+    """
+
     REPO_TYPE = "bucket"
     VFS_NAME = "hf_buckets"
+
+    def __init__(self, config: HfBucketsConfig) -> None:
+        """Args:
+            config (HfBucketsConfig): bucket id, credential and key prefix.
+        """
+        super().__init__(timeout=stall_timeout(config.timeout))
+        self.config = config
 
     @property
     def bucket_uri(self) -> str:
         return f"hf://buckets/{self.config.bucket}"
+
+    @property
+    def endpoint(self) -> str:
+        return self.config.endpoint
+
+    @property
+    def token(self) -> SecretStr | None:
+        return self.config.token
+
+    @property
+    def key_prefix(self) -> str:
+        return self.config.key_prefix or ""
+
+    def bucket_path(self, rel: str) -> str:
+        """Lift a mount-relative path to its bucket-relative spelling.
+
+        opendal applies the key prefix as its operator root; a Hub call
+        made directly has to apply it here instead.
+
+        Args:
+            rel (str): the path as the mount sees it.
+
+        Returns:
+            str: the path the Hub knows it by.
+        """
+        # Empty segments are dropped: opendal normalizes its root the same
+        # way, and the Hub matches paths exactly, so `a//b/x` would name a
+        # file the listing shows as `a/b/x` and answer it absent.
+        parts = [p for p in f"{self.key_prefix}/{rel}".split("/") if p]
+        return "/".join(parts)
+
+    def operator(self) -> opendal.AsyncOperator:
+        """A fresh opendal operator over the bucket, rooted at key_prefix.
+
+        Returns:
+            opendal.AsyncOperator: the operator listing and writes use.
+        """
+        kwargs = {"repo_type": self.REPO_TYPE, "repo_id": self.config.bucket}
+        token = reveal_secret(self.config.token)
+        if token:
+            kwargs["token"] = token
+        if self.config.endpoint:
+            kwargs["endpoint"] = self.config.endpoint
+        root = self._root()
+        if root:
+            kwargs["root"] = root
+        return opendal.AsyncOperator("hf", **kwargs)
+
+    def _root(self) -> str | None:
+        if not self.key_prefix:
+            return None
+        return "/" + self.key_prefix.strip("/") + "/"

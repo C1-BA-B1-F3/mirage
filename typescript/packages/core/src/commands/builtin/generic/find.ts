@@ -16,7 +16,8 @@ import { activeCacheManager } from '../../../cache/context.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { modifiedTs } from '../../../core/generic/find.ts'
-import { isEnoent, isEnotdir, isMissError } from '../../../utils/errors.ts'
+import { fsStrerror, isEnoent, isEnotdir, isMissError } from '../../../utils/errors.ts'
+import { dotRefusal, linkFollow, statOrEnoent } from '../utils/paths.ts'
 import { failureText } from '../../../errors/classify.ts'
 import { IOResult } from '../../../io/types.ts'
 import type { FindOptions } from '../../../vfs/base.ts'
@@ -463,6 +464,16 @@ export function findGeneric(
       // missing case answerable above every backend rather than only where
       // one wires a stat.
       const startStat = opts.statPath
+      // A start point's own `.` and `..` resolve first, link or not: the
+      // lookup below asks about the path they simplify to.
+      if (startStat !== undefined) {
+        const refusal = await dotRefusal(statOrEnoent(startStat), root, linkFollow(opts.ns?.links))
+        if (refusal !== null) {
+          const label = root.rawPath !== '' ? root.rawPath : root.virtual
+          missing.push(`find: '${label}': ${fsStrerror(refusal) ?? 'No such file or directory'}`)
+          continue
+        }
+      }
       let startIsDir = false
       if (startStat !== undefined && !rootIsLink) {
         let start = await startStat(root.virtual)

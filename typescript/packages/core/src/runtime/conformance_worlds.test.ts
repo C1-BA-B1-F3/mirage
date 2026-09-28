@@ -167,13 +167,17 @@ describe('structure world', () => {
   })
 
   it('link ancestors synthesize on every surface', async () => {
-    // ln permits /ghost/deep/lnk with no backend serving /ghost; its
-    // ancestors synthesize exactly as nested mount prefixes do, so
-    // `ls /` shows the way in and a guest walk from the root reaches
-    // the link.
+    // ln refuses /ghost/deep/lnk with no backend serving /ghost
+    // (symlink(2)'s ENOENT), but a node table restored from an older
+    // snapshot can still hold one; its ancestors synthesize exactly as
+    // nested mount prefixes do, so `ls /` shows the way in and a guest
+    // walk from the root reaches the link.
     const ws = await structureWorld()
     try {
-      expect((await run(ws, 'ln -s /base/a.txt /ghost/deep/lnk'))[0]).toBe(0)
+      const [refused, , why] = await run(ws, 'ln -s /base/a.txt /ghost/deep/lnk')
+      expect(refused).toBe(1)
+      expect(why).toContain('No such file or directory')
+      await ws.namespace.symlink('/ghost/deep/lnk', '/base/a.txt', 0)
       const stat = await ws.stat('/ghost')
       expect((stat as { type: FileType | null }).type).toBe(FileType.DIRECTORY)
       const [code, out] = await run(ws, 'ls /')

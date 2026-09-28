@@ -49,7 +49,7 @@ _NAMED_ESCAPES = {
 # family quote only when the name needs it (gnulib's ``shell_escape``
 # style), while head/tail/tac/fmt/split/csplit/truncate/strings quote
 # always and word the line differently ("cannot open X for reading").
-# head and tail say it in GNU's words (``OPEN_FAILURE_COMMANDS`` in
+# Those say it in GNU's words (``FAILURE_WORDING`` in
 # mirage.utils.errors). For the rest mirage renders one line shape, so it
 # renders one policy too: quote when the name needs it, which is the same
 # answer for every name that carries a metacharacter and differs only for
@@ -74,6 +74,7 @@ SHELL_QUOTED_COMMANDS: frozenset[str] = frozenset({
     "nl",
     "od",
     "paste",
+    "realpath",
     "sha1sum",
     "sha256sum",
     "sha384sum",
@@ -82,9 +83,7 @@ SHELL_QUOTED_COMMANDS: frozenset[str] = frozenset({
     "sort",
     "split",
     "strings",
-    "tac",
     "tee",
-    "truncate",
     "tsort",
     "unexpand",
     "uniq",

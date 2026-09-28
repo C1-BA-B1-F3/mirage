@@ -44,7 +44,13 @@ async def _collect(ait):
 
 
 def test_realpath_absolute():
+    # `..` is simplified once the name in front of it is proved a
+    # directory: GNU refuses `bar/..` while bar is missing and accepts
+    # it once it is there (coreutils 9.7).
     ws = _ws()
+    stdout, io = _run_raw(ws, "realpath /data/bar/../baz")
+    assert io.exit_code == 1
+    _run_raw(ws, "mkdir -p /data/bar")
     stdout, _ = _run_raw(ws, "realpath /data/bar/../baz")
     assert _bytes(stdout).strip() == b"/data/baz"
 
@@ -64,9 +70,8 @@ def test_realpath_e_missing_fails():
 
 
 def test_realpath_e_missing_message_not_doubled():
-    # Regression guard: the generic raises a plain (non-fs) error so
-    # format_fs_error emits it verbatim; a FileNotFoundError would be
-    # re-prefixed and re-suffixed into a doubled message.
+    # Regression guard: the operand is named once, quoted only when it
+    # needs it, the way GNU's quotef does (coreutils 9.7).
     ws = _ws()
 
     async def go():
@@ -75,4 +80,4 @@ def test_realpath_e_missing_message_not_doubled():
 
     code, err = asyncio.run(go())
     assert code == 1
-    assert err == "realpath: '/data/nope.txt': No such file or directory\n"
+    assert err == "realpath: /data/nope.txt: No such file or directory\n"

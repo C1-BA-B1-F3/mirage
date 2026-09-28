@@ -1,27 +1,55 @@
 import re
 from dataclasses import dataclass
 
+LIMIT = 64
+LONGEST = 4096
+QUANTIFIER = re.compile(r"[*+?]|\{(?P<least>[0-9]+)(?:,[0-9]*)?\}")
+GROUP = re.compile(
+    r"\?(?:(?P<look>=|!|<=|<!)|[:>]|P?<[A-Za-z_$][A-Za-z0-9_$]*>)")
+
 
 @dataclass(frozen=True, slots=True)
 class Required:
+    """What every match of a subexpression consumes: ``literal`` when the
+    text is fixed, and ``needles``, one of which it always contains (none
+    known when empty)."""
     literal: str | None
     needles: tuple[str, ...]
 
 
 UNKNOWN = Required(None, ())
-QUANTIFIER = re.compile(r"(?:[?*+]|\{([0-9]+)(?:,[0-9]*)?\})")
+EMPTY = Required("", ())
 
 
 def literal(text: str) -> Required:
     return Required(text, (text, ) if text else ())
 
 
-def strength(needles: tuple[str, ...]) -> int:
-    return min(map(len, needles), default=0)
+def strength(part: Required) -> int:
+    return min(map(len, part.needles), default=0)
+
+
+def sequence(left: Required, right: Required) -> Required:
+    if left.literal is not None and right.literal is not None:
+        return literal(left.literal + right.literal)
+    return Required(None, max(left, right, key=strength).needles)
+
+
+def either(left: Required, right: Required) -> Required:
+    if left.literal is not None and left.literal == right.literal:
+        return left
+    if not left.needles or not right.needles:
+        return UNKNOWN
+    needles = tuple(dict.fromkeys(left.needles + right.needles))
+    return Required(None, needles) if len(needles) <= LIMIT else UNKNOWN
 
 
 class RequiredLiterals:
-    """A bounded partial parser: unsupported syntax disables skipping."""
+    """A bounded partial parser: syntax it does not know disables skipping.
+
+    Args:
+        source (str): the host regex source, printable ASCII only.
+    """
 
     def __init__(self, source: str) -> None:
         self.source = source
@@ -31,122 +59,144 @@ class RequiredLiterals:
     def peek(self) -> str:
         return self.source[self.at:self.at + 1]
 
-    def parse(self, depth: int = 0) -> Required:
-        if depth > 32:
+    def needles(self) -> tuple[str, ...]:
+        required = self.alternation(0)
+        if not self.valid or self.at != len(self.source):
+            return ()
+        return required.needles
+
+    def alternation(self, depth: int) -> Required:
+        if depth > LIMIT:
             self.valid = False
             return UNKNOWN
-        branches: list[Required] = []
-        best: tuple[str, ...] = ()
-        run = ""
-        exact: str | None = ""
-        while self.at < len(self.source) and self.peek() != ")":
-            if self.peek() == "|":
-                branches.append(Required(exact, best))
-                best, run, exact = (), "", ""
-                self.at += 1
-                continue
-            atom = self.atom(depth)
-            if not self.valid:
-                return UNKNOWN
-            quantifier = QUANTIFIER.match(self.source, self.at)
-            if quantifier is not None:
-                self.at = quantifier.end()
-                optional = quantifier[0][0] in "?*" or (
-                    quantifier[1] is not None and not quantifier[1].strip("0"))
-                atom = UNKNOWN if optional else Required(None, atom.needles)
-                if self.peek() == "?":
-                    self.at += 1
-            exact = (exact + atom.literal if exact is not None
-                     and atom.literal is not None else None)
-            run = "" if atom.literal is None else run + atom.literal
-            candidate = (run, ) if run else atom.needles
-            if strength(candidate) > strength(best):
-                best = candidate
-        branches.append(Required(exact, best))
-        if depth == 0 and self.at != len(self.source):
+        required = self.concatenation(depth)
+        while self.valid and self.peek() == "|":
+            self.at += 1
+            required = either(required, self.concatenation(depth))
+        return required
+
+    def concatenation(self, depth: int) -> Required:
+        required = EMPTY
+        run: list[str] = []
+        while self.valid and self.peek() not in ("", "|", ")"):
+            atom = self.quantified(self.atom(depth))
+            if atom.literal is not None:
+                run.append(atom.literal)
+            else:
+                required = sequence(sequence(required, literal("".join(run))),
+                                    atom)
+                run = []
+        return sequence(required, literal("".join(run)))
+
+    def quantified(self, atom: Required) -> Required:
+        if self.peek() not in ("*", "+", "?", "{"):
+            return atom
+        bound = QUANTIFIER.match(self.source, self.at)
+        if bound is None:
             self.valid = False
-        if len(branches) == 1:
-            return branches[0]
-        if any(not branch.needles for branch in branches):
             return UNKNOWN
-        needles = tuple(dict.fromkeys(n for b in branches for n in b.needles))
-        return Required(None, needles) if len(needles) <= 64 else UNKNOWN
+        self.at = bound.end()
+        if self.peek() == "?":
+            self.at += 1
+        least = bound["least"]
+        if bound[0] == "+" or least is not None and int(least) > 0:
+            return Required(None, atom.needles)
+        return UNKNOWN
 
     def atom(self, depth: int) -> Required:
         char = self.peek()
         self.at += 1
         if char == "(":
-            assertion = False
-            if self.source.startswith(("?=", "?!", "?<=", "?<!"), self.at):
-                assertion = True
-                self.at += 3 if self.source.startswith("?<", self.at) else 2
-            elif self.source.startswith("?:", self.at):
-                self.at += 2
-            elif self.peek() == "?":
-                self.valid = False
-                return UNKNOWN
-            group = self.parse(depth + 1)
-            if self.peek() != ")":
-                self.valid = False
-            self.at += 1
-            return UNKNOWN if assertion else group
+            return self.group(depth)
         if char == "[":
-            if self.peek() == "^":
-                self.at += 1
-            if self.peek() == "]":
-                self.at += 1
-            while self.at < len(self.source):
-                member = self.peek()
-                self.at += 1
-                if member == "]":
-                    return UNKNOWN
-                if member == "\\":
-                    self.at += 1
-                if member == "[":
-                    break
-            self.valid = False
-            return UNKNOWN
+            return self.bracket()
         if char == "\\":
-            escaped = self.peek()
-            self.at += 1
-            if escaped and escaped in "bB":
-                return literal("")
-            if escaped and escaped in "dDsSwWnrtfv":
-                return UNKNOWN
-            if escaped and not escaped.isalnum():
-                return literal(escaped)
-            self.valid = False
-            return UNKNOWN
+            return self.escape()
         if char == ".":
             return UNKNOWN
-        if char in "^$":
-            return literal("")
-        if char in "*+?{}":
+        if char in ("^", "$"):
+            return EMPTY
+        if char in ("*", "+", "?", "{", "}"):
             self.valid = False
             return UNKNOWN
         return literal(char)
 
+    def group(self, depth: int) -> Required:
+        """A group's requirement; a lookaround consumes nothing.
+
+        Inline flags, comments, conditionals and named backreferences are
+        refused.
+
+        Args:
+            depth (int): the nesting depth of the group's parent.
+        """
+        opener = GROUP.match(self.source, self.at)
+        if opener is not None:
+            self.at = opener.end()
+        elif self.peek() == "?":
+            self.valid = False
+            return UNKNOWN
+        inner = self.alternation(depth + 1)
+        if self.peek() != ")":
+            self.valid = False
+            return UNKNOWN
+        self.at += 1
+        return EMPTY if opener is not None and opener["look"] else inner
+
+    def bracket(self) -> Required:
+        """Step over a bracket expression, which requires no literal.
+
+        A leading ``]`` is a member in Python and closes an empty set in
+        JavaScript, and a ``[`` inside is a nested set under JavaScript's
+        ``v`` flag, so both are refused rather than guessed.
+        """
+        if self.peek() == "^":
+            self.at += 1
+        if self.peek() == "]":
+            self.valid = False
+            return UNKNOWN
+        while self.at < len(self.source):
+            member = self.peek()
+            self.at += 1
+            if member == "]":
+                return UNKNOWN
+            if member == "[":
+                break
+            if member == "\\":
+                self.at += 1
+        self.valid = False
+        return UNKNOWN
+
+    def escape(self) -> Required:
+        char = self.peek()
+        self.at += 1
+        if char in ("b", "B"):
+            return EMPTY
+        if char in ("d", "D", "s", "S", "w", "W", "n", "r", "t", "f", "v"):
+            return UNKNOWN
+        if char and not char.isalnum():
+            return literal(char)
+        self.valid = False
+        return UNKNOWN
+
 
 def required_needles(pat: re.Pattern[str]) -> tuple[bytes, ...] | None:
-    """Find byte literals, at least one of which every matching line contains.
+    """Byte literals, one of which every line ``pat`` matches contains.
+
+    Under ``re.IGNORECASE`` they are lowercase, for a search of an
+    ASCII-lowercased view. Unicode case folding matches non-ASCII
+    spellings of ASCII letters (``ſ`` for ``s``), which only the line
+    matcher can see, so a pattern that folds that way gets none.
 
     Args:
         pat (re.Pattern[str]): the compiled line matcher.
     """
-    if (pat.flags & re.VERBOSE or len(pat.pattern) > 4096
+    fold = bool(pat.flags & re.IGNORECASE)
+    if (pat.flags & re.VERBOSE or fold and not pat.flags & re.ASCII
+            or len(pat.pattern) > LONGEST
             or any(not " " <= char <= "~" for char in pat.pattern)):
         return None
-    parser = RequiredLiterals(pat.pattern)
-    required = parser.parse().needles
-    if not parser.valid or not required:
-        return None
-    needles = [text.encode("ascii") for text in required]
-    if pat.flags & re.IGNORECASE:
-        needles = [text.lower() for text in needles]
-        # Python's Unicode IGNORECASE includes four non-ASCII ASCII spellings.
-        if not pat.flags & re.ASCII:
-            for letter, spelling in [(b"s", "ſ"), (b"k", "K"), (b"i", "İ"),
-                                     (b"i", "ı")]:
-                if any(letter in needle for needle in needles):
-                    needles.append(spelling.encode())
-    return tuple(needles)
+    needles = RequiredLiterals(pat.pattern).needles()
+    if fold:
+        needles = tuple(dict.fromkeys(needle.lower() for needle in needles))
+    return tuple(needle.encode("ascii") for needle in needles) or None

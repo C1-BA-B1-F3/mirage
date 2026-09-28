@@ -17,6 +17,7 @@ import { PathSpec } from '@struktoai/mirage-core/types'
 import { encodeBase64 } from '@struktoai/mirage-core/utils/base64'
 import { OPFSAccessor } from './accessor/opfs.ts'
 import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
+import { TRUNCATE_SCRIPT } from '@struktoai/mirage-core/vfs/redis/constants'
 
 export function spec(p: string): PathSpec {
   return PathSpec.fromStrPath(p)
@@ -295,6 +296,21 @@ class FakeRedis {
     switch (name) {
       case 'PING':
         return 'PONG'
+      case 'EVAL': {
+        // The real Redis tests execute the Lua; this fake models its REST contract.
+        if (rest.length !== 7 || key !== TRUNCATE_SCRIPT || argText(rest[1] ?? '') !== '2') {
+          throw new Error('ERR unsupported script')
+        }
+        const file = argText(rest[2] ?? '')
+        const modified = argText(rest[3] ?? '')
+        if (argText(rest[6] ?? '') === '1' && !this.data.has(file)) return 0
+        const length = Number(argText(rest[4] ?? ''))
+        const data = new Uint8Array(length)
+        data.set((this.bytesAt(file) ?? new Uint8Array(0)).subarray(0, length))
+        this.data.set(file, { kind: 'string', data })
+        this.data.set(modified, { kind: 'string', data: argBytes(rest[5] ?? '').slice() })
+        return 1
+      }
       case 'GET':
         if (rest.length !== 1) throw wrongArity(name)
         return this.bytesAt(key)

@@ -95,10 +95,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "sed 1d /data/a.txt",
+      "command": "sed 1d /data/a.txt; sed 1d /data/b.txt /data/a.txt",
       "expect": {
         "exit": 0,
-        "stdout": "world\nfoo\nbar\nbaz\n",
+        "stdout": "world\nfoo\nbar\nbaz\n2\n3\nhello\nworld\nfoo\nbar\nbaz\n",
         "stderr": ""
       }
     },
@@ -129,10 +129,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "sed '$d' /data/a.txt",
+      "command": "sed '$d' /data/a.txt; sed '$d' /data/a.txt /data/b.txt",
       "expect": {
         "exit": 0,
-        "stdout": "hello\nworld\nfoo\nbar\n",
+        "stdout": "hello\nworld\nfoo\nbar\nhello\nworld\nfoo\nbar\nbaz\n1\n2\n",
         "stderr": ""
       }
     },
@@ -1319,10 +1319,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "sed 's/no/NO/' /data/no_nl.txt",
+      "command": "sed 's/no/NO/' /data/no_nl.txt; sed 's/no/NO/' /data/no_nl.txt /data/b.txt /data/no_nl.txt",
       "expect": {
         "exit": 0,
-        "stdout": "NO trailing newline",
+        "stdout": "NO trailing newlineNO trailing newline\n1\n2\n3\nNO trailing newline",
         "stderr": ""
       }
     },

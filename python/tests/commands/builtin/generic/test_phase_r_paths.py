@@ -76,13 +76,17 @@ async def test_realpath_exists_check_passes():
 async def test_realpath_exists_check_fails():
 
     async def stat_fn(path):
-        raise FileNotFoundError
+        if path.virtual == "/missing":
+            raise FileNotFoundError
+        return FileStat(type=FileType.FILE, name="a")
 
-    # A plain (non-fs) error carrying the fully GNU-formatted message, so
-    # format_fs_error emits it verbatim; a FileNotFoundError would be
-    # re-wrapped into a doubled message (and diverge from the TS throw).
-    with pytest.raises(ValueError, match="realpath"):
-        await realpath([_spec("/missing")], stat_fn=stat_fn, e=True)
+    # One unresolved operand is reported and the rest still print, exit 1
+    # (coreutils 9.7), rather than aborting the command.
+    out, io = await realpath(
+        [_spec("/missing"), _spec("/a")], stat_fn=stat_fn, e=True)
+    assert io.exit_code == 1
+    assert io.stderr == b"realpath: /missing: No such file or directory\n"
+    assert out == b"/a\n"
 
 
 @pytest.mark.asyncio

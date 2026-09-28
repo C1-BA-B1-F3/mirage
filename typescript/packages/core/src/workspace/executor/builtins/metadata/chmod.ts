@@ -14,13 +14,17 @@
 
 import type { FileStat } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
-import { fsStrerror, isEnoent, isEnotdir } from '../../../../utils/errors.ts'
 import { DEFAULT_DIR_MODE, DEFAULT_FILE_MODE, parseChmod } from '../../../../utils/mode.ts'
-import { CycleError } from '../../../../utils/path.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import { expandOperands, fail, finish, splitValueFlags } from '../shared.ts'
-import { isReadOnlyError, permissionError, setattrVia, walkStats } from './metadata.ts'
+import {
+  isReadOnlyError,
+  permissionError,
+  resolveOperand,
+  setattrVia,
+  walkStats,
+} from './metadata.ts'
 import type { Result } from '../types.ts'
 
 // chmod MODE FILE...: set permission bits via setattr. Follows symlinks
@@ -47,29 +51,9 @@ export async function handleChmod(
   const recursive = flags.has('R')
   const errors: string[] = []
   for (const target of await expandOperands(namespace, operands.slice(1))) {
-    let virtual: string
-    try {
-      virtual = namespace.follow(target.virtual)
-    } catch (err) {
-      if (err instanceof CycleError) {
-        errors.push(`chmod: cannot access '${target.rawPath}': Too many levels of symbolic links\n`)
-        continue
-      }
-      throw err
-    }
-    const resolved = PathSpec.fromStrPath(virtual)
-    let stat: FileStat
-    try {
-      const [result] = await dispatch('stat', resolved)
-      stat = result as FileStat
-    } catch (err) {
-      const strerror = isEnoent(err) || isEnotdir(err) ? fsStrerror(err) : null
-      if (strerror !== null) {
-        errors.push(`chmod: cannot access '${target.rawPath}': ${strerror}\n`)
-        continue
-      }
-      throw err
-    }
+    const found = await resolveOperand(namespace, dispatch, 'chmod', target, errors)
+    if (found === null) continue
+    const [resolved, stat] = found
     const entries: [PathSpec, FileStat][] = recursive
       ? await walkStats(namespace, dispatch, resolved, stat)
       : [[resolved, stat]]

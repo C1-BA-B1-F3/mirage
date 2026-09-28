@@ -166,7 +166,10 @@ SPECS: dict[str, CommandSpec] = {
     CommandSpec(rest=Operand(type="path")),
     'truncate':
     CommandSpec(
-        options=(Option(short="-s", long="--size", type="str"), ),
+        options=(
+            Option(short="-c", long="--no-create"),
+            Option(short="-s", long="--size", type="str"),
+        ),
         rest=Operand(type="path"),
     ),
     'basename':

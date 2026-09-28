@@ -29,6 +29,12 @@ import {
 import { type ByteSource, materialize } from '../../../../io/types.ts'
 import { type FileStat, FileType, PathSpec, wordText } from '../../../../types.ts'
 import {
+  absentDestStrerror,
+  dispatchStat,
+  dotRefusal,
+  typedSpec,
+} from '../../../../commands/builtin/utils/paths.ts'
+import {
   fsStrerror,
   isEacces,
   isEexist,
@@ -222,6 +228,41 @@ function followVisible(namespace: Namespace, virtual: string): string {
   return pathAllowed(virtual) ? namespace.follow(virtual) : virtual
 }
 
+// An operand as the path the kernel reaches, its final name kept. Command
+// dispatch walks the links above the name of every operand it classifies;
+// ln's relative words arrive unclassified, so they are walked here, and
+// every namespace read in this module sees the name the door will. A hidden
+// path stays as typed, and a loop is left for the door to report when the
+// link is made. Mirrors Python's _operand_abs.
+function operandAbs(namespace: Namespace, arg: string | PathSpec, cwd: string): string {
+  const virtual = absPath(arg, cwd)
+  if (arg instanceof PathSpec || !pathAllowed(virtual)) return virtual
+  try {
+    return namespace.followParent(virtual)
+  } catch (err) {
+    if (err instanceof CycleError) return virtual
+    throw err
+  }
+}
+
+const ENOENT_TEXT = 'No such file or directory'
+const ELOOP_TEXT = 'Too many levels of symbolic links'
+
+// ln's line for a link its name's parent chain would not take. GNU words
+// the step that failed. Under -f or -b it lstats the name before anything
+// else, and an error there other than absence is `failed to access`; the
+// rest fail at link(2) or symlink(2), where a hard link names its target
+// alongside and a symlink never does. Mirrors Python's _refused.
+function refused(flags: LnFlags, typed: string, targetTyped: string, why: string): string {
+  const backs = flags.backup !== null && flags.backup !== 'none'
+  if ((flags.force || backs) && why !== ENOENT_TEXT) {
+    return `ln: failed to access '${typed}': ${why}\n`
+  }
+  const kind = flags.symbolic ? 'symbolic link' : 'hard link'
+  const arrow = flags.symbolic ? '' : ` => '${targetTyped}'`
+  return `ln: failed to create ${kind} '${typed}'${arrow}: ${why}\n`
+}
+
 async function dirAt(
   namespace: Namespace,
   dispatch: DispatchFn,
@@ -275,10 +316,14 @@ export async function planLinks(
   const hint = `${usageHint('ln')}\n`
   if (targetDir !== null) {
     const typed = targetTyped ?? targetDir
+    const unwalked = await dotRefusal(dispatchStat(dispatch), typedSpec(typed, cwd))
+    if (unwalked !== null) {
+      return [[], `ln: failed to access '${typed}': ${fsStrerror(unwalked) ?? ENOENT_TEXT}\n`]
+    }
     const [resolved, stat] = await dirAt(
       namespace,
       dispatch,
-      absPath(targetDir, cwd),
+      operandAbs(namespace, targetDir, cwd),
       flags.noDereference,
     )
     if (stat === null) {
@@ -300,10 +345,13 @@ export async function planLinks(
     if (extra !== undefined) return [[], `ln: extra operand '${wordText(extra)}'\n${hint}`]
     const link = operands[1]
     if (link === undefined) return [[], null]
-    return [[{ source: first, linkAbs: absPath(link, cwd), linkTyped: wordText(link) }], null]
+    return [
+      [{ source: first, linkAbs: operandAbs(namespace, link, cwd), linkTyped: wordText(link) }],
+      null,
+    ]
   }
   const last = operands[operands.length - 1] ?? first
-  const lastAbs = absPath(last, cwd)
+  const lastAbs = operandAbs(namespace, last, cwd)
   const [resolved, stat] = await dirAt(namespace, dispatch, lastAbs, flags.noDereference)
   const isDir = stat !== null && stat.type === FileType.DIRECTORY
   if (operands.length === 2 && !isDir) {
@@ -384,6 +432,22 @@ export async function makeLink(
   const targetTyped = wordText(plan.source)
   let linkTarget: string | null = null
   let data: Uint8Array | null = null
+  // A `.` or `..` resolves against the directory in front of it, which has
+  // to be there. A symlink's target is stored as typed and never walked; a
+  // hard link's is the file it names.
+  const walker = dispatchStat(dispatch)
+  if (!flags.symbolic) {
+    const unwalked = await dotRefusal(walker, typedSpec(plan.source, cwd))
+    if (unwalked !== null) {
+      errors.push(`ln: failed to access '${targetTyped}': ${fsStrerror(unwalked) ?? ENOENT_TEXT}\n`)
+      return
+    }
+  }
+  const unwalked = await dotRefusal(walker, typedSpec(typed, cwd))
+  if (unwalked !== null) {
+    errors.push(refused(flags, typed, targetTyped, fsStrerror(unwalked) ?? ENOENT_TEXT))
+    return
+  }
   if (flags.symbolic) {
     linkTarget = targetTyped
     if (flags.relative) {
@@ -404,7 +468,7 @@ export async function makeLink(
       linkTarget = posixRelative(targetAbs, linkDir)
     }
   } else {
-    const srcAbs = absPath(plan.source, cwd)
+    const srcAbs = operandAbs(namespace, plan.source, cwd)
     if (visibleLink(namespace, srcAbs) && !flags.logical) {
       linkTarget = namespace.readlink(srcAbs)
     } else {
@@ -448,13 +512,12 @@ export async function makeLink(
       ? await linkTargetStat(namespace, dispatch, plan.linkAbs, null)
       : await pathStat(dispatch, plan.linkAbs)
     if (behind !== null && behind.type !== FileType.DIRECTORY && (flags.force || backs)) {
-      errors.push(`ln: failed to access '${typed}': Not a directory\n`)
+      errors.push(refused(flags, typed, targetTyped, 'Not a directory'))
       return
     }
     if (!linked && behind === null) {
-      const arrow = flags.symbolic ? '' : ` => '${targetTyped}'`
       const why = await missStrerror(dispatch, plan.linkAbs)
-      errors.push(`ln: failed to create ${kind} '${typed}'${arrow}: ${why}\n`)
+      errors.push(refused(flags, typed, targetTyped, why))
       return
     }
     if (linked && behind?.type !== FileType.DIRECTORY) {
@@ -469,7 +532,7 @@ export async function makeLink(
   if (
     flags.force &&
     !backs &&
-    absPath(plan.source, cwd) === plan.linkAbs &&
+    operandAbs(namespace, plan.source, cwd) === plan.linkAbs &&
     (visibleLink(namespace, plan.linkAbs) || (await pathStat(dispatch, plan.linkAbs)) !== null)
   ) {
     errors.push(`ln: '${targetTyped}' and '${typed}' are the same file\n`)
@@ -523,6 +586,10 @@ export async function makeLink(
         errors.push(`ln: ${typed}: cannot overwrite directory\n`)
         return
       }
+      if (err instanceof CycleError) {
+        errors.push(refused(flags, typed, targetTyped, ELOOP_TEXT))
+        return
+      }
       if (!isEnoent(err) && !isEnotdir(err)) throw err
     }
     occupied = false
@@ -531,6 +598,17 @@ export async function makeLink(
     errors.push(`ln: failed to create ${kind} '${typed}': File exists\n`)
     return
   }
+  if (linkTarget === null) {
+    // A byte copy lands through the backend's write, which on a keyed
+    // store makes the key whatever stands above it. ln is not mkdir -p, so
+    // the parent chain of the name (absent by now) is judged first, as cp
+    // judges its destination's; the door judges a symlink's itself.
+    const why = await absentDestStrerror(dispatchStat(dispatch), linkSpec)
+    if (why !== null) {
+      errors.push(refused(flags, typed, targetTyped, why))
+      return
+    }
+  }
   try {
     if (linkTarget !== null) {
       await dispatch('symlink', linkSpec, [], { target: linkTarget })
@@ -538,6 +616,16 @@ export async function makeLink(
       await dispatch('write', linkSpec, [data ?? new Uint8Array()])
     }
   } catch (err) {
+    if (isEnoent(err) || isEnotdir(err)) {
+      // The door refuses a name its parent cannot hold (symlink(2)'s
+      // ENOENT and ENOTDIR), and a store's write refuses the same way.
+      errors.push(refused(flags, typed, targetTyped, fsStrerror(err) ?? ENOENT_TEXT))
+      return
+    }
+    if (err instanceof CycleError) {
+      errors.push(refused(flags, typed, targetTyped, ELOOP_TEXT))
+      return
+    }
     if (isEexist(err)) {
       // The door owns the existence rule (it is the only layer that can
       // see both the node table and the backend); ln owns the wording.

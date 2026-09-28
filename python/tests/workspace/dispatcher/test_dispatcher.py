@@ -70,6 +70,7 @@ def _dispatcher(policies: Policies) -> tuple[Dispatcher, MagicMock]:
     namespace = MagicMock()
     namespace.ensure_loaded = AsyncMock()
     namespace.follow = MagicMock(side_effect=lambda p: p)
+    namespace.follow_parent = MagicMock(side_effect=lambda p: p)
     mount = MagicMock()
     mount.prefix = "/data/"
     mount.retiring = False
@@ -511,6 +512,98 @@ async def test_symlink_refuses_an_occupied_name(occupied):
                               PathSpec.from_str_path(occupied),
                               target="elsewhere")
         assert (await ws.shell("cat /ram/a.txt")).stdout == b"hi\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name,refusal", [
+    ("/ram/nope/y", FileNotFoundError),
+    ("/ram/nope/deeper/y", FileNotFoundError),
+    ("/ram/dangling/y", FileNotFoundError),
+    ("/ram/a.txt/y", NotADirectoryError),
+    ("/ram/a.txt/sub/y", NotADirectoryError),
+    ("/ram/flink/y", NotADirectoryError),
+])
+async def test_symlink_refuses_a_name_its_parent_cannot_hold(name, refusal):
+    # symlink(2) resolves the directory a name goes in before the name:
+    # ENOENT when it is absent, ENOTDIR when a plain file stands in the
+    # chain at any depth, and a link above the name is followed first.
+    # Unchecked, the node was an orphan that invented the directories
+    # above it, which ls then listed.
+    with Workspace({"/ram/": RAMVFS()}, mode=MountMode.WRITE) as ws:
+        await ws.shell("echo hi > /ram/a.txt; mkdir /ram/d")
+        await ws.shell("ln -s missing /ram/dangling; ln -s a.txt /ram/flink")
+        with pytest.raises(refusal):
+            await ws.dispatch("symlink",
+                              PathSpec.from_str_path(name),
+                              target="x")
+        assert sorted(
+            ws.namespace.symlink_targets()) == ["/ram/dangling", "/ram/flink"]
+        listing = (await ws.shell("ls /ram")).stdout
+        assert listing == b"a.txt\nd\ndangling\nflink\n"
+
+
+@pytest.mark.asyncio
+async def test_a_link_made_under_a_linked_directory_lands_in_its_target():
+    # Every link above the final name is followed before the op sees the
+    # path, whichever surface named it. The node table filed a relative
+    # `ln -s t alias/x` under the alias's own name, where no listing of
+    # the directory and no read through it ever looked.
+    with Workspace({"/ram/": RAMVFS()}, mode=MountMode.WRITE) as ws:
+        await ws.shell("mkdir /ram/d /ram/e; ln -s d /ram/alias")
+        await ws.dispatch("symlink",
+                          PathSpec.from_str_path("/ram/alias/x"),
+                          target="t")
+        await ws.dispatch("symlink",
+                          PathSpec.from_str_path("/ram/e/empty"),
+                          target="t")
+        assert ws.namespace.readlink("/ram/d/x") == "t"
+        assert not ws.namespace.is_link("/ram/alias/x")
+        found, _ = await ws.dispatch("readlink",
+                                     PathSpec.from_str_path("/ram/alias/x"))
+        assert found == "t"
+        assert ws.namespace.readlink("/ram/e/empty") == "t"
+
+
+@pytest.mark.asyncio
+async def test_a_link_in_a_listed_directory_costs_only_the_occupancy_probes():
+    # The parent check rides on the probes the occupancy check already
+    # makes: a parent whose listing answered with entries is a directory,
+    # so a link made there asks the backend nothing more. The walk is for
+    # an empty or silent parent, which is the refusal path nearly always.
+    with Workspace({"/ram/": RAMVFS()}, mode=MountMode.WRITE) as ws:
+        await ws.shell("mkdir /ram/d; echo hi > /ram/d/a.txt")
+        mount = ws.namespace.mount_for("/ram/d")
+        execute = mount.execute_op
+        seen: list[tuple[str, str]] = []
+
+        async def spy(op, path, *args, **kwargs):
+            seen.append((op, path))
+            return await execute(op, path, *args, **kwargs)
+
+        mount.execute_op = spy
+        await ws.dispatch("symlink",
+                          PathSpec.from_str_path("/ram/d/x"),
+                          target="t")
+        assert seen == [("stat", "/ram/d/x"), ("readdir", "/ram/d")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("landing,refusal", [
+    ("/ram/nope/x", FileNotFoundError),
+    ("/ram/a.txt/x", NotADirectoryError),
+])
+async def test_a_link_rename_refuses_a_landing_its_parent_cannot_hold(
+        landing, refusal):
+    # rename(2) resolves the destination's directory as symlink(2) does,
+    # and the node table moved a link anywhere at all.
+    with Workspace({"/ram/": RAMVFS()}, mode=MountMode.WRITE) as ws:
+        await ws.shell("echo hi > /ram/a.txt; ln -s a.txt /ram/link")
+        with pytest.raises(refusal):
+            await ws.dispatch("rename",
+                              PathSpec.from_str_path("/ram/link"),
+                              dst=PathSpec.from_str_path(landing))
+        assert ws.namespace.readlink("/ram/link") == "a.txt"
+        assert not ws.namespace.is_link(landing)
 
 
 @pytest.mark.asyncio

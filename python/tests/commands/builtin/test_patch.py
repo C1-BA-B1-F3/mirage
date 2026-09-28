@@ -112,13 +112,14 @@ async def test_patch_preserves_virtual_paths_for_mounted_io(prefix, source):
         files[path.vfs_path] = data
 
     input_path = PathSpec.from_str_path(prefix + "/fix.diff", "fix.diff")
+    orig_path = PathSpec.from_str_path(prefix + "/hello.txt", "hello.txt")
     flags = {"p": "1"}
     if source == "input":
         flags["i"] = input_path
     opts = CommandOpts(flags=flags,
                        mount_prefix=prefix,
                        stdin=patch_data if source == "stdin" else None)
-    await patch_generic([input_path] if source == "operand" else [], [], opts,
-                        read, write, True)
+    operands = [orig_path, input_path] if source == "operand" else []
+    await patch_generic(operands, [], opts, read, write, True)
     assert "hello.txt" in seen
     assert files["hello.txt"] == b"hello\nuniverse\n"

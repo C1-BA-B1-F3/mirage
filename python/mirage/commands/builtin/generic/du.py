@@ -16,6 +16,7 @@ from mirage.context import (hidden_paths_intersect, path_allowed,
 from mirage.io.types import IOResult
 from mirage.ops.types import LinkView, MountView, StatPath
 from mirage.types import FileStat, PathSpec
+from mirage.utils.errors import DotWalkError, fs_strerror
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.path import respell_raw
 from mirage.vfs.types import DuEntries
@@ -231,6 +232,11 @@ async def du_operands(
         try:
             await stat(path)
             stattable = True
+        except DotWalkError as exc:
+            # The operand did not resolve, so no channel asked about the
+            # path it simplifies to can find it there.
+            missing.append((path.raw_path, fs_strerror(exc) or ENOENT_TEXT))
+            continue
         except NotADirectoryError:
             # An operand typed with a trailing slash that did not name a
             # directory. Unreadable like a missing one, but GNU reports

@@ -142,9 +142,11 @@ def test_always_quotes_even_an_ordinary_name():
 def test_quotes_operands_reads_the_table():
     assert quotes_operands("cat")
     assert quotes_operands("wc")
-    assert quotes_operands("tac")
+    assert quotes_operands("fold")
     assert quotes_operands("sort")
     assert not quotes_operands("head")
+    assert not quotes_operands("tac")
+    assert not quotes_operands("truncate")
     assert not quotes_operands("grep")
     assert not quotes_operands("sed")
     assert not quotes_operands("rev")

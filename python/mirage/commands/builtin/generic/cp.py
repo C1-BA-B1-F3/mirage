@@ -20,6 +20,9 @@ from mirage.commands.builtin.utils.constants import DEFAULT_BACKUP_SUFFIX
 from mirage.commands.builtin.utils.copy import (backend_key_default,
                                                 copy_targets, is_directory,
                                                 path_exists)
+from mirage.commands.builtin.utils.paths import (absent_dest_strerror,
+                                                 descendant_path,
+                                                 nearest_ancestor)
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.argmatch import ArgmatchMatch, argmatch
 from mirage.commands.spec.flag_view import FlagView
@@ -30,9 +33,8 @@ from mirage.types import (CopyStrategy, FileStat, FileType, NativeCopy,
                           NativeMove, PathSpec, PrimitiveCopy, PrimitiveMove,
                           ReaddirFn, StatFn)
 from mirage.utils.dates import iso_timestamp
-from mirage.utils.errors import FS_ERRORS, fs_strerror
+from mirage.utils.errors import FS_ERRORS, DotWalkMissing, fs_strerror
 from mirage.utils.key_prefix import mounted_path, rekey
-from mirage.utils.path import norm, parent
 
 UPDATE_MODES = ("all", "none", "none-fail", "older")
 
@@ -295,8 +297,8 @@ async def dest_kind(stat: StatFn,
     The backends answer ENOENT for a path under a plain file just as
     they do for a genuinely absent one (only a slashed operand makes the
     stat itself say ENOTDIR), so the chain is walked upward until
-    something exists; the common case (the parent is there) costs a
-    single stat.
+    something exists (:func:`absent_dest_strerror`); the common case
+    (the parent is there) costs a single stat.
 
     Args:
         stat (StatFn): Stats a path; raises when missing.
@@ -311,26 +313,15 @@ async def dest_kind(stat: StatFn,
         info = await stat(target)
     except NotADirectoryError:
         return False, False, "Not a directory"
+    except DotWalkMissing:
+        # Its `..` passes a name that is not there: the chain of the path
+        # it simplifies to says nothing about this one.
+        return False, False, "No such file or directory"
     except (FileNotFoundError, ValueError):
         pass
     else:
         return _slash_aware_kind(target, info)
-    immediate = parent(norm(target.virtual))
-    node = immediate
-    while node != "/":
-        exists, is_dir = await entry_kind(stat, descendant_path(target, node))
-        if exists:
-            if not is_dir:
-                return False, False, "Not a directory"
-            # An existing directory higher up means the intermediate
-            # components are simply absent.
-            return False, False, (None if node == immediate else
-                                  "No such file or directory")
-        node = parent(node)
-    # The mount root always exists as a directory and is never stat-ed:
-    # a backend that cannot stat "/" must not fail every copy into it.
-    return False, False, (None
-                          if immediate == "/" else "No such file or directory")
+    return False, False, await absent_dest_strerror(stat, target)
 
 
 def slash_refuses_file(target: PathSpec, target_exists: bool,
@@ -354,28 +345,6 @@ def slash_refuses_file(target: PathSpec, target_exists: bool,
     """
     return (not target_exists and target.raw_path.endswith("/")
             and not src_is_dir)
-
-
-async def entry_kind(stat: StatFn, path: PathSpec) -> tuple[bool, bool]:
-    """Probe a path once for ``(exists, is_dir)``.
-
-    ENOTDIR counts as "does not exist": a path whose parent chain runs
-    through a plain file cannot exist. This is the probe for a path
-    that is not an operand (an ancestor in a chain walk, an overwrite
-    target already paired); an operand itself goes through
-    :func:`source_kind` or :func:`dest_kind`, which keep the ENOTDIR a
-    slashed spelling earns. ``NotADirectoryError`` is not a
-    ``FileNotFoundError`` subclass, so it has to be named explicitly.
-
-    Args:
-        stat (StatFn): Stats a path; raises when missing.
-        path (PathSpec): The probed path.
-    """
-    try:
-        info = await stat(path)
-    except (FileNotFoundError, NotADirectoryError, ValueError):
-        return False, False
-    return True, info.type == FileType.DIRECTORY
 
 
 async def source_kind(stat: StatFn,
@@ -409,16 +378,9 @@ async def source_kind(stat: StatFn,
         pass
     else:
         return _slash_aware_kind(path, info)
-    node = parent(norm(path.virtual))
-    while node != "/":
-        node_exists, node_is_dir = await entry_kind(
-            stat, descendant_path(path, node))
-        if node_exists:
-            if not node_is_dir:
-                return False, False, "Not a directory"
-            break
-        node = parent(node)
-    return False, False, "No such file or directory"
+    _, is_dir = await nearest_ancestor(stat, path)
+    return False, False, ("No such file or directory"
+                          if is_dir else "Not a directory")
 
 
 def overwrite_type_error(cmd_name: str, src: PathSpec, src_is_dir: bool,
@@ -605,11 +567,6 @@ def transfer_line(src: PathSpec, target: PathSpec,
     if backup is not None:
         line += f" (backup: '{backup.virtual}')"
     return line
-
-
-def descendant_path(root: PathSpec, virtual: str) -> PathSpec:
-    return PathSpec.from_str_path(virtual,
-                                  rekey(root.virtual, root.vfs_path, virtual))
 
 
 async def _tree_lines(strategy: NativeCopy, src: PathSpec, target: PathSpec,
@@ -885,6 +842,7 @@ async def cp(
     flags: CpFlags,
     backend_key: Callable[[PathSpec], str] | None = None,
     readdir: ReaddirFn | None = None,
+    link_at: Callable[[PathSpec], FileStat | None] | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     """Copy sources to a destination, fanning out into a directory.
 
@@ -906,6 +864,10 @@ async def cp(
             normalized mount-relative path.
         readdir (ReaddirFn | None): Directory lister for backup version
             scans; the primitive strategy's own lister is used when None.
+        link_at (Callable | None): The link standing at the name a
+            destination was typed as, its own row, None where none stands
+            (the router has followed the operand by the time cp runs);
+            None outside a workspace.
 
     Returns:
         tuple[ByteSource | None, IOResult]: Verbose output and recorded
@@ -984,6 +946,21 @@ async def cp(
                                         target_exists, target_is_dir)
         if mismatch is not None:
             errors.append(mismatch)
+            continue
+        if (not target_exists and link_at is not None
+                and link_at(target) is not None):
+            # A dangling link: the stat followed it to nothing, but the
+            # name is taken. GNU will not create the file it points at
+            # (POSIX would), and the link is a non-directory to a tree.
+            if src_is_dir:
+                errors.append(f"cp: cannot overwrite non-directory "
+                              f"'{target.raw_path}' with directory "
+                              f"'{src.raw_path}'")
+                continue
+            if flags.verbose:
+                lines.append(transfer_line(src, target, None))
+            errors.append("cp: not writing through dangling symlink "
+                          f"'{target.raw_path}'")
             continue
         if flags.recursive and src_is_dir:
             src_base = src.mount_path.rstrip("/")

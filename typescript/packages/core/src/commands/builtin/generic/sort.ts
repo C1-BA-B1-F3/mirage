@@ -355,10 +355,13 @@ export async function sortGeneric(
         }),
       ]
     }
-    const outputPath = PathSpec.fromStrPath(
-      parsed.output.virtual,
-      mountKey(parsed.output.virtual, opts.mountPrefix ?? ''),
-    )
+    const outputPath = new PathSpec({
+      virtual: parsed.output.virtual,
+      directory: parsed.output.directory,
+      vfsPath: mountKey(parsed.output.virtual, opts.mountPrefix ?? ''),
+      rawPath: parsed.output.rawPath,
+      dotted: parsed.output.dotted,
+    })
     try {
       await write(outputPath, output)
     } catch (error) {

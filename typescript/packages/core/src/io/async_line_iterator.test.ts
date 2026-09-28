@@ -200,3 +200,37 @@ it('skips only complete lines and preserves candidates across source chunks', as
   expect(await iter.readline()).toEqual(encode('tail'))
   expect(await iter.readline()).toBeNull()
 })
+
+it("keeps each needle's next hit across interleaved candidates under folding", async () => {
+  const iter = new AsyncLineIterator(fromChunks([encode('x\nA1\nx\nx\nb2\nx\na3\nx\nB4\nx')]))
+  expect(await iter.readline()).toEqual(encode('x'))
+  const needles = ['a', 'b']
+  const seen: [[number, number], string][] = []
+  for (;;) {
+    const skipped = iter.skipNonmatchingLines(needles, true)
+    const line = await iter.readline()
+    if (line === null) break
+    seen.push([skipped, new TextDecoder().decode(line)])
+  }
+  expect(seen).toEqual([
+    [[0, 0], 'A1'],
+    [[2, 4], 'b2'],
+    [[1, 2], 'a3'],
+    [[1, 2], 'B4'],
+    [[0, 0], 'x'],
+  ])
+})
+
+it('skips records by another delimiter', async () => {
+  const iter = new AsyncLineIterator(
+    fromChunks([encode('a\nb\0needle\nc\0d\0nee'), encode('dle\0')]),
+  )
+  const needles = ['needle']
+  expect(await iter.readUntil(0)).toEqual([encode('a\nb'), true])
+  expect(iter.skipNonmatchingLines(needles, false, 0)).toEqual([0, 0])
+  expect(await iter.readUntil(0)).toEqual([encode('needle\nc'), true])
+  expect(iter.skipNonmatchingLines(needles, false, 0)).toEqual([1, 2])
+  expect(await iter.readUntil(0)).toEqual([encode('needle'), true])
+  expect(iter.skipNonmatchingLines(needles, false, 0)).toEqual([0, 0])
+  expect(await iter.readUntil(0)).toEqual([encode(''), false])
+})

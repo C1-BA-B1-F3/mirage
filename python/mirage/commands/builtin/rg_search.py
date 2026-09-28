@@ -647,20 +647,25 @@ def nonmatch_stop(f: RgFlags) -> NonmatchStop:
 async def _records(
         lines: AsyncLineIterator, f: RgFlags,
         pat: re.Pattern[str]) -> AsyncIterator[tuple[bytes, int, int]]:
-    """Read records through the delimiter selected by rg.
+    """Read records through the delimiter selected by rg, each with the
+    records and bytes skipped before it.
+
+    A record holding none of the pattern's needles cannot be selected, so
+    it is skipped unless the output prints or stops at unselected records:
+    -v, --stop-on-nonmatch, --passthru and printed context.
 
     Args:
         lines (AsyncLineIterator): The input cursor.
         f (RgFlags): The parsed flags.
         pat (re.Pattern[str]): The compiled line matcher.
     """
-    needles = (required_needles(pat)
-               if not (f.invert or f.null_data or f.stop_on_nonmatch
-                       or prints_context(f) or f.passthru) else None)
+    needles = (None if f.invert or f.stop_on_nonmatch or f.passthru
+               or prints_context(f) else required_needles(pat))
+    fold = bool(pat.flags & re.IGNORECASE)
     delimiter = b"\0" if f.null_data else b"\n"
     while True:
-        skipped, size = (lines.skip_nonmatching_lines(
-            needles, bool(pat.flags & re.IGNORECASE)) if needles else (0, 0))
+        skipped, size = (lines.skip_nonmatching_lines(needles, fold, delimiter)
+                         if needles is not None else (0, 0))
         raw, terminated = await lines.read_until(delimiter)
         if not terminated and not raw:
             return

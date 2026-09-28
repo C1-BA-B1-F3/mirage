@@ -782,16 +782,12 @@ async def test_offsets_and_context_after_empty_lines(flags):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("record",
                          [b"abcdefg\n", b"abcdefg\0", b"\xffabcdef\n"])
-@pytest.mark.parametrize("pattern,folds", [
-    ("needle", 0),
-    ("needle", re.IGNORECASE),
-    ("needle|qqzzyy", 0),
-    ("nee.le", 0),
-    (r"\bneedle\b", 0),
-    ("(?:needle)|(?:qqzzyy)", 0),
-    ("needle[0-9]+", 0),
+@pytest.mark.parametrize("pattern", [
+    "needle", "needle|qqzzyy", "nee.le", r"\bneedle\b",
+    "(?:needle)|(?:qqzzyy)", "(?:needle|other)+", "needle[0-9]+"
 ])
-async def test_reject_short_records_by_buffer(record, pattern, folds,
+@pytest.mark.parametrize("flags", [re.ASCII, re.ASCII | re.I])
+async def test_reject_short_records_by_buffer(record, pattern, flags,
                                               monkeypatch):
     data = record * 40000
     reads = 0
@@ -810,20 +806,21 @@ async def test_reject_short_records_by_buffer(record, pattern, folds,
     f = parse_flags(FlagView({"c": True}, spec=SPECS["grep"]), False)
     io = IOResult()
     out = await materialize(
-        grep_input(source(), re.compile(pattern, folds), f, "f", False, io))
+        grep_input(source(), re.compile(pattern, flags), f, "f", False, io))
     assert (out, io.exit_code, io.stderr) == (b"0\n", 1, None)
     assert reads < 50
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("size,pattern", [
-    (7, "needle"),
-    (16384, "needle"),
-    (PROBE_BLOCK_BYTES, "needle"),
-    (7, "needle|qqzzyy"),
-    (16384, "NEEDLE"),
-    (PROBE_BLOCK_BYTES, "nee.le"),
-    (7, r"\bneedle\b"),
+@pytest.mark.parametrize("size,pattern,folds", [
+    (7, "needle", 0),
+    (16384, "needle", re.I),
+    (PROBE_BLOCK_BYTES, "needle", 0),
+    (7, "needle|qqzzyy", re.I),
+    (16384, "NEEDLE", re.I),
+    (PROBE_BLOCK_BYTES, "nee.le", 0),
+    (7, r"\bneedle\b", re.I),
+    (16384, r"(?<!\w)needle(?!\w)", 0),
 ])
 @pytest.mark.parametrize("flags", [
     {},
@@ -867,7 +864,7 @@ async def test_reject_short_records_by_buffer(record, pattern, folds,
     },
 ])
 async def test_literal_prefilter_preserves_unfiltered_results(
-        size, pattern, flags):
+        size, pattern, folds, flags):
     data = (b"abcdefg\n" * 2100 + b"\xff\0\n" + "é needle 😀\n".encode() +
             b"abcdefg\n" * 2100 + b"needle needle")
     for mode in ["binary", "text", "without-match"]:
@@ -883,15 +880,14 @@ async def test_literal_prefilter_preserves_unfiltered_results(
             }, spec=SPECS["grep"]), False)
         fast = IOResult()
         slow = IOResult()
+        pat = re.compile(pattern, re.ASCII | folds)
         with patch.object(AsyncLineIterator,
                           "skip_nonmatching_lines",
                           return_value=(0, 0)):
             expected = await materialize(
-                grep_input(source(), re.compile(pattern, re.IGNORECASE), f,
-                           "f", True, slow))
+                grep_input(source(), pat, f, "f", True, slow))
         actual = await materialize(
-            grep_input(source(), re.compile(pattern, re.IGNORECASE), f, "f",
-                       True, fast))
+            grep_input(source(), pat, f, "f", True, fast))
         assert (actual, fast.stderr, fast.exit_code) == (expected, slow.stderr,
                                                          slow.exit_code)
 
@@ -926,10 +922,19 @@ async def test_literal_prefilter_preserves_unfiltered_results(
     ("k", re.IGNORECASE),
     ("é", 0),
     ("a b", re.VERBOSE),
+    ("needle|other", re.I),
+    ("nee.le", 0),
+    (r"\bneedle\b", 0),
+    ("needleX?", 0),
+    ("s|k|i", re.ASCII | re.I),
+    ("needle|other", re.ASCII | re.I),
+    (r"(?<!\w)needle(?!\w)", re.ASCII | re.I),
+    ("(?P<name>need)le", 0),
 ])
 async def test_prefilter_preserves_regex_and_unicode(pattern, flags):
     data = ("other\n" * 3000 +
-            "a.b\na+b\na\\b\na b\nab\né\nK\nk\nſ\nS\nİ\nı\nI\n").encode()
+            "a.b\na+b\na\\b\na b\nab\né\nK\nk\nſ\nS\nİ\nı\nI\n"
+            "NEEDLE\nneedleX\nneedle").encode()
 
     async def source():
         yield data

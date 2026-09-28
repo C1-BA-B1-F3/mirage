@@ -50,7 +50,10 @@ class AsyncLineIterator:
         self._budget = YieldBudget()
         self._buf = b""
         self._exhausted = False
-        self._unskipped_attempts = 0
+        self._view: bytes | None = None
+        self._view_key: tuple[tuple[bytes, ...], bool] = ((), False)
+        self._hits: list[int] = []
+        self._unskipped = 0
 
     def __aiter__(self) -> "AsyncLineIterator":
         return self
@@ -81,30 +84,42 @@ class AsyncLineIterator:
 
     def skip_nonmatching_lines(self,
                                needles: tuple[bytes, ...],
-                               ignore_case: bool = False) -> tuple[int, int]:
-        """Skip complete buffered lines before a possible literal match.
+                               ignore_case: bool = False,
+                               delimiter: bytes = b"\n") -> tuple[int, int]:
+        """Skip complete buffered records before a possible literal match.
 
-        Leave the candidate and any unfinished line for ``readline`` to join
-        across transport boundaries. Never pull more input.
+        Leave the candidate and any unfinished record for ``read_until`` to
+        join across transport boundaries. Never pull more input. Each
+        needle's next hit is kept until the buffer is refilled, so the calls
+        between two pulls search it once, however the hits interleave.
 
         Args:
-            needles (tuple[bytes, ...]): nonempty literals without newlines.
+            needles (tuple[bytes, ...]): one or more nonempty literals
+                without the delimiter, lowercase under ``ignore_case``.
             ignore_case (bool): search an ASCII-lowercased view.
+            delimiter (bytes): the one-byte record terminator.
 
         Returns:
-            tuple[int, int]: skipped line and byte counts.
+            tuple[int, int]: skipped record and byte counts.
         """
-        # Bound prefilter work on dense matches; retry with the next buffer.
-        if self._unskipped_attempts >= 8:
+        key = (needles, ignore_case)
+        if self._view is None or self._view_key != key:
+            self._view = self._buf.lower() if ignore_case else self._buf
+            self._view_key = key
+            self._hits = [-1] * len(needles)
+            self._unskipped = 0
+        # Dense matches skip nothing; stop trying until the next pull.
+        if self._unskipped >= 8:
             return 0, 0
-        data = self._buf.lower() if ignore_case else self._buf
-        hit = min((at for needle in needles if (at := data.find(needle)) >= 0),
-                  default=-1)
-        end = self._buf.rfind(b"\n", 0,
-                              hit if hit >= 0 else len(self._buf)) + 1
-        self._unskipped_attempts = (self._unskipped_attempts +
-                                    1 if end == 0 else 0)
-        count = self._buf.count(b"\n", 0, end)
+        view = self._view
+        start = len(view) - len(self._buf)
+        for index, needle in enumerate(needles):
+            if self._hits[index] < start:
+                found = view.find(needle, start)
+                self._hits[index] = found if found >= 0 else len(view)
+        end = self._buf.rfind(delimiter, 0, min(self._hits) - start) + 1
+        self._unskipped = self._unskipped + 1 if end == 0 else 0
+        count = self._buf.count(delimiter, 0, end)
         self._buf = self._buf[end:]
         return count, end
 
@@ -141,7 +156,7 @@ class AsyncLineIterator:
                 self._buf = self._buf[split:]
                 try:
                     self._buf += await self._source.__anext__()
-                    self._unskipped_attempts = 0
+                    self._view = None
                 except StopAsyncIteration:
                     self._exhausted = True
         except BaseException:
@@ -191,7 +206,7 @@ class AsyncLineIterator:
                 if len(self._buf) < need and not self._exhausted:
                     try:
                         self._buf += await self._source.__anext__()
-                        self._unskipped_attempts = 0
+                        self._view = None
                     except StopAsyncIteration:
                         self._exhausted = True
                     continue

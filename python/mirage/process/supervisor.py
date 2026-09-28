@@ -1,7 +1,7 @@
 import asyncio
+import errno
 import time
 from collections.abc import Callable
-from dataclasses import replace
 from threading import RLock
 
 from mirage.process.config import ProcessPermissions, ProcessScope
@@ -30,7 +30,8 @@ class ProcessSupervisor:
               command: str,
               cwd: PathSpec,
               run: ProcessRunner,
-              parent_pid: int | None = None) -> ProcessHandle:
+              parent_pid: int | None = None,
+              limit: int | None = None) -> ProcessHandle:
         """Track a runner; its caller owns admission before command effects.
 
         Args:
@@ -38,10 +39,24 @@ class ProcessSupervisor:
             command (str): display text, never parsed by this layer.
             cwd (PathSpec): working directory at launch.
             run (ProcessRunner): asynchronous execution and cleanup.
+            parent_pid (int | None): the runner this one is a child of.
+            limit (int | None): the most runners the session may hold,
+                this one included; None for no cap. One asked to stop no
+                longer counts, so ``kill`` frees its slot at once.
+
+        Raises:
+            BlockingIOError: the session already holds ``limit``
+                runners, the EAGAIN fork(2) answers at ``ulimit -u``.
         """
         with self._lock:
             if self._stopped:
                 raise RuntimeError("process supervisor is stopped")
+            if limit is not None and sum(
+                    1 for _, handle in self._live.values()
+                    if handle.info.session_id == session_id
+                    and not handle.info.cancellation_requested) >= limit:
+                raise BlockingIOError(errno.EAGAIN,
+                                      "Resource temporarily unavailable")
             pid = self._next_pid
             self._next_pid += 1
             parent = self._live.get(
@@ -94,20 +109,17 @@ class ProcessSupervisor:
             return self._generations.get(session_id, 0) == generation
 
         def allowed(scope: ProcessScope, handle: ProcessHandle) -> bool:
-            return scope == "workspace" or (
-                scope == "session" and handle.info.session_id == session_id)
+            return (scope == "workspace"
+                    or handle.info.session_id == session_id)
 
         def visible(handle: ProcessHandle) -> ProcessInfo | None:
             entry = self._live.get(handle.info.pid)
             if (handle.info.session_id == session_id and entry is not None
                     and entry[0] != generation):
                 return None
-            grants = permissions()
-            if not valid() or not allowed(grants.metadata, handle):
+            if not valid() or not allowed(permissions().list, handle):
                 return None
-            info = handle.info
-            return info if allowed(grants.details, handle) else replace(
-                info, command=None, cwd=None, failure=None)
+            return handle.info
 
         def list_visible() -> tuple[ProcessInfo, ...]:
             with self._lock:
@@ -120,15 +132,17 @@ class ProcessSupervisor:
                 return visible(entry[1]) if entry is not None else None
 
         def check_spawn() -> None:
-            if not valid() or not permissions().spawn:
+            if not valid():
                 raise PermissionError("process spawn is not permitted")
 
         def terminate(pid: int) -> bool:
             with self._lock:
                 entry = self._live.get(pid)
-                if entry is None or visible(entry[1]) is None or not allowed(
-                        permissions().control, entry[1]):
+                if entry is None or visible(entry[1]) is None:
                     return False
+                if not allowed(permissions().kill, entry[1]):
+                    raise PermissionError(errno.EPERM,
+                                          "Operation not permitted")
                 return entry[1].terminate()
 
         async def wait(pid: int) -> ProcessInfo | None:

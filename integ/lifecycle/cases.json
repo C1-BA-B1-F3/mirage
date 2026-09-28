@@ -2491,6 +2491,215 @@
       ]
     },
     {
+      "id": "process_scopes_reach_other_sessions_as_the_profile_says",
+      "settings": {
+        "mode": "write",
+        "mounts": {
+          "/a": {
+            "vfs": "ram",
+            "config": {}
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "exec",
+          "command": "sleep 30 &",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "",
+              "stderr": ""
+            }
+          }
+        },
+        {
+          "op": "session",
+          "id": "peer"
+        },
+        {
+          "op": "exec",
+          "command": "ps | grep -c 'sleep 30$'",
+          "expect": {
+            "value": {
+              "exit_code": 1,
+              "stdout": "0\n",
+              "stderr": ""
+            }
+          },
+          "session": "peer"
+        },
+        {
+          "op": "session",
+          "id": "audit",
+          "profile": {
+            "processes": {
+              "list": "workspace"
+            }
+          }
+        },
+        {
+          "op": "exec",
+          "command": "ps | grep -c 'sleep 30$'",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "1\n",
+              "stderr": ""
+            }
+          },
+          "session": "audit"
+        },
+        {
+          "op": "exec",
+          "command": "kill $(ps | grep 'sleep 30$' | cut -f1) 2>&1 | sed 's/[0-9][0-9]*/PID/'",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "kill: (PID) - Operation not permitted\n",
+              "stderr": ""
+            }
+          },
+          "session": "audit"
+        },
+        {
+          "op": "session",
+          "id": "ops",
+          "profile": {
+            "processes": "workspace"
+          }
+        },
+        {
+          "op": "exec",
+          "command": "kill $(ps | grep 'sleep 30$' | cut -f1); echo rc=$?",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "rc=0\n",
+              "stderr": ""
+            }
+          },
+          "session": "ops"
+        }
+      ]
+    },
+    {
+      "id": "process_max_refuses_a_fork_past_the_cap",
+      "settings": {
+        "mode": "write",
+        "mounts": {
+          "/a": {
+            "vfs": "ram",
+            "config": {}
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "session",
+          "id": "capped",
+          "profile": {
+            "processes": {
+              "max": 2
+            }
+          }
+        },
+        {
+          "op": "exec",
+          "command": "(sleep 30 & echo in); echo sub=$?",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "sub=254\n",
+              "stderr": "bash: fork: Resource temporarily unavailable\n"
+            }
+          },
+          "session": "capped"
+        },
+        {
+          "op": "exec",
+          "command": "sleep 30 & echo one",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "one\n",
+              "stderr": ""
+            }
+          },
+          "session": "capped"
+        },
+        {
+          "op": "exec",
+          "command": "echo x | cat; echo no",
+          "expect": {
+            "value": {
+              "exit_code": 254,
+              "stdout": "",
+              "stderr": "bash: fork: Resource temporarily unavailable\n"
+            }
+          },
+          "session": "capped"
+        },
+        {
+          "op": "exec",
+          "command": "echo $?",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "254\n",
+              "stderr": ""
+            }
+          },
+          "session": "capped"
+        },
+        {
+          "op": "exec",
+          "command": "kill %1; (echo sub)",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "sub\n",
+              "stderr": ""
+            }
+          },
+          "session": "capped"
+        },
+        {
+          "op": "session",
+          "id": "loop",
+          "profile": {
+            "processes": {
+              "max": 3
+            }
+          }
+        },
+        {
+          "op": "exec",
+          "command": "n=0; while true; do sleep 30 & n=$((n+1)); done; echo no",
+          "expect": {
+            "value": {
+              "exit_code": 254,
+              "stdout": "",
+              "stderr": "bash: fork: Resource temporarily unavailable\n"
+            }
+          },
+          "session": "loop"
+        },
+        {
+          "op": "exec",
+          "command": "echo $n",
+          "expect": {
+            "value": {
+              "exit_code": 0,
+              "stdout": "2\n",
+              "stderr": ""
+            }
+          },
+          "session": "loop"
+        }
+      ]
+    },
+    {
       "id": "same_session_lines_run_one_at_a_time",
       "settings": {
         "mode": "write",

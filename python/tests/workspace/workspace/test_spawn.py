@@ -55,18 +55,16 @@ async def test_profile_process_views_and_revocation():
         view = ws._process_view(a)
         assert view.get(child.pid) is not None
         assert ws.processes.view('b').get(child.pid) is None
-        await ws.set_session_profile(
-            'a', {'processes': {
-                'spawn': False,
-                'metadata': 'none'
-            }})
+        await ws.set_session_profile('a', {'processes': {'max': 1}})
         assert view.list() == ()
         assert view.spawn is not None
         with pytest.raises(PermissionError):
             view.spawn(SpawnRequest(('true', )))
         await asyncio.wait_for(child.wait(), 2)
-        with pytest.raises(PermissionError):
+        held = ws.spawn(SpawnRequest(('sleep', '30')), 'a')
+        with pytest.raises(BlockingIOError):
             ws.spawn(SpawnRequest(('true', )), 'a')
+        held.terminate()
     finally:
         await ws.close()
 

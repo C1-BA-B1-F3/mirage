@@ -597,8 +597,6 @@ export class Workspace {
 
   private spawnForSession(request: SpawnRequest, session: SessionState): ChildProcess {
     if (this.isShuttingDown()) throw new Error('Workspace is closed')
-    if (!session.processes.spawn)
-      throw Object.assign(new Error('process spawn is not permitted'), { code: 'EACCES' })
     if (session.processDepth >= 16) throw new Error('process nesting limit (16) reached')
     const argv = [...request.argv]
     literalTree(argv)
@@ -641,6 +639,7 @@ export class Workspace {
       command: shellJoin(argv),
       cwd,
       parentPid: session.processId,
+      limit: session.processes.max,
       cancel: () => {
         abort.abort()
         input.stop()

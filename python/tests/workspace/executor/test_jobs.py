@@ -674,26 +674,62 @@ async def test_a_job_evaluating_a_nested_line_survives_the_line_cancel():
 
 
 @pytest.mark.asyncio
-async def test_no_job_builtin_names_a_job_the_profile_hides():
+async def test_ps_and_kill_reach_other_sessions_as_far_as_the_profile_says():
     ws = _workspace()
-    ws.create_session("hidden", profile={"processes": {"metadata": "none"}})
+    ws.create_session("a")
+    ws.create_session("b")
+    ws.create_session("audit", profile={"processes": {"list": "workspace"}})
+    ws.create_session("ops", profile={"processes": "workspace"})
+    count = "ps | grep -c 'sleep 30$'"
+    stop = "kill $(ps | grep 'sleep 30$' | cut -f1); echo rc=$?"
     try:
-        io = await ws.shell(
-            "sleep 30 & jobs; fg %1; echo rc=$?; disown %1; echo rc=$?; "
-            "disown -a; wait %1; echo rc=$?; kill %1; echo rc=$?",
-            session_id="hidden")
-        assert io.stdout == b"rc=1\nrc=1\nrc=127\nrc=1\n"
-        assert [j.id for j in ws.job_table.list_jobs("hidden")] == [1]
+        pid = (await ws.shell("sleep 30 & echo $!", session_id="a")).stdout
+        assert (await ws.shell(count, session_id="b")).stdout == b"0\n"
+        assert (await ws.shell(count, session_id="audit")).stdout == b"1\n"
+        io = await ws.shell(stop, session_id="audit")
+        assert (await io.stdout_str(), await io.stderr_str()) == (
+            "rc=1\n",
+            f"kill: ({pid.decode().strip()}) - Operation not permitted\n")
+        assert (await ws.shell(stop, session_id="ops")).stdout == b"rc=0\n"
     finally:
         await ws.close()
 
 
 @pytest.mark.asyncio
-async def test_fg_prints_no_command_line_the_profile_hides():
+async def test_a_session_at_its_process_cap_cannot_fork():
     ws = _workspace()
-    ws.create_session("redacted", profile={"processes": {"details": "none"}})
+    ws.create_session("capped", profile={"processes": {"max": 2}})
+    refusal = "bash: fork: Resource temporarily unavailable\n"
+
+    async def run(line: str) -> tuple[str, str, int]:
+        io = await ws.shell(line, session_id="capped")
+        return await io.stdout_str(), await io.stderr_str(), io.exit_code
+
     try:
-        io = await ws.shell("echo hi & fg %1", session_id="redacted")
-        assert io.stdout == b"[hidden]\nhi\n"
+        assert await run("(sleep 30 & echo in); echo sub=$?") == ("sub=254\n",
+                                                                  refusal, 0)
+        assert await run("sleep 30 & echo one") == ("one\n", "", 0)
+        for line in ("(echo sub); echo no", "echo x | cat; echo no",
+                     "sleep 30 & echo no"):
+            assert await run(line) == ("", refusal, 254)
+        assert await run("echo $?") == ("254\n", "", 0)
+        assert await run("kill %1; (echo sub)") == ("sub\n", "", 0)
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_runaway_loop_stops_at_the_process_cap():
+    ws = _workspace()
+    ws.create_session("capped", profile={"processes": {"max": 3}})
+    try:
+        io = await asyncio.wait_for(
+            ws.shell(
+                "n=0; while true; do sleep 30 & n=$((n+1)); done; echo no",
+                session_id="capped"), 10)
+        assert io.exit_code == 254
+        io = await ws.shell("echo $n; jobs", session_id="capped")
+        assert io.stdout == (b"2\n[1] running sleep 30\n"
+                             b"[2] running sleep 30\n")
     finally:
         await ws.close()

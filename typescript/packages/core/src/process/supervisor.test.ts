@@ -171,7 +171,7 @@ it('closes admission and requests cancellation of every live runner', async () =
   expect(supervisor.live()).toEqual([])
 })
 
-it('workspace metadata grants neither foreign details nor control', async () => {
+it('a workspace list grants no kill', async () => {
   const supervisor = new ProcessSupervisor(),
     release = gate()
   const child = supervisor.start({
@@ -185,21 +185,44 @@ it('workspace metadata grants neither foreign details nor control', async () => 
     },
   })
   const view = supervisor.view('observer', () => ({
-    metadata: 'workspace',
-    details: 'session',
-    control: 'session',
-    spawn: false,
+    list: 'workspace',
+    kill: 'session',
+    max: null,
   }))
-  expect(view.get(child.info.pid)).toMatchObject({ command: null, cwd: null })
-  expect(view.terminate(child.info.pid)).toBe(false)
+  expect(view.get(child.info.pid)).toMatchObject({ command: 'secret argument' })
+  expect(() => view.terminate(child.info.pid)).toThrow(expect.objectContaining({ code: 'EPERM' }))
+  const waiter = view.wait(child.info.pid)
+  supervisor.revokeSession('observer')
   expect(() => {
     view.checkSpawn()
   }).toThrow('not permitted')
-  const waiter = view.wait(child.info.pid)
-  supervisor.revokeSession('observer')
   release.release()
   expect(await waiter).toBeNull()
   await child.join()
+})
+
+it('start refuses a session at its limit', async () => {
+  const supervisor = new ProcessSupervisor(),
+    release = gate()
+  const start = (sessionId: string) =>
+    supervisor.start({
+      sessionId,
+      command: 'work',
+      cwd: PathSpec.fromStrPath('/'),
+      cancel: () => undefined,
+      limit: 2,
+      run: async () => {
+        await release.promise
+        return 0
+      },
+    })
+  const held = [start('a'), start('a')]
+  expect(() => start('a')).toThrow(expect.objectContaining({ code: 'EAGAIN' }))
+  held.push(start('b'))
+  held[0]?.terminate()
+  held.push(start('a'))
+  release.release()
+  await Promise.all(held.map((process) => process.join()))
 })
 
 it('group cancellation reaches grandchildren after an intermediate exits', async () => {

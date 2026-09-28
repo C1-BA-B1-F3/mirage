@@ -14,7 +14,12 @@ export class ProcessSupervisor {
   private readonly generations = new Map<string, number>()
   private stopped = false
 
-  /** Host-only: the supplied runner must admit commands before effects. */
+  /**
+   * Host-only: the supplied runner must admit commands before effects.
+   * `limit` is the most runners the session may hold, this one included;
+   * one asked to stop no longer counts, so `kill` frees its slot at once.
+   * Past it this throws EAGAIN, what fork(2) answers at `ulimit -u`.
+   */
   start(init: {
     sessionId: string
     command: string
@@ -22,8 +27,17 @@ export class ProcessSupervisor {
     run: ProcessRunner
     cancel: () => void
     parentPid?: number | null
+    limit?: number | null
   }): ProcessHandle {
     if (this.stopped) throw new Error('process supervisor is stopped')
+    if (
+      init.limit != null &&
+      [...this.runners.values()].filter(
+        ({ handle }) =>
+          handle.info.sessionId === init.sessionId && !handle.info.cancellationRequested,
+      ).length >= init.limit
+    )
+      throw Object.assign(new Error('Resource temporarily unavailable'), { code: 'EAGAIN' })
     const parent = init.parentPid == null ? undefined : this.runners.get(init.parentPid)
     if (
       init.parentPid != null &&
@@ -79,7 +93,7 @@ export class ProcessSupervisor {
     const generation = this.generations.get(sessionId) ?? 0
     const valid = () => (this.generations.get(sessionId) ?? 0) === generation
     const allowed = (scope: ProcessScope, handle: ProcessHandle) =>
-      scope === 'workspace' || (scope === 'session' && handle.info.sessionId === sessionId)
+      scope === 'workspace' || handle.info.sessionId === sessionId
     const visible = (handle: ProcessHandle) => {
       const entry = this.runners.get(handle.info.pid)
       if (
@@ -88,11 +102,8 @@ export class ProcessSupervisor {
         entry.generation !== generation
       )
         return null
-      const grants = permissions()
-      if (!valid() || !allowed(grants.metadata, handle)) return null
-      return allowed(grants.details, handle)
-        ? handle.info
-        : Object.freeze({ ...handle.info, command: null, cwd: null, failure: null })
+      if (!valid() || !allowed(permissions().list, handle)) return null
+      return handle.info
     }
     return Object.freeze({
       list: () =>
@@ -107,17 +118,15 @@ export class ProcessSupervisor {
         return entry === undefined ? null : visible(entry.handle)
       },
       checkSpawn: () => {
-        if (!valid() || !permissions().spawn)
+        if (!valid())
           throw Object.assign(new Error('process spawn is not permitted'), { code: 'EACCES' })
       },
       terminate: (pid: number) => {
         const entry = this.runners.get(pid)
-        return (
-          entry !== undefined &&
-          visible(entry.handle) !== null &&
-          allowed(permissions().control, entry.handle) &&
-          entry.handle.terminate()
-        )
+        if (entry === undefined || visible(entry.handle) === null) return false
+        if (!allowed(permissions().kill, entry.handle))
+          throw Object.assign(new Error('Operation not permitted'), { code: 'EPERM' })
+        return entry.handle.terminate()
       },
       wait: async (pid: number) => {
         const entry = this.runners.get(pid)

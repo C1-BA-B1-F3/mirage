@@ -27,12 +27,9 @@ const LOG =
 
 const PROFILES = {
   agent: {},
-  operator: {
-    processes: { metadata: 'workspace', details: 'workspace', control: 'workspace', spawn: true },
-  },
-  reviewer: {
-    processes: { metadata: 'session', details: 'none', control: 'none', spawn: true },
-  },
+  operator: { processes: 'workspace' },
+  auditor: { processes: { list: 'workspace' } },
+  sandboxed: { processes: { max: 3 } },
 } as const
 
 function indent(text: string): string {
@@ -104,18 +101,26 @@ async function scopedByProfile(ws: Workspace): Promise<void> {
   console.log("\n=== 3. agents cannot see or kill each other's work ===")
   ws.createSession('agent-a', { profile: 'agent' })
   ws.createSession('agent-b', { profile: 'agent' })
+  ws.createSession('audit', { profile: 'auditor' })
   ws.createSession('ops', { profile: 'operator' })
-  ws.createSession('review', { profile: 'reviewer' })
   const pid = (await sh(ws, 'sleep 30 & echo $!', 'agent-a')).trim()
   await sh(ws, 'ps', 'agent-b')
   await sh(ws, `kill ${pid}`, 'agent-b')
-  await sh(ws, 'ps', 'ops')
+  await sh(ws, 'ps', 'audit')
+  await sh(ws, `kill ${pid}`, 'audit')
   await sh(ws, `kill ${pid}; echo "kill exit=$?"`, 'ops')
-  await sh(ws, 'sleep 30 & ps; kill %1', 'review')
+}
+
+async function cappedByProfile(ws: Workspace): Promise<void> {
+  console.log('\n=== 4. a process cap stops a runaway loop ===')
+  ws.createSession('sandbox', { profile: 'sandboxed' })
+  await sh(ws, 'n=0; while true; do sleep 30 & n=$((n+1)); done', 'sandbox')
+  await sh(ws, 'echo "status=$? started=$n"; jobs', 'sandbox')
+  await sh(ws, 'kill %1; kill %2; echo a | tr a b', 'sandbox')
 }
 
 async function nothingOutlivesClose(ws: Workspace): Promise<void> {
-  console.log('\n=== 4. closing the workspace stops everything it started ===')
+  console.log('\n=== 5. closing the workspace stops everything it started ===')
   await sh(ws, 'sleep 60 &', 'agent-a')
   await sh(ws, 'sleep 60 | sleep 60 &', 'agent-b')
   ws.spawn({ argv: ['sleep', '60'] })
@@ -140,6 +145,7 @@ async function main(): Promise<void> {
   await backgroundWork(ws)
   await driveFromHost(ws)
   await scopedByProfile(ws)
+  await cappedByProfile(ws)
   await nothingOutlivesClose(ws)
 }
 

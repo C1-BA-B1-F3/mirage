@@ -172,18 +172,37 @@ async function runProgram(
     let stdout: ByteSource | null
     let io: IOResult
     if (isBg) {
-      const [bgStdout, bgIo, bgExec] = await handleBackground(
-        recurse,
-        child,
-        null,
-        session,
-        jobTable,
-        agentId,
-        stdin,
-        callStack,
-        handed,
-        decisions,
-      )
+      let launched: [ByteSource | null, IOResult, ExecutionNode]
+      try {
+        launched = await handleBackground(
+          recurse,
+          child,
+          null,
+          session,
+          jobTable,
+          agentId,
+          stdin,
+          callStack,
+          handed,
+          decisions,
+        )
+      } catch (err) {
+        if (!(err instanceof ExitSignal)) throw err
+        // A job the shell cannot fork ends the line, as a failed fork(2)
+        // ends bash's.
+        mergedIo = await mergedIo.merge(
+          new IOResult({ exitCode: err.exitCode, stderr: err.stderr }),
+        )
+        mergedIo.exitCode = err.exitCode
+        recordStatus(session, err.exitCode)
+        lastExec = new ExecutionNode({
+          command: child.text,
+          exitCode: err.exitCode,
+          stderr: err.stderr,
+        })
+        break
+      }
+      const [bgStdout, bgIo, bgExec] = launched
       stdout = bgStdout
       io = bgIo
       lastExec = bgExec

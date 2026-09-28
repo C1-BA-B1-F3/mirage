@@ -12,7 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { parseProcessPermissions, type ProcessPermissions } from '../process/config.ts'
+import {
+  parseProcessPermissions,
+  type ProcessPermissions,
+  type ProcessScope,
+} from '../process/config.ts'
 import type { Limit } from '../types.ts'
 import { parseCommandLimits } from './builtin/output_cap.ts'
 import { DEFAULT_ASK_REASON, DEFAULT_DENY_REASON } from './constants.ts'
@@ -150,7 +154,8 @@ export interface SessionProfile {
    */
   readonly policy?: ProfilePolicySpec | null
   readonly commandLimits?: Readonly<Record<string, Limit>> | null
-  readonly processes?: ProcessPermissions | null
+  /** A bare scope for both `list` and `kill`, or any of the fields. */
+  readonly processes?: ProcessScope | Partial<ProcessPermissions> | null
 }
 
 /**

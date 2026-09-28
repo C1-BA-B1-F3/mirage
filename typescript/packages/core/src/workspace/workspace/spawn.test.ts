@@ -63,12 +63,14 @@ it('revokes captured process doors on profile replacement', async () => {
     const view = ws.processes.view('a')
     expect(view.get(child.pid)).not.toBeNull()
     expect(ws.processes.view('b').get(child.pid)).toBeNull()
-    await ws.setSessionProfile('a', {
-      processes: { metadata: 'none', details: 'none', control: 'none', spawn: false },
-    })
+    await ws.setSessionProfile('a', { processes: { max: 1 } })
     expect(view.list()).toEqual([])
-    expect(() => ws.spawn({ argv: ['true'] }, 'a')).toThrow('not permitted')
     await child.wait()
+    const held = ws.spawn({ argv: ['sleep', '30'] }, 'a')
+    expect(() => ws.spawn({ argv: ['true'] }, 'a')).toThrow(
+      expect.objectContaining({ code: 'EAGAIN' }),
+    )
+    held.terminate()
   } finally {
     await ws.close()
   }
@@ -274,27 +276,23 @@ print('done')`
   }
 }, 60000)
 
-it('Pyodide subprocess retains the profile spawn restriction', async () => {
+it('Pyodide subprocess meets the profile process cap as BlockingIOError', async () => {
   const ws = new Workspace(
     {},
     { mode: MountMode.EXEC, runtimes: [new PyodideRuntime()], shellParser: parser },
   )
   try {
-    ws.createSession('restricted', {
-      profile: {
-        processes: { spawn: false, metadata: 'session', details: 'session', control: 'session' },
-      },
-    })
-    const code = `import subprocess
+    ws.createSession('restricted', { profile: { processes: { max: 1 } } })
+    const code = `import errno, subprocess
 try:
     subprocess.Popen(['true'])
-except PermissionError:
-    print('denied')
+except BlockingIOError as error:
+    print('denied', error.errno == errno.EAGAIN)
 else:
-    raise AssertionError('spawn bypassed profile')`
+    raise AssertionError('spawn passed the process cap')`
     const result = await ws.shell(`python -c ${shellQuote(code)}`, { sessionId: 'restricted' })
     expect(result.exitCode, new TextDecoder().decode(result.stderr)).toBe(0)
-    expect(new TextDecoder().decode(result.stdout)).toBe('denied\n')
+    expect(new TextDecoder().decode(result.stdout)).toBe('denied True\n')
   } finally {
     await ws.close()
   }

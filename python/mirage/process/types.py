@@ -21,8 +21,8 @@ class ProcessInfo:
 
     pid: int
     session_id: str
-    command: str | None
-    cwd: PathSpec | None
+    command: str
+    cwd: PathSpec
     started_at: float
     state: ProcessState = ProcessState.RUNNING
     cancellation_requested: bool = False
@@ -36,9 +36,10 @@ class ProcessInfo:
 class ProcessView:
     """Process operations scoped to one session incarnation and its profile.
 
-    An absent or invisible PID returns None. Metadata grants no output
-    access; control and spawn are checked separately. The view carries no
-    reference to mutable tasks.
+    An absent or invisible PID returns None. Seeing a process grants no
+    output access; stopping one the view sees but may not stop raises
+    PermissionError (EPERM). The view carries no reference to mutable
+    tasks.
     """
 
     list: Callable[[], tuple[ProcessInfo, ...]]

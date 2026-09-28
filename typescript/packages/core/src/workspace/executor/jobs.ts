@@ -17,6 +17,7 @@ import { IOResult } from '../../io/types.ts'
 import { concat } from '../../io/cachable_iterator.ts'
 import { CommandTimeoutError } from '../../commands/errors.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
+import { FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
 import { ExitSignal, ReturnSignal } from '../../shell/errors.ts'
 import { isBackgrounded } from '../../shell/helpers.ts'
 import { type Job, JobStatus, type JobTable } from '../../shell/job_table/index.ts'
@@ -202,15 +203,18 @@ export async function handleBackground(
       agent: agentId ?? '',
       sessionId: session.sessionId,
       parentPid: session.processId,
+      limit: session.processes.max,
     })
   } catch (err) {
-    // A submission that fails (a console the table cannot build) starts
-    // no runner, so nothing would ever revoke the job's hand-off: its
-    // grants would stay reserved for good, neither spent nor on offer
-    // to any later line.
+    // A submission that fails (a console the table cannot build, a
+    // session at its process cap) starts no runner, so nothing would ever
+    // revoke the job's hand-off: its grants would stay reserved for good,
+    // neither spent nor on offer to any later line.
     if (jobHanded !== null && decisions !== null) {
       await decisions.revoke(session.sessionId, jobHanded)
     }
+    if ((err as { code?: unknown }).code === 'EAGAIN')
+      throw new ExitSignal(FORK_FAILED_STATUS, new TextEncoder().encode(FORK_FAILED))
     throw err
   }
   bgSession.processId = job.process?.info.pid ?? null
@@ -304,28 +308,9 @@ function processView(jobTable: JobTable, session: SessionState | null): ProcessV
     : jobTable.processes.view(session.sessionId, () => session.processes)
 }
 
-/**
- * The jobs a builtin may name or list. A profile that grants no process
- * metadata (`processes.metadata: none`) sees none, whichever builtin
- * asks, so `jobs`, `fg`, `disown`, `kill %N` and `wait` with operands all
- * answer as for an empty table. Bare `wait` still joins every job: it
- * names none, and it is how a job's output reaches the line.
- */
-function visibleJobs(jobTable: JobTable, session: SessionState | null): Job[] {
-  return session?.processes.metadata === 'none' ? [] : jobTable.listJobs(sessionOf(session))
-}
-
 /** The job whose number is `jobId`, the one `%N` names. */
 function jobNumbered(jobs: readonly Job[], jobId: number): Job | null {
   return jobs.find((j) => j.id === jobId) ?? null
-}
-
-/**
- * The command line a builtin prints for a job, `[hidden]` when the
- * profile grants no process details (`processes.details: none`).
- */
-function commandOf(job: Job, session: SessionState | null): string {
-  return session?.processes.details === 'none' ? '[hidden]' : job.command
 }
 
 /**
@@ -450,7 +435,7 @@ export async function handleWait(
   }
   const errors: string[] = []
   const picked: Job[] = []
-  const visible = visibleJobs(jobTable, session)
+  const visible = jobTable.listJobs(sid)
   for (const spec of specs) {
     const [job, refusal] = resolveSpec(visible, spec)
     if (job === null) {
@@ -562,7 +547,7 @@ export function handleDisown(
   const specs = scan.operands
   let targets: Job[] = []
   const errors: string[] = []
-  const jobs = visibleJobs(jobTable, session)
+  const jobs = jobTable.listJobs(sid)
   if (specs.length > 0) {
     for (const spec of specs) {
       const [job] = resolveSpec(jobs, spec)
@@ -610,7 +595,7 @@ export async function handleFg(
 ): Promise<JobHandlerResult> {
   const cmdStr = parts.join(' ')
   const sid = sessionOf(session)
-  const jobs = visibleJobs(jobTable, session)
+  const jobs = jobTable.listJobs(sid)
   let jobId: number
   if (parts.length <= 1) {
     const running = jobs.filter((j) => j.status === JobStatus.RUNNING)
@@ -637,7 +622,7 @@ export async function handleFg(
     }
   }
   const job = await abortable(jobTable.wait(jobId, sid), signal)
-  const header = new TextEncoder().encode(commandOf(job, session) + '\n')
+  const header = new TextEncoder().encode(job.command + '\n')
   const body = await job.console.snapshot(Channel.STDOUT)
   const stderr = await job.console.snapshot(Channel.STDERR)
   jobTable.reap(jobId, sid)
@@ -679,11 +664,22 @@ export async function handleKill(
   }
   let killed: boolean
   if ((parts[1] ?? '').startsWith('%')) {
-    const job = jobNumbered(visibleJobs(jobTable, session), jobId)
-    const controlled = session?.processes.control !== 'none'
-    killed = job !== null && controlled && (await jobTable.kill(jobId, sid))
+    const job = jobNumbered(jobTable.listJobs(sid), jobId)
+    killed = job !== null && (await jobTable.kill(jobId, sid))
   } else {
-    killed = processView(jobTable, session).terminate(jobId)
+    try {
+      killed = processView(jobTable, session).terminate(jobId)
+    } catch (err) {
+      if ((err as { code?: unknown }).code !== 'EPERM') throw err
+      const denied = new TextEncoder().encode(
+        `kill: (${String(jobId)}) - Operation not permitted\n`,
+      )
+      return [
+        null,
+        new IOResult({ exitCode: 1, stderr: denied }),
+        new ExecutionNode({ command: cmdStr, exitCode: 1, stderr: denied }),
+      ]
+    }
     const job = jobTable.listJobs(sid).find((j) => j.pid === jobId)
     if (killed && job !== undefined) await jobTable.kill(job.id, sid)
   }
@@ -701,15 +697,12 @@ export async function handleKill(
 const JOBS_FLAGS: ReadonlySet<string> = new Set('lnprs')
 const JOBS_USAGE = 'jobs: usage: jobs [-lnprs] [jobspec ...] or jobs -x command [args]'
 
-/**
- * One `jobs` line; `-l` includes the managed PID, independently of detail access.
- */
-function jobRow(job: Job, long: boolean, session: SessionState | null): string {
+/** One `jobs` line; `-l` includes the managed PID. */
+function jobRow(job: Job, long: boolean): string {
   const id = job.id.toString()
-  const command = commandOf(job, session)
   return long
-    ? `[${id}] ${String(job.pid)} ${job.status} ${command}`
-    : `[${id}] ${job.status} ${command}`
+    ? `[${id}] ${String(job.pid)} ${job.status} ${job.command}`
+    : `[${id}] ${job.status} ${job.command}`
 }
 
 /**
@@ -750,7 +743,7 @@ export function handleJobs(
       specs.push(word)
     }
   }
-  let jobs = visibleJobs(jobTable, session)
+  let jobs = jobTable.listJobs(sid)
   if (specs.length > 0) {
     const picked: Job[] = []
     for (const spec of specs) {
@@ -773,7 +766,7 @@ export function handleJobs(
   if (flags.has('n')) jobs = jobs.filter((j) => j.status !== JobStatus.RUNNING)
   const lines = flags.has('p')
     ? jobs.map((j) => String(j.pid))
-    : jobs.map((j) => jobRow(j, flags.has('l'), session))
+    : jobs.map((j) => jobRow(j, flags.has('l')))
   jobTable.popCompleted(sid)
   const out =
     lines.length > 0 ? new TextEncoder().encode(`${lines.join('\n')}\n`) : new Uint8Array()
@@ -792,7 +785,7 @@ export function handlePs(
     return jobResult(cmdStr, 'ps: supported forms: ps, ps aux, ps -e, ps -ef\n', 2)
   }
   for (const info of processView(jobTable, session).list()) {
-    lines.push(`${String(info.pid)}\t${info.command ?? '[hidden]'}`)
+    lines.push(`${String(info.pid)}\t${info.command}`)
   }
   const out =
     lines.length > 0 ? new TextEncoder().encode(`${lines.join('\n')}\n`) : new Uint8Array()

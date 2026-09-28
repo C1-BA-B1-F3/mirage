@@ -178,12 +178,15 @@ class JobTable:
         agent: str = "unknown",
         session_id: str = "",
         parent_pid: int | None = None,
+        limit: int | None = None,
     ) -> Job:
         """Register a job in its session's list and start it.
 
         The table creates the task itself so the runner is handed a job
         that already has a console. Building the task first would leave a
-        window in which output could arrive with nowhere to go.
+        window in which output could arrive with nowhere to go. The job
+        joins the list only once its runner is admitted, so a refused one
+        leaves no entry behind.
 
         Args:
             command (str): the command line being run.
@@ -191,6 +194,12 @@ class JobTable:
             cwd (str): working directory the job was started from.
             agent (str): agent that started the job.
             session_id (str): session whose job list the job joins.
+            parent_pid (int | None): the runner that started the job.
+            limit (int | None): the session's process cap
+                (``processes.max``); None for no cap.
+
+        Raises:
+            BlockingIOError: the session is at its process cap.
         """
         jobs = self._jobs.setdefault(session_id, {})
         if not jobs:
@@ -211,8 +220,6 @@ class JobTable:
                   agent=agent,
                   session_id=session_id,
                   console=console)
-        jobs[job_id] = job
-        self._next_ids[session_id] = job_id + 1
 
         async def execute() -> int:
             if job.status == JobStatus.RUNNING:
@@ -223,8 +230,11 @@ class JobTable:
                                            command=command,
                                            cwd=PathSpec.from_str_path(cwd),
                                            run=execute,
-                                           parent_pid=parent_pid)
+                                           parent_pid=parent_pid,
+                                           limit=limit)
         job.task = job.process.task
+        jobs[job_id] = job
+        self._next_ids[session_id] = job_id + 1
         return job
 
     def load(self, job: Job) -> None:

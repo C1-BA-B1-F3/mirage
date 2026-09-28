@@ -14,6 +14,7 @@
 
 import {
   DEFAULT_PROCESS_PERMISSIONS,
+  parseProcessPermissions,
   restrictProcesses,
   type ProcessPermissions,
 } from '../../process/config.ts'
@@ -195,10 +196,12 @@ export function withInline(
       'inline permissions may add ask and deny rules, not a policy; state one on the profile',
     )
   }
+  const own =
+    base?.processes == null ? DEFAULT_PROCESS_PERMISSIONS : parseProcessPermissions(base.processes)
   const processes =
     inline.processes == null
-      ? (base?.processes ?? DEFAULT_PROCESS_PERMISSIONS)
-      : restrictProcesses(base?.processes ?? DEFAULT_PROCESS_PERMISSIONS, inline.processes)
+      ? own
+      : restrictProcesses(own, parseProcessPermissions(inline.processes))
   if (base === null) return inline.processes == null ? inline : { ...inline, processes }
   const hidePaths = unionHide(base.paths, inline.paths)
   const hideVars = unionHide(base.vars, inline.vars)
@@ -406,7 +409,9 @@ export function compileProfile(effective: SessionProfile | null, name = ''): Com
   const commands = compileCommands(effective)
   checkRules(commands)
   return {
-    ...(effective.processes == null ? {} : { processes: effective.processes }),
+    ...(effective.processes == null
+      ? {}
+      : { processes: parseProcessPermissions(effective.processes) }),
     mountModes: modesOf(effective),
     hiddenPaths: hiddenOf(effective),
     hiddenVars: classifyVars(effective.vars?.hide ?? []),

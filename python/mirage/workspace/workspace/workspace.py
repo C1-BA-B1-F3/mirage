@@ -738,8 +738,6 @@ class Workspace:
                            session: SessionState) -> ChildProcess:
         if self._closing or self._closed:
             raise RuntimeError("Workspace is closed")
-        if not session.processes.spawn:
-            raise PermissionError("process spawn is not permitted")
         if session.process_depth >= 16:
             raise RuntimeError("process nesting limit (16) reached")
         argv = tuple(request.argv)
@@ -817,7 +815,8 @@ class Workspace:
                                        command=shell_join(argv),
                                        cwd=cwd,
                                        run=run,
-                                       parent_pid=session.process_id)
+                                       parent_pid=session.process_id,
+                                       limit=session.processes.max)
         child.process_id = process.info.pid
         child.shell_pid = process.info.pid
 

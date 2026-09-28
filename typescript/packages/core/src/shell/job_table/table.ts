@@ -132,7 +132,9 @@ export class JobTable {
    *
    * The table creates the task itself so the runner is handed a job that
    * already has a console. Building the task first would leave a window
-   * in which output could arrive with nowhere to go.
+   * in which output could arrive with nowhere to go. The job joins the
+   * list only once its runner is admitted, so one refused at the
+   * session's process cap (`limit`, EAGAIN) leaves no entry behind.
    */
   submit(init: {
     command: string
@@ -142,6 +144,7 @@ export class JobTable {
     agent?: string
     sessionId?: string
     parentPid?: number | null
+    limit?: number | null
   }): Job {
     const sessionId = init.sessionId ?? ''
     const jobs = this.sessionJobs(sessionId)
@@ -166,8 +169,6 @@ export class JobTable {
       sessionId,
       console: jobConsole,
     })
-    jobs.set(job.id, job)
-    this.nextIds.set(sessionId, jobId + 1)
     job.process = this.processes.start({
       sessionId,
       parentPid: init.parentPid ?? null,
@@ -180,7 +181,10 @@ export class JobTable {
       cancel: () => {
         init.abort.abort()
       },
+      limit: init.limit ?? null,
     })
+    jobs.set(job.id, job)
+    this.nextIds.set(sessionId, jobId + 1)
     const process = job.process
     const onAbort = () => {
       process.terminate()

@@ -28,6 +28,7 @@ from mirage.process.types import ProcessView
 from mirage.shell.call_stack import CallStack
 from mirage.shell.console import Channel, JobConsole
 from mirage.shell.console.pipe import PipeConsole
+from mirage.shell.constants import FORK_FAILED, FORK_FAILED_STATUS
 from mirage.shell.errors import ExitSignal, ReturnSignal
 from mirage.shell.helpers import get_text, is_backgrounded
 from mirage.shell.job_table import Job, JobStatus, JobTable
@@ -180,14 +181,17 @@ async def handle_background(
                                cwd=bg_session.cwd,
                                agent=agent_id or "",
                                session_id=session.session_id,
-                               parent_pid=session.process_id)
-    except Exception:
-        # A submission that fails (a console the table cannot build)
-        # starts no runner, so nothing would ever revoke the job's
-        # hand-off: its grants would stay reserved for good, neither
-        # spent nor on offer to any later line.
+                               parent_pid=session.process_id,
+                               limit=session.processes.max)
+    except Exception as exc:
+        # A submission that fails (a console the table cannot build, a
+        # session at its process cap) starts no runner, so nothing would
+        # ever revoke the job's hand-off: its grants would stay reserved
+        # for good, neither spent nor on offer to any later line.
         if job_handed is not None and decisions is not None:
             await decisions.revoke(session.session_id, job_handed)
+        if isinstance(exc, BlockingIOError):
+            raise ExitSignal(FORK_FAILED_STATUS, stderr=FORK_FAILED) from exc
         raise
     bg_session.process_id = (job.process.info.pid
                              if job.process is not None else None)
@@ -294,25 +298,6 @@ def _process_view(job_table: JobTable,
                                     lambda: session.processes)
 
 
-def _visible_jobs(job_table: JobTable,
-                  session: SessionState | None) -> list[Job]:
-    """The jobs a builtin may name or list.
-
-    A profile that grants no process metadata (``processes.metadata:
-    none``) sees none, whichever builtin asks, so `jobs`, `fg`,
-    `disown`, `kill %N` and `wait` with operands all answer as for an
-    empty table. Bare `wait` still joins every job: it names none, and
-    it is how a job's output reaches the line.
-
-    Args:
-        job_table (JobTable): the workspace's job table.
-        session (SessionState | None): the shell session, if any.
-    """
-    if session is not None and session.processes.metadata == "none":
-        return []
-    return job_table.list_jobs(_session_of(session))
-
-
 def _job_numbered(jobs: list[Job], job_id: int) -> Job | None:
     """The job whose number is `job_id`, the one `%N` names.
 
@@ -321,19 +306,6 @@ def _job_numbered(jobs: list[Job], job_id: int) -> Job | None:
         job_id (int): the job number.
     """
     return next((j for j in jobs if j.id == job_id), None)
-
-
-def _command_of(job: Job, session: SessionState | None) -> str:
-    """The command line a builtin prints for a job, `[hidden]` when the
-    profile grants no process details (``processes.details: none``).
-
-    Args:
-        job (Job): the job.
-        session (SessionState | None): the shell session, if any.
-    """
-    if session is not None and session.processes.details == "none":
-        return "[hidden]"
-    return job.command
 
 
 def _resolve_spec(jobs: list[Job], spec: str) -> tuple[Job | None, str]:
@@ -482,7 +454,7 @@ async def handle_wait(
             await view.unset(var)
     errors: list[str] = []
     picked: list[Job] = []
-    visible = _visible_jobs(job_table, session)
+    visible = job_table.list_jobs(sid)
     for spec in specs:
         job, refusal = _resolve_spec(visible, spec)
         if job is None:
@@ -590,7 +562,7 @@ async def handle_disown(
     specs = scan.operands
     targets: list[Job] = []
     errors: list[str] = []
-    jobs = _visible_jobs(job_table, session)
+    jobs = job_table.list_jobs(sid)
     if specs:
         for spec in specs:
             job, _ = _resolve_spec(jobs, spec)
@@ -636,7 +608,7 @@ async def handle_fg(
     """
     cmd_str = " ".join(parts)
     sid = _session_of(session)
-    jobs = _visible_jobs(job_table, session)
+    jobs = job_table.list_jobs(sid)
     if len(parts) <= 1:
         running = [j for j in jobs if j.status == JobStatus.RUNNING]
         if not running:
@@ -663,7 +635,7 @@ async def handle_fg(
                                                              exit_code=1,
                                                              stderr=err)
     job = await job_table.wait(job_id, sid)
-    header = (_command_of(job, session) + "\n").encode()
+    header = (job.command + "\n").encode()
     stdout = header + await job.console.snapshot(Channel.STDOUT)
     stderr = await job.console.snapshot(Channel.STDERR)
     job_table.reap(job_id, sid)
@@ -697,12 +669,17 @@ async def handle_kill(
                                                          exit_code=1,
                                                          stderr=err)
     if parts[1].startswith("%"):
-        job = _job_numbered(_visible_jobs(job_table, session), job_id)
-        controlled = session is None or session.processes.control != "none"
-        killed = (job is not None and controlled
-                  and await job_table.kill(job_id, sid))
+        job = _job_numbered(job_table.list_jobs(sid), job_id)
+        killed = job is not None and await job_table.kill(job_id, sid)
     else:
-        killed = _process_view(job_table, session).terminate(job_id)
+        try:
+            killed = _process_view(job_table, session).terminate(job_id)
+        except PermissionError:
+            err = f"kill: ({job_id}) - Operation not permitted\n".encode()
+            return None, IOResult(exit_code=1,
+                                  stderr=err), ExecutionNode(command=cmd_str,
+                                                             exit_code=1,
+                                                             stderr=err)
         job = next((j for j in job_table.list_jobs(sid) if j.pid == job_id),
                    None)
         if killed and job is not None:
@@ -721,19 +698,16 @@ _JOBS_USAGE = ("jobs: usage: jobs [-lnprs] [jobspec ...] "
                "or jobs -x command [args]")
 
 
-def _job_row(job: Job, long: bool, session: SessionState | None) -> str:
+def _job_row(job: Job, long: bool) -> str:
     """One `jobs` line in mirage's own row shape.
 
     Args:
         job (Job): the job.
         long (bool): `-l`, which includes the managed process id.
-        session (SessionState | None): the shell session, whose profile
-            decides whether the command line is printed.
     """
-    command = _command_of(job, session)
     if long:
-        return f"[{job.id}] {job.pid} {job.status.value} {command}"
-    return f"[{job.id}] {job.status.value} {command}"
+        return f"[{job.id}] {job.pid} {job.status.value} {job.command}"
+    return f"[{job.id}] {job.status.value} {job.command}"
 
 
 async def handle_jobs(
@@ -773,7 +747,7 @@ async def handle_jobs(
             flags.update(word[1:])
         else:
             specs.append(word)
-    jobs = _visible_jobs(job_table, session)
+    jobs = job_table.list_jobs(sid)
     if specs:
         picked: list[Job] = []
         for spec in specs:
@@ -794,7 +768,7 @@ async def handle_jobs(
     if "p" in flags:
         lines = [str(j.pid) for j in jobs]
     else:
-        lines = [_job_row(j, "l" in flags, session) for j in jobs]
+        lines = [_job_row(j, "l" in flags) for j in jobs]
     job_table.pop_completed(sid)
     out = ("\n".join(lines) + "\n").encode() if lines else b""
     return out, IOResult(), ExecutionNode(command=cmd_str, exit_code=0)
@@ -814,9 +788,6 @@ async def handle_ps(
         return _job_result(cmd_str,
                            "ps: supported forms: ps, ps aux, ps -e, ps -ef\n",
                            2)
-    lines = [
-        f"{info.pid}\t{info.command or '[hidden]'}"
-        for info in processes.list()
-    ]
+    lines = [f"{info.pid}\t{info.command}" for info in processes.list()]
     out = ("\n".join(lines) + "\n").encode() if lines else b""
     return out, IOResult(), ExecutionNode(command=cmd_str, exit_code=0)

@@ -28,7 +28,8 @@ from mirage.runtime.types import DispatchFn
 from mirage.shell.call_stack import CallStack
 from mirage.shell.console.pipe import PipeConsole
 from mirage.shell.console.types import Channel
-from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
+from mirage.shell.constants import (ERREXIT_EXEMPT_TYPES, FORK_FAILED,
+                                    FORK_FAILED_STATUS)
 from mirage.shell.descriptors import unreadable_stdin
 from mirage.shell.errors import ExitSignal, PipeClosed
 from mirage.shell.job_table import JobTable
@@ -110,19 +111,25 @@ async def handle_pipe(
         return io.exit_code
 
     tasks: list[asyncio.Task[int]] = []
-    for i, cmd in enumerate(commands):
-        if processes is None:
-            tasks.append(asyncio.create_task(run_segment(i, cmd)))
-        else:
-            process = processes.start(session_id=session.session_id,
-                                      command=(cmd.text or b"").decode(),
-                                      cwd=PathSpec.from_str_path(session.cwd),
-                                      parent_pid=session.process_id,
-                                      run=partial(run_segment, i, cmd))
-            children[i].process_id = process.info.pid
-            tasks.append(process.task)
     failed = False
     try:
+        for i, cmd in enumerate(commands):
+            if processes is None:
+                tasks.append(asyncio.create_task(run_segment(i, cmd)))
+                continue
+            try:
+                process = processes.start(session_id=session.session_id,
+                                          command=(cmd.text or b"").decode(),
+                                          cwd=PathSpec.from_str_path(
+                                              session.cwd),
+                                          parent_pid=session.process_id,
+                                          run=partial(run_segment, i, cmd),
+                                          limit=session.processes.max)
+            except BlockingIOError as exc:
+                raise ExitSignal(FORK_FAILED_STATUS,
+                                 stderr=FORK_FAILED) from exc
+            children[i].process_id = process.info.pid
+            tasks.append(process.task)
         result = await run_with_timeout(
             asyncio.gather(materialize(pipes[-1].stream()), *tasks),
             session.pipeline_timeout_seconds, "pipeline")
@@ -316,9 +323,22 @@ async def handle_subshell(
             # what keeps the option from leaking to the parent.
             is_bg = (i + 1 < len(body) and body[i + 1].type == NT.BACKGROUND)
             if is_bg and job_table is not None:
-                stdout, io, last_exec = await handle_background(
-                    execute_node, child, None, session, job_table, agent_id
-                    or "", stdin, call_stack, handed, decisions)
+                try:
+                    stdout, io, last_exec = await handle_background(
+                        execute_node, child, None, session, job_table, agent_id
+                        or "", stdin, call_stack, handed, decisions)
+                except ExitSignal as sig:
+                    # A job the subshell cannot fork ends the subshell
+                    # only, its status the subshell's.
+                    merged_io = await merged_io.merge(
+                        IOResult(exit_code=sig.contained_code,
+                                 stderr=sig.stderr or None))
+                    merged_io.exit_code = sig.contained_code
+                    record_status(session, sig.contained_code)
+                    last_exec = ExecutionNode(command="()",
+                                              exit_code=sig.contained_code,
+                                              stderr=sig.stderr)
+                    break
                 merged_io = await merged_io.merge(io)
                 # Seed $? for later body commands (mirrors program loop).
                 record_status(session, io.exit_code)

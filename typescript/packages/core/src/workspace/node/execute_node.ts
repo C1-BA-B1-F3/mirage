@@ -15,6 +15,7 @@
 import { PathSpec } from '../../types.ts'
 import { runWithSession } from '../../context/session_context.ts'
 import { isProgramInvocation, runAsProgram } from '../../context/session_context.ts'
+import type { ProcessHandle } from '../../process/handle.ts'
 import type { ProcessSupervisor } from '../../process/supervisor.ts'
 import type { Runtime } from '../../runtime/base.ts'
 import type { RouteDecision } from '../../runtime/routing/index.ts'
@@ -44,7 +45,7 @@ import {
   getWhileParts,
 } from '../../shell/helpers.ts'
 import { JobTable } from '../../shell/job_table/index.ts'
-import { ERREXIT_EXEMPT_TYPES } from '../../shell/constants.ts'
+import { ERREXIT_EXEMPT_TYPES, FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
 import { NodeType as NT, type PipelineStages, Redirect, RedirectKind } from '../../shell/types.ts'
 import { NodeKind, nodeKind, pipelineTransparent } from '../../shell/node_kind.ts'
 import { expandRedirects } from '../expand/redirects.ts'
@@ -939,34 +940,42 @@ async function executeNodeBody(
     const childSession = session.fork()
     const asProgram = isProgramInvocation(session)
     let result: Result | undefined
-    const process = subTable.processes.start({
-      sessionId: session.sessionId,
-      command: node.text,
-      cwd: PathSpec.fromStrPath(session.cwd),
-      parentPid: session.processId,
-      cancel: () => {
-        abort.abort()
-      },
-      run: async () => {
-        const body = () =>
-          handleSubshell(
-            subRecurse,
-            node.children,
-            childSession,
-            stdin,
-            callStack,
-            subTable,
-            agentId,
-            dispatch,
-            deps.handed ?? null,
-            registry.decisions,
+    let process: ProcessHandle
+    try {
+      process = subTable.processes.start({
+        sessionId: session.sessionId,
+        command: node.text,
+        cwd: PathSpec.fromStrPath(session.cwd),
+        parentPid: session.processId,
+        cancel: () => {
+          abort.abort()
+        },
+        limit: session.processes.max,
+        run: async () => {
+          const body = () =>
+            handleSubshell(
+              subRecurse,
+              node.children,
+              childSession,
+              stdin,
+              callStack,
+              subTable,
+              agentId,
+              dispatch,
+              deps.handed ?? null,
+              registry.decisions,
+            )
+          result = await runWithSession(childSession, () =>
+            asProgram ? runAsProgram(childSession, body) : body(),
           )
-        result = await runWithSession(childSession, () =>
-          asProgram ? runAsProgram(childSession, body) : body(),
-        )
-        return result[1].exitCode
-      },
-    })
+          return result[1].exitCode
+        },
+      })
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'EAGAIN')
+        throw new ExitSignal(FORK_FAILED_STATUS, new TextEncoder().encode(FORK_FAILED))
+      throw error
+    }
     childSession.processId = process.info.pid
     await process.task
     if (result === undefined) throw new Error('subshell completed without a result')

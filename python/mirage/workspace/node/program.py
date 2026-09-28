@@ -139,9 +139,22 @@ async def _run_program(
                  and children[i + 1].type == NT.BACKGROUND)
 
         if is_bg:
-            stdout, io, last_exec = await handle_background(
-                recurse, child, None, session, job_table, agent_id, stdin,
-                call_stack, handed, decisions)
+            try:
+                stdout, io, last_exec = await handle_background(
+                    recurse, child, None, session, job_table, agent_id, stdin,
+                    call_stack, handed, decisions)
+            except ExitSignal as sig:
+                # A job the shell cannot fork ends the line, as a failed
+                # fork(2) ends bash's.
+                merged_io = await merged_io.merge(
+                    IOResult(exit_code=sig.exit_code,
+                             stderr=sig.stderr or None))
+                merged_io.exit_code = sig.exit_code
+                record_status(session, sig.exit_code)
+                last_exec = ExecutionNode(command=get_text(child),
+                                          exit_code=sig.exit_code,
+                                          stderr=sig.stderr)
+                break
             # Launching a job is itself a statement: bash sets $? to 0
             # (the launch status), so `false; cmd & echo $?` prints 0.
             record_status(session, io.exit_code)

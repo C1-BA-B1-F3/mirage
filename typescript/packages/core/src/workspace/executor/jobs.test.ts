@@ -18,7 +18,6 @@ import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { Channel } from '../../shell/console/index.ts'
 import { type JobResult, type JobRunner, JobStatus, JobTable } from '../../shell/job_table/index.ts'
 import type { ShellParser } from '../../shell/parse/index.ts'
-import { DEFAULT_PROCESS_PERMISSIONS } from '../../process/config.ts'
 import { MountMode } from '../../types.ts'
 import { getTestParser, stdoutStr, stderrStr } from '../fixtures/workspace_fixture.ts'
 import { Workspace } from '../workspace/workspace.ts'
@@ -426,32 +425,60 @@ describe('jobs are scoped to the session that launched them', () => {
 })
 
 describe('job builtins honor the process profile', () => {
-  it('no job builtin names a job the profile hides', async () => {
+  it('ps and kill reach other sessions as far as the profile says', async () => {
     const ws = buildWs()
-    ws.createSession('hidden', {
-      profile: { processes: { ...DEFAULT_PROCESS_PERMISSIONS, metadata: 'none' } },
-    })
+    ws.createSession('a')
+    ws.createSession('b')
+    ws.createSession('audit', { profile: { processes: { list: 'workspace' } } })
+    ws.createSession('ops', { profile: { processes: 'workspace' } })
+    const count = "ps | grep -c 'sleep 30$'"
+    const stop = "kill $(ps | grep 'sleep 30$' | cut -f1); echo rc=$?"
     try {
-      const io = await ws.shell(
-        'sleep 30 & jobs; fg %1; echo rc=$?; disown %1; echo rc=$?; ' +
-          'disown -a; wait %1; echo rc=$?; kill %1; echo rc=$?',
-        { sessionId: 'hidden' },
-      )
-      expect(stdoutStr(io)).toBe('rc=1\nrc=1\nrc=127\nrc=1\n')
-      expect(ws.jobTable.listJobs('hidden').map((j) => j.id)).toEqual([1])
+      const pid = stdoutStr(await ws.shell('sleep 30 & echo $!', { sessionId: 'a' })).trim()
+      expect(stdoutStr(await ws.shell(count, { sessionId: 'b' }))).toBe('0\n')
+      expect(stdoutStr(await ws.shell(count, { sessionId: 'audit' }))).toBe('1\n')
+      const io = await ws.shell(stop, { sessionId: 'audit' })
+      expect([stdoutStr(io), new TextDecoder().decode(io.stderr)]).toEqual([
+        'rc=1\n',
+        `kill: (${pid}) - Operation not permitted\n`,
+      ])
+      expect(stdoutStr(await ws.shell(stop, { sessionId: 'ops' }))).toBe('rc=0\n')
     } finally {
       await ws.close()
     }
   })
 
-  it('fg prints no command line the profile hides', async () => {
+  it('a session at its process cap cannot fork', async () => {
     const ws = buildWs()
-    ws.createSession('redacted', {
-      profile: { processes: { ...DEFAULT_PROCESS_PERMISSIONS, details: 'none' } },
-    })
+    ws.createSession('capped', { profile: { processes: { max: 2 } } })
+    const refusal = 'bash: fork: Resource temporarily unavailable\n'
+    const run = async (line: string): Promise<[string, string, number]> => {
+      const io = await ws.shell(line, { sessionId: 'capped' })
+      return [stdoutStr(io), new TextDecoder().decode(io.stderr), io.exitCode]
+    }
     try {
-      const io = await ws.shell('echo hi & fg %1', { sessionId: 'redacted' })
-      expect(stdoutStr(io)).toBe('[hidden]\nhi\n')
+      expect(await run('(sleep 30 & echo in); echo sub=$?')).toEqual(['sub=254\n', refusal, 0])
+      expect(await run('sleep 30 & echo one')).toEqual(['one\n', '', 0])
+      for (const line of ['(echo sub); echo no', 'echo x | cat; echo no', 'sleep 30 & echo no'])
+        expect(await run(line)).toEqual(['', refusal, 254])
+      expect(await run('echo $?')).toEqual(['254\n', '', 0])
+      expect(await run('kill %1; (echo sub)')).toEqual(['sub\n', '', 0])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('a runaway loop stops at the process cap', async () => {
+    const ws = buildWs()
+    ws.createSession('capped', { profile: { processes: { max: 3 } } })
+    try {
+      const io = await ws.shell('n=0; while true; do sleep 30 & n=$((n+1)); done; echo no', {
+        sessionId: 'capped',
+      })
+      expect(io.exitCode).toBe(254)
+      expect(stdoutStr(await ws.shell('echo $n; jobs', { sessionId: 'capped' }))).toBe(
+        '2\n[1] running sleep 30\n[2] running sleep 30\n',
+      )
     } finally {
       await ws.close()
     }

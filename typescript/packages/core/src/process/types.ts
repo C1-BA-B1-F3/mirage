@@ -7,8 +7,8 @@ export type ProcessState = 'running' | 'stopping' | 'exited'
 export interface ProcessInfo {
   readonly pid: number
   readonly sessionId: string
-  readonly command: string | null
-  readonly cwd: PathSpec | null
+  readonly command: string
+  readonly cwd: PathSpec
   readonly startedAt: number
   readonly state: ProcessState
   readonly cancellationRequested: boolean
@@ -18,7 +18,10 @@ export interface ProcessInfo {
   readonly groupId: number
 }
 
-/** Profile-scoped operations. Metadata grants no streams; invisible PIDs return null. */
+/**
+ * Profile-scoped operations. Seeing a process grants no streams; invisible
+ * PIDs return null. Stopping one the view sees but may not stop throws EPERM.
+ */
 export interface ProcessView {
   readonly list: () => readonly ProcessInfo[]
   readonly get: (pid: number) => ProcessInfo | null

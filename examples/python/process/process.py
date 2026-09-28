@@ -29,17 +29,17 @@ LOG = ("09:00 INFO  boot\n"
 PROFILES = {
     "agent": {},
     "operator": {
-        "processes": {
-            "metadata": "workspace",
-            "details": "workspace",
-            "control": "workspace",
-        },
+        "processes": "workspace"
     },
-    "reviewer": {
+    "auditor": {
         "processes": {
-            "details": "none",
-            "control": "none",
-        },
+            "list": "workspace"
+        }
+    },
+    "sandboxed": {
+        "processes": {
+            "max": 3
+        }
     },
 }
 
@@ -113,18 +113,26 @@ async def scoped_by_profile(ws: Workspace) -> None:
     print("\n=== 3. agents cannot see or kill each other's work ===")
     ws.create_session("agent-a", profile="agent")
     ws.create_session("agent-b", profile="agent")
+    ws.create_session("audit", profile="auditor")
     ws.create_session("ops", profile="operator")
-    ws.create_session("review", profile="reviewer")
     pid = (await sh(ws, "sleep 30 & echo $!", "agent-a")).strip()
     await sh(ws, "ps", "agent-b")
     await sh(ws, f"kill {pid}", "agent-b")
-    await sh(ws, "ps", "ops")
+    await sh(ws, "ps", "audit")
+    await sh(ws, f"kill {pid}", "audit")
     await sh(ws, f'kill {pid}; echo "kill exit=$?"', "ops")
-    await sh(ws, "sleep 30 & ps; kill %1", "review")
+
+
+async def capped_by_profile(ws: Workspace) -> None:
+    print("\n=== 4. a process cap stops a runaway loop ===")
+    ws.create_session("sandbox", profile="sandboxed")
+    await sh(ws, "n=0; while true; do sleep 30 & n=$((n+1)); done", "sandbox")
+    await sh(ws, 'echo "status=$? started=$n"; jobs', "sandbox")
+    await sh(ws, "kill %1; kill %2; echo a | tr a b", "sandbox")
 
 
 async def nothing_outlives_close(ws: Workspace) -> None:
-    print("\n=== 4. closing the workspace stops everything it started ===")
+    print("\n=== 5. closing the workspace stops everything it started ===")
     await sh(ws, "sleep 60 &", "agent-a")
     await sh(ws, "sleep 60 | sleep 60 &", "agent-b")
     ws.spawn(SpawnRequest(argv=("sleep", "60")))
@@ -147,6 +155,7 @@ async def main() -> None:
     await background_work(ws)
     await drive_from_host(ws)
     await scoped_by_profile(ws)
+    await capped_by_profile(ws)
     await nothing_outlives_close(ws)
 
 

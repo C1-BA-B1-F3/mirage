@@ -1,9 +1,11 @@
 import asyncio
+import errno
 from dataclasses import FrozenInstanceError
 
 import pytest
 
 from mirage.process.config import ProcessPermissions
+from mirage.process.handle import ProcessHandle
 from mirage.process.supervisor import ProcessSupervisor
 from mirage.process.types import ProcessState
 from mirage.types import PathSpec
@@ -179,7 +181,7 @@ async def test_join_can_cross_event_loops_without_blocking_the_runner():
 
 
 @pytest.mark.asyncio
-async def test_workspace_metadata_does_not_grant_details_or_control():
+async def test_workspace_list_does_not_grant_kill():
     supervisor = ProcessSupervisor()
     release = asyncio.Event()
 
@@ -191,22 +193,48 @@ async def test_workspace_metadata_does_not_grant_details_or_control():
                              command='secret argument',
                              cwd=PathSpec.from_str_path('/private'),
                              run=run)
-    grants = ProcessPermissions(metadata='workspace',
-                                details='session',
-                                control='session',
-                                spawn=False)
+    grants = ProcessPermissions(list='workspace')
     view = supervisor.view('observer', lambda: grants)
     info = view.get(child.info.pid)
-    assert info is not None and info.command is None and info.cwd is None
-    assert not view.terminate(child.info.pid)
-    with pytest.raises(PermissionError):
-        view.check_spawn()
+    assert info is not None and info.command == 'secret argument'
+    with pytest.raises(PermissionError) as denied:
+        view.terminate(child.info.pid)
+    assert denied.value.errno == errno.EPERM
     waiter = asyncio.create_task(view.wait(child.info.pid))
     await asyncio.sleep(0)
     supervisor.revoke_session('observer')
+    with pytest.raises(PermissionError):
+        view.check_spawn()
     release.set()
     assert await waiter is None
     await child.join()
+
+
+@pytest.mark.asyncio
+async def test_start_refuses_a_session_at_its_limit():
+    supervisor = ProcessSupervisor()
+    release = asyncio.Event()
+
+    async def run():
+        await release.wait()
+        return 0
+
+    def start(session_id: str) -> ProcessHandle:
+        return supervisor.start(session_id=session_id,
+                                command='work',
+                                cwd=PathSpec.from_str_path('/'),
+                                run=run,
+                                limit=2)
+
+    held = [start('a'), start('a')]
+    with pytest.raises(BlockingIOError) as refused:
+        start('a')
+    assert refused.value.errno == errno.EAGAIN
+    held.append(start('b'))
+    held[0].terminate()
+    held.append(start('a'))
+    release.set()
+    await asyncio.gather(*(process.join() for process in held))
 
 
 @pytest.mark.asyncio

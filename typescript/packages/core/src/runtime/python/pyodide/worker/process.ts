@@ -147,7 +147,12 @@ export class GuestProcessTable {
         inherited_stderr: encoded(inherited.stderr),
       })
     } catch (error) {
-      const code = error instanceof PipeClosed ? 'EPIPE' : classify(error)
+      const code =
+        error instanceof PipeClosed
+          ? 'EPIPE'
+          : (error as { code?: unknown }).code === 'EAGAIN'
+            ? 'EAGAIN'
+            : classify(error)
       return JSON.stringify({
         error: error instanceof Error ? error.message : String(error),
         code: code ?? 'EIO',

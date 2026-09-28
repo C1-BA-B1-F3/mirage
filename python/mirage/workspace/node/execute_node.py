@@ -31,7 +31,8 @@ from mirage.shell.arith import evaluate_arith
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.call_stack import CallStack
 from mirage.shell.console import Channel, JobConsole
-from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
+from mirage.shell.constants import (ERREXIT_EXEMPT_TYPES, FORK_FAILED,
+                                    FORK_FAILED_STATUS)
 from mirage.shell.errors import ArithError, ExitSignal, ReadonlyError
 from mirage.shell.job_table import JobTable
 from mirage.shell.node_kind import NodeKind, node_kind, pipeline_transparent
@@ -888,12 +889,16 @@ async def _execute_node(
                 if program_token is not None:
                     reset_program_invocation(program_token)
 
-        process = sub_table.processes.start(session_id=session.session_id,
-                                            command=get_text(node),
-                                            cwd=PathSpec.from_str_path(
-                                                session.cwd),
-                                            parent_pid=session.process_id,
-                                            run=run_subshell)
+        try:
+            process = sub_table.processes.start(session_id=session.session_id,
+                                                command=get_text(node),
+                                                cwd=PathSpec.from_str_path(
+                                                    session.cwd),
+                                                parent_pid=session.process_id,
+                                                run=run_subshell,
+                                                limit=session.processes.max)
+        except BlockingIOError as exc:
+            raise ExitSignal(FORK_FAILED_STATUS, stderr=FORK_FAILED) from exc
         child_session.process_id = process.info.pid
         await process.task
         return results[0]

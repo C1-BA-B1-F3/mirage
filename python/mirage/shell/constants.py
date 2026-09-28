@@ -64,6 +64,15 @@ SHELL_ARGV0 = "mirage"
 # command -v report.
 BIN_PREFIX = "/usr/bin"
 
+# What bash says when fork(2) fails with EAGAIN, as at `ulimit -u`: the
+# forking shell abandons the rest of its line with status 254 (bash 5.2,
+# pinned in debian:stable-slim), and a subshell dying of it reports 254
+# to its parent. A session's `processes.max` is the cap here. bash first
+# retries with backoff, printing `fork: retry:`; the refusal here is
+# immediate.
+FORK_FAILED = b"bash: fork: Resource temporarily unavailable\n"
+FORK_FAILED_STATUS = 254
+
 # The descriptors the shell models: stdin, stdout and stderr, and no
 # table above them. A redirect naming any other number is refused
 # before it does anything (`shell/descriptors.py`), because the old

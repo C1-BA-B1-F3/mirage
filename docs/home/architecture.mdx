@@ -100,31 +100,42 @@ shell is not a live runner in `ps`. Signals, stopped jobs and native process
 groups are not emulated. Existing shell cancellation retains exit status 137;
 the Debian bash reference reports 143 for its default SIGTERM.
 
-Profiles grant views rather than owning processes:
+A session always sees and stops its own processes. Its profile says how far past
+the session it reaches, and how many processes it may hold:
 
 ```yaml
 profiles:
-  reviewer:
+  operator:
+    processes: workspace   # lists and kills every session's processes
+  auditor:
     processes:
-      metadata: session
-      details: none
-      control: none
-      spawn: true
+      list: workspace      # sees every session's processes
+      kill: session        # stops only its own
+  sandboxed:
+    processes:
+      max: 8               # live processes this session may hold
 ```
 
-`metadata`, `details` and `control` each accept `none`, `session` or `workspace`.
-Defaults are `session`; spawn defaults to true and still passes command
-admission. `details: none` redacts command text, cwd and failure details; `jobs`,
-`fg` and `ps` print `[hidden]` in its place. `metadata: none` hides the session's
-own jobs from `jobs`, `fg`, `disown`, `kill %N` and `wait` with operands; a bare
-`wait` still joins them, since it names none. Control also requires metadata
-visibility. A spawned child's output is its handle's result, so the command limits
+`list` and `kill` accept `session` (the default) or `workspace`; a bare scope sets
+both, and `kill` cannot reach past `list`. `list` governs `ps` and a handler's
+process view; `kill` governs numeric `kill` and the view's terminate,
+and a process the session sees but may not stop answers
+`kill: (PID) - Operation not permitted`, as bash does.
+`max` counts the session's live processes, its running line included, as
+`ulimit -u` counts the shell: background jobs, pipeline stages, subshells and
+spawned children. A process asked to stop no longer counts. Past the cap a fork
+fails as bash's does at its process limit: `bash: fork: Resource temporarily
+unavailable`, the rest of the line abandoned with status 254, and a subshell that
+hits it reports 254 to its parent. Bash first retries with backoff; Mirage refuses
+at once. A host or guest spawn past the cap raises EAGAIN, `BlockingIOError` in
+Python and in a Pyodide guest's `subprocess`.
+A spawned child's output is its handle's result, so the command limits
 bound it as they bound a typed line's, wherever the parent's own output goes. Inline permissions only narrow these grants.
 Two sessions using the same profile do not thereby share their processes.
 Replacing a profile revokes captured doors and requests cancellation of that
 session's executions; closing the session also cancels its managed work.
-Output remains owned by the returned child handle or shell job console: metadata
-access does not grant another process's output stream or replay. Only live
+Output remains owned by the returned child handle or shell job console: listing
+a process does not grant its output stream or replay. Only live
 processes appear in the supervisor; retain a handle to inspect its final result.
 
 For a workspace backed by stored sessions, hydrate with `ensure_sessions_loaded`

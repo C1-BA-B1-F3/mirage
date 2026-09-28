@@ -745,7 +745,7 @@
       "expect": {
         "exit": 1,
         "stdout": "z\n",
-        "stderr": "zcat: /data/pr/missing.gz: No such file or directory\n"
+        "stderr": "gzip: /data/pr/missing.gz: No such file or directory\n"
       }
     },
     {

@@ -513,7 +513,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "rg: /ghost: No such file or directory\n"
+        "stderr": "rg: /ghost: IO error for operation on /ghost: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -841,7 +841,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "gzip: /ghost: Is a directory\n"
+        "stderr": "gzip: /ghost is a directory -- ignored\n"
       }
     },
     {

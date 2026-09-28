@@ -868,7 +868,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "gzip: stdin: not in gzip format\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: not in gzip format\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -884,7 +884,7 @@
       "expect": {
         "exit": 2,
         "stdout": "d/\nd/a.txt\nd/b.txt\n",
-        "stderr": "gzip: stdin: invalid compressed data--crc error\ngzip: stdin: invalid compressed data--length error\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -900,7 +900,7 @@
       "expect": {
         "exit": 2,
         "stdout": "hello\n",
-        "stderr": "gzip: stdin: invalid compressed data--crc error\ngzip: stdin: invalid compressed data--length error\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -916,7 +916,7 @@
       "expect": {
         "exit": 2,
         "stdout": "d/\nd/a.txt\nd/b.txt\n",
-        "stderr": "gzip: stdin: decompression OK, trailing garbage ignored\ntar: Child returned status 2\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: decompression OK, trailing garbage ignored\ntar: Child returned status 2\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -934,7 +934,7 @@
       "expect": {
         "exit": 2,
         "stdout": "hello.txt\n",
-        "stderr": "gzip: stdin: unexpected end of file\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -952,7 +952,7 @@
       "expect": {
         "exit": 2,
         "stdout": "hello\n",
-        "stderr": "gzip: stdin: unexpected end of file\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -970,7 +970,7 @@
       "expect": {
         "exit": 2,
         "stdout": "hello\n",
-        "stderr": "gzip: stdin: unexpected end of file\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -988,7 +988,7 @@
       "expect": {
         "exit": 2,
         "stdout": "hello.txt\n",
-        "stderr": "gzip: stdin: unexpected end of file\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: unexpected end of file\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -1006,7 +1006,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "gzip: stdin: invalid compressed data--crc error\ngzip: stdin: invalid compressed data--length error\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -1024,7 +1024,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "gzip: stdin: invalid compressed data--crc error\ngzip: stdin: invalid compressed data--length error\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -1042,7 +1042,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "gzip: stdin: invalid compressed data--crc error\ngzip: stdin: invalid compressed data--length error\ntar: This does not look like a tar archive\ntar: Skipping to next header\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\ntar: This does not look like a tar archive\ntar: Skipping to next header\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -1060,7 +1060,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "gzip: stdin: invalid compressed data--crc error\ngzip: stdin: invalid compressed data--length error\ntar: This does not look like a tar archive\ntar: Skipping to next header\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\ntar: This does not look like a tar archive\ntar: Skipping to next header\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     },
     {
@@ -1078,7 +1078,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "gzip: stdin: invalid compressed data--crc error\ngzip: stdin: invalid compressed data--length error\ntar: This does not look like a tar archive\ntar: Skipping to next header\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\ntar: This does not look like a tar archive\ntar: Skipping to next header\ntar: Child returned status 1\ntar: Error is not recoverable: exiting now\n"
       }
     }
   ]

@@ -1,0 +1,164 @@
+{
+  "cases": [
+    {
+      "id": "mv_moves_several_sources_into_a_link_to_a_directory",
+      "seq": 1301016,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/mvl1301 && mkdir /data/mvl1301/dir && echo a > /data/mvl1301/a && echo b > /data/mvl1301/b && ln -s /data/mvl1301/dir /data/mvl1301/dl && mv /data/mvl1301/a /data/mvl1301/b /data/mvl1301/dl && ls /data/mvl1301 /data/mvl1301/dir; rc=$?; rm -r /data/mvl1301; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/mvl1301:\ndir\ndl\n\n/data/mvl1301/dir:\na\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "mv_t_moves_into_a_link_to_a_directory",
+      "seq": 1301017,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/mvl1302 && mkdir /data/mvl1302/dir && echo a > /data/mvl1302/a && echo b > /data/mvl1302/b && ln -s /data/mvl1302/dir /data/mvl1302/dl && mv -t /data/mvl1302/dl /data/mvl1302/a /data/mvl1302/b && ls /data/mvl1302 /data/mvl1302/dir; rc=$?; rm -r /data/mvl1302; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/mvl1302:\ndir\ndl\n\n/data/mvl1302/dir:\na\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "mv_refuses_a_dangling_link_as_a_target_directory",
+      "seq": 1301018,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/mvl1303 && echo a > /data/mvl1303/a && echo b > /data/mvl1303/b && ln -s /data/mvl1303/nowhere /data/mvl1303/dang && mv /data/mvl1303/a /data/mvl1303/b /data/mvl1303/dang; echo rc=$?; ls /data/mvl1303; rc=$?; rm -r /data/mvl1303; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\na\nb\ndang\n",
+        "stderr": "mv: target '/data/mvl1303/dang': No such file or directory\n"
+      }
+    },
+    {
+      "id": "mv_refuses_a_link_to_a_file_as_a_target_directory",
+      "seq": 1301019,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/mvl1304 && echo a > /data/mvl1304/a && echo b > /data/mvl1304/b && echo f > /data/mvl1304/f && ln -s /data/mvl1304/f /data/mvl1304/fl && mv /data/mvl1304/a /data/mvl1304/b /data/mvl1304/fl; echo rc=$?; ls /data/mvl1304; rc=$?; rm -r /data/mvl1304; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\na\nb\nf\nfl\n",
+        "stderr": "mv: target '/data/mvl1304/fl': Not a directory\n"
+      }
+    },
+    {
+      "id": "mv_moves_a_link_source_as_the_link",
+      "seq": 1301020,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/mvl1305 && mkdir /data/mvl1305/dir && echo f > /data/mvl1305/f && ln -s f /data/mvl1305/fl && mv /data/mvl1305/fl /data/mvl1305/dir && readlink /data/mvl1305/dir/fl && ls /data/mvl1305; rc=$?; rm -r /data/mvl1305; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "f\ndir\nf\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

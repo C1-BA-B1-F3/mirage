@@ -425,7 +425,7 @@
       "expect": {
         "exit": 2,
         "stdout_text": "",
-        "stderr_text": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr_text": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -438,7 +438,7 @@
       "expect": {
         "exit": 2,
         "stdout_text": "/data/a.txt\n",
-        "stderr_text": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr_text": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -451,7 +451,7 @@
       "expect": {
         "exit": 2,
         "stdout_text": "/data/a.txt:1\n",
-        "stderr_text": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr_text": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -464,7 +464,7 @@
       "expect": {
         "exit": 2,
         "stdout_text": "/data/a.txt:hello\n/data/a.txt-world\n",
-        "stderr_text": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr_text": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {

@@ -20,7 +20,7 @@ from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     InvalidGitFileError, NotARepositoryError, NotAWorkTreeError,
     NoWorkingDirectoryError, WorkTreeChdirError)
 from mirage.commands.cli.builtin.git.io import read_file, read_optional
-from mirage.commands.cli.builtin.git.repo import config_bool, config_value
+from mirage.commands.cli.builtin.git.repo import config_bool, config_values
 from mirage.commands.cli.builtin.git.types import RepoLocation
 from mirage.ops.types import MountRoot, StatPath
 from mirage.runtime.types import DispatchFn
@@ -239,8 +239,12 @@ async def _location(dispatch: DispatchFn, stat_path: StatPath, gitdir: str,
     to the git directory, as in native git 2.54.0, which enters a relative
     one before any verb runs. A bare repository keeps the default, and
     only a verb that needs a work tree refuses it (``require_work_tree``).
+    git parses core.bare whichever tree wins, so a value it cannot read
+    fails every verb, a named work tree and a linked worktree included.
     Divergence: the ``config.worktree`` that ``extensions.worktreeConfig``
-    adds is not read, so a linked worktree never takes either key.
+    adds is not read, so a linked worktree never takes either key; and a
+    bare repository that also names a core.worktree stays bare without
+    git's "do not make sense" warning.
 
     Args:
         dispatch (DispatchFn): workspace op dispatcher.
@@ -253,17 +257,19 @@ async def _location(dispatch: DispatchFn, stat_path: StatPath, gitdir: str,
         root (str): mount boundary used for discovery.
 
     Raises:
+        BadConfigValueError: a core.bare git cannot read as a boolean.
         WorkTreeChdirError: a relative core.worktree git cannot enter.
     """
     located = RepoLocation(gitdir, common, default_worktree, root)
+    bare = await config_bool(dispatch, located, b"core", b"bare", False)
     if worktree is not None:
         return replace(located, worktree=_against(start, worktree))
-    if gitdir != common or await is_bare(dispatch, located):
+    if gitdir != common or bare:
         return located
-    configured = await config_value(dispatch, located, b"core", b"worktree")
-    if configured is None:
+    configured = await config_values(dispatch, located, b"core", b"worktree")
+    if not configured:
         return located
-    spelled = configured.decode("utf-8", errors="replace")
+    spelled = configured[-1].decode("utf-8", errors="replace")
     selected = _against(gitdir, spelled)
     if not spelled.startswith("/"):
         info = await stat_path(selected)

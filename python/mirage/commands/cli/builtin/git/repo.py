@@ -12,22 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import re
 from io import BytesIO
 
 from dulwich.config import ConfigFile
 from dulwich.repo import BaseRepo
 
-from mirage.commands.cli.builtin.git.errors import BadConfigValueError
 from mirage.commands.cli.builtin.git.io import read_optional
 from mirage.commands.cli.builtin.git.objects import load_object_store
 from mirage.commands.cli.builtin.git.refs import load_refs
 from mirage.commands.cli.builtin.git.types import RepoLocation
+from mirage.commands.cli.builtin.git.util import git_bool
 from mirage.runtime.types import DispatchFn
-
-TRUE_WORDS = (b"true", b"yes", b"on")
-FALSE_WORDS = (b"false", b"no", b"off", b"")
-INTEGER = re.compile(rb"[-+]?[0-9]+")
 
 
 async def open_repo(dispatch: DispatchFn, location: RepoLocation) -> BaseRepo:
@@ -57,11 +52,12 @@ async def open_repo(dispatch: DispatchFn, location: RepoLocation) -> BaseRepo:
     return BaseRepo(store, refs)
 
 
-async def config_value(dispatch: DispatchFn, location: RepoLocation,
-                       section: bytes, name: bytes) -> bytes | None:
-    """One variable from the repository's config, None when it is unset.
+async def config_values(dispatch: DispatchFn, location: RepoLocation,
+                        section: bytes, name: bytes) -> list[bytes]:
+    """Every value a variable takes in the repository's config, in order.
 
-    Only the repository's own config is reachable from a mount.
+    Only the repository's own config is reachable from a mount, and a
+    linked worktree's config is its repository's.
 
     Args:
         dispatch (DispatchFn): workspace op dispatcher.
@@ -71,21 +67,17 @@ async def config_value(dispatch: DispatchFn, location: RepoLocation,
     """
     data = await read_optional(dispatch, f"{location.commondir}/config")
     if data is None:
-        return None
+        return []
+    config = ConfigFile.from_file(BytesIO(data))
     try:
-        return ConfigFile.from_file(BytesIO(data)).get((section, ), name)
+        return list(config.get_multivar((section, ), name))
     except KeyError:
-        return None
+        return []
 
 
 async def config_bool(dispatch: DispatchFn, location: RepoLocation,
                       section: bytes, name: bytes, default: bool) -> bool:
     """A boolean from the repository's config, read the way git reads one.
-
-    ``true``/``yes``/``on`` and ``false``/``no``/``off`` in any case, a
-    bare name as true, an empty value as false and an integer as whether
-    it is nonzero; anything else is git's fatal (pinned against git
-    2.50).
 
     Args:
         dispatch (DispatchFn): workspace op dispatcher.
@@ -93,16 +85,10 @@ async def config_bool(dispatch: DispatchFn, location: RepoLocation,
         section (bytes): the section, e.g. ``b"core"``.
         name (bytes): the variable, e.g. ``b"quotepath"``.
         default (bool): the answer when the variable is unset.
+
+    Raises:
+        BadConfigValueError: a value git cannot read as a boolean.
     """
-    value = await config_value(dispatch, location, section, name)
-    if value is None:
-        return default
-    word = value.lower()
-    if word in TRUE_WORDS:
-        return True
-    if word in FALSE_WORDS:
-        return False
-    if INTEGER.fullmatch(word):
-        return int(word) != 0
+    values = await config_values(dispatch, location, section, name)
     key = b".".join((section, name)).decode(errors="replace").lower()
-    raise BadConfigValueError(value.decode(errors="replace"), key)
+    return git_bool(values, key, default)

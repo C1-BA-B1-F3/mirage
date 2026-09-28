@@ -4563,6 +4563,48 @@
         "stdout": "8ef2542 add two\n128 128\n",
         "stderr": "fatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\n"
       }
+    },
+    {
+      "id": "git_core_bare_is_read_as_a_git_boolean",
+      "seq": 567930,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-bool-backup && for spelling in '[Core]\\n\\tBare = yes' '[CORE]\\n\\tBARE = On' '[core]\\n\\tbare' '[core]\\n\\tbare = 1' '[core]\\n\\tbare = -1' '[core]\\n\\tbare = 0x10' '[core]\\n\\tbare = 010' '[core]\\n\\tbare = 2k' '[core]\\n\\tbare = 1g' '[core]\\n\\tbare = \" 1\"' '[core]\\n\\tbare = 0' '[core]\\n\\tbare ='; do cp /repo/.git/config-bool-backup /repo/.git/config && printf \"$spelling\\n\" >> /repo/.git/config && git -C /repo status --short; printf '%s -> %s\\n' \"$spelling\" \"$?\"; done; mv /repo/.git/config-bool-backup /repo/.git/config)",
+      "expect": {
+        "exit": 0,
+        "stdout": "[Core]\\n\\tBare = yes -> 128\n[CORE]\\n\\tBARE = On -> 128\n[core]\\n\\tbare -> 128\n[core]\\n\\tbare = 1 -> 128\n[core]\\n\\tbare = -1 -> 128\n[core]\\n\\tbare = 0x10 -> 128\n[core]\\n\\tbare = 010 -> 128\n[core]\\n\\tbare = 2k -> 128\n[core]\\n\\tbare = 1g -> 128\n[core]\\n\\tbare = \" 1\" -> 128\n[core]\\n\\tbare = 0 -> 0\n[core]\\n\\tbare = -> 0\n",
+        "stderr": "fatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_core_bare_invalid_fails_every_verb",
+      "seq": 567931,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-badbare-backup && mkdir -p /repo/.git/worktrees/badbare /git-badbare-tree && printf 'ref: refs/heads/main\\n' > /repo/.git/worktrees/badbare/HEAD && printf '../..\\n' > /repo/.git/worktrees/badbare/commondir && printf 'gitdir: /repo/.git/worktrees/badbare\\n' > /git-badbare-tree/.git && for value in 08 2g ' true' maybe; do cp /repo/.git/config-badbare-backup /repo/.git/config && printf '[core]\\n\\tbare = \"%s\"\\n[core]\\n\\tbare = false\\n' \"$value\" >> /repo/.git/config && git -C /repo log --oneline -1; done; git -C /repo --work-tree=. status --short; git --git-dir=/repo/.git --work-tree=/repo log --oneline -1; git -C /git-badbare-tree log --oneline -1; result=$?; mv /repo/.git/config-badbare-backup /repo/.git/config; rm -r /repo/.git/worktrees/badbare /git-badbare-tree; exit \"$result\")",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: bad boolean config value '08' for 'core.bare'\nfatal: bad boolean config value '2g' for 'core.bare'\nfatal: bad boolean config value ' true' for 'core.bare'\nfatal: bad boolean config value 'maybe' for 'core.bare'\nfatal: bad boolean config value 'maybe' for 'core.bare'\nfatal: bad boolean config value 'maybe' for 'core.bare'\nfatal: bad boolean config value 'maybe' for 'core.bare'\n"
+      }
+    },
+    {
+      "id": "git_linked_worktree_ignores_shared_core_bare",
+      "seq": 567932,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-lbare-backup && mkdir -p /repo/.git/worktrees/lbare /git-lbare-tree && printf 'ref: refs/heads/main\\n' > /repo/.git/worktrees/lbare/HEAD && printf '../..\\n' > /repo/.git/worktrees/lbare/commondir && cp /repo/.git/index /repo/.git/worktrees/lbare/index && printf 'gitdir: /repo/.git/worktrees/lbare\\n' > /git-lbare-tree/.git && printf '[core]\\n\\tbare = true\\n' >> /repo/.git/config && git -C /repo status --short; git -C /git-lbare-tree status --short; result=$?; mv /repo/.git/config-lbare-backup /repo/.git/config; rm -r /repo/.git/worktrees/lbare /git-lbare-tree; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " D docs/readme.md\n D letters.txt\n D numbers.txt\n",
+        "stderr": "fatal: this operation must be run in a work tree\n"
+      }
     }
   ]
 }

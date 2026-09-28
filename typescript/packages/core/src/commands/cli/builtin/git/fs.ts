@@ -12,6 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { GitConfigManager } from 'isomorphic-git/managers'
+import { FileSystem } from 'isomorphic-git/models'
+
 import { FileType, PathSpec } from '../../../../types.ts'
 import type { FileStat } from '../../../../types.ts'
 import { enoent } from '../../../../utils/errors.ts'
@@ -22,6 +25,13 @@ import { posixNormpath } from '../../../../utils/path.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
+
+/** The fields of one line of isomorphic-git's parsed config that a raw read needs. */
+interface ConfigLine {
+  readonly path: string
+  readonly name: string | null
+  readonly value: string | null
+}
 
 /**
  * The stat shape isomorphic-git reads. It consults `type`, `mode`, `size` and
@@ -157,4 +167,35 @@ export function gitFs(
       exists: (path: string) => exists(dispatch, path),
     } as unknown as Record<string, (...args: never[]) => Promise<unknown>>,
   }
+}
+
+/**
+ * Every value a variable takes in the repository's config, as written.
+ *
+ * Read below `git.getConfig`, which casts `core.bare` and a few other keys
+ * itself, and only when they are spelled in lowercase and hold a word:
+ * `[Core] Bare = true` came back a string and `bare = 1` threw. A linked
+ * worktree's config is its repository's.
+ *
+ * @param dispatch workspace op dispatcher
+ * @param location the discovered repository
+ * @param path the variable, e.g. `core.bare`; its section and name in any case
+ */
+export async function configValues(
+  dispatch: Dispatch,
+  location: RepoLocation,
+  path: string,
+): Promise<string[]> {
+  const config = await GitConfigManager.get({
+    fs: new FileSystem(gitFs(dispatch)) as never,
+    gitdir: location.commondir,
+  })
+  // Section and name fold case; a subsection between them does not.
+  const first = path.indexOf('.')
+  const last = path.lastIndexOf('.')
+  const key =
+    path.slice(0, first).toLowerCase() + path.slice(first, last) + path.slice(last).toLowerCase()
+  return (config.parsedConfig as readonly ConfigLine[])
+    .filter((line) => line.name !== null && line.path === key)
+    .map((line) => line.value ?? '')
 }

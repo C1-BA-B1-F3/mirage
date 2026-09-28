@@ -17,8 +17,8 @@ import pytest
 from mirage.commands.cli.builtin.git.discover import (discover,
                                                       require_work_tree)
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    InvalidGitFileError, NotARepositoryError, NotAWorkTreeError,
-    NoWorkingDirectoryError, WorkTreeChdirError)
+    BadConfigValueError, InvalidGitFileError, NotARepositoryError,
+    NotAWorkTreeError, NoWorkingDirectoryError, WorkTreeChdirError)
 from mirage.types import ContentType, FileStat, FileType
 
 
@@ -310,3 +310,48 @@ async def test_a_named_work_tree_must_be_a_directory(worktree):
                           None, worktree)
     with pytest.raises(NotAWorkTreeError):
         await require_work_tree(_no_reads(), stat_path, repo, True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("config", [
+    b"[Core]\n\tBare = yes\n",
+    b"[core]\n\tbare = 1\n",
+    b"[core]\n\tbare\n",
+])
+async def test_core_bare_is_read_as_git_reads_a_boolean(config):
+    dispatch = _reads({"/repo/.git/config": config})
+    stat_path = _stat_over({"/repo", "/repo/.git"})
+    repo = await discover(dispatch, stat_path, _root("/repo/"), "/repo")
+    with pytest.raises(NotAWorkTreeError):
+        await require_work_tree(dispatch, stat_path, repo, False)
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_core_bare_fails_even_a_named_work_tree():
+    # git parses core.bare at setup, before it asks which tree was named,
+    # and dies at the first value it cannot read.
+    dispatch = _reads(
+        {"/repo/.git/config": b"[core]\n\tbare = maybe\n\tbare = false\n"})
+    with pytest.raises(BadConfigValueError) as excinfo:
+        await discover(dispatch, _stat_over({"/repo", "/repo/.git"}),
+                       _root("/repo/"), "/repo", None, ".")
+    assert str(excinfo.value) == ("bad boolean config value 'maybe' "
+                                  "for 'core.bare'")
+
+
+@pytest.mark.asyncio
+async def test_a_linked_worktree_ignores_core_bare_but_still_parses_it():
+    stat_path = _stat_over({"/repo/.git/worktrees/wt", "/repo/wt"},
+                           files={"/repo/wt/.git"})
+    contents = {
+        "/repo/wt/.git": b"gitdir: /repo/.git/worktrees/wt\n",
+        "/repo/.git/worktrees/wt/commondir": b"../..\n",
+        "/repo/.git/config": b"[core]\n\tbare = true\n",
+    }
+    repo = await discover(_reads(contents), stat_path, _root("/repo/"),
+                          "/repo/wt")
+    await require_work_tree(_reads(contents), stat_path, repo, False)
+    contents["/repo/.git/config"] += b"\tbare = maybe\n"
+    with pytest.raises(BadConfigValueError):
+        await discover(_reads(contents), stat_path, _root("/repo/"),
+                       "/repo/wt")

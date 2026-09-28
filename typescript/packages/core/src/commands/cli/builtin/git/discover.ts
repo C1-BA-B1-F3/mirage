@@ -12,9 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import git from 'isomorphic-git'
-
-import { gitFs } from './fs.ts'
+import { configValues } from './fs.ts'
 import type { MountRoot, StatPath } from '../../../../ops/types.ts'
 import { GIT_DIR } from './constants.ts'
 import { FileType } from '../../../../types.ts'
@@ -29,6 +27,7 @@ import {
 import { readFile, readOptional, under } from './io.ts'
 import type { Dispatch, RepoLocation } from './types.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
+import { gitBool } from './util.ts'
 
 const GITDIR_PREFIX = 'gitdir:'
 const COMMON_DIR = 'commondir'
@@ -220,9 +219,12 @@ export async function discover(
  * CLI/environment paths are relative to -C; core.worktree is relative to the
  * git directory, as in native git 2.54.0, which enters a relative one before
  * any verb runs. A bare repository keeps the default, and only a verb that
- * needs a work tree refuses it (`requireWorkTree`). Divergence: the
- * `config.worktree` that `extensions.worktreeConfig` adds is not read, so a
- * linked worktree never takes either key. Mirrors _location in discover.py.
+ * needs a work tree refuses it (`requireWorkTree`). git parses core.bare
+ * whichever tree wins, so a value it cannot read fails every verb, a named work
+ * tree and a linked worktree included. Divergence: the `config.worktree` that
+ * `extensions.worktreeConfig` adds is not read, so a linked worktree never takes
+ * either key; and a bare repository that also names a core.worktree stays bare
+ * without git's "do not make sense" warning. Mirrors _location in discover.py.
  */
 async function location(
   dispatch: Dispatch,
@@ -240,13 +242,10 @@ async function location(
     worktree: defaultWorktree,
     mountRoot: root,
   }
+  const bare = gitBool(await configValues(dispatch, located, 'core.bare'), 'core.bare', false)
   if (worktree !== null) return { ...located, worktree: against(start, worktree) }
-  if (gitdir !== common || (await isBare(dispatch, located))) return located
-  const configured = (await git.getConfig({
-    fs: gitFs(dispatch) as never,
-    gitdir: common,
-    path: 'core.worktree',
-  })) as string | undefined
+  if (gitdir !== common || bare) return located
+  const configured = (await configValues(dispatch, located, 'core.worktree')).at(-1)
   if (configured === undefined) return located
   const selected = against(gitdir, configured)
   if (!configured.startsWith('/')) {
@@ -267,12 +266,7 @@ async function location(
  */
 export async function isBare(dispatch: Dispatch, location: RepoLocation): Promise<boolean> {
   if (location.gitdir !== location.commondir) return false
-  const value = (await git.getConfig({
-    fs: gitFs(dispatch) as never,
-    gitdir: location.commondir,
-    path: 'core.bare',
-  })) as unknown
-  return value === true
+  return gitBool(await configValues(dispatch, location, 'core.bare'), 'core.bare', false)
 }
 
 /**

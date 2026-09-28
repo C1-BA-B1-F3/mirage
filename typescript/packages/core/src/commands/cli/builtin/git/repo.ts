@@ -16,13 +16,13 @@ import git from 'isomorphic-git'
 
 import type { FlagView } from '../../../spec/flag_view.ts'
 import { discover, requireWorkTree } from './discover.ts'
-import { BadConfigValueError, NoWorkspaceError } from './errors.ts'
+import { NoWorkspaceError } from './errors.ts'
 import { abbrevLength, type CommitFacts } from './format.ts'
-import { gitFs } from './fs.ts'
+import { configValues, gitFs } from './fs.ts'
 import { readNames, readRange, under } from './io.ts'
 import { basename } from './path.ts'
 import type { CLIDoors } from '../../types.ts'
-import { startPoint } from './util.ts'
+import { gitBool, startPoint } from './util.ts'
 import type { Dispatch, RepoLocation } from './types.ts'
 
 const PACK_DIR = 'objects/pack'
@@ -156,29 +156,14 @@ export async function commitFacts(repo: Repo, oid: string): Promise<CommitFacts>
   }
 }
 
-const TRUE_WORDS = ['true', 'yes', 'on']
-const FALSE_WORDS = ['false', 'no', 'off', '']
-
 /**
  * A boolean from the repository's config, read the way git reads one.
- *
- * `true`/`yes`/`on` and `false`/`no`/`off` in any case, a bare name as true, an
- * empty value as false and an integer as whether it is nonzero; anything else is
- * git's fatal (pinned against git 2.50). Only the repository's own config is
- * reachable from a mount.
  *
  * @param repo the opened repository
  * @param path the variable, e.g. `core.quotepath`
  * @param fallback the answer when the variable is unset
  */
 export async function configBool(repo: Repo, path: string, fallback: boolean): Promise<boolean> {
-  const value = (await git.getConfig({ ...repoArgs(repo), path })) as unknown
-  if (value === undefined || value === null) return fallback
-  if (typeof value === 'boolean') return value
-  const spelled = typeof value === 'number' ? String(value) : (value as string)
-  const word = spelled.toLowerCase()
-  if (TRUE_WORDS.includes(word)) return true
-  if (FALSE_WORDS.includes(word)) return false
-  if (/^[-+]?[0-9]+$/.test(word)) return Number(word) !== 0
-  throw new BadConfigValueError(spelled, path.toLowerCase())
+  const values = await configValues(repo.dispatch, repo.location, path)
+  return gitBool(values, path.toLowerCase(), fallback)
 }

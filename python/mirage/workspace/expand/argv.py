@@ -17,14 +17,15 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from mirage.commands.spec.types import ValueType
+from mirage.commands.spec.types import CommandSpec, ValueType
 from mirage.ops.types import SessionView
 from mirage.policy.match import scopes_paths
 from mirage.runtime.routing.types import RouteDecision
 from mirage.shell.call_stack import CallStack
 from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec, word_text
-from mirage.utils.glob_walk import literal_word, mark_globs, unmark_globs
+from mirage.utils.glob_walk import (has_glob, literal_word, mark_globs,
+                                    unmark_globs)
 from mirage.workspace.expand.classify import classify_parts
 from mirage.workspace.expand.globs import glob_options, resolve_globs
 from mirage.workspace.expand.parts import expand_words
@@ -34,6 +35,7 @@ from mirage.workspace.expand.spec_hints import (spec_for_command,
 from mirage.workspace.lookup import (Consumer, WordPolicy,
                                      end_options_after_program, lookup,
                                      runtime_refused, word_policy)
+from mirage.workspace.lookup.constants import INTERPRETER_NAMES
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.session import SessionState
@@ -102,7 +104,9 @@ async def expand_argv(
 
     Uses the cwd mount's CommandSpec (when it has one for the command)
     to decide which words are TEXT (skip classification) and which are
-    PATH (classify even bare filenames).
+    PATH (classify even bare filenames). A native program's line is
+    globbed whatever the slots, as bash globs it, and its words are
+    then classified for the slots the expanded words fill.
 
     Args:
         parts (list[TSNodeLike]): word nodes after env-prefix
@@ -147,22 +151,55 @@ async def expand_argv(
             name, expanded[consumed:])
 
     policy = word_policy(consumer)
+    # A native program gets its words the way bash hands them over, with
+    # every unquoted glob already expanded, whatever slot the word fills.
+    native = consumer is Consumer.EXTERNAL and not refused
+    # An interpreter run in-process keeps the shell's reading of its
+    # words, which is what its argv is built from, but its script is a
+    # file it opens: the spec's script slot makes that one word a path,
+    # so a rule protecting `secret.py` reads `python3 secret.py` however
+    # the script is spelled.
+    in_process = consumer is Consumer.SESSION and name in INTERPRETER_NAMES
+    spec: CommandSpec | None = None
     word_kinds: list[ValueType | None] | None = None
     word_bases: list[str | None] | None = None
-    # Native captures still need the spec's path roles for admission.
-    if policy is WordPolicy.MOUNT or consumer is Consumer.EXTERNAL:
+    # Native captures and interpreters still need the spec's path roles
+    # for admission.
+    if (policy is WordPolicy.MOUNT or consumer is Consumer.EXTERNAL
+            or in_process):
         spec = spec_for_command(name, registry, session.cwd)
         if spec:
             # Before anything reads the line: an option carrying a
             # program hands the words after it to that program, and
             # POSIX's own `--` is how that is said.
             extra: list[ValueType | None] = ["str"] * (consumed - 1)
-            word_kinds = extra + spec_word_kinds(spec, expanded[consumed:],
-                                                 name)
+            kinds = spec_word_kinds(spec, expanded[consumed:], name)
+            if in_process:
+                kinds = [kind if kind == "path" else None for kind in kinds]
+            word_kinds = extra + kinds
             bases = spec_word_bases(spec, expanded[consumed:], session.cwd)
             if bases is not None:
                 head: list[str | None] = [None] * (consumed - 1)
                 word_bases = head + bases
+    if native:
+        # bash globs every unquoted word before the program reads any of
+        # them, whatever slot it fills and whatever it looks like:
+        # `python3 s.py *.txt` gets the matches, `.*.txt` the dotfiles and
+        # `x=*` a file named `x=1`, and a glob that matches nothing stays
+        # the word as typed. So a word carrying a live glob character is a
+        # pattern here, spec or no spec, rather than a shell word the
+        # shape rules read. A quoted one carries marks rather than glob
+        # characters, so it stays text.
+        tail = expanded[consumed:]
+        own = (word_kinds[consumed -
+                          1:] if word_kinds is not None else [None] *
+               len(tail))
+        names: list[ValueType | None] = ["str"] * (consumed - 1)
+        globbed: list[ValueType | None] = [
+            "path" if has_glob(word) else kind
+            for kind, word in zip(own, tail)
+        ]
+        word_kinds = names + globbed
 
     classified = classify_parts(expanded,
                                 registry,
@@ -196,6 +233,9 @@ async def expand_argv(
             item if isinstance(item, PathSpec) and item.pattern else
             literal_word(item) for item in classified
         ]
+    if native and spec:
+        words = _program_words(words, spec, name, consumed, registry,
+                               session.cwd)
     # The text view renders words as typed (raw_path): bash hands
     # programs their words unchanged, so `echo sub/file.txt` prints the
     # relative form, not the resolved absolute path. Quote removal is
@@ -206,3 +246,48 @@ async def expand_argv(
                 operands=tuple(words[consumed:]),
                 prefix=tuple(
                     unmark_globs(word) for word in expanded[:consumed]))
+
+
+def _program_words(words: list[str | PathSpec], spec: CommandSpec, name: str,
+                   consumed: int, registry: MountRegistry,
+                   cwd: str) -> list[str | PathSpec]:
+    """Classify a native program's words for the argv it receives.
+
+    bash expands every glob before the program parses its argv, so a
+    match can fill a slot of another kind than the word it came from:
+    `grep *.txt` hands grep its pattern and its files out of one word,
+    and a glob's extra matches push every later word into a later slot.
+    The spec therefore reads the expanded words, which are literal from
+    here on, and each word is classified for the slot it now fills.
+    Admission then judges the paths the program opens, and a match in a
+    text slot is text, exactly like the same word typed by hand. A glob
+    that matched nothing keeps the pattern spec the resolver left in a
+    path slot, and is its typed text in a text slot.
+
+    Args:
+        words (list[str | PathSpec]): the resolved words, name first.
+        spec (CommandSpec): the program's command spec.
+        name (str): the expanded command name.
+        consumed (int): how many leading words form the name.
+        registry (MountRegistry): mount registry for classification.
+        cwd (str): working directory the line was typed under.
+    """
+    literal = [mark_globs(word_text(w)) for w in words]
+    kinds: list[ValueType | None] = ["str"] * (consumed - 1)
+    kinds += spec_word_kinds(spec, literal[consumed:], name)
+    bases = spec_word_bases(spec, literal[consumed:], cwd)
+    head: list[str | None] = [None] * (consumed - 1)
+    reread = classify_parts(literal,
+                            registry,
+                            cwd,
+                            word_kinds=kinds,
+                            word_bases=None if bases is None else head + bases)
+    out: list[str | PathSpec] = [words[0]]
+    for word, kind, fresh in zip(words[1:], kinds, reread[1:]):
+        if not (isinstance(word, PathSpec) and word.pattern):
+            out.append(literal_word(fresh))
+        elif kind in (None, "path"):
+            out.append(word)
+        else:
+            out.append(literal_word(word_text(word)))
+    return out

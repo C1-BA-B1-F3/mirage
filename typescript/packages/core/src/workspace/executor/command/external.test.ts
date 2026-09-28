@@ -146,6 +146,22 @@ describe('external program capture', () => {
     }
   })
 
+  it('globs every unquoted word of a fallback program', async () => {
+    // bash globs a word whatever it looks like: a leading dot matches the
+    // dotfiles and `x=*` a file named `x=1`, and a quoted or unmatched
+    // pattern stays the word as typed.
+    const probe = new ProcessProbe()
+    const ws = await workspace(probe)
+    try {
+      await ws.shell("mkdir /work; touch /work/.a.txt '/work/x=1'; cd /work")
+      const result = await ws.shell("native-tool .*.txt x=* '.*.txt' .none*")
+      expect(result.exitCode).toBe(0)
+      expect(probe.requests[0]?.argv).toEqual(['native-tool', '.a.txt', 'x=1', '.*.txt', '.none*'])
+    } finally {
+      await ws.close()
+    }
+  })
+
   it('never uses the external fallback for a refused named capture', async () => {
     const probe = new ProcessProbe({ captures: ['native-tool'], script: () => false })
     const fallback = new ProcessProbe()
@@ -499,6 +515,95 @@ describe.each(['process', 'shell'] as const)('external %s path admission', (kind
       const tokens = ['grep', 'secret.txt', 'public.txt']
       if (probe instanceof ProcessProbe) expect(probe.requests[0]?.argv).toEqual(tokens)
       else expect(probe.lines[0]).toBe(shellJoin(tokens))
+    } finally {
+      await ws.close()
+    }
+  })
+})
+
+describe.each(['process', 'shell'] as const)('external %s text-slot globs', (kind) => {
+  async function textWorkspace(
+    captures: string[],
+    policies: RulePolicy[] = [],
+  ): Promise<[Workspace, ProcessProbe | ShellProbe]> {
+    const probe = kind === 'process' ? new ProcessProbe({ captures }) : new ShellProbe({ captures })
+    const ws = new Workspace(
+      { '/work': new RAMVFS() },
+      { shellParser: await getTestParser(), runtimes: [probe], mode: MountMode.EXEC, policies },
+    )
+    return [ws, probe]
+  }
+
+  it.each([
+    ['python3 s.py *.txt', ['python3', 's.py', 'a.txt', 'b.txt']],
+    ['python3 -c p /work/*.txt', ['python3', '-c', 'p', '/work/a.txt', '/work/b.txt']],
+    ['python3 s.py ../work/?.txt', ['python3', 's.py', '../work/a.txt', '../work/b.txt']],
+    ["python3 s.py '*.txt' \\*.txt", ['python3', 's.py', '*.txt', '*.txt']],
+    ['python3 s.py *.none', ['python3', 's.py', '*.none']],
+    ['python3 s.py .*.txt', ['python3', 's.py', '.a.txt']],
+    ['python3 s.py x=*', ['python3', 's.py', 'x=1']],
+    ['python3 s.py .none*', ['python3', 's.py', '.none*']],
+    ['shopt -s nullglob; python3 s.py *.none x', ['python3', 's.py', 'x']],
+    ['set -f; python3 s.py *.txt', ['python3', 's.py', '*.txt']],
+  ] as const)('hands %s the words bash would', async (line, tokens) => {
+    const [ws, probe] = await textWorkspace(['python3'])
+    try {
+      await ws.shell("touch /work/a.txt /work/b.txt /work/.a.txt '/work/x=1'")
+      await ws.shell('cd /work')
+      const result = await ws.shell(line)
+      expect(result.exitCode).toBe(0)
+      if (probe instanceof ProcessProbe) expect(probe.requests[0]?.argv).toEqual(tokens)
+      else expect(probe.lines[0]).toBe(shellJoin([...tokens]))
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('obeys failglob', async () => {
+    const [ws, probe] = await textWorkspace(['python3'])
+    try {
+      await ws.shell('cd /work')
+      await ws.shell('shopt -s failglob')
+      const result = await ws.shell('python3 s.py *.none')
+      expect(result.exitCode).toBe(1)
+      expect(DEC.decode(result.stderr)).toBe('bash: no match: *.none\n')
+      expect(probe instanceof ProcessProbe ? probe.requests : probe.lines).toHaveLength(0)
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('admits the paths of the expanded argv', async () => {
+    const [ws, probe] = await textWorkspace(
+      ['grep', 'python3'],
+      [
+        new RulePolicy({
+          reason: 'protected',
+          commands: ['grep', 'python3'],
+          paths: ['/work/secret.txt'],
+        }),
+      ],
+    )
+    try {
+      expect((await ws.shell('echo secret > /work/secret.txt')).exitCode).toBe(0)
+      expect((await ws.shell('echo public > /work/public.txt')).exitCode).toBe(0)
+      await ws.shell('cd /work')
+      // One word fills grep's pattern and its file operand, so the match
+      // that lands in the file slot is a path the gate reads.
+      const refused = await ws.shell('grep *.txt')
+      expect(refused.exitCode).not.toBe(0)
+      expect(DEC.decode(refused.stderr)).toContain('protected')
+      expect(probe instanceof ProcessProbe ? probe.requests : probe.lines).toHaveLength(0)
+      // A match in a text slot is text, as the word typed by hand is.
+      for (const [line, tokens] of [
+        ['grep s*.txt public.txt', ['grep', 'secret.txt', 'public.txt']],
+        ['python3 s.py s*.txt', ['python3', 's.py', 'secret.txt']],
+      ] as const) {
+        const result = await ws.shell(line)
+        expect(result.exitCode, line).toBe(0)
+        if (probe instanceof ProcessProbe) expect(probe.requests.at(-1)?.argv).toEqual(tokens)
+        else expect(probe.lines.at(-1)).toBe(shellJoin([...tokens]))
+      }
     } finally {
       await ws.close()
     }

@@ -59,6 +59,14 @@ any word, so a name only the fallback would run has no file there: `which`,
 Mirage executes `grep` and writes the VFS output. An explicit `captures: ["*"]`
 opts into delegating the entire shell line.
 
+A delegated program receives its words the way bash hands them over: every
+unquoted glob is expanded against the workspace first, whatever operand it
+fills, so `python3 job.py *.csv` runs `python3 job.py a.csv b.csv`, and a
+quoted or escaped glob stays literal. Command rules then judge that expanded
+argv: `grep *.txt` is refused when a match that grep reads as a file is protected.
+An interpreter's script is a file operand like any other, so `python3 job.py` is
+judged on `job.py` however it is spelled, and the words after it stay its argv.
+
 ## The workspace inside the sandbox
 
 For the job to see your mounts as ordinary files, the sandbox must serve

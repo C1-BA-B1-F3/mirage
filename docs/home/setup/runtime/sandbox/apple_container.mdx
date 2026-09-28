@@ -1,6 +1,7 @@
 ---
-title: Apple container
+title: Apple Container
 icon: apple
+iconType: brands
 description: Connect either Mirage SDK to an existing container under Apple's container tool.
 ---
 
@@ -9,15 +10,35 @@ macOS 26 or later; live FUSE mounts need `SYS_ADMIN`. Details:
 [Python](/python/runtime/sandbox/apple_container) ·
 [TypeScript](/typescript/runtime/sandbox/apple_container).
 
+Run these commands from the Mirage repository root:
+
 ```bash
 brew install container
 container system start
+container build -f docker/sandbox/Dockerfile --target fuse \
+  -t mirage-python-fuse .
 container run -d --cap-add SYS_ADMIN \
   --name my-sandbox mirage-python-fuse sleep infinity
 ```
 
-`my-sandbox` is any name you choose; the runtime's `container` config refers
-to it.
+`mirage-python-fuse` is the local image name assigned by `-t` during the
+build. The image contains Python, Mirage, and FUSE (Filesystem in Userspace),
+which makes workspace backends accessible as ordinary files inside the
+container. This example uses the Python Mirage CLI inside the container to serve the
+mounts; your host application can use either the Python or TypeScript SDK.
+Apple Container does not require Python.
+
+| Part of `container run` | Meaning |
+| --- | --- |
+| `-d` | Run the container in the background. |
+| `--cap-add SYS_ADMIN` | Allow the FUSE mounts used to expose workspace files. |
+| `--name my-sandbox` | Give this container a name; use it in the runtime's `container` config. |
+| `mirage-python-fuse` | Use the image built above. |
+| `sleep infinity` | Keep the container running while Mirage sends commands through `container exec`. |
+
+This starts the container. Follow the Python or TypeScript guide above to
+copy your workspace configuration into it and mount your backends before
+running commands that use workspace files.
 
 <Tabs>
   <Tab title="Python SDK" icon="/images/python-logo.svg">

@@ -1,7 +1,8 @@
 ---
-title: Apple container
+title: Apple Container
 description: Run captured command lines in an existing container under Apple's container tool.
 icon: apple
+iconType: brands
 ---
 
 Apple's [`container`](https://github.com/apple/container) runs every Linux
@@ -14,26 +15,50 @@ the sandbox.
 
 ## Start the container
 
-Install the tool and start its services once, then build the shared image
-with `container build` from the repo root. Live FUSE mounts need
-`SYS_ADMIN`; every container already has `/dev/fuse`:
+Install the tool and start its services once, then build the sandbox image
+from the Mirage repository root:
 
 ```bash
 brew install container
 container system start
 container build -f docker/sandbox/Dockerfile --target fuse \
   -t mirage-python-fuse .
+```
+
+`--target fuse` selects the Dockerfile's FUSE build stage. `-t mirage-python-fuse`
+assigns a local name to the resulting image, which contains Python, Mirage,
+and FUSE (Filesystem in Userspace). FUSE makes workspace backends accessible
+as ordinary files inside the container. This example uses the Python Mirage CLI inside the container to serve the
+mounts; your host application can use either the Python or TypeScript SDK.
+Apple Container does not require Python.
+
+Start a container from that image:
+
+```bash
 container run -d --cap-add SYS_ADMIN \
   --name my-sandbox mirage-python-fuse sleep infinity
+```
+
+| Part of `container run` | Meaning |
+| --- | --- |
+| `-d` | Run the container in the background. |
+| `--cap-add SYS_ADMIN` | Allow FUSE mounts; Apple Container already provides `/dev/fuse`. |
+| `--name my-sandbox` | Give this container a name; use it in the runtime's `container` config. |
+| `mirage-python-fuse` | Use the image built above. |
+| `sleep infinity` | Keep the container running while Mirage sends commands through `container exec`. |
+
+Create `sandbox.yaml` with your backends and mount paths, following
+[The workspace inside the sandbox](/typescript/runtime/sandbox#the-workspace-inside-the-sandbox).
+Then copy it into the container and start the workspace:
+
+```bash
 container cp sandbox.yaml my-sandbox:/tmp/sandbox.yaml
 container exec my-sandbox mirage workspace create /tmp/sandbox.yaml
 ```
 
-`my-sandbox` is any name you choose: `--name` sets the container's id, and
-the runtime's `container` config below refers to it. Mirage reaches the
-container only through `container exec`; the last command starts a Mirage
-inside it that FUSE-mounts your backends at the same paths, which is how
-programs there see your files.
+The last command starts Mirage inside the container and FUSE-mounts your
+backends at the configured paths, so programs there can read and write your
+workspace files.
 
 Host directories reach the container only if you pass them at start with
 `--volume`; the guest otherwise sees nothing from the host filesystem. A

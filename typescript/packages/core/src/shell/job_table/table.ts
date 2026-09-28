@@ -130,11 +130,10 @@ export class JobTable {
   /**
    * Register a job in its session's list and start it.
    *
-   * The table creates the task itself so the runner is handed a job that
-   * already has a console. Building the task first would leave a window
-   * in which output could arrive with nowhere to go. The job joins the
-   * list only once its runner is admitted, so one refused at the
-   * session's process cap (`limit`, EAGAIN) leaves no entry behind.
+   * Reserve a process slot before allocating a console. The runner is
+   * deferred until the job and console are ready; failed setup cancels
+   * the reservation without entering the supplied runner. Only fully
+   * initialized jobs join the table.
    */
   submit(init: {
     command: string
@@ -153,28 +152,14 @@ export class JobTable {
     // later `wait %1` pointing at nothing.
     if (jobs.size === 0) this.nextIds.set(sessionId, 1)
     const jobId = this.nextIds.get(sessionId) ?? 1
-    let jobConsole: JobConsole
-    if (this.consoleFactory === null) {
-      jobConsole = new JobConsole()
-    } else {
-      jobConsole = this.consoleFactory(jobId)
-      this.factoryConsoles.push(jobConsole)
-    }
-    const job = new Job({
-      id: jobId,
-      command: init.command,
-      abort: init.abort,
-      cwd: init.cwd,
-      agent: init.agent ?? 'unknown',
-      sessionId,
-      console: jobConsole,
-    })
-    job.process = this.processes.start({
+    let job: Job | null = null
+    const process = this.processes.start({
       sessionId,
       parentPid: init.parentPid ?? null,
       command: init.command,
       cwd: PathSpec.fromStrPath(init.cwd),
       run: async () => {
+        if (job === null) return KILLED_EXIT_CODE
         if (job.status === JobStatus.RUNNING) return settle(init.run, job)
         return job.exitCode
       },
@@ -183,9 +168,30 @@ export class JobTable {
       },
       limit: init.limit ?? null,
     })
+    try {
+      let jobConsole: JobConsole
+      if (this.consoleFactory === null) {
+        jobConsole = new JobConsole()
+      } else {
+        jobConsole = this.consoleFactory(jobId)
+        this.factoryConsoles.push(jobConsole)
+      }
+      job = new Job({
+        id: jobId,
+        command: init.command,
+        abort: init.abort,
+        cwd: init.cwd,
+        agent: init.agent ?? 'unknown',
+        sessionId,
+        console: jobConsole,
+      })
+    } catch (error) {
+      process.terminate()
+      throw error
+    }
+    job.process = process
     jobs.set(job.id, job)
     this.nextIds.set(sessionId, jobId + 1)
-    const process = job.process
     const onAbort = () => {
       process.terminate()
     }

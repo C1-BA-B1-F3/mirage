@@ -297,3 +297,24 @@ else:
     await ws.close()
   }
 }, 30000)
+
+it('top-level lines cannot bypass the spawn process cap', async () => {
+  const ws = new Workspace({ '/data': new RAMVFS() }, { runtimes: [], shellParser: parser })
+  const session = ws.createSession('capped', { profile: { processes: { max: 1 } } })
+  const child = ws.spawn({ argv: ['sleep', '30'] }, 'capped')
+  try {
+    const result = await ws.shell('echo leaked > /data/file', { sessionId: 'capped' })
+    expect(result.exitCode).toBe(254)
+    expect(result.stderrText).toBe('bash: fork: Resource temporarily unavailable\n')
+    expect(session.processId).toBeNull()
+    expect(ws.processes.live()).toHaveLength(1)
+    expect((await ws.shell('test ! -e /data/file')).exitCode).toBe(0)
+    child.terminate()
+    await child.wait()
+    expect((await ws.shell('echo $?; echo ok', { sessionId: 'capped' })).stdoutText).toBe(
+      '254\nok\n',
+    )
+  } finally {
+    await ws.close()
+  }
+})

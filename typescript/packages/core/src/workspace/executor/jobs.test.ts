@@ -462,7 +462,9 @@ describe('job builtins honor the process profile', () => {
       for (const line of ['(echo sub); echo no', 'echo x | cat; echo no', 'sleep 30 & echo no'])
         expect(await run(line)).toEqual(['', refusal, 254])
       expect(await run('echo $?')).toEqual(['254\n', '', 0])
-      expect(await run('kill %1; (echo sub)')).toEqual(['sub\n', '', 0])
+      expect(await run('kill %1')).toEqual(['', '', 0])
+      await ws.processes.drain()
+      expect(await run('(echo sub)')).toEqual(['sub\n', '', 0])
     } finally {
       await ws.close()
     }

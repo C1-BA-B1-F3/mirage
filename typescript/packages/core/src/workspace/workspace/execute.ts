@@ -14,6 +14,8 @@
 
 import { PathSpec } from '../../types.ts'
 import { literalTree } from '../../shell/literal.ts'
+import { FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
+import type { ProcessHandle } from '../../process/handle.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import { runWithRecording } from '../../observe/context.ts'
@@ -313,22 +315,34 @@ async function runLine(
     const combined =
       options.signal === undefined ? abort.signal : AbortSignal.any([options.signal, abort.signal])
     let result: ExecuteResult | ProvisionResult | undefined
-    const process = env.jobTable.processes.start({
-      sessionId: targetSession.sessionId,
-      command,
-      cwd: PathSpec.fromStrPath(options.cwd ?? targetSession.cwd),
-      cancel: () => {
-        abort.abort()
-      },
-      run: async () => {
-        result = await runWithSession(
-          targetSession,
-          () => runLine(env, command, { ...options, signal: combined }, frame, argv),
-          env.sessions,
-        )
-        return result instanceof ExecuteResult ? result.exitCode : 0
-      },
-    })
+    let process: ProcessHandle
+    try {
+      process = env.jobTable.processes.start({
+        sessionId: targetSession.sessionId,
+        limit: targetSession.processes.max,
+        command,
+        cwd: PathSpec.fromStrPath(options.cwd ?? targetSession.cwd),
+        cancel: () => {
+          abort.abort()
+        },
+        run: async () => {
+          result = await runWithSession(
+            targetSession,
+            () => runLine(env, command, { ...options, signal: combined }, frame, argv),
+            env.sessions,
+          )
+          return result instanceof ExecuteResult ? result.exitCode : 0
+        },
+      })
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 'EAGAIN') throw error
+      recordStatus(targetSession, FORK_FAILED_STATUS)
+      return new ExecuteResult(
+        new Uint8Array(),
+        new TextEncoder().encode(FORK_FAILED),
+        FORK_FAILED_STATUS,
+      )
+    }
     targetSession.processId = process.info.pid
     targetSession.shellPid ??= process.info.pid
     try {

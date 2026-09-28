@@ -41,8 +41,8 @@ class ProcessSupervisor:
             run (ProcessRunner): asynchronous execution and cleanup.
             parent_pid (int | None): the runner this one is a child of.
             limit (int | None): the most runners the session may hold,
-                this one included; None for no cap. One asked to stop no
-                longer counts, so ``kill`` frees its slot at once.
+                this one included; None for no cap. Stopping runners count
+                until they finish cleanup and leave the live registry.
 
         Raises:
             BlockingIOError: the session already holds ``limit``
@@ -53,8 +53,7 @@ class ProcessSupervisor:
                 raise RuntimeError("process supervisor is stopped")
             if limit is not None and sum(
                     1 for _, handle in self._live.values()
-                    if handle.info.session_id == session_id
-                    and not handle.info.cancellation_requested) >= limit:
+                    if handle.info.session_id == session_id) >= limit:
                 raise BlockingIOError(errno.EAGAIN,
                                       "Resource temporarily unavailable")
             pid = self._next_pid

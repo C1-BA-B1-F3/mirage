@@ -17,7 +17,7 @@ export class ProcessSupervisor {
   /**
    * Host-only: the supplied runner must admit commands before effects.
    * `limit` is the most runners the session may hold, this one included;
-   * one asked to stop no longer counts, so `kill` frees its slot at once.
+   * stopping runners count until they finish cleanup and leave the live registry.
    * Past it this throws EAGAIN, what fork(2) answers at `ulimit -u`.
    */
   start(init: {
@@ -32,10 +32,8 @@ export class ProcessSupervisor {
     if (this.stopped) throw new Error('process supervisor is stopped')
     if (
       init.limit != null &&
-      [...this.runners.values()].filter(
-        ({ handle }) =>
-          handle.info.sessionId === init.sessionId && !handle.info.cancellationRequested,
-      ).length >= init.limit
+      [...this.runners.values()].filter(({ handle }) => handle.info.sessionId === init.sessionId)
+        .length >= init.limit
     )
       throw Object.assign(new Error('Resource temporarily unavailable'), { code: 'EAGAIN' })
     const parent = init.parentPid == null ? undefined : this.runners.get(init.parentPid)

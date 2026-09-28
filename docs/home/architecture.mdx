@@ -123,7 +123,9 @@ and a process the session sees but may not stop answers
 `kill: (PID) - Operation not permitted`, as bash does.
 `max` counts the session's live processes, its running line included, as
 `ulimit -u` counts the shell: background jobs, pipeline stages, subshells and
-spawned children. A process asked to stop no longer counts. Past the cap a fork
+spawned children. Stopping processes count until their runners exit. Top-level
+lines also require a slot; a full session can be stopped through host handles or
+an authorized session with spare capacity. Past the cap a fork
 fails as bash's does at its process limit: `bash: fork: Resource temporarily
 unavailable`, the rest of the line abandoned with status 254, and a subshell that
 hits it reports 254 to its parent. Bash first retries with backoff; Mirage refuses

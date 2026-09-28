@@ -137,3 +137,25 @@ async def test_spawn_output_obeys_the_command_limit_wherever_the_parent_writes(
         assert result.stdout == b'0123'
     finally:
         await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_top_level_line_cannot_bypass_spawn_process_cap():
+    ws = Workspace({'/data': RAMVFS()}, runtimes=[])
+    session = ws.create_session('capped', profile={'processes': {'max': 1}})
+    child = ws.spawn(SpawnRequest(('sleep', '30')), 'capped')
+    try:
+        result = await ws.shell('echo leaked > /data/file',
+                                session_id='capped')
+        assert result.exit_code == 254
+        assert result.stderr == (
+            b'bash: fork: Resource temporarily unavailable\n')
+        assert session.process_id is None
+        assert len(ws.processes.live()) == 1
+        assert (await ws.shell('test ! -e /data/file')).exit_code == 0
+        child.terminate()
+        await child.wait()
+        result = await ws.shell('echo $?; echo ok', session_id='capped')
+        assert result.stdout == b'254\nok\n'
+    finally:
+        await ws.close()

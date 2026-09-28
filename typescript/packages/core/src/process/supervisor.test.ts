@@ -220,9 +220,10 @@ it('start refuses a session at its limit', async () => {
   expect(() => start('a')).toThrow(expect.objectContaining({ code: 'EAGAIN' }))
   held.push(start('b'))
   held[0]?.terminate()
-  held.push(start('a'))
+  expect(() => start('a')).toThrow(expect.objectContaining({ code: 'EAGAIN' }))
   release.release()
   await Promise.all(held.map((process) => process.join()))
+  await start('a').join()
 })
 
 it('group cancellation reaches grandchildren after an intermediate exits', async () => {

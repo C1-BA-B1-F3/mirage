@@ -28,6 +28,7 @@ from mirage.policy import HandOff, resolve_limit
 from mirage.provision import ProvisionResult
 from mirage.runtime.routing import RouteDecision, RouteDeny, RouteError
 from mirage.shell.console import JobConsole
+from mirage.shell.constants import FORK_FAILED, FORK_FAILED_STATUS
 from mirage.shell.literal import literal_tree
 from mirage.shell.parse import (find_syntax_error, find_unterminated_backtick,
                                 parse, syntax_error_result)
@@ -284,11 +285,16 @@ async def execute_line(
             finally:
                 reset_current_session(token)
 
-        process = ws.processes.start(session_id=session.session_id,
-                                     command=command,
-                                     cwd=PathSpec.from_str_path(
-                                         cwd or session.cwd),
-                                     run=run)
+        try:
+            process = ws.processes.start(session_id=session.session_id,
+                                         command=command,
+                                         cwd=PathSpec.from_str_path(
+                                             cwd or session.cwd),
+                                         run=run,
+                                         limit=session.processes.max)
+        except BlockingIOError:
+            record_status(session, FORK_FAILED_STATUS)
+            return IOResult(exit_code=FORK_FAILED_STATUS, stderr=FORK_FAILED)
         session.process_id = process.info.pid
         if session.shell_pid is None:
             session.shell_pid = process.info.pid

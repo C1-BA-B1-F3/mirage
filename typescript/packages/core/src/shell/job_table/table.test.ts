@@ -555,3 +555,57 @@ it('settles an already aborted job without entering its runner', async () => {
   expect(job.status).toBe(JobStatus.KILLED)
   expect(await job.process?.join()).toMatchObject({ exitCode: 137, cancellationRequested: true })
 })
+
+it('refused jobs never allocate factory consoles', async () => {
+  const stores: RAMConsoleStore[] = []
+  const table = new JobTable(() => {
+    const store = new RAMConsoleStore()
+    stores.push(store)
+    return new JobConsole(store)
+  })
+  const abort = new AbortController()
+  const job = table.submit({ command: 'held', run: pending(abort), abort, cwd: '/', limit: 1 })
+  try {
+    for (let n = 0; n < 3; n++)
+      expect(() =>
+        table.submit({
+          command: 'refused',
+          run: quiet,
+          abort: new AbortController(),
+          cwd: '/',
+          limit: 1,
+        }),
+      ).toThrow(expect.objectContaining({ code: 'EAGAIN' }))
+    expect(stores).toHaveLength(1)
+    expect(table.listJobs()).toEqual([job])
+  } finally {
+    await table.killAll()
+    await table.processes.drain()
+    await table.closeConsoles()
+  }
+  expect(stores[0]?.closed).toBe(true)
+})
+
+it('factory failure never enters the job runner', async () => {
+  const entered: (number | string)[] = []
+  const table = new JobTable((id) => {
+    entered.push(id)
+    throw new Error('console unavailable')
+  })
+  expect(() =>
+    table.submit({
+      command: 'refused',
+      cwd: '/',
+      abort: new AbortController(),
+      limit: 1,
+      run: (job) => {
+        entered.push('runner')
+        return quiet(job)
+      },
+    }),
+  ).toThrow('console unavailable')
+  await table.processes.drain()
+  expect(table.listJobs()).toEqual([])
+  expect(table.processes.live()).toEqual([])
+  expect(entered).toEqual([1])
+})

@@ -45,6 +45,12 @@ async def test_cancel_does_not_claim_exit_before_finally_finishes():
     with pytest.raises(asyncio.CancelledError):
         await waiter
     assert supervisor.live() == (process, )
+    with pytest.raises(BlockingIOError):
+        supervisor.start(session_id="a",
+                         command="replacement",
+                         cwd=PathSpec.from_str_path("/"),
+                         run=run,
+                         limit=1)
     release.set()
     result = await process.join()
     assert result.state == ProcessState.EXITED
@@ -232,6 +238,9 @@ async def test_start_refuses_a_session_at_its_limit():
     assert refused.value.errno == errno.EAGAIN
     held.append(start('b'))
     held[0].terminate()
+    with pytest.raises(BlockingIOError):
+        start('a')
+    await held[0].join()
     held.append(start('a'))
     release.set()
     await asyncio.gather(*(process.join() for process in held))

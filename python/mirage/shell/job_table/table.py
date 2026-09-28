@@ -182,11 +182,10 @@ class JobTable:
     ) -> Job:
         """Register a job in its session's list and start it.
 
-        The table creates the task itself so the runner is handed a job
-        that already has a console. Building the task first would leave a
-        window in which output could arrive with nowhere to go. The job
-        joins the list only once its runner is admitted, so a refused one
-        leaves no entry behind.
+        Reserve a process slot before allocating a console. The runner
+        is deferred until the job and console are ready; failed setup
+        cancels the reservation without entering the supplied runner.
+        Only fully initialized jobs join the table.
 
         Args:
             command (str): the command line being run.
@@ -208,30 +207,38 @@ class JobTable:
             # would leave a later `wait %1` pointing at nothing.
             self._next_ids[session_id] = 1
         job_id = self._next_ids.setdefault(session_id, 1)
-        if self._console_factory is None:
-            console = JobConsole()
-        else:
-            console = self._console_factory(job_id)
-            self._factory_consoles.append(console)
-        job = Job(id=job_id,
-                  command=command,
-                  task=None,
-                  cwd=cwd,
-                  agent=agent,
-                  session_id=session_id,
-                  console=console)
+        job: Job | None = None
 
         async def execute() -> int:
+            if job is None:
+                return KILLED_EXIT_CODE
             if job.status == JobStatus.RUNNING:
                 return await _settle(run, job)
             return job.exit_code
 
-        job.process = self.processes.start(session_id=session_id,
-                                           command=command,
-                                           cwd=PathSpec.from_str_path(cwd),
-                                           run=execute,
-                                           parent_pid=parent_pid,
-                                           limit=limit)
+        process = self.processes.start(session_id=session_id,
+                                       command=command,
+                                       cwd=PathSpec.from_str_path(cwd),
+                                       run=execute,
+                                       parent_pid=parent_pid,
+                                       limit=limit)
+        try:
+            if self._console_factory is None:
+                console = JobConsole()
+            else:
+                console = self._console_factory(job_id)
+                self._factory_consoles.append(console)
+            job = Job(id=job_id,
+                      command=command,
+                      task=None,
+                      cwd=cwd,
+                      agent=agent,
+                      session_id=session_id,
+                      console=console)
+        except Exception:
+            process.terminate()
+            raise
+        job.process = process
         job.task = job.process.task
         jobs[job_id] = job
         self._next_ids[session_id] = job_id + 1

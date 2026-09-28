@@ -322,3 +322,48 @@ async def test_process_ids_do_not_restart_with_shell_job_numbers():
     await table.kill_all()
     await asyncio.gather(a.process.join(), b.process.join(),
                          replacement.process.join())
+
+
+@pytest.mark.asyncio
+async def test_refused_job_never_allocates_a_factory_console():
+    stores: list[RAMConsoleStore] = []
+    table = JobTable(console_factory=partial(_tracked_ram_console, stores))
+    release = asyncio.Event()
+
+    async def run(job):
+        await release.wait()
+        return IOResult(), ExecutionNode()
+
+    job = table.submit(command='held', run=run, cwd='/', limit=1)
+    try:
+        for _ in range(3):
+            with pytest.raises(BlockingIOError):
+                table.submit(command='refused', run=run, cwd='/', limit=1)
+        assert len(stores) == 1
+        assert table.list_jobs() == [job]
+    finally:
+        release.set()
+        await table.processes.drain()
+        await table.close_consoles()
+    assert stores[0].closed
+
+
+@pytest.mark.asyncio
+async def test_factory_failure_never_enters_job_runner():
+    entered = []
+
+    def factory(job_id):
+        entered.append(job_id)
+        raise ValueError('console unavailable')
+
+    async def run(job):
+        entered.append('runner')
+        return IOResult(), ExecutionNode()
+
+    table = JobTable(console_factory=factory)
+    with pytest.raises(ValueError, match='console unavailable'):
+        table.submit(command='refused', run=run, cwd='/', limit=1)
+    await table.processes.drain()
+    assert table.list_jobs() == []
+    assert table.processes.live() == ()
+    assert entered == [1]

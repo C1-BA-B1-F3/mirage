@@ -111,7 +111,7 @@ write_world_yaml() {
 
 run_case() {
   local cli="$1" host="$2" suite="$3" case_json="$4" work="$5"
-  local case_id wsid world_json
+  local case_id wsid world_json session_id
   case_id="$suite/$(jq -r '.id' <<<"$case_json")"
   wsid="rt-$(jq -r '.id' <<<"$case_json" | tr '_' '-')"
   world_json=$(jq -c '.world // {}' <<<"$case_json")
@@ -139,6 +139,18 @@ run_case() {
     return 1
   fi
 
+  local execute_args=(execute -w "$wsid")
+  session_id=$(jq -r '.session_id // empty' <<<"$world_json")
+  if [ -n "$session_id" ]; then
+    if ! $cli session create "$wsid" --id "$session_id" \
+        >"$work/session.out" 2>&1 </dev/null; then
+      failures+=("$case_id: session create failed: $(head -c 300 "$work/session.out")")
+      $cli workspace delete "$wsid" >/dev/null 2>&1 </dev/null || true
+      return 1
+    fi
+    execute_args+=(--session "$session_id")
+  fi
+
   # Seed declared mount files through the shell (cat reads the piped
   # stdin, the redirect writes the mount). A nested seed name needs its
   # parent first: the redirect refuses a missing directory, and it
@@ -151,13 +163,13 @@ run_case() {
     case "$name" in
       */*)
         quoted_parent=$(jq -nr --arg path "$prefix/${name%/*}" '$path | @sh')
-        $cli execute -w "$wsid" -c "mkdir -p $quoted_parent" \
+        $cli "${execute_args[@]}" -c "mkdir -p $quoted_parent" \
           >/dev/null </dev/null || return 1
         ;;
     esac
     jq -j --arg p "$prefix" --arg n "$name" \
       '.world.mounts[$p].files[$n]' <<<"$case_json" \
-      | $cli execute -w "$wsid" -c "cat > $quoted_path" >/dev/null || return 1
+      | $cli "${execute_args[@]}" -c "cat > $quoted_path" >/dev/null || return 1
   done < <(jq -r '(.world.mounts // {}) | to_entries[]
                   | .key as $p | (.value.files // {}) | keys[]
                   | [$p, .] | @tsv' <<<"$case_json")
@@ -173,7 +185,7 @@ run_case() {
     fi
     runtime=$(jq -r '.runtime // empty' <<<"$step")
     expect=$(jq -c '.expect // {}' <<<"$step")
-    local args=(execute -w "$wsid" -c "$cmd")
+    local args=("${execute_args[@]}" -c "$cmd")
     [ -n "$runtime" ] && args+=(--runtime "$runtime")
     if jq -e 'has("stdin")' >/dev/null <<<"$step"; then
       jq -j '.stdin' <<<"$step" > "$work/stdin.bin"

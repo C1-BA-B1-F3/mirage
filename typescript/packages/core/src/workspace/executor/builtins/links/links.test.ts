@@ -603,3 +603,97 @@ it.each(['/data', '/other'])(
     }
   },
 )
+
+for (const destination of ['/data', '/other']) {
+  for (const sourceLink of [false, true]) {
+    it.each(['safe', 'missing', 'dst~', 'dir'])(
+      `cp backup at ${destination} preserves %s referent (source link: ${String(sourceLink)})`,
+      async (backupTarget) => {
+        const parser = await getTestParser()
+        const ws = new Workspace(
+          { '/data': new RAMVFS(), '/other': new RAMVFS() },
+          { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
+        )
+        try {
+          const setup = await ws.shell(
+            `mkdir -p ${destination}/dir; printf safe > ${destination}/safe; ` +
+              `printf child > ${destination}/dir/file; printf old > ${destination}/dst; ` +
+              `ln -s ${backupTarget} ${destination}/dst~; ` +
+              (sourceLink ? 'ln -s absent /data/src' : 'printf new > /data/src'),
+          )
+          expect(setup.exitCode).toBe(0)
+          const result = await ws.shell(`cp -Pb /data/src ${destination}/dst`)
+          expect(result.exitCode).toBe(0)
+          expect(err(result)).toBe('')
+          expect(ws.namespace.isLink(`${destination}/dst~`)).toBe(false)
+          const content = await ws.shell(
+            `cat ${destination}/dst~ ${destination}/safe ${destination}/dir/file`,
+          )
+          expect(DEC.decode(content.stdout)).toBe('oldsafechild')
+          expect((await ws.shell(`test -e ${destination}/missing`)).exitCode).toBe(1)
+          if (sourceLink) expect(ws.namespace.readlink(`${destination}/dst`)).toBe('absent')
+          else expect(DEC.decode((await ws.shell(`cat ${destination}/dst`)).stdout)).toBe('new')
+        } finally {
+          await ws.close()
+        }
+      },
+    )
+  }
+}
+
+it.each([false, true])(
+  'cp backup unlink refusal preserves destination (source link: %s)',
+  async (sourceLink) => {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS(), '/other': new RAMVFS() },
+      {
+        mode: MountMode.WRITE,
+        policies: [new PinLinks()],
+        shellParserFactory: () => Promise.resolve(parser),
+      },
+    )
+    try {
+      const setup = await ws.shell(
+        'printf safe > /other/safe; printf old > /other/dst; ln -s safe /other/dst.pinned; ' +
+          (sourceLink ? 'ln -s absent /data/src' : 'printf new > /data/src'),
+      )
+      expect(setup.exitCode).toBe(0)
+      const result = await ws.shell('cp -Pb --suffix=.pinned /data/src /other/dst')
+      expect(result.exitCode).toBe(1)
+      expect(err(result)).toBe("cp: cannot backup '/other/dst': Permission denied\n")
+      expect(ws.namespace.readlink('/other/dst.pinned')).toBe('safe')
+      expect(DEC.decode((await ws.shell('cat /other/dst /other/safe')).stdout)).toBe('oldsafe')
+      expect((await ws.shell('test -e /data/src || test -L /data/src')).exitCode).toBe(0)
+    } finally {
+      await ws.close()
+    }
+  },
+)
+
+for (const command of ['cp -P', 'mv']) {
+  it.each(['/data', '/other'])(
+    `${command} counts namespace links in numbered backups at %s`,
+    async (destination) => {
+      const parser = await getTestParser()
+      const ws = new Workspace(
+        { '/data': new RAMVFS(), '/other': new RAMVFS() },
+        { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
+      )
+      try {
+        const setup = await ws.shell(
+          `printf old > ${destination}/dst; ln -s missing ${destination}/dst.~1~; printf new > /data/src`,
+        )
+        expect(setup.exitCode).toBe(0)
+        const result = await ws.shell(`${command} --backup=numbered /data/src ${destination}/dst`)
+        expect(result.exitCode).toBe(0)
+        expect(ws.namespace.readlink(`${destination}/dst.~1~`)).toBe('missing')
+        expect(
+          DEC.decode((await ws.shell(`cat ${destination}/dst ${destination}/dst.~2~`)).stdout),
+        ).toBe('newold')
+      } finally {
+        await ws.close()
+      }
+    },
+  )
+}

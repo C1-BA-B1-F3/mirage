@@ -289,6 +289,8 @@ export async function makeLink(
     target,
     writes,
     errors,
+    undefined,
+    copies,
   )
   if (!made.ok) return false
   try {
@@ -376,7 +378,7 @@ export async function copyTreeLinks(
         [{ path: entry.virtual, isDir: false }],
         errors,
         undefined,
-        { policy, writes, reads, lines },
+        { policy, writes, reads, lines, copies },
       )
       continue
     }
@@ -410,6 +412,7 @@ export async function copyTreeLinks(
         writes,
         reads,
         ...(lines !== undefined ? { lines } : {}),
+        copies,
       },
     )
     await copyTreeLinks(
@@ -710,6 +713,7 @@ export async function makeBackup(
   writes: Record<string, ByteSource>,
   errors: string[],
   index?: IndexCacheStore,
+  copies?: TransferLinks,
 ): Promise<{ backup: PathSpec | null; ok: boolean }> {
   if (policy.backup === null) return { backup: null, ok: true }
   if (!(await pathExists(stat, target))) return { backup: null, ok: true }
@@ -717,7 +721,12 @@ export async function makeBackup(
   try {
     // A failed version scan must not degrade to `.~1~`/the simple suffix:
     // that would overwrite existing backup history.
-    backup = await backupTarget(readdir, target, policy.backup, policy.suffix)
+    backup = await backupTarget(
+      copies?.relay.readdir ?? readdir,
+      target,
+      policy.backup,
+      policy.suffix,
+    )
   } catch (err) {
     if (!isFsError(err)) throw err
     errors.push(`${policy.cmdName}: cannot backup '${target.virtual}': ${String(fsStrerror(err))}`)
@@ -726,6 +735,13 @@ export async function makeBackup(
   if (backup === null) return { backup: null, ok: true }
   let made: boolean
   try {
+    if (
+      copies !== undefined &&
+      !('rename' in strategy) &&
+      copies.links.statAt(backup.virtual) !== null
+    ) {
+      await copies.dispatch('unlink', backup)
+    }
     made = await duplicateForBackup(strategy, stat, target, backup, errors, policy.cmdName, index)
   } catch (err) {
     if (!isFsError(err)) throw err
@@ -958,6 +974,7 @@ export async function copyEntries(
         opts.writes ?? {},
         errors,
         index,
+        opts.copies,
       )
       if (!made.ok) {
         copiedAll = false
@@ -1175,6 +1192,7 @@ export async function cpGeneric(
           writes,
           reads,
           lines: flags.verbose ? lines : undefined,
+          copies,
         })
         if (copies !== undefined) {
           await copyTreeLinks(
@@ -1244,6 +1262,7 @@ export async function cpGeneric(
           writes,
           errors,
           index,
+          copies,
         )
         if (!made.ok) continue
         await strategy.copy(entry, entryDst)
@@ -1275,6 +1294,7 @@ export async function cpGeneric(
       writes,
       errors,
       index,
+      copies,
     )
     if (!made.ok) continue
     if (isPrimitiveCopy(strategy)) {

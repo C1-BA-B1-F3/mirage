@@ -472,30 +472,26 @@ describe('unknownOptionError leaves the token unescaped', () => {
 })
 
 describe('missingOperandError', () => {
-  // coreutils says a bare `missing operand` with no operand at all; diffutils
-  // names the program itself (coreutils 9.7, diffutils 3.10).
+  // argv[argc - 1] once getopt permuted: the last operand, or join's literal
+  // last word, since it reads operands in order. With no operand coreutils
+  // says a bare `missing operand`, while diffutils names the line's last word
+  // and else the program itself (coreutils 9.7, diffutils 3.10). Mirrors
+  // python's test_missing_operand_error_matches_gnu.
+  const hint = (cmd: string, prefixed: boolean): string =>
+    `${prefixed ? `${cmd}: ` : ''}Try '${cmd} --help' for more information.`
   it.each([
-    ['comm', null, "comm: missing operand\nTry 'comm --help' for more information.", 1],
-    [
-      'join',
-      'a.txt',
-      "join: missing operand after 'a.txt'\nTry 'join --help' for more information.",
-      1,
-    ],
-    [
-      'cmp',
-      null,
-      "cmp: missing operand after 'cmp'\ncmp: Try 'cmp --help' for more information.",
-      2,
-    ],
-    [
-      'diff',
-      'a.txt',
-      "diff: missing operand after 'a.txt'\ndiff: Try 'diff --help' for more information.",
-      2,
-    ],
-  ] as const)('matches GNU for %s', (cmd, last, message, code) => {
-    const err = missingOperandError(cmd, last)
-    expect([err.message, err.exitCode]).toEqual([message, code])
+    ['comm', null, [], 'comm: missing operand', false, 1],
+    ['comm', null, ['-1'], 'comm: missing operand', false, 1],
+    ['comm', 'a.txt', ['a.txt', '-1'], "comm: missing operand after 'a.txt'", false, 1],
+    ['join', 'a.txt', [], "join: missing operand after 'a.txt'", false, 1],
+    ['join', 'a.txt', ['a.txt', '-t', ','], "join: missing operand after ','", false, 1],
+    ['cmp', null, [], "cmp: missing operand after 'cmp'", true, 2],
+    ['cmp', null, ['-s'], "cmp: missing operand after '-s'", true, 2],
+    ['diff', 'a.txt', [], "diff: missing operand after 'a.txt'", true, 2],
+    ['diff', 'a.txt', ['a.txt', '-u'], "diff: missing operand after 'a.txt'", true, 2],
+    ['diff', null, ['-u'], "diff: missing operand after '-u'", true, 2],
+  ] as const)('matches GNU for %s %s %j', (cmd, last, argv, line, prefixed, code) => {
+    const err = missingOperandError(cmd, last, argv)
+    expect([err.message, err.exitCode]).toEqual([`${line}\n${hint(cmd, prefixed)}`, code])
   })
 })

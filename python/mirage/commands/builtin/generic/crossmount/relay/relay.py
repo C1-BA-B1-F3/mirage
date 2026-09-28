@@ -60,7 +60,8 @@ async def run_relay(cmd_name: str,
             unzip, zip, ls, sort, wc.
         scopes (list[PathSpec]): Path operands in command-line order.
         text_args (list[str]): Positional text operands (tar's member
-            selectors; empty for the transfer and merge commands).
+            selectors, cmp's skips; empty for the transfer and merge
+            commands).
         flag_kwargs (dict): Flags parsed against the shared command spec.
         dispatch (DispatchFn): Workspace operation dispatcher.
         run_single (RunSingle): Single-mount runner (wc's per-operand
@@ -103,4 +104,4 @@ async def run_relay(cmd_name: str,
         return await run_unzip(scopes, text_args, flag_kwargs, dispatch)
     if cmd_name == Cmd.ZIP:
         return await run_zip(scopes, flag_kwargs, dispatch, ns)
-    return await run_cmp(scopes, flag_kwargs, dispatch, stdin)
+    return await run_cmp(scopes, text_args, flag_kwargs, dispatch, stdin)

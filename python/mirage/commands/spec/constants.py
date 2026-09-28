@@ -291,6 +291,12 @@ OLD_OPTION_EXIT = 2
 # name (GNU diffutils style: `diff: Try 'diff --help' ...`).
 USAGE_HINT_PREFIX = frozenset({"diff", "cmp", "patch"})
 
+# Commands that read their operands in line order (getopt's
+# RETURN_IN_ORDER), so the argv[argc - 1] a missing-operand line names is
+# the line's last word, not its last operand: `join a.txt -t ,` is missing
+# an operand after ',' (coreutils 9.7).
+ARGV_IN_ORDER = frozenset({"join"})
+
 
 def flag_kwarg_name(flag: str) -> str:
     """Map a flag name to its dispatcher kwarg name.

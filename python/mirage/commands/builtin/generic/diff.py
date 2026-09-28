@@ -1,6 +1,6 @@
 import difflib
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from mirage.commands.builtin.diff_format import ed_script, normal_diff
@@ -128,25 +128,26 @@ async def _diff_dirs(
 
 
 async def diff(
-    paths: list[PathSpec],
-    *,
-    read_bytes: Callable[..., Awaitable[bytes]],
-    readdir_fn: Callable[..., Awaitable[list[str]]],
-    stat_fn: Callable[..., Awaitable[FileStat]],
-    stdin: ByteSource | None = None,
-    i: bool = False,
-    w: bool = False,
-    b: bool = False,
-    e: bool = False,
-    u: bool = False,
-    q: bool = False,
-    r: bool = False,
+        paths: list[PathSpec],
+        *,
+        read_bytes: Callable[..., Awaitable[bytes]],
+        readdir_fn: Callable[..., Awaitable[list[str]]],
+        stat_fn: Callable[..., Awaitable[FileStat]],
+        stdin: ByteSource | None = None,
+        i: bool = False,
+        w: bool = False,
+        b: bool = False,
+        e: bool = False,
+        u: bool = False,
+        q: bool = False,
+        r: bool = False,
+        argv: Sequence[str] = (),
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 2:
         raise extra_operand_error(CommandName.DIFF, paths[2].raw_path)
     if len(paths) < 2:
         raise missing_operand_error(CommandName.DIFF,
-                                    _name(paths[-1]) if paths else None)
+                                    _name(paths[-1]) if paths else None, argv)
     if is_stdin(paths[0]) and is_stdin(paths[1]):
         # Both name the one stdin, which GNU sees as the same file.
         return None, IOResult()
@@ -229,4 +230,5 @@ async def diff_generic(
                       e=parsed.ed,
                       u=parsed.unified,
                       q=parsed.brief,
-                      r=parsed.recursive)
+                      r=parsed.recursive,
+                      argv=opts.argv)

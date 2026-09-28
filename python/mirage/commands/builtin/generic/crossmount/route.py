@@ -22,6 +22,7 @@ from mirage.commands.builtin.generic.crossmount.types import (CrossResult,
                                                               RunSingle,
                                                               Strategy)
 from mirage.commands.builtin.utils.stream import is_stdin, resolve_source
+from mirage.commands.errors import UsageError
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import read_fail_exit
 from mirage.io import IOResult
@@ -101,6 +102,12 @@ async def handle_cross_mount(
                                 flag_kwargs,
                                 run_single,
                                 stdin=stdin)
+    except UsageError as exc:
+        # The command's own usage refusal (cmp's bad skip, an extra
+        # operand) is its result, and the rest of the line runs, as the
+        # single-mount path answers it.
+        return None, IOResult(exit_code=exc.exit_code,
+                              stderr=f"{exc}\n".encode())
     except FS_ERRORS as exc:
         return None, IOResult(exit_code=read_fail_exit(cmd_name, exc),
                               stderr=format_fs_error(cmd_name, exc, scopes))

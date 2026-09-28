@@ -79,6 +79,8 @@ class ExecContext:
             one path.
         session_view (SessionView | None): The session plane's live,
             gated handle.
+        argv (tuple[str, ...]): The words after the command name, as the
+            line spelled them.
     """
 
     limit_override: Limit | None = None
@@ -96,6 +98,7 @@ class ExecContext:
     readdir_path: ReaddirPath | None = None
     session_view: SessionView | None = None
     processes: ProcessView | None = None
+    argv: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +159,14 @@ class CommandOpts:
         session_view (SessionView | None): The session plane's live,
             gated handle (reads and gate-cleared writes); ``env`` above
             stays the frozen process-view snapshot.
+        argv (tuple[str, ...]): The words after the command name, as the
+            line spelled them (an operand's ``raw_path``), for the GNU
+            diagnostic that quotes a word the classified operands do not
+            hold: diffutils names the line's last argument, an option
+            included (``cmp: missing operand after '-s'``). Flags are read
+            through a spec-bound ``FlagView``, never from here. Empty
+            where a line runs split per operand or per mount, since no
+            one word list describes such a run.
     """
 
     stdin: ByteSource | None = None
@@ -178,6 +189,7 @@ class CommandOpts:
     readdir_path: ReaddirPath | None = None
     session_view: SessionView | None = None
     processes: ProcessView | None = None
+    argv: tuple[str, ...] = ()
 
 
 CommandFnResult = tuple[ByteSource | None, IOResult] | None

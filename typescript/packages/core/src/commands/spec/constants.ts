@@ -216,6 +216,12 @@ export const FLOAT_VALUE = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
 // name (GNU diffutils style: `diff: Try 'diff --help' ...`).
 export const USAGE_HINT_PREFIX: ReadonlySet<string> = new Set(['diff', 'cmp', 'patch'])
 
+// Commands that read their operands in line order (getopt's
+// RETURN_IN_ORDER), so the argv[argc - 1] a missing-operand line names is
+// the line's last word, not its last operand: `join a.txt -t ,` is missing
+// an operand after ',' (coreutils 9.7). Mirrors Python's ARGV_IN_ORDER.
+export const ARGV_IN_ORDER: ReadonlySet<string> = new Set(['join'])
+
 // An old-style cluster letter left without its argument exits 2, not
 // USAGE_EXIT's 64: tar reads the cluster itself and raises its own fatal
 // error, while 64 (EX_USAGE) is what argp returns for a letter it does

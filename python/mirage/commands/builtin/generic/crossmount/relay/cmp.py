@@ -25,6 +25,7 @@ from mirage.types import PathSpec
 
 
 async def run_cmp(scopes: list[PathSpec],
+                  text_args: list[str],
                   flag_kwargs: dict[str, FlagValue],
                   dispatch: DispatchFn,
                   stdin: ByteSource | None = None) -> CrossResult:
@@ -37,6 +38,7 @@ async def run_cmp(scopes: list[PathSpec],
 
     Args:
         scopes (list[PathSpec]): The two path operands.
+        text_args (list[str]): The SKIP1 and SKIP2 operands, if any.
         flag_kwargs (dict): Flags parsed against the shared cmp spec.
         dispatch (DispatchFn): Workspace operation dispatcher.
         stdin (ByteSource | None): The line's input, which a ``-`` or
@@ -44,6 +46,7 @@ async def run_cmp(scopes: list[PathSpec],
     """
     parsed = parse_flags(flag_kwargs)
     return await generic_cmp(flat_scopes(scopes),
+                             text_args,
                              stdin=stdin,
                              read_bytes=functools.partial(
                                  relay, dispatch, "read"),

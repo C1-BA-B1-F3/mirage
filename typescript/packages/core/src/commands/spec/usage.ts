@@ -17,6 +17,7 @@ import type { ArgmatchChoices, ArgmatchKind } from './argmatch.ts'
 import { quoteText } from '../quote.ts'
 import { gnuStrerror } from '../../utils/errors.ts'
 import {
+  ARGV_IN_ORDER,
   OLD_OPTION_EXIT,
   OPERAND_EXIT,
   PYTHON_NAMES,
@@ -453,12 +454,25 @@ export function extraOperandError(cmdName: string, operand: string): UsageError 
  * GNU-shaped usage error for an operand short of a command's arity.
  *
  * Shapes pinned against real GNU: `<cmd>: missing operand after '<arg>'`
- * names the last operand given. With none given, coreutils says a bare
- * `missing operand` while diffutils names the program itself
- * (`cmp: missing operand after 'cmp'`).
+ * names `argv[argc - 1]` once getopt has moved the operands behind the
+ * options, which is the last operand given, or the line's last word for a
+ * program that reads its operands in order (join). With none given,
+ * coreutils says a bare `missing operand`, while diffutils still names the
+ * line's last word, an option or its value included (`cmp: missing operand
+ * after '-s'`, `diff -U 3` names `3`), and the program itself on a bare line
+ * (`cmp: missing operand after 'cmp'`; diffutils 3.10). `argv` is the
+ * line's words after the command name. Mirrors Python's
+ * missing_operand_error.
  */
-export function missingOperandError(cmdName: string, last: string | null): UsageError {
-  const after = last ?? (USAGE_HINT_PREFIX.has(cmdName) ? cmdName : null)
+export function missingOperandError(
+  cmdName: string,
+  last: string | null,
+  argv: readonly string[] = [],
+): UsageError {
+  let after = last
+  const lastWord = argv[argv.length - 1]
+  if (after !== null && ARGV_IN_ORDER.has(cmdName) && lastWord !== undefined) after = lastWord
+  if (after === null && USAGE_HINT_PREFIX.has(cmdName)) after = lastWord ?? cmdName
   const line =
     after === null ? `${cmdName}: missing operand` : `${cmdName}: missing operand after '${after}'`
   return new UsageError(`${line}\n${usageHint(cmdName)}`, usageExitCode(cmdName))

@@ -2,6 +2,7 @@ import pytest
 
 from mirage.commands.builtin.generic.crossmount.route import handle_cross_mount
 from mirage.commands.builtin.generic.crossmount.types import Strategy
+from mirage.commands.errors import UsageError
 from mirage.io import IOResult
 from mirage.types import PathSpec
 
@@ -82,3 +83,16 @@ async def test_a_filesystem_error_reports_in_the_commands_voice(monkeypatch):
     # exits 2 whether the operand is missing or a directory.
     assert result.exit_code == 2
     assert b"sort" in result.stderr
+
+
+@pytest.mark.asyncio
+async def test_a_usage_error_is_the_commands_result(monkeypatch):
+    # cmp's bad skip is refused in the relay; it is cmp's result, exit 2,
+    # and not an exception that ends the rest of the line.
+    monkeypatch.setattr(
+        "mirage.commands.builtin.generic.crossmount.route.strategy_for",
+        _broken(UsageError("cmp: invalid --ignore-initial value 'z'")))
+    _, result = await handle_cross_mount("cmp", [_path("/a/x")], ["z"], {},
+                                         _dispatch, _run_single)
+    assert (result.exit_code,
+            result.stderr) == (2, b"cmp: invalid --ignore-initial value 'z'\n")

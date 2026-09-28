@@ -24,6 +24,9 @@ import { SessionState } from '../session/session.ts'
 import type { ExecuteNodeFn } from './jobs.ts'
 import type { DispatchFn } from './cross_mount.ts'
 import { handleCommand } from './command.ts'
+import { RAMVFS } from '../../vfs/ram/ram.ts'
+import { getTestParser } from '../fixtures/workspace_fixture.ts'
+import { Workspace } from '../workspace/workspace.ts'
 
 class StubVFS extends BaseVFS implements VFS {
   constructor(readonly kind: string) {
@@ -183,5 +186,26 @@ describe('handleCommand — job builtins', () => {
     )
     expect(io.exitCode).toBe(1)
     expect(decode(io.stderr as Uint8Array)).toMatch(/no such job/)
+  })
+})
+
+describe('the words a handler sees', () => {
+  // The words after the command name reach the handler as typed, which is
+  // where GNU's `missing operand after '<word>'` reads its word. Mirrors
+  // python's test_a_handler_sees_the_words_the_line_spelled.
+  it.each([
+    ['cmp -s', "cmp: missing operand after '-s'\n"],
+    ['cmp -n 5 --', "cmp: missing operand after '--'\n"],
+    ['diff -u', "diff: missing operand after '-u'\n"],
+    ['cd /data && join a.txt -t ,', "join: missing operand after ','\n"],
+  ])('%s', async (line, err) => {
+    const ws = new Workspace(
+      { '/data/': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    await ws.shell('echo a > /data/a.txt')
+    const r = await ws.shell(line)
+    expect(new TextDecoder().decode(r.stderr).startsWith(err)).toBe(true)
+    await ws.close()
   })
 })

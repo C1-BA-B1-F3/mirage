@@ -72,5 +72,5 @@ export async function runRelay(
   if (cmdName === Cmd.TAR) return runTar(scopes, textArgs, flagKwargs, dispatch, ns)
   if (cmdName === Cmd.UNZIP) return runUnzip(scopes, textArgs, flagKwargs, dispatch)
   if (cmdName === Cmd.ZIP) return runZip(scopes, flagKwargs, dispatch, ns)
-  return runCmp(scopes, flagKwargs, dispatch, stdin)
+  return runCmp(scopes, textArgs, flagKwargs, dispatch, stdin)
 }

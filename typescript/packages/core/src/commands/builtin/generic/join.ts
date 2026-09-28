@@ -163,7 +163,8 @@ export async function joinGeneric(
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('join'))
   if (paths.length > 2) throw extraOperandError(CommandName.JOIN, paths[2]?.rawPath ?? '')
-  if (paths.length < 2) throw missingOperandError(CommandName.JOIN, paths[0]?.rawPath ?? null)
+  if (paths.length < 2)
+    throw missingOperandError(CommandName.JOIN, paths[0]?.rawPath ?? null, opts.argv ?? [])
   const p1 = paths[0]
   const p2 = paths[1]
   if (p1 === undefined || p2 === undefined) return [null, new IOResult()]

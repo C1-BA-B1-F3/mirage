@@ -20,9 +20,11 @@ import { crossOpts, flatten, streamOp } from '../utils.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
 
 // Byte-compare two files on different mounts via the shared generic. Pure
-// wiring: both sides are read through dispatch-relayed primitives.
+// wiring: both sides are read through dispatch-relayed primitives, and the
+// SKIP1 and SKIP2 operands ride along as texts.
 export async function runCmp(
   scopes: PathSpec[],
+  textArgs: readonly string[],
   flagKwargs: Record<string, FlagValue>,
   dispatch: DispatchFn,
   stdin: ByteSource | null = null,
@@ -30,6 +32,6 @@ export async function runCmp(
   const flat = flatten(scopes)
   const opts = { ...crossOpts(flagKwargs), stdin }
   const stream = streamOp(dispatch)
-  const [out, io] = await cmpGeneric(flat, opts, stream)
+  const [out, io] = await cmpGeneric(flat, textArgs, opts, stream)
   return [out, io]
 }

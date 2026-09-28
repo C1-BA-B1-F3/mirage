@@ -77,6 +77,7 @@ async def test_stat_sheet_from_cache(accessor, index):
     )
     assert result.content == ContentType.JSON
     assert result.extra["doc_id"] == "s1"
+    assert result.fingerprint == "2026-04-01T00:00:00.000Z"
 
 
 @pytest.mark.asyncio

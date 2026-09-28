@@ -24,6 +24,8 @@ import type * as ClientModule from '../core/gridfs/client.ts'
 import type * as DriveModule from '@struktoai/mirage-core/core/google/drive'
 import type * as DriveVersionsModule from '@struktoai/mirage-core/core/gdrive/versions'
 import type * as DocsReadModule from '@struktoai/mirage-core/core/gdocs/read'
+import type * as GoogleClientModule from '@struktoai/mirage-core/core/google/client'
+import type * as JsonRenderModule from '@struktoai/mirage-core/core/render/json'
 import type { Accessor } from '@struktoai/mirage-core/accessor/base'
 import type { S3Accessor } from '@struktoai/mirage-core/accessor/s3'
 import { applyIo } from '@struktoai/mirage-core/cache/file/io'
@@ -35,7 +37,11 @@ import { ONEDRIVE_IO } from '@struktoai/mirage-core/commands/builtin/onedrive/io
 import { SHAREPOINT_IO } from '@struktoai/mirage-core/commands/builtin/sharepoint/io'
 import type { OneDriveAccessor } from '@struktoai/mirage-core/accessor/onedrive'
 import type { SharePointAccessor } from '@struktoai/mirage-core/accessor/sharepoint'
+import { GDOCS_IO } from '@struktoai/mirage-core/commands/builtin/gdocs/io'
 import { GDRIVE_IO } from '@struktoai/mirage-core/commands/builtin/gdrive/io'
+import { GSHEETS_IO } from '@struktoai/mirage-core/commands/builtin/gsheets/io'
+import { GSLIDES_IO } from '@struktoai/mirage-core/commands/builtin/gslides/io'
+import type { CommandIO } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { GDriveAccessor } from '@struktoai/mirage-core/accessor/gdrive'
 import { GITHUB_IO } from '@struktoai/mirage-core/commands/builtin/github/io'
 import { stream as githubStream } from '@struktoai/mirage-core/core/github/read'
@@ -80,6 +86,9 @@ import { SupabaseVFS } from './supabase/supabase.ts'
 import { TencentVFS } from './tencent/tencent.ts'
 import { WasabiVFS } from './wasabi/wasabi.ts'
 import { GDriveVFS } from '@struktoai/mirage-core/vfs/gdrive/gdrive'
+import { makeFilename as docFilename } from '@struktoai/mirage-core/vfs/gdocs/doc_entry'
+import { makeFilename as sheetFilename } from '@struktoai/mirage-core/vfs/gsheets/sheet_entry'
+import { makeFilename as slideFilename } from '@struktoai/mirage-core/vfs/gslides/slide_entry'
 import { GridFSVFS } from './gridfs/gridfs.ts'
 import { SSHVFS } from './ssh/ssh.ts'
 import { readRevalidatable, type VFS } from '@struktoai/mirage-core/vfs/base'
@@ -251,6 +260,21 @@ vi.mock('@struktoai/mirage-core/core/google/drive', async (importOriginal) => {
       return Promise.all(children.map(gdriveResource))
     },
     listSharedDrives: () => Promise.resolve([]),
+    // Each of gdocs, gsheets and gslides lists only its own kind.
+    listAllFiles: async (_tm: unknown, opts: { mimeType?: string | null } = {}) => ({
+      files: await Promise.all(
+        [...H.gdrive.values()]
+          .filter(
+            (i) =>
+              i.mimeType !== GDRIVE_FOLDER &&
+              (opts.mimeType === undefined ||
+                opts.mimeType === null ||
+                i.mimeType === opts.mimeType),
+          )
+          .map(gdriveResource),
+      ),
+      complete: true,
+    }),
     getFile: async (_tm: unknown, id: string) => gdriveResource(item(id)),
     downloadFile: (_tm: unknown, id: string) => {
       H.gdriveDownloads += 1
@@ -267,7 +291,7 @@ vi.mock('@struktoai/mirage-core/core/gdrive/versions', async (importOriginal) =>
       const found = H.gdrive.get(id)
       if (found === undefined) throw new Error(`no drive item ${id}`)
       const r = await gdriveResource(found)
-      return [r.md5Checksum ?? null, r.headRevisionId ?? null, r.modifiedTime ?? null]
+      return [r.md5Checksum ?? null, r.headRevisionId ?? null]
     },
   }
 })
@@ -282,6 +306,35 @@ vi.mock('@struktoai/mirage-core/core/gdocs/read', async (importOriginal) => {
       H.gdriveRenders += 1
       return Promise.resolve(found.content)
     },
+  }
+})
+
+// gdocs, gsheets and gslides render inside their own module, where a mocked
+// export does not reach, so the fake stands in at the two seams the render
+// crosses: the editor API hands back the stored bytes, and the renderer passes
+// bytes through. python patches the render functions themselves.
+const EDITOR_GET = /\/(?:documents|spreadsheets|presentations)\/([^/?]+)$/
+
+vi.mock('@struktoai/mirage-core/core/google/client', async (importOriginal) => {
+  const actual = await importOriginal<typeof GoogleClientModule>()
+  return {
+    ...actual,
+    googleGet: (_tm: unknown, url: string) => {
+      const id = EDITOR_GET.exec(url)?.[1]
+      const found = id === undefined ? undefined : H.gdrive.get(id)
+      if (found === undefined) throw new Error(`unrouted google get ${url}`)
+      H.gdriveRenders += 1
+      return Promise.resolve(found.content)
+    },
+  }
+})
+
+vi.mock('@struktoai/mirage-core/core/render/json', async (importOriginal) => {
+  const actual = await importOriginal<typeof JsonRenderModule>()
+  return {
+    ...actual,
+    compactJsonBytes: (value: unknown) =>
+      value instanceof Uint8Array ? value : actual.compactJsonBytes(value),
   }
 })
 
@@ -421,6 +474,9 @@ type Family =
   | 'hf_buckets'
   | 'github'
   | 'gdrive'
+  | 'gdocs'
+  | 'gsheets'
+  | 'gslides'
 
 const HARNESSES: Record<string, Family> = {
   ...Object.fromEntries(S3_FAMILY.map((name) => [name, 's3' as const])),
@@ -431,6 +487,20 @@ const HARNESSES: Record<string, Family> = {
   hf_buckets: 'hf_buckets',
   github: 'github',
   gdrive: 'gdrive',
+  gdocs: 'gdocs',
+  gsheets: 'gsheets',
+  gslides: 'gslides',
+}
+
+// The mounts that render a Drive file through its editor API: the mime type
+// they list, the door, and the name their listing gives the file.
+const GAPPS: Record<
+  string,
+  [string, CommandIO, (title: string, id: string, modified: string) => string]
+> = {
+  gdocs: ['application/vnd.google-apps.document', GDOCS_IO as CommandIO, docFilename],
+  gsheets: ['application/vnd.google-apps.spreadsheet', GSHEETS_IO as CommandIO, sheetFilename],
+  gslides: ['application/vnd.google-apps.presentation', GSLIDES_IO as CommandIO, slideFilename],
 }
 
 // The drive each Graph backend addresses in the fake: OneDrive the signed-in
@@ -483,14 +553,21 @@ const ALL_ROWS: Row[] = ['bytes', 'stream', 'drain']
 
 // What each family can run, fixed when the rows are built. github and gdrive
 // have no key_prefix, and their stream is their read handed over whole, one
-// chunk, so a drain row would pass without draining.
+// chunk, so a drain row would pass without draining. The GAPPS mounts also
+// have one flat listing, so only one shape.
 const FAMILY_SHAPES: Partial<Record<Family, Shape[]>> = {
   github: ['root', 'nested'],
   gdrive: ['root', 'nested'],
+  gdocs: ['root'],
+  gsheets: ['root'],
+  gslides: ['root'],
 }
 const FAMILY_ROWS: Partial<Record<Family, Row[]>> = {
   github: ['bytes', 'stream'],
   gdrive: ['bytes', 'stream'],
+  gdocs: ['bytes', 'stream'],
+  gsheets: ['bytes', 'stream'],
+  gslides: ['bytes', 'stream'],
 }
 
 const SPEC_VFS = resolve(
@@ -776,6 +853,36 @@ async function makeFake(name: string, shape: Shape, data: Uint8Array): Promise<F
       readBytes: (p) => GDRIVE_IO.readBytes(accessor, p, index),
       readStream: (p) => GDRIVE_IO.readStream(accessor, p, index),
       stat: (p) => GDRIVE_IO.stat(accessor, p),
+      streamSlot: 'bytes',
+    }
+  }
+  const gapp = GAPPS[name]
+  if (gapp !== undefined) {
+    const [mime, io, filename] = gapp
+    const item = gdriveAdd('a', data, mime)
+    const vfs = await buildVfs(name, GDRIVE_CONFIG)
+    const accessor = vfs.accessor
+    if (accessor === undefined) throw new Error(`${name} built no accessor`)
+    expect(readRevalidatable(vfs)).toBe(true)
+    // The fake names no owner, so the file lists under shared/. A rewrite
+    // moves modifiedTime within the same day, which keeps the name.
+    const fileKey = `shared/${filename('a', item.id, item.modifiedTime)}`
+    const index = new RAMIndexCacheStore()
+    const before = H.gdriveRenders
+    let edits = 0
+    return {
+      vfs,
+      accessor,
+      key: fileKey,
+      fetches: () => H.gdriveRenders - before,
+      rewrite: (next) => {
+        edits += 1
+        item.content = next
+        item.modifiedTime = `2026-04-16T00:00:${String(edits).padStart(2, '0')}Z`
+      },
+      readBytes: (p) => io.readBytes(accessor, p, index),
+      readStream: (p) => io.readStream(accessor, p, index),
+      stat: (p) => io.stat(accessor, p),
       streamSlot: 'bytes',
     }
   }
@@ -1093,12 +1200,15 @@ describe('the read-token contract', () => {
     for (const family of ['github', 'gdrive'])
       for (const shape of ['root', 'nested'])
         for (const row of ['bytes', 'stream']) expectedA.add(`${family}-${shape}-${row}`)
+    for (const family of ['gdocs', 'gsheets', 'gslides'])
+      for (const row of ['bytes', 'stream']) expectedA.add(`${family}-root-${row}`)
     const ids = (cs: Case[]): Set<string> => new Set(cs.map((c) => `${c.name}-${c.shape}-${c.row}`))
     expect(ids(A_CASES)).toEqual(expectedA)
     expect(ids(B_CASES)).toEqual(
       new Set([...expectedA].filter((i) => !i.endsWith('-drain') && !i.endsWith('-listed-stream'))),
     )
-    expect(cases(['drain']).some((c) => c.name === 'github' || c.name === 'gdrive')).toBe(false)
+    const whole = ['github', 'gdrive', 'gdocs', 'gsheets', 'gslides']
+    expect(cases(['drain']).some((c) => whole.includes(c.name))).toBe(false)
   })
 
   it('a native gdoc under fresh renders once until it changes', async () => {

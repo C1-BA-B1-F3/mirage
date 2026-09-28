@@ -1,0 +1,58 @@
+{
+  "cases": [
+    {
+      "id": "gapp_read_bounded_serves_stale",
+      "seq": 522000,
+      "targets": [
+        "gapps-fresh"
+      ],
+      "read": "bounded",
+      "ttl": 600,
+      "scenario": [
+        {
+          "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
+        },
+        {
+          "mutate": {
+            "command": "gws docs documents batchUpdate --params '{\"documentId\": \"doc0001\"}' --json '{\"requests\": [{\"replaceAllText\": {\"containsText\": {\"text\": \"hello\"}, \"replaceText\": \"HELLO\"}}]}' > /dev/null && gws sheets write --spreadsheet sheet0001 --range 'Sheet1!B2' --json-values '[[\"999\"]]' > /dev/null && gws slides presentations batchUpdate --params '{\"presentationId\": \"pres0001\"}' --json '{\"requests\": [{\"createSlide\": {}}]}' > /dev/null"
+          }
+        },
+        {
+          "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "hello gdoc\n\n\"120\"\n1\nhello gdoc\n\n\"120\"\n1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gapp_read_fresh_revalidates",
+      "seq": 522001,
+      "targets": [
+        "gapps-fresh"
+      ],
+      "read": "fresh",
+      "scenario": [
+        {
+          "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
+        },
+        {
+          "mutate": {
+            "command": "gws docs documents batchUpdate --params '{\"documentId\": \"doc0001\"}' --json '{\"requests\": [{\"replaceAllText\": {\"containsText\": {\"text\": \"hello\"}, \"replaceText\": \"HELLO\"}}]}' > /dev/null && gws sheets write --spreadsheet sheet0001 --range 'Sheet1!B2' --json-values '[[\"999\"]]' > /dev/null && gws slides presentations batchUpdate --params '{\"presentationId\": \"pres0001\"}' --json '{\"requests\": [{\"createSlide\": {}}]}' > /dev/null"
+          }
+        },
+        {
+          "command": "cat /docs/owned/*.gdoc.json | jq -r '[.. | .textRun? // empty | .content] | add'; cat /sheets/owned/*.gsheet.json | jq -c '.sheets[0].data[0].rowData[1].values[1].formattedValue'; cat /slides/owned/*.gslide.json | jq -c '.slides | length'"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "hello gdoc\n\n\"120\"\n1\nHELLO gdoc\n\n\"999\"\n2\n",
+        "stderr": ""
+      },
+      "note": "A gws edit made by another client leaves this workspace's cached render behind it: bounded serves the old bytes for its ttl, and fresh finds each file's Drive modifiedTime moved and renders again. The edit runs on the shadow workspace because a gws write on the read side drops that side's caches itself. The target mounts only the three apps because a workspace-wide fresh refuses a RAM mount."
+    }
+  ]
+}

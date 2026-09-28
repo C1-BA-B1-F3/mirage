@@ -38,6 +38,10 @@ export class GSheetsVFS extends BoundVFS<GSheetsAccessor> implements VFS {
   readonly kind: string = VFSName.GSHEETS
   readonly cachesReads: boolean = true
   override readonly indexTtl: number = 86_400
+  // stat and read both stamp the file's Drive modifiedTime, off the same
+  // listing. An entry listed before an edit stamps the older value, which only
+  // makes the next check refetch.
+  readonly readRevalidatable: boolean = true
   readonly prompt: string = GSHEETS_PROMPT
   readonly writePrompt: string = GSHEETS_WRITE_PROMPT
   readonly config: GSheetsConfig

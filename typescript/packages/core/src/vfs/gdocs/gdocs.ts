@@ -38,6 +38,10 @@ export class GDocsVFS extends BoundVFS<GDocsAccessor> implements VFS {
   readonly kind: string = VFSName.GDOCS
   readonly cachesReads: boolean = true
   override readonly indexTtl: number = 86_400
+  // stat and read both stamp the file's Drive modifiedTime, off the same
+  // listing. An entry listed before an edit stamps the older value, which only
+  // makes the next check refetch.
+  readonly readRevalidatable: boolean = true
   readonly prompt: string = GDOCS_PROMPT
   readonly writePrompt: string = GDOCS_WRITE_PROMPT
   readonly config: GDocsConfig

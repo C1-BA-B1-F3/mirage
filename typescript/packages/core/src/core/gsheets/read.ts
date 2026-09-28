@@ -14,6 +14,7 @@
 
 import type { GSheetsAccessor } from '../../accessor/gsheets.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
+import { record, startOp } from '../../observe/context.ts'
 import type { PathSpec } from '../../types.ts'
 import { enoent } from '../../utils/errors.ts'
 import { sheetsBase, type TokenManager, googleGet } from '../google/client.ts'
@@ -60,7 +61,12 @@ async function readFile(
 ): Promise<Uint8Array> {
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry === null) throw enoent(path.virtual)
-  return readSpreadsheet(accessor.tokenManager, entry.id)
+  const timer = startOp()
+  const data = await readSpreadsheet(accessor.tokenManager, entry.id)
+  record('read', path.virtual, 'gsheets', data.length, timer, {
+    fingerprint: entry.remoteTime !== '' ? entry.remoteTime : null,
+  })
+  return data
 }
 
 export const read = makeRead<GSheetsAccessor>(detectScope, { file: readFile })

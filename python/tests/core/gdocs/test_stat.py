@@ -92,6 +92,7 @@ async def test_stat_doc(accessor, index):
     assert result.name == "2026-04-01_My_Doc__doc1.gdoc.json"
     assert result.content == ContentType.JSON
     assert result.modified == "2026-04-01T00:00:00.000Z"
+    assert result.fingerprint == "2026-04-01T00:00:00.000Z"
     assert result.extra["doc_id"] == "doc1"
     assert result.extra["doc_name"] == "My Doc"
     # rendered JSON length is unknown until read; the Drive source size

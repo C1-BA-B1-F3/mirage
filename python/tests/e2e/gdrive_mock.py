@@ -79,6 +79,9 @@ _PATCH_TARGETS = {
         "mirage.core.gdrive.read.read_doc",
         "mirage.core.gdrive.read.read_spreadsheet",
         "mirage.core.gdrive.read.read_presentation",
+        "mirage.core.gdocs.read.read_doc",
+        "mirage.core.gsheets.read.read_spreadsheet",
+        "mirage.core.gslides.read.read_presentation",
     ],
 }
 
@@ -332,12 +335,20 @@ def _build_fakes(registry):
         mime_type: str | None = None,
         trashed: bool = False,
         page_size: int = 1000,
+        modified_after: str | None = None,
+        modified_before: str | None = None,
     ) -> tuple[list[dict], bool]:
-        del mime_type, trashed, page_size
+        # Same rule as fake_list_files: the full signature, so a filter this
+        # fake ignores still binds. The mime type is honoured because each
+        # of gdocs, gsheets and gslides lists only its own kind.
+        del trashed, page_size, modified_after, modified_before
         fake = _resolve_fake(token_manager, registry)
         if fake is None:
             return [], True
-        return fake.all_files(), True
+        return [
+            f for f in fake.all_files()
+            if mime_type is None or f["mimeType"] == mime_type
+        ], True
 
     async def fake_list_shared_drives(token_manager) -> list[dict]:
         return []

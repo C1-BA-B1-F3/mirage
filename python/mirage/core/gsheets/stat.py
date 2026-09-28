@@ -28,6 +28,7 @@ def _file_stat(match: ScopeMatch, path: PathSpec,
         content=ContentType.JSON,
         modified=entry.remote_time,
         size=entry.size,
+        fingerprint=entry.remote_time or None,
         extra={
             "doc_id": entry.id,
             "doc_name": entry.name,

@@ -78,6 +78,7 @@ async def test_stat_deck_from_cache(accessor, index):
     assert result.content == ContentType.JSON
     assert result.extra["doc_id"] == "d1"
     assert result.size == 2048
+    assert result.fingerprint == "2026-04-01T00:00:00.000Z"
 
 
 @pytest.mark.asyncio

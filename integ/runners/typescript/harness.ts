@@ -192,7 +192,9 @@ export interface Case {
   _source?: string
 }
 
-export type ScenarioStep = { mutate: { path: string; content: string } } | { command: string }
+export type ScenarioStep =
+  | { mutate: { path: string; content: string } | { command: string } }
+  | { command: string }
 
 export interface ProvisionInfo {
   networkRead: number | string
@@ -494,13 +496,16 @@ export async function seedMountRoot(ws: ExecWorkspace, mountPath: string): Promi
 export async function runScenario(
   ws: ExecWorkspace,
   mutate: (path: string, content: Uint8Array) => Promise<void>,
+  mutateLine: (command: string) => Promise<void>,
   steps: ScenarioStep[],
 ): Promise<{ exitCode: number; out: string }> {
   const outputs: string[] = []
   let exitCode = 0
   for (const step of steps) {
     if ('mutate' in step) {
-      await mutate(step.mutate.path, ENC.encode(step.mutate.content))
+      const spec = step.mutate
+      if ('command' in spec) await mutateLine(spec.command)
+      else await mutate(spec.path, ENC.encode(spec.content))
       continue
     }
     const result = await ws.shell(step.command)
@@ -514,6 +519,7 @@ export async function runScenario(
 export interface ScenarioOpen {
   ws: ExecWorkspace
   mutate: (path: string, content: Uint8Array) => Promise<void>
+  mutateLine: (command: string) => Promise<void>
   cleanup: () => Promise<void>
 }
 
@@ -553,7 +559,12 @@ export async function runConsistencyCase(
     // every workspace a case can run against, or a consistency scenario would
     // silently run under a different one.
     opened.ws.env = { ...opened.ws.env, ...(target.env ?? {}) }
-    const { exitCode, out } = await runScenario(opened.ws, opened.mutate, c.scenario ?? [])
+    const { exitCode, out } = await runScenario(
+      opened.ws,
+      opened.mutate,
+      opened.mutateLine,
+      c.scenario ?? [],
+    )
     return { exitCode, out, stderr: '' }
   } finally {
     await opened.cleanup()

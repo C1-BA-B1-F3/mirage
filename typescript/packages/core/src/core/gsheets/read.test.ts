@@ -28,12 +28,15 @@ vi.mock('../google/client.ts', async () => {
 })
 
 import { GSheetsAccessor } from '../../accessor/gsheets.ts'
+import { IndexEntry } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
+import { runWithRecording } from '../../observe/context.ts'
 import { PathSpec } from '../../types.ts'
 import type { TokenManager } from '../google/client.ts'
 import * as drive from '../google/drive.ts'
 import * as client from '../google/client.ts'
 import { read, readSpreadsheet } from './read.ts'
+import { stat } from './stat.ts'
 
 const STUB_TOKEN_MANAGER = {
   config: { clientId: 'cid', refreshToken: 'rt' },
@@ -89,4 +92,45 @@ describe('gsheets read auto-bootstrap', () => {
     expect(vi.mocked(client.googleGet).mock.lastCall?.[1]).toMatch(/\/spreadsheets\/s1$/)
     expect(vi.mocked(client.googleGet).mock.lastCall?.[2]).toEqual({ includeGridData: 'true' })
   })
+})
+
+describe('gsheets read token', () => {
+  // read: fresh compares this record with stat's fingerprint, so both take
+  // the entry's modified stamp, and an entry without one stamps nothing.
+  const cases: [string, string | null][] = [
+    ['2026-04-01T00:00:00.000Z', '2026-04-01T00:00:00.000Z'],
+    ['', null],
+  ]
+  for (const [stamp, token] of cases) {
+    it(`records the token stat reports (stamp ${JSON.stringify(stamp)})`, async () => {
+      const name = '2026-04-01_My_Sheet__s1.gsheet.json'
+      const target = `/gsheets/owned/${name}`
+      const index = new RAMIndexCacheStore()
+      await index.setDir('/gsheets/owned', [
+        [
+          name,
+          new IndexEntry({
+            id: 's1',
+            name: 'My Sheet',
+            resourceType: 'gsheets/file',
+            remoteTime: stamp,
+            vfsName: name,
+          }),
+        ],
+      ])
+      vi.mocked(client.googleGet).mockResolvedValue({ spreadsheetId: 's1' })
+      const path = new PathSpec({
+        virtual: target,
+        directory: target,
+        vfsPath: mountKey(target, '/gsheets'),
+      })
+      const accessor = makeAccessor()
+      const [data, records] = await runWithRecording(() => read(accessor, path, index))
+      const info = await stat(accessor, path, index)
+      expect(records.map((r) => [r.op, r.path, r.source, r.bytes, r.fingerprint])).toEqual([
+        ['read', target, 'gsheets', data.byteLength, token],
+      ])
+      expect(info.fingerprint).toBe(token)
+    })
+  }
 })

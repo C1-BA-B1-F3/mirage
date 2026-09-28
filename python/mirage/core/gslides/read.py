@@ -21,6 +21,7 @@ from mirage.core.hierarchy.probe import resolve_entry
 from mirage.core.hierarchy.read import make_read
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.render.json import compact_json_bytes
+from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
@@ -37,7 +38,15 @@ async def _read_file(accessor: GSlidesAccessor, match: ScopeMatch,
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is None:
         raise enoent(path.virtual)
-    return await read_presentation(accessor.token_manager, entry.id)
+    timer = start_op()
+    data = await read_presentation(accessor.token_manager, entry.id)
+    record("read",
+           path.virtual,
+           "gslides",
+           len(data),
+           timer,
+           fingerprint=entry.remote_time or None)
+    return data
 
 
 read = make_read(detect_scope, readers={"file": _read_file})

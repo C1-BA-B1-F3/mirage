@@ -28,12 +28,15 @@ vi.mock('../google/client.ts', async () => {
 })
 
 import { GDocsAccessor } from '../../accessor/gdocs.ts'
+import { IndexEntry } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
+import { runWithRecording } from '../../observe/context.ts'
 import { PathSpec } from '../../types.ts'
 import type { TokenManager } from '../google/client.ts'
 import * as drive from '../google/drive.ts'
 import * as client from '../google/client.ts'
 import { read, readDoc } from './read.ts'
+import { stat } from './stat.ts'
 
 const STUB_TOKEN_MANAGER = {
   config: { clientId: 'cid', refreshToken: 'rt' },
@@ -119,4 +122,45 @@ describe('gdocs readDoc', () => {
       { includeTabsContent: 'true' },
     )
   })
+})
+
+describe('gdocs read token', () => {
+  // read: fresh compares this record with stat's fingerprint, so both take
+  // the entry's modified stamp, and an entry without one stamps nothing.
+  const cases: [string, string | null][] = [
+    ['2026-04-01T00:00:00.000Z', '2026-04-01T00:00:00.000Z'],
+    ['', null],
+  ]
+  for (const [stamp, token] of cases) {
+    it(`records the token stat reports (stamp ${JSON.stringify(stamp)})`, async () => {
+      const name = '2026-04-01_My_Doc__doc1.gdoc.json'
+      const target = `/gdocs/owned/${name}`
+      const index = new RAMIndexCacheStore()
+      await index.setDir('/gdocs/owned', [
+        [
+          name,
+          new IndexEntry({
+            id: 'doc1',
+            name: 'My Doc',
+            resourceType: 'gdocs/file',
+            remoteTime: stamp,
+            vfsName: name,
+          }),
+        ],
+      ])
+      vi.mocked(client.googleGet).mockResolvedValue({ documentId: 'doc1' })
+      const path = new PathSpec({
+        virtual: target,
+        directory: target,
+        vfsPath: mountKey(target, '/gdocs'),
+      })
+      const accessor = makeAccessor()
+      const [data, records] = await runWithRecording(() => read(accessor, path, index))
+      const info = await stat(accessor, path, index)
+      expect(records.map((r) => [r.op, r.path, r.source, r.bytes, r.fingerprint])).toEqual([
+        ['read', target, 'gdocs', data.byteLength, token],
+      ])
+      expect(info.fingerprint).toBe(token)
+    })
+  }
 })

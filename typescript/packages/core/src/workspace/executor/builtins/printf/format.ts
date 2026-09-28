@@ -504,8 +504,17 @@ function formatHexFloat(
   return applyPad(prefix, body, flags, width, flags.includes('0'))
 }
 
-/** Interpret a backslash escape at `fmt[i]`. Returns emitted text, next index, and whether output should stop (`\c`). */
-function readEscape(fmt: string, i: number): [string, number, boolean] {
+/**
+ * Interpret a backslash escape at `fmt[i]`, the format string or a `%b`
+ * argument (`bArg`). Returns emitted text, next index, and whether output
+ * should stop (`\c`).
+ *
+ * An octal escape in the format is `\NNN`, one to three digits. A `%b`
+ * argument also takes `\0NNN`: after a leading `0`, up to three more
+ * digits. bash 5.2.37 writes `printf '\0003'` as NUL then `3` and
+ * `printf %b '\0003'` as the byte 3.
+ */
+function readEscape(fmt: string, i: number, bArg: boolean): [string, number, boolean] {
   const n = fmt.length
   if (i + 1 >= n) return ['\\', i + 1, false]
   const ch = fmt.charAt(i + 1)
@@ -528,15 +537,11 @@ function readEscape(fmt: string, i: number): [string, number, boolean] {
     return ['\\' + ch, i + 2, false]
   }
   if (OCT_DIGIT.test(ch)) {
-    let digits = ''
-    let j = i + 1
-    if (fmt.charAt(j) === '0') j += 1
-    while (j < n && digits.length < 3 && OCT_DIGIT.test(fmt.charAt(j))) {
-      digits += fmt.charAt(j)
-      j += 1
-    }
-    if (!digits) return ['\0', j, false]
-    return [byteChar(parseInt(digits, 8)), j, false]
+    const start = i + 1
+    const limit = bArg && ch === '0' ? 4 : 3
+    let j = start
+    while (j < n && j - start < limit && OCT_DIGIT.test(fmt.charAt(j))) j += 1
+    return [byteChar(parseInt(fmt.slice(start, j), 8)), j, false]
   }
   return ['\\' + ch, i + 2, false]
 }
@@ -547,7 +552,7 @@ function expandEscapes(s: string): [string, boolean] {
   const n = s.length
   while (i < n) {
     if (s.charAt(i) === '\\') {
-      const [text, ni, stop] = readEscape(s, i)
+      const [text, ni, stop] = readEscape(s, i, true)
       out += text
       i = ni
       if (stop) return [out, true]
@@ -679,7 +684,7 @@ export function runPrintf(fmt: string, args: string[]): [string, string[]] {
     while (i < n && !stop) {
       const ch = fmt.charAt(i)
       if (ch === '\\') {
-        const [text, ni, stopHere] = readEscape(fmt, i)
+        const [text, ni, stopHere] = readEscape(fmt, i, false)
         out.push(text)
         i = ni
         stop = stopHere

@@ -17,13 +17,16 @@ import { getCurrentSession } from '@struktoai/mirage-core/context/session_contex
 import { PROCESS_EXECUTOR, type ProcessExecutor } from '@struktoai/mirage-core/runtime/mixin'
 import { RemoteSandbox } from '@struktoai/mirage-core/runtime/sandbox/base'
 import { registerRuntime } from '@struktoai/mirage-core/runtime/table'
-import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import type {
   ProcessExecution,
   RunResult,
   RuntimeOptions,
 } from '@struktoai/mirage-core/runtime/types'
-import { APPLE_CONTAINER_CONFIG_KEYS, type AppleContainerConfig } from './config.ts'
+import {
+  APPLE_CONTAINER_CONFIG_KEYS,
+  type AppleContainerConfig,
+  validateAppleContainerConfig,
+} from './config.ts'
 import {
   APPLE_CONTAINER_CLI_HINT,
   PRELUDE,
@@ -64,31 +67,17 @@ export class AppleContainerRuntime
 {
   readonly [PROCESS_EXECUTOR] = true as const
   readonly name = 'apple_container'
-  // Single-flight probe per container: concurrent first lines share one
-  // inspect, and a failed probe clears its slot so the next line retries.
   private readonly probes = new Map<string, Promise<void>>()
 
   constructor(options: RuntimeOptions<AppleContainerConfig> | Record<string, unknown> = {}) {
     super(options, APPLE_CONTAINER_CONFIG_KEYS)
-    const { container, containers = {} } = this.config
-    if (container === undefined && Object.keys(containers).length === 0) {
-      throw new Error('apple_container config needs container or containers')
-    }
-    if (container !== undefined && !nonblank(container)) {
-      throw new Error('apple_container container must be a nonblank id')
-    }
-    const blank = Object.entries(containers)
-      .filter(([, id]) => !nonblank(id))
-      .map(([session]) => session)
-      .sort(compareCodePoints)
-    if (blank.length > 0) {
-      throw new Error(
-        `apple_container containers must map each session to a nonblank id: ${blank.join(', ')}`,
-      )
-    }
+    validateAppleContainerConfig(this.config)
   }
 
-  // One container CLI invocation; the seam tests override.
+  /**
+   * Run one container CLI invocation. EPIPE means the guest exited without
+   * draining stdin, matching Python communicate()'s BrokenPipeError handling.
+   */
   protected container(
     args: string[],
     stdin: Uint8Array | null = null,
@@ -114,9 +103,6 @@ export class AppleContainerRuntime
           code: code ?? 1,
         })
       })
-      // EPIPE means the guest command exited without draining its
-      // stdin (`head`-like); python's communicate() suppresses the
-      // matching BrokenPipeError, so it is not an error here either.
       child.stdin.on('error', (error: NodeJS.ErrnoException) => {
         if (error.code !== 'EPIPE') reject(error)
       })
@@ -133,10 +119,15 @@ export class AppleContainerRuntime
     return Promise.resolve()
   }
 
-  /** The container this line's session runs in, probed once. */
+  /**
+   * Select this session's container. Concurrent first lines share a probe;
+   * a failed probe clears its slot so the next line retries.
+   */
   private async target(signal?: AbortSignal): Promise<string> {
     const sessionId = getCurrentSession()?.sessionId ?? null
-    const mapped = sessionId !== null ? this.config.containers?.[sessionId] : undefined
+    const { containers = {} } = this.config
+    const mapped =
+      sessionId !== null && Object.hasOwn(containers, sessionId) ? containers[sessionId] : undefined
     const container = mapped ?? this.config.container
     if (container === undefined) throw new Error(noContainerHint(sessionId))
     let probe = this.probes.get(container)
@@ -219,11 +210,6 @@ function inspectedState(payload: unknown): unknown {
     throw new Error('expected [{ status: { state } }]')
   }
   return status.state
-}
-
-/** Whether a configured id is a string with something in it. */
-function nonblank(value: unknown): boolean {
-  return typeof value === 'string' && value.trim() !== ''
 }
 
 const DECODER = new TextDecoder()

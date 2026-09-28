@@ -121,6 +121,7 @@ interface CliSpecJson {
 }
 
 interface World {
+  session_id?: string
   command_limits?: unknown
   register_runtimes?: Record<string, string>
   runtimes?: (string | Record<string, unknown>)[]
@@ -552,6 +553,7 @@ async function buildWorkspace(world: World, runId: string): Promise<Workspace> {
     mode: MountMode.EXEC,
     commandLimits: parseCommandLimits(world.command_limits),
   }
+  if (world.session_id !== undefined) options.sessionId = world.session_id
   if (world.runtimes !== undefined) options.runtimes = world.runtimes.map(buildEntry)
   if (world.route_policy !== undefined) options.routePolicy = new ScriptSource(world.route_policy)
   if (world.policies !== undefined) options.policies = world.policies.map(buildPolicy)

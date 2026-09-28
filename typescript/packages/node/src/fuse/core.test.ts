@@ -21,6 +21,7 @@ import { DIR_SIZE, mtimeMs } from '@struktoai/mirage-core/utils/stat_view'
 import { describe, expect, it, vi } from 'vitest'
 import { Workspace } from '../workspace.ts'
 import { MountCore } from './core.ts'
+import { errnoError } from './errors.ts'
 
 const NAIVE_STAMP = '2026-01-02T03:04:05'
 
@@ -35,7 +36,11 @@ async function mkCore(): Promise<MountCore> {
 }
 
 describe('MountCore', () => {
-  it('reads under its session when truncate falls back to read and rewrite', async () => {
+  it.each([
+    [0, ''],
+    [2, 'he'],
+    [8, 'hello\n\0\0'],
+  ])('resizes to %i under its session when truncate falls back', async (size, expected) => {
     const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
     await ws.shell("echo 'hello' > /data/f.txt")
     const sess = ws.createSession('agent', { profile: {} })
@@ -46,9 +51,31 @@ describe('MountCore', () => {
       readers.push(getCurrentSession()?.sessionId ?? null)
       return realRead(...args)
     })
-    await new MountCore(ws.vfs, { session: sess }).truncate('/data/f.txt', 2)
+    await new MountCore(ws.vfs, { session: sess }).truncate('/data/f.txt', size)
     expect(readers).toEqual(['agent'])
+    expect(new TextDecoder().decode(await realRead('/data/f.txt'))).toBe(expected)
   })
+
+  it.each(['EACCES', 'EIO', 'ENOENT'] as const)(
+    'preserves bytes when the truncate fallback read fails with %s',
+    async (code) => {
+      const ws = new Workspace({ '/data/': new RAMVFS() }, { mode: MountMode.WRITE })
+      await ws.shell("echo 'hello' > /data/f.txt")
+      const sess = ws.createSession('agent', { profile: {} })
+      const core = new MountCore(ws.vfs, { session: sess })
+      const realRead = ws.vfs.readFile.bind(ws.vfs)
+      const write = vi.spyOn(ws.vfs, 'writeFile')
+      const error = errnoError(code, 'fallback read failed')
+      vi.spyOn(ws.vfs, 'truncate').mockRejectedValue(enotsup('ram', 'truncate', '/data/f.txt'))
+      vi.spyOn(ws.vfs, 'readFile').mockRejectedValueOnce(error)
+
+      await expect(core.truncate('/data/f.txt', 2)).rejects.toBe(error)
+      expect(write).not.toHaveBeenCalled()
+      expect(new TextDecoder().decode(await realRead('/data/f.txt'))).toBe('hello\n')
+      await core.truncate('/data/f.txt', 2)
+      expect(new TextDecoder().decode(await realRead('/data/f.txt'))).toBe('he')
+    },
+  )
 
   it('runs every op under its session with no adapter binding it', async () => {
     // The SFTP door drives MountCore directly, with no FUSE adapter to

@@ -49,7 +49,9 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
     its own. Each container is probed once, on its first line.
 
     Args:
-        options (Any): the RemoteSandbox constructor fields.
+        captures (Sequence[str] | None): commands routed to this runtime.
+        config (SandboxConfig | dict[str, Any] | None): container settings.
+        script (Callable[..., Any] | ScriptSource | None): execution hook.
     """
 
     name = "apple_container"
@@ -69,7 +71,12 @@ class AppleContainerRuntime(RemoteSandbox, ProcessExecutorMixin):
             self,
             args: list[str],
             stdin: bytes | None = None) -> tuple[bytes, bytes, int]:
-        """One container CLI invocation; the seam tests override."""
+        """Run one container CLI invocation.
+
+        Args:
+            args (list[str]): CLI arguments after the executable.
+            stdin (bytes | None): input delivered to the guest command.
+        """
         try:
             process = await asyncio.create_subprocess_exec(
                 "container",

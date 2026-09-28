@@ -495,6 +495,8 @@ async def _build_workspace(world: dict[str, Any], run_id: str) -> Workspace:
         for name, content in spec.get("files", {}).items():
             seeds.append((prefix, name, content.encode()))
     kwargs: dict[str, Any] = {}
+    if "session_id" in world:
+        kwargs["session_id"] = world["session_id"]
     if "runtimes" in world:
         kwargs["runtimes"] = [_build_entry(e) for e in world["runtimes"]]
     if "route_policy" in world:

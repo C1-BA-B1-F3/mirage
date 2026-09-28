@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { SandboxConfig } from '@struktoai/mirage-core/runtime/sandbox/config'
+import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 
 /** How to reach the user's running containers. */
 export interface AppleContainerConfig extends SandboxConfig {
@@ -23,3 +24,27 @@ export interface AppleContainerConfig extends SandboxConfig {
 }
 
 export const APPLE_CONTAINER_CONFIG_KEYS: readonly string[] = ['env', 'container', 'containers']
+
+/** Validate container ids before any session can use the runtime. */
+export function validateAppleContainerConfig(config: AppleContainerConfig): void {
+  const { container, containers = {} } = config
+  if (container === undefined && Object.keys(containers).length === 0) {
+    throw new Error('apple_container config needs container or containers')
+  }
+  if (container !== undefined && !nonblank(container)) {
+    throw new Error('apple_container container must be a nonblank id')
+  }
+  const blank = Object.entries(containers)
+    .filter(([, id]) => !nonblank(id))
+    .map(([session]) => session)
+    .sort(compareCodePoints)
+  if (blank.length > 0) {
+    throw new Error(
+      `apple_container containers must map each session to a nonblank id: ${blank.join(', ')}`,
+    )
+  }
+}
+
+function nonblank(value: unknown): boolean {
+  return typeof value === 'string' && value.trim() !== ''
+}

@@ -333,33 +333,59 @@ it('refuses empty argv and a stopped container before executing', async () => {
   expect(runtime.calls).toHaveLength(1)
 })
 
-it('runs each session in its own container', async () => {
-  const runtime = makeRuntime({
-    captures: ['uname'],
-    config: { container: 'shared', containers: { agent_a: 'box-a', agent_b: 'box-b' } },
-  })
-  const ws = new Workspace(
-    { '/d': new RAMVFS() },
-    { mode: MountMode.EXEC, runtimes: [runtime, 'workspace'] },
-  )
-  for (const sessionId of ['agent_a', 'agent_b', 'agent_a']) {
+it.each(['agent_a', 'constructor', 'toString', '__proto__'])(
+  'runs mapped session %s in its own container',
+  async (sessionId) => {
+    const runtime = makeRuntime({
+      captures: ['uname'],
+      config: { container: 'shared', containers: { [sessionId]: 'box-a', agent_b: 'box-b' } },
+    })
+    const ws = new Workspace(
+      { '/d': new RAMVFS() },
+      { mode: MountMode.EXEC, runtimes: [runtime, 'workspace'] },
+    )
+    for (const id of [sessionId, 'agent_b', sessionId]) {
+      const handle = await ws.session(id)
+      expect((await handle.shell('uname')).exitCode).toBe(0)
+    }
+    expect((await ws.shell('uname')).exitCode).toBe(0)
+    expect(runtime.execTargets()).toEqual(['box-a', 'box-b', 'box-a', 'shared'])
+    expect(runtime.inspected()).toEqual(['box-a', 'box-b', 'shared'])
+  },
+)
+
+it.each(['agent_b', 'constructor', 'toString', '__proto__'])(
+  'uses the fallback for unmapped session %s',
+  async (sessionId) => {
+    const runtime = makeRuntime({
+      captures: ['uname'],
+      config: { container: 'shared', containers: { agent_a: 'box-a' } },
+    })
+    const ws = new Workspace(
+      { '/d': new RAMVFS() },
+      { mode: MountMode.EXEC, runtimes: [runtime, 'workspace'] },
+    )
     const handle = await ws.session(sessionId)
     expect((await handle.shell('uname')).exitCode).toBe(0)
-  }
-  expect((await ws.shell('uname')).exitCode).toBe(0)
-  expect(runtime.execTargets()).toEqual(['box-a', 'box-b', 'box-a', 'shared'])
-  expect(runtime.inspected()).toEqual(['box-a', 'box-b', 'shared'])
-})
+    expect(runtime.execTargets()).toEqual(['shared'])
+  },
+)
 
-it('fails a session with no container loudly', async () => {
-  const runtime = makeRuntime({ captures: ['uname'], config: { containers: { agent_a: 'box-a' } } })
-  const ws = new Workspace(
-    { '/d': new RAMVFS() },
-    { mode: MountMode.EXEC, runtimes: [runtime, 'workspace'] },
-  )
-  const handle = await ws.session('agent_b')
-  const result = await handle.shell('uname')
-  expect(result.exitCode).toBe(1)
-  expect(DEC.decode(result.stderr)).toContain('no container for session agent_b')
-  expect(runtime.calls).toHaveLength(0)
-})
+it.each(['agent_b', 'constructor', 'toString', '__proto__'])(
+  'fails unmapped session %s loudly',
+  async (sessionId) => {
+    const runtime = makeRuntime({
+      captures: ['uname'],
+      config: { containers: { agent_a: 'box-a' } },
+    })
+    const ws = new Workspace(
+      { '/d': new RAMVFS() },
+      { mode: MountMode.EXEC, runtimes: [runtime, 'workspace'] },
+    )
+    const handle = await ws.session(sessionId)
+    const result = await handle.shell('uname')
+    expect(result.exitCode).toBe(1)
+    expect(DEC.decode(result.stderr)).toContain(`no container for session ${sessionId}`)
+    expect(runtime.calls).toHaveLength(0)
+  },
+)

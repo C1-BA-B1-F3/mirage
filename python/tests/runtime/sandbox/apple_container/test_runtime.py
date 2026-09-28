@@ -205,20 +205,22 @@ async def test_process_refuses_empty_argv_and_a_stopped_container():
 
 
 @pytest.mark.asyncio
-async def test_each_session_runs_in_its_own_container():
+@pytest.mark.parametrize("session_id",
+                         ["agent_a", "constructor", "toString", "__proto__"])
+async def test_each_session_runs_in_its_own_container(session_id):
     runtime = FakeAppleContainerRuntime(captures=["uname"],
                                         config={
                                             "container": "shared",
                                             "containers": {
-                                                "agent_a": "box-a",
+                                                session_id: "box-a",
                                                 "agent_b": "box-b"
                                             }
                                         })
     ws = Workspace({"/d": RAMVFS()},
                    mode=MountMode.EXEC,
                    runtimes=[runtime, "workspace"])
-    for session_id in ("agent_a", "agent_b", "agent_a"):
-        handle = await ws.session(session_id)
+    for mapped_id in (session_id, "agent_b", session_id):
+        handle = await ws.session(mapped_id)
         assert (await handle.shell("uname")).exit_code == 0
     assert (await ws.shell("uname")).exit_code == 0
     assert runtime.exec_targets() == ["box-a", "box-b", "box-a", "shared"]
@@ -226,7 +228,28 @@ async def test_each_session_runs_in_its_own_container():
 
 
 @pytest.mark.asyncio
-async def test_a_session_with_no_container_fails_loud():
+@pytest.mark.parametrize("session_id",
+                         ["agent_b", "constructor", "toString", "__proto__"])
+async def test_unmapped_session_uses_fallback(session_id):
+    runtime = FakeAppleContainerRuntime(captures=["uname"],
+                                        config={
+                                            "container": "shared",
+                                            "containers": {
+                                                "agent_a": "box-a"
+                                            }
+                                        })
+    ws = Workspace({"/d": RAMVFS()},
+                   mode=MountMode.EXEC,
+                   runtimes=[runtime, "workspace"])
+    handle = await ws.session(session_id)
+    assert (await handle.shell("uname")).exit_code == 0
+    assert runtime.exec_targets() == ["shared"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("session_id",
+                         ["agent_b", "constructor", "toString", "__proto__"])
+async def test_a_session_with_no_container_fails_loud(session_id):
     runtime = FakeAppleContainerRuntime(
         captures=["uname"], config={"containers": {
             "agent_a": "box-a"
@@ -234,10 +257,11 @@ async def test_a_session_with_no_container_fails_loud():
     ws = Workspace({"/d": RAMVFS()},
                    mode=MountMode.EXEC,
                    runtimes=[runtime, "workspace"])
-    handle = await ws.session("agent_b")
+    handle = await ws.session(session_id)
     result = await handle.shell("uname")
     assert result.exit_code == 1
-    assert "no container for session agent_b" in await result.stderr_str()
+    stderr = await result.stderr_str()
+    assert f"no container for session {session_id}" in stderr
     assert not runtime.calls
 
 

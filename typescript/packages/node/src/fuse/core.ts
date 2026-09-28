@@ -595,9 +595,7 @@ export class MountCore {
         await this.op(() => this.ops.truncate(this.resolve(path), size))
       } catch (dispatchErr) {
         if (!isMissingOp(dispatchErr, 'truncate')) throw dispatchErr
-        const data = await this.op(() =>
-          this.ops.readFile(this.resolve(path), { raw: true }),
-        ).catch(() => new Uint8Array(0))
+        const data = await this.op(() => this.ops.readFile(this.resolve(path), { raw: true }))
         const out = new Uint8Array(size)
         out.set(data.subarray(0, Math.min(data.byteLength, size)), 0)
         await this.writeFile(path, out)

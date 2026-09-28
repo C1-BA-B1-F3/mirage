@@ -65,7 +65,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "awk: /data/nope.awk: No such file or directory\n"
+        "stderr": "awk: cannot open \"/data/nope.awk\" (No such file or directory)\n"
       },
       "flags": [
         "f"

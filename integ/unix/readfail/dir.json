@@ -613,7 +613,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "zgrep: /data/rfdir: Is a directory\n"
+        "stderr": ""
       }
     },
     {
@@ -627,7 +627,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "zgrep: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "gzip: /data/rfnope.txt.gz: No such file or directory\n"
       }
     },
     {

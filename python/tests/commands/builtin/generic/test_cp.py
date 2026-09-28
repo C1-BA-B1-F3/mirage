@@ -14,12 +14,13 @@
 
 import pytest
 
-from mirage.commands.builtin.generic.cp import CpFlags, cp, update_mode
+from mirage.commands.builtin.generic.cp import (CpFlags, cp, parse_flags,
+                                                update_mode)
 from mirage.commands.errors import UsageError
-from mirage.commands.spec import SPECS
+from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
-from mirage.types import (ContentType, FileStat, FileType, NativeCopy,
-                          PathSpec, PrimitiveCopy)
+from mirage.types import (ContentType, CopyDeref, FileStat, FileType,
+                          NativeCopy, PathSpec, PrimitiveCopy)
 from mirage.utils.errors import enotsup
 
 
@@ -894,3 +895,32 @@ async def test_slashed_file_source_reports_cannot_stat():
     assert io.exit_code == 1
     assert io.stderr == b"cp: cannot stat '/reg/': Not a directory\n"
     assert files == {"/reg": b"R"}
+
+
+def _cp_flags(*argv: str) -> CpFlags:
+    spec = SPECS["cp"]
+    words = [*argv, "/data/a", "/data/b"]
+    return parse_flags(
+        FlagView(parse_to_kwargs(parse_command(spec, words, "/", "cp")),
+                 spec=spec))
+
+
+@pytest.mark.parametrize("argv,deref", [
+    ([], CopyDeref.ALWAYS),
+    (["-r"], CopyDeref.NEVER),
+    (["-R"], CopyDeref.NEVER),
+    (["-a"], CopyDeref.NEVER),
+    (["-rL"], CopyDeref.ALWAYS),
+    (["-rH"], CopyDeref.COMMAND_LINE),
+    (["-P"], CopyDeref.NEVER),
+    (["-d"], CopyDeref.NEVER),
+    (["-L", "-P"], CopyDeref.NEVER),
+    (["-P", "-L"], CopyDeref.ALWAYS),
+    (["-a", "-L"], CopyDeref.ALWAYS),
+])
+def test_the_last_link_option_wins_and_recursion_defaults_to_never(
+        argv, deref):
+    # cp.c: -L, -P, -H, -d and -a each set the dereference policy, so the
+    # last one wins; with none, a recursive copy copies links as links and
+    # any other copy follows them.
+    assert _cp_flags(*argv).dereference is deref

@@ -17,6 +17,7 @@ import { cpGeneric, parseFlags } from '../../cp.ts'
 import type { CrossResult, DispatchFn } from '../types.ts'
 import { flatten, readBytesOp, readdirOp, statOp } from '../utils.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
+import type { NamespaceView } from '../../../../../ops/types.ts'
 import { FlagView } from '../../../../spec/flag_view.ts'
 import { specOf } from '../../../../spec/builtins.ts'
 
@@ -31,6 +32,11 @@ export async function runCp(
   // Maps an operand to its storage identity so two prefixes over one
   // store compare equal.
   storageKey?: (path: PathSpec) => string,
+  // The namespace's links, which a copy that does not follow them recreates
+  // by name.
+  ns?: NamespaceView,
+  // The working directory a typed link source resolves against.
+  cwd = '/',
 ): Promise<CrossResult> {
   const flat = flatten(scopes)
   const stat = statOp(dispatch)
@@ -42,12 +48,18 @@ export async function runCp(
   const mkdir = async (p: PathSpec): Promise<void> => {
     await dispatch('mkdir', p)
   }
+  const strategy = { readBytes, write, mkdir, readdir }
   return cpGeneric(
     flat,
     stat,
-    { readBytes, write, mkdir, readdir },
+    strategy,
     parseFlags(new FlagView(flagKwargs, specOf('cp'))),
     undefined,
     storageKey,
+    undefined,
+    undefined,
+    ns?.links === undefined
+      ? undefined
+      : { links: ns.links, dispatch, cwd, relay: strategy, relayStat: stat },
   )
 }

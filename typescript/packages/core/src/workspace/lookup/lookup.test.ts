@@ -30,6 +30,7 @@ import {
   readsSubtrees,
   lookup,
   lookupAll,
+  lsLinkMode,
   program,
   programNote,
   programs,
@@ -184,6 +185,32 @@ describe('find link-policy options', () => {
 
   it('only counts options before the operand', () => {
     expect(dereferences('find', ['find', '/data/link', '-L'])).toBe(false)
+  })
+})
+
+describe('lsLinkMode', () => {
+  // coreutils 9.7: the last of -L, -H and
+  // --dereference-command-line-symlink-to-dir wins; without one, -d, a long
+  // format or the classify style (abbreviated or valued) resolve no
+  // command-line link, and anything else resolves a link to a directory. -p
+  // and --file-type are not classify. Mirrors test_constants.py.
+  it.each([
+    [['ls', '-l', '/data/link'], 'none'],
+    [['ls', '-d', '/data/link'], 'none'],
+    [['ls', '-la', '/data/link'], 'none'],
+    [['ls', '-g', '/data/link'], 'none'],
+    [['ls', '-F', '/data/link'], 'none'],
+    [['ls', '--cl', '/data/link'], 'none'],
+    [['ls', '--indicator-style=classify', '/data/link'], 'none'],
+    [['ls', '/data/link'], 'directory'],
+    [['ls', '-p', '/data/link'], 'directory'],
+    [['ls', '--file-type', '/data/link'], 'directory'],
+    [['ls', '--classify=never', '/data/link'], 'directory'],
+    [['ls', '-l', '-L', '/data/link'], 'all'],
+    [['ls', '-F', '-H', '/data/link'], 'all'],
+    [['ls', '-H', '--dereference-command-line-symlink-to-dir', '/data/link'], 'directory'],
+  ] as const)('reads %j as %s', (words, mode) => {
+    expect(lsLinkMode(words)).toBe(mode)
   })
 })
 

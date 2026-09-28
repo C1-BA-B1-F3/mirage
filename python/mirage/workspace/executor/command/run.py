@@ -33,7 +33,8 @@ from mirage.types import FileStat, PathSpec
 from mirage.utils.errors import format_fs_error
 from mirage.workspace.executor.builtins.links import (link_target_stat,
                                                       path_exists,
-                                                      path_readdir, path_stat)
+                                                      path_readdir, path_stat,
+                                                      resolve_link)
 from mirage.workspace.executor.command.flags import parse_flags
 from mirage.workspace.mount import (MountCommandUnsupported, MountEntry,
                                     MountRegistry)
@@ -178,7 +179,7 @@ def link_view(namespace: Namespace | None,
     return LinkView(stat_at=namespace.link_stat_at,
                     children=namespace.link_stats_under,
                     subtree=namespace.link_stats_below,
-                    resolve=namespace.follow,
+                    resolve=functools.partial(resolve_link, namespace),
                     exists=functools.partial(path_exists, dispatch),
                     target_stat=functools.partial(link_target_stat, namespace,
                                                   dispatch))

@@ -481,6 +481,7 @@ export async function handleCommand(
       makeStorageKey(registry),
       csNs,
       sessionView(session, registry.policies),
+      session.cwd,
     )
     let csStdout = csStdout0
     if (cmdName === 'find') {

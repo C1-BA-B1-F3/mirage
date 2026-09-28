@@ -20,6 +20,7 @@ export {
   dereferences,
   endOptionsAfterProgram,
   followsLastComponent,
+  lsLinkMode,
   readsSubtrees,
   walksMounts,
 } from './constants.ts'

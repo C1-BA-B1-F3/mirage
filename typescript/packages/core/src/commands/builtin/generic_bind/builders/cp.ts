@@ -19,7 +19,9 @@ import type { FileStat, NativeCopy, PathSpec, PrimitiveCopy, StatFn } from '../.
 import { resolvePath } from '../../../../utils/path.ts'
 import { hiddenPathsIntersect, pathRulesActive } from '../../../../context/session_context.ts'
 import { walkFind } from '../../../../core/generic/find.ts'
-import { cpGeneric, parseFlags } from '../../generic/cp.ts'
+import { type CopyLinks, cpGeneric, parseFlags } from '../../generic/cp.ts'
+import { readBytesOp, readdirOp, statOp } from '../../generic/crossmount/utils.ts'
+import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Builder, CommandIO } from '../adapter.ts'
 import { requireOp, resolveGlobOf } from '../adapter.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
@@ -116,6 +118,31 @@ export const CP_BUILDER: Builder = {
       undefined,
       (p: PathSpec) => ops.readdir(accessor, p, idx),
       links === null ? undefined : (p: PathSpec) => typedLink(links, cwd, p),
+      links === null || opts.dispatch === undefined
+        ? undefined
+        : copyLinksOf(links, opts.dispatch, cwd),
     )
   },
+}
+
+// The namespace's links for cp, with the door's transfer primitives. Mirrors
+// Python's _copy_links.
+function copyLinksOf(links: LinkView, dispatch: DispatchFn, cwd: string): CopyLinks {
+  const relayStat = statOp(dispatch)
+  return {
+    links,
+    dispatch,
+    cwd,
+    relay: {
+      readBytes: readBytesOp(dispatch),
+      write: async (p: PathSpec, data: Uint8Array) => {
+        await dispatch('write', p, [data])
+      },
+      mkdir: async (p: PathSpec) => {
+        await dispatch('mkdir', p)
+      },
+      readdir: readdirOp(dispatch),
+    },
+    relayStat,
+  }
 }

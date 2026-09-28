@@ -19,7 +19,7 @@ import { RAMVFS } from '../../../../vfs/ram/ram.ts'
 import { MountMode, PathSpec } from '../../../../types.ts'
 import { getTestParser } from '../../../fixtures/workspace_fixture.ts'
 import { Workspace } from '../../../workspace/workspace.ts'
-import { followPaths, prepareMv } from './links.ts'
+import { followPaths, prepareMv, settleMoves } from './links.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 
@@ -368,8 +368,8 @@ describe('mv re-anchors what the node table holds', () => {
         '/',
       )
       expect(prepared.early).toBeNull()
-      expect(prepared.postUnlink).toBe('/data/moved')
-      expect(prepared.postRename).toEqual(['/data/d', '/data/moved'])
+      expect(prepared.errors).toEqual([])
+      expect(prepared.moves).toEqual([['/data/d', '/data/moved', false]])
     } finally {
       await ws.close()
     }
@@ -377,15 +377,15 @@ describe('mv re-anchors what the node table holds', () => {
 
   it('reads the destination off the parsed line', async () => {
     // -T names the destination outright, so no basename is appended to
-    // it, and -t makes every positional a source, which is the shape a
-    // two-operand pair cannot describe at all.
+    // it, and -t makes every positional a source and the flag's value the
+    // directory they land in, whatever the order of the words.
     const ws = await makeWs()
     try {
       await ws.shell('mkdir -p /data/dst; printf a > /data/a')
       const pair = [PathSpec.fromStrPath('/data/a'), PathSpec.fromStrPath('/data/dst')]
       const dispatch = dispatchOf(ws)
       const into = await prepareMv(ws.namespace, dispatch, pair, ['/data/a', '/data/dst'], '/')
-      expect(into.postRename).toEqual(['/data/a', '/data/dst/a'])
+      expect(into.moves).toEqual([['/data/a', '/data/dst/a', false]])
       const onto = await prepareMv(
         ws.namespace,
         dispatch,
@@ -393,7 +393,7 @@ describe('mv re-anchors what the node table holds', () => {
         ['-T', '/data/a', '/data/dst'],
         '/',
       )
-      expect(onto.postRename).toEqual(['/data/a', '/data/dst'])
+      expect(onto.moves).toEqual([['/data/a', '/data/dst', true]])
       const many = await prepareMv(
         ws.namespace,
         dispatch,
@@ -401,7 +401,102 @@ describe('mv re-anchors what the node table holds', () => {
         ['-t', '/data/dst', '/data/a'],
         '/',
       )
-      expect(many.postRename).toBeNull()
+      expect(many.moves).toEqual([['/data/a', '/data/dst/a', false]])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('follows a linked destination for many sources', async () => {
+    // GNU stats the destination of `mv a b dlink` through the link, so the
+    // generic mv is handed the directory it names (coreutils 9.7), and each
+    // source lands inside it.
+    const ws = await makeWs()
+    try {
+      await ws.shell('mkdir -p /data/dst; printf a > /data/a; printf b > /data/b')
+      await ws.shell('ln -s /data/dst /data/dlink')
+      const items = [
+        PathSpec.fromStrPath('/data/a'),
+        PathSpec.fromStrPath('/data/b'),
+        new PathSpec({
+          virtual: '/data/dlink',
+          directory: '/data/',
+          vfsPath: 'dlink',
+          rawPath: 'dlink',
+        }),
+      ]
+      const prepared = await prepareMv(
+        ws.namespace,
+        dispatchOf(ws),
+        items,
+        ['a', 'b', 'dlink'],
+        '/data',
+      )
+      expect(prepared.early).toBeNull()
+      expect(prepared.errors).toEqual([])
+      const dst = prepared.items[prepared.items.length - 1]
+      expect(dst instanceof PathSpec ? [dst.virtual, dst.rawPath] : null).toEqual([
+        '/data/dst',
+        'dlink',
+      ])
+      expect(prepared.moves).toEqual([
+        ['/data/a', '/data/dst/a', false],
+        ['/data/b', '/data/dst/b', false],
+      ])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('renames a link source among many', async () => {
+    // A link has no backend entry for the generic mv to move, so a
+    // several-source mv lost it (`mv: cannot stat 'l'`); the namespace
+    // renames it into the directory and the rest go to the backend.
+    const ws = await makeWs()
+    try {
+      await ws.shell('mkdir -p /data/dst; printf a > /data/a')
+      await ws.shell('ln -s /data/a /data/l')
+      const link = PathSpec.fromStrPath('/data/l')
+      const prepared = await prepareMv(
+        ws.namespace,
+        dispatchOf(ws),
+        [link, PathSpec.fromStrPath('/data/a'), PathSpec.fromStrPath('/data/dst')],
+        ['/data/l', '/data/a', '/data/dst'],
+        '/',
+      )
+      expect(prepared.early).toBeNull()
+      expect(prepared.errors).toEqual([])
+      expect(prepared.items).not.toContain(link)
+      expect(ws.namespace.isLink('/data/dst/l')).toBe(true)
+      expect(ws.namespace.isLink('/data/l')).toBe(false)
+      expect(prepared.moves).toEqual([['/data/a', '/data/dst/a', false]])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('confirms each move by its landing', async () => {
+    // The source cannot confirm a move: a link left below a moved directory
+    // synthesizes it back. A landing that appeared is a move that happened;
+    // one that was already there waits for exit 0.
+    const ws = await makeWs()
+    try {
+      await ws.shell('mkdir -p /data/src /data/new /data/kept; printf k > /data/k')
+      await ws.shell('ln -s /data/k /data/src/lk')
+      await ws.shell('ln -s /data/k /data/kept/lk')
+      await settleMoves(
+        ws.namespace,
+        dispatchOf(ws),
+        [
+          ['/data/src', '/data/new', false],
+          ['/data/kept', '/data/gone', false],
+          ['/data/kept', '/data/new', true],
+        ],
+        1,
+      )
+      expect(ws.namespace.isLink('/data/new/lk')).toBe(true)
+      expect(ws.namespace.isLink('/data/src/lk')).toBe(false)
+      expect(ws.namespace.isLink('/data/kept/lk')).toBe(true)
     } finally {
       await ws.close()
     }

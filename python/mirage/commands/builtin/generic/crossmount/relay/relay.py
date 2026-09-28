@@ -45,7 +45,8 @@ async def run_relay(cmd_name: str,
                     storage_key: Callable[[PathSpec], str] | None = None,
                     ns: NamespaceView | None = None,
                     session_view: SessionView | None = None,
-                    stdin: ByteSource | None = None) -> CrossResult:
+                    stdin: ByteSource | None = None,
+                    cwd: str = "/") -> CrossResult:
     """Run a command whose work must see every operand at once.
 
     Pure wiring: every operand is read or written through ``dispatch``
@@ -72,6 +73,10 @@ async def run_relay(cmd_name: str,
             the archivers' scan (tar, zip: links, mount boundaries).
         session_view (SessionView | None): The session plane's door, for
             the generic that renders the session's profile (ls -l).
+        stdin (ByteSource | None): The line's input, which a ``-``
+            operand reads.
+        cwd (str): The session's working directory, which cp resolves a
+            typed link source against.
     """
     if cmd_name == Cmd.WC:
         return await run_wc(scopes, flag_kwargs, dispatch, run_single)
@@ -80,7 +85,8 @@ async def run_relay(cmd_name: str,
     if cmd_name == Cmd.LS:
         return await run_ls(scopes, flag_kwargs, dispatch, ns, session_view)
     if cmd_name == Cmd.CP:
-        return await run_cp(scopes, flag_kwargs, dispatch, storage_key)
+        return await run_cp(scopes, flag_kwargs, dispatch, storage_key, ns,
+                            cwd)
     if cmd_name == Cmd.MV:
         return await run_mv(scopes, flag_kwargs, dispatch, storage_key)
     if cmd_name == Cmd.DIFF:

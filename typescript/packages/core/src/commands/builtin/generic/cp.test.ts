@@ -41,6 +41,8 @@ import { entryKind } from '../utils/paths.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { type FlagValue } from '../../spec/types.ts'
 import { specOf } from '../../spec/builtins.ts'
+import { SPECS, parseCommand } from '../../spec/index.ts'
+import { parseToKwargs } from '../../spec/parser.ts'
 
 const DEC = new TextDecoder()
 
@@ -1106,5 +1108,33 @@ describe('cpGeneric trailing slash', () => {
     expect(io.exitCode).toBe(1)
     expect(await io.stderrStr()).toBe("cp: cannot stat '/reg/': Not a directory\n")
     expect([...files.keys()]).toEqual(['/reg'])
+  })
+})
+
+describe('the link options', () => {
+  function flagsOf(...argv: string[]): CpFlags {
+    const spec = SPECS.cp
+    if (spec === undefined) throw new Error('no cp spec')
+    const words = [...argv, '/data/a', '/data/b']
+    return parseFlags(new FlagView(parseToKwargs(parseCommand(spec, words, '/', 'cp')), spec))
+  }
+
+  // cp.c: -L, -P, -H, -d and -a each set the dereference policy, so the last
+  // one wins; with none, a recursive copy copies links as links and any other
+  // copy follows them. Mirrors test_cp.py.
+  it.each([
+    [[], 'always'],
+    [['-r'], 'never'],
+    [['-R'], 'never'],
+    [['-a'], 'never'],
+    [['-rL'], 'always'],
+    [['-rH'], 'command_line'],
+    [['-P'], 'never'],
+    [['-d'], 'never'],
+    [['-L', '-P'], 'never'],
+    [['-P', '-L'], 'always'],
+    [['-a', '-L'], 'always'],
+  ] as const)('reads %j as %s', (argv, deref) => {
+    expect(flagsOf(...argv).dereference).toBe(deref)
   })
 })

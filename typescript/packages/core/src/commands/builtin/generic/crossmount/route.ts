@@ -48,6 +48,9 @@ export async function handleCrossMount(
   // The session plane's door, for the RELAY generic that renders the
   // session's profile (ls).
   sessionView?: SessionView,
+  // The session's working directory, which a typed operand resolves against
+  // (cp's link sources).
+  cwd = '/',
 ): Promise<CrossResult> {
   const native = runSingle
   const input = resolveSource(stdin)
@@ -73,6 +76,7 @@ export async function handleCrossMount(
         ns,
         sessionView,
         stdin,
+        cwd,
       )
     }
     if (strategy === Strategy.STREAM) {

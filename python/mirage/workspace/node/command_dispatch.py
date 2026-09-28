@@ -31,13 +31,13 @@ from mirage.shell.parse import find_syntax_error, parse, syntax_error_result
 from mirage.shell.types import NodeType as NT
 from mirage.shell.variable import ShellVar, VarAttr
 from mirage.shell.xtrace import trace_command
-from mirage.types import PathSpec, Producer, word_text
+from mirage.types import LsLinkMode, PathSpec, Producer, word_text
 from mirage.utils.glob_walk import glob_pattern
 from mirage.utils.path import CycleError
 from mirage.vfs.dev.dev import DevVFS
 from mirage.workspace.executor.builtins.alias import alias_command_text
 from mirage.workspace.executor.builtins.table import BUILTINS
-from mirage.workspace.executor.builtins.types import BuiltinCall
+from mirage.workspace.executor.builtins.types import BuiltinCall, MvMove
 from mirage.workspace.executor.command import handle_command
 from mirage.workspace.executor.command.external import run_external
 from mirage.workspace.expand import expand_node
@@ -46,7 +46,7 @@ from mirage.workspace.expand.globs import expand_boundary_globs
 from mirage.workspace.expand.node import child_line
 from mirage.workspace.lookup import (SLASH_KEEPS_LAST, UNSUPPORTED_BUILTINS,
                                      Consumer, follows_last_component, lookup,
-                                     runtime_refused)
+                                     ls_link_mode, runtime_refused)
 from mirage.workspace.lookup.constants import INTERPRETER_NAMES
 from mirage.workspace.node.admission import Admitted, Refused, admit
 from mirage.workspace.node.occurrence import claimant_for, evaluated_from
@@ -61,9 +61,10 @@ from mirage.shell.helpers import (  # isort: skip
 from mirage.shell.types import ProcessSubDirection  # isort: skip
 
 from mirage.workspace.executor.builtins import (  # isort: skip
-    accepts_line, follow_paths, handle_chgrp, handle_exec_path, handle_chmod,
-    handle_chown, handle_df, handle_getfattr, handle_ln, handle_readlink,
-    handle_setfattr, handle_touch, prepare_mv, strip_link_operands)
+    accepts_line, follow_directory_links, follow_paths, handle_chgrp,
+    handle_exec_path, handle_chmod, handle_chown, handle_df, handle_getfattr,
+    handle_ln, handle_readlink, handle_setfattr, handle_touch, prepare_mv,
+    settle_moves, strip_link_operands)
 
 
 async def execute_command(
@@ -593,10 +594,18 @@ async def _route_argv(
     #    in comes back refused (`walk_error`) rather than failing the
     #    line: the command meets ELOOP at its op and words it per operand.
     if namespace.nodes and operands:
-        operands = follow_paths(namespace,
-                                operands,
-                                follows_last_component(name, argv.words),
-                                slash_follows=name not in SLASH_KEEPS_LAST)
+        ls_mode = ls_link_mode(argv.words) if name == "ls" else None
+        operands = follow_paths(
+            namespace,
+            operands,
+            ls_mode is LsLinkMode.ALL if ls_mode is not None else
+            follows_last_component(name, argv.words),
+            slash_follows=name not in SLASH_KEEPS_LAST)
+        if ls_mode is LsLinkMode.DIRECTORY:
+            # ls resolves a command-line link only when it leads to a
+            # directory, and only a stat can tell where it leads.
+            operands = await follow_directory_links(namespace, dispatch,
+                                                    operands)
         argv = argv.with_operands(operands)
 
     # ── symlinks (namespace-backed; not bash builtins, not mount
@@ -632,8 +641,7 @@ async def _route_argv(
 
     # ── symlink-aware dispatch: reads follow links (open(2)); rm/mv act
     #    on the link entry itself (lstat semantics) ──
-    post_unlink: str | None = None
-    post_rename: tuple[str, str] | None = None
+    mv_moves: list[MvMove] = []
     link_errors: list[str] = []
     if namespace.nodes:
         try:
@@ -659,7 +667,7 @@ async def _route_argv(
                                                                 exit_code=1,
                                                                 stderr=err)
             elif name == "mv":
-                operands, post_unlink, post_rename, early = await prepare_mv(
+                operands, mv_moves, early, link_errors = await prepare_mv(
                     namespace, dispatch, operands, argv.args, session.cwd)
                 if early is not None:
                     return early
@@ -718,16 +726,8 @@ async def _route_argv(
                 else:
                     await namespace.unlink(item.virtual)
                     await namespace.purge_under(item.virtual)
-        if post_unlink is not None:
-            # The landing is replaced the way rename(2) replaces it,
-            # node and subtree alike, and then the source's own node and
-            # subtree land on it. The same four steps the dispatcher
-            # takes for a rename it forwards itself.
-            await namespace.unlink(post_unlink)
-            await namespace.purge_under(post_unlink)
-        if post_rename is not None:
-            await namespace.rename(post_rename[0], post_rename[1])
-            await namespace.rename_under(post_rename[0], post_rename[1])
+    if mv_moves:
+        await settle_moves(namespace, dispatch, mv_moves, io.exit_code)
     if link_errors:
         # A refused link operand fails the line the way a refused
         # backend operand does: its lines lead (they were reported

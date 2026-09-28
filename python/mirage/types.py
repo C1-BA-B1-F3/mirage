@@ -77,6 +77,33 @@ class LsTimeKind(str, Enum):
     BIRTH = "birth"
 
 
+class LsIndicator(str, Enum):
+    """The mark `ls` appends to a name, `--indicator-style`'s words: `-p`
+    is `slash`, `--file-type` is `file-type` and `-F` is `classify`."""
+    NONE = "none"
+    SLASH = "slash"
+    FILE_TYPE = "file-type"
+    CLASSIFY = "classify"
+
+
+class CopyDeref(str, Enum):
+    """Which symlinks `cp` follows: every one (`-L`), only the command
+    line's (`-H`), or none, copying each link as a link (`-P`, `-d`,
+    `-a`, and a recursive copy's default)."""
+    ALWAYS = "always"
+    COMMAND_LINE = "command_line"
+    NEVER = "never"
+
+
+class LsLinkMode(str, Enum):
+    """Which command-line symlinks `ls` resolves before it lists them:
+    every one (`-L`, `-H`), only one leading to a directory (the
+    default), or none (`-d`, a long format, `-F`)."""
+    ALL = "all"
+    DIRECTORY = "directory"
+    NONE = "none"
+
+
 class FileType(str, Enum):
     """POSIX file type (the `st_mode` kind), the switch behavior branches on.
 

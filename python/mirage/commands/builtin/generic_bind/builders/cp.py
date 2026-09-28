@@ -17,8 +17,11 @@ from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore
+from mirage.commands.builtin.generic.cp import CopyLinks
 from mirage.commands.builtin.generic.cp import cp as generic_cp
 from mirage.commands.builtin.generic.cp import parse_flags
+from mirage.commands.builtin.generic.crossmount.utils import \
+    transfer_primitives
 from mirage.commands.builtin.generic.find import parse_find_args, walk_find
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           Operation, bound_op,
@@ -29,6 +32,7 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.context import hidden_paths_intersect, path_rules_active
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView, StatOverlay
+from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, NativeCopy, PathSpec, PrimitiveCopy
 from mirage.utils.key_prefix import rekey
 from mirage.utils.path import resolve_path
@@ -130,15 +134,35 @@ async def cp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     overlay = opts.ns.stat_overlay if opts.ns is not None else None
     links = opts.ns.links if opts.ns is not None else None
     cwd = opts.cwd.virtual if opts.cwd is not None else "/"
-    return await generic_cp(paths,
-                            strategy=strategy,
-                            stat=overlayable_stat(ops, accessor, opts.index,
-                                                  overlay),
-                            flags=parsed,
-                            readdir=bound_op(ops.readdir, accessor,
-                                             opts.index),
-                            link_at=(partial(_typed_link, links, cwd)
-                                     if links is not None else None))
+    return await generic_cp(
+        paths,
+        strategy=strategy,
+        stat=overlayable_stat(ops, accessor, opts.index, overlay),
+        flags=parsed,
+        readdir=bound_op(ops.readdir, accessor, opts.index),
+        link_at=(partial(_typed_link, links, cwd)
+                 if links is not None else None),
+        copies=(_copy_links(links, opts.dispatch, cwd)
+                if links is not None and opts.dispatch is not None else None))
+
+
+def _copy_links(links: LinkView, dispatch: DispatchFn, cwd: str) -> CopyLinks:
+    """The namespace's links for cp, with the door's transfer primitives.
+
+    Args:
+        links (LinkView): the namespace's symlink facts.
+        dispatch (DispatchFn): the op door.
+        cwd (str): the directory a typed operand resolves against.
+    """
+    prim = transfer_primitives(dispatch)
+    return CopyLinks(links=links,
+                     dispatch=dispatch,
+                     cwd=cwd,
+                     relay=PrimitiveCopy(read_bytes=prim["read_bytes"],
+                                         write=prim["write"],
+                                         mkdir=prim["mkdir"],
+                                         readdir=prim["readdir"]),
+                     relay_stat=prim["stat"])
 
 
 def _typed_link(links: LinkView, cwd: str, path: PathSpec) -> FileStat | None:

@@ -56,11 +56,14 @@ export async function runRelay(
   // profile (ls -l).
   sessionView?: SessionView,
   stdin: ByteSource | null = null,
+  // The session's working directory, which cp resolves a typed link source
+  // against.
+  cwd = '/',
 ): Promise<CrossResult> {
   if (cmdName === Cmd.WC) return runWc(scopes, flagKwargs, dispatch, runSingle)
   if (cmdName === Cmd.SORT) return runSort(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.LS) return runLs(scopes, flagKwargs, dispatch, ns, sessionView)
-  if (cmdName === Cmd.CP) return runCp(scopes, flagKwargs, dispatch, storageKey)
+  if (cmdName === Cmd.CP) return runCp(scopes, flagKwargs, dispatch, storageKey, ns, cwd)
   if (cmdName === Cmd.MV) return runMv(scopes, flagKwargs, dispatch, storageKey)
   if (cmdName === Cmd.DIFF) return runDiff(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.PASTE) return runPaste(scopes, flagKwargs, dispatch, stdin)

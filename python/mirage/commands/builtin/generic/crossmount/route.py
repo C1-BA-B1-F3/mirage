@@ -43,6 +43,7 @@ async def handle_cross_mount(
     storage_key: Callable[[PathSpec], str] | None = None,
     ns: NamespaceView | None = None,
     session_view: SessionView | None = None,
+    cwd: str = "/",
 ) -> CrossResult:
     """Run a command whose path operands span mounts.
 
@@ -71,6 +72,8 @@ async def handle_cross_mount(
             generics that render them (ls).
         session_view (SessionView | None): The session plane's door, for
             the RELAY generic that renders the session's profile (ls).
+        cwd (str): The session's working directory, which a typed
+            operand resolves against (cp's link sources).
     """
     native = run_single
     input_source = resolve_source(stdin)
@@ -88,7 +91,7 @@ async def handle_cross_mount(
         if strategy is Strategy.RELAY:
             return await run_relay(cmd_name, scopes, text_args, flag_kwargs,
                                    dispatch, run_single, storage_key, ns,
-                                   session_view, stdin)
+                                   session_view, stdin, cwd)
         if strategy is Strategy.STREAM:
             return await run_stream(cmd_name, scopes, text_args, flag_kwargs,
                                     run_single)

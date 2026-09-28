@@ -70,3 +70,7 @@ class BuiltinCall:
 
 
 BuiltinFn = Callable[[BuiltinCall], Awaitable[Result]]
+
+# One mv source's move: (source, landing, whether the landing was there),
+# which settle_moves reads to confirm the move happened.
+MvMove = tuple[str, str, bool]

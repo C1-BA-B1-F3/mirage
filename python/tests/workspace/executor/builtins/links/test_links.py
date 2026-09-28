@@ -7,7 +7,7 @@ from mirage.workspace import Workspace
 from mirage.workspace.executor.builtins.links import (accepts_line,
                                                       follow_parent,
                                                       follow_paths, link_flags,
-                                                      prepare_mv)
+                                                      prepare_mv, settle_moves)
 
 
 def _ws() -> Workspace:
@@ -328,36 +328,111 @@ async def test_prepare_mv_hands_back_the_pair_whatever_the_table_holds():
     ws = _ws()
     await ws.shell("mkdir -p /data/d; printf 't\\n' > /data/t")
     await ws.shell("ln -s /data/t /data/d/link")
-    _items, unlinked, renamed, early = await prepare_mv(
+    _items, moves, early, errors = await prepare_mv(
         ws.namespace, ws.dispatch, [
             PathSpec.from_str_path("/data/d"),
             PathSpec.from_str_path("/data/moved")
         ], ("/data/d", "/data/moved"), "/")
     assert early is None
-    assert unlinked == "/data/moved"
-    assert renamed == ("/data/d", "/data/moved")
+    assert errors == []
+    assert moves == [("/data/d", "/data/moved", False)]
 
 
 @pytest.mark.asyncio
 async def test_prepare_mv_reads_the_destination_off_the_parsed_line():
     # -T names the destination outright, so the basename is not appended
-    # to it, and -t makes every positional a source, which is the shape
-    # a two-operand pair cannot describe at all.
+    # to it, and -t makes every positional a source and the flag's value
+    # the directory they land in, whatever the order of the words.
     ws = _ws()
     await ws.shell("mkdir -p /data/dst; printf 'a\\n' > /data/a")
     pair = [
         PathSpec.from_str_path("/data/a"),
         PathSpec.from_str_path("/data/dst")
     ]
-    _items, _unlinked, renamed, _early = await prepare_mv(
-        ws.namespace, ws.dispatch, pair, ("/data/a", "/data/dst"), "/")
-    assert renamed == ("/data/a", "/data/dst/a")
-    _items, _unlinked, no_target, _early = await prepare_mv(
+    _items, into, _early, _errors = await prepare_mv(ws.namespace, ws.dispatch,
+                                                     pair,
+                                                     ("/data/a", "/data/dst"),
+                                                     "/")
+    assert into == [("/data/a", "/data/dst/a", False)]
+    _items, onto, _early, _errors = await prepare_mv(
         ws.namespace, ws.dispatch, pair, ("-T", "/data/a", "/data/dst"), "/")
-    assert no_target == ("/data/a", "/data/dst")
-    _items, _unlinked, target_dir, _early = await prepare_mv(
+    assert onto == [("/data/a", "/data/dst", True)]
+    _items, target_dir, _early, _errors = await prepare_mv(
         ws.namespace, ws.dispatch, pair, ("-t", "/data/dst", "/data/a"), "/")
-    assert target_dir is None
+    assert target_dir == [("/data/a", "/data/dst/a", False)]
+
+
+@pytest.mark.asyncio
+async def test_prepare_mv_follows_a_linked_destination_for_many_sources():
+    # GNU stats the destination of `mv a b dlink` through the link, so the
+    # generic mv is handed the directory it names (coreutils 9.7), and
+    # each source lands inside it.
+    ws = _ws()
+    await ws.shell("mkdir -p /data/dst; printf a > /data/a; printf b > /data/b"
+                   )
+    await ws.shell("ln -s /data/dst /data/dlink")
+    items: list[str | PathSpec] = [
+        PathSpec.from_str_path("/data/a"),
+        PathSpec.from_str_path("/data/b"),
+        PathSpec(vfs_path="dlink",
+                 virtual="/data/dlink",
+                 directory="/data/",
+                 raw_path="dlink")
+    ]
+    rewritten, moves, early, errors = await prepare_mv(ws.namespace,
+                                                       ws.dispatch, items,
+                                                       ("a", "b", "dlink"),
+                                                       "/data")
+    assert early is None and errors == []
+    dst = rewritten[-1]
+    assert isinstance(dst, PathSpec)
+    assert (dst.virtual, dst.raw_path) == ("/data/dst", "dlink")
+    assert moves == [("/data/a", "/data/dst/a", False),
+                     ("/data/b", "/data/dst/b", False)]
+
+
+@pytest.mark.asyncio
+async def test_prepare_mv_renames_a_link_source_among_many():
+    # A link has no backend entry for the generic mv to move, so a
+    # several-source mv lost it (`mv: cannot stat 'l'`); the namespace
+    # renames it into the directory and the rest go to the backend.
+    ws = _ws()
+    await ws.shell("mkdir -p /data/dst; printf a > /data/a")
+    await ws.shell("ln -s /data/a /data/l")
+    link = PathSpec.from_str_path("/data/l")
+    items: list[str | PathSpec] = [
+        link,
+        PathSpec.from_str_path("/data/a"),
+        PathSpec.from_str_path("/data/dst")
+    ]
+    rewritten, moves, early, errors = await prepare_mv(
+        ws.namespace, ws.dispatch, items, ("/data/l", "/data/a", "/data/dst"),
+        "/")
+    assert early is None and errors == []
+    assert link not in rewritten
+    assert ws.namespace.is_link("/data/dst/l")
+    assert not ws.namespace.is_link("/data/l")
+    assert moves == [("/data/a", "/data/dst/a", False)]
+
+
+@pytest.mark.asyncio
+async def test_settle_moves_confirms_each_move_by_its_landing():
+    # The source cannot confirm a move: a link left below a moved
+    # directory synthesizes it back. A landing that appeared is a move
+    # that happened; one that was already there waits for exit 0.
+    ws = _ws()
+    await ws.shell(
+        "mkdir -p /data/src /data/new /data/kept; printf k > /data/k")
+    await ws.shell("ln -s /data/k /data/src/lk")
+    await ws.shell("ln -s /data/k /data/kept/lk")
+    await settle_moves(ws.namespace, ws.dispatch, [
+        ("/data/src", "/data/new", False),
+        ("/data/kept", "/data/gone", False),
+        ("/data/kept", "/data/new", True),
+    ], 1)
+    assert ws.namespace.is_link("/data/new/lk")
+    assert not ws.namespace.is_link("/data/src/lk")
+    assert ws.namespace.is_link("/data/kept/lk")
 
 
 @pytest.mark.asyncio

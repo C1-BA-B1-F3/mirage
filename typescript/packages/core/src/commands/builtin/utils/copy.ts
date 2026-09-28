@@ -57,10 +57,20 @@ export function copyTargets(
     const first = sources[0]
     return first === undefined ? [] : [[first, dst]]
   }
-  return sources.map((src): [PathSpec, PathSpec] => {
-    const name = rstripSlash(src.mountPath).split('/').pop() ?? ''
-    return [src, childPath(dst, name)]
-  })
+  return sources.map((src): [PathSpec, PathSpec] => [src, childPath(dst, landingName(src))])
+}
+
+/**
+ * The name a source lands under inside a directory destination. GNU names it
+ * after the operand as typed, so a link the router followed still lands under
+ * its own name (`cp al dir` makes `dir/al`, not `dir/a.txt`). `''`, `.` and
+ * `..` name no entry of their own, so they keep the name of what they resolve
+ * to. Mirrors Python's landing_name.
+ */
+export function landingName(src: PathSpec): string {
+  const typed = rstripSlash(src.rawPath).split('/').pop() ?? ''
+  if (typed !== '' && typed !== '.' && typed !== '..') return typed
+  return rstripSlash(src.mountPath).split('/').pop() ?? ''
 }
 
 export async function pathExists(stat: StatFn, path: PathSpec): Promise<boolean> {

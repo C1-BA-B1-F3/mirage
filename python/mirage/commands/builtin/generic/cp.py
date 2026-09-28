@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 from mirage.commands.builtin.utils.backup import backup_control, backup_target
@@ -30,13 +30,16 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import argmatch_error, extra_operand_error
 from mirage.io.types import ByteSource, IOResult
-from mirage.types import (CopyStrategy, FileStat, FileType, NativeCopy,
-                          NativeMove, PathSpec, PrimitiveCopy, PrimitiveMove,
-                          ReaddirFn, StatFn)
+from mirage.ops.types import LinkView
+from mirage.runtime.types import DispatchFn
+from mirage.types import (LINK_TARGET_KEY, CopyDeref, CopyStrategy, FileStat,
+                          FileType, NativeCopy, NativeMove, PathSpec,
+                          PrimitiveCopy, PrimitiveMove, ReaddirFn, StatFn)
 from mirage.utils.dates import iso_timestamp
 from mirage.utils.errors import (ELOOP_STRERROR, FS_ERRORS, DotWalkLoop,
                                  DotWalkMissing, fs_strerror)
 from mirage.utils.key_prefix import mounted_path, rekey
+from mirage.utils.path import CycleError, resolve_path
 
 UPDATE_MODES = ("all", "none", "none-fail", "older")
 
@@ -53,6 +56,40 @@ class CpFlags:
     # cross-mount relay's string view is wrapped against the first source.
     target_dir: PathSpec | str | None = None
     no_target_dir: bool = False
+    dereference: CopyDeref = CopyDeref.ALWAYS
+
+
+@dataclass(frozen=True, slots=True)
+class CopyLinks:
+    """The namespace's symlinks as cp meets them, and the door that makes
+    them. Links live above every backend, so no copy strategy lists one
+    and a tree copy has to recreate each by name.
+
+    Attributes:
+        links (LinkView): the namespace's symlink facts.
+        dispatch (DispatchFn): the op door, through which a link is made.
+        cwd (str): the directory a typed operand resolves against.
+        relay (PrimitiveCopy): the door's own transfer primitives, which
+            copy what a followed link leads to on whatever mount it lives.
+        relay_stat (StatFn): the door's stat, for the same walk.
+    """
+
+    links: LinkView
+    dispatch: DispatchFn
+    cwd: str
+    relay: PrimitiveCopy
+    relay_stat: StatFn
+
+
+# Each option of cp's link policy, and what it asks for; the last typed
+# wins (coreutils 9.7: `-L -P` copies the link, `-P -L` what it names).
+_DEREF_OPTIONS = {
+    "dereference": CopyDeref.ALWAYS,
+    "no_dereference": CopyDeref.NEVER,
+    "H": CopyDeref.COMMAND_LINE,
+    "d": CopyDeref.NEVER,
+    "archive": CopyDeref.NEVER,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,9 +221,15 @@ def parse_flags(fl: FlagView) -> CpFlags:
             "cp: --backup is mutually exclusive with -n or "
             "--update=none-fail\nTry 'cp --help' for more information.", 1)
     target_dir, no_target = target_flags("cp", fl)
+    recursive = (fl.as_bool("r") or fl.as_bool("recursive")
+                 or fl.as_bool("archive"))
+    typed = fl.typed_order(*_DEREF_OPTIONS)
+    # With no link option a recursive copy copies links as links and any
+    # other copy follows them (cp.c's DEREF_UNDEFINED default).
+    dereference = (_DEREF_OPTIONS[typed[-1]] if typed else
+                   CopyDeref.NEVER if recursive else CopyDeref.ALWAYS)
     return CpFlags(
-        recursive=fl.as_bool("r") or fl.as_bool("recursive")
-        or fl.as_bool("archive"),
+        recursive=recursive,
         no_clobber=no_clobber,
         verbose=fl.as_bool("verbose"),
         update=update,
@@ -194,7 +237,182 @@ def parse_flags(fl: FlagView) -> CpFlags:
         suffix=suffix if suffix is not None else DEFAULT_BACKUP_SUFFIX,
         target_dir=target_dir,
         no_target_dir=no_target,
+        dereference=dereference,
     )
+
+
+def typed_link(copies: CopyLinks, path: PathSpec) -> FileStat | None:
+    """The link standing at the name an operand was typed as, its own row.
+
+    The router follows an operand through a link before cp runs, which
+    leaves ``virtual`` at the target and the typed name in ``raw_path``.
+
+    Args:
+        copies (CopyLinks): the namespace's links and door.
+        path (PathSpec): the operand.
+    """
+    return copies.links.stat_at(
+        resolve_path(path.raw_path or path.virtual, copies.cwd))
+
+
+async def _entry_at(dispatch: DispatchFn, spec: PathSpec) -> FileStat | None:
+    """What stands at a path, asked through the door; None where nothing
+    does, which is where a new link goes.
+
+    Args:
+        dispatch (DispatchFn): the op door.
+        spec (PathSpec): the path.
+    """
+    try:
+        there, _ = await dispatch("stat", spec)
+    except (FileNotFoundError, NotADirectoryError, DotWalkLoop):
+        return None
+    return there if isinstance(there, FileStat) else None
+
+
+async def make_link(copies: CopyLinks, landing: str, text: str,
+                    shown: str) -> str | None:
+    """Create the link ``landing`` -> ``text``, as a copy that does not
+    follow links makes it.
+
+    What stands at the landing is replaced, a link or any other
+    non-directory alike, and a directory refuses the link (coreutils 9.7).
+    The error line when the link cannot be made, else None.
+
+    Args:
+        copies (CopyLinks): the namespace's links and door.
+        landing (str): the link's virtual path.
+        text (str): the target, verbatim.
+        shown (str): the landing as cp names it.
+    """
+    spec = PathSpec.from_str_path(landing)
+    if copies.links.stat_at(landing) is not None:
+        await copies.dispatch("unlink", spec)
+    else:
+        there = await _entry_at(copies.dispatch, spec)
+        if there is not None and there.type == FileType.DIRECTORY:
+            return (f"cp: cannot overwrite directory '{shown}' "
+                    "with non-directory")
+        if there is not None:
+            await copies.dispatch("unlink", spec)
+    try:
+        await copies.dispatch("symlink", spec, target=text)
+    except FS_ERRORS as exc:
+        return (f"cp: cannot create symbolic link '{shown}': "
+                f"{fs_strerror(exc)}")
+    return None
+
+
+async def copy_tree_links(
+    copies: CopyLinks,
+    deref: CopyDeref,
+    src: PathSpec,
+    target: PathSpec,
+    errors: list[str],
+    lines: list[str] | None,
+    seen: tuple[str, ...] = ()) -> None:
+    """Recreate the links below a copied directory, which its copy could
+    not see.
+
+    Without ``-L`` each lands as a link with its target verbatim, dangling
+    and looping ones included. Under ``-L`` each is what it leads to: a
+    file's bytes, a directory's whole tree (the links below it included),
+    and ``cannot stat`` for one that leads nowhere or loops (coreutils
+    9.7). A link that leads back into a tree being copied is refused as
+    GNU names it, ``cannot copy cyclic symbolic link``, rather than
+    copied until the name is too long, which is where GNU stops.
+
+    Args:
+        copies (CopyLinks): the namespace's links and door.
+        deref (CopyDeref): the line's link policy.
+        src (PathSpec): the copied directory.
+        target (PathSpec): where it was copied to.
+        errors (list[str]): per-entry diagnostics.
+        lines (list[str] | None): ``-v``'s lines, None without ``-v``.
+        seen (tuple[str, ...]): the directories being copied above this
+            one, which a followed link must not lead back into.
+    """
+    base = src.virtual.rstrip("/") or "/"
+    dst_base = target.virtual.rstrip("/")
+    shown_src = src.raw_path.rstrip("/") or src.raw_path
+    shown_dst = target.raw_path.rstrip("/") or target.raw_path
+    below = sorted(copies.links.subtree(base), key=lambda row: row[0])
+    for virtual, row in below:
+        rel = virtual[len(base.rstrip("/")) + 1:]
+        landing = f"{dst_base}/{rel}"
+        shown = f"{shown_src}/{rel}"
+        if deref is not CopyDeref.ALWAYS:
+            text = str(row.extra.get(LINK_TARGET_KEY) or "")
+            error = await make_link(copies, landing, text,
+                                    f"{shown_dst}/{rel}")
+            if error is not None:
+                errors.append(error)
+            elif lines is not None:
+                lines.append(f"'{virtual}' -> '{landing}'")
+            continue
+        try:
+            resolved = copies.links.resolve(virtual)
+        except CycleError:
+            errors.append(f"cp: cannot stat '{shown}': {ELOOP_STRERROR}")
+            continue
+        leads = await copies.links.target_stat(virtual)
+        if leads is None:
+            errors.append(f"cp: cannot stat '{shown}': "
+                          "No such file or directory")
+            continue
+        if leads.type != FileType.DIRECTORY:
+            await _copy_followed_file(copies, resolved, landing, shown, errors,
+                                      lines)
+            continue
+        inside = resolved.rstrip("/") or "/"
+        if any(inside == d or d.startswith(inside.rstrip("/") + "/")
+               for d in (*seen, base)):
+            errors.append(f"cp: cannot copy cyclic symbolic link '{shown}'")
+            continue
+        followed = PathSpec.from_str_path(inside)
+        placed = PathSpec.from_str_path(landing)
+        entries = await walk(copies.relay.readdir, copies.relay_stat, followed,
+                             "cp", errors)
+        await copy_entries("cp",
+                           copies.relay,
+                           copies.relay_stat,
+                           followed,
+                           placed,
+                           entries,
+                           errors,
+                           lines=lines)
+        await copy_tree_links(copies, deref, replace(followed, raw_path=shown),
+                              replace(placed, raw_path=f"{shown_dst}/{rel}"),
+                              errors, lines, (*seen, base))
+
+
+async def _copy_followed_file(copies: CopyLinks, resolved: str, landing: str,
+                              shown: str, errors: list[str],
+                              lines: list[str] | None) -> None:
+    """Copy what a followed link names when it is a file.
+
+    Args:
+        copies (CopyLinks): the namespace's links and door.
+        resolved (str): the file the link leads to.
+        landing (str): where the copy goes.
+        shown (str): the link as cp names it.
+        errors (list[str]): per-entry diagnostics.
+        lines (list[str] | None): ``-v``'s lines, None without ``-v``.
+    """
+    try:
+        data = await copies.relay.read_bytes(PathSpec.from_str_path(resolved))
+    except FS_ERRORS as exc:
+        errors.append(f"cp: cannot open '{shown}' for reading: "
+                      f"{fs_strerror(exc)}")
+        return
+    try:
+        await copies.relay.write(PathSpec.from_str_path(landing), data=data)
+    except FS_ERRORS as exc:
+        errors.append(f"cp: cannot create regular file '{landing}': "
+                      f"{fs_strerror(exc)}")
+        return
+    if lines is not None:
+        lines.append(f"'{resolved}' -> '{landing}'")
 
 
 def split_operands(
@@ -852,6 +1070,7 @@ async def cp(
     backend_key: Callable[[PathSpec], str] | None = None,
     readdir: ReaddirFn | None = None,
     link_at: Callable[[PathSpec], FileStat | None] | None = None,
+    copies: CopyLinks | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     """Copy sources to a destination, fanning out into a directory.
 
@@ -877,6 +1096,10 @@ async def cp(
             destination was typed as, its own row, None where none stands
             (the router has followed the operand by the time cp runs);
             None outside a workspace.
+        copies (CopyLinks | None): The namespace's links and the door
+            that makes them, so a link is copied as a link where the
+            policy says to; None outside a workspace, where no link can
+            stand.
 
     Returns:
         tuple[ByteSource | None, IOResult]: Verbose output and recorded
@@ -916,6 +1139,28 @@ async def cp(
     errors: list[str] = []
     for src, target in copy_targets(sources, dst, dst_is_dir, dst_exists,
                                     dst_err):
+        link = (typed_link(copies, src) if copies is not None
+                and flags.dereference is CopyDeref.NEVER else None)
+        if copies is not None and link is not None:
+            # The router followed the operand, but the policy copies the
+            # link itself, whatever it leads to (coreutils 9.7). Onto a
+            # destination that is no directory the link replaces the name
+            # as typed, never what a link standing there leads to.
+            named = resolve_path(src.raw_path or src.virtual, copies.cwd)
+            landing = (target.virtual if target is not dst else resolve_path(
+                dst.raw_path or dst.virtual, copies.cwd))
+            if named == landing:
+                errors.append(f"cp: '{named}' and '{landing}' "
+                              "are the same file")
+                continue
+            error = await make_link(copies, landing,
+                                    str(link.extra.get(LINK_TARGET_KEY) or ""),
+                                    target.raw_path)
+            if error is not None:
+                errors.append(error)
+            elif flags.verbose:
+                lines.append(f"'{named}' -> '{landing}'")
+            continue
         src_exists, src_is_dir, src_err = await source_kind(stat, src)
         if not src_exists:
             errors.append(f"cp: cannot stat '{src.raw_path}': {src_err}")
@@ -997,6 +1242,10 @@ async def cp(
                                    writes=writes,
                                    reads=reads,
                                    lines=lines if flags.verbose else None)
+                if copies is not None:
+                    await copy_tree_links(copies, flags.dereference, src,
+                                          target, errors,
+                                          lines if flags.verbose else None)
                 continue
             if strategy.dir_copy is not None and not per_entry_native:
                 if flags.no_clobber and target_exists:
@@ -1009,6 +1258,10 @@ async def cp(
                 if flags.verbose:
                     lines.extend(await _tree_lines(strategy, src, target,
                                                    src_base, dst_base))
+                if copies is not None:
+                    await copy_tree_links(copies, flags.dereference, src,
+                                          target, errors,
+                                          lines if flags.verbose else None)
                 continue
             # Per-entry policy forfeits dir_copy, so the tree's directories
             # are recreated here: a files-only pass would drop every
@@ -1032,6 +1285,9 @@ async def cp(
                 writes[entry_dst.mount_path] = b""
                 if flags.verbose:
                     lines.append(transfer_line(entry, entry_dst, backup))
+            if copies is not None:
+                await copy_tree_links(copies, flags.dereference, src, target,
+                                      errors, lines if flags.verbose else None)
             continue
         if not await overwrite_gate(policy, stat, src, target, errors):
             continue

@@ -405,3 +405,19 @@ describe('mv re-anchors what the node table holds', () => {
     }
   })
 })
+
+it.each(['missing', 'a.txt', 'loop'])(
+  'keeps the %s link when the move destination loops',
+  async (source) => {
+    const ws = await makeWs()
+    try {
+      await ws.shell(`cd /data; echo hello > a.txt; ln -s loop loop; ln -s ${source} src`)
+      const result = await ws.shell('cd /data; mv src loop/child')
+      expect(result.exitCode).toBe(1)
+      expect(err(result)).toBe("mv: cannot stat 'loop/child': Too many levels of symbolic links\n")
+      expect(ws.namespace.isLink('/data/src')).toBe(true)
+    } finally {
+      await ws.close()
+    }
+  },
+)

@@ -61,7 +61,11 @@ export const TAR_BUILDER: Builder = {
     }
     return tarGeneric(resolved, texts, opts, {
       stream: (p) => ops.readStream(accessor, p, idx),
-      write: (p, data) => write(accessor, p, data),
+      // Archive output follows links even when the member scan preserves them.
+      write: async (p, data) => {
+        if (dispatch !== undefined) await dispatch('write', p, [data])
+        else await write(accessor, p, data)
+      },
       mkdir: (p, parents) => mkdir(accessor, p, parents),
       stat,
       walk: walkOf(ops, accessor, idx),

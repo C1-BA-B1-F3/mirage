@@ -449,3 +449,16 @@ async def test_mv_of_a_link_refuses_a_slashed_destination():
     r = await ws.shell("mv /data/dlnk /data/e/ && readlink /data/e/dlnk")
     assert r.exit_code == 0
     assert r.stdout == b"/data/sd\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("source", ["missing", "a.txt", "loop"])
+async def test_mv_link_into_loop_reports_destination_and_keeps_source(source):
+    ws = _ws()
+    await ws.shell(
+        f"cd /data; echo hello > a.txt; ln -s loop loop; ln -s {source} src")
+    result = await ws.shell("cd /data; mv src loop/child")
+    assert result.exit_code == 1
+    assert result.stderr == (b"mv: cannot stat 'loop/child': "
+                             b"Too many levels of symbolic links\n")
+    assert ws.namespace.is_link("/data/src")

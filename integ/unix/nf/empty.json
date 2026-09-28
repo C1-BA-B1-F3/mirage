@@ -951,6 +951,108 @@
         "stdout": "hello\nworld\nfoo\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "nf_empty_tar_archive_t",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && tar -tf '' a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: : Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "nf_empty_tar_archive_x",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && tar -xf '' a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: : Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "nf_empty_tar_archive_c",
+      "seq": 645,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && tar -cf '' a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: : Cannot open: No such file or directory\ntar: Error is not recoverable: exiting now\n"
+      }
     }
   ]
 }

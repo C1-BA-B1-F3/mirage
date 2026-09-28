@@ -33,7 +33,7 @@ import {
 import { parseFindExpression, type FindExpr } from '../../commands/builtin/find_parse.ts'
 import { FindParseError, UsageError } from '../../commands/errors.ts'
 import type { FlagValue } from '../../commands/spec/types.ts'
-import type { DispatchFn, RunSingle } from '../../commands/builtin/generic/crossmount/types.ts'
+import type { Cmd, DispatchFn, RunSingle } from '../../commands/builtin/generic/crossmount/types.ts'
 import {
   crossOpts,
   flatten,
@@ -45,6 +45,8 @@ import {
 import type { NamespaceView, StatPath } from '../../ops/types.ts'
 import { inMtimeWindow } from '../../utils/dates.ts'
 import { modifiedTs } from '../../core/generic/find.ts'
+import { combinedExit } from '../../commands/builtin/generic/crossmount/fanout/exit.ts'
+import { runFanout } from '../../commands/builtin/generic/crossmount/fanout/fanout.ts'
 import { mergeDuBlocks } from '../../commands/builtin/generic/crossmount/fanout/du.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { filenameMode } from '../../commands/builtin/generic/grep.ts'
@@ -138,17 +140,10 @@ export function shouldFanOut(
   flagKwargs: Record<string, FlagValue>,
   registry: MountRegistry,
 ): boolean {
-  if (paths.length === 0 || paths[0] === undefined) return false
-  // An operand the walk refused (the empty name, whose `virtual` is the
-  // working directory) names nothing, so no mount is nested in it; the
-  // single run reports it.
-  if (paths[0].walkError !== null) return false
-  // Gated on the raw registry, not the session view: with every
-  // descendant ungranted, single-mount dispatch would serve the parent
-  // backend's keys shadowed under a hidden mount's prefix, and only the
-  // fan-out's shadow filter drops those. Execution still runs the
-  // allowed descendants only.
-  if (registry.descendantMounts(paths[0].virtual).length === 0) return false
+  // Use the raw mount table: hidden descendants still shadow backend keys.
+  // A refused operand names nothing; every valid operand may own a subtree.
+  if (!paths.some((p) => p.walkError === null && registry.descendantMounts(p.virtual).length > 0))
+    return false
   if (TRAVERSAL_CMDS.has(cmdName)) return true
   if (cmdName === 'grep') {
     return flagKwargs.r === true || flagKwargs.R === true || flagKwargs.recursive === true
@@ -463,6 +458,55 @@ export async function fanOutTraversal(
       }),
     ]
   }
+  if (paths.length > 1) {
+    const runSingle: RunSingle = (name, operands, words, flags, options) =>
+      primaryMount.executeCmd(name, operands, words, flags, {
+        stdin: options?.stdin ?? null,
+        cwd,
+        ...(signal === undefined ? {} : { signal }),
+        ...(ns === undefined ? {} : { ns }),
+        ...(statPath === null ? {} : { statPath }),
+      })
+    const runOperand = runWithFanout(
+      runSingle,
+      registry,
+      cwd,
+      ns,
+      ensureOpen,
+      statPath,
+      signal,
+      dispatch,
+    )
+    const [stdout, io] = await runFanout(
+      cmdName as Cmd,
+      [...paths],
+      [...texts],
+      flagKwargs,
+      runOperand,
+      stdin,
+    )
+    io.producer = {
+      command: cmdName,
+      prefixes: [
+        ...new Set([
+          primaryMount.prefix,
+          ...paths
+            .filter((p) => p.walkError === null)
+            .flatMap((p) => allowedDescendants(registry, p.virtual).map((m) => m.prefix)),
+        ]),
+      ],
+      declared: null,
+    }
+    return [
+      stdout,
+      io,
+      new ExecutionNode({
+        command: cmdStr,
+        exitCode: io.exitCode,
+        stderr: await materialize(io.stderr),
+      }),
+    ]
+  }
   const targetPath = paths[0]?.virtual ?? cwd
   let descendants = allowedDescendants(registry, targetPath)
   if (cmdName === 'ls') descendants = await lsBlockMounts(descendants, statPath)
@@ -511,8 +555,8 @@ export async function fanOutTraversal(
   let findMatches: PathSpec[][] = []
   let findMatchesComplete = true
   let mergedIo = new IOResult()
-  let finalExit = 0
-  let successSeen = false
+  const exitCodes: number[] = []
+  const errored: boolean[] = []
 
   const mountsToRun: MountEntry[] = [primaryMount, ...descendants]
   for (const mount of mountsToRun) {
@@ -648,11 +692,8 @@ export async function fanOutTraversal(
         allStdout.push(data)
       }
     }
-    if (io.exitCode === 0) {
-      successSeen = true
-    } else if (finalExit === 0) {
-      finalExit = io.exitCode
-    }
+    exitCodes.push(io.exitCode)
+    errored.push(io.exitCode !== 0 && io.stderr !== null)
     mergedIo = await mergedIo.merge(io)
   }
   signal?.throwIfAborted()
@@ -674,7 +715,10 @@ export async function fanOutTraversal(
     }
   }
 
-  const finalIoExit = successSeen ? 0 : finalExit
+  const quiet =
+    (cmdName === 'grep' && new FlagView(flagKwargs, specOf('grep')).asBool('q')) ||
+    (cmdName === 'rg' && new FlagView(flagKwargs, specOf('rg')).asBool('quiet'))
+  const finalIoExit = combinedExit(cmdName as Cmd, exitCodes, errored, quiet)
   let combined: ByteSource | null = null
   if (duMerge && allStdout.length > 0) {
     combined = mergeDuBlocks(allStdout, targetPath, paths[0]?.rawPath ?? targetPath, {

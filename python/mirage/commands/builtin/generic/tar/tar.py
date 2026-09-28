@@ -3,7 +3,7 @@ import logging
 import tarfile
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from mirage.commands.builtin.generic.archive.extract import (ensure_dir,
                                                              extract_dest)
@@ -234,7 +234,7 @@ async def _create_archive(
     except FS_ERRORS as exc:
         # GNU opens the archive before it reads a member, so an archive
         # it cannot create is the whole run's one fatal line.
-        shown = archive_path.raw_path or archive_path.virtual
+        shown = archive_path.raw_path
         return None, IOResult(exit_code=CREATE_ERROR_EXIT,
                               stderr=_stderr([
                                   f"tar: {shown}: Cannot open: "
@@ -463,7 +463,7 @@ async def tar(
         # Relay doors address by full virtual path (flat_scopes'
         # convention), not by the mount-relative key the wrapper's
         # accessor stamped.
-        archive = PathSpec.from_str_path(archive.virtual)
+        archive = replace(archive, vfs_path=archive.virtual.strip("/"))
     # Only the last -C is a destination; create checks every one.
     dest_path = extract_dest(C[-1] if C else None, cwd, relay)
     chosen = list(selectors or [])

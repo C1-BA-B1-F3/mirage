@@ -337,6 +337,10 @@ async def prepare_mv(
             return items, None, None, fail(
                 "mv", "mv: cannot overwrite directory '' with "
                 f"non-directory '{src.raw_path}'\n")
+        if (dst.walk_error == "ELOOP" and src.walk_error is None
+                and namespace.is_link(src.virtual)):
+            return items, None, None, fail(
+                "mv", f"mv: cannot stat '{dst.raw_path}': {ELOOP_STRERROR}\n")
         return items, None, None, None
 
     # Where the move lands: inside a directory destination (followed, so

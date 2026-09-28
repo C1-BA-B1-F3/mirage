@@ -318,6 +318,10 @@ export async function prepareMv(
       )
       return { items, postUnlink: null, postRename: null, early }
     }
+    if (dst.walkError === 'ELOOP' && src.walkError === null && namespace.isLink(src.virtual)) {
+      const early = fail('mv', `mv: cannot stat '${dst.rawPath}': ${ELOOP_STRERROR}\n`)
+      return { items, postUnlink: null, postRename: null, early }
+    }
     return { items, postUnlink: null, postRename: null, early: null }
   }
 

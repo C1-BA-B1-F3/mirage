@@ -831,3 +831,39 @@ def test_the_empty_name_does_not_fan_out():
         assert io.exit_code == 1
         assert _stdout(io) == ""
         assert io.stderr == err
+
+
+@pytest.mark.parametrize(
+    "operands",
+    ["'' /base", "/base ''", "loop/child /base", "/base loop/child"])
+@pytest.mark.parametrize("command, expected, error", [
+    ("find",
+     "/base\n/base/inner\n/base/inner/real.txt\n/base/loop\n/base/top.txt\n",
+     1),
+    ("du -s", "18\t/base\n", 1),
+    ("grep -rl hit", "/base/top.txt\n/base/inner/real.txt\n", 2),
+    ("rg -l hit", "/base/top.txt\n/base/inner/real.txt\n", 2),
+])
+def test_refused_operand_does_not_hide_nested_mounts(operands, command,
+                                                     expected, error):
+    ws = _context_workspace()
+    asyncio.run(ws.shell("cd /base; ln -s loop loop"))
+    io = asyncio.run(ws.shell(f"cd /base; {command} {operands}"))
+    assert _stdout(io) == expected
+    assert io.exit_code == error
+    assert io.producer is not None
+    assert set(io.producer.prefixes) == {"/base/", "/base/inner/"}
+    assert io.stderr
+
+
+@pytest.mark.parametrize("command, code", [("find", 1), ("du", 1), ("grep", 2),
+                                           ("rg", 2)])
+def test_successful_mount_does_not_mask_a_failed_mount(command, code):
+    primary = TraversalMount("/", output=b"match\n")
+    child = TraversalMount("/data/", exit_code=code)
+    _, io, _ = asyncio.run(
+        _fan_out_traversal(command, [PathSpec.from_str_path("/")], [], {},
+                           TraversalRegistry([child]), primary, "/", command,
+                           None))
+    assert io.exit_code == code
+    assert io.stderr == b"backend failed\n"

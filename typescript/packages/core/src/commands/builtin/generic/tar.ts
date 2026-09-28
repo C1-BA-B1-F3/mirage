@@ -115,13 +115,15 @@ export interface TarDeps {
   isDir: DirProbe
 }
 
-function makePathSpec(virtual: string, prefix: string, rawPath?: string): PathSpec {
+function makePathSpec(virtual: string, prefix: string, operand?: PathSpec): PathSpec {
   return new PathSpec({
     virtual,
     directory: virtual,
     vfsPath: mountKey(virtual, prefix),
     resolved: true,
-    ...(rawPath !== undefined ? { rawPath } : {}),
+    rawPath: operand?.rawPath ?? virtual,
+    dotted: operand?.dotted ?? null,
+    walkError: operand?.walkError ?? null,
   })
 }
 
@@ -324,24 +326,28 @@ export async function tarGeneric(
   const fFlag = fl.asStr('f') ?? null
   const CFlags = fl.asList('C')
   // The words that spelled -f and each -C, for the lines that name them.
-  const archiveTyped = fl.asPaths('f')[0]?.rawPath
-  const CTyped = fl.asPaths('C').map((c) => c.rawPath)
+  const archiveOperand = fl.asPaths('f')[0]
+  const COperands = fl.asPaths('C')
   // Only the last -C is a destination; create checks every one.
   const CFlag = CFlags.length > 0 ? (CFlags[CFlags.length - 1] ?? null) : null
   const stripN = fl.asInt('strip_components') ?? 0
   const exclude = fl.asStr('exclude') ?? null
   const toStdout = fl.asBool('to_stdout')
   const mountPrefix = relay ? '' : (opts.mountPrefix ?? '')
-  const archivePath = fFlag
+  const archiveSpec =
+    archiveOperand !== undefined
+      ? makePathSpec(archiveOperand.virtual, mountPrefix, archiveOperand)
+      : fFlag !== null
+        ? makePathSpec(fFlag, mountPrefix)
+        : null
   const destPath = extractDest(CFlag, opts.cwd)
   const selectors = [...texts]
   const verboseLines: string[] = []
 
   if (create) {
-    if (archivePath === null) {
+    if (archiveSpec === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
-    const archiveSpec = makePathSpec(archivePath, mountPrefix, archiveTyped)
     const plan = await planCreate(paths, {
       archive: archiveSpec,
       exclude,
@@ -349,7 +355,12 @@ export async function tarGeneric(
       stat: deps.stat,
       walk: deps.walk,
       isDir: deps.isDir,
-      directories: CFlags.map((c, index) => makePathSpec(c, mountPrefix, CTyped[index])),
+      directories: CFlags.map((c, index) => {
+        const operand = COperands[index]
+        return operand === undefined
+          ? makePathSpec(c, mountPrefix)
+          : makePathSpec(operand.virtual, mountPrefix, operand)
+      }),
       links: opts.ns?.links ?? null,
       mounts: opts.ns?.mounts ?? null,
     })
@@ -367,10 +378,10 @@ export async function tarGeneric(
   }
 
   if (list) {
-    if (archivePath === null) {
+    if (archiveSpec === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
-    const raw = await readArchiveBytes(deps.stream, makePathSpec(archivePath, mountPrefix))
+    const raw = await readArchiveBytes(deps.stream, archiveSpec)
     if (raw instanceof IOResult) return [null, raw]
     const { entries, failure, notices } = await readArchive(raw, compression)
     const names = entries.map((e) => (e.isDir === true ? `${rstripSlash(e.name)}/` : e.name))
@@ -394,10 +405,10 @@ export async function tarGeneric(
   }
 
   if (extract) {
-    if (archivePath === null) {
+    if (archiveSpec === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
-    const raw = await readArchiveBytes(deps.stream, makePathSpec(archivePath, mountPrefix))
+    const raw = await readArchiveBytes(deps.stream, archiveSpec)
     if (raw instanceof IOResult) return [null, raw]
     const { entries, failure, notices } = await readArchive(raw, compression)
     const writes: Record<string, Uint8Array> = {}

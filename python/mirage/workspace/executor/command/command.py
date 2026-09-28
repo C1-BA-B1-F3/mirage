@@ -342,7 +342,7 @@ async def handle_command(
             if shared_spec is not None else None,
             cmd_name,
             session.cwd,
-            str_flag_paths=True)
+            str_flag_paths=cmd_name != "tar")
         cross_texts = (find_expr_tokens
                        if find_expr_tokens is not None else cross_parsed.texts)
         cross_refusal = option_error(cmd_name, cross_parsed)

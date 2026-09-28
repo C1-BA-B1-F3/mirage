@@ -813,6 +813,142 @@
         "stdout": "1\n2\n3\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "sym_eloop_tar_archive_t",
+      "seq": 635,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && ln -s archive-loop-t archive-loop-t && tar -tf archive-loop-t a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: archive-loop-t: Cannot open: Too many levels of symbolic links\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "sym_eloop_tar_archive_x",
+      "seq": 635,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && ln -s archive-loop-x archive-loop-x && tar -xf archive-loop-x a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: archive-loop-x: Cannot open: Too many levels of symbolic links\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "sym_eloop_tar_archive_c",
+      "seq": 635,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && ln -s archive-loop-c archive-loop-c && tar -cf archive-loop-c a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: archive-loop-c: Cannot open: Too many levels of symbolic links\ntar: Error is not recoverable: exiting now\n"
+      }
+    },
+    {
+      "id": "sym_eloop_mv_link_source",
+      "seq": 635,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && ln -s move-loop move-loop && ln -s missing move-source && mv move-source move-loop/child",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mv: cannot stat 'move-loop/child': Too many levels of symbolic links\n"
+      }
     }
   ]
 }

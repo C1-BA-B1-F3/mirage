@@ -408,7 +408,7 @@ export async function handleCommand(
         undefined,
         false,
         undefined,
-        true,
+        cmdName !== 'tar',
       )
     const csFlags = csParsed.flagKwargs
     const csTexts = findExprTokens ?? csParsed.texts

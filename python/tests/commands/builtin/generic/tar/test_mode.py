@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import pytest
+
 from mirage.commands.builtin.generic.tar.mode import is_create_mode
 
 
@@ -40,3 +42,16 @@ def test_option_terminator_ends_the_scan():
     assert not is_create_mode(("-xf", "a.tar", "--", "-c"))
     assert not is_create_mode(("-xf", "a.tar", "--", "--create"))
     assert is_create_mode(("-cf", "a.tar", "--", "-c"))
+
+
+@pytest.mark.parametrize(
+    "argv,create",
+    [
+        (["--crea", "-f", "a.tar", "d"], True),
+        (["--cr=x"], True),
+        # Ambiguous in tar's own table, so no mode at all.
+        (["--c", "-f", "a.tar"], False),
+        (["--get", "-f", "a.tar"], False),
+    ])
+def test_a_long_word_reads_as_tars_getopt_long_reads_it(argv, create):
+    assert is_create_mode(argv) is create

@@ -15,7 +15,8 @@
 import pytest
 
 from mirage.commands.spec.compile import (compile_spec, expand_git_long,
-                                          expand_long)
+                                          expand_long, expand_table_long)
+from mirage.commands.spec.constants import TAR_LONG_OPTIONS
 from mirage.commands.spec.types import CommandSpec, Operand, Option
 
 
@@ -224,3 +225,40 @@ def test_git_long_names_the_last_two_candidates_of_an_ambiguity():
 def test_git_long_answers_nothing_for_a_word_no_option_starts_with():
     assert expand_git_long(BRANCH, "--zzz") is None
     assert expand_git_long((), "--verb") is None
+
+
+@pytest.mark.parametrize(
+    "typed,found",
+    [
+        # An entry spelled exactly names its option, an alias its primary.
+        ("--file", ("--file", )),
+        ("--get", ("--extract", )),
+        ("--ungzip", ("--gzip", )),
+        # A prefix one option owns resolves, its aliases included.
+        ("--crea", ("--create", )),
+        ("--gun", ("--gzip", )),
+        ("--dir", ("--directory", )),
+        ("--vers", ("--version", )),
+        # A prefix of two options is ambiguous in table order, an option
+        # mirage never declared included (GNU tar 1.35's own lines).
+        ("--fil", ("--file", "--files-from")),
+        ("--li", ("--list", "--listed-incremental")),
+        ("--us", ("--use-compress-program", "--usage")),
+        ("--ver",
+         ("--verify", "--verbose", "--verbatim-files-from", "--version")),
+        ("--to", ("--to-stdout", "--to-command", "--touch", "--totals")),
+        ("--zzz", ()),
+        ("--", ()),
+    ])
+def test_table_long_resolves_as_the_programs_getopt_long_does(typed, found):
+    assert expand_table_long(TAR_LONG_OPTIONS, typed) == found
+
+
+def test_table_long_lists_every_later_candidate_naming_another_option():
+    # glibc compares each later match with the FIRST one only, so a later
+    # alias of a third option is listed beside its own primary.
+    table = (("--apple", ), ("--apricot", "--apron"), ("--ape", ))
+    assert expand_table_long(table, "--ap") == ("--apple", "--apricot",
+                                                "--apron", "--ape")
+    assert expand_table_long((("--apricot", "--apron"), ),
+                             "--apr") == ("--apricot", )

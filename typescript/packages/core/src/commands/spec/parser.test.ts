@@ -1354,9 +1354,9 @@ describe('flag-driven operand kinds', () => {
 describe("parseCommand — tar's old option style", () => {
   it('parses a cluster as flags', () => {
     const p = parseCommand(specOf('tar'), ['xzf', '/data/a.tgz'], '/')
-    expect(p.flags['-x']).toBe(true)
-    expect(p.flags['-z']).toBe(true)
-    expect(p.flags['-f']).toBe('/data/a.tgz')
+    expect(p.flags['--extract']).toBe(true)
+    expect(p.flags['--gzip']).toBe(true)
+    expect(p.flags['--file']).toBe('/data/a.tgz')
     expect(p.paths()).toEqual([])
     expect(p.pathFlagValues).toEqual(['/data/a.tgz'])
   })
@@ -1381,14 +1381,14 @@ describe("parseCommand — tar's old option style", () => {
 
   it('binds two value letters in letter order', () => {
     const p = parseCommand(specOf('tar'), ['xfC', '/data/a.tgz', '/data/out'], '/')
-    expect(p.flags['-f']).toBe('/data/a.tgz')
-    expect(p.flags['-C']).toEqual(['/data/out'])
+    expect(p.flags['--file']).toBe('/data/a.tgz')
+    expect(p.flags['--directory']).toEqual(['/data/out'])
   })
 
   it('keeps a bool letter that follows a value letter', () => {
     const p = parseCommand(specOf('tar'), ['cfz', '/data/a.tgz'], '/')
-    expect(p.flags['-f']).toBe('/data/a.tgz')
-    expect(p.flags['-z']).toBe(true)
+    expect(p.flags['--file']).toBe('/data/a.tgz')
+    expect(p.flags['--gzip']).toBe(true)
   })
 
   it('reports a missing cluster argument instead of throwing', () => {
@@ -1414,7 +1414,7 @@ describe("parseCommand — tar's old option style", () => {
       '/',
     )
     expect(p.flags['--strip-components']).toBe('1')
-    expect(p.flags['-C']).toEqual(['/data/out'])
+    expect(p.flags['--directory']).toEqual(['/data/out'])
   })
 
   it('is off for every other command', () => {
@@ -1516,8 +1516,8 @@ describe('operandBase (tar -C)', () => {
     expect(parsed.args.filter(([, k]) => k === 'path').map(([v]) => v)).toEqual([
       '/work/check/my_paper',
     ])
-    expect(parsed.flags['-f']).toBe('/home/out.tgz')
-    expect(parsed.flags['-C']).toEqual(['/work/check'])
+    expect(parsed.flags['--file']).toBe('/home/out.tgz')
+    expect(parsed.flags['--directory']).toEqual(['/work/check'])
   })
 
   it('is cumulative like a real chdir', () => {
@@ -1531,7 +1531,7 @@ describe('operandBase (tar -C)', () => {
       '/work/d2/y',
     ])
     // Every occurrence is kept in order: GNU chdirs at each one.
-    expect(parsed.flags['-C']).toEqual(['/work/d1', '/work/d2'])
+    expect(parsed.flags['--directory']).toEqual(['/work/d1', '/work/d2'])
   })
 
   it('only moves what follows it', () => {
@@ -1819,4 +1819,38 @@ it.each([['-O', '-'], ['-O-']])('keeps wget stdout out of path operands', (...ar
   )
   expect(literal.flags['-O']).toBe('/data/-')
   expect(literal.pathFlagValues).toEqual(['/data/-'])
+})
+
+describe('tar long options against its whole table', () => {
+  // Mirrors python's test_tar_long_options_resolve_against_tars_whole_table.
+  it.each([
+    [['--file=/data/a.tar', '-t'], '--file'],
+    [['--file', '/data/a.tar', '-t'], '--file'],
+    [['--get', '-f', '/data/a.tar'], '--extract'],
+    [['--gun', '-tf', '/data/a.tar'], '--gzip'],
+    [['--crea', '-f', '/data/a.tar', '/data/x'], '--create'],
+  ])('%j resolves', (words, dest) => {
+    const parsed = parseCommand(specOf('tar'), words, '/', 'tar')
+    expect(dest in parsed.flags).toBe(true)
+    expect([parsed.invalidOptions, parsed.ambiguousOptions]).toEqual([[], []])
+  })
+
+  it('names an ambiguity with every option the table holds', () => {
+    // `--fil` could be --files-from, which mirage never declared; glibc names
+    // the word as typed, `=value` and all (GNU tar 1.35).
+    const parsed = parseCommand(specOf('tar'), ['--fil=/data/a.tar', '-t'], '/', 'tar')
+    expect(parsed.ambiguousOptions).toEqual([['--fil=/data/a.tar', ['--file', '--files-from']]])
+  })
+
+  it('keeps an option tar has and mirage does not unrecognized', () => {
+    const parsed = parseCommand(specOf('tar'), ['--files-from=x', '-t'], '/', 'tar')
+    expect(parsed.invalidOptions).toEqual(['--files-from=x'])
+  })
+
+  it('names an ambiguous long with its value', () => {
+    // glibc prints d->__nextchar, the whole word after `--` (coreutils 9.7:
+    // `ls: option '--re=x' is ambiguous`).
+    const parsed = parseCommand(specOf('ls'), ['--re=x', '/data'], '/', 'ls')
+    expect(parsed.ambiguousOptions[0]?.[0]).toBe('--re=x')
+  })
 })

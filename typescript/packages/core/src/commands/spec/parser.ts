@@ -16,7 +16,13 @@ import { resolvePath } from '../../utils/path.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import { type ArgmatchChoices, argmatch, valueClasses } from './argmatch.ts'
 import { BUILTIN_SPECS, isBuiltinGrammar } from './builtins.ts'
-import { type CompiledSpec, compileSpec, expandGitLong, expandLong } from './compile.ts'
+import {
+  type CompiledSpec,
+  compileSpec,
+  expandGitLong,
+  expandLong,
+  expandTableLong,
+} from './compile.ts'
 import {
   ARG_PLACEHOLDER,
   ARGMATCH_CHOICE_OPTIONS,
@@ -25,6 +31,7 @@ import {
   FLOAT_VALUE,
   flagKwargName,
   INT_VALUE,
+  LONG_OPTION_TABLES,
   LONG_SYNONYMS,
   NO_LONG_OPTIONS,
   NUMERIC_SHORT,
@@ -543,6 +550,7 @@ export function parseCommand(
   let lenientDashOperands: boolean
   let digitOptions: boolean
   let equalsValues: boolean
+  let longTable: readonly (readonly string[])[] | undefined
   const synonyms = new Map<string, string>()
   if (unknownIsOperand) {
     // Where the word goes is still the grammar's to say: it lands in a textual
@@ -589,6 +597,7 @@ export function parseCommand(
         if (name === cmdName && spelling !== undefined) synonyms.set(spelling, same)
       }
     }
+    longTable = builtin ? LONG_OPTION_TABLES[cmdName] : undefined
   }
   let i = 0
   let endOfFlags = false
@@ -654,12 +663,26 @@ export function parseCommand(
           continue
         }
         if (resolved !== null && cs.dest.has(resolved.spelling)) spelling = resolved.spelling
+      } else if (!cs.dest.has(typed) && longTable !== undefined) {
+        // The program's own table decides, since a prefix of an option
+        // mirage never declared is still ambiguous.
+        const found = expandTableLong(longTable, typed)
+        if (found.length > 1) {
+          ambiguousOptions.push([tok, found])
+          optionErrorKinds.push('ambiguous')
+          i += 1
+          continue
+        }
+        const only = found[0]
+        if (only !== undefined && cs.dest.has(only)) spelling = only
       } else if (!cs.dest.has(typed) && !noLongOptionParser) {
         const candidates = expandLong(cs, typed, synonyms)
         if (candidates.length === 1) {
           spelling = candidates[0] ?? typed
         } else if (candidates.length > 1) {
-          ambiguousOptions.push([typed, candidates])
+          // glibc names the word as typed, `=value` and all (`ls: option
+          // '--re=x' is ambiguous`).
+          ambiguousOptions.push([tok, candidates])
           optionErrorKinds.push('ambiguous')
           i += 1
           continue

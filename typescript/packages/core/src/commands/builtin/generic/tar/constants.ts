@@ -26,6 +26,15 @@ export const COMPRESSION_SIGNATURES: Readonly<Record<CompressionKind, readonly n
 // usage.oldOptionError gives (mirage's tar serves no --usage).
 export const USAGE_HINT = "Try 'tar --help' for more information."
 export const EMPTY_ARCHIVE = 'tar: Cowardly refusing to create an empty archive'
+// argp's mode refusals: a second main operation where the first one is already
+// set, and a line that never names one. The double space is GNU's.
+export const MODE_CONFLICT =
+  "tar: You may not specify more than one '-Acdtrux', '--delete' or  '--test-label' option"
+export const NO_MODE =
+  "tar: You must specify one of the '-Acdtrux', '--delete' or '--test-label' options"
+export const MULTIPLE_ARCHIVES = "tar: Multiple archive files require '-M' option"
+// A --strip-components value that is no count, named first.
+export const STRIP_COUNT = 'tar: {}: Invalid number of elements'
 // GNU normalizes an empty operand to `.` before it stats it, says so, and
 // then still names the operand as typed when the stat fails (tar 1.35).
 export const EMPTY_MEMBER = "tar: Substituting `.' for empty member name"

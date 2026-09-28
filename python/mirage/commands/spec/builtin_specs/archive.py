@@ -17,22 +17,26 @@ from mirage.commands.spec.types import CommandSpec, Operand, Option
 SPECS: dict[str, CommandSpec] = {
     'tar':
     CommandSpec(
+        # Each option under GNU tar's own long name. Its aliases (--get,
+        # --gunzip, --ungzip) and every abbreviation resolve through
+        # LONG_OPTION_TABLES, tar's whole table, which also knows the
+        # options mirage does not declare.
         options=(
-            Option(short="-c"),
-            Option(short="-x"),
-            Option(short="-t"),
-            Option(short="-z"),
-            Option(short="-j"),
-            Option(short="-J"),
-            Option(short="-v"),
+            Option(short="-c", long="--create"),
+            Option(short="-x", long="--extract"),
+            Option(short="-t", long="--list"),
+            Option(short="-z", long="--gzip"),
+            Option(short="-j", long="--bzip2"),
+            Option(short="-J", long="--xz"),
+            Option(short="-v", long="--verbose"),
             # -h archives what a symlink points at instead of the link.
-            Option(short="-h"),
+            Option(short="-h", long="--dereference"),
             Option(short="-O", long="--to-stdout"),
-            Option(short="-f", type="path"),
+            Option(short="-f", long="--file", type="path"),
             # Every occurrence is kept, in order: GNU chdirs at each
             # one and fails at the first it cannot enter, so the
             # planner has to see them all, not just the last.
-            Option(short="-C", type="path", multiple=True),
+            Option(short="-C", long="--directory", type="path", multiple=True),
             Option(long="--strip-components", type="str"),
             Option(long="--exclude", type="str"),
         ),

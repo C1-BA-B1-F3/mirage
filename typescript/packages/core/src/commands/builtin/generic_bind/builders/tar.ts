@@ -31,7 +31,7 @@ export const TAR_BUILDER: Builder = {
     const stat = async (p: PathSpec): Promise<FileStat> => ops.stat(accessor, p, idx)
     const dispatch = opts.dispatch
     const fl = new FlagView(opts.flags, specOf('tar'))
-    if (dispatch !== undefined && !fl.asBool('c')) {
+    if (dispatch !== undefined && !fl.asBool('create')) {
       // -t reads and -x writes wherever cwd or -C says, which need not
       // be this mount, so both run on dispatch-relayed doors and each
       // path routes to the mount that owns it. Only -c stays on the

@@ -390,6 +390,39 @@ function gitSpelling(long: string, unset: boolean): string {
   return long.startsWith(NO) ? `--${long.slice(NO.length)}` : `--${NO}${long}`
 }
 
+/**
+ * getopt_long prefix matching against a program's whole table.
+ *
+ * An entry spelled exactly names its option; otherwise every entry the typed
+ * spelling prefixes is a candidate. glibc sets aside a later candidate that
+ * names the same option as the first one, so one option's aliases resolve
+ * where two options are ambiguous. The result length tells the caller
+ * everything: 0 unknown, 1 the option's primary spelling, 2+ the
+ * possibilities glibc lists (the first candidate and every later one naming
+ * another option, in table order). `table` is each option's primary spelling
+ * then its aliases, in the program's table order (LONG_OPTION_TABLES).
+ * Mirrors Python's expand_table_long.
+ */
+export function expandTableLong(
+  table: readonly (readonly string[])[],
+  spelling: string,
+): readonly string[] {
+  const entries = table.flatMap((group) => group.map((name) => [name, group[0] ?? name] as const))
+  for (const [name, primary] of entries) if (name === spelling) return [primary]
+  if (spelling.length <= 2) return []
+  const matches = entries.filter(([name]) => name.startsWith(spelling))
+  const first = matches[0]
+  if (first === undefined) return []
+  const listed = [
+    first[0],
+    ...matches
+      .slice(1)
+      .filter(([, p]) => p !== first[1])
+      .map(([n]) => n),
+  ]
+  return listed.length === 1 ? [first[1]] : listed
+}
+
 export function expandLong(
   cs: CompiledSpec,
   spelling: string,

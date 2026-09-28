@@ -13,7 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { compileSpec, expandGitLong, expandLong } from './compile.ts'
+import { compileSpec, expandGitLong, expandLong, expandTableLong } from './compile.ts'
+import { TAR_LONG_OPTIONS } from './constants.ts'
 import { CommandSpec, Option } from './types.ts'
 
 describe('compileSpec — count/choices/required/default tables', () => {
@@ -216,5 +217,39 @@ describe('expandGitLong', () => {
   it('answers nothing for a word no option starts with', () => {
     expect(expandGitLong(BRANCH, '--zzz')).toBeNull()
     expect(expandGitLong([], '--verb')).toBeNull()
+  })
+})
+
+describe('expandTableLong', () => {
+  // Mirrors python's test_table_long_resolves_as_the_programs_getopt_long_does.
+  it.each([
+    // An entry spelled exactly names its option, an alias its primary.
+    ['--file', ['--file']],
+    ['--get', ['--extract']],
+    ['--ungzip', ['--gzip']],
+    // A prefix one option owns resolves, its aliases included.
+    ['--crea', ['--create']],
+    ['--gun', ['--gzip']],
+    ['--dir', ['--directory']],
+    ['--vers', ['--version']],
+    // A prefix of two options is ambiguous in table order, an option mirage
+    // never declared included (GNU tar 1.35's own lines).
+    ['--fil', ['--file', '--files-from']],
+    ['--li', ['--list', '--listed-incremental']],
+    ['--us', ['--use-compress-program', '--usage']],
+    ['--ver', ['--verify', '--verbose', '--verbatim-files-from', '--version']],
+    ['--to', ['--to-stdout', '--to-command', '--touch', '--totals']],
+    ['--zzz', []],
+    ['--', []],
+  ])('resolves %s as tar does', (typed, found) => {
+    expect(expandTableLong(TAR_LONG_OPTIONS, typed)).toEqual(found)
+  })
+
+  it('lists every later candidate naming another option', () => {
+    // glibc compares each later match with the FIRST one only, so a later
+    // alias of a third option is listed beside its own primary.
+    const table = [['--apple'], ['--apricot', '--apron'], ['--ape']]
+    expect(expandTableLong(table, '--ap')).toEqual(['--apple', '--apricot', '--apron', '--ape'])
+    expect(expandTableLong([['--apricot', '--apron']], '--apr')).toEqual(['--apricot'])
   })
 })

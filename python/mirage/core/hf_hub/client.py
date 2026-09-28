@@ -67,7 +67,9 @@ def stall_timeout(seconds: float) -> aiohttp.ClientTimeout:
     restarts on every chunk of the body, so a large download that keeps
     flowing is never cut off; a total bound would fail any file that takes
     longer than it to arrive. It is what huggingface_hub's own timeout
-    means, and the TypeScript twin is ``stallFetch``.
+    means, and the TypeScript twin is ``stallFetch``. A bound of zero or
+    less is none: aiohttp reads a zero that way, but a negative read bound
+    would fire at once.
 
     Args:
         seconds (float): the mount's configured timeout.
@@ -75,6 +77,8 @@ def stall_timeout(seconds: float) -> aiohttp.ClientTimeout:
     Returns:
         aiohttp.ClientTimeout: the bound, for the accessor's pool.
     """
+    if seconds <= 0:
+        return aiohttp.ClientTimeout(total=None)
     return aiohttp.ClientTimeout(total=None,
                                  sock_connect=seconds,
                                  sock_read=seconds)

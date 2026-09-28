@@ -269,6 +269,27 @@ def test_stall_timeout_bounds_progress_not_the_whole_request():
     assert (bound.total, bound.sock_connect, bound.sock_read) == (None, 5, 5)
 
 
+@pytest.mark.parametrize("seconds", [0, -1])
+def test_a_bound_of_zero_or_less_is_none(seconds):
+    bound = stall_timeout(seconds)
+    assert (bound.total, bound.sock_connect, bound.sock_read) == (None, None,
+                                                                  None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seconds", [0, -1])
+async def test_a_download_under_no_bound_is_not_cut_off(hub_url, seconds):
+    pool = SessionPool(timeout=stall_timeout(seconds))
+    try:
+        chunks = [
+            c
+            async for c in hub_stream(None, hub_url + "/drip", 2, session=pool)
+        ]
+    finally:
+        await pool.close()
+    assert b"".join(chunks) == b"abcdefgh"
+
+
 @pytest.mark.asyncio
 async def test_a_download_that_keeps_flowing_outlives_the_bound(hub_url):
     pool = SessionPool(timeout=stall_timeout(STALL))

@@ -39,7 +39,8 @@ ws = Workspace({"/hf": vfs}, mode=MountMode.READ)
 bucket in `namespace/bucket-name` form plus an optional access token.
 `timeout` is how many seconds one Hub request may go without progress:
 connecting, waiting for the answer, or between two chunks of a download.
-A large file that keeps arriving is never cut off.
+A large file that keeps arriving is never cut off, and `0` turns the
+bound off.
 Both `READ` and `WRITE` modes are supported out of the box.
 
 ## Filesystem Layout

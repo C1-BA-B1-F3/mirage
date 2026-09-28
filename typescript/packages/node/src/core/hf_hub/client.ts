@@ -60,9 +60,11 @@ export class HfHubError extends Error {
  * every chunk of the body, so a large download that keeps flowing is never
  * cut off; a total bound would fail any file that takes longer than it to
  * arrive. It is what huggingface_hub's own timeout means, and the python twin
- * is `stall_timeout`, which aiohttp spells as sock_connect and sock_read.
+ * is `stall_timeout`, which aiohttp spells as sock_connect and sock_read. A
+ * bound of zero or less is none, as aiohttp reads a zero.
  */
 export function stallFetch(ms: number): typeof fetch {
+  if (ms <= 0) return fetch
   return async (input, init) => {
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined

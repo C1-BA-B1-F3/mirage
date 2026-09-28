@@ -310,6 +310,12 @@ describe('stallFetch', () => {
     })
   })
 
+  it('reads a bound of zero or less as none', async () => {
+    expect(stallFetch(0)).toBe(fetch)
+    expect(stallFetch(-1)).toBe(fetch)
+    expect(await drain(hubStream(undefined, `${base}/drip`, undefined, 0))).toBe('abcdefgh')
+  })
+
   it('bounds the streamed read', async () => {
     expect(await drain(hubStream(undefined, `${base}/drip`, undefined, STALL_MS))).toBe('abcdefgh')
     await expect(

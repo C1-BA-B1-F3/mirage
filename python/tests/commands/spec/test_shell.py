@@ -85,3 +85,14 @@ def test_read_dash_r():
     parse = parse_shell_options(SHELL_SPECS["read"], ["-r", "v"])
     assert parse.flags == {"r": True}
     assert parse.operands == ["v"]
+
+
+def test_options_preserve_aliases_clusters_and_partial_parse():
+    for tail in (["-q"], ["--max-args"]):
+        parse = parse_shell_options(SHELL_SPECS["xargs"],
+                                    ["-0rn0", "--max-args=2", *tail])
+        assert parse.given == [("0", True), ("r", True), ("n", "0"),
+                               ("n", "2")]
+        assert parse.invalid == ("q" if tail == ["-q"] else None)
+        assert parse.needs_value == ("--max-args"
+                                     if tail == ["--max-args"] else None)

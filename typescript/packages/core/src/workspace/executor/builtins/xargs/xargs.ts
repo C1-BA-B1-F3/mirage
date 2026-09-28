@@ -94,13 +94,6 @@ function exclusive(option: string, offending: string): string {
   return `xargs: warning: options ${offending} and ${option} are mutually exclusive, ignoring previous ${offending} value\n`
 }
 
-function delimiter(flags: Record<string, string | boolean>): string | null {
-  if (flags['0'] === true) return '\0'
-  const delim = flags.d
-  if (typeof delim === 'string') return delim.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
-  return null
-}
-
 /** GNU's read_string: every delimiter ends an item, empty ones too. */
 function readItems(text: string, delim: string): string[] {
   const items = text.split(delim)
@@ -122,7 +115,9 @@ function unmatched(quote: string): string {
  * is a blank runs on into the next one. Under -I only a newline ends
  * the word, so the read is the whole line. An unmatched quote ends the
  * reading with GNU's refusal, after the reads before it and the words
- * its own read had pushed; the refusal is empty otherwise.
+ * its own read had pushed; the refusal is empty otherwise. GNU 4.10.0's
+ * EOF check uses the rendered buffer: an empty quoted token or lone
+ * quote at EOF is ignored, unlike one terminated by a newline.
  */
 function readLines(text: string, replace: boolean): [Read[], string] {
   const reads: Read[] = []
@@ -290,8 +285,19 @@ export async function handleXargs(
   let maxArgs = 0
   let procs = 1
   let warnings = ''
+  let delim: string | null = null
   for (const [name, value] of parse.given) {
     if (name === 'help' || name === 'version') return standardResponse(name, warnings)
+    if (name === '0') delim = '\0'
+    if (name === 'd' && typeof value === 'string') {
+      if (value === '') {
+        return refuse(
+          warnings +
+            'xargs: Invalid input delimiter specification : the delimiter must be either a single character or an escape sequence starting with \\.\n',
+        )
+      }
+      delim = value.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+    }
     if (name === 'I' || name === 'i') {
       if (maxArgs > 0) warnings += exclusive('--replace/-I/-i', '--max-args')
       if (maxLines > 0) warnings += exclusive('--replace/-I/-i', '--max-lines')
@@ -336,7 +342,6 @@ export async function handleXargs(
   }
 
   const text = new TextDecoder().decode(await materialize(stdin))
-  const delim = delimiter(parse.flags)
   const [reads, quoteError]: [Read[], string] =
     delim === null
       ? readLines(text, replace !== null)

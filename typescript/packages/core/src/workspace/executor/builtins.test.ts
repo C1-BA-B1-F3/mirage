@@ -1907,6 +1907,23 @@ describe('handleRead options', () => {
 describe('handleXargs', () => {
   const session = new SessionState({ sessionId: 'test' })
 
+  it.each([
+    ['-L0', '-L2'],
+    ['-n0', '--max-args=2'],
+    ['-d', '', '-0'],
+  ])('rejects invalid occurrences before reading input (%j)', async (...args) => {
+    const shell = fakeShell()
+    const reads: boolean[] = []
+    async function* source() {
+      reads.push(true)
+      yield await Promise.resolve(enc('a\n'))
+    }
+    const [, io] = await handleXargs(shell.fn, [...args, 'echo'], session, source())
+    expect(io.exitCode).toBe(1)
+    expect(reads).toEqual([])
+    expect(shell.lines).toEqual([])
+  })
+
   it('-n1 batches one arg per run', async () => {
     const shell = fakeShell()
     const [, io] = await handleXargs(shell.fn, ['-n1', 'echo'], session, aBC())

@@ -100,15 +100,6 @@ def _exclusive(option: str, offending: str) -> str:
             f"exclusive, ignoring previous {offending} value\n")
 
 
-def _delimiter(flags: dict[str, str | bool]) -> str | None:
-    if flags.get("0") is True:
-        return "\0"
-    delim = flags.get("d")
-    if isinstance(delim, str):
-        return delim.replace("\\n", "\n").replace("\\t", "\t")
-    return None
-
-
 def _read_items(text: str, delim: str) -> list[str]:
     """GNU's read_string: every delimiter ends an item, empty ones too.
 
@@ -133,7 +124,9 @@ def _read_lines(text: str,
     is a blank runs on into the next one. Under -I only a newline ends
     the word, so the read is the whole line. An unmatched quote ends the
     reading with GNU's refusal, after the reads before it and the words
-    its own read had pushed; the refusal is empty otherwise.
+    its own read had pushed; the refusal is empty otherwise. GNU 4.10.0's
+    EOF check uses the rendered buffer: an empty quoted token or lone
+    quote at EOF is ignored, unlike one terminated by a newline.
 
     Args:
         text (str): the whole input.
@@ -309,9 +302,20 @@ async def handle_xargs(
     max_args = 0
     procs = 1
     warnings = ""
+    delim: str | None = None
     for name, value in parse.given:
         if name in ("help", "version"):
             return _standard_response(name, warnings)
+        if name == "0":
+            delim = "\0"
+        if name == "d" and isinstance(value, str):
+            if not value:
+                return _refuse(
+                    warnings +
+                    "xargs: Invalid input delimiter specification : "
+                    "the delimiter must be either a single character or an "
+                    "escape sequence starting with \\.\n")
+            delim = value.replace("\\n", "\n").replace("\\t", "\t")
         if name in ("I", "i"):
             if max_args:
                 warnings += _exclusive("--replace/-I/-i", "--max-args")
@@ -357,7 +361,6 @@ async def handle_xargs(
 
     data = await materialize(stdin)
     text = (data or b"").decode(errors="replace")
-    delim = _delimiter(parse.flags)
     if delim is None:
         reads, quote_error = _read_lines(text, replace is not None)
     else:

@@ -77,6 +77,18 @@ describe('parseShellOptions', () => {
     expect(parseShellOptions(SHELL_SPECS.xargs, ['--max-args']).needsValue).toBe('--max-args')
   })
 
+  it.each(['-q', '--max-args'])('preserves aliases, clusters and options before %s', (tail) => {
+    const parse = parseShellOptions(SHELL_SPECS.xargs, ['-0rn0', '--max-args=2', tail])
+    expect(parse.given).toEqual([
+      ['0', true],
+      ['r', true],
+      ['n', '0'],
+      ['n', '2'],
+    ])
+    expect(parse.invalid).toBe(tail === '-q' ? 'q' : null)
+    expect(parse.needsValue).toBe(tail === '--max-args' ? '--max-args' : null)
+  })
+
   it('reports an invalid short option', () => {
     const parse = parseShellOptions(SHELL_SPECS.xargs, ['-q', 'echo'])
     expect(parse.invalid).toBe('q')

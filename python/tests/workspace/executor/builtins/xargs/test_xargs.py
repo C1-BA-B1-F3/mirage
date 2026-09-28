@@ -444,3 +444,21 @@ async def test_replace_max_lines_and_max_args_cancel_in_order(
     assert shell.lines == lines
     stderr = await materialize(io.stderr) or b""
     assert stderr == b"".join(warned(o, off) for o, off in warnings)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "args", [["-L0", "-L2"], ["-n0", "--max-args=2"], ["-d", "", "-0"]])
+async def test_invalid_occurrence_rejected_before_reading_input(args):
+    shell = FakeShell()
+    reads = []
+
+    async def source():
+        reads.append(True)
+        yield b"a\n"
+
+    _, io, _ = await handle_xargs(shell, [*args, "echo"], make_session(),
+                                  source())
+    assert io.exit_code == 1
+    assert reads == []
+    assert shell.lines == []

@@ -100,8 +100,8 @@
       "command": "gh api repos/integ/repo-cli/contents/NOTES.md -X PUT -f message=again -f content=b3RoZXIK",
       "expect": {
         "exit": 1,
-        "stdout": "",
-        "stderr": "gh api: NOTES.md does not match\n"
+        "stdout": "{\"message\":\"NOTES.md does not match\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: NOTES.md does not match (HTTP 409)\n"
       }
     },
     {
@@ -113,8 +113,8 @@
       "command": "gh api repos/integ/repo-cli/contents/ABSENT.md -X PUT -f message=x -f content=eAo= -f sha=deadbeef",
       "expect": {
         "exit": 1,
-        "stdout": "",
-        "stderr": "gh api: Invalid request.\n\n\"sha\" wasn't supplied.\n"
+        "stdout": "{\"message\":\"Invalid request.\\n\\n\\\"sha\\\" wasn't supplied.\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Invalid request.\n\n\"sha\" wasn't supplied. (HTTP 422)\n"
       }
     },
     {
@@ -139,8 +139,8 @@
       "command": "gh api repos/integ/nope",
       "expect": {
         "exit": 1,
-        "stdout": "",
-        "stderr": "gh api: Not Found\n"
+        "stdout": "{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Not Found (HTTP 404)\n"
       }
     },
     {
@@ -178,7 +178,7 @@
       "command": "gh repo fork integ/repo-cli --fork-name forked",
       "expect": {
         "exit": 0,
-        "stdout": "\u2713 Created fork integ-user/forked\n",
+        "stdout": "✓ Created fork integ-user/forked\n",
         "stderr": ""
       }
     },
@@ -191,7 +191,7 @@
       "command": "gh repo rename renamed -R integ-user/forked",
       "expect": {
         "exit": 0,
-        "stdout": "\u2713 Renamed repository integ-user/renamed\n",
+        "stdout": "✓ Renamed repository integ-user/renamed\n",
         "stderr": ""
       }
     },
@@ -334,8 +334,8 @@
       "command": "gh api user/repos -f name=fresh-repo",
       "expect": {
         "exit": 1,
-        "stdout": "",
-        "stderr": "gh api: Resource not accessible by personal access token\n"
+        "stdout": "{\"message\":\"Resource not accessible by personal access token\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Resource not accessible by personal access token (HTTP 403)\n"
       }
     },
     {
@@ -503,7 +503,7 @@
       "command": "gh issue edit 4 --title updated --add-label bug && gh issue comment 4 --body note && gh issue close 4 && gh issue reopen 4",
       "expect": {
         "exit": 0,
-        "stdout": "https://github.com/integ/repo-cli/issues/4\nhttps://github.com/integ/repo-cli/issues/4#issuecomment-1\n\u2713 Closed issue integ/repo-cli#4 (updated)\n\u2713 Reopened issue integ/repo-cli#4 (updated)\n",
+        "stdout": "https://github.com/integ/repo-cli/issues/4\nhttps://github.com/integ/repo-cli/issues/4#issuecomment-1\n✓ Closed issue integ/repo-cli#4 (updated)\n✓ Reopened issue integ/repo-cli#4 (updated)\n",
         "stderr": ""
       }
     },
@@ -594,7 +594,7 @@
       "command": "gh pr edit 5 --title merged-title --body merged-body && gh pr comment 5 --body review && gh pr merge 5 --squash --subject merged",
       "expect": {
         "exit": 0,
-        "stdout": "https://github.com/integ/repo-cli/pull/5\nhttps://github.com/integ/repo-cli/issues/5#issuecomment-2\n\u2713 Merged pull request integ/repo-cli#5\n",
+        "stdout": "https://github.com/integ/repo-cli/pull/5\nhttps://github.com/integ/repo-cli/issues/5#issuecomment-2\n✓ Merged pull request integ/repo-cli#5\n",
         "stderr": ""
       }
     },
@@ -607,7 +607,7 @@
       "command": "gh pr create -t abandoned -H old -B main -b no && gh pr close 6",
       "expect": {
         "exit": 0,
-        "stdout": "https://github.com/integ/repo-cli/pull/6\n\u2713 Closed pull request integ/repo-cli#6 (abandoned)\n",
+        "stdout": "https://github.com/integ/repo-cli/pull/6\n✓ Closed pull request integ/repo-cli#6 (abandoned)\n",
         "stderr": ""
       }
     },
@@ -760,10 +760,10 @@
       "targets": [
         "cli-gh"
       ],
-      "command": "gh api repos/integ/repo-cli/issues -f title='h\u00e9llo \u2615' | grep '\"title\"'",
+      "command": "gh api repos/integ/repo-cli/issues -f title='héllo ☕' | grep '\"title\"'",
       "expect": {
         "exit": 0,
-        "stdout": "  \"title\": \"h\u00e9llo \u2615\",\n",
+        "stdout": "  \"title\": \"héllo ☕\",\n",
         "stderr": ""
       }
     },
@@ -773,10 +773,10 @@
       "targets": [
         "cli-gh"
       ],
-      "command": "url=$(gh issue create --title 'na\u00efve \u65e5\u672c' --body ok) && gh issue view \"$url\" --json title",
+      "command": "url=$(gh issue create --title 'naïve 日本' --body ok) && gh issue view \"$url\" --json title",
       "expect": {
         "exit": 0,
-        "stdout": "{\n  \"title\": \"na\u00efve \u65e5\u672c\"\n}\n",
+        "stdout": "{\n  \"title\": \"naïve 日本\"\n}\n",
         "stderr": ""
       }
     },
@@ -1324,6 +1324,110 @@
         "exit": 0,
         "stdout": "relative body\n\nlast\n",
         "stderr": ""
+      }
+    },
+    {
+      "id": "gh_api_error_silent",
+      "seq": 569300,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/nope --silent",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_api_error_ignores_jq",
+      "seq": 569301,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/nope --jq .message",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\"}",
+        "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_api_search_validation_body",
+      "seq": 569302,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api 'search/issues?q=repo:integ/missing'",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"message\":\"Validation Failed\",\"errors\":[{\"message\":\"The listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.\",\"resource\":\"Search\",\"field\":\"q\",\"code\":\"invalid\"}],\"documentation_url\":\"https://docs.github.com/v3/search/\",\"status\":\"422\"}",
+        "stderr": "gh: Validation Failed (HTTP 422)\n"
+      }
+    },
+    {
+      "id": "gh_search_issues_validation_reason",
+      "seq": 569303,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh search issues needle --repo integ/missing",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Invalid search query \"needle repo:integ/missing type:issue\".\nThe listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.\n"
+      }
+    },
+    {
+      "id": "gh_search_prs_validation_reason",
+      "seq": 569304,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh search prs needle --repo integ/missing",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Invalid search query \"needle repo:integ/missing type:pr\".\nThe listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.\n"
+      }
+    },
+    {
+      "id": "gh_search_code_missing_repo_is_empty",
+      "seq": 569305,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh search code needle --repo integ/missing --json path",
+      "expect": {
+        "exit": 0,
+        "stdout": "[]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gh_search_commits_validation_reason",
+      "seq": 569306,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh search commits needle --repo integ/missing",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Invalid search query \"needle repo:integ/missing\".\nThe listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.\n"
+      }
+    },
+    {
+      "id": "gh_api_error_slurp",
+      "seq": 569307,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api repos/integ/nope --paginate --slurp",
+      "expect": {
+        "exit": 1,
+        "stdout": "[{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\"}]",
+        "stderr": "gh: Not Found (HTTP 404)\n"
       }
     }
   ]

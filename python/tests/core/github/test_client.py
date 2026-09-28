@@ -174,3 +174,31 @@ async def test_request_raises_with_githubs_own_wording_and_status(base_url):
     with pytest.raises(GitHubApiError, match="Not Found") as excinfo:
         await github_request("t", "GET", "/repos/o/r", base_url=base_url)
     assert excinfo.value.status == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body,data", [
+    (' {"message":"Validation Failed", "errors":[{"message":"bad query"}]}\n',
+     {
+         "message": "Validation Failed",
+         "errors": [{
+             "message": "bad query"
+         }]
+     }),
+    ("upstream unavailable\n", "upstream unavailable\n"),
+    ("", None),
+])
+async def test_request_error_preserves_wire_body_and_request_url(
+        base_url, body, data):
+    REPLY.update({"status": 422, "body": body})
+    with pytest.raises(GitHubApiError) as caught:
+        await github_request("t",
+                             "GET",
+                             "/search/issues",
+                             params={"q": "bad query"},
+                             base_url=base_url)
+    error = caught.value
+    assert error.body == body
+    assert error.data == data
+    assert error.url == f"{base_url}/search/issues?q=bad+query"
+    assert error.status == 422

@@ -16,6 +16,8 @@ import type { CommandFnResult } from '../../../config.ts'
 import { UsageError } from '../../../errors.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import { Option, Operand } from '../../../spec/types.ts'
+import { GitHubApiError } from '../../../../core/github/client.ts'
+import { IOResult } from '../../../../io/types.ts'
 import { search } from '../../../../core/github/search.ts'
 
 function quote(value: string): string {
@@ -133,14 +135,32 @@ async function searchCmd(kind: string, inv: CLIInvocation): Promise<CommandFnRes
     throw new UsageError('cannot use `--jq` or `--template` without `--json`', 1)
   if (fl.asStr('jq') !== undefined && fl.asStr('template') !== undefined)
     throw new UsageError('cannot use `--jq` and `--template` together', 1)
-  const values = await search(
-    ghTransport(inv.config),
-    ({ repos: 'repositories', prs: 'issues' } as Record<string, string>)[kind] ?? kind,
-    query(kind, inv.texts, fl),
-    limit,
-    SEARCH_SORTS[kind] ? fl.asStr('sort') : undefined,
-    SEARCH_SORTS[kind] ? fl.asStr('order') : undefined,
-  )
+  const expression = query(kind, inv.texts, fl)
+  let values: unknown[]
+  try {
+    values = await search(
+      ghTransport(inv.config),
+      ({ repos: 'repositories', prs: 'issues' } as Record<string, string>)[kind] ?? kind,
+      expression,
+      limit,
+      SEARCH_SORTS[kind] ? fl.asStr('sort') : undefined,
+      SEARCH_SORTS[kind] ? fl.asStr('order') : undefined,
+    )
+  } catch (error) {
+    if (!(error instanceof GitHubApiError)) throw error
+    const data = record(error.data)
+    const errors = data.errors
+    const detail = Array.isArray(errors) && errors.length > 0 ? record(errors[0]) : null
+    const message = typeof detail?.message === 'string' ? detail.message : ''
+    const diagnostic =
+      error.status === 422 && detail !== null
+        ? `Invalid search query ${JSON.stringify(expression.trim())}.\n${message}`
+        : `HTTP ${String(error.status)}: ${error.message} (${error.url})`
+    return [
+      null,
+      new IOResult({ exitCode: 1, stderr: new TextEncoder().encode(`${diagnostic}\n`) }),
+    ]
+  }
   const rows = values.map((value) => exported(kind, value))
   const template = fl.asStr('template')
   if (template !== undefined)

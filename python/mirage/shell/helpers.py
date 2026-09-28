@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import shlex
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 
 from mirage.shell.constants import (FD_BOTH, FD_CLOSE, FD_STDERR, FD_STDIN,
@@ -32,6 +32,31 @@ from mirage.utils.path import expand_tilde
 def get_text(node: TSNodeLike) -> str:
     """Get the text content of a node."""
     return (node.text or b"").decode()
+
+
+def quoted_parts(node: TSNodeLike) -> Iterator[str | TSNodeLike]:
+    """Walk a double-quoted string without losing scanner-owned text.
+
+    Newlines and preceding whitespace may sit between child extents;
+    trailing whitespace may belong to the closing quote token. Preserve
+    those source slices rather than reconstructing gaps from row counts.
+    Expansion nodes retain their own folded prefixes.
+
+    Args:
+        node (TSNodeLike): a double-quoted string node.
+    """
+    source = node.text or b""
+    end = node.start_byte
+    for child in node.children:
+        if child.start_byte > end:
+            yield unescape_dquoted(
+                source[end - node.start_byte:child.start_byte -
+                       node.start_byte].decode())
+        end = child.end_byte
+        if child.type == NT.DQUOTE:
+            yield unescape_dquoted(get_text(child)[:-1])
+        else:
+            yield child
 
 
 def byte_offset(text: str, index: int) -> int:
@@ -169,12 +194,13 @@ def literal_word(node: TSNodeLike, home: str | None = None) -> str | None:
         return ""
     if ntype == NT.STRING:
         pieces: list[str] = []
-        for child in node.children:
-            if child.type == NT.DQUOTE:
+        for part in quoted_parts(node):
+            if isinstance(part, str):
+                pieces.append(part)
                 continue
-            if child.type != NT.STRING_CONTENT:
+            if part.type != NT.STRING_CONTENT:
                 return None
-            pieces.append(unescape_dquoted(get_text(child)))
+            pieces.append(unescape_dquoted(get_text(part)))
         return "".join(pieces)
     if ntype == NT.CONCATENATION:
         pieces = []

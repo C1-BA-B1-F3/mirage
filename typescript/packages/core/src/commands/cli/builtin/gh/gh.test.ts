@@ -15,7 +15,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type * as AccessorModule from './accessor.ts'
 import { bodyValue, readCliFile, repoNumber } from './accessor.ts'
-import { type GitHubResponse, type GitHubTransport } from '../../../../core/github/client.ts'
+import {
+  GitHubApiError,
+  type GitHubResponse,
+  type GitHubTransport,
+} from '../../../../core/github/client.ts'
 import { cliSpecFor } from '../../specs.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
@@ -24,7 +28,7 @@ import { issueComments } from '../../../../core/github/issue.ts'
 import { commentsFor, commentsText } from './issue.ts'
 import { GH } from './index.ts'
 import { PathSpec } from '../../../../types.ts'
-import { IOResult } from '../../../../io/types.ts'
+import { IOResult, materialize } from '../../../../io/types.ts'
 import { api } from './api.ts'
 import { fork, listCmd, rename, summary, view } from './repo.ts'
 
@@ -654,4 +658,58 @@ it('formats deleted authors, edited/minimized comments and nonzero reactions lik
   expect(commentsText(rows ?? [])).toBe(
     'author:\t\nassociation:\tcontributor\nedited:\ttrue\nstatus:\toutdated\n--\ncomment\n--\n',
   )
+})
+
+it.each([
+  [{}, ' {"message":"Not Found"}\n', ' {"message":"Not Found"}\n', 'gh: Not Found (HTTP 404)\n'],
+  [{ silent: true }, '{"message":"Not Found"}', '', 'gh: Not Found (HTTP 404)\n'],
+  [
+    { jq: '.message' },
+    '{"message":"Not Found"}',
+    '{"message":"Not Found"}',
+    'gh: Not Found (HTTP 404)\n',
+  ],
+  [{}, 'not found\n', 'not found\n', 'gh: HTTP 404\n'],
+  [{}, '', '', 'gh: HTTP 404\n'],
+] as const)('keeps HTTP error responses with flags %s', async (flags, body, stdout, stderr) => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockRejectedValue(new GitHubApiError('Not Found', 404, body))
+  try {
+    const result = await api(inv(['repos/o/missing'], flags))
+    if (result === null) throw new Error('missing API result')
+    expect(DEC.decode(await materialize(result[0]))).toBe(stdout)
+    expect(DEC.decode(await materialize(result[1].stderr))).toBe(stderr)
+    expect(result[1].exitCode).toBe(1)
+  } finally {
+    request.mockRestore()
+  }
+})
+
+it.each([
+  [{ jq: '.value' }, 'first\n{"message":"Validation Failed"}'],
+  [{ slurp: true }, '[{"value":"first"},{"message":"Validation Failed"}]'],
+  [{ silent: true }, ''],
+] as const)('keeps rendered pages when a later request fails: %s', async (flags, stdout) => {
+  const body = '{"message":"Validation Failed"}'
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockResolvedValueOnce({
+      data: { value: 'first' },
+      status: 200,
+      headers: { link: '</page2>; rel="next"' },
+    })
+    .mockRejectedValueOnce(new GitHubApiError('Validation Failed', 422, body))
+  try {
+    const result = await api(inv(['page1'], { paginate: true, ...flags }))
+    if (result === null) throw new Error('missing API result')
+    expect(DEC.decode(await materialize(result[0]))).toBe(stdout)
+    expect(DEC.decode(await materialize(result[1].stderr))).toBe(
+      'gh: Validation Failed (HTTP 422)\n',
+    )
+    expect(result[1].exitCode).toBe(1)
+    expect(request).toHaveBeenCalledTimes(2)
+  } finally {
+    request.mockRestore()
+  }
 })

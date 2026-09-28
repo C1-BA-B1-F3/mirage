@@ -17,11 +17,10 @@ import re
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from mirage.commands.cli.builtin.gh.accessor import (json_out, read_cli_file,
-                                                     text_out)
+from mirage.commands.cli.builtin.gh.accessor import read_cli_file, text_out
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
-from mirage.core.github.client import github_request_response
+from mirage.core.github.client import GitHubApiError, github_request_response
 from mirage.core.github.config import GhConfig
 from mirage.core.github.placeholder import expand
 from mirage.core.jq import jq_eval
@@ -229,45 +228,73 @@ async def api(
     first = True
     while current is not None:
         request_params = params if first else None
-        if has_input or body is not None:
-            response = await github_request_response(
-                inv.config.token,
-                upper,
-                current,
-                body,
-                request_params,
-                base_url=inv.config.base_url,
-                headers=_headers(fl) or None)
-        else:
-            response = await github_request_response(
-                inv.config.token,
-                upper,
-                current,
-                params=request_params,
-                base_url=inv.config.base_url,
-                headers=_headers(fl) or None)
+        try:
+            if has_input or body is not None:
+                response = await github_request_response(
+                    inv.config.token,
+                    upper,
+                    current,
+                    body,
+                    request_params,
+                    base_url=inv.config.base_url,
+                    headers=_headers(fl) or None)
+            else:
+                response = await github_request_response(
+                    inv.config.token,
+                    upper,
+                    current,
+                    params=request_params,
+                    base_url=inv.config.base_url,
+                    headers=_headers(fl) or None)
+        except GitHubApiError as exc:
+            stdout = await _render_pages(pages, fl, exc.body)
+            data = exc.data if isinstance(exc.data, dict) else {}
+            message = data.get("message")
+            diagnostic = (f"{message} (HTTP {exc.status})"
+                          if isinstance(message, str) and message else
+                          f"HTTP {exc.status}")
+            return stdout.encode(), IOResult(
+                exit_code=1, stderr=f"gh: {diagnostic}\n".encode())
         pages.append(response.data)
         first = False
         current = (_next_path(response.headers.get("link"),
                               inv.config.base_url)
                    if fl.as_bool("paginate") else None)
 
+    return text_out(await _render_pages(pages, fl))
+
+
+def _json_page(value: Any) -> str:
+    if value is None:
+        return ""
+    return json.dumps(value, indent=2, ensure_ascii=False) + "\n"
+
+
+async def _render_pages(pages: list[Any],
+                        fl: FlagView,
+                        failure: str | None = None) -> str:
+    """Render completed pages and an optional verbatim error response."""
     if fl.as_bool("silent"):
-        return text_out("")
+        return ""
     slurp = fl.as_bool("slurp")
+    if failure is not None:
+        if slurp:
+            rendered = [
+                json.dumps(page, ensure_ascii=False, separators=(",", ":"))
+                for page in pages
+            ]
+            if failure:
+                rendered.append(failure)
+            return "[" + ",".join(rendered) + "]"
+        return await _render_pages(pages, fl) + failure
+    if not pages:
+        return ""
     program = fl.as_str("jq")
     if program:
         inputs = [pages] if slurp else pages
-        lines = "".join(f"{jq_line(value)}\n" for item in inputs
-                        for value in jq_eval(item, program))
-        return text_out(lines)
+        return "".join(f"{jq_line(value)}\n" for item in inputs
+                       for value in jq_eval(item, program))
     if slurp:
-        return json_out(pages)
-    if len(pages) == 1:
-        if isinstance(pages[0], str):
-            return text_out(pages[0])
-        return json_out(pages[0])
-    rendered = "".join("" if page is None else page if isinstance(
-        page, str) else f"{json.dumps(page, indent=2, ensure_ascii=False)}\n"
-                       for page in pages)
-    return text_out(rendered)
+        return _json_page(pages)
+    return "".join(page if isinstance(page, str) else _json_page(page)
+                   for page in pages)

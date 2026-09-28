@@ -12,14 +12,15 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { IOResult } from '../../../../io/types.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { expand } from '../../../../core/github/placeholder.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
-import type { GitHubResponse } from '../../../../core/github/client.ts'
+import { GitHubApiError, type GitHubResponse } from '../../../../core/github/client.ts'
 import { jqEval } from '../../../../core/jq/index.ts'
-import { ghTransport, jsonOut, readCliFile, textOut } from './accessor.ts'
+import { ghTransport, readCliFile, textOut } from './accessor.ts'
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 const EMPTY_ARRAY = Symbol('empty-array')
@@ -221,26 +222,42 @@ export async function api(inv: CLIInvocation): Promise<CommandFnResult> {
   let first = true
   while (current !== undefined) {
     const headers = requestHeaders(fl)
-    const response: GitHubResponse =
-      transport.requestWithResponse === undefined
-        ? {
-            data: await transport.request(
+    let response: GitHubResponse
+    try {
+      response =
+        transport.requestWithResponse === undefined
+          ? {
+              data: await transport.request(
+                upper,
+                current,
+                body,
+                first ? params : undefined,
+                Object.keys(headers).length === 0 ? undefined : headers,
+              ),
+              status: 200,
+              headers: {},
+            }
+          : await transport.requestWithResponse(
               upper,
               current,
               body,
               first ? params : undefined,
               Object.keys(headers).length === 0 ? undefined : headers,
-            ),
-            status: 200,
-            headers: {},
-          }
-        : await transport.requestWithResponse(
-            upper,
-            current,
-            body,
-            first ? params : undefined,
-            Object.keys(headers).length === 0 ? undefined : headers,
-          )
+            )
+    } catch (error) {
+      if (!(error instanceof GitHubApiError)) throw error
+      const stdout = new TextEncoder().encode(await renderPages(pages, fl, error.body))
+      const data = error.data as { message?: unknown } | null
+      const message = data?.message
+      const diagnostic =
+        typeof message === 'string' && message !== ''
+          ? `${message} (HTTP ${String(error.status)})`
+          : `HTTP ${String(error.status)}`
+      return [
+        stdout,
+        new IOResult({ exitCode: 1, stderr: new TextEncoder().encode(`gh: ${diagnostic}\n`) }),
+      ]
+    }
     pages.push(response.data)
     first = false
     current = fl.asBool('paginate')
@@ -248,8 +265,26 @@ export async function api(inv: CLIInvocation): Promise<CommandFnResult> {
       : undefined
   }
 
-  if (fl.asBool('silent')) return textOut('')
+  return textOut(await renderPages(pages, fl))
+}
+
+function jsonPage(value: unknown): string {
+  return value === null ? '' : `${JSON.stringify(value, null, 2)}\n`
+}
+
+/** Render completed pages and an optional verbatim error response. */
+async function renderPages(pages: unknown[], fl: FlagView, failure?: string): Promise<string> {
+  if (fl.asBool('silent')) return ''
   const slurp = fl.asBool('slurp')
+  if (failure !== undefined) {
+    if (slurp) {
+      const rendered = pages.map((page) => JSON.stringify(page))
+      if (failure !== '') rendered.push(failure)
+      return `[${rendered.join(',')}]`
+    }
+    return (await renderPages(pages, fl)) + failure
+  }
+  if (pages.length === 0) return ''
   const program = fl.asStr('jq')
   if (program !== undefined && program !== '') {
     const inputs = slurp ? [pages] : pages
@@ -257,15 +292,8 @@ export async function api(inv: CLIInvocation): Promise<CommandFnResult> {
     for (const item of inputs) {
       for (const value of await jqEval(item, program)) output.push(`${jqLine(value)}\n`)
     }
-    return textOut(output.join(''))
+    return output.join('')
   }
-  if (slurp) return jsonOut(pages)
-  if (pages.length === 1) {
-    return typeof pages[0] === 'string' ? textOut(pages[0]) : jsonOut(pages[0])
-  }
-  return textOut(
-    pages
-      .map((page) => (typeof page === 'string' ? page : `${JSON.stringify(page, null, 2)}\n`))
-      .join(''),
-  )
+  if (slurp) return jsonPage(pages)
+  return pages.map((page) => (typeof page === 'string' ? page : jsonPage(page))).join('')
 }

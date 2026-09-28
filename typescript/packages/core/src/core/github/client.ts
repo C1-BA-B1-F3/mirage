@@ -117,6 +117,8 @@ export class HttpGitHubTransport implements GitHubTransport {
     params?: Record<string, string>,
     headers?: Record<string, string>,
   ): Promise<GitHubResponse> {
+    let errorBody = ''
+    let errorUrl = ''
     try {
       // Octokit reads loose parameters off the same object that carries
       // `url`, `method` and `headers`, so a field the agent typed would
@@ -130,6 +132,16 @@ export class HttpGitHubTransport implements GitHubTransport {
         method: method.toUpperCase(),
         url: escapeRoute(path) + (query === '' ? '' : `${path.includes('?') ? '&' : '?'}${query}`),
         headers: { 'X-GitHub-Api-Version': GITHUB_API_VERSION, ...headers },
+        request: {
+          fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+            const response = await globalThis.fetch(input, init)
+            if (response.status >= 400) {
+              errorBody = await response.clone().text()
+              errorUrl = response.url || (input instanceof Request ? input.url : String(input))
+            }
+            return response
+          },
+        },
         ...(body === undefined ? {} : { data: body }),
       })
       // 204 and an empty 202 decode to '' rather than a body; the caller gets
@@ -145,14 +157,11 @@ export class HttpGitHubTransport implements GitHubTransport {
       }
     } catch (err) {
       if (err instanceof RequestError) {
-        // Octokit composes its message as `<message> - <documentation_url>`.
-        // The suffix is octokit's, not GitHub's: the service says only the
-        // message, real gh prints only the message, and the python client
-        // reports only the message. Read it off the body rather than
-        // trimming the composed string.
+        // Keep the service's message distinct from Octokit's composed
+        // diagnostic, and retain the wire body for command-specific output.
         const data = err.response?.data as { message?: string } | undefined
         const message = typeof data?.message === 'string' ? data.message : err.message
-        throw new GitHubApiError(message, err.status)
+        throw new GitHubApiError(message, err.status, errorBody, errorUrl)
       }
       throw err
     }
@@ -161,10 +170,20 @@ export class HttpGitHubTransport implements GitHubTransport {
 
 export class GitHubApiError extends Error {
   readonly status: number
-  constructor(message: string, status: number) {
+  readonly body: string
+  readonly url: string
+  readonly data: unknown
+  constructor(message: string, status: number, body = '', url = '') {
     super(message)
     this.name = 'GitHubApiError'
     this.status = status
+    this.body = body
+    this.url = url
+    try {
+      this.data = body === '' ? null : JSON.parse(body)
+    } catch {
+      this.data = body
+    }
   }
 }
 

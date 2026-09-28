@@ -25,6 +25,25 @@ export function getText(node: TSNodeLike): string {
 }
 
 /**
+ * Walk a double-quoted string without losing scanner-owned text.
+ * Newlines and preceding whitespace may sit between child extents;
+ * trailing whitespace may belong to the closing quote token. Preserve
+ * those source slices rather than reconstructing gaps from row counts.
+ * Expansion nodes retain their own folded prefixes.
+ */
+export function* quotedParts(node: TSNodeLike): Generator<string | TSNodeLike> {
+  const start = node.startIndex ?? 0
+  let end = start
+  for (const child of node.children) {
+    const childStart = child.startIndex ?? end
+    if (childStart > end) yield unescapeDquoted(node.text.slice(end - start, childStart - start))
+    end = child.endIndex ?? childStart + child.text.length
+    if (child.type === NT.DQUOTE) yield unescapeDquoted(child.text.slice(0, -1))
+    else yield child
+  }
+}
+
+/**
  * Where an index into a node's text falls in the parser's offsets, the twin
  * of python's `byte_offset`.
  *
@@ -147,8 +166,11 @@ export function literalWord(node: TSNodeLike, home: string | null = null): strin
   }
   if (ntype === NT.STRING) {
     const pieces: string[] = []
-    for (const child of node.children) {
-      if (child.type === NT.DQUOTE) continue
+    for (const child of quotedParts(node)) {
+      if (typeof child === 'string') {
+        pieces.push(child)
+        continue
+      }
       if (child.type !== NT.STRING_CONTENT) return null
       pieces.push(unescapeDquoted(child.text))
     }

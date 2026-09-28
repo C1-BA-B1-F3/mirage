@@ -355,3 +355,22 @@ describe('fetchDirTreePage', () => {
     expect((err as GitHubApiError).message).toContain('truncated the tree listing')
   })
 })
+
+it.each([
+  [
+    ' {"message":"Validation Failed", "errors":[{"message":"bad query"}]}\n',
+    { message: 'Validation Failed', errors: [{ message: 'bad query' }] },
+  ],
+  ['upstream unavailable\n', 'upstream unavailable\n'],
+  ['', null],
+])('preserves an error response body and request URL: %s', async (body, data) => {
+  REPLY = { status: 422, body: body }
+  await expect(
+    transport().request('GET', '/search/issues', undefined, { q: 'bad query' }),
+  ).rejects.toMatchObject({
+    status: 422,
+    body,
+    data,
+    url: 'https://api.example.test/search/issues?q=bad+query',
+  })
+})

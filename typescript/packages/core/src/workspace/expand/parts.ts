@@ -14,6 +14,7 @@
 
 import type { SessionView } from '../../ops/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
+import { quotedParts } from '../../shell/helpers.ts'
 import { NodeType as NT } from '../../shell/types.ts'
 import type { PathSpec } from '../../types.ts'
 import { markEscapedGlobs, markGlobs, unmarkGlobs } from '../../utils/glob_walk.ts'
@@ -88,8 +89,12 @@ async function expandStringWithArray(
   const expandChild = (n: TSNodeLike) => expandNode(n, session, executeFn, callStack, view)
   const fragments: string[] = ['']
   let splatYielded = false
-  for (const child of node.children) {
-    if (child.type === NT.DQUOTE) continue
+  for (const child of quotedParts(node)) {
+    if (typeof child === 'string') {
+      const last = fragments.length - 1
+      fragments[last] = (fragments[last] ?? '') + child
+      continue
+    }
     if (isMultiwordAt(child)) {
       const words = await expandArrayAt(child, session, callStack, expandChild, view)
       // The separating whitespace is folded into this node, and survives

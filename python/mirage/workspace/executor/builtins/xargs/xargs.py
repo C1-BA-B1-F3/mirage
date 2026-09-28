@@ -27,7 +27,7 @@ from mirage.commands.spec.usage import (ambiguous_option_error,
                                         unexpected_value_error,
                                         unknown_option_error, usage_hint)
 from mirage.io import IOResult
-from mirage.io.stream import async_chain, materialize, yield_bytes
+from mirage.io.stream import SharedStdin, async_chain, materialize, yield_bytes
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
 from mirage.utils.errors import FS_ERRORS, fs_strerror
@@ -495,23 +495,23 @@ async def _run_lines(
             carries each command's slot number.
         registry (MountRegistry | None): where a command name is looked
             up; None runs every name.
-        stdin (ByteSource | None): what the first command reads (-a).
+        stdin (ByteSource | None): input shared by all commands (-a).
     """
     results: list[list[IOResult]] = [[] for _ in events]
     upcoming = iter(range(len(events)))
     stop: int | None = None
     forked = procs != 1 or slot_var is not None
     taken: set[int] = set()
-    feed = stdin
+    feed = SharedStdin(stdin) if stdin is not None else b""
 
     async def run(words: list[str]) -> IOResult:
-        nonlocal feed
         line = shlex.join(words)
-        extra = {"stdin": feed if feed is not None else b""}
-        feed = None
+        extra = {"stdin": feed}
         io: IOResult
         if not forked:
             io = await execute_fn(line, session_id=session.session_id, **extra)
+            await io.materialize_stdout()
+            await io.materialize_stderr()
             return io
         slot = next(n for n in range(len(taken) + 1) if n not in taken)
         taken.add(slot)

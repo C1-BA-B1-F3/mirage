@@ -26,7 +26,7 @@ import {
 } from '../../../../commands/spec/usage.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
-import { asyncChain, yieldBytes } from '../../../../io/stream.ts'
+import { SharedStdin, asyncChain, yieldBytes } from '../../../../io/stream.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import { shellJoin } from '../../../../shell/join.ts'
 import { asyncContextIsolatesTasks } from '../../../../utils/async_context.ts'
@@ -566,12 +566,15 @@ async function runLines(
   const stopped = (): boolean => stop !== null
   const forked = procs !== 1 || slotVar !== null
   const taken = new Set<number>()
-  let feed = opts.stdin ?? null
+  const stdin = opts.stdin == null ? new Uint8Array() : new SharedStdin(opts.stdin)
   const run = async (words: string[]): Promise<IOResult> => {
     const line = shellJoin(words)
-    const stdin = feed ?? new Uint8Array()
-    feed = null
-    if (!forked) return executeFn(line, { sessionId: session.sessionId, session, stdin })
+    if (!forked) {
+      const io = await executeFn(line, { sessionId: session.sessionId, session, stdin })
+      await io.materializeStdout()
+      await io.materializeStderr()
+      return io
+    }
     let slot = 0
     while (taken.has(slot)) slot += 1
     taken.add(slot)

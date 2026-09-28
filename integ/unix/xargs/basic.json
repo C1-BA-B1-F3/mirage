@@ -1450,6 +1450,158 @@
         "stdout": "input\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "xargs_arg_file_shared_unread",
+      "seq": 1300400,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && printf 'true\\ncat\\ncat\\n' > xargs_shared.txt && printf abc | xargs -a xargs_shared.txt -n1 sh -c; rc=$?; rm -f xargs_shared.txt; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "abc",
+        "stderr": ""
+      },
+      "flags": [
+        "a",
+        "arg-file"
+      ]
+    },
+    {
+      "id": "xargs_arg_file_shared_unread_parallel",
+      "seq": 1300401,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && printf 'true\\ncat\\ncat\\n' > xargs_shared.txt && printf abc | xargs -a xargs_shared.txt -P2 -n1 sh -c | wc -c; rc=$?; rm -f xargs_shared.txt; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "a",
+        "arg-file"
+      ]
+    },
+    {
+      "id": "xargs_arg_file_shared_partial",
+      "seq": 1300402,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && printf 'head -c 1; echo :first\\ncat\\ncat\\n' > xargs_shared.txt && printf abc | xargs -a xargs_shared.txt -I@ sh -c @; rc=$?; rm -f xargs_shared.txt; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "a:first\nbc",
+        "stderr": ""
+      },
+      "flags": [
+        "a",
+        "arg-file"
+      ]
+    },
+    {
+      "id": "xargs_arg_file_shared_readers",
+      "seq": 1300403,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && printf 'cat\\ncat\\ncat\\n' > xargs_shared.txt && printf abc | xargs -a xargs_shared.txt -P0 -n1 sh -c | wc -c; rc=$?; rm -f xargs_shared.txt; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "a",
+        "arg-file"
+      ]
     }
   ]
 }

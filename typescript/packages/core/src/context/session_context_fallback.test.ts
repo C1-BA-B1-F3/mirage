@@ -540,17 +540,72 @@ describe('overlapping shell calls beside xargs', () => {
         'again',
         new CLISpec({
           name: 'again',
-          fn: async () => {
-            const inner = await ws.shell('Z=inner; echo inner')
-            return [inner.stdout, new IOResult({ exitCode: inner.exitCode })]
+          fn: async (inv) => {
+            await Promise.resolve()
+            if (inv.shell === undefined) throw new Error('missing invocation shell')
+            const inner = await inv.shell('Z=inner; echo inner')
+            return [inner.stdout, inner]
           },
         }),
       )
       try {
         const io = await ws.shell(line)
         expect(io.stdoutText).toBe('inner\n')
-        expect(ws.getSession(ws.defaultSessionId).env.Z).toBe('inner')
+        expect(ws.getSession(ws.defaultSessionId).env.Z).toBe(
+          line === 'again' ? 'inner' : undefined,
+        )
       } finally {
+        await ws.close()
+      }
+    },
+  )
+
+  it.each([false, true])(
+    'queues unrelated calls while a callback re-enters (named=%s)',
+    async (named) => {
+      const parser = await getTestParser()
+      const ws = new Workspace({}, { shellParser: parser })
+      const [entered, enter] = gate()
+      const [held, release] = gate()
+      let expired: ((command: string) => Promise<IOResult>) | undefined
+      ws.registerCli(
+        'again',
+        new CLISpec({
+          name: 'again',
+          fn: async (inv) => {
+            expired = inv.shell
+            enter()
+            await held
+            if (inv.shell === undefined) throw new Error('missing invocation shell')
+            const inner = await inv.shell('X=inner; echo "$X"')
+            return [inner.stdout, inner]
+          },
+        }),
+      )
+      try {
+        const outer = ws.shell('X=outer; again; echo "$X"')
+        await entered
+        let finished = false
+        const unrelated = ws
+          .shell('echo "$X"; X=other', named ? { sessionId: ws.defaultSessionId } : {})
+          .then((result) => {
+            finished = true
+            return result
+          })
+        await new Promise((resolve) => setTimeout(resolve, 20))
+        expect(finished).toBe(false)
+        await expect(
+          ws.shell('X=leaked', { signal: AbortSignal.timeout(20) }),
+        ).rejects.toMatchObject({ name: 'AbortError' })
+        release()
+        expect((await outer).stdoutText).toBe('inner\ninner\n')
+        expect((await unrelated).stdoutText).toBe('inner\n')
+        expect(ws.getSession(ws.defaultSessionId).env.X).toBe('other')
+        if (expired === undefined) throw new Error('missing saved shell')
+        await expect(expired('X=leaked')).rejects.toThrow('no longer active')
+        expect(ws.getSession(ws.defaultSessionId).env.X).toBe('other')
+      } finally {
+        release()
         await ws.close()
       }
     },

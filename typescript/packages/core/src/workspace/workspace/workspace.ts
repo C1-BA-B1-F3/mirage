@@ -1419,10 +1419,8 @@ export class Workspace {
    * inline: it already holds the session, and waiting on itself would
    * deadlock. Evaluators carry their session explicitly. Ambient re-entry
    * is accepted only with task-local storage, just as in `executeLine`:
-   * the fallback's newest binding may belong to another call. There a
-   * host callback cannot be told from any other caller, so while the
-   * line holding the session waits on one of its callbacks, a call for
-   * that session runs inline rather than deadlocking behind it.
+   * the fallback's newest binding may belong to another call. Host callbacks
+   * use their invocation's explicitly bound shell door on the fallback.
    *
    * @param sessionId the session named by the caller, or undefined for
    *   the default.
@@ -1439,10 +1437,6 @@ export class Workspace {
     if (ambient !== null && (sessionId === undefined || sessionId === ambient.sessionId)) {
       return run()
     }
-    if (!asyncContextIsolatesTasks) {
-      const holder = this.registeredSession(sessionId ?? this.sessionManager.defaultId)
-      if ((holder?.lineHold?.callbacks ?? 0) > 0) return run()
-    }
     // Hydrate first: a workspace on a shared store adopts the persisted
     // default id there, and a key taken before that names a session no
     // later line would wait on.
@@ -1456,15 +1450,7 @@ export class Workspace {
       if (this.isShuttingDown()) throw new Error('Workspace is closed')
       if (hasAborted(signal)) throw makeAbortError(signal)
       started = true
-      const held = this.registeredSession(key)
-      if (held === null) return run()
-      const hold = { callbacks: 0 }
-      held.lineHold = hold
-      try {
-        return await run()
-      } finally {
-        if (held.lineHold === hold) held.lineHold = null
-      }
+      return run()
     })
     if (signal === undefined) return gate
     // The wait is the caller's to abandon; the run is not. Once the line
@@ -1479,11 +1465,6 @@ export class Workspace {
         signal.removeEventListener('abort', onAbort)
       })
     })
-  }
-
-  /** The registered session named `sessionId`, or null when there is none. */
-  private registeredSession(sessionId: string): SessionState | null {
-    return this.sessionManager.list().find((s) => s.sessionId === sessionId) ?? null
   }
 
   /**

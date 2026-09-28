@@ -161,6 +161,9 @@ def parse_signal(operand: str) -> int | None:
 def signal_name(number: int) -> str:
     """gnulib's sig2str: a signal's name, or its number when it has none.
 
+    The table follows glibc on x86-64 Linux: the first matching name wins
+    (6 is ABRT, 29 is POLL), independently of the host's signal numbers.
+
     Args:
         number (int): the signal number.
     """

@@ -157,7 +157,11 @@ export function parseSignal(operand: string): number | null {
   return number
 }
 
-/** gnulib's sig2str: a signal's name, or its number when it has none. */
+/**
+ * gnulib's sig2str: a signal's name, or its number when it has none.
+ * The table follows glibc on x86-64 Linux: the first matching name wins
+ * (6 is ABRT, 29 is POLL), independently of the host's signal numbers.
+ */
 export function signalName(number: number): string {
   for (const [name, known] of SIGNAL_NAMES) if (known === number) return name
   if (number < SIGRTMIN || number > SIGRTMAX) return String(number)

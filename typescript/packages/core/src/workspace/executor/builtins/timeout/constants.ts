@@ -12,9 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-// gnulib's sig2str table as glibc builds it on x86-64 Linux, in table
-// order: a number's name is the first entry holding it (6 is ABRT, not
-// IOT; 29 is POLL, not IO).
 export const SIGNAL_NAMES: readonly (readonly [string, number])[] = Object.freeze([
   ['HUP', 1],
   ['INT', 2],

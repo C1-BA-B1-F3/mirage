@@ -197,6 +197,8 @@ class CLIContext:
     (workspace/executor/command/cli.ts).
 
     Args:
+        shell (Callable[[str], Awaitable[IOResult]] | None): the nested
+            evaluator bound to this invocation's session.
         entries (list[Runtime] | None): the workspace's ordered
             runtime world, which a script leaf selects its interpreter
             from; None (outside a workspace) refuses script installs.
@@ -212,6 +214,7 @@ class CLIContext:
             gated handle; ``inv.env`` stays the frozen process view.
     """
 
+    shell: Callable[[str], Awaitable[IOResult]] | None = None
     command_limits: Mapping[str, Limit] | None = None
     entries: list[Runtime] | None = None
     dispatch: DispatchFn | None = None
@@ -382,6 +385,15 @@ async def handle_cli(
                       ns=ns,
                       session_view=session_view) if any(
                           door is not None for door in opened) else None)
+    active = True
+
+    async def shell(command: str) -> IOResult:
+        if not active:
+            raise RuntimeError("CLI shell is no longer active")
+        if context.shell is None:
+            raise RuntimeError("CLI shell is unavailable")
+        return await context.shell(command)
+
     inv = CLIInvocation(install.config,
                         argv=tuple(argv),
                         paths=tuple(parsed.paths),
@@ -390,7 +402,8 @@ async def handle_cli(
                         stdin=stdin,
                         env=env_snapshot(session),
                         doors=doors,
-                        spec=leaf)
+                        spec=leaf,
+                        shell=shell if context.shell is not None else None)
 
     # asyncio's timeout cancels the runtime task as well as the caller;
     # TypeScript forwards an explicit deadline and abort signal instead.
@@ -457,6 +470,8 @@ async def handle_cli(
         return None, err_io, ExecutionNode(command=cmd_str,
                                            exit_code=1,
                                            stderr=err_stderr)
+    finally:
+        active = False
     if out is None:
         stdout, io = None, IOResult()
     else:

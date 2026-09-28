@@ -23,6 +23,7 @@ import re
 
 import pytest
 
+from mirage.io.stream import SharedStdin
 from mirage.policy import Deny, Policy
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -876,14 +877,13 @@ async def test_exec_child_reads_a_slow_stdin_incrementally():
     # A source that only ever yields its first chunk after a while and
     # never ends must still feed `head -c 1` its byte: the cursor pulls
     # a chunk at a time rather than waiting for EOF.
-    from mirage.workspace.executor.find_action_dispatch import _SharedStdin
 
     async def endless():
         yield b"ab"
         while True:
             await asyncio.sleep(3600)
 
-    shared = _SharedStdin(endless())
+    shared = SharedStdin(endless())
     got = []
     async for chunk in shared:
         got.append(chunk)

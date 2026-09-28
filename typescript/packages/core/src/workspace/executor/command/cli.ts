@@ -164,6 +164,8 @@ async function scriptOutput(
  * `links` follows for mount commands).
  */
 export interface CLIContext {
+  shell?: (command: string) => Promise<IOResult>
+  signal?: AbortSignal
   commandLimits?: Readonly<Record<string, Limit>>
   /**
    * The workspace's ordered runtime world, which a script leaf selects
@@ -316,8 +318,17 @@ export async function handleCli(
     ...(context.ns !== undefined ? { ns: context.ns } : {}),
     ...(context.sessionView !== undefined ? { sessionView: context.sessionView } : {}),
   }
+  let active = true
+  const shell = async (command: string): Promise<IOResult> => {
+    if (!active || context.signal?.aborted === true) {
+      throw new Error('CLI shell is no longer active')
+    }
+    if (context.shell === undefined) throw new Error('CLI shell is unavailable')
+    return context.shell(command)
+  }
   const inv: CLIInvocation = {
     config: install.config,
+    ...(context.shell !== undefined ? { shell } : {}),
     argv,
     paths,
     texts,
@@ -374,17 +385,7 @@ export async function handleCli(
     // Defer the call into the promise: a synchronously-thrown leaf
     // error must land in the catch arms below, exactly as when the
     // call sat inside the try.
-    // The line waits on its host while the callback runs, so it lends
-    // its session to the callback's own lines (see `SessionState.lineHold`).
-    const hold = session.lineHold
-    body = (async () => {
-      if (hold !== null) hold.callbacks += 1
-      try {
-        return await fn(inv)
-      } finally {
-        if (hold !== null) hold.callbacks -= 1
-      }
-    })()
+    body = Promise.resolve().then(() => fn(inv))
   }
   // The leaf's declared limit bounds the handler body and its
   // streams, exactly like mount dispatch: without the wrap a blocking
@@ -444,6 +445,8 @@ export async function handleCli(
       new IOResult({ exitCode: 1, stderr }),
       new ExecutionNode({ command: cmdStr, exitCode: 1, stderr }),
     ]
+  } finally {
+    active = false
   }
   // The spec's `write` is the one answer: what policy calls a write, the
   // cache does too, so a verb that can mutate (`gh api` under any method)

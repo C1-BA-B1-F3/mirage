@@ -521,11 +521,6 @@ async function runParsedLine(
   // with record:false: no new recording scope, so their ops land in the
   // caller's recorder, and no command entry is logged for them.
   const isLine = options.record !== false
-  if (isLine) {
-    // Each typed line reads stdin fresh; a buffer left behind by a
-    // previous line's read/select would otherwise serve EOF forever.
-    effectiveSession.stdinBuffer = null
-  }
   // The session's kill channel folded in, as the dispatcher folds it
   // for the tree: a question put to a host has to answer to both, and
   // both admission passes below can put one.

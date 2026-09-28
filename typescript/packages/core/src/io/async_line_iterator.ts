@@ -16,6 +16,7 @@ import { abortable } from '../workspace/abort.ts'
 import { CachableAsyncIterator } from './cachable_iterator.ts'
 import { YieldBudget } from './yield_budget.ts'
 import { chunks } from './cooperative.ts'
+import { type ByteSource, DeviceInput } from './types.ts'
 
 const NEWLINE = 0x0a
 const BYTE_VIEW = new TextDecoder('latin1')
@@ -35,9 +36,11 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
   private hits: number[] = []
   private unskippedAttempts = 0
 
-  constructor(private readonly input: AsyncIterable<Uint8Array> | AsyncIterator<Uint8Array>) {
+  constructor(private readonly input: ByteSource | AsyncIterator<Uint8Array>) {
     const s = this.input as AsyncIterable<Uint8Array>
-    if (typeof s[Symbol.asyncIterator] === 'function') {
+    if (this.input instanceof Uint8Array) {
+      this.source = chunks(this.input)
+    } else if (typeof s[Symbol.asyncIterator] === 'function') {
       this.source = chunks(s)
     } else {
       this.source = chunks({
@@ -148,6 +151,11 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
   }
 
   // The stdin buffer survives individual builtins; cancellation belongs to each read.
+  /** Close the source and drop what it buffered, for input a failed line abandoned. */
+  discard(): Promise<void> {
+    return this.close()
+  }
+
   private check(signal?: AbortSignal): Promise<void> | undefined {
     signal?.throwIfAborted()
     const pending = this.budget.run()
@@ -225,6 +233,29 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
     return [copyOf(data), found]
   }
 
+  /** Hand over what is buffered, else the source's next chunk; null at end of input. */
+  async readChunk(): Promise<Uint8Array | null> {
+    if (this.buf.byteLength > 0) {
+      const data = this.buf
+      this.buf = new Uint8Array(0)
+      return data
+    }
+    if (this.exhausted) return null
+    try {
+      const pending = this.check()
+      if (pending !== undefined) await pending
+      const result = await this.pull()
+      if (result.done === true) {
+        this.exhausted = true
+        return null
+      }
+      return result.value
+    } catch (error) {
+      await this.close()
+      throw error
+    }
+  }
+
   /**
    * Read at most `count` characters, stopping early at `delim` (null
    * reads through delimiters). `read -n` is the delimited form, `read
@@ -272,6 +303,59 @@ export class AsyncLineIterator implements AsyncIterableIterator<Uint8Array> {
       throw error
     }
   }
+}
+
+/**
+ * Standard input that the commands of one group, loop or shell read in
+ * turn, as bash's all read one open descriptor.
+ *
+ * What one command reads the next does not see again: `read` takes its
+ * line off `lines` and leaves the rest buffered there, and any other
+ * command iterates this object for that rest, then for what the source
+ * still holds. It has no `return`, so a command that stops early never
+ * closes the source a later command may still read; whoever opened the
+ * source closes it, and a failed line discards it.
+ */
+export class SharedInput implements AsyncIterableIterator<Uint8Array> {
+  readonly lines: AsyncLineIterator
+
+  constructor(source: ByteSource) {
+    this.lines = new AsyncLineIterator(source)
+  }
+
+  [Symbol.asyncIterator](): AsyncIterableIterator<Uint8Array> {
+    return this
+  }
+
+  async next(): Promise<IteratorResult<Uint8Array>> {
+    const chunk = await this.lines.readChunk()
+    if (chunk === null) return { done: true, value: undefined }
+    return { done: false, value: chunk }
+  }
+
+  /** Close the source for good, for a line that failed reading it. */
+  discard(): Promise<void> {
+    return this.lines.discard()
+  }
+}
+
+/**
+ * The one descriptor a construct hands every command it runs. `<
+ * /dev/null` stays as it is: it reads nothing, so there is no position
+ * to share, and its type tells a command no file is attached.
+ */
+export function share(stdin: ByteSource | null): ByteSource | null {
+  if (stdin === null || stdin instanceof SharedInput || stdin instanceof DeviceInput) return stdin
+  return new SharedInput(stdin)
+}
+
+/**
+ * The line reader `read`, `mapfile` and `select` take input from: a
+ * shared descriptor's own, so what they leave the next command reads,
+ * else one over `stdin` alone.
+ */
+export function lineBuffer(stdin: ByteSource): AsyncLineIterator {
+  return stdin instanceof SharedInput ? stdin.lines : new AsyncLineIterator(stdin)
 }
 
 /**

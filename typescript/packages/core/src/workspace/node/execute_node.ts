@@ -19,6 +19,7 @@ import type { ProcessHandle } from '../../process/handle.ts'
 import type { ProcessSupervisor } from '../../process/supervisor.ts'
 import type { Runtime } from '../../runtime/base.ts'
 import type { RouteDecision } from '../../runtime/routing/index.ts'
+import { share } from '../../io/async_line_iterator.ts'
 import { asyncChain } from '../../io/stream.ts'
 import { type ByteSource, IOResult } from '../../io/types.ts'
 import type { VFS } from '../../vfs/base.ts'
@@ -787,6 +788,11 @@ async function executeNodeBody(
 
   const { dispatch, registry, jobTable, executeFn, agentId } = deps
   const kind = nodeKind(node)
+
+  // The statements a construct runs all read one descriptor, as bash's
+  // do: `read` takes its line and the command after it gets the rest, in
+  // a group, a loop, a list, a subshell or a nested shell alike.
+  if (STREAMING_KINDS.has(kind)) stdin = share(stdin)
 
   // `set -n` reads without executing, and it stops *everything* after
   // it, at every depth: GNU answers `if true; then set -n; echo BAD; fi`

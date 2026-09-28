@@ -18,6 +18,7 @@ from typing import Any
 
 from mirage.commands.builtin.utils.limit import run_with_timeout
 from mirage.io import IOResult
+from mirage.io.async_line_iterator import share
 from mirage.io.stream import (async_chain, close_quietly, discard_io,
                               discard_streams)
 from mirage.io.types import ByteSource, materialize
@@ -310,6 +311,10 @@ async def handle_subshell(
         all_stdout: list[Any] = []
         merged_io = IOResult()
         last_exec = ExecutionNode(command="()", exit_code=0)
+        # The descriptor `exec < file` opened, as the program loop keeps
+        # it: each statement reads on from where the one before stopped.
+        exec_input: ByteSource | None = None
+        exec_source: bytes | None = None
         i = 0
         while i < len(body):
             child = body[i]
@@ -351,7 +356,10 @@ async def handle_subshell(
             if child_stdin is None and session.exec_stdin_unreadable:
                 child_stdin = unreadable_stdin()
             elif child_stdin is None and session.exec_stdin is not None:
-                child_stdin = session.exec_stdin
+                if exec_source is not session.exec_stdin:
+                    exec_source = session.exec_stdin
+                    exec_input = share(exec_source)
+                child_stdin = exec_input
             try:
                 stdout, io, last_exec = await execute_node(
                     child, session, child_stdin, call_stack)

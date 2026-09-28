@@ -35,6 +35,7 @@ async def handle_source(
     path: str | PathSpec,
     session: SessionState,
     args: list[str] | None = None,
+    stdin: ByteSource | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Read a script file and execute it in the calling shell.
 
@@ -52,6 +53,8 @@ async def handle_source(
             script. When given they replace ``$1..$#`` for the duration
             of the source and are restored afterwards, matching bash;
             when omitted the parent's positional parameters are kept.
+        stdin (ByteSource | None): the caller's standard input, which
+            the script's statements read in turn.
     """
     raw = _scope_path(path)
     if word_text(path) == "":
@@ -74,7 +77,9 @@ async def handle_source(
         session.positional_args = args
     session.source_depth += 1
     try:
-        io = await execute_fn(script, session_id=session.session_id)
+        io = await execute_fn(script,
+                              session_id=session.session_id,
+                              stdin=stdin)
     finally:
         session.source_depth -= 1
         if saved_positional is not None:
@@ -97,4 +102,5 @@ async def source_builtin(call: BuiltinCall) -> Result:
         return script_error("source", SOURCE_USAGE, 2)
     return await handle_source(call.dispatch, call.execute_fn, operands[0],
                                call.session,
-                               [word_text(o) for o in operands[1:]])
+                               [word_text(o)
+                                for o in operands[1:]], call.stdin)

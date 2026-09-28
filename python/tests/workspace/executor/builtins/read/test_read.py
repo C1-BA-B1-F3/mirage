@@ -63,3 +63,56 @@ async def test_read_scalar_replaces_array():
     await ws.shell("a=(x y z)")
     io = await ws.shell('read -r a b <<< "one two"\necho "a=$a b=$b"')
     assert (io.stdout or b"") == b"a=one b=two\n"
+
+
+# What bash printed for each line (debian:stable-slim): the commands a
+# group, loop, list, function or nested shell runs read one descriptor,
+# so `read` takes its own and the next command reads on from there.
+READ_LEAVES_THE_REST = [
+    ("printf 'a\\nb\\n' | { read x; echo \"[$x]\"; cat; }", b"[a]\nb\n"),
+    ("printf 'a\\nb\\n' | sh -c 'read x; echo \"[$x]\"; cat'", b"[a]\nb\n"),
+    ("printf 'a\\nb\\nc\\n' | { ( read x; echo \"[$x]\" ); cat; }",
+     b"[a]\nb\nc\n"),
+    ("printf 'a\\nb\\nc\\n' | { read x; read y; echo \"$x $y\"; cat; }",
+     b"a b\nc\n"),
+    ("printf 'a\\nb\\n' | { read -n1 x; echo \"[$x]\"; cat; }", b"[a]\n\nb\n"),
+    ("printf 'abc\\ndef\\n' | { read -N2 x; echo \"[$x]\"; cat; }",
+     b"[ab]\nc\ndef\n"),
+    ("printf 'a:b\\nc\\n' | { read -d: x; echo \"[$x]\"; cat; }",
+     b"[a]\nb\nc\n"),
+    ("printf 'a\\nb\\n' | { cat; read x; echo \"[$x]\"; }", b"a\nb\n[]\n"),
+    ("printf 'a\\nb\\nc\\n' | while read x; do echo \"[$x]\"; cat; done",
+     b"[a]\nb\nc\n"),
+    ("printf 'a\\nb\\nc\\n' | { read x; for i in 1 2; do read y; "
+     "echo \"[$y]\"; done; }", b"[b]\n[c]\n"),
+    ("f() { read x; echo \"[$x]\"; }; printf 'a\\nb\\nc\\n' | { f; f; cat; }",
+     b"[a]\n[b]\nc\n"),
+    ("printf 'a\\nb\\nc\\n' | { eval 'read x'; echo \"[$x]\"; cat; }",
+     b"[a]\nb\nc\n"),
+    ("printf 'read y; echo \"[$y]\"\\n' > /data/s.sh; "
+     "printf 'a\\nb\\n' | { source /data/s.sh; cat; }", b"[a]\nb\n"),
+    ("printf 'a\\nb\\nc\\n' | { read x && cat; }", b"b\nc\n"),
+    ("printf 'a\\nb\\n' | case x in x) read a; read b; echo \"$a$b\";; esac",
+     b"ab\n"),
+    ("printf 'a\\nb\\nc\\n' | { read x; mapfile -t r; "
+     "echo \"[$x] ${#r[@]}\"; }", b"[a] 2\n"),
+    ("printf '1\\n2\\n' | { select v in p q; do echo \"[$v]\"; break; done; "
+     "cat; }", b"[p]\n2\n"),
+    ("printf 'a\\nb\\nc\\n' | { read x; xargs echo; }", b"b c\n"),
+    ("printf 'a\\nb\\n' > /data/f; { read x; echo \"[$x]\"; cat; } < /data/f",
+     b"[a]\nb\n"),
+    ("{ read x; echo \"[$x]\"; cat; } <<< $'a\\nb'", b"[a]\nb\n"),
+    ("printf 'a\\nb\\nc\\n' > /data/f; exec < /data/f; read x; read y; "
+     "echo \"[$x][$y]\"", b"[a][b]\n"),
+    ("read x <<< ''; read y <<< ''; echo \"$? [$y]\"", b"0 []\n"),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, expected", READ_LEAVES_THE_REST)
+async def test_read_leaves_the_rest_for_the_next_command(
+        line: str, expected: bytes):
+    ws = await _read_ws()
+    io = await ws.shell(line)
+    assert await materialize(io.stdout) == expected
+    assert io.exit_code == 0

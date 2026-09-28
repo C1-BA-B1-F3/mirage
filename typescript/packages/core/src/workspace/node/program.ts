@@ -14,6 +14,7 @@
 
 import { CommandTimeoutError } from '../../commands/errors.ts'
 import { isControlFlowError } from '../workspace/failure.ts'
+import { share } from '../../io/async_line_iterator.ts'
 import { asyncChain } from '../../io/stream.ts'
 import { type ByteSource, IOResult, materialize } from '../../io/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
@@ -110,6 +111,10 @@ async function runProgram(
   // Source lines and the highest one `set -v` has already echoed.
   const sourceLines = getText(node).split('\n')
   let echoedRow = -1
+  // The descriptor `exec < file` opened, one for every statement after
+  // it, and the bytes it was opened on.
+  let execInput: ByteSource | null = null
+  let execSource: Uint8Array | null = null
 
   let i = 0
   while (i < children.length) {
@@ -216,13 +221,15 @@ async function runProgram(
       let execNode: ExecutionNode
       try {
         // `exec < file` feeds the shell's stdin: a later `read` or
-        // `while read` sees it. The same bytes reach each statement, and
-        // the identity-keyed line buffer advances a sequence of reads
-        // through them.
+        // `while read` sees it, and each statement reads on from where
+        // the one before it stopped.
         // `exec <&-` or `exec 0<&1` left nothing to read: a reader gets
         // EBADF, as bash's does.
-        const childStdin =
-          stdin ?? (session.execStdinUnreadable ? unreadableStdin() : session.execStdin)
+        if (session.execStdin !== execSource) {
+          execSource = session.execStdin
+          execInput = share(execSource)
+        }
+        const childStdin = stdin ?? (session.execStdinUnreadable ? unreadableStdin() : execInput)
         ;[s, ioResult, execNode] = await recurse(child, session, childStdin, callStack)
       } catch (err) {
         if (err instanceof ExitSignal) {

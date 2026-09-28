@@ -16,6 +16,7 @@ import type { ProcessHandle } from '../../process/handle.ts'
 import type { ProcessSupervisor } from '../../process/supervisor.ts'
 import { PathSpec } from '../../types.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
+import { share } from '../../io/async_line_iterator.ts'
 import { asyncChain, closeQuietly, discardIo, discardStreams } from '../../io/stream.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
@@ -363,6 +364,10 @@ export async function handleSubshell(
     const allStdout: ByteSource[] = []
     let mergedIo = new IOResult()
     let lastExec = new ExecutionNode({ command: '()', exitCode: 0 })
+    // The descriptor `exec < file` opened, as the program loop keeps it:
+    // each statement reads on from where the one before stopped.
+    let execInput: ByteSource | null = null
+    let execSource: Uint8Array | null = null
     let i = 0
     while (i < body.length) {
       const child = body[i]
@@ -420,8 +425,11 @@ export async function handleSubshell(
       let io: IOResult
       let childExec: ExecutionNode
       try {
-        const childStdin =
-          stdin ?? (session.execStdinUnreadable ? unreadableStdin() : session.execStdin)
+        if (session.execStdin !== execSource) {
+          execSource = session.execStdin
+          execInput = share(execSource)
+        }
+        const childStdin = stdin ?? (session.execStdinUnreadable ? unreadableStdin() : execInput)
         ;[stdout, io, childExec] = await executeNode(child, session, childStdin, callStack)
       } catch (err) {
         if (!(err instanceof ExitSignal)) throw err

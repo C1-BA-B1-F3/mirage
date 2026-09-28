@@ -16,6 +16,7 @@ import logging
 from collections.abc import AsyncIterator
 
 from mirage.io import CachableAsyncIterator, IOResult
+from mirage.io.async_line_iterator import SharedInput
 from mirage.io.types import ByteSource, materialize
 
 logger = logging.getLogger(__name__)
@@ -109,7 +110,7 @@ async def close_quietly(stream: ByteSource | None) -> None:
 async def discard_streams(*streams: ByteSource | None) -> None:
     """Discard failed reads without changing normal early-close behavior."""
     for stream in streams:
-        if isinstance(stream, CachableAsyncIterator):
+        if isinstance(stream, (CachableAsyncIterator, SharedInput)):
             await stream.discard()
         else:
             await close_quietly(stream)

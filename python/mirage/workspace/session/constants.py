@@ -69,13 +69,11 @@ INHERITED_FIELDS: tuple[str, ...] = (
 )
 
 # State that belongs to the line being executed, not to the shell, so a
-# fork starts it fresh: the errexit marker, the source nesting depth, the
-# stdin the caller happened to pass and the running function's locals.
+# fork starts it fresh: the errexit marker, the source nesting depth and
+# the running function's locals.
 TRANSIENT_FIELDS: tuple[str, ...] = (
     "errexit_immune",
     "source_depth",
-    "_stdin_buffer",
-    "_stdin_source",
     "_local_vars",
     "_local_frames",
     "_local_random",

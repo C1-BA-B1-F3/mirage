@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { ByteSource } from '../../../../io/types.ts'
 import type { PathSpec } from '../../../../types.ts'
 import { fsStrerror } from '../../../../utils/errors.ts'
 import type { SessionState } from '../../../session/session.ts'
@@ -29,6 +30,7 @@ export async function handleSource(
   path: string | PathSpec,
   session: SessionState,
   args: string[] = [],
+  stdin: ByteSource | null = null,
 ): Promise<Result> {
   const raw = scopePath(path)
   if (wordText(path) === '') {
@@ -51,7 +53,7 @@ export async function handleSource(
   }
   session.sourceDepth += 1
   try {
-    const io = await executeFn(script, { sessionId: session.sessionId })
+    const io = await executeFn(script, { sessionId: session.sessionId, stdin })
     return [io.stdout, io, new ExecutionNode({ command: `source ${raw}`, exitCode: io.exitCode })]
   } finally {
     session.sourceDepth -= 1
@@ -68,5 +70,5 @@ export async function sourceBuiltin(call: BuiltinCall): Promise<Result> {
   const target = operands[0]
   if (target === undefined) return scriptError('source', SOURCE_USAGE, 2)
   const sourceArgs = operands.slice(1).map((o) => wordText(o))
-  return handleSource(call.dispatch, call.executeFn, target, call.session, sourceArgs)
+  return handleSource(call.dispatch, call.executeFn, target, call.session, sourceArgs, call.stdin)
 }

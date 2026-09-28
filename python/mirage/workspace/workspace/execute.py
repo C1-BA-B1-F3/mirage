@@ -313,10 +313,6 @@ async def execute_line(
     # typed line is read, never inside the evaluator). Internal
     # evaluations and provision runs get an inert scope.
     is_line = record and not provision
-    if is_line:
-        # Each typed line reads stdin fresh; a buffer left behind by a
-        # previous line's read/select would otherwise serve EOF forever.
-        effective_session._stdin_buffer = None
     scope = RecordingScope(active=is_line)
 
     session_token = set_current_session(effective_session,

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { SharedInput } from './async_line_iterator.ts'
 import { CachableAsyncIterator } from './cachable_iterator.ts'
 import { type ByteSource, type IOResult, materialize } from './types.ts'
 
@@ -90,7 +91,7 @@ export async function closeQuietly(stream: ByteSource | null): Promise<void> {
 /** Discard failed reads without changing normal early-consumer close semantics. */
 export async function discardStreams(...streams: (ByteSource | null)[]): Promise<void> {
   for (const stream of new Set(streams)) {
-    if (stream instanceof CachableAsyncIterator) {
+    if (stream instanceof CachableAsyncIterator || stream instanceof SharedInput) {
       await stream.discard()
     } else {
       await closeQuietly(stream)

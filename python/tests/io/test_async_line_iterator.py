@@ -14,7 +14,10 @@
 
 import pytest
 
-from mirage.io.async_line_iterator import AsyncLineIterator, char_width
+from mirage.io.async_line_iterator import (AsyncLineIterator, SharedInput,
+                                           char_width, line_buffer, share)
+from mirage.io.cooperative import chunks
+from mirage.io.types import DeviceInput, materialize
 
 
 async def _chunks(parts: list[bytes]):
@@ -203,3 +206,43 @@ async def test_skip_nonmatching_lines_by_another_delimiter():
     assert await lines.read_until(b"\0") == (b"needle", True)
     assert lines.skip_nonmatching_lines((b"needle", ), False, b"\0") == (0, 0)
     assert await lines.read_until(b"\0") == (b"", False)
+
+
+@pytest.mark.asyncio
+async def test_shared_input_hands_over_what_a_line_read_left():
+    shared = SharedInput(_chunks([b"a\nb\n", b"c\n"]))
+    assert await shared.lines.readline() == b"a"
+    assert await materialize(shared) == b"b\nc\n"
+    assert await shared.lines.readline() is None
+
+
+@pytest.mark.asyncio
+async def test_shared_input_reads_bytes():
+    shared = SharedInput(b"a\nb\n")
+    assert await shared.lines.readline() == b"a"
+    assert await materialize(shared) == b"b\n"
+
+
+@pytest.mark.asyncio
+async def test_a_reader_that_stops_early_leaves_the_rest():
+    shared = SharedInput(_chunks([b"a\n", b"b\n"]))
+    reader = chunks(shared)
+    assert await reader.__anext__() == b"a\n"
+    await reader.aclose()
+    assert await shared.lines.readline() == b"b"
+
+
+def test_share_wraps_once_and_leaves_dev_null_as_it_is():
+    shared = share(b"x")
+    assert isinstance(shared, SharedInput)
+    assert share(shared) is shared
+    device = DeviceInput()
+    assert share(device) is device
+    assert share(None) is None
+
+
+@pytest.mark.asyncio
+async def test_line_buffer_reads_a_shared_input_in_place():
+    shared = SharedInput(b"a\nb\n")
+    assert line_buffer(shared) is shared.lines
+    assert await line_buffer(b"a\nb\n").readline() == b"a"

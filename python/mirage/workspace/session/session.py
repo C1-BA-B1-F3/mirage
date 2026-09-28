@@ -18,8 +18,6 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
-from mirage.io.async_line_iterator import AsyncLineIterator
-from mirage.io.types import ByteSource
 from mirage.policy.types import (AdmissionRules, Decision, HideReason,
                                  ProfileScript)
 from mirage.process.config import ProcessPermissions
@@ -313,8 +311,6 @@ class SessionState:
     # Depth of nested `source`/`.` execution: `return` is legal and the
     # program loop absorbs its signal only while a file is being sourced.
     source_depth: int = field(default=0, repr=False)
-    _stdin_buffer: AsyncLineIterator | None = field(default=None, repr=False)
-    _stdin_source: ByteSource | None = field(default=None, repr=False)
     # Variables shadowed by `local` / `declare` in the running function;
     # a None value means the caller had no variable of that name. One
     # stack, not one per container: a local shadows the whole record, so

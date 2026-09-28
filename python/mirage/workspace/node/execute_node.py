@@ -20,6 +20,7 @@ from typing import Any, Callable
 from mirage.context import (program_invocation, reset_program_invocation,
                             set_program_invocation)
 from mirage.io import IOResult
+from mirage.io.async_line_iterator import share
 from mirage.io.stream import async_chain
 from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
@@ -771,6 +772,12 @@ async def _execute_node(
                       handed=handed)
 
     kind = node_kind(node)
+
+    # The statements a construct runs all read one descriptor, as bash's
+    # do: `read` takes its line and the command after it gets the rest,
+    # in a group, a loop, a list, a subshell or a nested shell alike.
+    if kind in STREAMING_KINDS:
+        stdin = share(stdin)
 
     # A sink turns this walk from "return your output" into "write your
     # output". Sequencing constructs pass it to their children so each

@@ -16,7 +16,9 @@ from typing import Any
 
 from mirage.commands.spec.usage import read_fail_exit
 from mirage.io import IOResult
+from mirage.io.async_line_iterator import share
 from mirage.io.stream import async_chain, materialize
+from mirage.io.types import ByteSource
 from mirage.policy.decisions import Decisions
 from mirage.policy.types import HandOff
 from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
@@ -89,6 +91,10 @@ async def _run_program(
     # Source lines and the highest one `set -v` has already echoed.
     source_lines = get_text(node).split("\n")
     echoed_row = -1
+    # The descriptor `exec < file` opened, one for every statement
+    # after it, and the bytes it was opened on.
+    exec_input: ByteSource | None = None
+    exec_source: bytes | None = None
 
     i = 0
     while i < len(children):
@@ -167,10 +173,12 @@ async def _run_program(
                 child_stdin = unreadable_stdin()
             elif child_stdin is None and session.exec_stdin is not None:
                 # `exec < file` feeds the shell's stdin: a later `read`
-                # or `while read` sees it. The same bytes reach each
-                # statement, and the identity-keyed line buffer advances
-                # a sequence of reads through it.
-                child_stdin = session.exec_stdin
+                # or `while read` sees it, and each statement reads on
+                # from where the one before it stopped.
+                if exec_source is not session.exec_stdin:
+                    exec_source = session.exec_stdin
+                    exec_input = share(exec_source)
+                child_stdin = exec_input
             try:
                 stdout, io, last_exec = await recurse(child, session,
                                                       child_stdin, call_stack)

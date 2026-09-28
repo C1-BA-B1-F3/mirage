@@ -15,6 +15,7 @@
 from typing import Any
 
 from mirage.io import IOResult
+from mirage.io.async_line_iterator import share
 from mirage.io.stream import async_chain
 from mirage.io.types import ByteSource
 from mirage.policy.decisions import Decisions
@@ -68,6 +69,8 @@ async def run_shell_function(
         decisions (Decisions | None): ledger that holds those claims.
     """
     func_body = session.functions[cmd_name]
+    # The body's statements read the caller's stdin in turn.
+    stdin = share(stdin)
     cs = call_stack if call_stack is not None else CallStack()
     # Positional args carry the word as typed ($1 stays sub/a.txt).
     text_args = [word_text(p) for p in parts[1:]]

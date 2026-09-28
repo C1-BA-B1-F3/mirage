@@ -20,7 +20,6 @@ import {
 import type { Limit } from '../../types.ts'
 import { parseCommandLimits, commandLimitsToJSON } from '../../policy/builtin/output_cap.ts'
 import { BIN_PREFIX, RANDOM, RANDOM_UNSET, SHELL_ARGV0 } from '../../shell/constants.ts'
-import type { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import { EnvVarSchema, type EnvEntries } from '../../secrets/config.ts'
 import type { ShellArray } from '../../shell/array.ts'
 import type { ManagedRef, ShellVar } from '../../shell/variable.ts'
@@ -444,8 +443,6 @@ export class SessionState {
   // Depth of nested `source`/`.` execution: `return` is legal and the
   // program loop absorbs its signal only while a file is being sourced.
   sourceDepth = 0
-  stdinBuffer: AsyncLineIterator | null = null
-  stdinSource: unknown = null
   // Variables shadowed by `local` / `declare` in the running function; a
   // null value means the caller had no variable of that name. One stack,
   // not one per container: a local shadows the whole record, so its

@@ -13,10 +13,12 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
+import { SharedInput } from './async_line_iterator.ts'
 import { CachableAsyncIterator } from './cachable_iterator.ts'
 import {
   asyncChain,
   closeQuietly,
+  discardStreams,
   drain,
   exitOnEmpty,
   mergeStdoutStderr,
@@ -141,6 +143,31 @@ describe('closeQuietly', () => {
 
   it('is a no-op on bytes', async () => {
     await closeQuietly(encode('x'))
+  })
+
+  it('leaves a shared input to a discard', async () => {
+    let closed = false
+    async function* gen(): AsyncGenerator<Uint8Array, void, void> {
+      try {
+        await Promise.resolve()
+        yield encode('a\n')
+        yield encode('b\n')
+        yield encode('c\n')
+      } finally {
+        closed = true
+      }
+    }
+    const shared = new SharedInput(gen())
+    const text = async (): Promise<string | null> => {
+      const line = await shared.lines.readline()
+      return line === null ? null : new TextDecoder().decode(line)
+    }
+    expect(await text()).toBe('a')
+    await closeQuietly(shared)
+    expect(await text()).toBe('b')
+    await discardStreams(shared)
+    expect(closed).toBe(true)
+    expect(await text()).toBeNull()
   })
 })
 

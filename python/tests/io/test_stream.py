@@ -14,8 +14,12 @@
 
 import asyncio
 
-from mirage.io.stream import (async_chain, drain, exit_on_empty,
-                              merge_stdout_stderr, quiet_match)
+import pytest
+
+from mirage.io.async_line_iterator import SharedInput
+from mirage.io.stream import (async_chain, close_quietly, discard_streams,
+                              drain, exit_on_empty, merge_stdout_stderr,
+                              quiet_match)
 from mirage.io.types import IOResult
 
 
@@ -343,3 +347,25 @@ def test_chain_cachables_early_stop_leaves_later_untouched():
         assert not b.exhausted
 
     asyncio.run(_run())
+
+
+@pytest.mark.asyncio
+async def test_a_shared_input_outlives_a_close_and_not_a_discard():
+    closed = False
+
+    async def source():
+        nonlocal closed
+        try:
+            yield b"a\n"
+            yield b"b\n"
+            yield b"c\n"
+        finally:
+            closed = True
+
+    shared = SharedInput(source())
+    assert await shared.lines.readline() == b"a"
+    await close_quietly(shared)
+    assert await shared.lines.readline() == b"b"
+    await discard_streams(shared)
+    assert closed
+    assert await shared.lines.readline() is None

@@ -23,6 +23,7 @@ import { wordText } from '../../../types.ts'
 import type { SessionState } from '../../session/session.ts'
 import { restoreLocals } from '../../session/state.ts'
 import { ExecutionNode } from '../../types.ts'
+import { share } from '../../../io/async_line_iterator.ts'
 import { asyncChain } from '../../../io/stream.ts'
 import { type ExecuteNodeFn, runStatement } from '../jobs.ts'
 import type { JobTable } from '../../../shell/job_table/index.ts'
@@ -45,6 +46,8 @@ export async function executeShellFunction(
   handed: HandOff | null = null,
   decisions: Decisions | null = null,
 ): Promise<Result> {
+  // The body's statements read the caller's stdin in turn.
+  const bodyStdin = share(stdin)
   const cs = callStack ?? new CallStack()
   // Positional args carry the word as typed ($1 stays sub/a.txt).
   const textArgs = restParts.map(wordText)
@@ -70,7 +73,7 @@ export async function executeShellFunction(
           executeNode,
           cmdNode,
           session,
-          stdin,
+          bodyStdin,
           cs,
           jobTable,
           agentId,

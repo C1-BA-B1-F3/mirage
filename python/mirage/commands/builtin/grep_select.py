@@ -46,9 +46,6 @@ class WalkFilters:
     text: bool = False
 
 
-NO_FILTERS = WalkFilters()
-
-
 def parse_file_globs(fl: FlagView) -> tuple[FileGlob, ...]:
     """The --include/--exclude rules a line typed, in line order.
 

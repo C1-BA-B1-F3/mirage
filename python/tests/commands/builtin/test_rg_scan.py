@@ -617,9 +617,8 @@ class TestRgByteOffsets:
 class TestRgFullReportsSelection:
     """The status rides ``io``, not the printed lines.
 
-    ``rg_full`` returns only the printed lines, so the status rides the
-    same ``io`` channel ``grep_lines`` and ``grep_stream`` already take;
-    a zero-width match selects its line and prints an empty piece.
+    The ``rg`` helper returns only the printed lines, so the status rides
+    ``io``; a zero-width match selects its line and prints an empty piece.
     """
 
     @pytest.mark.anyio

@@ -691,7 +691,9 @@ async def test_rg_multi_file_missing_operand_reports_and_continues():
     )
     decoded = (await _drain_async(output)).decode()
     assert decoded == "/a.txt:hello\n/a.txt:world\n"
-    assert io.stderr == b"rg: /nope.txt: No such file or directory\n"
+    assert io.stderr == (
+        b"rg: /nope.txt: IO error for operation on /nope.txt: "
+        b"No such file or directory (os error 2)\n")
     assert io.exit_code == 2
 
 
@@ -706,9 +708,10 @@ def _walk_refused(virtual: str, raw: str, verdict: WalkErrno) -> PathSpec:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operand, message", [
-    (("/", "", "ENOENT"), b"rg: : No such file or directory\n"),
-    (("/lp1", "lp1", "ELOOP"),
-     b"rg: lp1: Too many levels of symbolic links\n"),
+    (("/", "", "ENOENT"), b"rg: : IO error for operation on : "
+     b"No such file or directory (os error 2)\n"),
+    (("/lp1", "lp1", "ELOOP"), b"rg: lp1: IO error for operation on lp1: "
+     b"Too many levels of symbolic links (os error 40)\n"),
 ])
 async def test_rg_refuses_an_operand_the_walk_refused(operand, message):
     # ripgrep 14.1.1: `rg o ''` and `rg o lp1` (a loop) refuse the operand
@@ -730,6 +733,28 @@ async def test_rg_refuses_an_operand_the_walk_refused(operand, message):
 
 
 @pytest.mark.asyncio
+async def test_rg_lone_operand_it_may_not_read_is_the_searchers_refusal():
+    # ripgrep 14.1.1 opens a lone file operand after the stat said it is
+    # one, so a file it may not read is `rg: locked.txt: Permission denied
+    # (os error 13)`, exit 2, not the shared handler's exit 1.
+    readdir, stat, rb, _ = _make_backend({"/locked.txt": b"hit\n"})
+
+    async def denied(path):
+        raise PermissionError("/locked.txt")
+        yield b""
+
+    output, io = await rg([_typed("/locked.txt", "locked.txt")], ["hit"],
+                          CommandOpts(),
+                          readdir=readdir,
+                          stat=stat,
+                          read_bytes=rb,
+                          read_stream=denied)
+    assert await _drain_async(output) == b""
+    assert io.stderr == b"rg: locked.txt: Permission denied (os error 13)\n"
+    assert io.exit_code == 2
+
+
+@pytest.mark.asyncio
 async def test_rg_typed_empty_operand_is_not_the_implicit_cwd():
     # A bare `rg PAT` searches a synthetic cwd operand spelled '' too, so
     # only the walk's verdict tells a typed '' apart. A line that named
@@ -744,7 +769,8 @@ async def test_rg_typed_empty_operand_is_not_the_implicit_cwd():
                           read_bytes=rb,
                           read_stream=rs)
     assert await _drain_async(output) == b""
-    assert io.stderr == b"rg: : No such file or directory\n" * 2
+    assert io.stderr == (b"rg: : IO error for operation on : "
+                         b"No such file or directory (os error 2)\n") * 2
     assert io.exit_code == 2
 
 
@@ -1321,7 +1347,8 @@ async def test_rg_walk_names_a_missing_operand_as_typed(paths, flags, want):
     # as the line spelled it, the way it prints `sub/ok.txt:hit`.
     out, err, io = await _run_locked([_typed(v, r) for v, r in paths], flags)
     assert out == want
-    assert b"rg: nope: No such file or directory\n" in err
+    assert (b"rg: nope: IO error for operation on nope: "
+            b"No such file or directory (os error 2)\n" in err)
     assert io.exit_code == 2
 
 
@@ -1329,7 +1356,7 @@ async def test_rg_walk_names_a_missing_operand_as_typed(paths, flags, want):
 async def test_rg_walk_names_a_file_it_could_not_read_as_typed():
     out, err, io = await _run_locked([_typed("/d/sub", "sub")], {})
     assert out == b"sub/ok.txt:hit\n"
-    assert err == b"rg: sub/locked.txt: Permission denied\n"
+    assert err == b"rg: sub/locked.txt: Permission denied (os error 13)\n"
     assert io.exit_code == 2
 
 

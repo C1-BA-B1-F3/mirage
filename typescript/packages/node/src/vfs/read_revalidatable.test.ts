@@ -1478,26 +1478,25 @@ describe('the read-token contract', () => {
       await ws.close()
     }
   })
-})
 
-describe('partial searches cannot evict live app bytes or overlays', () => {
-  it.each(['gdocs', 'gsheets', 'gslides'])('%s', async (name) => {
-    const fake = await makeFake(name, 'root', SEED)
-    const virtual = `/m/${fake.key}`
-    const ws = freshWorkspace(fake.vfs)
-    const search = vi.spyOn(googleDrive, 'listAllFiles')
-    try {
-      await line(ws, `cat ${virtual}`)
-      await line(ws, `chmod 600 ${virtual}`)
-      search.mockClear().mockResolvedValue({ files: [], complete: false })
-      const before = fake.fetches()
-      expect(await line(ws, `cat ${virtual}`)).toEqual(SEED)
-      expect(new TextDecoder().decode(await line(ws, `stat -c %a ${virtual}`))).toBe('600\n')
-      expect(fake.fetches()).toBe(before)
-      expect(search).not.toHaveBeenCalled()
-    } finally {
-      search.mockRestore()
-      await ws.close()
-    }
+  describe('partial searches cannot evict live app bytes or overlays', () => {
+    it.each(['gdocs', 'gsheets', 'gslides'])('%s', async (name) => {
+      const fake = await makeFake(name, 'root', SEED)
+      const virtual = `/m/${fake.key}`
+      const ws = freshWorkspace(fake.vfs)
+      const search = vi.spyOn(googleDrive, 'listAllFiles')
+      try {
+        await line(ws, `cat ${virtual}`)
+        await line(ws, `chmod 600 ${virtual}`)
+        search.mockClear().mockResolvedValue({ files: [], complete: false })
+        const before = fake.fetches()
+        expect(await line(ws, `cat ${virtual}`)).toEqual(SEED)
+        expect(new TextDecoder().decode(await line(ws, `stat -c %a ${virtual}`))).toBe('600\n')
+        expect(fake.fetches()).toBe(before)
+        expect(search).not.toHaveBeenCalled()
+      } finally {
+        await ws.close()
+      }
+    })
   })
 })

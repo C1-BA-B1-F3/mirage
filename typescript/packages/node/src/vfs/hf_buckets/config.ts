@@ -23,6 +23,9 @@ import { type FieldNormalizer, secondsToMs } from '@struktoai/mirage-core/utils/
 
 export const HF_ENDPOINT = 'https://huggingface.co'
 
+// python's `timeout: int = 30`, in the milliseconds this side stores.
+export const HF_TIMEOUT_MS = 30_000
+
 export function assertHfRepoId(value: string, field: string): string {
   const parts = value.split('/')
   if (parts.length !== 2 || parts[0] === '' || parts[1] === '') {

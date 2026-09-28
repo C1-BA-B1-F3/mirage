@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,10 +20,12 @@ import pytest_asyncio
 from aiohttp import web
 from pydantic import SecretStr
 
+from mirage.core.api.client import SessionPool
 from mirage.core.hf_hub.client import (HfHubError, _error_of, api_url,
                                        etag_value, hub_bytes_tagged,
                                        hub_headers, hub_post, hub_stream,
-                                       resolve_url, rev_segment)
+                                       quote_path, resolve_url, rev_segment,
+                                       stall_timeout)
 from mirage.utils.ranges import ByteWindow
 
 
@@ -127,6 +130,7 @@ def test_etag_value_strips_the_weak_prefix_and_quotes(raw, expected):
 
 
 SEEN: list[dict] = []
+STALL = 0.3
 SERVE: dict = {"body": b"0123456789", "ignore_range": False}
 
 
@@ -149,6 +153,25 @@ async def _cdn(request: web.Request) -> web.Response:
     return web.Response(body=body, headers=headers)
 
 
+async def _drip(request: web.Request) -> web.StreamResponse:
+    # Each chunk lands inside the stall bound, the whole body well past it.
+    resp = web.StreamResponse()
+    await resp.prepare(request)
+    for chunk in (b"ab", b"cd", b"ef", b"gh"):
+        await asyncio.sleep(STALL / 2)
+        await resp.write(chunk)
+    await resp.write_eof()
+    return resp
+
+
+async def _stall(request: web.Request) -> web.StreamResponse:
+    resp = web.StreamResponse()
+    await resp.prepare(request)
+    await resp.write(b"ab")
+    await asyncio.sleep(STALL * 4)
+    return resp
+
+
 async def _post(request: web.Request) -> web.Response:
     SEEN.append({"content_type": request.headers.get("Content-Type")})
     return web.json_response([])
@@ -162,6 +185,8 @@ async def hub_url():
     app.router.add_get("/resolve", _resolve)
     app.router.add_get("/cdn", _cdn)
     app.router.add_post("/post", _post)
+    app.router.add_get("/drip", _drip)
+    app.router.add_get("/stall", _stall)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", 0)
@@ -233,3 +258,60 @@ async def test_hub_post_sends_a_json_content_type(hub_url):
     # The live Hub answers a paths-info body without it with 400.
     await hub_post(None, hub_url + "/post", {"paths": ["a.txt"]})
     assert SEEN[-1]["content_type"] == "application/json"
+
+
+def test_quote_path_encodes_each_segment_without_a_leading_slash():
+    assert quote_path("/a dir/f#1.txt") == "a%20dir/f%231.txt"
+
+
+def test_stall_timeout_bounds_progress_not_the_whole_request():
+    bound = stall_timeout(5)
+    assert (bound.total, bound.sock_connect, bound.sock_read) == (None, 5, 5)
+
+
+@pytest.mark.parametrize("seconds", [0, -1])
+def test_a_bound_of_zero_or_less_is_none(seconds):
+    bound = stall_timeout(seconds)
+    assert (bound.total, bound.sock_connect, bound.sock_read) == (None, None,
+                                                                  None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seconds", [0, -1])
+async def test_a_download_under_no_bound_is_not_cut_off(hub_url, seconds):
+    pool = SessionPool(timeout=stall_timeout(seconds))
+    try:
+        chunks = [
+            c
+            async for c in hub_stream(None, hub_url + "/drip", 2, session=pool)
+        ]
+    finally:
+        await pool.close()
+    assert b"".join(chunks) == b"abcdefgh"
+
+
+@pytest.mark.asyncio
+async def test_a_download_that_keeps_flowing_outlives_the_bound(hub_url):
+    pool = SessionPool(timeout=stall_timeout(STALL))
+    try:
+        chunks = [
+            c
+            async for c in hub_stream(None, hub_url + "/drip", 2, session=pool)
+        ]
+    finally:
+        await pool.close()
+    assert b"".join(chunks) == b"abcdefgh"
+
+
+@pytest.mark.asyncio
+async def test_a_download_that_stops_flowing_fails_at_the_bound(hub_url):
+    pool = SessionPool(timeout=stall_timeout(STALL))
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            async for _ in hub_stream(None,
+                                      hub_url + "/stall",
+                                      2,
+                                      session=pool):
+                pass
+    finally:
+        await pool.close()

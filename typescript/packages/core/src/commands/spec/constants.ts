@@ -274,19 +274,18 @@ export const READ_FAIL_EXIT: Readonly<Record<string, number>> = Object.freeze({
   unzip: 9,
 })
 
-// The four commands whose code DOES depend on the errno, so the table
-// above cannot express them on its own. sed opens the directory
-// successfully and fails on the read, which is its own class (4), while a
-// missing file fails at open (2). The gzip family reports a directory as
-// a warning (2) and a missing file as an error (1). zgrep inverts that,
-// because its exit code is grep's: a directory it cannot decompress
-// yields no match (1) where a missing file is grep's own error (2).
+// The commands whose code DOES depend on the errno, so the table above
+// cannot express them on its own. sed opens the directory successfully and
+// fails on the read, which is its own class (4), while a missing file fails at
+// open (2). The gzip family reports a directory as a warning (2) and a missing
+// file as an error (1). zgrep opens its operands itself, as `gzip -cdfq`
+// does, and a pattern file it cannot read is exit 2 however it failed.
+// Mirrors Python's READ_FAIL_EXIT_ISDIR.
 export const READ_FAIL_EXIT_ISDIR: Readonly<Record<string, number>> = Object.freeze({
   sed: 4,
   gzip: 2,
   gunzip: 2,
   zcat: 2,
-  zgrep: 1,
 })
 
 // The interpreter commands answer option errors in CPython's words, not

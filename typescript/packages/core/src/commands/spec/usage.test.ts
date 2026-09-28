@@ -301,15 +301,16 @@ describe('readFailExitCode', () => {
     expect(readFailExitCode('cat', fsErr('EFBIG'))).toBe(1)
   })
 
-  it('splits by errno for the four commands that do', () => {
+  it('splits by errno for the commands that do', () => {
     // sed opens the directory and fails on the read (4) where a missing
     // file fails at open (2); the gzip family calls a directory a warning
-    // (2) and a missing file an error (1); zgrep inverts that.
+    // (2) and a missing file an error (1). zgrep opens its operands itself,
+    // so a failed read that reaches here is grep's trouble, 2 either way.
     expect(readFailExitCode('sed', fsErr('EISDIR'))).toBe(4)
     expect(readFailExitCode('sed', fsErr('ENOENT'))).toBe(2)
     expect(readFailExitCode('zcat', fsErr('EISDIR'))).toBe(2)
     expect(readFailExitCode('zcat', fsErr('ENOENT'))).toBe(1)
-    expect(readFailExitCode('zgrep', fsErr('EISDIR'))).toBe(1)
+    expect(readFailExitCode('zgrep', fsErr('EISDIR'))).toBe(2)
     expect(readFailExitCode('zgrep', fsErr('ENOENT'))).toBe(2)
   })
 

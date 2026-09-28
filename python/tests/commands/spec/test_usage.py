@@ -129,15 +129,16 @@ def test_read_fail_exit_reads_the_code_off_the_command():
     assert read_fail_exit("cat", efbig("/x")) == 1
 
 
-def test_read_fail_exit_splits_by_errno_for_the_four_that_do():
+def test_read_fail_exit_splits_by_errno_for_the_ones_that_do():
     # sed opens the directory and fails on the read (4) where a missing
     # file fails at open (2); the gzip family calls a directory a warning
-    # (2) and a missing file an error (1); zgrep inverts that.
+    # (2) and a missing file an error (1). zgrep opens its operands
+    # itself, so a failed read that reaches here is grep's trouble, 2.
     assert read_fail_exit("sed", IsADirectoryError("/d")) == 4
     assert read_fail_exit("sed", FileNotFoundError("/x")) == 2
     assert read_fail_exit("zcat", IsADirectoryError("/d")) == 2
     assert read_fail_exit("zcat", FileNotFoundError("/x")) == 1
-    assert read_fail_exit("zgrep", IsADirectoryError("/d")) == 1
+    assert read_fail_exit("zgrep", IsADirectoryError("/d")) == 2
     assert read_fail_exit("zgrep", FileNotFoundError("/x")) == 2
 
 

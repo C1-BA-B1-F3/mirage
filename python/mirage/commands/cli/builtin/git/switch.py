@@ -120,7 +120,7 @@ async def switch(
         # own default; only an attaching switch needs a branch to name.
         if not creating and not texts and not flags.detach:
             raise MissingBranchArgumentError()
-        repo, location = await opened(fl, doors)
+        repo, location = await opened(fl, doors, work_tree=True)
         head = await read_head(dispatch, location.gitdir)
         known = repo.refs.allkeys()
         if flags.create is not None:

@@ -15,8 +15,9 @@
 import pytest
 
 from mirage.commands.cli.builtin.git.render import (branch_line, long_format,
-                                                    quote_path, short_format,
-                                                    short_line)
+                                                    quote_path,
+                                                    relative_entries,
+                                                    short_format, short_line)
 from mirage.commands.cli.builtin.git.types import StatusEntry
 
 
@@ -176,3 +177,29 @@ def test_quote_path_off_leaves_non_ascii_alone(path, human):
 
 def test_an_undecodable_byte_is_quoted_as_itself():
     assert quote_path("\udcff.txt", False) == '"\\377.txt"'
+
+
+@pytest.mark.parametrize(
+    "prefix, path, shown",
+    [
+        # Pinned against git 2.54 from inside each directory.
+        ("docs", "letters.txt", "../letters.txt"),
+        ("docs", "docs/extra.md", "extra.md"),
+        ("docs", "docs2/x", "../docs2/x"),
+        ("new", "new/", "./"),
+        ("new/deep", "new/", "../"),
+        ("new/deep", "new/deep/f.txt", "f.txt"),
+    ])
+def test_rows_read_from_the_invocation_directory(prefix, path, shown):
+    assert relative_entries([row(path, "?", "?")], prefix)[0].path == shown
+
+
+def test_a_rename_shows_both_sides_from_the_invocation_directory():
+    moved = relative_entries(
+        [row("docs/numbers.txt", "R", " ", "numbers.txt")], "docs")[0]
+    assert (moved.original, moved.path) == ("../numbers.txt", "numbers.txt")
+
+
+def test_rows_stay_repository_relative_at_the_top():
+    rows = [row("docs/readme.md", " ", "M")]
+    assert relative_entries(rows, "") is rows

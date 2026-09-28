@@ -15,14 +15,14 @@
 import git from 'isomorphic-git'
 
 import type { FlagView } from '../../../spec/flag_view.ts'
-import { discover } from './discover.ts'
-import { BadConfigValueError, NoWorkspaceError } from './errors.ts'
+import { discover, requireWorkTree } from './discover.ts'
+import { NoWorkspaceError } from './errors.ts'
 import { abbrevLength, type CommitFacts } from './format.ts'
-import { gitFs } from './fs.ts'
+import { configValues, gitFs } from './fs.ts'
 import { readNames, readRange, under } from './io.ts'
 import { basename } from './path.ts'
 import type { CLIDoors } from '../../types.ts'
-import { startPoint } from './util.ts'
+import { gitBool, startPoint } from './util.ts'
 import type { Dispatch, RepoLocation } from './types.ts'
 
 const PACK_DIR = 'objects/pack'
@@ -56,7 +56,7 @@ export function repoArgs(repo: Repo): { fs: never; dir: string; gitdir: string }
   return {
     fs: repo.fs as never,
     dir: repo.location.worktree,
-    gitdir: repo.location.commondir,
+    gitdir: repo.location.gitdir,
   }
 }
 
@@ -89,7 +89,7 @@ async function packedCount(dispatch: Dispatch, commondir: string): Promise<numbe
  */
 async function openRepo(dispatch: Dispatch, location: RepoLocation): Promise<Repo> {
   return {
-    fs: gitFs(dispatch),
+    fs: gitFs(dispatch, location),
     dispatch,
     location,
     abbrev: abbrevLength(await packedCount(dispatch, location.commondir)),
@@ -103,12 +103,12 @@ async function openRepo(dispatch: Dispatch, location: RepoLocation): Promise<Rep
  * for a `.git`, then open the object database across the dispatcher. Kept in one
  * place so a new verb inherits the discovery rules rather than restating them.
  *
- * @param fl the leaf's flag bag, read for `-C`
- * @param statPath dispatcher-backed stat, both channels
- * @param mountRoot the mount prefix serving a path
- * @param dispatch workspace op dispatcher
+ * @param fl the leaf's flag bag, read for `-C`, `--git-dir` and `--work-tree`
+ * @param doors the invocation's doors, one per state plane
+ * @param workTree the verb reads or writes working files, so there must be a
+ *   work tree to enter, as git's `NEED_WORK_TREE` asks
  */
-export async function opened(fl: FlagView, doors: CLIDoors): Promise<Repo> {
+export async function opened(fl: FlagView, doors: CLIDoors, workTree = false): Promise<Repo> {
   const dispatch = doors.dispatch
   const statPath = doors.statPath
   // The mount root comes from the name plane rather than a door of its own:
@@ -118,12 +118,16 @@ export async function opened(fl: FlagView, doors: CLIDoors): Promise<Repo> {
   if (statPath === undefined || mounts === undefined || dispatch === undefined) {
     throw new NoWorkspaceError()
   }
+  const chosen = fl.asStr('work_tree')
   const location = await discover(
     dispatch,
     statPath,
     (path: string) => mounts.rootOf(path),
     startPoint(fl),
+    fl.asStr('git_dir'),
+    chosen,
   )
+  if (workTree) await requireWorkTree(dispatch, statPath, location, chosen !== undefined)
   return openRepo(dispatch, location)
 }
 
@@ -152,29 +156,14 @@ export async function commitFacts(repo: Repo, oid: string): Promise<CommitFacts>
   }
 }
 
-const TRUE_WORDS = ['true', 'yes', 'on']
-const FALSE_WORDS = ['false', 'no', 'off', '']
-
 /**
  * A boolean from the repository's config, read the way git reads one.
- *
- * `true`/`yes`/`on` and `false`/`no`/`off` in any case, a bare name as true, an
- * empty value as false and an integer as whether it is nonzero; anything else is
- * git's fatal (pinned against git 2.50). Only the repository's own config is
- * reachable from a mount.
  *
  * @param repo the opened repository
  * @param path the variable, e.g. `core.quotepath`
  * @param fallback the answer when the variable is unset
  */
 export async function configBool(repo: Repo, path: string, fallback: boolean): Promise<boolean> {
-  const value = (await git.getConfig({ ...repoArgs(repo), path })) as unknown
-  if (value === undefined || value === null) return fallback
-  if (typeof value === 'boolean') return value
-  const spelled = typeof value === 'number' ? String(value) : (value as string)
-  const word = spelled.toLowerCase()
-  if (TRUE_WORDS.includes(word)) return true
-  if (FALSE_WORDS.includes(word)) return false
-  if (/^[-+]?[0-9]+$/.test(word)) return Number(word) !== 0
-  throw new BadConfigValueError(spelled, path.toLowerCase())
+  const values = await configValues(repo.dispatch, repo.location, path)
+  return gitBool(values, path.toLowerCase(), fallback)
 }

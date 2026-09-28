@@ -36,6 +36,80 @@
       "flags": [
         "M"
       ]
+    },
+    {
+      "id": "sort_M_vertical_tab_is_not_blank",
+      "seq": 1302031,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '\\vfeb\\njan\\n' | sort -M | od -An -c",
+      "expect": {
+        "exit": 0,
+        "stdout": "  \\v   f   e   b  \\n   j   a   n  \\n\n",
+        "stderr": ""
+      },
+      "flags": [
+        "M"
+      ]
+    },
+    {
+      "id": "sort_M_skips_blanks",
+      "seq": 1302032,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf ' feb\\n\\tjan\\n\\nmar\\n' | sort -M | od -An -c",
+      "expect": {
+        "exit": 0,
+        "stdout": "  \\n  \\t   j   a   n  \\n       f   e   b  \\n   m   a   r  \\n\n",
+        "stderr": ""
+      },
+      "flags": [
+        "M"
+      ]
     }
   ]
 }

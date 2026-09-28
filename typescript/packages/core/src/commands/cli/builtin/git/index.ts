@@ -403,7 +403,21 @@ export const GIT = new CLISpec({
   name: 'git',
   description: 'Content tracker',
   usageStyle: UsageStyle.GIT,
-  options: [DIRECTORY_OPTION],
+  options: [
+    DIRECTORY_OPTION,
+    new Option({
+      long: '--git-dir',
+      type: 'str',
+      env: 'GIT_DIR',
+      description: 'Use the repository at <path>',
+    }),
+    new Option({
+      long: '--work-tree',
+      type: 'str',
+      env: 'GIT_WORK_TREE',
+      description: 'Use <path> as the working tree',
+    }),
+  ],
   subcommands: [
     new CLISpec({
       name: 'version',

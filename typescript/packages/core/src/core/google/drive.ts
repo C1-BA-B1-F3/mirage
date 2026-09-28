@@ -70,6 +70,7 @@ export interface DriveFile {
   modifiedTime?: string
   md5Checksum?: string
   headRevisionId?: string
+  trashed?: boolean
   owners?: DriveOwner[]
   capabilities?: { canEdit?: boolean }
   parents?: string[]
@@ -252,7 +253,7 @@ export async function* downloadFileStream(
 
 export const FOLDER_MIME = 'application/vnd.google-apps.folder'
 const ITEM_FIELDS =
-  'id,name,mimeType,driveId,size,quotaBytesUsed,createdTime,modifiedTime,md5Checksum,headRevisionId,parents'
+  'id,name,mimeType,driveId,size,quotaBytesUsed,createdTime,modifiedTime,md5Checksum,headRevisionId,parents,owners,trashed'
 const DEFAULT_UPLOAD_MIME = 'application/octet-stream'
 
 // Escape a value for a Drive API query string literal.

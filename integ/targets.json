@@ -1814,6 +1814,36 @@
       ]
     },
     {
+      "id": "gapps-fresh",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "service": "gws",
+      "epoch": "2026-01-01T00:00:00Z",
+      "apps": "google-apps/v1",
+      "mounts": [
+        {
+          "path": "/docs",
+          "vfs": "gdocs",
+          "backend": "gdocs"
+        },
+        {
+          "path": "/sheets",
+          "vfs": "gsheets",
+          "backend": "gsheets"
+        },
+        {
+          "path": "/slides",
+          "vfs": "gslides",
+          "backend": "gslides"
+        }
+      ],
+      "clis": [
+        "gws"
+      ]
+    },
+    {
       "id": "gcal",
       "hosts": [
         "python",

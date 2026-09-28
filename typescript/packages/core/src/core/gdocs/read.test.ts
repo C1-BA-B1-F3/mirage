@@ -19,7 +19,7 @@ import type * as ClientModule from '../google/client.ts'
 
 vi.mock('../google/drive.ts', async () => {
   const actual = await vi.importActual<typeof DriveModule>('../google/drive.ts')
-  return { ...actual, listAllFiles: vi.fn() }
+  return { ...actual, listAllFiles: vi.fn(), getFile: vi.fn() }
 })
 
 vi.mock('../google/client.ts', async () => {
@@ -28,12 +28,15 @@ vi.mock('../google/client.ts', async () => {
 })
 
 import { GDocsAccessor } from '../../accessor/gdocs.ts'
+import { IndexEntry } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
+import { runWithRecording } from '../../observe/context.ts'
 import { PathSpec } from '../../types.ts'
 import type { TokenManager } from '../google/client.ts'
 import * as drive from '../google/drive.ts'
 import * as client from '../google/client.ts'
 import { read, readDoc } from './read.ts'
+import { stat } from './stat.ts'
 
 const STUB_TOKEN_MANAGER = {
   config: { clientId: 'cid', refreshToken: 'rt' },
@@ -44,17 +47,13 @@ function makeAccessor(): GDocsAccessor {
 }
 
 describe('gdocs read auto-bootstrap', () => {
-  it('refetches owned listing when entry is evicted from index', async () => {
-    vi.mocked(drive.listAllFiles).mockResolvedValue({
-      files: [
-        {
-          id: 'doc1',
-          name: 'Notes',
-          modifiedTime: '2026-04-01T00:00:00.000Z',
-          owners: [{ me: true }],
-        },
-      ],
-      complete: true,
+  it('fetches metadata by ID when entry is evicted from index', async () => {
+    vi.mocked(drive.getFile).mockResolvedValue({
+      mimeType: 'application/vnd.google-apps.document',
+      id: 'doc1',
+      name: 'Notes',
+      modifiedTime: '2026-04-01T00:00:00.000Z',
+      owners: [{ me: true }],
     })
     vi.mocked(client.googleGet).mockResolvedValue({ documentId: 'doc1' })
 
@@ -69,8 +68,10 @@ describe('gdocs read auto-bootstrap', () => {
     expect(new TextDecoder().decode(out)).toContain('doc1')
   })
 
-  it('throws ENOENT when file missing even after recursion', async () => {
-    vi.mocked(drive.listAllFiles).mockResolvedValue({ files: [], complete: true })
+  it('throws ENOENT when file missing by ID', async () => {
+    vi.mocked(drive.getFile).mockRejectedValue(
+      Object.assign(new Error('missing'), { code: 'ENOENT' }),
+    )
     vi.mocked(client.googleGet).mockRejectedValue(new Error('should not call googleGet'))
 
     const accessor = makeAccessor()
@@ -85,8 +86,8 @@ describe('gdocs read auto-bootstrap', () => {
 
   // The Drive-item read family (gdocs/gsheets/gslides) shares this shape:
   // only an absent parent may collapse into the operand's ENOENT.
-  it('propagates a failed parent listing instead of reporting ENOENT', async () => {
-    vi.mocked(drive.listAllFiles).mockRejectedValue(new Error('google unavailable'))
+  it('propagates a failed metadata request instead of reporting ENOENT', async () => {
+    vi.mocked(drive.getFile).mockRejectedValue(new Error('google unavailable'))
     vi.mocked(client.googleGet).mockRejectedValue(new Error('should not call googleGet'))
 
     const accessor = makeAccessor()
@@ -119,4 +120,45 @@ describe('gdocs readDoc', () => {
       { includeTabsContent: 'true' },
     )
   })
+})
+
+describe('gdocs read token', () => {
+  // read: fresh compares this record with stat's fingerprint, so both take
+  // the entry's modified stamp, and an entry without one stamps nothing.
+  const cases: [string, string | null][] = [
+    ['2026-04-01T00:00:00.000Z', '2026-04-01T00:00:00.000Z'],
+    ['', null],
+  ]
+  for (const [stamp, token] of cases) {
+    it(`records the token stat reports (stamp ${JSON.stringify(stamp)})`, async () => {
+      const name = '2026-04-01_My_Doc__doc1.gdoc.json'
+      const target = `/gdocs/owned/${name}`
+      const index = new RAMIndexCacheStore()
+      await index.setDir('/gdocs/owned', [
+        [
+          name,
+          new IndexEntry({
+            id: 'doc1',
+            name: 'My Doc',
+            resourceType: 'gdocs/file',
+            remoteTime: stamp,
+            vfsName: name,
+          }),
+        ],
+      ])
+      vi.mocked(client.googleGet).mockResolvedValue({ documentId: 'doc1' })
+      const path = new PathSpec({
+        virtual: target,
+        directory: target,
+        vfsPath: mountKey(target, '/gdocs'),
+      })
+      const accessor = makeAccessor()
+      const [data, records] = await runWithRecording(() => read(accessor, path, index))
+      const info = await stat(accessor, path, index)
+      expect(records.map((r) => [r.op, r.path, r.source, r.bytes, r.fingerprint])).toEqual([
+        ['read', target, 'gdocs', data.byteLength, token],
+      ])
+      expect(info.fingerprint).toBe(token)
+    })
+  }
 })

@@ -171,7 +171,7 @@ def selftest_mount_read() -> None:
         *raises(
             lambda: asyncio.run(
                 runner_main.adapters.open_consistency(target, ReadSpec(
-                ), {"/nope": bound})), "names no mount: /nope"))
+                ), {"/nope": bound})), "t: mount_read names no mount: /nope"))
 
     bare, moded, limited, kept = RAMVFS(), RAMVFS(), RAMVFS(), RAMVFS()
     limits = {"cat": Limit(timeout_seconds=5)}
@@ -939,7 +939,8 @@ def selftest_mount_read_typescript() -> None:
     check("cases (ts): a mount_read without a read is rejected", "mount_read"
           in out["unread"], repr(out["unread"]))
     check("mount_read (ts): an override naming an unmounted prefix is refused",
-          "names no mount: /nope" in out["nope"], repr(out["nope"]))
+          "t: mount_read names no mount: /nope" in out["nope"],
+          repr(out["nope"]))
     check("mount_read (ts): a bare mount keeps the workspace's mode",
           out["data"] == [True, None, "bounded", 45], repr(out["data"]))
     check("mount_read (ts): a read-only mount keeps its mode",

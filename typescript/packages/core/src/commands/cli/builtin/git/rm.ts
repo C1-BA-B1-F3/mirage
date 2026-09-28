@@ -255,7 +255,7 @@ export async function rm(inv: CLIInvocation): Promise<CommandFnResult> {
     checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
     flags = parseFlags(fl)
     if (texts.length === 0) throw new NoPathspecRemoveError()
-    const repo = await opened(fl, doors)
+    const repo = await opened(fl, doors, !flags.cached)
     const state = await readIndex(repo, dispatch)
     const tracked = new Set([...state.entries.keys(), ...state.conflicts.keys()])
     selected = select(repo.location, startPoint(fl), texts, tracked, flags)

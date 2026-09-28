@@ -170,6 +170,21 @@ async def test_a_move_is_reported_as_a_rename(git_ws, repo_path: Path):
                      "status --porcelain") == b"R  b.txt -> moved.txt\n"
 
 
+@pytest.mark.asyncio
+async def test_a_subdirectory_reads_paths_from_where_git_runs(
+        git_ws, repo_path: Path):
+    # Pinned against git 2.54: the human formats name paths from the
+    # invocation directory, so the untracked one git runs in is ./, and
+    # porcelain stays relative to the top.
+    (repo_path / "a.txt").write_text("edited\n", encoding="utf-8")
+    (repo_path / "sub").mkdir()
+    (repo_path / "sub" / "new.txt").write_text("x\n", encoding="utf-8")
+    short = await git_ws.shell("git -C /repo/sub status --short")
+    machine = await git_ws.shell("git -C /repo/sub status --porcelain")
+    assert short.stdout == b" M ../a.txt\n?? ./\n"
+    assert machine.stdout == b" M a.txt\n?? sub/\n"
+
+
 def flags(**raw: object) -> FlagView:
     """A flag view over one raw kwarg bag.
 

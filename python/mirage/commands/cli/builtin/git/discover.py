@@ -13,11 +13,14 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import posixpath
+from dataclasses import replace
 
 from mirage.commands.cli.builtin.git.constants import GIT_DIR
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    InvalidGitFileError, NotARepositoryError, NoWorkingDirectoryError)
+    InvalidGitFileError, NotARepositoryError, NotAWorkTreeError,
+    NoWorkingDirectoryError, WorkTreeChdirError)
 from mirage.commands.cli.builtin.git.io import read_file, read_optional
+from mirage.commands.cli.builtin.git.repo import config_bool, config_values
 from mirage.commands.cli.builtin.git.types import RepoLocation
 from mirage.ops.types import MountRoot, StatPath
 from mirage.runtime.types import DispatchFn
@@ -58,8 +61,6 @@ def _against(base: str, target: str) -> str:
         base (str): directory the naming file lives in.
         target (str): the path as the file spelled it.
     """
-    if target.startswith("/"):
-        return _normalize(target)
     return _normalize(posixpath.normpath(posixpath.join(base, target)))
 
 
@@ -116,8 +117,37 @@ async def _common_dir(dispatch: DispatchFn, gitdir: str) -> str:
     return _against(gitdir, target) if target else gitdir
 
 
-async def discover(dispatch: DispatchFn, stat_path: StatPath,
-                   mount_root: MountRoot, start: str) -> RepoLocation:
+async def _validated(dispatch: DispatchFn, stat_path: StatPath,
+                     gitdir: str) -> str | None:
+    """git's ``is_git_directory``: the common directory, or None.
+
+    A git directory holds its own HEAD and finds objects and refs in its
+    common directory, which is itself unless it is a linked worktree's.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        stat_path (StatPath): dispatcher-backed stat, both channels.
+        gitdir (str): absolute virtual path of the candidate.
+    """
+    common = await _common_dir(dispatch, gitdir)
+    signatures = (
+        (f"{gitdir}/HEAD", FileType.FILE),
+        (f"{common}/objects", FileType.DIRECTORY),
+        (f"{common}/refs", FileType.DIRECTORY),
+    )
+    for path, kind in signatures:
+        entry = await stat_path(path)
+        if entry is None or entry.type is not kind:
+            return None
+    return common
+
+
+async def discover(dispatch: DispatchFn,
+                   stat_path: StatPath,
+                   mount_root: MountRoot,
+                   start: str,
+                   gitdir: str | None = None,
+                   worktree: str | None = None) -> RepoLocation:
     """Find the repository governing a path, or raise git's own fatal.
 
     Walks up from ``start`` looking for a ``.git`` entry, stopping at the
@@ -144,8 +174,31 @@ async def discover(dispatch: DispatchFn, stat_path: StatPath,
         mount_root (MountRoot): the mount prefix serving a path.
         start (str): absolute virtual path to start from, normally the
             session cwd or the argument of ``-C``.
+        gitdir (str | None): explicit repository path; skips upward discovery.
+        worktree (str | None): explicit working tree, relative to start.
     """
     root = _normalize(mount_root(start))
+    if gitdir is not None:
+        here = await stat_path(start)
+        if here is None:
+            raise NoWorkingDirectoryError(start)
+        if here.type is not FileType.DIRECTORY:
+            raise NoWorkingDirectoryError(start, "Not a directory")
+        candidate = _against(start, gitdir)
+        info = await stat_path(candidate)
+        if info is None:
+            raise NotARepositoryError(gitdir)
+        # git names the target a pointer leads to unquoted, as it does for
+        # one met on the way up.
+        pointer = info.type is not FileType.DIRECTORY
+        resolved = (await _follow_gitfile(dispatch, stat_path, candidate)
+                    if pointer else candidate)
+        common = await _validated(dispatch, stat_path, resolved)
+        if common is None:
+            raise (NotARepositoryError(resolved, quoted=False)
+                   if pointer else NotARepositoryError(gitdir))
+        return await _location(dispatch, stat_path, resolved, common, start,
+                               start, worktree, root)
     current = _normalize(start)
     first = True
     while True:
@@ -154,10 +207,9 @@ async def discover(dispatch: DispatchFn, stat_path: StatPath,
         if info is not None:
             gitdir = (candidate if info.type is FileType.DIRECTORY else await
                       _follow_gitfile(dispatch, stat_path, candidate))
-            return RepoLocation(gitdir=gitdir,
-                                commondir=await _common_dir(dispatch, gitdir),
-                                worktree=current,
-                                mount_root=root)
+            common = await _common_dir(dispatch, gitdir)
+            return await _location(dispatch, stat_path, gitdir, common, start,
+                                   current, worktree, root)
         if first:
             # git enters ``-C`` before it looks for anything, so a path it
             # cannot enter fails on its own terms even when a directory
@@ -176,3 +228,93 @@ async def discover(dispatch: DispatchFn, stat_path: StatPath,
         if current == root or current == "/":
             raise NotARepositoryError()
         current = _parent(current)
+
+
+async def _location(dispatch: DispatchFn, stat_path: StatPath, gitdir: str,
+                    common: str, start: str, default_worktree: str,
+                    worktree: str | None, root: str) -> RepoLocation:
+    """Resolve the work tree once for every verb, after locating metadata.
+
+    CLI/environment paths are relative to -C; core.worktree is relative
+    to the git directory, as in native git 2.54.0, which enters a relative
+    one before any verb runs. A bare repository keeps the default, and
+    only a verb that needs a work tree refuses it (``require_work_tree``).
+    git parses core.bare whichever tree wins, so a value it cannot read
+    fails every verb, a named work tree and a linked worktree included.
+    Divergence: the ``config.worktree`` that ``extensions.worktreeConfig``
+    adds is not read, so a linked worktree never takes either key; and a
+    bare repository that also names a core.worktree stays bare without
+    git's "do not make sense" warning.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        stat_path (StatPath): dispatcher-backed stat, both channels.
+        gitdir (str): resolved checkout metadata directory.
+        common (str): shared repository directory.
+        start (str): invocation directory after -C.
+        default_worktree (str): discovered root, or start for explicit gitdir.
+        worktree (str | None): command-line or environment override.
+        root (str): mount boundary used for discovery.
+
+    Raises:
+        BadConfigValueError: a core.bare git cannot read as a boolean.
+        WorkTreeChdirError: a relative core.worktree git cannot enter.
+    """
+    located = RepoLocation(gitdir, common, default_worktree, root)
+    bare = await config_bool(dispatch, located, b"core", b"bare", False)
+    if worktree is not None:
+        return replace(located, worktree=_against(start, worktree))
+    if gitdir != common or bare:
+        return located
+    configured = await config_values(dispatch, located, b"core", b"worktree")
+    if not configured:
+        return located
+    spelled = configured[-1].decode("utf-8", errors="replace")
+    selected = _against(gitdir, spelled)
+    if not spelled.startswith("/"):
+        info = await stat_path(selected)
+        if info is None:
+            raise WorkTreeChdirError(spelled)
+        if info.type is not FileType.DIRECTORY:
+            raise WorkTreeChdirError(spelled, "Not a directory")
+    return replace(located, worktree=selected)
+
+
+async def is_bare(dispatch: DispatchFn, location: RepoLocation) -> bool:
+    """Whether core.bare leaves the repository without a work tree.
+
+    git reads core.bare, like core.worktree, only from a repository's own
+    config, and a linked worktree's config is its repository's, so a
+    linked worktree is never bare. A named work tree overrides it.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        location (RepoLocation): the discovered repository.
+    """
+    return (location.gitdir == location.commondir
+            and await config_bool(dispatch, location, b"core", b"bare", False))
+
+
+async def require_work_tree(dispatch: DispatchFn, stat_path: StatPath,
+                            location: RepoLocation, named: bool) -> None:
+    """git's ``setup_work_tree``: refuse when there is no tree to enter.
+
+    Asked by every verb that reads or writes working files, so a bare
+    repository or a mistyped ``--work-tree`` is refused rather than read
+    as a tree with every file deleted.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        stat_path (StatPath): dispatcher-backed stat, both channels.
+        location (RepoLocation): the discovered repository.
+        named (bool): ``--work-tree`` or ``GIT_WORK_TREE`` chose the tree.
+
+    Raises:
+        NotAWorkTreeError: the repository is bare or the tree is not a
+            directory.
+    """
+    if not named and await is_bare(dispatch, location):
+        raise NotAWorkTreeError()
+    info = await stat_path(location.worktree)
+    if info is None or info.type is not FileType.DIRECTORY:
+        raise NotAWorkTreeError()

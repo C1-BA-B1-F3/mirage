@@ -40,7 +40,7 @@ import { renderReport } from './status.ts'
 import { report } from './summary.ts'
 import type { TreeEntry } from './tree.ts'
 import type { IndexState } from './types.ts'
-import { checkOperands, escaped, fatal, switches } from './util.ts'
+import { checkOperands, escaped, fatal, startPoint, switches } from './util.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import { encodeText } from '../../../../shell/bytes.ts'
 
@@ -215,7 +215,7 @@ export async function commit(inv: CLIInvocation): Promise<CommandFnResult> {
       throw staging ? new AllWithPathsError(named) : new PartialCommitError(named)
     const message = fl.asStr('message')
     if (message === undefined || message === '') throw new MissingMessageError()
-    const repo = await opened(fl, doors)
+    const repo = await opened(fl, doors, true)
     const state = await readIndex(repo, dispatch)
     if (state.conflicts.size > 0) throw new UnmergedIndexError()
     const restaged = staging
@@ -233,7 +233,7 @@ export async function commit(inv: CLIInvocation): Promise<CommandFnResult> {
       })
     if (same) {
       throw new NothingToCommitError(
-        await renderReport(repo, dispatch, statPath, head, doors.ns?.links ?? null),
+        await renderReport(repo, dispatch, statPath, head, startPoint(fl), doors.ns?.links ?? null),
       )
     }
     const parents =
@@ -247,6 +247,7 @@ export async function commit(inv: CLIInvocation): Promise<CommandFnResult> {
     await record(
       dispatch,
       repo.location.gitdir,
+      repo.location.commondir,
       head.ref,
       parents[0] ?? null,
       oid,

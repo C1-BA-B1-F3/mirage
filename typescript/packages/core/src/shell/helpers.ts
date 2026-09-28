@@ -25,6 +25,44 @@ export function getText(node: TSNodeLike): string {
 }
 
 /**
+ * A node's children with the source text between them, the twin of
+ * python's `source_parts`.
+ *
+ * tree-sitter-bash's scanner consumes some text without giving it a node:
+ * whitespace and newlines inside a double-quoted string, and the whitespace
+ * or line continuation opening a `${v:-word}` operand. Only the node's own
+ * source still holds that text, so it is sliced out between child extents
+ * rather than rebuilt from row or byte counts, which lose tabs, newlines and
+ * escapes. web-tree-sitter counts `startIndex` in UTF-16 code units, the
+ * units `text.slice` takes.
+ */
+export function* sourceParts(node: TSNodeLike): Generator<string | TSNodeLike> {
+  const start = node.startIndex ?? 0
+  let end = start
+  for (const child of node.children) {
+    const childStart = child.startIndex ?? end
+    if (childStart > end) yield node.text.slice(end - start, childStart - start)
+    end = child.endIndex ?? childStart + child.text.length
+    yield child
+  }
+}
+
+/**
+ * Walk a double-quoted string without losing scanner-owned text.
+ *
+ * The text between children is the string's own, and the closing quote
+ * token can carry the whitespace before it. Expansion nodes keep their own
+ * folded prefixes.
+ */
+export function* quotedParts(node: TSNodeLike): Generator<string | TSNodeLike> {
+  for (const part of sourceParts(node)) {
+    if (typeof part === 'string') yield unescapeDquoted(part)
+    else if (part.type === NT.DQUOTE) yield unescapeDquoted(part.text.slice(0, -1))
+    else yield part
+  }
+}
+
+/**
  * Where an index into a node's text falls in the parser's offsets, the twin
  * of python's `byte_offset`.
  *
@@ -147,8 +185,11 @@ export function literalWord(node: TSNodeLike, home: string | null = null): strin
   }
   if (ntype === NT.STRING) {
     const pieces: string[] = []
-    for (const child of node.children) {
-      if (child.type === NT.DQUOTE) continue
+    for (const child of quotedParts(node)) {
+      if (typeof child === 'string') {
+        pieces.push(child)
+        continue
+      }
       if (child.type !== NT.STRING_CONTENT) return null
       pieces.push(unescapeDquoted(child.text))
     }

@@ -162,7 +162,7 @@ async def restore(
         if not texts:
             raise NoRestorePathsError()
         flags = parse_flags(fl)
-        repo, location = await opened(fl, doors)
+        repo, location = await opened(fl, doors, work_tree=True)
         state = await read_index(dispatch, location.gitdir)
         held = index_tree(state.entries)
         if flags.source is not None:

@@ -382,6 +382,7 @@ async function attach(
   await record(
     dispatch,
     repo.location.gitdir,
+    repo.location.commondir,
     ref,
     headCommit(known, head),
     oid,
@@ -533,7 +534,7 @@ export async function checkout(inv: CLIInvocation): Promise<CommandFnResult> {
     checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
     const target = texts[0]
     if (target === undefined) throw new UnknownPathspecError('')
-    const repo = await opened(fl, doors)
+    const repo = await opened(fl, doors, true)
     const head = await readHead(dispatch, repo.location.gitdir)
     const creating = fl.asBool('b')
     const ref = `${BRANCH_PREFIX}${target}`

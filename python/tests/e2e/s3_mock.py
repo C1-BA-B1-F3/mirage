@@ -141,8 +141,7 @@ class MultiBucketS3Client:
         # NOT the MD5 of the content.
         self.etag_suffix = etag_suffix
         self.calls: Counter[str] = Counter()
-        # The same calls keyed by bucket, listings included, so a line that
-        # reads two mounts can be charged leg by leg.
+        # Per (method, bucket), listings included.
         self.bucket_calls: Counter[tuple[str, str]] = Counter()
         # Keys DeleteObjects refuses, reported under "Errors" in a 200.
         self.undeletable: set[str] = set()

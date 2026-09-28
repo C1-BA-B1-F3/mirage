@@ -173,9 +173,7 @@ export interface S3Mock {
   // How many times one command has been sent, and a way to zero that count
   // without disturbing the stubbed behaviour (`reset` drops the handlers
   // too). A cost claim is asserted in HTTP verbs, which is what the python
-  // twin counts through its own session. `input` narrows the count to the
-  // sends whose input carries those fields, as `{ Bucket }` charges one leg
-  // of a line that reads two buckets.
+  // twin counts through its own session. `input` narrows it, e.g. `{ Bucket }`.
   commandCalls<TInput extends object>(
     command: new (input: TInput) => AwsCommand<TInput, MetadataBearer>,
     input?: Partial<TInput>,

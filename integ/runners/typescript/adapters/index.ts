@@ -2294,9 +2294,7 @@ export async function openConsistency(
   read: ReadSpec,
   mountRead: Record<string, ReadSpec>,
 ): Promise<OpenConsistency | null> {
-  // Checked before anything opens: a key naming no mount would leave every
-  // leg under the workspace policy, and refusing it here leaves no service
-  // or bucket behind to clean up.
+  // Refused before anything opens, so there is nothing to clean up.
   const paths = new Set(target.mounts.map((m) => m.path))
   const unknown = Object.keys(mountRead)
     .filter((p) => !paths.has(p))

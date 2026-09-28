@@ -173,8 +173,7 @@ def selftest_mount_read() -> None:
                 runner_main.adapters.open_consistency(target, ReadSpec(
                 ), {"/nope": bound})), "t: mount_read names no mount: /nope"))
 
-    # An override the backend refuses fails the read workspace after the
-    # mounts are built; what was built must still be torn down.
+    # A refused override must still tear down what was built.
     torn: list[tuple] = []
     real_teardown = runner_main.adapters.teardown_target
 
@@ -906,8 +905,7 @@ def selftest_no_shadow_fails() -> None:
           f"got {proc.stdout.strip()!r} {proc.stderr[-200:]}")
 
 
-# The typescript twin of selftest_mount_read and of the mount_read case
-# rule, through the harness and adapter modules themselves.
+# selftest_mount_read and the mount_read case rule, on the typescript host.
 MOUNT_READ_PROBE = (
     "Promise.all([import('./runners/typescript/harness.ts'),\n"
     "  import('./runners/typescript/adapters/index.ts'),\n"

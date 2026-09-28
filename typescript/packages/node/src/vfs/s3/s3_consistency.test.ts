@@ -195,26 +195,10 @@ describe('S3 cache consistency (mocked)', () => {
     }
   })
 
-  // #1101 Design §2: a read policy is a property of the byte source. One
-  // line reads a `fresh` mount and a `bounded` one after both objects
-  // changed out of band, so each leg answers to its own mount: the fresh
-  // leg prints v2 and pays one gate probe plus one refetch, the bounded leg
-  // prints v1 and sends nothing. The `ls` warm-up is what makes "nothing"
-  // true; after `cat` alone each mount root is unlisted and the walk pays
-  // one listing per leg.
-  //
-  // `siblings` reaches the cross-mount handler and `nested` the traversal
-  // fan-out; `shared-vfs` puts one VFS under both prefixes, the only shape a
-  // policy keyed by VFS rather than by mount fails. The mount whose policy
-  // equals `default` inherits it, so a policy read from the workspace is
-  // wrong on the other leg either way. `freshSide` matters because a manager
-  // leaking from the first leg into the second leaves the bytes right when
-  // the bounded leg runs first; only the fresh leg's missing probe shows it.
-  // The closing `cat` of the bounded leg is the other door: a single-mount
-  // read reconciles at routing, which a walk over directory operands never
-  // reaches, so a routing reconcile reading the workspace's `fresh` would
-  // refetch v2 there and nothing above would notice.
-  // The python twin is in test_fingerprint_spike.py.
+  // #1101 Design §2: a read policy belongs to the mount. After an out-of-band
+  // change, one line over a fresh and a bounded mount must print v2 and v1,
+  // and only the fresh leg may reach the backend. The python twin in
+  // test_fingerprint_spike.py says what each parameter tells apart.
   const SHAPES = {
     siblings: ['/a', '/b', 'grep -r v /a/ /b/'],
     nested: ['/x', '/x/y', 'grep -r v /x/'],
@@ -267,10 +251,8 @@ describe('S3 cache consistency (mocked)', () => {
           mock.commandCalls(HeadObjectCommand, { Bucket }),
           mock.commandCalls(GetObjectCommand, { Bucket }),
         ]
-        // A probe or a refetch on the bounded bucket means the fresh
-        // mount's policy reached it.
+        // Any send here means the fresh mount's policy reached the bounded one.
         expect(ledger('bounded-bkt')).toEqual([0, 0, 0])
-        // One bucket in shared-vfs, so this is the whole line's cost there.
         // A missing HEAD means the fresh leg was served without a check.
         expect(ledger('fresh-bkt')).toEqual([0, 1, 1])
         expect(ws.networkRecords.slice(mark).map((r) => [r.op, r.path])).toEqual([

@@ -3041,9 +3041,7 @@ async def open_consistency(
         Callable[[str], Awaitable[None]],
         Callable[[], Awaitable[None]],
 ]:
-    # Checked before anything opens: a key naming no mount would leave
-    # every leg under the workspace policy, and refusing it here leaves
-    # no service or bucket behind to clean up.
+    # Refused before anything opens, so there is nothing to clean up.
     unknown = sorted(set(mount_read) - {m["path"] for m in target["mounts"]})
     if unknown:
         raise ValueError(f"{target['id']}: mount_read names no mount: "
@@ -3053,8 +3051,7 @@ async def open_consistency(
     read_mounts, read_cleanups = await build_mounts(target, run_id, service)
     shadow_mounts, shadow_cleanups = await build_mounts(
         target, run_id, service)
-    # The read side is where a policy the backend cannot honour is
-    # refused, after the service and every mount already exist.
+    # A refused policy fails here, after the mounts and service exist.
     try:
         read_ws = Workspace(apply_mount_read(read_mounts, mount_read),
                             mode=MountMode.WRITE,

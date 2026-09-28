@@ -29,7 +29,7 @@ export const SHELL_SPECS = Object.freeze({
         short: '-a',
         long: '--arg-file',
         type: 'str',
-        description: 'Read items from this file (not supported).',
+        description: 'Read items from this file, not standard input.',
       }),
       new Option({
         short: '-d',
@@ -40,14 +40,14 @@ export const SHELL_SPECS = Object.freeze({
       new Option({
         short: '-E',
         type: 'str',
-        description: 'Stop reading at this logical end-of-file string (not supported).',
+        description: 'Stop reading at this logical end-of-file string.',
       }),
       new Option({
         short: '-e',
         long: '--eof',
         type: 'str',
         valueOptional: true,
-        description: 'Same as -E (not supported).',
+        description: 'Same as -E; no string turns it off.',
       }),
       new Option({
         short: '-I',
@@ -82,12 +82,13 @@ export const SHELL_SPECS = Object.freeze({
       new Option({
         short: '-o',
         long: '--open-tty',
-        description: 'Reopen stdin as the terminal in each command (not supported).',
+        description:
+          'Reopen stdin as the terminal in each command (there is no terminal, so this fails).',
       }),
       new Option({
         short: '-p',
         long: '--interactive',
-        description: 'Prompt before running each command (not supported).',
+        description: 'Prompt before running each command (there is no terminal, so this fails).',
       }),
       new Option({
         short: '-r',
@@ -98,21 +99,21 @@ export const SHELL_SPECS = Object.freeze({
         short: '-s',
         long: '--max-chars',
         type: 'str',
-        description: 'Limit a command line to N characters (not supported).',
+        description: 'Limit a command line to N bytes.',
       }),
       new Option({
         short: '-t',
         long: '--verbose',
-        description: 'Print each command before running it (not supported).',
+        description: 'Print each command on stderr before running it.',
       }),
       new Option({
         long: '--show-limits',
-        description: 'Show the command-line length limits (not supported).',
+        description: 'Show the command-line length limits.',
       }),
       new Option({
         short: '-x',
         long: '--exit',
-        description: 'Exit if a command line exceeds the size limit (not supported).',
+        description: 'Exit if a command line exceeds the size limit.',
       }),
       new Option({
         short: '-P',
@@ -123,7 +124,7 @@ export const SHELL_SPECS = Object.freeze({
       new Option({
         long: '--process-slot-var',
         type: 'str',
-        description: "Set this variable to each command's slot number (not supported).",
+        description: "Set this variable to each command's slot number.",
       }),
       VERSION_OPTION,
       HELP_OPTION,
@@ -134,21 +135,34 @@ export const SHELL_SPECS = Object.freeze({
     description: 'Run a command with a time limit.',
     options: [
       new Option({
-        short: '-s',
-        long: '--signal',
-        type: 'str',
-        description: 'Signal to send on timeout (not supported).',
+        short: '-f',
+        long: '--foreground',
+        description: 'Signal only the command, not its process group.',
       }),
       new Option({
         short: '-k',
         long: '--kill-after',
         type: 'str',
-        description: 'Also send KILL after this long (not supported).',
+        description: 'Also send KILL this long after the first signal.',
       }),
       new Option({
+        short: '-p',
         long: '--preserve-status',
-        description: "Exit with the command's status on timeout (not supported).",
+        description: "Exit with the command's status even when it times out.",
       }),
+      new Option({
+        short: '-s',
+        long: '--signal',
+        type: 'str',
+        description: 'Signal to send on timeout (default TERM).',
+      }),
+      new Option({
+        short: '-v',
+        long: '--verbose',
+        description: 'Report each signal sent on stderr.',
+      }),
+      HELP_OPTION,
+      VERSION_OPTION,
     ],
     rest: new Operand({ type: 'str' }),
   }),

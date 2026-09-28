@@ -8,8 +8,8 @@ from mirage.workspace.executor.builtins.xargs import handle_xargs
 from mirage.workspace.session import (get_current_session,
                                       reset_current_session,
                                       set_current_session)
-from mirage.workspace.session.session import SessionState
-from mirage.workspace.session.state import seed_var, session_view
+from mirage.workspace.session.session import SessionState, vars_from_env
+from mirage.workspace.session.state import env_snapshot, seed_var, session_view
 
 
 class FakeShell:
@@ -18,7 +18,10 @@ class FakeShell:
         self.lines: list[str] = []
         self.exit_codes = exit_codes or []
 
-    async def __call__(self, line: str, session_id: str) -> IOResult:
+    async def __call__(self,
+                       line: str,
+                       session_id: str,
+                       stdin: bytes | None = None) -> IOResult:
         self.lines.append(line)
         code = (self.exit_codes[len(self.lines) - 1]
                 if len(self.lines) <= len(self.exit_codes) else 0)
@@ -36,7 +39,10 @@ class SlowShell:
         self.delays = delays or {}
         self.exit_codes = exit_codes or {}
 
-    async def __call__(self, line: str, session_id: str) -> IOResult:
+    async def __call__(self,
+                       line: str,
+                       session_id: str,
+                       stdin: bytes | None = None) -> IOResult:
         self.lines.append(line)
         self.active += 1
         self.peak = max(self.peak, self.active)
@@ -84,12 +90,21 @@ async def test_failing_invocation_exits_123_but_continues():
 
 
 @pytest.mark.asyncio
-async def test_command_not_found_stops_with_127():
+async def test_exit_255_stops_with_124():
+    shell = FakeShell(exit_codes=[255, 0])
+    _, io, _ = await handle_xargs(shell, ["-n1", "sh"], make_session(), b"a b")
+    assert shell.lines == ["sh a"]
+    assert io.exit_code == 124
+    assert await materialize(
+        io.stderr) == b"xargs: sh: exited with status 255; aborting\n"
+
+
+@pytest.mark.asyncio
+async def test_command_exit_127_is_an_ordinary_failure():
     shell = FakeShell(exit_codes=[127, 0])
-    _, io, _ = await handle_xargs(shell, ["-n1", "nope"], make_session(),
-                                  b"a b")
-    assert shell.lines == ["nope a"]
-    assert io.exit_code == 127
+    _, io, _ = await handle_xargs(shell, ["-n1", "sh"], make_session(), b"a b")
+    assert shell.lines == ["sh a", "sh b"]
+    assert io.exit_code == 123
 
 
 @pytest.mark.asyncio
@@ -185,23 +200,103 @@ async def test_abbreviated_long_options_resolve(args, lines):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("args, spelling", [
-    (["-t", "echo"], "-t"),
-    (["--verb", "echo"], "-t"),
-    (["-x", "echo"], "-x"),
-    (["-s", "100", "echo"], "-s"),
-    (["-E", "END", "echo"], "-E"),
-    (["--eof", "echo"], "-e"),
-    (["--show", "echo"], "--show-limits"),
-    (["--process-slot-var=S", "echo"], "--process-slot-var"),
+@pytest.mark.parametrize("args, data, lines, stderr", [
+    (["-t", "echo", "x"], b"a b\n", ["echo x a b"], b"echo x a b\n"),
+    (["--verb", "-I{}", "echo", "[{}]"], b"a b\n", ["echo '[a b]'"
+                                                    ], b"echo '[a b]'\n"),
+    (["-0", "-t", "echo"], b"it's\n", ["echo 'it'\"'\"'s\n'"
+                                       ], b"echo 'it'\\''s'$'\\n'\n"),
+    (["-E", "STOP", "echo"], b"a b STOP c\nd\n", ["echo a b"], b""),
+    (["-eSTOP", "echo"], b"STOP a\n", ["echo"], b""),
+    (["-e", "echo"], b"a _ b\n", ["echo a _ b"], b""),
+    (["-s", "12", "echo"], b"a b c d e f\n", ["echo a b c", "echo d e f"
+                                              ], b""),
+    (["-s", "0", "echo"
+      ], b"a\n", [], b"xargs: value 0 for -s option should be >= 1\n"
+     b"xargs: cannot fit single argument within argument list size limit\n"),
+    (["-s", "9", "-x", "-n", "3", "echo"
+      ], b"a b c\n", [], b"xargs: argument list too long\n"),
+    (["-s", "7", "-L", "1", "echo"
+      ], b"a b\n", [], b"xargs: argument list too long\n"),
+    (["-s", "10", "echo"
+      ], b"abcdefgh\n", [], b"xargs: argument line too long\n"),
+    (["-s", "12", "-I{}", "echo", "x{}"
+      ], b"abcdef\n", [], b"xargs: argument list too long\n"),
+    (["-0", "-E", "S", "echo"], b"a\0S\0", ["echo a S"],
+     b"xargs: warning: the -E option has no effect if -0 or -d is used.\n\n"),
+    (["echo"], b"ab\0cd ef\n", ["echo ab ef"],
+     b"xargs: WARNING: a NUL character occurred in the input.  It cannot be "
+     b"passed through in the argument list.  Did you mean to use the --null "
+     b"option?\n"),
+    (["-p", "echo"], b"a\n", [],
+     b"echo axargs: failed to open /dev/tty for reading: No such device or "
+     b"address\n"),
+    (["-d", "\\x2c", "echo"], b"a,b", ["echo a b"], b""),
+    (["-d", "ab", "echo"], b"a", [],
+     b"xargs: Invalid input delimiter specification ab: the delimiter must be "
+     b"either a single character or an escape sequence starting with \\.\n"),
+    (["--process-slot-var=A=B", "echo"], b"a\n", [],
+     b"xargs: option --process-slot-var may not be set to a value which "
+     b"includes `='\n"),
 ])
-async def test_reserved_gnu_options_are_unsupported(args, spelling):
+async def test_gnu_options(args, data, lines, stderr):
     shell = FakeShell()
-    _, io, _ = await handle_xargs(shell, args, make_session(), b"a\n")
-    assert io.exit_code == 1
-    assert await materialize(
-        io.stderr) == f"xargs: unsupported option -- '{spelling}'\n".encode()
+    _, io, _ = await handle_xargs(shell, args, make_session(), data)
+    assert shell.lines == lines
+    assert await materialize(io.stderr) == stderr
+
+
+@pytest.mark.asyncio
+async def test_open_tty_fails_without_a_terminal():
+    shell = FakeShell()
+    _, io, _ = await handle_xargs(shell, ["-o", "echo"], make_session(),
+                                  b"a\n")
     assert shell.lines == []
+    assert io.exit_code == 125
+    assert (await
+            materialize(io.stderr
+                        )).endswith(b"xargs: echo: terminated by signal 6\n")
+
+
+@pytest.mark.asyncio
+async def test_show_limits_counts_the_environment():
+    session = make_session()
+    session.vars = {**session.vars, **vars_from_env({"A": "bb"})}
+    size = sum(
+        len(f"{name}={value}") + 1
+        for name, value in env_snapshot(session).items())
+    shell = FakeShell()
+    _, io, _ = await handle_xargs(shell,
+                                  ["--show-limits", "-s", "100", "echo"],
+                                  session, b"a\n")
+    upper = 2097152 - 2048 - size
+    assert (await materialize(io.stderr)).decode() == (
+        f"Your environment variables take up {size} bytes\n"
+        f"POSIX upper limit on argument length (this system): {upper}\n"
+        "POSIX smallest allowable upper limit on argument length "
+        "(all systems): 4096\n"
+        "Maximum length of command we could actually use: "
+        f"{upper - size}\n"
+        "Size of command buffer we are actually using: 100\n"
+        "Maximum parallelism (--max-procs must be no greater): 2147483647\n")
+    assert shell.lines == ["echo a"]
+
+
+@pytest.mark.asyncio
+async def test_process_slot_var_numbers_each_command():
+    seen: list[str] = []
+
+    async def execute(line, session_id, stdin=None):
+        current = get_current_session()
+        assert current is not None
+        seen.append(f"{line}:{current.env.get('SLOT')}")
+        return IOResult()
+
+    session = make_session()
+    await handle_xargs(execute, ["--process-slot-var=SLOT", "-n1", "sh"],
+                       session, b"a b\n")
+    assert seen == ["sh a:0", "sh b:0"]
+    assert "SLOT" not in session.env
 
 
 @pytest.mark.asyncio
@@ -344,11 +439,11 @@ async def test_replace_failure_exits_123_and_missing_command_stops():
                                   make_session(), b"a\nb\n")
     assert shell.lines == ["test a", "test b"]
     assert io.exit_code == 123
-    shell = FakeShell(exit_codes=[127, 0])
-    _, io, _ = await handle_xargs(shell, ["-I{}", "nope", "{}"],
-                                  make_session(), b"a\nb\n")
-    assert shell.lines == ["nope a"]
-    assert io.exit_code == 127
+    shell = FakeShell(exit_codes=[255, 0])
+    _, io, _ = await handle_xargs(shell, ["-I{}", "sh", "{}"], make_session(),
+                                  b"a\nb\n")
+    assert shell.lines == ["sh a"]
+    assert io.exit_code == 124
 
 
 @pytest.mark.asyncio
@@ -462,12 +557,12 @@ async def test_max_procs_runs_side_by_side_in_input_order():
 
 
 @pytest.mark.asyncio
-async def test_max_procs_starts_nothing_after_a_command_cannot_run():
-    shell = SlowShell(delays={"nope b": 0.05}, exit_codes={"nope a": 127})
+async def test_max_procs_starts_nothing_after_a_command_aborts():
+    shell = SlowShell(delays={"nope b": 0.05}, exit_codes={"nope a": 255})
     _, io, _ = await handle_xargs(shell, ["-P2", "-n1", "nope"],
                                   make_session(), b"a b c d")
     assert shell.lines == ["nope a", "nope b"]
-    assert io.exit_code == 127
+    assert io.exit_code == 124
     shell = SlowShell(exit_codes={"nope c": 1})
     _, io, _ = await handle_xargs(shell, ["-P3", "-n1", "nope"],
                                   make_session(), b"a b c d")
@@ -533,7 +628,7 @@ async def test_parallel_mode_forks_even_a_single_invocation(procs, data):
     seed_var(parent, "X", "outer")
     seen = []
 
-    async def execute(line, session_id):
+    async def execute(line, session_id, stdin=None):
         current = get_current_session()
         assert current is not None
         assert current is not parent
@@ -569,7 +664,7 @@ async def test_parallel_mode_restores_parent_after_single_invocation_raises():
     parent = make_session()
     seed_var(parent, "X", "outer")
 
-    async def execute(line, session_id):
+    async def execute(line, session_id, stdin=None):
         current = get_current_session()
         assert current is not None
         await session_view(current).set("X", "inner")

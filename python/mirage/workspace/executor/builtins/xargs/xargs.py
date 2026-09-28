@@ -16,10 +16,10 @@ import asyncio
 import re
 import shlex
 from collections.abc import Callable
-from enum import Enum
 from typing import Any
 
 from mirage.commands.config import version_line
+from mirage.commands.quote import quote_text
 from mirage.commands.spec.help import render_help
 from mirage.commands.spec.shell import SHELL_SPECS, parse_shell_options
 from mirage.commands.spec.usage import (ambiguous_option_error,
@@ -29,27 +29,57 @@ from mirage.commands.spec.usage import (ambiguous_option_error,
 from mirage.io import IOResult
 from mirage.io.stream import async_chain, materialize, yield_bytes
 from mirage.io.types import ByteSource
+from mirage.runtime.types import DispatchFn
+from mirage.utils.errors import FS_ERRORS, fs_strerror
+from mirage.utils.quote import shell_quote
+from mirage.workspace.executor.builtins.script.script import read_script_text
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
+from mirage.workspace.lookup.lookup import execs
+from mirage.workspace.mount.registry import MountRegistry
 from mirage.workspace.session import (SessionState, reset_current_session,
                                       set_current_session)
+from mirage.workspace.session.session import vars_from_env
+from mirage.workspace.session.state import env_snapshot
 from mirage.workspace.types import ExecutionNode
 
 _SYNOPSIS = "xargs [OPTION]... COMMAND [INITIAL-ARGS]..."
 _PROCS_MAX = 2147483647
-_UNSUPPORTED = frozenset({
-    "a", "E", "e", "o", "p", "s", "t", "show-limits", "x", "process-slot-var"
-})
-_BLANKS = frozenset(" \t")
-_SPACES = frozenset(" \t\n\v\f\r")
-_QUOTES = {"'": "single", '"': "double"}
+_ARG_MAX = 2097152
+_HEADROOM = 2048
+_POSIX_ARG_MIN = 4096
+_DEFAULT_ARG_SIZE = 131072
+_BLANKS = frozenset(b" \t")
+_SPACES = frozenset(b" \t\n\v\f\r")
+_QUOTES = {ord("'"): "single", ord('"'): "double"}
 _NUMBER = re.compile(r"[ \t\n\v\f\r]*[+-]?[0-9]+")
+_ESCAPES = {
+    "a": 7,
+    "b": 8,
+    "f": 12,
+    "n": 10,
+    "r": 13,
+    "t": 9,
+    "v": 11,
+    "\\": 92
+}
+_NUL_WARNING = ("xargs: WARNING: a NUL character occurred in the input.  "
+                "It cannot be passed through in the argument list.  "
+                "Did you mean to use the --null option?\n")
+_NORM, _SPACE, _QUOTE, _BACKSLASH = range(4)
 
 
-class _State(Enum):
-    NORM = "norm"
-    SPACE = "space"
-    QUOTE = "quote"
-    BACKSLASH = "backslash"
+class _Fatal(Exception):
+    """GNU's ``error (EXIT_FAILURE, ...)``: the message ends xargs.
+
+    Args:
+        message (str): the diagnostic, newline included.
+        code (int): the exit status.
+    """
+
+    def __init__(self, message: str, code: int = 1) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
 
 
 def _refuse(stderr: str | bytes,
@@ -105,174 +135,435 @@ def _exclusive(option: str, offending: str) -> str:
             f"exclusive, ignoring previous {offending} value\n")
 
 
-def _read_items(text: str, delim: str) -> list[str]:
-    """GNU's read_string: every delimiter ends an item, empty ones too.
+def _delimiter(spec: str) -> tuple[int, str]:
+    """GNU's get_input_delimiter: the byte, or its refusal.
+
+    One byte stands for itself; otherwise the value is a C escape (a
+    letter, ``\\`` or an octal or ``\\x`` hex code) and anything else is
+    refused, the empty value included.
 
     Args:
-        text (str): the whole input.
-        delim (str): the item terminator.
+        spec (str): the -d value as typed.
     """
-    items = text.split(delim)
-    if not items[-1]:
-        items.pop()
-    return items
+    raw = spec.encode()
+    if len(raw) == 1:
+        return raw[0], ""
+    if not spec.startswith("\\"):
+        return 0, (f"xargs: Invalid input delimiter specification {spec}: "
+                   "the delimiter must be either a single character or an "
+                   "escape sequence starting with \\.\n")
+    named = _ESCAPES.get(spec[1])
+    if named is not None:
+        return named, ""
+    if spec[1] != "x" and not spec[1].isdigit():
+        return 0, (f"xargs: Invalid escape sequence {spec} in input "
+                   "delimiter specification.\n")
+    base, body = (16, spec[2:]) if spec[1] == "x" else (8, spec[1:])
+    match = re.match(r"[0-9a-fA-F]*" if base == 16 else r"[0-7]*", body)
+    digits = match.group(0) if match else ""
+    value = int(digits, base) if digits else 0
+    if value > 255:
+        return 0, (f"xargs: Invalid escape sequence {spec} in input "
+                   "delimiter specification; character values must not "
+                   f"exceed {'ff' if base == 16 else '377'}.\n")
+    tail = body[len(digits):]
+    if tail:
+        return 0, (f"xargs: Invalid escape sequence {spec} in input "
+                   f"delimiter specification; trailing characters {tail} "
+                   "not recognised.\n")
+    return value, ""
 
 
-def _read_lines(text: str,
-                replace: bool) -> tuple[list[tuple[list[str], bool]], str]:
-    """GNU's read_line over the whole input.
-
-    One entry per read: the words it pushed and whether the newline
-    ending it counts as a line for -L. Blanks separate words and a
-    newline ends the read; quotes and backslashes are removed; leading
-    blanks and blank lines are skipped, and a line whose last character
-    is a blank runs on into the next one. Under -I only a newline ends
-    the word, so the read is the whole line. An unmatched quote ends the
-    reading with GNU's refusal, after the reads before it and the words
-    its own read had pushed; the refusal is empty otherwise. GNU 4.10.0's
-    EOF check uses the rendered buffer: an empty quoted token or lone
-    quote at EOF is ignored, unlike one terminated by a newline.
-
-    Args:
-        text (str): the whole input.
-        replace (bool): whether -I is in force.
-    """
-    reads: list[tuple[list[str], bool]] = []
-    words: list[str] = []
-    buf: list[str] = []
-    state = _State.SPACE
-    quote = ""
-    prev = ""
-    for c in text:
-        before, prev = prev, c
-        if state is _State.SPACE:
-            if c in _SPACES:
-                continue
-            state = _State.NORM
-        if state is _State.NORM:
-            if c == "\n":
-                words.append("".join(buf))
-                reads.append((words, before not in _BLANKS))
-                words, buf, state = [], [], _State.SPACE
-                continue
-            if not replace and c in _BLANKS:
-                words.append("".join(buf))
-                buf, state = [], _State.SPACE
-                continue
-            if c == "\\":
-                state = _State.BACKSLASH
-                continue
-            if c in _QUOTES:
-                state, quote = _State.QUOTE, c
-                continue
-        elif state is _State.QUOTE:
-            if c == "\n":
-                reads.append((words, False))
-                return reads, _unmatched(quote)
-            if c == quote:
-                state = _State.NORM
-                continue
-        else:
-            state = _State.NORM
-        buf.append(c)
-    if buf and state is _State.QUOTE:
-        reads.append((words, False))
-        return reads, _unmatched(quote)
-    if buf:
-        words.append("".join(buf))
-    if words:
-        reads.append((words, False))
-    return reads, ""
-
-
-def _unmatched(quote: str) -> str:
+def _unmatched(quote: int) -> str:
     return (f"xargs: unmatched {_QUOTES[quote]} quote; by default quotes are "
             "special to xargs unless you use the -0 option\n")
 
 
-def _batch_reads(reads: list[tuple[list[str], bool]], max_lines: int,
-                 max_args: int) -> tuple[list[list[str]], list[str]]:
-    """GNU's exec points without -I, and the words left pending.
+def _c_string(word: bytes) -> bytes:
+    return word.split(b"\0", 1)[0]
 
-    A batch runs once it holds -n words or -L lines.
+
+def _limits(env_size: int, posix_max: int, arg_max: int) -> str:
+    return (f"Your environment variables take up {env_size} bytes\n"
+            "POSIX upper limit on argument length (this system): "
+            f"{posix_max}\n"
+            "POSIX smallest allowable upper limit on argument length "
+            f"(all systems): {_POSIX_ARG_MIN}\n"
+            "Maximum length of command we could actually use: "
+            f"{posix_max - env_size}\n"
+            f"Size of command buffer we are actually using: {arg_max}\n"
+            "Maximum parallelism (--max-procs must be no greater): "
+            f"{_PROCS_MAX}\n")
+
+
+class _Builder:
+    """GNU xargs's input reader and command builder over one input.
+
+    A port of ``read_line``, ``read_string`` and buildcmd.c: words are
+    pushed onto the pending command line until a -n, -L or size limit
+    runs it, and every limit, logical EOF and refusal lands where GNU's
+    does. ``events`` records what GNU does in order, a message (str) or
+    a command line to run (list[bytes]); a refusal raises ``_Fatal``
+    after the events before it.
 
     Args:
-        reads (list[tuple[list[str], bool]]): the reader's entries.
-        max_lines (int): the -L count, 0 when unset.
+        data (bytes): the whole input.
+        command (list[bytes]): the command and its initial arguments.
+        delim (int | None): the -0/-d delimiter byte, None for lines.
+        eof (bytes | None): the logical end-of-file word.
+        replace (bytes | None): the -I string.
         max_args (int): the -n count, 0 when unset.
+        max_lines (int): the -L count, 0 when unset.
+        arg_max (int): the command line size limit (-s).
+        max_argc (int): the most arguments a command line takes.
+        exit_if_exceeded (bool): -x, which -I and -L imply.
+        always_run (bool): run once on empty input (no -r).
+        query (bool): -p, which needs a terminal to ask on.
+        open_tty (bool): -o, which needs a terminal for the command.
     """
-    batches: list[list[str]] = []
-    pending: list[str] = []
-    lines = 0
-    for words, counted in reads:
-        for word in words:
-            pending.append(word)
-            if max_args and len(pending) == max_args:
-                batches.append(pending)
-                pending = []
-        if counted:
-            lines += 1
-        if max_lines and lines >= max_lines:
-            batches.append(pending)
-            pending, lines = [], 0
-    return batches, pending
+
+    def __init__(self, data: bytes, command: list[bytes], *, delim: int
+                 | None, eof: bytes | None, replace: bytes | None,
+                 max_args: int, max_lines: int, arg_max: int, max_argc: int,
+                 exit_if_exceeded: bool, always_run: bool, query: bool,
+                 open_tty: bool) -> None:
+        self.data = data
+        self.pos = 0
+        self.command = command
+        self.delim = delim
+        self.eof_word = eof
+        self.replace = replace
+        self.max_args = max_args
+        self.max_lines = max_lines
+        self.arg_max = arg_max
+        self.max_argc = max_argc
+        self.exit_if_exceeded = (exit_if_exceeded or replace is not None
+                                 or max_lines > 0)
+        self.always_run = always_run
+        self.query = query
+        self.open_tty = open_tty
+        self.events: list[str | list[bytes]] = []
+        self.args: list[bytes] = []
+        self.chars = 0
+        self.initial_chars = 0
+        self.initial_argc = 0
+        self.initial = True
+        self.runs = 0
+        self.lineno = 0
+        self.eof = False
+        self.nul_warned = False
+        self.line = b""
+
+    def build(self) -> None:
+        """Read the whole input into ``events``; raises ``_Fatal``."""
+        if self.replace is None:
+            for word in self.command:
+                self._push(word, len(word) + 1)
+            self.initial = False
+            self.initial_argc = len(self.args)
+            self.initial_chars = self.chars
+            while self._read() != -1:
+                if self.max_lines and self.lineno >= self.max_lines:
+                    self._exec()
+                    self.lineno = 0
+            if (len(self.args) != self.initial_argc
+                    or (self.always_run and not self.runs)):
+                self._exec()
+            return
+        head, rest = self.command[0], self.command[1:]
+        while (length := self._read()) != -1:
+            line = _c_string(self.line)
+            self.args, self.chars = [], 0
+            self._push(head, len(head) + 1)
+            self.initial = False
+            for arg in rest:
+                self._insert(arg, line, length - 1)
+            self._exec()
+
+    def _read(self) -> int:
+        return self._read_line() if self.delim is None else self._read_item()
+
+    def _take(self, word: bytes) -> int:
+        self.line = word
+        if self.replace is None:
+            self._push(_c_string(word), len(word) + 1)
+        return len(word) + 1
+
+    def _is_eof(self, word: bytes) -> bool:
+        return self.eof_word is not None and _c_string(word) == self.eof_word
+
+    def _read_line(self) -> int:
+        if self.eof:
+            return -1
+        state, quote, c, first, seen = _SPACE, 0, -1, True, False
+        buf = bytearray()
+        room = self.arg_max - self.initial_chars - 1
+        while True:
+            prev = c
+            if self.pos >= len(self.data):
+                self.eof = True
+                if not buf:
+                    return -1
+                if state == _QUOTE:
+                    self._exec_if_possible()
+                    raise _Fatal(_unmatched(quote))
+                if first and self._is_eof(bytes(buf)):
+                    return -1
+                return self._take(bytes(buf))
+            c = self.data[self.pos]
+            self.pos += 1
+            if state == _SPACE:
+                if c in _SPACES:
+                    continue
+                state = _NORM
+            if state == _NORM:
+                if c == 10:
+                    if prev not in _BLANKS:
+                        self.lineno += 1
+                    if not buf and not seen:
+                        state = _SPACE
+                        continue
+                    if self._is_eof(bytes(buf)):
+                        self.eof = True
+                        return -1 if first else len(buf) + 1
+                    return self._take(bytes(buf))
+                seen = True
+                if self.replace is None and c in _BLANKS:
+                    if self._is_eof(bytes(buf)):
+                        self.eof = True
+                        return -1 if first else len(buf) + 1
+                    self._take(bytes(buf))
+                    buf, state, first = bytearray(), _SPACE, False
+                    continue
+                if c == 92:
+                    state = _BACKSLASH
+                    continue
+                if c in _QUOTES:
+                    state, quote = _QUOTE, c
+                    continue
+            elif state == _QUOTE:
+                if c == 10:
+                    self._exec_if_possible()
+                    raise _Fatal(_unmatched(quote))
+                if c == quote:
+                    state, seen = _NORM, True
+                    continue
+            else:
+                state = _NORM
+            if c == 0 and not self.nul_warned:
+                self.events.append(_NUL_WARNING)
+                self.nul_warned = True
+            if len(buf) >= room:
+                self._exec_if_possible()
+                raise _Fatal("xargs: argument line too long\n")
+            buf.append(c)
+
+    def _read_item(self) -> int:
+        if self.eof:
+            return -1
+        buf = bytearray()
+        room = self.arg_max - self.initial_chars - 1
+        while True:
+            if self.pos >= len(self.data):
+                self.eof = True
+                return self._take(bytes(buf)) if buf else -1
+            c = self.data[self.pos]
+            self.pos += 1
+            if c == self.delim:
+                self.lineno += 1
+                return self._take(bytes(buf))
+            if len(buf) >= room:
+                self._exec_if_possible()
+                raise _Fatal("xargs: argument line too long\n")
+            buf.append(c)
+
+    def _full(self) -> bool:
+        if (not self.initial and self.max_args
+                and len(self.args) - self.initial_argc == self.max_args):
+            return True
+        return len(self.args) == self.max_argc
+
+    def _push(self, arg: bytes, length: int) -> None:
+        if self.chars + length > self.arg_max:
+            if self.initial or len(self.args) == self.initial_argc:
+                raise _Fatal("xargs: cannot fit single argument within "
+                             "argument list size limit\n")
+            if self.replace is not None or (self.exit_if_exceeded and
+                                            (self.max_lines or self.max_args)):
+                raise _Fatal("xargs: argument list too long\n")
+            self._exec()
+        if self._full():
+            self._exec()
+        self.args.append(arg)
+        self.chars += length
+        if self._full():
+            self._exec()
+        if self.initial:
+            self.initial_chars = self.chars
+
+    def _insert(self, arg: bytes, line: bytes, size: int) -> None:
+        """GNU's bc_do_insert: one initial argument with -I applied.
+
+        Args:
+            arg (bytes): the initial argument.
+            line (bytes): the input line, cut at a NUL as C cuts it.
+            size (int): the line's length as read, NULs included.
+        """
+        assert self.replace is not None
+        room = self.arg_max - 1
+        out = bytearray()
+        once = True
+        while once or arg:
+            once = False
+            at = arg.find(self.replace)
+            span = at if at >= 0 else len(arg)
+            if room <= span:
+                break
+            room -= span
+            out += arg[:span]
+            arg = arg[span:]
+            if at < 0:
+                continue
+            if room <= size or not (self.replace or size):
+                break
+            room -= size
+            out += line + b"\0" * (size - len(line))
+            arg = arg[len(self.replace):]
+        if arg:
+            raise _Fatal("xargs: command too long\n")
+        self._push(_c_string(bytes(out)), len(out) + 1)
+
+    def _exec_if_possible(self) -> None:
+        if (self.replace is not None or self.initial
+                or len(self.args) == self.initial_argc
+                or self.exit_if_exceeded):
+            return
+        self._exec()
+
+    def _exec(self) -> None:
+        line = list(self.args)
+        if self.query:
+            self.events.append(_trace(line)[:-1])
+            raise _Fatal("xargs: failed to open /dev/tty for reading: "
+                         "No such device or address\n")
+        if self.open_tty:
+            name = line[0].decode(errors="replace")
+            raise _Fatal(
+                "xargs: '/dev/tty': No such device or address\n"
+                "xargs: xargs.c:1648: wait_for_proc_all: Assertion "
+                "`getpid () == parent' failed.\n"
+                f"xargs: {name}: terminated by signal 6\n", 125)
+        self.events.append(line)
+        self.runs += 1
+        del self.args[self.initial_argc:]
+        self.chars = self.initial_chars
 
 
-async def _run_lines(execute_fn: Callable[..., Any], lines: list[str],
-                     session: SessionState, procs: int) -> list[IOResult]:
-    """Run the command lines, at most ``procs`` at a time.
+def _trace(line: list[bytes]) -> str:
+    return " ".join(
+        shell_quote(word.decode(errors="replace")) for word in line) + "\n"
 
-    GNU starts no command once one could not run (126, 127) and waits
-    for those already running. Parallel mode gives every command a
-    fork of the session, even a single command,
-    so one cannot see another's variables, and each drains inside its
-    fork, since a stream can still read the ambient session. The
-    results come back in input order, which is the order their output
-    is written in.
+
+async def _run_lines(
+        execute_fn: Callable[..., Any],
+        events: list[str | list[bytes]],
+        session: SessionState,
+        procs: int,
+        *,
+        trace: bool = False,
+        slot_var: str | None = None,
+        registry: MountRegistry | None = None,
+        stdin: ByteSource | None = None) -> tuple[list[IOResult], int | None]:
+    """Run the builder's command lines, at most ``procs`` at a time.
+
+    Messages keep their place among the runs. A command nobody provides
+    stops xargs with GNU's 127 before it runs, and one exiting 255 stops
+    it with 124 once it has run, each after GNU's diagnostic; the
+    commands already running finish. Parallel mode, and a slot variable,
+    give every command a fork of the session, so one cannot see
+    another's variables, and each drains inside its fork, since a stream
+    can still read the ambient session. The results come back in input
+    order, which is the order their output is written in.
 
     Args:
         execute_fn (Callable): shell evaluator for each line.
-        lines (list[str]): the command lines, in input order.
+        events (list[str | list[bytes]]): messages and command lines.
         session (SessionState): the session the lines run in.
         procs (int): the -P count; 0 runs every line at once.
+        trace (bool): -t, print each command line before it runs.
+        slot_var (str | None): --process-slot-var, the variable that
+            carries each command's slot number.
+        registry (MountRegistry | None): where a command name is looked
+            up; None runs every name.
+        stdin (ByteSource | None): what the first command reads (-a).
     """
-    results: list[IOResult | None] = [None] * len(lines)
-    upcoming = iter(range(len(lines)))
-    stopped = False
-    forked = procs != 1
+    results: list[list[IOResult]] = [[] for _ in events]
+    upcoming = iter(range(len(events)))
+    stop: int | None = None
+    forked = procs != 1 or slot_var is not None
+    taken: set[int] = set()
+    feed = stdin
 
-    async def run(line: str) -> IOResult:
+    async def run(words: list[str]) -> IOResult:
+        nonlocal feed
+        line = shlex.join(words)
+        extra = {"stdin": feed if feed is not None else b""}
+        feed = None
         io: IOResult
         if not forked:
-            io = await execute_fn(line, session_id=session.session_id)
+            io = await execute_fn(line, session_id=session.session_id, **extra)
             return io
-        token = set_current_session(session.fork())
+        slot = next(n for n in range(len(taken) + 1) if n not in taken)
+        taken.add(slot)
+        child = session.fork()
+        if slot_var is not None:
+            child.vars = {**child.vars, **vars_from_env({slot_var: str(slot)})}
+        token = set_current_session(child)
         try:
-            io = await execute_fn(line, session_id=session.session_id)
+            io = await execute_fn(line, session_id=session.session_id, **extra)
             await io.materialize_stdout()
             await io.materialize_stderr()
             return io
         finally:
             reset_current_session(token)
+            taken.discard(slot)
 
     async def worker() -> None:
-        nonlocal stopped
-        while not stopped:
+        nonlocal stop
+        while stop is None:
             index = next(upcoming, None)
             if index is None:
                 return
+            event = events[index]
+            if isinstance(event, str):
+                results[index].append(IOResult(stderr=event.encode()))
+                continue
+            words = [word.decode(errors="replace") for word in event]
+            if trace:
+                results[index].append(IOResult(stderr=_trace(event).encode()))
+            if registry is not None and not execs(words[0], session, registry):
+                missing = f"xargs: {words[0]}: No such file or directory\n"
+                results[index].append(
+                    IOResult(stderr=missing.encode(), exit_code=127))
+                stop = 127
+                return
             try:
-                io = await run(lines[index])
+                io = await run(words)
             except BaseException:
-                stopped = True
+                stop = 1 if stop is None else stop
                 raise
-            results[index] = io
-            if io.exit_code in (126, 127):
-                stopped = True
+            results[index].append(io)
+            if io.exit_code == 255 and stop is None:
+                aborted = (f"xargs: {words[0]}: exited with status 255; "
+                           "aborting\n")
+                results[index].append(
+                    IOResult(stderr=aborted.encode(), exit_code=255))
+                stop = 124
 
-    width = (min(procs, len(lines)) if procs else len(lines)) if forked else 1
-    await asyncio.gather(*(worker() for _ in range(width)))
-    return [io for io in results if io is not None]
+    runs = sum(1 for event in events if not isinstance(event, str))
+    width = (min(procs, runs) if procs else runs) if procs != 1 else 1
+    await asyncio.gather(*(worker() for _ in range(max(width, 1))))
+    return [io for ios in results for io in ios], stop
 
 
 async def handle_xargs(
@@ -280,6 +571,9 @@ async def handle_xargs(
     args: list[str],
     session: SessionState,
     stdin: ByteSource | None,
+    *,
+    dispatch: DispatchFn | None = None,
+    registry: MountRegistry | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Run a command with words read from stdin (GNU xargs).
 
@@ -288,8 +582,12 @@ async def handle_xargs(
     the order given, as GNU's getopt loop reads them: -I, -L and -n
     cancel each other with GNU's warning, and --help or --version
     answers where it stands. The spec declares every option GNU's table
-    has, so an abbreviated long option resolves exactly as GNU's does;
-    the ones mirage does not implement are refused as unsupported.
+    has, so an abbreviated long option resolves exactly as GNU's does.
+
+    The limits are GNU's on a Linux system with an 8 MiB stack: the
+    environment counts against ARG_MAX (2 MiB) as GNU measures it, and
+    a command line holds 128 KiB unless -s says otherwise. There is no
+    terminal, so -p and -o fail the way GNU does without one.
 
     GNU xargs execs the command directly, so every input word must
     reach it as exactly one argv token. The inner line is built with
@@ -302,31 +600,67 @@ async def handle_xargs(
             arguments; the command defaults to ["echo"] like GNU.
         session (SessionState): shell session state.
         stdin (ByteSource | None): input whose words become arguments.
+        dispatch (DispatchFn | None): op dispatcher, which reads -a.
+        registry (MountRegistry | None): where command names are looked
+            up; None runs every name.
     """
     parse = parse_shell_options(SHELL_SPECS["xargs"], args or [])
+    env_size = sum(
+        len(f"{name}={value}".encode()) + 1
+        for name, value in env_snapshot(session).items())
+    posix_max = _ARG_MAX - env_size - _HEADROOM
+    oversized = _HEADROOM + env_size >= _ARG_MAX
+    arg_max = min(_DEFAULT_ARG_SIZE, posix_max)
     replace: str | None = None
     max_lines = 0
     max_args = 0
     procs = 1
     warnings = ""
-    delim: str | None = None
+    delim: int | None = None
+    eof: str | None = None
+    arg_file = "-"
+    slot_var: str | None = None
+    toggles: set[str] = set()
     for name, value in parse.given:
         if name in ("help", "version"):
             return _standard_response(name, warnings)
         if name == "0":
-            delim = "\0"
+            delim = 0
         if name == "d" and isinstance(value, str):
-            if not value:
+            delim, refusal = _delimiter(value)
+            if refusal:
+                return _refuse(warnings + refusal)
+        if name in ("E", "e"):
+            eof = value if isinstance(value, str) and value else None
+        if name in ("t", "p", "x", "o", "r", "show-limits"):
+            toggles.add(name)
+        if name == "a" and isinstance(value, str):
+            arg_file = value
+        if name == "process-slot-var" and isinstance(value, str):
+            if "=" in value:
                 return _refuse(
-                    warnings +
-                    "xargs: Invalid input delimiter specification : "
-                    "the delimiter must be either a single character or an "
-                    "escape sequence starting with \\.\n")
-            delim = value.replace("\\n", "\n").replace("\\t", "\t")
-        if name in _UNSUPPORTED:
-            dashes = "--" if len(name) > 1 else "-"
-            return _refuse(warnings +
-                           f"xargs: unsupported option -- '{dashes}{name}'\n")
+                    warnings + "xargs: option --process-slot-var "
+                    "may not be set to a value which includes `='\n")
+            if not value:
+                return _refuse(warnings + "xargs: failed to unset environment "
+                               "variable : Invalid argument\n")
+            slot_var = value
+        if name == "s" and isinstance(value, str):
+            if oversized:
+                return _refuse(warnings +
+                               "xargs: environment is too large for exec\n")
+            if not _NUMBER.fullmatch(value):
+                return _refuse(warnings + f'xargs: invalid number "{value}" '
+                               f"for -s option\n{usage_hint('xargs')}\n")
+            arg_max = int(value)
+            if arg_max < 1:
+                warnings += (f"xargs: value {value} for -s option should be "
+                             ">= 1\n")
+                arg_max = 1
+            elif arg_max > posix_max:
+                warnings += (f"xargs: value {value} for -s option should be "
+                             f"<= {posix_max}\n")
+                arg_max = posix_max
         if name in ("I", "i"):
             if max_args:
                 warnings += _exclusive("--replace/-I/-i", "--max-args")
@@ -374,49 +708,68 @@ async def handle_xargs(
     if parse.needs_value is not None:
         stderr, code = missing_value_error("xargs", parse.needs_value)
         return _refuse(warnings.encode() + stderr, code)
+    if eof is not None and delim is not None:
+        warnings += ("xargs: warning: the -E option has no effect if -0 or -d "
+                     "is used.\n\n")
+    if oversized:
+        return _refuse(warnings + "xargs: environment is too large for exec\n")
 
-    data = await materialize(stdin)
-    text = (data or b"").decode(errors="replace")
-    if delim is None:
-        reads, quote_error = _read_lines(text, replace is not None)
+    child_stdin: ByteSource | None = None
+    if arg_file == "-":
+        data = await materialize(stdin) or b""
     else:
-        reads, quote_error = [([item], True)
-                              for item in _read_items(text, delim)], ""
+        try:
+            if dispatch is None:
+                raise FileNotFoundError(arg_file)
+            data = (await read_script_text(dispatch, arg_file,
+                                           session.cwd)).encode()
+        except FS_ERRORS as exc:
+            return _refuse(warnings + "xargs: Cannot open input file "
+                           f"'{quote_text(arg_file)}': {fs_strerror(exc)}\n")
+        child_stdin = stdin
+    if "show-limits" in toggles:
+        warnings += _limits(env_size, posix_max, arg_max)
 
-    command = parse.operands or ["echo"]
-    if replace is not None:
-        items = [word for words, _ in reads for word in words]
-        if items and not replace and len(command) > 1:
-            return _refuse(warnings + "xargs: command too long\n")
-        runs = [[
-            command[0], *(arg.replace(replace, item) for arg in command[1:])
-        ] for item in items]
-    else:
-        batches, pending = _batch_reads(reads, max_lines, max_args)
-        if quote_error:
-            # GNU runs what it had read unless -L holds whole lines.
-            if pending and not max_lines:
-                batches.append(pending)
-        elif pending or not (batches or parse.flags.get("r") is True):
-            batches.append(pending)
-        runs = [[*command, *batch] for batch in batches]
+    builder = _Builder(
+        data, [word.encode() for word in parse.operands or ["echo"]],
+        delim=delim,
+        eof=eof.encode() if eof is not None else None,
+        replace=replace.encode() if replace is not None else None,
+        max_args=max_args,
+        max_lines=max_lines,
+        arg_max=arg_max,
+        max_argc=posix_max // 8 - 2,
+        exit_if_exceeded="x" in toggles,
+        always_run="r" not in toggles,
+        query="p" in toggles,
+        open_tty="o" in toggles)
+    fatal: _Fatal | None = None
+    try:
+        builder.build()
+    except _Fatal as caught:
+        fatal = caught
 
-    ios = await _run_lines(execute_fn, [shlex.join(run) for run in runs],
-                           session, procs)
+    ios, stop = await _run_lines(execute_fn,
+                                 builder.events,
+                                 session,
+                                 procs,
+                                 trace="t" in toggles,
+                                 slot_var=slot_var,
+                                 registry=registry,
+                                 stdin=child_stdin)
     stdouts: list[ByteSource] = []
     merged = IOResult(stderr=warnings.encode() or None)
     for io in ios:
         if io.stdout is not None:
             stdouts.append(io.stdout)
         merged = await merged.merge(io)
-    # GNU xargs stops when the command cannot run or is missing, and
-    # exits 123 when any invocation fails but keeps going.
-    exit_code = next(
-        (io.exit_code for io in ios if io.exit_code in (126, 127)),
-        123 if any(io.exit_code != 0 for io in ios) else 0)
-    if quote_error and exit_code not in (126, 127):
-        merged = await merged.merge(IOResult(stderr=quote_error.encode()))
-        exit_code = 1
+    if stop is not None:
+        exit_code = stop
+    elif fatal is not None:
+        merged = await merged.merge(IOResult(stderr=fatal.message.encode()))
+        exit_code = fatal.code
+    else:
+        exit_code = 123 if any(io.exit_code != 0 for io in ios) else 0
     merged.exit_code = exit_code
     out = async_chain(*stdouts) if stdouts else None
     return out, merged, ExecutionNode(command="xargs", exit_code=exit_code)
@@ -428,5 +781,9 @@ async def xargs_builtin(call: BuiltinCall) -> Result:
     Args:
         call (BuiltinCall): the invocation.
     """
-    return await handle_xargs(call.execute_fn, list(call.argv.args),
-                              call.session, call.stdin)
+    return await handle_xargs(call.execute_fn,
+                              list(call.argv.args),
+                              call.session,
+                              call.stdin,
+                              dispatch=call.dispatch,
+                              registry=call.registry)

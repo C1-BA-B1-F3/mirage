@@ -138,7 +138,7 @@ describe('parseShellOptions', () => {
 
   it('parses timeout long bool flag', () => {
     const parse = parseShellOptions(SHELL_SPECS.timeout, ['--preserve-status', '1', 'sleep', '3'])
-    expect(parse.flags).toEqual({ 'preserve-status': true })
+    expect(parse.flags).toEqual({ p: true })
     expect(parse.operands).toEqual(['1', 'sleep', '3'])
   })
 

@@ -1056,9 +1056,11 @@ async def test_a_profiles_allow_list_is_the_only_one_a_session_reads():
         code, _, err = await _line(ws, "git -C /repo status", "rev")
         assert "not allowed" not in err
         # Nested runners re-enter the chokepoint: the hidden `rm` stays
-        # hidden inside xargs, eval and a function body.
+        # hidden inside xargs (which, as GNU's, finds no such program),
+        # eval and a function body.
         assert await _line(ws, "echo /repo/d/x | xargs rm",
-                           "rev") == (127, "", "rm: command not found\n")
+                           "rev") == (127, "",
+                                      "xargs: rm: No such file or directory\n")
         assert await _line(ws, "eval 'rm /repo/d/x'",
                            "rev") == (127, "", "rm: command not found\n")
         assert await _line(ws, "f() { rm /repo/d/x; }; f",

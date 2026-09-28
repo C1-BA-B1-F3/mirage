@@ -545,7 +545,7 @@
       }
     },
     {
-      "id": "blt_timeout_signal_unsupported",
+      "id": "blt_timeout_signal",
       "seq": 502317,
       "targets": [
         "ram",
@@ -574,12 +574,12 @@
       "command": "timeout -s KILL 5 echo hi; echo $?",
       "expect": {
         "exit": 0,
-        "stdout": "125\n",
-        "stderr": "timeout: unsupported option -- '-s'\n"
+        "stdout": "hi\n0\n",
+        "stderr": ""
       }
     },
     {
-      "id": "blt_timeout_kill_after_unsupported",
+      "id": "blt_timeout_kill_after",
       "seq": 502318,
       "targets": [
         "ram",
@@ -608,8 +608,8 @@
       "command": "timeout -k 1 5 echo hi; echo $?",
       "expect": {
         "exit": 0,
-        "stdout": "125\n",
-        "stderr": "timeout: unsupported option -- '-k'\n"
+        "stdout": "hi\n0\n",
+        "stderr": ""
       }
     },
     {

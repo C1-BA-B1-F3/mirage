@@ -1446,11 +1446,12 @@ describe('command permissions end to end', () => {
     // not the verb, so `git -C /repo status` is `git status`.
     expect((await line(ws, 'git -C /repo status', 'rev'))[2]).not.toContain('not allowed')
     // Nested runners re-enter the chokepoint: the hidden `rm` stays
-    // hidden inside xargs, eval and a function body.
+    // hidden inside xargs (which, as GNU's, finds no such program), eval
+    // and a function body.
     expect(await line(ws, 'echo /repo/d/x | xargs rm', 'rev')).toEqual([
       127,
       '',
-      'rm: command not found\n',
+      'xargs: rm: No such file or directory\n',
     ])
     expect(await line(ws, "eval 'rm /repo/d/x'", 'rev')).toEqual([
       127,

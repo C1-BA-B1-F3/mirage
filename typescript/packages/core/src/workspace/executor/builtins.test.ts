@@ -17,7 +17,7 @@ import { HELP as PRINTF_HELP } from './builtins/printf/printf.ts'
 import { specOf } from '../../commands/spec/index.ts'
 import { renderHelp } from '../../commands/spec/help.ts'
 import { makeVar } from '../../shell/variable.ts'
-import { seedVar, sessionView, setAttr } from '../../workspace/session/state.ts'
+import { envSnapshot, seedVar, sessionView, setAttr } from '../../workspace/session/state.ts'
 import { VarAttr } from '../../shell/variable.ts'
 import { varsFromEnv } from '../../workspace/session/session.ts'
 import { describe, expect, it, vi } from 'vitest'
@@ -61,7 +61,7 @@ import {
   handleWhoami,
   handleXargs,
 } from './builtins/index.ts'
-import { parseDuration } from './builtins/timeout/timeout.ts'
+import { parseDuration, parseSignal, signalName } from './builtins/timeout/timeout.ts'
 import { ReturnSignal } from '../../shell/errors.ts'
 
 function wireMount(mount: MountEntry): void {
@@ -1938,11 +1938,21 @@ describe('handleXargs', () => {
     expect(io.exitCode).toBe(123)
   })
 
-  it('command-not-found stops with 127', async () => {
+  it('exit 255 stops with 124', async () => {
+    const shell = fakeShell([255, 0])
+    const [, io] = await handleXargs(shell.fn, ['-n1', 'sh'], session, ab())
+    expect(shell.lines).toEqual(['sh a'])
+    expect(io.exitCode).toBe(124)
+    expect(decode(await materialize(io.stderr))).toBe(
+      'xargs: sh: exited with status 255; aborting\n',
+    )
+  })
+
+  it('a command exiting 127 is an ordinary failure', async () => {
     const shell = fakeShell([127, 0])
-    const [, io] = await handleXargs(shell.fn, ['-n1', 'nope'], session, ab())
-    expect(shell.lines).toEqual(['nope a'])
-    expect(io.exitCode).toBe(127)
+    const [, io] = await handleXargs(shell.fn, ['-n1', 'sh'], session, ab())
+    expect(shell.lines).toEqual(['sh a', 'sh b'])
+    expect(io.exitCode).toBe(123)
   })
 
   it('-r skips the run on empty input', async () => {
@@ -2036,23 +2046,106 @@ describe('handleXargs', () => {
     expect(io.exitCode).toBe(0)
   })
 
-  it.each([
-    [['-t', 'echo'], '-t'],
-    [['--verb', 'echo'], '-t'],
-    [['-x', 'echo'], '-x'],
-    [['-s', '100', 'echo'], '-s'],
-    [['-E', 'END', 'echo'], '-E'],
-    [['--eof', 'echo'], '-e'],
-    [['--show', 'echo'], '--show-limits'],
-    [['--process-slot-var=S', 'echo'], '--process-slot-var'],
-  ])('reserved GNU options are unsupported (%j)', async (args, spelling) => {
+  it.each<[string[], string, string[], string]>([
+    [['-t', 'echo', 'x'], 'a b\n', ['echo x a b'], 'echo x a b\n'],
+    [['--verb', '-I{}', 'echo', '[{}]'], 'a b\n', ["echo '[a b]'"], "echo '[a b]'\n"],
+    [['-0', '-t', 'echo'], "it's\n", ["echo 'it'\\''s\n'"], "echo 'it'\\''s'$'\\n'\n"],
+    [['-E', 'STOP', 'echo'], 'a b STOP c\nd\n', ['echo a b'], ''],
+    [['-eSTOP', 'echo'], 'STOP a\n', ['echo'], ''],
+    [['-e', 'echo'], 'a _ b\n', ['echo a _ b'], ''],
+    [['-s', '12', 'echo'], 'a b c d e f\n', ['echo a b c', 'echo d e f'], ''],
+    [
+      ['-s', '0', 'echo'],
+      'a\n',
+      [],
+      'xargs: value 0 for -s option should be >= 1\nxargs: cannot fit single argument within argument list size limit\n',
+    ],
+    [['-s', '9', '-x', '-n', '3', 'echo'], 'a b c\n', [], 'xargs: argument list too long\n'],
+    [['-s', '7', '-L', '1', 'echo'], 'a b\n', [], 'xargs: argument list too long\n'],
+    [['-s', '10', 'echo'], 'abcdefgh\n', [], 'xargs: argument line too long\n'],
+    [['-s', '12', '-I{}', 'echo', 'x{}'], 'abcdef\n', [], 'xargs: argument list too long\n'],
+    [
+      ['-0', '-E', 'S', 'echo'],
+      'a\0S\0',
+      ['echo a S'],
+      'xargs: warning: the -E option has no effect if -0 or -d is used.\n\n',
+    ],
+    [
+      ['echo'],
+      'ab\0cd ef\n',
+      ['echo ab ef'],
+      'xargs: WARNING: a NUL character occurred in the input.  It cannot be passed through in the argument list.  Did you mean to use the --null option?\n',
+    ],
+    [
+      ['-p', 'echo'],
+      'a\n',
+      [],
+      'echo axargs: failed to open /dev/tty for reading: No such device or address\n',
+    ],
+    [['-d', '\\x2c', 'echo'], 'a,b', ['echo a b'], ''],
+    [
+      ['-d', 'ab', 'echo'],
+      'a',
+      [],
+      'xargs: Invalid input delimiter specification ab: the delimiter must be either a single character or an escape sequence starting with \\.\n',
+    ],
+    [
+      ['--process-slot-var=A=B', 'echo'],
+      'a\n',
+      [],
+      "xargs: option --process-slot-var may not be set to a value which includes `='\n",
+    ],
+  ])('GNU options (%j)', async (args, data, lines, stderr) => {
     const shell = fakeShell()
-    const [, io] = await handleXargs(shell.fn, args, session, enc('a\n'))
-    expect(io.exitCode).toBe(1)
-    expect(decode(await materialize(io.stderr))).toBe(
-      `xargs: unsupported option -- '${spelling}'\n`,
-    )
+    const [, io] = await handleXargs(shell.fn, args, session, enc(data))
+    expect(shell.lines).toEqual(lines)
+    expect(decode(await materialize(io.stderr))).toBe(stderr)
+  })
+
+  it('-o fails without a terminal', async () => {
+    const shell = fakeShell()
+    const [, io] = await handleXargs(shell.fn, ['-o', 'echo'], session, enc('a\n'))
     expect(shell.lines).toEqual([])
+    expect(io.exitCode).toBe(125)
+    expect(decode(await materialize(io.stderr))).toMatch(/xargs: echo: terminated by signal 6\n$/)
+  })
+
+  it('--show-limits counts the environment', async () => {
+    const counted = new SessionState({ sessionId: 'limits' })
+    counted.vars = { ...counted.vars, ...varsFromEnv({ A: 'bb' }) }
+    let size = 0
+    for (const [name, value] of Object.entries(envSnapshot(counted))) {
+      size += new TextEncoder().encode(`${name}=${value}`).length + 1
+    }
+    const upper = 2097152 - 2048 - size
+    const shell = fakeShell()
+    const [, io] = await handleXargs(
+      shell.fn,
+      ['--show-limits', '-s', '100', 'echo'],
+      counted,
+      enc('a\n'),
+    )
+    expect(decode(await materialize(io.stderr))).toBe(
+      `Your environment variables take up ${String(size)} bytes\n` +
+        `POSIX upper limit on argument length (this system): ${String(upper)}\n` +
+        'POSIX smallest allowable upper limit on argument length (all systems): 4096\n' +
+        `Maximum length of command we could actually use: ${String(upper - size)}\n` +
+        'Size of command buffer we are actually using: 100\n' +
+        'Maximum parallelism (--max-procs must be no greater): 2147483647\n',
+    )
+    expect(shell.lines).toEqual(['echo a'])
+  })
+
+  it('--process-slot-var numbers each command in its own fork', async () => {
+    const parent = new SessionState({ sessionId: 'slots' })
+    const seen: string[] = []
+    const execute = (line: string, opts: { session?: SessionState }): Promise<IOResult> => {
+      seen.push(`${line}:${opts.session?.env.SLOT ?? ''}`)
+      return Promise.resolve(new IOResult())
+    }
+    await handleXargs(execute, ['--process-slot-var=SLOT', '-n1', 'sh'], parent, enc('a b\n'))
+    expect(seen).toEqual(['sh a:0', 'sh b:0'])
+    expect(parent.env.SLOT).toBeUndefined()
   })
 
   it.each([[['--help']], [['--help', '-q']], [['-r', '--help', 'echo']], [['--hel']], [['--h']]])(
@@ -2167,15 +2260,15 @@ describe('handleXargs', () => {
     ])
   })
 
-  it('-I failure exits 123 and a missing command stops', async () => {
+  it('-I failure exits 123 and exit 255 stops', async () => {
     let shell = fakeShell([1, 0])
     let [, io] = await handleXargs(shell.fn, ['-I{}', 'test', '{}'], session, enc('a\nb\n'))
     expect(shell.lines).toEqual(['test a', 'test b'])
     expect(io.exitCode).toBe(123)
-    shell = fakeShell([127, 0])
-    ;[, io] = await handleXargs(shell.fn, ['-I{}', 'nope', '{}'], session, enc('a\nb\n'))
-    expect(shell.lines).toEqual(['nope a'])
-    expect(io.exitCode).toBe(127)
+    shell = fakeShell([255, 0])
+    ;[, io] = await handleXargs(shell.fn, ['-I{}', 'sh', '{}'], session, enc('a\nb\n'))
+    expect(shell.lines).toEqual(['sh a'])
+    expect(io.exitCode).toBe(124)
   })
 
   it('-I stops on an unmatched quote after earlier lines', async () => {
@@ -2300,11 +2393,11 @@ describe('handleXargs', () => {
     expect(shell.peak()).toBe(1)
   })
 
-  it('-P starts nothing after a command cannot run', async () => {
-    let shell = slowShell({ 'nope b': 50 }, { 'nope a': 127 })
+  it('-P starts nothing after a command aborts', async () => {
+    let shell = slowShell({ 'nope b': 50 }, { 'nope a': 255 })
     let [, io] = await handleXargs(shell.fn, ['-P2', '-n1', 'nope'], session, enc('a b c d'))
     expect(shell.lines).toEqual(['nope a', 'nope b'])
-    expect(io.exitCode).toBe(127)
+    expect(io.exitCode).toBe(124)
     shell = slowShell({}, { 'nope c': 1 })
     ;[, io] = await handleXargs(shell.fn, ['-P3', '-n1', 'nope'], session, enc('a b c d'))
     expect(io.exitCode).toBe(123)
@@ -2372,11 +2465,76 @@ describe('handleTimeout', () => {
     expect(parseDuration('.5')).toBe(0.5)
   })
 
+  it('reads C floats as durations', () => {
+    expect(parseDuration('1e-1')).toBe(0.1)
+    expect(parseDuration('.1s')).toBe(0.1)
+    expect(parseDuration(' 0.1')).toBe(0.1)
+    expect(parseDuration('0x1p-3')).toBe(0.125)
+    expect(parseDuration('inf')).toBe(Infinity)
+    expect(parseDuration('infinitys')).toBe(Infinity)
+    expect(parseDuration('-0')).toBe(0)
+  })
+
   it('rejects garbage durations', () => {
     expect(parseDuration('xx')).toBeNull()
     expect(parseDuration('-1')).toBeNull()
     expect(parseDuration('1x')).toBeNull()
     expect(parseDuration('')).toBeNull()
+    expect(parseDuration('1ss')).toBeNull()
+    expect(parseDuration('1,5')).toBeNull()
+    expect(parseDuration('1e')).toBeNull()
+    expect(parseDuration('nan')).toBeNull()
+  })
+
+  it.each<[string, number | null]>([
+    ['TERM', 15],
+    ['sigint', 2],
+    ['Sigterm', 15],
+    ['SIG9', 9],
+    ['IOT', 6],
+    ['EXIT', 0],
+    ['0', 0],
+    ['143', 15],
+    ['256', 0],
+    ['265', 9],
+    ['319', 63],
+    ['32', 32],
+    ['RTMIN', 34],
+    ['rtmin+1', 35],
+    ['RTMIN 2', 36],
+    ['RTMIN+30', 64],
+    ['SIGRTMAX', 64],
+    ['RTMAX-30', 34],
+    ['FOO', null],
+    ['', null],
+    ['65', null],
+    ['193', null],
+    ['255', null],
+    ['0x9', null],
+    ['9x', null],
+    ['sig65', null],
+    ['RTMIN+31', null],
+    ['RTMIN+ 2', null],
+    ['RTMAX+1', null],
+    ['2147483648', null],
+  ])('parses signal %j', (operand, number) => {
+    expect(parseSignal(operand)).toBe(number)
+  })
+
+  it.each<[number, string]>([
+    [15, 'TERM'],
+    [6, 'ABRT'],
+    [17, 'CHLD'],
+    [29, 'POLL'],
+    [0, 'EXIT'],
+    [32, '32'],
+    [34, 'RTMIN'],
+    [40, 'RTMIN+6'],
+    [49, 'RTMIN+15'],
+    [50, 'RTMAX-14'],
+    [64, 'RTMAX'],
+  ])('names signal %i', (number, name) => {
+    expect(signalName(number)).toBe(name)
   })
 
   it('passes through when the command finishes in time', async () => {
@@ -2455,7 +2613,9 @@ describe('handleTimeout', () => {
     const shell = fakeShell()
     const [, io] = await handleTimeout(shell.fn, ['xx', 'sleep', '1'], session)
     expect(io.exitCode).toBe(125)
-    expect(decode(await materialize(io.stderr))).toBe("timeout: invalid time interval 'xx'\n")
+    expect(decode(await materialize(io.stderr))).toBe(
+      `timeout: invalid time interval 'xx'\n${TIMEOUT_TRY}`,
+    )
     expect(shell.lines).toEqual([])
   })
 
@@ -2463,7 +2623,7 @@ describe('handleTimeout', () => {
     const shell = fakeShell()
     const [, io] = await handleTimeout(shell.fn, ['5'], session)
     expect(io.exitCode).toBe(125)
-    expect(decode(await materialize(io.stderr))).toBe('timeout: missing operand\n')
+    expect(decode(await materialize(io.stderr))).toBe(TIMEOUT_TRY)
   })
 
   it.each([
@@ -2472,26 +2632,97 @@ describe('handleTimeout', () => {
     [['--si'], "timeout: option '--signal' requires an argument\n"],
     [
       ['--=x', '1', 'true'],
-      "timeout: option '--=x' is ambiguous; possibilities: '--signal' '--kill-after' '--preserve-status'\n",
+      "timeout: option '--=x' is ambiguous; possibilities: '--foreground' '--kill-after' '--preserve-status' '--signal' '--verbose' '--help' '--version'\n",
+    ],
+    [
+      ['--v', '1', 'true'],
+      "timeout: option '--v' is ambiguous; possibilities: '--verbose' '--version'\n",
     ],
     [
       ['--preserve-status=x', '1', 'true'],
       "timeout: option '--preserve-status' doesn't allow an argument\n",
     ],
+    [['-x', '1', 'true'], "timeout: invalid option -- 'x'\n"],
+    [['-s', 'FOO', '1', 'true'], "timeout: 'FOO': invalid signal\n"],
+    [['-k', 'x', '1', 'true'], "timeout: invalid time interval 'x'\n"],
   ])('option refusals exit 125 (%j)', async (args, message) => {
     const shell = fakeShell()
     const [, io] = await handleTimeout(shell.fn, args, session)
     expect(io.exitCode).toBe(125)
-    expect(decode(await materialize(io.stderr))).toBe(message)
+    expect(decode(await materialize(io.stderr))).toBe(message + TIMEOUT_TRY)
+    expect(shell.lines).toEqual([])
   })
 
-  it('signal option is rejected', async () => {
-    const shell = fakeShell()
-    const [, io] = await handleTimeout(shell.fn, ['-s', 'KILL', '1', 'sleep', '3'], session)
-    expect(io.exitCode).toBe(125)
-    expect(decode(await materialize(io.stderr))).toBe("timeout: unsupported option -- '-s'\n")
+  it.each<[string[], number, string]>([
+    [['0.05'], 124, ''],
+    [['-v', '0.05'], 124, "timeout: sending signal TERM to command 'sleep'\n"],
+    [['-p', '0.05'], 143, ''],
+    [['-p', '-s', 'INT', '0.05'], 130, ''],
+    [['-s', 'KILL', '0.05'], 137, ''],
+    [['-p', '-s', 'QUIT', '0.05'], 131, ''],
+    [['-s', '32', '0.05'], 160, ''],
+    [['-f', '-s', '32', '0.05'], 124, ''],
+    [['-f', '-p', '-s', '33', '0.05'], 161, ''],
+    [
+      ['-v', '-s', 'CONT', '-k', '0.05', '0.05'],
+      137,
+      "timeout: sending signal CONT to command 'sleep'\ntimeout: sending signal KILL to command 'sleep'\n",
+    ],
+    [
+      ['-v', '-f', '-s', 'STOP', '-k', '0.05', '0.05'],
+      137,
+      "timeout: sending signal STOP to command 'sleep'\ntimeout: sending signal KILL to command 'sleep'\n",
+    ],
+    [
+      ['-v', '-s', 'CHLD', '-k', '0.05', '0.05'],
+      137,
+      "timeout: sending signal CHLD to command 'sleep'\ntimeout: sending signal KILL to command 'sleep'\n",
+    ],
+  ])('signal outcome (%j)', async (args, code, said) => {
+    const shell = slowShell({ 'sleep 1': 1000 })
+    const [, io, node] = await handleTimeout(shell.fn, [...args, 'sleep', '1'], session)
+    expect(io.exitCode).toBe(code)
+    expect(node.exitCode).toBe(code)
+    expect(decode(await materialize(io.stderr))).toBe(said)
+  })
+
+  it.each<[string[], number]>([
+    [['-s', 'CONT'], 124],
+    [['-s', '0'], 124],
+    [['-s', 'TSTP'], 124],
+    [['-f', '-s', 'CHLD'], 124],
+    [['-p', '-s', 'CONT'], 3],
+  ])('ignored signals let the command finish (%j)', async (args, code) => {
+    const shell = slowShell({ sh: 200 }, { sh: 3 })
+    const [stdout, io] = await handleTimeout(shell.fn, [...args, '0.05', 'sh'], session)
+    expect(io.exitCode).toBe(code)
+    expect(decode(stdout as Uint8Array)).toBe('ran:sh\n')
+  })
+
+  it('a stopped timeout never returns', async () => {
+    const shell = slowShell({ sh: 50 })
+    const run = handleTimeout(shell.fn, ['-s', 'STOP', '0.01', 'sh'], session)
+    const late = new Promise((resolve) =>
+      setTimeout(() => {
+        resolve('late')
+      }, 300),
+    )
+    expect(await Promise.race([run, late])).toBe('late')
+  })
+
+  it('hands the command its stdin', async () => {
+    const seen: (ByteSource | null | undefined)[] = []
+    const execute = (_line: string, opts: { stdin?: ByteSource | null }): Promise<IOResult> => {
+      seen.push(opts.stdin)
+      return Promise.resolve(new IOResult())
+    }
+    const input = new TextEncoder().encode('hi\n')
+    await handleTimeout(execute, ['1', 'cat'], session, input)
+    expect(seen).toEqual([input])
   })
 })
+
+const TIMEOUT_TRY = "Try 'timeout --help' for more information.\n"
 
 function aBC(): Uint8Array {
   return new TextEncoder().encode('a b c')

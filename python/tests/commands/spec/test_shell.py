@@ -114,7 +114,7 @@ def test_value_flag_missing_value_reported():
 def test_timeout_long_bool_flag():
     parse = parse_shell_options(SHELL_SPECS["timeout"],
                                 ["--preserve-status", "1", "sleep", "3"])
-    assert parse.flags == {"preserve-status": True}
+    assert parse.flags == {"p": True}
     assert parse.operands == ["1", "sleep", "3"]
 
 

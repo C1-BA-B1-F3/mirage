@@ -26,10 +26,11 @@ SHELL_SPECS: dict[str, CommandSpec] = {
             Option(short="-0",
                    long="--null",
                    description="Input items are terminated by NUL."),
-            Option(short="-a",
-                   long="--arg-file",
-                   type="str",
-                   description="Read items from this file (not supported)."),
+            Option(
+                short="-a",
+                long="--arg-file",
+                type="str",
+                description="Read items from this file, not standard input."),
             Option(short="-d",
                    long="--delimiter",
                    type="str",
@@ -37,12 +38,12 @@ SHELL_SPECS: dict[str, CommandSpec] = {
             Option(short="-E",
                    type="str",
                    description="Stop reading at this logical end-of-file "
-                   "string (not supported)."),
+                   "string."),
             Option(short="-e",
                    long="--eof",
                    type="str",
                    value_optional=True,
-                   description="Same as -E (not supported)."),
+                   description="Same as -E; no string turns it off."),
             Option(short="-I",
                    type="str",
                    description="Replace this string in the initial "
@@ -70,30 +71,28 @@ SHELL_SPECS: dict[str, CommandSpec] = {
             Option(short="-o",
                    long="--open-tty",
                    description="Reopen stdin as the terminal in each "
-                   "command (not supported)."),
+                   "command (there is no terminal, so this fails)."),
             Option(short="-p",
                    long="--interactive",
                    description="Prompt before running each command "
-                   "(not supported)."),
+                   "(there is no terminal, so this fails)."),
             Option(short="-r",
                    long="--no-run-if-empty",
                    description="Do not run the command on empty input."),
             Option(short="-s",
                    long="--max-chars",
                    type="str",
-                   description="Limit a command line to N characters "
-                   "(not supported)."),
+                   description="Limit a command line to N bytes."),
             Option(short="-t",
                    long="--verbose",
-                   description="Print each command before running it "
-                   "(not supported)."),
+                   description="Print each command on stderr before "
+                   "running it."),
             Option(long="--show-limits",
-                   description="Show the command-line length limits "
-                   "(not supported)."),
+                   description="Show the command-line length limits."),
             Option(short="-x",
                    long="--exit",
                    description="Exit if a command line exceeds the size "
-                   "limit (not supported)."),
+                   "limit."),
             Option(short="-P",
                    long="--max-procs",
                    type="str",
@@ -102,7 +101,7 @@ SHELL_SPECS: dict[str, CommandSpec] = {
             Option(long="--process-slot-var",
                    type="str",
                    description="Set this variable to each command's slot "
-                   "number (not supported)."),
+                   "number."),
             VERSION_OPTION,
             HELP_OPTION,
         ),
@@ -112,18 +111,28 @@ SHELL_SPECS: dict[str, CommandSpec] = {
     CommandSpec(
         description="Run a command with a time limit.",
         options=(
-            Option(short="-s",
-                   long="--signal",
-                   type="str",
-                   description="Signal to send on timeout (not supported)."),
+            Option(short="-f",
+                   long="--foreground",
+                   description="Signal only the command, not its process "
+                   "group."),
             Option(short="-k",
                    long="--kill-after",
                    type="str",
-                   description="Also send KILL after this long "
-                   "(not supported)."),
-            Option(long="--preserve-status",
-                   description="Exit with the command's status on timeout "
-                   "(not supported)."),
+                   description="Also send KILL this long after the first "
+                   "signal."),
+            Option(short="-p",
+                   long="--preserve-status",
+                   description="Exit with the command's status even when it "
+                   "times out."),
+            Option(short="-s",
+                   long="--signal",
+                   type="str",
+                   description="Signal to send on timeout (default TERM)."),
+            Option(short="-v",
+                   long="--verbose",
+                   description="Report each signal sent on stderr."),
+            HELP_OPTION,
+            VERSION_OPTION,
         ),
         rest=Operand(type="str"),
     ),

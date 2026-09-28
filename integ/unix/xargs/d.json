@@ -379,6 +379,80 @@
       "flags": [
         "d"
       ]
+    },
+    {
+      "id": "xargs_delimiter_escapes",
+      "seq": 1300083,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a,b' | xargs -d '\\x2c' echo; printf 'a,b' | xargs -d '\\054' echo; printf 'a\\nb' | xargs -d '\\nX' echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "a b\na b\na b\n",
+        "stderr": ""
+      },
+      "flags": [
+        "d"
+      ]
+    },
+    {
+      "id": "xargs_delimiter_refusals",
+      "seq": 1300084,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a' | xargs -d ab echo; echo code=$?; printf 'a' | xargs -d '\\q' echo; echo code=$?; printf 'a' | xargs -d '\\400' echo; echo code=$?; printf 'a' | xargs -d '\\x2cz' echo; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=1\ncode=1\ncode=1\ncode=1\n",
+        "stderr": "xargs: Invalid input delimiter specification ab: the delimiter must be either a single character or an escape sequence starting with \\.\nxargs: Invalid escape sequence \\q in input delimiter specification.\nxargs: Invalid escape sequence \\400 in input delimiter specification; character values must not exceed 377.\nxargs: Invalid escape sequence \\x2cz in input delimiter specification; trailing characters z not recognised.\n"
+      },
+      "flags": [
+        "d"
+      ]
     }
   ]
 }

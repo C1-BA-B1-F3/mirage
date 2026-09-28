@@ -26,10 +26,7 @@ import {
 import type { TokenManager } from './client.ts'
 import type { ByteWindow } from '../../utils/ranges.ts'
 
-// md5Checksum and headRevisionId feed driveFingerprint, and this is the
-// listing the freshness probe's stat warms through, so without them the probe
-// compares a timestamp against the read's md5. They ride a request that is
-// already issued, so they cost nothing.
+// md5Checksum and headRevisionId are a file's token (driveFingerprint).
 const FIELDS =
   'nextPageToken,' +
   'files(id,name,mimeType,driveId,size,quotaBytesUsed,' +
@@ -71,9 +68,6 @@ export interface DriveFile {
   quotaBytesUsed?: string
   createdTime?: string
   modifiedTime?: string
-  // The two content tokens driveFingerprint reads. Optional because Drive
-  // omits both for a folder and for a native google-apps file, and omits the
-  // md5 for some binary files as well.
   md5Checksum?: string
   headRevisionId?: string
   owners?: DriveOwner[]
@@ -257,9 +251,6 @@ export async function* downloadFileStream(
 }
 
 export const FOLDER_MIME = 'application/vnd.google-apps.folder'
-// Top-level, with no `files(...)` wrapper: a files.get answers a bare File
-// resource, and wrapping these would ask for a field the response has no room
-// for, so Drive would return neither and say nothing.
 const ITEM_FIELDS =
   'id,name,mimeType,driveId,size,quotaBytesUsed,createdTime,modifiedTime,md5Checksum,headRevisionId,parents'
 const DEFAULT_UPLOAD_MIME = 'application/octet-stream'

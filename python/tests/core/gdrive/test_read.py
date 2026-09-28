@@ -19,9 +19,11 @@ import pytest
 
 import mirage.core.gdrive.read as gdrive_read
 from mirage.accessor.gdrive import GDriveAccessor
+from mirage.cache.index import NULL_INDEX
 from mirage.cache.index.config import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.gdrive.read import read
+from mirage.core.gdrive.stat import stat
 from mirage.core.google.client import TokenManager
 from mirage.core.google.config import GoogleConfig
 from mirage.observe.context import (RecordingScope, active_recorder,
@@ -284,7 +286,7 @@ async def test_recorded_read_names_the_virtual_path(accessor, index):
                    return_value=b"bytes"), \
              patch("mirage.core.gdrive.read.capture_file_metadata",
                    new_callable=AsyncMock,
-                   return_value=(None, "rev", None)):
+                   return_value=(None, "rev")):
             data = await read(
                 accessor,
                 PathSpec(virtual="/m/m/k.txt",
@@ -294,6 +296,161 @@ async def test_recorded_read_names_the_virtual_path(accessor, index):
         scope.close()
     assert data == b"bytes"
     assert [r.path for r in scope.records] == ["/m/m/k.txt"]
+
+
+CONTENT = b"pdf content here"
+DIGEST = hashlib.md5(CONTENT).hexdigest()
+REVISION = "file123-r1"
+STAMP = "2026-04-01T00:00:00.000Z"
+STALE = hashlib.md5(b"the previous content").hexdigest()
+
+
+def binary_entry() -> IndexEntry:
+    return IndexEntry(id="file123",
+                      name="report",
+                      resource_type="gdrive/file",
+                      remote_time=STAMP,
+                      vfs_name="report.pdf",
+                      extra={
+                          "md5_checksum": DIGEST,
+                          "head_revision_id": REVISION,
+                      })
+
+
+def spec_for(name: str = "report.pdf", prefix: str = "") -> PathSpec:
+    virtual = f"{prefix}/{name}"
+    return PathSpec(vfs_path=name, virtual=virtual, directory=virtual)
+
+
+async def read_recording(accessor,
+                         path,
+                         index,
+                         *,
+                         capture=(DIGEST, REVISION),
+                         offset: int = 0,
+                         size=None):
+    """Read under a live recorder and hand back its records.
+
+    The download answers the whole content whatever the window, so only
+    the window guard can keep a ranged read from stamping.
+
+    Args:
+        accessor (GDriveAccessor): backend accessor.
+        path (PathSpec): the path to read.
+        index (IndexCacheStore): listing cache to read through.
+        capture (tuple): what ``capture_file_metadata`` answers.
+        offset (int): first byte to read.
+        size (int | None): how many bytes, or None for the rest.
+    """
+    scope = RecordingScope()
+    try:
+        with patch("mirage.core.gdrive.read.download_file",
+                   new_callable=AsyncMock,
+                   return_value=CONTENT), \
+             patch("mirage.core.gdrive.read.capture_file_metadata",
+                   new_callable=AsyncMock,
+                   return_value=capture):
+            data = await read(accessor, path, index, offset=offset, size=size)
+        return data, list(scope.records)
+    finally:
+        scope.close()
+
+
+@pytest.mark.asyncio
+async def test_the_read_record_and_the_index_stat_stamp_one_token(
+        accessor, index):
+    await index.set_dir("/", [("report.pdf", binary_entry())])
+    path = spec_for()
+    _, records = await read_recording(accessor, path, index)
+    result = await stat(accessor, path, index)
+    assert records[0].fingerprint == DIGEST
+    assert result.fingerprint == records[0].fingerprint
+
+
+@pytest.mark.asyncio
+async def test_the_read_record_and_the_api_stat_stamp_one_token(
+        index, fake_drive, gdrive_accessor):
+    # stat's other door: with nothing to warm, it asks Drive directly.
+    file_id = fake_drive.add("report.pdf", content=CONTENT)
+    await index.set_dir("/",
+                        [("report.pdf",
+                          IndexEntry(id=file_id,
+                                     name="report.pdf",
+                                     resource_type="gdrive/file",
+                                     remote_time=STAMP,
+                                     vfs_name="report.pdf",
+                                     extra={
+                                         "md5_checksum": DIGEST,
+                                         "head_revision_id": f"{file_id}-r1",
+                                     }))])
+    path = spec_for()
+    _, records = await read_recording(gdrive_accessor,
+                                      path,
+                                      index,
+                                      capture=(DIGEST, f"{file_id}-r1"))
+    api_stat = await stat(gdrive_accessor, path, NULL_INDEX)
+    assert api_stat.fingerprint == DIGEST
+    assert api_stat.fingerprint == records[0].fingerprint
+
+
+@pytest.mark.asyncio
+async def test_the_read_record_on_a_root_mount_has_one_slash(accessor, index):
+    await index.set_dir("/", [("report.pdf", binary_entry())])
+    _, records = await read_recording(accessor, spec_for(), index)
+    assert records[0].path == "/report.pdf"
+
+
+@pytest.mark.asyncio
+async def test_a_name_sharing_the_prefixs_leading_text_keeps_its_boundary(
+        accessor, index):
+    await index.set_dir("/gd", [("gd-report.pdf", binary_entry())])
+    _, records = await read_recording(accessor,
+                                      spec_for("gd-report.pdf", "/gd"), index)
+    assert records[0].path == "/gd/gd-report.pdf"
+
+
+@pytest.mark.asyncio
+async def test_a_verified_md5_is_stamped_on_the_record(accessor, index):
+    await index.set_dir("/", [("report.pdf", binary_entry())])
+    _, records = await read_recording(accessor, spec_for(), index)
+    assert (records[0].fingerprint, records[0].revision) == (DIGEST, REVISION)
+
+
+@pytest.mark.asyncio
+async def test_a_captured_md5_that_disagrees_drops_the_revision_too(
+        accessor, index):
+    # The capture predates these bytes, and so does its revision: a pin
+    # would replace the drift check and replay the older bytes.
+    await index.set_dir("/", [("report.pdf", binary_entry())])
+    _, records = await read_recording(accessor,
+                                      spec_for(),
+                                      index,
+                                      capture=(STALE, REVISION))
+    assert (records[0].fingerprint, records[0].revision) == (None, None)
+
+
+@pytest.mark.parametrize("offset,size", [(1, 4), (0, 4)],
+                         ids=["ranged", "size-capped"])
+@pytest.mark.asyncio
+async def test_a_windowed_read_stamps_no_token_but_keeps_the_revision(
+        accessor, index, offset, size):
+    await index.set_dir("/", [("report.pdf", binary_entry())])
+    _, records = await read_recording(accessor,
+                                      spec_for(),
+                                      index,
+                                      offset=offset,
+                                      size=size)
+    assert (records[0].fingerprint, records[0].revision) == (None, REVISION)
+
+
+@pytest.mark.asyncio
+async def test_a_capture_with_no_md5_is_stamped_unverified(accessor, index):
+    await index.set_dir("/", [("report.pdf", binary_entry())])
+    _, records = await read_recording(accessor,
+                                      spec_for(),
+                                      index,
+                                      capture=(None, REVISION))
+    assert records[0].fingerprint == REVISION
 
 
 BODY = b"quarterly numbers\n"
@@ -317,16 +474,12 @@ async def read_unrecorded(
     monkeypatch: pytest.MonkeyPatch,
     extra: dict[str, JsonValue],
     *,
-    remote_time: str = UNRECORDED_STAMP,
-    capture: tuple[str | None, str | None, str | None] = (None, None, None),
     offset: int = 0,
     size: int | None = None,
 ) -> tuple[list[tuple[str, dict]], AsyncMock, AsyncMock]:
-    # Seeded straight into the index rather than warmed through readdir:
-    # readdir drops an empty or missing md5, so a warmed entry could not
-    # carry the odd shapes these rows need.
-    await index.set_dir("/gd",
-                        [("a.txt", unrecorded_entry(extra, remote_time))])
+    # Seeded rather than warmed: readdir drops an empty or missing md5, so a
+    # warmed entry could not carry the odd shapes these rows need.
+    await index.set_dir("/gd", [("a.txt", unrecorded_entry(extra))])
     records = []
 
     def spy(op, path, source, nbytes, timer, **kwargs):
@@ -335,7 +488,7 @@ async def read_unrecorded(
     monkeypatch.setitem(vars(gdrive_read), "record", spy)
     download = AsyncMock(
         return_value=BODY[offset:None if size is None else offset + size])
-    captured = AsyncMock(return_value=capture)
+    captured = AsyncMock(return_value=(None, None))
     monkeypatch.setitem(vars(gdrive_read), "download_file", download)
     monkeypatch.setitem(vars(gdrive_read), "capture_file_metadata", captured)
     assert active_recorder() is None
@@ -358,8 +511,6 @@ async def test_an_unrecorded_read_stamps_the_entry_md5(accessor, index,
 @pytest.mark.asyncio
 async def test_an_unrecorded_read_drops_a_stale_entry_md5(
         accessor, index, monkeypatch):
-    # The listing predates the download; an md5 that no longer describes the
-    # bytes must not label them.
     records, _, _ = await read_unrecorded(accessor, index, monkeypatch, {
         "md5_checksum": "0" * 32,
         "head_revision_id": "r7"
@@ -376,19 +527,17 @@ async def test_an_unrecorded_read_without_an_md5_stamps_the_head_revision(
 
 
 @pytest.mark.asyncio
-async def test_an_unrecorded_read_with_neither_stamps_the_modified_time(
+async def test_an_unrecorded_read_with_neither_token_stamps_none(
         accessor, index, monkeypatch):
+    # A file with content never falls back to its modified stamp.
     records, _, _ = await read_unrecorded(accessor, index, monkeypatch, {})
-    assert records[0][1]["fingerprint"] == UNRECORDED_STAMP
+    assert records[0][1]["fingerprint"] is None
 
 
 @pytest.mark.parametrize("odd_md5", ["", 123], ids=["empty", "non-string"])
 @pytest.mark.asyncio
 async def test_an_unusable_entry_md5_falls_through_to_the_head_revision(
         accessor, index, monkeypatch, odd_md5):
-    # An empty string is what a listing that omits the field leaves once
-    # coerced, and a non-string is what a Redis-restored index can hold.
-    # Neither may reach the md5 comparison and drop a usable token.
     records, _, _ = await read_unrecorded(accessor, index, monkeypatch, {
         "md5_checksum": odd_md5,
         "head_revision_id": "r7"
@@ -399,8 +548,7 @@ async def test_an_unusable_entry_md5_falls_through_to_the_head_revision(
 @pytest.mark.asyncio
 async def test_an_unrecorded_windowed_read_stamps_no_token(
         accessor, index, monkeypatch):
-    # No md5 on the entry, so the check cannot drop the token for it: only
-    # the window can. The whole-file control is the head-revision row.
+    # No md5 on the entry, so only the window can drop the token.
     records, _, _ = await read_unrecorded(accessor,
                                           index,
                                           monkeypatch,
@@ -412,8 +560,7 @@ async def test_an_unrecorded_windowed_read_stamps_no_token(
 @pytest.mark.asyncio
 async def test_an_unrecorded_read_pins_no_revision(accessor, index,
                                                    monkeypatch):
-    # The entry's revision can be a TTL old; pinning a replay to it could
-    # serve bytes this read never saw.
+    # The entry's revision can be a TTL old.
     records, _, _ = await read_unrecorded(accessor, index, monkeypatch, {
         "md5_checksum": BODY_MD5,
         "head_revision_id": "r7"
@@ -468,7 +615,7 @@ async def test_a_recorded_read_prefers_the_capture_over_the_entry(
     monkeypatch.setitem(vars(gdrive_read), "download_file",
                         AsyncMock(return_value=BODY))
     monkeypatch.setitem(vars(gdrive_read), "capture_file_metadata",
-                        AsyncMock(return_value=(BODY_MD5, "r9", None)))
+                        AsyncMock(return_value=(BODY_MD5, "r9")))
     scope = RecordingScope()
     try:
         await read(
@@ -488,48 +635,83 @@ NATIVE_READS = [
 ]
 
 
-async def read_native_at(accessor: GDriveAccessor, index: RAMIndexCacheStore,
-                         monkeypatch: pytest.MonkeyPatch, mount: str,
-                         resource_type: str, vfs_name: str,
-                         renderer: str) -> list[str]:
+async def read_native_at(accessor: GDriveAccessor,
+                         index: RAMIndexCacheStore,
+                         monkeypatch: pytest.MonkeyPatch,
+                         mount: str,
+                         resource_type: str,
+                         vfs_name: str,
+                         renderer: str,
+                         extra: dict[str, JsonValue] | None = None,
+                         offset: int = 0,
+                         size: int | None = None):
     await index.set_dir(mount or "/",
                         [(vfs_name,
                           IndexEntry(id="doc1",
                                      name="x",
                                      resource_type=resource_type,
                                      remote_time=UNRECORDED_STAMP,
-                                     vfs_name=vfs_name))])
+                                     vfs_name=vfs_name,
+                                     extra=extra or {}))])
     monkeypatch.setitem(vars(gdrive_read), renderer,
-                        AsyncMock(return_value=b"{}"))
+                        AsyncMock(return_value=b'{"tabs": []}'))
     virtual = f"{mount}/{vfs_name}"
     scope = RecordingScope()
     try:
-        await read(
-            accessor,
-            PathSpec(virtual=virtual, directory=f"{mount}/",
-                     vfs_path=vfs_name), index)
+        data = await read(accessor,
+                          PathSpec(virtual=virtual,
+                                   directory=f"{mount}/",
+                                   vfs_path=vfs_name),
+                          index,
+                          offset=offset,
+                          size=size)
     finally:
         scope.close()
-    return [r.path for r in scope.records]
+    return data, list(scope.records)
+
+
+@pytest.mark.parametrize("resource_type,vfs_name,renderer", NATIVE_READS)
+@pytest.mark.parametrize("mount", ["/gd", ""], ids=["mounted", "root"])
+@pytest.mark.asyncio
+async def test_a_native_read_records_its_stamp_at_the_virtual_path(
+        accessor, index, monkeypatch, mount, resource_type, vfs_name,
+        renderer):
+    _, records = await read_native_at(accessor, index, monkeypatch, mount,
+                                      resource_type, vfs_name, renderer)
+    assert [(r.path, r.fingerprint)
+            for r in records] == [(f"{mount}/{vfs_name}", UNRECORDED_STAMP)]
 
 
 @pytest.mark.parametrize("resource_type,vfs_name,renderer", NATIVE_READS)
 @pytest.mark.asyncio
-async def test_a_native_read_records_the_virtual_path(accessor, index,
-                                                      monkeypatch,
-                                                      resource_type, vfs_name,
-                                                      renderer):
-    # The cache fill matches the record on the virtual path; the mount path
-    # ("/x.gdoc.json") names nothing under a mount at /gd.
-    paths = await read_native_at(accessor, index, monkeypatch, "/gd",
-                                 resource_type, vfs_name, renderer)
-    assert paths == [f"/gd/{vfs_name}"]
+async def test_a_native_read_records_no_revision(accessor, index, monkeypatch,
+                                                 resource_type, vfs_name,
+                                                 renderer):
+    # A revision pin would replace the drift check, and a render never
+    # consults one.
+    _, records = await read_native_at(accessor,
+                                      index,
+                                      monkeypatch,
+                                      "/gd",
+                                      resource_type,
+                                      vfs_name,
+                                      renderer,
+                                      extra={"head_revision_id": "doc1-r1"})
+    assert records[0].revision is None
 
 
 @pytest.mark.parametrize("resource_type,vfs_name,renderer", NATIVE_READS)
 @pytest.mark.asyncio
-async def test_a_native_read_on_a_root_mount_records_one_slash(
+async def test_a_windowed_native_read_records_its_window_and_no_token(
         accessor, index, monkeypatch, resource_type, vfs_name, renderer):
-    paths = await read_native_at(accessor, index, monkeypatch, "",
-                                 resource_type, vfs_name, renderer)
-    assert paths == [f"/{vfs_name}"]
+    data, records = await read_native_at(accessor,
+                                         index,
+                                         monkeypatch,
+                                         "/gd",
+                                         resource_type,
+                                         vfs_name,
+                                         renderer,
+                                         offset=2,
+                                         size=5)
+    assert len(data) == 5
+    assert (records[0].bytes, records[0].fingerprint) == (5, None)

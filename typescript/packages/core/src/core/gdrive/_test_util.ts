@@ -20,11 +20,8 @@ import type { DriveFile } from '../google/drive.ts'
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
 const FILE_MIME = 'application/octet-stream'
 export const DOC_MIME = 'application/vnd.google-apps.document'
-// Spelled out rather than imported from ../google/drive.ts: that module is
-// the one every test here replaces with a vi.mock whose factory imports THIS
-// file, so a value import from it closes a cycle and the suite hangs at
-// module init. The existing mime constants above are local for the same
-// reason.
+// Local, not imported from ../google/drive.ts: the tests mock that module
+// with a factory importing this file, and the cycle hangs module init.
 const NATIVE_MIMES = new Set([
   DOC_MIME,
   'application/vnd.google-apps.spreadsheet',
@@ -93,11 +90,7 @@ export class FakeDrive {
       parents: [...item.parents],
       size: String(item.content.length),
       ...(item.driveId === undefined ? {} : { driveId: item.driveId }),
-      // Drive's own guards, mirrored from integ/server/gws/drive/item.ts: a
-      // folder and a native google-apps file carry neither field. Emitting
-      // them flatly would give every fake item an md5, so steps 2 and 3 of
-      // driveFingerprint's chain would never execute and the tests that cover
-      // them would pass while proving nothing.
+      // As Drive does: a folder and a Doc, Sheet or Slides file have neither.
       ...(item.mimeType === FOLDER_MIME || NATIVE_MIMES.has(item.mimeType)
         ? {}
         : { md5Checksum: md5Hex(item.content), headRevisionId: `${item.id}-r1` }),

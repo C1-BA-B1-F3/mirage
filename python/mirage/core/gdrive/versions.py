@@ -65,37 +65,29 @@ async def download_revision(token_manager: TokenManager,
     return await google_get_bytes(token_manager, url, window)
 
 
-async def capture_file_metadata(
-        token_manager: TokenManager,
-        file_id: str) -> tuple[str | None, str | None, str | None]:
-    """Fetch a file's three version fields at read time.
+async def capture_file_metadata(token_manager: TokenManager,
+                                file_id: str) -> tuple[str | None, str | None]:
+    """Fetch a file's md5 and head revision at read time.
 
-    Returns the slots raw rather than a coalesced token, because the
-    caller has to know which one it got: it verifies an md5 against the
-    bytes it downloaded, and a token it cannot tell apart from a
-    timestamp would be dropped for every binary file whose md5 Drive
-    withholds. The head revision doubles as the pinnable revision.
-
-    ``modifiedTime`` rides the same request and costs nothing. It is the
-    only field a Drive shortcut carries, and without it such a file
-    would stamp None on the read while stat answered a stamp.
+    Returned raw rather than coalesced, because the caller checks the md5
+    against the bytes it downloads. The head revision doubles as the
+    pinnable revision.
 
     Args:
         token_manager (TokenManager): OAuth2 token manager.
         file_id (str): file ID.
 
     Returns:
-        tuple[str | None, str | None, str | None]: the md5 checksum, the
-        head revision id, and the modified stamp, each absent as None.
+        tuple[str | None, str | None]: the md5 checksum and the head
+        revision id, each absent as None.
     """
     url = f"{drive_base(token_manager)}/files/{file_id}"
     item = await google_get(
         token_manager,
         url,
         params={
-            "fields": "headRevisionId,md5Checksum,modifiedTime",
+            "fields": "headRevisionId,md5Checksum",
             "supportsAllDrives": "true",
         },
     )
-    return (item.get("md5Checksum"), item.get("headRevisionId"),
-            item.get("modifiedTime"))
+    return item.get("md5Checksum"), item.get("headRevisionId")

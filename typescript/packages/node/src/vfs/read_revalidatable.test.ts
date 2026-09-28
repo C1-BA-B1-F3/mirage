@@ -482,14 +482,16 @@ const ALL_SHAPES: Shape[] = ['root', 'nested', 'prefixed']
 const ALL_ROWS: Row[] = ['bytes', 'stream', 'drain']
 
 // What each family can run, fixed when the rows are built. github and gdrive
-// have no key_prefix (gdrive's config refuses unknown fields), and gdrive's
-// stream is its read handed over whole, one chunk, so a drain row would pass
-// without draining.
+// have no key_prefix, and their stream is their read handed over whole, one
+// chunk, so a drain row would pass without draining.
 const FAMILY_SHAPES: Partial<Record<Family, Shape[]>> = {
   github: ['root', 'nested'],
   gdrive: ['root', 'nested'],
 }
-const FAMILY_ROWS: Partial<Record<Family, Row[]>> = { gdrive: ['bytes', 'stream'] }
+const FAMILY_ROWS: Partial<Record<Family, Row[]>> = {
+  github: ['bytes', 'stream'],
+  gdrive: ['bytes', 'stream'],
+}
 
 const SPEC_VFS = resolve(
   fileURLToPath(import.meta.url),
@@ -1073,8 +1075,8 @@ describe('the read-token contract', () => {
 
   it('each family runs exactly its rows', () => {
     // The per-family table filters the rows as they are built, so a filter
-    // bug drops a row silently or hands gdrive a drain row that passes
-    // without draining. Pin the ids outright rather than the count.
+    // bug drops a row silently or hands a whole-read stream a drain row that
+    // passes without draining. Pin the ids outright rather than the count.
     const aliases = [...S3_FAMILY.filter((n) => n !== 's3'), 'hf_datasets', 'hf_spaces']
     // Literals, not ALL_SHAPES / ALL_ROWS: the expectation must not move with
     // the tables it checks.
@@ -1088,16 +1090,15 @@ describe('the read-token contract', () => {
     for (const family of ['s3', 'gridfs', 'hf_models', 'onedrive', 'sharepoint', 'hf_buckets'])
       for (const shape of shapes) for (const row of rows) expectedA.add(`${family}-${shape}-${row}`)
     for (const n of aliases) for (const row of rows) expectedA.add(`${n}-root-${row}`)
-    for (const shape of ['root', 'nested'])
-      for (const row of rows) expectedA.add(`github-${shape}-${row}`)
-    for (const shape of ['root', 'nested'])
-      for (const row of ['bytes', 'stream']) expectedA.add(`gdrive-${shape}-${row}`)
+    for (const family of ['github', 'gdrive'])
+      for (const shape of ['root', 'nested'])
+        for (const row of ['bytes', 'stream']) expectedA.add(`${family}-${shape}-${row}`)
     const ids = (cs: Case[]): Set<string> => new Set(cs.map((c) => `${c.name}-${c.shape}-${c.row}`))
     expect(ids(A_CASES)).toEqual(expectedA)
     expect(ids(B_CASES)).toEqual(
       new Set([...expectedA].filter((i) => !i.endsWith('-drain') && !i.endsWith('-listed-stream'))),
     )
-    expect(cases(['drain']).some((c) => c.name === 'gdrive')).toBe(false)
+    expect(cases(['drain']).some((c) => c.name === 'github' || c.name === 'gdrive')).toBe(false)
   })
 
   it('a native gdoc under fresh renders once until it changes', async () => {

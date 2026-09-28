@@ -218,7 +218,7 @@ describe('gdrive versioned reads', () => {
 // A key named like its mount: neither `m/k.txt` nor `/m/k.txt` is virtual.
 describe('gdrive read record path', () => {
   it('records the virtual path for a binary file', async () => {
-    vi.mocked(versions.captureFileMetadata).mockResolvedValue([null, null, null])
+    vi.mocked(versions.captureFileMetadata).mockResolvedValue([null, null])
     vi.mocked(drive.downloadFile).mockResolvedValue(new TextEncoder().encode('live'))
     const index = new RAMIndexCacheStore()
     await index.setDir('/m/m', [
@@ -261,7 +261,7 @@ function specFor(name = 'report.pdf', mount = ''): PathSpec {
 
 describe('the gdrive read record', () => {
   beforeEach(() => {
-    vi.mocked(versions.captureFileMetadata).mockResolvedValue([DIGEST, REVISION, STAMP])
+    vi.mocked(versions.captureFileMetadata).mockResolvedValue([DIGEST, REVISION])
     vi.mocked(drive.downloadFile).mockResolvedValue(CONTENT)
   })
 
@@ -331,17 +331,6 @@ describe('the gdrive read record', () => {
     expect(apiStat.fingerprint).toBe(records[0]?.fingerprint)
   })
 
-  it('records the virtual path', async () => {
-    // latestFingerprint matches the record against the virtual cache key; the
-    // mount path ('/report.pdf') names nothing under a mount at /gd.
-    const index = new RAMIndexCacheStore()
-    await index.setDir('/gd', [['report.pdf', binaryEntry()]])
-    const [, records] = await runWithRecording(async () =>
-      read(makeAccessor(), specFor(undefined, '/gd'), index),
-    )
-    expect(records[0]?.path).toBe('/gd/report.pdf')
-  })
-
   it('keeps the captured revision on a windowed read', async () => {
     // A window proves nothing about the revision: the bytes are a slice of
     // the object the capture named, so the pin is still true even though the
@@ -364,7 +353,6 @@ describe('the gdrive read record', () => {
     vi.mocked(versions.captureFileMetadata).mockResolvedValue([
       md5Hex(new TextEncoder().encode('the previous content')),
       REVISION,
-      STAMP,
     ])
     const [, records] = await runWithRecording(async () => read(makeAccessor(), specFor(), index))
     expect(records[0]?.fingerprint).toBeNull()
@@ -375,36 +363,15 @@ describe('the gdrive read record', () => {
     expect(records[0]?.revision).toBeNull()
   })
 
-  it('stamps no token on a ranged read', async () => {
-    // The stub answers the WHOLE content whatever the window, so the
-    // whole-file guard is the only thing between this read and a stamp. A
-    // stub that returned the window would make the digests disagree and this
-    // would pass either way.
-    const index = new RAMIndexCacheStore()
-    await index.setDir('/', [['report.pdf', binaryEntry()]])
-    const [, records] = await runWithRecording(async () =>
-      read(makeAccessor(), specFor(), index, { offset: 1, size: 4 }),
-    )
-    expect(records[0]?.fingerprint).toBeNull()
-  })
-
   it('stamps no token on a size-capped read from zero', async () => {
-    // The guard is `offset !== 0 || size !== null`, and a window at offset 1
-    // trips both halves at once -- so dropping the size half would leave the
-    // other ranged test green while `head -c N` stamped a whole-object token.
+    // `head -c N`: offset 0 alone does not make a read whole.
     const index = new RAMIndexCacheStore()
     await index.setDir('/', [['report.pdf', binaryEntry()]])
     const [, records] = await runWithRecording(async () =>
       read(makeAccessor(), specFor(), index, { offset: 0, size: 4 }),
     )
     expect(records[0]?.fingerprint).toBeNull()
-  })
-
-  it('stamps the token on the whole-file control', async () => {
-    const index = new RAMIndexCacheStore()
-    await index.setDir('/', [['report.pdf', binaryEntry()]])
-    const [, records] = await runWithRecording(async () => read(makeAccessor(), specFor(), index))
-    expect(records[0]?.fingerprint).toBe(DIGEST)
+    expect(records[0]?.revision).toBe(REVISION)
   })
 
   it('stamps a capture with no md5 unverified', async () => {
@@ -413,7 +380,7 @@ describe('the gdrive read record', () => {
     // stat's head revision -- the mismatch this change removes.
     const index = new RAMIndexCacheStore()
     await index.setDir('/', [['report.pdf', binaryEntry()]])
-    vi.mocked(versions.captureFileMetadata).mockResolvedValue([null, REVISION, STAMP])
+    vi.mocked(versions.captureFileMetadata).mockResolvedValue([null, REVISION])
     const [, records] = await runWithRecording(async () => read(makeAccessor(), specFor(), index))
     expect(records[0]?.fingerprint).toBe(REVISION)
   })
@@ -428,7 +395,7 @@ describe('the gdrive read record', () => {
     const index = new RAMIndexCacheStore()
     await index.setDir('/', [['report.pdf', binaryEntry()]])
     vi.mocked(drive.downloadFile).mockResolvedValue(BIG)
-    vi.mocked(versions.captureFileMetadata).mockResolvedValue([md5Hex(BIG), REVISION, STAMP])
+    vi.mocked(versions.captureFileMetadata).mockResolvedValue([md5Hex(BIG), REVISION])
     // Order, not eventual firing: `await timer` resolves only after the
     // callback that would set a flag, so a flag assertion cannot fail once
     // reached and passes against a fully synchronous hash too. The timeout is
@@ -503,22 +470,6 @@ describe('the native gdrive read record', () => {
       expect(records[0]?.bytes).toBe(5)
       expect(records[0]?.fingerprint).toBeNull()
     })
-
-    it(`records its token at the virtual path for ${vfsName}`, async () => {
-      // Without this record a `fresh` mount re-renders every gdoc on every
-      // read. The native arm makes its own record() call, so its path is
-      // asserted here rather than inherited from the binary rows.
-      const index = new RAMIndexCacheStore()
-      await index.setDir('/gd', [[vfsName, nativeEntry(resourceType, vfsName)]])
-      const rendered = new TextEncoder().encode('{"tabs": []}')
-      renderer().mockResolvedValue(rendered)
-      const [, records] = await runWithRecording(async () =>
-        read(makeAccessor(), specFor(vfsName, '/gd'), index),
-      )
-      expect(records.length).toBe(1)
-      expect(records[0]?.path).toBe(`/gd/${vfsName}`)
-      expect(records[0]?.fingerprint).toBe(STAMP)
-    })
   }
 })
 
@@ -552,7 +503,7 @@ async function readUnrecorded(
   vi.mocked(drive.downloadFile).mockResolvedValue(
     BODY.slice(offset, options?.size === undefined ? undefined : offset + options.size),
   )
-  vi.mocked(versions.captureFileMetadata).mockResolvedValue([null, null, null])
+  vi.mocked(versions.captureFileMetadata).mockResolvedValue([null, null])
   await read(makeAccessor(), UNRECORDED_SPEC, index, options)
   return UNRECORDED.records
 }
@@ -577,9 +528,10 @@ describe('an unrecorded gdrive read', () => {
     expect(records[0]?.[1].fingerprint).toBe('r7')
   })
 
-  it('stamps the modified time when the entry has neither', async () => {
+  it('stamps nothing when the entry has neither token', async () => {
+    // A file with content never falls back to its modified stamp.
     const records = await readUnrecorded({})
-    expect(records[0]?.[1].fingerprint).toBe(UNRECORDED_STAMP)
+    expect(records[0]?.[1].fingerprint).toBeNull()
   })
 
   for (const [label, odd] of [
@@ -656,7 +608,7 @@ describe('an unrecorded gdrive read', () => {
       ],
     ])
     vi.mocked(drive.downloadFile).mockResolvedValue(BODY)
-    vi.mocked(versions.captureFileMetadata).mockResolvedValue([BODY_MD5, 'r9', null])
+    vi.mocked(versions.captureFileMetadata).mockResolvedValue([BODY_MD5, 'r9'])
     const [, records] = await runWithRecording(() => read(makeAccessor(), UNRECORDED_SPEC, index))
     expect(records.map((r) => [r.fingerprint, r.revision])).toEqual([[BODY_MD5, 'r9']])
   })
@@ -674,7 +626,9 @@ describe('the native gdrive read record path', () => {
         const [, records] = await runWithRecording(() =>
           read(makeAccessor(), specFor(vfsName, mount), index),
         )
-        expect(records.map((r) => r.path)).toEqual([`${mount}/${vfsName}`])
+        expect(records.map((r) => [r.path, r.fingerprint])).toEqual([
+          [`${mount}/${vfsName}`, STAMP],
+        ])
       })
     }
   }

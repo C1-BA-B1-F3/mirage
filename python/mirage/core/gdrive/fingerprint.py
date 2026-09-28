@@ -12,57 +12,43 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.cache.index import IndexEntry
+from mirage.core.gdrive import NATIVE_RESOURCE_TYPES
 from mirage.types import JsonValue
 
 
-def drive_fingerprint(md5: JsonValue, head_revision: JsonValue,
+def _token(value: JsonValue) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def drive_fingerprint(resource_type: str, md5: JsonValue,
+                      head_revision: JsonValue,
                       modified: JsonValue) -> str | None:
-    """The one content token a Drive item is named by, read or stat.
+    """The token a Drive file's stat and read both stamp, chosen by kind.
 
-    ``READ_REVALIDATABLE`` claims that ``io.stat`` and the read record
-    stamp the *same kind* of token, and the way to make that structural
-    rather than coincidental is to compute it in one place from one
-    ordered chain that both sides call:
-
-        md5Checksum -> headRevisionId -> modifiedTime -> None
-
-    ``md5Checksum`` is the real content hash and is present on every
-    ordinary binary file. ``headRevisionId`` is a second content token
-    that Drive populates only for files with binary content, so it
-    covers the binary file whose md5 Drive withholds -- it is not the
-    native files' token, which is the thing it is easiest to assume.
-
-    ``modifiedTime`` is the floor, and for a gdoc, gsheet or gslide it
-    is the only token that exists at all: Drive gives a native file
-    neither of the first two. Ending the chain one step earlier would
-    hand every native file ``None``, which makes the freshness probe
-    answer UNKNOWN and clear the whole mount index on every native read.
-    It is a weaker token -- a rename moves it and provokes a refetch --
-    but it errs toward refetching, never toward serving stale bytes.
-
-    An empty string is absent, not a value: ``IndexEntry.remote_time``
-    defaults to ``""`` and ``stat_from_api`` reads
-    ``item.get("modifiedTime", "")``. Returned, it would escape the
-    ``fingerprint is None`` checks in the reconcile probe and the drift
-    check. The guard below tests emptiness explicitly so the TypeScript
-    twin, whose ``??`` would keep ``""``, has something to mirror.
-
-    Each candidate is type-checked rather than merely tested for
-    truthiness: ``IndexEntry.extra`` is untyped and a Redis-restored
-    index can hold whatever was serialized into it. Without the check
-    this would return an int and ``==``-compare it against stat's
-    string, while the TypeScript twin's ``typeof`` guard answered null.
+    Drive gives every file with content an md5 and a head revision. A
+    Doc, Sheet or Slides file has neither, so its modified stamp stands
+    in: a weaker token, but it errs toward refetching. An absent, empty
+    or non-string field is no token, the same on both hosts.
 
     Args:
-        md5 (JsonValue): Drive's ``md5Checksum``, if the item has one.
-        head_revision (JsonValue): Drive's ``headRevisionId``, if any.
+        resource_type (str): the file's gdrive resource type.
+        md5 (JsonValue): Drive's ``md5Checksum``.
+        head_revision (JsonValue): Drive's ``headRevisionId``.
         modified (JsonValue): Drive's ``modifiedTime``.
-
-    Returns:
-        str | None: the first usable token, or None when the item
-        carries none and the copy is therefore unverifiable.
     """
-    for candidate in (md5, head_revision, modified):
-        if isinstance(candidate, str) and candidate:
-            return candidate
-    return None
+    if resource_type in NATIVE_RESOURCE_TYPES:
+        return _token(modified)
+    return _token(md5) or _token(head_revision)
+
+
+def entry_fingerprint(entry: IndexEntry) -> str | None:
+    """The token of the file an index entry lists.
+
+    Args:
+        entry (IndexEntry): the file's index entry.
+    """
+    return drive_fingerprint(entry.resource_type,
+                             entry.extra.get("md5_checksum"),
+                             entry.extra.get("head_revision_id"),
+                             entry.remote_time)

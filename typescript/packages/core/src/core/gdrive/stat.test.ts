@@ -97,12 +97,9 @@ describe('gdrive stat parent refresh', () => {
 })
 
 describe('the token stat stamps', () => {
-  // Every step of the chain, because a chain pinned only at its first step
-  // can be truncated to the md5 and stay green -- which is the read/stat
-  // mismatch this backend exists to have removed, reintroduced on one side.
   const STAMP = '2026-04-01T00:00:00.000Z'
 
-  async function statWith(extra: Record<string, unknown>) {
+  async function statWith(extra: Record<string, unknown>, resourceType = 'gdrive/file') {
     const index = new RAMIndexCacheStore()
     await index.setDir('/', [
       [
@@ -110,7 +107,7 @@ describe('the token stat stamps', () => {
         new IndexEntry({
           id: 'f1',
           name: 'report',
-          resourceType: 'gdrive/file',
+          resourceType,
           remoteTime: STAMP,
           vfsName: 'report.pdf',
           extra,
@@ -134,9 +131,13 @@ describe('the token stat stamps', () => {
     expect(st.fingerprint).toBe('r3')
   })
 
-  it('falls to the stamp when the item carries neither', async () => {
-    // The native google-apps case, and the reason the chain has three steps.
+  it('stamps nothing for a file with content and neither token', async () => {
     const st = await statWith({})
+    expect(st.fingerprint).toBeNull()
+  })
+
+  it('stamps a doc by its modified time', async () => {
+    const st = await statWith({}, 'gdrive/gdoc')
     expect(st.fingerprint).toBe(STAMP)
   })
 })

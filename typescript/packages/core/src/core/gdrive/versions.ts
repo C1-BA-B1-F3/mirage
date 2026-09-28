@@ -57,21 +57,17 @@ export async function downloadRevision(
   return googleGetBytes(tm, url, window)
 }
 
-// Fetch a file's three version fields at read time. Returns the slots raw
-// rather than a coalesced token, because the caller has to know which one it
-// got: it verifies an md5 against the bytes it downloaded, and a token it
-// cannot tell apart from a timestamp would be dropped for every binary file
-// whose md5 Drive withholds. The head revision doubles as the pinnable
-// revision. modifiedTime rides the same request and costs nothing; it is the
-// only field a Drive shortcut carries.
+// Fetch a file's md5 and head revision at read time, raw rather than
+// coalesced, because the caller checks the md5 against the bytes it
+// downloads. The head revision doubles as the pinnable revision.
 export async function captureFileMetadata(
   tm: TokenManager,
   fileId: string,
-): Promise<[string | null, string | null, string | null]> {
+): Promise<[string | null, string | null]> {
   const url = `${driveBase(tm)}/files/${fileId}`
   const item = (await googleGet(tm, url, {
-    fields: 'headRevisionId,md5Checksum,modifiedTime',
+    fields: 'headRevisionId,md5Checksum',
     supportsAllDrives: 'true',
-  })) as { headRevisionId?: string; md5Checksum?: string; modifiedTime?: string }
-  return [item.md5Checksum ?? null, item.headRevisionId ?? null, item.modifiedTime ?? null]
+  })) as { headRevisionId?: string; md5Checksum?: string }
+  return [item.md5Checksum ?? null, item.headRevisionId ?? null]
 }

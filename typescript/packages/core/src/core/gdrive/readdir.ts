@@ -29,17 +29,23 @@ export const DIRECTORY_RESOURCE_TYPES: ReadonlySet<string> = new Set([
   'gdrive/shared_drive',
 ])
 
-const FOLDER_MIME = 'application/vnd.google-apps.folder'
-const DOC_MIME = 'application/vnd.google-apps.document'
-const SHEET_MIME = 'application/vnd.google-apps.spreadsheet'
-const SLIDE_MIME = 'application/vnd.google-apps.presentation'
+// Docs, Sheets and Slides: rendered to JSON rather than downloaded, and
+// carrying no content hash.
+export const NATIVE_RESOURCE_TYPES: ReadonlySet<string> = new Set([
+  'gdrive/gdoc',
+  'gdrive/gsheet',
+  'gdrive/gslide',
+])
 
-function resourceTypeFor(mime: string): string {
-  if (mime === FOLDER_MIME) return 'gdrive/folder'
-  if (mime === DOC_MIME) return 'gdrive/gdoc'
-  if (mime === SHEET_MIME) return 'gdrive/gsheet'
-  if (mime === SLIDE_MIME) return 'gdrive/gslide'
-  return 'gdrive/file'
+const RESOURCE_TYPES: Readonly<Record<string, string>> = {
+  'application/vnd.google-apps.folder': 'gdrive/folder',
+  'application/vnd.google-apps.document': 'gdrive/gdoc',
+  'application/vnd.google-apps.spreadsheet': 'gdrive/gsheet',
+  'application/vnd.google-apps.presentation': 'gdrive/gslide',
+}
+
+export function resourceTypeFor(mime: string): string {
+  return RESOURCE_TYPES[mime] ?? 'gdrive/file'
 }
 
 function uniqueSharedDriveName(name: string, existingNames: Set<string>): string {
@@ -108,23 +114,17 @@ export async function readdir(
     const mime = f.mimeType ?? ''
     const ext = MIME_TO_EXT[mime] ?? ''
     const filename = ext !== '' ? `${f.name}${ext}` : f.name
-    const isDir = mime === FOLDER_MIME
+    const resourceType = resourceTypeFor(mime)
+    const isDir = resourceType === 'gdrive/folder'
     const sizeRaw = f.size ?? f.quotaBytesUsed ?? '0'
     const sizeNum = Number.parseInt(sizeRaw, 10)
     const sourceSize = Number.isFinite(sizeNum) && sizeNum > 0 ? sizeNum : null
-    const resourceType = resourceTypeFor(mime)
     // Binary files download raw, so Drive's size is the rendered byte length
     // and stays. Google-apps files (gdoc/gsheet/gslide) render to JSON, so
     // Drive's source size must not become FileStat.size (render-derived or
     // null, see the CLAUDE.md FUSE rules); it lives in extra instead.
     const extra: Record<string, unknown> = f.driveId !== undefined ? { drive_id: f.driveId } : {}
-    // Carried so stat can answer the same token the read stamps without a
-    // second request. Omitted when Drive omits them, as drive_id is: a folder
-    // and a native google-apps file have neither, and that absence is what
-    // sends driveFingerprint on to the stamp.
-    // Truthiness, not `!== undefined`, to match the python twin: an empty or
-    // null token is absent, and storing it on one host only would leave the
-    // two `extra` dicts different for the same listing.
+    // Carried so stat answers the read's token without a request.
     if (typeof f.md5Checksum === 'string' && f.md5Checksum !== '')
       extra.md5_checksum = f.md5Checksum
     if (typeof f.headRevisionId === 'string' && f.headRevisionId !== '')

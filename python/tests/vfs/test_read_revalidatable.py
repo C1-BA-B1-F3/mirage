@@ -114,11 +114,10 @@ ALL_SHAPES = ("root", "nested", "prefixed")
 ALL_ROWS = ("bytes", "stream", "drain")
 
 # What each family can run, fixed at collection. github and gdrive have no
-# key_prefix (gdrive's config forbids unknown fields), and gdrive's stream is
-# its read handed over whole, one chunk, so a drain row would pass without
-# draining anything.
+# key_prefix, and their stream is their read handed over whole, one chunk,
+# so a drain row would pass without draining anything.
 FAMILY_SHAPES = {"github": ("root", "nested"), "gdrive": ("root", "nested")}
-FAMILY_ROWS = {"gdrive": ("bytes", "stream")}
+FAMILY_ROWS = {"github": ("bytes", "stream"), "gdrive": ("bytes", "stream")}
 
 # One document per family, identical in the TypeScript twin. oci is the one
 # alias with a required field beyond these; every other one-of (r2's
@@ -650,8 +649,8 @@ def _declared() -> set[str]:
 
 def test_each_family_runs_exactly_its_rows():
     # The per-family table is filtered at collection, so a filter bug drops
-    # a row silently or hands gdrive a drain row that passes without
-    # draining. Pin the ids outright rather than the count.
+    # a row silently or hands a whole-read stream a drain row that passes
+    # without draining. Pin the ids outright rather than the count.
     aliases = [n
                for n in S3_FAMILY if n != "s3"] + ["hf_datasets", "hf_spaces"]
     # Literals, not ALL_SHAPES / ALL_ROWS: the expectation must not move
@@ -669,11 +668,8 @@ def test_each_family_runs_exactly_its_rows():
          for row in rows
          } | {f"{n}-listed-stream"
               for n in ("s3", "onedrive", "sharepoint")} | {
-                  f"github-{shape}-{row}"
-                  for shape in ("root", "nested")
-                  for row in rows
-              } | {
-                  f"gdrive-{shape}-{row}"
+                  f"{family}-{shape}-{row}"
+                  for family in ("github", "gdrive")
                   for shape in ("root", "nested")
                   for row in ("bytes", "stream")
               }
@@ -684,7 +680,8 @@ def test_each_family_runs_exactly_its_rows():
     }
     assert {c.id for c in A_CASES} == expected_a
     assert {c.id for c in B_CASES} == expected_b
-    assert not any(c.id.startswith("gdrive-") for c in _cases(("drain", )))
+    assert not any(
+        c.id.startswith(("github-", "gdrive-")) for c in _cases(("drain", )))
 
 
 def test_every_declaring_backend_has_a_harness():

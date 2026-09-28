@@ -33,10 +33,7 @@ class GoogleFileSuffix(str, Enum):
     GMAIL = ".gmail.json"
 
 
-# md5Checksum and headRevisionId feed `drive_fingerprint`, and this is the
-# listing the freshness probe's stat warms through, so without them the
-# probe compares a timestamp against the read's md5. They ride a request
-# that is already issued, so they cost nothing.
+# md5Checksum and headRevisionId are a file's token (`drive_fingerprint`).
 FIELDS = ("nextPageToken,"
           "files(id,name,mimeType,driveId,size,quotaBytesUsed,"
           "createdTime,modifiedTime,md5Checksum,headRevisionId,"
@@ -282,9 +279,6 @@ async def download_file(
 
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
-# Top-level, with no `files(...)` wrapper: a files.get answers a bare File
-# resource, and wrapping these would ask for a field the response has no
-# room for, so Drive would return neither and say nothing.
 ITEM_FIELDS = ("id,name,mimeType,driveId,size,quotaBytesUsed,"
                "createdTime,modifiedTime,md5Checksum,headRevisionId,parents")
 DEFAULT_UPLOAD_MIME = "application/octet-stream"

@@ -365,8 +365,7 @@ def _build_fakes(registry):
         return entry
 
     async def fake_capture_file_metadata(
-            token_manager,
-            file_id: str) -> tuple[str | None, str | None, str | None]:
+            token_manager, file_id: str) -> tuple[str | None, str | None]:
         # Reads the bytes directly rather than through `fake_download_file`,
         # so the download counter stays honest: the real call is a metadata
         # GET and must not read as a download.
@@ -375,9 +374,7 @@ def _build_fakes(registry):
             raise FileNotFoundError(file_id)
         fake.calls["capture_file_metadata"] += 1
         digest = hashlib.md5(_bytes_for(fake, registry, file_id)).hexdigest()
-        entry = fake.find_entry(file_id)
-        modified = None if entry is None else entry.get("modifiedTime")
-        return digest, f"rev-{digest}", modified
+        return digest, f"rev-{digest}"
 
     async def fake_render(token_manager, file_id: str) -> bytes:
         fake = _resolve_fake(token_manager, registry)

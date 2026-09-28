@@ -14,17 +14,14 @@
 
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { driveFingerprint } from './fingerprint.ts'
+import { IndexEntry } from '../../cache/index/config.ts'
+import { driveFingerprint, entryFingerprint } from './fingerprint.ts'
 
-// integ/fixtures/gdrive/fingerprint.json is the contract: the python suite
-// (tests/core/gdrive/test_fingerprint.py) asserts the same rows, so a chain
-// changed in one tree without the other fails both. The coalescing operator
-// is exactly where the two hosts drift silently -- this host's `??` keeps ""
-// where python's `or` skips it -- and a shared table is the only thing that
-// compares them against one answer.
+// Shared with the python suite, so the two hosts answer one table.
 const FIXTURE = new URL('../../../../../../integ/fixtures/gdrive/fingerprint.json', import.meta.url)
 
 interface Case {
+  resource_type: string
   md5: string | number | null
   head_revision: string | null
   modified: string | null
@@ -35,59 +32,35 @@ const CASES = JSON.parse(readFileSync(FIXTURE, 'utf8')) as Record<string, Case>
 
 describe('driveFingerprint against the shared table', () => {
   it('has a non-empty table', () => {
-    // A fixture that failed to resolve reads as zero cases, and a loop over
-    // zero cases passes without asserting anything.
-    expect(Object.keys(CASES).length).toBeGreaterThanOrEqual(6)
+    expect(Object.keys(CASES).length).toBeGreaterThanOrEqual(8)
   })
 
   for (const [name, c] of Object.entries(CASES)) {
     it(`matches ${name}`, () => {
-      expect(driveFingerprint(c.md5, c.head_revision, c.modified)).toBe(c.expected)
+      expect(driveFingerprint(c.resource_type, c.md5, c.head_revision, c.modified)).toBe(c.expected)
     })
   }
 })
 
-describe('driveFingerprint', () => {
-  it('prefers the md5 over a head revision and a stamp', () => {
-    expect(driveFingerprint('abc', 'r3', '2026-01-01T00:00:00Z')).toBe('abc')
+describe('entryFingerprint', () => {
+  it('answers the md5 of a file with content', () => {
+    const entry = new IndexEntry({
+      id: 'f',
+      name: 'a.pdf',
+      resourceType: 'gdrive/file',
+      remoteTime: '2026-01-01T00:00:00Z',
+      extra: { md5_checksum: 'abc', head_revision_id: 'r3' },
+    })
+    expect(entryFingerprint(entry)).toBe('abc')
   })
 
-  it('carries a binary file with no md5 on its head revision', () => {
-    // Drive withholds md5Checksum for some binary files; the head revision is
-    // the second content token, and dropping this step would send them to a
-    // timestamp while the read still stamped a revision.
-    expect(driveFingerprint(null, 'r3', '2026-01-01T00:00:00Z')).toBe('r3')
-  })
-
-  it('leaves a native file its stamp, the only token it has', () => {
-    // Drive populates headRevisionId only for files with binary content, so a
-    // gdoc/gsheet/gslide reaches step 3 or nothing at all. A two-step chain
-    // hands every native file null, which makes _probe answer UNKNOWN and
-    // clear the whole mount index on every native read.
-    expect(driveFingerprint(null, null, '2026-01-01T00:00:00Z')).toBe('2026-01-01T00:00:00Z')
-  })
-
-  it('treats an empty string as absent, not as a value', () => {
-    // The inputs that actually arrive are '' and not null: IndexEntry
-    // .remoteTime defaults to '' and statFromApi does `item.modifiedTime ??
-    // ''`. This host must coalesce with `||`: `??` keeps '' and returns it,
-    // which escapes the `fingerprint === null` guards in the reconcile probe
-    // and the drift check, so TypeScript would compare a '' token and raise a
-    // spurious ContentDriftError where the python twin's `or` chain answers
-    // None and treats the entry as unverifiable.
-    expect(driveFingerprint('', '', '')).toBeNull()
-  })
-
-  it('answers null when every candidate is absent', () => {
-    expect(driveFingerprint(null, null, null)).toBeNull()
-  })
-
-  it('skips a non-string candidate', () => {
-    // IndexEntry.extra is Record<string, unknown> and a Redis-restored index
-    // can hold whatever was serialized into it. Without a typeof guard this
-    // host would return a number, while the python twin returned an int and
-    // `==`-compared it against stat's string -- the same silent split the
-    // empty-string case exists to catch, one host at a time.
-    expect(driveFingerprint(12345, 'r3', 'T')).toBe('r3')
+  it('answers the stamp of a doc', () => {
+    const entry = new IndexEntry({
+      id: 'd',
+      name: 'notes',
+      resourceType: 'gdrive/gdoc',
+      remoteTime: '2026-01-01T00:00:00Z',
+    })
+    expect(entryFingerprint(entry)).toBe('2026-01-01T00:00:00Z')
   })
 })

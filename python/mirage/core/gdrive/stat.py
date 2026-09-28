@@ -18,20 +18,15 @@ from mirage.accessor.gdrive import GDriveAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.cache.index.warm import entry_or_warm
 from mirage.core.gdrive import DIRECTORY_RESOURCE_TYPES
-from mirage.core.gdrive.fingerprint import drive_fingerprint
+from mirage.core.gdrive.fingerprint import drive_fingerprint, entry_fingerprint
 from mirage.core.gdrive.readdir import readdir as _readdir
+from mirage.core.gdrive.readdir import resource_type_for
 from mirage.core.gdrive.resolve import resolve_key
 from mirage.core.google.drive import FOLDER_MIME, MIME_TO_EXT, get_file
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.filetype import content_type_for_path
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
-
-_MIME_TO_RT = {
-    "application/vnd.google-apps.document": "gdrive/gdoc",
-    "application/vnd.google-apps.spreadsheet": "gdrive/gsheet",
-    "application/vnd.google-apps.presentation": "gdrive/gslide",
-}
 
 
 async def stat_from_api(accessor: GDriveAccessor, key: str,
@@ -56,6 +51,7 @@ async def stat_from_api(accessor: GDriveAccessor, key: str,
                         type=FileType.DIRECTORY,
                         modified=modified,
                         extra={"file_id": node.id})
+    resource_type = resource_type_for(node.mime_type)
     ext = MIME_TO_EXT.get(node.mime_type)
     vfs_name = f"{node.name}{ext}" if ext else node.name
     # Native renders are size-unknown (see the CLAUDE.md FileStat.size rule).
@@ -67,11 +63,11 @@ async def stat_from_api(accessor: GDriveAccessor, key: str,
         type=FileType.FILE,
         content=content_type_for_path(vfs_name),
         modified=modified,
-        fingerprint=drive_fingerprint(item.get("md5Checksum"),
+        fingerprint=drive_fingerprint(resource_type, item.get("md5Checksum"),
                                       item.get("headRevisionId"), modified),
         extra={
             "file_id": node.id,
-            "resource_type": _MIME_TO_RT.get(node.mime_type, "gdrive/file"),
+            "resource_type": resource_type,
         },
     )
 
@@ -114,9 +110,7 @@ async def stat(
         type=FileType.FILE,
         content=content_type_for_path(entry.vfs_name),
         modified=entry.remote_time,
-        fingerprint=drive_fingerprint(entry.extra.get("md5_checksum"),
-                                      entry.extra.get("head_revision_id"),
-                                      entry.remote_time),
+        fingerprint=entry_fingerprint(entry),
         extra={
             "file_id": entry.id,
             "resource_type": entry.resource_type,

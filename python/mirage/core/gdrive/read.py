@@ -20,8 +20,8 @@ from mirage.accessor.gdrive import GDriveAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.cache.index.warm import entry_or_warm
 from mirage.core.gdocs.read import read_doc
-from mirage.core.gdrive import DIRECTORY_RESOURCE_TYPES
-from mirage.core.gdrive.fingerprint import drive_fingerprint
+from mirage.core.gdrive import DIRECTORY_RESOURCE_TYPES, NATIVE_RESOURCE_TYPES
+from mirage.core.gdrive.fingerprint import drive_fingerprint, entry_fingerprint
 from mirage.core.gdrive.readdir import readdir
 from mirage.core.gdrive.versions import (capture_file_metadata,
                                          download_revision)
@@ -44,18 +44,11 @@ async def read_bytes(
     return await download_file(token_manager, file_id)
 
 
-_NATIVE_RESOURCE_TYPES = frozenset(
-    {"gdrive/gdoc", "gdrive/gsheet", "gdrive/gslide"})
-
-
 def _whole_file(offset: int, size: int | None) -> bool:
-    """Whether a read returned the entire object rather than a window.
+    """Whether a read returned the whole object rather than a window.
 
-    A token describes the whole object, and `latest_fingerprint`'s
-    byte-identity guard applies only to writes, so a windowed body
-    stamped with one would read as fresh for the life of the entry. Both
-    read paths ask this before stamping; a guard written twice is a
-    guard the two paths can drift apart on.
+    A token describes the whole object, so a window stamped with one
+    would read as fresh for the life of the entry.
 
     Args:
         offset (int): first byte the caller asked for.
@@ -64,64 +57,18 @@ def _whole_file(offset: int, size: int | None) -> bool:
     return offset == 0 and size is None
 
 
-def _verified_tokens(md5: str | None, head_revision: str | None,
-                     modified: str | None, data: bytes, offset: int,
-                     size: int | None) -> tuple[str | None, str | None]:
-    """The (fingerprint, revision) pair that describes bytes we just read.
+def _stale_md5(md5: JsonValue, data: bytes) -> bool:
+    """Whether Drive's md5 names other bytes than the ones just read.
 
-    The capture and the download are two separate requests, so the
-    metadata describes the object as of the first and the bytes come
-    from the second. Drive's md5Checksum is the md5 of the content and
-    the content is already in memory, so the two are compared here
-    rather than trusted -- no extra request.
-
-    The three answers are three different states of evidence, and they
-    are not interchangeable:
-
-    * A window proves nothing about either token. The fingerprint is
-      dropped because it describes the whole object and a partial body
-      under it would read as fresh for the life of the entry, but the
-      revision still names the object the window came from, so it
-      stays.
-    * A disagreeing md5 is positive proof that the capture predates
-      these bytes -- and the revision came from that same capture, so
-      it describes the old content too. Both are dropped. Keeping the
-      revision here would be worse than useless: a revision pin
-      REPLACES the drift check rather than supplementing it, so replay
-      would serve the pre-change bytes and report success, with the one
-      mechanism that would have surfaced it switched off.
-    * Otherwise the capture is trusted. A capture with no md5 cannot be
-      checked, so its token is stamped as it arrived -- dropping it
-      would leave the read at None against stat's head revision, the
-      mismatch this chain exists to remove.
+    The metadata and the download are two requests, so a write between
+    them leaves metadata that predates the bytes.
 
     Args:
-        md5 (str | None): Drive's md5Checksum for the item.
-        head_revision (str | None): Drive's headRevisionId.
-        modified (str | None): Drive's modifiedTime.
-        data (bytes): the bytes this read returned.
-        offset (int): first byte read.
-        size (int | None): how many bytes, or None for the rest.
+        md5 (JsonValue): Drive's ``md5Checksum`` for the file.
+        data (bytes): the whole file as downloaded.
     """
-    if not _whole_file(offset, size):
-        return None, head_revision
-    if md5 is not None and hashlib.md5(data).hexdigest() != md5:
-        return None, None
-    return drive_fingerprint(md5, head_revision, modified), head_revision
-
-
-def _entry_token(value: JsonValue) -> str | None:
-    """One version field off an index entry, or None when it is unusable.
-
-    ``IndexEntry.extra`` is untyped: a listing that omitted the field
-    leaves it absent, and a restored index can hold an empty string or a
-    non-string. Any of those reaching the md5 comparison would drop a
-    token the next link of the chain could have stamped.
-
-    Args:
-        value (JsonValue): the stored field.
-    """
-    return value if isinstance(value, str) and value else None
+    return (isinstance(md5, str) and bool(md5)
+            and hashlib.md5(data).hexdigest() != md5)
 
 
 async def read_file_versioned(token_manager: TokenManager,
@@ -132,17 +79,12 @@ async def read_file_versioned(token_manager: TokenManager,
                               size: int | None = None) -> bytes:
     """Download a binary file honouring snapshot revision pins.
 
-    A pinned path reads that revision's content; an actively recorded
-    read captures the version fields and checks the md5 against the
-    bytes it downloaded before stamping either token.
-
-    An unrecorded read stamps from the index entry the caller resolved
-    the file through, checked the same way, so its token does not depend
-    on a recorder being bound and costs no request. The entry precedes
-    the download, so a stale md5 is caught by the check; the other two
-    fields are unverified and trusted, as an md5-less capture is. It pins
-    no revision: the entry's can be a TTL old, and a replay pinned to it
-    could serve bytes this read never saw.
+    A pinned path reads that revision's content. Otherwise the token
+    comes from a capture when a recorder is bound and from the index
+    entry when none is, so it never depends on the recorder; the
+    entry's revision is not pinned, since it can be a TTL old. Either
+    md5 is checked against the bytes, and a stale one drops the token
+    and the revision with it.
 
     Args:
         token_manager (TokenManager): OAuth2 token manager.
@@ -155,23 +97,24 @@ async def read_file_versioned(token_manager: TokenManager,
     """
     pinned = revision_for(virtual)
     window = window_for(offset, size)
+    whole = _whole_file(offset, size)
     timer = start_op()
     fingerprint = None
     revision = pinned
     if pinned:
         data = await download_revision(token_manager, file_id, pinned, window)
     elif active_recorder() is not None:
-        md5, revision, modified = await capture_file_metadata(
-            token_manager, file_id)
+        md5, revision = await capture_file_metadata(token_manager, file_id)
         data = await download_file(token_manager, file_id, window)
-        fingerprint, revision = _verified_tokens(md5, revision, modified, data,
-                                                 offset, size)
+        if whole and _stale_md5(md5, data):
+            revision = None
+        elif whole:
+            fingerprint = drive_fingerprint(entry.resource_type, md5, revision,
+                                            entry.remote_time)
     else:
         data = await download_file(token_manager, file_id, window)
-        fingerprint, _ = _verified_tokens(
-            _entry_token(entry.extra.get("md5_checksum")),
-            _entry_token(entry.extra.get("head_revision_id")),
-            _entry_token(entry.remote_time), data, offset, size)
+        if whole and not _stale_md5(entry.extra.get("md5_checksum"), data):
+            fingerprint = entry_fingerprint(entry)
     record("read",
            virtual,
            "gdrive",
@@ -216,7 +159,7 @@ async def read(
         raise enoent(virtual)
     if entry.resource_type in DIRECTORY_RESOURCE_TYPES:
         raise IsADirectoryError(virtual)
-    if entry.resource_type not in _NATIVE_RESOURCE_TYPES:
+    if entry.resource_type not in NATIVE_RESOURCE_TYPES:
         return await read_file_versioned(accessor.token_manager, entry.id,
                                          virtual, entry, offset, size)
     timer = start_op()
@@ -227,13 +170,9 @@ async def read(
     else:
         rendered = await read_presentation(accessor.token_manager, entry.id)
     sliced = slice_window(rendered, offset, size)
-    # The entry's token costs no request and is never newer than the render.
-    # It can be a TTL older: a wasted refetch, or a STRICT drift raise on an
-    # untouched file. No revision: a pin would replace the drift check, and
-    # this branch never consults one.
-    fingerprint = (drive_fingerprint(
-        entry.extra.get("md5_checksum"), entry.extra.get("head_revision_id"),
-        entry.remote_time) if _whole_file(offset, size) else None)
+    # No revision: a pin would replace the drift check a render relies on.
+    fingerprint = entry_fingerprint(entry) if _whole_file(offset,
+                                                          size) else None
     record("read",
            virtual,
            "gdrive",

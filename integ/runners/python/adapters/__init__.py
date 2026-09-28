@@ -3053,9 +3053,15 @@ async def open_consistency(
     read_mounts, read_cleanups = await build_mounts(target, run_id, service)
     shadow_mounts, shadow_cleanups = await build_mounts(
         target, run_id, service)
-    read_ws = Workspace(apply_mount_read(read_mounts, mount_read),
-                        mode=MountMode.WRITE,
-                        read=read)
+    # The read side is where a policy the backend cannot honour is
+    # refused, after the service and every mount already exist.
+    try:
+        read_ws = Workspace(apply_mount_read(read_mounts, mount_read),
+                            mode=MountMode.WRITE,
+                            read=read)
+    except Exception:
+        await teardown_target([], [*read_cleanups, *shadow_cleanups], service)
+        raise
     shadow_ws = Workspace(shadow_mounts, mode=MountMode.WRITE)
     # Same rule as open_target: a target's declared environment reaches
     # every workspace a case can run against, or a consistency scenario

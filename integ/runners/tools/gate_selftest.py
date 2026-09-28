@@ -173,6 +173,28 @@ def selftest_mount_read() -> None:
                 runner_main.adapters.open_consistency(target, ReadSpec(
                 ), {"/nope": bound})), "t: mount_read names no mount: /nope"))
 
+    # An override the backend refuses fails the read workspace after the
+    # mounts are built; what was built must still be torn down.
+    torn: list[tuple] = []
+    real_teardown = runner_main.adapters.teardown_target
+
+    async def record_teardown(*args) -> None:
+        torn.append(args)
+        await real_teardown(*args)
+
+    runner_main.adapters.teardown_target = record_teardown
+    try:
+        refused = raises(
+            lambda: asyncio.run(
+                runner_main.adapters.open_consistency(target, ReadSpec(
+                ), {"/data":
+                    ReadSpec(policy=ReadPolicy.FRESH)})), "read: fresh")
+    finally:
+        runner_main.adapters.teardown_target = real_teardown
+    check("mount_read: a refused override still tears down what it built",
+          refused[0] and len(torn) == 1 and len(torn[0][1]) == 2,
+          f"{refused[1]}; teardowns {torn!r}")
+
     bare, moded, limited, kept = RAMVFS(), RAMVFS(), RAMVFS(), RAMVFS()
     limits = {"cat": Limit(timeout_seconds=5)}
     out = runner_main.adapters.apply_mount_read(

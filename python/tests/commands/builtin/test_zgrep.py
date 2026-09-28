@@ -15,6 +15,8 @@
 import asyncio
 import gzip
 
+import pytest
+
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -36,6 +38,8 @@ def _run_raw(ws, cmd, cwd="/", stdin=None):
 
 
 def _bytes(stdout):
+    if stdout is None:
+        return b""
     if isinstance(stdout, bytes):
         return stdout
     return b"".join(asyncio.run(_collect(stdout)))
@@ -205,3 +209,39 @@ def test_zgrep_reports_a_bad_archive_and_exits_2_beside_a_match():
     assert _bytes(
         io.stderr) == b"zgrep: /data/cut.gz: unexpected end of file\n"
     assert io.exit_code == 2
+
+
+@pytest.mark.parametrize("data", [b"", b"hello\n"])
+@pytest.mark.parametrize("mode", ["", "-l", "-L", "-c", "-o", "-q"])
+@pytest.mark.parametrize("pattern, diagnostic", [
+    ("(", "Unmatched ( or \\("),
+    ("[z-a]", "Invalid range end"),
+    ("a{2,1}", "Invalid content of \\{\\}"),
+    ("\\", "Trailing backslash"),
+])
+def test_zgrep_invalid_ere(data, mode, pattern, diagnostic):
+    ws, _ = _ws()
+    stdout, io = _run_raw(ws,
+                          f"zgrep -E {mode} '{pattern}'",
+                          stdin=gzip.compress(data))
+    assert (_bytes(stdout), _bytes(io.stderr),
+            io.exit_code) == (b"", f"grep: {diagnostic}\n".encode(), 2)
+
+
+@pytest.mark.parametrize("pattern", ["hello", "("])
+@pytest.mark.parametrize("mode, output", [
+    ("", b""),
+    ("-l", b""),
+    ("-L", b"-\n"),
+    ("-c", b""),
+    ("-o", b""),
+    ("-v", b""),
+    ("-q -L", b"-\n"),
+])
+def test_zgrep_m0_skips_validation_and_selection(pattern, mode, output):
+    ws, _ = _ws()
+    stdout, io = _run_raw(ws,
+                          f"zgrep -E -m0 {mode} '{pattern}'",
+                          stdin=gzip.compress(b"hello\n"))
+    assert (_bytes(stdout), _bytes(io.stderr), io.exit_code) == (output, b"",
+                                                                 1)

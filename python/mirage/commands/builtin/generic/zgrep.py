@@ -65,8 +65,6 @@ def _zgrep_search(
                                                       m.start()), m.group()))
                     if max_count is not None and len(matched) >= max_count:
                         break
-            elif invert:
-                matched.append((idx, start, line))
         else:
             hit = bool(pattern.search(line))
             if invert:
@@ -168,8 +166,9 @@ async def zgrep(
         texts, fl, partial(_read_plain, read_bytes),
         "zgrep: usage: zgrep [flags] pattern [path]")
     f = parse_flags(fl, never_match)
-    compiled = compile_pattern(pattern, f.ignore_case, f.fixed, f.whole_word,
-                               f.basic_regexp)
+    # GNU grep 3.11 skips regex validation and selection under -m0.
+    compiled = (None if f.max_count == 0 else compile_pattern(
+        pattern, f.ignore_case, f.fixed, f.whole_word, f.basic_regexp))
     multi = len(paths) > 1
     show_filename = f.force_filename or (multi and not f.suppress_filename)
     any_match = False
@@ -187,15 +186,16 @@ async def zgrep(
             if failure is not None:
                 errors.append(
                     failure.render("zgrep", operand_label(p, "stdin")))
+        if compiled is None:
+            if f.files_without_match:
+                all_results.append(p.raw_path)
+            continue
         # zgrep hands grep a stdin operand as `-`, so -l and -L list it
         # as `-` while its lines are labelled `(standard input)` (gzip
         # 1.13); /dev/stdin is named as typed either way.
         fname = operand_label(p, "(standard input)") if show_filename else None
         if f.files_only or f.files_without_match:
-            # -m0 selects no line at all, so -l lists nothing and -L
-            # lists every archive, exit 1 (zgrep 3.11).
-            matched = f.max_count != 0 and _files_only_match(
-                data, compiled, f.invert)
+            matched = _files_only_match(data, compiled, f.invert)
             # -L lists the files that selected nothing; the status
             # still follows the matching, as GNU grep's does.
             if matched == f.files_only:
@@ -213,7 +213,8 @@ async def zgrep(
     # A bad archive is exit 2 even beside a match, -q included (zgrep 3.11).
     exit_code = 2 if errors else 0 if any_match else 1
     stderr = "".join(errors).encode() or None
-    if f.quiet or not all_results:
+    # Under -m0, GNU still prints -L's operands even with -q.
+    if (f.quiet and f.max_count != 0) or not all_results:
         return None, IOResult(exit_code=exit_code, stderr=stderr)
     return format_records(all_results), IOResult(exit_code=exit_code,
                                                  stderr=stderr)

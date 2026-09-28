@@ -197,3 +197,39 @@ describe('zgrep matches on ASCII rules, as grep does under LC_ALL=C', () => {
     expect(await shell(line, null, seed)).toEqual([out, '', 0])
   })
 })
+
+describe('zgrep invalid extended expressions (GNU grep 3.11)', () => {
+  it.each([
+    ['(', 'Unmatched ( or \\('],
+    ['[z-a]', 'Invalid range end'],
+    ['a{2,1}', 'Invalid content of \\{\\}'],
+    ['\\', 'Trailing backslash'],
+  ])(
+    'reports %s with exit 2 in every output mode, including empty input',
+    async (pattern, diagnostic) => {
+      for (const data of ['', 'hello\n']) {
+        for (const mode of ['', '-l', '-L', '-c', '-o', '-q']) {
+          expect(
+            await shell(`zgrep -E ${mode} '${pattern}'`, await gzip(ENC.encode(data))),
+          ).toEqual(['', `grep: ${diagnostic}\n`, 2])
+        }
+      }
+    },
+  )
+
+  it.each([
+    ['', ''],
+    ['-l', ''],
+    ['-L', '-\n'],
+    ['-c', ''],
+    ['-o', ''],
+    ['-v', ''],
+    ['-q -L', '-\n'],
+  ])('skips regex validation and selection under -m0 %s', async (mode, output) => {
+    for (const pattern of ['hello', '(']) {
+      expect(
+        await shell(`zgrep -E -m0 ${mode} '${pattern}'`, await gzip(ENC.encode('hello\n'))),
+      ).toEqual([output, '', 1])
+    }
+  })
+})

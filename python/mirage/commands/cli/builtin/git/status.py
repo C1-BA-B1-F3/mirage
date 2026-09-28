@@ -27,7 +27,8 @@ from mirage.commands.cli.builtin.git.render import (branch_line, long_format,
                                                     short_format)
 from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.types import HeadRef, RepoLocation
+from mirage.commands.cli.builtin.git.types import (HeadRef, RepoLocation,
+                                                   StatusEntry)
 from mirage.commands.cli.builtin.git.util import fatal, links_of, start_point
 from mirage.commands.cli.builtin.git.worktree import (UNTRACKED_ALL,
                                                       UNTRACKED_NO,
@@ -80,11 +81,32 @@ def parse_flags(fl: FlagView) -> StatusFlags:
                        untracked=mode)
 
 
+async def displayed(dispatch: DispatchFn, location: RepoLocation, start: str,
+                    rows: list[StatusEntry]) -> list[StatusEntry]:
+    """Status rows as a person reads them, relative to where git runs.
+
+    git's human formats name paths from the invocation directory unless
+    ``status.relativePaths`` is false; porcelain never does. From outside
+    the work tree they stay relative to its root.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        location (RepoLocation): the discovered repository.
+        start (str): absolute virtual path git is running in.
+        rows (list[StatusEntry]): repository-relative status entries.
+    """
+    if not await config_bool(dispatch, location, b"status", b"relativepaths",
+                             True):
+        return rows
+    return relative_entries(rows, repo_relative(location, start, "."))
+
+
 async def render_report(dispatch: DispatchFn,
                         stat_path: StatPath,
                         repo: BaseRepo,
                         location: RepoLocation,
                         head: HeadRef,
+                        start: str,
                         links: LinkView | None = None) -> str:
     """The default status report, as a string.
 
@@ -98,6 +120,8 @@ async def render_report(dispatch: DispatchFn,
         repo (BaseRepo): the opened repository.
         location (RepoLocation): the discovered repository.
         head (HeadRef): what HEAD points at.
+        start (str): absolute virtual path git is running in, which the
+            report's paths are relative to.
         links (LinkView | None): the name plane's link facts, so the
             walk lstats as git does.
     """
@@ -106,8 +130,9 @@ async def render_report(dispatch: DispatchFn,
     fully = await config_bool(dispatch, location, b"core", b"quotepath", True)
     commit = None if head.commit is None else short(head.commit.encode(),
                                                     abbrev_for(repo))
-    return long_format(rows, head.branch, commit, no_commits, state.merging,
-                       False, fully)
+    return long_format(await displayed(dispatch, location, start,
+                                       rows), head.branch, commit, no_commits,
+                       state.merging, False, fully)
 
 
 async def status(
@@ -134,17 +159,15 @@ async def status(
         if dispatch is None or stat_path is None:
             raise NoWorkspaceError()
         parsed = parse_flags(fl)
-        repo, location = await opened(fl, doors)
+        repo, location = await opened(fl, doors, work_tree=True)
         head = await read_head(dispatch, location.gitdir)
         rows, state, no_commits = await collect(dispatch, stat_path, repo,
                                                 location, parsed.untracked,
                                                 links_of(doors))
         fully = await config_bool(dispatch, location, b"core", b"quotepath",
                                   True)
-        if not parsed.porcelain and await config_bool(
-                dispatch, location, b"status", b"relativepaths", True):
-            rows = relative_entries(
-                rows, repo_relative(location, start_point(fl), "."))
+        if not parsed.porcelain:
+            rows = await displayed(dispatch, location, start_point(fl), rows)
     except GitError as exc:
         return fatal(exc)
     commit = None if head.commit is None else short(head.commit.encode(),

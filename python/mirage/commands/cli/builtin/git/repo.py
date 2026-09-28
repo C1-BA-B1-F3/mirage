@@ -57,6 +57,27 @@ async def open_repo(dispatch: DispatchFn, location: RepoLocation) -> BaseRepo:
     return BaseRepo(store, refs)
 
 
+async def config_value(dispatch: DispatchFn, location: RepoLocation,
+                       section: bytes, name: bytes) -> bytes | None:
+    """One variable from the repository's config, None when it is unset.
+
+    Only the repository's own config is reachable from a mount.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        location (RepoLocation): the discovered repository.
+        section (bytes): the section, e.g. ``b"core"``.
+        name (bytes): the variable, e.g. ``b"worktree"``.
+    """
+    data = await read_optional(dispatch, f"{location.commondir}/config")
+    if data is None:
+        return None
+    try:
+        return ConfigFile.from_file(BytesIO(data)).get((section, ), name)
+    except KeyError:
+        return None
+
+
 async def config_bool(dispatch: DispatchFn, location: RepoLocation,
                       section: bytes, name: bytes, default: bool) -> bool:
     """A boolean from the repository's config, read the way git reads one.
@@ -64,7 +85,7 @@ async def config_bool(dispatch: DispatchFn, location: RepoLocation,
     ``true``/``yes``/``on`` and ``false``/``no``/``off`` in any case, a
     bare name as true, an empty value as false and an integer as whether
     it is nonzero; anything else is git's fatal (pinned against git
-    2.50). Only the repository's own config is reachable from a mount.
+    2.50).
 
     Args:
         dispatch (DispatchFn): workspace op dispatcher.
@@ -73,12 +94,8 @@ async def config_bool(dispatch: DispatchFn, location: RepoLocation,
         name (bytes): the variable, e.g. ``b"quotepath"``.
         default (bool): the answer when the variable is unset.
     """
-    data = await read_optional(dispatch, f"{location.commondir}/config")
-    if data is None:
-        return default
-    try:
-        value = ConfigFile.from_file(BytesIO(data)).get((section, ), name)
-    except KeyError:
+    value = await config_value(dispatch, location, section, name)
+    if value is None:
         return default
     word = value.lower()
     if word in TRUE_WORDS:

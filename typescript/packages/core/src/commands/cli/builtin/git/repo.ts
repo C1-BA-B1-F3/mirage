@@ -15,7 +15,7 @@
 import git from 'isomorphic-git'
 
 import type { FlagView } from '../../../spec/flag_view.ts'
-import { discover } from './discover.ts'
+import { discover, requireWorkTree } from './discover.ts'
 import { BadConfigValueError, NoWorkspaceError } from './errors.ts'
 import { abbrevLength, type CommitFacts } from './format.ts'
 import { gitFs } from './fs.ts'
@@ -103,12 +103,12 @@ async function openRepo(dispatch: Dispatch, location: RepoLocation): Promise<Rep
  * for a `.git`, then open the object database across the dispatcher. Kept in one
  * place so a new verb inherits the discovery rules rather than restating them.
  *
- * @param fl the leaf's flag bag, read for `-C`
- * @param statPath dispatcher-backed stat, both channels
- * @param mountRoot the mount prefix serving a path
- * @param dispatch workspace op dispatcher
+ * @param fl the leaf's flag bag, read for `-C`, `--git-dir` and `--work-tree`
+ * @param doors the invocation's doors, one per state plane
+ * @param workTree the verb reads or writes working files, so there must be a
+ *   work tree to enter, as git's `NEED_WORK_TREE` asks
  */
-export async function opened(fl: FlagView, doors: CLIDoors): Promise<Repo> {
+export async function opened(fl: FlagView, doors: CLIDoors, workTree = false): Promise<Repo> {
   const dispatch = doors.dispatch
   const statPath = doors.statPath
   // The mount root comes from the name plane rather than a door of its own:
@@ -118,14 +118,16 @@ export async function opened(fl: FlagView, doors: CLIDoors): Promise<Repo> {
   if (statPath === undefined || mounts === undefined || dispatch === undefined) {
     throw new NoWorkspaceError()
   }
+  const chosen = fl.asStr('work_tree')
   const location = await discover(
     dispatch,
     statPath,
     (path: string) => mounts.rootOf(path),
     startPoint(fl),
     fl.asStr('git_dir'),
-    fl.asStr('work_tree'),
+    chosen,
   )
+  if (workTree) await requireWorkTree(dispatch, statPath, location, chosen !== undefined)
   return openRepo(dispatch, location)
 }
 

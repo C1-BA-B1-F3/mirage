@@ -45,6 +45,21 @@ walking up from there, so a path inside the tree works:
 git -C /repo/src status
 ```
 
+`--git-dir` and `--work-tree` name the two halves directly, as do
+`GIT_DIR` and `GIT_WORK_TREE`, which the options override. Both resolve
+against the `-C` directory. With `--git-dir` alone nothing is
+discovered and the working directory is the work tree. A repository's
+own `core.worktree` and `core.bare` apply as they do in git, and a
+linked worktree ignores both. A verb that reads or writes working files
+(`status`, `add`, `commit`, `checkout`, `switch`, `restore`, `mv`,
+`reset`, and `rm` without `--cached`) refuses a bare repository or a
+work tree that is not a directory, in git's words:
+
+```bash
+git --git-dir=/repo/.git --work-tree=/repo status --short
+GIT_DIR=/repo/.git git log --oneline -1
+```
+
 ## Verbs
 
 ### Inspect
@@ -140,6 +155,9 @@ serve, and inventing a name would put an unreviewed one into history.
 
 ## Deliberate limits
 
+- **No `config.worktree`.** The per-worktree config that
+  `extensions.worktreeConfig` enables is not read, so a linked worktree
+  never takes a `core.worktree` or `core.bare` of its own.
 - **No network verbs.** `clone`, `fetch`, `pull` and `push` are absent.
 - **A pathspec that begins with a dash needs `--`.** `git rm -draft` is a
   refused switch and `git rm -- -draft` removes the file, which is what

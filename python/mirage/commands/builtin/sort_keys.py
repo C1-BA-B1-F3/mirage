@@ -23,13 +23,7 @@ from mirage.commands.quote import quote_text
 
 @dataclass(frozen=True, slots=True)
 class NumericKey:
-    """Canonical decimal magnitude, without conversion to floating point.
-
-    Args:
-        negative (bool): sign, always False for zero.
-        integer (str): ASCII digits without leading zeroes.
-        fraction (str): ASCII digits without trailing zeroes.
-    """
+    """A decimal with no leading or trailing zeroes; zero is never negative."""
     negative: bool
     integer: str
     fraction: str
@@ -39,11 +33,32 @@ class NumericKey:
 # shapes never compare against each other.
 _VersionPart: TypeAlias = tuple[int, int] | tuple[int, str]
 # What one key field collapses to before comparison: a month index, a
-# parsed number, the (rank, value) pair -g uses to order junk before
-# NaN before real numbers, the version run list, or the text itself.
-_SortKey: TypeAlias = NumericKey | str | int | float | tuple[
-    int, float] | list[_VersionPart]
-_HUMAN_SUFFIXES = {"K": 1e3, "M": 1e6, "G": 1e9, "T": 1e12, "P": 1e15}
+# parsed number, the (unit, number) pair -h orders by, the (rank, value)
+# pair -g uses to order junk before NaN before real numbers, the version
+# run list, or the text itself.
+_SortKey: TypeAlias = (NumericKey | str | int | float | tuple[int, NumericKey]
+                       | tuple[int, float] | list[_VersionPart])
+# sort.c's `unit_order`: the suffixes -h ranks, lowercase only for k.
+_UNIT_ORDERS = {
+    "K": 1,
+    "k": 1,
+    "M": 2,
+    "G": 3,
+    "T": 4,
+    "P": 5,
+    "E": 6,
+    "Z": 7,
+    "Y": 8,
+    "R": 9,
+    "Q": 10,
+}
+# sort.c's `blanks`: isblank() in the C locale plus the newline a -z
+# record can hold. They separate fields, and -b, -n, -h and -M skip them.
+_FIELD_BLANKS = " \t\n"
+# strnumcmp's number in the C locale: no `+`, exponent or thousands
+# separator. find_unit_order reads the byte after the digits and points.
+_NUMBER_RE = re.compile(r"[ \t\n]*(-?)([0-9]*)(?:\.([0-9]*))?")
+_UNIT_RE = re.compile(r"[ \t\n]*(-?)([0-9.]*)(.?)")
 _VERSION_RE = re.compile(r"([0-9]+)|([^0-9]+)")
 _MONTHS = {
     "jan": 1,
@@ -352,10 +367,10 @@ def _compute_fields(line: str,
     i = 0
     while i < n:
         lead_start = i
-        while i < n and line[i] in " \t":
+        while i < n and line[i] in _FIELD_BLANKS:
             i += 1
         content_start = i
-        while i < n and line[i] not in " \t":
+        while i < n and line[i] not in _FIELD_BLANKS:
             i += 1
         fields.append((lead_start, content_start, i))
     return fields
@@ -385,22 +400,6 @@ def _extract(line: str, fields: list[tuple[int, int, int]], key: Key) -> str:
     return line[start:end]
 
 
-def _parse_human(s: str) -> float:
-    s = s.strip()
-    if not s:
-        return 0.0
-    suffix = s[-1].upper()
-    if suffix in _HUMAN_SUFFIXES:
-        try:
-            return float(s[:-1]) * _HUMAN_SUFFIXES[suffix]
-        except ValueError:
-            return 0.0
-    try:
-        return float(s)
-    except ValueError:
-        return 0.0
-
-
 def _version_key(s: str) -> list[_VersionPart]:
     parts: list[_VersionPart] = []
     for m in _VERSION_RE.finditer(s):
@@ -417,7 +416,7 @@ def _leading_number(field: str) -> NumericKey:
     Args:
         field (str): extracted sort key, possibly followed by nonnumeric text.
     """
-    match = re.match(r"[ \t]*(-?)([0-9]*)(?:\.([0-9]*))?", field)
+    match = _NUMBER_RE.match(field)
     assert match is not None
     integer = match[2].lstrip("0")
     fraction = (match[3] or "").rstrip("0")
@@ -425,16 +424,35 @@ def _leading_number(field: str) -> NumericKey:
                       fraction)
 
 
+def _human_number(field: str) -> tuple[int, NumericKey]:
+    """sort.c's ``human_numcompare`` key: the unit's order, then the number.
+
+    The unit is the byte after the run of digits and decimal points, so
+    ``5.K`` carries K. Its order is negated for a negative number and is
+    zero for a zero one, and it outranks the magnitude, so ``1500`` sorts
+    before ``1K``.
+
+    Args:
+        field (str): extracted sort key, possibly followed by other text.
+    """
+    match = _UNIT_RE.match(field)
+    assert match is not None
+    order = 0
+    if any("1" <= char <= "9" for char in match[2]):
+        order = _UNIT_ORDERS.get(match[3], 0)
+    return (-order if match[1] else order), _leading_number(field)
+
+
 def _transform(field: str, mods: KeyMods) -> _SortKey:
     if mods.dictionary:
         field = "".join(char for char in field
-                        if char.isalnum() or char in " \t")
+                        if char.isalnum() or char in _FIELD_BLANKS)
     elif mods.ignore_nonprinting:
         field = "".join(char for char in field if char.isprintable())
     if mods.month:
-        return _MONTHS.get(field.strip()[:3].lower(), 0)
+        return _MONTHS.get(field.lstrip(_FIELD_BLANKS)[:3].lower(), 0)
     if mods.human:
-        return _parse_human(field)
+        return _human_number(field)
     if mods.version:
         return _version_key(field)
     if mods.numeric:
@@ -461,6 +479,8 @@ def _cmp(a: _SortKey | _VersionPart, b: _SortKey | _VersionPart) -> int:
         right = (len(b.integer), b.integer, b.fraction)
         order = (left > right) - (left < right)
         return -order if a.negative else order
+    if isinstance(a, tuple) and isinstance(b, tuple):
+        return _cmp(a[0], b[0]) or _cmp(a[1], b[1])
     if isinstance(a, list) and isinstance(b, list):
         for x, y in zip(a, b):
             c = _cmp(x, y)

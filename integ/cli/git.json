@@ -4367,6 +4367,202 @@
         "stdout": " M letters.txt\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "git_linked_worktree_ignores_shared_core_worktree",
+      "seq": 567935,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/.git/worktrees/shared /git-shared-tree && printf 'ref: refs/heads/topic\\n' > /repo/.git/worktrees/shared/HEAD && printf '../..\\n' > /repo/.git/worktrees/shared/commondir && printf 'gitdir: /repo/.git/worktrees/shared\\n' > /git-shared-tree/.git && cp /repo/.git/config /repo/.git/config-shared-backup && printf '[core]\\n\\tworktree = ..\\n' >> /repo/.git/config && git -C /git-shared-tree status --short; result=$?; mv /repo/.git/config-shared-backup /repo/.git/config; rm -r /repo/.git/worktrees/shared /git-shared-tree; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "D  docs/readme.md\nD  letters.txt\nD  numbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_linked_worktree_reads_the_shared_exclude",
+      "seq": 567936,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/.git/worktrees/excl /git-excl-tree && printf 'ref: refs/heads/main\\n' > /repo/.git/worktrees/excl/HEAD && printf '../..\\n' > /repo/.git/worktrees/excl/commondir && cp /repo/.git/index /repo/.git/worktrees/excl/index && printf 'gitdir: /repo/.git/worktrees/excl\\n' > /git-excl-tree/.git && cp /repo/.git/info/exclude /repo/.git/info/exclude-backup && printf '*.log\\n' >> /repo/.git/info/exclude && printf 'x\\n' > /git-excl-tree/debug.log && printf 'y\\n' > /git-excl-tree/notes.txt && git -C /git-excl-tree status --short; result=$?; mv /repo/.git/info/exclude-backup /repo/.git/info/exclude; rm -r /repo/.git/worktrees/excl /git-excl-tree; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " D docs/readme.md\n D letters.txt\n D numbers.txt\n?? notes.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_linked_worktree_logs_its_branch_in_the_repository",
+      "seq": 567937,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf '8ef25423772bbfe671c8e285ae1d63991d59db19\\n' > /repo/.git/refs/heads/wtlog && mkdir -p /repo/.git/worktrees/wtlog /git-wtlog-tree && printf 'ref: refs/heads/wtlog\\n' > /repo/.git/worktrees/wtlog/HEAD && printf '../..\\n' > /repo/.git/worktrees/wtlog/commondir && cp /repo/.git/index /repo/.git/worktrees/wtlog/index && printf 'gitdir: /repo/.git/worktrees/wtlog\\n' > /git-wtlog-tree/.git && printf 'wt\\n' > /git-wtlog-tree/wt.txt && git -C /git-wtlog-tree add wt.txt && git -C /git-wtlog-tree commit -m 'from a worktree' > /dev/null && cut -f 2 /repo/.git/logs/refs/heads/wtlog && cut -f 2 /repo/.git/worktrees/wtlog/logs/HEAD && ls /repo/.git/worktrees/wtlog/logs; result=$?; rm -r /repo/.git/worktrees/wtlog /git-wtlog-tree /repo/.git/refs/heads/wtlog /repo/.git/logs/refs/heads/wtlog; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "commit: from a worktree\ncommit: from a worktree\nHEAD\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_gitfile_names_a_non_repository",
+      "seq": 567938,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'gitdir: docs\\n' > /repo/select-stray && git --git-dir=/repo/select-stray log --oneline -1; result=$?; rm /repo/select-stray; exit \"$result\")",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: not a git repository: /repo/docs\n"
+      }
+    },
+    {
+      "id": "git_core_worktree_relative_is_entered_first",
+      "seq": 567939,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-wt-backup && printf '[core]\\n\\tworktree = nowhere\\n' >> /repo/.git/config && git -C /repo log --oneline -1; result=$?; mv /repo/.git/config-wt-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: cannot chdir to 'nowhere': No such file or directory\n"
+      }
+    },
+    {
+      "id": "git_core_worktree_absolute_missing",
+      "seq": 567940,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-wt-backup && printf '[core]\\n\\tworktree = /repo/nowhere\\n' >> /repo/.git/config && git -C /repo log --oneline -1; git -C /repo status --short; result=$?; mv /repo/.git/config-wt-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 128,
+        "stdout": "8ef2542 add two\n",
+        "stderr": "fatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_core_bare_needs_a_named_work_tree",
+      "seq": 567941,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-bare-backup && printf '[core]\\n\\tbare = true\\n' >> /repo/.git/config && git -C /repo log --oneline -1; git -C /repo status --short; git -C /repo reset -q; git -C /repo --work-tree=. status --short; echo done; mv /repo/.git/config-bare-backup /repo/.git/config)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\ndone\n",
+        "stderr": "fatal: this operation must be run in a work tree\nfatal: mixed reset is not allowed in a bare repository\n"
+      }
+    },
+    {
+      "id": "git_status_relative_paths_off",
+      "seq": 567942,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-rel-backup && printf '[status]\\n\\trelativePaths = false\\n' >> /repo/.git/config && printf 'edited\\n' > /repo/letters.txt && git -C /repo/docs status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; mv /repo/.git/config-rel-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_status_long_format_is_relative_to_the_subdirectory",
+      "seq": 567943,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && mkdir -p /repo/fresh/deep && printf 'x\\n' > /repo/fresh/deep/f.txt && printf 'extra\\n' > /repo/docs/extra.md && git -C /repo/docs status && git -C /repo/fresh/deep status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; rm -r /repo/fresh /repo/docs/extra.md; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "On branch main\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   ../letters.txt\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\textra.md\n\t../fresh/\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n M ../../letters.txt\n?? ../../docs/extra.md\n?? ../\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_commit_report_is_relative_to_the_subdirectory",
+      "seq": 567944,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && printf 'extra\\n' > /repo/docs/extra.md && git -C /repo/docs commit -m never; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; rm /repo/docs/extra.md; exit \"$result\")",
+      "expect": {
+        "exit": 1,
+        "stdout": "On branch main\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   ../letters.txt\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\textra.md\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_missing_is_refused",
+      "seq": 567945,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir=/repo/.git --work-tree=/repo/missing status --short",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_work_tree_file_is_refused",
+      "seq": 567946,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir=/repo/.git --work-tree=/repo/letters.txt status --short",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_work_tree_missing_still_reads",
+      "seq": 567947,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo --work-tree=missing log --oneline -1 && git -C /repo --work-tree=missing diff --cached --stat",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_missing_refuses_writes",
+      "seq": 567948,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo --work-tree=missing add -A; added=$?; git -C /repo --work-tree=missing commit -am never; committed=$?; git -C /repo status --porcelain; git -C /repo log --oneline -1; echo \"$added $committed\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n128 128\n",
+        "stderr": "fatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\n"
+      }
     }
   ]
 }

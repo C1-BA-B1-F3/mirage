@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import posixpath
 from dataclasses import replace
 
 from mirage.commands.cli.builtin.git.types import StatusEntry
@@ -385,6 +384,27 @@ def long_format(rows: list[StatusEntry],
     return "".join(f"{line}\n" for line in lines)
 
 
+def _relative(path: str, base: list[str]) -> str:
+    """A repository-relative path as seen from a directory inside the tree.
+
+    Computed on the names alone, as git's ``relative_path`` does: the
+    virtual paths never meet the host's working directory. A directory
+    row keeps its slash, so the one git runs inside prints ``./``.
+
+    Args:
+        path (str): repository-relative path, ``/``-terminated for a
+            directory.
+        base (list[str]): the invocation directory's components.
+    """
+    parts = [part for part in path.split("/") if part]
+    shared = 0
+    while (shared < len(base) and shared < len(parts)
+           and base[shared] == parts[shared]):
+        shared += 1
+    name = "/".join([".."] * (len(base) - shared) + parts[shared:]) or "."
+    return name + ("/" if path.endswith("/") else "")
+
+
 def relative_entries(rows: list[StatusEntry],
                      prefix: str) -> list[StatusEntry]:
     """Render status paths relative to an invocation inside the work tree.
@@ -395,14 +415,10 @@ def relative_entries(rows: list[StatusEntry],
     """
     if not prefix:
         return rows
-
-    def relative(path: str) -> str:
-        return posixpath.relpath(path,
-                                 prefix) + ("/" if path.endswith("/") else "")
-
+    base = prefix.split("/")
     return [
         replace(row,
-                path=relative(row.path),
-                original=relative(row.original)
+                path=_relative(row.path, base),
+                original=_relative(row.original, base)
                 if row.original is not None else None) for row in rows
     ]

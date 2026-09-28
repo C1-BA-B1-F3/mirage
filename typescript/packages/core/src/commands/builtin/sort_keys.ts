@@ -16,13 +16,28 @@ import { compareCodePoints } from '../../utils/sort.ts'
 import { quoteText } from '../quote.ts'
 import { SortKeyError } from './errors.ts'
 
-const HUMAN_SUFFIXES: Record<string, number> = {
-  K: 1e3,
-  M: 1e6,
-  G: 1e9,
-  T: 1e12,
-  P: 1e15,
+// sort.c's `unit_order`: the suffixes -h ranks, lowercase only for k.
+const UNIT_ORDERS: Record<string, number> = {
+  K: 1,
+  k: 1,
+  M: 2,
+  G: 3,
+  T: 4,
+  P: 5,
+  E: 6,
+  Z: 7,
+  Y: 8,
+  R: 9,
+  Q: 10,
 }
+
+// sort.c's `blanks`: isblank() in the C locale plus the newline a -z
+// record can hold. They separate fields, and -b, -n, -h and -M skip them.
+const FIELD_BLANKS = ' \t\n'
+// strnumcmp's number in the C locale: no `+`, exponent or thousands
+// separator. find_unit_order reads the byte after the digits and points.
+const NUMBER_RE = /^[ \t\n]*(-?)([0-9]*)(?:\.([0-9]*))?/
+const UNIT_RE = /^[ \t\n]*(-?)([0-9.]*)(.?)/
 
 const MONTHS: Record<string, number> = {
   jan: 1,
@@ -78,13 +93,14 @@ export interface SortConfig {
   stable: boolean
 }
 
+/** A decimal with no leading or trailing zeroes; zero is never negative. */
 interface NumericKey {
   readonly negative: boolean
   readonly integer: string
   readonly fraction: string
 }
 
-type SortKey = NumericKey | string | number | (string | number)[]
+type SortKey = NumericKey | string | number | (NumericKey | string | number)[]
 
 function isAsciiDigit(char: string): boolean {
   return char >= '0' && char <= '9'
@@ -311,9 +327,9 @@ export function computeFields(line: string, fieldSep: string | null): [number, n
   let i = 0
   while (i < n) {
     const leadStart = i
-    while (i < n && (line[i] === ' ' || line[i] === '\t')) i += 1
+    while (i < n && FIELD_BLANKS.includes(line.charAt(i))) i += 1
     const contentStart = i
-    while (i < n && line[i] !== ' ' && line[i] !== '\t') i += 1
+    while (i < n && !FIELD_BLANKS.includes(line.charAt(i))) i += 1
     fields.push([leadStart, contentStart, i])
   }
   return fields
@@ -345,19 +361,6 @@ export function extract(line: string, fields: [number, number, number][], key: K
   return line.slice(start, Math.max(end, start))
 }
 
-function parseHuman(s: string): number {
-  const trimmed = s.trim()
-  if (trimmed === '') return 0
-  const suffix = trimmed[trimmed.length - 1]?.toUpperCase() ?? ''
-  if (suffix in HUMAN_SUFFIXES) {
-    const num = Number.parseFloat(trimmed.slice(0, -1))
-    if (Number.isNaN(num)) return 0
-    return num * (HUMAN_SUFFIXES[suffix] ?? 1)
-  }
-  const num = Number.parseFloat(trimmed)
-  return Number.isNaN(num) ? 0 : num
-}
-
 function versionKey(s: string): (string | number)[] {
   const parts: (string | number)[] = []
   let m: RegExpExecArray | null
@@ -371,10 +374,24 @@ function versionKey(s: string): (string | number)[] {
 
 /** Read a C-locale GNU -n prefix without losing decimal precision. */
 function leadingNumber(field: string): NumericKey {
-  const match = /^[ \t]*(-?)([0-9]*)(?:\.([0-9]*))?/.exec(field)
+  const match = NUMBER_RE.exec(field)
   const integer = (match?.[2] ?? '').replace(/^0+/, '')
   const fraction = (match?.[3] ?? '').replace(/0+$/, '')
   return { negative: match?.[1] === '-' && (integer !== '' || fraction !== ''), integer, fraction }
+}
+
+/**
+ * sort.c's `human_numcompare` key: the unit's order, then the number.
+ *
+ * The unit is the byte after the run of digits and decimal points, so `5.K`
+ * carries K. Its order is negated for a negative number and is zero for a zero
+ * one, and it outranks the magnitude, so `1500` sorts before `1K`. Mirrors
+ * _human_number in sort_keys.py.
+ */
+function humanNumber(field: string): [number, NumericKey] {
+  const match = UNIT_RE.exec(field)
+  const order = /[1-9]/.test(match?.[2] ?? '') ? (UNIT_ORDERS[match?.[3] ?? ''] ?? 0) : 0
+  return [match?.[1] === '-' ? -order : order, leadingNumber(field)]
 }
 
 function isPrintingCharacter(char: string): boolean {
@@ -399,13 +416,16 @@ function parseGeneralFloat(field: string): number | null {
 function transform(field: string, mods: KeyMods): SortKey {
   if (mods.dictionary)
     field = Array.from(field)
-      .filter((char) => /[\p{L}\p{N} \t]/u.test(char))
+      .filter((char) => /[\p{L}\p{N} \t\n]/u.test(char))
       .join('')
   else if (mods.ignoreNonprinting) {
     field = Array.from(field).filter(isPrintingCharacter).join('')
   }
-  if (mods.month) return MONTHS[field.trim().slice(0, 3).toLowerCase()] ?? 0
-  if (mods.human) return parseHuman(field)
+  if (mods.month) {
+    const name = field.replace(/^[ \t\n]+/, '').slice(0, 3)
+    return MONTHS[name.toLowerCase()] ?? 0
+  }
+  if (mods.human) return humanNumber(field)
   if (mods.version) return versionKey(field)
   if (mods.numeric) return leadingNumber(field)
   if (mods.generalNumeric) {

@@ -14,9 +14,11 @@
 
 import pytest
 
-from mirage.commands.cli.builtin.git.discover import discover
+from mirage.commands.cli.builtin.git.discover import (discover,
+                                                      require_work_tree)
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    InvalidGitFileError, NotARepositoryError, NoWorkingDirectoryError)
+    InvalidGitFileError, NotARepositoryError, NotAWorkTreeError,
+    NoWorkingDirectoryError, WorkTreeChdirError)
 from mirage.types import ContentType, FileStat, FileType
 
 
@@ -232,3 +234,79 @@ async def test_a_missing_start_beats_a_repository_above_it():
     stat_path = _stat_over({"/repo", "/repo/.git"})
     with pytest.raises(NoWorkingDirectoryError):
         await discover(_no_reads(), stat_path, _root("/repo/"), "/repo/gone")
+
+
+@pytest.mark.asyncio
+async def test_core_worktree_is_relative_to_the_git_directory():
+    stat_path = _stat_over({"/repo/.git", "/repo/src"})
+    dispatch = _reads({"/repo/.git/config": b"[core]\n\tworktree = ../src\n"})
+    repo = await discover(dispatch, stat_path, _root("/repo/"), "/repo")
+    assert repo.worktree == "/repo/src"
+
+
+@pytest.mark.asyncio
+async def test_a_linked_worktree_ignores_its_repositorys_core_worktree():
+    # git reads core.worktree only from a repository's own config, and a
+    # linked worktree's config is the repository's: applying it would
+    # put the tree next to the main checkout's metadata.
+    stat_path = _stat_over({"/repo/.git/worktrees/wt"},
+                           files={"/repo/wt/.git"})
+    dispatch = _reads({
+        "/repo/wt/.git": b"gitdir: /repo/.git/worktrees/wt\n",
+        "/repo/.git/worktrees/wt/commondir": b"../..\n",
+        "/repo/.git/config": b"[core]\n\tworktree = ..\n",
+    })
+    repo = await discover(dispatch, stat_path, _root("/repo/"), "/repo/wt")
+    assert repo.worktree == "/repo/wt"
+
+
+@pytest.mark.asyncio
+async def test_a_relative_core_worktree_git_cannot_enter_fails_every_verb():
+    dispatch = _reads({"/repo/.git/config": b"[core]\n\tworktree = gone\n"})
+    with pytest.raises(WorkTreeChdirError) as excinfo:
+        await discover(dispatch, _stat_over({"/repo/.git"}), _root("/repo/"),
+                       "/repo")
+    assert str(excinfo.value) == ("cannot chdir to 'gone': "
+                                  "No such file or directory")
+
+
+@pytest.mark.asyncio
+async def test_a_named_work_tree_beats_the_config():
+    dispatch = _reads({
+        "/repo/.git/config":
+        b"[core]\n\tbare = true\n\tworktree = gone\n",
+    })
+    repo = await discover(dispatch, _stat_over({"/repo/.git"}),
+                          _root("/repo/"), "/repo", None, "../elsewhere")
+    assert repo.worktree == "/elsewhere"
+
+
+@pytest.mark.asyncio
+async def test_a_named_git_file_leading_nowhere_names_its_target():
+    # git's read_gitfile refuses the pointer's target, unquoted, before
+    # it quotes the --git-dir it was handed.
+    stat_path = _stat_over({"/", "/repo/docs"}, files={"/repo/stray"})
+    dispatch = _reads({"/repo/stray": b"gitdir: docs\n"})
+    with pytest.raises(NotARepositoryError) as excinfo:
+        await discover(dispatch, stat_path, _root("/"), "/", "/repo/stray")
+    assert str(excinfo.value) == "not a git repository: /repo/docs"
+
+
+@pytest.mark.asyncio
+async def test_a_bare_repository_has_no_work_tree_to_enter():
+    dispatch = _reads({"/repo/.git/config": b"[core]\n\tbare = true\n"})
+    stat_path = _stat_over({"/repo", "/repo/.git"})
+    repo = await discover(dispatch, stat_path, _root("/repo/"), "/repo")
+    with pytest.raises(NotAWorkTreeError):
+        await require_work_tree(dispatch, stat_path, repo, False)
+    await require_work_tree(dispatch, stat_path, repo, True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("worktree", ["/repo/missing", "/repo/a.txt"])
+async def test_a_named_work_tree_must_be_a_directory(worktree):
+    stat_path = _stat_over({"/repo", "/repo/.git"}, files={"/repo/a.txt"})
+    repo = await discover(_no_reads(), stat_path, _root("/repo/"), "/repo",
+                          None, worktree)
+    with pytest.raises(NotAWorkTreeError):
+        await require_work_tree(_no_reads(), stat_path, repo, True)

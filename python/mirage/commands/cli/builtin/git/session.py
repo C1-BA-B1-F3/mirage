@@ -14,7 +14,8 @@
 
 from dulwich.repo import BaseRepo
 
-from mirage.commands.cli.builtin.git.discover import discover
+from mirage.commands.cli.builtin.git.discover import (discover,
+                                                      require_work_tree)
 from mirage.commands.cli.builtin.git.errors import NoWorkspaceError
 from mirage.commands.cli.builtin.git.repo import open_repo
 from mirage.commands.cli.builtin.git.types import RepoLocation
@@ -24,7 +25,8 @@ from mirage.commands.spec.flag_view import FlagView
 
 
 async def opened(fl: FlagView,
-                 doors: CLIDoors) -> tuple[BaseRepo, RepoLocation]:
+                 doors: CLIDoors,
+                 work_tree: bool = False) -> tuple[BaseRepo, RepoLocation]:
     """Discover and open the repository a verb was invoked against.
 
     Every verb starts the same way: honor ``-C``, walk up to the mount
@@ -39,18 +41,26 @@ async def opened(fl: FlagView,
     keep in step.
 
     Args:
-        fl (FlagView): the leaf's flag bag, read for ``-C``.
+        fl (FlagView): the leaf's flag bag, read for ``-C``,
+            ``--git-dir`` and ``--work-tree``.
         doors (CLIDoors): the invocation's doors, one per state plane.
+        work_tree (bool): the verb reads or writes working files, so
+            there must be a work tree to enter, as git's
+            ``NEED_WORK_TREE`` asks.
 
     Raises:
         NoWorkspaceError: a plane this verb needs is not wired.
+        NotAWorkTreeError: ``work_tree`` and there is none to enter.
     """
     dispatch = doors.dispatch
     stat_path = doors.stat_path
     mounts = doors.ns.mounts if doors.ns is not None else None
     if stat_path is None or mounts is None or dispatch is None:
         raise NoWorkspaceError()
+    chosen = fl.as_str("work_tree")
     location = await discover(dispatch, stat_path, mounts.root_of,
-                              start_point(fl), fl.as_str("git_dir"),
-                              fl.as_str("work_tree"))
+                              start_point(fl), fl.as_str("git_dir"), chosen)
+    if work_tree:
+        named = chosen is not None
+        await require_work_tree(dispatch, stat_path, location, named)
     return await open_repo(dispatch, location), location

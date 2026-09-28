@@ -19,7 +19,13 @@ import type { MountRoot, StatPath } from '../../../../ops/types.ts'
 import { GIT_DIR } from './constants.ts'
 import { FileType } from '../../../../types.ts'
 import { parent, posixNormpath } from '../../../../utils/path.ts'
-import { InvalidGitFileError, NotARepositoryError, NoWorkingDirectoryError } from './errors.ts'
+import {
+  InvalidGitFileError,
+  NotARepositoryError,
+  NotAWorkTreeError,
+  NoWorkingDirectoryError,
+  WorkTreeChdirError,
+} from './errors.ts'
 import { readFile, readOptional, under } from './io.ts'
 import type { Dispatch, RepoLocation } from './types.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
@@ -91,6 +97,29 @@ async function commonDir(dispatch: Dispatch, gitdir: string): Promise<string> {
 }
 
 /**
+ * git's `is_git_directory`: the common directory, or null.
+ *
+ * A git directory holds its own HEAD and finds objects and refs in its common
+ * directory, which is itself unless it is a linked worktree's.
+ */
+async function validated(
+  dispatch: Dispatch,
+  statPath: StatPath,
+  gitdir: string,
+): Promise<string | null> {
+  const common = await commonDir(dispatch, gitdir)
+  for (const [path, kind] of [
+    [under(gitdir, 'HEAD'), FileType.FILE],
+    [under(common, 'objects'), FileType.DIRECTORY],
+    [under(common, 'refs'), FileType.DIRECTORY],
+  ] as const) {
+    const entry = await statPath(path)
+    if (entry?.type !== kind) return null
+  }
+  return common
+}
+
+/**
  * Find the repository governing a path, or throw git's own fatal.
  *
  * Walks up from `start` looking for a `.git` entry, stopping at the mount root.
@@ -134,20 +163,15 @@ export async function discover(
     const candidate = against(start, gitdir)
     const info = await statPath(candidate)
     if (info === null) throw new NotARepositoryError(gitdir)
-    const resolved =
-      info.type === FileType.DIRECTORY
-        ? candidate
-        : await followGitfile(dispatch, statPath, candidate)
-    const common = await commonDir(dispatch, resolved)
-    for (const [path, kind] of [
-      [under(resolved, 'HEAD'), FileType.FILE],
-      [under(common, 'objects'), FileType.DIRECTORY],
-      [under(common, 'refs'), FileType.DIRECTORY],
-    ] as const) {
-      const entry = await statPath(path)
-      if (entry?.type !== kind) throw new NotARepositoryError(gitdir)
+    // git names the target a pointer leads to unquoted, as it does for one met
+    // on the way up.
+    const pointer = info.type !== FileType.DIRECTORY
+    const resolved = pointer ? await followGitfile(dispatch, statPath, candidate) : candidate
+    const common = await validated(dispatch, statPath, resolved)
+    if (common === null) {
+      throw pointer ? new NotARepositoryError(resolved, false) : new NotARepositoryError(gitdir)
     }
-    return location(dispatch, resolved, common, start, start, worktree, root)
+    return location(dispatch, statPath, resolved, common, start, start, worktree, root)
   }
   let current = normalize(start)
   let first = true
@@ -161,6 +185,7 @@ export async function discover(
           : await followGitfile(dispatch, statPath, candidate)
       return location(
         dispatch,
+        statPath,
         gitdir,
         await commonDir(dispatch, gitdir),
         start,
@@ -191,11 +216,17 @@ export async function discover(
 
 /**
  * Resolve the work tree once for every verb, after locating metadata.
- * CLI/environment paths are relative to -C; core.worktree is relative to
- * the git directory, as in native git 2.54.0.
+ *
+ * CLI/environment paths are relative to -C; core.worktree is relative to the
+ * git directory, as in native git 2.54.0, which enters a relative one before
+ * any verb runs. A bare repository keeps the default, and only a verb that
+ * needs a work tree refuses it (`requireWorkTree`). Divergence: the
+ * `config.worktree` that `extensions.worktreeConfig` adds is not read, so a
+ * linked worktree never takes either key. Mirrors _location in discover.py.
  */
 async function location(
   dispatch: Dispatch,
+  statPath: StatPath,
   gitdir: string,
   common: string,
   start: string,
@@ -203,15 +234,63 @@ async function location(
   worktree: string | null,
   root: string,
 ): Promise<RepoLocation> {
-  let selected: string
-  if (worktree !== null) selected = against(start, worktree)
-  else {
-    const configured = (await git.getConfig({
-      fs: gitFs(dispatch) as never,
-      gitdir: common,
-      path: 'core.worktree',
-    })) as string | undefined
-    selected = configured === undefined ? defaultWorktree : against(gitdir, configured)
+  const located: RepoLocation = {
+    gitdir,
+    commondir: common,
+    worktree: defaultWorktree,
+    mountRoot: root,
   }
-  return { gitdir, commondir: common, worktree: selected, mountRoot: root }
+  if (worktree !== null) return { ...located, worktree: against(start, worktree) }
+  if (gitdir !== common || (await isBare(dispatch, located))) return located
+  const configured = (await git.getConfig({
+    fs: gitFs(dispatch) as never,
+    gitdir: common,
+    path: 'core.worktree',
+  })) as string | undefined
+  if (configured === undefined) return located
+  const selected = against(gitdir, configured)
+  if (!configured.startsWith('/')) {
+    const info = await statPath(selected)
+    if (info === null) throw new WorkTreeChdirError(configured)
+    if (info.type !== FileType.DIRECTORY)
+      throw new WorkTreeChdirError(configured, 'Not a directory')
+  }
+  return { ...located, worktree: selected }
+}
+
+/**
+ * Whether core.bare leaves the repository without a work tree.
+ *
+ * git reads core.bare, like core.worktree, only from a repository's own config,
+ * and a linked worktree's config is its repository's, so a linked worktree is
+ * never bare. A named work tree overrides it.
+ */
+export async function isBare(dispatch: Dispatch, location: RepoLocation): Promise<boolean> {
+  if (location.gitdir !== location.commondir) return false
+  const value = (await git.getConfig({
+    fs: gitFs(dispatch) as never,
+    gitdir: location.commondir,
+    path: 'core.bare',
+  })) as unknown
+  return value === true
+}
+
+/**
+ * git's `setup_work_tree`: refuse when there is no tree to enter.
+ *
+ * Asked by every verb that reads or writes working files, so a bare repository
+ * or a mistyped `--work-tree` is refused rather than read as a tree with every
+ * file deleted.
+ *
+ * @param named `--work-tree` or `GIT_WORK_TREE` chose the tree
+ */
+export async function requireWorkTree(
+  dispatch: Dispatch,
+  statPath: StatPath,
+  location: RepoLocation,
+  named: boolean,
+): Promise<void> {
+  if (!named && (await isBare(dispatch, location))) throw new NotAWorkTreeError()
+  const info = await statPath(location.worktree)
+  if (info?.type !== FileType.DIRECTORY) throw new NotAWorkTreeError()
 }

@@ -16,8 +16,9 @@ import { FileType, PathSpec } from '../../../../types.ts'
 import type { FileStat } from '../../../../types.ts'
 import { enoent } from '../../../../utils/errors.ts'
 import { basename } from './path.ts'
-import { ensureDir, exists, readNames, removeFile } from './io.ts'
-import type { Dispatch } from './types.ts'
+import { ensureDir, exists, readNames, removeFile, under } from './io.ts'
+import type { Dispatch, RepoLocation } from './types.ts'
+import { posixNormpath } from '../../../../utils/path.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
@@ -84,9 +85,32 @@ class GitStat {
  * different layer than every other call, and no verb mirrored so far writes or
  * follows one inside a `.git` directory.
  */
-export function gitFs(dispatch: Dispatch): {
+export function gitFs(
+  source: Dispatch,
+  location?: RepoLocation,
+): {
   promises: Record<string, (...args: never[]) => Promise<unknown>>
 } {
+  // isomorphic-git accepts one gitdir and does not follow commondir itself.
+  // Route shared storage here so every library operation keeps the selected
+  // checkout's HEAD/index while using the common objects, refs and config.
+  const dispatch: Dispatch = (op, path, args, kwargs) => {
+    let virtual = posixNormpath(path.virtual)
+    if (location !== undefined && location.gitdir !== location.commondir) {
+      const prefix = `${location.gitdir}/`
+      if (virtual.startsWith(prefix)) {
+        const relative = virtual.slice(prefix.length)
+        const shared = ['objects', 'refs', 'packed-refs', 'config', 'shallow'].some(
+          (name) => relative === name || relative.startsWith(`${name}/`),
+        )
+        const local = ['refs/bisect', 'refs/worktree', 'refs/rewritten'].some(
+          (name) => relative === name || relative.startsWith(`${name}/`),
+        )
+        if (shared && !local) virtual = under(location.commondir, relative)
+      }
+    }
+    return source(op, PathSpec.fromStrPath(virtual), args, kwargs)
+  }
   const readFile = async (path: string, options?: string | { encoding?: string }) => {
     const encoding = typeof options === 'string' ? options : options?.encoding
     const [data] = await dispatch('read', PathSpec.fromStrPath(path))

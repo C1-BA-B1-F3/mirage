@@ -3989,6 +3989,384 @@
         "stdout": "unborn\ndocs/readme.md\nletters.txt\nnumbers.txt\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "git_dir_equals",
+      "seq": 567950,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir=/repo/.git log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_separate",
+      "seq": 567951,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir /repo/.git log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_relative_after_C",
+      "seq": 567952,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo --git-dir=.git log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_before_C",
+      "seq": 567953,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir=../.git -C /repo/docs log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_environment",
+      "seq": 567954,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "GIT_DIR=/repo/.git git log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_environment_relative",
+      "seq": 567955,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "GIT_DIR=../.git git -C /repo/docs log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_option_overrides_environment",
+      "seq": 567956,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "GIT_DIR=/missing git --git-dir=/repo/.git log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_equals",
+      "seq": 567957,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git --git-dir=/repo/.git --work-tree=/repo status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_separate",
+      "seq": 567958,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git --git-dir /repo/docs/../.git --work-tree /repo/./ status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_only",
+      "seq": 567959,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git -C /repo --work-tree=. status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_relative",
+      "seq": 567960,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git -C /repo/docs --git-dir=../.git --work-tree=.. status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M ../letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_environment",
+      "seq": 567961,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && GIT_DIR=/repo/.git GIT_WORK_TREE=/repo git status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_environment_only",
+      "seq": 567962,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && GIT_WORK_TREE=.. git -C /repo/docs status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M ../letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_option_overrides_environment",
+      "seq": 567963,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && GIT_DIR=/missing GIT_WORK_TREE=/missing git --git-dir=/repo/.git --work-tree=/repo status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_defaults_work_tree_to_cwd",
+      "seq": 567964,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /git-select-empty && git -C /git-select-empty --git-dir=/repo/.git status --short; result=$?; rmdir /git-select-empty; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " D docs/readme.md\n D letters.txt\n D numbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_explicit_does_not_discover",
+      "seq": 567965,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo --git-dir=docs log --oneline -1",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: not a git repository: 'docs'\n"
+      }
+    },
+    {
+      "id": "git_dir_missing",
+      "seq": 567966,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir=/missing log --oneline -1",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: not a git repository: '/missing'\n"
+      }
+    },
+    {
+      "id": "git_dir_invalid_C",
+      "seq": 567967,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /missing --git-dir=/repo/.git log --oneline -1",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: cannot change to '/missing': No such file or directory\n"
+      }
+    },
+    {
+      "id": "git_dir_gitfile",
+      "seq": 567968,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'gitdir: .git\\n' > /repo/select-gitfile && git --git-dir=/repo/select-gitfile log --oneline -1; result=$?; rm /repo/select-gitfile; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_core_worktree",
+      "seq": 567969,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-select-backup && printf '\\n[core]\\nworktree = ..\\n' >> /repo/.git/config && printf 'edited\\n' > /repo/letters.txt && git --git-dir=/repo/.git status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; mv /repo/.git/config-select-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_overrides_config",
+      "seq": 567970,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-select-backup && printf '\\n[core]\\nworktree = /missing\\n' >> /repo/.git/config && printf 'edited\\n' > /repo/letters.txt && git --git-dir=/repo/.git --work-tree=/repo status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; mv /repo/.git/config-select-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_stage_from_outside",
+      "seq": 567972,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git --git-dir=/repo/.git --work-tree=/repo add letters.txt && git --git-dir=/repo/.git --work-tree=/repo diff --cached --name-only; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; git -C /repo reset --quiet -- letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_porcelain_is_root_relative",
+      "seq": 567974,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git -C /repo/docs --git-dir=../.git --work-tree=.. status --porcelain; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_status_subdirectory_paths",
+      "seq": 567975,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git -C /repo/docs status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M ../letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_environment_overrides_config",
+      "seq": 567976,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-select-backup && printf '\\n[core]\\nworktree = /missing\\n' >> /repo/.git/config && printf 'edited\\n' > /repo/letters.txt && GIT_WORK_TREE=/repo git --git-dir=/repo/.git status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; mv /repo/.git/config-select-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_shared_metadata",
+      "seq": 567977,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/.git/worktrees/select && printf 'ref: refs/heads/topic\\n' > /repo/.git/worktrees/select/HEAD && printf '../..\\n' > /repo/.git/worktrees/select/commondir && git --git-dir=/repo/.git/worktrees/select log --oneline -1; result=$?; rm -r /repo/.git/worktrees/select; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c add docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_across_mounts",
+      "seq": 567978,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp -r /repo/.git /git-select-meta && printf 'edited\\n' > /repo/letters.txt && git --git-dir=/git-select-meta --work-tree=/repo status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; rm -r /git-select-meta; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
     }
   ]
 }

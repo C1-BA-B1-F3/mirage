@@ -78,7 +78,13 @@ export interface SortConfig {
   stable: boolean
 }
 
-type SortKey = string | number | (string | number)[]
+interface NumericKey {
+  readonly negative: boolean
+  readonly integer: string
+  readonly fraction: string
+}
+
+type SortKey = NumericKey | string | number | (string | number)[]
 
 function isAsciiDigit(char: string): boolean {
   return char >= '0' && char <= '9'
@@ -363,16 +369,12 @@ function versionKey(s: string): (string | number)[] {
   return parts
 }
 
-function leadingNumber(field: string): number {
-  const trimmed = field.replace(/^\s+/, '')
-  let numEnd = 0
-  for (const ch of trimmed) {
-    if (/\d/.test(ch) || ((ch === '.' || ch === '+' || ch === '-') && numEnd === 0)) numEnd += 1
-    else break
-  }
-  if (numEnd === 0) return 0
-  const num = Number.parseFloat(trimmed.slice(0, numEnd))
-  return Number.isNaN(num) ? 0 : num
+/** Read a C-locale GNU -n prefix without losing decimal precision. */
+function leadingNumber(field: string): NumericKey {
+  const match = /^[ \t]*(-?)([0-9]*)(?:\.([0-9]*))?/.exec(field)
+  const integer = (match?.[2] ?? '').replace(/^0+/, '')
+  const fraction = (match?.[3] ?? '').replace(/0+$/, '')
+  return { negative: match?.[1] === '-' && (integer !== '' || fraction !== ''), integer, fraction }
 }
 
 function isPrintingCharacter(char: string): boolean {
@@ -425,10 +427,17 @@ function cmpVals(a: SortKey, b: SortKey): number {
     }
     return a.length - b.length
   }
+  if (typeof a === 'object' && !Array.isArray(a) && typeof b === 'object' && !Array.isArray(b)) {
+    if (a.negative !== b.negative) return a.negative ? -1 : 1
+    const order =
+      a.integer.length - b.integer.length ||
+      compareCodePoints(a.integer, b.integer) ||
+      compareCodePoints(a.fraction, b.fraction)
+    return a.negative ? -order : order
+  }
   if (typeof a === 'number' && typeof b === 'number') return a < b ? -1 : a > b ? 1 : 0
-  const sa = String(a)
-  const sb = String(b)
-  return compareCodePoints(sa, sb)
+  if (typeof a === 'string' && typeof b === 'string') return compareCodePoints(a, b)
+  throw new TypeError('sort keys must have the same comparison type')
 }
 
 // GNU sort's `compare`: the keys, then the whole line as a last resort.
@@ -453,15 +462,6 @@ export function compareLines(a: string, b: string, cfg: SortConfig): number {
   return c
 }
 
-function dedupeKeyOf(line: string, cfg: SortConfig): string {
-  const fields = computeFields(line, cfg.fieldSep)
-  const parts = cfg.keys.map((key) => {
-    const value = transform(extract(line, fields, key), key.mods)
-    return Array.isArray(value) ? value.map((x) => String(x)).join('\0') : String(value)
-  })
-  return parts.join('\x01')
-}
-
 export function sortLines(lines: string[], cfg: SortConfig): string[] {
   const indexed = lines.map((l, i) => ({ l, i }))
   indexed.sort((x, y) => {
@@ -470,14 +470,10 @@ export function sortLines(lines: string[], cfg: SortConfig): string[] {
   })
   const ordered = indexed.map((x) => x.l)
   if (!cfg.unique) return ordered
-  const seen = new Set<string>()
   const out: string[] = []
   for (const line of ordered) {
-    const dk = dedupeKeyOf(line, cfg)
-    if (!seen.has(dk)) {
-      seen.add(dk)
-      out.push(line)
-    }
+    const previous = out[out.length - 1]
+    if (previous === undefined || compareLines(previous, line, cfg) !== 0) out.push(line)
   }
   return out
 }

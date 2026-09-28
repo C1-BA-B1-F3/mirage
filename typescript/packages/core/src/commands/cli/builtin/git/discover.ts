@@ -12,6 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import git from 'isomorphic-git'
+
+import { gitFs } from './fs.ts'
 import type { MountRoot, StatPath } from '../../../../ops/types.ts'
 import { GIT_DIR } from './constants.ts'
 import { FileType } from '../../../../types.ts'
@@ -40,7 +43,7 @@ function normalize(path: string): string {
  * writes an absolute path.
  */
 function against(base: string, target: string): string {
-  if (target.startsWith('/')) return normalize(target)
+  if (target.startsWith('/')) return normalize(posixNormpath(target))
   return normalize(posixNormpath(`${base}/${target}`))
 }
 
@@ -119,8 +122,33 @@ export async function discover(
   statPath: StatPath,
   mountRoot: MountRoot,
   start: string,
+  gitdir: string | null = null,
+  worktree: string | null = null,
 ): Promise<RepoLocation> {
   const root = normalize(mountRoot(start))
+  if (gitdir !== null) {
+    const here = await statPath(start)
+    if (here === null) throw new NoWorkingDirectoryError(start)
+    if (here.type !== FileType.DIRECTORY)
+      throw new NoWorkingDirectoryError(start, 'Not a directory')
+    const candidate = against(start, gitdir)
+    const info = await statPath(candidate)
+    if (info === null) throw new NotARepositoryError(gitdir)
+    const resolved =
+      info.type === FileType.DIRECTORY
+        ? candidate
+        : await followGitfile(dispatch, statPath, candidate)
+    const common = await commonDir(dispatch, resolved)
+    for (const [path, kind] of [
+      [under(resolved, 'HEAD'), FileType.FILE],
+      [under(common, 'objects'), FileType.DIRECTORY],
+      [under(common, 'refs'), FileType.DIRECTORY],
+    ] as const) {
+      const entry = await statPath(path)
+      if (entry?.type !== kind) throw new NotARepositoryError(gitdir)
+    }
+    return location(dispatch, resolved, common, start, start, worktree, root)
+  }
   let current = normalize(start)
   let first = true
   for (;;) {
@@ -131,12 +159,15 @@ export async function discover(
         info.type === FileType.DIRECTORY
           ? candidate
           : await followGitfile(dispatch, statPath, candidate)
-      return {
+      return location(
+        dispatch,
         gitdir,
-        commondir: await commonDir(dispatch, gitdir),
-        worktree: current,
-        mountRoot: root,
-      }
+        await commonDir(dispatch, gitdir),
+        start,
+        current,
+        worktree,
+        root,
+      )
     }
     if (first) {
       // git enters `-C` before it looks for anything, so a path it cannot
@@ -156,4 +187,31 @@ export async function discover(
     if (current === root || current === '/') throw new NotARepositoryError()
     current = parent(current)
   }
+}
+
+/**
+ * Resolve the work tree once for every verb, after locating metadata.
+ * CLI/environment paths are relative to -C; core.worktree is relative to
+ * the git directory, as in native git 2.54.0.
+ */
+async function location(
+  dispatch: Dispatch,
+  gitdir: string,
+  common: string,
+  start: string,
+  defaultWorktree: string,
+  worktree: string | null,
+  root: string,
+): Promise<RepoLocation> {
+  let selected: string
+  if (worktree !== null) selected = against(start, worktree)
+  else {
+    const configured = (await git.getConfig({
+      fs: gitFs(dispatch) as never,
+      gitdir: common,
+      path: 'core.worktree',
+    })) as string | undefined
+    selected = configured === undefined ? defaultWorktree : against(gitdir, configured)
+  }
+  return { gitdir, commondir: common, worktree: selected, mountRoot: root }
 }

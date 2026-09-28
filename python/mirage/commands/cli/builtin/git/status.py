@@ -20,13 +20,15 @@ from mirage.commands.cli.builtin.git.changes import collect
 from mirage.commands.cli.builtin.git.errors import GitError, NoWorkspaceError
 from mirage.commands.cli.builtin.git.format import short
 from mirage.commands.cli.builtin.git.objects import abbrev_for
+from mirage.commands.cli.builtin.git.pathspec import repo_relative
 from mirage.commands.cli.builtin.git.refs import read_head
 from mirage.commands.cli.builtin.git.render import (branch_line, long_format,
+                                                    relative_entries,
                                                     short_format)
 from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.types import HeadRef, RepoLocation
-from mirage.commands.cli.builtin.git.util import fatal, links_of
+from mirage.commands.cli.builtin.git.util import fatal, links_of, start_point
 from mirage.commands.cli.builtin.git.worktree import (UNTRACKED_ALL,
                                                       UNTRACKED_NO,
                                                       UNTRACKED_NORMAL)
@@ -139,6 +141,10 @@ async def status(
                                                 links_of(doors))
         fully = await config_bool(dispatch, location, b"core", b"quotepath",
                                   True)
+        if not parsed.porcelain and await config_bool(
+                dispatch, location, b"status", b"relativepaths", True):
+            rows = relative_entries(
+                rows, repo_relative(location, start_point(fl), "."))
     except GitError as exc:
         return fatal(exc)
     commit = None if head.commit is None else short(head.commit.encode(),

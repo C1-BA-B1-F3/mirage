@@ -56,7 +56,7 @@ export function repoArgs(repo: Repo): { fs: never; dir: string; gitdir: string }
   return {
     fs: repo.fs as never,
     dir: repo.location.worktree,
-    gitdir: repo.location.commondir,
+    gitdir: repo.location.gitdir,
   }
 }
 
@@ -89,7 +89,7 @@ async function packedCount(dispatch: Dispatch, commondir: string): Promise<numbe
  */
 async function openRepo(dispatch: Dispatch, location: RepoLocation): Promise<Repo> {
   return {
-    fs: gitFs(dispatch),
+    fs: gitFs(dispatch, location),
     dispatch,
     location,
     abbrev: abbrevLength(await packedCount(dispatch, location.commondir)),
@@ -123,6 +123,8 @@ export async function opened(fl: FlagView, doors: CLIDoors): Promise<Repo> {
     statPath,
     (path: string) => mounts.rootOf(path),
     startPoint(fl),
+    fl.asStr('git_dir'),
+    fl.asStr('work_tree'),
   )
   return openRepo(dispatch, location)
 }

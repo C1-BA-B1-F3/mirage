@@ -20,17 +20,29 @@ from typing import TypeAlias
 from mirage.commands.builtin.errors import SortKeyError
 from mirage.commands.quote import quote_text
 
+
+@dataclass(frozen=True, slots=True)
+class NumericKey:
+    """Canonical decimal magnitude, without conversion to floating point.
+
+    Args:
+        negative (bool): sign, always False for zero.
+        integer (str): ASCII digits without leading zeroes.
+        fraction (str): ASCII digits without trailing zeroes.
+    """
+    negative: bool
+    integer: str
+    fraction: str
+
+
 # One run of a version string: digits rank before non-digits, so the two
 # shapes never compare against each other.
 _VersionPart: TypeAlias = tuple[int, int] | tuple[int, str]
 # What one key field collapses to before comparison: a month index, a
 # parsed number, the (rank, value) pair -g uses to order junk before
 # NaN before real numbers, the version run list, or the text itself.
-_SortKey: TypeAlias = str | int | float | tuple[int,
-                                                float] | list[_VersionPart]
-# The same keys made hashable for -u, version lists flattened to tuples.
-_DedupKey: TypeAlias = tuple[_SortKey | tuple[_VersionPart, ...], ...]
-
+_SortKey: TypeAlias = NumericKey | str | int | float | tuple[
+    int, float] | list[_VersionPart]
 _HUMAN_SUFFIXES = {"K": 1e3, "M": 1e6, "G": 1e9, "T": 1e12, "P": 1e15}
 _VERSION_RE = re.compile(r"([0-9]+)|([^0-9]+)")
 _MONTHS = {
@@ -399,18 +411,18 @@ def _version_key(s: str) -> list[_VersionPart]:
     return parts
 
 
-def _leading_number(field: str) -> float:
-    field = field.lstrip()
-    num_end = 0
-    for ch in field:
-        if ch in "0123456789" or (ch in ".+-" and num_end == 0):
-            num_end += 1
-        else:
-            break
-    try:
-        return float(field[:num_end]) if num_end else 0.0
-    except ValueError:
-        return 0.0
+def _leading_number(field: str) -> NumericKey:
+    """Read a C-locale GNU -n prefix without losing decimal precision.
+
+    Args:
+        field (str): extracted sort key, possibly followed by nonnumeric text.
+    """
+    match = re.match(r"[ \t]*(-?)([0-9]*)(?:\.([0-9]*))?", field)
+    assert match is not None
+    integer = match[2].lstrip("0")
+    fraction = (match[3] or "").rstrip("0")
+    return NumericKey(bool(match[1] and (integer or fraction)), integer,
+                      fraction)
 
 
 def _transform(field: str, mods: KeyMods) -> _SortKey:
@@ -442,6 +454,13 @@ def _transform(field: str, mods: KeyMods) -> _SortKey:
 
 
 def _cmp(a: _SortKey | _VersionPart, b: _SortKey | _VersionPart) -> int:
+    if isinstance(a, NumericKey) and isinstance(b, NumericKey):
+        if a.negative != b.negative:
+            return -1 if a.negative else 1
+        left = (len(a.integer), a.integer, a.fraction)
+        right = (len(b.integer), b.integer, b.fraction)
+        order = (left > right) - (left < right)
+        return -order if a.negative else order
     if isinstance(a, list) and isinstance(b, list):
         for x, y in zip(a, b):
             c = _cmp(x, y)
@@ -483,26 +502,14 @@ def compare_lines(a: str, b: str, cfg: SortConfig) -> int:
     return c
 
 
-def _dedup_key(line: str, cfg: SortConfig) -> _DedupKey:
-    fields = _compute_fields(line, cfg.field_sep)
-    parts: list[_SortKey | tuple[_VersionPart, ...]] = []
-    for key in cfg.keys:
-        value = _transform(_extract(line, fields, key), key.mods)
-        parts.append(tuple(value) if isinstance(value, list) else value)
-    return tuple(parts)
-
-
 def sort_lines(lines: list[str], cfg: SortConfig) -> list[str]:
     compare = partial(compare_lines, cfg=cfg)
     ordered = sorted(lines, key=cmp_to_key(compare))
     if not cfg.unique:
         return ordered
-    seen: set[_DedupKey] = set()
     deduped: list[str] = []
     for line in ordered:
-        dk = _dedup_key(line, cfg)
-        if dk not in seen:
-            seen.add(dk)
+        if not deduped or compare_lines(deduped[-1], line, cfg) != 0:
             deduped.append(line)
     return deduped
 

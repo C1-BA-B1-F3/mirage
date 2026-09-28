@@ -51,5 +51,6 @@ async def opened(fl: FlagView,
     if stat_path is None or mounts is None or dispatch is None:
         raise NoWorkspaceError()
     location = await discover(dispatch, stat_path, mounts.root_of,
-                              start_point(fl))
+                              start_point(fl), fl.as_str("git_dir"),
+                              fl.as_str("work_tree"))
     return await open_repo(dispatch, location), location

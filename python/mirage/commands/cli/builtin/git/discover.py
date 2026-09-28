@@ -13,6 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import posixpath
+from io import BytesIO
+
+from dulwich.config import ConfigFile
 
 from mirage.commands.cli.builtin.git.constants import GIT_DIR
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
@@ -58,8 +61,6 @@ def _against(base: str, target: str) -> str:
         base (str): directory the naming file lives in.
         target (str): the path as the file spelled it.
     """
-    if target.startswith("/"):
-        return _normalize(target)
     return _normalize(posixpath.normpath(posixpath.join(base, target)))
 
 
@@ -116,8 +117,12 @@ async def _common_dir(dispatch: DispatchFn, gitdir: str) -> str:
     return _against(gitdir, target) if target else gitdir
 
 
-async def discover(dispatch: DispatchFn, stat_path: StatPath,
-                   mount_root: MountRoot, start: str) -> RepoLocation:
+async def discover(dispatch: DispatchFn,
+                   stat_path: StatPath,
+                   mount_root: MountRoot,
+                   start: str,
+                   gitdir: str | None = None,
+                   worktree: str | None = None) -> RepoLocation:
     """Find the repository governing a path, or raise git's own fatal.
 
     Walks up from ``start`` looking for a ``.git`` entry, stopping at the
@@ -144,8 +149,31 @@ async def discover(dispatch: DispatchFn, stat_path: StatPath,
         mount_root (MountRoot): the mount prefix serving a path.
         start (str): absolute virtual path to start from, normally the
             session cwd or the argument of ``-C``.
+        gitdir (str | None): explicit repository path; skips upward discovery.
+        worktree (str | None): explicit working tree, relative to start.
     """
     root = _normalize(mount_root(start))
+    if gitdir is not None:
+        here = await stat_path(start)
+        if here is None:
+            raise NoWorkingDirectoryError(start)
+        if here.type is not FileType.DIRECTORY:
+            raise NoWorkingDirectoryError(start, "Not a directory")
+        candidate = _against(start, gitdir)
+        info = await stat_path(candidate)
+        if info is None:
+            raise NotARepositoryError(gitdir)
+        resolved = (candidate if info.type is FileType.DIRECTORY else await
+                    _follow_gitfile(dispatch, stat_path, candidate))
+        common = await _common_dir(dispatch, resolved)
+        for path, kind in ((f"{resolved}/HEAD", FileType.FILE),
+                           (f"{common}/objects", FileType.DIRECTORY),
+                           (f"{common}/refs", FileType.DIRECTORY)):
+            entry = await stat_path(path)
+            if entry is None or entry.type is not kind:
+                raise NotARepositoryError(gitdir)
+        return await _location(dispatch, resolved, common, start, start,
+                               worktree, root)
     current = _normalize(start)
     first = True
     while True:
@@ -154,10 +182,9 @@ async def discover(dispatch: DispatchFn, stat_path: StatPath,
         if info is not None:
             gitdir = (candidate if info.type is FileType.DIRECTORY else await
                       _follow_gitfile(dispatch, stat_path, candidate))
-            return RepoLocation(gitdir=gitdir,
-                                commondir=await _common_dir(dispatch, gitdir),
-                                worktree=current,
-                                mount_root=root)
+            common = await _common_dir(dispatch, gitdir)
+            return await _location(dispatch, gitdir, common, start, current,
+                                   worktree, root)
         if first:
             # git enters ``-C`` before it looks for anything, so a path it
             # cannot enter fails on its own terms even when a directory
@@ -176,3 +203,34 @@ async def discover(dispatch: DispatchFn, stat_path: StatPath,
         if current == root or current == "/":
             raise NotARepositoryError()
         current = _parent(current)
+
+
+async def _location(dispatch: DispatchFn, gitdir: str, common: str, start: str,
+                    default_worktree: str, worktree: str | None,
+                    root: str) -> RepoLocation:
+    """Resolve the work tree once for every verb, after locating metadata.
+
+    CLI/environment paths are relative to -C; core.worktree is relative
+    to the git directory, as in native git 2.54.0.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        gitdir (str): resolved checkout metadata directory.
+        common (str): shared repository directory.
+        start (str): invocation directory after -C.
+        default_worktree (str): discovered root, or start for explicit gitdir.
+        worktree (str | None): command-line or environment override.
+        root (str): mount boundary used for discovery.
+    """
+    if worktree is not None:
+        selected = _against(start, worktree)
+    else:
+        data = await read_optional(dispatch, f"{common}/config")
+        config = ConfigFile.from_file(BytesIO(data or b""))
+        try:
+            configured = config.get((b"core", ), b"worktree")
+        except KeyError:
+            configured = None
+        selected = (_against(gitdir, configured.decode("utf-8"))
+                    if configured is not None else default_worktree)
+    return RepoLocation(gitdir, common, selected, root)

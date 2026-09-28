@@ -12,6 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import posixpath
+from dataclasses import replace
+
 from mirage.commands.cli.builtin.git.types import StatusEntry
 
 UNCHANGED = " "
@@ -380,3 +383,26 @@ def long_format(rows: list[StatusEntry],
         _trailer(staged, work, unmerged, untracked, no_commits,
                  hide_untracked))
     return "".join(f"{line}\n" for line in lines)
+
+
+def relative_entries(rows: list[StatusEntry],
+                     prefix: str) -> list[StatusEntry]:
+    """Render status paths relative to an invocation inside the work tree.
+
+    Args:
+        rows (list[StatusEntry]): repository-relative status entries.
+        prefix (str): invocation directory relative to the work tree.
+    """
+    if not prefix:
+        return rows
+
+    def relative(path: str) -> str:
+        return posixpath.relpath(path,
+                                 prefix) + ("/" if path.endswith("/") else "")
+
+    return [
+        replace(row,
+                path=relative(row.path),
+                original=relative(row.original)
+                if row.original is not None else None) for row in rows
+    ]

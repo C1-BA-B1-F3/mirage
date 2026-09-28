@@ -21,10 +21,11 @@ import { collect } from './changes.ts'
 import { GitError, NoWorkspaceError } from './errors.ts'
 import { short } from './format.ts'
 import { readHead } from './refs.ts'
-import { branchLine, longFormat, shortFormat } from './render.ts'
+import { branchLine, longFormat, relativeEntries, shortFormat } from './render.ts'
 import { configBool, opened, type Repo } from './repo.ts'
 import type { Dispatch, HeadRef } from './types.ts'
-import { fatal } from './util.ts'
+import { fatal, startPoint } from './util.ts'
+import { repoRelative } from './pathspec.ts'
 import { UNTRACKED_ALL, UNTRACKED_NO, UNTRACKED_NORMAL } from './worktree.ts'
 import { encodeText } from '../../../../shell/bytes.ts'
 
@@ -108,12 +109,16 @@ export async function status(inv: CLIInvocation): Promise<CommandFnResult> {
       doors.ns?.links ?? null,
     )
     const fully = await configBool(repo, 'core.quotepath', true)
+    const displayed =
+      !parsed.porcelain && (await configBool(repo, 'status.relativePaths', true))
+        ? relativeEntries(rows, repoRelative(repo.location, startPoint(fl), '.'))
+        : rows
     const commit = head.commit === null ? null : short(head.commit, repo.abbrev)
     const body =
       parsed.porcelain || parsed.short
-        ? shortFormat(rows, parsed.branch ? branchLine(head.branch, noCommits) : null, fully)
+        ? shortFormat(displayed, parsed.branch ? branchLine(head.branch, noCommits) : null, fully)
         : longFormat(
-            rows,
+            displayed,
             head.branch,
             commit,
             noCommits,

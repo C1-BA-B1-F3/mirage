@@ -298,22 +298,31 @@
   },
   "options": [
     {
+      "long": "--verbose",
       "short": "-l",
       "type": "bool"
     },
     {
+      "long": "--quiet",
       "short": "-s",
       "type": "bool"
     },
     {
+      "long": "--silent",
+      "type": "bool"
+    },
+    {
+      "long": "--bytes",
       "short": "-n",
       "type": "str"
     },
     {
+      "long": "--print-bytes",
       "short": "-b",
       "type": "bool"
     },
     {
+      "long": "--ignore-initial",
       "short": "-i",
       "type": "str"
     }

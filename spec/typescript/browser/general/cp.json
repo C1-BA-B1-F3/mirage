@@ -256,6 +256,24 @@
       "type": "bool"
     },
     {
+      "long": "--dereference",
+      "short": "-L",
+      "type": "bool"
+    },
+    {
+      "long": "--no-dereference",
+      "short": "-P",
+      "type": "bool"
+    },
+    {
+      "short": "-H",
+      "type": "bool"
+    },
+    {
+      "short": "-d",
+      "type": "bool"
+    },
+    {
       "long": "--force",
       "short": "-f",
       "type": "bool"

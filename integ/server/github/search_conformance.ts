@@ -13,6 +13,7 @@ import { RAMVFS } from '../../../typescript/packages/core/dist/vfs/ram/ram.js'
 
 const TENANT = 'gh-search-conformance'
 const REPO = 'integ/repo-v1'
+const MISSING_REPO_QUERY = '{ repository(owner: "integ", name: "missing") { name } }'
 const HEADERS = {
   'x-mirage-run': TENANT,
   'x-mirage-tenant': 'default',
@@ -60,7 +61,13 @@ export async function searchConformance(endpoint: string): Promise<number> {
     try {
       const { pathname, search, searchParams } = new URL(req.url ?? '/', 'http://proxy.invalid')
       if (pathname.includes('/search/')) queries.push(searchParams.get('q') ?? '')
-      const response = await fetch(`${endpoint}${pathname}${search}`, { headers: HEADERS })
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(chunk as Buffer)
+      const response = await fetch(`${endpoint}${pathname}${search}`, {
+        method: req.method ?? 'GET',
+        headers: HEADERS,
+        ...(chunks.length === 0 ? {} : { body: Buffer.concat(chunks) }),
+      })
       res.writeHead(response.status, {
         ...Object.fromEntries(response.headers),
         'x-github-enterprise-version': '3.16.0',
@@ -394,6 +401,10 @@ export async function searchConformance(endpoint: string): Promise<number> {
       ['api', 'repos/integ/missing', '--paginate'],
       ['api', 'repos/integ/missing', '--paginate', '--slurp'],
       ['api', 'search/issues?q=repo:integ/missing'],
+      ['api', 'graphql', '-f', `query=${MISSING_REPO_QUERY}`],
+      ['api', 'graphql', '-f', `query=${MISSING_REPO_QUERY}`, '--jq', '.data'],
+      ['api', 'graphql', '-f', 'query={ viewer { bogus } }'],
+      ['api', 'graphql', '-f', 'query={ viewer { login } }', '--jq', '.data.viewer.login'],
     )
     for (const args of commands) {
       nativeQueries.length = 0

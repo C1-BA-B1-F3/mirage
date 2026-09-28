@@ -178,7 +178,7 @@
       "command": "gh repo fork integ/repo-cli --fork-name forked",
       "expect": {
         "exit": 0,
-        "stdout": "✓ Created fork integ-user/forked\n",
+        "stdout": "\u2713 Created fork integ-user/forked\n",
         "stderr": ""
       }
     },
@@ -191,7 +191,7 @@
       "command": "gh repo rename renamed -R integ-user/forked",
       "expect": {
         "exit": 0,
-        "stdout": "✓ Renamed repository integ-user/renamed\n",
+        "stdout": "\u2713 Renamed repository integ-user/renamed\n",
         "stderr": ""
       }
     },
@@ -503,7 +503,7 @@
       "command": "gh issue edit 4 --title updated --add-label bug && gh issue comment 4 --body note && gh issue close 4 && gh issue reopen 4",
       "expect": {
         "exit": 0,
-        "stdout": "https://github.com/integ/repo-cli/issues/4\nhttps://github.com/integ/repo-cli/issues/4#issuecomment-1\n✓ Closed issue integ/repo-cli#4 (updated)\n✓ Reopened issue integ/repo-cli#4 (updated)\n",
+        "stdout": "https://github.com/integ/repo-cli/issues/4\nhttps://github.com/integ/repo-cli/issues/4#issuecomment-1\n\u2713 Closed issue integ/repo-cli#4 (updated)\n\u2713 Reopened issue integ/repo-cli#4 (updated)\n",
         "stderr": ""
       }
     },
@@ -594,7 +594,7 @@
       "command": "gh pr edit 5 --title merged-title --body merged-body && gh pr comment 5 --body review && gh pr merge 5 --squash --subject merged",
       "expect": {
         "exit": 0,
-        "stdout": "https://github.com/integ/repo-cli/pull/5\nhttps://github.com/integ/repo-cli/issues/5#issuecomment-2\n✓ Merged pull request integ/repo-cli#5\n",
+        "stdout": "https://github.com/integ/repo-cli/pull/5\nhttps://github.com/integ/repo-cli/issues/5#issuecomment-2\n\u2713 Merged pull request integ/repo-cli#5\n",
         "stderr": ""
       }
     },
@@ -607,7 +607,7 @@
       "command": "gh pr create -t abandoned -H old -B main -b no && gh pr close 6",
       "expect": {
         "exit": 0,
-        "stdout": "https://github.com/integ/repo-cli/pull/6\n✓ Closed pull request integ/repo-cli#6 (abandoned)\n",
+        "stdout": "https://github.com/integ/repo-cli/pull/6\n\u2713 Closed pull request integ/repo-cli#6 (abandoned)\n",
         "stderr": ""
       }
     },
@@ -760,10 +760,10 @@
       "targets": [
         "cli-gh"
       ],
-      "command": "gh api repos/integ/repo-cli/issues -f title='héllo ☕' | grep '\"title\"'",
+      "command": "gh api repos/integ/repo-cli/issues -f title='h\u00e9llo \u2615' | grep '\"title\"'",
       "expect": {
         "exit": 0,
-        "stdout": "  \"title\": \"héllo ☕\",\n",
+        "stdout": "  \"title\": \"h\u00e9llo \u2615\",\n",
         "stderr": ""
       }
     },
@@ -773,10 +773,10 @@
       "targets": [
         "cli-gh"
       ],
-      "command": "url=$(gh issue create --title 'naïve 日本' --body ok) && gh issue view \"$url\" --json title",
+      "command": "url=$(gh issue create --title 'na\u00efve \u65e5\u672c' --body ok) && gh issue view \"$url\" --json title",
       "expect": {
         "exit": 0,
-        "stdout": "{\n  \"title\": \"naïve 日本\"\n}\n",
+        "stdout": "{\n  \"title\": \"na\u00efve \u65e5\u672c\"\n}\n",
         "stderr": ""
       }
     },
@@ -1428,6 +1428,58 @@
         "exit": 1,
         "stdout": "[{\"message\":\"Not Found\",\"documentation_url\":\"https://docs.github.com/rest\"}]",
         "stderr": "gh: Not Found (HTTP 404)\n"
+      }
+    },
+    {
+      "id": "gh_api_graphql_field_error",
+      "seq": 569308,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api graphql -f query='{ repository(owner: \"integ\", name: \"missing\") { name } }'",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"errors\":[{\"message\":\"Could not resolve to a Repository with the name 'integ/missing'.\",\"locations\":[{\"line\":1,\"column\":3}],\"path\":[\"repository\"]}],\"data\":{\"repository\":null}}",
+        "stderr": "gh: Could not resolve to a Repository with the name 'integ/missing'.\n"
+      }
+    },
+    {
+      "id": "gh_api_graphql_error_ignores_jq",
+      "seq": 569309,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api graphql -f query='{ repository(owner: \"integ\", name: \"missing\") { name } }' --jq .data",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"errors\":[{\"message\":\"Could not resolve to a Repository with the name 'integ/missing'.\",\"locations\":[{\"line\":1,\"column\":3}],\"path\":[\"repository\"]}],\"data\":{\"repository\":null}}",
+        "stderr": "gh: Could not resolve to a Repository with the name 'integ/missing'.\n"
+      }
+    },
+    {
+      "id": "gh_api_graphql_validation_error",
+      "seq": 569310,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api graphql -f query='{ viewer { bogus } }'",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"errors\":[{\"message\":\"Cannot query field \\\"bogus\\\" on type \\\"RepositoryOwner\\\". Did you mean \\\"login\\\"?\",\"locations\":[{\"line\":1,\"column\":12}]}]}",
+        "stderr": "gh: Cannot query field \"bogus\" on type \"RepositoryOwner\". Did you mean \"login\"?\n"
+      }
+    },
+    {
+      "id": "gh_api_graphql_answer",
+      "seq": 569311,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login",
+      "expect": {
+        "exit": 0,
+        "stdout": "integ-user\n",
+        "stderr": ""
       }
     }
   ]

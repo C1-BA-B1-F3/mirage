@@ -25,21 +25,40 @@ export function getText(node: TSNodeLike): string {
 }
 
 /**
- * Walk a double-quoted string without losing scanner-owned text.
- * Newlines and preceding whitespace may sit between child extents;
- * trailing whitespace may belong to the closing quote token. Preserve
- * those source slices rather than reconstructing gaps from row counts.
- * Expansion nodes retain their own folded prefixes.
+ * A node's children with the source text between them, the twin of
+ * python's `source_parts`.
+ *
+ * tree-sitter-bash's scanner consumes some text without giving it a node:
+ * whitespace and newlines inside a double-quoted string, and the whitespace
+ * or line continuation opening a `${v:-word}` operand. Only the node's own
+ * source still holds that text, so it is sliced out between child extents
+ * rather than rebuilt from row or byte counts, which lose tabs, newlines and
+ * escapes. web-tree-sitter counts `startIndex` in UTF-16 code units, the
+ * units `text.slice` takes.
  */
-export function* quotedParts(node: TSNodeLike): Generator<string | TSNodeLike> {
+export function* sourceParts(node: TSNodeLike): Generator<string | TSNodeLike> {
   const start = node.startIndex ?? 0
   let end = start
   for (const child of node.children) {
     const childStart = child.startIndex ?? end
-    if (childStart > end) yield unescapeDquoted(node.text.slice(end - start, childStart - start))
+    if (childStart > end) yield node.text.slice(end - start, childStart - start)
     end = child.endIndex ?? childStart + child.text.length
-    if (child.type === NT.DQUOTE) yield unescapeDquoted(child.text.slice(0, -1))
-    else yield child
+    yield child
+  }
+}
+
+/**
+ * Walk a double-quoted string without losing scanner-owned text.
+ *
+ * The text between children is the string's own, and the closing quote
+ * token can carry the whitespace before it. Expansion nodes keep their own
+ * folded prefixes.
+ */
+export function* quotedParts(node: TSNodeLike): Generator<string | TSNodeLike> {
+  for (const part of sourceParts(node)) {
+    if (typeof part === 'string') yield unescapeDquoted(part)
+    else if (part.type === NT.DQUOTE) yield unescapeDquoted(part.text.slice(0, -1))
+    else yield part
   }
 }
 

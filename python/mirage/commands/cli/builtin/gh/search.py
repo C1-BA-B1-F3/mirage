@@ -119,6 +119,33 @@ def search_spec() -> CLISpec:
                    subcommands=tuple(leaves))
 
 
+def _search_error(exc: GitHubApiError, query: str) -> str:
+    """How gh search words a failed search, its ``httpError.Error``.
+
+    A 422 naming its errors says the query is invalid, with the first
+    reason; anything else is the status, GitHub's message (the status
+    line for a body that is not JSON) and the request URL.
+
+    Args:
+        exc (GitHubApiError): the failure.
+        query (str): the ``q`` the search sent.
+    """
+    data = exc.data if isinstance(exc.data, dict) else None
+    errors = data.get("errors") if data is not None else None
+    if exc.status == 422 and isinstance(errors, list) and errors:
+        first = errors[0] if isinstance(errors[0], dict) else {}
+        reason = first.get("message")
+        quoted = json.dumps(query.strip(), ensure_ascii=False)
+        return (f"Invalid search query {quoted}.\n"
+                f"{reason if isinstance(reason, str) else ''}")
+    if data is None:
+        message = f"{exc.status} {exc}"
+    else:
+        found = data.get("message")
+        message = found if isinstance(found, str) else ""
+    return f"HTTP {exc.status}: {message} ({exc.url})"
+
+
 async def search_cmd(kind: str, inv: CLIInvocation[GhConfig]) -> CommandOutput:
     fl = FlagView(inv.flags, inv.spec)
     fields = json_fields(fl, SEARCH_FIELDS[kind])
@@ -143,18 +170,8 @@ async def search_cmd(kind: str, inv: CLIInvocation[GhConfig]) -> CommandOutput:
             fl.as_str("sort") if kind in SEARCH_SORTS else None,
             fl.as_str("order") if kind in SEARCH_SORTS else None)
     except GitHubApiError as exc:
-        data = exc.data if isinstance(exc.data, dict) else {}
-        errors = data.get("errors")
-        if exc.status == 422 and isinstance(
-                errors, list) and errors and isinstance(errors[0], dict):
-            message = errors[0].get("message", "")
-            if not isinstance(message, str):
-                message = ""
-            quoted = json.dumps(query.strip(), ensure_ascii=False)
-            diagnostic = f"Invalid search query {quoted}.\n{message}"
-        else:
-            diagnostic = f"HTTP {exc.status}: {exc} ({exc.url})"
-        return None, IOResult(exit_code=1, stderr=f"{diagnostic}\n".encode())
+        return None, IOResult(exit_code=1,
+                              stderr=f"{_search_error(exc, query)}\n".encode())
     rows = [_export(kind, value) for value in values]
     template = fl.as_str("template")
     if template is not None:

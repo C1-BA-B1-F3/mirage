@@ -34,29 +34,46 @@ def get_text(node: TSNodeLike) -> str:
     return (node.text or b"").decode()
 
 
-def quoted_parts(node: TSNodeLike) -> Iterator[str | TSNodeLike]:
-    """Walk a double-quoted string without losing scanner-owned text.
+def source_parts(node: TSNodeLike) -> Iterator[str | TSNodeLike]:
+    """A node's children with the source text between them.
 
-    Newlines and preceding whitespace may sit between child extents;
-    trailing whitespace may belong to the closing quote token. Preserve
-    those source slices rather than reconstructing gaps from row counts.
-    Expansion nodes retain their own folded prefixes.
+    tree-sitter-bash's scanner consumes some text without giving it a
+    node: whitespace and newlines inside a double-quoted string, and
+    the whitespace or line continuation opening a ``${v:-word}``
+    operand. Only the node's own source still holds that text, so it
+    is sliced out between child extents rather than rebuilt from row
+    or byte counts, which lose tabs, newlines and escapes.
 
     Args:
-        node (TSNodeLike): a double-quoted string node.
+        node (TSNodeLike): the parent node.
     """
     source = node.text or b""
     end = node.start_byte
     for child in node.children:
         if child.start_byte > end:
-            yield unescape_dquoted(
-                source[end - node.start_byte:child.start_byte -
-                       node.start_byte].decode())
+            yield source[end - node.start_byte:child.start_byte -
+                         node.start_byte].decode()
         end = child.end_byte
-        if child.type == NT.DQUOTE:
-            yield unescape_dquoted(get_text(child)[:-1])
+        yield child
+
+
+def quoted_parts(node: TSNodeLike) -> Iterator[str | TSNodeLike]:
+    """Walk a double-quoted string without losing scanner-owned text.
+
+    The text between children is the string's own, and the closing
+    quote token can carry the whitespace before it. Expansion nodes
+    keep their own folded prefixes.
+
+    Args:
+        node (TSNodeLike): a double-quoted string node.
+    """
+    for part in source_parts(node):
+        if isinstance(part, str):
+            yield unescape_dquoted(part)
+        elif part.type == NT.DQUOTE:
+            yield unescape_dquoted(get_text(part)[:-1])
         else:
-            yield child
+            yield part
 
 
 def byte_offset(text: str, index: int) -> int:

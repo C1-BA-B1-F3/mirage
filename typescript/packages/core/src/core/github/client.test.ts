@@ -32,7 +32,10 @@ interface Seen {
 }
 
 const SEEN: Seen[] = []
-let REPLY: { status: number; body: string } = { status: 200, body: '{"ok":true}' }
+let REPLY: { status: number; body: string; reason?: string } = {
+  status: 200,
+  body: '{"ok":true}',
+}
 const REAL_FETCH = globalThis.fetch
 
 function transport(): HttpGitHubTransport {
@@ -54,6 +57,7 @@ beforeEach(() => {
     return Promise.resolve(
       new Response(REPLY.body === '' ? null : REPLY.body, {
         status: REPLY.status,
+        statusText: REPLY.reason ?? '',
         headers: { 'content-type': 'application/json', 'x-page': 'next' },
       }),
     )
@@ -360,15 +364,17 @@ it.each([
   [
     ' {"message":"Validation Failed", "errors":[{"message":"bad query"}]}\n',
     { message: 'Validation Failed', errors: [{ message: 'bad query' }] },
+    'Validation Failed',
   ],
-  ['upstream unavailable\n', 'upstream unavailable\n'],
-  ['', null],
-])('preserves an error response body and request URL: %s', async (body, data) => {
-  REPLY = { status: 422, body: body }
+  ['upstream unavailable\n', 'upstream unavailable\n', 'Unprocessable Entity'],
+  ['', null, 'Unprocessable Entity'],
+])('preserves an error response body and request URL: %s', async (body, data, message) => {
+  REPLY = { status: 422, body, reason: 'Unprocessable Entity' }
   await expect(
     transport().request('GET', '/search/issues', undefined, { q: 'bad query' }),
   ).rejects.toMatchObject({
     status: 422,
+    message,
     body,
     data,
     url: 'https://api.example.test/search/issues?q=bad+query',

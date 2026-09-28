@@ -247,21 +247,63 @@ async def api(
                     base_url=inv.config.base_url,
                     headers=_headers(fl) or None)
         except GitHubApiError as exc:
-            stdout = await _render_pages(pages, fl, exc.body)
-            data = exc.data if isinstance(exc.data, dict) else {}
-            message = data.get("message")
-            diagnostic = (f"{message} (HTTP {exc.status})"
-                          if isinstance(message, str) and message else
-                          f"HTTP {exc.status}")
-            return stdout.encode(), IOResult(
-                exit_code=1, stderr=f"gh: {diagnostic}\n".encode())
+            return _failed(
+                pages, fl, exc.body,
+                _server_error(exc.data, exc.status) or f"HTTP {exc.status}")
+        if endpoint == "graphql":
+            diagnostic = _server_error(response.data, response.status)
+            if diagnostic:
+                return _failed(pages, fl, _compact_json(response.data),
+                               diagnostic)
         pages.append(response.data)
         first = False
         current = (_next_path(response.headers.get("link"),
                               inv.config.base_url)
                    if fl.as_bool("paginate") else None)
 
-    return text_out(await _render_pages(pages, fl))
+    return text_out(_render_pages(pages, fl))
+
+
+def _server_error(data: JsonValue, status: int) -> str:
+    """What gh reports from a JSON error body, empty when it names nothing.
+
+    gh's ``parseErrorResponse``: a string ``errors`` is the failure, with
+    ``message`` in parentheses; otherwise ``message`` is, with the status;
+    otherwise the messages of an ``errors`` array, one per line.
+
+    Args:
+        data (JsonValue): the decoded body.
+        status (int): the HTTP status.
+    """
+    if not isinstance(data, dict):
+        return ""
+    message = data.get("message")
+    message = message if isinstance(message, str) else ""
+    errors = data.get("errors")
+    if isinstance(errors, str) and errors:
+        return f"{errors} ({message})" if message else errors
+    if message:
+        return f"{message} (HTTP {status})"
+    if not isinstance(errors, list):
+        return ""
+    lines: list[str] = []
+    for entry in errors:
+        if isinstance(entry, str):
+            lines.append(entry)
+        elif isinstance(entry, dict):
+            text = entry.get("message")
+            lines.append(text if isinstance(text, str) else "")
+    return "\n".join(lines)
+
+
+def _failed(pages: list[Any], fl: FlagView, body: str,
+            diagnostic: str) -> tuple[ByteSource | None, IOResult]:
+    return _render_pages(pages, fl, body).encode(), IOResult(
+        exit_code=1, stderr=f"gh: {diagnostic}\n".encode())
+
+
+def _compact_json(value: JsonValue) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _json_page(value: Any) -> str:
@@ -270,31 +312,33 @@ def _json_page(value: Any) -> str:
     return json.dumps(value, indent=2, ensure_ascii=False) + "\n"
 
 
-async def _render_pages(pages: list[Any],
-                        fl: FlagView,
-                        failure: str | None = None) -> str:
-    """Render completed pages and an optional verbatim error response."""
+def _render_pages(pages: list[Any],
+                  fl: FlagView,
+                  failure: str | None = None) -> str:
+    """Render the completed pages, then a failing response's body.
+
+    gh copies the failing body out verbatim, past ``--jq``. Under
+    ``--slurp`` that body is still the array's last element, even an
+    empty one or one that is not JSON, which is gh's own output.
+
+    Args:
+        pages (list[Any]): the decoded bodies of the pages that landed.
+        fl (FlagView): the invocation's flags.
+        failure (str | None): the failing response's body, if one failed.
+    """
     if fl.as_bool("silent"):
         return ""
     slurp = fl.as_bool("slurp")
-    if failure is not None:
-        if slurp:
-            rendered = [
-                json.dumps(page, ensure_ascii=False, separators=(",", ":"))
-                for page in pages
-            ]
-            if failure:
-                rendered.append(failure)
-            return "[" + ",".join(rendered) + "]"
-        return await _render_pages(pages, fl) + failure
-    if not pages:
-        return ""
+    if slurp and failure is not None:
+        return "[" + ",".join([*map(_compact_json, pages), failure]) + "]"
     program = fl.as_str("jq")
     if program:
         inputs = [pages] if slurp else pages
-        return "".join(f"{jq_line(value)}\n" for item in inputs
-                       for value in jq_eval(item, program))
-    if slurp:
-        return _json_page(pages)
-    return "".join(page if isinstance(page, str) else _json_page(page)
-                   for page in pages)
+        rendered = "".join(f"{jq_line(value)}\n" for item in inputs
+                           for value in jq_eval(item, program))
+    elif slurp:
+        rendered = _json_page(pages)
+    else:
+        rendered = "".join(page if isinstance(page, str) else _json_page(page)
+                           for page in pages)
+    return rendered + (failure or "")

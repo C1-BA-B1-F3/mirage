@@ -148,17 +148,12 @@ async function searchCmd(kind: string, inv: CLIInvocation): Promise<CommandFnRes
     )
   } catch (error) {
     if (!(error instanceof GitHubApiError)) throw error
-    const data = record(error.data)
-    const errors = data.errors
-    const detail = Array.isArray(errors) && errors.length > 0 ? record(errors[0]) : null
-    const message = typeof detail?.message === 'string' ? detail.message : ''
-    const diagnostic =
-      error.status === 422 && detail !== null
-        ? `Invalid search query ${JSON.stringify(expression.trim())}.\n${message}`
-        : `HTTP ${String(error.status)}: ${error.message} (${error.url})`
     return [
       null,
-      new IOResult({ exitCode: 1, stderr: new TextEncoder().encode(`${diagnostic}\n`) }),
+      new IOResult({
+        exitCode: 1,
+        stderr: new TextEncoder().encode(`${searchError(error, expression)}\n`),
+      }),
     ]
   }
   const rows = values.map((value) => exported(kind, value))
@@ -176,6 +171,28 @@ async function searchCmd(kind: string, inv: CLIInvocation): Promise<CommandFnRes
     human(kind, rows, values, kind === 'issues' && boolean(fl, 'include_prs')),
     SEARCH_FIELDS[kind] ?? [],
   )
+}
+
+/**
+ * How gh search words a failed search, its `httpError.Error`.
+ *
+ * A 422 naming its errors says the query is invalid, with the first reason;
+ * anything else is the status, GitHub's message (the status line for a body
+ * that is not JSON) and the request URL.
+ */
+function searchError(error: GitHubApiError, expression: string): string {
+  const { data } = error
+  const body =
+    typeof data === 'object' && data !== null && !Array.isArray(data) ? record(data) : null
+  const errors = body?.errors
+  if (error.status === 422 && Array.isArray(errors) && errors.length > 0) {
+    const reason = record(errors[0]).message
+    const quoted = JSON.stringify(expression.trim())
+    return `Invalid search query ${quoted}.\n${typeof reason === 'string' ? reason : ''}`
+  }
+  let message = `${String(error.status)} ${error.message}`
+  if (body !== null) message = typeof body.message === 'string' ? body.message : ''
+  return `HTTP ${String(error.status)}: ${message} (${error.url})`
 }
 
 type Row = Record<string, JsonValue>

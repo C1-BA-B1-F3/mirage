@@ -842,20 +842,55 @@ async def test_api_http_failure_keeps_the_response(monkeypatch, flags, body,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("flags,stdout", [
+@pytest.mark.parametrize("body,stderr", [
+    ('{"message":"Validation Failed","errors":"bad thing"}',
+     "gh: bad thing (Validation Failed)\n"),
+    ('{"errors":"bad thing"}', "gh: bad thing\n"),
+    ('{"message":"Validation Failed","errors":[{"message":"one"}]}',
+     "gh: Validation Failed (HTTP 422)\n"),
+    ('{"errors":[{"message":"one"},"two"]}', "gh: one\ntwo\n"),
+    ('{"errors":[{"code":"x"}]}', "gh: HTTP 422\n"),
+    ('{"errors":[]}', "gh: HTTP 422\n"),
+    ('{"message":""}', "gh: HTTP 422\n"),
+    ('["not", "an", "object"]', "gh: HTTP 422\n"),
+])
+async def test_api_failure_names_what_gh_reads_off_the_body(
+        monkeypatch, body, stderr):
+    request = AsyncMock(
+        side_effect=GitHubApiError("Validation Failed", 422, body=body))
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    out, io = await api(_inv(("repos/o/r", )))
+    assert await materialize(out) == body.encode()
+    assert await io.stderr_str() == stderr
+    assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,body,stdout,stderr", [
     ({
         "jq": ".value"
-    }, 'first\n{"message":"Validation Failed"}'),
+    }, '{"message":"Validation Failed"}',
+     'first\n{"message":"Validation Failed"}',
+     "gh: Validation Failed (HTTP 422)\n"),
     ({
         "slurp": True
-    }, '[{"value":"first"},{"message":"Validation Failed"}]'),
+    }, '{"message":"Validation Failed"}',
+     '[{"value":"first"},{"message":"Validation Failed"}]',
+     "gh: Validation Failed (HTTP 422)\n"),
+    ({
+        "slurp": True
+    }, "upstream unavailable\n", '[{"value":"first"},upstream unavailable\n]',
+     "gh: HTTP 422\n"),
+    ({
+        "slurp": True
+    }, "", '[{"value":"first"},]', "gh: HTTP 422\n"),
     ({
         "silent": True
-    }, ''),
+    }, '{"message":"Validation Failed"}', "",
+     "gh: Validation Failed (HTTP 422)\n"),
 ])
 async def test_api_later_page_failure_keeps_rendered_pages(
-        monkeypatch, flags, stdout):
-    body = '{"message":"Validation Failed"}'
+        monkeypatch, flags, body, stdout, stderr):
     request = AsyncMock(side_effect=[
         ApiResponse({"value": "first"}, 200, {"link": '</page2>; rel="next"'}),
         GitHubApiError("Validation Failed", 422, body=body),
@@ -864,5 +899,40 @@ async def test_api_later_page_failure_keeps_rendered_pages(
     out, io = await api(_inv(("page1", ), {"paginate": True, **flags}))
     assert await materialize(out) == stdout.encode()
     assert io.exit_code == 1
-    assert await io.stderr_str() == "gh: Validation Failed (HTTP 422)\n"
+    assert await io.stderr_str() == stderr
     assert request.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,stdout", [
+    ({}, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'),
+    ({
+        "jq": ".data"
+    }, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'),
+    ({
+        "silent": True
+    }, ""),
+])
+async def test_api_graphql_errors_fail_as_gh_fails(monkeypatch, flags, stdout):
+    data = {"errors": [{"message": "one"}, {"message": "two"}], "data": None}
+    request = AsyncMock(return_value=ApiResponse(data, 200, {}))
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    out, io = await api(
+        _inv(("graphql", ), {
+            "raw_field": ["query={ viewer { login } }"],
+            **flags
+        }))
+    assert await materialize(out) == stdout.encode()
+    assert await io.stderr_str() == "gh: one\ntwo\n"
+    assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_api_graphql_errors_only_count_on_the_graphql_endpoint(
+        monkeypatch):
+    data = {"errors": [{"message": "one"}]}
+    request = AsyncMock(return_value=ApiResponse(data, 200, {}))
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    out, io = await api(_inv(("repos/o/r", )))
+    assert json.loads(await materialize(out)) == data
+    assert io.exit_code == 0

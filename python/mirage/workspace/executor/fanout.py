@@ -169,7 +169,10 @@ def _should_fan_out(
     -r/-R; or for ls -R. Returns False when there's no descendant
     mount under the path (single-mount dispatch is correct).
     """
-    if not paths:
+    if not paths or paths[0].walk_error is not None:
+        # An operand the walk refused (the empty name, whose `virtual` is
+        # the working directory) names nothing, so no mount is nested in
+        # it; the single run reports it.
         return False
     target = paths[0].virtual
     # Gated on the raw registry, not the session view: with every

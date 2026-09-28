@@ -416,6 +416,68 @@ describe('rgGeneric - unreadable paths are named as typed', () => {
   })
 })
 
+describe('rgGeneric - an operand the walk refused', () => {
+  function walkRefused(virtual: string, rawPath: string, walkError: 'ENOENT' | 'ELOOP'): PathSpec {
+    return new PathSpec({
+      virtual,
+      directory: virtual,
+      resolved: true,
+      vfsPath: virtual.slice(1),
+      rawPath,
+      walkError,
+    })
+  }
+  async function runAll(paths: PathSpec[]): Promise<[string, string, number]> {
+    const opts = {
+      stdin: null,
+      flags: {},
+      filetypeFns: null,
+      cwd: '/sub',
+    } as unknown as CommandOpts
+    const [out, io] = (await rgGeneric(paths, ['o'], opts, stat, readdir, stream)) as [
+      ByteSource,
+      IOResult,
+    ]
+    return [
+      DEC.decode(await materialize(out)),
+      DEC.decode(await materialize(io.stderr)),
+      io.exitCode,
+    ]
+  }
+
+  it.each([
+    ['the empty name', walkRefused('/sub', '', 'ENOENT'), 'rg: : No such file or directory\n'],
+    [
+      'a link loop',
+      walkRefused('/lp1', 'lp1', 'ELOOP'),
+      'rg: lp1: Too many levels of symbolic links\n',
+    ],
+  ] as const)('refuses %s by name', async (_, operand, message) => {
+    // ripgrep 14.1.1: `rg o ''` and `rg o lp1` (a loop) refuse the operand by
+    // name with exit 2. The empty name's `virtual` is the cwd it joined onto,
+    // which must not be walked.
+    expect(await runAll([operand])).toEqual(['', message, 2])
+    expect(await runAll([spec('/a.txt'), operand])).toEqual([
+      '/a.txt:hello\n/a.txt:world\n',
+      message,
+      2,
+    ])
+  })
+
+  it('does not read a typed empty operand as the implicit cwd', async () => {
+    // A bare `rg PAT` searches a synthetic cwd operand spelled '' too, so only
+    // the walk's verdict tells a typed '' apart. A line that named paths earns
+    // no "No files were searched" notice (ripgrep 14.1.1:
+    // `cd /data && rg o '' ''`).
+    const empty = walkRefused('/sub', '', 'ENOENT')
+    expect(await runAll([empty, empty])).toEqual([
+      '',
+      'rg: : No such file or directory\n'.repeat(2),
+      2,
+    ])
+  })
+})
+
 describe('labelled', () => {
   const base: CommandOpts = { stdin: null, flags: {}, filetypeFns: null, cwd: '/' }
 

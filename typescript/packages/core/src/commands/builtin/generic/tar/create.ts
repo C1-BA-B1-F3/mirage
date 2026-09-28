@@ -14,6 +14,7 @@
 
 import type { LinkView, MountView } from '../../../../ops/types.ts'
 import type { PathSpec } from '../../../../types.ts'
+import { fsStrerror, walkRefusal } from '../../../../utils/errors.ts'
 import { fnmatch } from '../../../../utils/fnmatch.ts'
 import { respellOne } from '../../../../utils/path.ts'
 import { lstripSlash, rstripSlash } from '../../../../utils/slash.ts'
@@ -28,6 +29,7 @@ import {
 import {
   CREATE_ERROR_EXIT,
   EMPTY_ARCHIVE,
+  EMPTY_MEMBER,
   ERROR_TRAILER,
   FATAL_TRAILER,
   SELF_DUMP,
@@ -177,6 +179,17 @@ export async function planCreate(
   const dropped: string[] = []
   let exitCode = 0
   for (const path of paths) {
+    if (path.walkError !== null) {
+      // The walk refused the operand before tar ran (the empty name, a
+      // link loop), so nothing is there to scan; the prefix it would strip
+      // is still announced first, as for any operand it cannot stat.
+      if (path.rawPath === '') notices.push(EMPTY_MEMBER)
+      const trimmed = rstripSlash(path.rawPath)
+      announcePrefix(stripPrefix(trimmed === '' ? path.rawPath : trimmed)[1], dropped, notices)
+      notices.push(`tar: ${path.rawPath}: Cannot stat: ${String(fsStrerror(walkRefusal(path)))}`)
+      exitCode = CREATE_ERROR_EXIT
+      continue
+    }
     // GNU strips a trailing slash off the operand before naming the
     // member, and re-adds one only for a member that really is a
     // directory: `tar -cf a.tar dlink/` stores `dlink`, the symlink,

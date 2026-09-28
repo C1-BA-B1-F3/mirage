@@ -28,6 +28,7 @@ import {
   ERROR_TRAILER,
   FATAL_TRAILER,
   INVALID_ARCHIVE,
+  TAPE_START,
 } from './tar/constants.ts'
 import { planCreate, type DirProbe, type StatFn, type WalkFn } from './tar/create.ts'
 import { fsStrerror, isEacces, isFsError, type GzipDataError } from '../../../utils/errors.ts'
@@ -207,6 +208,30 @@ function stderrOf(lines: readonly string[]): Uint8Array | null {
   return lines.length > 0 ? ENC.encode(`${lines.join('\n')}\n`) : null
 }
 
+// The archive's bytes, or the run's one fatal line when GNU would stop.
+// GNU opens the archive before it reads a member, so one it cannot open
+// (missing, the empty name, a link loop) ends the run as `Cannot open`; a
+// directory opens and then fails the first read, which GNU words as
+// `Cannot read` at the beginning of the tape. Exit 2 both ways, named as
+// typed (tar 1.35). Mirrors Python's _read_archive.
+async function readArchiveBytes(
+  stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
+  archive: PathSpec,
+): Promise<Uint8Array | IOResult> {
+  try {
+    return await materialize(stream(archive))
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    const shown = archive.rawPath
+    const lines =
+      (err as { code?: string }).code === 'EISDIR'
+        ? [`tar: ${shown}: Cannot read: ${String(fsStrerror(err))}`, TAPE_START, FATAL_TRAILER]
+        : [`tar: ${shown}: Cannot open: ${String(fsStrerror(err))}`, FATAL_TRAILER]
+    const stderr = stderrOf(lines)
+    return new IOResult({ exitCode: CREATE_ERROR_EXIT, ...(stderr !== null ? { stderr } : {}) })
+  }
+}
+
 async function writeArchive(
   plan: CreateResult,
   archivePath: PathSpec,
@@ -345,7 +370,8 @@ export async function tarGeneric(
     if (archivePath === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
-    const raw = await materialize(deps.stream(makePathSpec(archivePath, mountPrefix)))
+    const raw = await readArchiveBytes(deps.stream, makePathSpec(archivePath, mountPrefix))
+    if (raw instanceof IOResult) return [null, raw]
     const { entries, failure, notices } = await readArchive(raw, compression)
     const names = entries.map((e) => (e.isDir === true ? `${rstripSlash(e.name)}/` : e.name))
     const { keep, misses } = selectedMembers(names, selectors)
@@ -371,7 +397,8 @@ export async function tarGeneric(
     if (archivePath === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
-    const raw = await materialize(deps.stream(makePathSpec(archivePath, mountPrefix)))
+    const raw = await readArchiveBytes(deps.stream, makePathSpec(archivePath, mountPrefix))
+    if (raw instanceof IOResult) return [null, raw]
     const { entries, failure, notices } = await readArchive(raw, compression)
     const writes: Record<string, Uint8Array> = {}
     const listed = entries.map((e) => (e.isDir === true ? `${rstripSlash(e.name)}/` : e.name))

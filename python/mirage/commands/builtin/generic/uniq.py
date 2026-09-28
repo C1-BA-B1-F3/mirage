@@ -2,8 +2,9 @@ import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
+from mirage.commands.builtin.utils.operands import split_readable
 from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
-                                                  stdin_stream)
+                                                  stdin_stat, stdin_stream)
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.argmatch import ArgmatchMatch, argmatch
@@ -11,7 +12,7 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName, FlagValue
 from mirage.commands.spec.usage import argmatch_error, extra_operand_error
 from mirage.io.types import ByteSource, IOResult, materialize
-from mirage.types import PathSpec
+from mirage.types import PathSpec, StatFn
 
 # GNU's `delimit_method_string` and `grouping_method_string`, in
 # declaration order, which is what each option lists back. No aliases in
@@ -208,6 +209,7 @@ async def uniq(
     skip_chars: str | None = None,
     ignore_case: bool = False,
     check_chars: str | None = None,
+    stat: StatFn | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 2:
         raise extra_operand_error(CommandName.UNIQ, paths[2].raw_path
@@ -228,6 +230,13 @@ async def uniq(
     except ValueError as exc:
         return None, IOResult(exit_code=1, stderr=(str(exc) + "\n").encode())
     read_stream = stdin_stream(read_stream, stdin)
+    if paths and stat is not None:
+        # The input is stat'ed before the lazy stream starts, so a missing
+        # or unreadable one is reported in uniq's own words rather than
+        # surfacing mid-drain.
+        _, err = await split_readable(paths[:1], stdin_stat(stat), "uniq")
+        if err:
+            return None, IOResult(exit_code=1, stderr=err)
     cache: list[str] = []
     if paths:
         source = read_stream(paths[0])

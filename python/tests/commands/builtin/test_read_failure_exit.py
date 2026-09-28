@@ -133,7 +133,8 @@ async def test_directory_read_says_is_a_directory(template):
     stderr = (result.stderr or b"").decode()
     assert ("/ram/dir: Is a directory" in stderr
             or "/ram/dir: read error: Is a directory" in stderr
-            or "error reading '/ram/dir': Is a directory" in stderr)
+            or "error reading '/ram/dir': Is a directory" in stderr
+            or 'cannot open "/ram/dir" (Is a directory)' in stderr)
     assert "No such file" not in stderr
 
 

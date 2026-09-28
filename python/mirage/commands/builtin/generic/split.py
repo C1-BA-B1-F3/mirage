@@ -421,6 +421,24 @@ def _suffix_name(index: int, alphabet: str, auto: bool, width: int,
     return _to_base(value, alphabet, width)
 
 
+
+def _prefix_virtual(prefix: PathSpec) -> str:
+    """Where a PREFIX operand's pieces go, as the string they extend.
+
+    The prefix is glued to each suffix, not walked: an empty one, or one
+    ending in a slash, names the directory whose files are the bare
+    suffixes (GNU's ``split f ''`` writes ``aa`` to the cwd, and ``split
+    f out/`` writes ``out/aa``). ``virtual`` says neither, having
+    normalized the slash away and read the empty name as the directory
+    itself, so the separator is put back.
+
+    Args:
+        prefix (PathSpec): the PREFIX operand.
+    """
+    if prefix.raw_path == "" or prefix.raw_path.endswith("/"):
+        return prefix.virtual.rstrip("/") + "/"
+    return prefix.virtual
+
 async def split(
     paths: list[PathSpec],
     *,
@@ -448,8 +466,8 @@ async def split(
     # plus its suffix, wherever the input lives: GNU writes `xaa` to the
     # cwd, names it as it formed it (`split: xaa`, `split: /ro/preaa`),
     # and stops at the first one it cannot create.
-    prefix_virtual = (paths[1].virtual if len(paths) >= 2 else resolve_path(
-        "x", cwd))
+    prefix_virtual = (_prefix_virtual(paths[1])
+                      if len(paths) >= 2 else resolve_path("x", cwd))
     typed_prefix = paths[1].raw_path if len(paths) >= 2 else "x"
     if lines_per_file == 0 and byte_limit == 0 and chunks is None:
         lines_per_file = 1000

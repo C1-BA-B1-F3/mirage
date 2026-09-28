@@ -53,6 +53,9 @@ def relative_spec(word: str, registry: MountRegistry,
             resolved=False,
             raw_path=word,
         )
+    # The empty name joins onto the directory as the directory itself,
+    # a path the kernel walk never reaches (POSIX: a null pathname does
+    # not resolve), so it rides along refused rather than as the cwd.
     return PathSpec(
         virtual=path,
         directory=path[:last_slash + 1],
@@ -60,4 +63,5 @@ def relative_spec(word: str, registry: MountRegistry,
         resolved=True,
         raw_path=word,
         dotted=dotted_spelling(word, cwd),
+        walk_error="ENOENT" if word == "" else None,
     )

@@ -259,7 +259,7 @@ def operand_refusal(paths: list[PathSpec],
         return None
     mode = "C" if parsed.check_quiet else "c"
     if len(paths) > 1:
-        label = paths[1].raw_path or paths[1].virtual
+        label = paths[1].raw_path
         return IOResult(
             stderr=(f"sort: extra operand '{label}' not allowed with "
                     f"-{mode}\n").encode(),
@@ -285,7 +285,7 @@ def _split_records(raw: bytes, zero_terminated: bool) -> list[str]:
 def _label(path: PathSpec | None) -> str:
     if path is None:
         return "-"
-    return path.raw_path or path.virtual
+    return path.raw_path
 
 
 async def _read_runs(

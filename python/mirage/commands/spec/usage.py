@@ -21,7 +21,7 @@ from mirage.commands.spec.constants import (OLD_OPTION_EXIT, OPERAND_EXIT,
                                             READ_FAIL_EXIT_ISDIR, USAGE_EXIT,
                                             USAGE_HINT_PREFIX)
 from mirage.commands.spec.types import CommandName
-from mirage.utils.errors import FileTooLargeError, fs_strerror
+from mirage.utils.errors import DotWalkLoop, FileTooLargeError, fs_strerror
 
 
 def usage_exit_code(cmd_name: str) -> int:
@@ -54,7 +54,7 @@ def operand_exit_code(cmd_name: str) -> int:
 # that is the safe side to err on, and it is what the executor already
 # did before the tables existed.
 _READ_FAIL_ERRORS = (FileNotFoundError, IsADirectoryError, NotADirectoryError,
-                     FileTooLargeError)
+                     FileTooLargeError, DotWalkLoop)
 
 
 def _read_fail_code(cmd_name: str, is_dir: bool) -> int:

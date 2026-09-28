@@ -19,7 +19,7 @@ import { RAMVFS } from '../../../../vfs/ram/ram.ts'
 import { MountMode, PathSpec } from '../../../../types.ts'
 import { getTestParser } from '../../../fixtures/workspace_fixture.ts'
 import { Workspace } from '../../../workspace/workspace.ts'
-import { prepareMv } from './links.ts'
+import { followPaths, prepareMv } from './links.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 
@@ -65,6 +65,40 @@ async function makeWs(policies: Policy[] = []): Promise<Workspace> {
 function err(result: { stderr: Uint8Array | null }): string {
   return result.stderr === null ? '' : DEC.decode(result.stderr)
 }
+
+describe('followPaths and a link loop', () => {
+  it('refuses the looping operand and resolves its neighbours', async () => {
+    // A loop no longer fails the whole line: the operand stays as typed
+    // with the walk's verdict on it.
+    const ws = await makeWs()
+    await ws.shell(
+      'mkdir -p /data/real; ln -s /data/real /data/dlink; ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2',
+    )
+    const ns = ws.namespace
+    const [loop, link] = followPaths(ns, [
+      PathSpec.fromStrPath('/data/l1'),
+      PathSpec.fromStrPath('/data/dlink'),
+    ]) as PathSpec[]
+    expect([loop?.virtual, loop?.walkError]).toEqual(['/data/l1', 'ELOOP'])
+    expect([link?.virtual, link?.walkError]).toEqual(['/data/real', null])
+    const [under] = followPaths(ns, [PathSpec.fromStrPath('/data/l1/x')], false) as PathSpec[]
+    expect(under?.walkError).toBe('ELOOP')
+    // lstat semantics never reach the looping name itself.
+    const [kept] = followPaths(ns, [PathSpec.fromStrPath('/data/l1')], false) as PathSpec[]
+    expect(kept?.walkError).toBeNull()
+  })
+
+  it('lets mv replace a looping destination like any link', async () => {
+    // stat(2) of the destination fails ELOOP, which GNU mv reads as "not a
+    // directory": the rename lands on the link's own name.
+    const ws = await makeWs()
+    await ws.shell('echo b > /data/b.txt; ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2')
+    const r = await ws.shell('mv /data/b.txt /data/l1')
+    expect(r.exitCode).toBe(0)
+    expect(ws.namespace.isLink('/data/l1')).toBe(false)
+    expect(DEC.decode((await ws.shell('cat /data/l1')).stdout)).toBe('b\n')
+  })
+})
 
 describe('ln -f on the same file', () => {
   it('refuses the same file before removing it', async () => {

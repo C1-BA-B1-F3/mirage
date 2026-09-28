@@ -139,6 +139,10 @@ export function shouldFanOut(
   registry: MountRegistry,
 ): boolean {
   if (paths.length === 0 || paths[0] === undefined) return false
+  // An operand the walk refused (the empty name, whose `virtual` is the
+  // working directory) names nothing, so no mount is nested in it; the
+  // single run reports it.
+  if (paths[0].walkError !== null) return false
   // Gated on the raw registry, not the session view: with every
   // descendant ungranted, single-mount dispatch would serve the parent
   // backend's keys shadowed under a hidden mount's prefix, and only the

@@ -45,6 +45,42 @@ async def test_follow_paths_follows_the_last_component_only_when_asked():
     assert slashed[0].virtual == "/data/real/"
 
 
+@pytest.mark.asyncio
+async def test_follow_paths_refuses_a_loop_per_operand():
+    # A loop no longer fails the whole line: the operand stays as typed
+    # with the walk's verdict on it, and its neighbours still resolve.
+    ws = _ws()
+    await ws.shell("mkdir -p /data/real; ln -s /data/real /data/dlink; "
+                   "ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2")
+    ns = ws.namespace
+    loop, link = follow_paths(ns, [
+        PathSpec.from_str_path("/data/l1"),
+        PathSpec.from_str_path("/data/dlink")
+    ])
+    assert (loop.virtual, loop.walk_error) == ("/data/l1", "ELOOP")
+    assert (link.virtual, link.walk_error) == ("/data/real", None)
+    under = follow_paths(ns, [PathSpec.from_str_path("/data/l1/x")],
+                         follow_last=False)
+    assert under[0].walk_error == "ELOOP"
+    # lstat semantics never reach the looping name itself.
+    kept = follow_paths(ns, [PathSpec.from_str_path("/data/l1")],
+                        follow_last=False)
+    assert kept[0].walk_error is None
+
+
+@pytest.mark.asyncio
+async def test_mv_onto_a_loop_replaces_the_link():
+    # stat(2) of the destination fails ELOOP, which GNU mv reads as "not
+    # a directory": the rename lands on the link's own name.
+    ws = _ws()
+    await ws.shell("echo b > /data/b.txt; "
+                   "ln -s /data/l2 /data/l1; ln -s /data/l1 /data/l2")
+    r = await ws.shell("mv /data/b.txt /data/l1")
+    assert r.exit_code == 0
+    assert not ws.namespace.is_link("/data/l1")
+    assert (await ws.shell("cat /data/l1")).stdout == b"b\n"
+
+
 def test_accepts_line_refuses_what_the_command_layer_would():
     good = [PathSpec.from_str_path("/data/dlink")]
     assert accepts_line("rm", ("/data/dlink", ), good, "/data")

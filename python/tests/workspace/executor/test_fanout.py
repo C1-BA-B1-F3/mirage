@@ -814,3 +814,19 @@ def test_rg_creation_sort_is_explicitly_unsupported(direction):
         _context_workspace().shell(f"rg --{direction} created hit /base"))
     assert io.exit_code == 2
     assert b"creation time is not supported" in io.stderr
+
+
+def test_the_empty_name_does_not_fan_out():
+    # Its `virtual` is the working directory, which holds mounts, but it
+    # names nothing, so there is nothing below it to walk.
+    ws = Workspace({
+        "/base": (RAMVFS(), MountMode.WRITE),
+        "/base/inner": (RAMVFS(), MountMode.WRITE),
+    },
+                   mode=MountMode.WRITE)
+    for line, err in (("du ''", b"du: invalid zero-length file name\n"),
+                      ("find ''", b"find: '': No such file or directory\n")):
+        io = asyncio.run(ws.shell(f"cd /base && {line}"))
+        assert io.exit_code == 1
+        assert _stdout(io) == ""
+        assert io.stderr == err

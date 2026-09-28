@@ -636,6 +636,10 @@ class Producer:
 
 
 RefusalKind = Literal["deny", "pending", "failed"]
+
+# What the kernel walk answers for a path it cannot resolve at all: the
+# empty name (POSIX never resolves a null pathname) or a symlink loop.
+WalkErrno = Literal["ENOENT", "ELOOP"]
 RefusalScope = Literal["command", "operand"]
 
 
@@ -737,6 +741,14 @@ class PathSpec:
     resolved: bool = True
     # Absolute spelling before dot normalization; excluded from identity.
     dotted: str | None = field(default=None, compare=False)
+    # What the kernel walk already answered for an operand it cannot
+    # resolve at all, known before the command runs: ENOENT for the
+    # empty name, whose `virtual` reads as the working directory, and
+    # ELOOP for one a symlink loop stands in, which `follow_paths`
+    # leaves unrewritten. Every op that reaches it refuses
+    # (`walk_refusal`), so each command words the refusal as its own.
+    # Out of equality, like `dotted`.
+    walk_error: WalkErrno | None = field(default=None, compare=False)
 
     def __init__(
         self,
@@ -747,6 +759,7 @@ class PathSpec:
         resolved: bool = True,
         raw_path: str | None = None,
         dotted: str | None = None,
+        walk_error: WalkErrno | None = None,
     ) -> None:
         """Create a path whose stored spelling is always concrete.
 
@@ -760,6 +773,8 @@ class PathSpec:
                 to ``virtual`` only at the construction boundary.
             dotted (str | None): The absolute spelling a dot walk proves,
                 from ``dotted_spelling``.
+            walk_error (WalkErrno | None): The walk's verdict on an
+                operand it cannot resolve, None when it can.
         """
         object.__setattr__(self, "virtual", virtual)
         object.__setattr__(self, "directory", directory)
@@ -769,6 +784,7 @@ class PathSpec:
         object.__setattr__(self, "raw_path",
                            virtual if raw_path is None else raw_path)
         object.__setattr__(self, "dotted", dotted)
+        object.__setattr__(self, "walk_error", walk_error)
 
     @property
     def mount_path(self) -> str:

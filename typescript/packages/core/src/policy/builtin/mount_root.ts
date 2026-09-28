@@ -89,11 +89,11 @@ function deny(reason: string): Deny {
 
 // The first of these paths that is a mount root, if any.
 function firstRoot(
-  isRoot: (virtual: string) => boolean,
+  namesRoot: (path: PathSpec) => boolean,
   paths: readonly PathSpec[],
 ): PathSpec | null {
   for (const path of paths) {
-    if (isRoot(path.virtual)) return path
+    if (namesRoot(path)) return path
   }
   return null
 }
@@ -127,12 +127,18 @@ function firstRoot(
 export class MountRootPolicy implements Policy {
   preCommand(ctx: CommandContext): Action | null {
     if (ctx.paths.length === 0) return null
-    const isRoot = (virtual: string): boolean => ctx.registry.isMountRoot(virtual)
+    // An operand the kernel walk refused (`walkError`) names nothing,
+    // whatever its `virtual` reads as: the empty name simplifies to the
+    // working directory, which can be a mount root, and the command
+    // reports it ENOENT rather than busy. Mirrors Python's names_root.
+    const namesRoot = (p: PathSpec): boolean =>
+      p.walkError === null && ctx.registry.isMountRoot(p.virtual)
     const cmd = ctx.command
+    const operands = ctx.operands ?? ctx.paths
 
     if (cmd === 'rm' || cmd === 'rmdir') {
       for (const p of ctx.paths) {
-        if (isRoot(p.virtual)) {
+        if (namesRoot(p)) {
           return deny(
             cmd === 'rmdir'
               ? `failed to remove '${p.virtual}': Device or resource busy`
@@ -144,9 +150,12 @@ export class MountRootPolicy implements Policy {
     }
 
     if (cmd === 'mv') {
-      if (ctx.paths[0] !== undefined && isRoot(ctx.paths[0].virtual)) {
+      // The source is a slot, so it is read off the positionals:
+      // `mv -t /mnt f` moves INTO a mount root, which is ordinary.
+      const source = operands[0]
+      if (source !== undefined && namesRoot(source)) {
         const dst = ctx.paths[1] !== undefined ? ctx.paths[1].virtual : '?'
-        return deny(`cannot move '${ctx.paths[0].virtual}' to '${dst}': Device or resource busy`)
+        return deny(`cannot move '${source.virtual}' to '${dst}': Device or resource busy`)
       }
       return null
     }
@@ -155,7 +164,7 @@ export class MountRootPolicy implements Policy {
       // GNU mkdir -p makes "already exists" a no-op.
       if (hasParentsFlag(ctx.argv)) return null
       for (const p of ctx.paths) {
-        if (isRoot(p.virtual)) {
+        if (namesRoot(p)) {
           return deny(`cannot create directory '${p.virtual}': File exists`)
         }
       }
@@ -163,8 +172,9 @@ export class MountRootPolicy implements Policy {
     }
 
     if (cmd === 'touch') {
-      for (const p of ctx.paths) {
-        if (isRoot(p.virtual)) {
+      // Positionals only: `-r REF` is read, never touched.
+      for (const p of operands) {
+        if (namesRoot(p)) {
           return deny(`cannot touch '${p.virtual}': Is a directory`)
         }
       }
@@ -176,19 +186,17 @@ export class MountRootPolicy implements Policy {
       // directory operand is the directory to link into, GNU's rule, and
       // creating inside a mount is ordinary.
       const last = ctx.paths[ctx.paths.length - 1]
-      if (last !== undefined && hasNoTargetFlag(ctx.argv) && isRoot(last.virtual)) {
+      if (last !== undefined && hasNoTargetFlag(ctx.argv) && namesRoot(last)) {
         const kind = hasSymlinkFlag(ctx.argv) ? 'symbolic link' : 'link'
         return deny(`failed to create ${kind} '${last.virtual}': File exists`)
       }
       return null
     }
 
-    const operands = ctx.operands ?? ctx.paths
-
     if (cmd === 'tar') {
       // Only -c reads the filesystem; -t and -x match their operands
       // against names inside the archive.
-      const root = isCreateMode(ctx.argv) ? firstRoot(isRoot, operands) : null
+      const root = isCreateMode(ctx.argv) ? firstRoot(namesRoot, operands) : null
       if (root !== null) {
         return deny(
           `${root.rawPath}: Cannot open: Device or resource busy\n` +
@@ -201,7 +209,7 @@ export class MountRootPolicy implements Policy {
     if (cmd === 'zip') {
       // The first operand is the archive being written, not a source;
       // only what follows it is read.
-      const root = firstRoot(isRoot, operands.slice(1))
+      const root = firstRoot(namesRoot, operands.slice(1))
       if (root !== null) {
         return deny(`cannot read '${root.rawPath}': Device or resource busy`)
       }
@@ -211,7 +219,7 @@ export class MountRootPolicy implements Policy {
     if (cmd === 'cp') {
       // The last operand is the destination, and copying INTO a mount is
       // ordinary; only the sources are refused.
-      const root = firstRoot(isRoot, operands.slice(0, -1))
+      const root = firstRoot(namesRoot, operands.slice(0, -1))
       if (root !== null) {
         return deny(`cannot copy '${root.rawPath}': Device or resource busy`)
       }

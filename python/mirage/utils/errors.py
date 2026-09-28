@@ -123,23 +123,34 @@ class BadDescriptorError(OSError):
 
 
 class DotWalkError(OSError):
-    """A path its own ``.`` and ``..`` do not resolve (``dot_refusal``).
+    """A path the kernel walk does not resolve: its own ``.`` and ``..``
+    (``dot_refusal``), or an operand whose ``walk_error`` the walk
+    answered before the command ran (``walk_refusal``).
 
     Final, which is why it is a type of its own: a keyed store's plain
     miss can still be an implicit directory, and the layers that ask
     (the read commands' directory probes) re-read ENOENT that way, but
     a name in front of a dot that is missing or a plain file is not a
-    directory under any reading. Raised as one of the two subclasses,
-    so every catch site keyed on ENOENT or ENOTDIR still sees its own.
+    directory under any reading, and neither is the empty name or a
+    link loop. Raised as one of the subclasses, so every catch site
+    keyed on ENOENT or ENOTDIR still sees its own.
     """
 
 
 class DotWalkMissing(DotWalkError, FileNotFoundError):
-    """ENOENT: a name in front of a dot is not there."""
+    """ENOENT: a name in front of a dot is not there, or the name is
+    empty."""
 
 
 class DotWalkNotDir(DotWalkError, NotADirectoryError):
     """ENOTDIR: a name in front of a dot is a plain file."""
+
+
+class DotWalkLoop(DotWalkError):
+    """ELOOP: a symbolic link loop stands in the path's walk."""
+
+
+ELOOP_STRERROR = "Too many levels of symbolic links"
 
 
 _FS_STRERROR: list[tuple[type[OSError], str]] = [
@@ -147,6 +158,7 @@ _FS_STRERROR: list[tuple[type[OSError], str]] = [
     (FileNotFoundError, "No such file or directory"),
     (NotADirectoryError, "Not a directory"),
     (IsADirectoryError, "Is a directory"),
+    (DotWalkLoop, ELOOP_STRERROR),
     (FileExistsError, "File exists"),
     (ReadOnlyError, "Read-only file system"),
     (PermissionError, "Permission denied"),
@@ -183,6 +195,21 @@ def _virtual_of(path: str | PathSpec) -> str:
 
 def enoent(path: str | PathSpec) -> FileNotFoundError:
     return FileNotFoundError(_virtual_of(path))
+
+
+def walk_refusal(path: PathSpec) -> DotWalkError:
+    """What an op raises for an operand the kernel walk did not resolve.
+
+    Named as typed, the empty name included, since it is what the
+    command reports and ``virtual`` names the working directory for it.
+
+    Args:
+        path (PathSpec): an operand whose ``walk_error`` is set.
+    """
+    if path.walk_error == "ELOOP":
+        return DotWalkLoop(errno.ELOOP, ELOOP_STRERROR, path.raw_path)
+    return DotWalkMissing(errno.ENOENT, "No such file or directory",
+                          path.raw_path)
 
 
 def efbig(path: str | PathSpec) -> FileTooLargeError:
@@ -245,9 +272,18 @@ def einval(path: str | PathSpec, message: str = "Invalid argument") -> OSError:
     return OSError(errno.EINVAL, message, _virtual_of(path))
 
 
-def eloop(path: str | PathSpec) -> OSError:
-    return OSError(errno.ELOOP, "Too many levels of symbolic links",
-                   _virtual_of(path))
+def eloop(path: str | PathSpec) -> DotWalkLoop:
+    """ELOOP: a link loop stands in the path's walk.
+
+    Typed, unlike the three above, because it is a walk refusal: final
+    for every layer that re-reads a miss, and an OSError, so a per-operand
+    catch words it where the namespace's own ``CycleError`` escaped every
+    one. The door raises it for a loop above any name it is handed.
+
+    Args:
+        path (str | PathSpec): the path whose walk looped.
+    """
+    return DotWalkLoop(errno.ELOOP, ELOOP_STRERROR, _virtual_of(path))
 
 
 async def readdir_error(path: str | PathSpec, key: str,
@@ -368,11 +404,13 @@ def error_path(exc: BaseException) -> str:
     ``mkdir -p`` reports the component of the chain it tripped on, so the
     stamped path wins over what the caller was holding.
 
+    An empty stamp is the empty operand, which is a name like any other.
+
     Args:
         exc (BaseException): The filesystem error.
     """
     stamped = getattr(exc, "filename", None)
-    if isinstance(stamped, str) and stamped:
+    if isinstance(stamped, str):
         return stamped
     return str(exc)
 
@@ -451,6 +489,13 @@ FAILURE_WORDING: dict[str, tuple[str | None, str | None]] = {
 }
 
 
+# GNU wc and du vet every name the way their --files0-from reader does,
+# and refuse an empty one in these words before any open could answer
+# ENOENT for it (coreutils 9.7).
+ZERO_LENGTH_NAME = "invalid zero-length file name"
+_VETS_EMPTY_NAMES = frozenset({"du", "wc"})
+
+
 def _step_wording(cmd_name: str, label: str, exc: BaseException) -> str | None:
     """The command's own template for this failure, None for the plain
     line: no entry, no template for the step, or standard input, whose
@@ -489,6 +534,8 @@ def fs_error_line(cmd_name: str, path: str | PathSpec,
     """
     raw = getattr(path, "raw_path", None)
     label = raw if raw is not None else _virtual_of(path)
+    if label == "" and cmd_name in _VETS_EMPTY_NAMES:
+        return f"{cmd_name}: {ZERO_LENGTH_NAME}\n"
     strerror = fs_strerror(exc)
     template = _step_wording(cmd_name, label, exc)
     if template is not None and strerror is not None:

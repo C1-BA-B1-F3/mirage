@@ -549,6 +549,10 @@
     "integ/unix/slash/slash.json :: slash_mkdir_revisits_destination": {
       "hf": "HF cannot retain empty directories. This case asserts the directories created while revisiting a dotted operand; slash_mkdir_collides still covers its path refusals on HF.",
       "hf-prefix": "HF cannot retain empty directories. This case asserts the directories created while revisiting a dotted operand; slash_mkdir_collides still covers its path refusals on HF."
+    },
+    "integ/unix/sym/eloop.json :: sym_eloop_mv_onto": {
+      "hf": "hf has no rename op, so the backend rename this case pins (a file landing on a link a loop stands in, which GNU renames over the link because the destination's stat fails ELOOP) answers `Operation not supported` there, the same limit mv/backup.json omits hf for. hf runs every other case in this file, each of which refuses before any op reaches the backend.",
+      "hf-prefix": "hf has no rename op, so the backend rename this case pins (a file landing on a link a loop stands in, which GNU renames over the link because the destination's stat fails ELOOP) answers `Operation not supported` there, the same limit mv/backup.json omits hf for. hf runs every other case in this file, each of which refuses before any op reaches the backend."
     }
   }
 }

@@ -15,7 +15,13 @@
 import { rekey } from '../../../utils/key_prefix.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { FileType, PathSpec, type StatFn } from '../../../types.ts'
-import { enoent, enotdir, isMissingPath } from '../../../utils/errors.ts'
+import { ELOOP_STRERROR, eloop, enoent, enotdir, isMissingPath } from '../../../utils/errors.ts'
+
+// The destination verdicts GNU meets at the destination's own stat, before
+// any create or rename: a plain file in its chain, or a link loop in it. cp
+// and mv both word them `cannot stat 'DST'` (coreutils 9.7). Mirrors
+// Python's STAT_REFUSALS.
+export const STAT_REFUSALS: ReadonlySet<string> = new Set(['Not a directory', ELOOP_STRERROR])
 import { rstripSlash } from '../../../utils/slash.ts'
 
 export type BackendKeyFn = (path: PathSpec) => string
@@ -43,6 +49,7 @@ export function copyTargets(
   dstErr: string | null = null,
 ): [PathSpec, PathSpec][] {
   if (sources.length > 1 && !dstIsDir) {
+    if (dstErr === ELOOP_STRERROR) throw eloop(`target '${dst.rawPath}'`)
     if (!dstExists && dstErr !== 'Not a directory') throw enoent(`target '${dst.rawPath}'`)
     throw enotdir(`target '${dst.rawPath}'`)
   }

@@ -14,6 +14,8 @@
 
 from mirage.ops.types import LinkView
 from mirage.types import FileType, PathSpec
+from mirage.utils.errors import ELOOP_STRERROR
+from mirage.utils.path import CycleError
 
 
 async def rm_link_refusal(
@@ -92,6 +94,14 @@ async def mkdir_link_refusal(
     """
     if links is None or links.stat_at(p.virtual) is None:
         return False, None
+    if parents:
+        # -p stats the name mkdir(2) found taken, to see whether it is
+        # the directory asked for, and a loop fails that stat.
+        try:
+            links.resolve(p.virtual)
+        except CycleError:
+            return True, (f"mkdir: cannot stat '{p.raw_path}': "
+                          f"{ELOOP_STRERROR}")
     target = await links.target_stat(p.virtual)
     if parents and target is not None and target.type == FileType.DIRECTORY:
         return True, None

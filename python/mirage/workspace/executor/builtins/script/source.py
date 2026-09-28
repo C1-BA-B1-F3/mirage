@@ -54,8 +54,13 @@ async def handle_source(
             when omitted the parent's positional parameters are kept.
     """
     raw = _scope_path(path)
-    if not raw:
-        return script_error("source", SOURCE_USAGE, 2)
+    if word_text(path) == "":
+        # The empty name is a filename bash tries to open, not a missing
+        # argument, so it fails like any file that is not there.
+        return script_error("source",
+                            ": No such file or directory",
+                            1,
+                            command="source ")
     try:
         script = await read_script_text(dispatch, raw, session.cwd)
     except FS_ERRORS as exc:
@@ -88,7 +93,8 @@ async def source_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation.
     """
     operands = list(call.argv.operands)
-    path = operands[0] if operands else ""
-    return await handle_source(call.dispatch, call.execute_fn, path,
+    if not operands:
+        return script_error("source", SOURCE_USAGE, 2)
+    return await handle_source(call.dispatch, call.execute_fn, operands[0],
                                call.session,
                                [word_text(o) for o in operands[1:]])

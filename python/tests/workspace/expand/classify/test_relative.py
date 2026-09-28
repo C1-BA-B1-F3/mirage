@@ -60,3 +60,17 @@ def test_raw_path_round_trip():
     assert isinstance(result, PathSpec)
     assert result.raw_path == "./sub/a.txt"
     assert result.virtual == "/ram/sub/a.txt"
+
+
+def test_empty_word_is_refused_by_the_walk_not_read_as_the_cwd():
+    result = relative_spec("", _registry(), "/ram/sub")
+    assert isinstance(result, PathSpec)
+    assert result.virtual == "/ram/sub"
+    assert result.raw_path == ""
+    assert result.walk_error == "ENOENT"
+
+
+def test_a_named_word_carries_no_walk_error():
+    result = relative_spec("sub/a.txt", _registry(), "/ram")
+    assert isinstance(result, PathSpec)
+    assert result.walk_error is None

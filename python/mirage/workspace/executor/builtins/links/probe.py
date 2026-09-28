@@ -16,9 +16,13 @@ import posixpath
 
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import MISS_ERRORS
+from mirage.utils.errors import ELOOP_STRERROR, MISS_ERRORS, DotWalkLoop
 from mirage.utils.path import CycleError
 from mirage.workspace.mount.namespace import Namespace
+
+# What an existence probe reads as nothing there: every miss, and a link
+# loop, which the walk reaches nothing through.
+_ABSENT: tuple[type[Exception], ...] = (*MISS_ERRORS, DotWalkLoop)
 
 
 async def resolve_path_stat(dispatch: DispatchFn,
@@ -39,6 +43,10 @@ async def resolve_path_stat(dispatch: DispatchFn,
     ``tables``/``views`` under any first segment, and every absent
     schema read as a directory here.
 
+    A link loop in the path is absence too: the walk reaches nothing
+    there, which is the question this answers, and a diagnostic that has
+    to name the errno asks :func:`miss_strerror`.
+
     Args:
         dispatch (DispatchFn): op dispatcher.
         path (PathSpec): path to resolve.
@@ -46,13 +54,13 @@ async def resolve_path_stat(dispatch: DispatchFn,
     stat: FileStat | None
     try:
         stat, _ = await dispatch("stat", path)
-    except MISS_ERRORS:
+    except _ABSENT:
         stat = None
     if stat is not None:
         return stat
     try:
         entries, _ = await dispatch("readdir", path)
-    except MISS_ERRORS:
+    except _ABSENT:
         return None
     if not entries:
         return None
@@ -83,9 +91,9 @@ async def miss_strerror(dispatch: DispatchFn, virtual: str) -> str:
 
     ``path_stat`` answers None for both ways a lookup fails, since an
     existence probe treats them alike, while a diagnostic names the one
-    the stat met: ENOTDIR for a path under a plain file, ENOENT for the
-    rest. Asked only after a miss, so its round trip is on the failure
-    path.
+    the stat met: ENOTDIR for a path under a plain file, ELOOP for one a
+    link loop stands in, ENOENT for the rest. Asked only after a miss, so
+    its round trip is on the failure path.
 
     Args:
         dispatch (DispatchFn): op dispatcher.
@@ -97,6 +105,8 @@ async def miss_strerror(dispatch: DispatchFn, virtual: str) -> str:
         return "Not a directory"
     except MISS_ERRORS:
         return "No such file or directory"
+    except DotWalkLoop:
+        return ELOOP_STRERROR
     return "No such file or directory"
 
 

@@ -313,17 +313,20 @@ async def make_link(copies: TransferLinks, src: PathSpec, target: PathSpec,
         bool: Whether the link was created; False on a skip or error.
     """
     stat = partial(link_stat, copies)
+    target_link = copies.links.stat_at(target.virtual)
     there = await _entry_at(copies.dispatch, target)
-    if copies.links.stat_at(target.virtual) is None and there is not None \
+    if target_link is None and there is not None \
             and there.type == FileType.DIRECTORY:
         errors.append(f"{policy.cmd_name}: cannot overwrite directory "
                       f"'{target.raw_path}' with non-directory")
         return False
     if not await overwrite_gate(policy, stat, src, target, errors):
         return False
-    backup, ok = await make_backup(
-        policy, NativeMove(rename=partial(rename_link, copies)), stat,
-        copies.relay.readdir, target, writes, errors)
+    backup_strategy = (NativeMove(rename=partial(rename_link, copies))
+                       if target_link is not None else copies.relay)
+    backup, ok = await make_backup(policy, backup_strategy, stat,
+                                   copies.relay.readdir, target, writes,
+                                   errors)
     if not ok:
         return False
     try:

@@ -64,8 +64,11 @@ type Node =
 // Dates use UTC and Moment's format tokens, as Airtable does. Parsing accepts
 // ISO, RFC 2822 and the US/English dates in the reference, never host-local dates.
 // Runtime errors are NaN (excluded by filters and rendered as specialValue by
-// cells.ts); operators and ordinary calls propagate them. IF and SWITCH only
-// evaluate the selected result, while all branches are validated at compile time.
+// cells.ts); operators and ordinary calls propagate them. AND and OR are
+// ordinary calls: Airtable evaluates every argument, so AND(FALSE(), ERROR())
+// is an error, not FALSE (https://community.airtable.com/formulas-10/airtable-error-with-invalid-and-condition-formular-does-not-abort-after-first-mismatch-33457).
+// IF and SWITCH only evaluate the selected result, while all branches are
+// validated at compile time.
 // Semantics follow Airtable where the subset reaches: a missing cell is BLANK,
 // which equals '', 0 and FALSE(); SEARCH is case-insensitive and answers
 // blank when it finds nothing, FIND is case-sensitive and answers 0; `=` on

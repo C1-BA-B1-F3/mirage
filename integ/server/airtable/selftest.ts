@@ -945,6 +945,8 @@ async function formulaFields(): Promise<void> {
     ['IF(FALSE(), "unused")', undefined],
     ['IF(ERROR(), 1, 2)', nan],
     ['IF(ISERROR(1 / 0), "caught", "missed")', 'caught'],
+    ['AND(FALSE(), ERROR())', nan],
+    ['OR(TRUE(), ERROR())', nan],
     ['SWITCH(2, 1, ERROR(), 2, "two", ERROR())', 'two'],
     ['SWITCH(9, 1, "one", 2, "two", "other")', 'other'],
     ['SWITCH(9, 1, "one", 2, "two")', undefined],
@@ -1031,6 +1033,18 @@ async function formulaFields(): Promise<void> {
           'IF({Due}, CONCATENATE(LEFT({Name}, 3), ":", DATETIME_FORMAT({Due}, "YYYY-MM-DD"), ":", {Priority} * 2), BLANK())',
       },
     },
+    {
+      id: 'fldDueYear0000001',
+      name: 'Due year',
+      type: 'formula',
+      options: { formula: 'DATETIME_FORMAT({Due}, "YYYY")' },
+    },
+    {
+      id: 'fldDueLabel000001',
+      name: 'Due label',
+      type: 'formula',
+      options: { formula: 'IF(ISERROR({Due year}), "no date", "due " & {Due year})' },
+    },
   ]
   table.views = [
     {
@@ -1065,6 +1079,20 @@ async function formulaFields(): Promise<void> {
         'derived text and date formatting',
         fieldsOf(filtered.records[0]).Calculated,
         'CSV:2026-07-01:6',
+      )
+      const undated = fieldsOf((await http(`${features}/${F(5)}`)).body)
+      eq('a formula field in error renders as one', undated['Due year'], nan)
+      eq('ISERROR sees a referenced formula error', undated['Due label'], 'no date')
+      eq('a referenced formula value passes through', fieldsOf(first.body)['Due label'], 'due 2026')
+      eq(
+        'filters see a referenced formula error',
+        (await listAll(features, [['filterByFormula', 'ISERROR({Due year})']])).ids,
+        [5, 6, 8, 9, 10].map(F),
+      )
+      eq(
+        'operators carry a referenced formula error',
+        (await listAll(features, [['filterByFormula', '{Due year} & "" = ""']])).ids,
+        [],
       )
       const changed = await http(`${features}/${F(2)}`, {
         method: 'PATCH',

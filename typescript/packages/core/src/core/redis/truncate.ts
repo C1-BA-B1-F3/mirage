@@ -17,25 +17,21 @@ import { record, startOp } from '../../observe/context.ts'
 import { VFSName } from '../../types.ts'
 import type { PathSpec } from '../../types.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
-import { checkWriteTarget } from './dest.ts'
+import { checkDestParents, checkWriteTarget } from './dest.ts'
 import { norm, nowIso } from './utils.ts'
 
 export async function truncate(
   accessor: RedisAccessor,
   path: PathSpec,
   length: number,
+  noCreate = false,
 ): Promise<void> {
   const timer = startOp()
   const p = norm(path.mountPath)
   const store = accessor.store
+  await checkDestParents(store, path, p)
   await checkWriteTarget(store, path, p)
-  const existing = await store.getFile(p)
-  const data = existing ?? new Uint8Array(0)
-  const out = new Uint8Array(length)
-  const copyLen = Math.min(data.byteLength, length)
-  out.set(data.subarray(0, copyLen), 0)
-  await store.setFile(p, out)
-  await store.setModified(p, nowIso())
+  if (!(await store.truncateFile(p, length, nowIso(), noCreate))) return
   record('truncate', path.virtual, VFSName.REDIS, 0, timer)
   await invalidateAfterWrite(p)
 }

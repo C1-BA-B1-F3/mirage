@@ -154,6 +154,70 @@ def test_format_fs_error_words_a_head_open_failure():
                          b"No such file or directory\n")
 
 
+@pytest.mark.parametrize(("cmd", "step"), [
+    ("tac", "failed to open '/data/a.txt/x' for reading"),
+    ("stat", "cannot statx '/data/a.txt/x'"),
+    ("truncate", "cannot open '/data/a.txt/x' for writing"),
+])
+def test_each_command_names_its_own_failed_step(cmd, step):
+    # The errno is the backend's either way; only the step and the
+    # quoting are the command's (coreutils 9.7).
+    for exc, strerror in ((enoent("/data/a.txt/x"),
+                           "No such file or directory"),
+                          (enotdir("/data/a.txt/x"), "Not a directory")):
+        line = fs_error_line(cmd, "/data/a.txt/x", exc)
+        assert line == f"{cmd}: {step}: {strerror}\n"
+
+
+def test_tac_names_a_directory_read_first_and_quotes_it_when_needed():
+    # tac's read failure leads with the name, which GNU quotes the way
+    # quotef does: only a name that needs it, ':' included.
+    assert fs_error_line("tac", "/data/sub", eisdir("/data/sub")) == (
+        "tac: /data/sub: read error: Is a directory\n")
+    assert fs_error_line("tac", "/data/a b", eisdir("/data/a b")) == (
+        "tac: '/data/a b': read error: Is a directory\n")
+    assert fs_error_line("tac", "/data/c:d", eisdir("/data/c:d")) == (
+        "tac: '/data/c:d': read error: Is a directory\n")
+
+
+def test_stat_and_truncate_say_one_step_for_a_directory():
+    assert fs_error_line("truncate", "/data/sub", eisdir("/data/sub")) == (
+        "truncate: cannot open '/data/sub' for writing: Is a directory\n")
+    assert fs_error_line("stat", "/data/sub", eisdir("/data/sub")) == (
+        "stat: cannot statx '/data/sub': Is a directory\n")
+
+
+def test_a_step_line_escapes_a_control_character_in_the_name():
+    line = fs_error_line("stat", "/data/a\tb", enoent("/data/a\tb"))
+    assert line == ("stat: cannot statx '/data/a'$'\\t''b': "
+                    "No such file or directory\n")
+
+
+def test_tac_leaves_standard_input_bare():
+    exc = BadDescriptorError(errno.EBADF, "Bad file descriptor", "-")
+    assert fs_error_line("tac", "-", exc) == "tac: -: Bad file descriptor\n"
+
+
+def test_an_empty_operand_is_named_as_typed():
+    # An empty raw_path is the operand as typed, not a missing one, so it
+    # is not replaced by the virtual path it resolved to; the TypeScript
+    # formatter reads it the same way.
+    spec = PathSpec(virtual="/data",
+                    directory="/",
+                    vfs_path="data",
+                    raw_path="")
+    assert fs_error_line("tac", spec, enoent(spec)) == (
+        "tac: failed to open '' for reading: No such file or directory\n")
+    assert fs_error_line(
+        "cat", spec, enoent(spec)) == ("cat: '': No such file or directory\n")
+
+
+def test_format_fs_error_words_a_stat_failure():
+    exc = FileNotFoundError(2, "No such file or directory", "/a/gone.txt")
+    assert format_fs_error("stat", exc) == (
+        b"stat: cannot statx '/a/gone.txt': No such file or directory\n")
+
+
 def test_format_fs_error_generic_prefixes_command():
     err = format_fs_error(
         "slack-add-reaction",

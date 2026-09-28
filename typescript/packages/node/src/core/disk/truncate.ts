@@ -13,7 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { DiskAccessor } from '../../accessor/disk.ts'
-import { readFile, writeFile } from 'node:fs/promises'
+import { open } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { invalidateAfterWrite } from '@struktoai/mirage-core/cache/context'
 import { record, startOp } from '@struktoai/mirage-core/observe/context'
 import { VFSName } from '@struktoai/mirage-core/types'
@@ -24,22 +25,23 @@ export async function truncate(
   accessor: DiskAccessor,
   path: PathSpec,
   length: number,
+  noCreate = false,
 ): Promise<void> {
   const timer = startOp()
   const full = await resolveInside(accessor.root, path)
-  let data: Buffer
+  const flags = constants.O_WRONLY | (noCreate ? 0 : constants.O_CREAT)
+  let handle
   try {
-    data = await readFile(full)
+    handle = await open(full, flags, 0o666)
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      data = Buffer.alloc(0)
-    } else {
-      throw err
-    }
+    if (noCreate && (err as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw err
   }
-  const out = new Uint8Array(length)
-  out.set(data.subarray(0, Math.min(data.byteLength, length)))
-  await writeFile(full, out)
+  try {
+    await handle.truncate(length)
+  } finally {
+    await handle.close()
+  }
   record('truncate', path.virtual, VFSName.DISK, 0, timer)
   await invalidateAfterWrite(path)
 }

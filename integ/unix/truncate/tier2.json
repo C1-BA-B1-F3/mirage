@@ -3,7 +3,7 @@
     {
       "id": "truncate_tier2_size",
       "seq": 910001,
-      "targets": ["ram", "disk"],
+      "targets": ["ram", "disk", "redis", "opfs"],
       "command": "mkdir -p /data/t2truncate && printf 'abcdef' > /data/t2truncate/f && truncate --size 3 /data/t2truncate/f && cat /data/t2truncate/f && truncate -s +2 /data/t2truncate/f && wc -c < /data/t2truncate/f && truncate -s 2 /data/t2truncate/new && wc -c < /data/t2truncate/new && truncate -c -s 1 /data/t2truncate/absent /data/t2truncate/f && test ! -e /data/t2truncate/absent && wc -c < /data/t2truncate/f; truncate -s 0 /data/t2truncate/nodir/x /data/t2truncate/new; echo rc=$?; wc -c < /data/t2truncate/new; ln -s /data/t2truncate/target /data/t2truncate/dl && truncate -s 4 /data/t2truncate/dl && wc -c < /data/t2truncate/target && ln -s /data/t2truncate/absent2 /data/t2truncate/dl2 && truncate -c -s 4 /data/t2truncate/dl2 && test ! -e /data/t2truncate/absent2 && ln -s /data/t2truncate/nodir/t /data/t2truncate/dl3; truncate -s 1 /data/t2truncate/dl3; echo rc=$?",
       "expect": { "exit": 0, "stdout": "abc5\n2\n1\nrc=1\n0\n4\nrc=1\n", "stderr": "truncate: cannot open '/data/t2truncate/nodir/x' for writing: No such file or directory\ntruncate: cannot open '/data/t2truncate/dl3' for writing: No such file or directory\n" },
       "flags": ["size", "s"]

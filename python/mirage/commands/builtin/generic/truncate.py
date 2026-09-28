@@ -109,7 +109,7 @@ async def truncate(
     *,
     flags: TruncateFlags,
     stat: Callable[[PathSpec], Awaitable[FileStat]],
-    truncate_fn: Callable[[PathSpec, int], Awaitable[None]],
+    truncate_fn: Callable[[PathSpec, int, bool], Awaitable[None]],
 ) -> tuple[ByteSource | None, IOResult]:
     """Set each operand's length, GNU ``truncate -s``.
 
@@ -121,17 +121,17 @@ async def truncate(
         paths (list[PathSpec]): the file operands.
         flags (TruncateFlags): the parsed flags.
         stat (Callable): stats a path; raises when missing.
-        truncate_fn (Callable): sets a path's length in bytes, making
-            the file when it is absent.
+        truncate_fn (Callable): sets the length and enforces no_create.
     """
     if not paths:
         raise UsageError("truncate: missing file operand" + _TRY_HELP, 1)
-    err = b""
+    errors: list[str] = []
     for path in paths:
         try:
             await _truncate_one(path, flags, stat, truncate_fn)
         except FS_ERRORS as exc:
-            err += fs_error_line("truncate", path, exc).encode()
+            errors.append(fs_error_line("truncate", path, exc))
+    err = "".join(errors).encode()
     return None, IOResult(exit_code=1 if err else 0, stderr=err or None)
 
 
@@ -139,7 +139,7 @@ async def _truncate_one(
     path: PathSpec,
     flags: TruncateFlags,
     stat: Callable[[PathSpec], Awaitable[FileStat]],
-    truncate_fn: Callable[[PathSpec, int], Awaitable[None]],
+    truncate_fn: Callable[[PathSpec, int, bool], Awaitable[None]],
 ) -> None:
     """One operand, in the order GNU's open settles it.
 
@@ -158,7 +158,7 @@ async def _truncate_one(
         path (PathSpec): the operand.
         flags (TruncateFlags): the parsed flags.
         stat (Callable): stats a path; raises when missing.
-        truncate_fn (Callable): sets a path's length in bytes.
+        truncate_fn (Callable): sets the length and enforces no_create.
     """
     try:
         current = (await stat(path)).size or 0
@@ -174,7 +174,7 @@ async def _truncate_one(
         if why is not None:
             raise enoent(path) from exc
         current = 0
-    await truncate_fn(path, parse_size(flags.size, current))
+    await truncate_fn(path, parse_size(flags.size, current), flags.no_create)
 
 
 __all__ = ["TruncateFlags", "parse_flags", "parse_size", "truncate"]

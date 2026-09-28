@@ -735,11 +735,7 @@ class PathSpec:
     raw_path: str
     pattern: str | None = None
     resolved: bool = True
-    # The typed spelling with its `.` and `..` kept, absolute, when a
-    # named component precedes one (`dotted_spelling`); None otherwise.
-    # `virtual` has simplified them away, so this is what the walk that
-    # proves each such component a directory reads. Out of equality:
-    # it says how the path was reached, not which path it is.
+    # Absolute spelling before dot normalization; excluded from identity.
     dotted: str | None = field(default=None, compare=False)
 
     def __init__(

@@ -879,6 +879,39 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "slash_mkdir_revisits_destination",
+      "seq": 94101,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/revisit/new/../new /data/revisit/repeat/../repeat/../repeat /data/revisit/dot/. /data/revisit/up/.. && ls /data/revisit",
+      "expect": {
+        "exit": 0,
+        "stdout": "dot\nnew\nrepeat\nup\n",
+        "stderr": ""
+      },
+      "note": "GNU coreutils 9.7: an intermediate component must be created even when it equals the final normalized path."
     }
   ]
 }

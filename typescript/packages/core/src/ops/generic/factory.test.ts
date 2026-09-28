@@ -354,3 +354,15 @@ describe('the read op and byte ranges', () => {
     expect(table.readBytes).not.toHaveBeenCalled()
   })
 })
+
+it('emulated truncate refuses no-create before reading or writing', async () => {
+  const readBytes = vi.fn()
+  const write = vi.fn()
+  const ops = makeGenericOps('x', makeTable({ readBytes, write }), { emulateTruncate: true })
+  const truncate = ops.find((op) => op.name === 'truncate')
+  await expect(truncate?.fn(ACCESSOR, PATH, [2], { no_create: true })).rejects.toMatchObject({
+    code: 'ENOTSUP',
+  })
+  expect(readBytes).not.toHaveBeenCalled()
+  expect(write).not.toHaveBeenCalled()
+})

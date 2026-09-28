@@ -861,11 +861,7 @@ export class PathSpec {
   // The word's spelling: as typed for relative words, the absolute path
   // for everything else (defaults to `virtual`).
   readonly rawPath: string
-  // The typed spelling with its `.` and `..` kept, absolute, when a named
-  // component precedes one (`dottedSpelling`); null otherwise. `virtual`
-  // has simplified them away, so this is what the walk that proves each
-  // such component a directory reads. It says how the path was reached,
-  // not which path it is. Mirrors Python's PathSpec.dotted.
+  // Absolute spelling before dot normalization; excluded from identity.
   readonly dotted: string | null
 
   constructor(init: PathSpecInit) {

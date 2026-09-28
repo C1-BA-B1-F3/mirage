@@ -17,7 +17,7 @@ import pytest
 from mirage.commands.builtin.generic.truncate import (TruncateFlags,
                                                       parse_size, truncate)
 from mirage.commands.errors import UsageError
-from mirage.types import PathSpec
+from mirage.types import FileStat, FileType, PathSpec
 
 
 def test_plain_and_operation_sizes():
@@ -156,7 +156,7 @@ async def test_a_slashed_operand_is_settled_by_the_truncate_op():
     async def stat(path):
         raise FileNotFoundError(path.virtual)
 
-    async def truncate_fn(path, length) -> None:
+    async def truncate_fn(path, length, no_create) -> None:
         lengths.append((path.raw_path, length))
 
     _, io = await truncate([
@@ -177,3 +177,22 @@ async def test_a_slashed_operand_is_settled_by_the_truncate_op():
                            truncate_fn=truncate_fn)
     assert io.exit_code == 0
     assert lengths == [("/missing/", 4), ("/missing", 4)]
+
+
+@pytest.mark.asyncio
+async def test_no_create_reaches_the_mutation_after_a_successful_stat():
+    calls = []
+
+    async def stat(path):
+        calls.append("stat")
+        return FileStat(name=path.virtual, type=FileType.FILE, size=4)
+
+    async def mutate(path, length, no_create):
+        calls.append((path.virtual, length, no_create))
+
+    _, result = await truncate([PathSpec.from_str_path("/file")],
+                               flags=TruncateFlags("2", True),
+                               stat=stat,
+                               truncate_fn=mutate)
+    assert result.exit_code == 0
+    assert calls == ["stat", ("/file", 2, True)]

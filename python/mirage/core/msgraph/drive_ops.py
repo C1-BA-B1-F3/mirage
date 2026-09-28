@@ -36,7 +36,7 @@ from mirage.core.msgraph.config import MsGraphConfig
 from mirage.observe.context import (active_recorder, record, record_stream,
                                     revision_for, start_op)
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import enoent, listing_error
+from mirage.utils.errors import enoent, enotsup, listing_error
 from mirage.utils.filetype import content_type_for_path
 from mirage.utils.ranges import window_for
 from mirage.utils.stat_view import DIR_SIZE
@@ -802,8 +802,11 @@ class WriteFn(Protocol[A_contra]):
 
 class TruncateFn(Protocol[A_contra]):
 
-    def __call__(self, accessor: A_contra, path: PathSpec,
-                 length: int) -> Awaitable[None]:
+    def __call__(self,
+                 accessor: A_contra,
+                 path: PathSpec,
+                 length: int,
+                 no_create: bool = False) -> Awaitable[None]:
         ...
 
 
@@ -847,7 +850,12 @@ def make_truncate(read: ReadFn[A], write: WriteFn[A]) -> TruncateFn[A]:
         TruncateFn: the truncation.
     """
 
-    async def truncate(accessor: A, path: PathSpec, length: int) -> None:
+    async def truncate(accessor: A,
+                       path: PathSpec,
+                       length: int,
+                       no_create: bool = False) -> None:
+        if no_create:
+            raise enotsup("msgraph", "truncate --no-create", path)
         try:
             data = await read(accessor, path, index=NULL_INDEX)
         except FileNotFoundError:

@@ -13,7 +13,7 @@ export const TRUNCATE_BUILDER: Builder = {
       resolved,
       flags,
       (path) => ops.stat(accessor, path, index),
-      (path, length) => truncate(accessor, path, length),
+      (path, length, noCreate) => truncate(accessor, path, length, noCreate),
     )
   },
 }

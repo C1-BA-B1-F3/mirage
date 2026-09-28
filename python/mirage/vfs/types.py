@@ -147,8 +147,16 @@ class PairOp(Protocol):
 
 
 class TruncateOp(Protocol):
+    """Resize with an optional atomic no-create precondition.
 
-    def __call__(self, accessor: Any, path: PathSpec, length: int,
+    Backends unable to enforce no-create must raise ENOTSUP before writing.
+    """
+
+    def __call__(self,
+                 accessor: Any,
+                 path: PathSpec,
+                 length: int,
+                 no_create: bool = False,
                  /) -> Awaitable[None]:
         ...
 

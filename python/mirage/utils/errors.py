@@ -487,7 +487,8 @@ def fs_error_line(cmd_name: str, path: str | PathSpec,
             the reported spelling, a plain string is used verbatim.
         exc (BaseException): The filesystem error.
     """
-    label = getattr(path, "raw_path", None) or _virtual_of(path)
+    raw = getattr(path, "raw_path", None)
+    label = raw if raw is not None else _virtual_of(path)
     strerror = fs_strerror(exc)
     template = _step_wording(cmd_name, label, exc)
     if template is not None and strerror is not None:

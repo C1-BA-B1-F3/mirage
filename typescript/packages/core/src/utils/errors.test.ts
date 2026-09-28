@@ -143,6 +143,70 @@ describe('fsErrorLine — commands that name the failed open', () => {
       "head: cannot open '/a/gone.txt' for reading: No such file or directory\n",
     )
   })
+
+  it.each([
+    ['tac', "failed to open '/data/a.txt/x' for reading"],
+    ['stat', "cannot statx '/data/a.txt/x'"],
+    ['truncate', "cannot open '/data/a.txt/x' for writing"],
+  ])('%s names its own failed step', (cmd, step) => {
+    // The errno is the backend's either way; only the step and the quoting
+    // are the command's (coreutils 9.7).
+    expect(fsErrorLine(cmd, '/data/a.txt/x', enoent('/data/a.txt/x'))).toBe(
+      `${cmd}: ${step}: No such file or directory\n`,
+    )
+    expect(fsErrorLine(cmd, '/data/a.txt/x', enotdir('/data/a.txt/x'))).toBe(
+      `${cmd}: ${step}: Not a directory\n`,
+    )
+  })
+
+  it('names a tac directory read first and quotes it only when needed', () => {
+    // tac's read failure leads with the name, which GNU quotes the way
+    // quotef does: only a name that needs it, ':' included.
+    expect(fsErrorLine('tac', '/data/sub', eisdir('/data/sub'))).toBe(
+      'tac: /data/sub: read error: Is a directory\n',
+    )
+    expect(fsErrorLine('tac', '/data/a b', eisdir('/data/a b'))).toBe(
+      "tac: '/data/a b': read error: Is a directory\n",
+    )
+    expect(fsErrorLine('tac', '/data/c:d', eisdir('/data/c:d'))).toBe(
+      "tac: '/data/c:d': read error: Is a directory\n",
+    )
+  })
+
+  it('says one step for a stat or truncate directory', () => {
+    expect(fsErrorLine('truncate', '/data/sub', eisdir('/data/sub'))).toBe(
+      "truncate: cannot open '/data/sub' for writing: Is a directory\n",
+    )
+    expect(fsErrorLine('stat', '/data/sub', eisdir('/data/sub'))).toBe(
+      "stat: cannot statx '/data/sub': Is a directory\n",
+    )
+  })
+
+  it('escapes a control character in a step line', () => {
+    expect(fsErrorLine('stat', '/data/a\tb', enoent('/data/a\tb'))).toBe(
+      "stat: cannot statx '/data/a'$'\\t''b': No such file or directory\n",
+    )
+  })
+
+  it('leaves tac standard input bare', () => {
+    expect(fsErrorLine('tac', '-', ebadfStdin())).toBe('tac: -: Bad file descriptor\n')
+  })
+
+  it('names an empty operand as typed', () => {
+    // An empty rawPath is the operand as typed, not a missing one; the
+    // Python formatter reads it the same way.
+    const spec = { virtual: '/data', rawPath: '' }
+    expect(fsErrorLine('tac', spec, enoent(spec))).toBe(
+      "tac: failed to open '' for reading: No such file or directory\n",
+    )
+    expect(fsErrorLine('cat', spec, enoent(spec))).toBe("cat: '': No such file or directory\n")
+  })
+
+  it('words a stat failure at the chokepoint', () => {
+    expect(decode(formatFsError('stat', enoent('/a/gone.txt')))).toBe(
+      "stat: cannot statx '/a/gone.txt': No such file or directory\n",
+    )
+  })
 })
 
 describe('enotsup', () => {

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { enotsup } from '../../utils/errors.ts'
 import type { Accessor } from '../../accessor/base.ts'
 import { invalidateAfterWrite, invalidateAncestors } from '../../cache/context.ts'
 import { record, startOp } from '../../observe/context.ts'
@@ -99,13 +100,15 @@ export function makeCreate<A extends Accessor, C>(driver: ObjectStoreDriver<A, C
 export function makeTruncate<A extends Accessor, C>(
   driver: ObjectStoreDriver<A, C>,
 ): TruncateFn<A> {
-  return async function truncate(accessor, path, length) {
+  return async function truncate(accessor, path, length, noCreate = false) {
+    if (noCreate) throw enotsup(driver.vfs, 'truncate --no-create', path)
     const key = kp.apply(driver.keyPrefixOf(accessor), path.mountPath)
     const timer = startOp()
     const { conn, close } = await driver.connect(accessor)
     let meta: ObjectMeta | null
     try {
-      const data = (await driver.get(conn, key)) ?? new Uint8Array(0)
+      const existing = await driver.get(conn, key)
+      const data = existing ?? new Uint8Array(0)
       const result = new Uint8Array(length)
       result.set(data.subarray(0, Math.min(data.byteLength, length)), 0)
       // Remaining bytes are already zero-filled (Uint8Array default).

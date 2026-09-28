@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import errno
 from unittest.mock import AsyncMock
 
 import pytest
@@ -318,3 +319,17 @@ async def test_a_zero_length_read_asks_the_backend_nothing():
                                    size=0) == b""
     native.assert_not_awaited()
     table.read_bytes.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_emulated_truncate_refuses_no_create_before_io():
+    write = AsyncMock()
+    table = make_table(write=write)
+    read = table.read_bytes
+    ops = make_generic_ops("x", table, emulate_truncate=True)
+    truncate = next(o for o in ops if o.name == "truncate")
+    with pytest.raises(OSError) as error:
+        await truncate.fn(NOOPAccessor(), PATH, 2, no_create=True)
+    assert error.value.errno == errno.ENOTSUP
+    read.assert_not_called()
+    write.assert_not_called()

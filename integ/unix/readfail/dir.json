@@ -715,6 +715,62 @@
       }
     },
     {
+      "id": "readfail_tac_dir",
+      "seq": 963051,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "tac /data/rfdir",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "tac: /data/rfdir: read error: Is a directory\n"
+      }
+    },
+    {
+      "id": "readfail_tac_missing",
+      "seq": 963052,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "tac /data/rfnope.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "tac: failed to open '/data/rfnope.txt' for reading: No such file or directory\n"
+      }
+    },
+    {
+      "id": "readfail_stat_missing",
+      "seq": 963053,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "stat /data/rfnope.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "stat: cannot statx '/data/rfnope.txt': No such file or directory\n"
+      }
+    },
+    {
+      "id": "readfail_truncate_dir",
+      "seq": 963054,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "truncate -s 0 /data/rfdir",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "truncate: cannot open '/data/rfdir' for writing: Is a directory\n"
+      }
+    },
+    {
       "id": "readfail_multi_seed",
       "seq": 963060,
       "targets": [
@@ -880,6 +936,20 @@
         "exit": 2,
         "stdout": "",
         "stderr": "zcat: /data/rfdir: Is a directory\nzcat: /data/rfdir: Is a directory\n"
+      }
+    },
+    {
+      "id": "readfail_tac_continues_past_a_directory",
+      "seq": 963072,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "tac /data/rfok.txt /data/rfdir /data/rfok2.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "b\na\nd\nc\n",
+        "stderr": "tac: /data/rfdir: read error: Is a directory\n"
       }
     },
     {

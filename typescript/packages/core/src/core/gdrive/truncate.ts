@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { enotsup } from '../../utils/errors.ts'
 import type { GDriveAccessor } from '../../accessor/gdrive.ts'
 import type { PathSpec } from '../../types.ts'
 import { eisdir } from '../../utils/errors.ts'
@@ -23,7 +24,9 @@ async function truncateImpl(
   accessor: GDriveAccessor,
   path: PathSpec,
   length: number,
+  noCreate = false,
 ): Promise<void> {
+  if (noCreate) throw enotsup('gdrive', 'truncate --no-create', path)
   const node = await resolveKey(accessor, path.vfsPath)
   if (node !== null && isFolder(node)) throw eisdir(path)
   let data: Uint8Array

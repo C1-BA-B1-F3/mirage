@@ -543,6 +543,70 @@
         "stdout": "",
         "stderr": "/data/a.txt/x: Not a directory\n"
       }
+    },
+    {
+      "id": "readfail_notdir_tac",
+      "seq": 1299114,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "tac /data/a.txt/x",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "tac: failed to open '/data/a.txt/x' for reading: Not a directory\n"
+      }
+    },
+    {
+      "id": "readfail_notdir_tac_keeps_going",
+      "seq": 1299115,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "tac /data/a.txt/x /data/a.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "baz\nbar\nfoo\nworld\nhello\n",
+        "stderr": "tac: failed to open '/data/a.txt/x' for reading: Not a directory\n"
+      }
+    },
+    {
+      "id": "readfail_notdir_stat_keeps_going",
+      "seq": 1299116,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "stat -c %n /data/a.txt/x /data/a.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "/data/a.txt\n",
+        "stderr": "stat: cannot statx '/data/a.txt/x': Not a directory\n"
+      }
+    },
+    {
+      "id": "readfail_notdir_truncate",
+      "seq": 1299117,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "truncate -s 0 /data/a.txt/x; echo rc=$?; wc -c < /data/a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n24\n",
+        "stderr": "truncate: cannot open '/data/a.txt/x' for writing: Not a directory\n"
+      }
     }
   ]
 }

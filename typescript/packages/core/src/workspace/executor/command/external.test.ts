@@ -146,6 +146,22 @@ describe('external program capture', () => {
     }
   })
 
+  it('globs every unquoted word of a fallback program', async () => {
+    // bash globs a word whatever it looks like: a leading dot matches the
+    // dotfiles and `x=*` a file named `x=1`, and a quoted or unmatched
+    // pattern stays the word as typed.
+    const probe = new ProcessProbe()
+    const ws = await workspace(probe)
+    try {
+      await ws.shell("mkdir /work; touch /work/.a.txt '/work/x=1'; cd /work")
+      const result = await ws.shell("native-tool .*.txt x=* '.*.txt' .none*")
+      expect(result.exitCode).toBe(0)
+      expect(probe.requests[0]?.argv).toEqual(['native-tool', '.a.txt', 'x=1', '.*.txt', '.none*'])
+    } finally {
+      await ws.close()
+    }
+  })
+
   it('never uses the external fallback for a refused named capture', async () => {
     const probe = new ProcessProbe({ captures: ['native-tool'], script: () => false })
     const fallback = new ProcessProbe()
@@ -524,12 +540,15 @@ describe.each(['process', 'shell'] as const)('external %s text-slot globs', (kin
     ['python3 s.py ../work/?.txt', ['python3', 's.py', '../work/a.txt', '../work/b.txt']],
     ["python3 s.py '*.txt' \\*.txt", ['python3', 's.py', '*.txt', '*.txt']],
     ['python3 s.py *.none', ['python3', 's.py', '*.none']],
+    ['python3 s.py .*.txt', ['python3', 's.py', '.a.txt']],
+    ['python3 s.py x=*', ['python3', 's.py', 'x=1']],
+    ['python3 s.py .none*', ['python3', 's.py', '.none*']],
     ['shopt -s nullglob; python3 s.py *.none x', ['python3', 's.py', 'x']],
     ['set -f; python3 s.py *.txt', ['python3', 's.py', '*.txt']],
   ] as const)('hands %s the words bash would', async (line, tokens) => {
     const [ws, probe] = await textWorkspace(['python3'])
     try {
-      await ws.shell('touch /work/a.txt /work/b.txt')
+      await ws.shell("touch /work/a.txt /work/b.txt /work/.a.txt '/work/x=1'")
       await ws.shell('cd /work')
       const result = await ws.shell(line)
       expect(result.exitCode).toBe(0)

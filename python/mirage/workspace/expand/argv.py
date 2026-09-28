@@ -176,22 +176,30 @@ async def expand_argv(
             kinds = spec_word_kinds(spec, expanded[consumed:], name)
             if in_process:
                 kinds = [kind if kind == "path" else None for kind in kinds]
-            if native:
-                # A text slot does not keep a native program's pattern
-                # literal: bash expands `python3 s.py *.txt` before
-                # python reads a word of it, so an unquoted glob is
-                # classified by its shape like any shell word and
-                # resolved below. A quoted one carries marks rather than
-                # glob characters, so it stays text.
-                kinds = [
-                    None if kind != "path" and has_glob(word) else kind
-                    for kind, word in zip(kinds, expanded[consumed:])
-                ]
             word_kinds = extra + kinds
             bases = spec_word_bases(spec, expanded[consumed:], session.cwd)
             if bases is not None:
                 head: list[str | None] = [None] * (consumed - 1)
                 word_bases = head + bases
+    if native:
+        # bash globs every unquoted word before the program reads any of
+        # them, whatever slot it fills and whatever it looks like:
+        # `python3 s.py *.txt` gets the matches, `.*.txt` the dotfiles and
+        # `x=*` a file named `x=1`, and a glob that matches nothing stays
+        # the word as typed. So a word carrying a live glob character is a
+        # pattern here, spec or no spec, rather than a shell word the
+        # shape rules read. A quoted one carries marks rather than glob
+        # characters, so it stays text.
+        tail = expanded[consumed:]
+        own = (word_kinds[consumed -
+                          1:] if word_kinds is not None else [None] *
+               len(tail))
+        names: list[ValueType | None] = ["str"] * (consumed - 1)
+        globbed: list[ValueType | None] = [
+            "path" if has_glob(word) else kind
+            for kind, word in zip(own, tail)
+        ]
+        word_kinds = names + globbed
 
     classified = classify_parts(expanded,
                                 registry,

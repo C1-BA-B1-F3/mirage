@@ -158,20 +158,28 @@ export async function expandArgv(
       const program = lineWords.slice(consumed)
       let kinds = specWordKinds(spec, program, name)
       if (inProcess) kinds = kinds.map((kind) => (kind === 'path' ? kind : null))
-      // A text slot does not keep a native program's pattern literal:
-      // bash expands `python3 s.py *.txt` before python reads a word of
-      // it, so an unquoted glob is classified by its shape like any
-      // shell word and resolved below. A quoted one carries marks rather
-      // than glob characters, so it stays text.
-      if (native) {
-        kinds = kinds.map((kind, i) => (kind !== 'path' && hasGlob(program[i] ?? '') ? null : kind))
-      }
       wordKinds = [...extra, ...kinds]
       const bases = specWordBases(spec, lineWords.slice(consumed), session.cwd)
       if (bases !== null) {
         wordBases = [...new Array<string | null>(consumed - 1).fill(null), ...bases]
       }
     }
+  }
+  if (native) {
+    // bash globs every unquoted word before the program reads any of
+    // them, whatever slot it fills and whatever it looks like:
+    // `python3 s.py *.txt` gets the matches, `.*.txt` the dotfiles and
+    // `x=*` a file named `x=1`, and a glob that matches nothing stays the
+    // word as typed. So a word carrying a live glob character is a
+    // pattern here, spec or no spec, rather than a shell word the shape
+    // rules read. A quoted one carries marks rather than glob characters,
+    // so it stays text.
+    const tail = lineWords.slice(consumed)
+    const own = wordKinds !== null ? wordKinds.slice(consumed - 1) : tail.map(() => null)
+    wordKinds = [
+      ...new Array<ValueType | null>(consumed - 1).fill('str'),
+      ...tail.map((word, i): ValueType | null => (hasGlob(word) ? 'path' : (own[i] ?? null))),
+    ]
   }
 
   const classified = classifyParts(lineWords, registry, session.cwd, wordKinds, wordBases)

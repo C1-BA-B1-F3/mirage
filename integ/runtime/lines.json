@@ -160,7 +160,9 @@
             "files": {
               "a.txt": "a\n",
               "b.txt": "b\n",
-              "secret.txt": "secret\n"
+              "secret.txt": "secret\n",
+              ".hidden.txt": "hidden\n",
+              "x=1": "one\n"
             }
           }
         },
@@ -200,6 +202,13 @@
           "expect": {
             "exit": 0,
             "stdout": "[\"python3\",\"-c\",\"p\",\"/ram/a.txt\",\"/ram/b.txt\"]\n"
+          }
+        },
+        {
+          "command": "python3 s.py .*.txt x=*",
+          "expect": {
+            "exit": 0,
+            "stdout": "[\"python3\",\"s.py\",\".hidden.txt\",\"x=1\"]\n"
           }
         },
         {

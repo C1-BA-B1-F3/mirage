@@ -123,6 +123,23 @@ async def test_external_globs_expand_against_the_workspace():
 
 
 @pytest.mark.asyncio
+async def test_external_fallback_globs_every_unquoted_word():
+    # bash globs a word whatever it looks like: a leading dot matches the
+    # dotfiles and `x=*` a file named `x=1`, and a quoted or unmatched
+    # pattern stays the word as typed.
+    probe = ProcessProbe()
+    async with workspace({"/work": RAMVFS()},
+                         mode=MountMode.EXEC,
+                         runtimes=[probe]) as ws:
+        await ws.shell("touch /work/.a.txt '/work/x=1'")
+        await ws.shell("cd /work")
+        result = await ws.shell("native-tool .*.txt x=* '.*.txt' .none*")
+        assert result.exit_code == 0
+        assert probe.requests[0].argv == ("native-tool", ".a.txt", "x=1",
+                                          ".*.txt", ".none*")
+
+
+@pytest.mark.asyncio
 async def test_runtime_refusal_cannot_fall_through_to_external_capture():
     named = ProcessProbe(captures=("native-tool", ), script=lambda ctx: False)
     fallback = ProcessProbe()
@@ -483,6 +500,9 @@ async def test_external_spec_preserves_text_words_and_shell_globs(kind):
      ("python3", "s.py", "../work/a.txt", "../work/b.txt")),
     ("python3 s.py '*.txt' \\*.txt", ("python3", "s.py", "*.txt", "*.txt")),
     ("python3 s.py *.none", ("python3", "s.py", "*.none")),
+    ("python3 s.py .*.txt", ("python3", "s.py", ".a.txt")),
+    ("python3 s.py x=*", ("python3", "s.py", "x=1")),
+    ("python3 s.py .none*", ("python3", "s.py", ".none*")),
     ("shopt -s nullglob; python3 s.py *.none x", ("python3", "s.py", "x")),
     ("set -f; python3 s.py *.txt", ("python3", "s.py", "*.txt")),
 ])
@@ -491,7 +511,8 @@ async def test_external_text_slot_globs_expand_like_bash(kind, line, tokens):
     async with workspace({"/work": RAMVFS()},
                          runtimes=[probe],
                          mode=MountMode.EXEC) as ws:
-        await ws.shell("touch /work/a.txt /work/b.txt")
+        await ws.shell("touch /work/a.txt /work/b.txt /work/.a.txt '/work/x=1'"
+                       )
         await ws.shell("cd /work")
         result = await ws.shell(line)
         assert result.exit_code == 0

@@ -18,10 +18,9 @@ class FakeShell:
         self.lines: list[str] = []
         self.exit_codes = exit_codes or []
 
-    async def __call__(self,
-                       line: str,
-                       session_id: str,
-                       stdin: bytes | None = None) -> IOResult:
+    async def __call__(self, line: str, session_id: str,
+                       stdin: bytes) -> IOResult:
+        assert stdin == b""
         self.lines.append(line)
         code = (self.exit_codes[len(self.lines) - 1]
                 if len(self.lines) <= len(self.exit_codes) else 0)

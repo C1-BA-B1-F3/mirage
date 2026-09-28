@@ -458,7 +458,7 @@ async def _attach(dispatch: DispatchFn, repo: BaseRepo, location: RepoLocation,
         await detach_head(dispatch, location.gitdir, commit.id)
     where = head.branch if head.branch is not None else short(
         (head.commit or "").encode(), abbrev_for(repo))
-    await record(dispatch, location.gitdir,
+    await record(dispatch, location.gitdir, location.commondir,
                  ref.decode() if ref is not None else None,
                  head_commit(repo,
                              head), commit.id, IDENTITY, int(time.time()),
@@ -621,7 +621,7 @@ async def checkout(
         if not texts:
             raise UnknownPathspecError("")
         target = texts[0]
-        repo, location = await opened(fl, doors)
+        repo, location = await opened(fl, doors, work_tree=True)
         head = await read_head(dispatch, location.gitdir)
         creating = fl.as_bool("b")
         ref = Ref(f"{BRANCH_PREFIX}{target}".encode())

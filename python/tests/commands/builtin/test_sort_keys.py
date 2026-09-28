@@ -280,6 +280,41 @@ class TestSortKeydef:
             _cfg(["0"])
 
 
+class TestNumericKeys:
+    """-n and -h in the C locale, pinned against GNU sort 9.7."""
+
+    def test_a_newline_is_a_blank_before_a_number(self):
+        # A -z record may hold one; sort.c's blanks table counts it.
+        data = ["\n5", "3", "\n-5", "-4"]
+        assert sort_lines(data,
+                          _cfg(numeric=True)) == ["\n-5", "-4", "3", "\n5"]
+
+    def test_a_newline_separates_fields(self):
+        assert sort_lines(["b\n1", "a\n2"], _cfg(["2,2n"])) == ["b\n1", "a\n2"]
+
+    def test_the_unit_outranks_the_magnitude(self):
+        assert _lines("1500\n1.5K\n2000\n1K", human_numeric=True) == \
+            ["1500", "2000", "1K", "1.5K"]
+
+    def test_only_k_is_a_unit_in_lowercase(self):
+        assert _lines("1m\n1M\n2\n1k", human_numeric=True) == \
+            ["1m", "2", "1k", "1M"]
+
+    def test_a_negative_number_negates_its_unit_and_zero_has_none(self):
+        assert _lines("-1K\n-2\n1\n-1M\n0\n-0K\n0K",
+                      human_numeric=True) == \
+            ["-1M", "-1K", "-2", "-0K", "0", "0K", "1"]
+
+    def test_the_unit_follows_the_digits_and_points(self):
+        assert _lines("5.K\n3K\n.5K\n3\nK", human_numeric=True,
+                      stable=True) == ["K", "3", ".5K", "3K", "5.K"]
+
+    def test_human_numbers_compare_exactly(self):
+        assert _lines("1.000000000000000002K\n1.000000000000000001K",
+                      human_numeric=True, stable=True) == \
+            ["1.000000000000000001K", "1.000000000000000002K"]
+
+
 async def _rb(_path):
     raise AssertionError("stdin-driven tests never read paths")
 

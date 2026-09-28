@@ -134,7 +134,7 @@ export async function restore(inv: CLIInvocation): Promise<CommandFnResult> {
     checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
     if (texts.length === 0) throw new NoRestorePathsError()
     const flags = parseFlags(fl)
-    const repo = await opened(fl, doors)
+    const repo = await opened(fl, doors, true)
     const state = await readIndex(repo, dispatch)
     const held = indexTree(state.entries)
     let source: Map<string, TreeEntry> | null

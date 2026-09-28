@@ -377,7 +377,7 @@ export async function mv(inv: CLIInvocation): Promise<CommandFnResult> {
     checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
     const flags = parseFlags(fl)
     if (texts.length < 2) throw new MoveUsageError()
-    const repo = await opened(fl, doors)
+    const repo = await opened(fl, doors, true)
     const state = await readIndex(repo, dispatch)
     const conflicted = new Set(state.conflicts.keys())
     // An unmerged path holds no ordinary entry, so a tracked set built from the

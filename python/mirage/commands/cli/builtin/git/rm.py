@@ -271,7 +271,7 @@ async def rm(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         flags = parse_flags(fl)
         if not texts:
             raise NoPathspecRemoveError()
-        repo, location = await opened(fl, doors)
+        repo, location = await opened(fl, doors, work_tree=not flags.cached)
         state = await read_index(dispatch, location.gitdir)
         tracked = {
             path.decode("utf-8", errors="replace")

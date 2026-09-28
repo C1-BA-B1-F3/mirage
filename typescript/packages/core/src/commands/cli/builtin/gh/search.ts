@@ -16,6 +16,8 @@ import type { CommandFnResult } from '../../../config.ts'
 import { UsageError } from '../../../errors.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import { Option, Operand } from '../../../spec/types.ts'
+import { GitHubApiError } from '../../../../core/github/client.ts'
+import { IOResult } from '../../../../io/types.ts'
 import { search } from '../../../../core/github/search.ts'
 
 function quote(value: string): string {
@@ -133,14 +135,27 @@ async function searchCmd(kind: string, inv: CLIInvocation): Promise<CommandFnRes
     throw new UsageError('cannot use `--jq` or `--template` without `--json`', 1)
   if (fl.asStr('jq') !== undefined && fl.asStr('template') !== undefined)
     throw new UsageError('cannot use `--jq` and `--template` together', 1)
-  const values = await search(
-    ghTransport(inv.config),
-    ({ repos: 'repositories', prs: 'issues' } as Record<string, string>)[kind] ?? kind,
-    query(kind, inv.texts, fl),
-    limit,
-    SEARCH_SORTS[kind] ? fl.asStr('sort') : undefined,
-    SEARCH_SORTS[kind] ? fl.asStr('order') : undefined,
-  )
+  const expression = query(kind, inv.texts, fl)
+  let values: unknown[]
+  try {
+    values = await search(
+      ghTransport(inv.config),
+      ({ repos: 'repositories', prs: 'issues' } as Record<string, string>)[kind] ?? kind,
+      expression,
+      limit,
+      SEARCH_SORTS[kind] ? fl.asStr('sort') : undefined,
+      SEARCH_SORTS[kind] ? fl.asStr('order') : undefined,
+    )
+  } catch (error) {
+    if (!(error instanceof GitHubApiError)) throw error
+    return [
+      null,
+      new IOResult({
+        exitCode: 1,
+        stderr: new TextEncoder().encode(`${searchError(error, expression)}\n`),
+      }),
+    ]
+  }
   const rows = values.map((value) => exported(kind, value))
   const template = fl.asStr('template')
   if (template !== undefined)
@@ -156,6 +171,28 @@ async function searchCmd(kind: string, inv: CLIInvocation): Promise<CommandFnRes
     human(kind, rows, values, kind === 'issues' && boolean(fl, 'include_prs')),
     SEARCH_FIELDS[kind] ?? [],
   )
+}
+
+/**
+ * How gh search words a failed search, its `httpError.Error`.
+ *
+ * A 422 naming its errors says the query is invalid, with the first reason;
+ * anything else is the status, GitHub's message (the status line for a body
+ * that is not JSON) and the request URL.
+ */
+function searchError(error: GitHubApiError, expression: string): string {
+  const { data } = error
+  const body =
+    typeof data === 'object' && data !== null && !Array.isArray(data) ? record(data) : null
+  const errors = body?.errors
+  if (error.status === 422 && Array.isArray(errors) && errors.length > 0) {
+    const reason = record(errors[0]).message
+    const quoted = JSON.stringify(expression.trim())
+    return `Invalid search query ${quoted}.\n${typeof reason === 'string' ? reason : ''}`
+  }
+  let message = `${String(error.status)} ${error.message}`
+  if (body !== null) message = typeof body.message === 'string' ? body.message : ''
+  return `HTTP ${String(error.status)}: ${message} (${error.url})`
 }
 
 type Row = Record<string, JsonValue>

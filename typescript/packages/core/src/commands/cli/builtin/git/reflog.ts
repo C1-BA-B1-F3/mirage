@@ -70,10 +70,13 @@ async function append(
  * Record one move of HEAD, and of the branch it is on.
  *
  * git writes both logs on every update: `logs/HEAD` always, and the branch's own
- * log when HEAD is attached to one. Both carry the same line.
+ * log when HEAD is attached to one. Both carry the same line. HEAD's log belongs
+ * to the checkout and a branch's to the repository, so a linked worktree splits
+ * them the way git does.
  *
  * @param dispatch workspace op dispatcher
- * @param gitdir this checkout's git directory, which owns the logs
+ * @param gitdir this checkout's git directory, which owns HEAD's log
+ * @param commondir the shared git directory, which owns the branches' logs
  * @param ref the branch ref that also moved, null when HEAD is detached
  * @param before the id HEAD held, null when it held none
  * @param after the id it now holds
@@ -84,6 +87,7 @@ async function append(
 export async function record(
   dispatch: Dispatch,
   gitdir: string,
+  commondir: string,
   ref: string | null,
   before: string | null,
   after: string,
@@ -93,5 +97,5 @@ export async function record(
 ): Promise<void> {
   const line = entry(before ?? ZERO, after, who, when, message)
   await append(dispatch, gitdir, HEAD_LOG, line)
-  if (ref !== null) await append(dispatch, gitdir, `${LOGS_DIR}/${ref}`, line)
+  if (ref !== null) await append(dispatch, commondir, `${LOGS_DIR}/${ref}`, line)
 }

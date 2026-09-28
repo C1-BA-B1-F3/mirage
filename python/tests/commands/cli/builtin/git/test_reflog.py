@@ -57,8 +57,9 @@ def lines(repo_path: Path, *parts: str) -> list[bytes]:
 @pytest.mark.asyncio
 async def test_both_logs_gain_the_same_line_when_head_is_on_a_branch(
         git_rw, repo_path: Path):
-    await record(git_rw.dispatch, "/repo/.git", "refs/heads/main", OLD, NEW,
-                 WHO, 1700000000, "commit: recorded")
+    await record(git_rw.dispatch, "/repo/.git", "/repo/.git",
+                 "refs/heads/main", OLD, NEW, WHO, 1700000000,
+                 "commit: recorded")
     head = lines(repo_path, "logs", "HEAD")
     branch = lines(repo_path, "logs", "refs", "heads", "main")
     assert head[-1] == branch[-1]
@@ -69,8 +70,8 @@ async def test_both_logs_gain_the_same_line_when_head_is_on_a_branch(
 async def test_a_detached_head_leaves_the_branch_log_alone(
         git_rw, repo_path: Path):
     before = lines(repo_path, "logs", "refs", "heads", "main")
-    await record(git_rw.dispatch, "/repo/.git", None, OLD, NEW, WHO,
-                 1700000000, "checkout: moving from main to abc1234")
+    await record(git_rw.dispatch, "/repo/.git", "/repo/.git", None, OLD, NEW,
+                 WHO, 1700000000, "checkout: moving from main to abc1234")
     assert lines(repo_path, "logs", "refs", "heads", "main") == before
     assert lines(
         repo_path, "logs",
@@ -80,8 +81,23 @@ async def test_a_detached_head_leaves_the_branch_log_alone(
 @pytest.mark.asyncio
 async def test_entries_accumulate_rather_than_replace(git_rw, repo_path: Path):
     before = len(lines(repo_path, "logs", "HEAD"))
-    await record(git_rw.dispatch, "/repo/.git", None, OLD, NEW, WHO,
-                 1700000000, "first")
-    await record(git_rw.dispatch, "/repo/.git", None, NEW, OLD, WHO,
-                 1700000001, "second")
+    await record(git_rw.dispatch, "/repo/.git", "/repo/.git", None, OLD, NEW,
+                 WHO, 1700000000, "first")
+    await record(git_rw.dispatch, "/repo/.git", "/repo/.git", None, NEW, OLD,
+                 WHO, 1700000001, "second")
     assert len(lines(repo_path, "logs", "HEAD")) == before + 2
+
+
+@pytest.mark.asyncio
+async def test_a_linked_worktree_logs_its_branch_in_the_repository(
+        git_rw, repo_path: Path):
+    # git keeps logs/HEAD per checkout and logs/refs in the common
+    # directory, so `git reflog main` reads one log from every worktree.
+    await record(git_rw.dispatch, "/repo/.git/worktrees/wt", "/repo/.git",
+                 "refs/heads/main", OLD, NEW, WHO, 1700000000,
+                 "commit: from a worktree")
+    own = lines(repo_path, "worktrees", "wt", "logs", "HEAD")
+    shared = lines(repo_path, "logs", "refs", "heads", "main")
+    assert own == [shared[-1]]
+    assert not lines(repo_path, "worktrees", "wt", "logs", "refs", "heads",
+                     "main")

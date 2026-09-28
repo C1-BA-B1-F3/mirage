@@ -177,6 +177,42 @@ class NoWorkspaceError(GitError):
         super().__init__("this operation must be run in a work tree")
 
 
+class NotAWorkTreeError(GitError):
+    """A verb that reads or writes files, run with no work tree to enter.
+
+    git's ``setup_work_tree`` refuses a bare repository and a work tree
+    that is not a directory in the same words (pinned against git 2.54),
+    so a mistyped ``--work-tree`` is never taken for an empty tree.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("this operation must be run in a work tree")
+
+
+class BareResetError(GitError):
+    """``git reset`` in a bare repository, refused in its own words."""
+
+    def __init__(self) -> None:
+        super().__init__("mixed reset is not allowed in a bare repository")
+
+
+class WorkTreeChdirError(GitError):
+    """A relative ``core.worktree`` that git cannot enter.
+
+    git resolves one by entering it before any verb runs, so every verb
+    fails, the read-only ones included (pinned against git 2.54).
+
+    Args:
+        path (str): the value as the config spells it.
+        reason (str): the strerror git names, absence by default.
+    """
+
+    def __init__(self,
+                 path: str,
+                 reason: str = "No such file or directory") -> None:
+        super().__init__(f"cannot chdir to '{path}': {reason}")
+
+
 class NoWorkingDirectoryError(GitError):
     """``-C`` named a path git could not enter.
 

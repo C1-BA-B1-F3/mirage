@@ -203,7 +203,7 @@ export async function scan(
   mode: string,
   links: LinkView | null = null,
 ): Promise<WorkTree> {
-  const ignores = await loadIgnores(dispatch, location.gitdir, location.worktree)
+  const ignores = await loadIgnores(dispatch, location.commondir, location.worktree)
   const scanner = new Scanner(dispatch, statPath, location.worktree, tracked, mode, links)
   await scanner.walk('', false, ignores)
   return scanner.found

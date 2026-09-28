@@ -26,8 +26,8 @@ from mirage.shell.helpers import (  # isort: skip
     get_if_branches, get_list_parts, get_negated_command, get_parts,
     get_pipeline_commands, get_pipeline_stages, get_process_sub_body,
     get_redirects, get_subshell_body, get_text, get_while_parts,
-    is_backgrounded, literal_word, normalize_heredoc_body, split_env_prefix,
-    take_continuation)
+    is_backgrounded, literal_word, normalize_heredoc_body, quoted_parts,
+    source_parts, split_env_prefix, take_continuation)
 
 _LANG = tree_sitter.Language(tree_sitter_bash.language())
 _PARSER = tree_sitter.Parser(_LANG)
@@ -1031,3 +1031,35 @@ def test_take_continuation_detaches_the_steps():
     assert [op for op, _ in steps] == ["||", "&&"]
     assert redirects[0].continuation == ()
     assert take_continuation(redirects) == ()
+
+
+def _spelled(parts):
+    return [
+        part if isinstance(part, str) else (part.type, get_text(part))
+        for part in parts
+    ]
+
+
+@pytest.mark.parametrize("cmd,parts", [
+    ('echo "😀界\n $x \t\n "', [
+        "", ("string_content", "😀界"), "\n",
+        ("simple_expansion", " $x"), " \t\n", " "
+    ]),
+    ('echo "a\\\n $x"',
+     ["", ("string_content", "a\\\n "), ("simple_expansion", "$x"), ""]),
+])
+def test_quoted_parts_keeps_the_text_between_children(cmd, parts):
+    assert _spelled(quoted_parts(_first(cmd).children[1])) == parts
+
+
+@pytest.mark.parametrize("cmd,parts", [
+    ('echo "${u:-\t$f}"', [("${", "${"), ("variable_name", "u"),
+                           (":-", ":-"), "\t", ("simple_expansion", "$f"),
+                           ("}", "}")]),
+    ('echo "${f/x/\\ $f}"', [("${", "${"), ("variable_name", "f"), ("/", "/"),
+                             ("regex", "x"), ("/", "/"), "\\ ",
+                             ("simple_expansion", "$f"), ("}", "}")]),
+])
+def test_source_parts_yields_the_text_no_child_owns(cmd, parts):
+    expansion = _first(cmd).children[1].children[1]
+    assert _spelled(source_parts(expansion)) == parts

@@ -13,9 +13,10 @@ from mirage.commands.cli.types import CLIInvocation, CLISpec
 from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import Operand, Option
+from mirage.core.github.client import GitHubApiError
 from mirage.core.github.config import GhConfig
 from mirage.core.github.search import search
-from mirage.io.types import CommandOutput
+from mirage.io.types import CommandOutput, IOResult
 
 
 def _quote(value: str) -> str:
@@ -118,6 +119,33 @@ def search_spec() -> CLISpec:
                    subcommands=tuple(leaves))
 
 
+def _search_error(exc: GitHubApiError, query: str) -> str:
+    """How gh search words a failed search, its ``httpError.Error``.
+
+    A 422 naming its errors says the query is invalid, with the first
+    reason; anything else is the status, GitHub's message (the status
+    line for a body that is not JSON) and the request URL.
+
+    Args:
+        exc (GitHubApiError): the failure.
+        query (str): the ``q`` the search sent.
+    """
+    data = exc.data if isinstance(exc.data, dict) else None
+    errors = data.get("errors") if data is not None else None
+    if exc.status == 422 and isinstance(errors, list) and errors:
+        first = errors[0] if isinstance(errors[0], dict) else {}
+        reason = first.get("message")
+        quoted = json.dumps(query.strip(), ensure_ascii=False)
+        return (f"Invalid search query {quoted}.\n"
+                f"{reason if isinstance(reason, str) else ''}")
+    if data is None:
+        message = f"{exc.status} {exc}"
+    else:
+        found = data.get("message")
+        message = found if isinstance(found, str) else ""
+    return f"HTTP {exc.status}: {message} ({exc.url})"
+
+
 async def search_cmd(kind: str, inv: CLIInvocation[GhConfig]) -> CommandOutput:
     fl = FlagView(inv.flags, inv.spec)
     fields = json_fields(fl, SEARCH_FIELDS[kind])
@@ -132,12 +160,18 @@ async def search_cmd(kind: str, inv: CLIInvocation[GhConfig]) -> CommandOutput:
                          1)
     if fl.as_str("jq") is not None and fl.as_str("template") is not None:
         raise UsageError("cannot use `--jq` and `--template` together", 1)
-    values = await search(inv.config, {
-        "repos": "repositories",
-        "prs": "issues"
-    }.get(kind, kind), _query(kind, inv.texts, fl), limit,
-                          fl.as_str("sort") if kind in SEARCH_SORTS else None,
-                          fl.as_str("order") if kind in SEARCH_SORTS else None)
+    query = _query(kind, inv.texts, fl)
+    try:
+        values = await search(
+            inv.config, {
+                "repos": "repositories",
+                "prs": "issues"
+            }.get(kind, kind), query, limit,
+            fl.as_str("sort") if kind in SEARCH_SORTS else None,
+            fl.as_str("order") if kind in SEARCH_SORTS else None)
+    except GitHubApiError as exc:
+        return None, IOResult(exit_code=1,
+                              stderr=f"{_search_error(exc, query)}\n".encode())
     rows = [_export(kind, value) for value in values]
     template = fl.as_str("template")
     if template is not None:

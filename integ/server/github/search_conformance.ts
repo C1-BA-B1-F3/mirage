@@ -1,11 +1,10 @@
 import { spawn } from 'node:child_process'
-import { createServer } from 'node:https'
 import {
   createServer as createHttpServer,
   type IncomingMessage,
   type ServerResponse,
 } from 'node:http'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
@@ -14,6 +13,7 @@ import { RAMVFS } from '../../../typescript/packages/core/dist/vfs/ram/ram.js'
 
 const TENANT = 'gh-search-conformance'
 const REPO = 'integ/repo-v1'
+const MISSING_REPO_QUERY = '{ repository(owner: "integ", name: "missing") { name } }'
 const HEADERS = {
   'x-mirage-run': TENANT,
   'x-mirage-tenant': 'default',
@@ -41,29 +41,15 @@ function run(
   })
 }
 
-/** Compare vanilla gh and Mirage against the same isolated fake-service tenant. */
+/**
+ * Compare vanilla gh and Mirage against the same isolated fake-service tenant.
+ * gh's HTTP socket setting keeps the native proxy local without a generated
+ * certificate or platform-specific trust-store configuration.
+ */
 export async function searchConformance(endpoint: string): Promise<number> {
-  const temp = await mkdtemp(join(tmpdir(), 'mirage-gh-search-'))
-  const key = join(temp, 'key.pem'),
-    cert = join(temp, 'cert.pem')
-  const generated = await run('openssl', [
-    'req',
-    '-x509',
-    '-newkey',
-    'rsa:2048',
-    '-nodes',
-    '-keyout',
-    key,
-    '-out',
-    cert,
-    '-days',
-    '1',
-    '-subj',
-    '/CN=localhost',
-    '-addext',
-    'subjectAltName=IP:127.0.0.1,DNS:localhost',
-  ])
-  if (generated.code !== 0) throw new Error(generated.stderr)
+  const temp = await mkdtemp(join(tmpdir(), 'gh-conformance-'))
+  const socket = join(temp, 'http.sock')
+  await writeFile(join(temp, 'config.yml'), `http_unix_socket: ${socket}\n`)
   const nativeQueries: string[] = [],
     mirageQueries: string[] = [],
     failures: unknown[] = []
@@ -75,7 +61,13 @@ export async function searchConformance(endpoint: string): Promise<number> {
     try {
       const { pathname, search, searchParams } = new URL(req.url ?? '/', 'http://proxy.invalid')
       if (pathname.includes('/search/')) queries.push(searchParams.get('q') ?? '')
-      const response = await fetch(`${endpoint}${pathname}${search}`, { headers: HEADERS })
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(chunk as Buffer)
+      const response = await fetch(`${endpoint}${pathname}${search}`, {
+        method: req.method ?? 'GET',
+        headers: HEADERS,
+        ...(chunks.length === 0 ? {} : { body: Buffer.concat(chunks) }),
+      })
       res.writeHead(response.status, {
         ...Object.fromEntries(response.headers),
         'x-github-enterprise-version': '3.16.0',
@@ -87,25 +79,16 @@ export async function searchConformance(endpoint: string): Promise<number> {
       res.end()
     }
   }
-  const proxy = createServer(
-    { key: await readFile(key), cert: await readFile(cert) },
-    (req, res) => {
-      void forward(req, res, nativeQueries)
-    },
-  )
+  const proxy = createHttpServer((req, res) => {
+    void forward(req, res, nativeQueries)
+  })
   const mirror = createHttpServer((req, res) => {
     void forward(req, res, mirageQueries)
   })
-  await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve))
+  await new Promise<void>((resolve) => proxy.listen(socket, resolve))
   await new Promise<void>((resolve) => mirror.listen(0, '127.0.0.1', resolve))
-  const address = proxy.address(),
-    mirrorAddress = mirror.address()
-  if (
-    address === null ||
-    typeof address === 'string' ||
-    mirrorAddress === null ||
-    typeof mirrorAddress === 'string'
-  )
+  const mirrorAddress = mirror.address()
+  if (mirrorAddress === null || typeof mirrorAddress === 'string')
     throw new Error('missing proxy address')
   const base = `http://127.0.0.1:${mirrorAddress.port}`
   const ws = new Workspace(
@@ -284,9 +267,8 @@ export async function searchConformance(endpoint: string): Promise<number> {
     ]
     const env = {
       ...process.env,
-      GH_HOST: `127.0.0.1:${address.port}`,
+      GH_HOST: 'github.example.test',
       GH_ENTERPRISE_TOKEN: 'integ',
-      SSL_CERT_FILE: cert,
       GH_CONFIG_DIR: temp,
       GH_PAGER: 'cat',
       NO_COLOR: '1',
@@ -405,18 +387,35 @@ export async function searchConformance(endpoint: string): Promise<number> {
         'sha',
       ],
     )
-    for (const args of cases) {
+    cases.push(
+      ['issues', 'needle', '--repo', 'integ/missing'],
+      ['prs', 'needle', '--repo', 'integ/missing'],
+      ['code', 'needle', '--repo', 'integ/missing', '--json', 'path'],
+      ['commits', 'needle', '--repo', 'integ/missing'],
+    )
+    const commands = cases.map((args) => ['search', ...args])
+    commands.push(
+      ['api', 'repos/integ/missing'],
+      ['api', 'repos/integ/missing', '--silent'],
+      ['api', 'repos/integ/missing', '--jq', '.message'],
+      ['api', 'repos/integ/missing', '--paginate'],
+      ['api', 'repos/integ/missing', '--paginate', '--slurp'],
+      ['api', 'search/issues?q=repo:integ/missing'],
+      ['api', 'graphql', '-f', `query=${MISSING_REPO_QUERY}`],
+      ['api', 'graphql', '-f', `query=${MISSING_REPO_QUERY}`, '--jq', '.data'],
+      ['api', 'graphql', '-f', 'query={ viewer { bogus } }'],
+      ['api', 'graphql', '-f', 'query={ viewer { login } }', '--jq', '.data.viewer.login'],
+    )
+    for (const args of commands) {
       nativeQueries.length = 0
       mirageQueries.length = 0
-      const native = await run('gh', ['search', ...args], env)
-      const line = ['gh', 'search', ...args]
-        .map((word) => `'${word.replaceAll("'", "'\\''")}'`)
-        .join(' ')
+      const native = await run('gh', args, env)
+      const line = ['gh', ...args].map((word) => `'${word.replaceAll("'", "'\\''")}'`).join(' ')
       const result = await ws.shell(line)
       if (failures.length > 0) throw new Error(line, { cause: failures[0] })
       if (nativeQueries[0] !== mirageQueries[0])
         throw new Error(
-          `${line}\nquery native: ${nativeQueries[0]}\nquery mirage: ${mirageQueries[0]}`,
+          `${line}\nquery native: ${nativeQueries[0]}\nquery mirage: ${mirageQueries[0]}\nnative ${native.code}: ${native.stderr}`,
         )
       const stdout = new TextDecoder().decode(result.stdout),
         stderr = new TextDecoder().decode(result.stderr)
@@ -430,7 +429,7 @@ export async function searchConformance(endpoint: string): Promise<number> {
           `${line}\nnative ${native.code}: ${native.stdout}${native.stderr}\nmirage ${result.exitCode}: ${stdout}${stderr}`,
         )
     }
-    return cases.length
+    return commands.length
   } finally {
     await ws.close()
     await new Promise<void>((resolve, reject) =>

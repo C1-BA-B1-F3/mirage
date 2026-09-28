@@ -20,6 +20,8 @@ import { fileURLToPath } from 'node:url'
 import { Outcome, Scope } from '@struktoai/mirage-core/policy/index'
 import type { SessionProfile } from '@struktoai/mirage-core/policy/profile'
 import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
+import { resolveReadSpec } from '@struktoai/mirage-core/workspace/mount/read_policy'
+import type { ReadSpec } from '@struktoai/mirage-node'
 
 // integ/runtime holds the runtime suite (its own schema and runners,
 // integ/runtime/run.{py,ts} + cli.sh), not battery cases; keep it out.
@@ -176,6 +178,10 @@ export interface Case {
   // takes a bound.
   read?: 'fresh' | 'bounded'
   ttl?: number
+  // The same selector per mount: each named prefix runs under its own
+  // policy and every other mount inherits `read`, which is the only way a
+  // case can put two policies on one line. `ttl` bounds each.
+  mount_read?: Record<string, 'fresh' | 'bounded'>
   session?: string
   // The host's answer to every approval waiting on the workspace, given
   // before the command runs: `allow_once`, `allow_session` or `deny`.
@@ -397,7 +403,8 @@ export function loadCases(root: string): Case[] {
  * A duplicate id collides in the parity runner, which keys rows by
  * (target, id), so one of the pair is dropped from the py/ts diff without a
  * word. A target id that matches no manifest entry means the case never runs
- * anywhere, which reads as "passing" everywhere.
+ * anywhere, which reads as "passing" everywhere. A `mount_read` without a
+ * `read` is routed as an ordinary case, where the override is never applied.
  */
 export function validateCases(root: string, cases: Case[]): void {
   const known = new Set(loadTargets(root).keys())
@@ -412,6 +419,9 @@ export function validateCases(root: string, cases: Case[]): void {
     ) {
       throw new Error(`case ${c.id}: targets must be a nonempty string list`)
     }
+    if (c.mount_read !== undefined && c.read === undefined) {
+      throw new Error(`case ${c.id}: mount_read needs read, the policy every other mount inherits`)
+    }
     const first = seen.get(c.id)
     if (first !== undefined) duplicates.push(`${c.id} (${first} and ${c._source ?? '?'})`)
     else seen.set(c.id, c._source ?? '?')
@@ -423,6 +433,15 @@ export function validateCases(root: string, cases: Case[]): void {
   if (unknown.length) {
     throw new Error(`cases naming an unknown target: ${unknown.join('; ')}`)
   }
+}
+
+/** The per-mount policies a scenario case overrides its default with. */
+export function mountReadOf(c: Pick<Case, 'mount_read' | 'ttl'>): Record<string, ReadSpec> {
+  const out: Record<string, ReadSpec> = {}
+  for (const [prefix, policy] of Object.entries(c.mount_read ?? {})) {
+    out[prefix] = resolveReadSpec(policy, c.ttl)
+  }
+  return out
 }
 
 export function walkFiles(base: string): string[] {

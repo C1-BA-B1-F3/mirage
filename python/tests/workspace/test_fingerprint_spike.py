@@ -781,8 +781,10 @@ def test_one_line_serves_each_mount_under_its_own_policy(
         ("get_object", "fresh-bkt"): 1
     }, ("the fresh leg pays its gate probe and one refetch, and no listing; "
         "a missing head_object means it was served without being checked")
-    assert records == [("read", f"{fresh}/f.txt")], (
-        "only the fresh leg's refetch reaches the backend as a read")
+    assert records == [
+        ("read", f"{fresh}/f.txt")
+    ], ("only the fresh leg's refetch reaches the backend as a read")
+
 
 def test_the_live_cache_facts_door_reads_the_mounts_bound():
     """``apply_io`` with no captured function is the embedder's door.

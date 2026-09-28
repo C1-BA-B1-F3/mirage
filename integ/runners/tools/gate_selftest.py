@@ -31,8 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "python"))
 import harness  # noqa: E402
 import main as runner_main  # noqa: E402
 
-from mirage.types import (DEFAULT_READ_TTL, MountMode, ReadPolicy,  # noqa: E402
-                          ReadSpec)
+from mirage.types import ReadPolicy  # noqa: E402
+from mirage.types import DEFAULT_READ_TTL, MountMode, ReadSpec
 from mirage.vfs.ram import RAMVFS  # noqa: E402
 from mirage.workspace.mount.spec import Mount  # noqa: E402
 
@@ -169,8 +169,8 @@ def selftest_mount_read() -> None:
         "mount_read: an override naming an unmounted prefix is refused",
         *raises(
             lambda: asyncio.run(
-                runner_main.adapters.open_consistency(
-                    target, ReadSpec(), {"/nope": bound})), "/nope"))
+                runner_main.adapters.open_consistency(target, ReadSpec(
+                ), {"/nope": bound})), "/nope"))
 
     bare, moded, kept = RAMVFS(), RAMVFS(), RAMVFS()
     out = runner_main.adapters.apply_mount_read(
@@ -200,8 +200,7 @@ def selftest_mount_read() -> None:
           got == {"/d": bound}, repr(got))
     got = runner_main.mount_read_of({"mount_read": {"/d": "bounded"}})
     check(
-        "mount_read: with no ttl an override takes the default bound",
-        got == {
+        "mount_read: with no ttl an override takes the default bound", got == {
             "/d": ReadSpec(policy=ReadPolicy.BOUNDED, ttl=DEFAULT_READ_TTL)
         }, repr(got))
 
@@ -889,18 +888,21 @@ MOUNT_READ_PROBE = (
     "    out.unread = 'accepted'\n"
     "  } catch (e) { out.unread = String(e.message) }\n"
     "  const bound = { policy: 'bounded', ttl: 45 }\n"
-    "  const t = { id: 't', hosts: [], mounts: [{ path: '/data', vfs: 'ram' }] }\n"
+    "  const t = { id: 't', hosts: [],\n"
+    "    mounts: [{ path: '/data', vfs: 'ram' }] }\n"
     "  try {\n"
     "    await a.openConsistency(t, bound, { '/nope': bound })\n"
     "    out.nope = 'opened'\n"
     "  } catch (e) { out.nope = String(e.message) }\n"
-    "  const bare = new n.RAMVFS(), moded = new n.RAMVFS(), kept = new n.RAMVFS()\n"
+    "  const bare = new n.RAMVFS()\n"
+    "  const moded = new n.RAMVFS()\n"
+    "  const kept = new n.RAMVFS()\n"
     "  const m = a.applyMountRead({ '/data': bare, '/ro': [moded, 'read'],\n"
     "    '/keep': kept }, { '/data': bound, '/ro': bound })\n"
-    "  const opts = (x) => [x.vfs === bare || x.vfs === moded, x.options.mode,\n"
+    "  const opts = (x, vfs) => [x.vfs === vfs, x.options.mode,\n"
     "    x.options.read.policy, x.options.read.ttl]\n"
-    "  out.data = opts(m['/data'])\n"
-    "  out.ro = opts(m['/ro'])\n"
+    "  out.data = opts(m['/data'], bare)\n"
+    "  out.ro = opts(m['/ro'], moded)\n"
     "  out.keep = m['/keep'] === kept\n"
     "  out.ttl = h.mountReadOf({ mount_read: { '/d': 'bounded' }, ttl: 45 })\n"
     "  out.nottl = h.mountReadOf({ mount_read: { '/d': 'bounded' } })\n"
@@ -920,8 +922,8 @@ def selftest_mount_read_typescript() -> None:
         check("mount_read (ts): the probe ran", False,
               f"{exc}: {proc.stdout[-200:]} {proc.stderr[-400:]}")
         return
-    check("cases (ts): a mount_read without a read is rejected",
-          "mount_read" in out["unread"], repr(out["unread"]))
+    check("cases (ts): a mount_read without a read is rejected", "mount_read"
+          in out["unread"], repr(out["unread"]))
     check("mount_read (ts): an override naming an unmounted prefix is refused",
           "/nope" in out["nope"], repr(out["nope"]))
     check("mount_read (ts): a bare mount is wrapped writable",

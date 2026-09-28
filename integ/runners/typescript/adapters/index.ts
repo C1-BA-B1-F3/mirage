@@ -75,6 +75,7 @@ import {
   Mem0VFS,
   MongoDBVFS,
   NotionVFS,
+  Mount as CoreMount,
   MountMode,
   NextcloudVFS,
   OCIVFS,
@@ -137,6 +138,8 @@ export interface OpenConsistency extends Open {
 
 export interface OpenOptions {
   read?: ReadSpec
+  // Per-mount policies over `read`, for the read workspace only.
+  mountRead?: Record<string, ReadSpec>
 }
 
 type MountMap = ConstructorParameters<typeof Workspace>[0]
@@ -155,10 +158,40 @@ interface OpenedWorkspaces {
  * through one would invalidate the other's — which is exactly the thing the
  * scenario is there to observe.
  */
+/**
+ * The mount table with each named prefix under its own read policy.
+ *
+ * A mount keeps everything its builder gave it but the policy: a bare VFS is
+ * writable, as the workspace it joins is, and a `[vfs, mode]` pair keeps its
+ * mode. A prefix the override does not name is left exactly as built, so it
+ * inherits the workspace's policy.
+ */
+export function applyMountRead(mounts: MountMap, mountRead: Record<string, ReadSpec>): MountMap {
+  const out: MountMap = { ...mounts }
+  for (const [prefix, read] of Object.entries(mountRead)) {
+    const entry = out[prefix]
+    if (entry === undefined) throw new Error(`mount_read names no mount: ${prefix}`)
+    if (entry instanceof CoreMount) {
+      out[prefix] = new CoreMount(entry.vfs, { ...entry.options, read })
+    } else if (Array.isArray(entry)) {
+      const [vfs, mode, commandLimits] = entry
+      out[prefix] = new CoreMount(vfs, {
+        mode,
+        ...(commandLimits !== undefined ? { commandLimits } : {}),
+        read,
+      })
+    } else {
+      out[prefix] = new CoreMount(entry, { mode: MountMode.WRITE, read })
+    }
+  }
+  return out
+}
+
 function openWorkspaces(build: () => MountMap, options?: OpenOptions): OpenedWorkspaces {
   const opened: Workspace[] = []
-  const make = (read?: ReadSpec): ExecWorkspace => {
-    const ws = new Workspace(build(), {
+  const make = (read?: ReadSpec, mountRead?: Record<string, ReadSpec>): ExecWorkspace => {
+    const mounts = mountRead !== undefined ? applyMountRead(build(), mountRead) : build()
+    const ws = new Workspace(mounts, {
       mode: MountMode.WRITE,
       ...(read !== undefined ? { read } : {}),
     })
@@ -166,7 +199,7 @@ function openWorkspaces(build: () => MountMap, options?: OpenOptions): OpenedWor
     return ws as unknown as ExecWorkspace
   }
   return {
-    ws: make(options?.read),
+    ws: make(options?.read, options?.mountRead),
     shadow: () => make(),
     closeAll: async (): Promise<void> => {
       for (const ws of opened) await ws.close()
@@ -2253,10 +2286,21 @@ export const ADAPTERS: Record<string, (target: Target, options?: OpenOptions) =>
 export async function openConsistency(
   target: Target,
   read: ReadSpec,
+  mountRead: Record<string, ReadSpec>,
 ): Promise<OpenConsistency | null> {
+  // Checked before anything opens: a key naming no mount would leave every
+  // leg under the workspace policy, and refusing it here leaves no service
+  // or bucket behind to clean up.
+  const paths = new Set(target.mounts.map((m) => m.path))
+  const unknown = Object.keys(mountRead)
+    .filter((p) => !paths.has(p))
+    .sort()
+  if (unknown.length > 0) {
+    throw new Error(`${target.id}: mount_read names no mount: ${unknown.join(', ')}`)
+  }
   const adapter = ADAPTERS[target.mounts[0].vfs]
   if (adapter === undefined) return null
-  const opened = await adapter(target, { read })
+  const opened = await adapter(target, { read, mountRead })
   if (opened.shadow === undefined) {
     await opened.cleanup()
     return null

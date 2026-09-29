@@ -47,16 +47,24 @@ export interface Repo {
   readonly fs: ReturnType<typeof gitFs>
   readonly dispatch: Dispatch
   readonly location: RepoLocation
+  /** Parsed packs shared by this invocation, never retained across commands. */
+  readonly cache: Record<symbol, unknown>
   /** How many hex digits this repository abbreviates an id to. */
   readonly abbrev: number
 }
 
 /** The argument bag every isomorphic-git call in this package shares. */
-export function repoArgs(repo: Repo): { fs: never; dir: string; gitdir: string } {
+export function repoArgs(repo: Repo): {
+  fs: never
+  dir: string
+  gitdir: string
+  cache: Repo['cache']
+} {
   return {
     fs: repo.fs as never,
     dir: repo.location.worktree,
     gitdir: repo.location.gitdir,
+    cache: repo.cache,
   }
 }
 
@@ -92,6 +100,7 @@ async function openRepo(dispatch: Dispatch, location: RepoLocation): Promise<Rep
     fs: gitFs(dispatch, location),
     dispatch,
     location,
+    cache: {},
     abbrev: abbrevLength(await packedCount(dispatch, location.commondir)),
   }
 }

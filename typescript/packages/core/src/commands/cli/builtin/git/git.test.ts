@@ -18,7 +18,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { IOResult } from '../../../../io/types.ts'
 import { OpsRegistry } from '../../../../ops/registry.ts'
@@ -27,6 +27,7 @@ import { createShellParser, type ShellParser } from '../../../../shell/parse/ind
 import { MountMode } from '../../../../types.ts'
 import { Workspace } from '../../../../workspace/workspace/workspace.ts'
 import { GIT } from './index.ts'
+import * as gitFsModule from './fs.ts'
 import { ensureDir } from './io.ts'
 import type { Dispatch } from './types.ts'
 
@@ -113,6 +114,35 @@ it.each([
   'diff-tree -r HEAD',
 ])('read command matches native Git: %s', async (command) => {
   expect(await run(command)).toEqual([0, realGit(command.split(' ')), ''])
+})
+
+it.each([
+  'rev-list --all --count',
+  'log --all --format=%H',
+  'show --stat --format=%s HEAD~1',
+  'diff HEAD~2 HEAD~1',
+])('reads each pack and index once per invocation: %s', async (command) => {
+  const reads = new Map<string, number>()
+  const original = gitFsModule.gitFs
+  const spy = vi.spyOn(gitFsModule, 'gitFs').mockImplementation((dispatch, location) =>
+    original((op, path, args, kwargs) => {
+      if (op === 'read' && (path.virtual.endsWith('.pack') || path.virtual.endsWith('.idx'))) {
+        reads.set(path.virtual, (reads.get(path.virtual) ?? 0) + 1)
+      }
+      return dispatch(op, path, args, kwargs)
+    }, location),
+  )
+  try {
+    for (let invocation = 0; invocation < 2; invocation++) {
+      reads.clear()
+      expect(await run(command)).toEqual([0, realGit(command.split(' ')), ''])
+      expect([...reads.keys()].filter((path) => path.endsWith('.pack'))).toHaveLength(1)
+      expect([...reads.keys()].filter((path) => path.endsWith('.idx'))).toHaveLength(1)
+      expect([...reads.values()]).toEqual([1, 1])
+    }
+  } finally {
+    spy.mockRestore()
+  }
 })
 
 describe('git log', () => {

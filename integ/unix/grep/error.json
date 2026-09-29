@@ -623,6 +623,142 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "long_option_table_grep_includes_unsupported_options",
+      "seq": 1320028,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "grep --co x /data/a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: option '--co' is ambiguous; possibilities: '--context' '--color' '--colour' '--count'\nTry 'grep --help' for more information.\n"
+      }
+    },
+    {
+      "id": "long_option_table_ls_includes_unsupported_options",
+      "seq": 1320029,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "ls --s /data",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "ls: option '--s' is ambiguous; possibilities: '--size' '--si' '--show-control-chars' '--sort'\nTry 'ls --help' for more information.\n"
+      }
+    },
+    {
+      "id": "long_option_table_diff_includes_unsupported_options",
+      "seq": 1320030,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "diff --un /data/a.txt /data/b.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "diff: option '--un' is ambiguous; possibilities: '--unchanged-group-format' '--unchanged-line-format' '--unidirectional-new-file' '--unified'\ndiff: Try 'diff --help' for more information.\n"
+      }
+    },
+    {
+      "id": "long_option_table_gzip_includes_unsupported_options",
+      "seq": 1320031,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "gzip --s /data/a.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "gzip: option '--s' is ambiguous; possibilities: '--stdout' '--silent' '--synchronous' '--suffix'\nTry 'gzip --help' for more information.\n"
+      }
     }
   ]
 }

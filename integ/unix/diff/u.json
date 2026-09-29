@@ -36,6 +36,210 @@
       "flags": [
         "u"
       ]
+    },
+    {
+      "id": "diff_U_missing_operand",
+      "seq": 1320018,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "diff -U 3",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "diff: missing operand after '3'\ndiff: Try 'diff --help' for more information.\n"
+      }
+    },
+    {
+      "id": "diff_brief_missing_operand",
+      "seq": 1320019,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "diff /data/a.txt --brief",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "diff: missing operand after '/data/a.txt'\ndiff: Try 'diff --help' for more information.\n"
+      }
+    },
+    {
+      "id": "diff_unified_missing_operand",
+      "seq": 1320020,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "diff --unified /data/a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "diff: missing operand after '/data/a.txt'\ndiff: Try 'diff --help' for more information.\n"
+      }
+    },
+    {
+      "id": "diff_U_zero_limits_context",
+      "seq": 1320021,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "diff -U 0 /data/sorted_a.txt /data/sorted_b.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "--- /data/sorted_a.txt\n+++ /data/sorted_b.txt\n@@ -1 +0,0 @@\n-apple\n@@ -3 +2,2 @@\n-cherry\n+date\n+elder\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "diff_unified_equals_limits_context",
+      "seq": 1320022,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "diff --unified=0 /data/sorted_a.txt /data/sorted_b.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "--- /data/sorted_a.txt\n+++ /data/sorted_b.txt\n@@ -1 +0,0 @@\n-apple\n@@ -3 +2,2 @@\n-cherry\n+date\n+elder\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "diff_invalid_context_precedes_missing_operands",
+      "seq": 1320024,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "diff -U bad",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "diff: invalid context length 'bad'\ndiff: Try 'diff --help' for more information.\n"
+      }
     }
   ]
 }

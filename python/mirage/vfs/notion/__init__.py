@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.core.notion.config import NotionConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.notion.notion import NotionVFS
 
 __all__ = ["NotionConfig", "NotionVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[NotionVFS]":
     if name == "NotionVFS":
         from mirage.vfs.notion.notion import NotionVFS
         return NotionVFS

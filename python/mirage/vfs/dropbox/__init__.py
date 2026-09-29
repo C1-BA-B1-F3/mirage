@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.dropbox.config import DropboxConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.dropbox.dropbox import DropboxVFS
 
 __all__ = ["DropboxConfig", "DropboxVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[DropboxVFS]":
     if name == "DropboxVFS":
         from mirage.vfs.dropbox.dropbox import DropboxVFS
         return DropboxVFS

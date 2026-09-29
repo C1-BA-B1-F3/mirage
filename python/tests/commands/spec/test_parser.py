@@ -1499,3 +1499,18 @@ def test_an_ambiguous_long_names_the_word_with_its_value():
     # 9.7: `ls: option '--re=x' is ambiguous`).
     parsed = parse_command(SPECS["ls"], ["--re=x", "/data"], "/", "ls")
     assert parsed.ambiguous_options[0][0] == "--re=x"
+
+
+@pytest.mark.parametrize("word", ["--uc", "--univ"])
+def test_a_gnu_alias_resolves_when_only_its_synonym_is_declared(word):
+    parsed = parse_command(SPECS["date"], [word], "/", "date")
+    assert parsed.flags["--utc"] is True
+    assert parsed.option_error_kinds == []
+
+
+def test_gnu_numeric_operands_do_not_turn_cmp_options_into_skips():
+    parsed = parse_command(SPECS["cmp"], ["a", "b", "-1"], "/", "cmp")
+    assert parsed.invalid_options == ["1"]
+    sequence = parse_command(SPECS["seq"], ["-1", "1"], "/", "seq")
+    assert sequence.texts() == ["-1", "1"]
+    assert sequence.option_error_kinds == []

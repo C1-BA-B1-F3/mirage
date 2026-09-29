@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { GNU_LONG_OPTIONS } from './long_options.ts'
 import { Option } from './types.ts'
 
 // The two options every registered command answers, as GNU coreutils does.
@@ -323,6 +324,7 @@ export const TAR_LONG_OPTIONS: readonly (readonly string[])[] = [
   ['--version'],
 ]
 export const LONG_OPTION_TABLES: Readonly<Record<string, readonly (readonly string[])[]>> = {
+  ...GNU_LONG_OPTIONS,
   tar: TAR_LONG_OPTIONS,
 }
 

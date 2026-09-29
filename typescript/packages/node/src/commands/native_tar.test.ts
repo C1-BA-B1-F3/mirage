@@ -66,6 +66,7 @@ describe.each(NATIVE_BACKENDS)('native tar (%s backend)', (kind) => {
       env.createFile('a.txt', ENC.encode('aaa\n'))
       env.createFile('b.txt', ENC.encode('bbb\n'))
       await env.mirage('tar -c -J -f /data/out.tar.xz /data/a.txt /data/b.txt')
+      env.createFile('ex/.keep', new Uint8Array())
       await env.mirage('tar -x -J -f /data/out.tar.xz -C /data/ex')
       expect(await env.mirage('cat /data/ex/data/a.txt')).toBe('aaa\n')
       expect(await env.mirage('cat /data/ex/data/b.txt')).toBe('bbb\n')
@@ -78,6 +79,7 @@ describe.each(NATIVE_BACKENDS)('native tar (%s backend)', (kind) => {
     const env = makeEnv(kind)
     try {
       env.createFile('out.tar.bz2', BZIP2_FIXTURE)
+      env.createFile('ex/.keep', new Uint8Array())
       await env.mirage('tar -x -j -f /data/out.tar.bz2 -C /data/ex')
       expect(await env.mirage('cat /data/ex/a.txt')).toBe('aaa\n')
       expect(await env.mirage('cat /data/ex/b.txt')).toBe('bbb\n')
@@ -119,6 +121,7 @@ describe.each(NATIVE_BACKENDS)('native tar (%s backend)', (kind) => {
     try {
       env.createFile('a.txt', ENC.encode('aaa\n'))
       await env.mirage('tar -c -z -f /data/out.tar.gz /data/a.txt')
+      env.createFile('extracted/.keep', new Uint8Array())
       await env.mirage('tar -x -z -f /data/out.tar.gz --strip-components 1 -C /data/extracted')
       const content = await env.mirage('cat /data/extracted/a.txt')
       expect(content).toContain('aaa')
@@ -162,6 +165,7 @@ describe.each(NATIVE_BACKENDS)('native tar old option style (%s backend)', (kind
       env.createFile('a.txt', ENC.encode('aaa\n'))
       await env.mirage('tar czf /data/out.tar.gz /data/a.txt')
       expect(await env.mirage('tar tzf /data/out.tar.gz')).toContain('a.txt')
+      env.createFile('ex/.keep', new Uint8Array())
       await env.mirage('tar xzf /data/out.tar.gz -C /data/ex')
       expect(await env.mirage('cat /data/ex/data/a.txt')).toContain('aaa')
     } finally {
@@ -187,6 +191,7 @@ describe.each(NATIVE_BACKENDS)('native tar old option style (%s backend)', (kind
     try {
       env.createFile('a.txt', ENC.encode('aaa\n'))
       await env.mirage('tar czf /data/out.tar.gz /data/a.txt')
+      env.createFile('ex/.keep', new Uint8Array())
       await env.mirage('tar xzCf /data/ex /data/out.tar.gz')
       expect(await env.mirage('cat /data/ex/data/a.txt')).toContain('aaa')
     } finally {

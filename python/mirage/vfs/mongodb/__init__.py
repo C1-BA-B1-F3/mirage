@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.mongodb.config import MongoDBConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.mongodb.mongodb import MongoDBVFS
 
 __all__ = ["MongoDBConfig", "MongoDBVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[MongoDBVFS]":
     if name == "MongoDBVFS":
         from mirage.vfs.mongodb.mongodb import MongoDBVFS
         return MongoDBVFS

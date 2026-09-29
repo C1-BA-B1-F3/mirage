@@ -234,3 +234,33 @@ describe("tar's long options", () => {
     expect([code, stdout]).toEqual([0, out])
   })
 })
+
+it('streams an archive without a writable root or a dash file', async () => {
+  const ws = new Workspace(
+    { '/data': [new RAMVFS(), MountMode.WRITE] },
+    {
+      mode: MountMode.READ,
+      shellParser: await getTestParser(),
+    },
+  )
+  await ws.shell('printf hello > /data/a')
+  const result = await ws.shell('tar -cvf - -C /data a | tar -xOf -')
+  expect(result.exitCode).toBe(0)
+  expect(DEC.decode(result.stdout)).toBe('hello')
+  expect(DEC.decode(result.stderr)).toBe('a\n')
+  expect((await ws.shell('test ! -e /-')).exitCode).toBe(0)
+  await ws.close()
+})
+
+it.each(['', 'not an archive', 'x'.repeat(1024)])('rejects non-archive bytes %s', async (text) => {
+  for (const flags of ['-tf', '-xf']) {
+    const notices =
+      'tar: This does not look like a tar archive\n' +
+      (text.length >= 512 ? 'tar: Skipping to next header\n' : '')
+    expect(await shell(`tar ${flags} /data/bad`, { '/data/bad': ENC.encode(text) })).toEqual([
+      2,
+      '',
+      notices + 'tar: Exiting with failure status due to previous errors\n',
+    ])
+  }
+})

@@ -667,8 +667,11 @@ def parse_command(
                     option_error_kinds.append("ambiguous")
                     i += 1
                     continue
-                if found and found[0] in cs.dest:
-                    spelling = found[0]
+                if found:
+                    group = next((g for g in long_table if g[0] == found[0]),
+                                 ())
+                    spelling = next(
+                        (name for name in group if name in cs.dest), typed)
             elif typed not in cs.dest and not no_long_option_parser:
                 expansions = expand_long(cs, typed, synonyms)
                 if len(expansions) == 1:
@@ -842,7 +845,9 @@ def parse_command(
                     i += 2
                     continue
 
-            if lenient_dash_operands or NUMERIC_SHORT.match(tok):
+            if lenient_dash_operands or (
+                    NUMERIC_SHORT.match(tok) and
+                (not is_builtin_grammar(cmd_name, spec) or cmd_name == "seq")):
                 raw_args.append(tok)
                 raw_indices.append(scan_origins[i])
                 raw_bases.append(base)

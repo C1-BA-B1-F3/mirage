@@ -97,6 +97,189 @@
         "stdout": ":unique_history_no_label_1221\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "chunk_boundary_utf8",
+      "seq": 9901900,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "note": "The two-byte é begins at byte 16383 (zero based), across the 16 KiB boundary. Covers file and pipeline decoders.",
+      "command": "{ printf '%16383s' '' | tr ' ' a; printf 'é'; printf '%16384s' '' | tr ' ' b; } > /data/chunk-utf8; wc -c < /data/chunk-utf8; wc -m < /data/chunk-utf8; cat /data/chunk-utf8 | wc -m; wc -w < /data/chunk-utf8; grep -bo 'aéb' /data/chunk-utf8; head -c 16385 /data/chunk-utf8 | wc -m; tail -c 16384 /data/chunk-utf8 | wc -c; rm /data/chunk-utf8",
+      "expect": {
+        "exit": 0,
+        "stdout": "32769\n32768\n32768\n1\n16382:aéb\n16384\n16384\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "chunk_boundary_words",
+      "seq": 9901901,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "note": "A word spans byte 16384, with a final line lacking a newline.",
+      "command": "{ printf '%16383s' ''; printf 'alpha beta\\ngamma'; } > /data/chunk-words; wc -w < /data/chunk-words; wc -l < /data/chunk-words; wc -m < /data/chunk-words; grep -o 'alpha' /data/chunk-words; tail -n 1 /data/chunk-words; printf '\\n'; rm /data/chunk-words",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n1\n16399\nalpha\ngamma\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "chunk_boundary_lines",
+      "seq": 9901902,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "note": "31-byte lines straddle the 16 KiB boundary; count and early-exit consumers read the same stream.",
+      "command": "for i in $(seq 1 700); do printf '012345678901234567890123456789\\n'; done > /data/chunk-lines; wc -c < /data/chunk-lines; cat /data/chunk-lines | wc -l; grep -c '456789' /data/chunk-lines; head -n 529 /data/chunk-lines | wc -c; tail -n 172 /data/chunk-lines | wc -c; rm /data/chunk-lines",
+      "expect": {
+        "exit": 0,
+        "stdout": "21700\n700\n700\n16399\n5332\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_recursive_quiet_match_stops_before_missing_operand",
+      "seq": 9901903,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "note": "Quiet search stops globally, while -m and -c remain per file.",
+      "command": "mkdir -p /data/grep-stop/nested; printf 'hit\\nhit\\n' > /data/grep-stop/nested/a; printf 'hit\\nhit\\n' > /data/grep-stop/z; grep -rq hit /data/grep-stop /data/grep-missing; echo quiet=$?; grep -rhm 1 hit /data/grep-stop; grep -rch hit /data/grep-stop; rm -r /data/grep-stop",
+      "expect": {
+        "exit": 0,
+        "stdout": "quiet=0\nhit\nhit\n2\n2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "recursive_grep_setup",
+      "seq": 9901904,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/grep-stop/a/deep; printf 'hit\\nhit\\n' > /data/grep-stop/a/deep/first; printf 'hit\\nhit\\n' > /data/grep-stop/a/deep/later; printf 'hit\\nhit\\n' > /data/grep-stop/a/later; printf 'hit\\nhit\\n' > /data/grep-stop/z",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "recursive_grep_quiet",
+      "seq": 9901905,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "grep -rq hit /data/grep-stop /data/grep-missing",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "",
+        "check": "[\"/data/grep-stop/a/deep/first\"]\n"
+      },
+      "clear_cache": true,
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "recursive_grep_quiet_no_match",
+      "seq": 9901906,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "grep -rq absent /data/grep-stop",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "",
+        "check": "[\"/data/grep-stop/a/deep/first\",\"/data/grep-stop/a/deep/later\",\"/data/grep-stop/a/later\",\"/data/grep-stop/z\"]\n"
+      },
+      "clear_cache": true,
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "recursive_grep_max_count",
+      "seq": 9901907,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "grep -rhm 1 hit /data/grep-stop",
+      "expect": {
+        "exit": 0,
+        "stdout": "hit\nhit\nhit\nhit\n",
+        "stderr": "",
+        "check": "[\"/data/grep-stop/a/deep/first\",\"/data/grep-stop/a/deep/later\",\"/data/grep-stop/a/later\",\"/data/grep-stop/z\"]\n"
+      },
+      "clear_cache": true,
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "recursive_grep_count",
+      "seq": 9901908,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "grep -rch hit /data/grep-stop",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n2\n2\n2\n",
+        "stderr": "",
+        "check": "[\"/data/grep-stop/a/deep/first\",\"/data/grep-stop/a/deep/later\",\"/data/grep-stop/a/later\",\"/data/grep-stop/z\"]\n"
+      },
+      "clear_cache": true,
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "recursive_grep_quiet_prior_error",
+      "seq": 9901909,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "grep -rq hit /data/grep-missing /data/grep-stop",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "grep: /data/grep-missing: No such file or directory\n",
+        "check": "[\"/data/grep-stop/a/deep/first\"]\n"
+      },
+      "clear_cache": true,
+      "check": {
+        "read_paths": true
+      }
+    },
+    {
+      "id": "recursive_grep_cleanup",
+      "seq": 9901910,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "rm -r /data/grep-stop",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
     }
   ]
 }

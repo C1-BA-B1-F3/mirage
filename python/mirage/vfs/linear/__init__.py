@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.core.linear.config import LinearConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.linear.linear import LinearVFS
 
 __all__ = ["LinearConfig", "LinearVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[LinearVFS]":
     if name == "LinearVFS":
         from mirage.vfs.linear.linear import LinearVFS
         return LinearVFS

@@ -174,8 +174,27 @@ async def test_missing_nested_quote_refuses_before_any_execution(command):
         io = await ws.shell(command)
         assert io.exit_code == 2
         assert await io.stdout_str() == ""
-        assert "syntax error" in await io.stderr_str()
+        stderr = await io.stderr_str()
+        assert "unexpected EOF while looking for matching" in stderr
         check = await ws.shell("test -e /data/unexpected")
         assert check.exit_code == 1
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command,expected", [
+    ("echo \"it's fine\"", "it's fine\n"),
+    ("echo ok # unterminated '\"", "ok\n"),
+    ("cat <<'EOF'\n'\"\nEOF", "'\"\n"),
+    ("echo $'closed\\\''", "closed'\n"),
+])
+async def test_literal_quotes_are_not_reported_as_unclosed(command, expected):
+    ws = Workspace({"/data": RAMVFS()})
+    try:
+        io = await ws.shell(command)
+        assert io.exit_code == 0
+        assert await io.stdout_str() == expected
+        assert await io.stderr_str() == ""
     finally:
         await ws.close()

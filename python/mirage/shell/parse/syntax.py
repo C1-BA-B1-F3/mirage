@@ -185,7 +185,7 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
     if stray is not None:
         return stray
     if not node.has_error:
-        return None
+        return find_unterminated_quote(node)
     previous = None
     for child in node.children:
         # Bash permits unquoted spaces in associative subscripts. The
@@ -215,12 +215,52 @@ def find_syntax_error(node: TSNodeLike) -> str | None:
     return None
 
 
-def syntax_error_result(offending: str) -> IOResult:
+def find_unterminated_quote(node: TSNodeLike) -> str | None:
+    """Find a missing quote in the parser's erroneous regions.
+
+    Complete strings, comments and heredoc bodies remain opaque. The
+    grammar represents an open double quote as a missing token or an
+    ERROR child, and an open single quote as a leaf ERROR span. An ANSI-C
+    string ending in an escaped quote can parse cleanly, so check its
+    closing delimiter as well.
+
+    Args:
+        node (TSNodeLike): the parsed command being refused.
+    """
+    if node.is_missing and node.type in ("'", '"'):
+        return node.type
+    if node.type == "ansi_c_string":
+        source = (node.text or b"").decode()
+        before = source[:-1]
+        if (len(before) - len(before.rstrip("\\"))) % 2:
+            return "'"
+        return None
+    for child in node.children:
+        quote = find_unterminated_quote(child)
+        if quote is not None:
+            return quote
+    if node.type == "ERROR":
+        if not node.children and (node.text or b"").startswith(b"'"):
+            return "'"
+        if sum(child.type == '"' for child in node.children) % 2:
+            return '"'
+    return None
+
+
+def syntax_error_result(offending: str,
+                        node: TSNodeLike | None = None) -> IOResult:
     """Exit 2 with the bash-style diagnostic for an unparsable line.
 
     Args:
         offending (str): the span the parser flagged.
+        node (TSNodeLike | None): the parsed command, for quote diagnostics.
     """
+    quote = find_unterminated_quote(node) if node is not None else None
+    if quote is not None:
+        return IOResult(
+            exit_code=2,
+            stderr=("mirage: unexpected EOF while looking for matching "
+                    f"`{quote}'\n").encode())
     snippet = offending.strip()
     err = (f"mirage: syntax error near {snippet!r}\n".encode()
            if snippet else b"mirage: syntax error in command\n")

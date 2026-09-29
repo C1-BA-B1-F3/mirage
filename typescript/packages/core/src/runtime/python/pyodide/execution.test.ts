@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { readFileSync } from 'node:fs'
 import { captureBinding, WorkspaceBinding } from '../../binding.ts'
 import { PyodideWorkerClient } from './worker/client.ts'
 import { describe, expect, it, vi } from 'vitest'
@@ -629,3 +630,29 @@ describe('Pyodide evaluation cwd', { timeout: 120_000 }, () => {
     }
   })
 })
+
+const tracebackCases = JSON.parse(
+  readFileSync(
+    new URL('../../../../../../../integ/fixtures/runtime/python_errors.json', import.meta.url),
+    'utf8',
+  ),
+) as { code: string; stderr: string }[]
+
+it.each(tracebackCases)(
+  'prints only user traceback frames: $code',
+  async ({ code, stderr }) => {
+    const guest = new PyodideExecution(await loadPyodideRuntime())
+    try {
+      const result = guest.run(
+        { code, argv: ['-c'], cwd: '', flags: {}, script_cli: false, env: {}, stdin: null },
+        () => undefined,
+        () => undefined,
+      )
+      expect(result[2]).toBe(1)
+      expect(new TextDecoder().decode(result[1])).toBe(stderr)
+    } finally {
+      guest.close()
+    }
+  },
+  120_000,
+)

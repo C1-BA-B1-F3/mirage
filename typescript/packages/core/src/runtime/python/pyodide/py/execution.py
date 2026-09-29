@@ -517,8 +517,10 @@ def run(request, arm_interrupt, disarm_interrupt):
                 else:
                     err_bytes.diagnostic(str(code) + '\n')
                     exit_code = 1
-            except BaseException:
-                err_bytes.diagnostic(traceback.format_exc())
+            except BaseException as e:
+                err_bytes.diagnostic(''.join(
+                    traceback.format_exception(type(e), e,
+                                               e.__traceback__.tb_next)))
                 exit_code = 1
         finally:
             if had_main:

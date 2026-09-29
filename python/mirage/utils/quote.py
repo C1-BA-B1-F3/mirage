@@ -124,6 +124,28 @@ def quotes_operands(cmd_name: str) -> bool:
     return cmd_name in SHELL_QUOTED_COMMANDS
 
 
+def escape_name(name: str) -> str:
+    """GNU ls -b names: C escapes, with spaces and backslashes protected.
+
+    Uses the same UTF-8 locale policy as shell_quote_always, including
+    its documented divergence for unassigned Unicode characters.
+
+    Args:
+        name (str): the filename or symlink target to display.
+    """
+    parts: list[str] = []
+    for char in name:
+        if char in " \\":
+            parts.append("\\" + char)
+        elif 0xDC80 <= ord(char) <= 0xDCFF:
+            parts.append(f"\\{ord(char) - 0xDC00:03o}")
+        elif _needs_escape(char):
+            parts.append(_escape(char))
+        else:
+            parts.append(char)
+    return "".join(parts)
+
+
 def needs_shell_quote(name: str) -> bool:
     """Whether a name cannot be pasted back into a shell as written.
 

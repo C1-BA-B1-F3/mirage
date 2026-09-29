@@ -119,6 +119,19 @@ export function quotesOperands(cmdName: string): boolean {
   return SHELL_QUOTED_COMMANDS.has(cmdName)
 }
 
+/** GNU ls -b, using shellQuoteAlways's documented UTF-8 locale policy. */
+export function escapeName(name: string): string {
+  let out = ''
+  for (const char of name) {
+    const code = char.codePointAt(0) ?? 0
+    if (char === ' ' || char === '\\') out += '\\' + char
+    else if (code >= 0xdc80 && code <= 0xdcff)
+      out += `\\${(code - 0xdc00).toString(8).padStart(3, '0')}`
+    else out += needsEscape(char) ? escapeChar(char) : char
+  }
+  return out
+}
+
 // Whether a name cannot be pasted back into a shell as written.
 export function needsShellQuote(name: string): boolean {
   // An empty operand has to be quoted or it disappears from the line

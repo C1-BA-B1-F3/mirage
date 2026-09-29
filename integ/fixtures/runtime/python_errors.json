@@ -1,0 +1,22 @@
+[
+  {
+    "code": "print(1",
+    "stderr": "  File \"<string>\", line 1\n    print(1\n         ^\nSyntaxError: '(' was never closed\n"
+  },
+  {
+    "code": "x = 1/0",
+    "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nZeroDivisionError: division by zero\n"
+  },
+  {
+    "code": "def fail():\n    return 1/0\nfail()",
+    "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 3, in <module>\n  File \"<string>\", line 2, in fail\nZeroDivisionError: division by zero\n"
+  },
+  {
+    "code": "raise SyntaxError('user error')",
+    "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nSyntaxError: user error\n"
+  },
+  {
+    "code": "try:\n    1/0\nexcept ZeroDivisionError as error:\n    raise ValueError('outer') from error",
+    "stderr": "Traceback (most recent call last):\n  File \"<string>\", line 2, in <module>\nZeroDivisionError: division by zero\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"<string>\", line 4, in <module>\nValueError: outer\n"
+  }
+]

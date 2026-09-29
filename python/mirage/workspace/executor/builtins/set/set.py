@@ -17,9 +17,13 @@ from mirage.io.types import ByteSource
 from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import SET_OPTION_DEFAULTS, SET_OPTION_NAMES
 from mirage.shell.options import parse_option_word
+from mirage.utils.quote import single_quote
+from mirage.workspace.executor.builtins.constants import SET_QUOTED_CHARS
+from mirage.workspace.executor.builtins.declare.declare import (
+    bash_declare_quote, is_control)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import visible_env
+from mirage.workspace.session.state import set_positional_params, visible_env
 from mirage.workspace.types import ExecutionNode
 
 
@@ -29,14 +33,17 @@ async def handle_set(
     call_stack: CallStack | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     if not args:
-        lines = [f"{k}={v}" for k, v in visible_env(session).items()]
-        out = ("\n".join(sorted(lines)) + "\n").encode()
+        lines = [
+            f"{k}={_listed_value(v)}"
+            for k, v in sorted(visible_env(session).items())
+        ]
+        out = ("\n".join(lines) + "\n").encode()
         return out, IOResult(), ExecutionNode(command="set", exit_code=0)
     i = 0
     while i < len(args):
         tok = args[i]
         if tok == "--":
-            session.positional_args = args[i + 1:]
+            set_positional_params(session, call_stack, args[i + 1:])
             return None, IOResult(), ExecutionNode(command="set", exit_code=0)
         # `-o` and `+o` with nothing after them print the option table
         # instead of setting anything, in two different spellings: `-o`
@@ -49,7 +56,7 @@ async def handle_set(
         word = parse_option_word(tok,
                                  args[i + 1] if i + 1 < len(args) else None)
         if word is None:
-            session.positional_args = args[i:]
+            set_positional_params(session, call_stack, args[i:])
             break
         for option, enable in word.settings:
             # `-o` takes a name rather than a letter, and a name bash does
@@ -71,6 +78,27 @@ async def handle_set(
         # why the grammar hands them back instead of deciding here.
         i += word.consumed
     return None, IOResult(), ExecutionNode(command="set", exit_code=0)
+
+
+def _listed_value(value: str) -> str:
+    """A value as bash's bare ``set`` prints it.
+
+    ``$'...'`` when it holds a control character, the form ``declare
+    -p`` writes; single quotes when the shell would read a character in
+    it specially; bare otherwise. GNU prints ``IFS=$' \\t\\n'``,
+    ``x='a b'`` and ``y=a,b``.
+
+    Args:
+        value (str): the variable's value.
+    """
+    if any(is_control(ch) for ch in value):
+        return bash_declare_quote(value)
+    tilde = any(ch == "~" and (i == 0 or value[i - 1] in "=:")
+                for i, ch in enumerate(value))
+    if tilde or value.startswith("#") or any(ch in SET_QUOTED_CHARS
+                                             for ch in value):
+        return single_quote(value)
+    return value
 
 
 def _option_listing(session: SessionState, plus: bool) -> bytes:

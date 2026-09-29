@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { expandTemplate, makeInert, substitute } from './brace.ts'
+import { piece } from './types.ts'
 
 const EXPAND_CASES: [string, string[]][] = [
   ['{a,b,c}', ['a', 'b', 'c']],
@@ -91,10 +92,19 @@ describe('expandTemplate', () => {
 describe('substitute', () => {
   it('replaces atoms in order', () => {
     const word = `x${makeInert(0)}y${makeInert(1)}`
-    expect(substitute(word, ['A', 'B'])).toBe('xAyB')
+    expect(substitute(word, [[piece('A', true)], [piece('B')]])).toEqual([
+      piece('x'),
+      piece('A', true),
+      piece('y'),
+      piece('B'),
+    ])
   })
 
-  it('is identity without atoms', () => {
-    expect(substitute('plain', ['unused'])).toBe('plain')
+  it('is one literal piece without atoms', () => {
+    expect(substitute('plain', [[piece('unused')]])).toEqual([piece('plain')])
+  })
+
+  it('gives an empty word no pieces', () => {
+    expect(substitute('', [])).toEqual([])
   })
 })

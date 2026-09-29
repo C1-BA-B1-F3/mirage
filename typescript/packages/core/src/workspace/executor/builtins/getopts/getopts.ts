@@ -21,7 +21,7 @@ import type { SessionView } from '../../../../ops/types.ts'
 import { ExecutionNode } from '../../../types.ts'
 import { isValidName, requireView } from '../shared.ts'
 import type { BuiltinCall, Result } from '../types.ts'
-import { sessionView } from '../../../session/state.ts'
+import { positionalParams, sessionView } from '../../../session/state.ts'
 
 async function getoptsFinish(
   session: SessionState,
@@ -91,11 +91,7 @@ export async function handleGetopts(
   const view = requireView(state)
   const optstring = args[0] ?? ''
   const name = args[1] ?? ''
-  let params: readonly string[]
-  if (args.length > 2) params = args.slice(2)
-  else if (callStack !== null && callStack.getAllPositional().length > 0)
-    params = callStack.getAllPositional()
-  else params = session.positionalArgs
+  const params = args.length > 2 ? args.slice(2) : positionalParams(session, callStack)
   const silent = optstring.startsWith(':')
   const verbose = !silent && (session.env.OPTERR ?? '1') !== '0'
   const parsed = Number.parseInt(session.env.OPTIND ?? '1', 10)

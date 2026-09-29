@@ -28,10 +28,10 @@ def test_subshell_isolates_shell_options(shell):
     assert out == "continued\n"
 
 
-def test_function_prefix_persists_in_parent_env(shell):
+def test_function_prefix_is_restored_after_the_call(shell):
     out = shell.mirage(
         'f() { echo "FOO=$FOO"; }; FOO=bar f; echo "after=$FOO"')
-    assert out == "FOO=bar\nafter=bar\n"
+    assert out == "FOO=bar\nafter=\n"
 
 
 def test_command_prefix_does_not_persist(shell):

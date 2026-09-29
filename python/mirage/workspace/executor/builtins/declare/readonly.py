@@ -27,8 +27,8 @@ from mirage.workspace.executor.builtins.shared import (arith_refusal,
                                                        readonly_refusal,
                                                        refusal, require_view)
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (env_is_readonly, set_attr,
-                                            visible_env)
+from mirage.workspace.session.state import (env_is_readonly, outlive_call,
+                                            set_attr, visible_env)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -163,6 +163,7 @@ async def handle_readonly(
                 return refusal("readonly", exc)
             if stored is not None:
                 stored.append(assign)
+        outlive_call(session, assign.partition("=")[0])
     if errors:
         return identifier_failure("readonly", errors)
     return None, IOResult(), ExecutionNode(command="readonly", exit_code=0)

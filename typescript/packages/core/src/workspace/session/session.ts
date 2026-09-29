@@ -19,7 +19,13 @@ import {
 } from '../../process/config.ts'
 import type { Limit } from '../../types.ts'
 import { parseCommandLimits, commandLimitsToJSON } from '../../policy/builtin/output_cap.ts'
-import { BIN_PREFIX, RANDOM, RANDOM_UNSET, SHELL_ARGV0 } from '../../shell/constants.ts'
+import {
+  BIN_PREFIX,
+  IFS_DEFAULT,
+  RANDOM,
+  RANDOM_UNSET,
+  SHELL_ARGV0,
+} from '../../shell/constants.ts'
 import type { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import { EnvVarSchema, type EnvEntries } from '../../secrets/config.ts'
 import type { ShellArray } from '../../shell/array.ts'
@@ -568,6 +574,10 @@ export class SessionState {
     // host interpreter, keeps its own. The one directory here is where
     // every program's file is.
     if (!Object.hasOwn(this.vars, 'PATH')) this.vars.PATH = makeVar(BIN_PREFIX, new Set())
+    // bash sets IFS at startup and never exports it, so a fresh shell reads
+    // `${#IFS}` as 3 and `OLDIFS=$IFS ... IFS=$OLDIFS` puts the default
+    // back rather than an empty IFS that splits nothing.
+    if (!Object.hasOwn(this.vars, 'IFS')) this.vars.IFS = makeVar(IFS_DEFAULT, new Set())
   }
 
   /**

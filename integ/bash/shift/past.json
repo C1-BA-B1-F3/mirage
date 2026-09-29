@@ -61,10 +61,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "set -- a b; shift 3; echo code=$? n=$#; shift 2; echo code=$? n=$#",
+      "command": "set -- a b; shift 3; echo code=$? n=$#; shift 2; echo code=$? n=$#; (set -- a b; f() { shift; echo \"f:code=$? n=$#\"; }; f; echo \"n=$#\"; g() { shift; echo \"g:n=$# $*\"; set -- q; }; g x y; echo \"n=$# $*\")",
       "expect": {
         "exit": 0,
-        "stdout": "code=1 n=2\ncode=0 n=0\n",
+        "stdout": "code=1 n=2\ncode=0 n=0\nf:code=1 n=0\nn=2\ng:n=1 y\nn=2 a b\n",
         "stderr": ""
       }
     },

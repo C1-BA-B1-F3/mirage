@@ -129,10 +129,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "IFS=: read rz1 <<< 'q'; echo \"${IFS-default}\" | grep -c :",
+      "command": "IFS=: read rz1 <<< 'q'; echo \"${IFS-default}\" | grep -c :; printf '[%q]\\n' \"$IFS\"; echo ${#IFS}; declare -p IFS; (v='a,b c'; OLDIFS=$IFS; IFS=,; printf '<%s>' $v; echo; IFS=$OLDIFS; printf '<%s>' $v; echo; unset IFS; echo \"${IFS-unset}\"; printf '<%s>' $v; echo; IFS=, bash -c 'printf \"[%q]\\n\" \"$IFS\"'; bash -c 'echo ${#IFS}')",
       "expect": {
-        "exit": 1,
-        "stdout": "0\n",
+        "exit": 0,
+        "stdout": "0\n[$' \\t\\n']\n3\ndeclare -- IFS=$' \\t\\n'\n<a><b c>\n<a,b><c>\nunset\n<a,b><c>\n[$' \\t\\n']\n3\n",
         "stderr": ""
       }
     }

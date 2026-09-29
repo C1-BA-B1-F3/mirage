@@ -231,10 +231,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "set -- \"x y\" b; printf \"[%s]\\n\" \"pre $@ post\"",
+      "command": "(set -- \"x y\" b; printf \"[%s]\\n\" \"pre $@ post\"; IFS=,; printf \"[%s]\\n\" $* ${*} $@; IFS=; printf \"[%s]\\n\" $* $@)",
       "expect": {
         "exit": 0,
-        "stdout": "[pre x y]\n[b post]\n",
+        "stdout": "[pre x y]\n[b post]\n[x y]\n[b]\n[x y]\n[b]\n[x y]\n[b]\n[x y]\n[b]\n[x y]\n[b]\n",
         "stderr": ""
       }
     },
@@ -299,10 +299,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "set -- a b; printf \"[%s]\\n\" \"pre ${*} post\"",
+      "command": "(set -- a b; printf \"[%s]\\n\" \"pre ${*} post\"; IFS=,; printf \"[%s]\\n\" \"$*\" \"${*}\" \"$* \" \"${*/a/z}\" \"${*^}\" \"${*:2}\" \"${#*}\"; v=$*; w=\"$* \"; printf \"[%s]\\n\" \"$v\" \"$w\"; IFS=; printf \"[%s]\\n\" \"$* \" \"${*:-d}\"; unset IFS; printf \"[%s]\\n\" \"$*\")",
       "expect": {
         "exit": 0,
-        "stdout": "[pre a b post]\n",
+        "stdout": "[pre a b post]\n[a,b]\n[a,b]\n[a,b ]\n[z,b]\n[A,B]\n[b]\n[2]\n[a,b]\n[a,b ]\n[ab ]\n[ab]\n[a b]\n",
         "stderr": ""
       }
     },
@@ -401,10 +401,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "set -- ax bx; printf \"[%s]\\n\" \"${@/x/y}\"",
+      "command": "(set -- ax bx; printf \"[%s]\\n\" \"${@/x/y}\" \"${@:-d}\" \"${@:+z}\"; set -- \"\" \"\"; printf \"[%s]\\n\" \"${@:-d}\" \"${*:-d}\"; set --; printf \"[%s]\\n\" x \"${@:+z}\" \"${@:-}\" y)",
       "expect": {
         "exit": 0,
-        "stdout": "[ay]\n[by]\n",
+        "stdout": "[ay]\n[by]\n[ax]\n[bx]\n[z]\n[]\n[]\n[ ]\n[x]\n[]\n[y]\n",
         "stderr": ""
       }
     },
@@ -435,10 +435,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "arr=(); printf \"[%s]\\n\" x \"${arr[@]}\" y",
+      "command": "arr=(); printf \"[%s]\\n\" x \"${arr[@]}\" \"${arr[@]:+z}\" \"${!arr[@]}\" \"${arr[*]:+z}\" y",
       "expect": {
         "exit": 0,
-        "stdout": "[x]\n[y]\n",
+        "stdout": "[x]\n[]\n[y]\n",
         "stderr": ""
       }
     },

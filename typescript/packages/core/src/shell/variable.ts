@@ -116,6 +116,18 @@ export interface ShellVar {
   readonly managed?: ManagedRef
 }
 
+/**
+ * The records a prefix assignment shadowed for one function call.
+ *
+ * bash runs `x=1 f` with `x` in a scope of its own around the function,
+ * its temporary environment: the caller's value comes back when the call
+ * returns, `unset x` inside reveals it, and an `export` or `readonly` of
+ * the name lets the value outlive the call. A frame of this type on the
+ * call path is that scope; a plain frame holds a function's `local`
+ * shadows.
+ */
+export class TempEnv extends Map<string, ShellVar | null> {}
+
 const NO_ATTRS: ReadonlySet<VarAttr> = new Set()
 
 /** Build a variable record. */

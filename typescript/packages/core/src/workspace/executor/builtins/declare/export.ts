@@ -15,7 +15,7 @@
 import { IOResult } from '../../../../io/types.ts'
 import { PolicyDenied } from '../../../../policy/errors.ts'
 import { VarAttr } from '../../../../shell/variable.ts'
-import { setAttr } from '../../../session/state.ts'
+import { outliveCall, setAttr } from '../../../session/state.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { exportedNames } from '../../../session/state.ts'
 import type { SessionView } from '../../../../ops/types.ts'
@@ -122,6 +122,7 @@ export async function handleExport(
         throw err
       }
     }
+    if (on) outliveCall(session, assign.split('=', 1)[0] ?? assign)
   }
   if (errors.length > 0) return identifierFailure('export', errors)
   return [null, new IOResult(), new ExecutionNode({ command: 'export', exitCode: 0 })]

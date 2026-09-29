@@ -18,8 +18,11 @@ import { NodeType as NT } from '../../shell/types.ts'
 import type { CondNode } from '../executor/builtins/condition/index.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import type { ExecuteFn } from '../expand/node.ts'
-import { expandNode } from '../expand/node.ts'
+import { expandChunks, expandNode } from '../expand/node.ts'
 import { expandPattern } from '../expand/pattern.ts'
+import { splitFields } from '../expand/fields.ts'
+import { ifsValue } from '../expand/variable.ts'
+import { unmarkGlobs } from '../../utils/glob_walk.ts'
 import type { SessionState } from '../session/session.ts'
 
 const CONTAINER_TYPES = new Set<string>([
@@ -30,7 +33,6 @@ const CONTAINER_TYPES = new Set<string>([
 ])
 const FLAT_OP_TOKENS = new Set(['=', '==', '!=', '<', '>', '!', '(', ')'])
 const COND_OP_TOKENS = new Set(['=', '==', '!=', '=~', '<', '>', '&&', '||'])
-const SPLIT_TYPES = new Set<string>([NT.SIMPLE_EXPANSION, NT.EXPANSION])
 
 /**
  * Expand a test_command `[ ... ]` into flat argv, tokens in source order.
@@ -91,12 +93,8 @@ async function flatten(
       out.push(child.text)
       continue
     }
-    const expanded = await expandNode(child, session, executeFn, cs, view)
-    if (SPLIT_TYPES.has(ctype)) {
-      out.push(...expanded.split(/\s+/).filter((w) => w !== ''))
-      continue
-    }
-    out.push(expanded)
+    const chunks = await expandChunks(child, session, executeFn, cs, view)
+    for (const word of splitFields(chunks, ifsValue(session, cs))) out.push(unmarkGlobs(word))
   }
   return true
 }

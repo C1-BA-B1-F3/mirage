@@ -943,10 +943,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "f() { local QL; echo \"[${QL-UNSET}]\"; declare -p QL; }; f",
+      "command": "f() { local QL; echo \"[${QL-UNSET}]\"; declare -p QL; }; f; (QL=top; export QLX=1; g() { local QL QLX; echo \"[${QL-UNSET}]\"; declare -p QL QLX; QL+=y; echo \"$QL\"; }; g; echo \"$QL $QLX\"; h() { local QL=a; local QL; echo \"$QL\"; }; h)",
       "expect": {
         "exit": 0,
-        "stdout": "[UNSET]\ndeclare -- QL\n",
+        "stdout": "[UNSET]\ndeclare -- QL\n[UNSET]\ndeclare -- QL\ndeclare -x QLX\ny\ntop 1\na\n",
         "stderr": ""
       }
     },
@@ -1045,10 +1045,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "QTK=x printenv QTK; QTK=x env | grep '^QTK='; QTK=x true; echo \"[${QTK-unset}]\"",
+      "command": "QTK=x printenv QTK; QTK=x env | grep '^QTK='; QTK=x true; echo \"[${QTK-unset}]\"; (QTK=old; QTK=new echo $QTK; QTK=new printf '[%s]\\n' \"$QTK\" $(echo $QTK); QTK=a,b; IFS=, printf '[%s]\\n' $QTK; QTK=new bash -c \"echo [$QTK]\")",
       "expect": {
         "exit": 0,
-        "stdout": "x\nQTK=x\n[unset]\n",
+        "stdout": "x\nQTK=x\n[unset]\nold\n[old]\n[old]\n[a,b]\n[a,b]\n",
         "stderr": ""
       }
     },

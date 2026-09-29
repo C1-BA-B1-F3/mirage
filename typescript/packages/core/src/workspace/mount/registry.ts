@@ -47,6 +47,11 @@ interface ReadReconciler {
   mayServeCached(mount: MountEntry, path: string): Promise<boolean>
 }
 
+// The stat the dispatcher itself runs for a mount's VFS: its registry op,
+// behind the dispatcher's fence. A trailing-slash glob classifies a match
+// with it, the twin of python's owner.execute_op("stat").
+type OpStat = (mount: MountEntry, path: PathSpec) => Promise<unknown>
+
 export const DEV_PREFIX = '/dev/'
 
 // Raised when a path-bound command is unsupported by its backend.
@@ -82,6 +87,7 @@ export class MountRegistry {
   private defaultRead: ReadSpec = DEFAULT_READ_SPEC
   private cacheStore: FileCache | null = null
   private reconciler: ReadReconciler | null = null
+  private opStatDoor: OpStat | null = null
   // The world's workspace runtime, set by Workspace after construction.
   // Catch-all when its captures are empty; explicit captures make
   // unclaimed commands an admission failure (126).
@@ -124,6 +130,16 @@ export class MountRegistry {
 
   setReconciler(reconciler: ReadReconciler): void {
     this.reconciler = reconciler
+  }
+
+  // Null until the workspace wires its dispatcher in; a bare registry (no
+  // workspace behind it) leaves a glob to the VFS's own stat.
+  get opStat(): OpStat | null {
+    return this.opStatDoor
+  }
+
+  setOpStat(stat: OpStat): void {
+    this.opStatDoor = stat
   }
 
   /**

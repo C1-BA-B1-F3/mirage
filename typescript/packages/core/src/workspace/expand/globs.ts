@@ -17,7 +17,7 @@ import { childMountNames, namespaceNames } from '../../ops/namespace_view.ts'
 import type { NamespaceLinks } from '../../ops/config.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import type { VFS } from '../../vfs/base.ts'
-import { type FileStat, FileType, PathSpec } from '../../types.ts'
+import { FileStat, FileType, PathSpec } from '../../types.ts'
 import { isFsError } from '../../utils/errors.ts'
 import type { MountEntry } from '../mount/mount.ts'
 import type { MountRegistry } from '../mount/registry.ts'
@@ -382,11 +382,8 @@ async function walkGlobstar(
 // anything else is asked of the mount that owns the link-resolved path, one
 // stat per match. That mount is readied first, as levelMatches readies one
 // before listing it, because a link can point into a mount nothing has
-// touched yet. python's twin then reaches the mount's op table; a TypeScript
-// mount entry keeps no op table of its own (ops live on the workspace
-// registry), so the VFS is asked through the same direct door the
-// listings use. A VFS with no stat of its own cannot tell, so its
-// match is kept.
+// touched yet. statMatch picks which stat answers; a match no stat can
+// classify is dropped, as python's twin drops it.
 async function isDirectory(
   registry: MountRegistry,
   mount: MountEntry,
@@ -406,15 +403,31 @@ async function isDirectory(
   const prefix = rstripSlash(owner.prefix)
   if (rstripSlash(real) === prefix) return true
   await owner.ensureReady()
-  let row: FileStat | undefined
+  let row: unknown
   try {
-    row = await owner.vfs.stat?.(PathSpec.fromStrPath(real, mountKey(real, prefix)), owner.index)
+    row = await statMatch(registry, owner, real, prefix)
   } catch (err) {
     if (isFsError(err)) return false
     throw err
   }
-  if (row === undefined) return true
-  return row.type === FileType.DIRECTORY
+  return row instanceof FileStat && row.type === FileType.DIRECTORY
+}
+
+// The stat the dispatcher runs for the owning mount's VFS answers, so a
+// trailing-slash glob and `stat` read the same op table, as python's twin
+// asks owner.execute_op("stat"); a VFS with no stat op there answers
+// ENOTSUP and its match is dropped. A registry no workspace has wired (unit
+// tests building one bare) leaves it to the VFS's own stat, and without one
+// the match is dropped too.
+async function statMatch(
+  registry: MountRegistry,
+  owner: MountEntry,
+  real: string,
+  prefix: string,
+): Promise<unknown> {
+  const spec = PathSpec.fromStrPath(real, mountKey(real, prefix))
+  if (registry.opStat !== null) return registry.opStat(owner, spec)
+  return owner.vfs.stat?.(spec, owner.index)
 }
 
 function withTrailingSlash(spec: PathSpec): PathSpec {

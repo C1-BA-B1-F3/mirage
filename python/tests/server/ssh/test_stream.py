@@ -77,8 +77,9 @@ class FakeProcess:
         self.channel = None
 
 
-async def _started(steps: list[Step]) -> ChannelInput:
-    source = ChannelInput(FakeProcess(steps))
+async def _started(steps: list[Step],
+                   max_line: int | None = None) -> ChannelInput:
+    source = ChannelInput(FakeProcess(steps), max_line=max_line)
     source.start()
     return source
 
@@ -237,6 +238,18 @@ async def test_loop_stdin_and_sender_cross_to_the_channel_loop():
     assert got == [b"piped\n", b"more"]
     assert process.stdout.data == ["done"]
     await source.close()
+
+
+@pytest.mark.asyncio
+async def test_readline_takes_its_own_bound():
+    long = await _started(["aaaaaa\n"], max_line=4)
+    wide = await _started(["aaaaaa\n"], max_line=8)
+    try:
+        assert await long.readline() is Mark.LIMIT
+        assert await wide.readline() == b"aaaaaa\n"
+    finally:
+        await long.close()
+        await wide.close()
 
 
 @pytest.mark.asyncio

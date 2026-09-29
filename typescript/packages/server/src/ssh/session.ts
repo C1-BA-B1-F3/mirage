@@ -317,7 +317,7 @@ export async function handleChannel(
   channel.end()
 }
 
-/** Refuse a subsystem other than SFTP, in the voice of every refusal. */
+/** Refuse a subsystem other than SFTP and codex-exec, in the voice of every refusal. */
 export function refuseSubsystem(channel: ServerChannel, name: string): void {
   refuse(channel, `unsupported subsystem: ${name}`)
 }

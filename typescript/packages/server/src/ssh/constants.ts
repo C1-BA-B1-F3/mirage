@@ -29,6 +29,39 @@ export const AUTHORIZED_KEYS_NAME = 'authorized_keys'
  */
 export const PROFILE_OPTION = 'mirage-profile'
 
+/**
+ * The subsystem Codex opens (`ssh ... -s codex-exec`) to run its tools in
+ * a workspace. It speaks Codex's exec-server protocol: one JSON-RPC
+ * message per line, without the `jsonrpc` member.
+ */
+export const CODEX_SUBSYSTEM = 'codex-exec'
+export const CODEX_AGENT_ID = 'codex'
+export const CODEX_SHELL_NAME = 'bash'
+export const CODEX_SHELL_PATH = '/bin/bash'
+export const CODEX_SHELLS: ReadonlySet<string> = new Set(['bash', 'sh', 'zsh', 'dash'])
+/**
+ * One message carries a whole file as base64 (`fs/writeFile`), so a
+ * message may run far past a shell line.
+ */
+export const CODEX_MAX_MESSAGE = 64 * 1024 * 1024
+export const CODEX_READ_SIZE = 1024 * 1024
+export const CODEX_INTERRUPT_SIGNAL = 'interrupt'
+export const CODEX_CTRL_C = 0x03
+export const CODEX_CTRL_D = 0x04
+/**
+ * Exit statuses the protocol reports for a stopped process: an interrupt
+ * reads as 128 + SIGINT, a terminated process as no status.
+ */
+export const CODEX_INTERRUPTED = 130
+export const CODEX_TERMINATED = -1
+
+export const RPC_PARSE_ERROR = -32700
+export const RPC_INVALID_REQUEST = -32600
+export const RPC_METHOD_NOT_FOUND = -32601
+export const RPC_INVALID_PARAMS = -32602
+export const RPC_INTERNAL_ERROR = -32603
+export const RPC_NOT_FOUND = -32004
+
 export const SSH_ENV_KEYS = {
   ssh_port: ENV_SSH_PORT,
   ssh_host: ENV_SSH_HOST,

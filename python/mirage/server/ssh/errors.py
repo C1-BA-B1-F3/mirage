@@ -15,3 +15,16 @@
 
 class SSHConfigError(ValueError):
     """Raised when the daemon's SSH settings are unusable."""
+
+
+class CodexRPCError(Exception):
+    """A codex-exec request answered with a JSON-RPC error.
+
+    Args:
+        code (int): the JSON-RPC error code.
+        message (str): the error's message.
+    """
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(message)
+        self.code = code

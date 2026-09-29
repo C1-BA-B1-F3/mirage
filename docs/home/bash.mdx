@@ -252,6 +252,24 @@ or without `--seq`. A `--slurpfile` holding bad JSON is refused with
 `jq: Bad JSON in --slurpfile <name> <file>: <message>` and status 2, and
 `--argjson` and `--jsonargs` accept what jq's parser accepts.
 
+A file that cannot be opened is reported when the reader reaches it, and
+the reader goes on to the next one. jq's main loop checks for such a failure
+before each document it reads, so the document the reader went on to still
+runs, nothing after it does, and the status is 2 whatever the runs answered.
+
+```bash
+printf '1 2' > /data/a.json
+jq . /data/missing.json /data/a.json
+1
+# stderr: jq: error: Could not open file /data/missing.json: No such file or directory
+```
+
+A directory opens and then fails at its read, so jq reports it as
+`jq: error: Is a directory`, without its name. `-n` opens nothing its
+program does not read. A `--rawfile` or `--slurpfile` that cannot be read
+is refused with `jq: Bad JSON in --rawfile <name> <file>: Could not open
+<file>: <reason>` (`It's a directory` for a directory) and status 2.
+
 A few limits worth knowing. `input` and `inputs` read the documents
 still unread: `input` takes the next one (and fails with `break` when none
 is left, as jq does), `inputs` yields every one after it. mirage cannot see
@@ -275,14 +293,11 @@ print from the values the evaluator hands back, so jq's own spellings are not
 kept: where jq prints `1.000`, `1E+2`, `-0` and all 21 digits of
 `100000000000000000001` as they came in, mirage prints `1`, `100`, `0` and
 the nearest double. On the TypeScript host an object lists keys that read as
-array indices first (`{"b":1,"1":2}` prints as `{"1":2,"b":1}`). A missing
-operand fails the whole command before anything runs (`jq: <file>: No such
-file or directory`, status 2), where jq reports `jq: error: Could not open
-file <file>: ...` and reads the other operands. Under `--stream`, input nested
-more than 10,000 levels deep is refused with `Exceeds depth limit for
-parsing`, the limit jq's ordinary parser has. jq's streaming parser has no
-limit, but every event carries a copy of its path, so input nested n deep
-costs time in n squared.
+array indices first (`{"b":1,"1":2}` prints as `{"1":2,"b":1}`). Under
+`--stream`, input nested more than 10,000 levels deep is refused with
+`Exceeds depth limit for parsing`, the limit jq's ordinary parser has. jq's
+streaming parser has no limit, but every event carries a copy of its path,
+so input nested n deep costs time in n squared.
 
 Not implemented, and reported as an unknown option rather than quietly
 ignored: `-C` (colorized output, which an agent would only have to strip

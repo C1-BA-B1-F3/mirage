@@ -19,6 +19,7 @@ import orjson
 
 from mirage.core.jq.types import DEFAULT_INDENT, RS, JqError, JqHalt, JqOptions
 from mirage.types import JsonValue
+from mirage.utils.errors import fs_strerror
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,20 @@ def error_report(position: str, error: JqError) -> str:
         text = error.text.split("\0", 1)[0]
         return f"jq: error (at {position}): {text}\n"
     return f"jq: error (at {position}) (not a string): {error.text}\n"
+
+
+def load_failure(name: str, exc: BaseException) -> str:
+    """Why jq could not load a whole file (jv_load_file): an -f program,
+    a --rawfile or a --slurpfile. It opens the file itself, so a
+    directory gets words of its own instead of a failed read.
+
+    Args:
+        name (str): the file as typed.
+        exc (BaseException): why it could not be read.
+    """
+    if isinstance(exc, IsADirectoryError):
+        return f"Could not open {name}: It's a directory"
+    return f"Could not open {name}: {fs_strerror(exc)}"
 
 
 def halt_report(halt: JqHalt) -> str:

@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { RS, type JqError, type JqHalt, type JqOptions } from './types.ts'
+import { fsStrerror, isEisdir } from '../../utils/errors.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 
 const ENC = new TextEncoder()
@@ -94,6 +95,16 @@ export function errorReport(position: string, error: JqError): string {
     return `jq: error (at ${position}): ${text}\n`
   }
   return `jq: error (at ${position}) (not a string): ${error.text}\n`
+}
+
+/**
+ * Why jq could not load a whole file (jv_load_file): an -f program, a
+ * --rawfile or a --slurpfile, named as typed. It opens the file itself, so a
+ * directory gets words of its own instead of a failed read.
+ */
+export function loadFailure(name: string, err: unknown): string {
+  if (isEisdir(err)) return `Could not open ${name}: It's a directory`
+  return `Could not open ${name}: ${fsStrerror(err) ?? ''}`
 }
 
 /**

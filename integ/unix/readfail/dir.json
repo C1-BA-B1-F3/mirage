@@ -193,7 +193,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: /data/rfdir: Is a directory\n"
+        "stderr": "jq: error: Is a directory\n"
       }
     },
     {
@@ -207,7 +207,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "jq: error: Could not open file /data/rfnope.txt: No such file or directory\n"
       }
     },
     {

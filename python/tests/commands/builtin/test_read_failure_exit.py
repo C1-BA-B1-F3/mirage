@@ -92,13 +92,13 @@ GNU_READ_EXIT = {
 # the operand and the errno are named and only the exit code above is
 # GNU's for every line.
 #
-# Two lines print nothing at all on a directory in GNU: `jq .` exits 2
-# silently, and `zgrep x` exits 1 silently because zgrep runs gzip with
-# -q, which keeps the directory warning to itself. zgrep is silent here
-# too; jq reports it like the rest, which is a deliberate divergence
-# toward saying something.
-SILENT_IN_GNU = {"jq . {p}", "zgrep x {p}"}
+# One line prints nothing at all on a directory: `zgrep x` exits 1
+# silently, because zgrep runs gzip with -q, which keeps the directory
+# warning to itself. jq 1.7 was silent too, but jq 1.8.2, which both
+# hosts follow, opens the directory, fails at its first read and says so
+# without naming it.
 SILENT_HERE = {"zgrep x {p}"}
+BARE_HERE = {"jq . {p}": "jq: error: Is a directory\n"}
 
 
 # `diff` is absent on purpose. GNU diff DESCENDS into a directory
@@ -139,7 +139,16 @@ async def test_directory_read_is_silent_like_gnu(template):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("template", sorted(set(GNU_READ_EXIT) - SILENT_HERE))
+@pytest.mark.parametrize("template", sorted(BARE_HERE))
+async def test_directory_read_says_so_without_naming_it(template):
+    ws = await _ws()
+    result = await ws.shell(template.format(p="/ram/dir"))
+    assert (result.stderr or b"").decode() == BARE_HERE[template]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "template", sorted(set(GNU_READ_EXIT) - SILENT_HERE - set(BARE_HERE)))
 async def test_directory_read_says_is_a_directory(template):
     ws = await _ws()
     result = await ws.shell(template.format(p="/ram/dir"))

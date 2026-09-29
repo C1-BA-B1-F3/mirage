@@ -15,7 +15,8 @@
 import pytest
 
 from mirage.core.jq import (JqError, JqHalt, JqOptions, error_report,
-                            format_jq_output, halt_report, jq_eval)
+                            format_jq_output, halt_report, jq_eval,
+                            load_failure)
 
 PRETTY = JqOptions()
 COMPACT = JqOptions(compact=True)
@@ -126,3 +127,12 @@ def test_error_report_ends_a_string_message_at_a_nul():
 def test_halt_report_writes_what_jq_writes_for_a_halt(message, string,
                                                       expected):
     assert halt_report(JqHalt(message, string, 5)) == expected
+
+
+@pytest.mark.parametrize("exc, expected", [
+    (FileNotFoundError("f"), "Could not open f: No such file or directory"),
+    (PermissionError("f"), "Could not open f: Permission denied"),
+    (IsADirectoryError("f"), "Could not open f: It's a directory"),
+])
+def test_load_failure_words_a_file_jq_could_not_load(exc, expected):
+    assert load_failure("f", exc) == expected

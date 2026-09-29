@@ -802,7 +802,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "jq: /ghost: Is a directory\n"
+        "stderr": "jq: error: Is a directory\n"
       }
     },
     {

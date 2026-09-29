@@ -32,6 +32,7 @@ import {
   type JqOptions,
   type NoValue,
 } from './types.ts'
+import { READ_FAILURES, fsStrerror, isFsError } from '../../utils/errors.ts'
 
 /**
  * The most bytes one read of jq's input reader takes (jq 1.8's util.c):
@@ -210,9 +211,17 @@ class Pending {
  * document, is taken in one step and handed to the parser as read (see fast);
  * everything else, bad input included, goes through jq's parser. `opts`
  * decides the reading through -R, -s, --seq and --stream.
+ *
+ * An input is opened when the reader reaches it, and one that cannot be
+ * opened or read is reported and counted the way jq's reader does it, and
+ * the reader moves on to the next (see fail). `report` takes each line jq's
+ * reader writes to stderr about such an input; without it, the error
+ * propagates instead.
  */
 export class InputReader {
   private readonly sources: readonly InputSource[]
+  private readonly report: ((line: string) => void) | null
+  private failedInputs = 0
   private opened = 0
   private readonly parser: JqParser | null
   private readonly fastOk: boolean
@@ -223,12 +232,27 @@ export class InputReader {
   private pending = new Pending()
   private drained = false
   private feof = false
+  private fresh = true
+  private failed = false
 
-  constructor(sources: readonly InputSource[], opts: JqOptions) {
+  constructor(
+    sources: readonly InputSource[],
+    opts: JqOptions,
+    report: ((line: string) => void) | null = null,
+  ) {
     this.sources = sources
+    this.report = report
     this.parser = opts.rawInput ? null : new JqParser(opts.seq, opts.stream)
     this.fastOk = !(opts.rawInput || opts.seq || opts.stream)
     if (opts.slurp) this.slurped = opts.rawInput ? '' : []
+  }
+
+  /**
+   * How many inputs could not be opened or read, which jq's main loop checks
+   * before it reads each document (jq_util_input_errors).
+   */
+  failures(): number {
+    return this.failedInputs
   }
 
   /**
@@ -318,13 +342,46 @@ export class InputReader {
     this.pending = new Pending()
     this.drained = false
     this.feof = false
+    this.fresh = true
+    this.failed = false
   }
 
   private async pull(): Promise<void> {
     if (this.chunks === null) return
-    const next = await this.chunks.next()
-    if (next.done === true) this.drained = true
-    else this.pending.push(next.value)
+    let next: IteratorResult<Uint8Array>
+    try {
+      next = await this.chunks.next()
+    } catch (error) {
+      if (this.report === null || !isFsError(error)) throw error
+      this.fail(error, this.report)
+      return
+    }
+    if (next.done === true) {
+      this.drained = true
+    } else {
+      this.pending.push(next.value)
+      if (next.value.length > 0) this.fresh = false
+    }
+  }
+
+  /**
+   * Count an input that could not be opened or read, and report it in the
+   * words of jq's reader: fopen's failure names the input, a failed read is
+   * the bare strerror. A directory opens, and fails at its first read. The
+   * input ends there, and the line fgets was reading when it failed is lost
+   * with it.
+   */
+  private fail(error: unknown, report: (line: string) => void): void {
+    const strerror = fsStrerror(error) ?? ''
+    const code = (error as { code?: string }).code
+    if (this.fresh && (code === undefined || !READ_FAILURES.has(code))) {
+      report(`jq: error: Could not open file ${this.name ?? ''}: ${strerror}\n`)
+    } else {
+      report(`jq: error: ${strerror}\n`)
+    }
+    this.failedInputs += 1
+    this.failed = true
+    this.drained = true
   }
 
   /**
@@ -358,7 +415,8 @@ export class InputReader {
       }
       if (this.drained) {
         this.feof = true
-        return pending.take(pending.length)
+        const rest = pending.take(pending.length)
+        return this.failed ? new Uint8Array(0) : rest
       }
       await this.pull()
     }
@@ -384,7 +442,7 @@ export class InputReader {
     if (pending.length === 0) return NO_VALUE
     const skip = parser.bomSkip(pending.view(0, Math.min(3, pending.length)))
     if (skip === null) return NO_VALUE
-    if (newline < 0 && this.opened < this.sources.length) return NO_VALUE
+    if (newline < 0 && this.tailUnsettled()) return NO_VALUE
     const end = newline >= 0 ? newline + 1 : pending.length
     const line = pending.view(skip, end)
     const value = loads(line)
@@ -435,10 +493,16 @@ export class InputReader {
       await this.pull()
       newline = pending.indexOf(NEWLINE, searched)
     }
-    if (newline < 0 && this.opened < this.sources.length) return NO_VALUE
+    if (newline < 0 && this.tailUnsettled()) return NO_VALUE
     const value = loads(pending.view(skip, stop + 1))
     if (value === NO_VALUE) return NO_VALUE
     return this.took(parser, value, skip, stop)
+  }
+
+  // Whether an input's bytes after its last newline cannot be taken as they
+  // are: another input can run on from them, and a failed read loses them.
+  private tailUnsettled(): boolean {
+    return this.failed || this.opened < this.sources.length
   }
 
   private took(parser: JqParser, value: unknown, skip: number, stop: number): unknown {

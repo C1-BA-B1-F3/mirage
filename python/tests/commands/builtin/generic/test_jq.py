@@ -34,13 +34,23 @@ FILES = {
     "/d/two.json": b" 2\n",
 }
 
+DIRS = {"/d/dir"}
 
-async def _read_bytes(path: PathSpec) -> bytes:
+
+def _stored(path: PathSpec) -> bytes:
+    if path.virtual in DIRS:
+        raise IsADirectoryError(path.virtual)
+    if path.virtual not in FILES:
+        raise FileNotFoundError(path.virtual)
     return FILES[path.virtual]
 
 
+async def _read_bytes(path: PathSpec) -> bytes:
+    return _stored(path)
+
+
 async def _read_stream(path: PathSpec):
-    data = FILES[path.virtual]
+    data = _stored(path)
     for at in range(0, len(data), 5):
         yield data[at:at + 5]
 
@@ -596,6 +606,74 @@ async def test_slurpfile_with_bad_json_is_refused_in_jqs_words():
         "jq: Bad JSON in --slurpfile x /d/bad.json: Unfinished JSON term at "
         "EOF at line 3, column 1")
     assert caught.value.exit_code == 2
+
+
+MISSING = (b"jq: error: Could not open file /d/nope.json: No such file or "
+           b"directory\n")
+
+
+@pytest.mark.asyncio
+async def test_an_input_that_cannot_be_opened_is_reported_and_read_past():
+    # jq reports the file, reads on, and its main loop stops after the
+    # document the reader went on to (pinned: `jq . missing.json a.json`
+    # prints a.json's first document only).
+    assert await _flagged(["/d/nope.json", "/d/four.json"],
+                          ".") == (b"1\n", MISSING, 2)
+    assert await _flagged(["/d/four.json", "/d/nope.json", "/d/multi.json"],
+                          ".",
+                          compact_output=True) == (b'1\n2\n3\n4\n{"a":1}\n',
+                                                   MISSING, 2)
+
+
+@pytest.mark.asyncio
+async def test_a_failed_input_exits_two_whatever_the_runs_answered():
+    assert await _flagged(["/d/nope.json", "/d/four.json"],
+                          ". == 0",
+                          exit_status=True) == (b"false\n", MISSING, 2)
+    assert await _flagged(["/d/nope.json", "/d/four.json"],
+                          "halt_error") == (b"", MISSING + b"1\n", 2)
+
+
+@pytest.mark.asyncio
+async def test_a_directory_input_is_reported_in_jqs_bare_words():
+    assert await _flagged(["/d/dir", "/d/four.json"],
+                          ".") == (b"1\n", b"jq: error: Is a directory\n", 2)
+
+
+@pytest.mark.asyncio
+async def test_input_reads_past_a_failed_input_to_the_next():
+    # One that finds nothing more fails where the reader stopped, on the
+    # failed file at line 0 (pinned).
+    assert await _flagged(["/d/nope.json", "/d/four.json"],
+                          "input",
+                          null_input=True) == (b"1\n", MISSING, 2)
+    assert await _flagged(
+        ["/d/nope.json"], "input",
+        null_input=True) == (b"", MISSING +
+                             b"jq: error (at /d/nope.json:0): break\n", 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("option", ["rawfile", "slurpfile"])
+@pytest.mark.parametrize("path, reason",
+                         [("/d/nope.json", "No such file or directory"),
+                          ("/d/dir", "It's a directory")])
+async def test_a_flag_file_that_cannot_be_read_is_refused_in_jqs_words(
+        option, path, reason):
+    with pytest.raises(UsageError) as caught:
+        await _run([], "$x", null_input=True, **{option: ["x", _path(path)]})
+    assert str(caught.value) == (f"jq: Bad JSON in --{option} x {path}: "
+                                 f"Could not open {path}: {reason}")
+    assert caught.value.exit_code == 2
+
+
+def test_a_usage_error_ends_with_jq_1_8s_hint():
+    with pytest.raises(UsageError) as caught:
+        named_args(_spec_flags(argjson=["v", "1 2"]))
+    assert str(caught.value) == (
+        "jq: invalid JSON text passed to --argjson\n"
+        "Use jq --help for help with command-line options,\n"
+        "or see the jq manpage, or online docs at https://jqlang.org")
 
 
 def test_argjson_reads_its_value_as_jqs_parser_does():

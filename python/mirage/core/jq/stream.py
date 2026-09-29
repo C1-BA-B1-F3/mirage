@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import re
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 
 import orjson
 
@@ -22,6 +22,7 @@ from mirage.core.jq.parse import (CLOSE_BRACE, CLOSE_BRACKET, OPEN_BRACE,
 from mirage.core.jq.types import (NO_VALUE, UNKNOWN_POSITION, InputSource,
                                   JqOptions, JqParseError, NoValue)
 from mirage.types import JsonValue
+from mirage.utils.errors import FS_ERRORS, READ_FAILURES, fs_strerror
 
 # The most bytes one read of jq's input reader takes (jq 1.8's util.c):
 # fgets into a 4096-byte buffer, less the four bytes it keeps for UTF-8
@@ -124,15 +125,26 @@ class InputReader:
     document, is taken in one step and handed to the parser as read (see
     _fast); everything else, bad input included, goes through jq's parser.
 
+    An input is opened when the reader reaches it, and one that cannot be
+    opened or read is reported and counted the way jq's reader does it,
+    and the reader moves on to the next (see _fail). Without `report`,
+    such an error propagates instead.
+
     Args:
         sources (Sequence[InputSource]): the inputs, in order.
         opts (JqOptions): resolved options; -R, -s, --seq and --stream
             decide how the inputs are read.
+        report (Callable[[str], None] | None): takes each line jq's reader
+            writes to stderr about an input it could not open or read.
     """
 
-    def __init__(self, sources: Sequence[InputSource],
-                 opts: JqOptions) -> None:
+    def __init__(self,
+                 sources: Sequence[InputSource],
+                 opts: JqOptions,
+                 report: Callable[[str], None] | None = None) -> None:
         self._sources = list(sources)
+        self._report = report
+        self._failed_inputs = 0
         self._opened = 0
         self._parser = (None if opts.raw_input else JqParser(
             seq=opts.seq, streaming=opts.stream))
@@ -146,6 +158,14 @@ class InputReader:
         self._pending = bytearray()
         self._drained = False
         self._feof = False
+        self._fresh = True
+        self._failed = False
+
+    def failures(self) -> int:
+        """How many inputs could not be opened or read, which jq's main
+        loop checks before it reads each document
+        (jq_util_input_errors)."""
+        return self._failed_inputs
 
     def position(self) -> str:
         """Where jq's reader stands, as its error reports word it: the
@@ -226,14 +246,44 @@ class InputReader:
             self._pending = bytearray()
             self._drained = False
             self._feof = False
+            self._fresh = True
+            self._failed = False
 
     async def _pull(self) -> None:
         assert self._chunks is not None
-        chunk = await anext(self._chunks, None)
+        try:
+            chunk = await anext(self._chunks, None)
+        except FS_ERRORS as exc:
+            if self._report is None:
+                raise
+            self._fail(exc, self._report)
+            return
         if chunk is None:
             self._drained = True
         else:
             self._pending += chunk
+            self._fresh = self._fresh and not chunk
+
+    def _fail(self, exc: OSError, report: Callable[[str], None]) -> None:
+        """Count an input that could not be opened or read, and report it
+        in the words of jq's reader: fopen's failure names the input, a
+        failed read is the bare strerror. A directory opens, and fails at
+        its first read. The input ends there, and the line fgets was
+        reading when it failed is lost with it.
+
+        Args:
+            exc (OSError): the error.
+            report (Callable[[str], None]): where the report goes.
+        """
+        strerror = fs_strerror(exc)
+        if self._fresh and not isinstance(exc, READ_FAILURES):
+            report(f"jq: error: Could not open file {self._name}: "
+                   f"{strerror}\n")
+        else:
+            report(f"jq: error: {strerror}\n")
+        self._failed_inputs += 1
+        self._failed = True
+        self._drained = True
 
     async def _read_more(self) -> tuple[bytes, bool]:
         """jq's read_more: the next piece of the input, and whether the
@@ -265,7 +315,7 @@ class InputReader:
                     del pending[:missing]
                 return piece
             if self._drained:
-                piece = bytes(pending)
+                piece = b"" if self._failed else bytes(pending)
                 pending.clear()
                 self._feof = True
                 return piece
@@ -296,7 +346,7 @@ class InputReader:
         skip = parser.bom_skip(bytes(pending[:3]))
         if skip is None:
             return NO_VALUE
-        if newline < 0 and self._opened < len(self._sources):
+        if newline < 0 and self._tail_unsettled():
             return NO_VALUE
         end = newline + 1 if newline >= 0 else len(pending)
         line = bytes(pending[skip:end])
@@ -344,12 +394,18 @@ class InputReader:
             searched = len(pending)
             await self._pull()
             newline = pending.find(b"\n", searched)
-        if newline < 0 and self._opened < len(self._sources):
+        if newline < 0 and self._tail_unsettled():
             return NO_VALUE
         value = _loads(bytes(pending[skip:stop + 1]))
         if value is NO_VALUE:
             return NO_VALUE
         return self._took(parser, value, skip, stop)
+
+    def _tail_unsettled(self) -> bool:
+        # Whether an input's bytes after its last newline cannot be taken
+        # as they are: another input can run on from them, and a failed
+        # read loses them.
+        return self._failed or self._opened < len(self._sources)
 
     def _took(self, parser: JqParser, value: JsonValue, skip: int,
               stop: int) -> JsonValue:

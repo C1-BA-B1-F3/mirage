@@ -585,7 +585,8 @@ describe('gh api', () => {
 })
 
 // `--jq` renders the way gh 2.85 does, probed live: a string raw, null as
-// an empty line, everything else as compact JSON, one output per line.
+// an empty line, everything else as compact JSON with its keys sorted, one
+// output per line.
 describe('gh api --jq', () => {
   it('prints a string raw', async () => {
     reset({ full_name: 'o/r' })
@@ -596,7 +597,38 @@ describe('gh api --jq', () => {
   it('prints non-strings as compact JSON', async () => {
     reset({ name: 'r', count: 2, ok: true })
     const out = await api(inv(['repos/o/r'], { jq: '{name: .name, count: .count}, .ok' }))
-    expect(out === null ? '' : text(out)).toBe('{"name":"r","count":2}\ntrue\n')
+    expect(out === null ? '' : text(out)).toBe('{"count":2,"name":"r"}\ntrue\n')
+  })
+
+  // go-gh prints a number on its own line in fixed notation, whole with no
+  // decimals and otherwise with two, rounded half to even as strconv rounds;
+  // anything else goes through Go's json.Marshal: keys sorted, <, > and &
+  // escaped for HTML and U+2028 and U+2029 for JavaScript, DEL raw, and
+  // numbers spelled as ES6 spells them. Pinned against gh 2.85's go-gh with
+  // `gh api rate_limit --jq`.
+  it.each([
+    ['1.5', '1.50'],
+    ['0.125', '0.12'],
+    ['0.375', '0.38'],
+    ['-0.125', '-0.12'],
+    ['2.675', '2.67'],
+    ['1e-7', '0.00'],
+    ['3.0', '3'],
+    ['1e21', '1000000000000000000000'],
+    ['.n / 3', '1666.67'],
+    ['[.n / 3]', '[1666.6666666666667]'],
+    ['[1.5, 1e21, 1e-7, 0.000001, 100]', '[1.5,1e+21,1e-7,0.000001,100]'],
+    ['{"b": 1, "a": {"d": 2, "c": 3}}', '{"a":{"c":3,"d":2},"b":1}'],
+    ['{"x": "<&>"}', '{"x":"\\u003c\\u0026\\u003e"}'],
+    [
+      '["\\u2028", "\\u2029", "\\u007f", "é", "\\u0001", "\\b"]',
+      '["\\u2028","\\u2029","\x7f","é","\\u0001","\\b"]',
+    ],
+    ['[true, null, "x"]', '[true,null,"x"]'],
+  ])('prints %s as go-gh does', async (program, line) => {
+    reset({ n: 5000 })
+    const out = await api(inv(['repos/o/r'], { jq: program }))
+    expect(out === null ? '' : text(out)).toBe(`${line}\n`)
   })
 
   it('prints null as an empty line', async () => {

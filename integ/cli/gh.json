@@ -880,7 +880,7 @@
       "command": "gh issue view 4 --json comments --jq '.comments | map({author: .author, edited: .includesCreatedEdit, minimized: .isMinimized, reason: .minimizedReason, reactions: .reactionGroups, mine: .viewerDidAuthor})'",
       "expect": {
         "exit": 0,
-        "stdout": "[{\"author\":{\"login\":\"integ-user\"},\"edited\":false,\"minimized\":false,\"reason\":\"\",\"reactions\":[],\"mine\":true}]\n",
+        "stdout": "[{\"author\":{\"login\":\"integ-user\"},\"edited\":false,\"mine\":true,\"minimized\":false,\"reactions\":[],\"reason\":\"\"}]\n",
         "stderr": ""
       }
     },
@@ -1530,7 +1530,7 @@
       "command": "gh pr view 5 --json title,changedFiles,files,commits --jq '[.title, .changedFiles, .files, (.commits | map([.messageHeadline, .authors[0].login]))]'",
       "expect": {
         "exit": 0,
-        "stdout": "[\"merged-title\",1,[{\"path\":\"README.md\",\"additions\":1,\"deletions\":0}],[[\"Update README.md\",\"integ-user\"]]]\n",
+        "stdout": "[\"merged-title\",1,[{\"additions\":1,\"deletions\":0,\"path\":\"README.md\"}],[[\"Update README.md\",\"integ-user\"]]]\n",
         "stderr": ""
       }
     },
@@ -1779,6 +1779,19 @@
         "exit": 0,
         "stdout": "4\nexit=1\n4\nexit=1\n",
         "stderr": "gh issue view: error: no 4\ngh issue view: error: limit doesn't support negative count\n"
+      }
+    },
+    {
+      "id": "gh_jq_prints_each_output_as_go_gh_does",
+      "seq": 569335,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api user --jq '.login, 1.5, 0.125, -0.125, 1e21, 3.0, {\"b\": 1, \"a\": \"<&>\"}, [1.5, 1e21, 1e-7], true, null'; gh issue view 4 --json number --jq '{third: (.number / 3), number}, .number / 3'",
+      "expect": {
+        "exit": 0,
+        "stdout": "integ-user\n1.50\n0.12\n-0.12\n1000000000000000000000\n3\n{\"a\":\"\\u003c\\u0026\\u003e\",\"b\":1}\n[1.5,1e+21,1e-7]\ntrue\n\n{\"number\":4,\"third\":1.3333333333333333}\n1.33\n",
+        "stderr": ""
       }
     }
   ]

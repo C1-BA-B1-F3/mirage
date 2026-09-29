@@ -187,6 +187,13 @@ def camel(value: Any) -> Any:
     return result
 
 
+# Go's json.Marshal escapes <, > and & for HTML and U+2028 and U+2029 for
+# JavaScript on top of the escapes json.dumps shares with it; gojq's own
+# encoder escapes none of them, but does escape DEL.
+_MARSHAL_ESCAPES = re.compile(
+    r"[<>&\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}]")
+
+
 def _go_number(number: int | float) -> str:
     """A number as Go's JSON encoders, gojq's among them, write a float64,
     which is how ES6 spells it: the shortest digits that read back the
@@ -203,6 +210,16 @@ def _go_number(number: int | float) -> str:
     if magnitude != 0 and (magnitude < 1e-6 or magnitude >= 1e21):
         return f"{digits:e}"
     return f"{digits.normalize():f}"
+
+
+def _marshal_string(text: str) -> str:
+    """A string as Go's json.Marshal writes it.
+
+    Args:
+        text (str): the string.
+    """
+    return _MARSHAL_ESCAPES.sub(lambda match: f"\\u{ord(match.group()):04x}",
+                                json.dumps(text, ensure_ascii=False))
 
 
 def _gojq_string(text: str) -> str:
@@ -237,12 +254,28 @@ def _go_encoded(value: JsonValue, quote: Callable[[str], str]) -> str:
 
 
 def jq_line(value: Any) -> str:
-    """Render one jq result in gh's raw-output mode."""
+    """One `--jq` output as go-gh prints it: a string raw, null as an empty
+    line, a boolean as its word, a number in fixed notation, with no
+    decimals when it is whole and two otherwise (rounded half to even, as
+    strconv rounds), and anything else as Go's json.Marshal writes it.
+
+    jq hands a whole number over as an int holding the double's exact
+    value, which is what Go's fixed notation prints for it.
+
+    Args:
+        value (Any): one output of the program.
+    """
     if value is None:
         return ""
     if isinstance(value, str):
         return value
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return f"{value:.0f}" if value.is_integer() else f"{value:.2f}"
+    return _go_encoded(value, _marshal_string)
 
 
 def _select(value: Any, fields: list[str]) -> Any:

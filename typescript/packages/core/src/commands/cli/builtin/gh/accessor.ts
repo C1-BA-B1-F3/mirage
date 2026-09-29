@@ -181,6 +181,11 @@ export function textValue(value: unknown): string {
   return ''
 }
 
+// Go's json.Marshal escapes <, > and & for HTML and U+2028 and U+2029 for
+// JavaScript on top of the escapes JSON.stringify shares with it; gojq's own
+// encoder escapes none of them, but does escape DEL.
+const MARSHAL_ESCAPES = /[<>&\u{2028}\u{2029}]/gu
+
 /**
  * A number as Go's JSON encoders, gojq's among them, write a float64, which is
  * how ES6 spells it: the shortest digits that read back the same, in exponent
@@ -189,6 +194,14 @@ export function textValue(value: unknown): string {
  */
 function goNumber(number: number): string {
   return String(Math.min(Math.max(number, -Number.MAX_VALUE), Number.MAX_VALUE))
+}
+
+/** A string as Go's json.Marshal writes it. */
+function marshalString(text: string): string {
+  return JSON.stringify(text).replace(
+    MARSHAL_ESCAPES,
+    (escaped) => `\\u${escaped.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  )
 }
 
 /** A string as gojq's encoder writes it into an error. */
@@ -215,10 +228,38 @@ function goEncoded(value: unknown, quote: (text: string) => string): string {
   return JSON.stringify(value)
 }
 
+/**
+ * A number as go-gh prints a float64 on its own line: in fixed notation, with
+ * no decimals when it is whole and two otherwise, rounded half to even as
+ * strconv rounds. An infinity jq-wasm hands over counts as the largest finite
+ * float, which is what jq.py hands over for one.
+ */
+function fixedNumber(number: number): string {
+  const finite = Math.min(Math.max(number, -Number.MAX_VALUE), Number.MAX_VALUE)
+  if (Number.isInteger(finite)) return BigInt(finite).toString()
+  const text = finite.toFixed(2)
+  // toFixed breaks an exact tie away from zero where strconv breaks it to
+  // the even digit, and a number ties at two places exactly when its eighths
+  // are odd.
+  const eighths = finite * 8
+  const last = Number(text.slice(-1))
+  if (Number.isInteger(eighths) && eighths % 2 !== 0 && last % 2 === 1) {
+    return `${text.slice(0, -1)}${String(last - 1)}`
+  }
+  return text
+}
+
+/**
+ * One `--jq` output as go-gh prints it: a string raw, null as an empty line, a
+ * boolean as its word, a number in fixed notation (see fixedNumber), and
+ * anything else as Go's json.Marshal writes it.
+ */
 function jqLine(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'string') return value
-  return JSON.stringify(value)
+  if (typeof value === 'boolean') return String(value)
+  if (typeof value === 'number') return fixedNumber(value)
+  return goEncoded(value, marshalString)
 }
 
 /**

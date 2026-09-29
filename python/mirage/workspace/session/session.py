@@ -18,8 +18,7 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
-from mirage.io.async_line_iterator import AsyncLineIterator
-from mirage.io.types import ByteSource
+from mirage.io.async_line_iterator import SharedInput
 from mirage.policy.types import (AdmissionRules, Decision, HideReason,
                                  ProfileScript)
 from mirage.process.config import ProcessPermissions
@@ -313,8 +312,6 @@ class SessionState:
     # Depth of nested `source`/`.` execution: `return` is legal and the
     # program loop absorbs its signal only while a file is being sourced.
     source_depth: int = field(default=0, repr=False)
-    _stdin_buffer: AsyncLineIterator | None = field(default=None, repr=False)
-    _stdin_source: ByteSource | None = field(default=None, repr=False)
     # Variables shadowed by `local` / `declare` in the running function;
     # a None value means the caller had no variable of that name. One
     # stack, not one per container: a local shadows the whole record, so
@@ -372,12 +369,20 @@ class SessionState:
     # `exec < file`. None is the terminal (the workspace's own output);
     # `""` is a closed descriptor (`exec >&-`), whose writes are
     # dropped. `_exec_opened` names the targets already truncated, so a
-    # later statement appends rather than re-truncating.
+    # later statement appends rather than re-truncating. `exec_stdin`
+    # is the one descriptor an `exec <` opened: every statement after
+    # it reads on from where the one before stopped, across lines and
+    # into a child shell, which shares it as bash's fork shares fd 0.
+    # `exec_stdout_input` and `exec_stderr_input` are the read end a
+    # stream holds after `exec 1<f` or `exec 1<&0`, which a dup shares
+    # the offset of.
     exec_stdout: str | None = None
     exec_stdout_append: bool = False
+    exec_stdout_input: SharedInput | None = None
     exec_stderr: str | None = None
     exec_stderr_append: bool = False
-    exec_stdin: bytes | None = None
+    exec_stderr_input: SharedInput | None = None
+    exec_stdin: SharedInput | None = None
     exec_stdin_unreadable: bool = False
     # What fd 0 holds when it is not its own read end: `CLOSED` after
     # `exec <&-`, a writing stream's identity after `exec 0<&1`, so a

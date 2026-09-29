@@ -685,15 +685,17 @@ function convert(
  * consuming arguments; repeat while arguments remain and a cycle
  * consumed at least one (so a conversion-less format prints once and
  * excess args are dropped). Returns the output, the stderr messages in the
- * order bash writes them, and whether a conversion failed. An invalid
- * number fails (exit status 1); a missing-digit escape warning does not.
+ * order bash writes them, whether a conversion failed, and the first
+ * argument dropped, which coreutils printf names in a warning (null when
+ * every argument was used or `\c` ended the output). An invalid number
+ * fails (exit status 1); a missing-digit escape warning does not.
  *
  * A `\c` in a `%b` argument returns at once and reports no failure. bash's
  * `%b` returns there with the status it has so far, and only the end of
  * the builtin folds an invalid number into it, so bash 5.2.37 exits 0 for
  * `printf '%d%b' abc '\c'`.
  */
-export function runPrintf(fmt: string, args: string[]): [string, string[], boolean] {
+export function runPrintf(fmt: string, args: string[]): [string, string[], boolean, string | null] {
   const out: string[] = []
   const messages: string[] = []
   let failed = false
@@ -754,7 +756,7 @@ export function runPrintf(fmt: string, args: string[]): [string, string[], boole
           failed = true
         }
         out.push(text)
-        if (stopHere) return [out.join(''), messages, false]
+        if (stopHere) return [out.join(''), messages, false, null]
         continue
       }
       out.push(ch)
@@ -762,5 +764,6 @@ export function runPrintf(fmt: string, args: string[]): [string, string[], boole
     }
     if (stop || argI >= total || argI === consumedStart) break
   }
-  return [out.join(''), messages, failed]
+  const excess = !stop && argI < total ? (args[argI] ?? null) : null
+  return [out.join(''), messages, failed, excess]
 }

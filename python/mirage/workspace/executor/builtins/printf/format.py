@@ -454,12 +454,15 @@ def _read_conversion(
     return None
 
 
-def run_printf(fmt: str, args: list[str]) -> tuple[str, list[str], bool]:
+def run_printf(fmt: str,
+               args: list[str]) -> tuple[str, list[str], bool, str | None]:
     """Apply GNU printf's format-reuse semantics: scan ``fmt`` once per
     cycle, consuming arguments; repeat while arguments remain and a cycle
     consumed at least one (so a conversion-less format prints once and
     excess args are dropped). Returns the output, the stderr messages in
-    the order bash writes them, and whether a conversion failed. An
+    the order bash writes them, whether a conversion failed, and the
+    first argument dropped, which coreutils printf names in a warning
+    (None when every argument was used or ``\\c`` ended the output). An
     invalid number fails (exit status 1); a missing-digit escape warning
     does not.
 
@@ -525,13 +528,14 @@ def run_printf(fmt: str, args: list[str]) -> tuple[str, list[str], bool]:
                     failed = True
                 out.append(text)
                 if stop:
-                    return "".join(out), messages, False
+                    return "".join(out), messages, False, None
                 continue
             out.append(ch)
             i += 1
         if stop or arg_i >= total or arg_i == consumed_start:
             break
-    return "".join(out), messages, failed
+    excess = args[arg_i] if not stop and arg_i < total else None
+    return "".join(out), messages, failed, excess
 
 
 def _convert(conv: str, raw: str | None, flags: str, width: int | None,

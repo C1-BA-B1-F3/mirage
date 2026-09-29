@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { ByteSource } from '../../../../io/types.ts'
 import type { PathSpec } from '../../../../types.ts'
 import { fsStrerror } from '../../../../utils/errors.ts'
 import type { CallStack } from '../../../../shell/call_stack.ts'
@@ -31,6 +32,7 @@ export async function handleSource(
   path: string | PathSpec,
   session: SessionState,
   args: string[] = [],
+  stdin: ByteSource | null = null,
   callStack: CallStack | null = null,
 ): Promise<Result> {
   const raw = scopePath(path)
@@ -53,7 +55,7 @@ export async function handleSource(
   session.positionalArgs = args.length > 0 ? args : positionalParams(session, callStack)
   session.sourceDepth += 1
   try {
-    const io = await executeFn(script, { sessionId: session.sessionId })
+    const io = await executeFn(script, { sessionId: session.sessionId, stdin })
     return [io.stdout, io, new ExecutionNode({ command: `source ${raw}`, exitCode: io.exitCode })]
   } finally {
     session.sourceDepth -= 1
@@ -78,6 +80,7 @@ export async function sourceBuiltin(call: BuiltinCall): Promise<Result> {
     target,
     call.session,
     sourceArgs,
+    call.stdin,
     call.callStack,
   )
 }

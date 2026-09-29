@@ -26,9 +26,10 @@ async def handle_eval(
     execute_fn: Callable[..., Any],
     args: list[str],
     session: SessionState,
+    stdin: ByteSource | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     script = " ".join(args)
-    io = await execute_fn(script, session_id=session.session_id)
+    io = await execute_fn(script, session_id=session.session_id, stdin=stdin)
     return io.stdout, io, ExecutionNode(command="eval", exit_code=io.exit_code)
 
 
@@ -39,4 +40,4 @@ async def eval_builtin(call: BuiltinCall) -> Result:
         call (BuiltinCall): the invocation.
     """
     return await handle_eval(call.execute_fn, list(call.argv.args),
-                             call.session)
+                             call.session, call.stdin)

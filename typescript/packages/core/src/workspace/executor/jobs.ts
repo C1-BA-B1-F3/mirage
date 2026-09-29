@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { SharedInput } from '../../io/async_line_iterator.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult } from '../../io/types.ts'
 import { concat } from '../../io/cachable_iterator.ts'
@@ -33,6 +34,7 @@ import type { ProcessView } from '../../process/types.ts'
 import type { SessionState } from '../session/session.ts'
 import { occurrenceOf } from '../node/occurrence.ts'
 import { scanOptions } from './builtins/getopt.ts'
+import { statementStdin } from './statement.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import { ExecutionNode } from '../types.ts'
 
@@ -237,20 +239,25 @@ export async function handleBackground(
  * answers with status 0, as in bash, so `false &` inside a body trips
  * neither `$?` nor `set -e`. A null `jobTable` means the caller wired no
  * job plane, which is a programming error once a `&` shows up, not a
- * reason to run it inline.
+ * reason to run it inline. `bound` is `fd0Binding` as the body started,
+ * so an `exec <` in it replaces `stdin` for the statements after it; a
+ * job still gets the body's own stdin.
  */
 export function runStatement(
   executeNode: ExecuteNodeFn,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
+  bound: readonly [SharedInput | null, boolean],
   callStack: CallStack | null,
   jobTable: JobTable | null,
   agentId: string | null,
   handed: HandOff | null = null,
   decisions: Decisions | null = null,
 ): Promise<JobHandlerResult> {
-  if (!isBackgrounded(node)) return executeNode(node, session, stdin, callStack)
+  if (!isBackgrounded(node)) {
+    return executeNode(node, session, statementStdin(session, stdin, bound), callStack)
+  }
   if (jobTable === null) {
     throw new Error(`\`${node.text} &\` needs a job table; none was wired`)
   }

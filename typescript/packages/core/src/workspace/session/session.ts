@@ -18,6 +18,7 @@ import {
   type ProcessPermissions,
 } from '../../process/config.ts'
 import type { Limit } from '../../types.ts'
+import type { SharedInput } from '../../io/async_line_iterator.ts'
 import { parseCommandLimits, commandLimitsToJSON } from '../../policy/builtin/output_cap.ts'
 import {
   BIN_PREFIX,
@@ -26,7 +27,6 @@ import {
   RANDOM_UNSET,
   SHELL_ARGV0,
 } from '../../shell/constants.ts'
-import type { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import { EnvVarSchema, type EnvEntries } from '../../secrets/config.ts'
 import type { ShellArray } from '../../shell/array.ts'
 import type { ManagedRef, ShellVar } from '../../shell/variable.ts'
@@ -74,9 +74,11 @@ export interface ChildShellState {
   umask: number
   execStdout: string | null
   execStdoutAppend: boolean
+  execStdoutInput: SharedInput | null
   execStderr: string | null
   execStderrAppend: boolean
-  execStdin: Uint8Array | null
+  execStderrInput: SharedInput | null
+  execStdin: SharedInput | null
   execStdinUnreadable: boolean
   execStdinIdentity: string | null
   execOpened: Set<string>
@@ -450,8 +452,6 @@ export class SessionState {
   // Depth of nested `source`/`.` execution: `return` is legal and the
   // program loop absorbs its signal only while a file is being sourced.
   sourceDepth = 0
-  stdinBuffer: AsyncLineIterator | null = null
-  stdinSource: unknown = null
   // Variables shadowed by `local` / `declare` in the running function; a
   // null value means the caller had no variable of that name. One stack,
   // not one per container: a local shadows the whole record, so its
@@ -494,12 +494,19 @@ export class SessionState {
   // `exec` redirect-only state: where the shell's own stdout, stderr and
   // stdin point after a bare `exec > file`. Null is the terminal; `""`
   // is a closed descriptor whose writes drop; `execOpened` names targets
-  // already truncated so a later statement appends.
+  // already truncated so a later statement appends. `execStdin` is the
+  // one descriptor an `exec <` opened: every statement after it reads on
+  // from where the one before stopped, across lines and into a child
+  // shell, which shares it as bash's fork shares fd 0. `execStdoutInput`
+  // and `execStderrInput` are the read end a stream holds after `exec
+  // 1<f` or `exec 1<&0`, which a dup shares the offset of.
   execStdout: string | null = null
   execStdoutAppend = false
+  execStdoutInput: SharedInput | null = null
   execStderr: string | null = null
   execStderrAppend = false
-  execStdin: Uint8Array | null = null
+  execStderrInput: SharedInput | null = null
+  execStdin: SharedInput | null = null
   execStdinUnreadable = false
   // What fd 0 holds when it is not its own read end: CLOSED after `exec
   // <&-`, a writing stream's identity after `exec 0<&1`, so a later dup
@@ -646,8 +653,10 @@ export class SessionState {
     forked.umask = this.umask
     forked.execStdout = this.execStdout
     forked.execStdoutAppend = this.execStdoutAppend
+    forked.execStdoutInput = this.execStdoutInput
     forked.execStderr = this.execStderr
     forked.execStderrAppend = this.execStderrAppend
+    forked.execStderrInput = this.execStderrInput
     forked.execStdin = this.execStdin
     forked.execStdinUnreadable = this.execStdinUnreadable
     forked.execStdinIdentity = this.execStdinIdentity
@@ -737,8 +746,10 @@ export class SessionState {
       umask: this.umask,
       execStdout: this.execStdout,
       execStdoutAppend: this.execStdoutAppend,
+      execStdoutInput: this.execStdoutInput,
       execStderr: this.execStderr,
       execStderrAppend: this.execStderrAppend,
+      execStderrInput: this.execStderrInput,
       execStdin: this.execStdin,
       execStdinUnreadable: this.execStdinUnreadable,
       execStdinIdentity: this.execStdinIdentity,
@@ -782,8 +793,10 @@ export class SessionState {
     this.umask = state.umask
     this.execStdout = state.execStdout
     this.execStdoutAppend = state.execStdoutAppend
+    this.execStdoutInput = state.execStdoutInput
     this.execStderr = state.execStderr
     this.execStderrAppend = state.execStderrAppend
+    this.execStderrInput = state.execStderrInput
     this.execStdin = state.execStdin
     this.execStdinUnreadable = state.execStdinUnreadable
     this.execStdinIdentity = state.execStdinIdentity

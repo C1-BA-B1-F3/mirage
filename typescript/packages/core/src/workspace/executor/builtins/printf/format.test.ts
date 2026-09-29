@@ -90,20 +90,29 @@ describe('runPrintf', () => {
 
   it('ends the reuse when a cycle consumes nothing', () => {
     // `a%%b` has no conversion, so the first cycle consumes no argument
-    // and the excess args are dropped rather than looping forever.
-    expect(runPrintf('a%%b\n', ['x', 'y', 'z'])).toEqual(['a%b\n', [], false])
+    // and the excess args are dropped rather than looping forever; the
+    // first one dropped comes back for coreutils' warning.
+    expect(runPrintf('a%%b\n', ['x', 'y', 'z'])).toEqual(['a%b\n', [], false, 'x'])
   })
 
   it('drops every argument for an empty format', () => {
-    expect(runPrintf('', ['a', 'b', 'c'])).toEqual(['', [], false])
+    expect(runPrintf('', ['a', 'b', 'c'])).toEqual(['', [], false, 'a'])
+  })
+
+  it('drops nothing when the format is reused', () => {
+    expect(runPrintf('%s-%s\n', ['a', 'b', 'c'])).toEqual(['a-b\nc-\n', [], false, null])
+  })
+
+  it('drops nothing to warn about after \\c in the format', () => {
+    expect(runPrintf('x\\c', ['a'])).toEqual(['x', [], false, null])
   })
 
   it('suppresses the rest of the format after a stop from %b', () => {
-    expect(runPrintf('[%b][%s]\n', ['ab\\ccd', 'tail'])).toEqual(['[ab', [], false])
+    expect(runPrintf('[%b][%s]\n', ['ab\\ccd', 'tail'])).toEqual(['[ab', [], false, null])
   })
 
   it('ends every cycle when the stop lands on a later one', () => {
-    expect(runPrintf('<%b>', ['one', 'tw\\co', 'three'])).toEqual(['<one><tw', [], false])
+    expect(runPrintf('<%b>', ['one', 'tw\\co', 'three'])).toEqual(['<one><tw', [], false, null])
   })
 
   it.each([
@@ -112,11 +121,11 @@ describe('runPrintf', () => {
     ['2.5', '2'],
     ['3.5', '4'],
   ])('rounds %s half-to-even at fixed precision', (value, expected) => {
-    expect(runPrintf('%.0f', [value])).toEqual([expected, [], false])
+    expect(runPrintf('%.0f', [value])).toEqual([expected, [], false, null])
   })
 
   it('renders a missing argument as the empty string or zero', () => {
-    expect(runPrintf('[%s][%d]', [])).toEqual(['[][0]', [], false])
+    expect(runPrintf('[%s][%d]', [])).toEqual(['[][0]', [], false, null])
   })
 
   it.each(OCTAL_PINS)(
@@ -140,17 +149,28 @@ describe('runPrintf', () => {
   )
 
   it.each(MISSING_DIGIT_PINS)('warns for %s without failing', (escapes, warnings) => {
-    expect(runPrintf(escapes, [])).toEqual([escapes, warnings, false])
-    expect(runPrintf('%b', [escapes])).toEqual([escapes, warnings, false])
+    expect(runPrintf(escapes, [])).toEqual([escapes, warnings, false, null])
+    expect(runPrintf('%b', [escapes])).toEqual([escapes, warnings, false, null])
   })
 
   it('returns warnings and invalid numbers in scan order', () => {
-    expect(runPrintf('\\x%d\n', ['abc'])).toEqual(['\\x0\n', [HEX_WARNING, ABC_INVALID], true])
-    expect(runPrintf('%d\\x\n', ['abc'])).toEqual(['0\\x\n', [ABC_INVALID, HEX_WARNING], true])
+    expect(runPrintf('\\x%d\n', ['abc'])).toEqual([
+      '\\x0\n',
+      [HEX_WARNING, ABC_INVALID],
+      true,
+      null,
+    ])
+    expect(runPrintf('%d\\x\n', ['abc'])).toEqual([
+      '0\\x\n',
+      [ABC_INVALID, HEX_WARNING],
+      true,
+      null,
+    ])
     expect(runPrintf('%d%b\n', ['abc', '\\x'])).toEqual([
       '0\\x\n',
       [ABC_INVALID, HEX_WARNING],
       true,
+      null,
     ])
   })
 
@@ -159,32 +179,34 @@ describe('runPrintf', () => {
       '\\xa\n\\xb\n',
       [HEX_WARNING, HEX_WARNING],
       false,
+      null,
     ])
-    expect(runPrintf('\\x\n', ['a', 'b'])).toEqual(['\\x\n', [HEX_WARNING], false])
+    expect(runPrintf('\\x\n', ['a', 'b'])).toEqual(['\\x\n', [HEX_WARNING], false, 'a'])
   })
 
   it('warns for a %b argument up to its stop and before its precision', () => {
-    expect(runPrintf('%b\n', ['a\\cb\\x'])).toEqual(['a', [], false])
-    expect(runPrintf('%.1b\n', ['\\xy'])).toEqual(['\\\n', [HEX_WARNING], false])
+    expect(runPrintf('%b\n', ['a\\cb\\x'])).toEqual(['a', [], false, null])
+    expect(runPrintf('%.1b\n', ['\\xy'])).toEqual(['\\\n', [HEX_WARNING], false, null])
   })
 
   // bash 5.2.37: %b's \c returns from printf with the status it has so
   // far, before the end of the builtin folds an invalid number into it.
   it('reports no failure when %b stops after an invalid number', () => {
-    expect(runPrintf('%d%b', ['abc', '\\c'])).toEqual(['0', [ABC_INVALID], false])
-    expect(runPrintf('%d%b\n', ['abc', 'x\\cy'])).toEqual(['0x', [ABC_INVALID], false])
+    expect(runPrintf('%d%b', ['abc', '\\c'])).toEqual(['0', [ABC_INVALID], false, null])
+    expect(runPrintf('%d%b\n', ['abc', 'x\\cy'])).toEqual(['0x', [ABC_INVALID], false, null])
     expect(runPrintf('%d%b', ['abc', 'x', 'def', '\\c'])).toEqual([
       '0x0',
       [ABC_INVALID, DEF_INVALID],
       false,
+      null,
     ])
   })
 
   it('never reads an invalid number after the stop', () => {
-    expect(runPrintf('%b%d', ['\\c', 'abc'])).toEqual(['', [], false])
+    expect(runPrintf('%b%d', ['\\c', 'abc'])).toEqual(['', [], false, null])
   })
 
   it('still fails for an invalid number without a stop', () => {
-    expect(runPrintf('%d%b', ['abc', 'x'])).toEqual(['0x', [ABC_INVALID], true])
+    expect(runPrintf('%d%b', ['abc', 'x'])).toEqual(['0x', [ABC_INVALID], true, null])
   })
 })

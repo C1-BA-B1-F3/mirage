@@ -16,7 +16,7 @@ from collections.abc import Callable
 from typing import Any
 
 from mirage.io import IOResult
-from mirage.io.async_line_iterator import AsyncLineIterator
+from mirage.io.async_line_iterator import line_buffer
 from mirage.io.stream import async_chain
 from mirage.io.types import ByteSource
 from mirage.policy import Policies, PolicyDenied
@@ -32,7 +32,8 @@ from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec, word_text
 from mirage.utils.fnmatch import fnmatch
 from mirage.workspace.executor.jobs import run_statement
-from mirage.workspace.executor.statement import finish_statement, record_status
+from mirage.workspace.executor.statement import (fd0_binding, finish_statement,
+                                                 record_status)
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import session_view
 from mirage.workspace.types import ExecutionNode
@@ -42,13 +43,6 @@ from mirage.workspace.types import ExecutionNode
 # than this cap stops here. Cap-hit emits a stderr warning so callers
 # notice silent truncation. Bump if agents process larger streams.
 _MAX_WHILE = 10000
-
-
-def _line_buffer(stdin: ByteSource) -> AsyncLineIterator:
-    """Wrap a ByteSource (bytes or chunked async iter) as a line iterator."""
-    if isinstance(stdin, bytes):
-        return AsyncLineIterator(async_chain(stdin))
-    return AsyncLineIterator(stdin)
 
 
 async def _execute_body(
@@ -71,11 +65,12 @@ async def _execute_body(
     all_stdout: list[ByteSource | None] = []
     merged_io = IOResult()
     last_exec = ExecutionNode(command="", exit_code=0)
+    bound = fd0_binding(session)
     for cmd in body:
         try:
             stdout, io, last_exec = await run_statement(
-                execute_node, cmd, session, stdin, call_stack, job_table,
-                agent_id, handed, decisions)
+                execute_node, cmd, session, stdin, bound, call_stack,
+                job_table, agent_id, handed, decisions)
         except BreakSignal as sig:
             # The control builtin is a statement the loop leaves through
             # rather than closes, so its own status (0) is recorded here:
@@ -159,9 +154,10 @@ async def handle_if(
     handed: HandOff | None = None,
     decisions: Decisions | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
+    bound = fd0_binding(session)
     for condition, body in branches:
         cond_stdout, cond_io, _ = await run_statement(execute_node, condition,
-                                                      session, stdin,
+                                                      session, stdin, bound,
                                                       call_stack, job_table,
                                                       agent_id, handed,
                                                       decisions)
@@ -210,57 +206,47 @@ async def handle_for(
         return _collect_loop_result([], IOResult(exit_code=1, stderr=err),
                                     "for")
 
-    # Save and materialize stdin for re-reading across iterations
-    prev_buffer = session._stdin_buffer
-    if stdin is not None:
-        session._stdin_buffer = _line_buffer(stdin)
-        stdin = None
-
-    try:
-        for val in values:
-            if session.shell_options.get("noexec"):
-                break
-            # env stores strings only; bash keeps `for f in sub/*.txt`
-            # matches relative, so the loop variable takes the typed form.
-            # The write goes through the session door; a policy denial
-            # aborts the loop before its body runs.
-            text_val = word_text(val)
-            try:
-                await view.set(variable, text_val)
-            except PolicyDenied as exc:
-                merged_io = await merged_io.merge(
-                    IOResult(exit_code=1, stderr=f"{exc.strerror}\n".encode()))
-                break
-            try:
-                stdout, io, _ = await _execute_body(execute_node, body,
-                                                    session, stdin, call_stack,
-                                                    job_table, agent_id,
-                                                    handed, decisions)
-            except BreakSignal as sig:
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                if sig.levels > 1:
-                    raise BreakSignal(stdout=_chain_streams(all_stdout),
-                                      io=merged_io,
-                                      levels=sig.levels - 1)
-                break
-            except ContinueSignal as sig:
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                if sig.levels > 1:
-                    raise ContinueSignal(stdout=_chain_streams(all_stdout),
-                                         io=merged_io,
-                                         levels=sig.levels - 1)
-                continue
-            merged_io = await merged_io.merge(io)
-            all_stdout.append(stdout)
-    finally:
-        # The loop variable is an ordinary variable in bash and keeps
-        # its last value after the loop (`for X in a b; do :; done;
-        # echo $X` prints b); nothing is put back.
-        session._stdin_buffer = prev_buffer
+    for val in values:
+        if session.shell_options.get("noexec"):
+            break
+        # env stores strings only; bash keeps `for f in sub/*.txt`
+        # matches relative, so the loop variable takes the typed form.
+        # The write goes through the session door; a policy denial
+        # aborts the loop before its body runs.
+        text_val = word_text(val)
+        try:
+            await view.set(variable, text_val)
+        except PolicyDenied as exc:
+            merged_io = await merged_io.merge(
+                IOResult(exit_code=1, stderr=f"{exc.strerror}\n".encode()))
+            break
+        try:
+            stdout, io, _ = await _execute_body(execute_node, body, session,
+                                                stdin, call_stack, job_table,
+                                                agent_id, handed, decisions)
+        except BreakSignal as sig:
+            if sig.stdout is not None:
+                all_stdout.append(sig.stdout)
+            merged_io = await merged_io.merge(sig.io)
+            if sig.levels > 1:
+                raise BreakSignal(stdout=_chain_streams(all_stdout),
+                                  io=merged_io,
+                                  levels=sig.levels - 1)
+            break
+        except ContinueSignal as sig:
+            if sig.stdout is not None:
+                all_stdout.append(sig.stdout)
+            merged_io = await merged_io.merge(sig.io)
+            if sig.levels > 1:
+                raise ContinueSignal(stdout=_chain_streams(all_stdout),
+                                     io=merged_io,
+                                     levels=sig.levels - 1)
+            continue
+        merged_io = await merged_io.merge(io)
+        all_stdout.append(stdout)
+    # The loop variable is an ordinary variable in bash and keeps its
+    # last value after the loop (`for X in a b; do :; done; echo $X`
+    # prints b); nothing is put back.
     return _collect_loop_result(all_stdout, merged_io, "for")
 
 
@@ -280,65 +266,60 @@ async def _condition_loop(
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     merged_io = IOResult()
     all_stdout: list[ByteSource | None] = []
-    prev_buffer = session._stdin_buffer
-    if stdin is not None:
-        session._stdin_buffer = _line_buffer(stdin)
-        stdin = None
-    try:
-        hit_limit = True
-        for _ in range(_MAX_WHILE):
-            if session.shell_options.get("noexec"):
-                hit_limit = False
-                break
-            cond_stdout, cond_io, _ = await run_statement(
-                execute_node, condition, session, stdin, call_stack, job_table,
-                agent_id, handed, decisions)
-            await apply_barrier(cond_stdout, cond_io, BarrierPolicy.STATUS)
-            record_status(session,
-                          cond_io.exit_code,
-                          transparent=pipeline_transparent(condition))
-            if break_on_zero and cond_io.exit_code == 0:
-                hit_limit = False
-                break
-            if (not break_on_zero and cond_io.exit_code != 0):
-                hit_limit = False
-                break
-            try:
-                stdout, io, _ = await _execute_body(execute_node, body,
-                                                    session, stdin, call_stack,
-                                                    job_table, agent_id,
-                                                    handed, decisions)
-            except BreakSignal as sig:
-                hit_limit = False
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                if sig.levels > 1:
-                    raise BreakSignal(stdout=_chain_streams(all_stdout),
-                                      io=merged_io,
-                                      levels=sig.levels - 1)
-                break
-            except ContinueSignal as sig:
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                if sig.levels > 1:
-                    raise ContinueSignal(stdout=_chain_streams(all_stdout),
-                                         io=merged_io,
-                                         levels=sig.levels - 1)
-                continue
-            merged_io = await merged_io.merge(io)
-            all_stdout.append(stdout)
-        if hit_limit:
-            warn = (f"warning: {label} loop terminated after "
-                    f"{_MAX_WHILE} iterations\n").encode()
-            existing = merged_io.stderr
-            if isinstance(existing, bytes) and existing:
-                merged_io.stderr = existing + warn
-            else:
-                merged_io.stderr = warn
-    finally:
-        session._stdin_buffer = prev_buffer
+    hit_limit = True
+    bound = fd0_binding(session)
+    for _ in range(_MAX_WHILE):
+        if session.shell_options.get("noexec"):
+            hit_limit = False
+            break
+        cond_stdout, cond_io, _ = await run_statement(execute_node, condition,
+                                                      session, stdin, bound,
+                                                      call_stack, job_table,
+                                                      agent_id, handed,
+                                                      decisions)
+        await apply_barrier(cond_stdout, cond_io, BarrierPolicy.STATUS)
+        record_status(session,
+                      cond_io.exit_code,
+                      transparent=pipeline_transparent(condition))
+        if break_on_zero and cond_io.exit_code == 0:
+            hit_limit = False
+            break
+        if (not break_on_zero and cond_io.exit_code != 0):
+            hit_limit = False
+            break
+        try:
+            stdout, io, _ = await _execute_body(execute_node, body, session,
+                                                stdin, call_stack, job_table,
+                                                agent_id, handed, decisions)
+        except BreakSignal as sig:
+            hit_limit = False
+            if sig.stdout is not None:
+                all_stdout.append(sig.stdout)
+            merged_io = await merged_io.merge(sig.io)
+            if sig.levels > 1:
+                raise BreakSignal(stdout=_chain_streams(all_stdout),
+                                  io=merged_io,
+                                  levels=sig.levels - 1)
+            break
+        except ContinueSignal as sig:
+            if sig.stdout is not None:
+                all_stdout.append(sig.stdout)
+            merged_io = await merged_io.merge(sig.io)
+            if sig.levels > 1:
+                raise ContinueSignal(stdout=_chain_streams(all_stdout),
+                                     io=merged_io,
+                                     levels=sig.levels - 1)
+            continue
+        merged_io = await merged_io.merge(io)
+        all_stdout.append(stdout)
+    if hit_limit:
+        warn = (f"warning: {label} loop terminated after "
+                f"{_MAX_WHILE} iterations\n").encode()
+        existing = merged_io.stderr
+        if isinstance(existing, bytes) and existing:
+            merged_io.stderr = existing + warn
+        else:
+            merged_io.stderr = warn
     return _collect_loop_result(all_stdout, merged_io, label)
 
 
@@ -369,8 +350,8 @@ async def handle_cfor(
             offending expression text on an invalid expression, or
             ReadonlyError when it assigns to a readonly variable.
         session (SessionState): shell session.
-        stdin (ByteSource | None): input stream, line-buffered across
-            iterations like for/while.
+        stdin (ByteSource | None): input stream, which each iteration
+            reads on from where the one before stopped, like for/while.
         call_stack (CallStack | None): function-call scope, if any.
         job_table (JobTable | None): the job plane for a body statement
             ending in ``&``.
@@ -380,74 +361,67 @@ async def handle_cfor(
     """
     merged_io = IOResult()
     all_stdout: list[ByteSource | None] = []
-    prev_buffer = session._stdin_buffer
-    if stdin is not None:
-        session._stdin_buffer = _line_buffer(stdin)
-        stdin = None
+    hit_limit = True
     try:
-        hit_limit = True
-        try:
-            await eval_expr(exprs[0], 0)
-            for _ in range(_MAX_WHILE):
-                if session.shell_options.get("noexec"):
-                    hit_limit = False
-                    break
-                if await eval_expr(exprs[1], 1) == 0:
-                    hit_limit = False
-                    break
-                try:
-                    stdout, io, _ = await _execute_body(
-                        execute_node, body, session, stdin, call_stack,
-                        job_table, agent_id, handed, decisions)
-                except BreakSignal as sig:
-                    hit_limit = False
-                    if sig.stdout is not None:
-                        all_stdout.append(sig.stdout)
-                    merged_io = await merged_io.merge(sig.io)
-                    if sig.levels > 1:
-                        raise BreakSignal(stdout=_chain_streams(all_stdout),
-                                          io=merged_io,
-                                          levels=sig.levels - 1)
-                    break
-                except ContinueSignal as sig:
-                    if sig.stdout is not None:
-                        all_stdout.append(sig.stdout)
-                    merged_io = await merged_io.merge(sig.io)
-                    if sig.levels > 1:
-                        raise ContinueSignal(stdout=_chain_streams(all_stdout),
-                                             io=merged_io,
-                                             levels=sig.levels - 1)
-                    # bash runs the update expression after `continue`.
-                    await eval_expr(exprs[2], 0)
-                    continue
-                merged_io = await merged_io.merge(io)
-                all_stdout.append(stdout)
+        await eval_expr(exprs[0], 0)
+        for _ in range(_MAX_WHILE):
+            if session.shell_options.get("noexec"):
+                hit_limit = False
+                break
+            if await eval_expr(exprs[1], 1) == 0:
+                hit_limit = False
+                break
+            try:
+                stdout, io, _ = await _execute_body(execute_node, body,
+                                                    session, stdin, call_stack,
+                                                    job_table, agent_id,
+                                                    handed, decisions)
+            except BreakSignal as sig:
+                hit_limit = False
+                if sig.stdout is not None:
+                    all_stdout.append(sig.stdout)
+                merged_io = await merged_io.merge(sig.io)
+                if sig.levels > 1:
+                    raise BreakSignal(stdout=_chain_streams(all_stdout),
+                                      io=merged_io,
+                                      levels=sig.levels - 1)
+                break
+            except ContinueSignal as sig:
+                if sig.stdout is not None:
+                    all_stdout.append(sig.stdout)
+                merged_io = await merged_io.merge(sig.io)
+                if sig.levels > 1:
+                    raise ContinueSignal(stdout=_chain_streams(all_stdout),
+                                         io=merged_io,
+                                         levels=sig.levels - 1)
+                # bash runs the update expression after `continue`.
                 await eval_expr(exprs[2], 0)
-        except (ArithError, PolicyDenied, ReadonlyError) as exc:
-            # bash: the loop aborts with status 1, keeping the output
-            # of iterations that already ran. PolicyDenied is a header
-            # expression assigning a hidden name, refused by the same
-            # door as any denied assignment.
-            if isinstance(exc, ReadonlyError):
-                err = f"bash: {exc}\n".encode()
-            elif isinstance(exc, PolicyDenied):
-                err = f"bash: {exc.strerror}\n".encode()
-            else:
-                err = f"bash: ((: {exc}\n".encode()
-            merged_io = await merged_io.merge(IOResult(exit_code=1,
-                                                       stderr=err))
-            merged_io.exit_code = 1
-            return _collect_loop_result(all_stdout, merged_io, "for")
-        if hit_limit:
-            warn = (f"warning: for loop terminated after "
-                    f"{_MAX_WHILE} iterations\n").encode()
-            existing = merged_io.stderr
-            if isinstance(existing, bytes) and existing:
-                merged_io.stderr = existing + warn
-            else:
-                merged_io.stderr = warn
-    finally:
-        session._stdin_buffer = prev_buffer
+                continue
+            merged_io = await merged_io.merge(io)
+            all_stdout.append(stdout)
+            await eval_expr(exprs[2], 0)
+    except (ArithError, PolicyDenied, ReadonlyError) as exc:
+        # bash: the loop aborts with status 1, keeping the output
+        # of iterations that already ran. PolicyDenied is a header
+        # expression assigning a hidden name, refused by the same
+        # door as any denied assignment.
+        if isinstance(exc, ReadonlyError):
+            err = f"bash: {exc}\n".encode()
+        elif isinstance(exc, PolicyDenied):
+            err = f"bash: {exc.strerror}\n".encode()
+        else:
+            err = f"bash: ((: {exc}\n".encode()
+        merged_io = await merged_io.merge(IOResult(exit_code=1, stderr=err))
+        merged_io.exit_code = 1
+        return _collect_loop_result(all_stdout, merged_io, "for")
+    if hit_limit:
+        warn = (f"warning: for loop terminated after "
+                f"{_MAX_WHILE} iterations\n").encode()
+        existing = merged_io.stderr
+        if isinstance(existing, bytes) and existing:
+            merged_io.stderr = existing + warn
+        else:
+            merged_io.stderr = warn
     return _collect_loop_result(all_stdout, merged_io, "for")
 
 
@@ -520,15 +494,15 @@ async def handle_case(
     last_exec = ExecutionNode(command="case", exit_code=0)
     ran = False
     fallthrough = False
+    bound = fd0_binding(session)
     for patterns, body, terminator in items:
         if not (fallthrough or any(fnmatch(word, p) for p in patterns)):
             continue
         ran = True
         for stmt in body:
             stdout, io, last_exec = await run_statement(
-                execute_node, stmt, session, stdin, call_stack, job_table,
-                agent_id, handed, decisions)
-            stdin = None
+                execute_node, stmt, session, stdin, bound, call_stack,
+                job_table, agent_id, handed, decisions)
             stdout = await finish_statement(stdout, io, session, stmt)
             if stdout is not None:
                 all_stdout.append(stdout)
@@ -589,79 +563,69 @@ async def handle_select(
     all_stdout: list[ByteSource | None] = []
     view = session_view(session, policies)
 
-    prev_buffer = session._stdin_buffer
-    if stdin is not None:
-        session._stdin_buffer = _line_buffer(stdin)
-        stdin = None
-
+    lines = line_buffer(stdin) if stdin is not None else None
     menu = "".join(f"{i + 1}) {word_text(v)}\n"
                    for i, v in enumerate(values)).encode()
     merged_io = await merged_io.merge(IOResult(stderr=menu))
-    try:
-        for _ in range(_MAX_WHILE):
-            if session.shell_options.get("noexec"):
-                break
-            merged_io = await merged_io.merge(IOResult(stderr=b"#? "))
-            line_bytes = None
-            if session._stdin_buffer is not None:
-                line_bytes = await session._stdin_buffer.readline()
-            if line_bytes is None:
-                # bash terminates the prompt line with a newline when
-                # the choice read hits EOF.
-                all_stdout.append(b"\n")
-                break
-            reply = line_bytes.decode(errors="replace").rstrip("\n")
-            if not reply:
-                merged_io = await merged_io.merge(IOResult(stderr=menu))
-                continue
-            choice = ""
-            if reply.strip().isdigit():
-                idx = int(reply.strip())
-                if 1 <= idx <= len(values):
-                    choice = word_text(values[idx - 1])
-            # REPLY and the select variable go through the session door
-            # like the for-loop variable; readonly is the shell's own
-            # rule, checked before the door is asked.
-            frozen = next(
-                (n for n in ("REPLY", variable) if view.is_readonly(n)), None)
-            if frozen is not None:
-                err = f"bash: {frozen}: readonly variable\n".encode()
-                merged_io = await merged_io.merge(
-                    IOResult(exit_code=1, stderr=err))
-                break
-            try:
-                await view.set("REPLY", reply)
-                await view.set(variable, choice)
-            except PolicyDenied as exc:
-                merged_io = await merged_io.merge(
-                    IOResult(exit_code=1, stderr=f"{exc.strerror}\n".encode()))
-                break
-            try:
-                stdout, io, _ = await _execute_body(execute_node, body,
-                                                    session, None, call_stack,
-                                                    job_table, agent_id,
-                                                    handed, decisions)
-            except BreakSignal as sig:
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                if sig.levels > 1:
-                    raise BreakSignal(stdout=_chain_streams(all_stdout),
-                                      io=merged_io,
-                                      levels=sig.levels - 1)
-                break
-            except ContinueSignal as sig:
-                if sig.stdout is not None:
-                    all_stdout.append(sig.stdout)
-                merged_io = await merged_io.merge(sig.io)
-                if sig.levels > 1:
-                    raise ContinueSignal(stdout=_chain_streams(all_stdout),
-                                         io=merged_io,
-                                         levels=sig.levels - 1)
-                continue
-            merged_io = await merged_io.merge(io)
-            all_stdout.append(stdout)
-    finally:
-        # As with `for`, the selection variable keeps its last value.
-        session._stdin_buffer = prev_buffer
+    for _ in range(_MAX_WHILE):
+        if session.shell_options.get("noexec"):
+            break
+        merged_io = await merged_io.merge(IOResult(stderr=b"#? "))
+        line_bytes = await lines.readline() if lines is not None else None
+        if line_bytes is None:
+            # bash terminates the prompt line with a newline when
+            # the choice read hits EOF.
+            all_stdout.append(b"\n")
+            break
+        reply = line_bytes.decode(errors="replace").rstrip("\n")
+        if not reply:
+            merged_io = await merged_io.merge(IOResult(stderr=menu))
+            continue
+        choice = ""
+        if reply.strip().isdigit():
+            idx = int(reply.strip())
+            if 1 <= idx <= len(values):
+                choice = word_text(values[idx - 1])
+        # REPLY and the select variable go through the session door
+        # like the for-loop variable; readonly is the shell's own
+        # rule, checked before the door is asked.
+        frozen = next((n for n in ("REPLY", variable) if view.is_readonly(n)),
+                      None)
+        if frozen is not None:
+            err = f"bash: {frozen}: readonly variable\n".encode()
+            merged_io = await merged_io.merge(IOResult(exit_code=1,
+                                                       stderr=err))
+            break
+        try:
+            await view.set("REPLY", reply)
+            await view.set(variable, choice)
+        except PolicyDenied as exc:
+            merged_io = await merged_io.merge(
+                IOResult(exit_code=1, stderr=f"{exc.strerror}\n".encode()))
+            break
+        try:
+            stdout, io, _ = await _execute_body(execute_node, body, session,
+                                                stdin, call_stack, job_table,
+                                                agent_id, handed, decisions)
+        except BreakSignal as sig:
+            if sig.stdout is not None:
+                all_stdout.append(sig.stdout)
+            merged_io = await merged_io.merge(sig.io)
+            if sig.levels > 1:
+                raise BreakSignal(stdout=_chain_streams(all_stdout),
+                                  io=merged_io,
+                                  levels=sig.levels - 1)
+            break
+        except ContinueSignal as sig:
+            if sig.stdout is not None:
+                all_stdout.append(sig.stdout)
+            merged_io = await merged_io.merge(sig.io)
+            if sig.levels > 1:
+                raise ContinueSignal(stdout=_chain_streams(all_stdout),
+                                     io=merged_io,
+                                     levels=sig.levels - 1)
+            continue
+        merged_io = await merged_io.merge(io)
+        all_stdout.append(stdout)
+    # As with `for`, the selection variable keeps its last value.
     return _collect_loop_result(all_stdout, merged_io, "select")

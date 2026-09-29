@@ -28,9 +28,9 @@ export const TO_STDERR = '&2'
 
 // What `exec 1<f` binds a stream to: the file's read end, `<` then the
 // virtual path. Distinct from a path (which starts with `/`), from CLOSED
-// and from the terminal streams. A dup copies it (`exec 0<&1` reads the
-// file), a transient `<&1` reads it, and a write to it fails as one to
-// stdin's end does.
+// and from the terminal streams. A dup copies it with its offset (`exec
+// 0<&1` reads on where fd 1 stopped), a transient `<&1` reads it, and a
+// write to it fails as one to stdin's end does.
 export const OPEN_FOR_READING = '<'
 
 // The session fields an `exec` redirect line binds, put back as one
@@ -38,8 +38,10 @@ export const OPEN_FOR_READING = '<'
 export const EXEC_STREAM_FIELDS = [
   'execStdout',
   'execStdoutAppend',
+  'execStdoutInput',
   'execStderr',
   'execStderrAppend',
+  'execStderrInput',
   'execStdin',
   'execStdinUnreadable',
   'execStdinIdentity',

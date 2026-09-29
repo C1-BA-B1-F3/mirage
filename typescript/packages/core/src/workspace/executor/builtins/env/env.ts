@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { runAsProgram } from '../../../../context/session_context.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import { shellJoin } from '../../../../shell/join.ts'
@@ -161,7 +162,11 @@ export async function handleEnv(
   Object.assign(swapped, varsFromEnv(base))
   session.vars = swapped
   try {
-    const io = await executeFn(shellJoin(command), { sessionId: session.sessionId, stdin })
+    // env execs its command, so a builtin that is also a program answers as
+    // the program.
+    const io = await runAsProgram(session, () =>
+      executeFn(shellJoin(command), { sessionId: session.sessionId, stdin }),
+    )
     return [io.stdout, io, new ExecutionNode({ command: 'env', exitCode: io.exitCode })]
   } finally {
     session.vars = saved

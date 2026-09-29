@@ -45,4 +45,13 @@ describe('shellJoin', () => {
   it('joins nothing to an empty line', () => {
     expect(shellJoin([])).toBe('')
   })
+
+  it('writes a raw byte as an ANSI-C escape', () => {
+    expect(shellJoin(['printf', '%s', 'a\udcffb'])).toBe("printf %s 'a'$'\\xff''b'")
+    expect(shellJoin(['\udc80'])).toBe("''$'\\x80'''")
+  })
+
+  it('leaves a non-ASCII character as itself', () => {
+    expect(shellJoin(['echo', '\u00e9\u{10080}'])).toBe("echo '\u00e9\u{10080}'")
+  })
 })

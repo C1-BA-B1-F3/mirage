@@ -63,18 +63,26 @@ export function scriptError(
  * The caller owns the diagnostic: `source` and a nested shell word the same
  * failure differently and exit differently on it.
  */
+export async function readScriptBytes(
+  dispatch: DispatchFn,
+  path: string,
+  cwd: string,
+): Promise<Uint8Array> {
+  const scope = toScope(resolvePath(path, cwd))
+  const stat = await resolvePathStat(dispatch, scope)
+  if (stat !== null && stat.type === FileType.DIRECTORY) throw eisdir(path)
+  const [data] = await dispatch('read', scope)
+  if (data === null || data === undefined) return new Uint8Array()
+  return materialize(data as ByteSource)
+}
+
+/** Read a script file as text, a byte UTF-8 cannot read replaced. */
 export async function readScriptText(
   dispatch: DispatchFn,
   path: string,
   cwd: string,
 ): Promise<string> {
-  const scope = toScope(resolvePath(path, cwd))
-  const stat = await resolvePathStat(dispatch, scope)
-  if (stat !== null && stat.type === FileType.DIRECTORY) throw eisdir(path)
-  const [data] = await dispatch('read', scope)
-  if (data instanceof Uint8Array) return new TextDecoder().decode(data)
-  if (data === null || data === undefined) return ''
-  return new TextDecoder().decode(await materialize(data as ByteSource))
+  return new TextDecoder().decode(await readScriptBytes(dispatch, path, cwd))
 }
 
 /**

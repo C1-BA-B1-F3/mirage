@@ -20,7 +20,6 @@ from mirage.io.stream import async_chain, materialize
 from mirage.policy.decisions import Decisions
 from mirage.policy.types import HandOff
 from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
-from mirage.shell.descriptors import unreadable_stdin
 from mirage.shell.errors import ExitSignal, ReturnSignal
 from mirage.shell.helpers import get_text
 from mirage.shell.node_kind import pipeline_transparent
@@ -30,7 +29,8 @@ from mirage.workspace.executor.builtins.exec import (divert_statement,
                                                      stdout_to_stderr)
 from mirage.workspace.executor.control import BreakSignal, ContinueSignal
 from mirage.workspace.executor.jobs import handle_background
-from mirage.workspace.executor.statement import record_status
+from mirage.workspace.executor.statement import (fd0_binding, record_status,
+                                                 statement_stdin)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -89,6 +89,7 @@ async def _run_program(
     # Source lines and the highest one `set -v` has already echoed.
     source_lines = get_text(node).split("\n")
     echoed_row = -1
+    bound = fd0_binding(session)
 
     i = 0
     while i < len(children):
@@ -160,17 +161,10 @@ async def _run_program(
             record_status(session, io.exit_code)
             i += 2
         else:
-            child_stdin = stdin
-            if child_stdin is None and session.exec_stdin_unreadable:
-                # `exec <&-` or `exec 0<&1` left nothing to read: a
-                # reader gets EBADF, as bash's does.
-                child_stdin = unreadable_stdin()
-            elif child_stdin is None and session.exec_stdin is not None:
-                # `exec < file` feeds the shell's stdin: a later `read`
-                # or `while read` sees it. The same bytes reach each
-                # statement, and the identity-keyed line buffer advances
-                # a sequence of reads through it.
-                child_stdin = session.exec_stdin
+            # `exec < file` feeds the shell's stdin: a later `read` or
+            # `while read` sees it, and each statement reads on from
+            # where the one before it stopped.
+            child_stdin = statement_stdin(session, stdin, bound)
             try:
                 stdout, io, last_exec = await recurse(child, session,
                                                       child_stdin, call_stack)

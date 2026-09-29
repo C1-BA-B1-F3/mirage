@@ -30,7 +30,6 @@ from mirage.shell.console.pipe import PipeConsole
 from mirage.shell.console.types import Channel
 from mirage.shell.constants import (ERREXIT_EXEMPT_TYPES, FORK_FAILED,
                                     FORK_FAILED_STATUS)
-from mirage.shell.descriptors import unreadable_stdin
 from mirage.shell.errors import ExitSignal, PipeClosed
 from mirage.shell.job_table import JobTable
 from mirage.shell.types import NodeType as NT
@@ -39,9 +38,10 @@ from mirage.types import PathSpec
 from mirage.workspace.executor.builtins.exec import (divert_statement,
                                                      stdout_to_stderr)
 from mirage.workspace.executor.jobs import handle_background, pump
-from mirage.workspace.executor.statement import (carry_status,
+from mirage.workspace.executor.statement import (carry_status, fd0_binding,
                                                  finish_statement,
-                                                 record_status)
+                                                 record_status,
+                                                 statement_stdin)
 from mirage.workspace.session import (SessionState, reset_current_session,
                                       set_current_session)
 from mirage.workspace.types import ExecutionNode
@@ -147,7 +147,10 @@ async def handle_pipe(
         if failed:
             for io in ios:
                 await discard_io(io)
-            await discard_streams(stdin)
+            # The shell's own fd 0 outlives the line, as bash's does:
+            # the next line reads on from it.
+            if stdin is not session.exec_stdin:
+                await discard_streams(stdin)
 
     last_io = ios[-1]
     # Parked for the boundary that closes this statement to claim as
@@ -207,6 +210,7 @@ async def handle_connection(
     call_stack: CallStack | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Handle &&, ||"""
+    bound = fd0_binding(session)
     left_stdout, left_io, left_exec = await execute_node(
         left, session, stdin, call_stack)
     children = [left_exec]
@@ -224,7 +228,8 @@ async def handle_connection(
                 op="&&", exit_code=left_io.exit_code, children=children)
         try:
             right_stdout, right_io, right_exec = (await execute_node(
-                right, session, stdin, call_stack))
+                right, session, statement_stdin(session, stdin, bound),
+                call_stack))
         except ExitSignal as sig:
             raise await _merge_left_into_exit(sig, left_bytes, left_io)
         children.append(right_exec)
@@ -244,7 +249,8 @@ async def handle_connection(
                 op="||", exit_code=left_io.exit_code, children=children)
         try:
             right_stdout, right_io, right_exec = (await execute_node(
-                right, session, stdin, call_stack))
+                right, session, statement_stdin(session, stdin, bound),
+                call_stack))
         except ExitSignal as sig:
             raise await _merge_left_into_exit(sig, left_bytes, left_io)
         children.append(right_exec)
@@ -259,7 +265,7 @@ async def handle_connection(
     left_bytes = await finish_statement(left_stdout, left_io, session, left)
     try:
         right_stdout, right_io, right_exec = await execute_node(
-            right, session, stdin, call_stack)
+            right, session, statement_stdin(session, stdin, bound), call_stack)
     except ExitSignal as sig:
         raise await _merge_left_into_exit(sig, left_bytes, left_io)
     children.append(right_exec)
@@ -310,6 +316,7 @@ async def handle_subshell(
         all_stdout: list[Any] = []
         merged_io = IOResult()
         last_exec = ExecutionNode(command="()", exit_code=0)
+        bound = fd0_binding(session)
         i = 0
         while i < len(body):
             child = body[i]
@@ -347,11 +354,7 @@ async def handle_subshell(
                 i += 2
                 continue
             i += 1
-            child_stdin = stdin
-            if child_stdin is None and session.exec_stdin_unreadable:
-                child_stdin = unreadable_stdin()
-            elif child_stdin is None and session.exec_stdin is not None:
-                child_stdin = session.exec_stdin
+            child_stdin = statement_stdin(session, stdin, bound)
             try:
                 stdout, io, last_exec = await execute_node(
                     child, session, child_stdin, call_stack)

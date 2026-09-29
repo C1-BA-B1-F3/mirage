@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import shlex
 from collections.abc import Callable
 from typing import Any
 
@@ -20,6 +19,7 @@ from mirage.context import clear_program_invocation, reset_program_invocation
 from mirage.io import IOResult
 from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
+from mirage.shell.join import shell_join
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.utils.path import resolve_path
 from mirage.vfs.bin import BinViewVFS
@@ -145,7 +145,7 @@ async def handle_exec_path(
         return await handle_bash(dispatch, execute_fn,
                                  [*words[1:], path, *args], session, stdin,
                                  interp)
-    line = shlex.join([*words, path, *args])
+    line = shell_join([*words, path, *args])
     io = await execute_fn(line, session_id=session.session_id, stdin=stdin)
     return io.stdout, io, ExecutionNode(command=f"{path} " +
                                         " ".join(args) if args else path,

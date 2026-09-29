@@ -16,10 +16,19 @@
 // character is in the shlex safe set.
 const SAFE_TOKEN = /^[A-Za-z0-9@%+=:,./_-]+$/
 
+// A byte UTF-8 cannot read, carried as its surrogate escape (see
+// `byteChar` in `shell/bytes.ts`): a lone low surrogate, not the second
+// half of a pair.
+const BYTE_SENTINEL = /(?<![\uD800-\uDBFF])[\uDC80-\uDCFF]/g
+
 function quoteToken(token: string): string {
   if (token === '') return "''"
   if (SAFE_TOKEN.test(token)) return token
-  return `'${token.split("'").join("'\\''")}'`
+  const quoted = `'${token.split("'").join("'\\''")}'`
+  return quoted.replace(
+    BYTE_SENTINEL,
+    (char) => `'$'\\x${(char.charCodeAt(0) - 0xdc00).toString(16).padStart(2, '0')}''`,
+  )
 }
 
 /**
@@ -27,7 +36,9 @@ function quoteToken(token: string): string {
  * those tokens (Python's `shlex.join`). Internal code that synthesizes
  * a line from tokens it already holds (xargs, timeout) must use this
  * instead of `join(' ')`: a plain join is re-parsed by the shell, so a
- * token with whitespace splits and `$(...)` in a token executes.
+ * token with whitespace splits and `$(...)` in a token executes. A byte
+ * UTF-8 cannot read goes in as `$'\xHH'`, since the parser reads UTF-8
+ * only and the escape expands back to that byte.
  */
 export function shellJoin(tokens: readonly string[]): string {
   return tokens.map(quoteToken).join(' ')

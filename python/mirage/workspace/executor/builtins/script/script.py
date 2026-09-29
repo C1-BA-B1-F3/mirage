@@ -49,7 +49,8 @@ def script_error(
                                                      stderr=err)
 
 
-async def read_script_text(dispatch: DispatchFn, path: str, cwd: str) -> str:
+async def read_script_bytes(dispatch: DispatchFn, path: str,
+                            cwd: str) -> bytes:
     """Read a script file through the op dispatcher.
 
     Every way of running a script off a mount comes through here, so a
@@ -78,11 +79,21 @@ async def read_script_text(dispatch: DispatchFn, path: str, cwd: str) -> str:
     if stat is not None and stat.type == FileType.DIRECTORY:
         raise eisdir(path)
     data, _ = await dispatch("read", scope)
-    if isinstance(data, bytes):
-        return data.decode(errors="replace")
     if data is None:
-        return ""
-    return (await materialize(data)).decode(errors="replace")
+        return b""
+    return await materialize(data)
+
+
+async def read_script_text(dispatch: DispatchFn, path: str, cwd: str) -> str:
+    """Read a script file as text, a byte UTF-8 cannot read replaced.
+
+    Args:
+        dispatch (DispatchFn): op dispatcher, used to read the file.
+        path (str): the script operand, as typed.
+        cwd (str): working directory a relative operand resolves against.
+    """
+    return (await read_script_bytes(dispatch, path,
+                                    cwd)).decode(errors="replace")
 
 
 async def read_script_file(

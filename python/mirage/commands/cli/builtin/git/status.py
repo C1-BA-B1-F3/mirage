@@ -55,6 +55,7 @@ class StatusFlags:
     short: bool
     branch: bool
     untracked: str
+    ignored: bool = False
 
 
 def parse_flags(fl: FlagView) -> StatusFlags:
@@ -78,7 +79,8 @@ def parse_flags(fl: FlagView) -> StatusFlags:
                        or version is not None,
                        short=fl.as_bool("short"),
                        branch=fl.as_bool("branch"),
-                       untracked=mode)
+                       untracked=mode,
+                       ignored=fl.as_bool("ignored"))
 
 
 async def displayed(dispatch: DispatchFn, location: RepoLocation, start: str,
@@ -163,7 +165,8 @@ async def status(
         head = await read_head(dispatch, location.gitdir)
         rows, state, no_commits = await collect(dispatch, stat_path, repo,
                                                 location, parsed.untracked,
-                                                links_of(doors))
+                                                links_of(doors),
+                                                parsed.ignored)
         fully = await config_bool(dispatch, location, b"core", b"quotepath",
                                   True)
         if not parsed.porcelain:

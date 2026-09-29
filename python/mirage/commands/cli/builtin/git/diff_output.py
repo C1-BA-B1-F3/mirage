@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from io import BytesIO
@@ -59,6 +60,7 @@ class DiffFlags:
     merge: str = 'off'
     raw: bool = False
     abbrev: bool = False
+    function_context: bool = False
     context: int = HUNK_CONTEXT
     quote_path_fully: bool = True
 
@@ -112,10 +114,12 @@ def parse_diff_flags(fl: FlagView,
     context = fl.as_int("unified")
     if context is not None and context < 0:
         raise GitError("negative context length")
-    patch = fl.as_bool("patch") or context is not None or (
-        (default_patch or fl.as_bool("cc") or
-         (porcelain and fl.as_bool("c"))) and not any(modes))
-    return DiffFlags(context=HUNK_CONTEXT if context is None else context,
+    patch = fl.as_bool("patch") or fl.as_bool(
+        "function_context") or context is not None or (
+            (default_patch or fl.as_bool("cc") or
+             (porcelain and fl.as_bool("c"))) and not any(modes))
+    return DiffFlags(function_context=fl.as_bool("function_context"),
+                     context=HUNK_CONTEXT if context is None else context,
                      name_only=modes[0],
                      name_status=modes[1],
                      stat=modes[2],
@@ -262,7 +266,7 @@ def render_changes(repo: BaseRepo, rows: list[Change],
         if flags.patch:
             patches.append(
                 file_patch(repo, row, name, origin, abbrev_for(repo), fully,
-                           flags.context))
+                           flags.context, flags.function_context))
     if not (flags.name_only or flags.name_status):
         table = stat_table(stats)
         lines += numbers + (table if flags.stat else
@@ -362,7 +366,8 @@ def file_patch(repo: BaseRepo,
                origin: str,
                width: int,
                fully: bool = True,
-               context: int = HUNK_CONTEXT) -> bytes:
+               context: int = HUNK_CONTEXT,
+               function_context: bool = False) -> bytes:
     """One path's patch, headers and hunks, as git's builtin_diff writes it.
 
     A change between a file and a symlink is split into a deletion and
@@ -382,9 +387,9 @@ def file_patch(repo: BaseRepo,
     old, new = row.old, row.new
     if old and new and old[0] & 0o170000 != new[0] & 0o170000:
         return (file_patch(repo, replace(row, new=None), name, origin, width,
-                           fully, context) +
+                           fully, context, function_context) +
                 file_patch(repo, replace(row, old=None), name, origin, width,
-                           fully, context))
+                           fully, context, function_context))
     source = quote_path(f'a/{origin}', False, fully)
     target = quote_path(f'b/{name}', False, fully)
     head = [f'diff --git {source} {target}']
@@ -412,7 +417,8 @@ def file_patch(repo: BaseRepo,
     if any(b'\0' in data[:BINARY_SNIFF] for data in (before, after)):
         head.append(f'Binary files {source} and {target} differ')
         return encode_text(''.join(line + '\n' for line in head))
-    body = hunks(byte_lines(before), byte_lines(after), context)
+    body = hunks(byte_lines(before), byte_lines(after), context,
+                 function_context)
     if body:
         head += [
             f'--- {source}' + ('\t' if ' ' in source else ''),
@@ -433,7 +439,8 @@ def byte_lines(data: bytes) -> list[bytes]:
 
 def hunks(old: list[bytes],
           new: list[bytes],
-          count: int = HUNK_CONTEXT) -> bytes:
+          count: int = HUNK_CONTEXT,
+          function_context: bool = False) -> bytes:
     """The ``@@`` hunks of a two-way patch, as xdiff's xdl_emit_diff emits.
 
     Each header carries the nearest earlier line of the old side that
@@ -448,8 +455,14 @@ def hunks(old: list[bytes],
     out = []
     context = b''
     searched = -1
-    for group in SequenceMatcher(a=old, b=new,
-                                 autojunk=False).get_grouped_opcodes(count):
+    matcher = SequenceMatcher(a=old, b=new, autojunk=False)
+    groups = list(matcher.get_grouped_opcodes(count))
+    if function_context:
+        groups = _function_groups(
+            old,
+            SequenceMatcher(a=old, b=new, autojunk=False).get_opcodes(),
+            groups)
+    for group in groups:
         start, stop = group[0][1], group[-1][2]
         found = next((old[k] for k in range(start - 1, searched, -1)
                       if old[k] and chr(old[k][0]) in FUNCNAME_START), None)
@@ -468,6 +481,54 @@ def hunks(old: list[bytes],
             out.extend(_hunk_line(b'-', line) for line in old[i1:i2])
             out.extend(_hunk_line(b'+', line) for line in new[j1:j2])
     return b''.join(out)
+
+
+def _function_groups(
+    old: list[bytes], codes: Sequence[tuple[str, int, int, int, int]],
+    groups: list[list[tuple[str, int, int, int, int]]]
+) -> list[list[tuple[str, int, int, int, int]]]:
+    """Widen changed ranges to Git's default function boundaries.
+
+    Pinned against Git 2.47.3 (Debian stable) and 2.50.1.
+
+    Args:
+        old (list[bytes]): original lines.
+        codes (Sequence[tuple[str, int, int, int, int]]): diff opcodes.
+        groups (list[list[tuple[str, int, int, int, int]]]): bounded hunks.
+    """
+    boundaries = [
+        i for i, line in enumerate(old)
+        if line and chr(line[0]) in FUNCNAME_START
+    ]
+    ranges: list[tuple[int, int]] = []
+    for group in groups:
+        changes = [code for code in group if code[0] != 'equal']
+        start = min(
+            group[0][1],
+            max((i for i in boundaries if i <= changes[0][1]), default=0))
+        end = min((i for i in boundaries
+                   if i >= max(changes[-1][2], changes[-1][1] + 1)),
+                  default=len(old))
+        while end < len(old) and end > changes[-1][2] and not old[end -
+                                                                  1].strip():
+            end -= 1
+        end = max(end, group[-1][2])
+        if ranges and start <= ranges[-1][1]:
+            ranges[-1] = (ranges[-1][0], max(end, ranges[-1][1]))
+        else:
+            ranges.append((start, end))
+    result = []
+    for start, end in ranges:
+        group = []
+        for tag, i1, i2, j1, j2 in codes:
+            if tag == 'equal':
+                lo, hi = max(start, i1), min(end, i2)
+                if lo < hi:
+                    group.append((tag, lo, hi, j1 + lo - i1, j1 + hi - i1))
+            elif i1 <= end and i2 >= start:
+                group.append((tag, i1, i2, j1, j2))
+        result.append(group)
+    return result
 
 
 def _span(start: int, stop: int) -> str:

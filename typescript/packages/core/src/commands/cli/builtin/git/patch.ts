@@ -60,11 +60,34 @@ export async function filePatch(
   width: number,
   fully = true,
   count = HUNK_CONTEXT,
+  functionContext = false,
 ): Promise<string> {
   if (before && after && before.mode.slice(0, 3) !== after.mode.slice(0, 3))
     return (
-      (await filePatch(repo, path, oldPath, before, null, score, width, fully, count)) +
-      (await filePatch(repo, path, oldPath, null, after, score, width, fully, count))
+      (await filePatch(
+        repo,
+        path,
+        oldPath,
+        before,
+        null,
+        score,
+        width,
+        fully,
+        count,
+        functionContext,
+      )) +
+      (await filePatch(
+        repo,
+        path,
+        oldPath,
+        null,
+        after,
+        score,
+        width,
+        fully,
+        count,
+        functionContext,
+      ))
     )
   const source = quotePath(`a/${oldPath}`, false, fully),
     target = quotePath(`b/${path}`, false, fully)
@@ -90,7 +113,7 @@ export async function filePatch(
     to = after ? target : DEV_NULL
   if ([old, fresh].some((data) => data.subarray(0, BINARY_SNIFF).includes(0)))
     return text([...head, `Binary files ${from} and ${to} differ`])
-  const body = hunks(lines(old), lines(fresh), count)
+  const body = hunks(lines(old), lines(fresh), count, functionContext)
   return (
     text(body ? [...head, `--- ${from}${labelTab(from)}`, `+++ ${to}${labelTab(to)}`] : head) + body
   )
@@ -111,11 +134,20 @@ function text(rows: readonly string[]): string {
  * letter, `_` or `$` (git's default funcname), and keeps the previous hunk's
  * when none lies between the two.
  */
-function hunks(old: readonly string[], fresh: readonly string[], count: number): string {
+function hunks(
+  old: readonly string[],
+  fresh: readonly string[],
+  count: number,
+  functionContext = false,
+): string {
   const out: string[] = []
   let context = ''
   let searched = -1
-  for (const group of groupOpcodes(getOpcodes(old, fresh), count)) {
+  const codes = getOpcodes(old, fresh)
+  const groups = groupOpcodes(codes, count)
+  for (const group of functionContext
+    ? functionGroups(old, getOpcodes(old, fresh), groups)
+    : groups) {
     const first = group[0],
       last = group.at(-1)
     if (first === undefined || last === undefined) continue
@@ -159,4 +191,39 @@ function span(start: number, stop: number): string {
 
 function hunkLine(marker: string, line: string): string {
   return line.endsWith('\n') ? marker + line : `${marker}${line}\n\\ No newline at end of file\n`
+}
+
+type Opcode = ReturnType<typeof getOpcodes>[number]
+
+/** Widen to Git's default function boundaries (Git 2.47.3 Debian / 2.50.1). */
+function functionGroups(
+  old: readonly string[],
+  codes: readonly Opcode[],
+  groups: readonly Opcode[][],
+): Opcode[][] {
+  const boundaries = old.flatMap((line, i) => (FUNCNAME_START.test(line) ? [i] : []))
+  const ranges: [number, number][] = []
+  for (const group of groups) {
+    const changes = group.filter((code) => code[0] !== DiffOpTag.EQUAL)
+    const first = changes[0],
+      last = changes.at(-1)
+    if (!first || !last || !group[0] || !group.at(-1)) continue
+    const start = Math.min(group[0][1], boundaries.filter((i) => i <= first[1]).at(-1) ?? 0)
+    let end = boundaries.find((i) => i >= Math.max(last[2], last[1] + 1)) ?? old.length
+    while (end < old.length && end > last[2] && !(old[end - 1] ?? '').trim()) end--
+    end = Math.max(end, group.at(-1)?.[2] ?? end)
+    const previous = ranges.at(-1)
+    if (previous && start <= previous[1]) previous[1] = Math.max(previous[1], end)
+    else ranges.push([start, end])
+  }
+  return ranges.map(([start, end]) =>
+    codes.flatMap(([tag, i1, i2, j1, j2]): Opcode[] => {
+      if (tag === DiffOpTag.EQUAL) {
+        const lo = Math.max(start, i1),
+          hi = Math.min(end, i2)
+        return lo < hi ? [[tag, lo, hi, j1 + lo - i1, j1 + hi - i1]] : []
+      }
+      return i1 <= end && i2 >= start ? [[tag, i1, i2, j1, j2]] : []
+    }),
+  )
 }

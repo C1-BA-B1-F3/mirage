@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+from dataclasses import replace
 
 from dulwich.objects import Commit
 from dulwich.repo import BaseRepo
@@ -31,6 +32,7 @@ from mirage.commands.cli.builtin.git.history import (LogFlags, Walk,
                                                      decorations, parse_flags,
                                                      ref_commits, select,
                                                      walked)
+from mirage.commands.cli.builtin.git.mailmap import load_mailmap, use_mailmap
 from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.revparse import split_revisions
@@ -103,7 +105,7 @@ def _rendered(commits: list[Commit], flags: LogFlags, width: int,
     if fmt.kind in ("format", "tformat"):
         rendered = [
             render_template(fmt.template or "", commit, width, decor,
-                            flags.date) for commit in commits
+                            flags.date, flags.mailmap) for commit in commits
         ]
         if fmt.kind == "tformat":
             if not fmt.template:
@@ -114,7 +116,8 @@ def _rendered(commits: list[Commit], flags: LogFlags, width: int,
     for index, commit in enumerate(commits):
         if index:
             lines.append("")
-        block = preset_block(commit, fmt.kind, width, flags.date)
+        block = preset_block(commit, fmt.kind, width, flags.date,
+                             flags.mailmap if flags.use_mailmap else ())
         if flags.decorate and block and block[0].startswith("commit "):
             block[0] += render_template("%d", commit, width, decor)
         lines.extend(block)
@@ -196,9 +199,11 @@ def _graphed(repo: BaseRepo, walk: Walk, flags: LogFlags,
                 text = render_template("%s", commit, length, decor)
             elif user:
                 text = render_template(fmt.template or "", commit, width,
-                                       decor, flags.date)
+                                       decor, flags.date, flags.mailmap)
             else:
-                head, *rest = preset_block(commit, fmt.kind, width, flags.date)
+                head, *rest = preset_block(
+                    commit, fmt.kind, width, flags.date,
+                    flags.mailmap if flags.use_mailmap else ())
                 out += f"{head}{source}{labels}\n{graph.next_line()[0]}"
                 text = "".join(f"{line}\n" for line in rest)
             missing_newline = not text.endswith("\n")
@@ -238,6 +243,11 @@ async def log(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         check_operands(texts, marked=escaped(inv.argv))
         parsed = parse_flags(fl)
         repo, _location = await opened(fl, doors)
+        parsed = replace(parsed,
+                         mailmap=await load_mailmap(dispatch, _location),
+                         use_mailmap=use_mailmap(
+                             fl, await config_bool(dispatch, _location, b'log',
+                                                   b'mailmap', True)))
         commits, walk, decor = await asyncio.to_thread(
             _collect, repo, tuple(texts), parsed,
             (parsed.decorate or needs_decorations(parsed.pretty)))

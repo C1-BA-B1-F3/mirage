@@ -171,3 +171,4 @@ class WorkTree:
     """
     files: dict[str, FileStat] = field(default_factory=dict)
     untracked: list[str] = field(default_factory=list)
+    ignored: list[str] = field(default_factory=list)

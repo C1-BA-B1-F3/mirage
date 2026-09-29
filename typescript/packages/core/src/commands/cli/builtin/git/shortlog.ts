@@ -1,3 +1,4 @@
+import { loadMailmap, mappedIdentity } from './mailmap.ts'
 import { IOResult } from '../../../../io/types.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import type { CommandFnResult } from '../../../config.ts'
@@ -16,6 +17,7 @@ export async function shortlog(inv: CLIInvocation): Promise<CommandFnResult> {
   try {
     checkOperands(inv.texts, undefined, escaped(inv.argv))
     const repo = await opened(fl, inv.doors ?? {})
+    const mailmap = await loadMailmap(repo.dispatch, repo.location)
     const flags = parseFlags(fl)
     const [starts, hidden] = await splitRevisions(
       repo,
@@ -24,7 +26,8 @@ export async function shortlog(inv: CLIInvocation): Promise<CommandFnResult> {
     if (flags.allRefs) starts.push(...(await refCommits(repo)))
     const groups = new Map<string, string[]>()
     for (const commit of (await select(repo, starts, flags, hidden)).reverse()) {
-      const name = commit.authorName + (fl.asBool('email') ? ` <${commit.authorEmail}>` : '')
+      const identity = mappedIdentity(`${commit.authorName} <${commit.authorEmail}>`, mailmap)
+      const name = fl.asBool('email') ? identity : identity.slice(0, identity.lastIndexOf(' <'))
       const messages = groups.get(name) ?? []
       messages.push(subject(commit))
       groups.set(name, messages)

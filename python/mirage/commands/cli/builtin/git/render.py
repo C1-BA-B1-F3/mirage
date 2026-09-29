@@ -240,7 +240,7 @@ def _staged_entries(rows: list[StatusEntry], fully: bool) -> list[str]:
     """
     lines = []
     for row in rows:
-        if row.index_status in (UNCHANGED, UNTRACKED, UNMERGED_COLUMN):
+        if row.index_status in (UNCHANGED, UNTRACKED, UNMERGED_COLUMN, "!"):
             continue
         label = STAGED_LABELS.get(row.index_status, "modified:")
         path = quote_path(row.path, False, fully)
@@ -260,7 +260,7 @@ def _work_entries(rows: list[StatusEntry], fully: bool) -> list[str]:
     lines = []
     for row in rows:
         if row.index_status == UNMERGED_COLUMN or row.tree_status in (
-                UNCHANGED, UNTRACKED):
+                UNCHANGED, UNTRACKED, "!"):
             continue
         label = WORK_LABELS.get(row.tree_status, "modified:")
         lines.append(
@@ -378,6 +378,13 @@ def long_format(rows: list[StatusEntry],
                  (WORK_HINT_DELETED if deleted else WORK_HINT, DISCARD_HINT),
                  work))
     lines.extend(_section(UNTRACKED_HEADER, (UNTRACKED_HINT, ), untracked))
+    ignored = [
+        f"\t{quote_path(row.path, False, fully)}" for row in rows
+        if row.index_status == '!'
+    ]
+    lines.extend(
+        _section('Ignored files:', ('  (use "git add -f <file>..." to include '
+                                    'in what will be committed)', ), ignored))
     lines.extend(
         _trailer(staged, work, unmerged, untracked, no_commits,
                  hide_untracked))

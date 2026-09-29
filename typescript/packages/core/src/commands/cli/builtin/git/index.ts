@@ -1,3 +1,6 @@
+import { lsFiles } from './ls_files.ts'
+import { forEachRef } from './for_each_ref.ts'
+import { reflog } from './reflog.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -81,6 +84,11 @@ const DATE_OPTION = new Option({
 
 const DIFF_OPTIONS = [
   new Option({
+    short: '-W',
+    long: '--function-context',
+    description: 'Show whole functions as diff context',
+  }),
+  new Option({
     short: '-U',
     long: '--unified',
     type: 'int',
@@ -118,6 +126,24 @@ const MERGE_OPTIONS = [
 ]
 
 const LOG_OPTIONS = [
+  new Option({
+    short: '-E',
+    long: '--extended-regexp',
+    description: 'Use extended regular expressions',
+  }),
+  new Option({ short: '-F', long: '--fixed-strings', description: 'Match patterns literally' }),
+  new Option({
+    short: '-P',
+    long: '--perl-regexp',
+    description: 'Use Perl-compatible regular expressions',
+  }),
+  new Option({ long: '--basic-regexp', description: 'Use basic regular expressions' }),
+  new Option({
+    long: '--committer',
+    type: 'str',
+    multiple: true,
+    description: 'Limit commits to matching committers',
+  }),
   new Option({
     long: '--author',
     type: 'str',
@@ -205,7 +231,15 @@ const LOG_OPTIONS = [
   }),
 ]
 
+const MAILMAP_OPTIONS = [
+  new Option({ long: '--mailmap', description: 'Apply mailmap to identities' }),
+  new Option({ long: '--use-mailmap', description: 'Apply mailmap to identities' }),
+  new Option({ long: '--no-mailmap', description: 'Use recorded identities' }),
+  new Option({ long: '--no-use-mailmap', description: 'Use recorded identities' }),
+]
+
 const SHOW_OPTIONS = [
+  ...MAILMAP_OPTIONS,
   new Option({ long: '--oneline', description: 'One abbreviated line per commit' }),
   ...DIFF_OPTIONS,
   ...MERGE_OPTIONS,
@@ -215,6 +249,7 @@ const SHOW_OPTIONS = [
 ]
 
 const STATUS_OPTIONS = [
+  new Option({ long: '--ignored', description: 'Show ignored files' }),
   new Option({
     long: '--porcelain',
     type: 'str',
@@ -459,6 +494,42 @@ export const GIT = new CLISpec({
   ],
   subcommands: [
     new CLISpec({
+      name: 'reflog',
+      fn: reflog,
+      description: 'Show reference history',
+      options: [
+        new Option({
+          short: '-n',
+          long: '--max-count',
+          type: 'int',
+          numericShorthand: true,
+          description: 'Limit the number of entries',
+        }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'for-each-ref',
+      fn: forEachRef,
+      description: 'List references with a format',
+      options: [
+        new Option({ long: '--format', type: 'str', description: 'Format each reference' }),
+        new Option({ long: '--count', type: 'int', description: 'Maximum number of references' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'ls-files',
+      fn: lsFiles,
+      description: 'Show files in the index',
+      options: [
+        new Option({ short: '-z', description: 'Terminate paths with NUL' }),
+        new Option({ short: '-s', long: '--stage', description: 'Show staged object metadata' }),
+        new Option({ short: '-c', long: '--cached', description: 'Show cached files' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
       name: 'help',
       fn: helpCmd,
       description: 'Show command help',
@@ -513,6 +584,7 @@ export const GIT = new CLISpec({
       description: 'Read repository configuration',
       fn: config,
       options: [
+        new Option({ long: '--global', description: 'Read global configuration' }),
         new Option({ long: '--get', description: 'Get a configuration value' }),
         new Option({ short: '-l', long: '--list', description: 'List every variable and value' }),
         new Option({ long: '--show-origin', description: 'Show the file each value comes from' }),
@@ -547,6 +619,7 @@ export const GIT = new CLISpec({
       fn: revParse,
       description: 'Resolve revisions',
       options: [
+        new Option({ long: '--show-toplevel', description: 'Show the worktree root' }),
         new Option({ long: '--abbrev-ref', description: 'Show abbreviated reference names' }),
       ],
       rest: REVISION,
@@ -579,7 +652,7 @@ export const GIT = new CLISpec({
       name: 'log',
       description: 'Show commit logs',
       fn: log,
-      options: [...LOG_OPTIONS, ...DIFF_OPTIONS],
+      options: [...LOG_OPTIONS, ...MAILMAP_OPTIONS, ...DIFF_OPTIONS],
       rest: REVISION,
     }),
     new CLISpec({

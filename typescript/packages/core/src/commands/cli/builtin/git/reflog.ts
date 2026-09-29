@@ -1,3 +1,12 @@
+import { IOResult } from '../../../../io/types.ts'
+import type { CommandFnResult } from '../../../config.ts'
+import { FlagView } from '../../../spec/flag_view.ts'
+import type { CLIInvocation } from '../../types.ts'
+import { GitError } from './errors.ts'
+import { resolveCommit } from './revparse.ts'
+import { loadRefs } from './refs.ts'
+import { opened } from './repo.ts'
+import { fatal } from './util.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -98,4 +107,44 @@ export async function record(
   const line = entry(before ?? ZERO, after, who, when, message)
   await append(dispatch, gitdir, HEAD_LOG, line)
   if (ref !== null) await append(dispatch, commondir, `${LOGS_DIR}/${ref}`, line)
+}
+
+export async function reflog(inv: CLIInvocation): Promise<CommandFnResult> {
+  const fl = new FlagView(inv.flags)
+  try {
+    const repo = await opened(fl, inv.doors ?? {})
+    const texts = inv.texts[0] === 'show' ? inv.texts.slice(1) : inv.texts
+    const revision = texts[0] ?? 'HEAD'
+    await resolveCommit(repo, revision)
+    const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
+    const ref =
+      [
+        revision,
+        'refs/' + revision,
+        'refs/heads/' + revision,
+        'refs/tags/' + revision,
+        'refs/remotes/' + revision,
+      ].find((name) => refs.has(name)) ?? revision
+    const root = ref === 'HEAD' ? repo.location.gitdir : repo.location.commondir
+    const data = await readOptional(repo.dispatch, `${root}/logs/${ref}`)
+    let rows = new TextDecoder()
+      .decode(data ?? new Uint8Array())
+      .split('\n')
+      .filter(Boolean)
+      .reverse()
+    const limit = fl.asInt('max_count')
+    if (limit !== undefined && limit >= 0) rows = rows.slice(0, limit)
+    const name = ref.replace(/^refs\/(heads|remotes)\//, '')
+    const out = rows
+      .map((row, index) => {
+        const tab = row.indexOf('\t')
+        const oid = row.slice(0, tab).split(' ')[1] ?? ''
+        return `${oid.slice(0, repo.abbrev)} ${name}@{${String(index)}}: ${row.slice(tab + 1)}\n`
+      })
+      .join('')
+    return [new TextEncoder().encode(out), new IOResult()]
+  } catch (err) {
+    if (err instanceof GitError) return fatal(err)
+    throw err
+  }
 }

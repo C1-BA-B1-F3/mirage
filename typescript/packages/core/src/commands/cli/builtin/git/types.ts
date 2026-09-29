@@ -180,4 +180,5 @@ export interface WorkTree {
   readonly files: Map<string, FileStat>
   /** Paths to report as untracked, already collapsed to `dir/` where git would. */
   readonly untracked: string[]
+  readonly ignored: string[]
 }

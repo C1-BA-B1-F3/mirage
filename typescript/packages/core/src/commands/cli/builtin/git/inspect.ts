@@ -1,5 +1,6 @@
 import { readHead, loadRefs } from './refs.ts'
 import git from 'isomorphic-git'
+import { GitConfigManager } from 'isomorphic-git/managers'
 import { VERSION } from '../../../../version.ts'
 
 import { translateClasses } from '../../../../utils/posix.ts'
@@ -8,10 +9,10 @@ import { IOResult } from '../../../../io/types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { GitError } from './errors.ts'
+import { GitError, NoWorkspaceError } from './errors.ts'
 import { parseFlags, refCommits, select } from './history.ts'
 import { opened, repoArgs } from './repo.ts'
-import { readFile } from './io.ts'
+import { readFile, readOptional } from './io.ts'
 import { splitRevisions, resolveObject } from './revparse.ts'
 import { checkOperands, escaped, fatal, startPoint } from './util.ts'
 
@@ -51,7 +52,34 @@ export async function remote(inv: CLIInvocation): Promise<CommandFnResult> {
 export async function config(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   try {
-    const repo = await opened(fl, inv.doors ?? {})
+    const sources: { source: string; data: Uint8Array }[] = []
+    if (fl.asBool('global')) {
+      const dispatch = inv.doors?.dispatch
+      if (!dispatch) throw new NoWorkspaceError()
+      const home = inv.env.HOME ?? ''
+      const override = inv.env.GIT_CONFIG_GLOBAL
+      if (override === undefined && !home) throw new GitError('$HOME not set')
+      const target = override ?? `${home}/.gitconfig`
+      const configuredXdg = inv.env.XDG_CONFIG_HOME ?? ''
+      const xdg = configuredXdg === '' ? `${home}/.config` : configuredXdg
+      for (const source of override === undefined ? [`${xdg}/git/config`, target] : [target]) {
+        const data = await readOptional(dispatch, source)
+        if (data !== null) sources.push({ source, data })
+      }
+      if (!sources.length && fl.asBool('list'))
+        throw new GitError(`unable to read config file '${target}': No such file or directory`)
+    } else {
+      const repo = await opened(fl, inv.doors ?? {})
+      const source =
+        repo.location.commondir === repo.location.worktree + '/.git' &&
+        startPoint(fl) === repo.location.worktree
+          ? '.git/config'
+          : repo.location.commondir + '/config'
+      sources.push({
+        source,
+        data: await readFile(repo.dispatch, `${repo.location.commondir}/config`),
+      })
+    }
     const listing = fl.asBool('list'),
       regexp = fl.asBool('get_regexp'),
       origin = fl.asBool('show_origin')
@@ -71,47 +99,48 @@ export async function config(inv: CLIInvocation): Promise<CommandFnResult> {
         new IOResult({ exitCode: 6, stderr: ENC.encode(`error: invalid key pattern: ${key}\n`) }),
       ]
     }
-    const text = new TextDecoder().decode(
-      await readFile(repo.dispatch, `${repo.location.commondir}/config`),
-    )
-    let section = ''
-    const keys: string[] = []
-    for (const line of text.split('\n')) {
-      const header = /^\s*\[([\w.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\]/.exec(line)
-      if (header) {
-        section =
-          (header[1] ?? '').toLowerCase() +
-          (header[2] === undefined ? '' : '.' + header[2].replace(/\\(.)/g, '$1'))
-        continue
+    const values: [string, string, string][] = []
+    for (const { source, data } of sources) {
+      const text = new TextDecoder().decode(data)
+      const parsed = await GitConfigManager.get({
+        fs: { read: () => Promise.resolve(text) } as never,
+        gitdir: '/',
+      })
+      let section = ''
+      const keys: string[] = []
+      for (const line of text.split('\n')) {
+        const header = /^\s*\[([\w.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\]/.exec(line)
+        if (header) {
+          section =
+            (header[1] ?? '').toLowerCase() +
+            (header[2] === undefined ? '' : '.' + header[2].replace(/\\(.)/g, '$1'))
+          continue
+        }
+        const entry = /^\s*([\w-]+)\s*(?:=|$)/.exec(line)
+        if (entry && section) keys.push(section + '.' + (entry[1] ?? '').toLowerCase())
       }
-      const entry = /^\s*([\w-]+)\s*(?:=|$)/.exec(line)
-      if (entry && section) keys.push(section + '.' + (entry[1] ?? '').toLowerCase())
-    }
-    const values: [string, string][] = [],
-      seen = new Map<string, number>(),
-      cache = new Map<string, (string | boolean)[]>()
-    for (const name of keys) {
-      const at = seen.get(name) ?? 0
-      seen.set(name, at + 1)
-      if (!(listing || (pattern ? pattern.test(name) : name === configKey(key)))) continue
-      let held = cache.get(name)
-      if (!held) {
-        held = await git.getConfigAll({ ...repoArgs(repo), path: name })
-        cache.set(name, held)
+      const seen = new Map<string, number>(),
+        cache = new Map<string, (string | boolean)[]>()
+      for (const name of keys) {
+        const at = seen.get(name) ?? 0
+        seen.set(name, at + 1)
+        if (!(listing || (pattern ? pattern.test(name) : name === configKey(key)))) continue
+        let held = cache.get(name)
+        if (!held) {
+          held = (await parsed.getall(name)) as (string | boolean)[]
+          cache.set(name, held)
+        }
+        values.push([source, name, String(held[at] ?? '')])
       }
-      values.push([name, String(held[at] ?? '')])
     }
     const chosen = listing || regexp ? values : values.slice(-1)
-    const source =
-      repo.location.commondir === repo.location.worktree + '/.git' &&
-      startPoint(fl) === repo.location.worktree
-        ? '.git/config'
-        : repo.location.commondir + '/config'
-    const prefix = origin ? `file:${source}\t` : ''
     const out = chosen
       .map(
-        ([name, value]) =>
-          prefix + (listing || regexp ? name + (listing ? '=' : ' ') : '') + value + '\n',
+        ([source, name, value]) =>
+          (origin ? `file:${source}\t` : '') +
+          (listing || regexp ? name + (listing ? '=' : ' ') : '') +
+          value +
+          '\n',
       )
       .join('')
     return [ENC.encode(out), new IOResult({ exitCode: chosen.length || listing ? 0 : 1 })]
@@ -191,10 +220,10 @@ export async function revParse(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   try {
     checkOperands(inv.texts, undefined, escaped(inv.argv))
-    const repo = await opened(fl, inv.doors ?? {})
+    const repo = await opened(fl, inv.doors ?? {}, fl.asBool('show_toplevel'))
     const head = await readHead(repo.dispatch, repo.location.gitdir)
     const refs = await loadRefs(repo.dispatch, repo.location.gitdir, repo.location.commondir)
-    let out = ''
+    let out = fl.asBool('show_toplevel') ? repo.location.worktree + '\n' : ''
     for (const revision of inv.texts) {
       const obj = await resolveObject(repo, revision)
       if (!fl.asBool('abbrev_ref')) {

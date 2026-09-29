@@ -1,3 +1,5 @@
+import { compilePosixRegex, translateClasses } from '../../../../utils/posix.ts'
+import { mappedIdentity, type MailmapEntry } from './mailmap.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,6 +41,9 @@ export interface LogFlags {
   readonly authors: readonly RegExp[]
   /** `--grep` patterns, any of which may match a line of the message. */
   readonly greps: readonly RegExp[]
+  readonly committers: readonly RegExp[]
+  readonly mailmap: readonly MailmapEntry[]
+  readonly useMailmap: boolean
   /** `-i`, which folds case for `--grep`, `--author` and `-S` alike. */
   readonly ignoreCase: boolean
   readonly minParents: number | null
@@ -145,18 +150,37 @@ export function parseFlags(fl: FlagView): LogFlags {
   const ignoreCase = fl.asBool('regexp_ignore_case')
   let authors: RegExp[]
   let greps: RegExp[]
+  let committers: RegExp[]
+  let mode = 'basic_regexp'
+  for (const key of fl.typedOrder(
+    'basic_regexp',
+    'extended_regexp',
+    'fixed_strings',
+    'perl_regexp',
+  ))
+    mode = key
+  const pattern = (value: string): RegExp => {
+    if (mode === 'basic_regexp') return searchBre(value, ignoreCase)
+    const source =
+      mode === 'fixed_strings'
+        ? value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        : translateClasses(value)
+    return compilePosixRegex(source, ignoreCase ? 'i' : '')
+  }
   try {
-    authors = fl.asList('author').map((value) => searchBre(value, ignoreCase))
-    greps = fl
-      .asList('grep')
-      .flatMap((values) => values.split('\n').map((value) => searchBre(value, ignoreCase)))
+    committers = fl.asList('committer').map(pattern)
+    authors = fl.asList('author').map(pattern)
+    greps = fl.asList('grep').flatMap((values) => values.split('\n').map(pattern))
   } catch (err) {
-    if (err instanceof BreError) throw new GitError(err.message)
+    if (err instanceof BreError || err instanceof SyntaxError) throw new GitError(err.message)
     throw err
   }
   const maxCount = fl.asInt('max_count') ?? null
   return {
     authors,
+    committers,
+    mailmap: [],
+    useMailmap: true,
     greps,
     ignoreCase,
     date: fl.asStr('date') ?? 'default',
@@ -484,7 +508,26 @@ function messageMatches(message: string, greps: readonly RegExp[]): boolean {
 function filtersPass(commit: CommitFacts, flags: LogFlags): boolean {
   if (
     flags.authors.length &&
-    !flags.authors.some((pattern) => pattern.test(`${commit.authorName} <${commit.authorEmail}>`))
+    !flags.authors.some((pattern) =>
+      pattern.test(
+        mappedIdentity(
+          `${commit.authorName} <${commit.authorEmail}>`,
+          flags.useMailmap ? flags.mailmap : [],
+        ),
+      ),
+    )
+  )
+    return false
+  if (
+    flags.committers.length &&
+    !flags.committers.some((pattern) =>
+      pattern.test(
+        mappedIdentity(
+          `${commit.committerName} <${commit.committerEmail}>`,
+          flags.useMailmap ? flags.mailmap : [],
+        ),
+      ),
+    )
   )
     return false
   if (flags.greps.length && !messageMatches(commit.message, flags.greps)) return false

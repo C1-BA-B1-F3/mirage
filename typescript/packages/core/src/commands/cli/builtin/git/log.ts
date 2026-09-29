@@ -1,3 +1,4 @@
+import { loadMailmap, useMailmap } from './mailmap.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -77,7 +78,7 @@ function rendered(
   }
   if (fmt.kind === 'format' || fmt.kind === 'tformat') {
     const entries = commits.map((commit) =>
-      renderTemplate(fmt.template ?? '', commit, width, decor, flags.date),
+      renderTemplate(fmt.template ?? '', commit, width, decor, flags.date, flags.mailmap),
     )
     if (fmt.kind === 'tformat') {
       if (fmt.template === null || fmt.template === '') return ''
@@ -88,7 +89,13 @@ function rendered(
   const lines: string[] = []
   commits.forEach((commit, index) => {
     if (index > 0) lines.push('')
-    const block = presetBlock(commit, fmt.kind, width, flags.date)
+    const block = presetBlock(
+      commit,
+      fmt.kind,
+      width,
+      flags.date,
+      flags.useMailmap ? flags.mailmap : [],
+    )
     if (flags.decorate && block[0]?.startsWith('commit '))
       block[0] += renderTemplate('%d', commit, width, decor)
     lines.push(...block)
@@ -161,9 +168,15 @@ async function graphed(
         out += `${renderTemplate('%h', commit, length, decor)}${from}${labels} `
         text = renderTemplate('%s', commit, length, decor)
       } else if (user) {
-        text = renderTemplate(fmt.template ?? '', commit, width, decor, flags.date)
+        text = renderTemplate(fmt.template ?? '', commit, width, decor, flags.date, flags.mailmap)
       } else {
-        const [head = '', ...rest] = presetBlock(commit, fmt.kind, width, flags.date)
+        const [head = '', ...rest] = presetBlock(
+          commit,
+          fmt.kind,
+          width,
+          flags.date,
+          flags.useMailmap ? flags.mailmap : [],
+        )
         out += `${head}${from}${labels}\n${graph.nextLine()[0]}`
         text = rest.map((line) => `${line}\n`).join('')
       }
@@ -203,8 +216,12 @@ export async function log(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   try {
     checkOperands(texts, undefined, escaped(inv.argv))
-    const parsed = parseFlags(fl)
     const repo = await opened(fl, doors)
+    const parsed = {
+      ...parseFlags(fl),
+      mailmap: await loadMailmap(repo.dispatch, repo.location),
+      useMailmap: useMailmap(fl, await configBool(repo, 'log.mailmap', true)),
+    }
     const [starts, hidden] = await startingPoints(repo, texts, parsed)
     const decor =
       parsed.decorate || needsDecorations(parsed.pretty) ? await decorations(repo) : null

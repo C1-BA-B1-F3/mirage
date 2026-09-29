@@ -1,3 +1,4 @@
+import { mappedIdentity, type MailmapEntry } from './mailmap.ts'
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -218,13 +219,18 @@ function messageBlock(commit: CommitFacts): string[] {
  * @param commit the commit to render
  * @param length how many hex digits of a parent id to print
  */
-function entry(commit: CommitFacts, length: number = SHORT_SHA, date = 'default'): string[] {
+function entry(
+  commit: CommitFacts,
+  length: number = SHORT_SHA,
+  date = 'default',
+  mailmap: readonly MailmapEntry[] = [],
+): string[] {
   const lines = [`commit ${commit.oid}`]
   if (commit.parents.length > 1) {
     lines.push(`Merge: ${commit.parents.map((p) => short(p, length)).join(' ')}`)
   }
   lines.push(
-    `Author: ${commit.authorName} <${commit.authorEmail}>`,
+    `Author: ${mappedIdentity(`${commit.authorName} <${commit.authorEmail}>`, mailmap)}`,
     `Date:   ${gitDate(commit.authorTime, commit.authorTimezoneMinutes, date)}`,
     '',
     ...messageBlock(commit),
@@ -250,10 +256,17 @@ export function presetBlock(
   kind: string,
   length: number,
   date = 'default',
+  mailmap: readonly MailmapEntry[] = [],
 ): string[] {
-  if (kind === 'medium') return entry(commit, length, date)
-  const author = `${commit.authorName} <${commit.authorEmail}>`
-  const committer = `${commit.committerName} <${commit.committerEmail}>`
+  if (kind === 'medium') return entry(commit, length, date, mailmap)
+  const author = mappedIdentity(
+    `${commit.authorName} <${commit.authorEmail}>`,
+    kind === 'raw' ? [] : mailmap,
+  )
+  const committer = mappedIdentity(
+    `${commit.committerName} <${commit.committerEmail}>`,
+    kind === 'raw' ? [] : mailmap,
+  )
   if (kind === 'raw')
     return [
       `commit ${commit.oid}`,
@@ -315,6 +328,7 @@ export function renderTemplate(
   length: number,
   decor: Decorations | null,
   date = 'default',
+  mailmap: readonly MailmapEntry[] = [],
 ): string {
   const labels = decor?.get(commit.oid) ?? []
   const out: string[] = []
@@ -334,7 +348,7 @@ export function renderTemplate(
       continue
     }
     if ((marker === 'a' || marker === 'c') && i + 2 < template.length) {
-      const pair = identPlaceholder(marker, template[i + 2] ?? '', commit, date)
+      const pair = identPlaceholder(marker, template[i + 2] ?? '', commit, date, mailmap)
       if (pair !== null) {
         out.push(pair)
         i += 3
@@ -399,17 +413,23 @@ function simplePlaceholder(
 /**
  * An author/committer placeholder's value (%an, %cd, ...).
  *
- * %aN/%aE are the mailmap variants; no mailmap is ever loaded, so they read
- * as their plain forms.
+ * Uppercase identity placeholders always apply the worktree mailmap.
  */
 function identPlaceholder(
   who: string,
   field: string,
   commit: CommitFacts,
   date: string,
+  mailmap: readonly MailmapEntry[],
 ): string | null {
-  const name = who === 'a' ? commit.authorName : commit.committerName
-  const email = who === 'a' ? commit.authorEmail : commit.committerEmail
+  let name = who === 'a' ? commit.authorName : commit.committerName
+  let email = who === 'a' ? commit.authorEmail : commit.committerEmail
+  if (field === 'N' || field === 'E') {
+    const identity = mappedIdentity(`${name} <${email}>`, mailmap)
+    const at = identity.lastIndexOf(' <')
+    name = identity.slice(0, at)
+    email = identity.slice(at + 2, -1)
+  }
   const time = who === 'a' ? commit.authorTime : commit.committerTime
   const zone = who === 'a' ? commit.authorTimezoneMinutes : commit.committerTimezoneMinutes
   switch (field) {

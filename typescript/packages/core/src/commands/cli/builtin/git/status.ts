@@ -39,6 +39,7 @@ interface StatusFlags {
   readonly branch: boolean
   /** `-u`, which untracked files to report. */
   readonly untracked: string
+  readonly ignored: boolean
 }
 
 /**
@@ -57,6 +58,7 @@ function parseFlags(fl: FlagView): StatusFlags {
     porcelain: fl.asBool('porcelain') || fl.asStr('porcelain') != null,
     short: fl.asBool('short'),
     branch: fl.asBool('branch'),
+    ignored: fl.asBool('ignored'),
     untracked: mode,
   }
 }
@@ -128,6 +130,7 @@ export async function status(inv: CLIInvocation): Promise<CommandFnResult> {
       statPath,
       parsed.untracked,
       doors.ns?.links ?? null,
+      parsed.ignored,
     )
     const fully = await configBool(repo, 'core.quotepath', true)
     const shown = parsed.porcelain ? rows : await displayed(repo, startPoint(fl), rows)

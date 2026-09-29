@@ -426,13 +426,19 @@ export async function collect(
   statPath: StatPath,
   mode: string,
   links: LinkView | null = null,
+  showIgnored = false,
 ): Promise<[StatusEntry[], IndexState, boolean]> {
   const state = await readIndex(repo, dispatch)
   const head = await headEntries(repo)
   const staged = await stageChanges(repo, head, state.entries, new Set(state.conflicts.keys()))
   const tracked = new Set([...state.entries.keys(), ...state.conflicts.keys()])
-  const found = await scan(dispatch, statPath, repo.location, tracked, mode, links)
+  const found = await scan(dispatch, statPath, repo.location, tracked, mode, links, showIgnored)
   const unstaged = await workChanges(repo, dispatch, repo.location.worktree, state.entries, found)
   const rows = merge(staged, unstaged, conflictCodes(state.conflicts), found.untracked)
+  rows.push(
+    ...[...found.ignored]
+      .sort(compareCodePoints)
+      .map((path) => ({ path, indexStatus: '!', treeStatus: '!', original: null })),
+  )
   return [rows, state, head === null]
 }

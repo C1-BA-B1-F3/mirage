@@ -29,9 +29,12 @@ from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     UnrecognizedArgumentError)
 from mirage.commands.cli.builtin.git.format import (MEDIUM, LogFormat,
                                                     parse_pretty)
+from mirage.commands.cli.builtin.git.mailmap import (MailmapEntry,
+                                                     mapped_identity)
 from mirage.commands.cli.builtin.git.pickaxe import touches
 from mirage.commands.spec.flag_view import FlagView
 from mirage.utils.dates import iso_timestamp
+from mirage.utils.posix import compile_posix_regex, translate_classes
 
 REMOTE_PREFIX = b"refs/remotes/"
 # How many hidden commits a limited walk takes past the point where only
@@ -74,6 +77,9 @@ class LogFlags:
     until: float | None
     authors: tuple[re.Pattern[str], ...] = ()
     greps: tuple[re.Pattern[str], ...] = ()
+    committers: tuple[re.Pattern[str], ...] = ()
+    mailmap: tuple[MailmapEntry, ...] = ()
+    use_mailmap: bool = True
     ignore_case: bool = False
     date: str = "default"
     decorate: bool = False
@@ -179,17 +185,30 @@ def parse_flags(fl: FlagView) -> LogFlags:
         if fl.as_bool(name):
             order = "topo" if name == "topo_order" else "date"
     ignore_case = fl.as_bool("regexp_ignore_case")
+    mode = 'basic_regexp'
+    for key in fl.typed_order('basic_regexp', 'extended_regexp',
+                              'fixed_strings', 'perl_regexp'):
+        mode = key
+
+    def pattern(value: str) -> re.Pattern[str]:
+        if mode == 'basic_regexp':
+            return search_bre(value, ignore_case)
+        source = re.escape(
+            value) if mode == 'fixed_strings' else translate_classes(value)
+        return compile_posix_regex(source, re.IGNORECASE if ignore_case else 0)
+
     try:
-        authors = tuple(
-            search_bre(value, ignore_case) for value in fl.as_list("author"))
+        committers = tuple(pattern(value) for value in fl.as_list('committer'))
+        authors = tuple(pattern(value) for value in fl.as_list("author"))
         greps = tuple(
-            search_bre(value, ignore_case) for values in fl.as_list("grep")
+            pattern(value) for values in fl.as_list("grep")
             for value in values.split("\n"))
-    except BreError as exc:
+    except (BreError, re.error) as exc:
         raise GitError(str(exc)) from exc
     max_count = fl.as_int("max_count")
     return LogFlags(
         authors=authors,
+        committers=committers,
         greps=greps,
         ignore_case=ignore_case,
         date=fl.as_str("date") or "default",
@@ -518,8 +537,16 @@ def _filters_pass(commit: Commit, flags: LogFlags) -> bool:
         flags (LogFlags): the parsed invocation.
     """
     if flags.authors and not any(
-            pattern.search(commit.author.decode("utf-8", "replace"))
+            pattern.search(
+                mapped_identity(commit.author.decode("utf-8", "replace"),
+                                flags.mailmap if flags.use_mailmap else ()))
             for pattern in flags.authors):
+        return False
+    if flags.committers and not any(
+            pattern.search(
+                mapped_identity(commit.committer.decode("utf-8", "replace"),
+                                flags.mailmap if flags.use_mailmap else ()))
+            for pattern in flags.committers):
         return False
     if flags.greps and not _message_matches(commit.message, flags.greps):
         return False

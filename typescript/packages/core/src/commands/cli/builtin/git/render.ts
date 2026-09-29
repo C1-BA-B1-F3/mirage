@@ -194,7 +194,7 @@ function labelled(label: string, path: string, width: number): string {
 function stagedEntries(rows: readonly StatusEntry[], fully: boolean): string[] {
   const lines: string[] = []
   for (const row of rows) {
-    if ([UNCHANGED, UNTRACKED, UNMERGED_COLUMN].includes(row.indexStatus)) continue
+    if ([UNCHANGED, UNTRACKED, UNMERGED_COLUMN, '!'].includes(row.indexStatus)) continue
     const label = STAGED_LABELS[row.indexStatus] ?? 'modified:'
     let path = quotePath(row.path, false, fully)
     if (row.original !== null) path = `${quotePath(row.original, false, fully)} -> ${path}`
@@ -208,7 +208,8 @@ function workEntries(rows: readonly StatusEntry[], fully: boolean): string[] {
   const lines: string[] = []
   for (const row of rows) {
     if (row.indexStatus === UNMERGED_COLUMN) continue
-    if (row.treeStatus === UNCHANGED || row.treeStatus === UNTRACKED) continue
+    if (row.treeStatus === UNCHANGED || row.treeStatus === UNTRACKED || row.treeStatus === '!')
+      continue
     const label = WORK_LABELS[row.treeStatus] ?? 'modified:'
     lines.push(labelled(label, quotePath(row.path, false, fully), LABEL_WIDTH))
   }
@@ -296,6 +297,16 @@ export function longFormat(
   const deleted = work.some((line) => line.startsWith(`\t${WORK_LABELS.D ?? ''}`))
   lines.push(...section(WORK_HEADER, [deleted ? WORK_HINT_DELETED : WORK_HINT, DISCARD_HINT], work))
   lines.push(...section(UNTRACKED_HEADER, [UNTRACKED_HINT], untracked))
+  const ignored = rows
+    .filter((row) => row.indexStatus === '!')
+    .map((row) => `\t${quotePath(row.path, false, fully)}`)
+  lines.push(
+    ...section(
+      'Ignored files:',
+      ['  (use "git add -f <file>..." to include in what will be committed)'],
+      ignored,
+    ),
+  )
   lines.push(...trailer(staged, work, unmerged, untracked, noCommits, hideUntracked))
   return lines.map((line) => `${line}\n`).join('')
 }

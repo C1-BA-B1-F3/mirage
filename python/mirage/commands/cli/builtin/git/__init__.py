@@ -17,13 +17,16 @@ from mirage.commands.cli.builtin.git.branch import branch
 from mirage.commands.cli.builtin.git.checkout import checkout
 from mirage.commands.cli.builtin.git.commit import commit
 from mirage.commands.cli.builtin.git.diff import diff
+from mirage.commands.cli.builtin.git.for_each_ref import for_each_ref
 from mirage.commands.cli.builtin.git.fsck import fsck
 from mirage.commands.cli.builtin.git.init import init
 from mirage.commands.cli.builtin.git.inspect import (config, remote, rev_list,
                                                      rev_parse, show_ref,
                                                      version)
 from mirage.commands.cli.builtin.git.log import log
+from mirage.commands.cli.builtin.git.ls_files import ls_files
 from mirage.commands.cli.builtin.git.mv import mv
+from mirage.commands.cli.builtin.git.reflog import reflog
 from mirage.commands.cli.builtin.git.reset import reset
 from mirage.commands.cli.builtin.git.restore import restore
 from mirage.commands.cli.builtin.git.rm import rm
@@ -71,6 +74,9 @@ DATE_OPTION = Option(long="--date",
                      description="Date display format")
 
 DIFF_OPTIONS = (
+    Option(short='-W',
+           long='--function-context',
+           description='Show whole functions as diff context'),
     Option(short="-U",
            long="--unified",
            type="int",
@@ -115,6 +121,20 @@ MERGE_OPTIONS = (
 )
 
 LOG_OPTIONS = (
+    Option(short='-E',
+           long='--extended-regexp',
+           description='Use extended regular expressions'),
+    Option(short='-F',
+           long='--fixed-strings',
+           description='Match patterns literally'),
+    Option(short='-P',
+           long='--perl-regexp',
+           description='Use Perl-compatible regular expressions'),
+    Option(long='--basic-regexp', description='Use basic regular expressions'),
+    Option(long='--committer',
+           type='str',
+           multiple=True,
+           description='Limit commits to matching committers'),
     Option(long="--author",
            type="str",
            multiple=True,
@@ -180,7 +200,15 @@ LOG_OPTIONS = (
            description="Commits older than a date (ISO-8601 or epoch)"),
 )
 
-SHOW_OPTIONS = (Option(long="--oneline",
+MAILMAP_OPTIONS = (
+    Option(long='--mailmap', description='Apply mailmap to identities'),
+    Option(long='--use-mailmap', description='Apply mailmap to identities'),
+    Option(long='--no-mailmap', description='Use recorded identities'),
+    Option(long='--no-use-mailmap', description='Use recorded identities'),
+)
+
+SHOW_OPTIONS = (*MAILMAP_OPTIONS,
+                Option(long="--oneline",
                        description="One abbreviated line per commit"),
                 *DIFF_OPTIONS, *MERGE_OPTIONS, DATE_OPTION, PRETTY_OPTION,
                 FORMAT_OPTION)
@@ -347,6 +375,7 @@ TAG_OPTIONS = (
 )
 
 STATUS_OPTIONS = (
+    Option(long='--ignored', description='Show ignored files'),
     Option(long="--porcelain",
            type="str",
            value_optional=True,
@@ -403,6 +432,40 @@ GIT = CLISpec(
                     env="GIT_WORK_TREE",
                     description="Use <path> as the working tree")),
     subcommands=(
+        CLISpec(name='reflog',
+                fn=reflog,
+                description='Show reference history',
+                options=(Option(short='-n',
+                                long='--max-count',
+                                type='int',
+                                numeric_shorthand=True,
+                                description='Limit the number of entries'), ),
+                rest=REVISION),
+        CLISpec(name='for-each-ref',
+                fn=for_each_ref,
+                description='List references with a format',
+                options=(
+                    Option(long='--format',
+                           type='str',
+                           description='Format each reference'),
+                    Option(long='--count',
+                           type='int',
+                           description='Maximum number of references'),
+                ),
+                rest=REVISION),
+        CLISpec(name='ls-files',
+                fn=ls_files,
+                description='Show files in the index',
+                options=(
+                    Option(short='-z', description='Terminate paths with NUL'),
+                    Option(short='-s',
+                           long='--stage',
+                           description='Show staged object metadata'),
+                    Option(short='-c',
+                           long='--cached',
+                           description='Show cached files'),
+                ),
+                rest=REVISION),
         CLISpec(name="help",
                 fn=help_cmd,
                 description="Show command help",
@@ -445,7 +508,9 @@ GIT = CLISpec(
         CLISpec(name="config",
                 description="Read repository configuration",
                 fn=config,
-                options=(Option(long="--get",
+                options=(Option(long="--global",
+                                description="Read global configuration"),
+                         Option(long="--get",
                                 description="Get a configuration value"),
                          Option(short="-l",
                                 long="--list",
@@ -483,9 +548,12 @@ GIT = CLISpec(
         CLISpec(name="rev-parse",
                 fn=rev_parse,
                 description="Resolve revisions",
-                options=(Option(
-                    long="--abbrev-ref",
-                    description="Show abbreviated reference names"), ),
+                options=(
+                    Option(long="--show-toplevel",
+                           description="Show the worktree root"),
+                    Option(long="--abbrev-ref",
+                           description="Show abbreviated reference names"),
+                ),
                 rest=REVISION),
         CLISpec(name="rev-list",
                 description="List reachable commits",
@@ -514,7 +582,7 @@ GIT = CLISpec(
             name="log",
             description="Show commit logs",
             fn=log,
-            options=(*LOG_OPTIONS, *DIFF_OPTIONS),
+            options=(*LOG_OPTIONS, *MAILMAP_OPTIONS, *DIFF_OPTIONS),
             rest=REVISION,
         ),
         CLISpec(

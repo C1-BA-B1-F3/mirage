@@ -1,0 +1,158 @@
+{
+  "cases": [
+    {
+      "id": "git_1338_blob_parent",
+      "seq": 567900,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo show HEAD~1:numbers.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_1338_blob_caret",
+      "seq": 567901,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo show HEAD^:docs/readme.md",
+      "expect": {
+        "exit": 0,
+        "stdout": "notes\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_1338_ls_files",
+      "seq": 567902,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo ls-files",
+      "expect": {
+        "exit": 0,
+        "stdout": "docs/readme.md\nletters.txt\nnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_1338_for_each_ref",
+      "seq": 567903,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo for-each-ref --format='%(refname)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "refs/heads/main\nrefs/heads/topic\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_1338_reflog",
+      "seq": 567904,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo reflog -1 | cut -d \" \" -f 2-",
+      "expect": {
+        "exit": 0,
+        "stdout": "HEAD@{0}: commit: add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_1338_regexp",
+      "seq": 567905,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -E --grep='delta|docs' --format=%s",
+      "expect": {
+        "exit": 0,
+        "stdout": "add docs\nadd delta\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_1338_toplevel",
+      "seq": 567906,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo/docs rev-parse --show-toplevel",
+      "expect": {
+        "exit": 0,
+        "stdout": "/repo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_1338_mailmap",
+      "seq": 568900,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "printf 'Canonical Author <integ@example.com>\\n' > /repo/.mailmap && git -C /repo log -1 --format='%an|%aN' 98b4ffe",
+      "expect": {
+        "exit": 0,
+        "stdout": "Integ Author|Canonical Author\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_1338_global",
+      "seq": 568901,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "printf '[user]\\n\\tname = Global Author\\n' > /repo/global-config && GIT_CONFIG_GLOBAL=/repo/global-config git config --global --get user.name",
+      "expect": {
+        "exit": 0,
+        "stdout": "Global Author\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_1338_global_missing",
+      "seq": 568902,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "HOME=/repo/no-home git config --global --list",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: unable to read config file '/repo/no-home/.gitconfig': No such file or directory\n"
+      }
+    },
+    {
+      "id": "git_1338_ignored",
+      "seq": 568903,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "printf '*.log\\n' > /repo/.gitignore && echo ignored > /repo/issue1338.log && git -C /repo status --short --ignored | grep '^!! issue1338.log'",
+      "expect": {
+        "exit": 0,
+        "stdout": "!! issue1338.log\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

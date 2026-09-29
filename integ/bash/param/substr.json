@@ -1452,6 +1452,210 @@
         "stdout": "<>\n0\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "substr_unset_element_is_empty",
+      "seq": 603143,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "box",
+        "gdrive",
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
+      ],
+      "command": "(unset sa1 vi1; echo \"a${sa1[vi1]:.2f}b\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "ab\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "substr_unset_skips_its_bounds",
+      "seq": 603144,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "box",
+        "gdrive",
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
+      ],
+      "command": "(unset sx1 sy1; echo \"[${sx1:sy1=1}]\"; echo \"sy1=$sy1\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "[]\nsy1=\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "substr_set_element_evaluates_its_bounds",
+      "seq": 603145,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "box",
+        "gdrive",
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
+      ],
+      "command": "(unset vi2; sa2=(1 2); echo \"a${sa2[vi2]:.2f}b\")",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "bash: sa2[vi2]: .2f: syntax error: invalid character \".\"\n"
+      }
+    },
+    {
+      "id": "substr_unset_array_slice_is_empty",
+      "seq": 603146,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "box",
+        "gdrive",
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
+      ],
+      "command": "(unset sa3; echo \"[${sa3[@]:.2f}]\" \"[${sa3[*]:.2f}]\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "[] []\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "substr_empty_positional_is_set",
+      "seq": 603147,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "box",
+        "gdrive",
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
+      ],
+      "command": "(set -- \"\"; echo \"a${1:.2f}b\")",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "bash: 1: .2f: syntax error: invalid character \".\"\n"
+      }
+    },
+    {
+      "id": "substr_empty_positional_default_and_alternate",
+      "seq": 603148,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "box",
+        "gdrive",
+        "gdrive-folder",
+        "databricks",
+        "databricks-prefix",
+        "sharepoint-prefix"
+      ],
+      "command": "(set -- a \"\"; echo \"[${2-u}] [${2+s}] [${3-u}] [${3+s}]\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "[] [s] [u] []\n",
+        "stderr": ""
+      }
     }
   ]
 }

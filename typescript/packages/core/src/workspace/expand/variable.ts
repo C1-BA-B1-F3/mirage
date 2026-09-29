@@ -209,6 +209,13 @@ export function lookupVar(
   return env[name] ?? ''
 }
 
+/** Whether `name` is a positional parameter the current count reaches. */
+function positionalSet(name: string, session: SessionState, callStack: CallStack | null): boolean {
+  if (!/^\d+$/.test(name)) return false
+  const idx = parseInt(name, 10)
+  return idx === 0 || idx <= positionalParams(session, callStack).length
+}
+
 /**
  * The IFS in scope, a function's `local IFS` first; null when IFS is
  * unset, which splits the way the default does.
@@ -1172,9 +1179,11 @@ async function expandBracesIn(
     }
     if (!varInEnv) {
       // Specials, positionals, PWD/HOME fall back to the shared
-      // lookup; set-ness follows value presence.
+      // lookup; set-ness follows value presence, except that a
+      // positional parameter is set whenever the count reaches it,
+      // empty or not (`set -- ""` sets $1).
       val = lookupVar(p.varName, session, callStack, p.op === null || !UNSET_GUARD_OPS.has(p.op))
-      varInEnv = val !== ''
+      varInEnv = val !== '' || positionalSet(p.varName, session, callStack)
     }
   }
 
@@ -1218,7 +1227,13 @@ async function expandBracesIn(
     if (!(p.op === ':+' ? val !== '' : varInEnv)) return []
     return operatorWord(p, expandChild, quoted, session, callStack)
   }
-  if (p.op === ':') return [valuePiece(await substring(val, node, expandChild, operand), quoted)]
+  if (p.op === ':') {
+    // bash slices only a set parameter: an unset one expands empty and
+    // its bounds are never evaluated, so `${a[i]:.2f}` is nothing while
+    // a[i] is unset and an arithmetic error once it is set (5.2.37).
+    if (!varInEnv) return [valuePiece('', quoted)]
+    return [valuePiece(await substring(val, node, expandChild, operand), quoted)]
+  }
   return [valuePiece(valueOp(p.op, val, groups), quoted)]
 }
 
@@ -1296,7 +1311,11 @@ async function expandSplat(
   if (p.indirectOp) {
     items = keys
   } else if (op === ':') {
-    items = await sliceArray(arr, node, expandChild, operand)
+    // An array with no element is unset to a slice, as a scalar is:
+    // empty, bounds unevaluated. The positional parameters always
+    // evaluate theirs, since `$0` stands at their front.
+    const unset = p.subscript !== null && values.length === 0
+    items = unset ? [] : await sliceArray(arr, node, expandChild, operand)
   } else if (op !== null && (STRIP_OPS.has(op) || REPLACE_OPS.has(op) || CASE_OPS.has(op))) {
     items = values.map((el) => valueOp(op, el, groups))
   } else if (op !== null && UNSET_GUARD_OPS.has(op)) {

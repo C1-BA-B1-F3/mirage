@@ -290,6 +290,21 @@ def _lookup_var(var: str,
     return env[var]
 
 
+def _positional_set(name: str, session: SessionState,
+                    call_stack: CallStack | None) -> bool:
+    """Whether ``name`` is a positional parameter the current count reaches.
+
+    Args:
+        name (str): the parameter name.
+        session (SessionState): shell session.
+        call_stack (CallStack | None): function-call scope, if any.
+    """
+    if not name.isdigit():
+        return False
+    idx = int(name)
+    return idx == 0 or idx <= len(positional_params(session, call_stack))
+
+
 def ifs_value(session: SessionState,
               call_stack: CallStack | None) -> str | None:
     """The IFS in scope, a function's ``local IFS`` first.
@@ -1134,12 +1149,15 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
             var_in_env = True
         if not var_in_env:
             # Specials, positionals, PWD/HOME fall back to the shared
-            # lookup; set-ness follows value presence.
+            # lookup; set-ness follows value presence, except that a
+            # positional parameter is set whenever the count reaches it,
+            # empty or not (`set -- ""` sets $1).
             val = _lookup_var(p.var_name,
                               session,
                               call_stack,
                               strict=p.op not in _UNSET_GUARD_OPS)
-            var_in_env = val != ""
+            var_in_env = val != "" or _positional_set(p.var_name, session,
+                                                      call_stack)
 
     if p.indirect_op:
         # `${!r}` on a name reference is the target's *name*, not an
@@ -1191,6 +1209,12 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
         return await _operator_word(p, expand_child, quoted, session,
                                     call_stack)
     if p.op == ":":
+        # bash slices only a set parameter: an unset one expands empty
+        # and its bounds are never evaluated, so `${a[i]:.2f}` is nothing
+        # while a[i] is unset and an arithmetic error once it is set
+        # (5.2.37).
+        if not var_in_env:
+            return [value_piece("", quoted)]
         return [
             value_piece(await _substring(val, node, expand_child, operand),
                         quoted)
@@ -1294,7 +1318,12 @@ async def _expand_splat(p: _BraceParse, arr: ShellArray, keys: list[str],
     if p.indirect_op:
         items = keys
     elif p.op == ":":
-        items = await _slice_array(arr, node, expand_child, operand)
+        # An array with no element is unset to a slice, as a scalar is:
+        # empty, bounds unevaluated. The positional parameters always
+        # evaluate theirs, since `$0` stands at their front.
+        unset = p.subscript is not None and not values
+        items = [] if unset else await _slice_array(arr, node, expand_child,
+                                                    operand)
     elif p.op in _STRIP_OPS | _REPLACE_OPS | _CASE_OPS:
         items = [_value_op(p.op, el, groups) for el in values]
     elif p.op in _UNSET_GUARD_OPS:

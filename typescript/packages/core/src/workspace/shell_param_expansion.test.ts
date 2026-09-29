@@ -117,6 +117,50 @@ describe('parameter expansion error operators', () => {
   })
 })
 
+// An unset parameter slices to nothing and its bounds are never evaluated;
+// a set one evaluates them. Pinned on bash 5.2.37 (debian:stable-slim).
+const SLICE_CASES: [string, number, string, string][] = [
+  ['echo "a${sales[vid]:.2f}b"', 0, 'ab\n', ''],
+  ['declare -A m; echo "a${m[k]:.2f}b"', 0, 'ab\n', ''],
+  ['a=(); a[5]=x; echo "a${a[vid]:.2f}b"', 0, 'ab\n', ''],
+  ['x=hi; echo "[${x[1]:.2f}]"', 0, '[]\n', ''],
+  ['echo "a${x:.2f}b"', 0, 'ab\n', ''],
+  ['echo "a${1:.2f}b"', 0, 'ab\n', ''],
+  ['unset a; echo "[${a[@]:.2f}]" "[${a[*]:.2f}]"', 0, '[] []\n', ''],
+  ['declare -A m; echo "[${m[@]:.2f}]"', 0, '[]\n', ''],
+  ['unset x; echo "[${x:y=1}]"; echo "y=$y"', 0, '[]\ny=\n', ''],
+  ['unset x; echo "[${x:$((1/0))}]"; echo after', 0, '[]\nafter\n', ''],
+  [
+    'sales=(1 2); echo "a${sales[vid]:.2f}b"',
+    1,
+    '',
+    'bash: sales[vid]: .2f: syntax error: invalid character "."\n',
+  ],
+  ['x=; echo "a${x:.2f}b"', 1, '', 'bash: x: .2f: syntax error: invalid character "."\n'],
+  ['set -- ""; echo "a${1:.2f}b"', 1, '', 'bash: 1: .2f: syntax error: invalid character "."\n'],
+  [
+    'a=(); a[3]=x; echo "[${a[@]:.2f}]"',
+    1,
+    '',
+    'bash: a[@]: .2f: syntax error: invalid character "."\n',
+  ],
+  ['set -u; echo "a${x:.2f}b"', 127, '', 'bash: x: unbound variable\n'],
+  ['set -- a ""; echo "[${2-u}] [${2+s}] [${3-u}] [${3+s}]"', 0, '[] [s] [u] []\n', ''],
+]
+
+describe('substring of an unset parameter', () => {
+  for (const [cmd, exitCode, stdout, stderr] of SLICE_CASES) {
+    it(cmd, async () => {
+      const { ws } = await makeIntegrationWS()
+      try {
+        expect(await runResult(ws, cmd)).toEqual([exitCode, stdout, stderr])
+      } finally {
+        await ws.close()
+      }
+    })
+  }
+})
+
 describe('parameter expansion operators', () => {
   for (const [cmd, expected] of CASES) {
     it(cmd, async () => {

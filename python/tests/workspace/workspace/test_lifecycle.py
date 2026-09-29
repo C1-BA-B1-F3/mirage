@@ -22,6 +22,7 @@ import pytest
 
 from mirage.cache.index.config import (IndexConfig, IndexEntry, LookupStatus,
                                        RedisIndexConfig)
+from mirage.cache.index.view import IndexView
 from mirage.commands.cli.types import CLISpec
 from mirage.commands.config import RegisteredCommand
 from mirage.commands.spec import CommandSpec, Operand
@@ -57,16 +58,17 @@ async def test_first_mount_access_prepares_expansion_and_provision(action):
             if not hasattr(self, "_index"):
                 super().set_index(config)
 
-        async def resolve_glob(self, paths, prefix=""):
-            listing = await self.index.list_dir(paths[0].directory.rstrip("/")
-                                                or "/")
+        async def resolve_glob(self, paths, prefix="", index=None):
+            scoped = index if index is not None else self.index
+            listing = await scoped.list_dir(paths[0].directory.rstrip("/")
+                                            or "/")
             if listing.entries is not None:
                 return [
                     PathSpec.from_str_path(key, mount_key(key, prefix))
                     for key in listing.entries if fnmatchcase(
                         key.rsplit("/", 1)[-1], paths[0].pattern or "*")
                 ]
-            return await super().resolve_glob(paths, prefix)
+            return await super().resolve_glob(paths, prefix, index=index)
 
     ancestor = RAMVFS()
     ws = Workspace({"/": ancestor}, index=IndexConfig(ttl=600))
@@ -856,7 +858,7 @@ async def test_unmount_drains_metadata_glob_and_its_index_writes(monkeypatch):
     ws = Workspace({"/data": vfs}, index=IndexConfig(ttl=600))
     entered, release = asyncio.Event(), asyncio.Event()
     closed = False
-    index = vfs.index
+    raw = vfs.index
     close_vfs = vfs.close
 
     async def close():
@@ -864,11 +866,11 @@ async def test_unmount_drains_metadata_glob_and_its_index_writes(monkeypatch):
         closed = True
         await close_vfs()
 
-    async def glob(paths, prefix=""):
+    async def glob(paths, prefix="", index=None):
         entered.set()
         await release.wait()
         assert not closed
-        await index.set_dir("/data", [
+        await raw.set_dir("/data", [
             ("late", IndexEntry(id="late", name="late", resource_type="file"))
         ])
         return []
@@ -894,12 +896,39 @@ async def test_unmount_drains_metadata_glob_and_its_index_writes(monkeypatch):
         await expanding
         await removing
         assert closed
-        assert (await index.list_dir("/data")).entries is None
+        assert (await raw.list_dir("/data")).entries is None
     finally:
         release.set()
         await asyncio.gather(expanding,
                              *([] if removing is None else [removing]),
                              return_exceptions=True)
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_glob_writes_its_listing_through_a_lock_held_view(monkeypatch):
+    vfs = RAMVFS()
+    ws = Workspace({"/data": vfs}, index=IndexConfig(ttl=600))
+    raw = vfs.index
+    handed = []
+
+    async def glob(paths, prefix="", index=None):
+        handed.append(index)
+        await asyncio.wait_for(
+            index.set_dir(
+                "/data",
+                [("seen",
+                  IndexEntry(id="seen", name="seen", resource_type="file"))]),
+            1)
+        return []
+
+    monkeypatch.setattr(vfs, "resolve_glob", glob)
+    try:
+        result = await asyncio.wait_for(ws.shell("echo /data/*"), 5)
+        assert (result.exit_code, result.stdout) == (0, b"/data/*\n")
+        assert [type(index) for index in handed] == [IndexView]
+        assert (await raw.list_dir("/data")).entries == ["/data/seen"]
+    finally:
         await ws.close()
 
 

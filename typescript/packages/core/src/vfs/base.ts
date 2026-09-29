@@ -167,7 +167,7 @@ export interface VFS {
   writeFile?(path: PathSpec, data: Uint8Array): Promise<void>
   appendFile?(path: PathSpec, data: Uint8Array): Promise<void>
   readdir?(path: PathSpec): Promise<string[]>
-  stat?(path: PathSpec): Promise<FileStat>
+  stat?(path: PathSpec, index?: IndexCacheStore): Promise<FileStat>
   exists?(path: PathSpec): Promise<boolean>
   mkdir?(path: PathSpec, options?: { recursive?: boolean }): Promise<void>
   rmdir?(path: PathSpec): Promise<void>
@@ -193,7 +193,7 @@ export interface VFS {
    * workspace handing over an unstamped spec (`PathSpec.fromStrPath` keys it
    * from the root). Mirrors Python `BaseVFS.resolve_glob`.
    */
-  glob?(paths: readonly PathSpec[], prefix?: string): Promise<PathSpec[]>
+  glob?(paths: readonly PathSpec[], prefix?: string, index?: IndexCacheStore): Promise<PathSpec[]>
   // Capacity for df. Absent -> treated as UNKNOWN (rendered `-`). Implement
   // only where a truthful number exists (a real filesystem, or a provider
   // quota); never fabricate a total.

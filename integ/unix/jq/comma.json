@@ -434,9 +434,9 @@
       ],
       "command": "jq -c \".[] | .id, .id\" /data/data.jsonl",
       "expect": {
-        "exit": 0,
-        "stdout": "1\n1\n2\n2\n3\n3\n",
-        "stderr": ""
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at /data/data.jsonl:1): Cannot index number with string (\"id\")\njq: error (at /data/data.jsonl:2): Cannot index number with string (\"id\")\njq: error (at /data/data.jsonl:3): Cannot index number with string (\"id\")\n"
       },
       "flags": [
         "c"

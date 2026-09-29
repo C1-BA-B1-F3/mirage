@@ -24,7 +24,7 @@ from mirage.cache.index import NULL_INDEX
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.github.client import GitHubApiError
 from mirage.core.github.config import GitHubConfig
-from mirage.core.github.tree import (ensure_live_index, ensure_tree,
+from mirage.core.github.tree import (ensure_live_snapshot, ensure_tree,
                                      fetch_dir_page, fetch_dir_tree,
                                      fetch_tree, index_rows, point_row)
 from mirage.core.github.tree_entry import TreeEntry
@@ -199,59 +199,76 @@ def _accessor(config):
 
 @pytest.mark.asyncio
 @patch("mirage.core.github.tree.github_get")
-async def test_ensure_live_index_refetches_the_build_tree(mock_get, config):
+async def test_ensure_live_snapshot_refetches_the_build_tree(mock_get, config):
     # The build tree is only true at build time: a mount's first read can
     # come long after it, so reusing it would key an index built from a
     # repository several external writes ago.
     mock_get.return_value = _tree_payload()
     index = RAMIndexCacheStore(ttl=600)
     accessor = _accessor(config)
-    assert await ensure_live_index(accessor, index, "/gh") is True
+    assert await ensure_live_snapshot(accessor, index, "/gh") is not None
     mock_get.assert_awaited_once()
     assert (await index.list_dir("/gh/data")).entries == ["/gh/data/keep.txt"]
 
 
 @pytest.mark.asyncio
 @patch("mirage.core.github.tree.github_get")
-async def test_ensure_live_index_refetches_a_dropped_listing(mock_get, config):
+async def test_ensure_live_snapshot_refetches_a_dropped_listing(
+        mock_get, config):
     mock_get.return_value = _tree_payload()
     index = RAMIndexCacheStore(ttl=600)
     accessor = _accessor(config)
-    await ensure_live_index(accessor, index, "/gh")
+    await ensure_live_snapshot(accessor, index, "/gh")
     # What invalidation does: drop the row rather than expire it, which
     # is why the readers' EXPIRED probe never fires.
     await index.invalidate_dir("/gh")
     await index.invalidate_dir("/gh/data")
-    assert await ensure_live_index(accessor, index, "/gh") is True
+    assert await ensure_live_snapshot(accessor, index, "/gh") is not None
     assert mock_get.await_count == 2
     assert (await index.list_dir("/gh/data")).entries == ["/gh/data/keep.txt"]
 
 
 @pytest.mark.asyncio
 @patch("mirage.core.github.tree.github_get")
-async def test_ensure_live_index_leaves_a_live_index_alone(mock_get, config):
+async def test_ensure_live_snapshot_refetches_an_expired_listing(
+        mock_get, config):
     mock_get.return_value = _tree_payload()
     index = RAMIndexCacheStore(ttl=600)
     accessor = _accessor(config)
-    await ensure_live_index(accessor, index, "/gh")
+    await ensure_live_snapshot(accessor, index, "/gh")
+    await index.invalidate()
+    assert await ensure_live_snapshot(accessor, index, "/gh") is not None
+    assert mock_get.await_count == 2
+    assert (await index.list_dir("/gh/data")).entries == ["/gh/data/keep.txt"]
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.github.tree.github_get")
+async def test_ensure_live_snapshot_leaves_a_live_index_alone(
+        mock_get, config):
+    mock_get.return_value = _tree_payload()
+    index = RAMIndexCacheStore(ttl=600)
+    accessor = _accessor(config)
+    await ensure_live_snapshot(accessor, index, "/gh")
     mock_get.reset_mock()
-    assert await ensure_live_index(accessor, index, "/gh") is False
+    assert await ensure_live_snapshot(accessor, index, "/gh") is None
     mock_get.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 @patch("mirage.core.github.tree.github_get")
-async def test_ensure_live_index_skips_a_truncated_tree(mock_get, config):
+async def test_ensure_live_snapshot_skips_a_truncated_tree(mock_get, config):
     index = RAMIndexCacheStore(ttl=600)
     accessor = _accessor(config)
     accessor.truncated = True
-    assert await ensure_live_index(accessor, index, "/gh") is False
+    assert await ensure_live_snapshot(accessor, index, "/gh") is None
     mock_get.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_ensure_live_index_skips_the_null_index(config):
-    assert await ensure_live_index(_accessor(config), NULL_INDEX, "") is False
+async def test_ensure_live_snapshot_skips_the_null_index(config):
+    assert await ensure_live_snapshot(_accessor(config), NULL_INDEX,
+                                      "") is None
 
 
 def test_index_rows_key_by_mount_absolute_path():

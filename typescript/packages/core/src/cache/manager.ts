@@ -53,6 +53,7 @@ export class CacheManager {
   private readonly mayServeCached: (key: string) => Promise<boolean>
 
   private readGeneration = 0
+  private view: IndexView | null = null
 
   constructor(
     fileCache: FileCache | null,
@@ -83,10 +84,36 @@ export class CacheManager {
     })
   }
 
-  /** Bind backend metadata writes to this mount's lifetime. */
+  /**
+   * Bind backend metadata writes to this mount's lifetime.
+   *
+   * Reuse the view because refill locks are keyed by index identity.
+   */
   scopeIndex(index: IndexCacheStore): IndexCacheStore {
     if (this.fileCache === null || index instanceof IndexView) return index
-    return new IndexView(index, this.fileCache, this.prefix || '/', this.ownsPath)
+    if (this.view?.store !== index) {
+      this.view = new IndexView(index, this.fileCache, this.prefix || '/', this.ownsPath, {
+        readTtl: this.readTtl,
+      })
+    }
+    return this.view
+  }
+
+  /**
+   * A view for a caller already inside `withMutation`.
+   *
+   * Never share or retain it beyond that hold. A distinct refill lock
+   * avoids lock inversion with readers of the shared view.
+   */
+  scopeIndexLocked(index: IndexCacheStore): IndexCacheStore {
+    if (this.fileCache === null) return index
+    if (index instanceof IndexView) {
+      throw new Error('scopeIndexLocked needs a raw store; a view would take the lock again')
+    }
+    return new IndexView(index, this.fileCache, this.prefix || '/', this.ownsPath, {
+      locked: true,
+      readTtl: this.readTtl,
+    })
   }
 
   /**

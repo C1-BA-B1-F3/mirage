@@ -66,9 +66,9 @@
       ],
       "command": "jq -r \".[].msg\" /data/chat.jsonl",
       "expect": {
-        "exit": 0,
-        "stdout": "hello\nworld\n",
-        "stderr": ""
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at /data/chat.jsonl:1): Cannot index string with string (\"msg\")\njq: error (at /data/chat.jsonl:2): Cannot index string with string (\"msg\")\n"
       },
       "flags": [
         "r"

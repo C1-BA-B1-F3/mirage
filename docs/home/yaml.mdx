@@ -31,7 +31,7 @@ A workspace can be described entirely in YAML and loaded with one call — `load
 | `config` | map | `{}` | The backend's own config, validated by that backend's model. A key the model does not declare is refused by name (`linear: team_idz: ...`), never ignored. |
 | `mode` | `read` \| `write` \| `exec` | top-level `mode` | This mount's mode. |
 | `read` | `fresh` \| `bounded` | top-level `read` | How this mount's cached bytes are served. |
-| `ttl` | integer (seconds) | `600` | The staleness bound `bounded` serves within. |
+| `ttl` | integer (seconds) | `600` | The staleness bound for this mount's cached bytes and cached listings, under both `bounded` and `fresh`. |
 | `command_limits` | map | `{}` | Per-command caps for this mount. |
 | `backend` | `workspace` \| `fuse` \| `fskit` | `workspace` | Whether the mount also registers a real mountpoint. |
 | `mountpoint` | path | — | Where, for the kernel backends. |
@@ -56,7 +56,7 @@ mounts:
 
 ## The read policy
 
-`read: bounded` serves cached bytes without asking the backend, for as long as `ttl:` allows. `read: fresh` revalidates against the backend's content token before serving a cached copy, at the cost of one backend stat per file read.
+`read: bounded` serves cached bytes and cached directory listings without asking the backend, for as long as `ttl:` allows. `read: fresh` revalidates against the backend's content token before serving a cached copy, at the cost of one backend stat per file read.
 
 `fresh` is refused at mount time on a backend that cannot honour it, rather than quietly behaving as `bounded`:
 
@@ -67,7 +67,11 @@ mounts:
 
 ### The bound
 
-`ttl:` lives only in a mount block. At the top level it would sit beside `index: {ttl: ...}` and mean a different thing, so the workspace-level default is `read:` alone and a workspace-level `bounded` takes 600 seconds — the same default the index uses, so bodies and listings expire together.
+`ttl:` lives only in a mount block. At the top level it would sit beside `index: {ttl: ...}` and mean a different thing, so the workspace-level default is `read:` alone and a workspace-level `bounded` takes 600 seconds.
+
+Each listing write is capped by the mount's `ttl`, under both policies. Backends may expire listings sooner, and mounts without a listing cache still keep none. `fresh` revalidates file content but does not yet revalidate listings.
+
+Existing listings in a persisted Redis index retain their stored expiry until rewritten.
 
 Two shapes are refused, because a `read`/`ttl` pair that disagrees is almost always a typo:
 

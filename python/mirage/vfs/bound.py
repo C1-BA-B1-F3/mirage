@@ -93,12 +93,15 @@ class BoundVFS(BaseVFS):
         self.io = io.to_command_io() if isinstance(io, VFSAdapter) else io
         self._ops = direct_ops(self.io, lambda: self.index)
 
-    async def resolve_glob(self,
-                           paths: list[PathSpec],
-                           prefix: str = "") -> list[PathSpec]:
+    async def resolve_glob(
+            self,
+            paths: list[PathSpec],
+            prefix: str = "",
+            index: IndexCacheStore | None = None) -> list[PathSpec]:
         if prefix:
             paths = [
                 replace(p, vfs_path=mount_key(p.virtual, prefix))
                 for p in paths
             ]
-        return await self.io.resolve_glob(self.accessor, paths, self.index)
+        return await self.io.resolve_glob(
+            self.accessor, paths, index if index is not None else self.index)

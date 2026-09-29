@@ -370,9 +370,7 @@ class ReadPolicy(str, Enum):
     PINNED = "pinned"
 
 
-# Seconds. Matches IndexConfig.ttl (cache/index/config.py) so bodies and
-# listings expire together out of the box; that one is a float, this is
-# whole seconds.
+# Maximum lifetime in seconds for cached bodies and listings.
 DEFAULT_READ_TTL: int = 600
 
 

@@ -16,9 +16,11 @@ import { mountKey } from '../utils/key_prefix.ts'
 import { describe, expect, it } from 'vitest'
 
 import { PathSpec } from '../types.ts'
+import { withCacheMutation } from './file/io.ts'
 import { RAMFileCacheStore } from './file/ram.ts'
 import { IndexEntry } from './index/config.ts'
 import { RAMIndexCacheStore } from './index/ram.ts'
+import { IndexView } from './index/view.ts'
 import { CacheManager } from './manager.ts'
 import { enoent } from '../utils/errors.ts'
 
@@ -274,5 +276,91 @@ describe('CacheManager read gate', () => {
     const index = new RAMIndexCacheStore({ ttl: 600 })
     const manager = new CacheManager(cache, index, '/data/', true)
     expect(await manager.cachedSize(spec())).toBeNull()
+  })
+})
+
+function settleWithin(work: Promise<unknown>, ms: number): Promise<'done' | 'pending'> {
+  return Promise.race([
+    work.then(() => 'done' as const),
+    new Promise<'pending'>((resolve) => {
+      setTimeout(() => {
+        resolve('pending')
+      }, ms)
+    }),
+  ])
+}
+
+describe('CacheManager index views', () => {
+  it('shares one view per store', () => {
+    const manager = new CacheManager(new RAMFileCacheStore(), null, '/data', true)
+    const a = new RAMIndexCacheStore()
+    expect(manager.scopeIndex(a)).toBe(manager.scopeIndex(a))
+  })
+
+  it('builds a new view when the store is replaced', async () => {
+    const manager = new CacheManager(new RAMFileCacheStore(), null, '/data', true)
+    const a = new RAMIndexCacheStore()
+    const b = new RAMIndexCacheStore()
+    manager.scopeIndex(a)
+    const view = manager.scopeIndex(b)
+    expect((view as IndexView).store).toBe(b)
+    await view.setDir('/data', [
+      ['x', new IndexEntry({ id: 'x', name: 'x', resourceType: 'file' })],
+    ])
+    expect((await b.listDir('/data')).entries).toEqual(['/data/x'])
+    expect((await a.listDir('/data')).entries).toBeUndefined()
+  })
+
+  it('hands back a view it is given, whatever it has memoized', () => {
+    const cache = new RAMFileCacheStore()
+    const manager = new CacheManager(cache, null, '/data', true)
+    manager.scopeIndex(new RAMIndexCacheStore())
+    const other = new IndexView(new RAMIndexCacheStore(), cache, '/data', () => true)
+    expect(manager.scopeIndex(other)).toBe(other)
+  })
+
+  it('hands back the raw store without a file cache', () => {
+    const a = new RAMIndexCacheStore()
+    const manager = new CacheManager(null, null, '/data', true)
+    expect(manager.scopeIndex(a)).toBe(a)
+  })
+
+  it('refuses to build a lock-held view over a view', () => {
+    const cache = new RAMFileCacheStore()
+    const manager = new CacheManager(cache, null, '/data', true)
+    const view = new IndexView(new RAMIndexCacheStore(), cache, '/data', () => true)
+    expect(typeof manager.scopeIndexLocked).toBe('function')
+    expect(() => manager.scopeIndexLocked(view)).toThrow()
+  })
+
+  it('hands back the raw store for a lock-held scope without a file cache', () => {
+    const a = new RAMIndexCacheStore()
+    const manager = new CacheManager(null, null, '/data', true)
+    expect(manager.scopeIndexLocked(a)).toBe(a)
+  })
+
+  it('never memoizes a lock-held view or shares the memo slot', async () => {
+    const cache = new RAMFileCacheStore()
+    const manager = new CacheManager(cache, null, '/data', true)
+    const a = new RAMIndexCacheStore()
+    const locked = manager.scopeIndexLocked(a)
+    expect(locked).toBeInstanceOf(IndexView)
+    expect(manager.scopeIndexLocked(a)).not.toBe(locked)
+    const shared = manager.scopeIndex(a)
+    expect(shared).not.toBe(locked)
+    let release = (): void => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const held = withCacheMutation(cache, () => gate)
+    try {
+      const pending = shared.get('/data/x')
+      expect(await settleWithin(pending, 20)).toBe('pending')
+      release()
+      expect(await settleWithin(pending, 1000)).toBe('done')
+    } finally {
+      release()
+      await held
+    }
   })
 })

@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { withIndexLock } from '@struktoai/mirage-core/cache/index/lock'
-import { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
+import { IndexEntry, type IndexSnapshot } from '@struktoai/mirage-core/cache/index/config'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { LookupStatus } from '@struktoai/mirage-core/cache/index/config'
 import * as kp from '@struktoai/mirage-core/utils/key_prefix'
@@ -307,9 +307,14 @@ export function indexDirs(
 
 /** The entry and children tables a no-index mount reads, from the buckets. */
 export function indexRows(tree: Map<string, TreeEntry>, prefix: string): RowTables {
+  return rowsOf(indexDirs(tree, prefix))
+}
+
+/** The entry and child tables of directories `indexDirs` built. */
+function rowsOf(dirs: ReadonlyMap<string, readonly [string, IndexEntry][]>): RowTables {
   const entries = new Map<string, IndexEntry>()
   const children = new Map<string, string[]>()
-  for (const [parent, rows] of indexDirs(tree, prefix)) {
+  for (const [parent, rows] of dirs) {
     const base = rstripSlash(parent)
     for (const [name, row] of rows) entries.set(`${base}/${name}`, row)
     children.set(parent, rows.map(([name]) => `${base}/${name}`).sort(compareCodePoints))
@@ -318,7 +323,8 @@ export function indexRows(tree: Map<string, TreeEntry>, prefix: string): RowTabl
 }
 
 /**
- * Write the accessor's tree into `index` under `prefix`.
+ * Write the accessor's tree into `index` under `prefix`, and return the rows
+ * written, built from the same walk.
  *
  * One `setDir` per directory, the way the shared store spells a whole
  * listing; the year-long expiry is what makes the index the listing rather
@@ -328,10 +334,11 @@ export async function seedIndex(
   accessor: HfHubAccessor,
   index: IndexCacheStore,
   prefix: string,
-): Promise<void> {
+): Promise<RowTables> {
   const dirs = indexDirs(accessor.tree, prefix)
   const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
   await Promise.all([...dirs].map(([parent, rows]) => index.setDir(parent, rows, expires)))
+  return rowsOf(dirs)
 }
 
 /**
@@ -347,14 +354,27 @@ export async function refillIndex(
   index: IndexCacheStore,
   prefix: string,
 ): Promise<boolean> {
+  await refillSnapshot(accessor, index, prefix)
+  return true
+}
+
+/**
+ * `refillIndex`, returning the rows it wrote: a reader answers from them
+ * when its re-read of the store has already expired. Mirrors Python's
+ * `refill_snapshot`.
+ */
+export async function refillSnapshot(
+  accessor: HfHubAccessor,
+  index: IndexCacheStore,
+  prefix: string,
+): Promise<IndexSnapshot> {
   accessor.tree = await fetchTree(accessor)
   accessor.treeLoaded = true
   accessor.rowsCache = null
   accessor.refills += 1
   // Refilling replaces the snapshot; merging would retain deleted paths.
   await index.invalidatePrefix(rstripSlash(prefix) || '/')
-  await seedIndex(accessor, index, prefix)
-  return true
+  return seedIndex(accessor, index, prefix)
 }
 
 /**
@@ -371,11 +391,20 @@ export async function ensureLiveIndex(
   index: IndexCacheStore,
   prefix: string,
 ): Promise<boolean> {
+  return (await ensureLiveSnapshot(accessor, index, prefix)) !== null
+}
+
+/** `ensureLiveIndex`, returning the rows of the refill it made. Mirrors Python's `ensure_live_snapshot`. */
+export async function ensureLiveSnapshot(
+  accessor: HfHubAccessor,
+  index: IndexCacheStore,
+  prefix: string,
+): Promise<IndexSnapshot | null> {
   const root = rstripSlash(prefix)
   const listing = await index.listDir(root === '' ? '/' : root)
   if (listing.status !== LookupStatus.NOT_FOUND && listing.status !== LookupStatus.EXPIRED)
-    return false
-  return refillIndex(accessor, index, prefix)
+    return null
+  return refillSnapshot(accessor, index, prefix)
 }
 
 /**

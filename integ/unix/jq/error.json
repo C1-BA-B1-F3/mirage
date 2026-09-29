@@ -465,6 +465,1099 @@
         "c",
         "arg"
       ]
+    },
+    {
+      "id": "jq_parse_error_follows_the_documents_before_it",
+      "seq": 700981,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 [' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column 3\n"
+      }
+    },
+    {
+      "id": "jq_parse_error_on_a_truncated_object",
+      "seq": 700982,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"a\":1' | jq -c .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column 6\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_error_on_a_truncated_nested_value",
+      "seq": 700983,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"a\":[1,2' | jq -c .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column 9\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_error_on_a_bad_literal",
+      "seq": 700984,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf 'tru' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Invalid literal at EOF at line 1, column 3\n"
+      }
+    },
+    {
+      "id": "jq_parse_error_on_a_bad_literal_after_a_document",
+      "seq": 700985,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 truex' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n",
+        "stderr": "jq: parse error: Invalid literal at EOF at line 1, column 7\n"
+      }
+    },
+    {
+      "id": "jq_parse_error_on_a_number_run_into_a_literal",
+      "seq": 700986,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '[1] 1true' | jq -c .",
+      "expect": {
+        "exit": 5,
+        "stdout": "[1]\n",
+        "stderr": "jq: parse error: Invalid numeric literal at EOF at line 1, column 9\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_error_on_a_stray_brace",
+      "seq": 700987,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 } 2' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n",
+        "stderr": "jq: parse error: Unmatched '}' at line 1, column 3\n"
+      }
+    },
+    {
+      "id": "jq_parse_error_on_a_mismatched_bracket",
+      "seq": 700988,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"a\":1]' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Unmatched ']' at line 1, column 7\n"
+      }
+    },
+    {
+      "id": "jq_parse_error_on_a_missing_separator",
+      "seq": 700989,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"a\" 1}' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Expected separator between values at line 1, column 7\n"
+      }
+    },
+    {
+      "id": "jq_parse_error_on_an_unfinished_string",
+      "seq": 700990,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\"abc' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Unfinished string at EOF at line 1, column 4\n"
+      }
+    },
+    {
+      "id": "jq_parse_error_on_a_lone_surrogate_escape",
+      "seq": 700991,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\"\\\\ud800\"' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Invalid \\uXXXX\\uXXXX surrogate pair escape at line 1, column 8\n"
+      }
+    },
+    {
+      "id": "jq_parse_error_on_a_raw_control_character",
+      "seq": 700992,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\"a\\x01b\"' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Invalid string: control characters from U+0000 through U+001F must be escaped at line 1, column 5\n"
+      }
+    },
+    {
+      "id": "jq_parse_error_on_invalid_utf8_outside_a_string",
+      "seq": 700993,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\xff' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Invalid numeric literal at EOF at line 1, column 1\n"
+      }
+    },
+    {
+      "id": "jq_parse_invalid_utf8_in_a_string_is_replaced",
+      "seq": 700994,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\"a\\xffb\"' | jq -c . | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 22 61 ef bf bd 62 22 0a\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_a_cut_short_sequence_is_one_replacement",
+      "seq": 700995,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\"\\xe2\\x82\"' | jq -c . | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 22 ef bf bd 22 0a\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_error_in_the_second_of_two_files",
+      "seq": 700996,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '1\\n2\\n' > /data/qjqp/a.json && printf '[' > /data/qjqp/b.json && jq -c . /data/qjqp/a.json /data/qjqp/b.json",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n2\n",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 3, column 1\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_a_bad_file_reads_on_into_the_next",
+      "seq": 700997,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '1\\n2\\n' > /data/qjqp/a.json && printf '[' > /data/qjqp/b.json && printf '3\\n' > /data/qjqp/c.json && jq -c . /data/qjqp/a.json /data/qjqp/b.json /data/qjqp/c.json",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n2\n",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 4, column 0\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_files_are_one_stream",
+      "seq": 700998,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '1' > /data/qjqp/one.json && printf '2\\n' > /data/qjqp/two.json && jq -c . /data/qjqp/one.json /data/qjqp/two.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "12\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_a_value_spans_two_files",
+      "seq": 700999,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '[1,' > /data/qjqp/open.json && printf '2]\\n' > /data/qjqp/close.json && jq -c . /data/qjqp/open.json /data/qjqp/close.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1,2]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_a_value_is_placed_where_it_completes",
+      "seq": 701000,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '1' > /data/qjqp/one.json && printf ' 2\\n' > /data/qjqp/sp.json && jq 'error(tostring)' /data/qjqp/one.json /data/qjqp/sp.json",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at /data/qjqp/sp.json:1): 1\njq: error (at /data/qjqp/sp.json:1): 2\n"
+      }
+    },
+    {
+      "id": "jq_parse_error_under_slurp_prints_nothing",
+      "seq": 701001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 [' | jq -s -c .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column 3\n"
+      },
+      "flags": [
+        "s",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_error_under_slurp_across_files",
+      "seq": 701002,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '1\\n2\\n' > /data/qjqp/a.json && printf '[' > /data/qjqp/b.json && jq -s -c . /data/qjqp/a.json /data/qjqp/b.json",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 3, column 1\n"
+      },
+      "flags": [
+        "s",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_raw_lines_run_on_across_files",
+      "seq": 701003,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf 'a' > /data/qjqp/x.txt && printf 'b\\nc\\n' > /data/qjqp/y.txt && jq -R -c . /data/qjqp/x.txt /data/qjqp/y.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "\"ab\"\n\"c\"\n",
+        "stderr": ""
+      },
+      "flags": [
+        "R",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_raw_invalid_utf8_is_replaced",
+      "seq": 701004,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf 'a\\xffb\\n' | jq -R -c . | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 22 61 ef bf bd 62 22 0a\n",
+        "stderr": ""
+      },
+      "flags": [
+        "R",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_stream_hands_over_events_before_the_error",
+      "seq": 701005,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"a\":[1,{\"b\":2}],\"c\":3} [' | jq -c --stream .",
+      "expect": {
+        "exit": 5,
+        "stdout": "[[\"a\",0],1]\n[[\"a\",1,\"b\"],2]\n[[\"a\",1,\"b\"]]\n[[\"a\",1]]\n[[\"c\"],3]\n[[\"c\"]]\n",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column 25\n"
+      },
+      "flags": [
+        "c",
+        "stream"
+      ]
+    },
+    {
+      "id": "jq_parse_stream_truncated_array",
+      "seq": 701006,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '[1,2' | jq -c --stream .",
+      "expect": {
+        "exit": 5,
+        "stdout": "[[0],1]\n",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column 4\n"
+      },
+      "flags": [
+        "c",
+        "stream"
+      ]
+    },
+    {
+      "id": "jq_parse_stream_slurp_prints_nothing",
+      "seq": 701007,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '[1,2' | jq -c --stream -s .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column 4\n"
+      },
+      "flags": [
+        "c",
+        "stream",
+        "s"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_reports_and_reads_on",
+      "seq": 701008,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[1 2]\\n\\x1e3\\n' | jq -c --seq .",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e1\n\u001e3\n",
+        "stderr": "jq: ignoring parse error: Expected separator between values at line 2, column 6 (need RS to resync)\n"
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_names_text_before_a_separator",
+      "seq": 701009,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 2\\n' | jq -c --seq .",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "jq: ignoring parse error: Unfinished abandoned text at EOF at line 2, column 0\n"
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_truncated_value",
+      "seq": 701010,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e{\"a\":1}\\n\\x1e[1,\\x1e2\\n' | jq -c --seq .",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e{\"a\":1}\n\u001e2\n",
+        "stderr": "jq: ignoring parse error: Truncated value at line 2, column 5\n"
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_writes_no_separator_before_raw_text",
+      "seq": 701011,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e\"a\" \\x1e[1]\\n' | jq -r --seq .",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\n\u001e[\n  1\n]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "r",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_runtime_error_then_parse_error",
+      "seq": 701012,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"a\":1}\\n1 [' | jq '.a'",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n",
+        "stderr": "jq: error (at <stdin>:1): Cannot index number with string (\"a\")\njq: parse error: Unfinished JSON term at EOF at line 2, column 3\n"
+      }
+    },
+    {
+      "id": "jq_parse_inputs_meets_the_error",
+      "seq": 701013,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n2 [' | jq -n -c '[inputs]'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <stdin>:1): Unfinished JSON term at EOF at line 2, column 3\n"
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_inputs_error_can_be_caught",
+      "seq": 701014,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n2 [' | jq -n -c 'try ([inputs]) catch .'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\"Unfinished JSON term at EOF at line 2, column 3\"\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_input_leaves_the_error_to_the_main_loop",
+      "seq": 701015,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n2\\n[' | jq -c '[., input]'",
+      "expect": {
+        "exit": 5,
+        "stdout": "[1,2]\n",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 3, column 1\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_null_input_never_reads_to_the_error",
+      "seq": 701016,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 [' | jq -n 'input'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_parse_error_exits_five_under_exit_status",
+      "seq": 701017,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 [' | jq -e .",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 1, column 3\n"
+      },
+      "flags": [
+        "e"
+      ]
+    },
+    {
+      "id": "jq_parse_a_bom_starts_the_stream",
+      "seq": 701018,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\xef\\xbb\\xbf{\"a\":1}\\n' | jq -c .",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"a\":1}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_a_bom_in_a_later_file_is_bytes",
+      "seq": 701019,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '1\\n' > /data/qjqp/p.json && printf '\\xef\\xbb\\xbf2\\n' > /data/qjqp/q.json && jq -c . /data/qjqp/p.json /data/qjqp/q.json",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n",
+        "stderr": "jq: parse error: Invalid numeric literal at line 3, column 0\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_error_on_a_malformed_bom",
+      "seq": 701020,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\xef\\xbb1' | jq .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Malformed BOM\n"
+      }
+    },
+    {
+      "id": "jq_parse_reads_jqs_own_numbers",
+      "seq": 701021,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf 'nan NaN Infinity -Infinity +1 .5 01' | jq -c .",
+      "expect": {
+        "exit": 0,
+        "stdout": "null\nnull\n1.7976931348623157e+308\n-1.7976931348623157e+308\n1\n0.5\n1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_argjson_reads_jqs_own_numbers",
+      "seq": 701022,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n --argjson v nan '$v | isnan'",
+      "expect": {
+        "exit": 0,
+        "stdout": "true\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "argjson"
+      ]
+    },
+    {
+      "id": "jq_parse_slurpfile_with_bad_json",
+      "seq": 701023,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '1 [' > /data/qjqp/bad.json && jq -n --slurpfile x /data/qjqp/bad.json '$x'",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Bad JSON in --slurpfile x /data/qjqp/bad.json: Unfinished JSON term at EOF at line 1, column 3\n"
+      },
+      "flags": [
+        "n",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_parse_slurpfile_strips_a_bom",
+      "seq": 701029,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '\\xef\\xbb\\xbf[1]\\n' > /data/qjqp/bom.json && jq -n -c --slurpfile x /data/qjqp/bom.json '$x'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[1]]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "slurpfile"
+      ]
+    },
+    {
+      "id": "jq_parse_rawfile_replaces_invalid_utf8",
+      "seq": 701030,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf 'a\\xffb\\n' > /data/qjqp/raw.txt && jq -n -c --rawfile x /data/qjqp/raw.txt '$x' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 22 61 ef bf bd 62 5c 6e 22 0a\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "rawfile"
+      ]
+    },
+    {
+      "id": "jq_parse_json_lines_end_in_an_unfinished_document",
+      "seq": 701031,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqp && printf '{\"a\":1}\\n{\"a\":2\\n' > /data/qjqp/cut.jsonl && jq -c '.a' /data/qjqp/cut.jsonl",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n",
+        "stderr": "jq: parse error: Unfinished JSON term at EOF at line 3, column 0\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_raw_input_keeps_a_bom",
+      "seq": 701032,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\xef\\xbb\\xbfa\\n' | jq -R -c . | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 22 ef bb bf 61 22 0a\n",
+        "stderr": ""
+      },
+      "flags": [
+        "R",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_a_bom_inside_a_string_is_kept",
+      "seq": 701033,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\"\\xef\\xbb\\xbfa\"' | jq -c . | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 22 ef bb bf 61 22 0a\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_a_halt_ends_the_command_before_the_error",
+      "seq": 701034,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n2 [' | jq -c '[., input] | halt_error'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "[1,2]\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_a_run_that_reads_the_error_fails_and_the_loop_reads_on",
+      "seq": 701035,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n[1 2]\\n3\\n4\\n' | jq -c '[., input]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[3,4]\n",
+        "stderr": "jq: error (at <stdin>:2): Expected separator between values at line 2, column 5\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_inputs_stops_at_the_error_and_the_loop_reads_on",
+      "seq": 701036,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n[1 2]\\n3\\n4\\n' | jq -c '[., inputs]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[3,4]\n",
+        "stderr": "jq: error (at <stdin>:2): Expected separator between values at line 2, column 5\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_inputs_stops_at_the_error_and_the_loop_reads_on",
+      "seq": 701037,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[1 2]\\n\\x1e3\\n\\x1e4\\n' | jq -c --seq '[., inputs]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e[3,4]\n",
+        "stderr": "jq: error (at <stdin>:2): Expected separator between values at line 2, column 6 (need RS to resync)\n"
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_the_loop_reads_past_an_error_between_runs",
+      "seq": 701038,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e2\\n\\x1e[1 2]\\n\\x1e3\\n\\x1e4\\n' | jq -c --seq '[., input]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e[1,2]\n\u001e[3,4]\n",
+        "stderr": "jq: ignoring parse error: Expected separator between values at line 3, column 6 (need RS to resync)\n"
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_try_input_catches_the_error_and_reads_on",
+      "seq": 701039,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[1 2]\\n\\x1e2\\n\\x1e3\\n' | jq -c --seq '[., (try input catch .)]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e[1,\"Expected separator between values at line 2, column 6 (need RS to resync)\"]\n\u001e[2,3]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_each_error_ends_the_run_that_reads_it",
+      "seq": 701040,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[1 2]\\n\\x1e3\\n\\x1e{\"a\" 1}\\n\\x1e4\\n' | jq -c --seq '[., inputs]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e[4]\n",
+        "stderr": "jq: error (at <stdin>:2): Expected separator between values at line 2, column 6 (need RS to resync)\njq: error (at <stdin>:4): Expected separator between values at line 4, column 8 (need RS to resync)\n"
+      },
+      "flags": [
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_null_input_inputs_raises_the_error",
+      "seq": 701041,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[1 2]\\n\\x1e3\\n' | jq -n -c --seq '[inputs]'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <stdin>:2): Expected separator between values at line 2, column 6 (need RS to resync)\n"
+      },
+      "flags": [
+        "n",
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_seq_a_separator_abandons_an_unfinished_value",
+      "seq": 701042,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '\\x1e1\\n\\x1e[\\n\\x1e2\\n' | jq -n -c --seq '[inputs]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u001e[1,2]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "seq"
+      ]
+    },
+    {
+      "id": "jq_parse_stream_holds_to_the_depth_limit",
+      "seq": 701043,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '%.0s[' $(seq 10001) | jq -c --stream .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Exceeds depth limit for parsing at line 1, column 10001\n"
+      },
+      "flags": [
+        "c",
+        "stream"
+      ]
     }
   ]
 }

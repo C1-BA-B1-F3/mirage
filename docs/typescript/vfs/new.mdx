@@ -318,7 +318,7 @@ export class MyVFS extends BoundVFS<MyAccessor> implements VFS {
 }
 ```
 
-Set `cachesReads` true only for stable, read-mostly content. `BaseVFS` supplies a no-op `open()`, a no-op `loadState()` and a 600 s `indexTtl`, so declare one only to change it (`override open()` for a backend that must connect before its first read). Override `getState()` to carry the (redacted) config, and `close()` to release any client handles, calling `super.close()`, which closes the index store.
+Set `cachesReads` true only for stable, read-mostly content. `BaseVFS` supplies a no-op `open()`, a no-op `loadState()` and a 600 s `indexTtl`, so declare one only to change it (`override open()` for a backend that must connect before its first read). A mount's `ttl` caps listing lifetimes. Override `getState()` to carry the (redacted) config, and `close()` to release any client handles, calling `super.close()`, which closes the index store.
 
 A backend whose content lives in a remote service keeps `needs_override: true` in that state. Both loaders refuse a missing live override; neither substitutes an empty RAM mount. A backend that owns portable content can implement `getState` and `loadState` and register a factory so snapshots rebuild it, as shown above.
 

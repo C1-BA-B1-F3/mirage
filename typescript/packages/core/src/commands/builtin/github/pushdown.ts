@@ -24,6 +24,8 @@ import {
   searchSafe,
   shouldUseSearch,
 } from '../../../core/github/pushdown.ts'
+import { ensureLiveTree } from '../../../core/github/tree.ts'
+import { mountPrefixOf } from '../../../utils/key_prefix.ts'
 import { narrowPaths } from '../../../core/github/search.ts'
 import type { PathSpec } from '../../../types.ts'
 import { textCandidates, wholeWordLiteral } from '../grep_pushdown.ts'
@@ -72,6 +74,7 @@ export async function narrowScope(
   const first = paths[0]
   if (first === undefined) return { resolved: [], fileCount: 0, usedSearch: false }
   const key = scopeRelativeKey(first)
+  await ensureLiveTree(accessor, index, mountPrefixOf(first.virtual, first.vfsPath))
   const fileCount = countScopeFiles(accessor.tree, key)
   const query = wholeWordLiteral(pattern, fixedString, wholeWord)
   const useSearch =

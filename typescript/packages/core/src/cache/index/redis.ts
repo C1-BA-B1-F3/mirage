@@ -69,7 +69,7 @@ export interface RedisIndexCacheOptions {
 // Directory records retain stale listings like RAM; Redis maxmemory eviction
 // can still turn any cached fact into a miss.
 export class RedisIndexCacheStore extends IndexCacheStore {
-  private readonly ttl: number
+  readonly ttl: number
   private readonly url: string
   private readonly providedClient: RedisClientLike | null
   private readonly entryPrefix: string

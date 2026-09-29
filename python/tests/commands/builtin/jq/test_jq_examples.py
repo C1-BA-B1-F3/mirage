@@ -12,7 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from .conftest import EXAMPLE_JSON, EXAMPLE_JSONL, jq, jq_all, write_to_backend
+from .conftest import (EXAMPLE_JSON, EXAMPLE_JSONL, jq, jq_all, jq_slurp,
+                       jq_slurp_all, write_to_backend)
 
 
 class TestJqExampleJson:
@@ -111,30 +112,38 @@ class TestJqExampleJson:
 
 class TestJqExampleJsonl:
 
+    # A JSON Lines file is a stream of documents, one run each; these read
+    # it as one array of them, which is what `jq -s` does.
+
     def _load(self, backend):
         write_to_backend(backend, "/tmp/example.jsonl",
                          EXAMPLE_JSONL.read_bytes())
 
+    def test_each_line_runs_on_its_own(self, backend):
+        self._load(backend)
+        assert jq_all(backend, "/tmp/example.jsonl",
+                      ".type")[0] == "queue-operation"
+
     def test_total_lines(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.jsonl", "length")
+        result = jq_slurp(backend, "/tmp/example.jsonl", "length")
         assert result == 5766
 
     def test_all_have_type(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.jsonl", 'map(has("type"))')
+        result = jq_slurp(backend, "/tmp/example.jsonl", 'map(has("type"))')
         assert all(result)
 
     def test_unique_types(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.jsonl", "map(.type) | unique")
+        result = jq_slurp(backend, "/tmp/example.jsonl", "map(.type) | unique")
         assert "user" in result
         assert "assistant" in result
         assert "queue-operation" in result
 
     def test_select_queue_operations(self, backend):
         self._load(backend)
-        result = jq_all(
+        result = jq_slurp_all(
             backend, "/tmp/example.jsonl",
             '.[] | select(.type == "queue-operation") | .operation')
         assert "enqueue" in result
@@ -142,33 +151,34 @@ class TestJqExampleJsonl:
 
     def test_first_entry_type(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.jsonl", "first | .type")
+        result = jq_slurp(backend, "/tmp/example.jsonl", "first | .type")
         assert result == "queue-operation"
 
     def test_last_entry_type(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.jsonl", "last | .type")
+        result = jq_slurp(backend, "/tmp/example.jsonl", "last | .type")
         assert isinstance(result, str)
 
     def test_count_user_messages(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.jsonl",
-                    'map(select(.type == "user")) | length')
+        result = jq_slurp(backend, "/tmp/example.jsonl",
+                          'map(select(.type == "user")) | length')
         assert result > 0
 
     def test_slice_first_five(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.jsonl", ".[0:5] | length")
+        result = jq_slurp(backend, "/tmp/example.jsonl", ".[0:5] | length")
         assert result == 5
 
     def test_map_type_length(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.jsonl", ".[0:3] | map(.type)")
+        result = jq_slurp(backend, "/tmp/example.jsonl", ".[0:3] | map(.type)")
         assert len(result) == 3
         assert all(isinstance(t, str) for t in result)
 
     def test_group_by_type_first_ten(self, backend):
         self._load(backend)
-        result = jq(backend, "/tmp/example.jsonl", ".[0:10] | group_by(.type)")
+        result = jq_slurp(backend, "/tmp/example.jsonl",
+                          ".[0:10] | group_by(.type)")
         assert isinstance(result, list)
         assert all(isinstance(g, list) for g in result)

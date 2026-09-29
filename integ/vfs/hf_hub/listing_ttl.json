@@ -1,0 +1,51 @@
+{
+  "cases": [
+    {
+      "id": "hf_hub_listing_ttl_edit_seen_after_ttl",
+      "seq": 960021,
+      "targets": [
+        "hf-hub"
+      ],
+      "read": "bounded",
+      "ttl": 1,
+      "scenario": [
+        {
+          "mutate": {
+            "path": "/data/lt/a.txt",
+            "content": "v1\n"
+          }
+        },
+        {
+          "command": "cat /data/lt/a.txt"
+        },
+        {
+          "mutate": {
+            "path": "/data/lt/a.txt",
+            "content": "version two\n"
+          }
+        },
+        {
+          "command": "cat /data/lt/a.txt"
+        },
+        {
+          "command": "sleep 2"
+        },
+        {
+          "command": "find /data -path /data/lt/a.txt -size 12c"
+        },
+        {
+          "command": "cat /data/lt/a.txt"
+        },
+        {
+          "command": "stat -c %s /data/lt/a.txt"
+        }
+      ],
+      "expect": {
+        "exit": 0,
+        "stdout": "v1\nv1\n/data/lt/a.txt\nversion two\n12\n",
+        "stderr": ""
+      },
+      "note": "Caps the Hub tree's explicit year-long expiry. After ttl, find, cat and stat see the replacement's new size and bytes. Overwriting one name keeps the result stable on the shared fake."
+    }
+  ]
+}

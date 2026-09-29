@@ -118,6 +118,7 @@ describe('gh tree', () => {
   it('registers itself under the grammar gh uses', () => {
     expect(cliSpecFor('gh')).toBe(GH)
     expect(GH.subcommands.map((c) => c.name)).toEqual([
+      'auth',
       'version',
       'api',
       'issue',

@@ -26,6 +26,8 @@ from mirage.shell.parse.heredoc.lower import (drop_bytes, drop_source_bytes,
                                               lower_heredocs, rebase_source)
 from mirage.shell.parse.heredoc.node import HeredocNode
 from mirage.shell.parse.heredoc.reader import discover_heredocs
+from mirage.shell.parse.heredoc.types import HeredocSource
+from mirage.shell.parse.timing import lower_timing, wrap_timing
 from mirage.shell.types import TSNodeLike
 
 BASH_LANGUAGE = tree_sitter.Language(tree_sitter_bash.language())
@@ -313,6 +315,38 @@ def _repair_redirect_dashes(root: tree_sitter.Node,
     return (root, data) if retried.has_error else (retried, repaired)
 
 
+def _statement_boundaries(data: bytes) -> bytes:
+    """Make newlines swallowed between command words explicit separators.
+
+    tree-sitter-bash can absorb a statement newline into a nested pipeline
+    when the following statement has a file redirect. A newline between
+    children of a simple command cannot be whitespace in bash: quoted
+    newlines belong to a child, and continuations have already been joined.
+    Insert a semicolon without removing bytes so source maps remain valid.
+
+    Args:
+        data (bytes): source after heredoc lowering and continuation removal.
+    """
+    if b"\n" not in data:
+        return data
+    root = TS_PARSER.parse(data).root_node
+    offsets: set[int] = set()
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        stack.extend(node.children)
+        if node.type not in ("command", "file_redirect",
+                             "redirected_statement"):
+            continue
+        for left, right in zip(node.children, node.children[1:]):
+            gap = data[left.end_byte:right.start_byte]
+            if b"\n" in gap and not gap.strip():
+                offsets.add(left.end_byte + gap.index(b"\n"))
+    for offset in sorted(offsets, reverse=True):
+        data = data[:offset] + b";" + data[offset:]
+    return data
+
+
 def parse(command: str) -> TSNodeLike:
     """Parse shell structure after the source reader gathers heredocs.
 
@@ -353,6 +387,13 @@ def parse(command: str) -> TSNodeLike:
         source = drop_source_bytes(source, continuation_bytes(source.source))
     data = (source.source
             if source is not None else join_continuations(command).encode())
+    timing_marks: list[tuple[int, bool, int, int]] = []
+    if b"time" in data:
+        if source is None:
+            source = HeredocSource(data, data, tuple(range(len(data) + 1)), ())
+        source, timing_marks = lower_timing(TS_PARSER, source)
+        data = source.source
+    data = _statement_boundaries(data)
     root = _parse_bytes(data)
     if root.has_error:
         # Sitting inside an ERROR is not evidence that an opener is
@@ -382,4 +423,7 @@ def parse(command: str) -> TSNodeLike:
     if source is None:
         return root
     repaired = source.source[:root.start_byte] + (root.text or b"")
-    return HeredocNode(root, rebase_source(source, repaired))
+    source = rebase_source(source, repaired)
+    mapped = HeredocNode(root, source)
+    return wrap_timing(mapped, source,
+                       timing_marks) if timing_marks else mapped

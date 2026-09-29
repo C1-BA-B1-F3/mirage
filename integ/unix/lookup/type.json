@@ -157,15 +157,15 @@
       }
     },
     {
-      "id": "lookup_type_t_time_is_not_a_keyword_here",
+      "id": "lookup_type_t_time_is_a_keyword",
       "seq": 923,
       "targets": [
         "ram"
       ],
       "command": "type -t time",
       "expect": {
-        "exit": 1,
-        "stdout": "",
+        "exit": 0,
+        "stdout": "keyword\n",
         "stderr": ""
       }
     },

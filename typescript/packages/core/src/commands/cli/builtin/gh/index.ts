@@ -17,6 +17,7 @@ import { GhConfigSchema } from '../../../../core/github/config.ts'
 import { CLISpec } from '../../types.ts'
 import { Operand, Option } from '../../../spec/types.ts'
 import { api } from './api.ts'
+import { status as authStatus } from './auth.ts'
 import { version } from './version.ts'
 import {
   closeCmd as issueClose,
@@ -486,6 +487,13 @@ export const GH = new CLISpec({
   description: 'GitHub CLI',
   configModel: GhConfigSchema,
   subcommands: [
+    new CLISpec({
+      name: 'auth',
+      description: 'Manage authentication',
+      subcommands: [
+        new CLISpec({ name: 'status', description: 'Check the configured token', fn: authStatus }),
+      ],
+    }),
     new CLISpec({
       name: 'version',
       aliases: ['--version'],

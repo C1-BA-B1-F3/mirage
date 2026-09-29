@@ -12,11 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import time
 from collections.abc import Mapping
 from urllib.parse import urlsplit
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.errors import HttpConnectError, HttpTimeoutError
+from mirage.commands.builtin.general.curl_write_out import render_write_out
 from mirage.commands.builtin.utils.http import (DEFAULT_USER_AGENT,
                                                 HttpResponse,
                                                 http_form_request,
@@ -26,7 +28,7 @@ from mirage.commands.errors import UsageError
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.io.types import ByteSource, IOResult
+from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import PathSpec
 from mirage.utils.errors import (WALK_ERRORS, OperationNotSupportedError,
                                  fs_strerror)
@@ -39,6 +41,7 @@ EXIT_USAGE = 2
 EXIT_CONNECT = 7
 EXIT_HTTP_ERROR = 22
 EXIT_WRITE = 23
+EXIT_READ = 26
 EXIT_TIMEOUT = 28
 
 DEFAULT_TIMEOUT = 30.0
@@ -200,6 +203,63 @@ async def curl(
     timeout: float | None = DEFAULT_TIMEOUT
     if max_time is not None:
         timeout = None if max_time == 0 else max_time
+    template = fl.as_str("write_out") or ""
+    if template.startswith("@"):
+        try:
+            if template == "@-":
+                content = opts.stdin
+            else:
+                if opts.dispatch is None:
+                    raise OperationNotSupportedError(
+                        "no filesystem dispatcher")
+                content, _ = await opts.dispatch(
+                    "read", resolve_target(template[1:], opts.cwd))
+            template = (await materialize(content)).decode(errors="replace")
+        except WALK_ERRORS as exc:
+            # curl 8.14.1: -s suppresses only the opening diagnostic; -S
+            # does not restore it. The option error is always printed.
+            # The parsed flags no longer retain the spelling, so use -w.
+            detail = "" if fl.as_bool("silent") else (
+                f"curl: Failed to open {template[1:]}\n")
+            raise UsageError(
+                f"{detail}curl: option -w: error encountered when reading "
+                f"a file\n{HELP_HINT}",
+                exit_code=EXIT_READ) from exc
+    started = time.monotonic()
+
+    async def finish(
+        stdout: ByteSource | None,
+        io: IOResult,
+        response: HttpResponse | None = None
+    ) -> tuple[ByteSource | None, IOResult]:
+        code = f"{response.status:03d}" if response is not None else "000"
+        values = {
+            "http_code":
+            code,
+            "response_code":
+            code,
+            "url_effective":
+            response.url if response is not None else url,
+            "num_redirects":
+            str(len(response.history)) if response is not None else "0",
+            "size_download":
+            str(len(response.body)) if response is not None else "0",
+            "content_type":
+            next((v
+                  for k, v in response.headers if k.lower() == "content-type"),
+                 "") if response is not None else "",
+            "method":
+            response.method if response is not None else request or
+            ("HEAD" if head else "POST" if data or form else "GET"),
+            "exitcode":
+            str(io.exit_code),
+            "time_total":
+            f"{time.monotonic() - started:.6f}",
+        }
+        out, err = render_write_out(template, values)
+        io.stderr = (await materialize(io.stderr)) + err
+        return (await materialize(stdout)) + out, io
+
     body_len: int | None = None
     body_type: str | None = None
     try:
@@ -236,12 +296,12 @@ async def curl(
         err = b"" if quiet else (
             f"curl: ({EXIT_TIMEOUT}) Operation timed out after "
             f"{exc.elapsed_ms} milliseconds with 0 bytes received\n").encode()
-        return None, IOResult(exit_code=EXIT_TIMEOUT, stderr=err)
+        return await finish(None, IOResult(exit_code=EXIT_TIMEOUT, stderr=err))
     except HttpConnectError as exc:
         err = b"" if quiet else (
             f"curl: ({EXIT_CONNECT}) Failed to connect to {exc.host} port "
             f"{exc.port}: Could not connect to server\n").encode()
-        return None, IOResult(exit_code=EXIT_CONNECT, stderr=err)
+        return await finish(None, IOResult(exit_code=EXIT_CONNECT, stderr=err))
     hops = [*resp.history, resp]
     # The first request is the one this handler built; each redirect's is
     # the one the client reports, at the URL the server named.
@@ -266,7 +326,9 @@ async def curl(
         err = b"" if quiet else (
             f"curl: ({EXIT_HTTP_ERROR}) The requested URL returned error: "
             f"{resp.status}\n").encode()
-        return None, IOResult(exit_code=EXIT_HTTP_ERROR, stderr=trace + err)
+        return await finish(
+            None, IOResult(exit_code=EXIT_HTTP_ERROR, stderr=trace + err),
+            resp)
     result = resp.body
     # -i and -I print every hop's header block (curl 8.7.1); the body a
     # redirect carried is never written, only the final one.
@@ -276,7 +338,8 @@ async def curl(
         result = blocks
     elif include:
         result = blocks + result
-    if isinstance(output, (PathSpec, str)):
+    if isinstance(output, (PathSpec, str)) and (output.raw_path if isinstance(
+            output, PathSpec) else output) != "-":
         o_str = output.virtual if isinstance(output, PathSpec) else output
         if opts.dispatch is not None:
             scope = resolve_target(output, opts.cwd)
@@ -308,7 +371,10 @@ async def curl(
                         detail = strerror
                 err = b"" if quiet else (
                     f"curl: ({EXIT_WRITE}) {o_str}: {detail}\n").encode()
-                return None, IOResult(exit_code=EXIT_WRITE, stderr=trace + err)
+                return await finish(
+                    None, IOResult(exit_code=EXIT_WRITE, stderr=trace + err),
+                    resp)
         # Real curl writes the body to the file and prints nothing on stdout.
-        return None, IOResult(writes={o_str: result}, stderr=trace)
-    return result, IOResult(stderr=trace)
+        return await finish(None, IOResult(writes={o_str: result},
+                                           stderr=trace), resp)
+    return await finish(result, IOResult(stderr=trace), resp)

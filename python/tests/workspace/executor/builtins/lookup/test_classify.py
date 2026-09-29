@@ -97,15 +97,13 @@ def test_classify_all_keeps_the_layers_under_a_keyword():
     ]
 
 
-def test_time_and_coproc_are_not_keywords_here():
-    # mirage implements neither construct, so `time echo hi` reports
-    # command not found and type may not call it a keyword.
+def test_time_is_a_keyword_and_coproc_is_unimplemented():
     session = make_session()
     registry = make_registry()
-    assert classify("time", session, registry) is None
+    assert classify("time", session, registry) is NameKind.KEYWORD
     assert classify("coproc", session, registry) is None
     session.functions["time"] = []
-    assert classify("time", session, registry) is NameKind.FUNCTION
+    assert classify("time", session, registry) is NameKind.KEYWORD
 
 
 def test_describe_lines():

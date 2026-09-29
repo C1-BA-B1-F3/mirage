@@ -180,4 +180,4 @@ def test_install_mounts_applies_a_workspace_index_to_every_vfs():
                    normalize_mounts({"/a": vfs}, MountMode.WRITE, ReadSpec()),
                    IndexConfig(ttl=5), MountMode.WRITE, ReadSpec())
     assert vfs.index is not own
-    assert vfs.index._ttl == 5
+    assert vfs.index.ttl == 5

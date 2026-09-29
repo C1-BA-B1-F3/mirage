@@ -153,3 +153,8 @@ async def test_invalidation_is_visible_to_other_clients(store, store_factory):
     await peer.invalidate_dir("/dir")
     await store.invalidate()
     assert (await peer.list_dir("/dir")).status == LookupStatus.NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_ttl_is_the_configured_listing_lifetime(store):
+    assert store.ttl == 1

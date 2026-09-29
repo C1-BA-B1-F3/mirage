@@ -19,14 +19,15 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import web
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import ListResult, LookupResult
+from mirage.cache.index import IndexEntry, ListResult, LookupResult
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.core.github.tree import refill_index
+from mirage.core.github.tree import refill_snapshot
 
 SYMLINK = "120000"
 REGULAR = "100644"
@@ -279,7 +280,7 @@ def serve(hub: FakeGitHub | None = None) -> Iterator[FakeGitHub]:
 
 
 # Each hook fires once, on the first listing of the nested parent, so the
-# retry sees real data; a root child would let ensure_live_index's root
+# retry sees real data; a root child would let ensure_live_snapshot's root
 # probe consume it instead.
 class _ClearedAtList(RAMIndexCacheStore):
 
@@ -311,7 +312,7 @@ class _StaleListing(RAMIndexCacheStore):
         self.fired = True
         stale = [k for k in result.entries or [] if k != self.key]
         # Another op refills while this lookup holds the stale listing.
-        await refill_index(self.accessor, self, "/gh")
+        await refill_snapshot(self.accessor, self, "/gh")
         return ListResult(entries=stale, status=result.status)
 
 
@@ -341,7 +342,7 @@ class _ClearedAndReseeded(RAMIndexCacheStore):
         self.fired = True
         await self.clear()
         missed = await super().get(vfs_path)
-        await refill_index(self.accessor, self, "/gh")
+        await refill_snapshot(self.accessor, self, "/gh")
         return missed
 
 
@@ -361,3 +362,38 @@ def race_index(kind: str) -> RAMIndexCacheStore:
     if kind == "get":
         return _ClearedMidLookup()
     return _ClearedAndReseeded()
+
+
+_EPOCH = datetime.fromtimestamp(0, timezone.utc)
+
+
+class _ExpiredOnArrival(RAMIndexCacheStore):
+
+    def __init__(self, live: frozenset[str]) -> None:
+        super().__init__()
+        self.live = live
+
+    def seed(self, entries: dict[str, IndexEntry],
+             children: dict[str, list[str]], expires_at: datetime) -> None:
+        super().seed(entries, children, expires_at)
+        for path in children:
+            if path not in self.live:
+                self._expiry[path] = _EPOCH
+
+    async def _set_dir(self, vfs_path: str, entries: list[tuple[str,
+                                                                IndexEntry]],
+                       expired_at: datetime | None, *, partial: bool) -> None:
+        await super()._set_dir(vfs_path,
+                               entries,
+                               expired_at if vfs_path in self.live else _EPOCH,
+                               partial=partial)
+
+
+def expired_on_arrival(*live: str) -> RAMIndexCacheStore:
+    """An index whose listings are already expired when they land.
+
+    Args:
+        live (str): listing keys stored with the expiry their writer asked
+            for, so a test can keep the mount root live.
+    """
+    return _ExpiredOnArrival(frozenset(live))

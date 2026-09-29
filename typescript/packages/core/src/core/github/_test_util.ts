@@ -13,10 +13,10 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { GitHubAccessor } from '../../accessor/github.ts'
-import type { ListResult, LookupResult } from '../../cache/index/config.ts'
+import type { IndexEntry, ListResult, LookupResult } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { HttpGitHubTransport } from './client.ts'
-import { refillIndex } from './tree.ts'
+import { refillSnapshot } from './tree.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 
 export const BASE = 'http://github.test'
@@ -235,7 +235,7 @@ export function servedAccessor(ref = 'main'): GitHubAccessor {
 }
 
 // Each hook fires once, on the first listing of the nested parent, so the
-// retry sees real data; a root child would let ensureLiveIndex's root probe
+// retry sees real data; a root child would let ensureLiveSnapshot's root probe
 // consume it instead.
 class ClearedAtList extends RAMIndexCacheStore {
   fired = false
@@ -266,7 +266,7 @@ class StaleListing extends RAMIndexCacheStore {
     this.fired = true
     const stale = (result.entries ?? []).filter((k) => k !== this.key)
     // Another op refills while this lookup holds the stale listing.
-    await refillIndex(this.accessor, this, '/gh')
+    await refillSnapshot(this.accessor, this, '/gh')
     return { ...result, entries: stale }
   }
 }
@@ -290,7 +290,7 @@ class ClearedAndReseeded extends RAMIndexCacheStore {
     this.fired = true
     await this.clear()
     const missed = await super.get(path)
-    await refillIndex(this.accessor, this, '/gh')
+    await refillSnapshot(this.accessor, this, '/gh')
     return missed
   }
 }
@@ -309,4 +309,41 @@ export function raceIndex(kind: 'list' | 'stale' | 'get' | 'reseed'): RaceIndex 
   if (kind === 'stale') return new StaleListing('/gh/docs/sub', '/gh/docs/sub/b.txt')
   if (kind === 'get') return new ClearedMidLookup()
   return new ClearedAndReseeded()
+}
+
+/** Expire every listing immediately except the optional live key. */
+export class ExpiredOnArrival extends RAMIndexCacheStore {
+  constructor(private readonly live: string | null = null) {
+    super({ ttl: 86_400 })
+  }
+
+  private expiryFor(path: string, expiredAt?: Date | null): Date | null | undefined {
+    return path === this.live ? expiredAt : new Date(0)
+  }
+
+  override setDir(
+    path: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+  ): Promise<void> {
+    return super.setDir(path, entries, this.expiryFor(path, expiredAt))
+  }
+
+  override setPartialDir(
+    path: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+  ): Promise<void> {
+    return super.setPartialDir(path, entries, this.expiryFor(path, expiredAt))
+  }
+
+  override seed(
+    entries: ReadonlyMap<string, IndexEntry>,
+    children: ReadonlyMap<string, readonly string[]>,
+    expiresAt: Date,
+  ): void {
+    const live = [...children].filter(([path]) => path === this.live)
+    super.seed(entries, new Map([...children].filter(([path]) => path !== this.live)), new Date(0))
+    super.seed(new Map(), new Map(live), expiresAt)
+  }
 }

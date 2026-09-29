@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchDirTree, fetchTree, GitHubApiError, type GitHubTransport } from './client.ts'
 import { GitHubAccessor } from '../../accessor/github.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
-import { ensureLiveIndex, pointRow, populateIndex } from './tree.ts'
+import { ensureLiveSnapshot, pointRow, populateIndex, refillSnapshot } from './tree.ts'
 import { FakeGitHub, blobSha, servedAccessor } from './_test_util.ts'
 
 const ITEMS = [
@@ -44,7 +44,7 @@ describe('github tree fetch', () => {
   })
 })
 
-describe('ensureLiveIndex', () => {
+describe('ensureLiveSnapshot', () => {
   const TREE = {
     data: { path: 'data', type: 'tree', sha: 't1', size: null },
     'data/keep.txt': { path: 'data/keep.txt', type: 'blob', sha: 'b1', size: 4 },
@@ -78,7 +78,7 @@ describe('ensureLiveIndex', () => {
     // repository several external writes ago.
     const calls = { n: 0 }
     const index = new RAMIndexCacheStore({ ttl: 600 })
-    expect(await ensureLiveIndex(accessor(calls), index, '/gh')).toBe(true)
+    expect(await ensureLiveSnapshot(accessor(calls), index, '/gh')).not.toBeNull()
     expect(calls.n).toBe(1)
     expect((await index.listDir('/gh/data')).entries).toEqual(['/gh/data/keep.txt'])
   })
@@ -87,23 +87,40 @@ describe('ensureLiveIndex', () => {
     const calls = { n: 0 }
     const acc = accessor(calls)
     const index = new RAMIndexCacheStore({ ttl: 600 })
-    await ensureLiveIndex(acc, index, '/gh')
+    await ensureLiveSnapshot(acc, index, '/gh')
     // What invalidation does: drop the row rather than expire it, which is
     // why the readers' EXPIRED probe never fires.
     await index.invalidateDir('/gh')
     await index.invalidateDir('/gh/data')
-    expect(await ensureLiveIndex(acc, index, '/gh')).toBe(true)
+    expect(await ensureLiveSnapshot(acc, index, '/gh')).not.toBeNull()
     expect(calls.n).toBe(2)
     expect((await index.listDir('/gh/data')).entries).toEqual(['/gh/data/keep.txt'])
+  })
+
+  it('refetches an expired root listing', async () => {
+    const calls = { n: 0 }
+    const acc = accessor(calls)
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    await ensureLiveSnapshot(acc, index, '/gh')
+    await index.invalidate()
+    expect(await ensureLiveSnapshot(acc, index, '/gh')).not.toBeNull()
+    expect(calls.n).toBe(2)
+    expect((await index.listDir('/gh/data')).entries).toEqual(['/gh/data/keep.txt'])
+  })
+
+  it('reports no refill, and sends no request, without an index', async () => {
+    const calls = { n: 0 }
+    expect(await refillSnapshot(accessor(calls), undefined, '/gh')).toBeNull()
+    expect(calls.n).toBe(0)
   })
 
   it('leaves a live index alone and sends no request', async () => {
     const calls = { n: 0 }
     const acc = accessor(calls)
     const index = new RAMIndexCacheStore({ ttl: 600 })
-    await ensureLiveIndex(acc, index, '/gh')
+    await ensureLiveSnapshot(acc, index, '/gh')
     const before = calls.n
-    expect(await ensureLiveIndex(acc, index, '/gh')).toBe(false)
+    expect(await ensureLiveSnapshot(acc, index, '/gh')).toBeNull()
     expect(calls.n).toBe(before)
   })
 
@@ -111,12 +128,12 @@ describe('ensureLiveIndex', () => {
     const calls = { n: 0 }
     const acc = accessor(calls)
     acc.truncated = true
-    expect(await ensureLiveIndex(acc, new RAMIndexCacheStore({ ttl: 600 }), '/gh')).toBe(false)
+    expect(await ensureLiveSnapshot(acc, new RAMIndexCacheStore({ ttl: 600 }), '/gh')).toBeNull()
     expect(calls.n).toBe(0)
   })
 
   it('skips a missing index', async () => {
-    expect(await ensureLiveIndex(accessor({ n: 0 }), undefined, '')).toBe(false)
+    expect(await ensureLiveSnapshot(accessor({ n: 0 }), undefined, '')).toBeNull()
   })
 })
 

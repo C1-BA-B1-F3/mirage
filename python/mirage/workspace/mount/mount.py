@@ -226,7 +226,10 @@ class MountEntry:
                 return await self.vfs.resolve_glob(paths, prefix=prefix)
             async with self.cache_manager.mutation():
                 await self.ensure_ready()
-                return await self.vfs.resolve_glob(paths, prefix=prefix)
+                index = self.cache_manager.scope_index_locked(self.vfs.index)
+                return await self.vfs.resolve_glob(paths,
+                                                   prefix=prefix,
+                                                   index=index)
 
     @property
     def index(self) -> IndexCacheStore:

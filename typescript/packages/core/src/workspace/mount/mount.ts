@@ -191,11 +191,21 @@ export class MountEntry {
   /** Prepare and retain the VFS while its glob hook reads metadata. */
   async expandGlob(paths: readonly PathSpec[], prefix: string): Promise<PathSpec[]> {
     return this.use(async () => {
-      const call = async (): Promise<PathSpec[]> => {
+      const manager = this.cacheManager
+      if (manager === null) {
         await this.ensureReady()
         return this.vfs.glob === undefined ? [...paths] : this.vfs.glob(paths, prefix)
       }
-      return this.cacheManager === null ? call() : this.cacheManager.withMutation(call)
+      return manager.withMutation(async () => {
+        await this.ensureReady()
+        if (this.vfs.glob === undefined) return [...paths]
+        const index = this.vfs.index
+        return this.vfs.glob(
+          paths,
+          prefix,
+          index === undefined ? undefined : manager.scopeIndexLocked(index),
+        )
+      })
     })
   }
 

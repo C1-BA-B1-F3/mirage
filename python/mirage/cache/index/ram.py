@@ -51,6 +51,10 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
     async def entries(self) -> dict[str, IndexEntry]:
         return dict(self._entries)
 
+    @property
+    def ttl(self) -> float:
+        return self._ttl
+
     async def get(self, vfs_path: str) -> LookupResult:
         entry = self._entries.get(vfs_path)
         if entry is None:

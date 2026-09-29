@@ -16,10 +16,12 @@ import asyncio
 
 import pytest
 
+from mirage.cache.file.io import mutation_lock
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index import NULL_INDEX
 from mirage.cache.index.config import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.cache.index.view import IndexView
 from mirage.cache.manager import CacheManager
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -60,7 +62,7 @@ def test_write_evicts_file_and_parent_listing():
     assert listed is False
 
 
-async def _unlink_case() -> tuple[bool, bool, object]:
+async def _unlink_case() -> tuple[bool, bool, IndexEntry | None]:
     cache, index = _stores()
     await _seed(cache, index)
     manager = CacheManager(cache, index, "/data/", True)
@@ -440,3 +442,87 @@ def test_a_relative_path_that_looks_prefixed_is_still_prefixed():
     # something else; reading it as absolute evicted "/day" and left
     # "/d/day" cached, which is an eviction that hits no key.
     assert _run(_prefix_lookalike_case()) is False
+
+
+def _entry(name: str = "a") -> IndexEntry:
+    return IndexEntry(id=name, name=name, resource_type="file")
+
+
+async def _waits_for_the_lock(cache: RAMFileCacheStore, view) -> bool:
+    lock = mutation_lock(cache)
+    await lock.acquire()
+    call = asyncio.ensure_future(view.list_dir("/data"))
+    try:
+        await asyncio.sleep(0.02)
+        waited = not call.done()
+        lock.release()
+        await asyncio.wait_for(call, 1)
+        return waited
+    finally:
+        if lock.locked():
+            lock.release()
+        await asyncio.gather(call, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_scope_index_is_one_view_per_store():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    assert manager.scope_index(index) is manager.scope_index(index)
+
+
+@pytest.mark.asyncio
+async def test_scope_index_follows_a_replaced_store():
+    cache, index = _stores()
+    replaced = RAMIndexCacheStore(ttl=600)
+    manager = CacheManager(cache, index, "/data/", True)
+    first = manager.scope_index(index)
+    second = manager.scope_index(replaced)
+    await second.set_dir("/data", [("a", _entry())])
+    assert second is not first
+    assert (await replaced.list_dir("/data")).entries == ["/data/a"]
+    assert (await index.list_dir("/data")).entries is None
+
+
+@pytest.mark.asyncio
+async def test_scope_index_hands_back_a_view_even_while_it_holds_another():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    manager.scope_index(index)
+    view = IndexView(RAMIndexCacheStore(), cache, "/data", _owns_all)
+    assert manager.scope_index(view) is view
+
+
+@pytest.mark.asyncio
+async def test_scope_index_without_a_file_cache_is_the_raw_store():
+    _, index = _stores()
+    manager = CacheManager(None, index, "/data/", True)
+    assert manager.scope_index(index) is index
+    assert manager.scope_index(index) is index
+
+
+@pytest.mark.asyncio
+async def test_scope_index_locked_refuses_a_view():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    view = IndexView(index, cache, "/data", _owns_all)
+    with pytest.raises(ValueError):
+        manager.scope_index_locked(view)
+
+
+@pytest.mark.asyncio
+async def test_scope_index_locked_without_a_file_cache_is_the_raw_store():
+    _, index = _stores()
+    manager = CacheManager(None, index, "/data/", True)
+    assert manager.scope_index_locked(index) is index
+
+
+@pytest.mark.asyncio
+async def test_scope_index_locked_is_never_memoized_nor_shared():
+    cache, index = _stores()
+    manager = CacheManager(cache, index, "/data/", True)
+    locked = manager.scope_index_locked(index)
+    assert isinstance(locked, IndexView)
+    assert locked is not manager.scope_index_locked(index)
+    assert locked is not manager.scope_index(index)
+    assert await _waits_for_the_lock(cache, manager.scope_index(index))

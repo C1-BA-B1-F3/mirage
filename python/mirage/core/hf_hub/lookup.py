@@ -23,8 +23,8 @@ from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
 from mirage.cache.index.lock import index_lock
 from mirage.core.hf_hub.client import HfHubError
 from mirage.core.hf_hub.constants import ABSENT_STATUSES
-from mirage.core.hf_hub.tree import (ensure_live_index, fetch_path, index_rows,
-                                     local_rows, refill_index)
+from mirage.core.hf_hub.tree import (ensure_live_snapshot, fetch_path,
+                                     index_rows, local_rows, refill_snapshot)
 from mirage.types import PathSpec
 from mirage.utils.errors import eacces
 
@@ -85,21 +85,31 @@ async def lookup(
     if index is NULL_INDEX:
         entries, children = await local_rows(accessor, prefix)
         return Found(entry=entries.get(key), children=children.get(key))
-    async with index_lock(index, prefix.rstrip("/") or "/"):
-        await ensure_live_index(accessor, index, prefix)
+    root = prefix.rstrip("/") or "/"
+    parent_key = key.rstrip("/").rsplit("/", 1)[0] or "/"
+    async with index_lock(index, root):
+        refilled = await ensure_live_snapshot(accessor, index, prefix)
         result = await index.get(key)
         listing = await index.list_dir(key)
-        parent = listing if key == (
-            prefix.rstrip("/") or "/") else await index.list_dir(
-                key.rstrip("/").rsplit("/", 1)[0] or "/")
+        parent = listing if key == root else await index.list_dir(parent_key)
         # The index is the whole listing rather than a cache in front of one,
         # so an *expired* answer means the tree aged out, not that the path
         # is gone. Refetch once and ask again; a miss against a live index is
         # a real absence and must not cost a tree fetch.
-        if LookupStatus.EXPIRED in (parent.status, listing.status):
-            if await refill_index(accessor, index, prefix):
-                result = await index.get(key)
-                listing = await index.list_dir(key)
+        if refilled is None and LookupStatus.EXPIRED in (parent.status,
+                                                         listing.status):
+            refilled = await refill_snapshot(accessor, index, prefix)
+            result = await index.get(key)
+            listing = await index.list_dir(key)
+            parent = listing if key == root else await index.list_dir(
+                parent_key)
+        # A lock wait can outlast the TTL; use this refill only on EXPIRED.
+        if refilled is not None and LookupStatus.EXPIRED in (parent.status,
+                                                             listing.status):
+            refilled = index.scope_snapshot(refilled)
+            rows = refilled.children.get(key)
+            return Found(entry=refilled.entries.get(key),
+                         children=None if rows is None else list(rows))
         return Found(entry=result.entry, children=listing.entries)
 
 

@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -21,9 +22,11 @@ from fakeredis.aioredis import FakeRedis
 
 import mirage.core.github.tree
 from mirage.accessor.github import GitHubAccessor
+from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.index import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.redis import RedisIndexCacheStore
+from mirage.cache.index.view import IndexView
 from mirage.core.github.client import GitHubApiError
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.read import read
@@ -31,7 +34,7 @@ from mirage.core.github.readdir import readdir
 from mirage.core.github.stat import stat
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.types import FileType, PathSpec
-from tests.fixtures.github_api import FakeGitHub, serve
+from tests.fixtures.github_api import FakeGitHub, expired_on_arrival, serve
 
 
 def _index_from_tree(tree: dict[str, TreeEntry]) -> RAMIndexCacheStore:
@@ -362,3 +365,104 @@ async def test_the_truncated_walk_refuses_a_directory_github_cut_short():
             await readdir(accessor, path, index)
         # Nothing partial was cached as the directory's whole listing.
         assert (await index.list_dir("/gh/big")).entries is None
+
+
+DOCS = PathSpec(vfs_path="docs", virtual="/gh/docs", directory="/gh/docs")
+ROOT = PathSpec(vfs_path="", virtual="/gh", directory="/gh")
+
+
+def _live_accessor(gh: FakeGitHub) -> GitHubAccessor:
+    return GitHubAccessor(GitHubConfig(token="t", base_url=gh.url),
+                          "o",
+                          "r",
+                          "main",
+                          "main",
+                          tree={},
+                          truncated=False)
+
+
+def _seed_listed(index: RAMIndexCacheStore, files: dict[str, bytes]) -> None:
+    names = sorted({"/gh/" + path.split("/", 1)[0] for path in files})
+    docs = sorted("/gh/" + path for path in files if path.startswith("docs/"))
+    index.seed(
+        {
+            key:
+            IndexEntry(id=key,
+                       name=key.rsplit("/", 1)[1],
+                       resource_type="folder" if key == "/gh/docs" else "file")
+            for key in names + docs
+        }, {
+            "/gh": names,
+            "/gh/docs": docs
+        },
+        datetime.now(timezone.utc) + timedelta(days=1))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [(), ("/gh", )])
+async def test_readdir_answers_from_the_refill_it_just_made(live):
+    files = {"docs/a.txt": b"a", "docs/b.txt": b"b", "top.txt": b"t"}
+    with serve(FakeGitHub(files=files)) as gh:
+        index = expired_on_arrival(*live)
+        if live:
+            _seed_listed(index, files)
+        listed = await readdir(_live_accessor(gh), DOCS, index)
+        assert listed == ["/gh/docs/a.txt", "/gh/docs/b.txt"]
+        assert gh.counts() == (0, 1, 0)
+
+
+@pytest.mark.asyncio
+async def test_readdir_reports_a_folder_the_fresh_tree_dropped_as_missing():
+    files = {"docs/a.txt": b"a", "top.txt": b"t"}
+    with serve(FakeGitHub(files=files)) as gh:
+        index = expired_on_arrival()
+        _seed_listed(index, files)
+        del gh.files["docs/a.txt"]
+        await index.invalidate()
+        with pytest.raises(FileNotFoundError):
+            await readdir(_live_accessor(gh), DOCS, index)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path,owns", [
+    (ROOT, lambda _key: False),
+    (DOCS, lambda key: not key.startswith("/gh/docs")),
+],
+                         ids=["retiring", "nested"])
+async def test_readdir_under_a_view_that_refuses_the_folder_is_missing(
+        path, owns):
+    files = {"docs/a.txt": b"a", "top.txt": b"t"}
+    with serve(FakeGitHub(files=files)) as gh:
+        view = IndexView(RAMIndexCacheStore(ttl=86400),
+                         RAMFileCacheStore(),
+                         "/gh",
+                         owns,
+                         read_ttl=600)
+        with pytest.raises(FileNotFoundError):
+            await asyncio.wait_for(readdir(_live_accessor(gh), path, view), 5)
+        assert gh.counts() == (0, 1, 0)
+
+
+@pytest.mark.asyncio
+async def test_readdir_after_a_truncated_refill_walks_the_folder():
+    files = {"docs/deep/x.txt": b"x", "top.txt": b"t"}
+    with serve(FakeGitHub(files=files, truncated_recursive=True)) as gh:
+        accessor = _live_accessor(gh)
+        deep = PathSpec(vfs_path="docs/deep",
+                        virtual="/gh/docs/deep",
+                        directory="/gh/docs/deep")
+        listed = await readdir(accessor, deep, expired_on_arrival())
+        assert listed == ["/gh/docs/deep/x.txt"]
+        assert accessor.truncated is True
+        assert gh.counts() == (1, 1, 0)
+
+
+@pytest.mark.asyncio
+async def test_refill_snapshot_filters_children_owned_by_another_mount():
+    files = {"docs/a.txt": b"a", "docs/b.txt": b"b"}
+    with serve(FakeGitHub(files=files)) as gh:
+        view = IndexView(expired_on_arrival(), RAMFileCacheStore(), "/gh",
+                         lambda key: key != "/gh/docs/b.txt")
+        assert await readdir(_live_accessor(gh), DOCS,
+                             view) == ["/gh/docs/a.txt"]
+        assert gh.counts() == (0, 1, 0)

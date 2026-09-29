@@ -13,10 +13,12 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
+import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { HfHubError } from './client.ts'
 import {
   collect,
+  refillSnapshot,
   fetchPath,
   fetchTree,
   indexRows,
@@ -342,4 +344,23 @@ describe('fetchPath', () => {
     expect((spy.mock.calls[0]?.[2] as { expand: boolean }).expand).toBe(sent)
     spy.mockRestore()
   })
+})
+
+it('returns the snapshot it wrote if another refill replaces the accessor tree', async () => {
+  const acc = accessor()
+  const index = new RAMIndexCacheStore()
+  const write = index.setDir.bind(index)
+  vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([fileRow('a.txt')]))
+  vi.spyOn(index, 'setDir').mockImplementation(async (...args) => {
+    await write(...args)
+    acc.tree = new Map([['other.txt', parseEntry(fileRow('other.txt'))]])
+  })
+  try {
+    const snapshot = await refillSnapshot(acc, index, '/m')
+    expect(snapshot.children.get('/m')).toEqual(['/m/a.txt'])
+    expect(snapshot.entries.get('/m/a.txt')?.id).toBe('oid-a.txt')
+    expect((await index.listDir('/m')).entries).toEqual(['/m/a.txt'])
+  } finally {
+    vi.restoreAllMocks()
+  }
 })

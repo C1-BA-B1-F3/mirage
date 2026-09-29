@@ -15,8 +15,11 @@
 import asyncio
 from unittest.mock import MagicMock
 
-from mirage.cache.index import RAMIndexCacheStore
+import pytest
+
+from mirage.cache.index import IndexCacheStore, RAMIndexCacheStore
 from mirage.core.ram.readdir import readdir as ram_readdir
+from mirage.ops.registry import RegisteredOp
 from mirage.types import MountMode, PathSpec
 from mirage.utils.glob_walk import make_resolve_glob
 from mirage.utils.key_prefix import mount_key
@@ -657,12 +660,14 @@ class PrefixBlindRAM(RAMVFS):
         super().__init__()
         self.seen: list[tuple[str, str]] = []
 
-    async def resolve_glob(self,
-                           paths: list[PathSpec],
-                           prefix: str = "") -> list[PathSpec]:
+    async def resolve_glob(
+            self,
+            paths: list[PathSpec],
+            prefix: str = "",
+            index: IndexCacheStore | None = None) -> list[PathSpec]:
         for p in paths:
             self.seen.append((p.virtual, p.vfs_path))
-        return await super().resolve_glob(paths, prefix="")
+        return await super().resolve_glob(paths, prefix="", index=index)
 
 
 def test_glob_hook_is_handed_keys_below_a_non_root_prefix():
@@ -690,3 +695,60 @@ def test_glob_hook_is_handed_keys_below_a_non_root_prefix():
     assert vfs.seen
     assert [(v, key) for v, key in vfs.seen
             if key != mount_key(v, "/mnt/x")] == []
+
+
+class NoStatRAM(RAMVFS):
+    """A RAM mount that answers listings but registers no ``stat`` op."""
+
+    def ops_list(self) -> list[RegisteredOp]:
+        return [op for op in super().ops_list() if op.name != "stat"]
+
+
+async def _answers_nothing(_accessor, _path, *args, **kwargs):
+    return None
+
+
+def _unstatable(virtual: str, stat):
+
+    async def answer(accessor, path, *args, **kwargs):
+        if path.virtual == virtual:
+            return None
+        return await stat(accessor, path, *args, **kwargs)
+
+    return answer
+
+
+def _flat_ws(vfs: RAMVFS) -> Workspace:
+    vfs.load_state({"dirs": ["/", "/a", "/b"], "files": {"/f": b"x"}})
+    ws = Workspace({"/m": vfs}, mode=MountMode.WRITE)
+    ws.create_session("s")
+    return ws
+
+
+# Python drops unstatable matches; TypeScript keeps them (existing divergence).
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stat,expected", [
+    ("missing", b"/m/*/\n"),
+    ("none", b"/m/*/\n"),
+    ("one", b"/m/a/ /m/b/\n"),
+],
+                         ids=["missing", "none", "one"])
+async def test_trailing_slash_glob_keeps_nothing_a_mount_cannot_stat(
+        stat, expected):
+    vfs = NoStatRAM() if stat == "missing" else RAMVFS()
+    ws = _flat_ws(vfs)
+    if stat != "missing":
+        ram_stat = next(op.fn for op in vfs.ops_list() if op.name == "stat")
+        ws.mount("/m").register_op(
+            RegisteredOp(name="stat",
+                         vfs="ram",
+                         filetype=None,
+                         fn=_answers_nothing
+                         if stat == "none" else _unstatable("/m/f", ram_stat)))
+    try:
+        listed = await ws.shell("echo /m/*", session_id="s")
+        assert listed.stdout == b"/m/a /m/b /m/f\n"
+        result = await ws.shell("echo /m/*/", session_id="s")
+        assert (result.exit_code, result.stdout) == (0, expected)
+    finally:
+        await ws.close()

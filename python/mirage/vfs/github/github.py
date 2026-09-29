@@ -69,7 +69,7 @@ class GitHubVFS(BoundVFS):
 
         Hydrating lazily also removes a wasted round trip rather than
         adding one: nothing seeds the index at build time, so the first
-        ``readdir`` ran ``ensure_live_index`` and refetched the whole
+        ``readdir`` ran ``ensure_live_snapshot`` and refetched the whole
         tree anyway, discarding the one fetched here.
 
         ``default_branch``, ``tree`` and ``truncated`` stay accepted so a

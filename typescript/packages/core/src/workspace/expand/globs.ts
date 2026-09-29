@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { childMountNames, namespaceNames } from '../../ops/namespace_view.ts'
 import type { NamespaceLinks } from '../../ops/config.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
@@ -64,7 +65,7 @@ export function globOptions(session: SessionState): GlobOptions {
 }
 
 export interface ResourceWithGlob extends VFS {
-  glob(paths: readonly PathSpec[], prefix?: string): Promise<PathSpec[]>
+  glob(paths: readonly PathSpec[], prefix?: string, index?: IndexCacheStore): Promise<PathSpec[]>
 }
 
 // Virtual paths a directory owes the namespace, matching a segment.
@@ -407,7 +408,7 @@ async function isDirectory(
   await owner.ensureReady()
   let row: FileStat | undefined
   try {
-    row = await owner.vfs.stat?.(PathSpec.fromStrPath(real, mountKey(real, prefix)))
+    row = await owner.vfs.stat?.(PathSpec.fromStrPath(real, mountKey(real, prefix)), owner.index)
   } catch (err) {
     if (isFsError(err)) return false
     throw err

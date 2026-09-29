@@ -23,7 +23,7 @@ from mirage.shell.array import (ShellArray, array_extent, array_get, array_has,
                                 array_indices, array_slice, array_values)
 from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import RANDOM
-from mirage.shell.errors import ArithError, ExitSignal
+from mirage.shell.errors import ArithError, ExitSignal, UnboundVariable
 from mirage.shell.escapes import decode_ansi_c
 from mirage.shell.helpers import get_text, source_parts
 from mirage.shell.parameter import scan_parameter
@@ -75,14 +75,6 @@ _QUOTED_ARG_TYPES = frozenset(
 # Operators that handle unset themselves, so `set -u` must not fire
 # on the lookup that feeds them.
 _UNSET_GUARD_OPS = frozenset({"-", ":-", "+", ":+", "=", ":=", "?", ":?"})
-
-
-def _unbound(var: str) -> ExitSignal:
-    # GNU: fatal at top level with status 127; a containing
-    # subshell/pipeline segment reports 1 (same shape as ${var:?}).
-    return ExitSignal(127,
-                      stderr=f"bash: {var}: unbound variable\n".encode(),
-                      contained_code=1)
 
 
 def guard_expansion_write(session: SessionState, *names: str) -> None:
@@ -260,7 +252,7 @@ def _lookup_var(var: str,
         if idx <= len(positional):
             return positional[idx - 1]
         if nounset:
-            raise _unbound(var)
+            raise UnboundVariable(var)
         return ""
     if call_stack:
         local_val = call_stack.get_local(var)
@@ -285,7 +277,7 @@ def _lookup_var(var: str,
         return home_dir(session) or ""
     if var not in env:
         if nounset:
-            raise _unbound(var)
+            raise UnboundVariable(var)
         return ""
     return env[var]
 
@@ -867,12 +859,13 @@ class _ArithOperand:
         """
         reader = random_reader(self.session)
         try:
-            result = evaluate_arith(text,
-                                    visible_env(self.session),
-                                    elements=session_elements(
-                                        self.session, reader),
-                                    read_var=reader.read,
-                                    wrote_var=reader.wrote)
+            result = evaluate_arith(
+                text,
+                visible_env(self.session),
+                elements=session_elements(self.session, reader),
+                read_var=reader.read,
+                wrote_var=reader.wrote,
+                nounset=bool(self.session.shell_options.get("nounset")))
         except ArithError as exc:
             await land_arith_writes(self.session, self.view, exc.writes,
                                     reader)
@@ -1159,6 +1152,13 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
             var_in_env = val != "" or _positional_set(p.var_name, session,
                                                       call_stack)
 
+    # `set -u` refuses an element or key that holds nothing, named as
+    # typed (`a[i]`, `m[$k]`), unless the operator handles unset itself;
+    # a length is 0 (bash 5.2.37). A scalar's refusal is _lookup_var's.
+    if (p.subscript is not None and not var_in_env
+            and session.shell_options.get("nounset") and not p.length_op
+            and not p.indirect_op and p.op not in _UNSET_GUARD_OPS):
+        raise UnboundVariable(f"{p.var_name}[{p.subscript}]")
     if p.indirect_op:
         # `${!r}` on a name reference is the target's *name*, not an
         # indirection through the value.

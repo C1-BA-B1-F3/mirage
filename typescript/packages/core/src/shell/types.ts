@@ -36,6 +36,12 @@ export interface ElementOps {
    * subscript text (a caller outside a session).
    */
   isAssoc?(name: string): boolean
+  /**
+   * Whether a name holds an array, indexed or associative, empty or not.
+   * `set -u` counts such a name as set when an expression reads it bare,
+   * whatever its element 0 holds.
+   */
+  holdsArray?(name: string): boolean
 }
 
 /**

@@ -115,10 +115,15 @@ class ElementOps:
             evaluator evaluates an indexed subscript itself, in its own
             record, and hands ``resolve`` the index; absent, ``resolve``
             evaluates the subscript text (a caller outside a session).
+        holds_array (Callable[[str], bool] | None): whether a name holds
+            an array, indexed or associative, empty or not. ``set -u``
+            counts such a name as set when an expression reads it bare,
+            whatever its element 0 holds.
     """
     resolve: Callable[[str, str, Mapping[str, str]], str]
     read: Callable[[str, str], str | None]
     is_assoc: Callable[[str], bool] | None = None
+    holds_array: Callable[[str], bool] | None = None
 
 
 @dataclass(frozen=True, slots=True)

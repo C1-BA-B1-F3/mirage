@@ -30,7 +30,7 @@ import {
 } from '../../shell/array.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { RANDOM } from '../../shell/constants.ts'
-import { ArithError, ExitSignal } from '../../shell/errors.ts'
+import { ArithError, ExitSignal, UnboundVariable } from '../../shell/errors.ts'
 import { NodeType as NT, type TSNodeLike } from '../../shell/types.ts'
 import { PolicyDenied } from '../../policy/errors.ts'
 import type { SessionView } from '../../ops/types.ts'
@@ -112,12 +112,6 @@ const QUOTED_ARG_TYPES: ReadonlySet<string> = new Set([
 // on the lookup that feeds them.
 const UNSET_GUARD_OPS: ReadonlySet<string> = new Set(['-', ':-', '+', ':+', '=', ':=', '?', ':?'])
 
-// GNU: fatal at top level with status 127; a containing
-// subshell/pipeline segment reports 1 (same shape as ${var:?}).
-function unbound(name: string): ExitSignal {
-  return new ExitSignal(127, new TextEncoder().encode(`bash: ${name}: unbound variable\n`), null, 1)
-}
-
 /**
  * Refuse expansion-time writes that name hidden variables.
  *
@@ -175,7 +169,7 @@ export function lookupVar(
     const idx = parseInt(name, 10)
     if (idx === 0) return session.argv0
     if (idx <= positional.length) return positional[idx - 1] ?? ''
-    if (nounset) throw unbound(name)
+    if (nounset) throw new UnboundVariable(name)
     return ''
   }
   if (callStack) {
@@ -203,7 +197,7 @@ export function lookupVar(
   // and `unset PWD` silently do nothing.
   if (name === 'HOME') return homeDir(session) ?? ''
   if (!(name in env)) {
-    if (nounset) throw unbound(name)
+    if (nounset) throw new UnboundVariable(name)
     return ''
   }
   return env[name] ?? ''
@@ -755,6 +749,7 @@ class ArithOperand {
         sessionElements(this.session, reader),
         reader.read,
         reader.wrote,
+        this.session.shellOptions.nounset === true,
       )
     } catch (err) {
       if (!(err instanceof ArithError)) throw err
@@ -1187,6 +1182,19 @@ async function expandBracesIn(
     }
   }
 
+  // `set -u` refuses an element or key that holds nothing, named as typed
+  // (`a[i]`, `m[$k]`), unless the operator handles unset itself; a length
+  // is 0 (bash 5.2.37). A scalar's refusal is lookupVar's.
+  if (
+    p.subscript !== null &&
+    !varInEnv &&
+    session.shellOptions.nounset === true &&
+    !p.lengthOp &&
+    !p.indirectOp &&
+    (p.op === null || !UNSET_GUARD_OPS.has(p.op))
+  ) {
+    throw new UnboundVariable(`${p.varName ?? ''}[${p.subscript}]`)
+  }
   if (p.indirectOp) {
     // `${!r}` on a name reference is the target's *name*, not an
     // indirection through the value.

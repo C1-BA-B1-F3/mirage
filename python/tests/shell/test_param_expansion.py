@@ -159,3 +159,51 @@ SLICE_CASES = [
 @pytest.mark.parametrize("cmd,code,out,err", SLICE_CASES)
 def test_substring_of_an_unset_parameter(shell, cmd, code, out, err):
     assert shell.mirage_result(cmd) == (code, out, err)
+
+
+# `set -u` over subscripted references and the arithmetic in a subscript
+# or a substring bound, pinned on bash 5.2.37 (debian:stable-slim).
+NOUNSET_CASES = [
+    ('set -u; a=(1); echo "[${a[5]}]"; echo after', 127, "",
+     "bash: a[5]: unbound variable\n"),
+    ('set -u; a=(1); i=5; echo "[${a[i]:1}]"', 127, "",
+     "bash: a[i]: unbound variable\n"),
+    ('set -u; a=(1); echo "[${a[5]#x}]"', 127, "",
+     "bash: a[5]: unbound variable\n"),
+    ('set -u; declare -A m; k=x; echo "[${m[$k]}]"', 127, "",
+     "bash: m[$k]: unbound variable\n"),
+    ('set -u; x=s; echo "[${x[0]}]"; echo "[${x[1]}]"', 127, "[s]\n",
+     "bash: x[1]: unbound variable\n"),
+    ('set -u; arr=(1); echo "a${arr[vid]:.2f}b"', 127, "",
+     "bash: vid: unbound variable\n"),
+    ('set -u; arr=(1); vid=3; echo "a${arr[vid]:.2f}b"', 127, "",
+     "bash: arr[vid]: unbound variable\n"),
+    ('set -u; a=(1); echo "[${a[i+4]}]"', 127, "",
+     "bash: i: unbound variable\n"),
+    ('set -u; w=v; a=(1); echo "[${a[w]}]"', 127, "",
+     "bash: v: unbound variable\n"),
+    ('set -u; x=hello; echo "[${x:1:v}]"', 127, "",
+     "bash: v: unbound variable\n"),
+    ('set -u; a=(x y z); echo "[${a[@]:v}]"', 127, "",
+     "bash: v: unbound variable\n"),
+    ("set -u; a=(1); unset 'a[v]'; echo after", 127, "",
+     "bash: v: unbound variable\n"),
+    ("set -u; a=(1); [[ -v a[v] ]]; echo after", 127, "",
+     "bash: v: unbound variable\n"),
+    ("set -u; a[v]=1; echo after", 127, "", "bash: v: unbound variable\n"),
+    ('set -u; (a=(1); echo "[${a[5]}]"); echo "rc=$?"', 0, "rc=1\n",
+     "bash: a[5]: unbound variable\n"),
+    ('set -u; a=(1); echo "[${a[5]-d}] [${a[5]:-d}] [${a[5]+s}] '
+     '[${a[5]:+s}] [${#a[5]}]"', 0, "[d] [d] [] [] [0]\n", ""),
+    ('set -u; a=(1); echo "[${a[5]:=z}] [${a[5]}]"', 0, "[z] [z]\n", ""),
+    ('set -u; a=(1); echo "[${a[x=0]}] x=$x"', 0, "[1] x=0\n", ""),
+    ('set -u; a=(); a[1]=x; b=(7 8); echo "[${b[a]}]"', 0, "[7]\n", ""),
+    ('set -u; f() { local i=1; local a=(x y); echo "[${a[i]}]"; }; f', 0,
+     "[y]\n", ""),
+]
+
+
+@pytest.mark.parametrize("cmd,code,out,err", NOUNSET_CASES)
+def test_nounset_over_subscripts_and_substring_bounds(shell, cmd, code, out,
+                                                      err):
+    assert shell.mirage_result(cmd) == (code, out, err)

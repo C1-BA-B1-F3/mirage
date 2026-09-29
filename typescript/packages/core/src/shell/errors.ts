@@ -70,6 +70,19 @@ export class ExitSignal extends Error {
   }
 }
 
+/**
+ * `set -u` reading a name that is not set: `$x`, `${a[i]}`, or a variable
+ * an arithmetic expression reads. GNU bash dies on it the way it dies on
+ * `${x:?}`: status 127 at top level, 1 from a containing subshell or
+ * pipeline segment. Mirrors Python's mirage.shell.errors.UnboundVariable.
+ */
+export class UnboundVariable extends ExitSignal {
+  constructor(name: string) {
+    super(127, new TextEncoder().encode(`bash: ${name}: unbound variable\n`), null, 1)
+    this.name = 'UnboundVariable'
+  }
+}
+
 export class ReturnSignal extends Error {
   readonly exitCode: number
   readonly stderr: Uint8Array

@@ -77,6 +77,7 @@ git -C /repo status -uall
 git -C /repo log --oneline -n 20
 git -C /repo log --reverse
 git -C /repo log -S delta
+git -C /repo log --all --oneline --grep=fix -i --max-count=5
 git -C /repo log HEAD~2
 git -C /repo log --oneline main..topic
 git -C /repo log --all --oneline

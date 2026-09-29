@@ -142,6 +142,16 @@ describe('git log', () => {
     expect(out).toBe(realGit(['log', '--oneline', 'HEAD~2']))
   })
 
+  it.each([
+    'log --oneline --max-count=2',
+    'log --oneline --max-count 2',
+    'log --oneline --grep=delta --grep first',
+    'log --oneline --grep=ADD -i --max-count=2 --reverse',
+    'log --oneline --all --regexp-ignore-case --grep=^ADD --author=INTEG',
+  ])('matches native Git for the message and count limits: %s', async (command) => {
+    expect(await run(command)).toEqual([0, realGit(command.split(' ')), ''])
+  })
+
   it('finds the commit that introduced a string with the pickaxe', async () => {
     const [, out] = await run('log --oneline -S delta')
     expect(out).toBe(realGit(['log', '--oneline', '-S', 'delta']))

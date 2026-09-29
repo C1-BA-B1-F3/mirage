@@ -3991,6 +3991,104 @@
       }
     },
     {
+      "id": "git_log_grep_ignore_case_reverse",
+      "seq": 567991,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --all --oneline --grep='ADD' -i --reverse)",
+      "expect": {
+        "exit": 0,
+        "stdout": "265ec3a add delta\n225f39c add docs\n8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_graph_decorate_max_count",
+      "seq": 567992,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --all --oneline --decorate --graph --max-count=30)",
+      "expect": {
+        "exit": 0,
+        "stdout": "* 8ef2542 (HEAD -> main) add two\n* 225f39c (topic) add docs\n* 265ec3a add delta\n* 98b4ffe first commit\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_grep_separate_word",
+      "seq": 567993,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --oneline --grep 'add d')",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c add docs\n265ec3a add delta\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_grep_alternatives",
+      "seq": 567994,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --format=%s --grep=delta --grep=first)",
+      "expect": {
+        "exit": 0,
+        "stdout": "add delta\nfirst commit\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_max_count_cuts_before_reverse",
+      "seq": 567995,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --oneline --grep=add --max-count=1 --reverse)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_author_ignore_case",
+      "seq": 567996,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --format=%h --author=INTEG; git log --format=%h --author=INTEG --regexp-ignore-case -n1)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_rev_list_max_count",
+      "seq": 567997,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git rev-list --max-count=2 HEAD)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef25423772bbfe671c8e285ae1d63991d59db19\n225f39c50d27e015653a38d589474ce2880399e6\n",
+        "stderr": ""
+      }
+    },
+    {
       "id": "git_dir_equals",
       "seq": 567950,
       "targets": [

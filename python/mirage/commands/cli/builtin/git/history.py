@@ -44,13 +44,18 @@ class LogFlags:
     """The parsed shape of a ``git log`` invocation.
 
     Args:
-        max_count (int | None): ``-n``, how many commits to print.
+        max_count (int | None): ``-n``/``--max-count``, how many commits
+            to print; None when unlimited.
         oneline (bool): ``--oneline``, one abbreviated row per commit.
         reverse (bool): ``--reverse``, oldest first.
         search (str | None): ``-S``, the pickaxe string.
         since (float | None): ``--since`` as an epoch second.
         until (float | None): ``--until`` as an epoch second.
         authors (tuple[re.Pattern[str], ...]): author patterns, ORed together.
+        greps (tuple[re.Pattern[str], ...]): ``--grep`` patterns, any of
+            which may match a line of the message.
+        ignore_case (bool): ``-i``, which folds case for ``--grep``,
+            ``--author`` and ``-S`` alike.
         all_refs (bool): ``--all``, start from every ref as well.
         pretty (LogFormat): how each commit renders; medium unless
             ``--oneline`` or ``--pretty``/``--format`` said otherwise.
@@ -68,6 +73,8 @@ class LogFlags:
     since: float | None
     until: float | None
     authors: tuple[re.Pattern[str], ...] = ()
+    greps: tuple[re.Pattern[str], ...] = ()
+    ignore_case: bool = False
     date: str = "default"
     decorate: bool = False
     all_refs: bool = False
@@ -156,6 +163,20 @@ def pretty_format(fl: FlagView) -> LogFormat:
     return pretty
 
 
+def _log_pattern(value: str, ignore_case: bool) -> re.Pattern[str]:
+    """A ``--grep`` or ``--author`` pattern: a BRE, case-folded under
+    ``-i``.
+
+    Args:
+        value (str): the pattern as it arrived on the line.
+        ignore_case (bool): ``-i``.
+    """
+    pattern = search_bre(value)
+    if not ignore_case:
+        return pattern
+    return re.compile(pattern.pattern, pattern.flags | re.IGNORECASE)
+
+
 def parse_flags(fl: FlagView) -> LogFlags:
     """Read the raw log flag kwargs into a frozen struct.
 
@@ -171,15 +192,24 @@ def parse_flags(fl: FlagView) -> LogFlags:
     for name in fl.typed_order("topo_order", "date_order"):
         if fl.as_bool(name):
             order = "topo" if name == "topo_order" else "date"
+    ignore_case = fl.as_bool("regexp_ignore_case")
     try:
-        authors = tuple(search_bre(value) for value in fl.as_list("author"))
+        authors = tuple(
+            _log_pattern(value, ignore_case) for value in fl.as_list("author"))
+        greps = tuple(
+            _log_pattern(value, ignore_case) for value in fl.as_list("grep"))
     except BreError as exc:
         raise GitError(str(exc)) from exc
+    max_count = fl.as_int("max_count")
     return LogFlags(
         authors=authors,
+        greps=greps,
+        ignore_case=ignore_case,
         date=fl.as_str("date") or "default",
         decorate=fl.as_bool("decorate"),
-        max_count=fl.as_int("n"),
+        # git reads a negative count as no limit at all.
+        max_count=None
+        if max_count is not None and max_count < 0 else max_count,
         min_parents=2 if fl.as_bool("merges") else fl.as_int("min_parents"),
         max_parents=1 if fl.as_bool("no_merges") else fl.as_int("max_parents"),
         first_parent=fl.as_bool("first_parent"),
@@ -474,9 +504,27 @@ def _in_window(commit: Commit, flags: LogFlags) -> bool:
     return flags.until is None or commit.commit_time <= flags.until
 
 
+def _message_matches(message: bytes, greps: tuple[re.Pattern[str],
+                                                  ...]) -> bool:
+    """Whether a ``--grep`` pattern matches the message.
+
+    git searches the message a line at a time, so ``^`` and ``$`` anchor
+    to a line, and never the author or committer header.
+
+    Args:
+        message (bytes): the commit message.
+        greps (tuple[re.Pattern[str], ...]): the ``--grep`` patterns.
+    """
+    lines = message.decode("utf-8", "replace").split("\n")
+    return any(pattern.search(line) for pattern in greps for line in lines)
+
+
 def _filters_pass(commit: Commit, flags: LogFlags) -> bool:
-    """Whether a commit's author and parent count pass ``--merges``,
+    """Whether a commit passes ``--author``, ``--grep``, ``--merges``,
     ``--no-merges`` and kin.
+
+    Several ``--author``s or several ``--grep``s are alternatives, while
+    an ``--author`` and a ``--grep`` must both match.
 
     Args:
         commit (Commit): the commit.
@@ -485,6 +533,8 @@ def _filters_pass(commit: Commit, flags: LogFlags) -> bool:
     if flags.authors and not any(
             pattern.search(commit.author.decode("utf-8", "replace"))
             for pattern in flags.authors):
+        return False
+    if flags.greps and not _message_matches(commit.message, flags.greps):
         return False
     count = len(commit.parents)
     if flags.min_parents is not None and count < flags.min_parents:
@@ -538,7 +588,8 @@ def walked(repo: BaseRepo,
     for commit in source:
         if not _filters_pass(commit, flags):
             continue
-        shown = needle is None or touches(store, commit, needle)
+        shown = needle is None or touches(store, commit, needle,
+                                          flags.ignore_case)
         steps.append(WalkStep(commit, shown))
         printed += shown
         if flags.max_count is not None and printed >= flags.max_count:

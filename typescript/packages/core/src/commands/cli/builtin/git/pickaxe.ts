@@ -19,8 +19,18 @@ import { treeEntries } from './tree.ts'
 
 const DEC = new TextDecoder('utf-8', { fatal: false })
 
-/** How many times a string appears in one blob. */
-async function occurrences(repo: Repo, oid: string | null, needle: string): Promise<number> {
+/** Lower-case ASCII letters only, the table git folds a `-S` string through under `-i`. */
+function foldAscii(text: string): string {
+  return text.replace(/[A-Z]+/g, (run) => run.toLowerCase())
+}
+
+/** How many times a string appears in one blob, ASCII case folded when asked. */
+async function occurrences(
+  repo: Repo,
+  oid: string | null,
+  needle: string,
+  ignoreCase: boolean,
+): Promise<number> {
   if (oid === null) return 0
   let data: Uint8Array
   try {
@@ -28,7 +38,7 @@ async function occurrences(repo: Repo, oid: string | null, needle: string): Prom
   } catch {
     return 0
   }
-  const text = DEC.decode(data)
+  const text = ignoreCase ? foldAscii(DEC.decode(data)) : DEC.decode(data)
   if (needle === '') return 0
   let count = 0
   let at = text.indexOf(needle)
@@ -49,14 +59,17 @@ async function occurrences(repo: Repo, oid: string | null, needle: string): Prom
  * from".
  *
  * Compared against the first parent, or against nothing for a root commit, so
- * the objects a root commit adds all count as introduced.
+ * the objects a root commit adds all count as introduced. `-i` counts without
+ * regard to ASCII case.
  */
 export async function touches(
   repo: Repo,
   oid: string,
   parents: readonly string[],
   needle: string,
+  ignoreCase = false,
 ): Promise<boolean> {
+  const wanted = ignoreCase ? foldAscii(needle) : needle
   const { commit } = await git.readCommit({ ...repoArgs(repo), oid })
   const after = await treeEntries(repo, commit.tree)
   const first = parents[0]
@@ -69,7 +82,10 @@ export async function touches(
     const old = before.get(path)?.oid ?? null
     const now = after.get(path)?.oid ?? null
     if (old === now) continue
-    if ((await occurrences(repo, old, needle)) !== (await occurrences(repo, now, needle))) {
+    if (
+      (await occurrences(repo, old, wanted, ignoreCase)) !==
+      (await occurrences(repo, now, wanted, ignoreCase))
+    ) {
       return true
     }
   }

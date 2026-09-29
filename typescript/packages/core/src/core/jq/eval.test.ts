@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { JqCompileError } from './errors.ts'
 import { halts, jqCheck, jqEval, jqRun, referencesArgs, streamReads } from './eval.ts'
 import type { JqRun } from './types.ts'
@@ -552,13 +552,35 @@ describe('jqRun', () => {
     })
   })
 
-  it('reads a halt back past outputs that differ from run to run', async () => {
-    // `now` prints another value when the program runs again for the halt.
-    const run = await jqRun(null, 'now, ("x" | halt_error(3))')
-    expect([run.outputs.length, run.stop]).toEqual([
-      1,
-      { kind: 'halt', message: 'x', string: true, code: 3 },
-    ])
+  // jq-wasm's own `now` reads Date.now too, so a clock that moves a second
+  // at each reading shows which runs read it again.
+  it('reads now from one clock reading in a program that can halt', async () => {
+    // Every run of it, the reruns that read a halt back included, reads the
+    // same time, so the halt they read back is the first run's.
+    let ms = 1_790_000_000_000
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (ms += 1000))
+    try {
+      const run = await jqRun(null, 'now, (now | tostring | halt_error(3))')
+      expect(run.stop).toEqual({
+        kind: 'halt',
+        message: String(run.outputs[0]),
+        string: true,
+        code: 3,
+      })
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  it("reads jq's own clock at each call in a program that cannot halt", async () => {
+    let ms = 1_790_000_000_000
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (ms += 1000))
+    try {
+      const [first, second] = (await jqRun(null, '[now, now]')).outputs[0] as number[]
+      expect(second).toBeGreaterThan(first ?? Infinity)
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   it('refuses a halt code that is not a number as jq does', async () => {

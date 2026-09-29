@@ -23,6 +23,9 @@ export const INPUTS_VAR = '__mirage_jq_inputs'
 // The value the `$ARGS` prelude rebinds.
 export const ARGS_VAR = '__mirage_jq_args'
 
+// The one clock reading `now` answers in a program that can halt.
+export const NOW_VAR = '__mirage_jq_now'
+
 // The document the program runs on, once the prelude has unpacked it.
 export const VALUE_VAR = '__mirage_jq_value'
 

@@ -216,10 +216,18 @@ def test_a_halt_whose_message_no_second_run_recovers_reads_as_the_default():
                                                                    5))
 
 
-def test_a_halt_reads_back_past_outputs_that_differ_from_run_to_run():
-    # `now` prints another value when the program runs again for the halt.
-    run = jq_run(None, 'now, ("x" | halt_error(3))')
-    assert (len(run.outputs), run.stop) == (1, JqHalt("x", True, 3))
+def test_a_program_that_can_halt_reads_now_from_one_clock_reading(monkeypatch):
+    # Every run of it, the reruns that read a halt back included, reads
+    # the same time, so the halt they read back is the first run's.
+    monkeypatch.setattr("time.time_ns", lambda: 1_790_000_000_123_456_789)
+    run = jq_run(None, "now, (now | tostring | halt_error(3))")
+    assert run == JqRun([1790000000.123456],
+                        JqHalt("1790000000.123456", True, 3))
+
+
+def test_a_program_that_cannot_halt_reads_jqs_own_clock(monkeypatch):
+    monkeypatch.setattr("time.time_ns", lambda: 1_790_000_000_123_456_789)
+    assert jq_run(None, "now").outputs != [1790000000.123456]
 
 
 def test_halt_error_refuses_a_code_that_is_not_a_number_as_jq_does():

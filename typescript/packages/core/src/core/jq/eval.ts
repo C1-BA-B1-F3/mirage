@@ -18,6 +18,7 @@ import {
   ARGS_VAR,
   INPUTS_VAR,
   NAMED_VAR,
+  NOW_VAR,
   VALUE_VAR,
   type JqError,
   type JqHalt,
@@ -44,6 +45,7 @@ const INPUTS_DEF = /(?<![\w$.:])def\s+inputs\s*[:(]/
 const ARGS_REF = /\$ARGS(?![\w:])/
 const HALT_REF = /(?<![\w$.:])halt(?:_error)?(?![\w:])/
 const HALT_ERROR_REF = /(?<![\w$.:])halt_error(?![\w:])/
+const NOW_REF = /(?<![\w$.:])now(?![\w:])/
 const TOP_LEVEL_LINE = /(at <top-level>, line )(\d+)/g
 const IDENT = /[A-Za-z_][A-Za-z0-9_]*/y
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -226,10 +228,10 @@ const DONE = `, {"${DONE_KEY}": true}`
 // (which leaves any collector, `[halt_error]` or `map`), and when a `try` of
 // the program's own caught that, to print them just before the real halt.
 // Either answer counts only when the run printed as many outputs up to it as
-// the first run did: the two are one run up to the first halt, so a later
-// halt shows as more outputs before it, where the values themselves can
-// differ (`now`). A `try` that swallows one halt unseen before the program
-// reaches another still gets past that.
+// the first run did: the runs are one run up to the first halt, `now`
+// included (see bound), so a later halt shows as more outputs before it. A
+// `try` that swallows one halt unseen before the program reaches another
+// still gets past that.
 const HALT_MARK =
   `{"${HALT_KEY}": [$code, (if . == null then null ` +
   'elif type == "string" then . else tojson end), (type == "string")]}'
@@ -267,6 +269,15 @@ interface Bound {
 }
 
 /**
+ * The time `now` answers, as jq-wasm's gettimeofday reading spells it: whole
+ * seconds plus the microseconds of whole milliseconds.
+ */
+function clock(): number {
+  const ms = Date.now()
+  return Math.floor(ms / 1000) + ((ms % 1000) * 1000) / 1_000_000
+}
+
+/**
  * The bindings one run carries.
  *
  * Every value a run binds travels on stdin, inside one wrapper document the
@@ -275,6 +286,10 @@ interface Bound {
  * 1 MiB runs off the end of (a trap, or a silent overwrite of jq's own
  * data), while stdin is read from the heap. A run that binds nothing goes
  * on the plain document.
+ *
+ * A program that can halt also reads `now` from one clock reading, which
+ * every run of it shares, so the runs that read a halt back (see haltOf) take
+ * the path the first one took, where jq reads the clock at each call.
  */
 function bound(
   obj: unknown,
@@ -287,17 +302,20 @@ function bound(
   // A name that is not an identifier can never be spelled as a variable,
   // so nothing needs it bound; $ARGS.named still carries it.
   const names = Object.keys(namedArgs).filter((name) => NAME.test(name))
-  if (names.length === 0 && inputs === null && argsValue === null) {
+  const now = halts(expr) && NOW_REF.test(codeOnly(expr)) ? clock() : null
+  if (names.length === 0 && inputs === null && argsValue === null && now === null) {
     return { steps: [], stdin: plain, plain }
   }
-  const steps = [`. as [$${VALUE_VAR}, $${NAMED_VAR}, $${INPUTS_VAR}, $${ARGS_VAR}] |`]
+  const steps = [`. as [$${VALUE_VAR}, $${NAMED_VAR}, $${INPUTS_VAR}, $${ARGS_VAR}, $${NOW_VAR}] |`]
   for (const name of names) steps.push(`$${NAMED_VAR}[${JSON.stringify(name)}] as $${name} |`)
   if (inputs !== null) steps.push(streamDefs(expr))
   // jq defines $ARGS itself, from a command line that no longer carries
   // the bindings, so the only way to serve mirage's own is to rebind it.
   if (argsValue !== null) steps.push(`$${ARGS_VAR} as $ARGS |`)
+  if (now !== null) steps.push(`def now: $${NOW_VAR};`)
   steps.push(`$${VALUE_VAR} |`)
-  return { steps, stdin: JSON.stringify([obj, namedArgs, inputs ?? [], argsValue]), plain }
+  const carried = [obj, namedArgs, inputs ?? [], argsValue, now]
+  return { steps, stdin: JSON.stringify(carried), plain }
 }
 
 /** A compile error as the program's own lines number it. */

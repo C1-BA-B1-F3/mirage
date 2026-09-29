@@ -407,7 +407,7 @@
       }
     },
     {
-      "id": "jq_halt_after_an_output_that_differs_per_run_keeps_its_code",
+      "id": "jq_halt_after_now_keeps_its_code_and_message",
       "seq": 700978,
       "targets": [
         "ram",
@@ -420,6 +420,25 @@
         "exit": 0,
         "stdout": "exit=3\n\"number\"\n",
         "stderr": "x\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_halt_reads_now_as_the_output_before_it_did",
+      "seq": 700979,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqn && jq -n 'now | tostring | ., (. + \"\\n\" | halt_error(3))' > /data/qjqn/t.json 2> /data/qjqn/t.err; echo \"exit=$?\"; [ \"$(jq -r . /data/qjqn/t.json)\" = \"$(cat /data/qjqn/t.err)\" ] && echo same",
+      "expect": {
+        "exit": 0,
+        "stdout": "exit=3\nsame\n",
+        "stderr": ""
       },
       "flags": [
         "n"

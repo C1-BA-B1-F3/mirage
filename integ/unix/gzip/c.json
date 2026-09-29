@@ -36,6 +36,108 @@
       "flags": [
         "c"
       ]
+    },
+    {
+      "id": "gzip_filename_header_controls_truncated_output",
+      "seq": 1320025,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/g1320; printf 'hello\\nworld\\n' > /data/g1320/a.txt; cd /data/g1320 && gzip -c a.txt | head -c 20 > g1320.gz; gunzip -c g1320.gz; rc=$?; rm g1320.gz; rm -r /data/g1320; exit $rc)",
+      "expect": {
+        "exit": 1,
+        "stdout": "hel",
+        "stderr": "\ngzip: g1320.gz: unexpected end of file\n"
+      }
+    },
+    {
+      "id": "gzip_stdin_has_no_filename_header",
+      "seq": 1320026,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/g1320; printf 'hello\\nworld\\n' > /data/g1320/a.txt; cd /data/g1320 && cat a.txt | gzip -c | head -c 20 | gunzip -c)",
+      "expect": {
+        "exit": 1,
+        "stdout": "hello\nwor",
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
+      }
+    },
+    {
+      "id": "zgrep_cannot_match_bytes_beyond_truncation",
+      "seq": 1320027,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/g1320; printf 'hello\\nworld\\n' > /data/g1320/a.txt; cd /data/g1320 && gzip -c a.txt | head -c 20 > g1320.gz; zgrep hello g1320.gz; rc=$?; rm g1320.gz; rm -r /data/g1320; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "\ngzip: g1320.gz: unexpected end of file\n"
+      }
     }
   ]
 }

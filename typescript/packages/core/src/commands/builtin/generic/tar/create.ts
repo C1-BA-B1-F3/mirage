@@ -14,7 +14,7 @@
 
 import type { LinkView, MountView } from '../../../../ops/types.ts'
 import type { PathSpec } from '../../../../types.ts'
-import { fsStrerror, walkRefusal } from '../../../../utils/errors.ts'
+import { fsStrerror, isFsError, walkRefusal } from '../../../../utils/errors.ts'
 import { fnmatch } from '../../../../utils/fnmatch.ts'
 import { respellOne } from '../../../../utils/path.ts'
 import { lstripSlash, rstripSlash } from '../../../../utils/slash.ts'
@@ -148,6 +148,27 @@ function memberName(spelled: string, kind: MemberKind): string {
   return name
 }
 
+export async function checkDirectories(
+  directories: readonly PathSpec[],
+  isDir: DirProbe,
+  stat: StatFn,
+): Promise<string[]> {
+  for (const directory of directories) {
+    let reason: string
+    try {
+      if (directory.walkError !== null) throw walkRefusal(directory)
+      if (await isDir(directory)) continue
+      await stat(directory)
+      reason = 'Not a directory'
+    } catch (err) {
+      if (!isFsError(err)) throw err
+      reason = fsStrerror(err) ?? String(err)
+    }
+    return [`tar: ${directory.rawPath}: Cannot open: ${reason}`, FATAL_TRAILER]
+  }
+  return []
+}
+
 /**
  * Decide every member of a new archive, before writing any of it.
  *
@@ -162,18 +183,8 @@ export async function planCreate(
   deps: CreateDeps,
 ): Promise<CreateResult> {
   if (paths.length === 0) return refusal([EMPTY_ARCHIVE, USAGE_HINT])
-  for (const directory of deps.directories ?? []) {
-    // GNU chdirs at each -C in turn, before reading a single operand,
-    // so the FIRST one it cannot enter is fatal for the whole run and
-    // no members are written. Checking only the last would archive the
-    // operands that followed a bad earlier one.
-    if (!(await deps.isDir(directory))) {
-      return refusal([
-        `tar: ${directory.rawPath}: Cannot open: No such file or directory`,
-        FATAL_TRAILER,
-      ])
-    }
-  }
+  const directoryErrors = await checkDirectories(deps.directories ?? [], deps.isDir, deps.stat)
+  if (directoryErrors.length > 0) return refusal(directoryErrors)
   const members: Member[] = []
   const notices: string[] = []
   const dropped: string[] = []
@@ -250,7 +261,7 @@ export async function planCreate(
     for (const [name, spelled, entry] of named) {
       if (!keep.has(name)) continue
       const read = entry.read ?? null
-      if (read !== null && read.virtual === deps.archive.virtual) {
+      if (deps.archive.rawPath !== '-' && read !== null && read.virtual === deps.archive.virtual) {
         notices.push(`tar: ${name}: ${SELF_DUMP}`)
         continue
       }

@@ -87,8 +87,16 @@ async function runThrough(
   return new Uint8Array(buf)
 }
 
-export async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
-  return runThrough(bytes, new CompressionStream('gzip'))
+export async function gzip(bytes: Uint8Array, name = ''): Promise<Uint8Array> {
+  const compressed = await runThrough(bytes, new CompressionStream('gzip'))
+  if (name === '') return compressed
+  const header = compressed.slice(0, GZIP_FIXED_HEADER)
+  header[3] = (header[3] ?? 0) | GZIP_ORIG_NAME
+  return concat([
+    header,
+    new TextEncoder().encode(name + '\0'),
+    compressed.subarray(GZIP_FIXED_HEADER),
+  ])
 }
 
 export async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {

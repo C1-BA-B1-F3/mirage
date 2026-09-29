@@ -6,7 +6,7 @@ from mirage.commands.builtin.generic.tar import constants
 from mirage.commands.builtin.generic.tar.types import CreateResult, Member
 from mirage.ops.types import LinkView, MountView
 from mirage.types import PathSpec
-from mirage.utils.errors import fs_strerror, walk_refusal
+from mirage.utils.errors import FS_ERRORS, fs_strerror, walk_refusal
 from mirage.utils.fnmatch import fnmatch
 from mirage.utils.path import respell_one
 
@@ -153,6 +153,32 @@ def member_name(spelled: str, kind: MemberKind) -> str:
     return name
 
 
+async def check_directories(directories: list[PathSpec], is_dir: DirProbe,
+                            stat: StatFn) -> list[str]:
+    """Check each chdir before writing or extracting members.
+
+    Args:
+        directories (list[PathSpec]): cumulative -C operands in line order.
+        is_dir (DirProbe): directory probe, including implicit directories.
+        stat (StatFn): distinguishes a regular file from a missing directory.
+    """
+    for directory in directories:
+        try:
+            if directory.walk_error is not None:
+                raise walk_refusal(directory)
+            if await is_dir(directory):
+                continue
+            await stat(directory)
+            reason = "Not a directory"
+        except FS_ERRORS as exc:
+            reason = fs_strerror(exc) or str(exc)
+        return [
+            f"tar: {directory.raw_path}: Cannot open: {reason}",
+            constants.FATAL_TRAILER
+        ]
+    return []
+
+
 async def plan_create(
     paths: list[PathSpec],
     *,
@@ -193,16 +219,9 @@ async def plan_create(
     """
     if not paths:
         return _refusal([constants.EMPTY_ARCHIVE, constants.USAGE_HINT])
-    for directory in directories or []:
-        # GNU chdirs at each -C in turn, before reading a single
-        # operand, so the FIRST one it cannot enter is fatal for the
-        # whole run and no members are written. Checking only the last
-        # would archive the operands that followed a bad earlier one.
-        if not await is_dir(directory):
-            return _refusal([
-                f"tar: {directory.raw_path}: Cannot open: "
-                "No such file or directory", constants.FATAL_TRAILER
-            ])
+    directory_errors = await check_directories(directories or [], is_dir, stat)
+    if directory_errors:
+        return _refusal(directory_errors)
     members: list[Member] = []
     notices: list[str] = []
     dropped: list[str] = []
@@ -273,7 +292,8 @@ async def plan_create(
             if name not in keep:
                 continue
             read = entry.read
-            if read is not None and read.virtual == archive.virtual:
+            if (archive.raw_path != "-" and read is not None
+                    and read.virtual == archive.virtual):
                 notices.append(f"tar: {name}: {constants.SELF_DUMP}")
                 continue
             members.append(

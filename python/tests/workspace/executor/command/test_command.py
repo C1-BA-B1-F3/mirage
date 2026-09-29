@@ -47,3 +47,44 @@ async def test_a_handler_sees_the_words_the_line_spelled(line, err):
     await ws.shell("echo a > /data/a.txt")
     r = await ws.shell(line)
     assert (r.stderr or b"").decode().startswith(err)
+
+
+# jq's --rawfile/--slurpfile are read and curl's -o written through
+# the dispatcher, so a file on another mount, or a process substitution
+# under /dev, is no cross-mount line (DOOR_FLAG_KEYS). Positional
+# operands still route.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,out", [
+    ("jq -c -n --slurpfile t /work/t.json "
+     "--slurpfile f <(echo '{\"x\":1}') '[$t, $f]'",
+     b'[[{"a":1}],[{"x":1}]]\n'),
+    ("jq -c --slurpfile t /work/t.json '[., $t]' /data/d.json",
+     b'[{"b":2},[{"a":1}]]\n'),
+    ("cd /work && jq -c -n --rawfile r /data/r.txt '$r'", b'"raw\\n"\n'),
+])
+async def test_door_options_route_nothing(line, out):
+    ws = Workspace(
+        {
+            "/data": (RAMVFS(), MountMode.WRITE),
+            "/work": (RAMVFS(), MountMode.WRITE)
+        },
+        mode=MountMode.WRITE)
+    await ws.shell("echo '{\"a\":1}' > /work/t.json; "
+                   "echo '{\"b\":2}' > /data/d.json; echo raw > /data/r.txt")
+    r = await ws.shell(line)
+    assert (r.exit_code, r.stdout, r.stderr or b"") == (0, out, b"")
+
+
+@pytest.mark.asyncio
+async def test_positional_operands_on_two_mounts_still_refused():
+    ws = Workspace(
+        {
+            "/data": (RAMVFS(), MountMode.WRITE),
+            "/work": (RAMVFS(), MountMode.WRITE)
+        },
+        mode=MountMode.WRITE)
+    await ws.shell("echo 1 > /work/t.json; echo 2 > /data/d.json")
+    r = await ws.shell("jq . /work/t.json /data/d.json")
+    assert r.exit_code == 1
+    assert r.stderr == (b"jq: paths span multiple mounts (/data/, /work/), "
+                        b"cross-mount not supported\n")

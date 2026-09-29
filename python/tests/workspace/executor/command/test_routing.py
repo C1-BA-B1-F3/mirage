@@ -58,6 +58,19 @@ def test_path_flag_scopes_leaves_a_program_file_out(cmd: str, flag: str):
     assert path_flag_scopes(cmd, [flag, "/other/p", "/data/in"], "/") == []
 
 
+@pytest.mark.parametrize("cmd, argv", [
+    ("curl", ["-o", "/other/body", "http://x.test/"]),
+    ("jq", [
+        "--slurpfile", "s", "/other/s.json", "--rawfile", "r", "/dev/fd/63",
+        "."
+    ]),
+])
+def test_path_flag_scopes_leaves_door_files_out(cmd: str, argv: list[str]):
+    # The handler reaches them through the dispatcher, so they name no
+    # mount the line has to run on (DOOR_FLAG_KEYS).
+    assert path_flag_scopes(cmd, argv, "/") == []
+
+
 def test_program_tokens_walks_a_cli_verb_path_and_keeps_the_rest_raw():
     ws = Workspace(mounts={"/ram": (RAMVFS(), MountMode.WRITE)})
     try:

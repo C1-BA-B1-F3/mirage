@@ -40,6 +40,18 @@ export const CWD_DEFAULT_RAW: Record<string, string> = {
   ls: '.',
 }
 
+// The path options whose file the handler itself reads or writes through
+// the dispatcher, keyed by command, valued by kwarg name: curl's -o, jq's
+// --rawfile and --slurpfile. Like a program file, such a file is no operand
+// of the mount the line runs on, so it routes nothing: the line runs where
+// its positional operands (or the cwd) put it, and `--slurpfile` over a
+// process substitution, or beside an input on another mount, is not
+// cross-mount.
+export const DOOR_FLAG_KEYS: Readonly<Record<string, readonly string[]>> = {
+  curl: ['output'],
+  jq: ['rawfile', 'slurpfile'],
+}
+
 // The synthetic cwd operand for a CWD_DEFAULT_RAW command typed bare.
 // Injected before routing, so mount resolution, fan-out across
 // descendant mounts, and respellRaw treat it exactly like a typed
@@ -97,14 +109,19 @@ export function pathFlagScopes(cmdName: string, argv: string[], cwd: string): Pa
   const spec = SPECS[cmdName]
   if (spec === undefined) return []
   const parsed = parseCommand(spec, argv, cwd, cmdName)
-  const key = FILE_KEYS[cmdName]
-  const program = key === undefined ? undefined : parseToKwargs(parsed)[key]
-  const programPaths = Array.isArray(program) ? program : [program]
+  const kwargs = parseToKwargs(parsed)
   const flagPaths = [...parsed.pathFlagValues]
-  for (const value of programPaths) {
-    if (typeof value !== 'string') continue
-    const index = flagPaths.indexOf(value)
-    if (index >= 0) flagPaths.splice(index, 1)
+  // A program file and a door option's file are read or written through the
+  // dispatcher, not on the line's mount. A pair's name slots are words, never
+  // resolved paths, so they match nothing here.
+  for (const key of [FILE_KEYS[cmdName], ...(DOOR_FLAG_KEYS[cmdName] ?? [])]) {
+    if (key === undefined) continue
+    const value = kwargs[key]
+    for (const item of Array.isArray(value) ? value : [value]) {
+      if (typeof item !== 'string') continue
+      const index = flagPaths.indexOf(item)
+      if (index >= 0) flagPaths.splice(index, 1)
+    }
   }
   return flagPaths.map(
     (value) =>
@@ -149,6 +166,23 @@ export function positionalScopes(
         byVirtual.get(value) ??
         new PathSpec({ virtual: value, directory: value, vfsPath: '', rawPath: value }),
     )
+}
+
+/**
+ * The classified path words that route a line. Classification makes a door
+ * option's file a path word like any other, so a command in DOOR_FLAG_KEYS
+ * routes by its positional operands alone; every other command by all its
+ * path words.
+ */
+export function routedOperands(
+  cmdName: string,
+  argv: string[],
+  cwd: string,
+  words: readonly (string | PathSpec)[],
+  pathScopes: PathSpec[],
+): PathSpec[] {
+  if (!(cmdName in DOOR_FLAG_KEYS)) return pathScopes
+  return positionalScopes(cmdName, argv, cwd, words)
 }
 
 /** Combine positional and path-flag scopes, keeping operand order. */

@@ -158,12 +158,17 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
               await pause()
               await original(...args)
             })
-          } else {
-            const setter = method === 'setPartialDir' ? 'setPartialDir' : 'setDir'
-            const original = index[setter].bind(index)
-            vi.spyOn(index, setter).mockImplementation(async (...args) => {
+          } else if (method === 'setPartialDir') {
+            const original = index.setPartialDir.bind(index)
+            vi.spyOn(index, 'setPartialDir').mockImplementation(async (...args) => {
               await pause()
               await original(...args)
+            })
+          } else {
+            const original = index.setDir.bind(index)
+            vi.spyOn(index, 'setDir').mockImplementation(async (...args) => {
+              await pause()
+              return original(...args)
             })
           }
         }
@@ -398,7 +403,7 @@ class ExpirySpy extends RAMIndexCacheStore {
     path: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<void> {
+  ): Promise<string[]> {
     this.asked.push(expiredAt)
     return super.setDir(path, entries, expiredAt)
   }

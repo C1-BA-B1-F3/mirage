@@ -31,11 +31,18 @@ export abstract class IndexCacheStore {
   abstract get(vfsPath: string): Promise<LookupResult>
   abstract put(vfsPath: string, entry: IndexEntry): Promise<void>
   abstract listDir(vfsPath: string): Promise<ListResult>
+  /**
+   * Cache a complete directory listing. A complete listing names every
+   * child, so a child the previous listing named and this one does not is
+   * gone: its row goes, and a gone directory takes its listing and every
+   * row beneath it. Rows only `put` wrote were never named, so they stay.
+   * Resolves to the keys of the children that went.
+   */
   abstract setDir(
     vfsPath: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<void>
+  ): Promise<string[]>
   abstract invalidateDir(vfsPath: string): Promise<void>
   /**
    * Cache observed children without claiming a complete directory. Stores

@@ -158,3 +158,61 @@ async def test_invalidation_is_visible_to_other_clients(store, store_factory):
 @pytest.mark.asyncio
 async def test_ttl_is_the_configured_listing_lifetime(store):
     assert store.ttl == 1
+
+
+def folder(name):
+    return IndexEntry(id=name, name=name, resource_type="folder")
+
+
+@pytest.mark.asyncio
+async def test_first_listing_evicts_nothing(store):
+    assert await store.set_dir("/dir", [("a", entry())]) == []
+
+
+@pytest.mark.asyncio
+async def test_relist_evicts_the_rows_it_no_longer_names(store):
+    await store.set_dir("/dir", [("a", entry()), ("b", entry("b"))])
+    assert await store.set_dir("/dir", [("b", entry("b"))]) == ["/dir/a"]
+    assert (await store.get("/dir/a")).status == LookupStatus.NOT_FOUND
+    assert (await store.get("/dir/b")).entry is not None
+    assert (await store.list_dir("/dir")).entries == ["/dir/b"]
+
+
+@pytest.mark.asyncio
+async def test_relist_over_an_expired_listing_still_evicts(store):
+    past = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await store.set_dir("/dir", [("a", entry()), ("b", entry("b"))], past)
+    assert (await store.list_dir("/dir")).status == LookupStatus.EXPIRED
+    assert await store.set_dir("/dir", [("b", entry("b"))]) == ["/dir/a"]
+    assert (await store.get("/dir/a")).status == LookupStatus.NOT_FOUND
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_folder_takes_its_subtree(store):
+    await store.set_dir("/dir", [("sub", folder("sub")), ("f", entry("f"))])
+    await store.set_dir("/dir/sub", [("x", entry("x")),
+                                     ("deep", folder("deep"))])
+    await store.set_dir("/dir/sub/deep", [("y", entry("y"))])
+    await store.set_dir("/dir/sub2", [("z", entry("z"))])
+    assert await store.set_dir("/dir", [("f", entry("f"))]) == ["/dir/sub"]
+    for path in ["/dir/sub", "/dir/sub/x", "/dir/sub/deep/y"]:
+        assert (await store.get(path)).status == LookupStatus.NOT_FOUND
+    for path in ["/dir/sub", "/dir/sub/deep"]:
+        assert (await store.list_dir(path)).status == LookupStatus.NOT_FOUND
+    assert (await store.list_dir("/dir/sub2")).entries == ["/dir/sub2/z"]
+    assert (await store.get("/dir/sub2/z")).entry is not None
+
+
+@pytest.mark.asyncio
+async def test_partial_listing_evicts_nothing(store):
+    await store.set_dir("/dir", [("a", entry()), ("b", entry("b"))])
+    await store.set_partial_dir("/dir", [("b", entry("b"))])
+    assert (await store.get("/dir/a")).entry is not None
+
+
+@pytest.mark.asyncio
+async def test_relist_keeps_rows_only_put_wrote(store):
+    await store.put("/dir/p", entry("p"))
+    await store.set_dir("/dir", [("a", entry())])
+    assert await store.set_dir("/dir", []) == ["/dir/a"]
+    assert (await store.get("/dir/p")).entry is not None

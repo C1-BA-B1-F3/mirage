@@ -20,13 +20,14 @@ import aiohttp
 import pytest
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.cache.index import NULL_INDEX
+from mirage.cache.index import NULL_INDEX, IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.github.client import GitHubApiError
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.tree import (ensure_live_snapshot, ensure_tree,
                                      fetch_dir_page, fetch_dir_tree,
-                                     fetch_tree, index_rows, point_row)
+                                     fetch_tree, index_rows, point_row,
+                                     seed_index)
 from mirage.core.github.tree_entry import TreeEntry
 from tests.fixtures.github_api import FakeGitHub, blob_sha, serve
 
@@ -466,3 +467,18 @@ async def test_a_malformed_point_answer_is_refused():
                    AsyncMock(return_value={})):
             with pytest.raises(GitHubApiError, match="carries no tree"):
                 await point_row(accessor, "docs/a.txt")
+
+
+@pytest.mark.asyncio
+async def test_a_truncated_seed_keeps_rows_it_does_not_name():
+    accessor = _accessor(GitHubConfig(token="t"))
+    accessor.truncated = True
+    index = RAMIndexCacheStore(ttl=600)
+    await index.set_dir("/gh/data", [
+        ("keep.txt", IndexEntry(id="b1", name="keep.txt",
+                                resource_type="file")),
+        ("other.txt",
+         IndexEntry(id="b2", name="other.txt", resource_type="file")),
+    ])
+    seed_index(accessor, index, "/gh")
+    assert (await index.get("/gh/data/other.txt")).entry.id == "b2"

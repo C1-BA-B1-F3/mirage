@@ -29,7 +29,7 @@ export function buildTreeMap(tree: GitHubTreeItem[]): Record<string, TreeEntry> 
   return map
 }
 
-export async function populateIndex(
+export function populateIndex(
   index: IndexCacheStore,
   tree: Record<string, TreeEntry>,
   prefix: string,
@@ -57,8 +57,15 @@ export async function populateIndex(
     arr.push([name, indexEntryFromTree(item)])
     dirs.set(parent, arr)
   }
-  await Promise.all([...dirs].map(([parent, entries]) => index.setDir(parent, entries, expiresAt)))
-  return snapshotOf(dirs)
+  // Seeded, not written per directory: a truncated tree names only some
+  // children, and a complete write would evict the rest.
+  const snapshot = snapshotOf(dirs)
+  index.seed(
+    snapshot.entries,
+    snapshot.children,
+    expiresAt ?? new Date(Date.now() + index.ttl * 1000),
+  )
+  return Promise.resolve(snapshot)
 }
 
 /** The rows `populateIndex` wrote, keyed the way the store keys them. */

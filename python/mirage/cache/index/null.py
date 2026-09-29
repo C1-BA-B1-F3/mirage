@@ -52,8 +52,8 @@ class NullIndexCacheStore(IndexCacheStore):
         vfs_path: str,
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
-    ) -> None:
-        return None
+    ) -> list[str]:
+        return []
 
     async def entries(self) -> dict[str, IndexEntry]:
         return {}

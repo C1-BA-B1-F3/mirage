@@ -132,8 +132,11 @@ class IndexView(IndexCacheStore):
     async def set_dir(self,
                       vfs_path: str,
                       entries: list[tuple[str, IndexEntry]],
-                      expired_at: datetime | None = None) -> None:
-        await self._set_dir(vfs_path, entries, expired_at, partial=False)
+                      expired_at: datetime | None = None) -> list[str]:
+        return await self._set_dir(vfs_path,
+                                   entries,
+                                   expired_at,
+                                   partial=False)
 
     async def set_partial_dir(self,
                               vfs_path: str,
@@ -143,15 +146,20 @@ class IndexView(IndexCacheStore):
 
     async def _set_dir(self, vfs_path: str, entries: list[tuple[str,
                                                                 IndexEntry]],
-                       expired_at: datetime | None, *, partial: bool) -> None:
+                       expired_at: datetime | None, *,
+                       partial: bool) -> list[str]:
         async with self._fence():
-            if self._owns(vfs_path):
-                prefix = vfs_path.rstrip("/") + "/"
-                owned = [(name, entry) for name, entry in entries
-                         if self._owns(prefix + name)]
-                setter = (self._store.set_partial_dir
-                          if partial else self._store.set_dir)
-                await setter(vfs_path, owned, self._deadline(expired_at))
+            if not self._owns(vfs_path):
+                return []
+            prefix = vfs_path.rstrip("/") + "/"
+            owned = [(name, entry) for name, entry in entries
+                     if self._owns(prefix + name)]
+            deadline = self._deadline(expired_at)
+            if partial:
+                await self._store.set_partial_dir(vfs_path, owned, deadline)
+                return []
+            gone = await self._store.set_dir(vfs_path, owned, deadline)
+            return [key for key in gone if self._owns(key)]
 
     def scope_snapshot(self, snapshot: IndexSnapshot) -> IndexSnapshot:
         return IndexSnapshot(

@@ -200,9 +200,9 @@ class _SpyStore(RAMIndexCacheStore):
         super().__init__(ttl=ttl)
         self.asked: list[datetime | None] = []
 
-    async def set_dir(self, vfs_path, entries, expired_at=None) -> None:
+    async def set_dir(self, vfs_path, entries, expired_at=None) -> list[str]:
         self.asked.append(expired_at)
-        await super().set_dir(vfs_path, entries, expired_at)
+        return await super().set_dir(vfs_path, entries, expired_at)
 
     async def set_partial_dir(self,
                               vfs_path,

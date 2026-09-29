@@ -64,7 +64,23 @@ class IndexCacheStore:
         vfs_path: str,
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
-    ) -> None:
+    ) -> list[str]:
+        """Cache a complete directory listing.
+
+        A complete listing names every child, so a child the previous
+        listing named and this one does not is gone: its row goes, and a
+        gone directory takes its listing and every row beneath it. Rows
+        only ``put`` wrote were never named, so they stay.
+
+        Args:
+            vfs_path (str): the listed directory's virtual path.
+            entries (list[tuple[str, IndexEntry]]): every child.
+            expired_at (datetime | None): optional freshness deadline.
+
+        Returns:
+            list[str]: keys of the children the previous listing named
+            and this one does not.
+        """
         raise NotImplementedError
 
     async def entries(self) -> dict[str, IndexEntry]:

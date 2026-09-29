@@ -35,8 +35,8 @@ export class DevIndex extends RAMIndexCacheStore {
   override put(): Promise<void> {
     return Promise.resolve()
   }
-  override setDir(): Promise<void> {
-    return Promise.resolve()
+  override setDir(): Promise<string[]> {
+    return Promise.resolve([])
   }
 }
 

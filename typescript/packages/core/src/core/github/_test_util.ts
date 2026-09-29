@@ -325,7 +325,7 @@ export class ExpiredOnArrival extends RAMIndexCacheStore {
     path: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<void> {
+  ): Promise<string[]> {
     return super.setDir(path, entries, this.expiryFor(path, expiredAt))
   }
 

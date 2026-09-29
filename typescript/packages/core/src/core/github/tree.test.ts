@@ -15,6 +15,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchDirTree, fetchTree, GitHubApiError, type GitHubTransport } from './client.ts'
 import { GitHubAccessor } from '../../accessor/github.ts'
+import { IndexEntry } from '../../cache/index/config.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { ensureLiveSnapshot, pointRow, populateIndex, refillSnapshot } from './tree.ts'
 import { FakeGitHub, blobSha, servedAccessor } from './_test_util.ts'
@@ -162,6 +163,18 @@ describe('populateIndex', () => {
     const index = new RAMIndexCacheStore({ ttl: 600 })
     await populateIndex(index, {}, '/gh')
     expect((await index.listDir('/gh')).entries).toEqual([])
+  })
+
+  // A truncated tree names only some children, so writing it must not evict
+  // the rest of a folder a per-directory fallback listed in full.
+  it('keeps rows a truncated tree does not name', async () => {
+    const index = new RAMIndexCacheStore({ ttl: 600 })
+    await index.setDir('/gh/data', [
+      ['keep.txt', new IndexEntry({ id: 'b1', name: 'keep.txt', resourceType: 'file' })],
+      ['other.txt', new IndexEntry({ id: 'b2', name: 'other.txt', resourceType: 'file' })],
+    ])
+    await populateIndex(index, TREE, '/gh', new Date(0))
+    expect((await index.get('/gh/data/other.txt')).entry?.id).toBe('b2')
   })
 })
 

@@ -234,15 +234,10 @@ describe.skipIf(skip)('RedisIndexCacheStore', () => {
   it('does not revive a refill committed after another worker invalidates its generation', async () => {
     await store.setDir('/snapshot', [])
     const client = await redis()
-    const multi = client.multi.bind(client)
-    const spy = vi.spyOn(client, 'multi').mockImplementationOnce(() => {
-      const pipeline = multi()
-      const exec = pipeline.exec.bind(pipeline)
-      pipeline.exec = async () => {
-        await new RedisIndexCacheStore({ client: await redis(), keyPrefix: prefix }).invalidate()
-        return exec()
-      }
-      return pipeline
+    const run = client.eval.bind(client)
+    const spy = vi.spyOn(client, 'eval').mockImplementationOnce(async (script, options) => {
+      await new RedisIndexCacheStore({ client: await redis(), keyPrefix: prefix }).invalidate()
+      return run(script, options)
     })
     try {
       await store.setDir('/snapshot', [['old', entry('old', 'old')]])
@@ -276,15 +271,10 @@ describe.skipIf(skip)('RedisIndexCacheStore', () => {
     const client = await redis()
     const directoryKey = `${prefix}mirage:idx:generation:/snapshot`
     await store.setDir('/snapshot', [])
-    const multi = client.multi.bind(client)
-    const spy = vi.spyOn(client, 'multi').mockImplementationOnce(() => {
-      const pipeline = multi()
-      const exec = pipeline.exec.bind(pipeline)
-      pipeline.exec = async () => {
-        await client.del(directoryKey)
-        return exec()
-      }
-      return pipeline
+    const run = client.eval.bind(client)
+    const spy = vi.spyOn(client, 'eval').mockImplementationOnce(async (script, options) => {
+      await client.del(directoryKey)
+      return run(script, options)
     })
     try {
       await store.setDir('/snapshot', [['old', entry('old', 'old')]])
@@ -490,6 +480,8 @@ describe('deferred Redis seeds', () => {
       set: vi.fn().mockResolvedValue('OK'),
       del: vi.fn().mockResolvedValue(0),
       multi: () => pipeline,
+      eval: vi.fn().mockResolvedValue([[], []]),
+      exists: vi.fn().mockResolvedValue(0),
       scanIterator: () => {
         throw new Error('unexpected scan')
       },
@@ -549,12 +541,12 @@ describe('deferred Redis seeds', () => {
     const results = await pending
     expect(results.map((result) => result.status)).toEqual(['rejected', 'rejected'])
     expect(value.get).toHaveBeenCalledTimes(1)
-    await expect(store.setDir('/one', [])).resolves.toBeUndefined()
+    await expect(store.setDir('/one', [])).resolves.toEqual([])
     expect(value.get).toHaveBeenCalledTimes(3)
   })
 
   it('keeps listings stale when their generation key is evicted', async () => {
-    const { value, pipeline } = client()
+    const { value } = client()
     const raw = JSON.stringify({ entries: [], expires_at: 4102444800, generation: 'old:dir' })
     vi.mocked(value.mGet).mockResolvedValue([raw, null, 'dir'])
     const store = new RedisIndexCacheStore({ client: value })
@@ -563,7 +555,7 @@ describe('deferred Redis seeds', () => {
     const generation = vi.mocked(value.set).mock.calls[0]?.[1]
     expect(generation).toBeDefined()
     expect(generation).not.toBe('old')
-    expect(pipeline.set).toHaveBeenCalled()
+    expect(value.eval).toHaveBeenCalled()
     vi.mocked(value.mGet).mockResolvedValue([raw, generation ?? null, 'dir'])
     expect((await store.listDir('/old')).status).toBe(LookupStatus.EXPIRED)
   })

@@ -15,7 +15,7 @@
 from datetime import datetime, timedelta, timezone
 
 from mirage.cache.index.config import (IndexEntry, ListResult, LookupResult,
-                                       LookupStatus)
+                                       LookupStatus, ResourceType)
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.lock import KeyLockMixin
 from mirage.core.timeutil import to_iso_z
@@ -86,8 +86,11 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         vfs_path: str,
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
-    ) -> None:
-        await self._set_dir(vfs_path, entries, expired_at, partial=False)
+    ) -> list[str]:
+        return await self._set_dir(vfs_path,
+                                   entries,
+                                   expired_at,
+                                   partial=False)
 
     async def set_partial_dir(
         self,
@@ -104,7 +107,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         expired_at: datetime | None,
         *,
         partial: bool,
-    ) -> None:
+    ) -> list[str]:
         async with self._lock_for(vfs_path):
             now = datetime.now(timezone.utc)
             exp = expired_at or (now + timedelta(seconds=self._ttl))
@@ -117,12 +120,31 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
                     entry = entry.model_copy(update={"index_time": now_iso})
                 self._entries[full_path] = entry
                 child_keys.append(full_path)
+            named = set(child_keys)
+            gone = [] if partial else [
+                key for key in self._children.get(vfs_path, [])
+                if key not in named
+            ]
+            for key in gone:
+                self._evict(key)
             self._children[vfs_path] = child_keys
             self._expiry[vfs_path] = exp
             if partial:
                 self._partial.add(vfs_path)
             else:
                 self._partial.discard(vfs_path)
+            return gone
+
+    def _evict(self, key: str) -> None:
+        """Drop a child a complete listing no longer names.
+
+        Args:
+            key (str): the gone child's key.
+        """
+        entry = self._entries.pop(key, None)
+        if key in self._children or (entry is not None and entry.resource_type
+                                     == ResourceType.FOLDER):
+            self._drop_prefix(key)
 
     async def invalidate_dir(self, vfs_path: str) -> None:
         for child in self._children.get(vfs_path, []):
@@ -132,6 +154,9 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         self._partial.discard(vfs_path)
 
     async def invalidate_prefix(self, vfs_path: str) -> None:
+        self._drop_prefix(vfs_path)
+
+    def _drop_prefix(self, vfs_path: str) -> None:
         for entry_key in [k for k in self._entries if under_path(k, vfs_path)]:
             self._entries.pop(entry_key, None)
         for dir_key in [k for k in self._children if under_path(k, vfs_path)]:

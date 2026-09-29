@@ -13,7 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+from collections.abc import Awaitable
 from datetime import datetime, timedelta, timezone
+from typing import cast
 
 try:
     from redis.asyncio import Redis
@@ -33,6 +35,31 @@ from mirage.utils.key_prefix import under_path
 
 def _text(value: str | bytes) -> str:
     return value.decode() if isinstance(value, bytes) else value
+
+
+_SWAP_LISTING = """
+local old = redis.call('GET', KEYS[1])
+local named = {}
+for i = 3, #ARGV, 2 do
+  named[ARGV[i]] = true
+  redis.call('SET', ARGV[2] .. ARGV[i], ARGV[i + 1])
+end
+redis.call('SET', KEYS[1], ARGV[1])
+local gone, folders = {}, {}
+if old then
+  for _, path in ipairs(cjson.decode(old).entries) do
+    if not named[path] then
+      local row = redis.call('GET', ARGV[2] .. path)
+      redis.call('DEL', ARGV[2] .. path)
+      local folder = row ~= false
+        and cjson.decode(row).resource_type == 'folder'
+      gone[#gone + 1] = path
+      folders[#folders + 1] = folder and 1 or 0
+    end
+  end
+end
+return {gone, folders}
+"""
 
 
 def _glob_escape(value: str) -> str:
@@ -243,8 +270,11 @@ class RedisIndexCacheStore(IndexCacheStore):
         vfs_path: str,
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
-    ) -> None:
-        await self._set_dir(vfs_path, entries, expired_at, partial=False)
+    ) -> list[str]:
+        return await self._set_dir(vfs_path,
+                                   entries,
+                                   expired_at,
+                                   partial=False)
 
     async def set_partial_dir(
         self,
@@ -261,7 +291,7 @@ class RedisIndexCacheStore(IndexCacheStore):
         expired_at: datetime | None,
         *,
         partial: bool,
-    ) -> None:
+    ) -> list[str]:
         await self._flush_seed()
         now = datetime.now(timezone.utc)
         now_iso = to_iso_z(now)
@@ -270,25 +300,38 @@ class RedisIndexCacheStore(IndexCacheStore):
         generation = await self._generation(self._generation_key)
         directory_generation = await self._generation(
             f"{self._directory_generation_prefix}{vfs_path}")
-        pipe = self._client.pipeline()
-        child_keys: list[str] = []
+        rows: list[tuple[str, str]] = []
         for name, entry in entries:
-            full_path = prefix + name
             if not entry.index_time:
                 entry = entry.model_copy(update={"index_time": now_iso})
-            pipe.set(self._entry_key(full_path), entry.model_dump_json())
-            child_keys.append(full_path)
+            rows.append((prefix + name, entry.model_dump_json()))
 
         expiry = expired_at if expired_at is not None else now + timedelta(
             seconds=self._ttl)
         listing = IndexDirectory(
-            entries=child_keys,
+            entries=[path for path, _ in rows],
             expires_at=expiry.timestamp(),
             generation=f"{generation}:{directory_generation}",
             partial=partial)
-        pipe.set(self._children_key(vfs_path), listing.model_dump_json())
-
-        await pipe.execute()
+        if partial:
+            pipe = self._client.pipeline()
+            for path, row in rows:
+                pipe.set(self._entry_key(path), row)
+            pipe.set(self._children_key(vfs_path), listing.model_dump_json())
+            await pipe.execute()
+            return []
+        # One script, so no other writer lands between reading the previous
+        # listing and replacing it; the diff is against the true predecessor.
+        gone, folders = await cast(
+            Awaitable[tuple[list[str | bytes], list[int]]],
+            self._client.eval(_SWAP_LISTING, 1, self._children_key(vfs_path),
+                              listing.model_dump_json(), self._entry_prefix,
+                              *(value for row in rows for value in row)))
+        dropped = [_text(key) for key in gone]
+        for key, folder in zip(dropped, folders):
+            if folder or await self._client.exists(self._children_key(key)):
+                await self.invalidate_prefix(key)
+        return dropped
 
     async def entries(self) -> dict[str, IndexEntry]:
         await self._flush_seed()

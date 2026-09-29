@@ -15,7 +15,13 @@
 import { toIsoZ } from '../../utils/dates.ts'
 import { underPath } from '../../utils/key_prefix.ts'
 import { KeyLock } from '../lock.ts'
-import { LookupStatus, type IndexEntry, type ListResult, type LookupResult } from './config.ts'
+import {
+  LookupStatus,
+  ResourceType,
+  type IndexEntry,
+  type ListResult,
+  type LookupResult,
+} from './config.ts'
 import { IndexCacheStore } from './store.ts'
 
 export class RAMIndexCacheStore extends IndexCacheStore {
@@ -82,7 +88,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     vfsPath: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<void> {
+  ): Promise<string[]> {
     return this.storeDir(vfsPath, entries, expiredAt, false)
   }
 
@@ -91,7 +97,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
   ): Promise<void> {
-    return this.storeDir(vfsPath, entries, expiredAt, true)
+    return this.storeDir(vfsPath, entries, expiredAt, true).then(() => undefined)
   }
 
   private storeDir(
@@ -99,7 +105,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt: Date | null | undefined,
     partial: boolean,
-  ): Promise<void> {
+  ): Promise<string[]> {
     return this.lock.withLock(vfsPath, () => {
       const now = Date.now()
       const exp = expiredAt ? expiredAt.getTime() : now + this.ttl * 1000
@@ -112,12 +118,26 @@ export class RAMIndexCacheStore extends IndexCacheStore {
         this.entryMap.set(fullPath, stored)
         childKeys.push(fullPath)
       }
+      const named = new Set(childKeys)
+      const gone = partial
+        ? []
+        : (this.children.get(vfsPath) ?? []).filter((key) => !named.has(key))
+      for (const key of gone) this.evict(key)
       this.children.set(vfsPath, childKeys)
       this.expiry.set(vfsPath, exp)
       if (partial) this.partial.add(vfsPath)
       else this.partial.delete(vfsPath)
-      return Promise.resolve()
+      return Promise.resolve(gone)
     })
+  }
+
+  /** Drop a child a complete listing no longer names. */
+  private evict(key: string): void {
+    const entry = this.entryMap.get(key)
+    this.entryMap.delete(key)
+    if (this.children.has(key) || entry?.resourceType === ResourceType.FOLDER) {
+      this.dropPrefix(key)
+    }
   }
 
   invalidateDir(vfsPath: string): Promise<void> {
@@ -131,6 +151,11 @@ export class RAMIndexCacheStore extends IndexCacheStore {
   }
 
   invalidatePrefix(vfsPath: string): Promise<void> {
+    this.dropPrefix(vfsPath)
+    return Promise.resolve()
+  }
+
+  private dropPrefix(vfsPath: string): void {
     for (const key of [...this.entryMap.keys()]) {
       if (underPath(key, vfsPath)) this.entryMap.delete(key)
     }
@@ -143,7 +168,6 @@ export class RAMIndexCacheStore extends IndexCacheStore {
         this.partial.delete(key)
       }
     }
-    return Promise.resolve()
   }
 
   invalidate(): Promise<void> {

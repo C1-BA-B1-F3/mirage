@@ -143,7 +143,7 @@ export class IndexView extends IndexCacheStore {
     path: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<void> {
+  ): Promise<string[]> {
     return this.storeDir(path, entries, expiredAt, false)
   }
 
@@ -152,7 +152,7 @@ export class IndexView extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
   ): Promise<void> {
-    return this.storeDir(path, entries, expiredAt, true)
+    return this.storeDir(path, entries, expiredAt, true).then(() => undefined)
   }
 
   private storeDir(
@@ -160,15 +160,18 @@ export class IndexView extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt: Date | null | undefined,
     partial: boolean,
-  ): Promise<void> {
+  ): Promise<string[]> {
     return this.fence(async () => {
-      if (this.owns(path)) {
-        const prefix = rstripSlash(path) + '/'
-        const owned = entries.filter(([name]) => this.owns(prefix + name))
-        const deadline = this.deadline(expiredAt)
-        if (partial) await this.inner.setPartialDir(path, owned, deadline)
-        else await this.inner.setDir(path, owned, deadline)
+      if (!this.owns(path)) return []
+      const prefix = rstripSlash(path) + '/'
+      const owned = entries.filter(([name]) => this.owns(prefix + name))
+      const deadline = this.deadline(expiredAt)
+      if (partial) {
+        await this.inner.setPartialDir(path, owned, deadline)
+        return []
       }
+      const gone = await this.inner.setDir(path, owned, deadline)
+      return gone.filter((key) => this.owns(key))
     })
   }
 

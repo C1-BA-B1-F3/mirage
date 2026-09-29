@@ -37,6 +37,30 @@ import { CHILDREN_PREFIX, DEFAULT_KEY_PREFIX, ENTRY_PREFIX, GENERATION_KEY } fro
  * narrowing optimization only; the caller still filters at a path boundary.
  * Mirrors Python `_glob_escape` (`cache/index/redis.py`).
  */
+const SWAP_LISTING = `
+local old = redis.call('GET', KEYS[1])
+local named = {}
+for i = 3, #ARGV, 2 do
+  named[ARGV[i]] = true
+  redis.call('SET', ARGV[2] .. ARGV[i], ARGV[i + 1])
+end
+redis.call('SET', KEYS[1], ARGV[1])
+local gone, folders = {}, {}
+if old then
+  for _, path in ipairs(cjson.decode(old).entries) do
+    if not named[path] then
+      local row = redis.call('GET', ARGV[2] .. path)
+      redis.call('DEL', ARGV[2] .. path)
+      local folder = row ~= false
+        and cjson.decode(row).resource_type == 'folder'
+      gone[#gone + 1] = path
+      folders[#folders + 1] = folder and 1 or 0
+    end
+  end
+end
+return {gone, folders}
+`
+
 function globEscape(value: string): string {
   return value.replace(/[*?[\]\\]/g, (char) => `\\${char}`)
 }
@@ -54,6 +78,8 @@ export interface RedisClientLike {
   set: (key: string, value: string, options?: { NX: boolean }) => Promise<unknown>
   del: (key: string | string[]) => Promise<unknown>
   multi: () => RedisPipeline
+  eval: (script: string, options: { keys: string[]; arguments: string[] }) => Promise<unknown>
+  exists: (key: string) => Promise<number>
   scanIterator: (options: { MATCH: string }) => AsyncIterable<string | string[]>
   isOpen: boolean
   quit: () => Promise<unknown>
@@ -265,8 +291,8 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     vfsPath: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
-  ): Promise<void> {
-    await this.storeDir(vfsPath, entries, expiredAt, false)
+  ): Promise<string[]> {
+    return this.storeDir(vfsPath, entries, expiredAt, false)
   }
 
   override async setPartialDir(
@@ -282,7 +308,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt: Date | null | undefined,
     partial: boolean,
-  ): Promise<void> {
+  ): Promise<string[]> {
     await this.flushSeed()
     const c = await this.client()
     const now = new Date()
@@ -290,22 +316,36 @@ export class RedisIndexCacheStore extends IndexCacheStore {
     const prefix = vfsPath === '/' ? '/' : `${vfsPath}/`
     const generation = await this.generation(c, this.generationKey)
     const directory = await this.generation(c, `${this.generationKey}:${vfsPath}`)
-    const pipe = c.multi()
-    const childKeys: string[] = []
+    const rows: [string, string][] = []
     for (const [name, entry] of entries) {
-      const fullPath = prefix + name
       const stored = entry.indexTime === '' ? entry.copyWith({ indexTime: nowIso }) : entry
-      pipe.set(this.entryKey(fullPath), JSON.stringify(stored))
-      childKeys.push(fullPath)
+      rows.push([prefix + name, JSON.stringify(stored)])
     }
     const listing: IndexDirectory = {
-      entries: childKeys,
+      entries: rows.map(([path]) => path),
       generation: `${generation}:${directory}`,
       expires_at: (expiredAt?.getTime() ?? now.getTime() + this.ttl * 1000) / 1000,
       partial,
     }
-    pipe.set(this.childrenKey(vfsPath), JSON.stringify(listing))
-    await pipe.exec()
+    if (partial) {
+      const pipe = c.multi()
+      for (const [path, row] of rows) pipe.set(this.entryKey(path), row)
+      pipe.set(this.childrenKey(vfsPath), JSON.stringify(listing))
+      await pipe.exec()
+      return []
+    }
+    // One script, so no other writer lands between reading the previous
+    // listing and replacing it; the diff is against the true predecessor.
+    const [gone, folders] = (await c.eval(SWAP_LISTING, {
+      keys: [this.childrenKey(vfsPath)],
+      arguments: [JSON.stringify(listing), this.entryPrefix, ...rows.flat()],
+    })) as [string[], number[]]
+    for (const [i, path] of gone.entries()) {
+      if (folders[i] === 1 || (await c.exists(this.childrenKey(path))) === 1) {
+        await this.invalidatePrefix(path)
+      }
+    }
+    return gone
   }
 
   async invalidateDir(vfsPath: string): Promise<void> {

@@ -8,6 +8,10 @@ import { RAMFileCacheStore } from '../file/ram.ts'
 
 const REDIS_URL = process.env.REDIS_URL
 
+function folder(name: string): IndexEntry {
+  return new IndexEntry({ id: name, name, resourceType: 'folder' })
+}
+
 function entry(name = 'a'): IndexEntry {
   return new IndexEntry({
     id: name,
@@ -176,6 +180,74 @@ for (const backend of ['ram', 'redis']) {
         for (const path of ['/a1', '/a[1]-other']) {
           expect((await store.listDir(path)).entries).toEqual([path + '/a'])
         }
+      })
+
+      it('evicts nothing on a first listing', async () => {
+        expect(await store.setDir('/dir', [['a', entry()]])).toEqual([])
+      })
+
+      it('evicts the rows a re-list no longer names', async () => {
+        await store.setDir('/dir', [
+          ['a', entry()],
+          ['b', entry('b')],
+        ])
+        expect(await store.setDir('/dir', [['b', entry('b')]])).toEqual(['/dir/a'])
+        expect((await store.get('/dir/a')).status).toBe(LookupStatus.NOT_FOUND)
+        expect((await store.get('/dir/b')).entry).not.toBeNull()
+        expect((await store.listDir('/dir')).entries).toEqual(['/dir/b'])
+      })
+
+      it('evicts against an expired listing too', async () => {
+        const past = new Date(Date.now() - 1000)
+        await store.setDir(
+          '/dir',
+          [
+            ['a', entry()],
+            ['b', entry('b')],
+          ],
+          past,
+        )
+        expect((await store.listDir('/dir')).status).toBe(LookupStatus.EXPIRED)
+        expect(await store.setDir('/dir', [['b', entry('b')]])).toEqual(['/dir/a'])
+        expect((await store.get('/dir/a')).status).toBe(LookupStatus.NOT_FOUND)
+      })
+
+      it('drops the subtree of a folder a re-list no longer names', async () => {
+        await store.setDir('/dir', [
+          ['sub', folder('sub')],
+          ['f', entry('f')],
+        ])
+        await store.setDir('/dir/sub', [
+          ['x', entry('x')],
+          ['deep', folder('deep')],
+        ])
+        await store.setDir('/dir/sub/deep', [['y', entry('y')]])
+        await store.setDir('/dir/sub2', [['z', entry('z')]])
+        expect(await store.setDir('/dir', [['f', entry('f')]])).toEqual(['/dir/sub'])
+        for (const path of ['/dir/sub', '/dir/sub/x', '/dir/sub/deep/y']) {
+          expect((await store.get(path)).status).toBe(LookupStatus.NOT_FOUND)
+        }
+        for (const path of ['/dir/sub', '/dir/sub/deep']) {
+          expect((await store.listDir(path)).status).toBe(LookupStatus.NOT_FOUND)
+        }
+        expect((await store.listDir('/dir/sub2')).entries).toEqual(['/dir/sub2/z'])
+        expect((await store.get('/dir/sub2/z')).entry).not.toBeNull()
+      })
+
+      it('evicts nothing on a partial listing', async () => {
+        await store.setDir('/dir', [
+          ['a', entry()],
+          ['b', entry('b')],
+        ])
+        await store.setPartialDir('/dir', [['b', entry('b')]])
+        expect((await store.get('/dir/a')).entry).not.toBeNull()
+      })
+
+      it('keeps rows only put wrote', async () => {
+        await store.put('/dir/p', entry('p'))
+        await store.setDir('/dir', [['a', entry()]])
+        expect(await store.setDir('/dir', [])).toEqual(['/dir/a'])
+        expect((await store.get('/dir/p')).entry).not.toBeNull()
       })
     },
   )

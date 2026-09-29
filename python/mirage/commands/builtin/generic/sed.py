@@ -17,6 +17,7 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import read_fail_exit
 from mirage.io.types import ByteSource, IOResult
+from mirage.shell.bytes import encode_text
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_error_line
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
@@ -112,7 +113,7 @@ async def sed(
                                            commands,
                                            suppress=suppress,
                                            extended=extended)
-                new_data = new_text.encode()
+                new_data = encode_text(new_text)
                 await write_bytes(p, new_data)
                 writes[p.mount_path] = new_data
                 edited.append(p)
@@ -134,12 +135,11 @@ async def sed(
                 continue
             texts.append(data.decode(errors="replace"))
             read_ok.append(p)
-        return _run_stream(texts, commands, suppress,
-                           extended).encode(), IOResult(cache=[
-                               p.mount_path for p in read_ok if not is_stdin(p)
-                           ],
-                                                        exit_code=code,
-                                                        stderr=err or None)
+        out = encode_text(_run_stream(texts, commands, suppress, extended))
+        return out, IOResult(
+            cache=[p.mount_path for p in read_ok if not is_stdin(p)],
+            exit_code=code,
+            stderr=err or None)
 
     if paths:
         # GNU -i redirects the whole output stream to the file whatever the
@@ -169,10 +169,11 @@ async def sed(
                 raise NotImplementedError(
                     "sed: in-place edit (-i) is not supported on this "
                     "backend")
-            new_data = execute_program(text,
-                                       commands,
-                                       suppress=suppress,
-                                       extended=extended).encode()
+            new_data = encode_text(
+                execute_program(text,
+                                commands,
+                                suppress=suppress,
+                                extended=extended))
             await write_bytes(p, new_data)
             writes[p.mount_path] = new_data
             edited.append(p)
@@ -181,9 +182,8 @@ async def sed(
                                   cache=[p.mount_path for p in edited],
                                   exit_code=code,
                                   stderr=err or None)
-        return _run_stream(texts, commands, suppress,
-                           extended).encode(), IOResult(exit_code=code,
-                                                        stderr=err or None)
+        out = encode_text(_run_stream(texts, commands, suppress, extended))
+        return out, IOResult(exit_code=code, stderr=err or None)
 
     raw = await read_stdin_async(stdin)
     if raw is None:
@@ -194,7 +194,7 @@ async def sed(
                              commands,
                              suppress=suppress,
                              extended=extended)
-    return result.encode(), IOResult()
+    return encode_text(result), IOResult()
 
 
 __all__ = ["sed"]

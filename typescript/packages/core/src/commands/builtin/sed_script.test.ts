@@ -13,10 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
+import { encodeText } from '../../shell/bytes.ts'
 import { breToEre, executeProgram, parseProgram } from './sed_script.ts'
 
 function sed(expr: string, input: string, suppress = false, extended = false): string {
   return executeProgram(input, parseProgram(expr), suppress, extended)
+}
+
+function latin1Bytes(text: string): number[] {
+  return Array.from({ length: text.length }, (_, i) => text.charCodeAt(i))
 }
 
 // ERE convenience: sed -E
@@ -136,6 +141,81 @@ describe('sed c (change)', () => {
 
   it('emits the text once for a line range', () => {
     expect(sed('2,3c\\\nX', 'a\nb\nc\nd\n')).toBe('a\nX\nd\n')
+  })
+})
+
+describe('sed a, i and c text (GNU sed 4.9)', () => {
+  it('drops a backslash before an ordinary character', () => {
+    expect(sed('a one\\/two', 'x\n')).toBe('x\none/two\n')
+    expect(sed('i one\\/two', 'x\n')).toBe('one/two\nx\n')
+    expect(sed('c one\\/two', 'x\n')).toBe('one/two\n')
+    expect(sed("/^bibtexurl:/a codeurl: 'https:\\/\\/github.com\\/u\\/r'", 'bibtexurl: x\n')).toBe(
+      "bibtexurl: x\ncodeurl: 'https://github.com/u/r'\n",
+    )
+  })
+
+  it('decodes the text escapes', () => {
+    expect(sed('a one\\/two\\tthree', 'x\n')).toBe('x\none/two\tthree\n')
+    expect(sed('a x\\ny', 'x\n')).toBe('x\nx\ny\n')
+    expect(sed('a x\\\\y', 'x\n')).toBe('x\nx\\y\n')
+    expect(sed('a x\\by', 'x\n')).toBe('x\nxby\n')
+    expect(sed('a 1\\a2\\f3\\v4\\r5', 'x\n')).toBe('x\n1\x072\f3\v4\r5\n')
+  })
+
+  it('decodes numeric and control escapes', () => {
+    expect(sed('a [\\d065][\\x41][\\o101][\\x4][\\xZ][\\d300]', 'x\n')).toBe(
+      'x\n[A][A][A][\x04][xZ][,]\n',
+    )
+    expect(sed('a [\\cA][\\ca][\\c?][\\c\\\\]', 'x\n')).toBe('x\n[\x01][\x01][\x7f][\x1c]\n')
+    expect(() => sed('a [\\c\\d]', 'x\n')).toThrow('recursive escaping after \\c not allowed')
+  })
+
+  it('writes numeric escapes above ASCII as raw bytes', () => {
+    const out = sed('a [\\xff][\\d200][\\o377][\\x80][\\xc3\\xa9][\\o400]', 'x\n')
+    expect([...encodeText(out)]).toEqual(
+      latin1Bytes('x\n[\xff][\xc8][\xff][\x80][\xc3\xa9][\x00]\n'),
+    )
+  })
+
+  it('lets a final \\c take the closing newline', () => {
+    expect(sed('a foo\\c', 'x\ny\n')).toBe('x\nfooJy\nfooJ')
+    expect(sed('i foo\\c', 'x\n')).toBe('foo\nx\n')
+  })
+
+  it('skips blanks before one-line text and keeps them after a backslash', () => {
+    expect(sed('a  \t foo', 'x\n')).toBe('x\nfoo\n')
+    expect(sed('a\\   foo', 'x\n')).toBe('x\n   foo\n')
+    expect(sed('a\\tfoo', 'x\n')).toBe('x\ntfoo\n')
+    expect(sed('a \\tfoo', 'x\n')).toBe('x\ntfoo\n')
+    expect(sed('a\\\\tfoo', 'x\n')).toBe('x\n\tfoo\n')
+  })
+
+  it('reads the classic form and continued lines', () => {
+    expect(sed('a\\\n  l1\\\n  l2', 'x\n')).toBe('x\n  l1\n  l2\n')
+    expect(sed('i\\\nl1\\\nl2', 'x\n')).toBe('l1\nl2\nx\n')
+    expect(sed('a foo\\\nbar', 'x\n')).toBe('x\nfoo\nbar\n')
+  })
+
+  it('ends the text at a newline and not at a semicolon', () => {
+    expect(sed('1a foo\n2d', 'x\ny\n')).toBe('x\nfoo\n')
+    expect(sed('1a foo; 2d', 'x\ny\n')).toBe('x\nfoo; 2d\ny\n')
+    expect(sed('a int x = 1; echo bar', 'x\n')).toBe('x\nint x = 1; echo bar\n')
+  })
+
+  it('keeps trailing blanks', () => {
+    expect(sed('1d\n$a foo   ', 'x\ny\n')).toBe('y\nfoo   \n')
+  })
+
+  it('leaves the text undecoded when the script ends on a backslash', () => {
+    expect(sed('a one\\/two\\', 'x\n')).toBe('x\none\\/two\n')
+    expect(sed('a\\', 'x\ny\n')).toBe('x\ny\n')
+    expect(sed('c\\', 'x\ny\n')).toBe('')
+  })
+
+  it('refuses a missing text and a block the text left open', () => {
+    expect(() => sed('a', 'x\n')).toThrow("expected \\ after `a', `c' or `i'")
+    expect(() => sed('1{a foo;}', 'x\ny\n')).toThrow("unmatched `{'")
+    expect(sed('1{a foo\n}', 'x\ny\n')).toBe('x\nfoo\ny\n')
   })
 })
 

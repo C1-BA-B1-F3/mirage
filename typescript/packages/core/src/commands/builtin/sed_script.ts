@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { byteChar } from '../../shell/bytes.ts'
 import { compilePosixRegex, translateClasses } from '../../utils/posix.ts'
 const SIMPLE_CMDS = new Set(['d', 'D', 'p', 'P', 'h', 'H', 'g', 'G', 'x', 'N', 'q'])
 
@@ -83,6 +84,101 @@ function consumeAddress(rest: string): [SedAddr | null, string] {
   return [null, rest]
 }
 
+const TEXT_ESCAPES: Record<string, string> = {
+  a: '\x07',
+  f: '\f',
+  n: '\n',
+  r: '\r',
+  t: '\t',
+  v: '\v',
+  '\n': '\n',
+}
+
+const TEXT_ESCAPE_BASES: Record<string, number> = { d: 10, o: 8, x: 16 }
+
+// GNU's normalize_text over a/i/c text: the escapes above, `\dNNN`, `\oNNN`
+// and `\xHH` bytes (one above ASCII carried as its surrogate escape, which
+// `encodeText` writes back as that raw byte, as GNU writes it), and `\cX`
+// control characters; a backslash before any other character is dropped. The text always ends in
+// the newline that closed it, so `\c` at its end takes that newline as X.
+function decodeTextEscapes(buf: string): string {
+  let out = ''
+  let i = 0
+  while (i < buf.length) {
+    const ch = buf.charAt(i)
+    if (ch !== '\\' || i + 1 >= buf.length) {
+      out += ch
+      i += 1
+      continue
+    }
+    const nx = buf.charAt(i + 1)
+    i += 2
+    const simple = TEXT_ESCAPES[nx]
+    if (simple !== undefined) {
+      out += simple
+      continue
+    }
+    const base = TEXT_ESCAPE_BASES[nx]
+    if (base !== undefined) {
+      let value = 0
+      let digits = 0
+      for (let max = 1; i < buf.length && max <= 255; max *= base) {
+        const d = Number.parseInt(buf.charAt(i), base)
+        if (Number.isNaN(d)) break
+        value = value * base + d
+        digits += 1
+        i += 1
+      }
+      out += digits === 0 ? nx : byteChar(value)
+      continue
+    }
+    if (nx === 'c') {
+      const x = buf.charAt(i)
+      const upper = x >= 'a' && x <= 'z' ? x.toUpperCase() : x
+      out += String.fromCharCode(upper.charCodeAt(0) ^ 0x40)
+      i += 1
+      if (x === '\\') {
+        if (buf.charAt(i) !== '\\') throw new Error('sed: recursive escaping after \\c not allowed')
+        i += 1
+      }
+      continue
+    }
+    out += nx
+  }
+  return out
+}
+
+// Read the text of `a`, `i` or `c` as GNU's read_text does. Blanks after the
+// letter are skipped. A backslash there starts the classic form: a newline
+// after it is dropped and any other character is the text's first, so
+// `a\  x` keeps its leading blanks. The text runs to the first newline no
+// backslash escapes (a `;` is part of it) and keeps that newline. A script
+// that ends on a backslash leaves the text as read, undecoded, as GNU keeps
+// text still pending when its script runs out.
+function readText(rest: string): [string, string] {
+  let i = 0
+  while (rest.charAt(i) === ' ' || rest.charAt(i) === '\t') i += 1
+  if (i >= rest.length) throw new Error("sed: expected \\ after `a', `c' or `i'")
+  let buf = ''
+  if (rest.charAt(i) === '\\') {
+    i += 1
+    if (i >= rest.length) return ['', '']
+    if (rest.charAt(i) !== '\n') buf += rest.charAt(i)
+    i += 1
+  }
+  while (i < rest.length && rest.charAt(i) !== '\n') {
+    if (rest.charAt(i) === '\\') {
+      if (i + 1 >= rest.length) return [buf + '\n', '']
+      buf += rest.slice(i, i + 2)
+      i += 2
+      continue
+    }
+    buf += rest.charAt(i)
+    i += 1
+  }
+  return [decodeTextEscapes(buf + '\n'), rest.slice(i)]
+}
+
 function readLabelOrBranch(rest: string): [string, string] {
   let label = ''
   while (rest.length > 0) {
@@ -111,7 +207,7 @@ export function parseOneCommand(rest: string): [SedCommand, string] {
     rest = probe.slice(1)
     while (rest.startsWith(' ')) rest = rest.slice(1)
   }
-  if (rest === '') throw new Error('sed: missing command')
+  if (rest.trim() === '') throw new Error('sed: missing command')
   const ch = rest[0]
   if (ch === '{') return [{ cmd: '{', addrStart, addrEnd, negate }, rest.slice(1)]
   if (ch === '}') return [{ cmd: '}' }, rest.slice(1)]
@@ -188,32 +284,16 @@ export function parseOneCommand(rest: string): [SedCommand, string] {
     return [{ cmd: ch, addrStart, addrEnd, negate }, rest.slice(1)]
   }
   if (ch === 'a' || ch === 'i' || ch === 'c') {
-    // Text forms: `a\` <newline> text (the classic multi-line form, where the
-    // backslash-newline is a continuation and not part of the text), `a\text`,
-    // and the one-line `a text`. Strip that leading prefix so the text itself
-    // does not start with a stray newline.
-    let text = rest.slice(1)
-    if (text.startsWith('\\')) {
-      text = text.slice(1)
-      if (text.startsWith('\n')) text = text.slice(1)
-    } else if (text.startsWith(' ')) {
-      text = text.slice(1)
-    }
-    let end = text.length
-    for (let j = 0; j < text.length; j++) {
-      if (text[j] === ';') {
-        end = j
-        break
-      }
-    }
-    return [{ cmd: ch, text: text.slice(0, end), addrStart, addrEnd, negate }, text.slice(end)]
+    const [text, after] = readText(rest.slice(1))
+    return [{ cmd: ch, text, addrStart, addrEnd, negate }, after]
   }
   throw new Error(`sed: unsupported command: ${String(ch)}`)
 }
 
 export function parseProgram(expr: string): SedCommand[] {
   const commands: SedCommand[] = []
-  let rest = expr.trim()
+  // Only leading blanks go: trailing ones may belong to a/i/c text.
+  let rest = expr.replace(/^\s+/, '')
   while (rest !== '') {
     const first = rest[0]
     if (first === ';' || first === '\n') {
@@ -228,6 +308,14 @@ export function parseProgram(expr: string): SedCommand[] {
     commands.push(cmd)
     rest = after.replace(/^\s+/, '')
   }
+  // A `}` on the line of an a/i/c text is part of the text, so `1{a x;}`
+  // leaves its block open, which GNU refuses.
+  let depth = 0
+  for (const c of commands) {
+    if (c.cmd === '{') depth += 1
+    else if (c.cmd === '}') depth -= 1
+  }
+  if (depth > 0) throw new Error("sed: unmatched `{'")
   return commands
 }
 
@@ -429,6 +517,13 @@ function splitContentLines(text: string): { lines: string[]; finalNewline: boole
   return { lines: body.split('\n'), finalNewline }
 }
 
+// `a` writes its text as read, closing newline included; `i` and `c` write
+// all of it but the last character and then a newline, as GNU's output_line
+// does, and nothing for an empty text (`a\` ending the script).
+function textLine(text: string): string {
+  return text === '' ? '' : text.slice(0, -1) + '\n'
+}
+
 export function executeProgram(
   text: string,
   commands: SedCommand[],
@@ -572,9 +667,9 @@ export function executeProgram(
         pattern = hold
         hold = tmp
       } else if (c === 'a') {
-        deferred.push((cmd.text ?? '') + '\n')
+        deferred.push(cmd.text ?? '')
       } else if (c === 'i') {
-        output.push((cmd.text ?? '') + '\n')
+        output.push(textLine(cmd.text ?? ''))
       } else if (c === 'y') {
         // Transliterate each char of pattern[i] -> replacement[i].
         const from = cmd.pattern ?? ''
@@ -593,7 +688,7 @@ export function executeProgram(
         const isRange = cmd.addrEnd !== null && cmd.addrEnd !== undefined
         const rangeOpen = rangeActive.get(pc) === true
         if (!isRange || !rangeOpen || lineno === total) {
-          output.push((cmd.text ?? '') + '\n')
+          output.push(textLine(cmd.text ?? ''))
         }
         break
       } else if (c === 'q') {

@@ -1267,3 +1267,34 @@ for (const native of [false, true]) {
     )
   }
 }
+
+for (const flag of ['-r', '-rL']) {
+  it.each(['/data/copy', '/other/copy'])(
+    `cp ${flag} omits hidden links at %s`,
+    async (destination) => {
+      const ws = new Workspace(
+        { '/data': new RAMVFS(), '/other': new RAMVFS() },
+        { mode: MountMode.WRITE, shellParser: await getTestParser() },
+      )
+      try {
+        await ws.shell(
+          'mkdir -p /data/src/sec && echo visible > /data/src/a && ' +
+            'ln -s a /data/src/public && ln -s /private/key /data/src/secret && ' +
+            'ln -s /private/nested /data/src/sec/link',
+        )
+        ws.createSession('agent', {
+          profile: { paths: { hide: ['/data/src/secret', '/data/src/sec'] } },
+        })
+        const result = await ws.shell(`cp ${flag} /data/src ${destination}`, { sessionId: 'agent' })
+        expect(result.exitCode).toBe(0)
+        expect(DEC.decode(result.stderr)).toBe('')
+        const copied = await ws.shell(`ls -A ${destination} && cat ${destination}/public`)
+        expect(DEC.decode(copied.stdout)).toBe('a\npublic\nvisible\n')
+        expect(ws.namespace.isLink(`${destination}/secret`)).toBe(false)
+        expect(ws.namespace.isLink(`${destination}/sec/link`)).toBe(false)
+      } finally {
+        await ws.close()
+      }
+    },
+  )
+}

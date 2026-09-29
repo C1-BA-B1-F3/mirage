@@ -1015,3 +1015,32 @@ async def test_failed_backup_restores_existing_link(native, failure, referent):
     assert io.writes == {}
     assert links == {"/dst~": referent}
     assert files == {"/src": b"new", "/dst": b"old", "/safe": b"safe"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flag", ["-r", "-rL"])
+@pytest.mark.parametrize("destination", ["/data/copy", "/other/copy"])
+async def test_recursive_copy_omits_hidden_links(flag, destination):
+    ws = Workspace(
+        {
+            "/data": (RAMVFS(), MountMode.WRITE),
+            "/other": (RAMVFS(), MountMode.WRITE)
+        },
+        mode=MountMode.WRITE)
+    await ws.shell(
+        "mkdir -p /data/src/sec && echo visible > /data/src/a && "
+        "ln -s a /data/src/public && ln -s /private/key /data/src/secret && "
+        "ln -s /private/nested /data/src/sec/link")
+    ws.create_session(
+        "agent",
+        profile={"paths": {
+            "hide": ["/data/src/secret", "/data/src/sec"]
+        }})
+    result = await ws.shell(f"cp {flag} /data/src {destination}",
+                            session_id="agent")
+    assert result.exit_code == 0
+    assert await result.materialize_stderr() == b""
+    copied = await ws.shell(f"ls -A {destination} && cat {destination}/public")
+    assert await copied.materialize_stdout() == b"a\npublic\nvisible\n"
+    assert not ws.namespace.is_link(f"{destination}/secret")
+    assert not ws.namespace.is_link(f"{destination}/sec/link")

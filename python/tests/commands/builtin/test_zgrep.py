@@ -17,7 +17,9 @@ import gzip
 
 import pytest
 
-from mirage.types import MountMode
+from mirage.commands.builtin.generic.zgrep import zgrep as zgrep_generic
+from mirage.io.types import materialize
+from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -288,3 +290,36 @@ def _opens(line):
     ])
 def test_zgrep_opens_each_operand_as_gzip_cdfq_does(line, out, err, code):
     assert _opens(line) == (out, err, code)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,out", [
+    ({}, b"/bad:hello\n/good.gz:hello\n"),
+    ({
+        "c": True
+    }, b"/bad:1\n/good.gz:1\n"),
+    ({
+        "files_without_match": True
+    }, b""),
+])
+async def test_zgrep_keeps_partial_matches_and_continues_after_a_read_error(
+        flags, out):
+    reads = []
+
+    async def read(path):
+        reads.append(path.virtual)
+        if path.virtual == "/bad":
+            raise FileNotFoundError(path.virtual)
+        yield gzip.compress(b"hello\n")
+        if path.virtual == "/bad.gz":
+            raise PermissionError(path.virtual)
+
+    body, io = await zgrep_generic(
+        [PathSpec.from_str_path("/bad"),
+         PathSpec.from_str_path("/good.gz")], ["hello"],
+        flags,
+        read_bytes=read)
+    assert await materialize(body) == out
+    assert io.exit_code == 2
+    assert io.stderr == b"\ngzip: /bad.gz: Permission denied\n"
+    assert reads == ["/bad", "/bad.gz", "/good.gz"]

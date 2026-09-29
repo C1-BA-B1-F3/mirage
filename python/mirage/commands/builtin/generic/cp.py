@@ -31,6 +31,7 @@ from mirage.commands.spec.argmatch import ArgmatchMatch, argmatch
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import argmatch_error, extra_operand_error
+from mirage.context import path_allowed
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView
 from mirage.runtime.types import DispatchFn
@@ -370,6 +371,8 @@ async def copy_tree_links(
     shown_dst = target.raw_path.rstrip("/") or target.raw_path
     below = sorted(copies.links.subtree(base), key=lambda row: row[0])
     for virtual, row in below:
+        if not path_allowed(virtual):
+            continue
         rel = virtual[len(base.rstrip("/")) + 1:]
         landing = f"{dst_base}/{rel}"
         shown = f"{shown_src}/{rel}"

@@ -120,14 +120,18 @@ async def gzip(
                                            door=door)
             if opened is None:
                 continue
-            raw = await materialize(opened.stream)
+            known = gzip_suffix(p.raw_path, suffix) if in_place else None
+            if known is not None and not force:
+                if not quiet:
+                    lines.append(f"gzip: {p.raw_path} already has {known} "
+                                 "suffix -- unchanged")
+                continue
+            try:
+                raw = await materialize(opened.stream)
+            except FS_ERRORS as exc:
+                report(f"\ngzip: {p.raw_path}: {fs_strerror(exc)}", 1)
+                break
             link = opened.link
-        known = gzip_suffix(p.raw_path, suffix) if in_place else None
-        if known is not None and not force:
-            if not quiet:
-                lines.append(f"gzip: {p.raw_path} already has {known} "
-                             "suffix -- unchanged")
-            continue
         data = zlib.compress(raw, level=level, wbits=zlib.MAX_WBITS | 16)
         if not in_place:
             stdout.append(data)

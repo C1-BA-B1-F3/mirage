@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { eacces, enoent } from '../../../utils/errors.ts'
+import { zgrepGeneric } from '../generic/zgrep.ts'
 import { RAM_COMMANDS } from './index.ts'
 import { describe, expect, it } from 'vitest'
 import { materialize } from '../../../io/types.ts'
@@ -269,4 +271,30 @@ describe('zgrep opens each operand as gzip -cdfq does', () => {
     })
     expect(r).toEqual([out, err, code])
   })
+})
+
+it.each([
+  [{}, '/bad:hello\n/good.gz:hello\n'],
+  [{ c: true }, '/bad:1\n/good.gz:1\n'],
+  [{ files_without_match: true }, ''],
+] as const)('keeps partial matches and continues after read errors: %j', async (flags, out) => {
+  const reads: string[] = []
+  async function* read(path: PathSpec): AsyncIterable<Uint8Array> {
+    reads.push(path.virtual)
+    if (path.virtual === '/bad') throw enoent(path)
+    yield await gzip(ENC.encode('hello\n'))
+    if (path.virtual === '/bad.gz') throw eacces(path)
+  }
+  const result = await zgrepGeneric(
+    [PathSpec.fromStrPath('/bad'), PathSpec.fromStrPath('/good.gz')],
+    ['hello'],
+    { flags, stdin: null, filetypeFns: null, cwd: '/' },
+    read,
+  )
+  if (result === null) throw new Error('zgrep returned no result')
+  const [body, io] = result
+  expect(DEC.decode(await materialize(body))).toBe(out)
+  expect(io.exitCode).toBe(2)
+  expect(await io.stderrStr()).toBe('\ngzip: /bad.gz: Permission denied\n')
+  expect(reads).toEqual(['/bad', '/bad.gz', '/good.gz'])
 })

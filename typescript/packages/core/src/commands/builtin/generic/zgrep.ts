@@ -16,14 +16,13 @@ import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
-import { gunzipPartial } from '../../../utils/compress.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { compilePattern, resolvePattern } from '../grep_pattern.ts'
 import { STDIN_OPERAND } from '../utils/constants.ts'
-import { type LinkDoor, linkDoor } from '../utils/links.ts'
-import { isStdin, operandLabel, stdinStream } from '../utils/stream.ts'
+import { linkDoor } from '../utils/links.ts'
+import { operandLabel } from '../utils/stream.ts'
 import type { StatFn } from './archive/walk.ts'
-import { openGzipInput } from './decompress.ts'
+import { decompressInputs } from './decompress.ts'
 import { decodeLine, lineOffsets, matchOffset, prefixOf } from '../grep_offsets.ts'
 import { formatRecords } from '../utils/output.ts'
 import { splitLines } from '../utils/lines.ts'
@@ -101,44 +100,6 @@ function zgrepSearch(
   return [result, matched.length > 0]
 }
 
-/**
- * One operand as `gzip -cdfq` hands it to zgrep's grep.
- *
- * gzip opens the name as it would under -c and -f: a missing one is retried
- * with each suffix, a link is followed, and a directory is a warning -q keeps
- * quiet, so grep reads nothing from it. A failed open is reported in gzip's
- * words and grep still reads its empty output, which is why -c counts 0
- * there and -L lists it. The input is decoded with pass-through, the bytes
- * after a member too. Answers what grep reads and whether gzip failed (exit 2
- * for zgrep); a gzip warning is not a failure. Mirrors Python's _gunzipped.
- */
-async function gunzipped(
-  p: PathSpec,
-  source: (p: PathSpec) => AsyncIterable<Uint8Array>,
-  stat: StatFn | undefined,
-  door: LinkDoor | null,
-): Promise<[Uint8Array, boolean, string]> {
-  let failed = false
-  let errors = ''
-  const report = (line: string, code: number, warning: boolean): void => {
-    if (warning) return
-    errors += line
-    failed ||= code === 1
-  }
-  const found = await openGzipInput(p, source, report, {
-    follow: true,
-    ...(stat !== undefined ? { stat } : {}),
-    door,
-  })
-  const raw = found === null ? new Uint8Array() : await materialize(found.stream)
-  const [data, failure] = await gunzipPartial(raw, true)
-  if (failure !== null && failure.exitCode !== 2) {
-    errors += failure.render(operandLabel(found?.name ?? p, 'stdin'))
-    failed = true
-  }
-  return [data, failed, errors]
-}
-
 export async function zgrepGeneric(
   paths: PathSpec[],
   texts: string[],
@@ -202,27 +163,23 @@ export async function zgrepGeneric(
   let anyMatch = false
   const allResults: string[] = []
 
-  const read = stdinStream(stream, opts.stdin)
   const door = linkDoor(opts)
   let errors = ''
   let failed = false
   for (const p of paths.length > 0 ? paths : [STDIN_OPERAND]) {
     // zgrep decompresses each operand with `gzip -cdfq -- FILE`, which
     // reports its own failures and hands grep what it decoded.
-    let data: Uint8Array
-    if (isStdin(p)) {
-      const [decoded, failure] = await gunzipPartial(await materialize(read(p)), true)
-      data = decoded
-      if (failure !== null && failure.exitCode !== 2) {
-        errors += failure.render(operandLabel(p, 'stdin'))
-        failed = true
-      }
-    } else {
-      const [decoded, gzipFailed, lines] = await gunzipped(p, stream, stat, door)
-      data = decoded
-      errors += lines
-      failed ||= gzipFailed
-    }
+    const [body, io] = await decompressInputs([p], stream, {
+      stdin: opts.stdin,
+      toStdout: true,
+      force: true,
+      quiet: true,
+      ...(stat !== undefined ? { stat } : {}),
+      door,
+    })
+    const data = await materialize(body)
+    errors += await io.stderrStr()
+    failed ||= io.exitCode === 1
     if (pattern === null) {
       if (filesWithoutMatch) allResults.push(p.rawPath)
       continue

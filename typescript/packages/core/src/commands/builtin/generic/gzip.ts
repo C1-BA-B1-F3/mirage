@@ -122,13 +122,19 @@ export async function gzipGeneric(
         door,
       })
       if (found === null) continue
-      raw = await materialize(found.stream)
+      const known = inPlace ? gzipSuffix(p.rawPath, suffix) : null
+      if (known !== null && !force) {
+        if (!quiet) lines.push(`gzip: ${p.rawPath} already has ${known} suffix -- unchanged`)
+        continue
+      }
+      try {
+        raw = await materialize(found.stream)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        report(`\ngzip: ${p.rawPath}: ${String(fsStrerror(err))}`, 1, false)
+        break
+      }
       link = found.link
-    }
-    const known = inPlace ? gzipSuffix(p.rawPath, suffix) : null
-    if (known !== null && !force) {
-      if (!quiet) lines.push(`gzip: ${p.rawPath} already has ${known} suffix -- unchanged`)
-      continue
     }
     const data = await gzip(raw)
     if (!inPlace) {

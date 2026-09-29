@@ -14,8 +14,10 @@
 // Mirrors python/tests/commands/builtin/generic/test_gzip.py.
 
 import { describe, expect, it } from 'vitest'
-import { gzip } from '../../../utils/compress.ts'
-import { MountMode } from '../../../types.ts'
+import { eacces } from '../../../utils/errors.ts'
+import { gzipGeneric } from './gzip.ts'
+import { gzip, gunzip } from '../../../utils/compress.ts'
+import { MountMode, PathSpec } from '../../../types.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
 import { Workspace } from '../../../workspace/workspace/workspace.ts'
@@ -75,4 +77,49 @@ describe('gzip on a link in place (O_NOFOLLOW unless -c or -f)', () => {
     const r = await shell(`${seed}${line} && ls -F && gunzip -c al.gz`)
     expect(r).toEqual([`${listing}hello\n`, '', 0])
   })
+})
+
+it.each([false, true])('compression skips suffixes or reports late errors: %s', async (skipped) => {
+  const reads: string[] = []
+  const writes = new Map<string, Uint8Array>()
+  const removed: string[] = []
+  const name = skipped ? '/bad.gz' : '/bad'
+  async function* read(path: PathSpec): AsyncIterable<Uint8Array> {
+    await Promise.resolve()
+    reads.push(path.virtual)
+    yield new TextEncoder().encode('hello\n')
+    if (path.virtual === name) {
+      reads.push('continued')
+      throw eacces(path)
+    }
+  }
+  const result = await gzipGeneric(
+    [PathSpec.fromStrPath(name), PathSpec.fromStrPath('/good')],
+    { flags: {}, stdin: null, filetypeFns: null, cwd: '/' },
+    read,
+    (path, data) => {
+      writes.set(path.virtual, data)
+      return Promise.resolve()
+    },
+    (path) => {
+      removed.push(path.virtual)
+      return Promise.resolve()
+    },
+  )
+  if (result === null) throw new Error('gzip returned no result')
+  const [, io] = result
+  expect(io.exitCode).toBe(skipped ? 0 : 1)
+  expect(await io.stderrStr()).toBe(
+    skipped
+      ? 'gzip: /bad.gz already has .gz suffix -- unchanged\n'
+      : '\ngzip: /bad: Permission denied\n',
+  )
+  expect(reads).toEqual(skipped ? [name, '/good'] : [name, 'continued'])
+  expect(removed).toEqual(skipped ? ['/good'] : [])
+  expect([...writes.keys()]).toEqual(skipped ? ['/good.gz'] : [])
+  if (skipped) {
+    const output = writes.get('/good.gz')
+    if (output === undefined) throw new Error('gzip did not write the next file')
+    expect(await gunzip(output)).toEqual(new TextEncoder().encode('hello\n'))
+  }
 })

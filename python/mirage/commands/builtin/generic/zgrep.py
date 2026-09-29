@@ -1,10 +1,9 @@
 import re
-from collections.abc import (AsyncIterator, Awaitable, Callable, Mapping,
-                             Sequence)
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 
-from mirage.commands.builtin.generic.decompress import open_gzip_input
+from mirage.commands.builtin.generic.decompress import decompress_inputs
 from mirage.commands.builtin.grep_offsets import (decode_line, line_offsets,
                                                   match_offset, prefix_of)
 from mirage.commands.builtin.grep_pattern import (compile_pattern,
@@ -12,16 +11,13 @@ from mirage.commands.builtin.grep_pattern import (compile_pattern,
 from mirage.commands.builtin.utils.constants import STDIN_OPERAND
 from mirage.commands.builtin.utils.lines import split_lines
 from mirage.commands.builtin.utils.links import LinkDoor
-from mirage.commands.builtin.utils.operands import normalized_read
 from mirage.commands.builtin.utils.output import format_records
-from mirage.commands.builtin.utils.stream import (is_stdin, operand_label,
-                                                  stdin_bytes)
+from mirage.commands.builtin.utils.stream import operand_label
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import PathSpec, StatFn
-from mirage.utils.compress import gunzip_partial
 
 
 async def _read_plain(
@@ -158,52 +154,6 @@ def parse_flags(fl: FlagView, never_match: bool) -> ZgrepFlags:
     )
 
 
-async def _gunzipped(p: PathSpec, source: Callable[[PathSpec],
-                                                   AsyncIterator[bytes]],
-                     stat: StatFn | None, door: LinkDoor | None,
-                     errors: list[str]) -> tuple[bytes, bool]:
-    """One operand as ``gzip -cdfq`` hands it to zgrep's grep.
-
-    gzip opens the name as it would under -c and -f: a missing one is
-    retried with each suffix, a link is followed, and a directory is a
-    warning -q keeps quiet, so grep reads nothing from it. A failed open
-    is reported in gzip's words and grep still reads its empty output,
-    which is why -c counts 0 there and -L lists it. The input is
-    decoded with pass-through, the bytes after a member too.
-
-    Returns what grep reads, and whether gzip failed (exit 2 for
-    zgrep); a gzip warning is not a failure.
-
-    Args:
-        p (PathSpec): the operand.
-        source (Callable): reads a name on the operand's mount.
-        stat (StatFn | None): the mount's stat.
-        door (LinkDoor | None): the namespace's links.
-        errors (list[str]): collects gzip's lines.
-    """
-    failed = False
-
-    def report(line: str, code: int, warning: bool) -> None:
-        nonlocal failed
-        if not warning:
-            errors.append(line)
-            failed = failed or code == 1
-
-    opened = await open_gzip_input(p,
-                                   source,
-                                   report,
-                                   follow=True,
-                                   stat=stat,
-                                   door=door)
-    raw = b"" if opened is None else await materialize(opened.stream)
-    data, failure = gunzip_partial(raw, passthrough=True)
-    if failure is not None and failure.exit_code != 2:
-        name = opened.name if opened is not None else p
-        errors.append(failure.render(operand_label(name, "stdin")))
-        failed = True
-    return data, failed
-
-
 async def zgrep(
     paths: list[PathSpec],
     texts: Sequence[str] = (),
@@ -226,22 +176,23 @@ async def zgrep(
     show_filename = f.force_filename or (multi and not f.suppress_filename)
     any_match = False
     all_results: list[str] = []
-    read = stdin_bytes(read_bytes, stdin)
-    source = normalized_read(read_bytes)
 
     errors: list[str] = []
     failed = False
     for p in paths or [STDIN_OPERAND]:
         # zgrep decompresses each operand with `gzip -cdfq -- FILE`,
         # which reports its own failures and hands grep what it decoded.
-        if is_stdin(p):
-            data, failure = gunzip_partial(await read(p), passthrough=True)
-            if failure is not None and failure.exit_code != 2:
-                errors.append(failure.render(operand_label(p, "stdin")))
-                failed = True
-        else:
-            data, gzip_failed = await _gunzipped(p, source, stat, door, errors)
-            failed = failed or gzip_failed
+        body, io = await decompress_inputs([p],
+                                           read=read_bytes,
+                                           stdin=stdin,
+                                           to_stdout=True,
+                                           force=True,
+                                           quiet=True,
+                                           stat=stat,
+                                           door=door)
+        data = await materialize(body)
+        errors.append(await io.stderr_str())
+        failed = failed or io.exit_code == 1
         if compiled is None:
             if f.files_without_match:
                 all_results.append(p.raw_path)

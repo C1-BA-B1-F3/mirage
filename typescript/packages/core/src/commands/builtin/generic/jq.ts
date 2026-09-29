@@ -44,7 +44,8 @@ import { PathSpec } from '../../../types.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
-import { stdinStream } from '../utils/stream.ts'
+import { isStdin, stdinStream } from '../utils/stream.ts'
+import { readProgramFile } from './program.ts'
 
 type Stream = (p: PathSpec) => AsyncIterable<Uint8Array>
 
@@ -124,15 +125,17 @@ export function positionalArgs(
  */
 async function fileArgs(
   fl: FlagView,
-  toSpec: (value: string) => PathSpec,
-  stream: Stream,
+  read: (value: string) => Promise<Uint8Array>,
 ): Promise<Record<string, unknown>> {
   const args: Record<string, unknown> = {}
   for (const [name, value] of pairArgs(fl.asList('rawfile'))) {
-    args[name] = decodeUtf8(await materialize(stream(toSpec(value))))
+    args[name] = decodeUtf8(await read(value))
   }
   for (const [name, value] of pairArgs(fl.asList('slurpfile'))) {
-    const [values, failure] = await readValues({ name: value, chunks: stream(toSpec(value)) })
+    const [values, failure] = await readValues({
+      name: value,
+      chunks: yieldBytes(await read(value)),
+    })
     if (failure !== null) {
       throw new UsageError(`jq: Bad JSON in --slurpfile ${name} ${value}: ${failure.message}`, 2)
     }
@@ -414,11 +417,18 @@ export async function jqGeneric(
   const reads = streamReads(expr)
   const readsStream = reads.input || reads.inputs
   // --rawfile / --slurpfile read a file each, so they join the bindings
-  // only once the backend reader is in hand.
+  // only once a reader is in hand. Their files route nothing (the executor's
+  // DOOR_FLAG_KEYS), so one may sit on another mount than the operands: it
+  // is read through the door, stdin excepted, which is the invocation's own.
+  const readFlagFile = (value: string): Promise<Uint8Array> => {
+    const path = toSpec(value)
+    if (opts.dispatch === undefined || isStdin(path)) return materialize(stream(path))
+    return readProgramFile('jq', path, opts.dispatch)
+  }
   const base = parseFlags(fl)
   const jq: JqOptions = jqOptions({
     ...base,
-    namedArgs: { ...base.namedArgs, ...(await fileArgs(fl, toSpec, stream)) },
+    namedArgs: { ...base.namedArgs, ...(await fileArgs(fl, readFlagFile)) },
     positionalArgs: positionalArgs(fl, texts, hasProgramFile),
   })
   const argsValue = referencesArgs(expr) ? argsObject(jq) : null

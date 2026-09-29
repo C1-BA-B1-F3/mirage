@@ -30,6 +30,99 @@
         "stdout": "{\"k\":9}\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "xm_jq_slurpfile_from_another_mount",
+      "seq": 602023,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '{\"a\":1}\\n' > /data2/xm_s.json && printf '{\"b\":2}\\n' > /data/xm_d.json && jq -c --slurpfile s /data2/xm_s.json '[., $s]' /data/xm_d.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "[{\"b\":2},[{\"a\":1}]]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_jq_rawfile_and_slurpfile_on_two_mounts",
+      "seq": 602024,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'raw\\n' > /data2/xm_r.txt && printf '{\"b\":2}\\n' > /data/xm_d.json && jq -c -n --slurpfile d /data/xm_d.json --rawfile r /data2/xm_r.txt '[$d, $r]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[{\"b\":2}],\"raw\\n\"]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_jq_slurpfile_process_substitution",
+      "seq": 602025,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '{\"b\":2}\\n' > /data/xm_d.json && jq -c -n --slurpfile d /data/xm_d.json --slurpfile f <(echo '{\"x\":1}') '[$d, $f]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[[{\"b\":2}],[{\"x\":1}]]\n",
+        "stderr": ""
+      }
     }
   ]
 }

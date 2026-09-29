@@ -43,6 +43,12 @@ AMBIGUOUS_NAMES = {"l": "args_l", "O": "args_O", "I": "args_I", "1": "args_1"}
 # every operand name: the brackets are the renderer's.
 ARG_PLACEHOLDER = "ARG"
 
+# The path options whose lone `-` is stdout rather than a file, keyed by
+# command, valued by the option's canonical spelling: `wget -O -` and
+# `curl -D -`. Such a value stays `-`, unresolved and outside routing.
+# Explicit `./-` still names a file (curl 8.14.1 writes `-D ./-` there).
+STDOUT_DASH_OPTIONS = {"wget": "-O", "curl": "--dump-header"}
+
 # CPython and node read the script from stdin for a lone `-`, including
 # after `--`. Explicit `./-` still names a file (CPython 3.12, node 22).
 STDIN_SCRIPT_COMMANDS = frozenset({"python", "python3", "js", "node"})

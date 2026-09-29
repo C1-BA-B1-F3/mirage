@@ -2,8 +2,9 @@ import dataclasses
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from typing import Any
 
-from mirage.commands.builtin.utils.stream import (resolve_source, stdin_bytes,
-                                                  stdin_stream)
+from mirage.commands.builtin.generic.program import read_program_file
+from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
+                                                  stdin_bytes, stdin_stream)
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
@@ -20,6 +21,7 @@ from mirage.core.jq.types import (DEFAULT_INDENT, NO_VALUE, STDIN_NAME,
                                   JqParseError, JqRun, StreamReads)
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
+from mirage.runtime.types import DispatchFn
 from mirage.types import JsonValue, PathSpec
 
 INDENT_MIN = -1
@@ -133,7 +135,7 @@ async def file_args(
 
     Args:
         fl (FlagView): spec-validated view over the raw flag kwargs.
-        read_bytes (Callable): backend byte reader for one path.
+        read_bytes (Callable): byte reader for one path.
 
     Raises:
         UsageError: when a --slurpfile holds bad JSON, reported in jq's
@@ -429,6 +431,7 @@ async def jq_generic(
                     read_bytes=read_bytes,
                     read_stream=read_stream,
                     stdin=opts.stdin,
+                    dispatch=opts.dispatch,
                     **opts.flags)
 
 
@@ -438,12 +441,23 @@ async def jq(
     read_bytes: Callable[..., Awaitable[bytes]],
     read_stream: Callable[..., AsyncIterator[bytes]],
     stdin: ByteSource | None = None,
+    dispatch: DispatchFn | None = None,
     **flags: FlagValue,
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(flags, spec=SPECS["jq"])
     opts = parse_flags(fl)
     read_bytes = stdin_bytes(read_bytes, stdin)
     read_stream = stdin_stream(read_stream, stdin)
+
+    async def read_flag_file(path: PathSpec) -> bytes:
+        # --rawfile / --slurpfile route nothing (the executor's
+        # DOOR_FLAG_KEYS), so the file may sit on another mount than the
+        # operands: it is read through the door, stdin excepted, which is
+        # the invocation's own.
+        if dispatch is None or is_stdin(path):
+            return await read_bytes(path)
+        return await read_program_file("jq", path, dispatch)
+
     program_file = fl.raw("from_file")
     if isinstance(program_file, PathSpec):
         expression = (await read_bytes(program_file)).decode()
@@ -459,7 +473,7 @@ async def jq(
         opts,
         named_args={
             **opts.named_args,
-            **await file_args(fl, read_bytes)
+            **await file_args(fl, read_flag_file)
         },
         positional_args=positional_args(fl, texts,
                                         isinstance(program_file, PathSpec)),

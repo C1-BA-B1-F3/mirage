@@ -18,6 +18,7 @@ from mirage.commands.cli.builtin.gh import pull as pull_commands
 from mirage.commands.cli.builtin.gh import release as release_commands
 from mirage.commands.cli.builtin.gh import repo as repo_commands
 from mirage.commands.cli.builtin.gh.api import api
+from mirage.commands.cli.builtin.gh.auth import status as auth_status
 from mirage.commands.cli.builtin.gh.search import search_spec
 from mirage.commands.cli.builtin.gh.version import version
 from mirage.commands.cli.types import CLISpec
@@ -412,6 +413,11 @@ GH = CLISpec(
     description="GitHub CLI",
     config_model=GhConfig,
     subcommands=(
+        CLISpec(name="auth",
+                description="Manage authentication",
+                subcommands=(CLISpec(name="status",
+                                     description="Check the configured token",
+                                     fn=auth_status), )),
         CLISpec(
             name="version",
             aliases=("--version", ),

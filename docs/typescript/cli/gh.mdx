@@ -44,13 +44,26 @@ In YAML the same install rides the `clis:` section; see the
 | `token`   | the API token, as `GH_TOKEN` carries for real gh               |
 | `repo`    | the default repository, as `[HOST/]OWNER/REPO`                 |
 | `branch` | the current branch, for `{branch}` in an endpoint |
-| `baseUrl` | the API base, for GitHub Enterprise Server                     |
+| `baseUrl` | the REST API base, for GitHub Enterprise Server               |
+
+An Enterprise Server base ends in `/api/v3`, and GraphQL (`gh api graphql`
+and the verbs that query it, such as `repo view --json`) then goes to
+`/api/graphql` on the same host, outside the REST base, as real gh sends
+it. Any other `baseUrl` answers GraphQL at `baseUrl/graphql`.
 
 `repo` and `branch` are what real gh reads off the current directory's git
 remote and checkout. A workspace has neither, so the install carries them:
 `repo` answers a line that names no repository, and both feed the
 `{owner}`/`{repo}`/`{branch}` placeholders. Two installs under different head words are two
 accounts.
+
+## Authentication status
+
+`gh auth status` checks the configured token with `GET /user`, reports the
+host and account, and exits 1 when GitHub rejects the credential. It needs
+no mount. The token source is reported as `Mirage configuration`: configuration
+retains the resolved secret, not the environment variable or file that supplied
+it. The credential itself is never printed.
 
 ## Reading is the mount, acting is the CLI
 

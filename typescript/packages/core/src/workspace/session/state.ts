@@ -319,6 +319,10 @@ class SessionElements implements ElementOps {
     return visibleAssocs(this.session)[name] !== undefined
   }
 
+  holdsArray(name: string): boolean {
+    return this.isAssoc(name) || visibleArrays(this.session)[name] !== undefined
+  }
+
   resolve(name: string, subscript: string, env: Readonly<Record<string, string>>): string {
     if (visibleAssocs(this.session)[name] !== undefined) {
       return stripKeyQuotes(subscript)
@@ -413,6 +417,7 @@ export async function subscriptIndex(
       sessionElements(session, reader),
       reader.read,
       reader.wrote,
+      session.shellOptions.nounset === true,
     )
     idx = Number(result.value)
     writes = result.writes

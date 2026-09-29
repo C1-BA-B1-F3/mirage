@@ -42,6 +42,18 @@ CWD_DEFAULT_RAW = {
     "ls": ".",
 }
 
+# The path options whose file the handler itself reads or writes through
+# the dispatcher, keyed by command, valued by kwarg name: curl's -o and
+# -D, jq's --rawfile and --slurpfile. Like a program file, such a file is
+# no operand of the mount the line runs on, so it routes nothing: the line
+# runs where its positional operands (or the cwd) put it, and `-o` and
+# `-D` on two mounts, or `--slurpfile` over a process substitution, is not
+# cross-mount.
+DOOR_FLAG_KEYS: dict[str, tuple[str, ...]] = {
+    "curl": ("output", "dump_header"),
+    "jq": ("rawfile", "slurpfile"),
+}
+
 
 def default_cwd_operand(parts: list[str | PathSpec], cmd_name: str,
                         registry: MountRegistry, cwd: str,
@@ -103,13 +115,18 @@ def path_flag_scopes(cmd_name: str, argv: list[str],
     if spec is None:
         return []
     parsed = parse_command(spec, argv, cwd, cmd_name)
-    key = FILE_KEYS.get(cmd_name)
-    program = parse_to_kwargs(parsed).get(key) if key is not None else None
-    program_paths = program if isinstance(program, list) else [program]
+    kwargs = parse_to_kwargs(parsed)
     flag_paths = list(parsed.path_flag_values)
-    for value in program_paths:
-        if isinstance(value, str) and value in flag_paths:
-            flag_paths.remove(value)
+    # A program file and a door option's file are read or written
+    # through the dispatcher, not on the line's mount. A pair's name
+    # slots are words, never resolved paths, so they match nothing here.
+    for key in (FILE_KEYS.get(cmd_name), *DOOR_FLAG_KEYS.get(cmd_name, ())):
+        if key is None:
+            continue
+        value = kwargs.get(key)
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, str) and item in flag_paths:
+                flag_paths.remove(item)
     return [
         PathSpec(virtual=value, directory=value, vfs_path="", raw_path=value)
         for value in flag_paths
@@ -147,6 +164,27 @@ def positional_scopes(cmd_name: str, argv: list[str], cwd: str,
                      vfs_path="",
                      raw_path=value)) for value in parsed.paths()
     ]
+
+
+def routed_operands(cmd_name: str, argv: list[str], cwd: str,
+                    words: list[str | PathSpec],
+                    path_scopes: list[PathSpec]) -> list[PathSpec]:
+    """The classified path words that route a line.
+
+    Classification makes a door option's file a path word like any
+    other, so a command in DOOR_FLAG_KEYS routes by its positional
+    operands alone; every other command by all its path words.
+
+    Args:
+        cmd_name (str): command name.
+        argv (list[str]): the words after the command name, as typed.
+        cwd (str): working directory the line was typed under.
+        words (list[str | PathSpec]): the same words, classified.
+        path_scopes (list[PathSpec]): the line's classified path words.
+    """
+    if cmd_name not in DOOR_FLAG_KEYS:
+        return path_scopes
+    return positional_scopes(cmd_name, argv, cwd, words)
 
 
 def merge_scopes(positional: list[PathSpec],

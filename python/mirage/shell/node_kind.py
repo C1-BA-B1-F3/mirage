@@ -31,6 +31,7 @@ class NodeKind(StrEnum):
     """
     COMMENT = "comment"
     PROGRAM = "program"
+    TIMED = "timed"
     COMMAND = "command"
     PIPELINE = "pipeline"
     LIST = "list"
@@ -57,6 +58,7 @@ class NodeKind(StrEnum):
 _SIMPLE_KINDS = {
     NT.COMMENT: NodeKind.COMMENT,
     NT.PROGRAM: NodeKind.PROGRAM,
+    NT.TIMED_STATEMENT: NodeKind.TIMED,
     NT.COMMAND: NodeKind.COMMAND,
     NT.PIPELINE: NodeKind.PIPELINE,
     NT.LIST: NodeKind.LIST,
@@ -97,6 +99,7 @@ _PIPELINE_TRANSPARENT_KINDS = frozenset({
     NodeKind.UNTIL,
     NodeKind.CASE,
     NodeKind.NEGATED,
+    NodeKind.TIMED,
     NodeKind.FUNCTION_DEF,
 })
 

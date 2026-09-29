@@ -118,6 +118,7 @@ describe('gh tree', () => {
   it('registers itself under the grammar gh uses', () => {
     expect(cliSpecFor('gh')).toBe(GH)
     expect(GH.subcommands.map((c) => c.name)).toEqual([
+      'auth',
       'version',
       'api',
       'issue',
@@ -173,7 +174,7 @@ describe('gh repo', () => {
     expect(CALLS).toEqual([
       {
         method: 'POST',
-        path: '/graphql',
+        path: 'graphql',
         body: {
           query:
             'query RepositoryInfo($owner: String!, $name: String!) {\n' +
@@ -435,6 +436,15 @@ describe('gh api', () => {
     expect(CALLS[0]?.path).toBe('/user')
   })
 
+  // gh sends `graphql` alone to the GraphQL endpoint (`p == "graphql"`) and
+  // any other spelling, `/graphql` included, under the REST base.
+  it('names GraphQL by the bare graphql endpoint alone', async () => {
+    reset({})
+    await api(inv(['graphql'], { raw_field: ['query={ viewer { login } }'] }))
+    await api(inv(['/graphql']))
+    expect(CALLS.map((call) => call.path)).toEqual(['graphql', '/graphql'])
+  })
+
   it('refuses a field that is not key=value', async () => {
     reset({})
     await expect(api(inv(['x'], { raw_field: ['nope'] }))).rejects.toThrow(/key=value/)
@@ -676,7 +686,7 @@ it('follows GraphQL comment cursors and propagates errors', async () => {
   expect(request).toHaveBeenNthCalledWith(
     2,
     'POST',
-    '/graphql',
+    'graphql',
     expect.objectContaining({ variables: { owner: 'o', repo: 'r', number: 1, cursor: 'next' } }),
   )
   request.mockResolvedValueOnce({ errors: [{ message: 'Could not resolve repository' }] })

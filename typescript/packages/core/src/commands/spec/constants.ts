@@ -39,6 +39,15 @@ export const VERSION_OPTION = new Option({
 // every operand name: the brackets are the renderer's.
 export const ARG_PLACEHOLDER = 'ARG'
 
+// The path options whose lone `-` is stdout rather than a file, keyed by
+// command, valued by the option's canonical spelling: `wget -O -` and
+// `curl -D -`. Such a value stays `-`, unresolved and outside routing.
+// Explicit `./-` still names a file (curl 8.14.1 writes `-D ./-` there).
+export const STDOUT_DASH_OPTIONS: ReadonlyMap<string, string> = new Map([
+  ['wget', '-O'],
+  ['curl', '--dump-header'],
+])
+
 // CPython and node read the script from stdin for a lone `-`, including
 // after `--`. Explicit `./-` still names a file (CPython 3.12, node 22).
 export const STDIN_SCRIPT_COMMANDS: ReadonlySet<string> = new Set([

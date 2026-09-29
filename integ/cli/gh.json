@@ -269,7 +269,7 @@
       "command": "man gh | head -8",
       "expect": {
         "exit": 0,
-        "stdout": "gh: GitHub CLI\n\nUsage: gh [flags] <command> [<args>]\n\nCommands:\n  api                  Make an authenticated GitHub API request\n  issue                Manage issues\n  pr                   Manage pull requests\n",
+        "stdout": "gh: GitHub CLI\n\nUsage: gh [flags] <command> [<args>]\n\nCommands:\n  api                  Make an authenticated GitHub API request\n  auth                 Manage authentication\n  issue                Manage issues\n",
         "stderr": ""
       }
     },
@@ -1753,6 +1753,19 @@
         "exit": 0,
         "stdout": "integ-user\nexit=1\n4\nexit=1\n",
         "stderr": "gh api: halt error: x\ngh issue view: halt error: y\n"
+      }
+    },
+    {
+      "id": "gh_auth_status_configured_token",
+      "seq": 569900,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh auth status | tail -n 2 | sed -E 's/.*account integ-user/account integ-user/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "account integ-user (Mirage configuration)\n  - Active account: true\n",
+        "stderr": ""
       }
     }
   ]

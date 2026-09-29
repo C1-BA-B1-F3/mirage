@@ -24,3 +24,8 @@ export const SCOPE_ERROR = 5000
 // answer about the file, so the caller asks the whole tree instead, where a
 // real absence is honest and a refusal raises.
 export const DEFER_STATUSES: ReadonlySet<number> = new Set([404, 422])
+// The endpoint gh names GraphQL by (`gh api graphql`), which the transport
+// sends to the install's GraphQL endpoint (`graphqlUrl`) instead of under
+// its REST base. A REST path always leads with a slash, so `gh api
+// /graphql` stays a REST call, as gh's `p == "graphql"` has it.
+export const GRAPHQL_PATH = 'graphql'

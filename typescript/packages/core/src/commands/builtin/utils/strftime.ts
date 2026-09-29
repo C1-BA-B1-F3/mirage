@@ -17,8 +17,8 @@
 // no C library strftime knows.
 import type { Zone } from '../../../utils/timezone.ts'
 
-export const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-export const MONTH_NAMES = [
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTH_NAMES = [
   'Jan',
   'Feb',
   'Mar',
@@ -33,11 +33,11 @@ export const MONTH_NAMES = [
   'Dec',
 ]
 
-export function pad2(n: number): string {
+function pad2(n: number): string {
   return String(n).padStart(2, '0')
 }
 
-export function pad4(n: number): string {
+function pad4(n: number): string {
   return String(n).padStart(4, '0')
 }
 

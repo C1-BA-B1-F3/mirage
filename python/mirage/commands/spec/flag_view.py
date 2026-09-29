@@ -13,10 +13,26 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import Mapping
+from typing import Generic, TypeVar
 
 from mirage.commands.spec.constants import flag_kwarg_name
 from mirage.commands.spec.types import CommandSpec, FlagValue
 from mirage.types import PathSpec
+
+T = TypeVar("T")
+
+
+class FlagBag(dict[str, T], Generic[T]):
+    """Flag values with a separate tape of occurrences in scan order.
+
+    Args:
+        values (Mapping[str, T] | None): Values to copy, preserving their tape.
+    """
+
+    def __init__(self, values: Mapping[str, T] | None = None) -> None:
+        super().__init__(values or {})
+        self.occurrences: list[tuple[str, str | bool | int]] = (list(
+            values.occurrences) if isinstance(values, FlagBag) else [])
 
 
 class FlagView:
@@ -64,6 +80,29 @@ class FlagView:
         """
         wanted = {self._key(n) for n in names}
         return [k for k in self._flags if k in wanted]
+
+    def occurrences(self, *names: str) -> list[tuple[str, FlagValue]]:
+        """Read each typed occurrence, then defaults without a typed value.
+
+        Args:
+            names (str): Spec-bound option names to read.
+        """
+        wanted = {self._key(name) for name in names}
+        tape = self._flags.occurrences if isinstance(self._flags,
+                                                     FlagBag) else []
+        result: list[tuple[str, FlagValue]] = [
+            (name, value) for name, value in tape
+            if name in wanted and name in self._flags
+        ]
+        seen = {name for name, _ in result}
+        for name in self.typed_order(*names):
+            if name not in seen:
+                value = self._flags[name]
+                if isinstance(value, list):
+                    result.extend((name, item) for item in value)
+                else:
+                    result.append((name, value))
+        return result
 
     def as_bool(self, name: str) -> bool:
         value = self._flags.get(self._key(name))
@@ -113,9 +152,9 @@ class FlagView:
         return []
 
     def as_paths(self, name: str) -> list[PathSpec]:
-        # PATH-typed flag values arrive as PathSpec in the python
-        # executor; the TypeScript flag bag carries their resolved
-        # virtual-path strings, so its counterpart is asList.
+        # PATH-typed flag values arrive as PathSpec in both executors; a
+        # line parsed for a cross-mount strategy keeps its resolved
+        # strings, so it answers empty there. Mirrors TS asPaths.
         value = self._flags.get(self._key(name))
         if isinstance(value, list):
             return [item for item in value if isinstance(item, PathSpec)]

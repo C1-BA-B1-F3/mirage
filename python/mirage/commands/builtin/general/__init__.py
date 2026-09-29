@@ -19,9 +19,10 @@ from mirage.commands.builtin.general.expr import expr
 from mirage.commands.builtin.general.js import js, node
 from mirage.commands.builtin.general.python import python3, python_cmd
 from mirage.commands.builtin.general.seq import seq
+from mirage.commands.builtin.general.uname import uname
 from mirage.commands.builtin.general.wget import wget
 
-_FNS = [bc, curl, date, expr, js, node, python3, python_cmd, seq, wget]
+_FNS = [bc, curl, date, expr, js, node, python3, python_cmd, seq, uname, wget]
 
 COMMANDS = []
 for _fn in _FNS:

@@ -536,8 +536,9 @@ class TestAttachedOpsOneDoor:
 class TestProbesAndConveniences:
     """The surface union with the TS facade (R7b).
 
-    Only a genuine missing path reads back False from the probes; an
-    auth failure or a backend bug propagates, since acting on a false
+    Only a path that does not resolve reads back False from the probes
+    (absent, outside every mount, or under a plain file); an auth
+    failure or a backend bug propagates, since acting on a false
     "missing" means overwriting or recreating data that is there.
     """
 
@@ -549,6 +550,15 @@ class TestProbesAndConveniences:
         assert run(ops.exists("/data/dir")) is True
         assert run(ops.exists("/data/nope.txt")) is False
         assert run(ops.exists("/nowhere/x.txt")) is False
+
+    def test_a_path_under_a_plain_file_reads_back_missing(self):
+        # The other lookup failure besides ENOENT: `test -e` and
+        # os.path.exists answer False for it.
+        ops, _ = make_ops()
+        run(ops.write("/data/a.txt", b"x"))
+        assert run(ops.exists("/data/a.txt/x")) is False
+        assert run(ops.is_dir("/data/a.txt/x")) is False
+        assert run(ops.is_file("/data/a.txt/x")) is False
 
     def test_is_dir_and_is_file_split_on_the_stat_type(self):
         ops, _ = make_ops()

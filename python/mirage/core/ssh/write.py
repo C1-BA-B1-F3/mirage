@@ -28,5 +28,5 @@ async def write_bytes(accessor: SSHAccessor, path_spec: PathSpec,
     remote_path = _abs(config, path)
     async with sftp.open(remote_path, "wb") as f:
         await f.write(data)
-    record("write", path, "ssh", len(data), timer)
+    record("write", path_spec.virtual, "ssh", len(data), timer)
     await invalidate_after_write(path_spec)

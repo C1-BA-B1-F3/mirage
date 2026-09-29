@@ -12,13 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '../base.ts'
 import { QdrantAccessor } from '../../accessor/qdrant.ts'
 import { QDRANT_COMMANDS } from '../../commands/builtin/qdrant/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
+
 import { QDRANT_OPS } from '../../ops/qdrant/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
-import { BaseVFS } from '../base.ts'
 import {
   type QdrantConfigRedacted,
   redactQdrantConfig,
@@ -27,6 +28,7 @@ import {
   type QdrantConfigResolved,
 } from './config.ts'
 import { QDRANT_PROMPT } from './prompt.ts'
+
 export interface QdrantVFSOptions {
   config: QdrantConfig
 }
@@ -67,11 +69,6 @@ export class QdrantVFS extends BaseVFS {
     }
   }
 
-  // Nothing to take back: the bytes live in the remote store, so a
-  // restored mount reaches them through its config alone.
-  override loadState(_state: QdrantVFSState): Promise<void> {
-    return Promise.resolve()
-  }
   override ops(): readonly RegisteredOp[] {
     return QDRANT_OPS
   }

@@ -48,7 +48,7 @@ import type { TSNodeLike } from '../../shell/types.ts'
 import { PathSpec, type Refusal } from '../../types.ts'
 import type { EntryGate } from '../../types.ts'
 import { isGlob } from '../../utils/hidden.ts'
-import { CycleError, resolvePath } from '../../utils/path.ts'
+import { resolvePath } from '../../utils/path.ts'
 import { makeAbortError } from '../abort.ts'
 import { toScope } from '../executor/builtins/scope.ts'
 import { followPaths } from '../executor/builtins/links/links.ts'
@@ -64,7 +64,9 @@ import { classifyBarePath } from '../expand/classify/path.ts'
 import { specForCommand, specWordBases, specWordKinds } from '../expand/spec_hints.ts'
 import type { Namespace } from '../mount/namespace/namespace.ts'
 import type { MountRegistry } from '../mount/registry.ts'
+import { INTERPRETER_NAMES } from '../lookup/constants.ts'
 import {
+  Consumer,
   SHELL_NAMES,
   SLASH_KEEPS_LAST,
   WordPolicy,
@@ -87,6 +89,7 @@ import {
   rootFrame,
   wholeOccurrence,
 } from './occurrence.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 /**
  * What the command plane prints when a line does not get to run: 127
@@ -119,14 +122,19 @@ export function isPending(refused: Refused): boolean {
 }
 
 function norm(virtual: string): string {
-  return virtual.replace(/\/+$/, '') || '/'
+  return rstripSlash(virtual) || '/'
 }
 
 /**
  * The nodes a redirected statement may wrap whose last command is the
- * one the redirect binds to.
+ * one the redirect binds to. A `!` wraps one command, so it is its own
+ * last one: `! cat < f` parses as redirected(negated(cat), < f).
  */
-const REDIRECT_CHAIN: ReadonlySet<string> = new Set([NodeType.LIST, NodeType.PIPELINE])
+const REDIRECT_CHAIN: ReadonlySet<string> = new Set([
+  NodeType.LIST,
+  NodeType.PIPELINE,
+  NodeType.NEGATED_COMMAND,
+])
 
 /**
  * A command the gate let through, and what its own I/O may touch.
@@ -215,17 +223,12 @@ export function policyScopes(
     scopes.unshift(toScope(resolvePath(name, cwd)))
   }
   if (namespace !== null && namespace.nodes.size > 0 && operands.length > 0) {
-    let followed: (string | PathSpec)[] = []
-    try {
-      followed = followPaths(
-        namespace,
-        [...operands],
-        followsLastComponent(name, [name, ...args]),
-        !SLASH_KEEPS_LAST.has(name),
-      )
-    } catch (err) {
-      if (!(err instanceof CycleError)) throw err
-    }
+    const followed = followPaths(
+      namespace,
+      [...operands],
+      followsLastComponent(name, [name, ...args]),
+      !SLASH_KEEPS_LAST.has(name),
+    )
     const seen = new Set(scopes.map((p) => p.virtual))
     for (const item of followed) {
       if (item instanceof PathSpec && !seen.has(item.virtual)) {
@@ -240,12 +243,7 @@ export function policyScopes(
   if (redirects.length > 0) {
     const targets: (string | PathSpec)[] = [...redirects]
     if (namespace !== null && namespace.nodes.size > 0) {
-      let followed: (string | PathSpec)[] = []
-      try {
-        followed = followPaths(namespace, [...redirects], true)
-      } catch (err) {
-        if (!(err instanceof CycleError)) throw err
-      }
+      const followed = followPaths(namespace, [...redirects], true)
       targets.push(...followed.filter((p) => p instanceof PathSpec))
     }
     const seen = new Set(scopes.map((p) => p.virtual))
@@ -476,9 +474,23 @@ function wordHints(
 ): [(ValueType | null)[] | null, (string | null)[] | null] {
   const consumed = registry.matchCommandPrefix([...line])
   const joined = line.slice(0, consumed).join(' ')
+  const consumer = lookup(joined, session, registry)
+  // A mount command's spec is read, and so is a native capture's and an
+  // interpreter's: `python3 steal.py` runs on the runtime's own disk or
+  // a host process, where no op door follows the read, so the script
+  // slot the spec declares is the one place a path rule can see the
+  // file. The tree's gate reads a native capture the same way
+  // (`expandArgv`), and an interpreter it runs itself for the script slot
+  // alone, since its other words become the program's argv there; here
+  // the hints reach no runtime word, since the line runs as typed, so
+  // there is nothing to lose by reading them all.
   if (
     Object.hasOwn(session.functions, joined) ||
-    wordPolicy(lookup(joined, session, registry)) !== WordPolicy.MOUNT
+    !(
+      wordPolicy(consumer) === WordPolicy.MOUNT ||
+      consumer === Consumer.EXTERNAL ||
+      INTERPRETER_NAMES.has(joined)
+    )
   ) {
     return [null, null]
   }
@@ -696,8 +708,8 @@ export async function admitLine(
  * parse as a redirected_statement wrapping the whole list, so reading
  * only its first child answered `a` and left `b`, the command bash
  * actually opens the file for, with no target at all. The walk climbs
- * the last-command chain instead, which is bash's own rule for a list
- * and a pipeline. A compound (`{ }`, a loop, a subshell) redirects
+ * the last-command chain instead, which is bash's own rule for a list,
+ * a pipeline and a `!`. A compound (`{ }`, a loop, a subshell) redirects
  * every command inside it, which is not a chain, so none is claimed
  * here and the op door judges the write.
  */

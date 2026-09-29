@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -353,6 +353,36 @@ function capabilitiesFor(
   return out
 }
 
+// Every registered command SPECS does not declare. A backend verb (`trello
+// card create`) carries its spec inline, so the SPECS loop never sees it and
+// the parity gate could not tell a flag one language dropped. Each name gets
+// the spec its registrations share; two registrations of one name with
+// different specs is itself a failure. The directory is rewritten whole so a
+// removed verb leaves no file behind. Mirrors `_emit_vfs_commands` in
+// scripts/gen_specs.py.
+function emitVfsCommands(name: string, registry: Record<string, RegisteredCommand[]>): void {
+  const outDir = resolve(SPEC_ROOT, name, 'vfs_commands')
+  rmSync(outDir, { recursive: true, force: true })
+  mkdirSync(outDir, { recursive: true })
+  const own = Object.entries(registry)
+    .filter(([cmd]) => !(cmd in SPECS))
+    .sort(([a], [b]) => compareCodePoints(a, b))
+  for (const [cmd, rcs] of own) {
+    const first = rcs[0]
+    if (first === undefined) continue
+    const payloads = new Set(rcs.map((rc) => sortedStringify(serializeSpec(rc.spec, []))))
+    if (payloads.size > 1) {
+      throw new Error(`'${cmd}' is registered with ${String(payloads.size)} different specs`)
+    }
+    const payload = serializeSpec(first.spec, rcs)
+    writeFileSync(
+      resolve(outDir, `${cmd.replaceAll(' ', '_')}.json`),
+      sortedStringify(payload) + '\n',
+    )
+  }
+  console.log(`emitted ${own.length} backend command specs to ${outDir}`)
+}
+
 function emitVariant(
   name: string,
   pkgs: readonly string[],
@@ -377,6 +407,7 @@ function emitVariant(
     writeFileSync(resolve(outDir, `${cmd}.json`), sortedStringify(payload) + '\n')
   }
   console.log(`emitted ${entries.length} specs to ${outDir}`)
+  emitVfsCommands(name, registry)
   emitVfsNames(
     name,
     knownVfsNames,

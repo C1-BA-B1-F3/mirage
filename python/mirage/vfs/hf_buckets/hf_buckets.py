@@ -38,6 +38,10 @@ class HfBucketsVFS(BaseVFS):
     sizes_always_known: bool = True
     prompt: str = PROMPT
     supports_snapshot: bool = True
+    # stat stamps the paths-info xet hash and a read stamps its download's
+    # strong ETag, which is that same hash, so a `fresh` probe compares
+    # like with like.
+    read_revalidatable: bool = True
 
     def __init__(self, config: HfBucketsConfig) -> None:
         super().__init__()
@@ -55,6 +59,3 @@ class HfBucketsVFS(BaseVFS):
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)
-
-    def load_state(self, state: dict[str, Any]) -> None:
-        pass

@@ -77,11 +77,11 @@ describe('handleType', () => {
     expect(await body(out)).toBe('then is a shell keyword\nthen is a function\n')
   })
 
-  it('reports an installed CLI as its own kind', async () => {
+  it('reports an installed CLI by its file', async () => {
     const [out] = handleType(['linear'], makeSession(), makeRegistry(true))
-    expect(await body(out)).toBe('linear is a mirage CLI\n')
+    expect(await body(out)).toBe('linear is /usr/bin/linear\n')
     expect(await body(handleType(['-t', 'linear'], makeSession(), makeRegistry(true))[0])).toBe(
-      'cli\n',
+      'file\n',
     )
   })
 
@@ -100,25 +100,39 @@ describe('handleType', () => {
     expect(await body(handleType(['-P', 'cd'], makeSession(), makeRegistry())[0])).toBe('')
   })
 
-  it('classifies a mount command as a builtin', async () => {
+  it('reports a mount command by its file', async () => {
     const [out] = handleType(['cat'], makeSession(), makeRegistry())
-    expect(await body(out)).toBe('cat is a shell builtin\n')
+    expect(await body(out)).toBe('cat is /usr/bin/cat\n')
+  })
+
+  it('-p prints a program file and -P searches past a builtin', async () => {
+    // bash 5.2: -p is quiet for a builtin (still found), -P finds the file
+    // behind one, and misses one that has none.
+    const run = async (args: string[]): Promise<string> =>
+      body(handleType(args, makeSession(), makeRegistry())[0])
+    expect(await run(['-p', 'cat'])).toBe('/usr/bin/cat\n')
+    expect(await run(['-p', 'echo'])).toBe('')
+    expect(await run(['-P', 'echo'])).toBe('/usr/bin/echo\n')
+    expect(await run(['-ap', 'echo'])).toBe('/usr/bin/echo\n')
+    expect(handleType(['-P', 'cd'], makeSession(), makeRegistry())[1].exitCode).toBe(1)
   })
 
   it('-a prints every layer holding the name', async () => {
     const session = makeSession()
     session.functions.linear = 'linear() { :; }'
     const [out] = handleType(['-a', 'linear'], session, makeRegistry(true))
-    expect(await body(out)).toBe('linear is a function\nlinear is a mirage CLI\n')
+    expect(await body(out)).toBe('linear is a function\nlinear is /usr/bin/linear\n')
     const [words] = handleType(['-at', 'linear'], session, makeRegistry(true))
-    expect(await body(words)).toBe('function\ncli\n')
+    expect(await body(words)).toBe('function\nfile\n')
+    const [echo] = handleType(['-a', 'echo'], makeSession(), makeRegistry())
+    expect(await body(echo)).toBe('echo is a shell builtin\necho is /usr/bin/echo\n')
   })
 
   it('-f skips the function table so the CLI below it shows', async () => {
     const session = makeSession()
     session.functions.linear = 'linear() { :; }'
     const [out] = handleType(['-f', 'linear'], session, makeRegistry(true))
-    expect(await body(out)).toBe('linear is a mirage CLI\n')
+    expect(await body(out)).toBe('linear is /usr/bin/linear\n')
     expect(session.functions.linear).toBe('linear() { :; }')
   })
 
@@ -164,11 +178,18 @@ describe('handleType', () => {
 })
 
 describe('handleWhich', () => {
-  it('prints the name for every runnable, with no fake path', async () => {
+  it('prints the file of every program', async () => {
     const registry = makeRegistry(true)
-    expect(await body(handleWhich(['linear'], makeSession(), registry)[0])).toBe('linear\n')
-    expect(await body(handleWhich(['cd'], makeSession(), registry)[0])).toBe('cd\n')
-    expect(await body(handleWhich(['cat'], makeSession(), registry)[0])).toBe('cat\n')
+    for (const name of ['linear', 'cat', 'echo', 'xargs']) {
+      expect(await body(handleWhich([name], makeSession(), registry)[0])).toBe(`/usr/bin/${name}\n`)
+    }
+  })
+
+  it('misses a builtin with no program', () => {
+    // debianutils which: cd is bash's alone, so nothing and exit 1.
+    const [out, io] = handleWhich(['cd'], makeSession(), makeRegistry())
+    expect(out).toBeNull()
+    expect(io.exitCode).toBe(1)
   })
 
   it('is silent on a miss and exits 1', async () => {
@@ -184,28 +205,31 @@ describe('handleWhich', () => {
     expect(io.exitCode).toBe(1)
   })
 
-  it('reports the layer under a keyword', async () => {
-    // The keyword is filtered before the winner is picked, so the
-    // function below it is what `which` resolves.
+  it('does not resolve a function', () => {
+    // `which` searches PATH, which holds no function.
     const session = makeSession()
     session.functions.then = 'then() { :; }'
-    const [out, io] = handleWhich(['then'], session, makeRegistry())
-    expect(await body(out)).toBe('then\n')
-    expect(io.exitCode).toBe(0)
+    session.functions.myfn = 'myfn() { :; }'
+    for (const name of ['then', 'myfn']) {
+      const [out, io] = handleWhich([name], session, makeRegistry())
+      expect(out).toBeNull()
+      expect(io.exitCode).toBe(1)
+    }
   })
 
   it('uses the all-found exit rule and exits 1 with no operands', async () => {
-    const [out, io] = handleWhich(['cd', 'nope'], makeSession(), makeRegistry())
-    expect(await body(out)).toBe('cd\n')
+    const [out, io] = handleWhich(['cat', 'nope'], makeSession(), makeRegistry())
+    expect(await body(out)).toBe('/usr/bin/cat\n')
     expect(io.exitCode).toBe(1)
     expect(handleWhich([], makeSession(), makeRegistry())[1].exitCode).toBe(1)
   })
 
-  it('-a prints a line per layer and -s reports through the status', async () => {
+  it('-a prints the one file past a shadowing function and -s reports through the status', async () => {
+    // One directory on PATH, so one line; the function has no file.
     const session = makeSession()
     session.functions.linear = 'linear() { :; }'
     const [out] = handleWhich(['-a', 'linear'], session, makeRegistry(true))
-    expect(await body(out)).toBe('linear\nlinear\n')
+    expect(await body(out)).toBe('/usr/bin/linear\n')
     const [quiet, io] = handleWhich(['-s', 'linear'], session, makeRegistry(true))
     expect(quiet).toBeNull()
     expect(io.exitCode).toBe(0)

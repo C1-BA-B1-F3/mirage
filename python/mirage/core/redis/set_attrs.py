@@ -13,8 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.redis import RedisAccessor
+from mirage.core.redis.dest import lookup_error
 from mirage.types import PathSpec
-from mirage.utils.errors import enoent
 from mirage.utils.path import norm
 
 
@@ -49,7 +49,7 @@ async def set_attrs(
     store = accessor.store
     p = norm(path.mount_path)
     if not (await store.has_file(p) or await store.has_dir(p)):
-        raise enoent(path.raw_path)
+        raise await lookup_error(store, path, p)
     fields: dict[str, str] = {}
     if mode is not None:
         fields["mode"] = str(mode)

@@ -1,3 +1,4 @@
+import { VFSAdapter, appendFromRead } from '@struktoai/mirage-core/vfs/adapter'
 import { rangeOf } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { CommandIO } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { NextcloudAccessor } from '../../../accessor/nextcloud.ts'
@@ -22,25 +23,28 @@ import { truncate } from '../../../core/nextcloud/truncate.ts'
 import { unlink } from '../../../core/nextcloud/unlink.ts'
 import { write } from '../../../core/nextcloud/write.ts'
 
-export const NEXTCLOUD_IO: CommandIO<NextcloudAccessor> = {
+export const NEXTCLOUD_IO: CommandIO<NextcloudAccessor> = new VFSAdapter<NextcloudAccessor>({
+  read: { readdir, readBytes: read, stat },
+  native: {
+    readRange: rangeOf(read),
+    readStream: stream,
+    exists,
+    find,
+    du: { size: nextcloudDuSize, entries: nextcloudDuEntries },
+  },
+  writes: {
+    append: appendFromRead(read, write),
+    write,
+    mkdir,
+    unlink,
+    rmdir,
+    rmR,
+    rename,
+    copy,
+    create,
+    truncate,
+  },
   maxGlobMatches: SCOPE_ERROR,
-  readdir,
-  readBytes: read,
-  readRange: rangeOf(read),
-  readStream: stream,
-  stat,
   isMounted: () => true,
   local: false,
-  write,
-  exists,
-  mkdir,
-  unlink,
-  rmdir,
-  rmR,
-  rename,
-  copy,
-  create,
-  truncate,
-  find,
-  du: { size: nextcloudDuSize, entries: nextcloudDuEntries },
-}
+}).toCommandIO()

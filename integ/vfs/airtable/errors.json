@@ -1,0 +1,173 @@
+{
+  "cases": [
+    {
+      "id": "at_missing_base_ls",
+      "seq": 720300,
+      "targets": [
+        "airtable"
+      ],
+      "command": "ls /airtable/bases/Nope__appNope000000009",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "ls: cannot access '/airtable/bases/Nope__appNope000000009': No such file or directory\n"
+      }
+    },
+    {
+      "id": "at_missing_table_cat",
+      "seq": 720301,
+      "targets": [
+        "airtable"
+      ],
+      "command": "cat /airtable/bases/Product_Roadmap__appRoadmapBase001/Gone__tblGone0000000009/records.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /airtable/bases/Product_Roadmap__appRoadmapBase001/Gone__tblGone0000000009/records.jsonl: No such file or directory\n"
+      }
+    },
+    {
+      "id": "at_missing_view_cat",
+      "seq": 720302,
+      "targets": [
+        "airtable"
+      ],
+      "command": "cat /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/Gone__viwGone0000000009.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/Gone__viwGone0000000009.jsonl: No such file or directory\n"
+      }
+    },
+    {
+      "id": "at_scope_refuses_ls",
+      "seq": 720303,
+      "targets": [
+        "airtable"
+      ],
+      "command": "ls /roadmap/bases/Ops_Finance__appOpsFinance0002",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "ls: cannot access '/roadmap/bases/Ops_Finance__appOpsFinance0002': No such file or directory\n"
+      }
+    },
+    {
+      "id": "at_scope_refuses_read",
+      "seq": 720304,
+      "targets": [
+        "airtable"
+      ],
+      "command": "cat /roadmap/bases/Ops_Finance__appOpsFinance0002/base.json",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /roadmap/bases/Ops_Finance__appOpsFinance0002/base.json: No such file or directory\n"
+      }
+    },
+    {
+      "id": "at_scope_refuses_records",
+      "seq": 720305,
+      "targets": [
+        "airtable"
+      ],
+      "command": "head -n 1 /roadmap/bases/Ops_Finance__appOpsFinance0002/Q3_Budget__tblQ3Budget000004/records.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "head: cannot open '/roadmap/bases/Ops_Finance__appOpsFinance0002/Q3_Budget__tblQ3Budget000004/records.jsonl' for reading: No such file or directory\n"
+      }
+    },
+    {
+      "id": "at_read_only_mount",
+      "seq": 720306,
+      "targets": [
+        "airtable"
+      ],
+      "command": "touch /airtable/bases/Product_Roadmap__appRoadmapBase001/new.json",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "touch: cannot touch '/airtable/bases/Product_Roadmap__appRoadmapBase001/new.json': Read-only file system\n"
+      }
+    },
+    {
+      "id": "at_directory_read_is_eisdir",
+      "seq": 720307,
+      "targets": [
+        "airtable"
+      ],
+      "command": "cat /airtable/bases",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /airtable/bases: Is a directory\n"
+      }
+    },
+    {
+      "id": "at_wrong_table_name_jq",
+      "seq": 720308,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -r .table_name /airtable/bases/Product_Roadmap__appRoadmapBase001/Wrong__tblFeatures000001/table.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: /airtable/bases/Product_Roadmap__appRoadmapBase001/Wrong__tblFeatures000001/table.json: No such file or directory\n"
+      }
+    },
+    {
+      "id": "at_wrong_table_name_sort",
+      "seq": 720309,
+      "targets": [
+        "airtable"
+      ],
+      "command": "sort /airtable/bases/Product_Roadmap__appRoadmapBase001/Wrong__tblFeatures000001/records.jsonl",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: cannot read: /airtable/bases/Product_Roadmap__appRoadmapBase001/Wrong__tblFeatures000001/records.jsonl: No such file or directory\n"
+      }
+    },
+    {
+      "id": "at_wrong_view_name_redirect",
+      "seq": 720310,
+      "targets": [
+        "airtable"
+      ],
+      "command": "wc -l < /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/Wrong__viwFeatGrid000001.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "/airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/Wrong__viwFeatGrid000001.jsonl: No such file or directory\n"
+      }
+    },
+    {
+      "id": "at_foreign_view_id_jq",
+      "seq": 720311,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -c .record_id /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/Release_grid__viwRelGrid0000001.jsonl",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/Release_grid__viwRelGrid0000001.jsonl: No such file or directory\n"
+      }
+    },
+    {
+      "id": "at_wrong_base_name_jq",
+      "seq": 720312,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -r .base_name /airtable/bases/Wrong__appRoadmapBase001/base.json",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: /airtable/bases/Wrong__appRoadmapBase001/base.json: No such file or directory\n"
+      }
+    }
+  ]
+}

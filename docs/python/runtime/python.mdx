@@ -55,9 +55,8 @@ pip install mirage-ai[monty]
 Runs execute on Monty's own worker pool and are fully async: the event
 loop stays free, and cancelling a run halts the interpreter. One
 ceiling to know about when a server runs many I/O-heavy scripts at
-once: each run waiting on workspace I/O holds one pool worker (the
-Python binding only takes synchronous OS callbacks,
-[pydantic/monty#560](https://github.com/pydantic/monty/issues/560)),
+once: each run waiting on workspace I/O holds one pool worker (Mirage currently uses
+synchronous OS callbacks with Monty),
 and the pool defaults to the machine's core count. Set
 `TOKIO_WORKER_THREADS` to lift it; waiting workers cost kilobytes of
 stack and no CPU, so 100 parallel I/O-bound scripts on one core is a
@@ -66,9 +65,25 @@ stack and no CPU, so 100 parallel I/O-bound scripts on one core is a
 Without it, `python3` exits with code 127 and an install hint; every other
 command keeps working.
 
+### Working directory
+
+Monty commands start in the Mirage shell's current directory. Relative
+`open()` and `pathlib` paths reach the workspace dispatcher as absolute
+virtual paths, so `cd /data; python3 -c "print(open('a.txt').read())"`
+reads `/data/a.txt` through the same mount and policy checks as `cat`.
+The script operand is judged like `cat`'s file too: a rule protecting
+`/data/job.py` refuses `python3 job.py` from `/data`.
+`os.getcwd()` and `Path.cwd()` report that virtual directory, and
+`os.chdir()` changes it inside the guest without changing the shell or
+host process directory.
+
+A console evaluation session inherits the workspace cwd on its first
+feed and keeps subsequent guest `os.chdir()` changes. A new session or
+one-shot evaluation starts from the current workspace cwd.
+
 ### Differences from CPython
 
-The pinned Monty 0.0.23 lacks `dir()`, `json.load()` and `json.dump()`.
+The pinned Monty 1.0.0 lacks `dir()`, `json.load()` and `json.dump()`.
 Use `hasattr(value, 'name')` to check a specific attribute, `json.loads(f.read())` to read JSON, and
 `f.write(json.dumps(value))` to write it. Mirage does not automatically
 switch interpreters when an API is missing. The shared
@@ -77,16 +92,16 @@ so a dependency update can revisit them.
 
 Monty implements a Python subset. Notably:
 
-- The importable stdlib is `asyncio`, `base64`, `binascii`, `collections`, `dataclasses`,
+- The importable stdlib is `asyncio`, `base64`, `binascii`, `collections`, `copy`, `dataclasses`,
   `datetime`, `functools`, `itertools`, `json`, `math`, `os`, `pathlib`,
-  `re`, `sys`, `typing` and `unicodedata`, and each is
+  `random`, `re`, `sys`, `time`, `typing` and `unicodedata`, and each is
   itself partial (`json` has `loads`/`dumps` but no `load`/`dump`).
 - The parser refuses class inheritance and metaclasses, the
   `classmethod`/`staticmethod`/`property` method decorators, and `yield`.
   Plain classes, function decorators, `with`, f-strings and
   comprehensions all work.
-- Introspection builtins are absent: `dir`, `vars`, `globals`, `locals`,
-  `help`, `callable`, `issubclass`, `super`, `eval`, `exec` and
+- Introspection builtins are absent: `dir`, `vars`, `globals`,
+  `help`, `callable`, `issubclass`, `super` and
   `compile`. There is no `__dict__` on any object, so none of them can
   be written by hand either.
 - Command-line arguments are the `argv` global (`argv[0]` is the script
@@ -98,6 +113,10 @@ Monty implements a Python subset. Notably:
 - `os.stat()` answers a real namedtuple here, so `st[6]` and `len(st)`
   work; on the TypeScript host only the named attributes cross.
 - `os.environ` reflects the session env only, never the host's.
+- `os.urandom()` returns cryptographic random bytes, capped at 1 MiB per
+  call on both hosts. Larger requests raise `MemoryError`.
+- `Path.iterdir()` yields native `Path` objects on both hosts, including
+  relative paths whose entries can be read directly.
 - `os` has no extended-attribute calls (`os.getxattr` and its siblings);
   run `getfattr` or `setfattr` in the shell instead.
 
@@ -119,6 +138,12 @@ command, a read-only mount (or a session narrowed to read) answers
 key, or any setup. The interpreter's own build directory is served
 read-only from the host; a mount at `/` coexists with it (mount
 prefixes win for their subtrees, the build serves the rest).
+
+Each execution starts at the Mirage session's working directory, so
+`open('file.txt')` and `Path.cwd()` agree with the shell. Direct `run()`
+calls can supply `RunArgs.cwd` to override it. Guest `os.chdir()` changes
+last for that execution; they do not change the Mirage session or host
+process directory. A missing or non-directory cwd fails before user code.
 
 It needs the `wasi` extra plus a CPython WASI build (download and
 unzip a release from
@@ -233,3 +258,22 @@ cancellation: monty kills its worker process, wasi traps the run
 through wasmtime's epoch interruption, and local kills the
 subprocess. A timed-out `python3` run is reclaimed at the deadline,
 not left burning in the background.
+
+## Managed child commands
+
+Monty keeps its normal module boundary: `import subprocess` raises
+`ModuleNotFoundError`. Mirage tracks the Monty invocation, but does not inject a
+replacement guest API. The TypeScript SDK's Pyodide runtime wires ordinary
+Python `subprocess.Popen` and its standard helpers into the workspace.
+
+See [managed execution](/home/architecture#managed-execution) for process views,
+lifetimes and provider limits.
+
+Host applications can use the same door:
+
+```python
+from mirage.process.types import SpawnRequest
+
+child = ws.spawn(SpawnRequest(("cat",)))
+result = await child.communicate(b"hello\n")
+```

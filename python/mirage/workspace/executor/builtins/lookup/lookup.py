@@ -13,9 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.workspace.executor.builtins.getopt import last_of, scan_options
-from mirage.workspace.executor.builtins.lookup.classify import (classify_all,
-                                                                describe,
-                                                                locations)
+from mirage.workspace.executor.builtins.lookup.classify import (describe,
+                                                                locations,
+                                                                program_file)
 from mirage.workspace.executor.builtins.lookup.constants import (TYPE_OPTIONS,
                                                                  TYPE_USAGE,
                                                                  WHICH_OPTIONS,
@@ -23,6 +23,7 @@ from mirage.workspace.executor.builtins.lookup.constants import (TYPE_OPTIONS,
 from mirage.workspace.executor.builtins.lookup.types import NameKind
 from mirage.workspace.executor.builtins.shared import result
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
+from mirage.workspace.lookup import program
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.session import SessionState
 
@@ -36,12 +37,14 @@ def handle_type(
 
     Resolution matches ``command -V``, but the exit rule is ``type``'s:
     0 only when every name resolves. ``-t`` prints the classification
-    word, ``-p``/``-P`` print a path (always empty here) and are one
-    mutually exclusive group with ``-t``, ``-a`` prints one line per
-    layer holding the name (a shell function shadowing an installed CLI
-    is the case that has two), ``-f`` ignores the function table, and a
-    missing name warns on stderr unless a word-only mode (``-t``/``-p``)
-    is active.
+    word; ``-p`` prints the file of a name that resolves to one (none
+    for a builtin, which still resolves) and ``-P`` searches PATH for
+    one even past a builtin, a miss there being a miss; the three are
+    one group, the last winning. ``-a`` prints one line per layer
+    holding the name (a builtin that is also a program ends with its
+    file's line), ``-f`` ignores the function table, and a missing name
+    warns on stderr unless a word-only mode (``-t``/``-p``/``-P``) is
+    active. Pinned against bash 5.2 on debian:stable-slim.
 
     Args:
         args (list[str]): words after the ``type`` name.
@@ -53,14 +56,19 @@ def handle_type(
         return result("type",
                       exit_code=2,
                       stderr=f"type: {scan.bad}: invalid option\n{TYPE_USAGE}")
-    last = last_of(scan.letters, "tpP")
-    mode = last if last is None or last == "t" else "p"
+    mode = last_of(scan.letters, "tpP")
     all_mode = "a" in scan.letters
     hidden = NameKind.FUNCTION if "f" in scan.letters else None
     out_lines: list[str] = []
     err_lines: list[str] = []
     all_found = True
     for name in scan.operands:
+        if mode == "P":
+            if program(name, session, registry) is None:
+                all_found = False
+            else:
+                out_lines.append(f"{program_file(name)}\n")
+            continue
         kinds = locations(name, session, registry, all_mode, hidden)
         if not kinds:
             all_found = False
@@ -69,7 +77,10 @@ def handle_type(
             continue
         if mode == "t":
             out_lines.extend(f"{kind.value}\n" for kind in kinds)
-        elif mode is None:
+        elif mode == "p":
+            out_lines.extend(f"{program_file(name)}\n" for kind in kinds
+                             if kind is NameKind.FILE)
+        else:
             out_lines.extend(f"{describe(name, kind, session)}\n"
                              for kind in kinds)
     out = "".join(out_lines).encode() if out_lines else None
@@ -86,20 +97,17 @@ def handle_which(
 ) -> Result:
     """Run the ``which`` builtin (``which [-as] name [name ...]``).
 
-    Pinned against debianutils ``which`` (debian:stable-slim): a miss
-    prints nothing at all, the exit status is 0 only when every name
-    resolves (1 with no operands), and ``-s`` reports through the status
-    alone. Two deliberate divergences, both forced by mirage having no
-    PATH: the printed word is the name rather than a path (as
-    ``command -v`` already does), and every runnable resolves, where GNU
-    reports only files (``which cd`` misses there, since a builtin is
-    not on the PATH; here everything is in-process, so reporting nothing
-    would make the command useless). Keywords stay unresolvable, as they
-    are not commands anywhere. ``-a`` prints one line per layer, so a
-    shadowed name prints its name twice; ``type -a`` is the surface that
-    names the layers. The refusal for an unknown option is bash's shape,
-    not the C tool's ``Illegal option``, because this is a builtin and
-    the usage line cannot honestly name ``/usr/bin/which``.
+    Pinned against debianutils ``which`` (debian:stable-slim): it prints
+    the file PATH finds for each name, which is the program's under
+    ``/usr/bin`` (the one PATH directory), a miss prints nothing at all,
+    the exit status is 0 only when every name resolves (1 with no
+    operands), and ``-s`` reports through the status alone. A builtin
+    with no program (``cd``), a function, an alias and a reserved word
+    are no file, so each is a miss; ``-a`` has one directory to search
+    and so one line per name. ``$PATH`` itself is not read: mirage runs
+    a program by its name whatever PATH holds, so ``which`` answers as
+    dispatch does. The refusal for an unknown option is bash's shape,
+    not the C tool's ``Illegal option``, because this is a builtin.
 
     Args:
         args (list[str]): words after the ``which`` name.
@@ -112,25 +120,15 @@ def handle_which(
             "which",
             exit_code=2,
             stderr=f"which: {scan.bad}: invalid option\n{WHICH_USAGE}")
-    all_mode = "a" in scan.letters
     silent = "s" in scan.letters
     out_lines: list[str] = []
     all_found = True
     for name in scan.operands:
-        # `which` is a program, not the shell: it knows neither reserved
-        # words nor aliases, so both layers are dropped before the top
-        # is taken.
-        kinds = [
-            kind for kind in classify_all(name, session, registry)
-            if kind not in (NameKind.KEYWORD, NameKind.ALIAS)
-        ]
-        if not all_mode:
-            kinds = kinds[:1]
-        if not kinds:
+        if program(name, session, registry) is None:
             all_found = False
             continue
         if not silent:
-            out_lines.extend([f"{name}\n"] * len(kinds))
+            out_lines.append(f"{program_file(name)}\n")
     out = "".join(out_lines).encode() if out_lines else None
     code = 0 if (scan.operands and all_found) else 1
     return result("which", out=out, exit_code=code)

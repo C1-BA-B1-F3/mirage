@@ -17,7 +17,9 @@ import { recordStream } from '@struktoai/mirage-core/observe/context'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { hubStream, resolveUrl } from './client.ts'
-import { read, resolveEntry } from './read.ts'
+import { REFUSED_STATUSES } from './constants.ts'
+import { asRefusal } from './lookup.ts'
+import { read, resolveEntry, rowToken } from './read.ts'
 
 /** Read a byte range, in the VFS API's end-exclusive spelling. */
 export async function rangeRead(
@@ -34,7 +36,7 @@ export async function* stream(
   path: PathSpec,
   index?: IndexCacheStore,
 ): AsyncIterable<Uint8Array> {
-  await resolveEntry(accessor, path, index)
+  const entry = await resolveEntry(accessor, path, index)
   const raw = path.mountPath
   const url = resolveUrl(
     accessor.endpoint,
@@ -43,9 +45,16 @@ export async function* stream(
     accessor.revision,
     accessor.repoPath(raw),
   )
-  const rec = recordStream('read', raw, accessor.vfsName)
-  for await (const chunk of hubStream(accessor.token, url)) {
-    if (rec !== null) rec.bytes += chunk.length
-    yield chunk
+  const rec = recordStream('read', path.virtual, accessor.vfsName)
+  const stamp = (headers: Record<string, string>): void => {
+    if (rec !== null) rec.fingerprint = rowToken(entry, headers.etag ?? '')
+  }
+  try {
+    for await (const chunk of hubStream(accessor.token, url, stamp, accessor.timeoutMs)) {
+      if (rec !== null) rec.bytes += chunk.length
+      yield chunk
+    }
+  } catch (err) {
+    throw asRefusal(path, err, REFUSED_STATUSES)
   }
 }

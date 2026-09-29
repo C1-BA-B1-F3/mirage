@@ -25,15 +25,19 @@ import {
   childByName,
   children,
   copyTree,
+  eventsAfter,
   isDescendant,
   folderItem,
   itemById,
+  recordEvent,
   removeTree,
+  streamHead,
   typedItem,
   updateFile,
 } from './store.ts'
 import {
   boxError,
+  eventEntry,
   listOrder,
   nameInUse,
   notFound,
@@ -206,6 +210,7 @@ async function createFolder(ctx: Ctx<C>): Promise<Reply> {
     ctx.clock.nowIso(false),
     ctx.minter,
   )
+  await recordEvent(ctx.db, ctx.tenant, 'ITEM_CREATE', item, ctx.clock.lastIso(false))
   return { status: 201, body: render(item) }
 }
 
@@ -223,6 +228,7 @@ async function createWebLink(ctx: Ctx<C>): Promise<Reply> {
     ctx.clock.nowIso(false),
     ctx.minter,
   )
+  await recordEvent(ctx.db, ctx.tenant, 'ITEM_CREATE', item, ctx.clock.lastIso(false))
   return { status: 201, body: render(item) }
 }
 
@@ -246,6 +252,7 @@ async function upload(ctx: Ctx<C>): Promise<Reply> {
     ctx.clock.nowIso(false),
     ctx.minter,
   )
+  await recordEvent(ctx.db, ctx.tenant, 'ITEM_UPLOAD', item, ctx.clock.lastIso(false))
   return { status: 201, body: { total_count: 1, entries: [render(item)] } }
 }
 
@@ -261,6 +268,7 @@ async function uploadVersion(ctx: Ctx<C>): Promise<Reply> {
     parts.file?.bytes ?? new Uint8Array(0),
     ctx.clock.nowIso(false),
   )
+  await recordEvent(ctx.db, ctx.tenant, 'ITEM_UPLOAD', next, ctx.clock.lastIso(false))
   return { status: 200, body: { total_count: 1, entries: [render(next)] } }
 }
 
@@ -274,6 +282,9 @@ function deleteOf(kind: string, param: string) {
         return boxError(409, 'folder_not_empty', 'folder is not empty')
       }
     }
+    // One event for the item and none for what was inside it, as the vendor
+    // sends.
+    await recordEvent(ctx.db, ctx.tenant, 'ITEM_TRASH', item, ctx.clock.lastIso(false))
     await removeTree(ctx.db, ctx.tenant, item.id)
     return { status: 204 }
   }
@@ -295,6 +306,13 @@ function updateOf(kind: string, param: string) {
       where: { tenant_id: { tenant: ctx.tenant, id: item.id } },
       data: { name, parentId, modified: ctx.clock.nowIso(false) },
     })
+    await recordEvent(
+      ctx.db,
+      ctx.tenant,
+      parentId === item.parentId ? 'ITEM_RENAME' : 'ITEM_MOVE',
+      moved,
+      ctx.clock.lastIso(false),
+    )
     return { status: 200, body: render(moved) }
   }
 }
@@ -320,6 +338,7 @@ function copyOf(kind: string, param: string) {
       ctx.clock.nowIso(false),
       ctx.minter,
     )
+    await recordEvent(ctx.db, ctx.tenant, 'ITEM_COPY', made, ctx.clock.lastIso(false))
     return { status: 201, body: render(made) }
   }
 }
@@ -367,6 +386,32 @@ async function search(ctx: Ctx<C>): Promise<Reply> {
   return { status: 200, body: { total_count: hits.length, entries, offset, limit } }
 }
 
+// The user event stream. Only tree changes are recorded, so `all`, `changes`
+// and `sync` read the same rows; a short read is not the end of the stream
+// and the client keeps going until a page comes back empty, as on the vendor.
+async function events(ctx: Ctx<C>): Promise<Reply> {
+  if (!authed(ctx)) return unauthorized()
+  const head = await streamHead(ctx.db, ctx.tenant)
+  const raw = ctx.query.get('stream_position')
+  if (raw === 'now') {
+    return { status: 200, body: { chunk_size: 0, next_stream_position: String(head), entries: [] } }
+  }
+  const from = raw === null || raw === '' ? 0 : Number(raw)
+  if (!Number.isInteger(from) || from < 0) {
+    return boxError(400, 'bad_request', `stream_position: ${raw ?? ''}`)
+  }
+  const limit = Math.min(intQuery(ctx, 'limit', 100), 500)
+  const rows = await eventsAfter(ctx.db, ctx.tenant, from, limit)
+  return {
+    status: 200,
+    body: {
+      chunk_size: rows.length,
+      next_stream_position: String(rows.at(-1)?.seq ?? from),
+      entries: rows.map((row) => eventEntry(row.seq, row.eventType, row.source, row.createdAt)),
+    },
+  }
+}
+
 export function boxRoutes(): KitRoute<C>[] {
   return [
     route('POST', '/oauth2/token', token),
@@ -385,6 +430,7 @@ export function boxRoutes(): KitRoute<C>[] {
     route('DELETE', '/2.0/files/:file_id', deleteOf('file', 'file_id'), { write: true }),
     route('DELETE', '/2.0/folders/:folder_id', deleteOf('folder', 'folder_id'), { write: true }),
     route('GET', '/2.0/search', search),
+    route('GET', '/2.0/events', events),
     route('GET', '/dl/:file_id', dl),
     route('GET', '/rep/:file_id/extracted_text', repText),
   ]

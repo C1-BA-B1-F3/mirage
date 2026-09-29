@@ -357,7 +357,7 @@
       "targets": [
         "qdrant"
       ],
-      "command": "ln -s /db/cat/big/1.json /db/meta_link",
+      "command": "ln -s /db/cat/big/1.json /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "",
@@ -370,7 +370,7 @@
       "targets": [
         "qdrant"
       ],
-      "command": "readlink /db/meta_link",
+      "command": "readlink /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "/db/cat/big/1.json\n",
@@ -383,7 +383,7 @@
       "targets": [
         "qdrant"
       ],
-      "command": "cat /db/meta_link",
+      "command": "cat /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "{\"label\":\"cat\",\"kind\":\"big\",\"name\":\"a big orange cat\",\"id\":1}\n",
@@ -396,7 +396,7 @@
       "targets": [
         "qdrant"
       ],
-      "command": "grep label /db/meta_link",
+      "command": "grep label /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "{\"label\":\"cat\",\"kind\":\"big\",\"name\":\"a big orange cat\",\"id\":1}\n",
@@ -409,7 +409,7 @@
       "targets": [
         "qdrant"
       ],
-      "command": "ls -F /db/ | grep meta_link",
+      "command": "ls -F / | grep meta_link",
       "expect": {
         "exit": 0,
         "stdout": "meta_link@\n",
@@ -422,7 +422,7 @@
       "targets": [
         "qdrant"
       ],
-      "command": "rm /db/meta_link && ls /db/",
+      "command": "rm /meta_link && ls /db/",
       "expect": {
         "exit": 0,
         "stdout": "cat\ndog\n",

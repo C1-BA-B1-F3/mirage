@@ -1,0 +1,36 @@
+{
+  "cases": [
+    {
+      "id": "mkdir_z_short_takes_no_value",
+      "seq": 991451,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -Zfoo /data/mzc1",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mkdir: invalid option -- 'f'\nTry 'mkdir --help' for more information.\n"
+      }
+    },
+    {
+      "id": "mkdir_z_short_clusters",
+      "seq": 991452,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -vZ /data/mzc2",
+      "expect": {
+        "exit": 0,
+        "stdout": "mkdir: created directory '/data/mzc2'\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

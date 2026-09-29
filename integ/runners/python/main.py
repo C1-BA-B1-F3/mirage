@@ -25,8 +25,8 @@ import adapters  # noqa: E402
 import harness  # noqa: E402
 
 from mirage.concurrency import ConcurrencyLimiter  # noqa: E402
-from mirage.types import ReadPolicy  # noqa: E402
-from mirage.types import DEFAULT_READ_TTL, ReadSpec
+from mirage.types import ReadSpec  # noqa: E402
+from mirage.workspace.mount.read_policy import resolve_read_spec  # noqa: E402
 
 HOST = "python"
 
@@ -67,21 +67,35 @@ def read_spec_of(case: dict) -> ReadSpec:
     Args:
         case (dict): the integ case.
     """
-    policy = ReadPolicy(case["read"])
-    ttl = case.get("ttl")
-    return ReadSpec(policy=policy,
-                    ttl=DEFAULT_READ_TTL if ttl is None else int(ttl))
+    return resolve_read_spec(case["read"], case.get("ttl"))
+
+
+def mount_read_of(case: dict) -> dict[str, ReadSpec]:
+    """The per-mount policies a scenario case overrides its default with.
+
+    A selector like `read`: each named prefix runs under its own policy
+    and every other mount inherits `read`, which is the only way a case
+    can put two policies on one line. The case's `ttl` bounds each.
+
+    Args:
+        case (dict): the integ case.
+    """
+    return {
+        prefix: resolve_read_spec(policy, case.get("ttl"))
+        for prefix, policy in case.get("mount_read", {}).items()
+    }
 
 
 async def run_consistency_case(target: dict, case: dict,
                                report: harness.Report | None,
                                emit: list[dict] | None) -> None:
     spec = read_spec_of(case)
-    read_ws, mutate, cleanup = await adapters.open_consistency(target, spec)
+    read_ws, mutate, mutate_line, cleanup = await adapters.open_consistency(
+        target, spec, mount_read_of(case))
     try:
-        exit_code, out = await harness.run_scenario(read_ws, mutate,
-                                                    case["scenario"])
-        _emit_or_record(emit, report, target["id"], case, exit_code, out, "",
+        exit_code, out, err = await harness.run_scenario(
+            read_ws, mutate, mutate_line, case["scenario"])
+        _emit_or_record(emit, report, target["id"], case, exit_code, out, err,
                         0.0)
     finally:
         await cleanup()
@@ -269,6 +283,41 @@ async def run_pool(
     return errors
 
 
+def run_verdict(facet: str | None, ran: int, strict: bool,
+                env_skipped: list[str], unadapted: list[str]) -> str | None:
+    """The reason a finished run must exit 2, or None.
+
+    A skip is one line on stderr and exit 0, so a facet whose service
+    never came up (or whose env var got renamed in the workflow) reports
+    green having tested nothing; every facet has targets on both hosts,
+    so zero of them running is always a broken job. That guard only fires
+    when *every* target skipped, so a two-target facet that loses one
+    still reports green: CI passes --strict, which starts every service
+    its facet declares, so there a missing variable is a broken job
+    rather than a local convenience. A target that lists this host but
+    has no adapter here skips the same quiet way, and --allow-skip does
+    not excuse it: the manifest says it runs.
+
+    Args:
+        facet (str | None): the facet the run selected, if any.
+        ran (int): how many targets were eligible to run.
+        strict (bool): whether --strict was passed.
+        env_skipped (list[str]): targets skipped for missing env, outside
+            --allow-skip, as ``id (VARS)``.
+        unadapted (list[str]): targets that list this host but have no
+            adapter for it.
+    """
+    if facet and ran == 0:
+        return f"facet {facet!r} ran no targets"
+    if strict and env_skipped:
+        return (f"strict: {len(env_skipped)} target(s) skipped for missing "
+                f"env: {'; '.join(env_skipped)}")
+    if strict and unadapted:
+        return (f"strict: {len(unadapted)} target(s) list {HOST} but have "
+                f"no {HOST} adapter: {', '.join(unadapted)}")
+    return None
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", action="append", dest="targets")
@@ -314,6 +363,7 @@ async def main() -> None:
     ran = 0
     allow_skip = harness.parse_allow_skip(services, args.allow_skip)
     env_skipped: list[str] = []
+    unadapted: list[str] = []
     eligible: list[dict] = []
     for target_id in selected:
         target = manifest[target_id]
@@ -322,6 +372,7 @@ async def main() -> None:
             continue
         if target["mounts"][0]["vfs"] not in adapters.BUILDERS:
             print(f"skip [{target_id}]: no {HOST} adapter", file=sys.stderr)
+            unadapted.append(target_id)
             continue
         missing = harness.missing_env(services, target, HOST)
         if missing:
@@ -344,23 +395,9 @@ async def main() -> None:
         raised = await run_pool(eligible, cases, root, report, emit, services,
                                 args.target_jobs)
 
-    # A skip is one line on stderr and exit 0, so a facet whose service
-    # never came up (or whose env var got renamed in the workflow)
-    # reports green having tested nothing. Every facet has targets on
-    # both hosts, so zero of them running is always a broken job.
-    if args.facet and ran == 0:
-        print(f"facet {args.facet!r} ran no targets", file=sys.stderr)
-        sys.exit(2)
-
-    # The facet guard above only fires when *every* target skipped, so a
-    # two-target facet that loses one still reports green. CI passes
-    # --strict, which starts every service its facet declares, so there a
-    # missing variable is a broken job rather than a local convenience.
-    if args.strict and env_skipped:
-        print(
-            f"strict: {len(env_skipped)} target(s) skipped for missing "
-            f"env: {'; '.join(env_skipped)}",
-            file=sys.stderr)
+    verdict = run_verdict(args.facet, ran, args.strict, env_skipped, unadapted)
+    if verdict is not None:
+        print(verdict, file=sys.stderr)
         sys.exit(2)
 
     if args.emit:

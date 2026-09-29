@@ -24,6 +24,7 @@ import type { PathSpec } from '@struktoai/mirage-core/types'
 import { inMtimeWindow } from '@struktoai/mirage-core/utils/dates'
 import { norm } from '@struktoai/mirage-core/utils/path'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
+import { DIR_SIZE } from '@struktoai/mirage-core/utils/stat_view'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
 import { isDirectoryAttrs, joinRoot, stripPrefix } from './utils.ts'
 
@@ -81,8 +82,7 @@ function matches(
     return false
   }
   if (opts.minSize != null || opts.maxSize != null) {
-    // Directories count as size 0 for -size (deliberate GNU divergence).
-    const size = isDir ? 0 : entry.attrs.size
+    const size = isDir ? DIR_SIZE : entry.attrs.size
     if (opts.minSize != null && size < opts.minSize) return false
     if (opts.maxSize != null && size > opts.maxSize) return false
   }

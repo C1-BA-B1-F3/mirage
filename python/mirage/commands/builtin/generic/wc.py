@@ -20,6 +20,7 @@ from mirage.io.cooperative import chunks
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec, PolymorphicReadFn
 from mirage.utils.errors import FS_ERRORS, fs_error_line
+from mirage.utils.quote import shell_quote
 from mirage.utils.width import advance_column, is_space
 
 # GNU's `total_types` in declaration order, which is both the accepted
@@ -193,6 +194,44 @@ def _selected_values(
     return values
 
 
+def number_width(sizes: list[int | None], operands: int, counts: int) -> int:
+    """GNU wc's column width, which it takes from the operands.
+
+    One operand, or stdin, shown with one count prints unpadded. Otherwise
+    the width is the digits of the regular files' total size, and at least
+    7 once any operand is a stream or a directory, whose size GNU cannot
+    know (coreutils 9.7). A redirected file reaches mirage as a stream, so
+    ``wc < file`` pads to 7 where GNU pads to the file's size.
+
+    Args:
+        sizes (list[int | None]): per operand that opened, a regular
+            file's size, or None for a stream or a directory.
+        operands (int): the operands given, 1 for stdin.
+        counts (int): the columns each row shows.
+    """
+    if operands <= 1 and counts == 1:
+        return 1
+    width = len(str(sum(size for size in sizes if size is not None)))
+    return max(width, 7) if None in sizes else width
+
+
+def labelled(body: str, label: str | None) -> str:
+    """One report row under GNU's name rule (coreutils 9.7 ``wc.c``).
+
+    A name holding a newline is shell-quoted, as ``quotef`` does, so no
+    row spans two lines; every other name, spaces included, prints as
+    itself.
+
+    Args:
+        body (str): The row's right-aligned counts.
+        label (str | None): The operand's name, or None for no name.
+    """
+    if label is None:
+        return body
+    name = shell_quote(label) if "\n" in label else label
+    return f"{body} {name}"
+
+
 def format_wc_lines(
     rows: list[tuple[WCCounts, str | None]],
     *,
@@ -201,15 +240,15 @@ def format_wc_lines(
     bytes_: bool = False,
     chars: bool = False,
     max_line_length: bool = False,
+    width: int | None = None,
 ) -> list[str]:
     """Format a wc report in GNU style.
 
-    Counts are right-aligned to a shared width and space-separated; a single
-    count for a single operand prints unpadded, and a default-mode stdin read
-    uses GNU's width 7 for unknown sizes. Divergence from GNU: the width is
-    the widest printed number, while GNU derives it from operand file sizes;
-    the two are identical in the default mode, where the byte count is the
-    widest column.
+    Counts are right-aligned to a shared width and space-separated. A
+    caller that knows its operands passes GNU's width (``number_width``);
+    one that holds only counts, such as a database push-down that never
+    renders its files, gets the widest printed number, with a single count
+    for a single operand unpadded and a lone unlabelled row at GNU's 7.
 
     Args:
         rows (list[tuple[WCCounts, str | None]]): One entry per output row
@@ -219,6 +258,8 @@ def format_wc_lines(
         bytes_ (bool): Report byte count only.
         chars (bool): Report character count only.
         max_line_length (bool): Report longest line length only.
+        width (int | None): The column width, or None to size by the
+            printed numbers.
     """
     values = [(_selected_values(counts,
                                 lines=lines,
@@ -227,19 +268,19 @@ def format_wc_lines(
                                 chars=chars,
                                 max_line_length=max_line_length), label)
               for counts, label in rows]
-    if len(values) == 1 and len(values[0][0]) == 1:
+    if width is None and len(values) == 1 and len(values[0][0]) == 1:
         nums, label = values[0]
         body = str(nums[0])
-        return [body if label is None else f"{body} {label}"]
-    if len(values) == 1 and values[0][1] is None:
+        return [labelled(body, label)]
+    if width is None and len(values) == 1 and values[0][1] is None:
         width = 7
-    else:
+    if width is None:
         width = max((len(str(n)) for nums, _ in values for n in nums),
                     default=1)
     out: list[str] = []
     for nums, label in values:
         body = " ".join(str(n).rjust(width) for n in nums)
-        out.append(body if label is None else f"{body} {label}")
+        out.append(labelled(body, label))
     return out
 
 
@@ -248,6 +289,7 @@ def format_count_rows(
     totals: WCCounts,
     operand_count: int,
     flags: WCFlags,
+    width: int | None = None,
 ) -> bytes:
     if flags.total == "only":
         values = _selected_values(totals,
@@ -268,7 +310,23 @@ def format_count_rows(
                         words=flags.words,
                         bytes_=flags.bytes_,
                         chars=flags.chars,
-                        max_line_length=flags.max_line_length))
+                        max_line_length=flags.max_line_length,
+                        width=width))
+
+
+def shown_counts(flags: WCFlags) -> int:
+    """How many columns a row shows under these flags.
+
+    Args:
+        flags (WCFlags): The parsed flags.
+    """
+    return len(
+        _selected_values(WCCounts(),
+                         lines=flags.lines,
+                         words=flags.words,
+                         bytes_=flags.bytes_,
+                         chars=flags.chars,
+                         max_line_length=flags.max_line_length))
 
 
 async def format_multi(
@@ -309,6 +367,7 @@ async def format_multi(
                     total=total)
     cached = cache_aware_read(read)
     rows: list[tuple[WCCounts, str | None]] = []
+    sizes: list[int | None] = []
     totals = WCCounts()
     err = b""
     for path in paths:
@@ -317,12 +376,21 @@ async def format_multi(
             if inspect.isawaitable(source):
                 source = await source
             counts = await wc(source, flags=flags)
+        except IsADirectoryError as exc:
+            # GNU opens a directory and fails only to read it, so it prints
+            # a row of zeros beside the error and pads as for a stream.
+            err += fs_error_line("wc", path, exc).encode()
+            rows.append((WCCounts(), path.raw_path))
+            sizes.append(None)
+            continue
         except FS_ERRORS as exc:
             err += fs_error_line("wc", path, exc).encode()
             continue
         rows.append((counts, path.raw_path))
+        sizes.append(None if is_stdin(path) else counts.bytes_)
         totals.merge(counts)
-    return format_count_rows(rows, totals, len(paths), flags), err
+    width = number_width(sizes, len(paths), shown_counts(flags))
+    return format_count_rows(rows, totals, len(paths), flags, width), err
 
 
 async def wc_generic(
@@ -388,4 +456,5 @@ def format_stdin(counts: WCCounts, flags: WCFlags) -> bytes:
                         words=flags.words,
                         bytes_=flags.bytes_,
                         chars=flags.chars,
-                        max_line_length=flags.max_line_length))
+                        max_line_length=flags.max_line_length,
+                        width=number_width([None], 1, shown_counts(flags))))

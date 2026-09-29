@@ -1,0 +1,60 @@
+---
+title: Airtable
+icon: table
+description: Mount Airtable bases, tables, and records as a Mirage filesystem.
+---
+
+`AirtableVFS` exposes the bases a personal access token can reach as a
+read-only tree of tables, records, and saved views. Reads go through the
+Airtable Web API with plain `fetch`, so one class serves Node and the browser.
+
+Setup steps for the token live at [Airtable Credentials](/home/setup/airtable).
+
+## Node
+
+```bash
+pnpm add @struktoai/mirage-node
+```
+
+```ts
+import { AirtableVFS, MountMode, Workspace } from '@struktoai/mirage-node'
+
+const airtable = new AirtableVFS({ token: process.env.AIRTABLE_TOKEN! })
+
+const ws = new Workspace({ '/airtable': airtable }, { mode: MountMode.READ })
+await ws.shell('ls /airtable/bases/')
+```
+
+## Browser
+
+```bash
+pnpm add @struktoai/mirage-browser
+```
+
+```ts
+import { AirtableVFS, MountMode, Workspace } from '@struktoai/mirage-browser'
+
+const airtable = new AirtableVFS({ token: AIRTABLE_TOKEN })
+```
+
+The Airtable API sends `access-control-allow-origin: *`, so the browser calls
+it directly; a token in a page is visible to that page's user.
+
+## Config
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `token` | required | Personal access token. Redacted in snapshots. |
+| `baseIds` | none | Only these bases are listed or readable. |
+| `maxReadRecords` | `10000` | The most records one file renders on a full read. |
+| `requestsPerSecond` | `5` | Pacing per base. |
+| `baseUrl` | `https://api.airtable.com/v0` | Override to point at a fake or proxy. |
+
+## Mount mode
+
+`read`. Writes go through the [airtable CLI](/typescript/cli/airtable), which
+takes the same config and names a base, a table and a record by the id after
+the last `__` of the mount's directory names.
+
+For the mounted layout (`bases/`, `table.json`, `records.jsonl`, `views/`)
+and the reading rules see the [Python Airtable docs](/python/vfs/airtable).

@@ -17,6 +17,7 @@ from mirage.io.stream import async_chain, chain_cachables
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import (FileStat, FileType, Limit, PathSpec,
                           PolymorphicReadFn, StatFn)
+from mirage.utils.errors import FS_ERRORS, fs_error_line
 from mirage.utils.stream import ensure_stream
 
 
@@ -134,13 +135,20 @@ async def cat_generic(
             reads: dict[str, ByteSource] = {}
             parts: list[bytes] = []
             for p in readable:
-                data = await materialize(await source_for(p))
+                try:
+                    data = await materialize(await source_for(p))
+                except FS_ERRORS as exc:
+                    # A read the backend refuses once the stat passed (a
+                    # table past its read cap) is reported like a missing
+                    # operand, and the next operand still prints.
+                    err += fs_error_line("cat", p, exc).encode()
+                    continue
                 if not is_stdin(p):
                     reads[p.mount_path] = data
                 parts.append(data)
             io.reads.update(reads)
             io.cache.extend(reads)
-            source = async_chain(*parts)
+            source = async_chain(parts)
         if err:
             io.stderr = err
             io.exit_code = 1

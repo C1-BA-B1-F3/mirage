@@ -25,6 +25,7 @@ from mirage.commands.registry import registered_commands
 from mirage.ops.generic import make_generic_ops
 from mirage.ops.registry import RegisteredOp
 from mirage.types import CapacityResult, CapacityState
+from mirage.vfs.adapter import VFSAdapter
 from mirage.vfs.secrets import redacted_config_dump
 from mirage.watch.base import DeltaHook
 
@@ -42,15 +43,17 @@ class BaseVFS:
     class attributes and returns from ``ops`` and ``commands`` the
     tables its ``ops/<name>`` and ``commands/builtin/<name>`` modules
     build, so it calls ``super().__init__()`` bare. A custom backend
-    hands the constructor an accessor and a ``CommandIO`` table, and
-    the whole generic command set (``ls``, ``cat``, ``grep``, ``find``,
-    ``head``, ``wc``, ...) plus glob resolution and the VFS/FUSE ops
-    are derived from it: the one-file path, which
-    ``examples/python/other/custom_vfs.py`` walks end to end. Optional
-    fields on the table unlock more surface (``write`` enables the
-    byte-mutation family, ``find`` and ``du_size`` become native fast
-    paths), and a command whose requirements the table cannot meet is
-    never registered rather than registered and broken.
+    hands the constructor an accessor and a ``VFSAdapter`` (or a
+    prebuilt ``CommandIO`` table), and the whole generic command set
+    (``ls``, ``cat``, ``grep``, ``find``, ``head``, ``wc``, ...) plus
+    glob resolution and the VFS/FUSE ops are derived from it: the
+    one-file path, which ``examples/python/other/custom_vfs.py`` walks
+    end to end. Optional capabilities unlock more surface (``writes``
+    enables the byte-mutation family, ``find`` and ``du`` become
+    native fast paths). A table without an op still gets every
+    command: ``gzip -c`` and ``tar -t`` run as readers, and a line
+    that needs the missing op answers ``Operation not supported`` at
+    that op.
 
     Snapshots and versions see one of two things, and a subclass picks
     which by what it owns. Content the VFS holds itself (an in-memory
@@ -111,20 +114,16 @@ class BaseVFS:
     # silently serves bounded is the bug the policy exists to prevent.
     #
     # Distinct from supports_snapshot, which asks whether a token exists
-    # at all: gdrive stamps one on both sides and still cannot honour
-    # fresh, because stat returns a timestamp where read returns an md5.
-    # Distinct from caches_reads, which asks whether the gate can fire.
+    # at all, and from caches_reads, which asks whether the gate can
+    # fire. A backend can have a token on both sides and still fail this
+    # one, by stamping two different kinds.
     #
-    # onedrive and sharepoint look like they qualify and do not: both
-    # stamp a cTag on stat and on read, so on token kind alone the
-    # refusal reads as unnecessary. It is correct for a second reason
-    # the flag does not name -- both label the read record with
-    # `path.vfs_path`, which carries no leading slash, so `record()`
-    # builds a malformed key ("/oda/b.txt" rather than "/od/a/b.txt")
-    # and the cTag can never be matched against the cache entry. The
-    # backends that do qualify pass `path_spec.mount_path` instead.
-    # gdrive carries the same slashless label on top of its token-kind
-    # mismatch. Fix the label before reconsidering the flag.
+    # A declarer must stamp the token on every read, not only while a
+    # recorder is active: tests/vfs/test_read_revalidatable.py holds each
+    # one to that (#1165). onedrive and sharepoint qualify because every
+    # unpinned byte read fetches the item's cTag before its bytes, recorded
+    # or not; a stream stamps only under a recorder, the one place its token
+    # can land.
     read_revalidatable: bool = False
 
     _closed: bool = False
@@ -140,7 +139,7 @@ class BaseVFS:
         *,
         name: str | None = None,
         accessor: Accessor | None = None,
-        io: CommandIO | None = None,
+        io: CommandIO | VFSAdapter | None = None,
         prompt: str | None = None,
         write_prompt: str | None = None,
         overrides: set[str] | None = None,
@@ -168,7 +167,8 @@ class BaseVFS:
                 keeps the class attribute.
             accessor (Accessor | None): backend handle passed to every
                 core function.
-            io (CommandIO | None): the backend's IO table.
+            io (CommandIO | VFSAdapter | None): the backend's resource
+                capabilities, or a prebuilt IO table.
             prompt (str | None): LLM-facing description of the layout.
             write_prompt (str | None): appended when mounted writable.
             overrides (set[str] | None): generic command names the
@@ -225,9 +225,10 @@ class BaseVFS:
                     "derive from an io table; pass io")
             return
         self._from_table = True
+        table = io.to_command_io() if isinstance(io, VFSAdapter) else io
         self._commands_table = registered_commands([
             *make_generic_commands(self.name,
-                                   io,
+                                   table,
                                    overrides=overrides,
                                    provision_overrides=provision_overrides),
             *(commands or []),
@@ -242,7 +243,7 @@ class BaseVFS:
         # same name: the derived set is built with those names skipped,
         # so two handlers never compete for one key.
         shadowed = {ro.name for ro in user_ops if ro.filetype is None}
-        derived = (make_generic_ops(self.name, io, overrides=shadowed)
+        derived = (make_generic_ops(self.name, table, overrides=shadowed)
                    if auto_ops else [])
         self._ops_table = [*derived, *user_ops]
 
@@ -329,10 +330,15 @@ class BaseVFS:
         }
 
     def load_state(self, state: dict[str, Any]) -> None:
-        """Take back what ``get_state`` put out. A no-op by default.
+        """Take back what ``get_state`` put out.
+
+        A no-op by default, which is right for every VFS whose bytes live
+        in the remote service: its state is a redacted config, and the
+        restored mount reaches its data through that config alone. Only a
+        VFS holding content of its own (ram, disk, redis) overrides this.
 
         Args:
-            state (dict[str, Any]): the recorded state.
+            state (dict[str, Any]): the payload ``get_state`` produced.
         """
 
     @property

@@ -12,13 +12,16 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { MongoDBAccessor } from '@struktoai/mirage-core/accessor/mongodb'
+
 import { MONGODB_COMMANDS } from '@struktoai/mirage-core/commands/builtin/mongodb/index'
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { MongoDriver } from '@struktoai/mirage-core/core/mongodb/_driver'
+
 import { MONGODB_OPS } from '@struktoai/mirage-core/ops/mongodb/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import {
   redactMongoDBConfig,
   resolveMongoDBConfig,
@@ -30,7 +33,9 @@ import type {
 } from '@struktoai/mirage-core/vfs/mongodb/config'
 import { MONGODB_PROMPT } from '@struktoai/mirage-core/vfs/mongodb/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
+
 import { HttpMongoDriver } from './http_driver.ts'
+
 export interface MongoDBVFSOptions {
   config: MongoDBConfig
   prefix?: string
@@ -78,11 +83,6 @@ export class MongoDBVFS extends BaseVFS {
     }
   }
 
-  // The rows live in the database, so a restored mount reaches them
-  // through its config alone — there is nothing to take back.
-  override loadState(_state: MongoDBVFSState): Promise<void> {
-    return Promise.resolve()
-  }
   override async close(): Promise<void> {
     await this.driver.close()
     await super.close()

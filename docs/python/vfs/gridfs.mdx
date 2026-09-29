@@ -72,17 +72,20 @@ revisions of the file.
 ## Server-side find
 
 Unlike object stores that page through every key, GridFS metadata lives in
-an ordinary MongoDB collection, so `find` pushes its filters into the
-`fs.files` query itself:
+an ordinary MongoDB collection, so a `find` that can only print files
+(`-type f`) pushes its filters into the `fs.files` query itself:
 
 - `-name` / `-iname` globs become anchored regexes on the filename
-- `-type f` / `-type d` filter on the directory-marker shape
+- `-type f` drops the directory markers
 - `-size` bounds map to the stored `length`
 
-`find /gridfs/ -name '*.csv' -size +1M` narrows inside MongoDB and only
-matching metadata comes back, so `find` stays cheap even on large buckets.
-Semantics are identical to every other backend: the shared predicate
-evaluation still runs on the results.
+`find /gridfs/ -type f -name '*.csv' -size +1M` narrows inside MongoDB and
+only matching metadata comes back, so `find` stays cheap even on large
+buckets. Without `-type f` the filters run on the results instead: a
+directory that exists only because files sit under it has no document of
+its own, so a narrowed query would lose it. Semantics are identical to
+every other backend: the shared predicate evaluation still runs on the
+results.
 
 ## Cache
 

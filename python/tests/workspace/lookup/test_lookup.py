@@ -15,13 +15,26 @@
 from mirage.commands.cli.types import CLISpec
 from mirage.io import IOResult
 from mirage.policy.types import AdmissionRules
+from mirage.runtime.base import Runtime
+from mirage.runtime.constants import EXTERNAL_COMMANDS
+from mirage.runtime.mixin import ProcessExecutorMixin
+from mirage.runtime.types import ProcessExecution, RunResult
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.lookup import (SHELL_CONSUMERS, Consumer,
-                                     command_visible, lookup, lookup_all,
-                                     verb_visible)
+                                     command_visible, execs, lookup,
+                                     lookup_all, program, program_note,
+                                     programs, verb_visible)
 from mirage.workspace.session import SessionState
+
+
+class _Sandbox(Runtime, ProcessExecutorMixin):
+    name = "sandbox"
+    captures = ("gcc", EXTERNAL_COMMANDS)
+
+    async def run_process(self, request: ProcessExecution) -> RunResult:
+        return RunResult(stdout=b"", stderr=None, exit_code=0)
 
 
 def _fixture() -> tuple[SessionState, Workspace]:
@@ -200,3 +213,115 @@ def test_allow_lists_filter_every_layer_and_spare_only_functions():
     assert lookup_all("rm", session,
                       reg) == [Consumer.FUNCTION, Consumer.MOUNT]
     assert lookup("sleep", session, reg) is Consumer.SESSION
+
+
+def test_program_is_what_a_real_system_ships_as_a_file():
+    session, ws = _fixture()
+    registry = ws._registry
+    assert program("cat", session, registry) is Consumer.MOUNT
+    assert program("readlink", session, registry) is Consumer.NAMESPACE
+    # A builtin a real system also finds on disk keeps its file.
+    assert program("echo", session, registry) is Consumer.SESSION
+    assert program("xargs", session, registry) is Consumer.SESSION
+    # The shell's own words, reserved words and unknowns have none.
+    for name in ("cd", "export", "if", "nope-xyz", "/bin/ls"):
+        assert program(name, session, registry) is None
+
+
+def test_execs_finds_programs_functions_and_paths():
+    session, ws = _fixture()
+    registry = ws._registry
+    session.functions["myfn"] = []
+    session.functions["cd"] = []
+    for name in ("cat", "echo", "xargs", "myfn", "./run.sh", "/data/x"):
+        assert execs(name, session, registry)
+    for name in ("cd", "export", "if", "nope-xyz"):
+        assert not execs(name, session, registry)
+
+
+def test_program_keeps_the_file_under_a_shadowing_function():
+    session, ws = _fixture()
+    session.functions["cat"] = []
+    assert lookup("cat", session, ws._registry) is Consumer.FUNCTION
+    assert program("cat", session, ws._registry) is Consumer.MOUNT
+    session.functions["myfn"] = []
+    assert program("myfn", session, ws._registry) is None
+
+
+def test_programs_lists_every_program_the_session_can_run():
+    session, ws = _fixture()
+    ws.register_cli("prog", _cli_tree())
+    names = programs(session, ws._registry)
+    assert names == sorted(names)
+    assert {"cat", "echo", "prog", "readlink", "xargs"} <= set(names)
+    assert not {"cd", "export", "[["} & set(names)
+
+
+def test_programs_follows_the_allow_list():
+    _, ws = _fixture()
+    narrow = SessionState(session_id="n",
+                          commands=AdmissionRules(allow=("cat", )))
+    assert programs(narrow, ws._registry) == ["cat"]
+
+
+# An interpreter is a program only where a language runtime runs it; a
+# workspace without one answers `python3: command not found`, as a system
+# that never installed it does, so neither `which` nor `ls /usr/bin`
+# finds it.
+def test_program_has_no_file_for_an_interpreter_no_language_runtime_runs():
+    session = SessionState(session_id="t")
+    ws = Workspace({"/": RAMVFS()}, runtimes=["workspace"])
+    for name in ("python3", "python", "node"):
+        assert program(name, session, ws._registry) is None
+        assert name not in programs(session, ws._registry)
+
+
+def test_program_keeps_the_file_for_an_interpreter_a_runtime_runs():
+    session, ws = _fixture()
+    assert program("python3", session, ws._registry) is Consumer.SESSION
+    assert "python3" in programs(session, ws._registry)
+
+
+def test_program_has_no_file_for_a_shell_word_a_mount_also_registers():
+    session, ws = _fixture()
+    assert lookup_all("history", session,
+                      ws._registry) == [Consumer.SESSION, Consumer.MOUNT]
+    assert program("history", session, ws._registry) is None
+    assert "history" not in programs(session, ws._registry)
+
+
+def test_program_is_no_file_for_a_name_only_the_fallback_takes():
+    session = SessionState(session_id="t")
+    ws = Workspace({"/": RAMVFS()}, runtimes=[_Sandbox()])
+    assert lookup("native-tool", session, ws._registry) is Consumer.EXTERNAL
+    assert program("native-tool", session, ws._registry) is None
+    assert program("gcc", session, ws._registry) is Consumer.EXTERNAL
+    assert "gcc" in programs(session, ws._registry)
+
+
+def test_program_note_says_what_runs_the_name():
+    session, ws = _fixture()
+    registry = ws._registry
+    ws.register_cli("prog", _cli_tree())
+    assert program_note(
+        "cat", session,
+        registry) == ("cat is built into mirage. Help: cat --help")
+    assert program_note("prog", session, registry) == (
+        "prog is a CLI registered with this workspace. Help: prog --help")
+    assert program_note(
+        "python3", session,
+        registry) == ("python3 runs on the workspace's monty runtime.")
+    # A builtin's --help varies, so its line names none.
+    for name in ("echo", "ln", "xargs"):
+        assert program_note(name, session,
+                            registry) == f"{name} is built into mirage."
+    assert program_note("cd", session, registry) is None
+
+
+def test_program_note_names_the_runtime_a_capture_runs_on():
+    session = SessionState(session_id="t")
+    ws = Workspace({"/": RAMVFS()}, runtimes=[_Sandbox()])
+    assert program_note(
+        "gcc", session,
+        ws._registry) == ("gcc runs on the workspace's sandbox runtime.")
+    assert program_note("native-tool", session, ws._registry) is None

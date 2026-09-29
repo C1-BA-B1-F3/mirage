@@ -120,3 +120,14 @@ def test_value_text_spells_a_float_the_way_typescript_does():
     assert value_text(1e-7) == "1e-7"
     assert value_text(1e21) == "1e+21"
     assert value_text({"a": 1e-7, "b": [1e21]}) == '{"a":1e-7,"b":[1e+21]}'
+
+
+def test_jsonl_numbers_match_ecmascript_inside_nested_cells():
+    rows = [{
+        "cells": [1e-5, 1e-7, 1e20, 1e21, 1.0, -0.0, {
+            "number": -1.5e-5
+        }]
+    }]
+    assert jsonl_bytes(rows) == (
+        b'{"cells":[0.00001,1e-7,100000000000000000000,1e+21,1,0,'
+        b'{"number":-0.000015}]}\n')

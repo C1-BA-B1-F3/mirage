@@ -196,10 +196,10 @@ async def test_cmp_skip_offset():
 
 
 @pytest.mark.asyncio
-async def test_cmp_requires_two_paths():
+async def test_cmp_requires_an_operand():
     rb, _ = _make_backend({"/a.txt": b"x"})
-    with pytest.raises(ValueError, match="two paths"):
-        await cmp_cmd([_spec("/a.txt")], read_bytes=rb)
+    with pytest.raises(ValueError, match="^cmp: missing operand after 'cmp'"):
+        await cmp_cmd([], read_bytes=rb)
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from mirage.commands.builtin.utils.operands import (merge_split_errors,
                                                     normalized_read,
                                                     split_readable)
-from mirage.commands.builtin.utils.stream import resolve_source
+from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
+                                                  stdin_stat, stdin_stream)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -57,7 +58,7 @@ async def tac(
     regex: bool = False,
 ) -> tuple[ByteSource | None, IOResult]:
     if paths:
-        cache = [p.mount_path for p in paths]
+        cache = [p.mount_path for p in paths if not is_stdin(p)]
         parts: list[bytes] = []
         for p in paths:
             parts.append(await _reverse_source(read_stream(p), separator,
@@ -85,6 +86,8 @@ async def tac_generic(
         stream (PolymorphicReadFn): Bound reader called as
             ``stream(path)``.
     """
+    stat = stdin_stat(stat)
+    stream = stdin_stream(stream, opts.stdin)
     parsed = parse_flags(opts.flags)
     readable, err = await split_readable(paths, stat, "tac")
     if err and not readable:

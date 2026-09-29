@@ -16,52 +16,97 @@ import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { GitHubAccessor } from '../../accessor/github.ts'
 import { PathSpec } from '../../types.ts'
 import { lstripSlash, stripSlash } from '../../utils/slash.ts'
-import { type GitHubCodeSearchResult, searchCode } from './client.ts'
+import { type GitHubTransport, type GitHubCodeSearch, searchCode } from './client.ts'
+import { scopeRelativeKey, unsearchableKeys } from './pushdown.ts'
 
-async function search(
-  accessor: GitHubAccessor,
-  query: string,
-  pathFilter?: string,
-): Promise<GitHubCodeSearchResult[]> {
-  return searchCode(accessor.transport, accessor.owner, accessor.repo, query, pathFilter)
-}
-
-function stripPrefix(p: PathSpec): string {
-  const prefix = mountPrefixOf(p.virtual, p.vfsPath)
-  let raw = p.virtual
-  if (prefix !== '' && raw.startsWith(prefix)) {
-    raw = raw.slice(prefix.length) || '/'
-  }
-  return raw
-}
-
+// Use GitHub code search to narrow grep/rg scopes to candidate files.
+// Returns null whenever the narrowed set cannot be trusted as a superset of
+// what a full scan would read (a search failure, or an answer that is not
+// the whole set), so the caller falls back to the full scan. A trusted set
+// also carries every file code search never indexes, which no answer can
+// name; those come from the accessor's tree.
 export async function narrowPaths(
   accessor: GitHubAccessor,
-  pattern: string,
+  query: string,
   paths: readonly PathSpec[],
-): Promise<PathSpec[]> {
-  const mountPrefix =
-    (paths[0] === undefined ? undefined : mountPrefixOf(paths[0].virtual, paths[0].vfsPath)) ?? ''
+): Promise<PathSpec[] | null> {
+  const first = paths[0]
+  if (first === undefined) return []
+  const mountPrefix = mountPrefixOf(first.virtual, first.vfsPath)
   const narrowed: string[] = []
   for (const p of paths) {
-    const pathFilter = stripSlash(stripPrefix(p))
+    const key = scopeRelativeKey(p)
+    const pathFilter = stripSlash(key)
+    let answer: GitHubCodeSearch
     try {
-      const results = await search(accessor, pattern, pathFilter === '' ? undefined : pathFilter)
-      const scopePrefix = pathFilter === '' ? '' : `${pathFilter}/`
-      for (const r of results) {
-        if (r.path === pathFilter || r.path.startsWith(scopePrefix)) narrowed.push(r.path)
-      }
-    } catch {
-      // ignore — search is best-effort
+      answer = await searchCode(
+        accessor.transport,
+        accessor.owner,
+        accessor.repo,
+        query,
+        pathFilter === '' ? undefined : pathFilter,
+      )
+    } catch (err) {
+      console.warn(`github code search failed (${String(err)}); falling back to per-file scan`)
+      return null
     }
+    if (answer.truncated) return null
+    const scopePrefix = pathFilter === '' ? '' : `${pathFilter}/`
+    const hits = answer.results
+      .map((r) => r.path)
+      .filter((path) => path === pathFilter || path.startsWith(scopePrefix))
+    const seen = new Set(hits)
+    narrowed.push(...hits)
+    for (const k of unsearchableKeys(accessor.tree, key)) if (!seen.has(k)) narrowed.push(k)
   }
-  return narrowed.map(
-    (n) =>
-      new PathSpec({
-        virtual: `${mountPrefix}/${lstripSlash(n)}`,
-        directory: '',
-        vfsPath: mountKey(`${mountPrefix}/${lstripSlash(n)}`, mountPrefix),
-        resolved: true,
-      }),
-  )
+  return narrowed.map((n) => {
+    const virtual = `${mountPrefix}/${lstripSlash(n)}`
+    return new PathSpec({
+      virtual,
+      directory: '',
+      vfsPath: mountKey(virtual, mountPrefix),
+      resolved: true,
+    })
+  })
+}
+
+/** Fetch a bounded REST search, following the server's pagination. */
+export async function search(
+  transport: GitHubTransport,
+  kind: string,
+  query: string,
+  limit: number,
+  sort?: string,
+  order?: string,
+): Promise<unknown[]> {
+  const params: Record<string, string> = {
+    q: query,
+    per_page: String(Math.min(limit, 100)),
+    page: '1',
+  }
+  if (sort !== undefined) params.sort = sort
+  if (order !== undefined) params.order = order
+  const rows: unknown[] = []
+  for (let page = 1; rows.length < limit; page += 1) {
+    params.page = String(page)
+    const headers = {
+      Accept:
+        kind === 'code'
+          ? 'application/vnd.github.text-match+json'
+          : 'application/vnd.github.v3+json',
+    }
+    const response =
+      transport.requestWithResponse === undefined
+        ? {
+            data: await transport.request('GET', `/search/${kind}`, undefined, params, headers),
+            headers: {} as Record<string, string>,
+          }
+        : await transport.requestWithResponse('GET', `/search/${kind}`, undefined, params, headers)
+    const body = response.data as { items?: unknown[] }
+    const items = body.items ?? []
+    if (!Array.isArray(items)) throw new Error('invalid search response: items must be an array')
+    rows.push(...items.slice(0, limit - rows.length))
+    if (items.length === 0 || !(response.headers.link ?? '').includes('rel="next"')) break
+  }
+  return rows
 }

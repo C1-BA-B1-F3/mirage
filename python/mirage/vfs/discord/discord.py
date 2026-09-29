@@ -18,11 +18,12 @@ from mirage.accessor.discord import DiscordAccessor
 from mirage.commands.builtin.discord import COMMANDS
 from mirage.commands.config import RegisteredCommand
 from mirage.commands.registry import registered_commands
-from mirage.core.discord.config import DiscordConfig
+from mirage.core.time_range import TimeRange
 from mirage.ops.discord import OPS as DISCORD_VFS_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.discord.config import DiscordConfig
 from mirage.vfs.discord.prompt import PROMPT, WRITE_PROMPT
 
 
@@ -41,7 +42,10 @@ class DiscordVFS(BaseVFS):
     def __init__(self, config: DiscordConfig) -> None:
         super().__init__()
         self.config = config
-        self.accessor = DiscordAccessor(self.config)
+        self.accessor = DiscordAccessor(
+            self.config,
+            TimeRange.from_strings(config.start_time, config.end_time))
+        self.prompt = PROMPT + self.accessor.time_range.prompt()
 
     def ops(self) -> list[RegisteredOp]:
         return DISCORD_VFS_OPS
@@ -51,6 +55,3 @@ class DiscordVFS(BaseVFS):
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)
-
-    def load_state(self, state: dict[str, Any]) -> None:
-        pass

@@ -54,8 +54,8 @@ export interface CommitFacts {
 
 // The presets this build renders, and the real git presets it refuses by
 // name rather than calling invalid.
-const PRESET_KINDS = ['oneline', 'short', 'medium', 'full', 'fuller']
-const UNSUPPORTED_PRESETS = ['raw', 'email', 'mboxrd', 'reference']
+const PRESET_KINDS = ['oneline', 'short', 'medium', 'full', 'fuller', 'raw']
+const UNSUPPORTED_PRESETS = ['email', 'mboxrd', 'reference']
 const HEX_DIGITS = /[0-9a-fA-F]/
 
 /** Ref labels per commit id, for %d/%D. */
@@ -156,12 +156,20 @@ export function short(sha: string, length: number = SHORT_SHA): string {
  * @param timestamp seconds since the epoch
  * @param offsetMinutes the author's UTC offset in minutes
  */
-function gitDate(timestamp: number, offsetMinutes: number): string {
+function gitDate(timestamp: number, offsetMinutes: number, mode = 'default'): string {
   const shifted = new Date((timestamp + offsetMinutes * 60) * 1000)
   const pad = (n: number): string => String(n).padStart(2, '0')
   const sign = offsetMinutes >= 0 ? '+' : '-'
   const hours = Math.floor(Math.abs(offsetMinutes) / 60)
   const minutes = Math.abs(offsetMinutes) % 60
+  const zone = `${sign}${pad(hours)}${pad(minutes)}`
+  const iso = shifted.toISOString().slice(0, 19)
+  if (mode === 'iso' || mode === 'iso8601') return `${iso.replace('T', ' ')} ${zone}`
+  if (mode === 'iso-strict' || mode === 'iso8601-strict')
+    return `${iso}${offsetMinutes === 0 ? 'Z' : zone.slice(0, 3) + ':' + zone.slice(3)}`
+  if (mode === 'short') return iso.slice(0, 10)
+  if (mode === 'unix') return String(timestamp)
+  if (mode === 'raw') return `${String(timestamp)} ${zone}`
   const day = DAYS[shifted.getUTCDay()] ?? ''
   const month = MONTHS[shifted.getUTCMonth()] ?? ''
   return (
@@ -173,7 +181,7 @@ function gitDate(timestamp: number, offsetMinutes: number): string {
 }
 
 /** The first line of a commit message. */
-function subject(commit: CommitFacts): string {
+export function subject(commit: CommitFacts): string {
   return (commit.message.split('\n', 1)[0] ?? '').replace(/\s+$/, '')
 }
 
@@ -210,14 +218,14 @@ function messageBlock(commit: CommitFacts): string[] {
  * @param commit the commit to render
  * @param length how many hex digits of a parent id to print
  */
-function entry(commit: CommitFacts, length: number = SHORT_SHA): string[] {
+function entry(commit: CommitFacts, length: number = SHORT_SHA, date = 'default'): string[] {
   const lines = [`commit ${commit.oid}`]
   if (commit.parents.length > 1) {
     lines.push(`Merge: ${commit.parents.map((p) => short(p, length)).join(' ')}`)
   }
   lines.push(
     `Author: ${commit.authorName} <${commit.authorEmail}>`,
-    `Date:   ${gitDate(commit.authorTime, commit.authorTimezoneMinutes)}`,
+    `Date:   ${gitDate(commit.authorTime, commit.authorTimezoneMinutes, date)}`,
     '',
     ...messageBlock(commit),
   )
@@ -237,10 +245,25 @@ function mergeLine(commit: CommitFacts, length: number): string[] {
  * `full` adds `Commit:` and drops both dates; `fuller` aligns four header
  * lines to the `AuthorDate:` column.
  */
-export function presetBlock(commit: CommitFacts, kind: string, length: number): string[] {
-  if (kind === 'medium') return entry(commit, length)
+export function presetBlock(
+  commit: CommitFacts,
+  kind: string,
+  length: number,
+  date = 'default',
+): string[] {
+  if (kind === 'medium') return entry(commit, length, date)
   const author = `${commit.authorName} <${commit.authorEmail}>`
   const committer = `${commit.committerName} <${commit.committerEmail}>`
+  if (kind === 'raw')
+    return [
+      `commit ${commit.oid}`,
+      `tree ${commit.tree}`,
+      ...commit.parents.map((p) => `parent ${p}`),
+      `author ${author} ${gitDate(commit.authorTime, commit.authorTimezoneMinutes, 'raw')}`,
+      `committer ${committer} ${gitDate(commit.committerTime, commit.committerTimezoneMinutes, 'raw')}`,
+      '',
+      ...messageBlock(commit),
+    ]
   const lines = [`commit ${commit.oid}`, ...mergeLine(commit, length)]
   if (kind === 'short') {
     lines.push(`Author: ${author}`, '', `${INDENT}${subject(commit)}`)
@@ -252,9 +275,9 @@ export function presetBlock(commit: CommitFacts, kind: string, length: number): 
   }
   lines.push(
     `Author:     ${author}`,
-    `AuthorDate: ${gitDate(commit.authorTime, commit.authorTimezoneMinutes)}`,
+    `AuthorDate: ${gitDate(commit.authorTime, commit.authorTimezoneMinutes, date)}`,
     `Commit:     ${committer}`,
-    `CommitDate: ${gitDate(commit.committerTime, commit.committerTimezoneMinutes)}`,
+    `CommitDate: ${gitDate(commit.committerTime, commit.committerTimezoneMinutes, date)}`,
     '',
     ...messageBlock(commit),
   )
@@ -291,6 +314,7 @@ export function renderTemplate(
   commit: CommitFacts,
   length: number,
   decor: Decorations | null,
+  date = 'default',
 ): string {
   const labels = decor?.get(commit.oid) ?? []
   const out: string[] = []
@@ -310,7 +334,7 @@ export function renderTemplate(
       continue
     }
     if ((marker === 'a' || marker === 'c') && i + 2 < template.length) {
-      const pair = identPlaceholder(marker, template[i + 2] ?? '', commit)
+      const pair = identPlaceholder(marker, template[i + 2] ?? '', commit, date)
       if (pair !== null) {
         out.push(pair)
         i += 3
@@ -378,7 +402,12 @@ function simplePlaceholder(
  * %aN/%aE are the mailmap variants; no mailmap is ever loaded, so they read
  * as their plain forms.
  */
-function identPlaceholder(who: string, field: string, commit: CommitFacts): string | null {
+function identPlaceholder(
+  who: string,
+  field: string,
+  commit: CommitFacts,
+  date: string,
+): string | null {
   const name = who === 'a' ? commit.authorName : commit.committerName
   const email = who === 'a' ? commit.authorEmail : commit.committerEmail
   const time = who === 'a' ? commit.authorTime : commit.committerTime
@@ -391,7 +420,11 @@ function identPlaceholder(who: string, field: string, commit: CommitFacts): stri
     case 'E':
       return email
     case 'd':
-      return gitDate(time, zone)
+      return gitDate(time, zone, date)
+    case 'i':
+      return gitDate(time, zone, 'iso')
+    case 'I':
+      return gitDate(time, zone, 'iso-strict')
     case 't':
       return String(time)
     default:

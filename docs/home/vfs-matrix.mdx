@@ -12,7 +12,7 @@ The **Access** column separates filesystem access from API actions. `read`, `wri
 
 Sections below mirror the **Setup** sidebar so you can pick a category and follow the same path through credentials → VFS docs.
 
-Every VFS accepts `read: bounded`. `read: fresh`, which revalidates cached bytes against the backend before serving them, is accepted today only by the S3-compatible family and GridFS — the backends whose `stat` and read stamp the same kind of content token. Any other mount declaring it is refused at mount time rather than downgraded. This list is maintained by hand for now and grows one backend at a time as each learns to stamp a read fingerprint.
+Every VFS accepts `read: bounded`. `read: fresh`, which revalidates cached bytes against the backend before serving them, is accepted today only by the S3-compatible family, GridFS, OneDrive, SharePoint, the Hugging Face Hub repos (models, datasets, spaces), Hugging Face Buckets, GitHub, Google Drive, Google Docs, Google Sheets and Google Slides — the backends whose `stat` and read stamp the same kind of content token. On GitHub it revalidates a cached file against its blob sha; a file read for the first time comes from the mount's listing, and the next read's check corrects it. On Google Docs, Sheets and Slides the token is the file's Drive modified time, and the check lists every file of that kind, so it costs one listing rather than one stat. Any other mount declaring it is refused at mount time rather than downgraded. This list is maintained by hand for now and grows one backend at a time as each learns to stamp a read fingerprint.
 
 ## Infrastructure
 
@@ -100,6 +100,7 @@ No external setup, these run locally or against a connection string you already 
 | MongoDB | read | [MongoDB](/home/setup/mongodb) | [<Icon icon="python" />](/python/vfs/mongodb) [<Icon icon="node-js" />](/typescript/setup/mongodb) [<Icon icon="globe" />](/typescript/setup/mongodb) | Collection-backed views |
 | GridFS | read, write | [GridFS](/home/setup/gridfs) | [<Icon icon="python" />](/python/vfs/gridfs) [<Icon icon="node-js" />](/typescript/setup/gridfs) | File storage on MongoDB with revisions; find runs server-side |
 | Postgres | read | [Postgres](/home/setup/postgres) | [<Icon icon="python" />](/python/vfs/postgres) [<Icon icon="node-js" />](/typescript/setup/postgres) [<Icon icon="globe" />](/typescript/setup/postgres) | SQL tables exposed as paths |
+| Airtable | read | [Airtable](/home/setup/airtable) | [<Icon icon="python" />](/python/vfs/airtable) [<Icon icon="node-js" />](/typescript/setup/airtable) [<Icon icon="globe" />](/typescript/setup/airtable) | Bases and tables as folders; records and saved views as JSONL |
 | LanceDB | read | [LanceDB](/home/setup/lancedb) | [<Icon icon="python" />](/python/vfs/lancedb) [<Icon icon="node-js" />](/typescript/setup/lancedb) | Label folders + semantic search command |
 | Qdrant | read | [Qdrant](/home/setup/qdrant) | [<Icon icon="python" />](/python/vfs/qdrant) [<Icon icon="node-js" />](/typescript/setup/qdrant) [<Icon icon="globe" />](/typescript/setup/qdrant) | Collections as folders + semantic search command |
 

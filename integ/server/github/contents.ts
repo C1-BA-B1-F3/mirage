@@ -27,10 +27,12 @@ import {
 } from './wire.ts'
 import type { GitPerson } from './wire.ts'
 import {
+  blobBySha,
   branchFor,
-  branchNames,
   commitList,
   directoriesOf,
+  keepTree,
+  repoIsEmpty,
   stageTree,
   submodulesOf,
   treeItems,
@@ -41,6 +43,7 @@ import {
 import type { RepoRow, Tree } from './store.ts'
 import { authedRoute, everywhere, fail, jsonBodyOf, param, route, str, withRepo } from './http.ts'
 import type { C as Client } from './config.ts'
+import { stripSlash } from '../kit/typescript/index.ts'
 
 function fileJson(path: string, data: Buffer): JsonValue {
   return {
@@ -199,13 +202,26 @@ export async function writeFile(
     })
     return
   }
+  await keepTree(db, tenant, repo, branch)
   await db.githubFile.update({ where: { pk: existing.pk }, data: { data: bytes } })
 }
 
+// An empty repository is answered before the ref is resolved, so every ref
+// gets the same 404 there, including one that names nothing. Only once
+// something has been committed is an unknown ref the ref's own fault, and the
+// refusal names it the way the vendor's does. A branch nothing has been
+// committed to is refused the same way: it names no commit, and reading it as
+// an empty tree would pass off a ref that points nowhere as an empty
+// directory.
 const contents = withRepo(async (ctx, repo) => {
-  const files = await treeOf(ctx.db, ctx.tenant, repo, ctx.query.get('ref') ?? '')
-  if (files === null) return fail(404, 'No commit found for the ref')
-  const path = param(ctx, 'path').replace(/^\/+|\/+$/g, '')
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(404, 'This repository is empty.')
+  const ref = ctx.query.get('ref') ?? ''
+  const branch = await branchFor(ctx.db, ctx.tenant, repo, ref)
+  if (branch === null || (await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)) === '') {
+    return fail(404, `No commit found for the ref ${ref === '' ? repo.defaultBranch : ref}`)
+  }
+  const files = await treeOfBranch(ctx.db, ctx.tenant, repo, branch)
+  const path = stripSlash(param(ctx, 'path'))
   const hit = files.get(path)
   if (hit !== undefined) return { status: 200, body: fileJson(path, hit) }
   const listing = dirJson(files, path)
@@ -218,7 +234,7 @@ const contents = withRepo(async (ctx, repo) => {
 // writing is doing so for this reason.
 const putContents = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
-  const path = param(ctx, 'path').replace(/^\/+|\/+$/g, '')
+  const path = stripSlash(param(ctx, 'path'))
   const raw = body.content
   if (raw === undefined || raw === null) {
     return fail(422, 'Invalid request.\n\n"content" wasn\'t supplied.')
@@ -244,9 +260,23 @@ const putContents = withRepo(async (ctx, repo) => {
     return fail(422, 'Invalid request.\n\n"sha" wasn\'t supplied.')
   }
   const created = existing === undefined
+  // Read before the write, because the parent is where the ref pointed when
+  // this request arrived: a seeded branch's root, or none on an empty branch.
+  // After the write the same question names a root the ref never reported.
+  const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
   await writeFile(ctx.db, ctx.tenant, repo, branch, path, data)
   const message = str(body, 'message') === '' ? `Update ${path}` : str(body, 'message')
-  const commit = await recordCommit(ctx.db, ctx.tenant, repo, message, [path], branch)
+  const commit = await recordCommit(
+    ctx.db,
+    ctx.tenant,
+    repo,
+    message,
+    [path],
+    branch,
+    '',
+    undefined,
+    parent,
+  )
   return {
     status: created ? 201 : 200,
     body: { content: fileJson(path, data), commit: writtenCommitJson(commit) },
@@ -255,7 +285,7 @@ const putContents = withRepo(async (ctx, repo) => {
 
 const deleteContents = withRepo(async (ctx, repo) => {
   const body = jsonBodyOf(ctx)
-  const path = param(ctx, 'path').replace(/^\/+|\/+$/g, '')
+  const path = stripSlash(param(ctx, 'path'))
   const branch = await branchFor(ctx.db, ctx.tenant, repo, str(body, 'branch'))
   if (branch === null) return fail(404, 'Branch not found')
   const row = await ctx.db.githubFile.findFirst({
@@ -267,9 +297,21 @@ const deleteContents = withRepo(async (ctx, repo) => {
   if (str(body, 'sha') !== blobSha(Buffer.from(row.data))) {
     return fail(409, `${path} does not match`)
   }
+  const parent = await visibleHeadOf(ctx.db, ctx.tenant, repo, branch)
+  await keepTree(ctx.db, ctx.tenant, repo, branch)
   await ctx.db.githubFile.delete({ where: { pk: row.pk } })
   const message = str(body, 'message') === '' ? `Delete ${path}` : str(body, 'message')
-  const commit = await recordCommit(ctx.db, ctx.tenant, repo, message, [path], branch)
+  const commit = await recordCommit(
+    ctx.db,
+    ctx.tenant,
+    repo,
+    message,
+    [path],
+    branch,
+    '',
+    undefined,
+    parent,
+  )
   return { status: 200, body: { content: null, commit: writtenCommitJson(commit) } }
 })
 
@@ -287,19 +329,25 @@ const readme = withRepo(async (ctx, repo) => {
 // `/commits/{ref}` and `/git/commits/{sha}` are different endpoints: this one
 // takes a branch name as well as a sha and reports the file list, which is what
 // a caller asking "what changed" reads.
+//
+// Emptiness comes first here too, so every ref gets the 409 in an empty
+// repository. Past that, a ref that names no commit is a 422 quoting the ref
+// as it was asked, whether it looks like a sha or like a branch: the vendor
+// says "SHA" either way.
 const oneCommit = withRepo(async (ctx, repo) => {
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = param(ctx, 'ref')
   const branch = await branchFor(ctx.db, ctx.tenant, repo, ref)
-  const history = await commitList(ctx.db, ctx.tenant, repo, branch ?? repo.defaultBranch)
+  const history = branch === null ? [] : await commitList(ctx.db, ctx.tenant, repo, branch)
   const rendered: Array<Record<string, JsonValue>> = history.map((entry) => ({
     ...(commitJson(entry) as Record<string, JsonValue>),
     files: commitFiles(pathsOf(entry)),
   }))
-  const exact = rendered.find((entry) => entry.sha === ref)
-  if (exact !== undefined) return { status: 200, body: exact }
-  // Any spelling branchFor resolves (bare, HEAD, refs/heads/...) names the head.
-  if (branch !== null) return { status: 200, body: rendered[0] ?? null }
-  return fail(404, 'Not Found')
+  // A sha names its own commit; any other spelling branchFor resolves (bare,
+  // HEAD, refs/heads/...) names the head.
+  const hit = rendered.find((entry) => entry.sha === ref) ?? rendered[0]
+  if (hit === undefined) return fail(422, `No commit found for SHA: ${ref}`)
+  return { status: 200, body: hit }
 })
 
 // The backend passes either a ref name (a recursive whole-tree fetch) or a tree
@@ -307,9 +355,34 @@ const oneCommit = withRepo(async (ctx, repo) => {
 // through `branchFor`, which accepts a commit sha too, because a client that
 // resolves a ref to a commit then asks for the tree by that sha: git accepts
 // it, since a commit names its root tree.
+//
+// An empty repository is answered first, for every form of the request: the
+// recursive and shallow tree of a ref and one directory of it all 409, measured
+// against GitHub (2026-09-27), whatever the ref names.
 const gitTree = withRepo(async (ctx, repo) => {
+  if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) return fail(409, 'Git Repository is empty.')
   const ref = param(ctx, 'ref')
   const subs = await submodulesOf(ctx.db, ctx.tenant, repo)
+  // `{ref}:{dir}` names one directory of a ref, the way git's rev syntax does:
+  // the point lookup asks for a file's parent this way. A branch name cannot
+  // hold a colon, so the first one splits it. Measured against GitHub
+  // (2026-09-25): a missing directory or ref is 404, and a path through a
+  // file is 422.
+  const colon = ref.indexOf(':')
+  if (colon >= 0) {
+    const files = await treeOf(ctx.db, ctx.tenant, repo, ref.slice(0, colon))
+    if (files === null) return fail(404, 'Not Found')
+    const at = ref.slice(colon + 1).replace(/^\/+|\/+$/g, '')
+    const parts = at === '' ? [] : at.split('/')
+    for (let depth = 1; depth <= parts.length; depth += 1) {
+      if (files.has(parts.slice(0, depth).join('/'))) {
+        return fail(422, 'Invalid object requested. SHA must identify a commit or a tree.')
+      }
+    }
+    if (at !== '' && !directoriesOf(files).has(at)) return fail(404, 'Not Found')
+    const shallow = treeItems(files, subs, at).filter((it) => !it.path.includes('/'))
+    return { status: 200, body: { sha: treeSha(at), tree: shallow, truncated: false } }
+  }
   const files = await treeOf(ctx.db, ctx.tenant, repo, ref)
   if (files === null) {
     // Not a ref, so it may be one directory's tree sha. A per-sha tree GET is
@@ -319,6 +392,15 @@ const gitTree = withRepo(async (ctx, repo) => {
     if (at === undefined) return fail(404, 'Not Found')
     const shallow = treeItems(whole, subs, at).filter((it) => !it.path.includes('/'))
     return { status: 200, body: { sha: treeSha(at), tree: shallow, truncated: false } }
+  }
+  // Without recursive a ref names only its root directory's own rows, and
+  // a listing that small is never cut short: the per-directory walk asks for
+  // the root this way, and reading the recursive answer's truncation onto it
+  // refused a listing GitHub would have served whole.
+  // GitHub recurses for any value of the parameter, 0 and false included.
+  if (!ctx.query.has('recursive')) {
+    const shallow = treeItems(files, subs).filter((it) => !it.path.includes('/'))
+    return { status: 200, body: { sha: treeSha(''), tree: shallow, truncated: false } }
   }
   // A truncated recursive tree keeps only the top-level entries, the way git
   // drops deep paths past its entry cap.
@@ -357,23 +439,17 @@ export function contentRoutes(): KitRoute<C>[] {
       `${p}/repos/:owner/:repo/git/blobs/:sha`,
       authedRoute(
         withRepo(async (ctx, repo) => {
-          const want = param(ctx, 'sha')
-          for (const branch of await branchNames(ctx.db, ctx.tenant, repo)) {
-            const files = await treeOfBranch(ctx.db, ctx.tenant, repo, branch)
-            for (const data of files.values()) {
-              if (blobSha(data) !== want) continue
-              return {
-                status: 200,
-                body: {
-                  sha: want,
-                  size: data.length,
-                  content: wrapped(data),
-                  encoding: 'base64',
-                },
-              }
-            }
+          // Answered before the sha is looked at, as a tree is.
+          if (await repoIsEmpty(ctx.db, ctx.tenant, repo)) {
+            return fail(409, 'Git Repository is empty.')
           }
-          return fail(404, 'Not Found')
+          const want = param(ctx, 'sha')
+          const data = await blobBySha(ctx.db, ctx.tenant, repo, want)
+          if (data === null) return fail(404, 'Not Found')
+          return {
+            status: 200,
+            body: { sha: want, size: data.length, content: wrapped(data), encoding: 'base64' },
+          }
         }),
       ),
     ),

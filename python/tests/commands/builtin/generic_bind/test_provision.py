@@ -12,8 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import importlib
+import pkgutil
+
 import pytest
 
+import mirage.commands.builtin as builtin
 from mirage.cache.index import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.commands.builtin.generic_bind.provision import (
@@ -22,7 +26,7 @@ from mirage.commands.builtin.generic_bind.provision import (
     make_search_provision, make_transform_provision, metadata_provision,
     pure_provision, with_default_provisions, write_metadata_provision)
 from mirage.commands.builtin.ram import COMMANDS as RAM_COMMANDS
-from mirage.commands.config import CommandOpts
+from mirage.commands.config import CommandOpts, RegisteredCommand
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.provision import Precision
@@ -99,6 +103,49 @@ def test_default_provision_families():
     assert default_provision("rm", _stat) is write_metadata_provision
     assert default_provision("mv", _stat) is None
     assert default_provision("tee", _stat) is None
+
+
+def _backend_command_lists(
+) -> tuple[dict[str, list[RegisteredCommand]], list[str]]:
+    """Every builtin package's ``COMMANDS``, plus packages that would not
+    import: a package that fails to import registers nothing, so a
+    command missing its provision would pass by being absent."""
+    lists: dict[str, list[RegisteredCommand]] = {}
+    failed: list[str] = []
+    for info in pkgutil.iter_modules(builtin.__path__):
+        if not info.ispkg:
+            continue
+        name = f"{builtin.__name__}.{info.name}"
+        try:
+            module = importlib.import_module(name)
+        except ImportError as exc:
+            failed.append(f"{name}: {exc}")
+            continue
+        commands = getattr(module, "COMMANDS", None)
+        if commands is not None:
+            lists[info.name] = [
+                registered for fn in commands
+                for registered in getattr(fn, "_registered_commands", [])
+            ]
+    return lists, failed
+
+
+def test_every_backend_command_the_catalog_prices_carries_a_provision():
+    """A backend that shadows a generic builder with its own command
+    drops the builder's provision unless it wraps the command in
+    with_default_provisions, and a command with no provision plans as
+    UNKNOWN. Mirrors the TypeScript gate in provision.test.ts."""
+    lists, failed = _backend_command_lists()
+    assert not failed, f"builtin packages would not import: {failed}"
+    assert len(lists) > 20
+    offenders = [
+        f"{backend}: {cmd.name}" for backend, commands in lists.items()
+        for cmd in commands if cmd.filetype is None
+        and cmd.provision_fn is None and default_provision(cmd.name, _stat)
+    ]
+    assert not offenders, (
+        "commands the provision catalog prices but that carry no "
+        f"provision: {offenders}")
 
 
 def test_factory_registers_default_provisions():

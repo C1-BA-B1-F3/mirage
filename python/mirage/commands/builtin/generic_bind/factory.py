@@ -28,6 +28,7 @@ from mirage.commands.builtin.generic_bind.adapter import (CommandIO,
                                                           with_policy_guard)
 from mirage.commands.builtin.generic_bind.builders import BUILDERS
 from mirage.commands.builtin.generic_bind.provision import default_provision
+from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.commands.config import CommandOpts, command
 from mirage.commands.spec import SPECS
 from mirage.types import FileType, PathSpec
@@ -74,10 +75,13 @@ def with_read_cache(ops: CommandIO) -> CommandIO:
     Args:
         ops (CommandIO): the backend's IO adapter.
     """
+    read_bytes = cache_aware_read_bytes(ops.read_bytes)
     return replace(
         with_stat_cache(ops),
-        read_stream=cache_aware_read_stream(ops.read_stream),
-        read_bytes=cache_aware_read_bytes(ops.read_bytes),
+        read_stream=(functools.partial(stream_from_bytes, read_bytes)
+                     if ops.streams_bytes else cache_aware_read_stream(
+                         ops.read_stream)),
+        read_bytes=read_bytes,
     )
 
 
@@ -288,6 +292,15 @@ def make_generic_commands(
     skip = overrides or set()
     prov_over = provision_overrides or {}
     ops_over = ops_overrides or {}
+    # A name no builder has does nothing at all, so a misspelled override
+    # left the generic registered beside the bespoke one, and an override
+    # for a command the table never had (mem0's `search`) read as if it
+    # displaced something. Refused at registration, which is import time.
+    known = {b.name for b in BUILDERS}
+    unknown = sorted((set(skip) | set(prov_over) | set(ops_over)) - known)
+    if unknown:
+        raise ValueError(f"make_generic_commands({vfs!r}): no generic "
+                         f"builder named {', '.join(unknown)}")
     commands: list[Callable[..., Any]] = []
     for b in BUILDERS:
         if b.name in skip:
@@ -299,11 +312,6 @@ def make_generic_commands(
         # the session at call time. The raw adapter stays untouched for
         # the ops tables, whose door does its own enforcement.
         base_ops = with_path_guards(raw)
-        # A read-only backend (no write op) can't run the byte-mutation
-        # commands (cp/mv/tee/gunzip/...), so don't register a command that
-        # would crash when invoked.
-        if not base_ops.supports(b.requirements):
-            continue
         if b.read:
             finish = _read_wraps
         elif not b.write:
@@ -328,5 +336,6 @@ def make_generic_commands(
                     spec=SPECS[b.name],
                     provision=provision,
                     aggregate=agg,
-                    write=b.write)(bound))
+                    write=b.write,
+                    path_guarded=True)(bound))
     return commands

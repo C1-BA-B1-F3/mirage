@@ -258,6 +258,496 @@
       "flags": [
         "check"
       ]
+    },
+    {
+      "id": "sort_C_quiet_sorted",
+      "seq": 1299001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\n' | sort -C; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "C"
+      ]
+    },
+    {
+      "id": "sort_C_quiet_disorder",
+      "seq": 1299002,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'b\\na\\n' | sort -C; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "C"
+      ]
+    },
+    {
+      "id": "sort_C_extra_operand_names_C",
+      "seq": 1299003,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort -C /data/a.txt /data/dup.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: extra operand '/data/dup.txt' not allowed with -C\n"
+      },
+      "flags": [
+        "C"
+      ]
+    },
+    {
+      "id": "sort_c_with_output_is_incompatible",
+      "seq": 1299004,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'b\\na\\n' | sort -c -o /data/sortq_out.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-co' are incompatible\n"
+      },
+      "flags": [
+        "c",
+        "o"
+      ]
+    },
+    {
+      "id": "sort_C_with_output_is_incompatible",
+      "seq": 1299005,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'b\\na\\n' | sort -C -o /data/sortq_out.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-Co' are incompatible\n"
+      },
+      "flags": [
+        "C",
+        "o"
+      ]
+    },
+    {
+      "id": "sort_check_quiet_with_output_is_incompatible",
+      "seq": 1299006,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'b\\na\\n' | sort --check=quiet -o /data/sortq_out.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-Co' are incompatible\n"
+      },
+      "flags": [
+        "check",
+        "o"
+      ]
+    },
+    {
+      "id": "sort_c_and_C_are_incompatible",
+      "seq": 1299007,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sort -c -C",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-cC' are incompatible\n"
+      },
+      "flags": [
+        "c",
+        "C"
+      ]
+    },
+    {
+      "id": "sort_check_quiet_and_c_are_incompatible",
+      "seq": 1299008,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sort --check=quiet -c",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-cC' are incompatible\n"
+      },
+      "flags": [
+        "check",
+        "c"
+      ]
+    },
+    {
+      "id": "sort_incompatible_orderings_outrank_c_operands",
+      "seq": 1299072,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort -c -n -g /data/a.txt /data/dup.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-gn' are incompatible\n"
+      },
+      "flags": [
+        "c",
+        "n",
+        "g"
+      ]
+    },
+    {
+      "id": "sort_decimal_check_disorder",
+      "seq": 1302012,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '4.9\\n4.5\\n' | sort -nsc",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sort: -:2: disorder: 4.5\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_decimal_check_unique",
+      "seq": 1302013,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '4.5\\n4.9\\n' | sort -nuc",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_h_check_disorder",
+      "seq": 1302028,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '%s\\n' 1.5K 1500 2K | sort -hc; echo \"exit $?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "exit 1\n",
+        "stderr": "sort: -:2: disorder: 1500\n"
+      },
+      "flags": [
+        "h",
+        "c"
+      ]
+    },
+    {
+      "id": "sort_h_check_sorted",
+      "seq": 1302029,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '%s\\n' 1500 1.5K 2K | sort -hc; echo \"exit $?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "exit 0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "h",
+        "c"
+      ]
     }
   ]
 }

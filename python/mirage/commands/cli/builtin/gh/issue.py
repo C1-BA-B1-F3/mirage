@@ -22,7 +22,7 @@ from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.config import GhConfig
 from mirage.core.github.issue import (comment_issue, create_issue, edit_issue,
-                                      get_issue, list_issues)
+                                      get_issue, issue_comments, list_issues)
 from mirage.core.github.repo import RepoRef
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue
@@ -88,7 +88,13 @@ async def view_cmd(
     fl = FlagView(inv.flags)
     ref, number = _target(inv, fl)
     row = _issue(await get_issue(inv.config, ref, number))
-    return await typed_out(row, fl, _view_text(row), ISSUE_FIELDS)
+    comments = await comments_for(inv, fl, ref, number)
+    if comments is not None:
+        row["comments"] = comments
+    return await typed_out(
+        row, fl,
+        comments_text(comments or []) if fl.as_bool("comments") else
+        _view_text(row), (*ISSUE_FIELDS, "comments"))
 
 
 async def create_cmd(
@@ -180,3 +186,33 @@ async def comment_cmd(
     ref, number = _target(inv, fl)
     comment = _issue(await comment_issue(inv.config, ref, number, body or ""))
     return text_out(f'{comment.get("url", "")}\n')
+
+
+async def comments_for(inv: CLIInvocation[GhConfig], fl: FlagView,
+                       ref: RepoRef,
+                       number: int) -> list[dict[str, Any]] | None:
+    if not fl.as_bool("comments") and "comments" not in (fl.as_str("json")
+                                                         or "").split(","):
+        return None
+    rows = await issue_comments(inv.config, ref, number)
+    for row in rows:
+        row["author"] = row.get("author") or {"login": ""}
+        row["minimizedReason"] = row.get("minimizedReason") or ""
+        row["reactionGroups"] = [
+            group for group in row["reactionGroups"]
+            if group["users"]["totalCount"] > 0
+        ]
+    return rows
+
+
+def comments_text(rows: list[dict[str, Any]]) -> str:
+    parts = []
+    for row in rows:
+        author = (row.get("author") or {}).get("login", "")
+        status = row["minimizedReason"].lower(
+        ) if row["isMinimized"] else "none"
+        parts.append(f'author:\t{author}\n'
+                     f'association:\t{row["authorAssociation"].lower()}\n'
+                     f'edited:\t{str(row["includesCreatedEdit"]).lower()}\n'
+                     f'status:\t{status}\n--\n{row["body"]}\n--\n')
+    return "".join(parts)

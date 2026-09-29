@@ -37,7 +37,7 @@ class S3AliasConfig(BaseModel):
     the one provider that first needed them, so every alias accepts them.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     bucket: str
     region: str

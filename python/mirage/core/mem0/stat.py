@@ -18,8 +18,7 @@ from mirage.accessor.mem0 import Mem0Accessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.hierarchy.stat import make_stat
-from mirage.core.mem0.client import get_memory
-from mirage.core.mem0.readdir import readdir
+from mirage.core.mem0.readdir import listed_memory, readdir
 from mirage.core.mem0.scope import detect_scope
 from mirage.core.render.json import json_bytes
 from mirage.types import ContentType, FileStat, FileType, PathSpec
@@ -42,15 +41,7 @@ def _file_stat(memory: dict[str, Any]) -> FileStat:
 
 async def _memory_stat(accessor: Mem0Accessor, match: ScopeMatch,
                        path: PathSpec, index: IndexCacheStore) -> FileStat:
-    # The root listing caches each memory's whole payload, so a warm
-    # index answers without a network call.
-    lookup = await index.get(path.virtual)
-    cached = (lookup.entry.extra.get("memory")
-              if lookup.entry is not None else None)
-    if isinstance(cached, dict):
-        return _file_stat(cached)
-    memory = await get_memory(accessor.client, match.slots["memory_id"], path)
-    return _file_stat(memory)
+    return _file_stat(await listed_memory(accessor, path, index))
 
 
 stat = make_stat(

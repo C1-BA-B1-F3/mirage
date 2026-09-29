@@ -18,8 +18,8 @@ from dulwich.objects import Blob, Commit
 
 from mirage.commands.cli.builtin.git.format import short
 from mirage.commands.cli.builtin.git.summary import (FileStat, diffstat,
-                                                     mode_lines, report,
-                                                     stat_line, stat_table)
+                                                     report, stat_line,
+                                                     stat_table)
 
 MODE = 0o100644
 EXECUTABLE = 0o100755
@@ -117,51 +117,18 @@ def test_an_unchanged_path_is_never_read():
                          {b"a.txt": (MODE, b"a" * 40)}) == (0, 0)
 
 
-# Both report pins below reproduce a scratch-repo session against git
-# 2.37: a binary blob counts as a changed file but zero lines, and in a
-# mixed commit the untouched deletions clause drops off the line.
-def test_report_counts_a_binary_file_but_no_lines():
-    store, (bin_id, ) = store_with(b"A\x00B\x00C")
-    commit = pinned_commit(b"add binary")
-    out = report(store, commit, "main", {}, {b"blob.bin": (MODE, bin_id)}, 7,
-                 False)
+def test_report_prints_the_title_then_the_changes():
+    commit = pinned_commit(b"add binary\n\nbody")
+    out = report(commit, "main", b" 1 file changed\n", 7, False)
     assert out == (f"[main {short(commit.id, 7)}] add binary\n"
-                   " 1 file changed, 0 insertions(+), 0 deletions(-)\n"
-                   " create mode 100644 blob.bin\n").encode()
+                   " 1 file changed\n").encode()
 
 
-def test_report_mixes_binary_files_and_text_lines_like_git():
-    store, (txt, bin_id) = store_with(b"x\ny\nz\n", b"DIFFERENT\x00BYTES")
-    commit = pinned_commit(b"mixed")
-    after = {b"text.txt": (MODE, txt), b"blob.bin": (MODE, bin_id)}
-    out = report(store, commit, "main", {}, after, 7, False)
-    assert out == (f"[main {short(commit.id, 7)}] mixed\n"
-                   " 2 files changed, 3 insertions(+)\n"
-                   " create mode 100644 blob.bin\n"
-                   " create mode 100644 text.txt\n").encode()
-
-
-def test_a_created_path_gets_its_mode_line():
-    assert mode_lines({},
-                      {b"a.txt":
-                       (MODE, b"a" * 40)}) == [" create mode 100644 a.txt"]
-
-
-def test_an_executable_says_so():
-    assert mode_lines(
-        {}, {b"run.sh":
-             (EXECUTABLE, b"a" * 40)}) == [" create mode 100755 run.sh"]
-
-
-def test_a_removed_path_gets_a_delete_line():
-    assert mode_lines({b"a.txt": (MODE, b"a" * 40)},
-                      {}) == [" delete mode 100644 a.txt"]
-
-
-def test_a_path_that_only_changed_gets_no_mode_line():
-    before = {b"a.txt": (MODE, b"a" * 40)}
-    after = {b"a.txt": (MODE, b"b" * 40)}
-    assert mode_lines(before, after) == []
+def test_report_marks_a_root_commit_and_a_detached_head():
+    commit = pinned_commit(b"first")
+    assert report(commit, None, b"", 7, True) == (
+        f"[detached HEAD (root-commit) {short(commit.id, 7)}] first\n"
+    ).encode()
 
 
 def entry_stat(path: str, insertions: int, deletions: int) -> FileStat:

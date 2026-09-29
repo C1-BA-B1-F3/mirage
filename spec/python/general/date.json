@@ -18,22 +18,49 @@
   "options": [
     {
       "description": "Display the time described by the given date string.",
+      "long": "--date",
       "short": "-d",
       "type": "str"
     },
     {
+      "choices": [
+        "hours",
+        "minutes",
+        "date",
+        "seconds",
+        "ns"
+      ],
+      "description": "Output date/time in ISO 8601 format, to the given precision (default date).",
+      "long": "--iso-8601",
+      "short": "-I",
+      "type": "str",
+      "value_optional": true
+    },
+    {
+      "description": "Output date in RFC 5322 email format.",
+      "long": "--rfc-email",
+      "short": "-R",
+      "type": "bool"
+    },
+    {
+      "choices": [
+        "date",
+        "seconds",
+        "ns"
+      ],
+      "description": "Output date/time in RFC 3339 format, to the given precision.",
+      "long": "--rfc-3339",
+      "type": "str"
+    },
+    {
       "description": "Use Coordinated Universal Time (UTC).",
+      "long": "--utc",
       "short": "-u",
       "type": "bool"
     },
     {
-      "description": "Output date in ISO 8601 format.",
-      "short": "-I",
-      "type": "bool"
-    },
-    {
-      "description": "Output date in RFC 5322 email format.",
-      "short": "-R",
+      "description": "Use Coordinated Universal Time (UTC).",
+      "long": "--universal",
       "type": "bool"
     }
   ],

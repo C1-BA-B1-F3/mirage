@@ -32,6 +32,13 @@ export const SLACK_PROMPT = `{prefix}
   replaced with \`∕\` (U+2215) so paths don't break. Quote names
   containing spaces in shell commands. Always ls the parent dir first
   to discover exact entry names (they include IDs).
+  Without time bounds, bare channel listings show the latest 90 days
+  ending at the newest message. Date globs can discover earlier days.
+  With start_time/end_time, listings cover that scope; messages and their
+  attachments outside it are absent, including through direct paths.
+  Users and channel metadata remain available as context.
+  A time-scoped mount does not search through Slack: grep and rg read
+  the in-scope files, so grep needs -r to search a directory.
   Messages are JSONL; use jq to extract fields like .text, .user, .ts, .files.
   rg over files/ uses Slack's server-side file content search; works on
   PDFs, Word docs, code snippets that Slack has indexed.`

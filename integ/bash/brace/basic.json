@@ -521,10 +521,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "zbr1=Z; echo {a,$zbr1}",
+      "command": "zbr1=Z; echo {a,$zbr1}; (zbr6='p q'; IFS=,; zbr7=m,n; printf '[%s]\\n' {a,b}$zbr6 x{$zbr7,c})",
       "expect": {
         "exit": 0,
-        "stdout": "a Z\n",
+        "stdout": "a Z\n[ap q]\n[bp q]\n[xm]\n[n]\n[xc]\n",
         "stderr": ""
       }
     },

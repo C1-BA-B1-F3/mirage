@@ -12,8 +12,21 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { RANDOM, RANDOM_UNSET, SHELL_ARGV0 } from '../../shell/constants.ts'
-import type { AsyncLineIterator } from '../../io/async_line_iterator.ts'
+import {
+  DEFAULT_PROCESS_PERMISSIONS,
+  parseProcessPermissions,
+  type ProcessPermissions,
+} from '../../process/config.ts'
+import type { Limit } from '../../types.ts'
+import type { SharedInput } from '../../io/async_line_iterator.ts'
+import { parseCommandLimits, commandLimitsToJSON } from '../../policy/builtin/output_cap.ts'
+import {
+  BIN_PREFIX,
+  IFS_DEFAULT,
+  RANDOM,
+  RANDOM_UNSET,
+  SHELL_ARGV0,
+} from '../../shell/constants.ts'
 import { EnvVarSchema, type EnvEntries } from '../../secrets/config.ts'
 import type { ShellArray } from '../../shell/array.ts'
 import type { ManagedRef, ShellVar } from '../../shell/variable.ts'
@@ -61,9 +74,11 @@ export interface ChildShellState {
   umask: number
   execStdout: string | null
   execStdoutAppend: boolean
+  execStdoutInput: SharedInput | null
   execStderr: string | null
   execStderrAppend: boolean
-  execStdin: Uint8Array | null
+  execStderrInput: SharedInput | null
+  execStdin: SharedInput | null
   execStdinUnreadable: boolean
   execStdinIdentity: string | null
   execOpened: Set<string>
@@ -170,6 +185,11 @@ export interface SessionInit {
    * group. Stamped by the profile like script, so it persists.
    */
   profile?: string | null
+  commandLimits?: Readonly<Record<string, Limit>>
+  processes?: ProcessPermissions
+  processId?: number | null
+  shellPid?: number | null
+  processDepth?: number
   /**
    * The host's standing answers to asked lines (design 3.9): session
    * state like functions and cwd, persisted, read and written through
@@ -432,8 +452,6 @@ export class SessionState {
   // Depth of nested `source`/`.` execution: `return` is legal and the
   // program loop absorbs its signal only while a file is being sourced.
   sourceDepth = 0
-  stdinBuffer: AsyncLineIterator | null = null
-  stdinSource: unknown = null
   // Variables shadowed by `local` / `declare` in the running function; a
   // null value means the caller had no variable of that name. One stack,
   // not one per container: a local shadows the whole record, so its
@@ -476,12 +494,19 @@ export class SessionState {
   // `exec` redirect-only state: where the shell's own stdout, stderr and
   // stdin point after a bare `exec > file`. Null is the terminal; `""`
   // is a closed descriptor whose writes drop; `execOpened` names targets
-  // already truncated so a later statement appends.
+  // already truncated so a later statement appends. `execStdin` is the
+  // one descriptor an `exec <` opened: every statement after it reads on
+  // from where the one before stopped, across lines and into a child
+  // shell, which shares it as bash's fork shares fd 0. `execStdoutInput`
+  // and `execStderrInput` are the read end a stream holds after `exec
+  // 1<f` or `exec 1<&0`, which a dup shares the offset of.
   execStdout: string | null = null
   execStdoutAppend = false
+  execStdoutInput: SharedInput | null = null
   execStderr: string | null = null
   execStderrAppend = false
-  execStdin: Uint8Array | null = null
+  execStderrInput: SharedInput | null = null
+  execStdin: SharedInput | null = null
   execStdinUnreadable = false
   // What fd 0 holds when it is not its own read end: CLOSED after `exec
   // <&-`, a writing stream's identity after `exec 0<&1`, so a later dup
@@ -502,6 +527,12 @@ export class SessionState {
   commands: AdmissionRules | null
   script: ProfileScript | null
   profile: string | null
+  commandLimits: Readonly<Record<string, Limit>>
+  terminalOutput = true
+  processes: ProcessPermissions
+  processId: number | null
+  shellPid: number | null
+  processDepth: number
   decisions: readonly Decision[]
   generation: number
   pipelineTimeoutSeconds: number | null
@@ -527,7 +558,12 @@ export class SessionState {
     this.hideReasons = init.hideReasons ?? []
     this.commands = init.commands ?? null
     this.script = init.script ?? null
+    this.processId = init.processId ?? null
+    this.shellPid = init.shellPid ?? null
+    this.processDepth = init.processDepth ?? 0
     this.profile = init.profile ?? null
+    this.commandLimits = { ...init.commandLimits }
+    this.processes = parseProcessPermissions(init.processes ?? DEFAULT_PROCESS_PERMISSIONS)
     this.decisions = init.decisions ?? []
     this.generation = init.generation ?? 0
     this.pipelineTimeoutSeconds = init.pipelineTimeoutSeconds ?? null
@@ -540,6 +576,15 @@ export class SessionState {
     // rather than every string.
     if (!Object.hasOwn(this.vars, 'PWD'))
       this.vars.PWD = makeVar(this.cwd, new Set([VarAttr.Export]))
+    // bash starts with a PATH when the environment gives it none, and does
+    // not export it: `env` does not list it and a child process, such as a
+    // host interpreter, keeps its own. The one directory here is where
+    // every program's file is.
+    if (!Object.hasOwn(this.vars, 'PATH')) this.vars.PATH = makeVar(BIN_PREFIX, new Set())
+    // bash sets IFS at startup and never exports it, so a fresh shell reads
+    // `${#IFS}` as 3 and `OLDIFS=$IFS ... IFS=$OLDIFS` puts the default
+    // back rather than an empty IFS that splits nothing.
+    if (!Object.hasOwn(this.vars, 'IFS')) this.vars.IFS = makeVar(IFS_DEFAULT, new Set())
   }
 
   /**
@@ -584,11 +629,18 @@ export class SessionState {
       commands: overrides.commands ?? this.commands,
       script: overrides.script ?? this.script,
       profile: overrides.profile ?? this.profile,
+      commandLimits: overrides.commandLimits ?? this.commandLimits,
+      processes: overrides.processes ?? this.processes,
+      processId: overrides.processId ?? this.processId,
+      shellPid: overrides.shellPid ?? this.shellPid,
+      processDepth: overrides.processDepth ?? this.processDepth,
       decisions: overrides.decisions ?? this.decisions,
       generation: overrides.generation ?? this.generation,
       pipelineTimeoutSeconds: overrides.pipelineTimeoutSeconds ?? this.pipelineTimeoutSeconds,
       lastBgJobId: overrides.lastBgJobId ?? this.lastBgJobId,
     })
+    if (this.randomSeed === RANDOM_UNSET) forked.randomSeed = RANDOM_UNSET
+    forked.terminalOutput = this.terminalOutput
     forked.pipeStatus = [...this.pipeStatus]
     forked.getoptsPos = this.getoptsPos
     forked.getoptsOptind = this.getoptsOptind
@@ -601,8 +653,10 @@ export class SessionState {
     forked.umask = this.umask
     forked.execStdout = this.execStdout
     forked.execStdoutAppend = this.execStdoutAppend
+    forked.execStdoutInput = this.execStdoutInput
     forked.execStderr = this.execStderr
     forked.execStderrAppend = this.execStderrAppend
+    forked.execStderrInput = this.execStderrInput
     forked.execStdin = this.execStdin
     forked.execStdinUnreadable = this.execStdinUnreadable
     forked.execStdinIdentity = this.execStdinIdentity
@@ -692,8 +746,10 @@ export class SessionState {
       umask: this.umask,
       execStdout: this.execStdout,
       execStdoutAppend: this.execStdoutAppend,
+      execStdoutInput: this.execStdoutInput,
       execStderr: this.execStderr,
       execStderrAppend: this.execStderrAppend,
+      execStderrInput: this.execStderrInput,
       execStdin: this.execStdin,
       execStdinUnreadable: this.execStdinUnreadable,
       execStdinIdentity: this.execStdinIdentity,
@@ -737,8 +793,10 @@ export class SessionState {
     this.umask = state.umask
     this.execStdout = state.execStdout
     this.execStdoutAppend = state.execStdoutAppend
+    this.execStdoutInput = state.execStdoutInput
     this.execStderr = state.execStderr
     this.execStderrAppend = state.execStderrAppend
+    this.execStderrInput = state.execStderrInput
     this.execStdin = state.execStdin
     this.execStdinUnreadable = state.execStdinUnreadable
     this.execStdinIdentity = state.execStdinIdentity
@@ -834,6 +892,10 @@ export class SessionState {
     }
     if (this.commands !== null) data.commands = commandsToJSON(this.commands)
     if (this.script !== null) data.script = scriptToJSON(this.script)
+    if (Object.keys(this.commandLimits).length > 0)
+      data.command_limits = commandLimitsToJSON(this.commandLimits)
+    if (JSON.stringify(this.processes) !== JSON.stringify(DEFAULT_PROCESS_PERMISSIONS))
+      data.processes = this.processes
     if (this.profile !== null) data.profile = this.profile
     if (this.decisions.length > 0) data.decisions = this.decisions.map(decisionToJSON)
     return data
@@ -854,6 +916,8 @@ export class SessionState {
     commands?: CommandsJSON | null
     script?: ScriptJSON | null
     profile?: string | null
+    command_limits?: unknown
+    processes?: ProcessPermissions
     decisions?: DecisionJSON[] | null
     generation?: number
   }): SessionState {
@@ -894,6 +958,8 @@ export class SessionState {
       commands: data.commands != null ? commandsFromJSON(data.commands) : null,
       script: data.script != null ? scriptFromJSON(data.script) : null,
       profile: data.profile ?? null,
+      commandLimits: parseCommandLimits(data.command_limits),
+      processes: parseProcessPermissions(data.processes ?? DEFAULT_PROCESS_PERMISSIONS),
       decisions: data.decisions != null ? data.decisions.map(decisionFromJSON) : [],
     })
   }

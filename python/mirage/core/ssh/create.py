@@ -25,5 +25,5 @@ async def create(accessor: SSHAccessor, path: PathSpec) -> None:
     sftp = await accessor.sftp()
     async with sftp.open(_abs(config, path.mount_path), "wb"):
         pass
-    record("create", path.mount_path, "ssh", 0, timer)
+    record("create", path.virtual, "ssh", 0, timer)
     await invalidate_after_write(path)

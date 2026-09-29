@@ -15,6 +15,7 @@
 import { HfHubError, hubGet, hubPost, hubRequest, repoUrl, revSegment } from './client.ts'
 import { hfEndpoint, type HfConfig } from './config.ts'
 import { API_SEGMENTS, DEFAULT_REVISION, HTTP_CONFLICT } from './constants.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /**
  * The organization and name halves the repo endpoints take.
@@ -31,7 +32,7 @@ export function splitRepoId(repoId: string): [string | null, string] {
 
 function repoApiUrl(config: HfConfig, repoType: string, repoId: string, suffix: string): string {
   const segment = API_SEGMENTS[repoType] ?? 'models'
-  return `${hfEndpoint(config).replace(/\/+$/, '')}/api/${segment}/${repoId}${suffix}`
+  return `${rstripSlash(hfEndpoint(config))}/api/${segment}/${repoId}${suffix}`
 }
 
 export interface CreateRepoOptions {
@@ -68,7 +69,7 @@ export async function createRepo(
   if (options.resourceGroupId !== undefined && options.resourceGroupId !== '') {
     body.resourceGroupId = options.resourceGroupId
   }
-  const url = `${hfEndpoint(config).replace(/\/+$/, '')}/api/repos/create`
+  const url = `${rstripSlash(hfEndpoint(config))}/api/repos/create`
   let data: unknown
   try {
     data = await hubPost(config.token, url, body)
@@ -88,7 +89,7 @@ export async function deleteRepo(
   repoType = 'model',
 ): Promise<void> {
   const [organization, name] = splitRepoId(repoId)
-  const url = `${hfEndpoint(config).replace(/\/+$/, '')}/api/repos/delete`
+  const url = `${rstripSlash(hfEndpoint(config))}/api/repos/delete`
   await hubRequest(config.token, 'DELETE', url, { name, organization, type: repoType })
 }
 

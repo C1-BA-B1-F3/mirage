@@ -20,6 +20,7 @@ import type { Workspace as CoreWorkspace } from '@struktoai/mirage-core/workspac
 import { readVersion, resolveRef } from './api.ts'
 import { CATEGORIES, toState, type AnyDict, type Category } from './stateTree.ts'
 import type { VersionStore } from './store.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export interface RestoreReport {
   version: string
@@ -51,7 +52,7 @@ function mergeMountFiles(
     ((targetMount.vfs_state as AnyDict).files as Record<string, Uint8Array> | undefined) ?? {}
   const files = { ...((liveState.files as Record<string, Uint8Array> | undefined) ?? {}) }
   const drop = new Set<string>()
-  const base = prefix.replace(/\/+$/, '')
+  const base = rstripSlash(prefix)
   for (const rel of new Set([...Object.keys(files), ...Object.keys(targetFiles)])) {
     if (!selectedFile(`${base}${rel}`, wanted)) continue
     const target = targetFiles[rel]

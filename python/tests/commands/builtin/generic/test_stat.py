@@ -9,6 +9,7 @@ from mirage.ops.types import LinkView
 from mirage.policy.profile import SessionProfile
 from mirage.types import (DEVICE_NUMBERS_KEY, LINK_TARGET_KEY, ContentType,
                           FileStat, FileType, MountMode, PathSpec)
+from mirage.utils.stat_view import DIR_SIZE
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -72,9 +73,24 @@ async def test_name_quoted_size_type():
     assert await _render("%n", _fs()) == "/data/f.txt"
     assert await _render("%N", _fs()) == "'/data/f.txt'"
     assert await _render("%s", _fs(size=42)) == "42"
-    assert await _render("%s", _fs(size=None)) == "0"
+    assert await _render("%s", _fs(size=None)) == "-"
     assert await _render("%F", _fs()) == "regular file"
     assert await _render("%F", _fs(type=FileType.DIRECTORY)) == "directory"
+
+
+@pytest.mark.asyncio
+async def test_default_record_sizes_a_directory_as_percent_s_does():
+    # A directory is DIR_SIZE whatever the backend put in size: None for
+    # a synthetic one, a subtree total for a Graph folder. A file keeps
+    # its own size, None when unknown.
+    cases = [(_fs(type=FileType.DIRECTORY, size=None), f"size={DIR_SIZE} "),
+             (_fs(type=FileType.DIRECTORY, size=123456), f"size={DIR_SIZE} "),
+             (_fs(size=None), "size=None ")]
+    for fs, want in cases:
+        out, io = await stat([PathSpec.from_str_path("/data/f.txt")],
+                             stat_fn=partial(_const_stat, fs))
+        assert io.exit_code == 0
+        assert want in (await materialize(out)).decode()
 
 
 @pytest.mark.asyncio
@@ -98,7 +114,7 @@ async def test_mode_directives_directory_default():
     assert await _render("%a", d) == "755"
     assert await _render("%A", d) == "drwxr-xr-x"
     assert await _render("%f", d) == "41ed"
-    assert await _render("%s", d) == "0"
+    assert await _render("%s", d) == "4096"
 
 
 @pytest.mark.asyncio

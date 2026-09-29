@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter, appendFromRead } from '@struktoai/mirage-core/vfs/adapter'
+
 import { rangeOf } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { CommandIO } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { GridFSAccessor } from '../../../accessor/gridfs.ts'
@@ -33,25 +35,28 @@ import { truncate as gridfsTruncate } from '../../../core/gridfs/truncate.ts'
 import { unlink as gridfsUnlink } from '../../../core/gridfs/unlink.ts'
 import { write as gridfsWrite } from '../../../core/gridfs/write.ts'
 
-export const GRIDFS_IO: CommandIO<GridFSAccessor> = {
-  readdir: gridfsReaddir,
-  readBytes: gridfsRead,
-  readRange: rangeOf(gridfsRead),
-  readStream: gridfsStream,
-  stat: gridfsStat,
+export const GRIDFS_IO: CommandIO<GridFSAccessor> = new VFSAdapter<GridFSAccessor>({
+  read: { readdir: gridfsReaddir, readBytes: gridfsRead, stat: gridfsStat },
+  native: {
+    readRange: rangeOf(gridfsRead),
+    readStream: gridfsStream,
+    exists: gridfsExists,
+    find: gridfsFind,
+    du: { size: gridfsDu, entries: gridfsDuAll },
+  },
+  writes: {
+    append: appendFromRead(gridfsRead, gridfsWrite),
+    write: gridfsWrite,
+    mkdir: gridfsMkdir,
+    unlink: gridfsUnlink,
+    rmdir: gridfsRmdir,
+    rmR: gridfsRmR,
+    rename: gridfsRename,
+    copy: gridfsCopy,
+    create: gridfsCreate,
+    truncate: gridfsTruncate,
+  },
   isMounted: () => true,
   local: false,
   maxGlobMatches: SCOPE_ERROR,
-  write: gridfsWrite,
-  exists: gridfsExists,
-  mkdir: gridfsMkdir,
-  unlink: gridfsUnlink,
-  rmdir: gridfsRmdir,
-  rmR: gridfsRmR,
-  rename: gridfsRename,
-  copy: gridfsCopy,
-  create: gridfsCreate,
-  truncate: gridfsTruncate,
-  find: gridfsFind,
-  du: { size: gridfsDu, entries: gridfsDuAll },
-}
+}).toCommandIO()

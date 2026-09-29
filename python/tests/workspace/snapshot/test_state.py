@@ -187,6 +187,41 @@ async def test_registered_content_vfs_rebuilds_without_override():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("registered", [False, True])
+async def test_typescript_kind_locator_restores_without_a_python_class(
+        registered):
+    vfs = build_vfs("ram", {}) if registered else RAMVFS()
+    ws = Workspace({"/ram/": vfs}, mode=MountMode.WRITE)
+    try:
+        await ws.shell("echo portable > /ram/note.txt")
+        state = await to_state_dict(ws)
+    finally:
+        await ws.close()
+    for mount in state[StateKey.MOUNTS]:
+        mount[MountKey.VFS_CLASS] = mount[MountKey.VFS_STATE][VFSStateKey.TYPE]
+    restored = await Workspace.from_state(state)
+    try:
+        result = await restored.shell("cat /ram/note.txt")
+        assert await result.stdout_str() == "portable\n"
+    finally:
+        await restored.close()
+
+
+@pytest.mark.asyncio
+async def test_unknown_typescript_kind_requests_a_mount_override():
+    ws = Workspace({"/ram/": RAMVFS()})
+    try:
+        state = await to_state_dict(ws)
+    finally:
+        await ws.close()
+    mount = state[StateKey.MOUNTS][0]
+    mount[MountKey.VFS_CLASS] = "unknown-vfs"
+    mount[MountKey.VFS_STATE][VFSStateKey.TYPE] = "unknown-vfs"
+    with pytest.raises(ValueError, match="mounts= must include"):
+        build_mount_args(state)
+
+
+@pytest.mark.asyncio
 async def test_a_generic_vfs_keeping_the_default_state_needs_an_override():
     ws = Workspace({"/b/": Bare()}, mode=MountMode.READ)
     try:
@@ -575,6 +610,29 @@ async def test_an_alias_saved_with_redacted_creds_requires_an_override():
     assert requires_vfs_override(mount)
     with pytest.raises(ValueError, match="/s3"):
         build_mount_args(state, None, None)
+
+
+# The same alias built in code with no inline credentials needs no
+# override, and its `type` still names the parent: rebuilding through the
+# type's entry handed MinIO's own config to `S3Config`, which dropped
+# `access_key_id` and the rest and rebuilt a plain S3 mount, and refuses
+# them now that configs refuse unknown keys. The saved class names the
+# alias, so the mount comes back as what it was.
+@pytest.mark.asyncio
+async def test_an_alias_built_in_code_rebuilds_as_itself():
+    config = MinIOConfig(bucket="b", endpoint_url="http://localhost:9000")
+    ws = Workspace({"/s3": MinIOVFS(config)}, mode=MountMode.READ)
+    try:
+        state = await to_state_dict(ws)
+    finally:
+        await ws.close()
+    (mount, ) = (m for m in state[StateKey.MOUNTS]
+                 if m[MountKey.PREFIX].rstrip("/") == "/s3")
+    assert mount[MountKey.VFS_REF] is None
+    assert not requires_vfs_override(mount)
+    rebuilt = build_mount_args(state, None, None).mount_args["/s3/"].vfs
+    assert isinstance(rebuilt, MinIOVFS)
+    assert rebuilt.alias_config == config
 
 
 # The capture side used to read `cache._entries` unconditionally, which

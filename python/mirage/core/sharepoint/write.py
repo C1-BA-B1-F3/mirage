@@ -2,7 +2,7 @@ from mirage.accessor.sharepoint import SharePointAccessor
 from mirage.cache.context import invalidate_after_write
 from mirage.core.msgraph.drive_ops import (SIMPLE_UPLOAD_MAX,
                                            upload_session_write)
-from mirage.core.sharepoint.client import graph_put_bytes, item_url, split_path
+from mirage.core.sharepoint.client import graph_put_bytes, item_url
 from mirage.core.sharepoint.resolve import resolve
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
@@ -12,7 +12,6 @@ from mirage.utils.errors import enoent
 async def write_bytes(accessor: SharePointAccessor, path: PathSpec,
                       data: bytes) -> None:
     virtual = path.virtual if isinstance(path, PathSpec) else path
-    prefix, stripped = split_path(path)
     resolved = await resolve(accessor, path)
     if resolved.drive_id is None or resolved.item_path is None:
         raise enoent(virtual)
@@ -32,5 +31,5 @@ async def write_bytes(accessor: SharePointAccessor, path: PathSpec,
                                    session_url,
                                    data,
                                    session=accessor.pool)
-    record("write", stripped, "sharepoint", len(data), timer)
+    record("write", virtual, "sharepoint", len(data), timer)
     await invalidate_after_write(path)

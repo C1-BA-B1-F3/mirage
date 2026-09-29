@@ -19,7 +19,7 @@ import { record, startOp } from '@struktoai/mirage-core/observe/context'
 import { VFSName } from '@struktoai/mirage-core/types'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { diskError } from './errors.ts'
-import { resolveSafe } from './utils.ts'
+import { resolveInside } from './utils.ts'
 
 export async function appendBytes(
   accessor: DiskAccessor,
@@ -27,13 +27,12 @@ export async function appendBytes(
   data: Uint8Array,
 ): Promise<void> {
   const timer = startOp()
-  const virtual = p.mountPath
-  const full = resolveSafe(accessor.root, virtual)
+  const full = await resolveInside(accessor.root, p)
   try {
     await appendFile(full, data)
   } catch (err) {
     throw diskError(err, p)
   }
-  record('append', virtual, VFSName.DISK, data.byteLength, timer)
+  record('append', p.virtual, VFSName.DISK, data.byteLength, timer)
   await invalidateAfterWrite(p)
 }

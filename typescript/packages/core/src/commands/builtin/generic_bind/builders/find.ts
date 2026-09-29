@@ -61,9 +61,10 @@ export const FIND_BUILDER: Builder = {
     }
     // No backend find op: walk readdir/stat; the walk classifies entries
     // through stat (see walkFind). A directory the guarded readdir
-    // refuses is collected here and reported by the generic per start
-    // point.
+    // refuses, and an entry whose stat fails, are collected here and
+    // reported by the generic per start point.
     const closed: string[] = []
+    const unstatted = new Map<string, unknown>()
     return findGeneric(
       resolved,
       texts,
@@ -73,6 +74,7 @@ export const FIND_BUILDER: Builder = {
           root,
           {
             unreadable: closed,
+            unstatted,
             readdir: (spec, i) => ops.readdir(accessor, spec, i),
             // -mtime must see namespace times (touch results, observed
             // writes on mtime-less backends), same as ls.
@@ -91,6 +93,11 @@ export const FIND_BUILDER: Builder = {
       undefined,
       dirEmpty,
       () => closed.splice(0),
+      () => {
+        const failed = [...unstatted]
+        unstatted.clear()
+        return failed
+      },
     )
   },
 }

@@ -4,6 +4,7 @@ from typing import Any
 
 import orjson
 
+from mirage.commands.builtin.utils.stream import stdin_bytes, stdin_stream
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
@@ -253,6 +254,8 @@ async def jq(
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(flags, spec=SPECS["jq"])
     opts = parse_flags(fl)
+    read_bytes = stdin_bytes(read_bytes, stdin)
+    read_stream = stdin_stream(read_stream, stdin)
     program_file = fl.raw("from_file")
     if isinstance(program_file, PathSpec):
         expression = (await read_bytes(program_file)).decode()

@@ -16,18 +16,27 @@ import { describe, expect, it } from 'vitest'
 import {
   eacces,
   eaccesRefused,
+  ebadfStdin,
+  efbig,
+  eisdir,
+  eloop,
   erofsReadOnly,
   enoent,
   enotsup,
   enotdir,
   formatFsError,
+  fsErrorLine,
   fsStrerror,
   isFsError,
   isMissingPath,
   noMount,
   listingError,
   readdirError,
+  revoiceFsErrorLine,
+  isDotWalkError,
+  walkRefusal,
 } from './errors.ts'
+import { PathSpec } from '../types.ts'
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 const DEC = new TextDecoder()
@@ -71,6 +80,139 @@ describe('formatFsError', () => {
   })
 })
 
+describe('fsErrorLine — commands that name the failed open', () => {
+  const ENOENT = 'No such file or directory'
+
+  it.each([
+    ['head', `head: cannot open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['tail', `tail: cannot open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['fmt', `fmt: cannot open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['split', `split: cannot open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['csplit', `csplit: cannot open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['tac', `tac: failed to open '/data/nope.txt' for reading: ${ENOENT}\n`],
+    ['truncate', `truncate: cannot open '/data/nope.txt' for writing: ${ENOENT}\n`],
+    ['stat', `stat: cannot statx '/data/nope.txt': ${ENOENT}\n`],
+    ['sed', `sed: can't read /data/nope.txt: ${ENOENT}\n`],
+    ['uniq', `uniq: /data/nope.txt: ${ENOENT}\n`],
+  ])('%s reports a missing operand as a failed open', (cmd, line) => {
+    expect(fsErrorLine(cmd, '/data/nope.txt', enoent('/data/nope.txt'))).toBe(line)
+  })
+
+  // GNU's own fmt and base64 lines (`fmt: read error`, `base64: read error:
+  // Is a directory`) name no operand, so those keep the plain one.
+  it.each([
+    ['head', "head: error reading '/data/sub': Is a directory\n"],
+    ['tail', "tail: error reading '/data/sub': Is a directory\n"],
+    ['uniq', "uniq: error reading '/data/sub': Is a directory\n"],
+    ['tac', 'tac: /data/sub: read error: Is a directory\n'],
+    ['tsort', 'tsort: /data/sub: read error: Is a directory\n'],
+    ['sed', 'sed: read error on /data/sub: Is a directory\n'],
+    ['truncate', "truncate: cannot open '/data/sub' for writing: Is a directory\n"],
+    ['fmt', 'fmt: /data/sub: Is a directory\n'],
+    ['base64', 'base64: /data/sub: Is a directory\n'],
+  ])('%s reports a directory as a failed read', (cmd, line) => {
+    expect(fsErrorLine(cmd, '/data/sub', eisdir('/data/sub'))).toBe(line)
+  })
+
+  it.each([
+    ['head', `head: cannot open "it's.txt" for reading: ${ENOENT}\n`],
+    ['stat', `stat: cannot statx "it's.txt": ${ENOENT}\n`],
+    ['sed', `sed: can't read it's.txt: ${ENOENT}\n`],
+  ])('%s quotes the operand as typed', (cmd, line) => {
+    const spec = { virtual: "/data/it's.txt", rawPath: "it's.txt" }
+    expect(fsErrorLine(cmd, spec, enoent(spec))).toBe(line)
+  })
+
+  // A line that is cat's own for the operand is said again from its
+  // strerror; one about another path only has its prefix swapped.
+  it.each([
+    [
+      'cat: /b/nope: No such file or directory',
+      "sed: can't read /b/nope: No such file or directory",
+    ],
+    ["cat: '/b/a b': Is a directory", 'sed: read error on /b/a b: Is a directory'],
+    ['cat: /b/other: No such file or directory', 'sed: /b/other: No such file or directory'],
+    ['unrelated', 'unrelated'],
+  ])('revoices %j in the real command voice', (line, said) => {
+    const operand = line.includes('a b') ? '/b/a b' : '/b/nope'
+    expect(revoiceFsErrorLine(line, 'cat', 'sed', operand)).toBe(said)
+  })
+
+  it('leaves standard input bare', () => {
+    expect(fsErrorLine('tail', '-', ebadfStdin())).toBe('tail: -: Bad file descriptor\n')
+  })
+
+  it('words a head open failure at the chokepoint', () => {
+    expect(decode(formatFsError('head', enoent('/a/gone.txt')))).toBe(
+      "head: cannot open '/a/gone.txt' for reading: No such file or directory\n",
+    )
+  })
+
+  it.each([
+    ['tac', "failed to open '/data/a.txt/x' for reading"],
+    ['stat', "cannot statx '/data/a.txt/x'"],
+    ['truncate', "cannot open '/data/a.txt/x' for writing"],
+  ])('%s names its own failed step', (cmd, step) => {
+    // The errno is the backend's either way; only the step and the quoting
+    // are the command's (coreutils 9.7).
+    expect(fsErrorLine(cmd, '/data/a.txt/x', enoent('/data/a.txt/x'))).toBe(
+      `${cmd}: ${step}: No such file or directory\n`,
+    )
+    expect(fsErrorLine(cmd, '/data/a.txt/x', enotdir('/data/a.txt/x'))).toBe(
+      `${cmd}: ${step}: Not a directory\n`,
+    )
+  })
+
+  it('names a tac directory read first and quotes it only when needed', () => {
+    // tac's read failure leads with the name, which GNU quotes the way
+    // quotef does: only a name that needs it, ':' included.
+    expect(fsErrorLine('tac', '/data/sub', eisdir('/data/sub'))).toBe(
+      'tac: /data/sub: read error: Is a directory\n',
+    )
+    expect(fsErrorLine('tac', '/data/a b', eisdir('/data/a b'))).toBe(
+      "tac: '/data/a b': read error: Is a directory\n",
+    )
+    expect(fsErrorLine('tac', '/data/c:d', eisdir('/data/c:d'))).toBe(
+      "tac: '/data/c:d': read error: Is a directory\n",
+    )
+  })
+
+  it('says one step for a stat or truncate directory', () => {
+    expect(fsErrorLine('truncate', '/data/sub', eisdir('/data/sub'))).toBe(
+      "truncate: cannot open '/data/sub' for writing: Is a directory\n",
+    )
+    expect(fsErrorLine('stat', '/data/sub', eisdir('/data/sub'))).toBe(
+      "stat: cannot statx '/data/sub': Is a directory\n",
+    )
+  })
+
+  it('escapes a control character in a step line', () => {
+    expect(fsErrorLine('stat', '/data/a\tb', enoent('/data/a\tb'))).toBe(
+      "stat: cannot statx '/data/a'$'\\t''b': No such file or directory\n",
+    )
+  })
+
+  it('leaves tac standard input bare', () => {
+    expect(fsErrorLine('tac', '-', ebadfStdin())).toBe('tac: -: Bad file descriptor\n')
+  })
+
+  it('names an empty operand as typed', () => {
+    // An empty rawPath is the operand as typed, not a missing one; the
+    // Python formatter reads it the same way.
+    const spec = { virtual: '/data', rawPath: '' }
+    expect(fsErrorLine('tac', spec, enoent(spec))).toBe(
+      "tac: failed to open '' for reading: No such file or directory\n",
+    )
+    expect(fsErrorLine('cat', spec, enoent(spec))).toBe("cat: '': No such file or directory\n")
+  })
+
+  it('words a stat failure at the chokepoint', () => {
+    expect(decode(formatFsError('stat', enoent('/a/gone.txt')))).toBe(
+      "stat: cannot statx '/a/gone.txt': No such file or directory\n",
+    )
+  })
+})
+
 describe('enotsup', () => {
   it('carries the op and the operand', () => {
     const err = enotsup('email', 'unlink', '/mail/inbox/a.txt')
@@ -89,6 +231,16 @@ describe('enotsup', () => {
   it('formats as a GNU operand line at the chokepoint', () => {
     const line = formatFsError('mv', enotsup('email', 'unlink', '/mail/a.txt'))
     expect(DEC.decode(line)).toBe('mv: /mail/a.txt: Operation not supported\n')
+  })
+})
+
+describe('efbig', () => {
+  it('is a per-operand fs error that formats as GNU File too large', () => {
+    const err = efbig({ virtual: '/at/records.jsonl' })
+    expect(err.code).toBe('EFBIG')
+    expect(err.virtualPath).toBe('/at/records.jsonl')
+    expect(isFsError(err)).toBe(true)
+    expect(DEC.decode(formatFsError('cat', err))).toBe('cat: /at/records.jsonl: File too large\n')
   })
 })
 
@@ -266,5 +418,58 @@ describe('listingError', () => {
     }
     const err = await listingError('/', '/', unreachable, unreachable)
     expect(err.code).toBe('ENOENT')
+  })
+})
+
+it.each(['head', 'tail'])('%s names a read-cap failure at the chokepoint', (cmd) => {
+  expect(decode(formatFsError(cmd, efbig('/records.jsonl')))).toBe(
+    `${cmd}: error reading '/records.jsonl': File too large\n`,
+  )
+})
+
+describe('walkRefusal', () => {
+  it('names the empty operand as typed, not as the cwd it reads as', () => {
+    const spec = new PathSpec({
+      virtual: '/data',
+      directory: '/',
+      vfsPath: '',
+      rawPath: '',
+      walkError: 'ENOENT',
+    })
+    const err = walkRefusal(spec)
+    expect(isDotWalkError(err)).toBe(true)
+    expect(fsErrorLine('cat', spec, err)).toBe("cat: '': No such file or directory\n")
+  })
+
+  it('refuses a loop as a final per-operand error', () => {
+    const spec = new PathSpec({
+      virtual: '/data/l1',
+      directory: '/data/',
+      vfsPath: 'l1',
+      rawPath: 'l1',
+      walkError: 'ELOOP',
+    })
+    const err = walkRefusal(spec)
+    expect(isDotWalkError(err)).toBe(true)
+    expect(isFsError(err)).toBe(true)
+    expect(fsErrorLine('head', spec, err)).toBe(
+      "head: cannot open 'l1' for reading: Too many levels of symbolic links\n",
+    )
+  })
+
+  it('types eloop as a walk refusal', () => {
+    const err = eloop('/data/l1')
+    expect(isDotWalkError(err)).toBe(true)
+    expect(fsStrerror(err)).toBe('Too many levels of symbolic links')
+  })
+
+  it.each(['wc', 'du'])('%s vets the empty name', (cmd) => {
+    expect(fsErrorLine(cmd, '', enoent(''))).toBe(`${cmd}: invalid zero-length file name\n`)
+  })
+
+  it('quotes the empty operand for everything else', () => {
+    expect(fsErrorLine('tail', '', enoent(''))).toBe(
+      "tail: cannot open '' for reading: No such file or directory\n",
+    )
   })
 })

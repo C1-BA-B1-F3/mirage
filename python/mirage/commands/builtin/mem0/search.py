@@ -16,18 +16,17 @@ from dataclasses import dataclass
 
 from mirage.accessor.mem0 import Mem0Accessor
 from mirage.commands.builtin.generic_bind import metadata_provision
-from mirage.commands.builtin.mem0.io import resolve_glob
+from mirage.commands.builtin.mem0.io import IO
 from mirage.commands.builtin.utils.paths import default_paths
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.core.mem0.scope import detect_scope
-from mirage.core.mem0.search import search_memories_rendered
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
-from mirage.utils.key_prefix import mount_prefix_of
+from mirage.vfs.search import search_resources
+from mirage.vfs.types import SearchQuery
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,22 +47,6 @@ def parse_flags(fl: FlagView, default_limit: int) -> SearchFlags:
     return SearchFlags(method=method, top_k=top_k, threshold=threshold)
 
 
-def is_mount_root(path: PathSpec) -> bool:
-    root = mount_prefix_of(path.virtual, path.vfs_path).rstrip("/") or "/"
-    value = path.virtual.rstrip("/") or "/"
-    return value == "/" or value == root
-
-
-def memory_ids(paths: list[PathSpec]) -> set[str]:
-    ids: set[str] = set()
-    for path in paths:
-        match = detect_scope(path)
-        if match.kind != "memory":
-            raise FileNotFoundError(path.virtual)
-        ids.add(match.slots["memory_id"])
-    return ids
-
-
 @command("search",
          vfs="mem0",
          spec=SPECS["search"],
@@ -79,18 +62,12 @@ async def search(accessor: Mem0Accessor, paths: list[PathSpec],
     if parsed.method != "semantic":
         raise UsageError("search: only the 'semantic' method is supported")
     target_paths = default_paths(paths, opts.cwd)
-    mount_prefix = mount_prefix_of(target_paths[0].virtual,
-                                   target_paths[0].vfs_path)
-    target_ids: set[str] | None = None
-    if not any(is_mount_root(path) for path in target_paths):
-        target_ids = memory_ids(await resolve_glob(accessor, target_paths,
-                                                   opts.index))
-    output = await search_memories_rendered(
-        accessor,
-        query,
-        mount_prefix=mount_prefix,
-        top_k=parsed.top_k,
-        threshold=parsed.threshold,
-        memory_ids=target_ids,
-    )
+    output = await search_resources(
+        IO.search, accessor, target_paths,
+        SearchQuery(query,
+                    options={
+                        "top_k": parsed.top_k,
+                        "method": parsed.method,
+                        "threshold": parsed.threshold
+                    }), opts.index)
     return output, IOResult()

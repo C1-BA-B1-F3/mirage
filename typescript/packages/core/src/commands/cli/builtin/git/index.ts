@@ -25,7 +25,10 @@ import { mv } from './mv.ts'
 import { reset } from './reset.ts'
 import { restore } from './restore.ts'
 import { rm } from './rm.ts'
-import { show } from './show.ts'
+import { revParse } from './inspect.ts'
+import { shortlog } from './shortlog.ts'
+import { config, remote, revList, version, showRef } from './inspect.ts'
+import { show, diffTree } from './show.ts'
 import { status } from './status.ts'
 import { switchBranch } from './switch.ts'
 import { tag } from './tag.ts'
@@ -46,7 +49,7 @@ const REVISION = new Operand({ type: 'str' })
 // --pretty and --format set the same variable in git; both take git's
 // optional-value form, so a bare --pretty means medium and a detached next
 // word is a revision, never a format. A bare --format stays parseable too,
-// but only so prettyValue can answer it with git's own fatal (pretty.c reads
+// but only so prettyFormat can answer it with git's own fatal (pretty.c reads
 // --format in its =value form alone).
 const PRETTY_OPTION = new Option({
   long: '--pretty',
@@ -62,15 +65,116 @@ const FORMAT_OPTION = new Option({
   description: 'Alias of --pretty (requires =value)',
 })
 
+const DATE_OPTION = new Option({
+  long: '--date',
+  type: 'str',
+  choices: ['default', 'iso', 'iso8601', 'iso-strict', 'iso8601-strict', 'short', 'unix', 'raw'],
+  description: 'Date display format',
+})
+
+const DIFF_OPTIONS = [
+  new Option({
+    short: '-U',
+    long: '--unified',
+    type: 'int',
+    description: 'Number of context lines',
+  }),
+  new Option({ long: '--name-status', description: 'Show changed paths and status' }),
+  new Option({ long: '--name-only', description: 'Show changed paths instead of the patch' }),
+  new Option({ long: '--stat', description: 'Show the diffstat table instead of the patch' }),
+  new Option({ long: '--numstat', description: 'Show added and deleted line counts per path' }),
+  new Option({ long: '--shortstat', description: 'Show only the diffstat summary line' }),
+  new Option({ long: '--summary', description: 'Summarize creations, deletions and mode changes' }),
+  new Option({ short: '-p', long: '--patch', description: 'Show the patch' }),
+  new Option({ short: '-s', long: '--no-patch', description: 'Suppress all diff output' }),
+  new Option({
+    long: '--no-ext-diff',
+    description: 'Accepted for compatibility; there are no external diff drivers to disable',
+  }),
+  new Option({
+    short: '-M',
+    long: '--find-renames',
+    type: 'str',
+    valueOptional: true,
+    description: 'Detect renames with an optional similarity threshold',
+  }),
+  new Option({ long: '--no-renames', description: 'Turn off rename detection' }),
+  new Option({ long: '--raw', description: 'Show the raw diff format' }),
+]
+
+const MERGE_OPTIONS = [
+  new Option({ short: '-m', description: 'Show merge diffs separately against each parent' }),
+  new Option({ short: '-c', description: 'Show combined merge diffs' }),
+  new Option({ long: '--cc', description: 'Show dense combined merge diffs' }),
+  new Option({ long: '--first-parent', description: 'Follow and compare only the first parent' }),
+  new Option({ long: '--diff-merges', type: 'str', description: 'Select merge diff mode' }),
+]
+
 const LOG_OPTIONS = [
   new Option({
+    long: '--author',
+    type: 'str',
+    multiple: true,
+    description: 'Limit commits to matching authors',
+  }),
+  new Option({
+    long: '--grep',
+    type: 'str',
+    multiple: true,
+    description: 'Limit commits to ones with a message line that matches',
+  }),
+  new Option({
+    short: '-i',
+    long: '--regexp-ignore-case',
+    description: 'Match --grep, --author and -S without regard to case',
+  }),
+  ...MERGE_OPTIONS,
+  new Option({
+    long: '--after',
+    type: 'str',
+    description: 'Commits more recent than a date, like --since',
+  }),
+  new Option({
+    long: '--before',
+    type: 'str',
+    description: 'Commits older than a date, like --until',
+  }),
+  new Option({
+    long: '--max-parents',
+    type: 'int',
+    description: 'Show only commits with at most this many parents',
+  }),
+  new Option({
+    long: '--min-parents',
+    type: 'int',
+    description: 'Show only commits with at least this many parents',
+  }),
+  new Option({ long: '--merges', description: 'Show only merge commits' }),
+  new Option({ long: '--no-merges', description: 'Leave out merge commits' }),
+
+  DATE_OPTION,
+  new Option({ long: '--decorate', description: 'Print ref names on commits' }),
+  new Option({
     short: '-n',
+    long: '--max-count',
     type: 'int',
     numericShorthand: true,
     description: 'Limit the number of commits shown',
   }),
   new Option({ long: '--oneline', description: 'One abbreviated line per commit' }),
   new Option({ long: '--reverse', description: 'Print commits oldest first' }),
+  new Option({
+    long: '--graph',
+    description: 'Draw the commit history beside the log (implies --topo-order)',
+  }),
+  new Option({
+    long: '--topo-order',
+    description: 'Show no parent before all its children, one line of history at a time',
+  }),
+  new Option({
+    long: '--date-order',
+    description: 'Show no parent before all its children, otherwise newest first',
+  }),
   new Option({ long: '--all', description: 'Start from every ref as well as the revision' }),
   PRETTY_OPTION,
   FORMAT_OPTION,
@@ -95,13 +199,10 @@ const LOG_OPTIONS = [
 ]
 
 const SHOW_OPTIONS = [
-  new Option({ long: '--stat', description: 'Show the diffstat table instead of the patch' }),
-  new Option({ short: '-s', long: '--no-patch', description: 'Suppress all diff output' }),
-  new Option({ long: '--name-only', description: 'Show changed paths instead of the patch' }),
-  new Option({
-    long: '--no-ext-diff',
-    description: 'Accepted for compatibility; there are no external diff drivers to disable',
-  }),
+  new Option({ long: '--oneline', description: 'One abbreviated line per commit' }),
+  ...DIFF_OPTIONS,
+  ...MERGE_OPTIONS,
+  DATE_OPTION,
   PRETTY_OPTION,
   FORMAT_OPTION,
 ]
@@ -109,6 +210,8 @@ const SHOW_OPTIONS = [
 const STATUS_OPTIONS = [
   new Option({
     long: '--porcelain',
+    type: 'str',
+    valueOptional: true,
     description: 'Machine-readable output, stable across versions',
   }),
   new Option({ short: '-s', long: '--short', description: 'Give the output in the short format' }),
@@ -140,9 +243,19 @@ const ADD_OPTIONS = [
     description: 'Stage changes to tracked files only',
   }),
   new Option({ short: '-f', long: '--force', description: 'Stage paths an ignore rule covers' }),
+  new Option({
+    short: '-v',
+    long: '--verbose',
+    description: 'Name each path as it is added or removed',
+  }),
 ]
 
 const COMMIT_OPTIONS = [
+  new Option({
+    short: '-a',
+    long: '--all',
+    description: 'Stage modified and deleted tracked files first',
+  }),
   // Required, not defaulted: git would open an editor without it, and a mount
   // has none to open.
   new Option({ short: '-m', long: '--message', type: 'str', description: 'Commit message' }),
@@ -200,6 +313,55 @@ const MV_OPTIONS = [
   new Option({ short: '-v', long: '--verbose', description: 'Be verbose' }),
 ]
 
+// git's ref-filter options, which `branch` and `tag` share. The four commit
+// filters take the next word as their commit, whatever it looks like
+// (`--merged --no-merged` names a commit called `--no-merged`), except as the
+// line's last word, where they read HEAD: parse-options' LASTARG_DEFAULT. The
+// spec has no word for that, so they are declared with an optional value (a
+// bare one is HEAD, `--merged=main` is main) and `filterWords` reattaches a
+// detached value from the verbatim argv. `--points-at` always takes a value.
+const REF_FILTER_OPTIONS = [
+  new Option({
+    long: '--contains',
+    type: 'str',
+    valueOptional: true,
+    multiple: true,
+    metavar: 'commit',
+    description: 'List only refs that contain the commit (HEAD if omitted)',
+  }),
+  new Option({
+    long: '--no-contains',
+    type: 'str',
+    valueOptional: true,
+    multiple: true,
+    metavar: 'commit',
+    description: "List only refs that don't contain the commit (HEAD if omitted)",
+  }),
+  new Option({
+    long: '--merged',
+    type: 'str',
+    valueOptional: true,
+    multiple: true,
+    metavar: 'commit',
+    description: 'List only refs reachable from the commit (HEAD if omitted)',
+  }),
+  new Option({
+    long: '--no-merged',
+    type: 'str',
+    valueOptional: true,
+    multiple: true,
+    metavar: 'commit',
+    description: 'List only refs not reachable from the commit (HEAD if omitted)',
+  }),
+  new Option({
+    long: '--points-at',
+    type: 'str',
+    multiple: true,
+    metavar: 'object',
+    description: 'List only refs that point at the object',
+  }),
+]
+
 const TAG_OPTIONS = [
   new Option({ short: '-l', long: '--list', description: 'List tag names' }),
   // git spells the count attached (`-n2`) or not at all, never as a separate
@@ -221,13 +383,23 @@ const TAG_OPTIONS = [
     description: 'Tag message (repeatable, one paragraph each)',
   }),
   new Option({ short: '-f', long: '--force', description: 'Replace the tag if exists' }),
+  ...REF_FILTER_OPTIONS,
 ]
 
 const BRANCH_OPTIONS = [
+  new Option({ long: '--show-current', description: 'Show the current branch name' }),
+  new Option({
+    short: '-v',
+    long: '--verbose',
+    count: true,
+    description: 'Show commit and upstream details',
+  }),
   new Option({ short: '-a', description: 'List local and remote-tracking branches' }),
   new Option({ short: '-r', description: 'List remote-tracking branches' }),
   new Option({ short: '-d', long: '--delete', description: 'Delete a fully merged branch' }),
   new Option({ short: '-D', description: 'Delete a branch even if not merged' }),
+  new Option({ short: '-l', long: '--list', description: 'List branches matching the patterns' }),
+  ...REF_FILTER_OPTIONS,
 ]
 
 /**
@@ -243,8 +415,95 @@ export const GIT = new CLISpec({
   name: 'git',
   description: 'Content tracker',
   usageStyle: UsageStyle.GIT,
-  options: [DIRECTORY_OPTION],
+  options: [
+    DIRECTORY_OPTION,
+    new Option({
+      long: '--git-dir',
+      type: 'str',
+      env: 'GIT_DIR',
+      description: 'Use the repository at <path>',
+    }),
+    new Option({
+      long: '--work-tree',
+      type: 'str',
+      env: 'GIT_WORK_TREE',
+      description: 'Use <path> as the working tree',
+    }),
+  ],
   subcommands: [
+    new CLISpec({
+      name: 'version',
+      aliases: ['--version', '-v'],
+      fn: version,
+      description: 'Show the Mirage Git implementation version',
+    }),
+    new CLISpec({
+      name: 'remote',
+      description: 'List remotes',
+      fn: remote,
+      options: [new Option({ short: '-v', long: '--verbose', description: 'Show remote URLs' })],
+    }),
+    new CLISpec({
+      name: 'config',
+      description: 'Read repository configuration',
+      fn: config,
+      options: [
+        new Option({ long: '--get', description: 'Get a configuration value' }),
+        new Option({ short: '-l', long: '--list', description: 'List every variable and value' }),
+        new Option({ long: '--show-origin', description: 'Show the file each value comes from' }),
+        new Option({
+          long: '--get-regexp',
+          description: 'Get the variables whose names match a regular expression',
+        }),
+      ],
+      positional: [new Operand({ type: 'str', name: 'name' })],
+    }),
+    new CLISpec({ name: 'show-ref', description: 'List references', fn: showRef, rest: REVISION }),
+    // shortlog's -n is --numbered, so the count keeps only its long spelling.
+    new CLISpec({
+      name: 'shortlog',
+      fn: shortlog,
+      description: 'Summarize commit history',
+      options: [
+        ...LOG_OPTIONS.filter((opt) => opt.short !== '-n'),
+        new Option({
+          long: '--max-count',
+          type: 'int',
+          description: 'Limit the number of commits',
+        }),
+        new Option({ short: '-s', long: '--summary', description: 'Show only commit counts' }),
+        new Option({ short: '-e', long: '--email', description: 'Show author email addresses' }),
+        new Option({ short: '-n', long: '--numbered', description: 'Sort by commit count' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'rev-parse',
+      fn: revParse,
+      description: 'Resolve revisions',
+      options: [
+        new Option({ long: '--abbrev-ref', description: 'Show abbreviated reference names' }),
+      ],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'rev-list',
+      description: 'List reachable commits',
+      fn: revList,
+      options: [...LOG_OPTIONS, new Option({ long: '--count', description: 'Print commit count' })],
+      rest: REVISION,
+    }),
+    new CLISpec({
+      name: 'diff-tree',
+      description: 'Compare a commit with its parent',
+      fn: diffTree,
+      options: [
+        ...SHOW_OPTIONS,
+        new Option({ long: '--no-commit-id', description: 'Suppress commit ID' }),
+        new Option({ short: '-r', description: 'Recurse into subtrees' }),
+      ],
+      positional: [new Operand({ type: 'str', name: 'commit', required: true })],
+    }),
     new CLISpec({
       name: 'status',
       description: 'Show the working tree status',
@@ -255,7 +514,7 @@ export const GIT = new CLISpec({
       name: 'log',
       description: 'Show commit logs',
       fn: log,
-      options: LOG_OPTIONS,
+      options: [...LOG_OPTIONS, ...DIFF_OPTIONS],
       rest: REVISION,
     }),
     new CLISpec({
@@ -269,6 +528,11 @@ export const GIT = new CLISpec({
       name: 'diff',
       description: 'Show changes between commits',
       fn: diff,
+      options: [
+        ...DIFF_OPTIONS,
+        new Option({ long: '--cached', description: 'Compare the index with a commit' }),
+        new Option({ long: '--staged', description: 'Alias of --cached' }),
+      ],
       rest: REVISION,
     }),
     new CLISpec({
@@ -291,6 +555,7 @@ export const GIT = new CLISpec({
       name: 'reset',
       description: 'Unstage, putting the index back to HEAD',
       fn: reset,
+      options: [new Option({ short: '-q', long: '--quiet', description: 'Only report errors' })],
       rest: PATHSPEC,
       write: true,
     }),

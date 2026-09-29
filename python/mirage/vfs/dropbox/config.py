@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class DropboxConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     client_id: str
     client_secret: SecretStr
     refresh_token: SecretStr

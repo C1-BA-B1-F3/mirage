@@ -1,0 +1,216 @@
+{
+  "cases": [
+    {
+      "id": "truncate_c_seed",
+      "seq": 910070,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/t2tc && printf abcdef > /data/t2tc/f && echo ok",
+      "expect": {
+        "exit": 0,
+        "stdout": "ok\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "truncate_c_leaves_a_missing_file_alone",
+      "seq": 910071,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s 3 /data/t2tc/new; echo rc=$?; test -e /data/t2tc/new; echo new=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\nnew=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "truncate_c_missing_parent_is_silent",
+      "seq": 910072,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s 0 /data/t2tc/nope/x; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "truncate_c_still_refuses_a_file_parent",
+      "seq": 910073,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s 0 /data/t2tc/f/x; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": "truncate: cannot open '/data/t2tc/f/x' for writing: Not a directory\n"
+      }
+    },
+    {
+      "id": "truncate_c_still_refuses_a_directory",
+      "seq": 910074,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s 0 /data/t2tc; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": "truncate: cannot open '/data/t2tc' for writing: Is a directory\n"
+      }
+    },
+    {
+      "id": "truncate_c_truncates_an_existing_file",
+      "seq": 910075,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s 2 /data/t2tc/f && wc -c < /data/t2tc/f",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "truncate_c_keeps_going_past_a_missing_operand",
+      "seq": 910076,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s 1 /data/t2tc/gone /data/t2tc/f; echo rc=$?; wc -c < /data/t2tc/f",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "truncate_no_create_long_form",
+      "seq": 910077,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "no-create",
+        "s"
+      ],
+      "command": "truncate --no-create -s 2 /data/t2tc/new2; echo rc=$?; test -e /data/t2tc/new2; echo new=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\nnew=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "truncate_c_bundles_with_s",
+      "seq": 910078,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -cs0 /data/t2tc/new3; echo rc=$?; test -e /data/t2tc/new3; echo new=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\nnew=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "truncate_c_bad_size_is_refused_first",
+      "seq": 910079,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s '<abc' /data/t2tc/gone",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "truncate: Invalid number: 'abc'\n"
+      }
+    },
+    {
+      "id": "truncate_c_cleanup",
+      "seq": 910080,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "rm -r /data/t2tc && echo ok",
+      "expect": {
+        "exit": 0,
+        "stdout": "ok\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

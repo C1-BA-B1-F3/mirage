@@ -79,7 +79,7 @@ function isRegular(mode: string): boolean {
 }
 
 /** What a mode makes a path, for a rename pair that must not cross kinds. */
-function kindOf(mode: string): string {
+export function kindOf(mode: string): string {
   if (isRegular(mode)) return REGULAR_KIND
   return mode === '120000' ? SYMLINK_KIND : mode
 }
@@ -152,6 +152,7 @@ async function contentRenames(
   adds: readonly string[],
   deletes: readonly string[],
   oids: ReadonlyMap<string, string>,
+  threshold: number = RENAME_THRESHOLD,
 ): Promise<[string, string][]> {
   if (
     adds.length === 0 ||
@@ -180,7 +181,7 @@ async function contentRenames(
       // Negative score so the strongest pair sorts first while paths still
       // tie-break in ascending order, which is what makes two equally similar
       // candidates resolve the same way on every run.
-      if (score >= RENAME_THRESHOLD) candidates.push([-score, fresh, old])
+      if (score >= threshold) candidates.push([-score, fresh, old])
     }
   }
   // Python is `candidates.sort()`, a code-point tuple sort, so the paths
@@ -209,11 +210,12 @@ async function contentRenames(
  * similar enough. Both pair within one kind, and only the second is limited to
  * regular files: a moved symlink is a rename git reports as one.
  */
-async function pairRenames(
+export async function pairRenames(
   repo: Repo,
   staged: ReadonlyMap<string, string>,
   oids: ReadonlyMap<string, string>,
   kinds: ReadonlyMap<string, string>,
+  threshold: number = RENAME_THRESHOLD,
 ): Promise<Map<string, StagedRow>> {
   const pick = (letter: string): string[] =>
     [...staged.entries()]
@@ -232,6 +234,7 @@ async function pairRenames(
       scored(adds.filter((p) => !matchedNew.has(p))),
       scored(deletes.filter((p) => !matchedOld.has(p))),
       oids,
+      threshold,
     )),
   )
   const paired = new Map(pairs.map(([fresh, old]) => [fresh, [RENAMED, old] as StagedRow]))

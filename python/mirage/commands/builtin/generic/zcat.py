@@ -1,13 +1,14 @@
-import gzip as gziplib
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 
-from mirage.commands.builtin.utils.operands import (materialized_read,
-                                                    merge_split_errors,
-                                                    split_readable_coded)
-from mirage.commands.builtin.utils.stream import read_stdin_async
+from mirage.commands.builtin.constants import GZIP_SUFFIX
+from mirage.commands.builtin.generic.decompress import decompress_inputs
+from mirage.commands.builtin.utils.links import link_door
+from mirage.commands.builtin.utils.operands import normalized_read
 from mirage.commands.config import CommandOpts
+from mirage.commands.spec import SPECS
+from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
-from mirage.types import PathSpec, PolymorphicReadFn, StatFn
+from mirage.types import FileType, PathSpec, PolymorphicReadFn, StatFn
 
 
 async def zcat(
@@ -16,17 +17,10 @@ async def zcat(
     read_bytes: Callable[..., Awaitable[bytes]],
     stdin: ByteSource | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
-    # Each operand decompresses independently and the outputs concatenate
-    # in operand order, like GNU zcat.
-    if paths:
-        parts: list[bytes] = []
-        for p in paths:
-            parts.append(gziplib.decompress(await read_bytes(p)))
-        return b"".join(parts), IOResult()
-    raw = await read_stdin_async(stdin)
-    if raw is None:
-        raise ValueError("zcat: (stdin): unexpected end of file")
-    return gziplib.decompress(raw), IOResult()
+    return await decompress_inputs(paths,
+                                   read=read_bytes,
+                                   stdin=stdin,
+                                   to_stdout=True)
 
 
 async def zcat_generic(
@@ -38,6 +32,9 @@ async def zcat_generic(
 ) -> tuple[ByteSource | None, IOResult]:
     """Run zcat over resolved operands; mirrors zcatGeneric.
 
+    zcat is ``gzip -cd``, so -f copies input that is not gzip, -q drops
+    the warnings, and -S names the suffix a missing name is retried with.
+
     Args:
         paths (list[PathSpec]): Glob-resolved operands, empty for stdin.
         texts (list[str]): Non-path words, unused by zcat.
@@ -46,16 +43,25 @@ async def zcat_generic(
         stream (PolymorphicReadFn): Bound reader called as
             ``stream(path)``.
     """
-    # zcat is gzip's front end, so its exit code is gzip's: a directory
-    # is a warning (2) and a missing file is an error (1), which no other
-    # member of this family distinguishes. Hence the coded split.
-    readable, err, code = await split_readable_coded(paths, stat, "zcat")
-    if err and not readable:
-        return None, IOResult(exit_code=code, stderr=err)
-    return await merge_split_errors(
-        await zcat(readable,
-                   read_bytes=materialized_read(stream),
-                   stdin=opts.stdin), err, code)
+    fl = FlagView(opts.flags, spec=SPECS["zcat"])
+    suffix = fl.as_str("S")
+    read_stream = normalized_read(stream)
+
+    async def read(path: PathSpec) -> AsyncIterator[bytes]:
+        if (await stat(path)).type is FileType.DIRECTORY:
+            raise IsADirectoryError(path.virtual)
+        async for chunk in read_stream(path):
+            yield chunk
+
+    return await decompress_inputs(
+        paths,
+        read=read,
+        stdin=opts.stdin,
+        to_stdout=True,
+        force=fl.as_bool("f"),
+        quiet=fl.as_bool("q"),
+        suffix=GZIP_SUFFIX if suffix is None else suffix,
+        door=link_door(opts))
 
 
 __all__ = ["zcat", "zcat_generic"]

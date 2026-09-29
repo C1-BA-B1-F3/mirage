@@ -211,3 +211,53 @@ async def test_commit_records_the_environment_author(git_rw, repo_path: Path):
     with Repo(str(repo_path)) as repo:
         head = repo[repo.refs[b"HEAD"]]
         assert head.author == b"Ada <ada@x>"
+
+
+@pytest.mark.asyncio
+async def test_all_stages_tracked_changes_but_no_new_file(
+        git_rw, repo_path: Path):
+    (repo_path / "a.txt").write_text("edited\n", encoding="utf-8")
+    (repo_path / "b.txt").unlink()
+    (repo_path / "fresh.txt").write_text("x\n", encoding="utf-8")
+    code, out, _err = await run(git_rw, "commit -a -m both")
+    assert code == 0
+    assert out.split(
+        b"\n", 1)[1] == (b" 2 files changed, 1 insertion(+), 2 deletions(-)\n"
+                         b" delete mode 100644 b.txt\n")
+    assert (await run(git_rw, "status --porcelain"))[1] == b"?? fresh.txt\n"
+
+
+@pytest.mark.asyncio
+async def test_all_with_nothing_changed_leaves_the_index_alone(git_rw):
+    code, _out, _err = await run(git_rw, "commit -a -m nothing")
+    assert code == 1
+    assert (await run(git_rw, "status --porcelain"))[1] == b""
+
+
+@pytest.mark.asyncio
+async def test_all_with_paths_is_gits_fatal(git_rw):
+    assert await run(git_rw, "commit -a -m x a.txt") == (
+        128, b"", b"fatal: paths 'a.txt ...' with -a does not make sense\n")
+
+
+@pytest.mark.asyncio
+async def test_paths_without_all_are_refused_not_ignored(
+        git_rw, repo_path: Path):
+    # Committing the whole index while the caller named one path would
+    # record changes nobody asked for.
+    (repo_path / "a.txt").write_text("edited\n", encoding="utf-8")
+    await run(git_rw, "add -A")
+    before = head_commit(repo_path).id
+    code, _out, err = await run(git_rw, "commit -m x a.txt")
+    assert code == 128
+    assert err.startswith(b"fatal: cannot commit 'a.txt' alone")
+    assert head_commit(repo_path).id == before
+
+
+@pytest.mark.asyncio
+async def test_a_move_is_summarized_as_a_rename(git_rw):
+    await run(git_rw, "mv b.txt c.txt")
+    _code, out, _err = await run(git_rw, "commit -m moved")
+    assert out.split(
+        b"\n", 1)[1] == (b" 1 file changed, 0 insertions(+), 0 deletions(-)\n"
+                         b" rename b.txt => c.txt (100%)\n")

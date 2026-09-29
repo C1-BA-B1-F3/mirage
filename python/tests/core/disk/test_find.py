@@ -99,3 +99,38 @@ async def test_find_normalizes_native_separator(tmp_path, monkeypatch):
     assert "/sub/deep" in result
     assert "/sub/deep/b.txt" in result
     assert not any("\\" in r for r in result)
+
+
+@pytest.mark.asyncio
+async def test_find_skips_host_symlinks_and_finds_nothing_through_one(
+        tmp_path):
+    (tmp_path / "a.txt").write_text("a")
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub64").symlink_to("sub")
+    (tmp_path / "alias.txt").symlink_to("a.txt")
+    accessor = DiskAccessor(tmp_path)
+    result = await find(accessor,
+                        PathSpec(vfs_path="", virtual="/", directory="/"))
+    assert result == ["/", "/a.txt", "/sub"]
+    assert await find(
+        accessor,
+        PathSpec(vfs_path="sub64", virtual="/sub64",
+                 directory="/sub64")) == []
+
+
+@pytest.mark.asyncio
+async def test_find_empty_ignores_host_symlinks(tmp_path):
+    (tmp_path / "a.txt").write_text("a")
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "python").symlink_to("/nowhere/python3")
+    accessor = DiskAccessor(tmp_path)
+    result = await find(accessor,
+                        PathSpec(vfs_path="bin",
+                                 virtual="/bin",
+                                 directory="/bin"),
+                        empty=True)
+    assert result == ["/bin"]
+    result = await find(accessor,
+                        PathSpec(vfs_path="", virtual="/", directory="/"),
+                        empty=True)
+    assert result == ["/bin"]

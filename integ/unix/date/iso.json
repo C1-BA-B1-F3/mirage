@@ -1,0 +1,531 @@
+{
+  "cases": [
+    {
+      "id": "date_iso_precision_attached",
+      "seq": 991412,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u -d '2024-03-05T07:08:09.5Z' -Id; date -u -d '2024-03-05T07:08:09.5Z' -Ih; date -u -d '2024-03-05T07:08:09.5Z' -Im; date -u -d '2024-03-05T07:08:09.5Z' -Is; date -u -d '2024-03-05T07:08:09.5Z' -Ins",
+      "expect": {
+        "exit": 0,
+        "stdout": "2024-03-05\n2024-03-05T07+00:00\n2024-03-05T07:08+00:00\n2024-03-05T07:08:09+00:00\n2024-03-05T07:08:09,500000000+00:00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "date_iso_bare_is_date_only",
+      "seq": 991413,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u -d '2024-03-05T07:08:09.5Z' -I; date -u -d '2024-03-05T07:08:09.5Z' --iso-8601",
+      "expect": {
+        "exit": 0,
+        "stdout": "2024-03-05\n2024-03-05\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "date_iso_long_form_value",
+      "seq": 991414,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u -d '2024-03-05T07:08:09.5Z' --iso-8601=seconds; date -u -d '2024-03-05T07:08:09.5Z' --iso=m",
+      "expect": {
+        "exit": 0,
+        "stdout": "2024-03-05T07:08:09+00:00\n2024-03-05T07:08+00:00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "date_iso_precision_prefix",
+      "seq": 991415,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u -d '2024-03-05T07:08:09.5Z' -Isec; date -u -d '2024-03-05T07:08:09.5Z' -Iho; date -u -d '2024-03-05T07:08:09.5Z' -In",
+      "expect": {
+        "exit": 0,
+        "stdout": "2024-03-05T07:08:09+00:00\n2024-03-05T07+00:00\n2024-03-05T07:08:09,500000000+00:00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "date_iso_ends_a_cluster",
+      "seq": 991416,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -d '2024-03-05T07:08:09.5Z' -uIs; date -d '2024-03-05T07:08:09.5Z' -uI",
+      "expect": {
+        "exit": 0,
+        "stdout": "2024-03-05T07:08:09+00:00\n2024-03-05\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "date_iso_zone_offset",
+      "seq": 991417,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "TZ=Asia/Kolkata date -d '2024-03-05T07:08:09.5Z' -Is; TZ=America/St_Johns date -d '2024-03-05T07:08:09.5Z' -Im",
+      "expect": {
+        "exit": 0,
+        "stdout": "2024-03-05T12:38:09+05:30\n2024-03-05T03:38-03:30\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "date_iso_now_shape",
+      "seq": 991418,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -Is | grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$'; date -u -Is | grep -c '+00:00$'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "date_iso_invalid_precision",
+      "seq": 991419,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -d '2024-03-05T07:08:09.5Z' -Ix",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: invalid argument 'x' for '--iso-8601'\nValid arguments are:\n  - 'hours'\n  - 'minutes'\n  - 'date'\n  - 'seconds'\n  - 'ns'\nTry 'date --help' for more information.\n"
+      }
+    },
+    {
+      "id": "date_iso_attached_rest_is_the_value",
+      "seq": 991420,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -d '2024-03-05T07:08:09.5Z' -Isu",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: invalid argument 'su' for '--iso-8601'\nValid arguments are:\n  - 'hours'\n  - 'minutes'\n  - 'date'\n  - 'seconds'\n  - 'ns'\nTry 'date --help' for more information.\n"
+      }
+    },
+    {
+      "id": "date_iso_empty_precision_ambiguous",
+      "seq": 991421,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -d '2024-03-05T07:08:09.5Z' --iso-8601=",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: ambiguous argument '' for '--iso-8601'\nValid arguments are:\n  - 'hours'\n  - 'minutes'\n  - 'date'\n  - 'seconds'\n  - 'ns'\nTry 'date --help' for more information.\n"
+      }
+    },
+    {
+      "id": "date_rfc_3339_precisions",
+      "seq": 991422,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u -d '2024-03-05T07:08:09.5Z' --rfc-3339=date; date -u -d '2024-03-05T07:08:09.5Z' --rfc-3339=seconds; date -u -d '2024-03-05T07:08:09.5Z' --rfc-3339=ns",
+      "expect": {
+        "exit": 0,
+        "stdout": "2024-03-05\n2024-03-05 07:08:09+00:00\n2024-03-05 07:08:09.500000000+00:00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "date_rfc_3339_rejects_hours",
+      "seq": 991423,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -d '2024-03-05T07:08:09.5Z' --rfc-3339=hours",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: invalid argument 'hours' for '--rfc-3339'\nValid arguments are:\n  - 'date'\n  - 'seconds'\n  - 'ns'\nTry 'date --help' for more information.\n"
+      }
+    },
+    {
+      "id": "date_rfc_3339_requires_argument",
+      "seq": 991424,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -d '2024-03-05T07:08:09.5Z' --rfc-3339",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: option '--rfc-3339' requires an argument\nTry 'date --help' for more information.\n"
+      }
+    },
+    {
+      "id": "date_multiple_output_formats",
+      "seq": 991425,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -d '2024-03-05T07:08:09.5Z' -I -R",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: multiple output formats specified\n"
+      }
+    },
+    {
+      "id": "date_multiple_output_formats_with_plus",
+      "seq": 991426,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -d '2024-03-05T07:08:09.5Z' -Is +%Y",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: multiple output formats specified\n"
+      }
+    },
+    {
+      "id": "date_long_spellings",
+      "seq": 991427,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date --utc --date='2024-03-05T07:08:09.5Z' --rfc-email; date --universal --date='2024-03-05T07:08:09.5Z' -I",
+      "expect": {
+        "exit": 0,
+        "stdout": "Tue, 05 Mar 2024 07:08:09 +0000\n2024-03-05\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "date_default_format_space_pads_day",
+      "seq": 991428,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u -d '2024-03-05T07:08:09.5Z'",
+      "expect": {
+        "exit": 0,
+        "stdout": "Tue Mar  5 07:08:09 UTC 2024\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

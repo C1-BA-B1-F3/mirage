@@ -130,7 +130,7 @@
       "targets": [
         "ram-commands"
       ],
-      "command": "mkdir -p /scratch/box/sec /scratch/only /scratch/gone/sec /scratch/bag && echo v > /scratch/box/a.txt && echo s > /scratch/box/sec/k && echo x > /scratch/only/h && echo s > /scratch/gone/sec/k && echo a > /scratch/gone/a.txt && echo t > /scratch/bag/x.tkn && echo a > /scratch/bag/a.txt",
+      "command": "mkdir -p /scratch/box/sec /scratch/only /scratch/gone/sec /scratch/bag && echo v > /scratch/box/a.txt && echo s > /scratch/box/sec/k && echo x > /scratch/only/h && echo s > /scratch/gone/sec/k && echo a > /scratch/gone/a.txt && echo t > /scratch/bag/x.tkn && echo a > /scratch/bag/a.txt && ln -s a.txt /scratch/box/public && ln -s /private/key /scratch/box/sec/link",
       "expect": {
         "exit": 0,
         "stdout": "",
@@ -160,7 +160,7 @@
       "command": "find /scratch/box",
       "expect": {
         "exit": 0,
-        "stdout": "/scratch/box\n/scratch/box/a.txt\n/scratch/box/sec\n/scratch/box/sec/k\n",
+        "stdout": "/scratch/box\n/scratch/box/a.txt\n/scratch/box/public\n/scratch/box/sec\n/scratch/box/sec/k\n/scratch/box/sec/link\n",
         "stderr": ""
       }
     },
@@ -170,7 +170,7 @@
       "targets": [
         "ram-commands"
       ],
-      "command": "cp -r /scratch/box /scratch/boxcopy",
+      "command": "cp -r /scratch/box /scratch/boxcopy && cp -rL /scratch/box /scratch/boxfollow && cp -r /scratch/box /repo/boxcopy",
       "expect": {
         "exit": 0,
         "stdout": "",
@@ -184,10 +184,10 @@
       "targets": [
         "ram-commands"
       ],
-      "command": "find /scratch/boxcopy",
+      "command": "find /scratch/boxcopy && test -L /scratch/boxcopy/public && cat /scratch/boxcopy/public && find /scratch/boxfollow && cat /scratch/boxfollow/public && find /repo/boxcopy && test -L /repo/boxcopy/public && cat /repo/boxcopy/public",
       "expect": {
         "exit": 0,
-        "stdout": "/scratch/boxcopy\n/scratch/boxcopy/a.txt\n",
+        "stdout": "/scratch/boxcopy\n/scratch/boxcopy/a.txt\n/scratch/boxcopy/public\nv\n/scratch/boxfollow\n/scratch/boxfollow/a.txt\n/scratch/boxfollow/public\nv\n/repo/boxcopy\n/repo/boxcopy/a.txt\n/repo/boxcopy/public\nv\n",
         "stderr": ""
       }
     },
@@ -197,7 +197,7 @@
       "targets": [
         "ram-commands"
       ],
-      "command": "ls -a /scratch/only && rmdir /scratch/only",
+      "command": "ls -A /scratch/only && rmdir /scratch/only",
       "expect": {
         "exit": 0,
         "stdout": "",

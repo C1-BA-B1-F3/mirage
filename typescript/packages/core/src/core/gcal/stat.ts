@@ -20,7 +20,7 @@ import { enoent } from '../../utils/errors.ts'
 import { resolveEntry } from '../hierarchy/probe.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { makeStat } from '../hierarchy/stat.ts'
-import { calendarIndex, readdir } from './readdir.ts'
+import { calendarIndex, readdir, bucketZone, scopedDayBounds } from './readdir.ts'
 import { detectScope } from './scope.ts'
 
 function dirStat(_match: ScopeMatch, _path: PathSpec, entry: IndexEntry): FileStat {
@@ -52,12 +52,13 @@ async function statDay(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
+  const calendars = await calendarIndex(accessor)
+  scopedDayBounds(accessor, match.slots.day ?? '', bucketZone(accessor, calendars), path.virtual)
   const entry = await resolveEntry(readdir, accessor, path, index)
   if (entry !== null) return new FileStat({ name: entry.vfsName, type: FileType.DIRECTORY })
   // Ask the calendar list rather than the index: the index only knows the
   // calendar once the ROOT has been listed, which a stat of a day two
   // levels down never triggers.
-  const calendars = await calendarIndex(accessor)
   if (!calendars.has(match.slots.calendar ?? '')) throw enoent(path.virtual)
   return new FileStat({ name: match.slots.day ?? '', type: FileType.DIRECTORY })
 }

@@ -79,7 +79,12 @@ async def test_env_run_form_forwards_stdin_and_restores_env():
     assert args[0] == "printenv FOO"
     assert kwargs["stdin"] == b"piped\n"
     # The session environment is restored after the inner command runs.
-    assert session.env == {"PWD": "/", "FOO": "original"}
+    assert session.env == {
+        "PWD": "/",
+        "PATH": "/usr/bin",
+        "IFS": " \t\n",
+        "FOO": "original"
+    }
 
 
 @pytest.mark.asyncio

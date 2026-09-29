@@ -53,3 +53,17 @@ async def test_entries_normalizes_native_separator(tmp_path, monkeypatch):
         accessor, PathSpec(vfs_path="", virtual="/", directory="/"))
     assert [p for p, _ in found] == ["/sub/b.txt"]
     assert total == 2
+
+
+@pytest.mark.asyncio
+async def test_entries_leave_host_symlinks_out(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "a.txt").write_bytes(b"aaa")
+    (tmp_path / "big.txt").write_bytes(b"x" * 100)
+    (root / "big").symlink_to(tmp_path / "big.txt")
+    accessor = DiskAccessor(root)
+    found, total = await entries(
+        accessor, PathSpec(vfs_path="", virtual="/", directory="/"))
+    assert found == [("/a.txt", 3)]
+    assert total == 3

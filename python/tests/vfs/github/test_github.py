@@ -13,7 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-from unittest.mock import patch
+from collections.abc import Iterator
+from contextlib import contextmanager
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -23,8 +25,9 @@ from mirage.core.github.repo import ensure_default_branch
 from mirage.core.github.stat import stat
 from mirage.core.github.tree import ensure_tree
 from mirage.core.github.tree_entry import TreeEntry
-from mirage.types import PathSpec, VFSName
+from mirage.types import MountMode, PathSpec, VFSName
 from mirage.vfs.github.github import GitHubVFS
+from mirage.workspace import Workspace
 from tests.fixtures.driver_ops import ops
 
 CONFIG = GitHubConfig(token="test-token")
@@ -32,26 +35,53 @@ OWNER = "test-owner"
 REPO = "test-repo"
 
 
-def _offline(tree: dict,
-             truncated: bool = False,
-             default_branch: str = "main"):
-    """Patch both paths that would reach the network.
+@pytest.fixture(autouse=True)
+def no_network() -> Iterator[None]:
+    with patch("mirage.core.github.client.api_request",
+               side_effect=AssertionError(
+                   "unexpected GitHub network request")) as request:
+        yield
+        request.assert_not_called()
 
-    Each is patched in the module that fetches, because the mount is
-    built without touching either: the tree hydrates through
-    ``ensure_tree`` / ``refill_index`` in ``core.github.tree``, and the
-    default branch through ``ensure_default_branch`` in
-    ``core.github.repo``.
+
+@contextmanager
+def _offline(
+        tree: dict,
+        truncated: bool = False,
+        default_branch: str = "main") -> Iterator[tuple[AsyncMock, AsyncMock]]:
+    """Patch branch discovery, recursive trees, and directory lookups together.
 
     Args:
         tree (dict): The recursive tree to answer with.
         truncated (bool): Whether to report it truncated.
         default_branch (str): Branch the repo endpoint reports.
     """
-    return (patch("mirage.core.github.repo.fetch_default_branch",
-                  return_value=default_branch),
-            patch("mirage.core.github.tree.fetch_tree",
-                  return_value=(tree, truncated)))
+    with (patch("mirage.core.github.repo.fetch_default_branch",
+                return_value=default_branch) as branch,
+          patch("mirage.core.github.tree.fetch_tree",
+                return_value=(tree, truncated)) as fetch, _listing(tree)):
+        yield branch, fetch
+
+
+def _listing(tree: dict):
+    """Patch the one-directory listing a stat asks an empty index for.
+
+    Args:
+        tree (dict): The recursive tree each listing is cut from.
+    """
+
+    async def page(config, owner, repo, tree_sha, session=None):
+        at = tree_sha.partition(":")[2]
+        stem = at + "/" if at else ""
+        return [
+            TreeEntry(path=path[len(stem):],
+                      type=entry.type,
+                      sha=entry.sha,
+                      size=entry.size) for path, entry in tree.items()
+            if path.startswith(stem) and "/" not in path[len(stem):]
+        ], False
+
+    return patch("mirage.core.github.tree.fetch_dir_page", new=page)
 
 
 def _make_vfs(ref: str = "main",
@@ -151,7 +181,7 @@ async def test_stat_returns_sha_fingerprint() -> None:
         TreeEntry(path="src/main.py", type="blob", sha="abc123", size=100),
     }
     vfs = _make_vfs(tree=tree)
-    with _offline(tree)[1]:
+    with _offline(tree):
         result = await stat(vfs.accessor,
                             PathSpec.from_str_path("/src/main.py"),
                             ops(vfs).index)
@@ -165,13 +195,10 @@ async def test_replacing_index_still_serves_the_tree() -> None:
         TreeEntry(path="src/main.py", type="blob", sha="abc123", size=100),
     }
     vfs = _make_vfs(tree=tree)
-    with _offline(tree)[1]:
-        await stat(vfs.accessor, PathSpec.from_str_path("/src/main.py"),
-                   ops(vfs).index)
 
-    # The fresh store is empty, which reads as not-live, so the next read
-    # fills it by refetching rather than reporting the path gone.
-    with _offline(tree)[1]:
+    # The fresh store is empty, which reads as not-live, so the stat asks
+    # the parent directory rather than reporting the path gone.
+    with _offline(tree):
         result = await stat(vfs.accessor,
                             PathSpec.from_str_path("/src/main.py"),
                             RAMIndexCacheStore())
@@ -181,7 +208,7 @@ async def test_replacing_index_still_serves_the_tree() -> None:
 @pytest.mark.asyncio
 async def test_stat_raises_when_path_not_in_tree() -> None:
     vfs = _make_vfs()
-    with _offline({})[1], pytest.raises(FileNotFoundError):
+    with _offline({}), pytest.raises(FileNotFoundError):
         await stat(vfs.accessor, PathSpec.from_str_path("/nonexistent.py"),
                    ops(vfs).index)
 
@@ -190,8 +217,7 @@ def test_the_constructor_reaches_no_network() -> None:
     # The rule the lazy split exists to keep: naming a repository costs
     # nothing, so building a mount never blocks the caller's event loop
     # and build_vfs can stay synchronous.
-    branch, fetch = _offline({})
-    with branch as branch_m, fetch as fetch_m:
+    with _offline({}) as (branch_m, fetch_m):
         vfs = GitHubVFS(CONFIG, OWNER, REPO, "main")
     branch_m.assert_not_called()
     fetch_m.assert_not_called()
@@ -239,3 +265,39 @@ async def test_concurrent_ensure_tree_fetches_once() -> None:
         }, False)
         await asyncio.gather(*(ensure_tree(vfs.accessor) for _ in range(8)))
     assert mock_tree.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode,refusal", [
+    (MountMode.READ, "Read-only file system"),
+    (MountMode.WRITE, "Operation not supported"),
+])
+async def test_removing_a_tree_entry_is_refused_not_missing(
+        mode: MountMode, refusal: str) -> None:
+    # Cold stats and warmed listings must agree on existence, so removal
+    # reports the mount's refusal rather than ENOENT, including with -f.
+    tree = {
+        "top.txt": TreeEntry(path="top.txt", type="blob", sha="a", size=2),
+        "empty": TreeEntry(path="empty", type="tree", sha="b", size=None),
+    }
+    with _offline(tree):
+        ws = Workspace({"/gh": _make_vfs()}, mode=mode)
+        lines = {
+            "rm /gh/top.txt":
+            f"rm: cannot remove '/gh/top.txt': {refusal}\n",
+            "rm -f /gh/top.txt":
+            f"rm: cannot remove '/gh/top.txt': {refusal}\n",
+            "rmdir /gh/empty":
+            f"rmdir: failed to remove '/gh/empty': {refusal}\n",
+            "unlink /gh/top.txt":
+            f"unlink: cannot unlink '/gh/top.txt': {refusal}\n",
+            "rm /gh/nope":
+            "rm: cannot remove '/gh/nope': No such file or directory\n",
+        }
+        for line, stderr in lines.items():
+            result = await ws.shell(line)
+            assert (result.exit_code, await result.stderr_str()) == (1, stderr)
+        result = await ws.shell("rm -f /gh/nope")
+        assert (result.exit_code, await result.stderr_str()) == (0, "")
+        result = await ws.shell("ls /gh")
+        assert await result.stdout_str() == "empty\ntop.txt\n"

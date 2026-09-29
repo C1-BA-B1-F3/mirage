@@ -1,0 +1,101 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import functools
+import logging
+from pathlib import Path
+
+import asyncssh
+
+from mirage.server.registry import WorkspaceRegistry
+from mirage.server.ssh.config import SSHConfig
+from mirage.server.ssh.keys import load_host_key
+from mirage.server.ssh.session import handle_process
+from mirage.server.ssh.sftp import MirageSFTPServer
+from mirage.server.ssh.stream import ENCODING, ERRORS, MAX_TERMINAL_LINE
+
+logger = logging.getLogger(__name__)
+
+
+class MirageSSHServer(asyncssh.SSHServer):
+    """Admits a connection whose public key is in the authorized keys.
+
+    The file is read again for every connection, so a key added or
+    revoked takes effect on the next login without a restart. Public
+    key is the only method offered: no passwords, and nothing is
+    forwarded (ports, agents, X11).
+
+    Args:
+        authorized_keys_file (Path): OpenSSH-format authorized keys.
+    """
+
+    def __init__(self, authorized_keys_file: Path) -> None:
+        self._keys_file = authorized_keys_file
+        self._conn: asyncssh.SSHServerConnection | None = None
+
+    def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
+        self._conn = conn
+
+    def begin_auth(self, username: str) -> bool:
+        if self._conn is None:
+            return True
+        try:
+            self._conn.set_authorized_keys(str(self._keys_file))
+        except (OSError, ValueError) as exc:
+            logger.warning("ssh: refusing %r, cannot read %s: %s", username,
+                           self._keys_file, exc)
+        return True
+
+    def password_auth_supported(self) -> bool:
+        return False
+
+
+async def start_ssh_server(registry: WorkspaceRegistry,
+                           config: SSHConfig) -> asyncssh.SSHAcceptor:
+    """Listen for SSH on the daemon's loop, serving its workspaces.
+
+    ``ssh <workspace-id>@host`` opens a shell in that workspace,
+    ``ssh <workspace-id>@host cmd`` runs one line, and ``sftp``/``scp``
+    reach its files. Each channel runs as a fresh mirage session under
+    the profile its key is bound to (``mirage-profile`` in the
+    authorized keys), else the workspace's default profile.
+
+    Args:
+        registry (WorkspaceRegistry): the daemon's workspaces.
+        config (SSHConfig): where to listen and whom to admit.
+
+    Returns:
+        asyncssh.SSHAcceptor: the listener; ``close()`` stops it.
+    """
+    if not config.authorized_keys_file.exists():
+        logger.warning(
+            "ssh: %s does not exist; every login will be refused until "
+            "it holds a public key", config.authorized_keys_file)
+    acceptor = await asyncssh.listen(
+        config.host,
+        config.port,
+        server_host_keys=[load_host_key(config.host_key_file)],
+        server_factory=functools.partial(MirageSSHServer,
+                                         config.authorized_keys_file),
+        process_factory=functools.partial(handle_process, registry),
+        sftp_factory=functools.partial(MirageSFTPServer, registry),
+        allow_scp=True,
+        max_line_length=MAX_TERMINAL_LINE,
+        agent_forwarding=False,
+        gss_host=None,
+        encoding=ENCODING,
+        errors=ERRORS,
+    )
+    logger.info("ssh: listening on %s:%d", config.host, acceptor.get_port())
+    return acceptor

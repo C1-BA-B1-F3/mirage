@@ -24,19 +24,13 @@ class OldStyleArgv:
     Args:
         argv (list[str]): the rewritten words.
         origins (list[int]): for each rewritten word, the position it came
-            from in the caller's argv. Synthesized flag tokens all carry
-            the cluster's own position, so a word kind written back
-            through this table can only land on a real word.
-        cluster (str | None): the word read as a letter cluster, when the
-            line had one. The parser marks its slot TEXT so the word
-            survives path classification verbatim and the dispatch-time
-            scan reads the same letters the hint-time scan did.
+            from in the caller's argv; synthesized flags use the cluster's
+            position.
         needs_value (str | None): the cluster letter whose argument ran
             off the end of the line, when one did.
     """
     argv: list[str]
     origins: list[int]
-    cluster: str | None = None
     needs_value: str | None = None
 
 
@@ -79,14 +73,14 @@ def expand_old_style(cs: CompiledSpec, argv: list[str]) -> OldStyleArgv:
         if f"-{ch}" not in cs.value_spellings:
             continue
         if nxt >= len(argv):
-            return OldStyleArgv(out, origins, cluster, ch)
+            return OldStyleArgv(out, origins, ch)
         out.append(argv[nxt])
         origins.append(nxt)
         nxt += 1
     for idx in range(nxt, len(argv)):
         out.append(argv[idx])
         origins.append(idx)
-    return OldStyleArgv(out, origins, cluster)
+    return OldStyleArgv(out, origins)
 
 
 __all__ = ["OldStyleArgv", "expand_old_style"]

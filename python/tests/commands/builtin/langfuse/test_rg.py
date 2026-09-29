@@ -29,8 +29,8 @@ RESOLVE = "mirage.commands.builtin.generic_bind.adapter.make_resolve_glob"
 
 # The searchers live in the grep module and rg shares them, so the fetch
 # fakes patch the names the searchers read at call time.
-FETCH_TRACES = "mirage.commands.builtin.langfuse.grep.fetch_traces"
-FETCH_SESSIONS = "mirage.commands.builtin.langfuse.grep.fetch_sessions"
+FETCH_TRACES = "mirage.core.langfuse.search.fetch_traces"
+FETCH_SESSIONS = "mirage.core.langfuse.search.fetch_sessions"
 
 
 @pytest.fixture
@@ -98,7 +98,7 @@ async def test_shaping_flag_defers_to_generic(accessor):
                new=AsyncMock(return_value=SUMMARIES)) as fetch, patch.dict(
                    GENERICS, {"rg": generic}):
         await rg(accessor, [_spec("/traces")], ["search-me"],
-                 _opts(args_l=True))
+                 _opts(files_with_matches=True))
     fetch.assert_not_awaited()
     generic.assert_awaited_once()
 

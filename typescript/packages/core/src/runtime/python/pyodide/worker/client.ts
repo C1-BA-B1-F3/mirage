@@ -19,7 +19,9 @@ import type { BridgeDispatchFn, EvalResult, RunResult, RuntimeContext } from '..
 import { RuntimeVFS } from '../../../vfs.ts'
 import { applyMutation } from '../vfs/journal.ts'
 import type { FlushFailure } from '../vfs/types.ts'
+import { failureText } from './failure.ts'
 import { respond } from './transport.ts'
+import { GuestProcessTable } from './process.ts'
 import type {
   ExecuteRequest,
   VfsRequest,
@@ -83,6 +85,16 @@ async function createPort(): Promise<WorkerPort | null> {
   }
 }
 
+/**
+ * What a crashed worker reported, as an Error a command can print. A
+ * worker's uncaught exception arrives structured-cloned: an Error stays
+ * one, but anything else arrives as a plain value whose String() may be
+ * `[object Object]`.
+ */
+export function workerFailure(value: unknown): Error {
+  return value instanceof Error ? value : new Error(`pyodide worker crashed: ${failureText(value)}`)
+}
+
 export class PyodideWorkerClient {
   private startup: { resolve: () => void; reject: (error: Error) => void } | null = null
   private readonly ready = new Promise<void>((resolve, reject) => {
@@ -113,7 +125,7 @@ export class PyodideWorkerClient {
       }
     })
     port.onError((error) => {
-      this.fail(error)
+      this.fail(workerFailure(error))
     })
   }
 
@@ -142,6 +154,9 @@ export class PyodideWorkerClient {
     const vfs = new RuntimeVFS(context.dispatch, context.resolver)
     const { dispatch, scope } = context
     const responses = new Set<Promise<void>>()
+    const processes = new GuestProcessTable(
+      request.method === 'run' ? context : { ...context, processes: null },
+    )
     const cells = new Int32Array(this.interruptBuffer)
     Atomics.store(cells, 3, 0)
     const abort = (): void => {
@@ -161,7 +176,7 @@ export class PyodideWorkerClient {
         }
         if (message.kind === 'vfs') {
           const response = respond(message.buffer, () =>
-            scope.run(() => this.operation(message, vfs, dispatch)),
+            scope.run(() => this.operation(message, vfs, dispatch, processes)),
           )
           responses.add(response)
           void response.then(() => {
@@ -183,6 +198,7 @@ export class PyodideWorkerClient {
       signal?.removeEventListener('abort', abort)
       // An interrupted guest can finish while a backend mutation is still pending.
       // Keep the runtime queue closed until every response has finished.
+      await processes.close()
       await Promise.all(responses)
     }
   }
@@ -201,11 +217,14 @@ export class PyodideWorkerClient {
     this.port.terminate()
   }
 
+  // The first failure is the one to report: a worker that throws is also
+  // reported as exited right after, which says less about why.
   private fail(error: Error): void {
-    this.failure = error
-    this.startup?.reject(error)
+    this.failure ??= error
+    const failure = this.failure
+    this.startup?.reject(failure)
     this.startup = null
-    this.waiter?.reject(error)
+    this.waiter?.reject(failure)
     this.waiter = null
     for (const buffer of this.buffers) {
       const cells = new Int32Array(buffer, 0, 4)
@@ -219,8 +238,11 @@ export class PyodideWorkerClient {
     request: VfsRequest,
     vfs: RuntimeVFS,
     dispatch: BridgeDispatchFn,
+    processes: GuestProcessTable,
   ): Promise<unknown> {
     switch (request.op) {
+      case 'process':
+        return processes.call(request.payload ?? '{}')
       case 'read':
         return vfs.read(request.path)
       case 'stat':

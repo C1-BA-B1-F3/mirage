@@ -233,10 +233,64 @@ async function listComments(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
       id: row.id,
       body: row.body,
       created_at: row.createdAt,
+      updated_at: row.createdAt,
+      node_id: Buffer.from(`012:IssueComment${row.id}`).toString('base64'),
+      author_association: 'NONE',
       user: { login: row.user },
       html_url: `https://github.com/${repo.fullName}/issues/${String(number)}#issuecomment-${String(row.id)}`,
     })),
   )
+}
+
+function commentCursor(id: number): string {
+  return Buffer.from(`comment:${id}`).toString('base64')
+}
+
+/**
+ * The GraphQL `issueOrPullRequest` node for one number, null when the
+ * repository holds neither: its type and a page of its comments, oldest first.
+ */
+export async function issueOrPullRequestNode(
+  ctx: Ctx<C>,
+  repo: RepoRow,
+  number: number,
+): Promise<Record<string, unknown> | null> {
+  const issue = await issueRow(ctx.db, ctx.tenant, repo, number)
+  const pull = issue === null ? await pullRow(ctx.db, ctx.tenant, repo, number) : null
+  if (issue === null && pull === null) return null
+  return {
+    __typename: issue === null ? 'PullRequest' : 'Issue',
+    comments: async ({ first, after }: { first: number; after?: string }) => {
+      if (first < 1 || first > 100) throw new Error('first must be between 1 and 100')
+      const rows = await ctx.db.githubComment.findMany({
+        where: { ...scope(ctx.tenant), repo: repo.fullName, issueNumber: number },
+        orderBy: { seq: 'asc' },
+      })
+      const start = after ? rows.findIndex((row) => commentCursor(row.id) === after) + 1 : 0
+      if (after && start === 0) throw new Error('Invalid cursor')
+      const page = rows.slice(start, start + first)
+      return {
+        nodes: page.map((row) => ({
+          id: Buffer.from(`012:IssueComment${row.id}`).toString('base64'),
+          author: { login: row.user },
+          authorAssociation: 'NONE',
+          body: row.body,
+          createdAt: row.createdAt,
+          includesCreatedEdit: false,
+          isMinimized: false,
+          minimizedReason: null,
+          reactionGroups: [],
+          url: `https://github.com/${repo.fullName}/issues/${number}#issuecomment-${row.id}`,
+          viewerDidAuthor: row.user === DEFAULT_LOGIN,
+          ...(JSON.parse(row.metaJson) as Record<string, JsonValue>),
+        })),
+        pageInfo: {
+          hasNextPage: start + first < rows.length,
+          endCursor: page.length ? commentCursor(page[page.length - 1]!.id) : null,
+        },
+      }
+    },
+  }
 }
 
 export function issueRoutes(): KitRoute<C>[] {

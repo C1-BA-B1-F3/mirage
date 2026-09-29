@@ -33,21 +33,22 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-r", long="--reverse"),
             Option(short="-n", long="--numeric-sort"),
             Option(short="-u", long="--unique"),
-            Option(short="-f", long="--ignore-case"),
+            Option(short="-b", long="--ignore-leading-blanks"),
             Option(short="-k", long="--key", type="str", multiple=True),
             Option(short="-t", long="--field-separator", type="str"),
             Option(short="-h", long="--human-numeric-sort"),
             Option(short="-V", long="--version-sort"),
             Option(short="-s", long="--stable"),
-            Option(short="-M", long="--month-sort"),
-            Option(short="-b", long="--ignore-leading-blanks"),
+            Option(short="-m", long="--merge"),
+            Option(short="-f", long="--ignore-case"),
             Option(short="-c"),
+            Option(short="-C"),
             Option(long="--check", type="str", value_optional=True),
             Option(short="-d", long="--dictionary-order"),
             Option(short="-g", long="--general-numeric-sort"),
             Option(short="-i", long="--ignore-nonprinting"),
-            Option(short="-m", long="--merge"),
-            Option(short="-o", long="--output", type="path"),
+            Option(short="-M", long="--month-sort"),
+            Option(short="-o", long="--output", type="path", multiple=True),
             Option(short="-z", long="--zero-terminated"),
         ),
         rest=Operand(type="path"),
@@ -167,17 +168,29 @@ SPECS: dict[str, CommandSpec] = {
     'split':
     CommandSpec(
         options=(
-            Option(short="-l", long="--lines", type="str"),
+            # GNU's obsolete -NUM is a line count (DIGIT_OPTIONS reads
+            # its digits inside a cluster too). One divergence: GNU adds
+            # its `Try` hint when a zero count came as digits (`split
+            # -0`) and not for `-l 0`, and the bag cannot tell the two
+            # apart, so both refuse without it.
+            Option(short="-l",
+                   long="--lines",
+                   type="str",
+                   numeric_shorthand=True),
             Option(short="-b", long="--bytes", type="str"),
             Option(short="-n", long="--number", type="str"),
+            # GNU: -d/-x never take an argument; only --numeric-suffixes=
+            # and --hex-suffixes= carry one, so `-d10` is -d and ten lines.
             Option(short="-d",
                    long="--numeric-suffixes",
                    type="str",
-                   value_optional=True),
+                   value_optional=True,
+                   short_value=False),
             Option(short="-x",
                    long="--hex-suffixes",
                    type="str",
-                   value_optional=True),
+                   value_optional=True,
+                   short_value=False),
             Option(short="-a", long="--suffix-length", type="str"),
             Option(long="--additional-suffix", type="str"),
             Option(short="-t", long="--separator", type="str"),
@@ -222,10 +235,10 @@ SPECS: dict[str, CommandSpec] = {
         options=(
             Option(short="-f", long="--prefix", type="path"),
             Option(short="-n", long="--digits", type="str"),
-            Option(short="-b", long="--suffix-format", type="str"),
+            Option(long="--silent"),
             Option(short="-k", long="--keep-files"),
             Option(short="-s", long="--quiet"),
-            Option(long="--silent"),
+            Option(short="-b", long="--suffix-format", type="str"),
             Option(long="--suppress-matched"),
             Option(short="-z", long="--elide-empty-files"),
         ),

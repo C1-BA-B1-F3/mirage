@@ -28,7 +28,7 @@
       "expect": {
         "exit": 1,
         "stdout": "==> /data/a.txt <==\nhello\n",
-        "stderr": "head: /data2/xpr_nope.txt: No such file or directory\n"
+        "stderr": "head: cannot open '/data2/xpr_nope.txt' for reading: No such file or directory\n"
       }
     }
   ]

@@ -45,7 +45,7 @@ async def read_stream(
     config = accessor.config
     key = _key(path, config)
     pinned_revision = revision_for(virtual)
-    rec = record_stream("read", path, "gridfs")
+    rec = record_stream("read", virtual, "gridfs")
     if pinned_revision is not None:
         file_id = ObjectId(pinned_revision)
     else:

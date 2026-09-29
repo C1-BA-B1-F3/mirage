@@ -44,6 +44,12 @@ INHERITED_FIELDS: tuple[str, ...] = (
     "commands",
     "script",
     "profile",
+    "command_limits",
+    "terminal_output",
+    "processes",
+    "process_id",
+    "shell_pid",
+    "process_depth",
     "decisions",
     "generation",
     "pipeline_timeout_seconds",
@@ -52,8 +58,10 @@ INHERITED_FIELDS: tuple[str, ...] = (
     "script_name",
     "exec_stdout",
     "exec_stdout_append",
+    "exec_stdout_input",
     "exec_stderr",
     "exec_stderr_append",
+    "exec_stderr_input",
     "exec_stdin",
     "exec_stdin_unreadable",
     "exec_stdin_identity",
@@ -63,13 +71,11 @@ INHERITED_FIELDS: tuple[str, ...] = (
 )
 
 # State that belongs to the line being executed, not to the shell, so a
-# fork starts it fresh: the errexit marker, the source nesting depth, the
-# stdin the caller happened to pass and the running function's locals.
+# fork starts it fresh: the errexit marker, the source nesting depth and
+# the running function's locals.
 TRANSIENT_FIELDS: tuple[str, ...] = (
     "errexit_immune",
     "source_depth",
-    "_stdin_buffer",
-    "_stdin_source",
     "_local_vars",
     "_local_frames",
     "_local_random",
@@ -111,8 +117,10 @@ CHILD_SHELL_FIELDS: tuple[str, ...] = (
     "last_bg_job_id",
     "exec_stdout",
     "exec_stdout_append",
+    "exec_stdout_input",
     "exec_stderr",
     "exec_stderr_append",
+    "exec_stderr_input",
     "exec_stdin",
     "exec_stdin_unreadable",
     "exec_stdin_identity",

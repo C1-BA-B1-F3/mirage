@@ -194,6 +194,71 @@
         "stdout": "Run the wombat suite before pushing.\n# wombat invalidates the warm entries\n# wombat compaction pass\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "github_rg_search_single_hit_is_labelled",
+      "seq": 530016,
+      "targets": [
+        "github"
+      ],
+      "command": "rg -w compaction /repo",
+      "expect": {
+        "exit": 0,
+        "stdout": "/repo/src/store/step_5.py:# wombat compaction pass\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "github_rm_existing_file_is_refused_not_missing",
+      "seq": 530017,
+      "targets": [
+        "github"
+      ],
+      "command": "rm /repo/README.md; head -n 1 /repo/README.md",
+      "expect": {
+        "exit": 0,
+        "stdout": "# repo-v1\n",
+        "stderr": "rm: cannot remove '/repo/README.md': Read-only file system\n"
+      }
+    },
+    {
+      "id": "github_rm_f_reports_an_existing_file_it_cannot_remove",
+      "seq": 530018,
+      "targets": [
+        "github"
+      ],
+      "command": "rm -f /repo/README.md /repo/nope.md",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "rm: cannot remove '/repo/README.md': Read-only file system\n"
+      }
+    },
+    {
+      "id": "github_rm_missing_file_is_missing",
+      "seq": 530019,
+      "targets": [
+        "github"
+      ],
+      "command": "rm /repo/nope.md",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "rm: cannot remove '/repo/nope.md': No such file or directory\n"
+      }
+    },
+    {
+      "id": "github_unlink_existing_file_is_refused_not_missing",
+      "seq": 530020,
+      "targets": [
+        "github"
+      ],
+      "command": "unlink /repo/README.md",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unlink: cannot unlink '/repo/README.md': Read-only file system\n"
+      }
     }
   ]
 }

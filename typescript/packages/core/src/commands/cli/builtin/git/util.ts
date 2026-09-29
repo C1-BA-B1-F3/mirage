@@ -18,11 +18,18 @@ import type { FlagView } from '../../../spec/flag_view.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { GitError } from './errors.ts'
 import type { CLIInvocation } from '../../types.ts'
-import { UnrecognizedArgumentError } from './errors.ts'
+import { BadConfigValueError, UnrecognizedArgumentError } from './errors.ts'
 
 const ROOT = '/'
 // The end-of-options marker, which the parser consumes.
 const MARKER = '--'
+const TRUE_WORDS = ['true', 'yes', 'on']
+const FALSE_WORDS = ['false', 'no', 'off', '']
+// git_parse_signed: strtoimax in base 0 after C-locale space, then at most one
+// unit, and the product has to fit an int.
+const INTEGER = /^[ \t\n\v\f\r]*([-+]?)(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)([kKmMgG]?)$/
+const UNIT_SHIFTS: Readonly<Record<string, number>> = { '': 0, k: 10, m: 20, g: 30 }
+const INT_BITS = 31
 
 const ENC = new TextEncoder()
 
@@ -177,4 +184,54 @@ export function fatal(exc: GitError): CommandFnResult {
   if (exc.stream === 'stdout') return [data, new IOResult({ exitCode: exc.code })]
   const told = exc.report === '' ? null : ENC.encode(exc.report)
   return [told, new IOResult({ exitCode: exc.code, stderr: data })]
+}
+
+/**
+ * A config boolean read the way git's config callbacks read one.
+ *
+ * Every occurrence is parsed and the last one wins, so a value git cannot read
+ * fails even when a later line would have read fine. A value is
+ * `true`/`yes`/`on` or `false`/`no`/`off` in any case, empty for false, or an
+ * integer for whether it is nonzero (pinned against git 2.54).
+ *
+ * @param values every value the variable takes, in file order; a bare name
+ *   arrives as `true`
+ * @param key the variable, section and name lowercased
+ * @param fallback the answer when the variable is unset
+ */
+export function gitBool(values: readonly string[], key: string, fallback: boolean): boolean {
+  let answer = fallback
+  for (const value of values) {
+    const word = value.toLowerCase()
+    if (TRUE_WORDS.includes(word)) answer = true
+    else if (FALSE_WORDS.includes(word)) answer = false
+    else {
+      const number = integer(value)
+      if (number === null) throw new BadConfigValueError(value, key)
+      answer = number !== 0
+    }
+  }
+  return answer
+}
+
+/**
+ * git_parse_int: the integer a config value spells, null for none.
+ *
+ * Hex after `0x` and octal after a leading zero, then an optional `k`, `m` or
+ * `g`; a product outside an int is no integer.
+ */
+function integer(value: string): number | null {
+  const match = INTEGER.exec(value)
+  if (match === null) return null
+  const [, sign = '', digits = '', unit = ''] = match
+  const hex = /^0[xX]/.test(digits)
+  const magnitude = hex
+    ? parseInt(digits.slice(2), 16)
+    : parseInt(digits, digits.startsWith('0') ? 8 : 10)
+  const number = sign === '-' ? -magnitude : magnitude
+  const factor = 2 ** (UNIT_SHIFTS[unit.toLowerCase()] ?? 0)
+  const lowest = Math.floor(-(2 ** INT_BITS) / factor)
+  const highest = Math.floor((2 ** INT_BITS - 1) / factor)
+  if (number < lowest || number > highest) return null
+  return number * factor
 }

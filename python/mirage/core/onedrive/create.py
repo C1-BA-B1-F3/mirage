@@ -24,5 +24,5 @@ async def create(accessor: OneDriveAccessor, path: PathSpec) -> None:
     timer = start_op()
     url = item_url(accessor.config, "/" + stripped, action="/content")
     await graph_put_bytes(accessor.config, url, b"", session=accessor.pool)
-    record("create", stripped, "onedrive", 0, timer)
+    record("create", path.virtual, "onedrive", 0, timer)
     await invalidate_after_write(path)

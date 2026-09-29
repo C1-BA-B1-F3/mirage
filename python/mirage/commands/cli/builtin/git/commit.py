@@ -19,22 +19,25 @@ from dulwich.index import commit_tree
 from dulwich.objects import Commit, ObjectID
 from dulwich.repo import BaseRepo
 
+from mirage.commands.cli.builtin.git.add import stage_tracked
 from mirage.commands.cli.builtin.git.changes import head_entries
-from mirage.commands.cli.builtin.git.errors import (GitError,
-                                                    MissingMessageError,
-                                                    NothingToCommitError,
-                                                    NoWorkspaceError,
-                                                    UnmergedIndexError)
-from mirage.commands.cli.builtin.git.index import read_index
+from mirage.commands.cli.builtin.git.diff_output import commit_summary
+from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
+    AllWithPathsError, GitError, MissingMessageError, NothingToCommitError,
+    NoWorkspaceError, PartialCommitError, UnknownSwitchError,
+    UnmergedIndexError)
+from mirage.commands.cli.builtin.git.index import read_index, write_index
 from mirage.commands.cli.builtin.git.objects import abbrev_for
 from mirage.commands.cli.builtin.git.reflog import record
 from mirage.commands.cli.builtin.git.refs import (HEAD_REF, detach_head,
                                                   read_head, write_ref)
+from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.session import opened
 from mirage.commands.cli.builtin.git.status import render_report
 from mirage.commands.cli.builtin.git.summary import report
 from mirage.commands.cli.builtin.git.types import IndexState
-from mirage.commands.cli.builtin.git.util import fatal, links_of
+from mirage.commands.cli.builtin.git.util import (  # yapf: disable
+    check_operands, escaped, fatal, links_of, start_point, switches)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
@@ -137,6 +140,12 @@ async def commit(
     editor, which a mount has no way to offer, and inventing a message
     would put an unreviewed one into history.
 
+    ``-a`` restages every tracked path first, as ``add -u`` would, and
+    the index keeps that staging only once the commit is written. git's
+    ``-a`` also resolves conflicted paths and records a merge commit
+    from ``MERGE_HEAD``; this build writes no merge commits, so an
+    unmerged index is refused with or without ``-a``.
+
     Args:
         inv (CLIInvocation[None]): the line's invocation record.
             git declares no config_model; the planes it reads
@@ -151,13 +160,22 @@ async def commit(
     try:
         if dispatch is None or stat_path is None:
             raise NoWorkspaceError()
+        check_operands(inv.texts, UnknownSwitchError, escaped(inv.argv),
+                       switches(inv))
+        staging = fl.as_bool("all")
+        if inv.texts:
+            raise (AllWithPathsError if staging else PartialCommitError)(
+                inv.texts[0])
         message = fl.as_str("message")
         if not message:
             raise MissingMessageError()
-        repo, location = await opened(fl, doors)
+        repo, location = await opened(fl, doors, work_tree=True)
         state = await read_index(dispatch, location.gitdir)
         if state.conflicts:
             raise UnmergedIndexError()
+        if staging:
+            await stage_tracked(dispatch, stat_path, location, state,
+                                links_of(doors))
         head = await read_head(dispatch, location.gitdir)
         before = await asyncio.to_thread(head_entries, repo)
         after = {
@@ -168,6 +186,7 @@ async def commit(
             raise NothingToCommitError(await
                                        render_report(dispatch, stat_path, repo,
                                                      location, head,
+                                                     start_point(fl),
                                                      links_of(doors)))
         parents = [] if before is None else [repo.refs[HEAD_REF]]
         who = identity(fl, doors.session_view)
@@ -178,13 +197,19 @@ async def commit(
             await write_ref(dispatch, location.commondir, head.ref, written.id)
         else:
             await detach_head(dispatch, location.gitdir, written.id)
+        if staging:
+            await write_index(dispatch, location.gitdir, state)
         await record(
-            dispatch, location.gitdir, head.ref,
+            dispatch, location.gitdir, location.commondir, head.ref,
             parents[0] if parents else None, written.id, who, when,
             f"commit{ROOT_NOTE if before is None else ''}: "
             f"{message.splitlines()[0]}")
+        fully = await config_bool(dispatch, location, b"core", b"quotepath",
+                                  True)
+        changes = await asyncio.to_thread(commit_summary, repo, before or {},
+                                          tree, fully)
     except GitError as exc:
         return fatal(exc)
-    body = report(repo.object_store, written, head.branch, before or {}, tree,
-                  abbrev_for(repo), before is None)
+    body = report(written, head.branch, changes, abbrev_for(repo), before
+                  is None)
     return yield_bytes(body), IOResult()

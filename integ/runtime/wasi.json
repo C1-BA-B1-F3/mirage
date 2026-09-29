@@ -112,24 +112,36 @@
           "command": "python3 -c \"open('/ram/new.txt', 'w').close()\"",
           "expect": {
             "exit": 0,
-            "ops_contain": ["create /ram/new.txt"],
-            "ops_absent": ["write /ram/new.txt"]
+            "ops_contain": [
+              "create /ram/new.txt"
+            ],
+            "ops_absent": [
+              "write /ram/new.txt"
+            ]
           }
         },
         {
           "command": "cat /ram/new.txt",
-          "expect": { "exit": 0, "stdout": "" }
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
         },
         {
           "command": "python3 -c \"open('/ram/seed.txt', 'w').close()\"",
           "expect": {
             "exit": 0,
-            "ops_contain": ["truncate /ram/seed.txt"]
+            "ops_contain": [
+              "truncate /ram/seed.txt"
+            ]
           }
         },
         {
           "command": "cat /ram/seed.txt",
-          "expect": { "exit": 0, "stdout": "" }
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
         },
         {
           "command": "python3 -c \"open('/ram/new.txt', 'x')\"",
@@ -143,7 +155,9 @@
           "expect": {
             "exit": 0,
             "stdout": "fresh",
-            "ops_contain": ["create /ram/fresh.txt"]
+            "ops_contain": [
+              "create /ram/fresh.txt"
+            ]
           }
         },
         {
@@ -429,7 +443,9 @@
       "steps": [
         {
           "command": "ln -s t.txt /ram/lk && ln -s d /ram/dlk",
-          "expect": { "exit": 0 }
+          "expect": {
+            "exit": 0
+          }
         },
         {
           "command": "python3 -c \"import os\nfor e in sorted(os.scandir('/ram'), key=lambda x: x.name):\n    print(e.name, 'link' if e.is_symlink() else ('dir' if e.is_dir() else 'file'))\"",
@@ -463,7 +479,9 @@
       "steps": [
         {
           "command": "ln -s /ram/real/t.txt /ram/real/lk && ln -s /ram/real/sub /ram/real/dlk && ln -s /ram/real /ram/alias",
-          "expect": { "exit": 0 }
+          "expect": {
+            "exit": 0
+          }
         },
         {
           "command": "python3 -c \"import os\nfor e in sorted(os.scandir('/ram/alias'), key=lambda x: x.name):\n    print(e.name, 'link' if e.is_symlink() else ('dir' if e.is_dir() else 'file'))\"",
@@ -732,6 +750,71 @@
           "expect": {
             "exit": 0,
             "stdout": "['0.json', '1.json', '2.json', '3.json']\n4\n10\nEIO\nEIO\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "shell_cwd",
+      "hosts": [
+        "python"
+      ],
+      "world": {
+        "runtimes": [
+          "wasi",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "sub/item": "hello\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /data/sub",
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path.cwd()); print(Path('item').read_text(), end=''); Path('out').write_text('written')\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data/sub\nhello\n"
+          }
+        },
+        {
+          "command": "cat /data/sub/out",
+          "expect": {
+            "exit": 0,
+            "stdout": "written"
+          }
+        },
+        {
+          "command": "PWD=/wrong python3 -c \"import os; print(os.getcwd()); os.chdir('..'); raise ValueError('expected')\"",
+          "expect": {
+            "exit": 1,
+            "stdout": "/data/sub\n",
+            "stderr_contains": "expected"
+          }
+        },
+        {
+          "command": "python3 -c \"from __future__ import annotations; import os; print(os.getcwd())\"; pwd",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data/sub\n/data/sub\n"
+          }
+        },
+        {
+          "command": "printf \"import os; print(os.getcwd())\" > script.py; python3 script.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data/sub\n"
           }
         }
       ]

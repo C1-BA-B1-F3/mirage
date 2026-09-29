@@ -89,13 +89,50 @@ async def resolve_text_input(
     raise ValueError(error_message)
 
 
-def is_stdin(path: PathSpec) -> bool:
-    return path.raw_path == "-" or path.virtual == "/dev/stdin"
+def is_stdin(path: PathSpec, dash: bool = True) -> bool:
+    """Whether an operand reads stdin.
+
+    Args:
+        path (PathSpec): the operand.
+        dash (bool): a literal ``-`` names stdin, as it does for most
+            GNU tools; util-linux ``rev`` and binutils ``strings`` open it
+            as a file, so only ``/dev/stdin`` is stdin to them.
+    """
+    return (dash and path.raw_path == "-") or path.virtual == "/dev/stdin"
+
+
+def operand_label(path: PathSpec, stdin_name: str) -> str:
+    """The name a command's output gives an operand.
+
+    Only a literal ``-`` is stdin by name: ``/dev/stdin`` reads the same
+    bytes, but GNU grep, head and tail name it as the path it is.
+
+    Args:
+        path (PathSpec): the operand.
+        stdin_name (str): the command's name for ``-``.
+    """
+    return stdin_name if path.raw_path == "-" else path.raw_path
 
 
 def stdin_stream(
-        read: PolymorphicReadFn, stdin: ByteSource | None
+    read: PolymorphicReadFn,
+    stdin: ByteSource | None,
+    sole: bool = False,
+    dash: bool = True,
 ) -> Callable[[PathSpec], AsyncIterator[bytes]]:
+    """Read each operand from its backend, or from stdin for a stdin one.
+
+    Every stdin operand shares one cursor, so a later ``-`` never replays
+    bytes an earlier one read, and the cursor never closes the input a
+    later one may still read.
+
+    Args:
+        read (PolymorphicReadFn): the backend reader.
+        stdin (ByteSource | None): the invocation's input.
+        sole (bool): stdin has exactly one reader, which takes the input
+            itself, so a scan that stops early closes it.
+        dash (bool): a literal ``-`` names stdin (see ``is_stdin``).
+    """
     backend = normalized_read(read)
     source = resolve_source(stdin)
 
@@ -106,7 +143,9 @@ def stdin_stream(
     def stream(path: PathSpec) -> AsyncIterator[bytes]:
         # Bind the backend stream while its mount cache context is active.
         # Byte consumption stays lazy; only stdin needs a shared cursor.
-        return input_stream() if is_stdin(path) else backend(path)
+        if not is_stdin(path, dash):
+            return backend(path)
+        return source if sole else input_stream()
 
     return stream
 
@@ -123,11 +162,18 @@ def stdin_bytes(
 
 
 def stdin_stat(
-    stat: Callable[..., Awaitable[FileStat]]
+    stat: Callable[..., Awaitable[FileStat]],
+    dash: bool = True,
 ) -> Callable[[PathSpec], Awaitable[FileStat]]:
+    """Stat each operand on its backend, or as a stream for a stdin one.
+
+    Args:
+        stat (Callable): the backend stat.
+        dash (bool): a literal ``-`` names stdin (see ``is_stdin``).
+    """
 
     async def probe(path: PathSpec) -> FileStat:
-        if is_stdin(path):
+        if is_stdin(path, dash):
             return FileStat(name="-", type=FileType.FIFO)
         return await stat(path)
 

@@ -48,10 +48,9 @@ const pg = new PostgresVFS({
 | --- | --- | --- |
 | `dsn` | required | Postgres connection string. Redacted in snapshots. |
 | `schemas` | none | Optional list to limit which schemas appear in the tree. |
-| `defaultRowLimit` | `1000` | Default LIMIT applied to ad-hoc reads. |
-| `maxReadRows` | `10_000` | Hard ceiling per read. |
+| `defaultRowLimit` | `1000` | Rows a windowed read returns when it passes an offset but no limit. |
+| `maxReadRows` | `10_000` | Hard ceiling per read. A whole read past it is refused; `head -n` / `tail -n` past it print that many rows, then a notice on stderr, and exit 1. |
 | `maxReadBytes` | `10 MiB` | Hard ceiling per read. |
-| `defaultSearchLimit` | `100` | Default LIMIT for search-style queries. |
 
 ## Mount mode
 

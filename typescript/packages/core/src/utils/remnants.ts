@@ -13,7 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { FileStat, FileType, PathSpec } from '../types.ts'
-import { isMissingPath } from './errors.ts'
+import { isEnotdir, isMissingPath } from './errors.ts'
+import { rstripSlash } from './slash.ts'
 
 export type Allowed = (virtual: string) => boolean
 
@@ -62,7 +63,7 @@ export interface RemnantChannel {
  * paths rather than names; both normalize to the last component.
  */
 export function entryName(entry: string): string {
-  const trimmed = entry.replace(/\/+$/, '')
+  const trimmed = rstripSlash(entry)
   return trimmed.slice(trimmed.lastIndexOf('/') + 1)
 }
 
@@ -75,7 +76,7 @@ export function entryName(entry: string): string {
  * cannot mean different things at different doors.
  */
 export function visibleBelow(base: string, names: Iterable<string>, allowed: Allowed): boolean {
-  const root = base.replace(/\/+$/, '')
+  const root = rstripSlash(base)
   for (const name of names) {
     if (allowed(`${root}/${entryName(name)}`)) return true
   }
@@ -84,8 +85,8 @@ export function visibleBelow(base: string, names: Iterable<string>, allowed: All
 
 /** The child PathSpec one cascade step descends to. */
 export function childSpec(spec: PathSpec, name: string): PathSpec {
-  const base = spec.virtual.replace(/\/+$/, '')
-  const key = spec.vfsPath.replace(/\/+$/, '')
+  const base = rstripSlash(spec.virtual)
+  const key = rstripSlash(spec.vfsPath)
   return new PathSpec({
     virtual: `${base}/${name}`,
     directory: spec.virtual,
@@ -117,7 +118,7 @@ export async function removeRemnants(
   try {
     entries = await channel.readdir(spec)
   } catch (err) {
-    if (isMissingPath(err)) return
+    if (isMissingPath(err) || isEnotdir(err)) return
     throw err
   }
   for (const entry of entries) {
@@ -128,7 +129,7 @@ export async function removeRemnants(
     try {
       row = await channel.stat(child)
     } catch (err) {
-      if (isMissingPath(err)) continue
+      if (isMissingPath(err) || isEnotdir(err)) continue
       throw err
     }
     if (row instanceof FileStat && row.type === FileType.DIRECTORY) {
@@ -137,13 +138,13 @@ export async function removeRemnants(
       try {
         await channel.unlink(child)
       } catch (err) {
-        if (!isMissingPath(err)) throw err
+        if (!(isMissingPath(err) || isEnotdir(err))) throw err
       }
     }
   }
   try {
     await channel.rmdir(spec)
   } catch (err) {
-    if (!isMissingPath(err)) throw err
+    if (!(isMissingPath(err) || isEnotdir(err))) throw err
   }
 }

@@ -24,6 +24,7 @@ from mirage.commands.builtin.utils.identity import (UNKNOWN_NAME, Identity,
 from mirage.commands.builtin.utils.strftime import gnu_strftime
 from mirage.types import (DEVICE_NUMBERS_KEY, LINK_TARGET_KEY, FileStat,
                           FileType, LsTimeKind)
+from mirage.utils.stat_view import content_size, is_dir
 
 # GNU's --block-size units: the letter, its 1024-based factor and the two
 # suffixes it prints (K for KiB, kB for KB). xstrtoumax's table, which
@@ -192,6 +193,12 @@ def scaled_size(n: int, block: BlockSize | None, human: bool) -> str:
 # What a stat field a VFS cannot know renders as, in `stat -c` and in
 # the inode and block columns of `find -ls`.
 UNKNOWN_STAT_FIELD = "?"
+
+# FileStat.extra key marking an `ls` row whose stat failed: the listing
+# named the entry, so GNU keeps its row, and every fact only a stat
+# supplies prints as UNKNOWN_STAT_FIELD. Its type is a directory's when
+# the listing slash-marked it, and unknown otherwise.
+STAT_FAILED_KEY = "stat_failed"
 
 
 def human_scaled(n: int, base: int, units: tuple[str, ...]) -> str:
@@ -371,8 +378,10 @@ def _ls_size_and_time(s: FileStat,
 
     A device row carries its major and minor numbers where GNU puts
     them. An entry with neither a size nor a time (a synthetic
-    API-backend directory) shows ``-`` in both rather than inventing
-    size 0 and the epoch, and so does a time kind no backend reports.
+    API-backend directory) shows ``-`` for the time rather than
+    inventing the epoch, and so does a time kind no backend reports;
+    its size is ``-`` too unless it is a directory, whose size is
+    always ``DIR_SIZE``.
 
     Args:
         s (FileStat): the row's stat.
@@ -382,8 +391,6 @@ def _ls_size_and_time(s: FileStat,
             the ``--block-size`` scale.
     """
     when_iso = time_of(s, columns.time_kind)
-    # An unknown modification time renders the epoch, as it always has;
-    # only a kind no backend reports at all (birth) is honestly ``-``.
     known_time = columns.time_kind is not LsTimeKind.BIRTH
     dev = s.extra.get(DEVICE_NUMBERS_KEY) if s.extra else None
     if dev:
@@ -391,10 +398,9 @@ def _ls_size_and_time(s: FileStat,
                 _ls_time_string(when_iso, find_rule=find_rule)
                 if find_rule else styled_time(when_iso, columns.time_style))
         return f"{dev[0]}, {dev[1]}", when
-    if s.size is None and s.modified is None:
-        return UNKNOWN_NAME, UNKNOWN_NAME
-    size = scaled_size(s.size or 0, columns.block_size, human)
-    if not known_time:
+    size = (UNKNOWN_NAME if not is_dir(s) and s.size is None else scaled_size(
+        content_size(s), columns.block_size, human))
+    if not known_time or when_iso is None:
         return size, UNKNOWN_NAME
     if find_rule:
         return size, _ls_time_string(when_iso, find_rule=True)
@@ -432,7 +438,9 @@ def format_ls_long(
     session's profile; ``-`` when nothing names one. ``-g`` and ``-o``
     drop a column, ``-i`` leads with the inode column and ``-Z`` puts the
     context column before the size, both ``?`` as GNU prints them when
-    the filesystem has neither.
+    the filesystem has neither. A row whose stat failed is GNU's: the
+    type letter the listing gave, then ``?`` for every stat field, the
+    time right-aligned in its column.
 
     Args:
         stats (list[FileStat]): the rows to render.
@@ -446,20 +454,31 @@ def format_ls_long(
         names (list[str] | None): the name column per row when the
             caller decorated it (``--hyperlink``), else the row's own.
     """
-    cells = [_ls_size_and_time(s, human, columns=columns) for s in stats]
+    cells = [(UNKNOWN_STAT_FIELD,
+              UNKNOWN_STAT_FIELD) if s.extra.get(STAT_FAILED_KEY) else
+             _ls_size_and_time(s, human, columns=columns) for s in stats]
     width = size_width if size_width is not None else max(
         (len(size) for size, _ in cells), default=1)
+    time_width = max((len(when) for _, when in cells), default=1)
     out: list[str] = []
     for i, (s, (raw_size, when)) in enumerate(zip(stats, cells)):
-        fields = [ls_mode_string(s), "1"]
+        failed = bool(s.extra.get(STAT_FAILED_KEY))
+        if failed:
+            type_char = ("d" if s.type == FileType.DIRECTORY else
+                         UNKNOWN_STAT_FIELD)
+            fields = [type_char + UNKNOWN_STAT_FIELD * 9, UNKNOWN_STAT_FIELD]
+        else:
+            fields = [ls_mode_string(s), "1"]
         if columns.owner:
-            fields.append(owner_name(s.uid, identity))
+            fields.append(
+                UNKNOWN_STAT_FIELD if failed else owner_name(s.uid, identity))
         if columns.group:
-            fields.append(group_name(s.gid, identity))
+            fields.append(
+                UNKNOWN_STAT_FIELD if failed else group_name(s.gid, identity))
         if columns.context:
             fields.append(UNKNOWN_STAT_FIELD)
         fields.append(raw_size.rjust(width))
-        fields.append(when)
+        fields.append(when.rjust(time_width) if failed else when)
         fields.append(names[i] if names is not None else ls_name(s))
         lead = f"{UNKNOWN_STAT_FIELD} " if columns.inode else ""
         out.append(lead + " ".join(fields))

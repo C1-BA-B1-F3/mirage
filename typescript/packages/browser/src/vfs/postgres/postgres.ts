@@ -12,13 +12,16 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { PostgresAccessor } from '@struktoai/mirage-core/accessor/postgres'
+
 import { POSTGRES_COMMANDS } from '@struktoai/mirage-core/commands/builtin/postgres/index'
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { PgDriver } from '@struktoai/mirage-core/core/postgres/_driver'
+
 import { POSTGRES_OPS } from '@struktoai/mirage-core/ops/postgres/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import {
   redactPostgresConfig,
   resolvePostgresConfig,
@@ -30,7 +33,9 @@ import type {
 } from '@struktoai/mirage-core/vfs/postgres/config'
 import { POSTGRES_PROMPT } from '@struktoai/mirage-core/vfs/postgres/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
+
 import { NeonPgDriver } from './neon_driver.ts'
+
 export interface PostgresVFSOptions {
   config: PostgresConfig
   prefix?: string
@@ -75,11 +80,6 @@ export class PostgresVFS extends BaseVFS {
     }
   }
 
-  // The rows live in the database, so a restored mount reaches them
-  // through its config alone — there is nothing to take back.
-  override loadState(_state: PostgresVFSState): Promise<void> {
-    return Promise.resolve()
-  }
   override async close(): Promise<void> {
     await this.driver.close()
     await super.close()

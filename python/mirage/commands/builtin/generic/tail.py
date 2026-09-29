@@ -8,9 +8,11 @@ from typing import Any, Callable
 from mirage.cache.read_through import cache_aware_read
 from mirage.commands.builtin.tail_counts import (TailCounts, number_flag_error,
                                                  parse_counts, parse_seconds)
+from mirage.commands.builtin.utils.constants import STDIN_HEADER_NAME
 from mirage.commands.builtin.utils.operands import operands_io, split_readable
-from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
-                                                  stdin_stat, stdin_stream)
+from mirage.commands.builtin.utils.stream import (is_stdin, operand_label,
+                                                  resolve_source, stdin_stat,
+                                                  stdin_stream)
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.quote import quote_text
@@ -19,6 +21,7 @@ from mirage.commands.spec.argmatch import ArgmatchMatch, argmatch
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import argmatch_error
+from mirage.io.stream import async_chain
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileType, PathSpec, PolymorphicReadFn, StatFn
 from mirage.utils.errors import FS_ERRORS, fs_error_line, fs_strerror
@@ -262,8 +265,7 @@ async def _tail_multi(
 ) -> AsyncIterator[bytes]:
     for i, p in enumerate(paths):
         if show_headers:
-            label = "(standard input)" if is_stdin(p) else p.raw_path
-            header = f"==> {label} <==\n"
+            header = f"==> {operand_label(p, STDIN_HEADER_NAME)} <==\n"
             if i > 0:
                 header = "\n" + header
             yield header.encode()
@@ -461,8 +463,7 @@ async def _follow(
                 waiting.append((slot, p, APPEARED))
             continue
         if show_headers:
-            label = "(standard input)" if is_stdin(p) else p.raw_path
-            header = f"==> {label} <==\n"
+            header = f"==> {operand_label(p, STDIN_HEADER_NAME)} <==\n"
             yield (("\n" if last is not None else "") + header).encode()
         last = slot
         for chunk in chunks:
@@ -520,7 +521,8 @@ async def _follow(
             data, positions[slot] = grown
             if data:
                 if show_headers and last != slot:
-                    yield f"\n==> {p.raw_path} <==\n".encode()
+                    label = operand_label(p, STDIN_HEADER_NAME)
+                    yield f"\n==> {label} <==\n".encode()
                 last = slot
                 yield data
     _note(io, "tail: no files remaining\n")
@@ -650,9 +652,12 @@ async def tail_generic(
                           from_byte=counts.from_byte,
                           show_headers=show_headers), io
     source = resolve_source(opts.stdin, "tail: missing operand")
-    return tail(
-        source,
-        n=counts.lines,
-        c=counts.byte_count,
-        from_line=counts.from_line,
-        from_byte=counts.from_byte), IOResult(stderr=retry_warning or None)
+    body = tail(source,
+                n=counts.lines,
+                c=counts.byte_count,
+                from_line=counts.from_line,
+                from_byte=counts.from_byte)
+    if parsed.verbose and not parsed.quiet:
+        # -v heads a stdin nobody named with the name it gives `-`.
+        body = async_chain([f"==> {STDIN_HEADER_NAME} <==\n".encode(), body])
+    return body, IOResult(stderr=retry_warning or None)

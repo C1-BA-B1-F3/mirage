@@ -39,6 +39,13 @@ import {
 } from './errors.ts'
 import { short } from './format.ts'
 import { blockingRef, deleteRef, loadRefs, TAG_PREFIX, validRefName, writeRef } from './refs.ts'
+import {
+  filterWords,
+  keptRefs,
+  listModeOption,
+  refFilter,
+  withoutFilterValues,
+} from './ref_filter.ts'
 import { opened, repoArgs, type Repo } from './repo.ts'
 import { resolveObject } from './revparse.ts'
 import { checkOperands, escaped, fatal, switches } from './util.ts'
@@ -219,10 +226,15 @@ export async function buildTag(
  * lightweight tag, a pointer and nothing more; `-a` or `-m` writes a tag object
  * carrying a message and a tagger, and `-a` without `-m` is refused for the
  * reason `commit` refuses a missing message: there is no editor to open.
+ *
+ * The ref filters (`--contains`, `--merged`, `--points-at` and their negations)
+ * imply a listing the way `-n` does, so their operands are patterns.
  */
 export async function tag(inv: CLIInvocation): Promise<CommandFnResult> {
   const doors = inv.doors ?? {}
-  const texts = [...inv.texts]
+  const words = filterWords(inv)
+  const texts = withoutFilterValues(inv.texts, words)
+  const filtered = words.length > 0
   const fl = new FlagView(inv.flags)
   let name: string
   let was: string | undefined
@@ -239,7 +251,7 @@ export async function tag(inv: CLIInvocation): Promise<CommandFnResult> {
     // a listing, which is why it counts here too.
     if (
       (flags.annotate || flags.force) &&
-      (flags.listing || flags.remove || flags.lines !== undefined || texts.length === 0)
+      (flags.listing || flags.remove || flags.lines !== undefined || filtered || texts.length === 0)
     ) {
       throw new TagUsageError()
     }
@@ -247,12 +259,15 @@ export async function tag(inv: CLIInvocation): Promise<CommandFnResult> {
     // is the incompatible pair and `-d -f -n1` the usage, both exiting 129,
     // where `-d -n1` alone dies here.
     if (flags.remove && flags.lines !== undefined) throw new ListModeOnlyError()
+    const listOnly = flags.remove ? listModeOption(words) : null
+    if (listOnly !== null) throw new ListModeOnlyError(listOnly)
     // git reads the count while parsing the format it lists with, which is
     // after both usage refusals above and before any ref is read: a repository
     // holding no tags refuses this one too.
     if (flags.lines !== undefined && flags.lines < 0) throw new TagLinesError(flags.lines)
     const repo = await opened(fl, doors)
     abbrev = repo.abbrev
+    const filter = await refFilter(repo, words)
     const known = await loadRefs(dispatch, repo.location.gitdir, repo.location.commondir)
     if (flags.remove) {
       const out: string[] = []
@@ -292,8 +307,16 @@ export async function tag(inv: CLIInvocation): Promise<CommandFnResult> {
         new IOResult({ exitCode: err.length > 0 ? 1 : 0, stderr: ENC.encode(err.join('')) }),
       ]
     }
-    if (flags.listing || flags.lines !== undefined || texts.length === 0) {
-      const names = selectedNames(tagNames(known), texts)
+    if (flags.listing || flags.lines !== undefined || filtered || texts.length === 0) {
+      let names = selectedNames(tagNames(known), texts)
+      if (filter !== null) {
+        const kept = await keptRefs(
+          repo,
+          filter,
+          names.map((each) => [each, known.get(`${TAG_PREFIX}${each}`) ?? ''] as const),
+        )
+        names = names.filter((each) => kept.has(each))
+      }
       let messages: Map<string, string[]> | null = null
       // -n0 (and any other count that prints no line) is a plain listing in
       // git, so nothing is read and nothing is padded.

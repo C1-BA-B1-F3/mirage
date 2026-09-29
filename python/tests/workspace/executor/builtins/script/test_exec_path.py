@@ -149,3 +149,39 @@ def test_env_split_string_shebang_runs_with_options(ws):
     result = _run(ws, "/work/s.sh")
     assert result.stdout == b"ok\n"
     assert result.stderr == b"+ echo ok\n"
+
+
+@pytest.mark.asyncio
+async def test_virtual_program_needs_only_its_own_permission(ws):
+    await ws.shell("ln -s /usr/bin/echo /work/say")
+    ws.create_session("narrow", profile={"commands": {"allow": ["echo"]}})
+    for path in ("/usr/bin/echo", "/usr/bin/../bin/echo", "/work/say"):
+        io = await ws.shell(f"{path} 'two words'", session_id="narrow")
+        assert io.exit_code == 0
+        assert io.stdout == b"two words\n"
+    io = await ws.shell("/usr/bin/cat /work/say", session_id="narrow")
+    assert io.exit_code == 127
+
+
+@pytest.mark.asyncio
+async def test_virtual_program_still_checks_target_policy(ws):
+    ws.create_session(
+        "narrow",
+        profile={"commands": {
+            "allow": ["echo"],
+            "deny": ["echo blocked"]
+        }})
+    io = await ws.shell("/usr/bin/echo blocked", session_id="narrow")
+    assert io.exit_code == 126
+    assert io.stdout in (None, b"")
+
+
+@pytest.mark.asyncio
+async def test_virtual_program_skips_functions_and_preserves_caller(ws):
+    await ws.shell("cat() { echo shadow; }; alias cat='echo alias'; "
+                   "shopt -s expand_aliases")
+    io = await ws.shell("/usr/bin/cat /usr/bin/echo")
+    assert io.exit_code == 0
+    assert b'command echo' in io.stdout
+    io = await ws.shell("cat")
+    assert io.stdout == b"alias\n"

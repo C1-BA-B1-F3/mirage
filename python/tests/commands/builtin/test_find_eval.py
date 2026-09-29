@@ -14,6 +14,7 @@ from mirage.commands.builtin.find_eval import (Action, And, Empty, FindArgs,
                                                without_prune)
 # yapf: enable
 from mirage.types import FindType
+from mirage.utils.stat_view import DIR_SIZE
 
 
 def _entry(key="/data/a.txt",
@@ -434,34 +435,27 @@ def test_display_path_joins_like_apply_mount_prefix():
     assert display_path("/data", "/") == "/data"
 
 
-def test_emit_start_path_directory_size_zero():
-    # A directory start path contributes size 0: -size +N excludes it,
-    # -size -N keeps it (#318).
-    results: list[str] = []
-    emit_start_path(results,
-                    "/data",
-                    "data",
-                    kind="d",
-                    is_empty=None,
-                    exists=True,
-                    tree=TrueNode(),
-                    maxdepth=None,
-                    mindepth=None,
-                    min_size=5,
-                    max_size=None)
-    assert results == []
-    emit_start_path(results,
-                    "/data",
-                    "data",
-                    kind="d",
-                    is_empty=None,
-                    exists=True,
-                    tree=TrueNode(),
-                    maxdepth=None,
-                    mindepth=None,
-                    min_size=None,
-                    max_size=5)
-    assert results == ["/data"]
+def test_emit_start_path_counts_a_directory_as_dir_size():
+
+    def emit(min_size: int | None, max_size: int | None) -> list[str]:
+        results: list[str] = []
+        emit_start_path(results,
+                        "/data",
+                        "data",
+                        kind="d",
+                        is_empty=None,
+                        exists=True,
+                        tree=TrueNode(),
+                        maxdepth=None,
+                        mindepth=None,
+                        min_size=min_size,
+                        max_size=max_size)
+        return results
+
+    assert emit(5, None) == ["/data"]
+    assert emit(None, 5) == []
+    assert emit(DIR_SIZE, DIR_SIZE) == ["/data"]
+    assert emit(DIR_SIZE + 1, None) == []
 
 
 def test_unrespell_raw_round_trip():

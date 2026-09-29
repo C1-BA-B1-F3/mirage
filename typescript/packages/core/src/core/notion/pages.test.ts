@@ -23,6 +23,7 @@ import {
   getDatabase,
   getPage,
   queryDataSource,
+  queryDataSourcePage,
   searchDataSources,
   searchPages,
   searchTopLevelPages,
@@ -339,4 +340,32 @@ describe('createComment', () => {
     expect(transport.invocations).toEqual([{ name: 'API-create-a-comment', args: body }])
     expect(result).toEqual(comment)
   })
+})
+
+it('refuses a truncated query even after a complete first page', async () => {
+  const transport = new FakeTransport()
+  transport.responses.push(
+    { results: [{ id: 'first' }], has_more: true, next_cursor: 'next' },
+    {
+      results: [{ id: 'last' }],
+      has_more: false,
+      request_status: { type: 'incomplete', incomplete_reason: 'query_result_limit_reached' },
+    },
+  )
+  await expect(queryDataSource(transport, 'ds')).rejects.toThrow(
+    'Notion query incomplete: query_result_limit_reached',
+  )
+  expect(transport.invocations).toHaveLength(2)
+})
+
+it('refuses a one-page query Notion marked incomplete', async () => {
+  const transport = new FakeTransport()
+  transport.responses.push({
+    results: [{ id: 'partial' }],
+    has_more: false,
+    request_status: { type: 'incomplete', incomplete_reason: 'query_result_limit_reached' },
+  })
+  await expect(queryDataSourcePage(transport, 'ds', { page_size: 10 })).rejects.toThrow(
+    'Notion query incomplete: query_result_limit_reached',
+  )
 })

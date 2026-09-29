@@ -66,13 +66,15 @@ class JobConsole:
 
         Ignored once the job has ended, so a runner still unwinding after
         a kill cannot append past the ending chunk and strand readers
-        that already stopped following.
+        that already stopped following. Ignored too once the store is
+        closed: the console was discarded, and a Redis store written
+        after close would open a client that nothing closes.
 
         Args:
             channel (Channel): which stream the bytes came from.
             data (bytes): the payload.
         """
-        if self._finished:
+        if self._finished or self._store.closed:
             return
         await self._store.append(channel, data)
 
@@ -88,6 +90,8 @@ class JobConsole:
         if self._finished:
             return
         self._finished = True
+        if self._store.closed:
+            return
         await self._store.append(Channel.CONTROL, outcome.encode())
 
     async def read_from(self,

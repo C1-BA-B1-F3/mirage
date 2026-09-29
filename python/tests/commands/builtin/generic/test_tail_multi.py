@@ -277,7 +277,7 @@ async def test_follow_name_with_retry_waits_for_a_directory_to_be_replaced():
     stream, io = await tail_generic(_paths("/d/dir"), [], _follow_opts(F=True),
                                     fs.stat, fs.read, fs.read_range)
     assert stream is not None
-    assert io.stderr == (b"tail: /d/dir: Is a directory\n"
+    assert io.stderr == (b"tail: error reading '/d/dir': Is a directory\n"
                          b"tail: /d/dir: cannot follow end of this type of "
                          b"file\n")
 
@@ -312,7 +312,7 @@ async def test_follow_gives_up_on_a_directory_without_name_retry(
                                     fs.read_range)
     assert stream is None
     assert io.exit_code == 1
-    assert io.stderr.endswith(b"tail: /d/dir: Is a directory\n"
+    assert io.stderr.endswith(b"tail: error reading '/d/dir': Is a directory\n"
                               b"tail: /d/dir: cannot follow end of this "
                               b"type of file" + suffix +
                               b"\ntail: no files remaining\n")
@@ -603,7 +603,8 @@ async def test_retry_waits_for_an_operand_whose_first_read_fails(flags):
     assert io.exit_code == 1
     assert io.stderr == (
         (b"tail: warning: --retry only effective for the initial open\n"
-         if "f" in flags else b"") + b"tail: /d/f: No such file or directory\n"
+         if "f" in flags else b"") +
+        b"tail: cannot open '/d/f' for reading: No such file or directory\n"
         b"tail: '/d/f' has appeared;  following new file\n")
 
 
@@ -616,8 +617,9 @@ async def test_follow_without_retry_gives_up_on_a_failed_first_read():
     assert stream is not None
     chunks = await _drain_for(stream, 0.3)
     assert chunks == []
-    assert io.stderr == (b"tail: /d/f: No such file or directory\n"
-                         b"tail: no files remaining\n")
+    assert io.stderr == (
+        b"tail: cannot open '/d/f' for reading: No such file or directory\n"
+        b"tail: no files remaining\n")
     assert io.exit_code == 1
 
 
@@ -673,3 +675,43 @@ async def test_follow_infinite_interval_never_polls():
     await grower
     assert b"".join(chunks) == b"l1\nl2\n"
     assert io.exit_code == 0
+
+
+def _stdin(raw: str) -> PathSpec:
+    virtual = "/dev/stdin" if raw == "/dev/stdin" else "/-"
+    return PathSpec(vfs_path=virtual.strip("/"),
+                    virtual=virtual,
+                    directory="/",
+                    resolved=True,
+                    raw_path=raw)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw, header", [
+    ("-", b"==> standard input <==\n"),
+    ("/dev/stdin", b"==> /dev/stdin <==\n"),
+])
+async def test_tail_multi_names_stdin_the_way_gnu_does(raw, header):
+    # GNU tail 9.7 heads `-` "standard input", no parentheses, and
+    # /dev/stdin as the path it is.
+
+    async def read(p):
+        return b"b\n"
+
+    out = await _collect(
+        tail_multi([_stdin(raw)], read=read, n=1, show_headers=True))
+    assert out == header + b"b\n"
+
+
+@pytest.mark.asyncio
+async def test_tail_v_heads_a_stdin_nobody_named():
+    # `printf 'b\n' | tail -v` prints `==> standard input <==` first.
+
+    async def unused(p):
+        raise AssertionError(f"no operand to reach: {p}")
+
+    out, io = await tail_generic([], [],
+                                 CommandOpts(flags={"v": True}, stdin=b"b\n"),
+                                 unused, unused)
+    assert (await
+            _collect(out), io.exit_code) == (b"==> standard input <==\nb\n", 0)

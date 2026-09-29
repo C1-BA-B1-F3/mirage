@@ -21,6 +21,8 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-f' }),
       new Option({ short: '-c' }),
       new Option({ short: '-t' }),
+      new Option({ short: '-q' }),
+      new Option({ short: '-S', type: 'str' }),
     ],
     rest: new Operand({ type: 'path' }),
   }),
@@ -30,6 +32,8 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-k' }),
       new Option({ short: '-f' }),
       new Option({ short: '-c' }),
+      new Option({ short: '-q' }),
+      new Option({ short: '-S', type: 'str' }),
       new Option({ short: '-1' }),
       new Option({ short: '-2' }),
       new Option({ short: '-3' }),
@@ -43,22 +47,26 @@ export const SPECS: Record<string, CommandSpec> = {
     rest: new Operand({ type: 'path' }),
   }),
   tar: new CommandSpec({
+    // Each option under GNU tar's own long name. Its aliases (--get,
+    // --gunzip, --ungzip) and every abbreviation resolve through
+    // LONG_OPTION_TABLES, tar's whole table, which also knows the options
+    // mirage does not declare.
     options: [
-      new Option({ short: '-c' }),
-      new Option({ short: '-x' }),
-      new Option({ short: '-t' }),
-      new Option({ short: '-z' }),
-      new Option({ short: '-j' }),
-      new Option({ short: '-J' }),
-      new Option({ short: '-v' }),
+      new Option({ short: '-c', long: '--create' }),
+      new Option({ short: '-x', long: '--extract' }),
+      new Option({ short: '-t', long: '--list' }),
+      new Option({ short: '-z', long: '--gzip' }),
+      new Option({ short: '-j', long: '--bzip2' }),
+      new Option({ short: '-J', long: '--xz' }),
+      new Option({ short: '-v', long: '--verbose' }),
       // -h archives what a symlink points at instead of the link.
-      new Option({ short: '-h' }),
+      new Option({ short: '-h', long: '--dereference' }),
       new Option({ short: '-O', long: '--to-stdout' }),
-      new Option({ short: '-f', type: 'path' }),
+      new Option({ short: '-f', long: '--file', type: 'path' }),
       // Every occurrence is kept, in order: GNU chdirs at each one and
       // fails at the first it cannot enter, so the planner has to see
       // them all, not just the last.
-      new Option({ short: '-C', type: 'path', multiple: true }),
+      new Option({ short: '-C', long: '--directory', type: 'path', multiple: true }),
       new Option({ long: '--strip-components', type: 'str' }),
       new Option({ long: '--exclude', type: 'str' }),
     ],
@@ -82,6 +90,10 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-q' }),
       new Option({ short: '-p' }),
       new Option({ short: '-t' }),
+      // -v is -l's verbose table, or the version banner when no archive is
+      // named. zipinfo's own -v (a per-entry technical dump) is not
+      // rendered: under -Z the letter is ignored.
+      new Option({ short: '-v' }),
       // Info-ZIP reads -x as a variadic list of patterns; mirage takes
       // one per occurrence, since its spec has no variadic option value
       // and `-x a -x b` says the same thing (zip's -x has the same shape).
@@ -104,7 +116,14 @@ export const SPECS: Record<string, CommandSpec> = {
     positional: [new Operand({ type: 'path' })],
     rest: new Operand({ type: 'str' }),
   }),
+  // zcat is `gzip -cd`: -f copies input that is not gzip, -q drops the
+  // warnings, and -S names the suffix a missing name is retried with.
   zcat: new CommandSpec({
+    options: [
+      new Option({ short: '-f' }),
+      new Option({ short: '-q' }),
+      new Option({ short: '-S', type: 'str' }),
+    ],
     rest: new Operand({ type: 'path' }),
   }),
   zip: new CommandSpec({

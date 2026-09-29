@@ -22,8 +22,16 @@ import { type FileStat, VFSName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { patternArg } from '../grep_pattern.ts'
-import { rgGeneric } from '../generic/rg.ts'
-import { narrowScope } from './pushdown.ts'
+import {
+  labelled,
+  needsEveryFile,
+  parseFlags,
+  refuseMissingPattern,
+  rgGeneric,
+  walkFilter,
+} from '../generic/rg.ts'
+import { walkCandidates } from '../rg_scan.ts'
+import { narrowScope, scopeRefusal } from './pushdown.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
 const ENC = new TextEncoder()
@@ -35,30 +43,45 @@ async function rgCommand(
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
   let resolved: PathSpec[] = []
+  let runOpts = opts
+  const pattern = patternArg(texts, opts.flags, 'regexp')
+  const fl = new FlagView(opts.flags, specOf('rg'))
+  const f = parseFlags(fl)
+  const refused = refuseMissingPattern(pattern, fl, f)
+  if (refused !== null) return refused
   if (paths.length > 0) {
     const first = paths[0]
     if (first === undefined) return [null, new IOResult()]
-    const pattern = patternArg(texts, opts.flags)
-    const fl = new FlagView(opts.flags, specOf('rg'))
-    const fixedString = fl.asBool('F')
     const narrowed = await narrowScope(
       accessor,
       paths,
       pattern,
-      fixedString,
+      f.fixedString,
       true,
-      fl.asBool('w'),
+      f.wholeWord,
       opts.index ?? undefined,
+      // A narrowing holds only files matching the searched literal: -v and
+      // --files-without-match print from the rest, and -f adds patterns code
+      // search never saw.
+      needsEveryFile(fl, f),
     )
     resolved = narrowed.resolved
-    if (narrowed.fileCount > SCOPE_ERROR) {
+    if (narrowed.usedSearch) {
+      // The candidates stand in for the walk, so they pass its filters (-g,
+      // -t, hidden entries, -d); none left means nothing matched, not a stdin
+      // run.
+      resolved = walkCandidates(resolved, paths, walkFilter(f), opts.cwd)
+      if (resolved.length === 0) return [new Uint8Array(), new IOResult({ exitCode: 1 })]
+      runOpts = labelled(opts)
+    }
+    // A scope this large with no trusted narrowing is refused rather than
+    // scanned blob by blob; a listing reads no blob.
+    if (narrowed.fileCount > SCOPE_ERROR && !(f.listFiles || f.typeList)) {
       return [
         null,
         new IOResult({
           exitCode: 1,
-          stderr: ENC.encode(
-            `rg: ${String(narrowed.fileCount)} files in scope, narrow the path, or use -w to enable code search\n`,
-          ),
+          stderr: ENC.encode(scopeRefusal('rg', narrowed.fileCount, f.wholeWord)),
         }),
       ]
     }
@@ -68,7 +91,7 @@ async function rgCommand(
     githubReaddir(accessor, p, opts.index ?? undefined)
   const stream = (p: PathSpec): AsyncIterable<Uint8Array> =>
     githubStream(accessor, p, opts.index ?? undefined)
-  return rgGeneric(resolved, texts, opts, stat, readdir, stream)
+  return rgGeneric(resolved, texts, runOpts, stat, readdir, stream)
 }
 
 export const GITHUB_RG = command({

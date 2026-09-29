@@ -21,6 +21,7 @@ import type { PathSpec } from '../../types.ts'
 import * as kp from '../../utils/key_prefix.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { DIR_SIZE } from '../../utils/stat_view.ts'
 import type { FindHints, ObjectStoreDriver } from './driver.ts'
 
 export type FindFn<A extends Accessor> = (
@@ -67,7 +68,6 @@ export function makeFind<A extends Accessor, C>(driver: ObjectStoreDriver<A, C>)
     const hints: FindHints = {
       name: options.name ?? null,
       iname: options.iname ?? null,
-      type: options.type ?? null,
       minSize: options.minSize ?? null,
       maxSize: options.maxSize ?? null,
       pushdown,
@@ -116,8 +116,7 @@ export function makeFind<A extends Accessor, C>(driver: ObjectStoreDriver<A, C>)
           continue
         }
         if (options.minSize != null || options.maxSize != null) {
-          // Directories count as size 0 for -size (deliberate GNU divergence).
-          const effective = kind === 'd' ? 0 : size
+          const effective = kind === 'd' ? DIR_SIZE : size
           if (options.minSize != null && effective < options.minSize) continue
           if (options.maxSize != null && effective > options.maxSize) continue
         }

@@ -27,6 +27,7 @@ from mirage.errors.posix import posix_errno
 from mirage.ops.os_patch import make_os_module, os_routing
 from mirage.runtime.verbs import PASSTHROUGH_VERBS, REFUSED_VERBS, ROUTED_VERBS
 from mirage.types import HiddenPaths, PathSpec
+from mirage.utils.stat_view import DIR_SIZE
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
 from tests.fixtures.driver_ops import ops as driver_ops
@@ -97,7 +98,7 @@ class TestStatShape:
         _, patched = seeded()
         st = patched.stat("/data/dir")
         assert stat_mod.S_ISDIR(st.st_mode)
-        assert st.st_size == 0
+        assert st.st_size == DIR_SIZE
 
     def test_optional_fields_are_filled_not_none(self):
         # shutil.copystat reads st_flags when the platform has it, and

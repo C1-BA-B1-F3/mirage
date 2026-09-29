@@ -1,6 +1,18 @@
 {
   "_meta": {
     "by_vfs": {
+      "airtable": {
+        "filetypes": [],
+        "has_aggregate": false,
+        "has_provision": true,
+        "has_write": false
+      },
+      "bin": {
+        "filetypes": [],
+        "has_aggregate": false,
+        "has_provision": true,
+        "has_write": false
+      },
       "box": {
         "filetypes": [],
         "has_aggregate": false,
@@ -193,6 +205,8 @@
     "has_provision": true,
     "has_write": false,
     "vfs_names": [
+      "airtable",
+      "bin",
       "box",
       "chroma",
       "databricks_volume",
@@ -228,22 +242,31 @@
   },
   "options": [
     {
+      "long": "--verbose",
       "short": "-l",
       "type": "bool"
     },
     {
+      "long": "--quiet",
       "short": "-s",
       "type": "bool"
     },
     {
+      "long": "--silent",
+      "type": "bool"
+    },
+    {
+      "long": "--bytes",
       "short": "-n",
       "type": "str"
     },
     {
+      "long": "--print-bytes",
       "short": "-b",
       "type": "bool"
     },
     {
+      "long": "--ignore-initial",
       "short": "-i",
       "type": "str"
     }
@@ -254,6 +277,12 @@
     },
     {
       "type": "path"
+    },
+    {
+      "type": "str"
+    },
+    {
+      "type": "str"
     }
   ]
 }

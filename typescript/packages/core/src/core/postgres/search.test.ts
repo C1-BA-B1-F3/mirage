@@ -28,84 +28,175 @@ vi.mock('./client.ts', async () => {
 
 import { PostgresAccessor } from '../../accessor/postgres.ts'
 import { resolvePostgresConfig } from '../../vfs/postgres/config.ts'
+import type { SearchQuery } from '../../vfs/types.ts'
 import type { PgDriver } from './_driver.ts'
 import * as client from './client.ts'
 import { formatGrepResults, searchEntity, searchKind } from './search.ts'
 
-function makeAccessor(): { accessor: PostgresAccessor; query: ReturnType<typeof vi.fn> } {
-  const cfg = resolvePostgresConfig({ dsn: 'postgres://localhost/db' })
-  const query = vi.fn(() => Promise.resolve({ rows: [], rowCount: 0 }))
+type Row = Record<string, unknown>
+
+function columns(...pairs: [string, string][]): Row[] {
+  // What `fetchColumns` reads off information_schema.
+  return pairs.map(([name, type]) => ({ column_name: name, data_type: type, is_nullable: 'YES' }))
+}
+
+const USERS = columns(['id', 'integer'], ['name', 'text'])
+
+// A driver whose first query answers the column list and every other one the
+// rows, recording the SQL and parameters it was asked.
+function makeAccessor(
+  cols: Row[],
+  rows: Row[],
+  maxReadRows = 10_000,
+  maxReadBytes = 10 * 1024 * 1024,
+  databaseBytes = 100,
+): { accessor: PostgresAccessor; calls: [string, unknown[]][] } {
+  const calls: [string, unknown[]][] = []
   const driver: PgDriver = {
-    query: query as unknown as PgDriver['query'],
+    query: ((sql: string, params: unknown[] = []) => {
+      calls.push([sql, params])
+      if (sql.includes('information_schema.columns')) {
+        return Promise.resolve({ rows: cols, rowCount: cols.length })
+      }
+      if (sql.includes('EXPLAIN')) {
+        return Promise.resolve({
+          rows: [{ 'QUERY PLAN': [{ Plan: { 'Plan Rows': 1, 'Plan Width': 8 } }] }],
+          rowCount: 1,
+        })
+      }
+      if (sql.startsWith('WITH data AS MATERIALIZED')) {
+        return Promise.resolve({
+          rows:
+            rows.length === 0
+              ? [{ __mirage_bytes: 0 }]
+              : rows.map((row) => ({ ...row, __mirage_bytes: databaseBytes })),
+          rowCount: rows.length,
+        })
+      }
+      const limit = typeof params[params.length - 2] === 'number' ? Number(params[0]) : rows.length
+      return Promise.resolve({ rows: rows.slice(0, limit + 1), rowCount: rows.length })
+    }) as PgDriver['query'],
     close: () => Promise.resolve(),
   }
-  return { accessor: new PostgresAccessor(driver, cfg), query }
+  const cfg = resolvePostgresConfig({ dsn: 'postgres://localhost/db', maxReadRows, maxReadBytes })
+  return { accessor: new PostgresAccessor(driver, cfg), calls }
+}
+
+function query(pattern: string, ignoreCase = false): SearchQuery {
+  return {
+    query: pattern,
+    options: {
+      grep: { ignore_case: ignoreCase, fixed_string: false, whole_word: false, basic: true },
+    },
+  }
 }
 
 describe('searchEntity', () => {
-  it('returns [] when no text-typed columns', async () => {
-    const { accessor, query } = makeAccessor()
-    query.mockResolvedValueOnce({ rows: [], rowCount: 0 })
-    expect(await searchEntity(accessor, 'public', 'tables', 't', 'foo', 10)).toEqual([])
-    expect(query).toHaveBeenCalledTimes(1)
+  it.each(['\u0085', '\u2028', '\u2029'])(
+    'preserves Unicode separator %j inside a JSONL row',
+    async (separator) => {
+      const { accessor } = makeAccessor(USERS, [{ id: 1, name: `left${separator}right` }])
+      expect(await searchEntity(accessor, 'public', 'tables', 'users', query('name'))).toEqual([
+        `{"id":1,"name":"left${separator}right"}`,
+      ])
+    },
+  )
+
+  it('answers the lines grep would print', async () => {
+    const { accessor } = makeAccessor(USERS, [
+      { id: 1, name: 'alice' },
+      { id: 2, name: 'alex' },
+    ])
+    expect(await searchEntity(accessor, 'public', 'tables', 'users', query('al'))).toEqual([
+      '{"id":1,"name":"alice"}',
+      '{"id":2,"name":"alex"}',
+    ])
   })
 
-  it('builds an OR-of-LIKE WHERE across text columns (case-sensitive default)', async () => {
-    const { accessor, query } = makeAccessor()
-    query
-      .mockResolvedValueOnce({
-        rows: [{ column_name: 'name' }, { column_name: 'email' }],
-        rowCount: 2,
-      })
-      .mockResolvedValueOnce({ rows: [{ id: 1 }], rowCount: 1 })
+  it('casts every column and takes rows a line escapes', async () => {
+    const { accessor, calls } = makeAccessor(USERS, [])
+    await searchEntity(accessor, 'public', 'tables', 'users', query('user_id'))
+    const [sql, params] = calls[1] ?? ['', []]
+    expect(sql).not.toContain('ILIKE')
+    expect(sql).toContain('"id"::text LIKE $1')
+    expect(sql).toContain('"name"::text LIKE $1')
+    expect(sql).toContain(`"name" ~ '[[:cntrl:]]'`)
+    expect(sql).not.toContain('"id" ~')
+    // `_` is escaped so it matches literally; one past the ceiling tells a
+    // full answer from a cut one.
+    expect(params).toEqual(['%user\\_id%', 10_001, 10 * 1024 * 1024])
+    expect(sql).toContain('LEFT JOIN data ON budget.bytes <= $3')
+  })
 
-    const out = await searchEntity(accessor, 'public', 'tables', 'users', 'foo', 10)
-    expect(out).toEqual([{ id: 1 }])
-    const sql = query.mock.calls[1]?.[0] as string
-    expect(sql).toBe(
-      'SELECT * FROM "public"."users" WHERE "name"::text LIKE $1 OR "email"::text LIKE $1 LIMIT $2',
+  it('folds case with ILIKE under -i', async () => {
+    const { accessor, calls } = makeAccessor(USERS, [])
+    await searchEntity(accessor, 'public', 'tables', 'users', query('ALI', true))
+    expect(calls[1]?.[0]).toContain('ILIKE')
+  })
+
+  it.each([65, 1])('refuses database and rendered byte overflows (%i)', async (databaseBytes) => {
+    const { accessor } = makeAccessor(
+      USERS,
+      [{ name: 'needle' + 'x'.repeat(1024) }],
+      10_000,
+      64,
+      databaseBytes,
     )
-    expect(query.mock.calls[1]?.[1]).toEqual(['%foo%', 10])
+    await expect(
+      searchEntity(accessor, 'public', 'tables', 'users', query('needle')),
+    ).rejects.toMatchObject({ code: 'EFBIG', virtualPath: 'public/tables/users/rows.jsonl' })
   })
 
-  it('uses ILIKE and escapes LIKE wildcards when case-insensitive', async () => {
-    const { accessor, query } = makeAccessor()
-    query
-      .mockResolvedValueOnce({ rows: [{ column_name: 'name' }], rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+  // A tab renders as `\t` in the line, so `t` matches it there while no LIKE
+  // over the value would: the row is a candidate and the matcher decides.
+  it('decides a candidate with the matcher grep compiles', async () => {
+    const { accessor } = makeAccessor(columns(['id', 'integer'], ['body', 'text']), [
+      { id: 1, body: 'a\tb' },
+      { id: 2, body: 'x\ny' },
+    ])
+    expect(await searchEntity(accessor, 'public', 'tables', 't', query('t'))).toEqual([
+      '{"id":1,"body":"a\\tb"}',
+    ])
+  })
 
-    await searchEntity(accessor, 'public', 'tables', 'users', 'user_id', 10, true)
-    const sql = query.mock.calls[1]?.[0] as string
-    expect(sql).toBe('SELECT * FROM "public"."users" WHERE "name"::text ILIKE $1 LIMIT $2')
-    // `_` is escaped so it matches literally, not as a LIKE wildcard.
-    expect(query.mock.calls[1]?.[1]).toEqual(['%user\\_id%', 10])
+  // The push-down printed its LIKE answer as grep's, and a LIKE per text column
+  // never saw a number, a key, the text between values or a NULL, so grep over
+  // rows.jsonl found rows the push-down did not. Such a search reads the file.
+  it.each([
+    [columns(['id', 'integer'], ['rating', 'double precision']), '4.5'],
+    [columns(['id', 'integer'], ['at', 'timestamp with time zone']), '2026'],
+    [USERS, 'am'],
+    [USERS, 'ul'],
+    [USERS, ':1'],
+  ])('scans the file when a LIKE cannot see every match (%#)', async (cols, pattern) => {
+    const { accessor, calls } = makeAccessor(cols, [{ id: 1, rating: 4.5, name: null, at: '2026' }])
+    const lines = await searchEntity(accessor, 'public', 'tables', 't', query(pattern))
+    expect(lines).toHaveLength(1)
+    expect(calls.some(([sql]) => sql.includes('WITH data AS MATERIALIZED'))).toBe(true)
+  })
+
+  // It used to print the first `defaultSearchLimit` matches and drop the rest
+  // in silence; more than one read may return is refused instead.
+  it('refuses more candidates than one read may return', async () => {
+    const rows = Array.from({ length: 4 }, (_, id) => ({ id, name: 'ada' }))
+    const { accessor } = makeAccessor(USERS, rows, 3)
+    await expect(
+      searchEntity(accessor, 'public', 'tables', 'users', query('ada')),
+    ).rejects.toMatchObject({ code: 'EFBIG', virtualPath: 'public/tables/users/rows.jsonl' })
+  })
+
+  it('matches nothing in a relation with no columns', async () => {
+    const { accessor } = makeAccessor([], [])
+    expect(await searchEntity(accessor, 'public', 'tables', 't', query('x'))).toEqual([])
   })
 })
 
 describe('searchKind', () => {
-  it('walks tables and emits matches per entity', async () => {
-    vi.mocked(client.listTables).mockResolvedValue(['users', 'orders'])
-    const { accessor, query } = makeAccessor()
-    query
-      .mockResolvedValueOnce({ rows: [{ column_name: 'name' }], rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [{ id: 1 }], rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [{ column_name: 'name' }], rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
-
-    const out = await searchKind(accessor, 'public', 'tables', 'foo', 10)
-    expect(out).toEqual([{ schema: 'public', kind: 'tables', entity: 'users', rows: [{ id: 1 }] }])
-  })
-})
-
-describe('formatGrepResults', () => {
-  it('emits one line per matching row with path-prefix', () => {
-    const lines = formatGrepResults([
-      { schema: 'public', kind: 'tables', entity: 'users', rows: [{ id: 1, name: 'a' }] },
-      { schema: 'public', kind: 'tables', entity: 'users', rows: [{ id: 2, name: 'b' }] },
-    ])
-    expect(lines).toEqual([
-      'public/tables/users/rows.jsonl:{"id":1,"name":"a"}',
-      'public/tables/users/rows.jsonl:{"id":2,"name":"b"}',
-    ])
+  it('collects each entity with matches under one kind', async () => {
+    vi.mocked(client.listTables).mockResolvedValue(['users', 'empty'])
+    const { accessor } = makeAccessor(USERS, [{ id: 1, name: 'ada' }])
+    const found = await searchKind(accessor, 'public', 'tables', query('ada'))
+    expect(found.map((m) => m.entity)).toEqual(['users', 'empty'])
+    expect(formatGrepResults(found)[0]).toBe('public/tables/users/rows.jsonl:{"id":1,"name":"ada"}')
   })
 })

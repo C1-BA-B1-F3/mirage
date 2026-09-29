@@ -12,6 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import {
+  parseProcessPermissions,
+  type ProcessPermissions,
+  type ProcessScope,
+} from '../process/config.ts'
+import type { Limit } from '../types.ts'
+import { parseCommandLimits } from './builtin/output_cap.ts'
 import { DEFAULT_ASK_REASON, DEFAULT_DENY_REASON } from './constants.ts'
 import type { CommandRule, AdmissionRules, ProfileScript } from './types.ts'
 import { ScriptSource } from '../runtime/routing/types.ts'
@@ -146,6 +153,9 @@ export interface SessionProfile {
    * policy.
    */
   readonly policy?: ProfilePolicySpec | null
+  readonly commandLimits?: Readonly<Record<string, Limit>> | null
+  /** A bare scope for both `list` and `kill`, or any of the fields. */
+  readonly processes?: ProcessScope | Partial<ProcessPermissions> | null
 }
 
 /**
@@ -183,6 +193,8 @@ export interface CompiledProfile {
   readonly hideReasons?: readonly HideReason[]
   /** The profile's name, null for a document passed without one; the session's group. */
   readonly profile?: string | null
+  readonly commandLimits?: Readonly<Record<string, Limit>> | null
+  readonly processes?: ProcessPermissions
 }
 
 const RULE_FIELDS = ['reason', 'commands', 'paths'] as const
@@ -191,7 +203,17 @@ const VARS_FIELDS = ['hide'] as const
 const COMMANDS_FIELDS = ['allow', 'ask', 'deny'] as const
 const MOUNT_COMMANDS_FIELDS = ['ask', 'deny'] as const
 const PROFILE_MOUNT_FIELDS = ['mode', 'commands', 'paths'] as const
-const PROFILE_FIELDS = ['cwd', 'env', 'mounts', 'paths', 'vars', 'commands', 'policy'] as const
+const PROFILE_FIELDS = [
+  'cwd',
+  'env',
+  'mounts',
+  'paths',
+  'vars',
+  'commands',
+  'policy',
+  'command_limits',
+  'processes',
+] as const
 const POLICY_FIELDS = ['script', 'runtime'] as const
 
 // A document mapping, not merely "an object": a Set, a Date or any class
@@ -568,7 +590,11 @@ export function parseSessionProfile(raw: unknown, where = 'profile'): SessionPro
     vars?: VarsBlock | null
     commands?: CommandsBlock | null
     policy?: ProfilePolicySpec | null
+    commandLimits?: Readonly<Record<string, Limit>> | null
+    processes?: ProcessPermissions
   } = {}
+  if (obj.command_limits != null) out.commandLimits = parseCommandLimits(obj.command_limits)
+  if (obj.processes != null) out.processes = parseProcessPermissions(obj.processes)
   if (obj.policy !== undefined && obj.policy !== null) {
     out.policy = parseProfilePolicy(obj.policy, `${where}.policy`)
   }

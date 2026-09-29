@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { DiskAccessor } from '../../accessor/disk.ts'
@@ -35,6 +35,20 @@ describe('core/disk/write', () => {
     await writeBytes(accessor, spec('/x.txt'), new TextEncoder().encode('hi'))
     const out = await readFile(join(root, 'x.txt'), 'utf-8')
     expect(out).toBe('hi')
+  })
+
+  it('never writes through a host symlink out of the root', async () => {
+    const { root: outside, cleanup: cleanupOutside } = tmpRoot('mirage-core-disk-write-out-')
+    try {
+      await writeFile(join(outside, 'target.txt'), 'original')
+      await symlink(join(outside, 'target.txt'), join(root, 'link'))
+      await expect(
+        writeBytes(accessor, spec('/link'), new TextEncoder().encode('pwned')),
+      ).rejects.toMatchObject({ code: 'ENOENT' })
+      expect(await readFile(join(outside, 'target.txt'), 'utf8')).toBe('original')
+    } finally {
+      cleanupOutside()
+    }
   })
 
   it('does not create parent directories', async () => {

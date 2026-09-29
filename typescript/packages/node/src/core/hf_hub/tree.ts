@@ -18,22 +18,24 @@ import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { LookupStatus } from '@struktoai/mirage-core/cache/index/config'
 import * as kp from '@struktoai/mirage-core/utils/key_prefix'
 import type { HfHubAccessor, RowTables } from '../../accessor/hf_hub.ts'
-import { HfHubError, apiUrl, hubGetResponse, revSegment } from './client.ts'
+import { HfHubError, apiUrl, hubGetResponse, hubPost, revSegment } from './client.ts'
 import { MAX_TREE_PAGES, TREE_PAGE_SIZE, TREE_PAGE_SIZE_EXPANDED } from './constants.ts'
 import type { TreeEntry } from './tree_entry.ts'
 import { isDirEntry } from './tree_entry.ts'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 // `Link: <url>; rel="next"`, which is how the tree endpoint hands back its
 // cursor. Bounded repetition on the URL body so a pathological header cannot
 // backtrack quadratically.
 const NEXT_LINK = /<([^>]{1,4096})>\s*;\s*rel="next"/
 
-// A repository the mount cannot see reads as an empty tree rather than as an
-// error: 404 is a revision or subtree that does not exist, and the Hub answers
-// 401 rather than 404 for a repo an anonymous caller may not know about, so
-// both mean "nothing to list here" to a mount.
-const ABSENT_STATUSES = new Set([401, 403, 404])
+// The one refusal that means "nothing to list": the mount's key_prefix names
+// no folder. Every other refusal (401 for a bad token or an unknown repo, 403
+// for a gated one, 404 for a missing repo or revision) is an error, because
+// this listing is seeded as the mount's whole index and an empty one would
+// read every file as deleted.
+const MISSING_SUBTREE = 'EntryNotFound'
 
 function str(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback
@@ -82,14 +84,68 @@ export function treeUrl(accessor: HfHubAccessor): string {
   let suffix = `/tree/${revSegment(accessor.revision)}`
   // The prefix is normalized with a trailing slash, which the tree endpoint
   // reads as a path segment of its own.
-  const stem = accessor.keyPrefix.replace(/^\/+|\/+$/g, '')
+  const stem = stripSlash(accessor.keyPrefix)
   if (stem !== '') suffix += `/${stem}`
   return apiUrl(accessor.endpoint, accessor.repoType, accessor.repoId, suffix)
 }
 
+/**
+ * The paths-info endpoint for the mount's revision.
+ *
+ * Unlike the tree endpoint the key prefix does not ride the route: the segment
+ * after `paths-info` is the whole revision, so the prefix goes into each
+ * requested path instead.
+ */
+export function pathsInfoUrl(accessor: HfHubAccessor): string {
+  return apiUrl(
+    accessor.endpoint,
+    accessor.repoType,
+    accessor.repoId,
+    `/paths-info/${revSegment(accessor.revision)}`,
+  )
+}
+
+/**
+ * The listing row for one mount-relative path, in one request.
+ *
+ * The row is folded by `collect`, the same as a tree page, so it keys and
+ * carries the same oid a whole-tree walk would. Only a row naming exactly the
+ * asked path counts: an answer about some other path is not an answer about
+ * this one, and must not read as its absence.
+ */
+export async function fetchPath(
+  accessor: HfHubAccessor,
+  rel: string,
+): Promise<Map<string, TreeEntry>> {
+  const asked = accessor.repoPath(rel)
+  const answer = await hubPost(
+    accessor.token,
+    pathsInfoUrl(accessor),
+    { paths: [asked], expand: accessor.expandCommits === true },
+    undefined,
+    accessor.timeoutMs,
+  )
+  // Only an empty list says the path is missing; an answer of any other shape
+  // is one the client cannot read, not an absence.
+  if (!Array.isArray(answer)) {
+    throw new HfHubError(`paths-info answered no list for ${asked}`, 0, 'InvalidResponse')
+  }
+  const rows: unknown[] = answer
+  const matching = rows.filter(
+    (row) =>
+      typeof row === 'object' && row !== null && (row as Record<string, unknown>).path === asked,
+  )
+  if (rows.length > 0 && matching.length === 0) {
+    throw new HfHubError(`paths-info answered no row for ${asked}`, 0, 'PathMismatch')
+  }
+  const into = new Map<string, TreeEntry>()
+  collect(matching, accessor.keyPrefix, into)
+  return into
+}
+
 /** Fold one page of tree rows into the mount's listing. */
 export function collect(rows: unknown, prefix: string, into: Map<string, TreeEntry>): void {
-  const stem = prefix.replace(/\/+$/, '')
+  const stem = rstripSlash(prefix)
   for (const item of Array.isArray(rows) ? rows : []) {
     if (typeof item !== 'object' || item === null) continue
     const entry = parseEntry(item as Record<string, unknown>)
@@ -131,9 +187,19 @@ export async function walkPages(
   for (let page = 0; page < limit; page += 1) {
     let response
     try {
-      response = await hubGetResponse(accessor.token, target, query)
+      response = await hubGetResponse(accessor.token, target, query, accessor.timeoutMs)
     } catch (err) {
-      if (err instanceof HfHubError && ABSENT_STATUSES.has(err.status)) return ''
+      // Only a request carrying first-page params can learn that the subtree
+      // is missing; a cursor page failing means the listing broke part way,
+      // and keeping what came before would pass a partial tree off as whole.
+      if (
+        query !== undefined &&
+        err instanceof HfHubError &&
+        err.status === 404 &&
+        err.errorCode === MISSING_SUBTREE
+      ) {
+        return ''
+      }
       throw err
     }
     collect(response.data, accessor.keyPrefix, into)
@@ -199,7 +265,7 @@ export function indexDirs(
   tree: Map<string, TreeEntry>,
   prefix: string,
 ): Map<string, [string, IndexEntry][]> {
-  const stem = prefix.replace(/\/+$/, '')
+  const stem = rstripSlash(prefix)
   const dirs = new Map<string, [string, IndexEntry][]>()
   // The repository root always exists, so it gets a row even when the tree is
   // empty. Without it an empty repo is byte for byte a dropped index and every
@@ -244,7 +310,7 @@ export function indexRows(tree: Map<string, TreeEntry>, prefix: string): RowTabl
   const entries = new Map<string, IndexEntry>()
   const children = new Map<string, string[]>()
   for (const [parent, rows] of indexDirs(tree, prefix)) {
-    const base = parent.replace(/\/+$/, '')
+    const base = rstripSlash(parent)
     for (const [name, row] of rows) entries.set(`${base}/${name}`, row)
     children.set(parent, rows.map(([name]) => `${base}/${name}`).sort(compareCodePoints))
   }
@@ -284,8 +350,9 @@ export async function refillIndex(
   accessor.tree = await fetchTree(accessor)
   accessor.treeLoaded = true
   accessor.rowsCache = null
+  accessor.refills += 1
   // Refilling replaces the snapshot; merging would retain deleted paths.
-  await index.invalidatePrefix(prefix.replace(/\/+$/, '') || '/')
+  await index.invalidatePrefix(rstripSlash(prefix) || '/')
   await seedIndex(accessor, index, prefix)
   return true
 }
@@ -304,7 +371,7 @@ export async function ensureLiveIndex(
   index: IndexCacheStore,
   prefix: string,
 ): Promise<boolean> {
-  const root = prefix.replace(/\/+$/, '')
+  const root = rstripSlash(prefix)
   const listing = await index.listDir(root === '' ? '/' : root)
   if (listing.status !== LookupStatus.NOT_FOUND && listing.status !== LookupStatus.EXPIRED)
     return false
@@ -330,7 +397,7 @@ export async function ensureTree(
   }
   const run = (async () => {
     if (index !== undefined) {
-      await withIndexLock(index, prefix.replace(/\/+$/, '') || '/', async () => {
+      await withIndexLock(index, rstripSlash(prefix) || '/', async () => {
         if (!accessor.treeLoaded) await refillIndex(accessor, index, prefix)
       })
       return

@@ -43,11 +43,11 @@ describe('audit regressions: subshell isolation, errexit propagation, prefix sco
     }
   })
 
-  it('function prefix persists in parent env', async () => {
+  it('function prefix is restored after the call', async () => {
     const { ws } = await makeIntegrationWS()
     try {
       const out = await run(ws, 'f() { echo "FOO=$FOO"; }; FOO=bar f; echo "after=$FOO"')
-      expect(out).toBe('FOO=bar\nafter=bar\n')
+      expect(out).toBe('FOO=bar\nafter=\n')
     } finally {
       await ws.close()
     }

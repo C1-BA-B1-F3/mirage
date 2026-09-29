@@ -17,7 +17,7 @@ from typing import Any, TypeVar
 
 from mirage.core.box.client import (BoxApiError, BoxTokenManager, box_delete,
                                     box_get, box_get_bytes, box_get_stream,
-                                    box_post_json, box_put_json,
+                                    box_options, box_post_json, box_put_json,
                                     box_upload_multipart)
 from mirage.utils.errors import enoent
 from mirage.utils.ranges import ByteWindow
@@ -56,6 +56,7 @@ SEARCH_PAGE = 200
 # Box search serves at most 10,000 matches across all pages; a result set
 # that reaches the ceiling may be incomplete and must not narrow a scan.
 MAX_SEARCH_MATCHES = 10_000
+EVENTS_PAGE = 500
 
 
 async def list_folder_items(
@@ -88,6 +89,89 @@ async def list_folder_items(
         if offset >= data.get("total_count", 0) or not entries:
             break
     return out
+
+
+def _next_position(data: dict[str, Any]) -> str | None:
+    value = data.get("next_stream_position")
+    return None if value is None or value == "" else str(value)
+
+
+async def events_now(tm: BoxTokenManager, stream_type: str) -> str:
+    """The current head of the user's event stream.
+
+    Args:
+        tm (BoxTokenManager): token manager.
+        stream_type (str): ``all``, ``changes`` or ``sync``.
+    """
+    data = await box_get(tm,
+                         f"{tm.api_base}/events",
+                         params={
+                             "stream_type": stream_type,
+                             "stream_position": "now",
+                         })
+    position = _next_position(data)
+    if position is None:
+        raise RuntimeError("Box GET /events returned no next_stream_position")
+    return position
+
+
+async def events_since(
+    tm: BoxTokenManager,
+    stream_position: str,
+    stream_type: str,
+    limit: int = EVENTS_PAGE,
+) -> tuple[list[dict[str, Any]], str]:
+    """Every user event after ``stream_position``, and the new position.
+
+    Box may answer with fewer events than ``limit`` while more remain,
+    so only an empty page ends the read. A page of events that does not
+    move the position on is refused: reading it again would return the
+    same page for as long as the server keeps answering that way.
+
+    Args:
+        tm (BoxTokenManager): token manager.
+        stream_position (str): position from a previous read.
+        stream_type (str): ``all``, ``changes`` or ``sync``.
+        limit (int): events per request (Box caps it at 500).
+    """
+    out: list[dict[str, Any]] = []
+    position = stream_position
+    while True:
+        data = await box_get(tm,
+                             f"{tm.api_base}/events",
+                             params={
+                                 "stream_type": stream_type,
+                                 "stream_position": position,
+                                 "limit": limit,
+                             })
+        entries = data.get("entries") or []
+        advanced = _next_position(data)
+        if not entries:
+            return out, advanced or position
+        if advanced is None or advanced == position:
+            raise RuntimeError("Box GET /events returned events but did not "
+                               "advance next_stream_position")
+        out.extend(entries)
+        position = advanced
+
+
+async def realtime_server(tm: BoxTokenManager) -> dict[str, Any]:
+    """The long-poll server for the user's event stream.
+
+    ``OPTIONS /events`` hands back a ``realtime_server`` entry; a GET on
+    its ``url`` with ``&stream_position=<position>`` blocks until Box
+    answers ``new_change`` (read the events) or ``reconnect`` (ask for a
+    new server). The loop is the caller's.
+
+    Args:
+        tm (BoxTokenManager): token manager.
+    """
+    data = await box_options(tm, f"{tm.api_base}/events")
+    entries = data.get("entries") or []
+    if not entries:
+        raise RuntimeError("Box OPTIONS /events returned no realtime server")
+    server: dict[str, Any] = entries[0]
+    return server
 
 
 async def get_folder_info(tm: BoxTokenManager,

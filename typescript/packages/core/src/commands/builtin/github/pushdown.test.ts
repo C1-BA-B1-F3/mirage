@@ -22,7 +22,7 @@ import { GitHubAccessor } from '../../../accessor/github.ts'
 import type { GitHubTransport } from '../../../core/github/client.ts'
 import type { TreeEntry } from '../../../core/github/tree_entry.ts'
 import { PathSpec } from '../../../types.ts'
-import { narrowScope } from './pushdown.ts'
+import { narrowScope, scopeRefusal } from './pushdown.ts'
 
 // 150 blobs under src/ so the scope clears SCOPE_WARN (100) and search kicks in.
 function bigTree(): Record<string, TreeEntry> {
@@ -40,12 +40,32 @@ interface SearchCall {
   q: string
 }
 
-function makeAccessor(searchHits: string[], calls: SearchCall[]): GitHubAccessor {
+interface Answer {
+  fullName?: string
+  total?: number
+  tree?: Record<string, TreeEntry>
+  truncated?: boolean
+}
+
+function makeAccessor(
+  searchHits: string[],
+  calls: SearchCall[],
+  answer: Answer = {},
+): GitHubAccessor {
+  const fullName = answer.fullName ?? 'o/r'
   const transport: GitHubTransport = {
     get(path: string, params?: Record<string, string>): Promise<unknown> {
       if (path === '/search/code') {
         calls.push({ q: params?.q ?? '' })
-        return Promise.resolve({ items: searchHits.map((p) => ({ path: p, sha: 'x' })) })
+        return Promise.resolve({
+          total_count: answer.total ?? searchHits.length,
+          incomplete_results: false,
+          items: searchHits.map((p) => ({
+            path: p,
+            sha: 'x',
+            repository: { full_name: fullName },
+          })),
+        })
       }
       throw new Error(`unexpected transport call: ${path}`)
     },
@@ -62,7 +82,8 @@ function makeAccessor(searchHits: string[], calls: SearchCall[]): GitHubAccessor
     repo: 'r',
     ref: 'main',
     defaultBranch: 'main',
-    tree: bigTree(),
+    tree: answer.tree ?? bigTree(),
+    truncated: answer.truncated ?? false,
   })
 }
 
@@ -123,5 +144,125 @@ describe('narrowScope', () => {
     const res = await narrowScope(acc, [subdir()], 'import', false, true, false)
     expect(res.usedSearch).toBe(false)
     expect(calls).toHaveLength(0)
+  })
+})
+
+// Twins of the end-to-end tests in
+// python/tests/commands/builtin/github/test_pushdown.py, at the narrowScope
+// seam grep and rg share. A fallback resolves the scope itself, which the
+// scan then walks, so it reads as the scope path and the whole file count.
+describe('narrowScope trusts only a complete, own-repository answer', () => {
+  it('falls back on a foreign answer', async () => {
+    // A fork shares the path; trusted, it would narrow grep to one file.
+    const calls: SearchCall[] = []
+    const acc = makeAccessor(['src/f1.py'], calls, { fullName: 'o/r-fork' })
+    const res = await narrowScope(acc, [subdir()], 'import', false, true, true)
+    expect(res.usedSearch).toBe(false)
+    expect(res.fileCount).toBe(150)
+    expect(res.resolved.map((p) => p.virtual)).toEqual(['/src'])
+  })
+
+  it('falls back on a truncated answer', async () => {
+    const calls: SearchCall[] = []
+    const acc = makeAccessor(['src/f1.py'], calls, { total: 7 })
+    const res = await narrowScope(acc, [subdir()], 'import', false, true, true)
+    expect(res.usedSearch).toBe(false)
+    expect(res.fileCount).toBe(150)
+    expect(res.resolved.map((p) => p.virtual)).toEqual(['/src'])
+  })
+
+  it.each<[string, boolean]>([
+    ['import path:src', true],
+    ['foo NOT bar', false],
+  ])('never searches %j', async (pattern, fixedString) => {
+    // Without -F a colon pattern is not a literal and was never searched;
+    // the -F spelling and the operator are what reached code search before.
+    const calls: SearchCall[] = []
+    const acc = makeAccessor(['src/f1.py'], calls)
+    const res = await narrowScope(acc, [subdir()], pattern, fixedString, true, true)
+    expect(res.usedSearch).toBe(false)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('still narrows on a complete own answer', async () => {
+    const calls: SearchCall[] = []
+    const acc = makeAccessor(['src/f1.py'], calls)
+    const res = await narrowScope(acc, [subdir()], 'import', false, true, true)
+    expect(res.usedSearch).toBe(true)
+    expect(res.resolved.map((p) => p.virtual)).toEqual(['/src/f1.py'])
+  })
+
+  it('never trusts a narrowing over a truncated tree', async () => {
+    // A truncated tree cannot list every file code search skips, so no
+    // answer can be shown to be the whole set.
+    const calls: SearchCall[] = []
+    const acc = makeAccessor(['src/f1.py'], calls, { truncated: true })
+    const res = await narrowScope(acc, [subdir()], 'import', false, true, true)
+    expect(res.usedSearch).toBe(false)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('does not read a big binary file', async () => {
+    // A recursive walk skips binary extensions, and an unindexed file joins
+    // the narrowing only as a file that walk would have read.
+    const tree = bigTree()
+    tree['src/model.gguf'] = { path: 'src/model.gguf', type: 'blob', sha: 'g', size: 400_000 }
+    const calls: SearchCall[] = []
+    const acc = makeAccessor(['src/f1.py'], calls, { tree })
+    const res = await narrowScope(acc, [subdir()], 'import', false, true, true)
+    expect(res.usedSearch).toBe(true)
+    expect(res.resolved.map((p) => p.virtual)).toEqual(['/src/f1.py'])
+  })
+
+  it('never narrows when an operand is a file', async () => {
+    // A full scan reads every file named on the line, binary extension or
+    // not, so a narrowing is only offered over directory operands.
+    const calls: SearchCall[] = []
+    const acc = makeAccessor(['src/f1.py'], calls)
+    const named = new PathSpec({ virtual: '/src/f2.py', directory: '/src', vfsPath: 'src/f2.py' })
+    const res = await narrowScope(acc, [subdir(), named], 'import', false, true, true)
+    expect(res.usedSearch).toBe(false)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('narrows to nothing when the binary filter leaves nothing', async () => {
+    // Every candidate is a binary a walk skips, so the scan the narrowing
+    // stands in for reads nothing; grep and rg answer that as no match
+    // rather than handing an empty operand list on, which would read
+    // standard input.
+    const tree = bigTree()
+    tree['src/model.gguf'] = { path: 'src/model.gguf', type: 'blob', sha: 'g', size: 400_000 }
+    const calls: SearchCall[] = []
+    const acc = makeAccessor([], calls, { tree })
+    const res = await narrowScope(acc, [subdir()], 'import', false, true, true)
+    expect(res).toEqual({ resolved: [], fileCount: 0, usedSearch: true })
+  })
+
+  it('still reads a file code search never indexes', async () => {
+    // src/f7.py sits over the 384 KB limit, so code search can never name it.
+    const tree = bigTree()
+    tree['src/f7.py'] = { path: 'src/f7.py', type: 'blob', sha: 's7', size: 400_000 }
+    const calls: SearchCall[] = []
+    const acc = makeAccessor(['src/f1.py'], calls, { tree })
+    const res = await narrowScope(acc, [subdir()], 'import', false, true, true)
+    expect(res.usedSearch).toBe(true)
+    expect(res.resolved.map((p) => p.virtual)).toEqual(['/src/f1.py', '/src/f7.py'])
+  })
+})
+
+// Twin of test_a_scope_too_large_to_scan_names_why_it_was_not_narrowed.
+describe('scopeRefusal', () => {
+  it.each<[string, boolean, string]>([
+    [
+      'grep',
+      true,
+      'grep: 12 files in scope and code search could not narrow them; narrow the path\n',
+    ],
+    ['grep', false, 'grep: 12 files in scope, narrow the path, or use -w to enable code search\n'],
+    ['rg', true, 'rg: 12 files in scope and code search could not narrow them; narrow the path\n'],
+  ])('words the %s refusal for -w=%s', (cmd, wholeWord, stderr) => {
+    // With -w given, telling the caller to add -w is wrong: code search ran
+    // and its answer could not be trusted.
+    expect(scopeRefusal(cmd, 12, wholeWord)).toBe(stderr)
   })
 })

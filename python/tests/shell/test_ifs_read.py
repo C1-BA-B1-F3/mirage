@@ -30,8 +30,13 @@ def test_ifs_prefix_does_not_persist(shell):
 
 
 def test_env_prefix_to_command(shell):
-    out = shell.mirage('FOO=bar bash -c "echo $FOO"')
+    out = shell.mirage("FOO=bar bash -c 'echo $FOO'")
     assert "bar" in out
+
+
+def test_env_prefix_after_word_expansion(shell):
+    out = shell.mirage('FOO=bar bash -c "echo [$FOO]"')
+    assert out == "[]\n"
 
 
 def test_ifs_colon_split(shell):

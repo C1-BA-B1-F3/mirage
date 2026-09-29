@@ -299,7 +299,7 @@ def live_only_mount_prefixes(ws: "Workspace", ) -> list[str]:
     """
     out: list[str] = []
     for m in ws._registry.mounts():
-        if m.prefix in {"/dev/", "/.bash_history/"}:
+        if m.prefix in {"/dev/", "/.bash_history/", "/usr/bin/"}:
             continue
         if ws._implicit_root and m.prefix == "/":
             continue
@@ -336,7 +336,7 @@ async def check_drift(mount_for: TryMountFor,
     # Resolve backend IDs afresh without consulting the restored index.
     try:
         stat = await mount.execute_op("stat", path, index=RAMIndexCacheStore())
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, NotADirectoryError) as exc:
         if mount_for(path) is not mount:
             return
         raise ContentDriftError(path, recorded, None) from exc

@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.builtin.generic_bind import CommandIO, DuOps
 from mirage.core.disk.append import append_bytes as _append
 from mirage.core.disk.constants import SCOPE_ERROR
 from mirage.core.disk.copy import copy as _copy
@@ -34,30 +33,29 @@ from mirage.core.disk.stream import read_stream as _read_stream
 from mirage.core.disk.truncate import truncate as _truncate
 from mirage.core.disk.unlink import unlink as _unlink
 from mirage.core.disk.write import write_bytes as _write
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import DuOps, NativeReadOps, ReadOps, WriteOps
 
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_range=_read_range,
-    read_stream=_read_stream,
-    stat=_stat,
-    is_mounted=lambda a: a.root is not None,
-    local=True,
-    max_glob_matches=SCOPE_ERROR,
-    write=_write,
-    exists=_exists,
-    mkdir=_mkdir,
-    unlink=_unlink,
-    rmdir=_rmdir,
-    rm_r=_rm_r,
-    rename=_rename,
-    copy=_copy,
-    create=_create,
-    truncate=_truncate,
-    find=_find,
-    du=DuOps(size=_du_size, entries=_du_entries),
-    append=_append,
-    set_attrs=_set_attrs,
-)
+IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                native=NativeReadOps(read_range=_read_range,
+                                     read_stream=_read_stream,
+                                     exists=_exists,
+                                     find=_find,
+                                     du=DuOps(size=_du_size,
+                                              entries=_du_entries)),
+                writes=WriteOps(write=_write,
+                                mkdir=_mkdir,
+                                unlink=_unlink,
+                                rmdir=_rmdir,
+                                rm_r=_rm_r,
+                                rename=_rename,
+                                copy=_copy,
+                                create=_create,
+                                truncate=_truncate,
+                                append=_append,
+                                set_attrs=_set_attrs),
+                is_mounted=lambda a: a.root is not None,
+                local=True,
+                max_glob_matches=SCOPE_ERROR).to_command_io()
 
 resolve_glob = IO.resolve_glob

@@ -39,6 +39,7 @@ export type CLIOverrides = Record<
   string,
   Record<string, unknown> | [CLISpec, Record<string, unknown> | null]
 >
+import { BIN_PREFIX } from '../../shell/constants.ts'
 import { HISTORY_PREFIX } from '../../vfs/history/history.ts'
 import {
   hasRedactedSecret,
@@ -80,7 +81,7 @@ import { FORMAT_VERSION, normMountPrefix } from './utils.ts'
 const VALID_MODES: readonly string[] = [MountMode.READ, MountMode.WRITE, MountMode.EXEC]
 
 export async function toStateDict(ws: Workspace): Promise<WorkspaceStateDict> {
-  const skip = new Set(['/dev/', normMountPrefix(HISTORY_PREFIX)])
+  const skip = new Set(['/dev/', normMountPrefix(HISTORY_PREFIX), normMountPrefix(BIN_PREFIX)])
   const mounted = [...ws.registry.allMounts()]
   for (const mount of mounted) await mount.ensureReady()
   const mounts = mounted.filter((m) => !skip.has(m.prefix))

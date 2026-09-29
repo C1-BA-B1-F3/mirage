@@ -25,21 +25,18 @@ class Recorder:
     """Active recording state for a session.
 
     Bundles the sink (shared by reference across all push frames) with
-    the mount_prefix for the current async frame. Frozen so each push
-    is task-isolated: ``push_mount_prefix`` creates a new Recorder for
+    the mount_id for the current async frame. Frozen so each push is
+    task-isolated: ``push_mount_context`` creates a new Recorder for
     the calling task via ``_recorder.set``, never mutates the parent.
     The sink list is the one piece that's intentionally shared, so
     records emitted from any frame land in the same collection.
 
     Args:
         sink (list[OpRecord]): Where new records are appended.
-        mount_prefix (str): Current frame's mount prefix (e.g. "/s3").
-            Empty when no mount is active.
         mount_id (str | None): Identity of the mounted instance serving reads.
     """
 
     sink: list[OpRecord] = field(default_factory=list)
-    mount_prefix: str = ""
     mount_id: str | None = None
 
 
@@ -105,58 +102,36 @@ def reset_active_recorder(token) -> None:
     _recorder.reset(token)
 
 
-def push_mount_prefix(prefix: str) -> str:
-    """Set the mount prefix on the active Recorder. Returns the previous
-    prefix so callers can restore it.
+def push_mount_context(mount_id: str | None):
+    """Bind the mount instance that owns records in this async frame.
 
     Task-isolated: replaces the Recorder for the current task via
     ``_recorder.set`` (the new Recorder shares the same sink list, so
-    records still aggregate together). Other tasks reading the
-    Recorder via their own contextvar copy continue to see their
-    previous prefix.
-
-    No-op (and returns "") when no recorder is active.
+    records still aggregate together). Binds the unrecorded state again
+    when no recorder is active. Returns the token for
+    :func:`reset_active_recorder`.
 
     Args:
-        prefix (str): Mount prefix (e.g. "/s3"). Empty string to clear.
-
-    Returns:
-        str: The prefix that was active before this call.
-    """
-    rec = _recorder.get()
-    if rec is None:
-        return ""
-    _recorder.set(
-        Recorder(sink=rec.sink, mount_prefix=prefix, mount_id=rec.mount_id))
-    return rec.mount_prefix
-
-
-def push_mount_context(prefix: str, mount_id: str | None):
-    """Bind the mount instance that owns reads in this async frame.
-
-    Args:
-        prefix (str): virtual mount prefix.
         mount_id (str | None): instance identity, absent outside a mount.
     """
     rec = _recorder.get()
-    return _recorder.set(None if rec is None else Recorder(
-        sink=rec.sink, mount_prefix=prefix, mount_id=mount_id))
+    return _recorder.set(None if rec is
+                         None else Recorder(sink=rec.sink, mount_id=mount_id))
 
 
-async def with_mount_prefix(
-        prefix: str,
+async def with_mount_context(
         it: AsyncIterator[bytes],
         mount_id: str | None = None) -> AsyncIterator[bytes]:
-    """Wrap an async iterator so the recorder's mount prefix is `prefix`
+    """Wrap an async iterator so the recorder's mount_id is ``mount_id``
     during each ``__anext__`` of the underlying stream.
 
     Mirrors the side-effect-on-iteration pattern used by
     ``exit_on_empty``. Lets dispatchers preserve VFS backends as
-    ``async def with yield`` while still capturing the correct mount
-    prefix in records emitted lazily during stream consumption.
+    ``async def with yield`` while still stamping the serving mount's
+    identity on records emitted lazily during stream consumption. A
+    None ``mount_id`` inherits the consuming frame's.
 
     Args:
-        prefix (str): Mount prefix to push during iteration.
         it (AsyncIterator[bytes]): The stream to wrap.
         mount_id (str | None): Captured mount identity for lazy reads.
     """
@@ -164,9 +139,8 @@ async def with_mount_prefix(
     try:
         while True:
             previous = _recorder.get()
-            token = push_mount_context(
-                prefix, mount_id if mount_id is not None else
-                previous.mount_id if previous else None)
+            token = push_mount_context(mount_id if mount_id is not None else
+                                       previous.mount_id if previous else None)
             try:
                 chunk = await aiter.__anext__()
             except StopAsyncIteration:
@@ -178,24 +152,6 @@ async def with_mount_prefix(
         close = getattr(aiter, "aclose", None)
         if close is not None:
             await close()
-
-
-def _virtual(path: str, prefix: str) -> str:
-    """Name `path` against `prefix`, leaving an already-virtual path alone.
-
-    Backends name the mount-relative path ("/report.json") and a few name
-    the virtual one already ("/s3/report.json"), so the two have to be told
-    apart. The test is for a path boundary, not a bare startswith: a mount
-    at /s3 holding s3-report.txt would otherwise look already-prefixed and
-    record as "/s3-report.txt".
-
-    Args:
-        path (str): Mount-relative or already-virtual path.
-        prefix (str): Mount prefix (e.g. "/s3"), empty for the root mount.
-    """
-    if not prefix or path == prefix or path.startswith(prefix + "/"):
-        return path
-    return prefix + path
 
 
 class OpTimer:
@@ -243,8 +199,7 @@ def finish_record(op: str,
 
     Args:
         op (str): Operation name ("read", "write").
-        path (str): The path to name the record with, as it should be
-            stored (callers that need mount prefixing apply it first).
+        path (str): The full virtual path, stored as given.
         source (str): VFS name ("s3", "ram", "disk").
         nbytes (int): Bytes transferred.
         timer (OpTimer): the timer opened when the op started.
@@ -279,7 +234,7 @@ def record(op: str,
 
     Args:
         op (str): Operation name ("read", "write").
-        path (str): VFS-relative path.
+        path (str): The full virtual path.
         source (str): VFS name ("s3", "ram", "disk").
         nbytes (int): Bytes transferred.
         timer (OpTimer): the timer opened by :func:`start_op` when the
@@ -293,10 +248,9 @@ def record(op: str,
     rec = _recorder.get()
     if rec is None:
         return
-    prefix = rec.mount_prefix
     rec.sink.append(
         finish_record(op,
-                      _virtual(path, prefix),
+                      path,
                       source,
                       nbytes,
                       timer,
@@ -322,7 +276,7 @@ def record_stream(op: str,
 
     Args:
         op (str): Operation name ("read", "write").
-        path (str): VFS-relative path.
+        path (str): The full virtual path.
         source (str): VFS name ("s3", "ram", "disk").
         fingerprint (str | None): Initial fingerprint; the caller can
             also set ``rec.fingerprint`` later.
@@ -335,10 +289,9 @@ def record_stream(op: str,
     rec = _recorder.get()
     if rec is None:
         return None
-    prefix = rec.mount_prefix
     op_rec = OpRecord(
         op=op,
-        path=_virtual(path, prefix),
+        path=path,
         source=source,
         bytes=0,
         timestamp=int(time.time() * 1000),
@@ -409,7 +362,7 @@ async def with_revisions(revisions: dict[str, str] | None,
     """Wrap an async iterator so the active revisions map is ``revisions``
     during each ``__anext__`` of the underlying stream.
 
-    Mirrors :func:`with_mount_prefix`. A command handler can return an
+    Mirrors :func:`with_mount_context`. A command handler can return an
     async generator that defers its backend ``read_stream`` call to the
     first chunk request; by the time the caller consumes it, the
     dispatcher's ``revisions`` context would otherwise have been reset.
@@ -419,7 +372,6 @@ async def with_revisions(revisions: dict[str, str] | None,
         revisions (dict[str, str] | None): Revisions to push during
             iteration.
         it (AsyncIterator[bytes]): The stream to wrap.
-        mount_id (str | None): Captured mount identity for lazy reads.
     """
     aiter = it.__aiter__()
     try:

@@ -13,6 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import {
+  timeRangeShape,
+  orderedTimes,
+  timeRangeOrderError,
+} from '@struktoai/mirage-core/core/time_config'
+import {
   parseConfigWithSchema,
   redactConfigWithSchema,
   secretSchema,
@@ -22,12 +27,15 @@ import type { ConfigOf, RedactedConfig } from '@struktoai/mirage-core/vfs/secret
 
 type HeaderProvider = () => Promise<Record<string, string>> | Record<string, string>
 
-const SlackConfigSchema = z.object({
-  proxyUrl: z.string(),
-  getHeaders: secretSchema(
-    z.custom<HeaderProvider>((value) => typeof value === 'function'),
-  ).optional(),
-})
+const SlackConfigSchema = z
+  .object({
+    ...timeRangeShape,
+    proxyUrl: z.string(),
+    getHeaders: secretSchema(
+      z.custom<HeaderProvider>((value) => typeof value === 'function'),
+    ).optional(),
+  })
+  .refine(orderedTimes, timeRangeOrderError)
 
 export type SlackConfig = ConfigOf<typeof SlackConfigSchema>
 

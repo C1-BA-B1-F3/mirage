@@ -79,7 +79,8 @@
               "home/permissions",
               "home/policy-engine",
               "home/route-policy",
-              "home/auth"
+              "home/auth",
+              "home/ssh"
             ]
           },
           {
@@ -160,6 +161,7 @@
                       "home/setup/mongodb",
                       "home/setup/gridfs",
                       "home/setup/postgres",
+                      "home/setup/airtable",
                       "home/setup/chroma",
                       "home/setup/lancedb",
                       "home/setup/qdrant",
@@ -193,6 +195,7 @@
                   "home/setup/cli/discord",
                   "home/setup/cli/ntn",
                   "home/setup/cli/linear",
+                  "home/setup/cli/airtable",
                   "home/setup/cli/gh",
                   "home/setup/cli/hf",
                   "home/setup/cli/git"
@@ -212,6 +215,7 @@
                   "home/setup/runtime/sandbox",
                   "home/setup/runtime/sandbox/sandlock",
                   "home/setup/runtime/sandbox/docker",
+                  "home/setup/runtime/sandbox/apple_container",
                   "home/setup/runtime/sandbox/smolvm",
                   "home/setup/runtime/sandbox/daytona",
                   "home/setup/runtime/sandbox/e2b",
@@ -347,6 +351,7 @@
                       "python/vfs/mongodb",
                       "python/vfs/gridfs",
                       "python/vfs/postgres",
+                      "python/vfs/airtable",
                       "python/vfs/chroma",
                       "python/vfs/lancedb",
                       "python/vfs/qdrant",
@@ -382,6 +387,7 @@
                   "python/cli/discord",
                   "python/cli/ntn",
                   "python/cli/linear",
+                  "python/cli/airtable",
                   "python/cli/gh",
                   "python/cli/hf",
                   "python/cli/git"
@@ -409,6 +415,7 @@
                   "python/runtime/sandbox",
                   "python/runtime/sandbox/sandlock",
                   "python/runtime/sandbox/docker",
+                  "python/runtime/sandbox/apple_container",
                   "python/runtime/sandbox/smolvm",
                   "python/runtime/sandbox/daytona",
                   "python/runtime/sandbox/e2b",
@@ -544,6 +551,7 @@
                       "typescript/setup/mongodb",
                       "typescript/setup/gridfs",
                       "typescript/setup/postgres",
+                      "typescript/setup/airtable",
                       "typescript/setup/chroma",
                       "typescript/setup/lancedb",
                       "typescript/setup/qdrant",
@@ -578,6 +586,7 @@
                   "typescript/cli/discord",
                   "typescript/cli/ntn",
                   "typescript/cli/linear",
+                  "typescript/cli/airtable",
                   "typescript/cli/gh",
                   "typescript/cli/hf",
                   "typescript/cli/git"
@@ -604,6 +613,7 @@
                 "pages": [
                   "typescript/runtime/sandbox",
                   "typescript/runtime/sandbox/docker",
+                  "typescript/runtime/sandbox/apple_container",
                   "typescript/runtime/sandbox/smolvm",
                   "typescript/runtime/sandbox/daytona",
                   "typescript/runtime/sandbox/e2b",

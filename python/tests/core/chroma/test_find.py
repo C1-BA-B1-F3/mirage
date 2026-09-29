@@ -105,7 +105,9 @@ async def test_find_size_counts_sizeless_files_as_zero(chroma_accessor,
 @pytest.mark.asyncio
 async def test_find_honors_mtime_and_empty(chroma_accessor, chroma_collection,
                                            chroma_index, knowledge_root):
-    chroma_collection.chunks["api/reference"] = []
+    # -empty needs a known size of 0: one empty chunk renders 0 bytes,
+    # while a page with no chunks at all stays unsized and never matches.
+    chroma_collection.chunks["api/reference"][0]["document"] = ""
     recent = await find(
         chroma_accessor,
         knowledge_root,

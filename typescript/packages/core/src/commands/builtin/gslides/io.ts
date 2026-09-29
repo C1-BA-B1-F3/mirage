@@ -12,17 +12,17 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { GSlidesAccessor } from '../../../accessor/gslides.ts'
 import { read as gslidesRead, stream as gslidesStream } from '../../../core/gslides/read.ts'
 import { readdir as gslidesReaddir } from '../../../core/gslides/readdir.ts'
 import { stat as gslidesStat } from '../../../core/gslides/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const GSLIDES_IO: CommandIO<GSlidesAccessor> = {
-  readdir: gslidesReaddir,
-  readBytes: gslidesRead,
-  readStream: gslidesStream,
-  stat: gslidesStat,
+export const GSLIDES_IO: CommandIO<GSlidesAccessor> = new VFSAdapter<GSlidesAccessor>({
+  read: { readdir: gslidesReaddir, readBytes: gslidesRead, stat: gslidesStat },
+  native: { readStream: gslidesStream },
   isMounted: () => true,
   local: false,
-}
+}).toCommandIO()

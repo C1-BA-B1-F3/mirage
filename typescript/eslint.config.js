@@ -153,6 +153,8 @@ export default tseslint.config(
         __mirage_close: 'readonly',
         __mirage_readdir: 'readonly',
         __mirage_stat: 'readonly',
+        __mirage_getcwd: 'readonly',
+        __mirage_chdir: 'readonly',
         __mirage_remove: 'readonly',
         __mirage_mkdir: 'readonly',
         __mirage_rename: 'readonly',

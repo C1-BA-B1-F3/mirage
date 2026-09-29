@@ -24,8 +24,8 @@ from mirage.types import PathSpec
 async def cmp_cmd(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                   texts: list[str],
                   opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
-    if not ops.is_mounted(accessor) or len(paths) < 2:
-        raise ValueError('cmp: requires two paths')
+    if not ops.is_mounted(accessor):
+        raise ValueError("cmp: no VFS")
     resolved = await ops.resolve_glob(accessor, paths, opts.index)
     return await cmp_generic(resolved, list(texts), opts,
                              bound_op(ops.read_bytes, accessor, opts.index))

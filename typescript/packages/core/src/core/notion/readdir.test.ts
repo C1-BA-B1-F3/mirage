@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { IndexEntry } from '../../cache/index/config.ts'
+import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import { describe, expect, it } from 'vitest'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
@@ -19,7 +21,7 @@ import { PathSpec } from '../../types.ts'
 import type { NotionTransport } from './client.ts'
 import { normalizeDatabase, toJsonBytes } from './normalize.ts'
 import type { NotionAccessor } from '../../accessor/notion.ts'
-import { readdir } from './readdir.ts'
+import { readdir as rawOperation } from './readdir.ts'
 import { formatSegment } from './pathing.ts'
 import { NAME_MAX_BYTES, byteLength } from '../../utils/sanitize.ts'
 
@@ -240,18 +242,37 @@ describe('notion readdir databases', () => {
     expect(out).toEqual([`${dirPath}/database.json`, `${dirPath}/Tasks__${DS_ID}`])
   })
 
-  it('lists row pages under a data source directory', async () => {
+  it('lists the schema and rows.jsonl under a data source, never the rows', async () => {
     const transport = new FakeTransport()
     transport.enqueue('API-retrieve-a-data-source', dataSource())
-    transport.enqueue('API-post-data-source-query', {
-      results: [topPage(TOP1_ID, 'Row A'), { id: 'x', object: 'database' }],
+    const dirPath = `/databases/Tasks__${DB_ID}/Tasks__${DS_ID}`
+    const out = await readdir(makeAccessor(transport), spec(dirPath), undefined)
+    expect(out).toEqual([`${dirPath}/data_source.json`, `${dirPath}/rows.jsonl`])
+    expect(transport.invocations.map((call) => call.name)).toEqual(['API-retrieve-a-data-source'])
+  })
+
+  it('lists a row by its path, as any page', async () => {
+    const transport = new FakeTransport()
+    transport.enqueue('API-retrieve-a-page', {
+      ...topPage(TOP1_ID, 'Row A'),
+      parent: { data_source_id: DS_ID },
+    })
+    transport.enqueue('API-retrieve-block-children', {
+      results: [
+        {
+          id: CHILD1_ID,
+          type: 'child_page',
+          child_page: { title: 'Notes' },
+          last_edited_time: '2024-01-05T00:00:00Z',
+        },
+      ],
       has_more: false,
       next_cursor: null,
     })
-    const dirPath = `/databases/Tasks__${DB_ID}/Tasks__${DS_ID}`
+    const dirPath = `/databases/Tasks__${DB_ID}/Tasks__${DS_ID}/Row_A__${TOP1_ID}`
     const out = await readdir(makeAccessor(transport), spec(dirPath), undefined)
-    expect(out).toEqual([`${dirPath}/data_source.json`, `${dirPath}/Row_A__${TOP1_ID}`])
-    expect(transport.invocations[1]?.args).toEqual({ data_source_id: DS_ID, page_size: 100 })
+    expect(out).toEqual([`${dirPath}/page.json`, `${dirPath}/Notes__${CHILD1_ID}`])
+    expect(transport.invocations[1]?.args).toEqual({ block_id: TOP1_ID, page_size: 100 })
   })
 
   it('sizes database.json from the retrieved database', async () => {
@@ -381,3 +402,26 @@ describe('notion readdir long child titles', () => {
     expect(byteLength(child ?? '')).toBeLessThanOrEqual(NAME_MAX_BYTES)
   })
 })
+
+async function readdir(accessor: NotionAccessor, path: PathSpec, index?: IndexCacheStore) {
+  const cache = index ?? new RAMIndexCacheStore()
+  const pieces = path.virtual.replace(/\/$/, '').split('/')
+  const count = pieces.length
+  for (let i = 1; i < count; i++) {
+    const key = pieces.slice(0, i + 1).join('/')
+    const name = pieces[i] ?? ''
+    if (name.includes('__') && (await cache.get(key)).entry == null)
+      await cache.setPartialDir(key.slice(0, key.lastIndexOf('/')) || '/', [
+        [
+          name,
+          new IndexEntry({
+            id: name.split('__').at(-1) ?? '',
+            name,
+            vfsName: name,
+            resourceType: 'notion/container',
+          }),
+        ],
+      ])
+  }
+  return rawOperation(accessor, path, cache)
+}

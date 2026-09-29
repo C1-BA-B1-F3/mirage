@@ -38,7 +38,7 @@ export async function appendBytes(
     accessor.store.files.set(p, data)
   }
   accessor.store.modified.set(p, nowIso())
-  record('append', p, VFSName.RAM, data.byteLength, timer)
+  record('append', path.virtual, VFSName.RAM, data.byteLength, timer)
   await invalidateAfterWrite(path)
   return Promise.resolve()
 }

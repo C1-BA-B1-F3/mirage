@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { access, mkdir as mkdirFs } from 'node:fs/promises'
+import { access, mkdir as mkdirFs, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { DiskAccessor } from '../../accessor/disk.ts'
@@ -38,5 +38,20 @@ describe('core/disk/rmdir', () => {
   })
   it('is a no-op on missing dir', async () => {
     await expect(rmdir(accessor, spec('/missing'))).resolves.toBeUndefined()
+  })
+})
+
+// A path under a plain file is ENOTDIR on the real filesystem, stamped with
+// the virtual path: Node's own message names the host path, which must never
+// reach a diagnostic. Mirrors the disk tests in python/tests/core/disk.
+describe('core/disk/rmdir under a plain file', () => {
+  it('is ENOTDIR against the virtual path', async () => {
+    await writeFile(join(root, 'a.txt'), 'a')
+    const err: unknown = await rmdir(accessor, spec('/a.txt/x')).then(
+      () => null,
+      (e: unknown) => e,
+    )
+    expect(err).toMatchObject({ code: 'ENOTDIR', virtualPath: '/a.txt/x' })
+    expect((err as Error).message).not.toContain(root)
   })
 })

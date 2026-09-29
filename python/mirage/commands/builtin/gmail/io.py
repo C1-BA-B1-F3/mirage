@@ -12,24 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from functools import partial
-
-from mirage.commands.builtin.generic_bind import CommandIO
-from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.core.gmail.read import read as _read
 from mirage.core.gmail.readdir import readdir as _readdir
 from mirage.core.gmail.stat import stat as _stat
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import ReadOps
 
 # Mail is read through the generic factory; grep/rg push down to the Gmail
-# search API (kept bespoke) and writes go through the gws_gmail_* commands, so
-# the generic byte-mutation commands are intentionally absent.
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_stream=partial(stream_from_bytes, _read),
-    stat=_stat,
-    is_mounted=lambda a: True,
-    local=False,
-)
+# search API (kept bespoke) and writes go through the `gws` CLI
+# (commands/cli/builtin/gws), so the generic byte-mutation commands are
+# intentionally absent.
+IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                is_mounted=lambda a: True,
+                local=False).to_command_io()
 
 resolve_glob = IO.resolve_glob

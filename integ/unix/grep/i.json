@@ -148,6 +148,316 @@
       "flags": [
         "i"
       ]
+    },
+    {
+      "id": "grep_prefilter_folded_count",
+      "seq": 1287000,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "seq 1 20000 > /data/prefilter.txt; printf 'NEEDLE\\nneedle\\nother\\nneedleX\\n' >> /data/prefilter.txt; grep -ci needle /data/prefilter.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "i",
+        "c"
+      ]
+    },
+    {
+      "id": "grep_casefold_accent",
+      "seq": 1326015,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'ÉLAN\\nélan\\n' | grep -i é",
+      "expect": {
+        "exit": 0,
+        "stdout": "élan\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_casefold_fixed",
+      "seq": 1326016,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'ÉLAN\\nélan\\n' | grep -Fi Élan",
+      "expect": {
+        "exit": 0,
+        "stdout": "ÉLAN\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_casefold_only_matching",
+      "seq": 1326017,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'ÉAb éAB\\n' | grep -oib 'éab'",
+      "expect": {
+        "exit": 0,
+        "stdout": "5:éAB\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_casefold_backreference",
+      "seq": 1326018,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'Aa aA AA aa Éé\\n' | grep -oib '\\(a\\)\\1'",
+      "expect": {
+        "exit": 0,
+        "stdout": "0:Aa\n3:aA\n6:AA\n9:aa\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_casefold_negated_class",
+      "seq": 1326019,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'AaZz_\\n' | grep -oib '[^A-Z]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "4:_\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_casefold_upper_range",
+      "seq": 1326020,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'BCDbcdA\\n' | grep -oi '[B-D]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "B\nC\nD\nb\nc\nd\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_casefold_ere_upper",
+      "seq": 1326021,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'ABC abc Éé\\n' | grep -Eoi '[[:upper:]]+'",
+      "expect": {
+        "exit": 0,
+        "stdout": "ABC\nabc\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_c_locale_whitespace",
+      "seq": 1326202,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '\\302\\240\\n \\na\\n' | grep -Ei '^\\s$'",
+      "expect": {
+        "exit": 0,
+        "stdout": " \n",
+        "stderr": ""
+      }
     }
   ]
 }

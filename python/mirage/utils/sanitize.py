@@ -88,12 +88,36 @@ def truncate_bytes(text: str, budget: int) -> str:
     return raw[:budget].decode("utf-8", errors="ignore")
 
 
+def _strip_name_edges(cleaned: str) -> str:
+    """Trim what a cleaned name may not start or end with.
+
+    Underscores at either edge, and dots at the start: every hierarchy
+    classifier treats a dot-led segment as hidden, so a label that
+    rendered one (a board titled ``.plan``, or ``_.x`` once its
+    underscore was trimmed) was dropped from its listing and refused as
+    a path, with no error anywhere. ``path_safe_name`` keeps a dot-led
+    spelling by escaping it instead; these names are the shell-safe
+    kind, which drop what is not safe rather than escape it.
+
+    Args:
+        cleaned (str): a name whose unsafe characters are already
+            replaced.
+
+    Returns:
+        str: the name without leading dots or edge underscores.
+    """
+    return cleaned.lstrip("._").rstrip("_")
+
+
 def sanitize_name(name: str) -> str:
     """Sanitize a name for use in virtual paths.
 
     Replaces shell-unsafe characters (apostrophes, quotes, etc.)
     and spaces with underscores. Safe for use in shell commands
-    without quoting.
+    without quoting. Never dot-led, and never empty: a name with
+    nothing left once the unsafe characters go (``!!!``, an emoji-only
+    title) is ``unknown``, as a blank one is, because an empty label
+    renders a ``__<id>`` segment no classifier accepts.
 
     Args:
         name (str): raw name from API.
@@ -106,7 +130,9 @@ def sanitize_name(name: str) -> str:
     cleaned = UNSAFE_CHARS.sub("_", name)
     cleaned = cleaned.replace(" ", "_")
     cleaned = MULTI_UNDERSCORE.sub("_", cleaned)
-    cleaned = cleaned.strip("_")
+    cleaned = _strip_name_edges(cleaned)
+    if not cleaned:
+        return "unknown"
     if len(cleaned) > MAX_LEN:
         cleaned = cleaned[:MAX_LEN]
     return cleaned
@@ -153,7 +179,9 @@ def sanitize_label(text: str,
     be, so those are the arguments.
 
     Unlike ``sanitize_name`` this ellipsizes rather than hard-cutting, so
-    a truncated name reads as truncated.
+    a truncated name reads as truncated. Like it, the label is never
+    dot-led, and one with nothing left once the unsafe characters go is
+    the ``fallback``, as a blank one is.
 
     Two budgets apply, and both have to: ``max_len`` is the readable
     length a backend wants, while ``max_bytes`` is what the filesystem
@@ -180,7 +208,9 @@ def sanitize_label(text: str,
     if is_blank(text):
         return fallback
     cleaned = UNSAFE_CHARS.sub("_", text).replace(" ", "_")
-    cleaned = MULTI_UNDERSCORE.sub("_", cleaned).strip("_")
+    cleaned = _strip_name_edges(MULTI_UNDERSCORE.sub("_", cleaned))
+    if not cleaned:
+        return fallback
     if len(cleaned) > max_len:
         cleaned = cleaned[:max_len - len(ELLIPSIS)] + ELLIPSIS
     if byte_len(cleaned) > max_bytes:

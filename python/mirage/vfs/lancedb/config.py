@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class LanceDBConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     uri: str
     api_key: SecretStr | None = None
     region: str = "us-east-1"

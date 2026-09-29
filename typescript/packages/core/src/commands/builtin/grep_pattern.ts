@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { translateClasses } from '../../utils/posix.ts'
+import { compilePosixRegex, translateClasses } from '../../utils/posix.ts'
 import { BreError, translateBre } from './utils/bre.ts'
 import { UsageError } from '../errors.ts'
 import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
@@ -22,6 +22,15 @@ import { FlagView } from '../spec/flag_view.ts'
 import { type FlagValue } from '../spec/types.ts'
 
 export const NEVER_MATCH = '(?!)'
+// The dest -e fills in each search command's spec: rg spells its options by
+// their long names.
+export const PATTERN_KEYS: Readonly<Record<string, string>> = {
+  grep: 'e',
+  zgrep: 'e',
+  rg: 'regexp',
+}
+// The dest -f fills: grep's and rg's name the long spelling, zgrep has none.
+const FILE_KEYS: Readonly<Record<string, string>> = { grep: 'file', zgrep: 'f', rg: 'file' }
 
 const DEC = new TextDecoder()
 
@@ -35,11 +44,13 @@ function escapeRegex(s: string): string {
 export function patternArg(
   texts: readonly string[],
   bag: Record<string, FlagValue>,
+  patternKey = 'e',
 ): string | null {
   // Spec-less, as the shared push-down helpers are: `-e` and `-f` are
   // declared by the grep, rg and zgrep specs alike, and this helper is
-  // reached from all three.
-  const e = new FlagView(bag).asList('e')
+  // reached from all three; `patternKey` is the dest -e fills (rg's is
+  // `regexp`).
+  const e = new FlagView(bag).asList(patternKey)
   if (e.length > 0) return e.join('\n')
   if (texts.length > 0 && texts[0] !== undefined) return texts[0]
   return null
@@ -63,26 +74,28 @@ export async function resolvePattern(
   mountPrefix: string | null | undefined,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
 ): Promise<PatternResolution> {
-  let pattern = patternArg(texts, bag)
+  let pattern = patternArg(texts, bag, PATTERN_KEYS[name] ?? 'e')
   let neverMatch = false
-  // `raw` rather than `asList`, mirroring Python's `flags.raw("f")`: an
+  // `raw` rather than `asList`, mirroring Python's `flags.raw(file_key)`: an
   // empty -f list still means "-f was supplied", which is what turns on the
   // NEVER_MATCH sentinel below.
-  const patternFiles = new FlagView(bag).raw('f')
+  const patternFiles = new FlagView(bag).raw(FILE_KEYS[name] ?? 'f')
   if (Array.isArray(patternFiles)) {
     const first = paths[0]
     const prefix =
       (first === undefined ? undefined : mountPrefixOf(first.virtual, first.vfsPath)) ??
       mountPrefix ??
       ''
-    for (const filePath of patternFiles) {
+    for (const file of patternFiles) {
+      const filePath = file instanceof PathSpec ? file.virtual : file
       const patternSpec = PathSpec.fromStrPath(filePath, mountKey(filePath, prefix))
       let fileData: Uint8Array
       try {
         fileData = await materialize(stream(patternSpec))
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        return { pattern: null, neverMatch: false, error: `${name}: ${filePath}: ${msg}\n` }
+        const shown = file instanceof PathSpec ? file.rawPath : file
+        return { pattern: null, neverMatch: false, error: `${name}: ${shown}: ${msg}\n` }
       }
       pattern = mergePatternList(pattern, fileData)
     }
@@ -143,7 +156,7 @@ function sourceOf(part: string, fixedString: boolean, basic: boolean): string {
 // patterns are basic regular expressions, which grep reads by default and which
 // invert most of the RegExp operators; false leaves them alone, which is right
 // for -E and for rg's own dialect.
-function buildPatternStr(
+export function buildPatternStr(
   pattern: string,
   fixedString = false,
   wholeWord = false,
@@ -172,5 +185,25 @@ export function compilePattern(
   wholeWord = false,
   basic = false,
 ): RegExp {
-  return new RegExp(buildPatternStr(pattern, fixedString, wholeWord, basic), ignoreCase ? 'i' : '')
+  const source = buildPatternStr(pattern, fixedString, wholeWord, basic)
+  try {
+    return compilePosixRegex(source, ignoreCase ? 'i' : '')
+  } catch (err) {
+    if (!(err instanceof SyntaxError)) throw err
+    // GNU grep 3.11 diagnostics, also used by zgrep. Syntax outside
+    // our supported dialect gets a stable generic refusal.
+    let message = 'Invalid regular expression'
+    for (const [suffix, diagnostic] of [
+      ['Unterminated group', 'Unmatched ( or \\('],
+      ['Range out of order in character class', 'Invalid range end'],
+      ['numbers out of order in {} quantifier', 'Invalid content of \\{\\}'],
+      ['\\ at end of pattern', 'Trailing backslash'],
+    ] as const) {
+      if (err.message.endsWith(suffix)) {
+        message = diagnostic
+        break
+      }
+    }
+    throw new UsageError(`grep: ${message}`)
+  }
 }

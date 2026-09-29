@@ -159,3 +159,49 @@ describe('direct path execution', () => {
     expect(stdoutStr(outside)).toBe('fine\n')
   })
 })
+
+it('virtual programs need only their own permission, including through links', async () => {
+  const ws = await makeWs()
+  try {
+    await ws.shell('ln -s /usr/bin/echo /work/say')
+    ws.createSession('narrow', { profile: { commands: { allow: ['echo'] } } })
+    for (const path of ['/usr/bin/echo', '/usr/bin/../bin/echo', '/work/say']) {
+      const io = await ws.shell(`${path} 'two words'`, { sessionId: 'narrow' })
+      expect(io.exitCode).toBe(0)
+      expect(stdoutStr(io)).toBe('two words\n')
+    }
+    const io = await ws.shell('/usr/bin/cat /work/say', { sessionId: 'narrow' })
+    expect(io.exitCode).toBe(127)
+  } finally {
+    await ws.close()
+  }
+})
+
+it('virtual programs still check the target command policy', async () => {
+  const ws = await makeWs()
+  try {
+    ws.createSession('narrow', {
+      profile: {
+        commands: { allow: ['echo'], deny: [{ reason: 'blocked', commands: ['echo blocked'] }] },
+      },
+    })
+    const io = await ws.shell('/usr/bin/echo blocked', { sessionId: 'narrow' })
+    expect(io.exitCode).toBe(126)
+    expect(stdoutStr(io)).toBe('')
+  } finally {
+    await ws.close()
+  }
+})
+
+it('virtual programs skip functions and preserve caller aliases', async () => {
+  const ws = await makeWs()
+  try {
+    await ws.shell("cat() { echo shadow; }; alias cat='echo alias'; shopt -s expand_aliases")
+    const io = await ws.shell('/usr/bin/cat /usr/bin/echo')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toContain('command echo')
+    expect(stdoutStr(await ws.shell('cat'))).toBe('alias\n')
+  } finally {
+    await ws.close()
+  }
+})

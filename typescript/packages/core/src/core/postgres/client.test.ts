@@ -256,3 +256,19 @@ describe('fetchAllRelationships', () => {
     ])
   })
 })
+
+describe('fetchBoundedRows', () => {
+  it.each([0, 100, 101])('handles a %i-byte result and a colliding column', async (size) => {
+    const { accessor, query } = makeAccessor((sql) =>
+      sql.includes('information_schema.columns')
+        ? [{ column_name: '__mirage_bytes', data_type: 'text', is_nullable: 'YES' }]
+        : [{ __mirage_bytes: null, __mirage_bytes_: size }],
+    )
+    const rows = await client.fetchBoundedRows(accessor, 'public', 'users', {
+      limit: 11,
+      maxBytes: 100,
+    })
+    expect(rows).toEqual(size === 0 ? [] : size > 100 ? null : [{ __mirage_bytes: null }])
+    expect(query.mock.calls[1]?.[1]).toEqual([11, 100])
+  })
+})

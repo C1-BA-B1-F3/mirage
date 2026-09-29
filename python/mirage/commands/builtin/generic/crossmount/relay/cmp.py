@@ -19,12 +19,16 @@ from mirage.commands.builtin.generic.cmp import parse_flags
 from mirage.commands.builtin.generic.crossmount.types import CrossResult
 from mirage.commands.builtin.generic.crossmount.utils import flat_scopes, relay
 from mirage.commands.spec.types import FlagValue
+from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 
 
-async def run_cmp(scopes: list[PathSpec], flag_kwargs: dict[str, FlagValue],
-                  dispatch: DispatchFn) -> CrossResult:
+async def run_cmp(scopes: list[PathSpec],
+                  text_args: list[str],
+                  flag_kwargs: dict[str, FlagValue],
+                  dispatch: DispatchFn,
+                  stdin: ByteSource | None = None) -> CrossResult:
     """Byte-compare two files on different mounts via the shared generic.
 
     Pure wiring: both sides are read through dispatch-relayed primitives,
@@ -34,11 +38,16 @@ async def run_cmp(scopes: list[PathSpec], flag_kwargs: dict[str, FlagValue],
 
     Args:
         scopes (list[PathSpec]): The two path operands.
+        text_args (list[str]): The SKIP1 and SKIP2 operands, if any.
         flag_kwargs (dict): Flags parsed against the shared cmp spec.
         dispatch (DispatchFn): Workspace operation dispatcher.
+        stdin (ByteSource | None): The line's input, which a ``-`` or
+            ``/dev/stdin`` operand reads.
     """
     parsed = parse_flags(flag_kwargs)
     return await generic_cmp(flat_scopes(scopes),
+                             text_args,
+                             stdin=stdin,
                              read_bytes=functools.partial(
                                  relay, dispatch, "read"),
                              silent=parsed.silent,

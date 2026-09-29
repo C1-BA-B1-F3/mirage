@@ -15,9 +15,14 @@
 import { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { LookupStatus } from '@struktoai/mirage-core/cache/index/config'
+import type { PathSpec } from '@struktoai/mirage-core/types'
+import { eacces } from '@struktoai/mirage-core/utils/errors'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
-import { ensureLiveIndex, localRows, refillIndex } from './tree.ts'
+import { HfHubError } from './client.ts'
+import { ABSENT_STATUSES } from './constants.ts'
+import { ensureLiveIndex, fetchPath, indexRows, localRows, refillIndex } from './tree.ts'
 import { withIndexLock } from '@struktoai/mirage-core/cache/index/lock'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /**
  * What sits at one mount-absolute key.
@@ -65,7 +70,7 @@ export async function lookup(
     const parent =
       key === keyOf(prefix, '')
         ? listing
-        : await index.listDir(key.replace(/\/+$/, '').replace(/\/[^/]+$/, '') || '/')
+        : await index.listDir(rstripSlash(key).replace(/\/[^/]+$/, '') || '/')
     // The index is the whole listing rather than a cache in front of one, so an
     // *expired* answer means the tree aged out, not that the path is gone.
     // Refetch once and ask again; a miss against a live index is a real absence
@@ -80,10 +85,92 @@ export async function lookup(
   })
 }
 
+/**
+ * `lookup`, asked once more if the index was cleared under it.
+ *
+ * A reconcile verdict clears the mount index, and one landing between the
+ * refill and the read leaves a miss that only says the store is empty. Read as
+ * absence, that miss reaches `onOpMissing` through a dispatcher door and drops
+ * the path's overlay for good. Two signs tell that miss from a real one: the
+ * root listing is gone (a live index always has one), or the accessor refilled
+ * an index while the lookup ran, which is a clear followed by a concurrent
+ * reseed.
+ */
+export async function lookupRetrying(
+  accessor: HfHubAccessor,
+  index: IndexCacheStore | undefined,
+  prefix: string,
+  key: string,
+): Promise<Found> {
+  const refills = accessor.refills
+  const found = await lookup(accessor, index, prefix, key)
+  if (exists(found) || index === undefined) return found
+  const root = await index.listDir(keyOf(prefix, ''))
+  if (root.status !== LookupStatus.NOT_FOUND && accessor.refills === refills) return found
+  return lookup(accessor, index, prefix, key)
+}
+
+/**
+ * Answer one path with one request, where a whole walk would be waste.
+ *
+ * Taken only when the index holds no tree at all while the mount has loaded
+ * one before: the throwaway store reconcile and the drift check stat through,
+ * or a mount index a verdict just cleared. A mount that never loaded its tree
+ * seeds it as it always has, and a live or expired index keeps its own answer.
+ * Nothing is written back: one row is not a listing, and seeding it would make
+ * every other path read as absent.
+ *
+ * The row's id is the git oid a tree row carries. Its mtime can differ from
+ * the tree's: paths-info expands commits only when the mount forces it, while
+ * the tree's own default expands a repository small enough.
+ */
+export async function pointLookup(
+  accessor: HfHubAccessor,
+  index: IndexCacheStore | undefined,
+  prefix: string,
+  rel: string,
+): Promise<Found | null> {
+  if (index === undefined || !accessor.treeLoaded) return null
+  const root = await index.listDir(keyOf(prefix, ''))
+  if (root.status !== LookupStatus.NOT_FOUND) return null
+  const { entries } = indexRows(await fetchPath(accessor, rel), prefix)
+  return { entry: entries.get(keyOf(prefix, rel)) ?? null, children: null }
+}
+
+/**
+ * Report a repository the Hub will not show as permission denied.
+ *
+ * A 401, 403 or 404 for the repository or revision is the Hub declining to
+ * show the listing, so the path answers the way a directory the caller may not
+ * open does: every file tool already reports that and steps past it, where a
+ * raw Hub error would stop a walk across other mounts. It is never absence,
+ * which reconcile would turn into a delete.
+ */
+export async function refusalsDenied<T>(
+  pathSpec: PathSpec,
+  run: () => Promise<T>,
+  statuses: ReadonlySet<number> = ABSENT_STATUSES,
+): Promise<T> {
+  try {
+    return await run()
+  } catch (err) {
+    throw asRefusal(pathSpec, err, statuses)
+  }
+}
+
+/** The error to rethrow for `err`: EACCES for a refusal, `err` itself otherwise. */
+export function asRefusal(
+  pathSpec: PathSpec,
+  err: unknown,
+  statuses: ReadonlySet<number> = ABSENT_STATUSES,
+): unknown {
+  return err instanceof HfHubError && statuses.has(err.status) ? eacces(pathSpec) : err
+}
+
 /** The mount-absolute key for a mount-local path. */
 export function keyOf(prefix: string, local: string): string {
-  const rel = local.replace(/^\/+|\/+$/g, '')
-  const stem = prefix.replace(/\/+$/, '')
+  const rel = stripSlash(local)
+  const stem = rstripSlash(prefix)
   if (rel === '') return stem === '' ? '/' : stem
   return stem === '' ? `/${rel}` : `${stem}/${rel}`
 }
@@ -111,7 +198,7 @@ export async function probeDir(
 
 /** A row for a directory the tree implies but has no row for. */
 export function dirStatEntry(key: string): IndexEntry {
-  const trimmed = key.replace(/\/+$/, '')
+  const trimmed = rstripSlash(key)
   const cut = trimmed.lastIndexOf('/')
   return new IndexEntry({
     id: '',

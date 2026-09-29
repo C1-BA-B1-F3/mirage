@@ -26,6 +26,6 @@ export {
   createShellParser,
   type ShellParser,
   type ShellParserConfig,
-  stripLineContinuation,
+  joinContinuations,
 } from './parse.ts'
 export { findSyntaxError, findUnterminatedBacktick } from './syntax.ts'

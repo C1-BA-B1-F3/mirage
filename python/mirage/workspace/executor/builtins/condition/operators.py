@@ -12,10 +12,15 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from functools import partial
+
+from mirage.commands.builtin.utils.paths import (dispatch_stat, dot_refusal,
+                                                 typed_spec)
 from mirage.io.types import materialize
 from mirage.shell.errors import ArithError, ExitSignal
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.dates import iso_timestamp
+from mirage.utils.errors import FileTooLargeError
 from mirage.utils.path import CycleError, resolve_path, resolve_symlinks
 from mirage.workspace.executor.builtins.condition.constants import (
     FILE_PAIR_BINARY, FILE_UNARY, INT_COMPARATORS, UNSUPPORTED_UNARY)
@@ -53,6 +58,12 @@ async def path_kind(ctx: CondContext,
         ctx (CondContext): evaluation context.
         val (str | PathSpec): operand as typed or classified.
     """
+    walk = typed_spec(val, ctx.session.cwd)
+    if await dot_refusal(partial(dispatch_stat, ctx.dispatch),
+                         walk) is not None:
+        # A path whose `.` and `..` do not resolve names nothing, which
+        # is what every file test reads as false.
+        return None, None
     try:
         scope = operand_scope(ctx, val)
     except CycleError:
@@ -118,7 +129,12 @@ async def apply_unary(ctx: CondContext, op: str, val: str | PathSpec) -> bool:
             # API backends (dropbox, gdrive, box) stat freshly written
             # empty files as size-unknown; only a read can answer, and
             # the prefetch TTL cache keeps repeat tests cheap.
-            data, _ = await ctx.dispatch("read", operand_scope(ctx, val))
+            try:
+                data, _ = await ctx.dispatch("read", operand_scope(ctx, val))
+            except FileTooLargeError:
+                # a file its mount refuses to render whole (an airtable
+                # table past max_read_records) is certainly not empty
+                return True
             return len(await materialize(data)) > 0
         if op in ("-r", "-w"):
             # Mirage has no per-user access model: whatever exists in a

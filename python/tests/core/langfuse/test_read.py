@@ -121,7 +121,7 @@ async def test_read_invalid_path_raises(accessor, index):
 
 @pytest.mark.asyncio
 async def test_read_session_trace(accessor, index):
-    trace_data = {"id": "tid1", "session_id": "sid1"}
+    trace_data = {"id": "tid1", "sessionId": "sid1"}
     with patch(
             "mirage.core.langfuse.read.fetch_trace",
             new_callable=AsyncMock,
@@ -189,3 +189,27 @@ async def test_read_trace_server_error_propagates(accessor, index):
                 PathSpec(vfs_path="traces/tid1.json",
                          virtual="/traces/tid1.json",
                          directory="/traces/tid1.json"), index)
+
+
+@pytest.mark.asyncio
+async def test_read_refuses_another_sessions_trace(accessor, index):
+    """sessions/<id>/<trace>.json names a trace of that session; the
+    trace id alone would fetch any session's trace."""
+    with patch("mirage.core.langfuse.read.fetch_trace",
+               new_callable=AsyncMock,
+               return_value={
+                   "id": "t1",
+                   "sessionId": "s2"
+               }):
+        with pytest.raises(FileNotFoundError):
+            await read(
+                accessor,
+                PathSpec(vfs_path="sessions/s1/t1.json",
+                         virtual="/sessions/s1/t1.json",
+                         directory="/sessions/s1/t1.json"), index)
+        own = await read(
+            accessor,
+            PathSpec(vfs_path="sessions/s2/t1.json",
+                     virtual="/sessions/s2/t1.json",
+                     directory="/sessions/s2/t1.json"), index)
+    assert json.loads(own)["sessionId"] == "s2"

@@ -148,6 +148,43 @@
         "e",
         "f"
       ]
+    },
+    {
+      "id": "grep_e_attached_path_like_pattern",
+      "seq": 828,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/grep-eatt && echo a/b.c | tee /data/grep-eatt/in.txt > /dev/null && grep -ea/b.c /data/grep-eatt/in.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "a/b.c\n",
+        "stderr": ""
+      },
+      "flags": [
+        "e"
+      ]
     }
   ]
 }

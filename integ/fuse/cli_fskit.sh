@@ -5,7 +5,7 @@
 # kernel mountpoint under /Volumes. Proves the CLI config path really reaches
 # Apple's FSKit: the mount row is tagged fskit, stat size equals read size
 # (fskit clamps reads to the lookup-time size, so these agreeing is what
-# SIZES_ALWAYS_KNOWN guarantees), the metadata write surface works, and two
+# sizes_always_known guarantees), the metadata write surface works, and two
 # measured shim limits stay pinned:
 #   - new-content zeroing: pages for regions a file did not already have
 #     (new file, empty file, truncate-then-write) flush as NUL bytes of the

@@ -430,7 +430,7 @@
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | head -n1 /data/stdin-file -)",
       "expect": {
         "exit": 0,
-        "stdout": "==> /data/stdin-file <==\nfile\n\n==> (standard input) <==\na\n",
+        "stdout": "==> /data/stdin-file <==\nfile\n\n==> standard input <==\na\n",
         "stderr": ""
       }
     },
@@ -444,7 +444,7 @@
       "command": "(echo file > /data/stdin-file; printf 'a\\nb\\n' | tail -n1 /data/stdin-file -)",
       "expect": {
         "exit": 0,
-        "stdout": "==> /data/stdin-file <==\nfile\n\n==> (standard input) <==\nb\n",
+        "stdout": "==> /data/stdin-file <==\nfile\n\n==> standard input <==\nb\n",
         "stderr": ""
       }
     },
@@ -501,6 +501,748 @@
       "expect": {
         "exit": 0,
         "stdout": "exists\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_operand_grep_names_dev_stdin_by_path",
+      "seq": 916903,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'b\\n' | grep -H b /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "/dev/stdin:b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_operand_grep_lists_dev_stdin_by_path",
+      "seq": 916904,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'b\\n' | grep -l b /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "/dev/stdin\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_operand_grep_dev_stdin_beside_a_file",
+      "seq": 916905,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'b\\n' | grep b /dev/stdin /data/a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/dev/stdin:b\n/data/a.txt:bar\n/data/a.txt:baz\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_operand_head_heads_dev_stdin_by_path",
+      "seq": 916906,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'b\\n' | head -v /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "==> /dev/stdin <==\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_operand_tail_heads_dev_stdin_by_path",
+      "seq": 916907,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'b\\n' | tail -v /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "==> /dev/stdin <==\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_operand_tail_heads_dash_standard_input",
+      "seq": 916908,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'b\\n' | tail -v -",
+      "expect": {
+        "exit": 0,
+        "stdout": "==> standard input <==\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_head_v_heads_standard_input",
+      "seq": 916909,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'b\\n' | head -v",
+      "expect": {
+        "exit": 0,
+        "stdout": "==> standard input <==\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_tail_v_heads_standard_input",
+      "seq": 916910,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'b\\n' | tail -v",
+      "expect": {
+        "exit": 0,
+        "stdout": "==> standard input <==\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_sha256sum_hashes_a_dash_as_dash",
+      "seq": 916920,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a\\nb\\n' | sha256sum -",
+      "expect": {
+        "exit": 0,
+        "stdout": "911169ddaaf146aff539f58c26c489af3b892dff0fe283c1c264c65ae5aa59a2  -\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_md5sum_hashes_dev_stdin_as_typed",
+      "seq": 916921,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a\\nb\\n' | md5sum /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "dd8c6a395b5dd36c56d23275028f526c  /dev/stdin\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_sha1sum_second_stdin_operand_reads_nothing",
+      "seq": 916922,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a\\nb\\n' | sha1sum - /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "05dec960e24d918b8a73a1c53bcbbaac2ee5c2e0  -\nda39a3ee5e6b4b0d3255bfef95601890afd80709  /dev/stdin\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_sha256sum_check_with_no_operand_reads_stdin",
+      "seq": 916923,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(cd /data && printf 'hi\\n' > sio-sum && sha256sum sio-sum | sha256sum -c)",
+      "expect": {
+        "exit": 0,
+        "stdout": "sio-sum: OK\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_sha256sum_check_calls_stdin_standard_input",
+      "seq": 916924,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'junk\\n' | sha256sum -c -",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sha256sum: 'standard input': no properly formatted checksum lines found\n"
+      }
+    },
+    {
+      "id": "shell_stdin_cmp_reads_a_dash_operand",
+      "seq": 916925,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'hello\\n' > /data/sio-cmp; printf 'hellO\\n' | cmp - /data/sio-cmp)",
+      "expect": {
+        "exit": 1,
+        "stdout": "- /data/sio-cmp differ: char 5, line 1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_cmp_compares_a_lone_file_with_stdin",
+      "seq": 916926,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'hello\\n' > /data/sio-cmp; printf 'hel' | cmp /data/sio-cmp)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cmp: EOF on - after byte 3, in line 1\n"
+      }
+    },
+    {
+      "id": "shell_stdin_cmp_eof_on_a_line_boundary_says_line",
+      "seq": 916927,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'hello\\n' > /data/sio-cmp; printf 'hello\\nworld\\n' | cmp /data/sio-cmp -)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cmp: EOF on /data/sio-cmp after byte 6, line 1\n"
+      }
+    },
+    {
+      "id": "shell_stdin_cmp_two_stdin_operands_are_equal",
+      "seq": 916928,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'x' | cmp - -",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_cmp_no_operand_is_missing_operand",
+      "seq": 916929,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cmp",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "cmp: missing operand after 'cmp'\ncmp: Try 'cmp --help' for more information.\n"
+      }
+    },
+    {
+      "id": "shell_stdin_cmp_l_pads_offsets_to_the_file",
+      "seq": 916930,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'hello\\nworld\\nfoo\\n' > /data/sio-cmpl; printf 'hello\\nx\\n' | cmp -l - /data/sio-cmpl)",
+      "expect": {
+        "exit": 1,
+        "stdout": " 7 170 167\n 8  12 157\n",
+        "stderr": "cmp: EOF on - after byte 8\n"
+      }
+    },
+    {
+      "id": "shell_stdin_diff_reads_a_dash_operand",
+      "seq": 916931,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'a\\nb\\n' > /data/sio-diff; printf 'a\\nc\\n' | diff - /data/sio-diff)",
+      "expect": {
+        "exit": 1,
+        "stdout": "2c2\n< c\n---\n> b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_diff_names_dev_stdin_as_typed",
+      "seq": 916932,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'a\\nb\\n' > /data/sio-diff; printf 'x\\n' | diff -q /dev/stdin /data/sio-diff)",
+      "expect": {
+        "exit": 1,
+        "stdout": "Files /dev/stdin and /data/sio-diff differ\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_diff_two_stdin_operands_are_equal",
+      "seq": 916933,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'x\\n' | diff - -",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_diff_dash_against_a_directory_is_refused",
+      "seq": 916934,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'x\\n' | diff - /data",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "diff: cannot compare '-' to a directory\n"
+      }
+    },
+    {
+      "id": "shell_stdin_diff_one_operand_is_missing_operand",
+      "seq": 916935,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'a\\n' > /data/sio-diff; diff /data/sio-diff)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "diff: missing operand after '/data/sio-diff'\ndiff: Try 'diff --help' for more information.\n"
+      }
+    },
+    {
+      "id": "shell_stdin_diff_names_operands_as_typed",
+      "seq": 916936,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'a\\nb\\n' > /data/sio-diff; cd /data && printf 'x\\n' | diff -q sio-diff -)",
+      "expect": {
+        "exit": 1,
+        "stdout": "Files sio-diff and - differ\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_comm_reads_a_dash_operand",
+      "seq": 916937,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'apple\\nbanana\\n' > /data/sio-comm; printf 'apple\\nzebra\\n' | comm - /data/sio-comm)",
+      "expect": {
+        "exit": 0,
+        "stdout": "\t\tapple\n\tbanana\nzebra\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_comm_one_operand_is_missing_operand",
+      "seq": 916938,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'a\\n' > /data/sio-comm; comm /data/sio-comm)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "comm: missing operand after '/data/sio-comm'\nTry 'comm --help' for more information.\n"
+      }
+    },
+    {
+      "id": "shell_stdin_join_reads_a_dash_operand",
+      "seq": 916939,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(printf 'alice 30\\nbob 25\\n' > /data/sio-join; printf 'alice 1\\nbob 2\\n' | join - /data/sio-join)",
+      "expect": {
+        "exit": 0,
+        "stdout": "alice 1 30\nbob 2 25\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_join_refuses_two_dash_operands",
+      "seq": 916940,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a\\n' | join - -",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "join: both files cannot be standard input\n"
+      }
+    },
+    {
+      "id": "shell_stdin_tac_reads_a_dash_operand",
+      "seq": 916941,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a\\nb\\n' | tac -",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\na\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_nl_reads_dev_stdin",
+      "seq": 916942,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a\\nb\\n' | nl /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "     1\ta\n     2\tb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_fold_reads_a_dash_operand",
+      "seq": 916943,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'abcdef\\n' | fold -w 2 -",
+      "expect": {
+        "exit": 0,
+        "stdout": "ab\ncd\nef\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_expand_reads_dev_stdin",
+      "seq": 916944,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a\\tb\\n' | expand -t 2 /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "a b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_unexpand_reads_a_dash_operand",
+      "seq": 916945,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '        x\\n' | unexpand -",
+      "expect": {
+        "exit": 0,
+        "stdout": "\tx\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_fmt_reads_a_dash_operand",
+      "seq": 916946,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a b\\n' | fmt -",
+      "expect": {
+        "exit": 0,
+        "stdout": "a b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_strings_reads_dev_stdin",
+      "seq": 916947,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'hello world\\n' | strings -n 3 /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello world\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_rev_reads_dev_stdin",
+      "seq": 916948,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'abc\\n' | rev /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "cba\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_shuf_reads_a_dash_operand",
+      "seq": 916949,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a\\n' | shuf -",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_iconv_reads_dev_stdin",
+      "seq": 916950,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'caf\\n' | iconv -f utf-8 -t ascii /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "caf\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_tsort_reads_a_dash_operand",
+      "seq": 916951,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a b\\n' | tsort -",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_tsort_odd_tokens_name_the_input",
+      "seq": 916952,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'a\\n' | tsort -",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "tsort: -: input contains an odd number of tokens\n"
+      }
+    },
+    {
+      "id": "shell_stdin_base64_reads_a_dash_operand",
+      "seq": 916953,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'abc\\n' | base64 -w 4 -",
+      "expect": {
+        "exit": 0,
+        "stdout": "YWJj\nCg==\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_xxd_reads_dev_stdin",
+      "seq": 916954,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'abc' | xxd -p /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "616263\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_od_reads_a_dash_operand",
+      "seq": 916955,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'abc\\n' | od -An -tx1 -",
+      "expect": {
+        "exit": 0,
+        "stdout": " 61 62 63 0a\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_jq_reads_a_dash_operand",
+      "seq": 916956,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '{\"a\":1}\\n' | jq -c .a -",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_split_reads_a_dash_input",
+      "seq": 916957,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(cd /data && printf 'a\\nb\\n' | split -l 1 - sio-sp && cat sio-spaa sio-spab)",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_csplit_reads_a_dash_input",
+      "seq": 916958,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(cd /data && printf 'a\\nb\\nc\\n' | csplit -f sio-cs - 2 && cat sio-cs01)",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n4\nb\nc\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_zgrep_labels_a_dash_standard_input",
+      "seq": 916959,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'hello\\n' | gzip | zgrep -H hello -",
+      "expect": {
+        "exit": 0,
+        "stdout": "(standard input):hello\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_zgrep_lists_dev_stdin_as_typed",
+      "seq": 916960,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'hello\\n' | gzip | zgrep -l hello /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "/dev/stdin\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_zcat_reads_a_dash_operand",
+      "seq": 916961,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'hello\\n' | gzip | zcat -",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_gunzip_writes_a_dash_to_stdout",
+      "seq": 916962,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'hello\\n' | gzip | gunzip -",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_gzip_c_reads_dev_stdin",
+      "seq": 916963,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'hello\\n' | gzip -c /dev/stdin | zcat",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "shell_stdin_gzip_writes_a_dash_to_stdout_beside_files",
+      "seq": 916964,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(cd /data && printf 'f\\n' > sio-gzin && printf 'hi\\n' | gzip - sio-gzin | gzip -dc && ls sio-gzin*)",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\nsio-gzin.gz\n",
         "stderr": ""
       }
     }

@@ -16,7 +16,7 @@ import { AsyncLineIterator } from '../../../io/async_line_iterator.ts'
 import { IOResult } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { resolveSource } from '../utils/stream.ts'
+import { resolveSource, stdinStream } from '../utils/stream.ts'
 import { operandsIo, readOperands, singleChunk } from '../utils/operands.ts'
 
 const ENC = new TextEncoder()
@@ -26,10 +26,16 @@ function reverseString(s: string): string {
   return Array.from(s).reverse().join('')
 }
 
+// A newline is written where the input had one and nowhere else
+// (util-linux rev), so a last line with none stays without one; each file
+// is reversed on its own. Mirrors Python's rev.
 async function* revStream(source: AsyncIterable<Uint8Array>): AsyncIterable<Uint8Array> {
   const iter = new AsyncLineIterator(source)
-  for await (const line of iter) {
-    yield ENC.encode(reverseString(DEC.decode(line)) + '\n')
+  for (;;) {
+    const [line, found] = await iter.readUntil(0x0a)
+    if (!found && line.byteLength === 0) return
+    yield ENC.encode(reverseString(DEC.decode(line)) + (found ? '\n' : ''))
+    if (!found) return
   }
 }
 
@@ -44,6 +50,8 @@ export async function revGeneric(
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
 ): Promise<CommandFnResult> {
+  // util-linux rev opens `-` as a file; only /dev/stdin is stdin.
+  stream = stdinStream(stream, opts.stdin, false, false)
   if (paths.length > 0) {
     // Operands read eagerly so a missing one is reported up front and the
     // remaining operands still print (GNU rev).

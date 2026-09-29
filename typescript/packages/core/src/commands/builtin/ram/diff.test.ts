@@ -150,11 +150,14 @@ describe('diff', () => {
     expect(r.out).toContain('differ')
   })
 
-  it('missing second path returns exit code 2', async () => {
+  it("refuses a missing second path with GNU's usage error, exit 2", async () => {
     const vfs = new RAMVFS()
     vfs.store.files.set('/tmp/a.txt', ENC.encode('hello\n'))
-    const r = await runDiff(vfs, [PathSpec.fromStrPath('/tmp/a.txt')])
-    expect(r.exitCode).toBe(2)
+    const call = runDiff(vfs, [PathSpec.fromStrPath('/tmp/a.txt')])
+    await expect(call).rejects.toThrow(
+      "diff: missing operand after '/tmp/a.txt'\ndiff: Try 'diff --help' for more information.",
+    )
+    await expect(call).rejects.toMatchObject({ exitCode: 2 })
   })
 
   it('-u uses GNU single-line hunk header (@@ -1 +1 @@)', async () => {

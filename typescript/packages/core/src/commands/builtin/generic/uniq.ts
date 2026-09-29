@@ -13,13 +13,14 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { isStdin } from '../utils/stream.ts'
-import { stdinStream } from '../utils/stream.ts'
+import { stdinStat, stdinStream } from '../utils/stream.ts'
+import { splitReadable } from '../utils/operands.ts'
 import { IOResult, materialize } from '../../../io/types.ts'
-import type { PathSpec } from '../../../types.ts'
+import type { FileStat, PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { argmatchError, extraOperandError } from '../../spec/usage.ts'
 import { argmatch } from '../../spec/argmatch.ts'
-import { CommandName, type FlagValue } from '../../spec/types.ts'
+import { CommandName, type FlagValue, type ParsedFlagValue } from '../../spec/types.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { resolveSource } from '../utils/stream.ts'
@@ -40,7 +41,7 @@ interface UniqFlags {
   zeroTerminated: boolean
 }
 
-function parseCount(value: string | boolean | number | string[] | undefined): number | null {
+function parseCount(value: ParsedFlagValue | undefined): number | null {
   if (value === undefined || value === false) return null
   if (typeof value !== 'string') throw new Error(`uniq: invalid count: '${String(value)}'`)
   const normalized = value.trim()
@@ -57,7 +58,7 @@ const ALL_REPEATED_ARGS = ['none', 'prepend', 'separate'] as const
 const GROUP_ARGS = ['prepend', 'append', 'separate', 'both'] as const
 
 function optionalMethod(
-  value: string | boolean | number | string[] | undefined,
+  value: ParsedFlagValue | undefined,
   defaultValue: string,
   allowed: readonly string[],
   option: string,
@@ -81,13 +82,13 @@ function parseFlags(bag: Record<string, FlagValue>): UniqFlags {
   const duplicatesOnly = fl.asBool('repeated')
   const uniqueOnly = fl.asBool('unique')
   const allRepeated = optionalMethod(
-    fl.asBool('D') ? true : fl.raw('all_repeated'),
+    fl.asBool('D') ? true : (fl.raw('all_repeated') as ParsedFlagValue | undefined),
     'none',
     ALL_REPEATED_ARGS,
     'all-repeated',
   ) as UniqFlags['allRepeated']
   const group = optionalMethod(
-    fl.raw('group'),
+    fl.raw('group') as ParsedFlagValue | undefined,
     'separate',
     GROUP_ARGS,
     'group',
@@ -245,6 +246,7 @@ export async function uniqGeneric(
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write?: (p: PathSpec, data: Uint8Array) => Promise<void>,
+  stat?: (p: PathSpec) => Promise<FileStat>,
 ): Promise<CommandFnResult> {
   stream = stdinStream(stream, opts.stdin)
   if (paths.length > 2) throw extraOperandError(CommandName.UNIQ, paths[2]?.rawPath ?? '')
@@ -254,6 +256,13 @@ export async function uniqGeneric(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(`${message}\n`) })]
+  }
+  if (paths.length > 0 && stat !== undefined) {
+    // The input is stat'ed before the lazy stream starts, so a missing or
+    // unreadable one is reported in uniq's own words rather than
+    // surfacing mid-drain.
+    const [, err] = await splitReadable(paths.slice(0, 1), stdinStat(stat), 'uniq')
+    if (err !== '') return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(err) })]
   }
   let source: AsyncIterable<Uint8Array>
   const cache: string[] = []

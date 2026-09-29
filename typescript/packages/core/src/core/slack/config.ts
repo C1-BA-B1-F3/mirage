@@ -13,13 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { z } from 'zod'
-import {
-  parseConfigWithSchema,
-  redactConfigWithSchema,
-  type ConfigOf,
-  type RedactedConfig,
-  secretStr,
-} from '../../vfs/secrets.ts'
+import { type ConfigOf, secretStr } from '../../vfs/secrets.ts'
 
 export const SlackConfigSchema = z.object({
   token: secretStr(),
@@ -28,13 +22,3 @@ export const SlackConfigSchema = z.object({
 })
 
 export type SlackConfig = ConfigOf<typeof SlackConfigSchema>
-
-export type SlackConfigRedacted = RedactedConfig<SlackConfig, 'token' | 'searchToken'>
-
-export function redactSlackConfig(config: SlackConfig): SlackConfigRedacted {
-  return redactConfigWithSchema(SlackConfigSchema, config) as unknown as SlackConfigRedacted
-}
-
-export function normalizeSlackConfig(input: Record<string, unknown>): SlackConfig {
-  return parseConfigWithSchema(SlackConfigSchema, input)
-}

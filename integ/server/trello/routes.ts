@@ -91,6 +91,24 @@ async function boardLists(ctx: Ctx<C>): Promise<Reply> {
   }
 }
 
+async function getList(ctx: Ctx<C>): Promise<Reply> {
+  const list = await ctx.db.trelloList.findUnique({
+    where: listWhere(ctx.tenant, ctx.params.list ?? ''),
+  })
+  return list === null
+    ? notFound('list')
+    : {
+        status: 200,
+        body: {
+          id: list.id,
+          name: list.name,
+          idBoard: list.boardId,
+          closed: list.closed,
+          pos: list.pos,
+        },
+      }
+}
+
 async function boardMembers(ctx: Ctx<C>): Promise<Reply> {
   const boardId = ctx.params.board ?? ''
   const board = await ctx.db.trelloBoard.findUnique({ where: boardWhere(ctx.tenant, boardId) })
@@ -310,6 +328,7 @@ export function trelloRoutes(): KitRoute<C>[] {
     route('GET', '/boards/:board/lists', boardLists),
     route('GET', '/boards/:board/members', boardMembers),
     route('GET', '/boards/:board/labels', boardLabels),
+    route('GET', '/lists/:list', getList),
     route('GET', '/lists/:list/cards', listCards),
     route('POST', '/cards', createCard, { write: true }),
     route('GET', '/cards/:card', getCard),

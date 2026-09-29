@@ -20,6 +20,12 @@ import { IOResult, materialize } from '../../io/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
 import { PathSpec } from '../../types.ts'
+import {
+  PROGRAM_FILE_COMMANDS,
+  prepareProgram,
+  programFiles,
+} from '../../commands/builtin/generic/program.ts'
+import type { ParsedCommand } from './command/types.ts'
 import { identityFrom } from '../../commands/builtin/utils/identity.ts'
 import type { MountEntry } from '../mount/mount.ts'
 import type { Namespace } from '../mount/namespace/namespace.ts'
@@ -109,7 +115,6 @@ async function finishFind(
   ns: NamespaceView | undefined,
   statPath: StatPath,
   dispatch: DispatchFn,
-  namespace: Namespace | null,
   stdin: ByteSource | null,
   starts: readonly PathSpec[],
   signal: AbortSignal | undefined,
@@ -127,7 +132,6 @@ async function finishFind(
       statPath,
       dispatch,
       identity: identityFrom(ns, sessionView(session, registry.policies)),
-      namespace,
       stdin,
       starts,
       ...(signal !== undefined ? { signal } : {}),
@@ -139,6 +143,12 @@ async function finishFind(
   }
   if (io.exitCode === 0) io.exitCode = actionExit
   return newStdout
+}
+
+/** The command's words as the line spelled them, an operand as typed.
+ * Mirrors Python's spelled_words. */
+function spelledWords(parts: readonly (string | PathSpec)[]): string[] {
+  return parts.map((p) => (p instanceof PathSpec ? p.rawPath : p))
 }
 
 export async function handleCommand(
@@ -209,6 +219,7 @@ export async function handleCommand(
   // leaf and a command handler see one plane alike.
   const cliInstall = registry.clis.get(cmdName)
   if (cliInstall !== null) {
+    const cliSignal = mergeSignals(signal, session.abortSignal)
     // A leaf that waits on its service keeps running; the caller's abort
     // releases the invocation, as it does for `wait`.
     return abortable(
@@ -218,11 +229,26 @@ export async function handleCommand(
         session,
         stdin,
         {
+          ...(executeFn !== undefined
+            ? {
+                shell: (command: string) =>
+                  executeFn(command, {
+                    sessionId: session.sessionId,
+                    session,
+                    ...(cliSignal !== undefined ? { signal: cliSignal } : {}),
+                  }),
+              }
+            : {}),
+          ...(cliSignal !== undefined ? { signal: cliSignal } : {}),
+          commandLimits: registry.commandLimits,
           entries: registry.runtimeEntries,
           dispatch,
           statPath: (path: string) => pathStat(dispatch, path, null),
           ns: namespaceViewOf(registry, namespace ?? null, dispatch),
           sessionView: sessionView(session, registry.policies),
+          ...(registry.processView === undefined
+            ? {}
+            : { processes: registry.processView(session) }),
         },
         dropsMountCaches(cliInstall.spec) ? () => dropMountCaches(registry) : null,
       ),
@@ -278,10 +304,64 @@ export async function handleCommand(
     return [standardOut, new IOResult(), new ExecutionNode({ command: cmdStr, exitCode: 0 })]
   }
 
+  let prepared: ParsedCommand | null = null
+  if (PROGRAM_FILE_COMMANDS.has(cmdName)) {
+    const programSpec = SPECS[cmdName]
+    if (programSpec !== undefined) {
+      const candidate = parseFlags(
+        parts.slice(1),
+        registeredSpec(cmdName, programSpec),
+        cmdName,
+        session.cwd,
+      )
+      if (programFiles(cmdName, candidate.flagKwargs).length > 0) {
+        prepared = candidate
+        const refusal = optionError(cmdName, prepared)
+        if (refusal !== null) {
+          const [msg, code] = refusal
+          return [
+            null,
+            new IOResult({ exitCode: code, stderr: msg }),
+            new ExecutionNode({ command: cmdStr, exitCode: code, stderr: msg }),
+          ]
+        }
+        const [texts, flags, remaining, error] = await prepareProgram(
+          cmdName,
+          prepared.texts,
+          prepared.flagKwargs,
+          stdin,
+          dispatch,
+          prepared.paths,
+        )
+        if (error !== null) {
+          return [
+            null,
+            error,
+            new ExecutionNode({
+              command: cmdStr,
+              exitCode: error.exitCode,
+              stderr: await materialize(error.stderr),
+            }),
+          ]
+        }
+        stdin = remaining
+        prepared = { ...prepared, texts, flagKwargs: flags }
+        pathScopes.splice(0, pathScopes.length, ...prepared.paths)
+      }
+    }
+  }
+
   // Path-valued flags (e.g. shuf --output=/dst/out) own a mount just like
   // positional operands, so they join routing and mount validation instead of
   // being dropped whenever a positional path is also present.
-  const routingScopes = mergeScopes(pathScopes, pathFlagScopes(cmdName, rawArgv, session.cwd))
+  // The empty name joins onto the working directory in `virtual` but names
+  // no path there, so it routes nowhere: the line runs where its other
+  // operands (or the cwd) put it, and that run's op guards refuse it. A line
+  // is not cross-mount because one of its words is empty.
+  const routingScopes = mergeScopes(
+    pathScopes,
+    pathFlagScopes(cmdName, rawArgv, session.cwd),
+  ).filter((s) => s.walkError !== 'ENOENT')
 
   let findExprTokens: string[] | null = null
   if (cmdName === 'find') {
@@ -337,12 +417,18 @@ export async function handleCommand(
     // `option '--version' doesn't allow an argument` and the two-mount line
     // was `unrecognized option '--vers=x'`.
     const sharedSpec = SPECS[cmdName]
-    const csParsed = parseFlags(
-      parts.slice(1),
-      sharedSpec !== undefined ? registeredSpec(cmdName, sharedSpec) : null,
-      cmdName,
-      session.cwd,
-    )
+    const csParsed =
+      prepared ??
+      parseFlags(
+        parts.slice(1),
+        sharedSpec !== undefined ? registeredSpec(cmdName, sharedSpec) : null,
+        cmdName,
+        session.cwd,
+        undefined,
+        false,
+        undefined,
+        cmdName !== 'tar',
+      )
     const csFlags = csParsed.flagKwargs
     const csTexts = findExprTokens ?? csParsed.texts
     const csRefusal = optionError(cmdName, csParsed)
@@ -354,14 +440,16 @@ export async function handleCommand(
         new ExecutionNode({ command: cmdStr, exitCode: code, stderr: msg }),
       ]
     }
-    let csScopes = pathScopes
+    // The output flag owns a mount for routing, but is not a sort input.
+    // Parsed operands preserve aliases, order, and repeated path values.
+    let csScopes = cmdName === 'sort' ? csParsed.paths : pathScopes
     if (strategyFor(cmdName as Cmd, csFlags) === Strategy.RELAY) {
       // STREAM and FANOUT run each operand natively on its mount, which
-      // expands the operand's glob. RELAY bypasses the mount command
-      // wrappers entirely, so its glob operands must expand here; an
+      // expands the operand's glob. RELAY sees every operand at once (wc's
+      // layout, cp's sources), so its glob operands must expand here; an
       // unmatched glob stays the literal word, like bash.
       const expanded = await resolveGlobs(
-        pathScopes,
+        csScopes,
         registry,
         false,
         namespace ?? null,
@@ -393,6 +481,7 @@ export async function handleCommand(
       csNs,
       csStat,
       mergeSignals(signal, session.abortSignal),
+      dispatch,
     )
     const [csStdout0, csIo, csExec] = await handleCrossMount(
       cmdName,
@@ -406,6 +495,7 @@ export async function handleCommand(
       makeStorageKey(registry),
       csNs,
       sessionView(session, registry.policies),
+      session.cwd,
     )
     let csStdout = csStdout0
     if (cmdName === 'find') {
@@ -419,7 +509,6 @@ export async function handleCommand(
         csNs,
         csStat,
         dispatch,
-        namespace ?? null,
         stdin,
         csScopes,
         mergeSignals(signal, session.abortSignal),
@@ -450,7 +539,15 @@ export async function handleCommand(
       declared: null,
     }
     csExec.paths = pathScopes
-    return [maybeWithTimeout(csStdout, resolveLimit(cmdName, mounts), cmdName), csIo, csExec]
+    return [
+      maybeWithTimeout(
+        csStdout,
+        resolveLimit(cmdName, mounts, null, null, registry.commandLimits, session.commandLimits),
+        cmdName,
+      ),
+      csIo,
+      csExec,
+    ]
   }
 
   // Path-flag targets count: a command bound to one mount cannot write its
@@ -497,7 +594,8 @@ export async function handleCommand(
       new ExecutionNode({ command: cmdStr, exitCode: 127 }),
     ]
   }
-  const parsedLine = parseFlags(parts.slice(1), mount.specFor(cmdName), cmdName, session.cwd)
+  const parsedLine =
+    prepared ?? parseFlags(parts.slice(1), mount.specFor(cmdName), cmdName, session.cwd)
   const { paths: parsedPaths, flagKwargs, warnings: parseWarnings } = parsedLine
   const textsRaw = parsedLine.texts
   const refusal = optionError(cmdName, parsedLine)
@@ -548,6 +646,7 @@ export async function handleCommand(
       singleNs,
       singleStat,
       mergeSignals(signal, session.abortSignal),
+      dispatch,
     )
     let fanOut = fanOut0
     if (cmdName === 'find') {
@@ -561,7 +660,6 @@ export async function handleCommand(
         singleNs,
         singleStat,
         dispatch,
-        namespace ?? null,
         stdin,
         paths,
         mergeSignals(signal, session.abortSignal),
@@ -591,6 +689,7 @@ export async function handleCommand(
     stdin,
     mount,
     resolveHint: routingScopes[0] ?? null,
+    argv: spelledWords(parts.slice(1)),
   })
   let stdout = rawStdout
   if (cmdName === 'find') {
@@ -604,7 +703,6 @@ export async function handleCommand(
       singleNs,
       singleStat,
       dispatch,
-      namespace ?? null,
       stdin,
       paths,
       mergeSignals(signal, session.abortSignal),
@@ -616,7 +714,12 @@ export async function handleCommand(
   }
   const resolved =
     io.producer !== null
-      ? resolveProducer(io.producer, (prefix, name) => registry.limitOverride(prefix, name))
+      ? resolveProducer(
+          io.producer,
+          (prefix, name) => registry.limitOverride(prefix, name),
+          registry.commandLimits,
+          session.commandLimits,
+        )
       : null
   stdout = maybeWithTimeout(stdout, resolved, cmdName)
   io.stderr = maybeWithTimeout(io.stderr, resolved, cmdName)

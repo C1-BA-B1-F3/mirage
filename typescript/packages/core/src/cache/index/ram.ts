@@ -23,6 +23,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
   private readonly entryMap = new Map<string, IndexEntry>()
   private readonly children = new Map<string, string[]>()
   private readonly expiry = new Map<string, number>()
+  private readonly partial = new Set<string>()
   private readonly lock = new KeyLock()
 
   constructor(options: { ttl?: number } = {}) {
@@ -45,6 +46,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     for (const [path, keys] of children) {
       this.children.set(path, [...keys])
       this.expiry.set(path, expiresAt.getTime())
+      this.partial.delete(path)
     }
   }
 
@@ -72,6 +74,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     if (exp === undefined) return Promise.resolve({ status: LookupStatus.NOT_FOUND })
     if (Date.now() >= exp) return Promise.resolve({ status: LookupStatus.EXPIRED })
     const children = this.children.get(vfsPath) ?? []
+    if (this.partial.has(vfsPath)) return Promise.resolve({ partialEntries: children })
     return Promise.resolve({ entries: children })
   }
 
@@ -79,6 +82,23 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     vfsPath: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
+  ): Promise<void> {
+    return this.storeDir(vfsPath, entries, expiredAt, false)
+  }
+
+  override setPartialDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+  ): Promise<void> {
+    return this.storeDir(vfsPath, entries, expiredAt, true)
+  }
+
+  private storeDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt: Date | null | undefined,
+    partial: boolean,
   ): Promise<void> {
     return this.lock.withLock(vfsPath, () => {
       const now = Date.now()
@@ -94,6 +114,8 @@ export class RAMIndexCacheStore extends IndexCacheStore {
       }
       this.children.set(vfsPath, childKeys)
       this.expiry.set(vfsPath, exp)
+      if (partial) this.partial.add(vfsPath)
+      else this.partial.delete(vfsPath)
       return Promise.resolve()
     })
   }
@@ -104,6 +126,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     }
     this.expiry.delete(vfsPath)
     this.children.delete(vfsPath)
+    this.partial.delete(vfsPath)
     return Promise.resolve()
   }
 
@@ -115,7 +138,10 @@ export class RAMIndexCacheStore extends IndexCacheStore {
       if (underPath(key, vfsPath)) this.children.delete(key)
     }
     for (const key of [...this.expiry.keys()]) {
-      if (underPath(key, vfsPath)) this.expiry.delete(key)
+      if (underPath(key, vfsPath)) {
+        this.expiry.delete(key)
+        this.partial.delete(key)
+      }
     }
     return Promise.resolve()
   }
@@ -130,6 +156,7 @@ export class RAMIndexCacheStore extends IndexCacheStore {
     this.entryMap.clear()
     this.children.clear()
     this.expiry.clear()
+    this.partial.clear()
     this.lock.clear()
     return Promise.resolve()
   }

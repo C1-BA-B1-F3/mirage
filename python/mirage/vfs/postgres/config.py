@@ -12,13 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class PostgresConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     dsn: SecretStr
     schemas: list[str] | None = None
     default_row_limit: int = 1000
     max_read_rows: int = 10_000
     max_read_bytes: int = 10 * 1024 * 1024
-    default_search_limit: int = 100

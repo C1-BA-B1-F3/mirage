@@ -365,10 +365,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "printf 'pipe\\n' | cat <<< here",
+      "command": "printf 'pipe\\n' | cat <<< here; true && printf 'pipe\\n' | cat <<< here; false || printf 'pipe\\n' | cat <<< here",
       "expect": {
         "exit": 0,
-        "stdout": "here\n",
+        "stdout": "here\nhere\nhere\n",
         "stderr": ""
       }
     },
@@ -520,10 +520,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "hs='*  two'; cat <<< $hs",
+      "command": "hs='*  two'; cat <<< $hs; (set -- a b; IFS=,; cat <<< $*; cat <<< \"$@\"; case $* in a,b) echo case;; esac; [[ $* == a,b ]] && echo cond)",
       "expect": {
         "exit": 0,
-        "stdout": "*  two\n",
+        "stdout": "*  two\na,b\na b\ncase\ncond\n",
         "stderr": ""
       }
     },

@@ -27,6 +27,7 @@ import type {
 } from '../../types.ts'
 import { RuntimeVFS } from '../../vfs.ts'
 import { installMirageFs } from './vfs.ts'
+import { cwdPreamble } from './execution.ts'
 import BOOTSTRAP from '../../../generated/quickjs.ts'
 import { QuickJsUnavailableError } from './errors.ts'
 import type {
@@ -125,13 +126,17 @@ export class QuickJsRuntime extends JsRuntime implements Evaluator {
       }
       boot.value.dispose()
 
-      const result = await ctx.evalCodeAsync(
-        args.code,
-        args.flags?.module === true ? 'input.mjs' : 'input.js',
-        {
-          type: args.flags?.module === true ? 'module' : 'global',
-        },
-      )
+      let result = await ctx.evalCodeAsync(cwdPreamble(args.cwd ?? context?.cwd), 'mirage:cwd')
+      if (!result.error) {
+        result.value.dispose()
+        result = await ctx.evalCodeAsync(
+          args.code,
+          args.flags?.module === true ? 'input.mjs' : 'input.js',
+          {
+            type: args.flags?.module === true ? 'module' : 'global',
+          },
+        )
+      }
       let exitCode = 0
       if (result.error) {
         if (timedOut.value && args.timeoutSeconds !== undefined) {
@@ -212,17 +217,21 @@ export class QuickJsRuntime extends JsRuntime implements Evaluator {
         throw new EvalError('quickjs bootstrap failed')
       }
       boot.value.dispose()
-      const inputsJson = JSON.stringify(opts.inputs ?? {})
-      const bind = ctx.evalCode(
-        `for (const [__k, __v] of Object.entries(JSON.parse(${JSON.stringify(inputsJson)}))) globalThis[__k] = __v`,
-        'mirage:inputs',
-      )
-      if (bind.error) {
-        bind.error.dispose()
-        throw new EvalError('quickjs eval could not bind inputs')
+      let result = await ctx.evalCodeAsync(cwdPreamble(context?.cwd), 'mirage:cwd')
+      if (!result.error) {
+        result.value.dispose()
+        const inputsJson = JSON.stringify(opts.inputs ?? {})
+        const bind = ctx.evalCode(
+          `for (const [__k, __v] of Object.entries(JSON.parse(${JSON.stringify(inputsJson)}))) globalThis[__k] = __v`,
+          'mirage:inputs',
+        )
+        if (bind.error) {
+          bind.error.dispose()
+          throw new EvalError('quickjs eval could not bind inputs')
+        }
+        bind.value.dispose()
+        result = await ctx.evalCodeAsync(code, 'eval.js', { type: 'global' })
       }
-      bind.value.dispose()
-      const result = await ctx.evalCodeAsync(code, 'eval.js', { type: 'global' })
       if (result.error) {
         const message = this.formatError(ctx, result.error)
         result.error.dispose()

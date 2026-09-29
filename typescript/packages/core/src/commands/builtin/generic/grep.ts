@@ -12,17 +12,17 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { isStdin } from '../utils/stream.ts'
+import { isStdin, operandLabel } from '../utils/stream.ts'
 import { stdinStream, stdinStat } from '../utils/stream.ts'
 import { guardInput } from '../utils/limit.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { fsStrerror, isWalkError } from '../../../utils/errors.ts'
+import { fsStrerror, isWalkError, walkRefusal } from '../../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
 import { respellOne } from '../../../utils/path.ts'
 import { cacheAwareStream } from '../../../cache/read_through.ts'
 import { mountParentReaddir, mountParentStat } from '../utils/operands.ts'
-import { IOResult, materialize } from '../../../io/types.ts'
+import { IOResult } from '../../../io/types.ts'
 import { FileType, PathSpec, type FileStat } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { compilePattern, resolvePattern } from '../grep_pattern.ts'
@@ -149,6 +149,21 @@ export function parseFlags(fl: FlagView): FlagSet {
   }
 }
 
+/**
+ * Whether grep's output shows -A/-B/-C context. Only printed lines carry it:
+ * -c, -l, -L and -q print none, and -o drops it.
+ */
+export function printsContext(f: FlagSet): boolean {
+  return (
+    (f.afterContext > 0 || f.beforeContext > 0) &&
+    !f.countOnly &&
+    !f.filesOnly &&
+    !f.filesWithoutMatch &&
+    !f.quiet &&
+    !f.onlyMatching
+  )
+}
+
 function makeSpec(path: string, template: PathSpec): PathSpec {
   return new PathSpec({
     virtual: path,
@@ -224,6 +239,7 @@ export async function grepGeneric(
   const st = mountParentStat((p: string) => stat(makeSpec(p, first)), mounts)
   if (!f.recursive && paths.length === 1 && !(f.filesOnly || f.quiet || f.filesWithoutMatch)) {
     try {
+      if (first.walkError !== null) throw walkRefusal(first)
       const info = isStdin(first) ? await stat(first) : await st(first.virtual)
       if (info.type === FileType.DIRECTORY)
         return [
@@ -242,7 +258,7 @@ export async function grepGeneric(
           source,
           pat,
           f,
-          isStdin(first) ? '(standard input)' : first.rawPath,
+          operandLabel(first, '(standard input)'),
           f.withFilename && !f.noFilename,
           singleIO,
           false,
@@ -273,6 +289,9 @@ export async function grepGeneric(
 
   async function* scan(p: PathSpec, walked = false): AsyncIterable<Uint8Array> {
     try {
+      // The probes below go by `virtual`, which cannot carry the walk's
+      // verdict on an operand it refused.
+      if (p.walkError !== null) throw walkRefusal(p)
       const info = isStdin(p) ? await stat(p) : await st(p.virtual)
       if (info.type === FileType.DIRECTORY) {
         if (!f.recursive) {
@@ -314,7 +333,7 @@ export async function grepGeneric(
         stream(p),
         pat,
         f,
-        isStdin(p) ? '(standard input)' : p.rawPath,
+        operandLabel(p, '(standard input)'),
         show,
         fileIO,
         printed,
@@ -347,5 +366,5 @@ export async function grepGeneric(
     }
     io.exitCode = f.quiet && matched ? 0 : warnings.length ? 2 : matched ? 0 : 1
   }
-  return [await materialize(run()), io]
+  return [run(), io]
 }

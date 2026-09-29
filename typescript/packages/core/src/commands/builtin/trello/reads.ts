@@ -21,9 +21,8 @@ import {
   listBoardMembers,
   listCardComments,
   listListCards,
-  listWorkspaceBoards,
-  listWorkspaces,
 } from '../../../core/trello/client.ts'
+import { filteredBoards, filteredWorkspaces } from '../../../core/trello/readdir.ts'
 import {
   normalizeBoard,
   normalizeCard,
@@ -42,6 +41,7 @@ import {
   type RegisteredCommand,
 } from '../../config.ts'
 import { CommandSpec, Operand } from '../../spec/types.ts'
+import { requireBoard, requireCard, requireList } from './_scope.ts'
 
 type Runner = (accessor: TrelloAccessor, texts: string[]) => Promise<Uint8Array>
 
@@ -62,9 +62,9 @@ function first(texts: string[], label: string): string {
 
 async function runBoardList(accessor: TrelloAccessor): Promise<Uint8Array> {
   const boards: unknown[] = []
-  for (const workspace of await listWorkspaces(accessor.transport)) {
+  for (const workspace of await filteredWorkspaces(accessor)) {
     const workspaceId = typeof workspace.id === 'string' ? workspace.id : ''
-    for (const board of await listWorkspaceBoards(accessor.transport, workspaceId)) {
+    for (const board of await filteredBoards(accessor, workspaceId)) {
       boards.push(normalizeBoard(board))
     }
   }
@@ -72,37 +72,50 @@ async function runBoardList(accessor: TrelloAccessor): Promise<Uint8Array> {
 }
 
 async function runBoardShow(accessor: TrelloAccessor, texts: string[]): Promise<Uint8Array> {
-  const board = await getBoard(accessor.transport, first(texts, 'board id'))
+  const boardId = first(texts, 'board id')
+  await requireBoard(accessor, boardId)
+  const board = await getBoard(accessor.transport, boardId)
   return toJsonBytes(normalizeBoard(board))
 }
 
 async function runBoardMembers(accessor: TrelloAccessor, texts: string[]): Promise<Uint8Array> {
-  const members = await listBoardMembers(accessor.transport, first(texts, 'board id'))
+  const boardId = first(texts, 'board id')
+  await requireBoard(accessor, boardId)
+  const members = await listBoardMembers(accessor.transport, boardId)
   return toJsonBytes(members.map((member) => normalizeMember(member)))
 }
 
 async function runListList(accessor: TrelloAccessor, texts: string[]): Promise<Uint8Array> {
-  const lists = await listBoardLists(accessor.transport, first(texts, 'board id'))
+  const boardId = first(texts, 'board id')
+  await requireBoard(accessor, boardId)
+  const lists = await listBoardLists(accessor.transport, boardId)
   return toJsonBytes(lists.map((lst) => normalizeList(lst)))
 }
 
 async function runLabelList(accessor: TrelloAccessor, texts: string[]): Promise<Uint8Array> {
-  const labels = await listBoardLabels(accessor.transport, first(texts, 'board id'))
+  const boardId = first(texts, 'board id')
+  await requireBoard(accessor, boardId)
+  const labels = await listBoardLabels(accessor.transport, boardId)
   return toJsonBytes(labels.map((label) => normalizeLabel(label)))
 }
 
 async function runCardList(accessor: TrelloAccessor, texts: string[]): Promise<Uint8Array> {
-  const cards = await listListCards(accessor.transport, first(texts, 'list id'))
+  const listId = first(texts, 'list id')
+  await requireList(accessor, listId)
+  const cards = await listListCards(accessor.transport, listId)
   return toJsonBytes(cards.map((card) => normalizeCard(card)))
 }
 
 async function runCardShow(accessor: TrelloAccessor, texts: string[]): Promise<Uint8Array> {
-  const card = await getCard(accessor.transport, first(texts, 'card id'))
+  const cardId = first(texts, 'card id')
+  await requireCard(accessor, cardId)
+  const card = await getCard(accessor.transport, cardId)
   return toJsonBytes(normalizeCard(card))
 }
 
 async function runCardComments(accessor: TrelloAccessor, texts: string[]): Promise<Uint8Array> {
   const cardId = first(texts, 'card id')
+  await requireCard(accessor, cardId)
   const comments = await listCardComments(accessor.transport, cardId)
   return toJsonBytes(comments.map((comment) => normalizeComment(comment, cardId)))
 }

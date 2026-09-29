@@ -199,8 +199,12 @@ class FakeManager:
 
     def __init__(self) -> None:
         self.writes: list[str] = []
+        self.ancestors: list[str] = []
         self.unlinks: list[str] = []
         self.subtrees: list[str] = []
+
+    async def invalidate_ancestors(self, path: PathSpec) -> None:
+        self.ancestors.append(path.virtual)
 
     async def invalidate_after_write(self, path: PathSpec) -> None:
         self.writes.append(path.mount_path)

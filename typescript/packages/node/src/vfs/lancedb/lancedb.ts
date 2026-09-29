@@ -12,12 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { LanceDBAccessor } from '@struktoai/mirage-core/accessor/lancedb'
 import { LANCEDB_COMMANDS } from '@struktoai/mirage-core/commands/builtin/lancedb/index'
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
+
 import { LANCEDB_OPS } from '@struktoai/mirage-core/ops/lancedb/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import {
   redactLanceDBConfig,
   resolveLanceDBConfig,
@@ -29,6 +31,7 @@ import type {
 } from '@struktoai/mirage-core/vfs/lancedb/config'
 import { LANCEDB_PROMPT } from '@struktoai/mirage-core/vfs/lancedb/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
+
 import { LanceDBStore } from './store.ts'
 
 const REMOTE_SCHEMES = ['s3://', 'gs://', 'az://', 'hf://', 'db://']
@@ -77,11 +80,6 @@ export class LanceDBVFS extends BaseVFS {
     }
   }
 
-  // The rows live in the database, so a restored mount reaches them
-  // through its config alone — there is nothing to take back.
-  override loadState(_state: LanceDBVFSState): Promise<void> {
-    return Promise.resolve()
-  }
   override async close(): Promise<void> {
     await this.store.close()
     await super.close()

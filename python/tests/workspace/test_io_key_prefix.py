@@ -85,6 +85,10 @@ def _assert_single_prefix(captured: list) -> None:
 @pytest.mark.parametrize("cmd,stdin", [
     ("tee /data/t.txt > /dev/null", b"x\ny\n"),
     ("csplit -f /data/cs_ /data/seed.txt 2", None),
+    ("csplit /data/seed.txt 2", None),
+    ("split -l 1 /data/seed.txt", None),
+    ("cd /data && split -l 1", b"x\ny\n"),
+    ("cd /data && csplit", b"x\ny\n"),
     ("unzip /data/a.zip -d /data/exout", None),
     ("cp /data/seed.txt /data/copy.txt", None),
     ("grep x /data/seed.txt > /data/red.txt", None),
@@ -134,6 +138,20 @@ def test_ram_csplit_writes_parts_inside_mount():
         part = await ws.shell("cat /data/cs_00")
         assert part.exit_code == 0
         assert await part.stdout_str() == "x\n"
+        await ws.close()
+
+    asyncio.run(run())
+
+
+def test_ram_stdin_csplit_writes_its_part_inside_mount():
+    ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
+
+    async def run():
+        result = await ws.shell("cd /data && csplit", stdin=b"x\ny\n")
+        assert result.exit_code == 0, await result.stderr_str()
+        part = await ws.shell("cat /data/xx00")
+        assert part.exit_code == 0
+        assert await part.stdout_str() == "x\ny\n"
         await ws.close()
 
     asyncio.run(run())

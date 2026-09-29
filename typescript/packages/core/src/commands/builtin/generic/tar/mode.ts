@@ -12,6 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { expandTableLong } from '../../../spec/compile.ts'
+import { TAR_LONG_OPTIONS } from '../../../spec/constants.ts'
+
 /**
  * Whether a tar line reads the filesystem rather than an archive.
  *
@@ -27,13 +30,18 @@
  * and cannot turn the mode on. `--` ends the scan the way it ends GNU's
  * option parsing: a later `-c` names a member, and reading it as the
  * create flag would refuse the very selector fix this gate exists to
- * protect (`tar -xf a.tar -C /dst -- -c`).
+ * protect (`tar -xf a.tar -C /dst -- -c`). A long word is read the way
+ * tar's getopt_long reads it, against tar's whole table, so an abbreviation
+ * (`--crea`) is create too.
  */
 export function isCreateMode(argv: readonly string[]): boolean {
   for (const [i, tok] of argv.entries()) {
     if (tok === '--') return false
-    if (tok === '--create') return true
-    if (tok.startsWith('--')) continue
+    if (tok.startsWith('--')) {
+      const found = expandTableLong(TAR_LONG_OPTIONS, tok.split('=', 1)[0] ?? tok)
+      if (found.length === 1 && found[0] === '--create') return true
+      continue
+    }
     if (tok.startsWith('-')) {
       if (tok.slice(1).includes('c')) return true
       continue

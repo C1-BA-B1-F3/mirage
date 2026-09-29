@@ -20,6 +20,9 @@ from mirage.commands.builtin.generic.crossmount import (handle_cross_mount,
                                                         is_cross_mount)
 from mirage.commands.builtin.generic.crossmount.detect import strategy_for
 from mirage.commands.builtin.generic.crossmount.types import Strategy
+from mirage.commands.builtin.generic.program import (PROGRAM_FILE_COMMANDS,
+                                                     prepare_program,
+                                                     program_files)
 from mirage.commands.builtin.utils.identity import identity_from
 from mirage.commands.builtin.utils.limit import maybe_with_timeout
 from mirage.commands.config import standard_request
@@ -47,7 +50,8 @@ from mirage.workspace.executor.command.routing import (CWD_DEFAULT_RAW,
                                                        default_cwd_operand,
                                                        merge_scopes,
                                                        path_flag_scopes)
-from mirage.workspace.executor.command.types import ExecuteNodeFn
+from mirage.workspace.executor.command.types import (ExecuteNodeFn,
+                                                     ParsedCommand)
 from mirage.workspace.executor.fanout import (_fan_out_traversal,
                                               _should_fan_out, run_with_fanout)
 from mirage.workspace.executor.find_action_dispatch import _apply_find_actions
@@ -80,6 +84,16 @@ JOB_HANDLERS = {
 }
 
 
+def spelled_words(parts: list[str | PathSpec]) -> tuple[str, ...]:
+    """The command's words as the line spelled them, an operand as typed.
+
+    Args:
+        parts (list[str | PathSpec]): the classified words after the
+            command name.
+    """
+    return tuple(p.raw_path if isinstance(p, PathSpec) else p for p in parts)
+
+
 async def _finish_find(
         stdout: ByteSource | None,
         io: IOResult,
@@ -90,7 +104,6 @@ async def _finish_find(
         ns: NamespaceView | None,
         stat_path: StatPath | None,
         dispatch: DispatchFn,
-        namespace: Namespace | None = None,
         stdin: ByteSource | None = None,
         starts: list[PathSpec] | None = None) -> ByteSource | None:
     """Apply find's actions once, at the command boundary.
@@ -111,10 +124,8 @@ async def _finish_find(
         execute_fn (ExecuteLine | None): runs an ``-exec`` line.
         ns (NamespaceView | None): the name plane's facts.
         stat_path (StatPath | None): dispatcher stat.
-        dispatch (DispatchFn): the op dispatcher a symlink row is
+        dispatch (DispatchFn): the op dispatcher every matched row is
             deleted through.
-        namespace (Namespace | None): the node table a deleted row's
-            meta is dropped from.
         stdin (ByteSource | None): find's own input, for its ``-exec``
             children.
         starts (list[PathSpec] | None): the start operands, for the
@@ -132,7 +143,6 @@ async def _finish_find(
         stat_path=stat_path,
         dispatch=dispatch,
         identity=identity_from(ns, session_view(session, registry.policies)),
-        namespace=namespace,
         stdin=stdin,
         starts=starts)
     if action_err:
@@ -202,12 +212,18 @@ async def handle_command(
             session,
             stdin,
             CLIContext(
+                shell=(functools.partial(execute_fn,
+                                         session_id=session.session_id)
+                       if execute_fn is not None else None),
+                command_limits=registry.command_limits,
                 entries=registry.runtime_entries,
                 dispatch=dispatch,
                 stat_path=(functools.partial(path_stat, dispatch)
                            if dispatch is not None else None),
                 ns=namespace_view_of(registry, namespace, dispatch),
                 session_view=session_view(session, registry.policies),
+                processes=registry.process_view(session)
+                if registry.process_view is not None else None,
             ),
             drop_caches=(functools.partial(drop_mount_caches, registry)
                          if drops_mount_caches(cli_install.spec) else None),
@@ -257,11 +273,44 @@ async def handle_command(
         return standard_out, IOResult(), ExecutionNode(command=cmd_str,
                                                        exit_code=0)
 
+    prepared: ParsedCommand | None = None
+    if cmd_name in PROGRAM_FILE_COMMANDS and dispatch is not None:
+        candidate = parse_flags(parts[1:],
+                                registered_spec(cmd_name, SPECS[cmd_name]),
+                                cmd_name, session.cwd)
+        if program_files(cmd_name, candidate.flag_kwargs):
+            prepared = candidate
+            refusal = option_error(cmd_name, prepared)
+            if refusal is not None:
+                program_msg, code = refusal
+                return None, IOResult(exit_code=code,
+                                      stderr=program_msg), ExecutionNode(
+                                          command=cmd_str,
+                                          exit_code=code,
+                                          stderr=program_msg)
+            result = await prepare_program(cmd_name, prepared.texts,
+                                           prepared.flag_kwargs, stdin,
+                                           dispatch, prepared.paths)
+            program_texts, program_flags, stdin, program_error = result
+            if program_error is not None:
+                return None, program_error, await exec_node(
+                    cmd_str, program_error, prepared.paths)
+            prepared = prepared._replace(texts=program_texts,
+                                         flag_kwargs=program_flags)
+            path_scopes = prepared.paths
+
     # Path-valued flags (e.g. shuf --output=/dst/out) own a mount just like
     # positional operands, so they join routing and mount validation instead
     # of being dropped whenever a positional path is also present.
-    routing_scopes = merge_scopes(
-        path_scopes, path_flag_scopes(cmd_name, raw_argv, session.cwd))
+    # The empty name joins onto the working directory in `virtual` but
+    # names no path there, so it routes nowhere: the line runs where its
+    # other operands (or the cwd) put it, and that run's op guards refuse
+    # it. A line is not cross-mount because one of its words is empty.
+    routing_scopes = [
+        s for s in merge_scopes(
+            path_scopes, path_flag_scopes(cmd_name, raw_argv, session.cwd))
+        if s.walk_error != "ENOENT"
+    ]
 
     find_expr_tokens: list[str] | None = None
     if cmd_name == "find":
@@ -302,12 +351,13 @@ async def handle_command(
         # `option '--version' doesn't allow an argument` and the two-mount
         # line was `unrecognized option '--vers=x'`.
         shared_spec = SPECS.get(cmd_name)
-        cross_parsed = parse_flags(parts[1:],
-                                   registered_spec(cmd_name, shared_spec)
-                                   if shared_spec is not None else None,
-                                   cmd_name,
-                                   session.cwd,
-                                   str_flag_paths=True)
+        cross_parsed = prepared or parse_flags(
+            parts[1:],
+            registered_spec(cmd_name, shared_spec)
+            if shared_spec is not None else None,
+            cmd_name,
+            session.cwd,
+            str_flag_paths=cmd_name != "tar")
         cross_texts = (find_expr_tokens
                        if find_expr_tokens is not None else cross_parsed.texts)
         cross_refusal = option_error(cmd_name, cross_parsed)
@@ -318,13 +368,17 @@ async def handle_command(
                                       command=cmd_str,
                                       exit_code=code,
                                       stderr=refusal_msg)
-        cross_scopes = path_scopes
+        # sort's output flag routes to its owning mount but is not an input.
+        # Use the parser's operands so aliases and repeated paths keep their
+        # positions instead of subtracting matching path strings afterward.
+        cross_scopes = (cross_parsed.paths
+                        if cmd_name == "sort" else path_scopes)
         if strategy_for(cmd_name, cross_parsed.flag_kwargs) is Strategy.RELAY:
             # STREAM and FANOUT run each operand natively on its mount, which
-            # expands the operand's glob. RELAY bypasses the mount command
-            # wrappers entirely, so its glob operands must expand here; an
-            # unmatched glob stays the literal word, like bash.
-            expanded = await resolve_globs(list(path_scopes),
+            # expands the operand's glob. RELAY sees every operand at once
+            # (wc's layout, cp's sources), so its glob operands must expand
+            # here; an unmatched glob stays the literal word, like bash.
+            expanded = await resolve_globs(list(cross_scopes),
                                            registry,
                                            links=namespace,
                                            options=glob_options(session))
@@ -341,8 +395,13 @@ async def handle_command(
         # it, exactly as the same operand would on a line of its own.
         cross_stat = (functools.partial(path_stat, dispatch)
                       if dispatch is not None else None)
-        run_operand = functools.partial(run_with_fanout, run_single, registry,
-                                        session.cwd, cross_ns, cross_stat)
+        run_operand = functools.partial(run_with_fanout,
+                                        run_single,
+                                        registry,
+                                        session.cwd,
+                                        cross_ns,
+                                        cross_stat,
+                                        dispatch=dispatch)
         stdout, io = await handle_cross_mount(
             cmd_name,
             cross_scopes,
@@ -353,7 +412,8 @@ async def handle_command(
             stdin=stdin,
             storage_key=make_storage_key(registry),
             ns=cross_ns,
-            session_view=session_view(session, registry.policies))
+            session_view=session_view(session, registry.policies),
+            cwd=session.cwd)
         if cmd_name == "find":
             stdout = await _finish_find(stdout,
                                         io,
@@ -364,7 +424,6 @@ async def handle_command(
                                         cross_ns,
                                         cross_stat,
                                         dispatch,
-                                        namespace=namespace,
                                         stdin=stdin,
                                         starts=cross_scopes)
         if cross_parsed.warnings:
@@ -384,8 +443,12 @@ async def handle_command(
                 mounts.append(m)
         io.producer = Producer(command=cmd_name,
                                prefixes=tuple(m.prefix for m in mounts))
-        stdout = maybe_with_timeout(stdout, resolve_limit(cmd_name, mounts),
-                                    cmd_name)
+        stdout = maybe_with_timeout(
+            stdout,
+            resolve_limit(cmd_name,
+                          mounts,
+                          workspace_limits=registry.command_limits,
+                          profile_limits=session.command_limits), cmd_name)
         return stdout, io, await exec_node(cmd_str, io, path_scopes)
 
     # Reject unsupported cross-mount commands. Path-flag targets count: a
@@ -422,8 +485,8 @@ async def handle_command(
         ), ExecutionNode(command=cmd_str, exit_code=127)
 
     # Parse flags upstream — mount receives clean args
-    single_parsed = parse_flags(parts[1:], mount.spec_for(cmd_name), cmd_name,
-                                session.cwd)
+    single_parsed = prepared or parse_flags(
+        parts[1:], mount.spec_for(cmd_name), cmd_name, session.cwd)
     paths, texts, flag_kwargs, parse_warnings = (single_parsed.paths,
                                                  single_parsed.texts,
                                                  single_parsed.flag_kwargs,
@@ -467,7 +530,8 @@ async def handle_command(
                                                     cmd_str,
                                                     stdin,
                                                     ns=single_ns,
-                                                    stat_path=single_stat)
+                                                    stat_path=single_stat,
+                                                    dispatch=dispatch)
         if cmd_name == "find":
             stdout = await _finish_find(stdout,
                                         io,
@@ -478,7 +542,6 @@ async def handle_command(
                                         single_ns,
                                         single_stat,
                                         dispatch,
-                                        namespace=namespace,
                                         stdin=stdin,
                                         starts=paths)
             node.exit_code = io.exit_code
@@ -499,7 +562,8 @@ async def handle_command(
                                     flag_kwargs,
                                     stdin=stdin,
                                     mount=mount,
-                                    routing_decision=routing_decision)
+                                    routing_decision=routing_decision,
+                                    argv=spelled_words(parts[1:]))
     if cmd_name == "find":
         stdout = await _finish_find(stdout,
                                     io,
@@ -510,7 +574,6 @@ async def handle_command(
                                     single_ns,
                                     single_stat,
                                     dispatch,
-                                    namespace=namespace,
                                     stdin=stdin,
                                     starts=paths)
 
@@ -518,8 +581,9 @@ async def handle_command(
         existing = await materialize(io.stderr) if io.stderr else b""
         io.stderr = warn_bytes + existing
 
-    resolved = (resolve_producer(io.producer, registry.limit_override)
-                if io.producer is not None else None)
+    resolved = (resolve_producer(
+        io.producer, registry.limit_override, registry.command_limits,
+        session.command_limits) if io.producer is not None else None)
     stdout = maybe_with_timeout(stdout, resolved, cmd_name)
     io.stderr = maybe_with_timeout(io.stderr, resolved, cmd_name)
 

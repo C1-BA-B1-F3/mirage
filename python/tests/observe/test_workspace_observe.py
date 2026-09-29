@@ -72,7 +72,7 @@ def test_observer_store_not_mounted():
     result = asyncio.run(ws.shell("ls /.sessions"))
     assert result.exit_code != 0
     prefixes = {m.prefix for m in ws._registry.mounts()}
-    assert prefixes == {"/", "/data/", "/dev/", "/.bash_history/"}
+    assert prefixes == {"/", "/data/", "/dev/", "/.bash_history/", "/usr/bin/"}
 
 
 # The tests below assert the recorded event shape on the real execute path.

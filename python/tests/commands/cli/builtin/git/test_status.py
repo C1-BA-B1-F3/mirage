@@ -170,6 +170,21 @@ async def test_a_move_is_reported_as_a_rename(git_ws, repo_path: Path):
                      "status --porcelain") == b"R  b.txt -> moved.txt\n"
 
 
+@pytest.mark.asyncio
+async def test_a_subdirectory_reads_paths_from_where_git_runs(
+        git_ws, repo_path: Path):
+    # Pinned against git 2.54: the human formats name paths from the
+    # invocation directory, so the untracked one git runs in is ./, and
+    # porcelain stays relative to the top.
+    (repo_path / "a.txt").write_text("edited\n", encoding="utf-8")
+    (repo_path / "sub").mkdir()
+    (repo_path / "sub" / "new.txt").write_text("x\n", encoding="utf-8")
+    short = await git_ws.shell("git -C /repo/sub status --short")
+    machine = await git_ws.shell("git -C /repo/sub status --porcelain")
+    assert short.stdout == b" M ../a.txt\n?? ./\n"
+    assert machine.stdout == b" M a.txt\n?? sub/\n"
+
+
 def flags(**raw: object) -> FlagView:
     """A flag view over one raw kwarg bag.
 
@@ -189,3 +204,21 @@ def test_a_bare_u_means_all():
 
 def test_an_attached_mode_is_taken_as_typed():
     assert parse_flags(flags(untracked_files="no")).untracked == UNTRACKED_NO
+
+
+@pytest.mark.asyncio
+async def test_quote_path_off_prints_non_ascii_as_itself(
+        git_ws, repo_path: Path):
+    (repo_path / "é.txt").write_text("x\n", encoding="utf-8")
+    config = repo_path / ".git" / "config"
+    config.write_text(config.read_text() + "[core]\n\tquotePath = false\n")
+    assert await run(git_ws, "status --porcelain") == "?? é.txt\n".encode()
+
+
+@pytest.mark.asyncio
+async def test_a_bad_quote_path_value_is_gits_fatal(git_ws, repo_path: Path):
+    config = repo_path / ".git" / "config"
+    config.write_text(config.read_text() + "[core]\n\tquotePath = junk\n")
+    result = await git_ws.shell("git -C /repo status")
+    assert (result.exit_code, result.stderr) == (
+        128, b"fatal: bad boolean config value 'junk' for 'core.quotepath'\n")

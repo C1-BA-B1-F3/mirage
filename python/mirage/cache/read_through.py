@@ -92,24 +92,25 @@ def cache_aware_bound_stream(raw: ReadStreamFn) -> ReadStreamFn:
 
 
 def cache_aware_read_bytes(raw: ReadBytesFn) -> ReadBytesFn:
-    """Wrap a backend ``read_bytes`` so warm reads serve cached bytes.
+    """Cache complete backend renders and reuse them across read commands.
 
     Drop-in for the raw ``(accessor, path, ...)`` op, same signature (the
     factory wraps ``CommandIO`` ops with it). Returns the cached bytes on
-    a warm hit, else reads from the backend. No-op for local or
-    non-caching mounts.
+    a warm hit, else fills the cache from the full backend render. No-op
+    for local or non-caching mounts.
 
     Args:
         raw (ReadBytesFn): the backend ``read_bytes`` op.
     """
 
+    bound = active_cache_manager()
+
     async def reader(accessor: Accessor | None, path: PathSpec, *args: Any,
                      **kwargs: Any) -> bytes:
-        manager = active_cache_manager()
+        manager = bound or active_cache_manager()
         if manager is not None:
-            cached = await manager.cached_bytes(path)
-            if cached is not None:
-                return cached
+            return await manager.read_through(
+                path, partial(raw, accessor, path, *args, **kwargs))
         return await raw(accessor, path, *args, **kwargs)
 
     return reader

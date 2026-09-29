@@ -24,6 +24,10 @@ import type { OpRecord } from '../../observe/record.ts'
 import { type OpKwargs, OpsRegistry } from '../../ops/registry.ts'
 import type { BaseVFS } from '../../vfs/base.ts'
 import { HISTORY_PREFIX, HistoryViewVFS } from '../../vfs/history/history.ts'
+import { BIN_PREFIX } from '../../shell/constants.ts'
+import { Consumer } from '../lookup/types.ts'
+import { BinViewVFS } from '../../vfs/bin/bin.ts'
+import { lookup, program, programNote, programs } from '../lookup/lookup.ts'
 import { vfsStateRequiresOverride } from '../../vfs/secrets.ts'
 import { cliSpecFor } from '../../commands/cli/specs.ts'
 import type { CLISpec } from '../../commands/cli/types.ts'
@@ -69,6 +73,12 @@ import type { MountEntry } from '../mount/mount.ts'
 import { checkReadCapability } from '../mount/read_policy.ts'
 import { MountRegistry } from '../mount/registry.ts'
 import { PrefixResolver } from '../../runtime/resolver.ts'
+import { ChildProcess } from '../../process/child.ts'
+import { ProcessInput, ProcessOutput } from '../../process/stdio.ts'
+import type { SpawnRequest, ProcessView } from '../../process/types.ts'
+import { literalTree } from '../../shell/literal.ts'
+import { shellJoin } from '../../shell/join.ts'
+import { ProcessSupervisor } from '../../process/supervisor.ts'
 import { WorkspaceBinding, captureBinding } from '../../runtime/binding.ts'
 import type { RuntimeContext } from '../../runtime/types.ts'
 import { ContextScope } from '../../utils/context_scope.ts'
@@ -77,9 +87,12 @@ import {
   captureSessionContext,
   getCurrentSessionUnlessForeign,
   runWithSession,
+  runAsProgram,
 } from '../../context/session_context.ts'
 import { namespaceViewOf } from '../executor/command/run.ts'
 import { asyncContextIsolatesTasks } from '../../utils/async_context.ts'
+import { makeVar, VarAttr } from '../../shell/variable.ts'
+import { enoent } from '../../utils/errors.ts'
 import { sessionView, envSnapshot } from '../session/state.ts'
 import type { BridgeDispatchFn } from '../../runtime/types.ts'
 import { MontyUnavailableError } from '../../runtime/python/monty/index.ts'
@@ -102,7 +115,7 @@ import type { ResolvedSource } from '../../secrets/types.ts'
 import { DEFAULT_PROFILE } from '../session/constants.ts'
 import { SessionManager } from '../session/manager.ts'
 import type { WorkspaceFields, WorkspaceStateStore } from '../store/base.ts'
-import { varsFromEntries, type SessionState } from '../session/session.ts'
+import { varsFromEnv, varsFromEntries, type SessionState } from '../session/session.ts'
 import {
   parseProfileMounts,
   parseProfilePolicy,
@@ -120,7 +133,7 @@ import { normalizeMounts, prepareAddedMount, unmountPrefix } from './mounts.ts'
 import { Router } from './routing.ts'
 import { Runtimes } from './runtimes.ts'
 import { Session } from './handle.ts'
-import type { ExecuteResult } from './types.ts'
+import { ExecuteResult } from './types.ts'
 import { type ExecuteOptions, type MountSpec, type WorkspaceOptions } from './types.ts'
 import { Mount } from '../mount/spec.ts'
 import { commandName, forkForCall } from './utils.ts'
@@ -149,6 +162,7 @@ export class Workspace {
   private shellParser: ShellParser | null
   private readonly shellParserFactory: (() => Promise<ShellParser>) | null
   private shellParserPromise: Promise<ShellParser> | null = null
+  readonly processes = new ProcessSupervisor()
   readonly jobTable: JobTable
   readonly agentId: string | null
   readonly cache: FileCache & BaseVFS
@@ -213,8 +227,9 @@ export class Workspace {
         indexes: normalized.indexes,
       },
     )
+    this.registry.processView = (session) => this.processView(session)
     this.wsId = options.workspaceId ?? newWorkspaceId()
-    this.jobTable = new JobTable(options.consoleFactory ?? null)
+    this.jobTable = new JobTable(options.consoleFactory ?? null, this.processes)
     const stores = resolveControlStores(this.wsId, options)
     this.ownsStateStore = stores.owned
     this.stateStoreInternal = stores.stateStore
@@ -347,6 +362,17 @@ export class Workspace {
       MountMode.READ,
       DEFAULT_READ_SPEC,
     )
+    // One file per program the session can run, where PATH finds it: the
+    // same lookup which, type and command -v answer from.
+    this.registry.mount(
+      BIN_PREFIX,
+      new BinViewVFS(
+        () => programs(this.opSession(), this.registry),
+        (name) => programNote(name, this.opSession(), this.registry),
+      ),
+      MountMode.READ,
+      DEFAULT_READ_SPEC,
+    )
     this.cache = buildFileCache(options.cache, options.cacheLimit)
     this.registry.attachFileCache(this.cache)
     // Only an explicit agentId claims the workspace user; a bare launch
@@ -389,28 +415,10 @@ export class Workspace {
     for (const vfs of [...this.registry.allMounts().map((m) => m.vfs), this.cache]) {
       this.opsRegistry.registerVfs(vfs)
     }
-    // A mount's own limits win, which is the order node's unwrap produced
-    // before it handed them to core: it spread options first and then
-    // overwrote per prefix from the Mount. Merged per command, not per
-    // prefix: spreading one whole record over the other dropped every
-    // command the losing side named, so a workspace-level `cat` limit
-    // disappeared the moment the mount itself named an `ls` one. Python
-    // reaches the same shape through `entry.command_limits.update()`.
-    const limitPrefixes = new Set([
-      ...Object.keys(options.commandLimits ?? {}),
-      ...Object.keys(normalized.commandLimits),
-    ])
-    for (const prefix of limitPrefixes) {
-      const mount = this.registry.tryMountForPrefix(prefix)
-      if (mount === null) {
-        throw new Error(`commandLimits references unknown mount prefix: ${prefix}`)
-      }
-      for (const [cmd, sg] of Object.entries({
-        ...(options.commandLimits?.[prefix] ?? {}),
-        ...(normalized.commandLimits[prefix] ?? {}),
-      })) {
-        mount.commandLimits.set(cmd, sg)
-      }
+    this.registry.commandLimits = { ...options.commandLimits }
+    for (const [prefix, limits] of Object.entries(normalized.commandLimits)) {
+      const mount = this.registry.mountForPrefix(prefix)
+      for (const [name, limit] of Object.entries(limits)) mount.commandLimits.set(name, limit)
     }
     // The facade delegates every op to the dispatcher, so FUSE and
     // programmatic ws.vfs walk the same pipeline as a shell command and
@@ -458,17 +466,18 @@ export class Workspace {
    * Two are withheld, and neither is withheld for being `/`. An explicit
    * root mount is forwarded like any other prefix, and a runtime that
    * cannot serve it refuses on its own (Pyodide does, because Emscripten
-   * already owns `/`). What is withheld is the history view, which is a
-   * shell surface rather than a place to put files, and the synthetic
-   * root anchor, which nobody mounted: the workspace adds it so arg-less
-   * commands and root listing have somewhere to resolve, so announcing
-   * it as a mount would make every runtime report a claim on a VFS
-   * the embedder never asked for.
+   * already owns `/`). What is withheld is the history and program views,
+   * which are shell surfaces rather than places to put files (a runtime
+   * has its own `/usr/bin`), and the synthetic root anchor, which nobody
+   * mounted: the workspace adds it so arg-less commands and root listing
+   * have somewhere to resolve, so announcing it as a mount would make
+   * every runtime report a claim on a VFS the embedder never asked for.
    */
   private sandboxVisibleMounts(): string[] {
     const prefixes: string[] = []
     for (const m of this.registry.allMounts()) {
       if (m.prefix === HISTORY_PREFIX || m.prefix === HISTORY_PREFIX + '/') continue
+      if (m.prefix === BIN_PREFIX + '/') continue
       if (this.syntheticRootAnchor && m.prefix === '/') continue
       prefixes.push(m.prefix)
     }
@@ -520,13 +529,17 @@ export class Workspace {
     return this.observer.commandEvents()
   }
 
+  /** The session an op runs under: the bound one, else the default. */
+  private opSession(): SessionState {
+    return (
+      getCurrentSessionFor(this.sessionManager) ??
+      this.sessionManager.get(this.sessionManager.defaultId)
+    )
+  }
+
   /** Capture local adapter doors under this workspace's active or explicitly named session. */
   runtimeContext(sessionId?: string): RuntimeContext {
-    const session =
-      sessionId === undefined
-        ? (getCurrentSessionFor(this.sessionManager) ??
-          this.sessionManager.get(this.sessionManager.defaultId))
-        : this.sessionManager.get(sessionId)
+    const session = sessionId === undefined ? this.opSession() : this.sessionManager.get(sessionId)
     const scope = new ContextScope([
       ...captureSessionContext(session, this.sessionManager),
       ...captureRecordingContext(),
@@ -536,11 +549,129 @@ export class Workspace {
       {
         ns: namespaceViewOf(this.registry, this.namespace, this.dispatcher.dispatch),
         sessionView: sessionView(session, this.policies),
+        processes: this.processView(session),
         cwd: PathSpec.fromStrPath(session.cwd),
         env: envSnapshot(session),
       },
       scope,
     )
+  }
+
+  /** Spawn argv in an isolated session fork through the normal admission gate. */
+  spawn(request: SpawnRequest, sessionId?: string): ChildProcess {
+    return this.spawnForSession(
+      request,
+      sessionId === undefined ? this.opSession() : this.sessionManager.get(sessionId),
+    )
+  }
+
+  private processView(session: SessionState): ProcessView {
+    const parentPid = session.processId
+    const view = this.processes.view(session.sessionId, () => session.processes)
+    return Object.freeze({
+      ...view,
+      depth: session.processDepth,
+      spawn: (request: SpawnRequest) => {
+        view.checkSpawn()
+        const child = session.fork()
+        child.processId = parentPid
+        return this.spawnForSession(request, child)
+      },
+    })
+  }
+
+  private spawnForSession(request: SpawnRequest, session: SessionState): ChildProcess {
+    if (this.isShuttingDown()) throw new Error('Workspace is closed')
+    if (session.processDepth >= 16) throw new Error('process nesting limit (16) reached')
+    const argv = [...request.argv]
+    literalTree(argv)
+    const head = argv[0] ?? ''
+    const name = head.startsWith(`${BIN_PREFIX}/`) ? head.slice(BIN_PREFIX.length + 1) : head
+    if (!name.includes('/')) {
+      if (
+        program(name, session, this.registry) === null &&
+        lookup(name, session, this.registry) !== Consumer.EXTERNAL
+      )
+        throw enoent(head)
+      argv[0] = name
+    }
+    const cwd = request.cwd ?? PathSpec.fromStrPath(session.cwd)
+    const inheritedEnv = request.replaceEnv === true ? {} : envSnapshot(session)
+    const child = session.fork({
+      cwd: cwd.virtual,
+      processDepth: session.processDepth + 1,
+      vars: varsFromEnv(inheritedEnv),
+      functions: {},
+    })
+    if (!Object.hasOwn(inheritedEnv, 'PWD')) child.vars.PWD = makeVar(cwd.virtual, new Set())
+    child.aliases = {}
+    // The child's stdout is its handle's result, as a typed line's is the
+    // terminal, so the command limits bound what it hands back wherever
+    // the parent's own output goes.
+    child.terminalOutput = true
+    const scope = new ContextScope([
+      ...captureSessionContext(child, this.sessionManager),
+      ...captureRecordingContext(),
+    ])
+    const input = new ProcessInput(),
+      output = new ProcessOutput(request.mergeStderr),
+      abort = new AbortController()
+    const env = request.env === undefined ? undefined : { ...request.env }
+    const owner = this.sessionManager.get(session.sessionId)
+    const admission = this.processes.view(session.sessionId, () => owner.processes)
+    const process = this.processes.start({
+      sessionId: session.sessionId,
+      command: shellJoin(argv),
+      cwd,
+      parentPid: session.processId,
+      limit: session.processes.max,
+      cancel: () => {
+        abort.abort()
+        input.stop()
+        output.stop()
+      },
+      run: async () => {
+        try {
+          await this.ensureSessionsLoaded()
+          if (this.sessionManager.get(session.sessionId) !== owner)
+            throw new Error(
+              'session changed during hydration; retry spawn after ensureSessionsLoaded',
+            )
+          admission.checkSpawn()
+          const result = await scope.run(async () => {
+            const view = sessionView(child, this.policies)
+            for (const [name, value] of Object.entries(env ?? {})) {
+              await view.set(name, value)
+              await view.mark(name, VarAttr.Export, true)
+            }
+            return runAsProgram(child, () =>
+              executeLine(
+                this.executeEnv(),
+                shellJoin(argv),
+                {
+                  sessionId: session.sessionId,
+                  stdin: input.stream(),
+                  sink: output,
+                  signal: abort.signal,
+                },
+                argv,
+              ),
+            )
+          })
+          if (!(result instanceof ExecuteResult)) throw new Error('spawn returned a provision plan')
+          return result.exitCode
+        } finally {
+          input.stop()
+          output.end()
+        }
+      },
+    })
+    child.processId = process.info.pid
+    child.shellPid = process.info.pid
+    return new ChildProcess(process, input, output, () => {
+      process.terminate()
+      this.processes.terminateChildren(process.info.pid)
+    })
   }
 
   // The sandboxed runtimes' sole data path (quickjs, pyodide, monty).
@@ -841,7 +972,9 @@ export class Workspace {
     await this.ensureSessionsLoaded()
     if (this.isShuttingDown()) throw new Error('Workspace is closed')
     if (wasDefault) sessionId = this.defaultSessionId
-    return this.sessionManager.setProfile(sessionId, compiled)
+    const session = await this.sessionManager.setProfile(sessionId, compiled)
+    this.processes.revokeSession(sessionId)
+    return session
   }
 
   listSessions(): SessionState[] {
@@ -1237,7 +1370,10 @@ export class Workspace {
     // plan to honest UNKNOWN instead of resolving via execution.
     const executeFn: ExecuteFn = () => Promise.resolve(new IOResult())
     const provName = commandName(command)
-    const provResolved = provName !== '' ? resolveLimit(provName) : null
+    const provResolved =
+      provName !== ''
+        ? resolveLimit(provName, [], null, null, this.registry.commandLimits, session.commandLimits)
+        : null
     const provTimeout = provResolved !== null ? provResolved.timeoutSeconds : null
     return runWithTimeout(
       provisionNode(
@@ -1360,8 +1496,11 @@ export class Workspace {
     // A line admitted before close may still recurse through eval/source/$(),
     // but no continuation can start after teardown has finished.
     if (this.closed) throw new Error('Workspace is closed')
-    return this.serializeLine(options.sessionId, options.signal, () =>
-      executeLine(this.executeEnv(), command, options),
+    return this.serializeLine(
+      options.sessionId,
+      options.signal,
+      () => executeLine(this.executeEnv(), command, options),
+      options.session,
     )
   }
 
@@ -1374,10 +1513,10 @@ export class Workspace {
    * values. A nested line (`eval`, `source`, `$()`, `xargs`, a host
    * callback fired mid-line) is the same shell continuing and runs
    * inline: it already holds the session, and waiting on itself would
-   * deadlock. The ambient binding decides, by the same rule
-   * `executeLine` uses to pick the session a line runs as, so the lock
-   * key and the executed session never disagree; a background job's
-   * fork keeps its parent's id and continues inline too.
+   * deadlock. Evaluators carry their session explicitly. Ambient re-entry
+   * is accepted only with task-local storage, just as in `executeLine`:
+   * the fallback's newest binding may belong to another call. Host callbacks
+   * use their invocation's explicitly bound shell door on the fallback.
    *
    * @param sessionId the session named by the caller, or undefined for
    *   the default.
@@ -1387,8 +1526,10 @@ export class Workspace {
     sessionId: string | undefined,
     signal: AbortSignal | undefined,
     run: () => Promise<T>,
+    session?: SessionState,
   ): Promise<T> {
-    const ambient = getCurrentSessionFor(this.sessionManager)
+    if (session !== undefined) return run()
+    const ambient = asyncContextIsolatesTasks ? getCurrentSessionFor(this.sessionManager) : null
     if (ambient !== null && (sessionId === undefined || sessionId === ambient.sessionId)) {
       return run()
     }
@@ -1397,7 +1538,8 @@ export class Workspace {
     // later line would wait on.
     await abortable(this.ensureSessionsLoaded(), signal)
     let started = false
-    const gate = this.lineLock.withLock(sessionId ?? this.sessionManager.defaultId, async () => {
+    const key = sessionId ?? this.sessionManager.defaultId
+    const gate = this.lineLock.withLock(key, async () => {
       // A line queued behind a running one wakes after close may have
       // started, or after its caller was released; it runs nothing,
       // like a line that arrived after.
@@ -1537,8 +1679,17 @@ export class Workspace {
       // The declarations travel with the copy the way a live CLI
       // install does: an env pointer restores from state naming its
       // instance, and without the block the copy would answer the
-      // first read with "unknown secrets source".
+      // first read with "unknown secrets source". Profiles and command
+      // limits are deployment config the state never carries; without
+      // them the copy runs every session unconfined. Policy instances and
+      // the route policy stay behind: a policy is a live host object whose
+      // state two workspaces must not share, and the route names runtimes
+      // the copy does not carry. A caller's own profile table brings its
+      // own default.
       secrets: options.secrets ?? this.declaredSecretSources,
+      commandLimits: options.commandLimits ?? this.registry.commandLimits,
+      profiles: options.profiles ?? this.profiles,
+      profile: options.profile ?? (options.profiles == null ? this.defaultProfileName : null),
     }
     const copyAgentId = options.agentId ?? this.agentId
     if (copyAgentId !== null) opts.agentId = copyAgentId

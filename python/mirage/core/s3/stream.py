@@ -50,7 +50,7 @@ async def read_stream(
     path = path_spec.mount_path
     pinned_revision = revision_for(virtual)
     config = accessor.config
-    rec = record_stream("read", path, "s3")
+    rec = record_stream("read", virtual, "s3")
     # The accessor's cached client, not a fresh one. It outlives this
     # generator, which is what a stream needs: the body is consumed after
     # the call that produced it returns.

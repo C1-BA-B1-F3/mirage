@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { PathSpec } from '../../../../types.ts'
 import { CycleError, norm } from '../../../../utils/path.ts'
 import { PolicyDenied } from '../../../../policy/index.ts'
@@ -50,10 +51,26 @@ export async function handleReadlink(
     return fail('readlink', 'readlink: missing operand\n')
   }
   const canonical = flags.has('f') || flags.has('e') || flags.has('m')
+  // -m alone canonicalizes without asking for anything to be there, so it
+  // is the one mode whose path is never walked.
+  const walks = !canonical || flags.has('e') || flags.has('f')
+  const walker = dispatchStat(dispatch)
   const lines: string[] = []
   let exitCode = 0
   for (const op of operands) {
     const absOp = absPath(op, session.cwd)
+    const spec = typedSpec(op, session.cwd)
+    // The walk refused the operand before readlink ran: the empty name
+    // answers ENOENT in every mode, a link loop in every mode but -m,
+    // which leaves it unresolved as spelled (coreutils 9.7).
+    if (spec.walkError === 'ENOENT' || (spec.walkError !== null && walks)) {
+      exitCode = 1
+      continue
+    }
+    if (walks && (await dotRefusal(walker, spec)) !== null) {
+      exitCode = 1
+      continue
+    }
     if (canonical) {
       // -f/-e/-m canonicalize: resolve every symlink (including a trailing
       // one) and normalize the path, GNU realpath-style. A link operand
@@ -74,8 +91,11 @@ export async function handleReadlink(
         resolved = norm(namespace.follow(absOp))
       } catch (err) {
         if (!(err instanceof CycleError)) throw err
-        exitCode = 1
-        continue
+        if (walks) {
+          exitCode = 1
+          continue
+        }
+        resolved = norm(absOp)
       }
       const probe = flags.has('e')
         ? resolved

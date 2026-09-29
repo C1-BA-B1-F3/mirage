@@ -138,6 +138,7 @@ export interface LookupResult {
 
 export interface ListResult {
   entries?: string[] | null
+  partialEntries?: string[] | null
   status?: LookupStatus | null
 }
 
@@ -146,6 +147,7 @@ export const IndexDirectorySchema = z.object({
   entries: z.array(z.string()),
   expires_at: z.number(),
   generation: z.string(),
+  partial: z.boolean().default(false),
 })
 
 export type IndexDirectory = z.output<typeof IndexDirectorySchema>

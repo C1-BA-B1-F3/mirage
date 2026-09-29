@@ -16,6 +16,7 @@ import { DIR_MODE, FILE_MODE, LINK_MODE } from './constants.ts'
 import { fsError } from './errors.ts'
 import type { MirageFsSeed } from './seed.ts'
 import type { FSNode, NodeHost, NodeOps, StreamOps } from './types.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 /**
  * The node table for one mount prefix.
@@ -180,6 +181,26 @@ export class NodeTree {
     return parent.children?.get(name)
   }
 
+  /**
+   * Forget every node below the root, so the next lookup asks the mount.
+   *
+   * A child process may have changed anything the tree served. A node an
+   * open handle still holds keeps its bytes, as a descriptor keeps its
+   * inode: emptying it would hand a later read stale lengths over no
+   * content, and a later write would ship that empty buffer whole.
+   */
+  invalidate(): void {
+    if (this.root === null) return
+    const pending = [...(this.root.children?.values() ?? [])]
+    while (pending.length > 0) {
+      const node = pending.pop()
+      if (node === undefined) break
+      pending.push(...(node.children?.values() ?? []))
+      this.host.destroyNode?.(node)
+    }
+    this.root.children?.clear()
+  }
+
   childNames(node: FSNode): string[] {
     return [...(node.children?.keys() ?? [])]
   }
@@ -225,7 +246,7 @@ export class NodeTree {
   private relative(path: string): string | null {
     if (path === this.prefix) return ''
     if (!path.startsWith(this.prefix + '/')) return null
-    return path.slice(this.prefix.length + 1).replace(/\/+$/, '')
+    return rstripSlash(path.slice(this.prefix.length + 1))
   }
 
   private ensureDir(rel: string): FSNode {

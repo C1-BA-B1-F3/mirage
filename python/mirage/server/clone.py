@@ -18,6 +18,7 @@ from typing import Any
 from mirage import Workspace
 from mirage.secrets.config import SecretSource
 from mirage.secrets.sources import resolve_config_secrets, resolve_sources_for
+from mirage.shell.constants import BIN_PREFIX
 from mirage.vfs.history import HISTORY_PREFIX
 from mirage.vfs.registry import build_vfs
 from mirage.workspace.mount.spec import Mount
@@ -69,7 +70,11 @@ async def build_override_mounts(
 
 def _existing_redacted_mounts(ws: Workspace, state: dict[str, Any],
                               skip: set[str]) -> dict[str, Any]:
-    auto_prefixes = {"/dev/", norm_mount_prefix(HISTORY_PREFIX)}
+    auto_prefixes = {
+        "/dev/",
+        norm_mount_prefix(HISTORY_PREFIX),
+        norm_mount_prefix(BIN_PREFIX)
+    }
     prefix_to_vfs = {
         m.prefix: m.vfs
         for m in ws._registry.mounts() if m.prefix not in auto_prefixes

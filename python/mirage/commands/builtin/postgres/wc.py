@@ -21,11 +21,21 @@ from mirage.commands.builtin.postgres.io import IO
 from mirage.commands.config import CommandOpts
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
+from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.postgres import client
 from mirage.core.postgres.read import read as postgres_read
+from mirage.core.postgres.readdir import entity_exists
 from mirage.core.postgres.scope import detect_scope
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
+
+
+async def _all_exist(accessor: PostgresAccessor, paths: list[PathSpec],
+                     scopes: list[ScopeMatch]) -> bool:
+    for p, scope in zip(paths, scopes):
+        if not await entity_exists(accessor, scope, p.virtual):
+            return False
+    return True
 
 
 @command("wc", vfs="postgres", spec=SPECS["wc"])
@@ -44,7 +54,8 @@ async def wc(accessor: PostgresAccessor, paths: list[PathSpec],
                                        parsed.chars or parsed.max_line_length)
     scopes = [detect_scope(p) for p in resolved]
     row_scopes = [scope for scope in scopes if scope.kind == "entity_rows"]
-    if resolved and count_only and len(row_scopes) == len(scopes):
+    if (resolved and count_only and len(row_scopes) == len(scopes)
+            and await _all_exist(accessor, resolved, row_scopes)):
         rows: list[tuple[WCCounts, str | None]] = []
         total = 0
         pool = await accessor.pool()

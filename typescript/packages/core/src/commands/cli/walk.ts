@@ -547,7 +547,22 @@ export function walk(
     while (i < argv.length) {
       const token = argv[i]
       if (token === undefined) break
+      const alias =
+        !optionsEnded && token.startsWith('-') && !cs.dest.has(token) && token !== '--help'
+          ? findChild(node, token)
+          : null
+      if (alias?.aliases.includes(token)) {
+        const refused = finishNode(name, node, cs, flags, cwd, style, env)
+        if (refused !== null) return refused
+        node = alias
+        path = [...path, alias.name]
+        i += 1
+        descended = true
+        break
+      }
       if (!optionsEnded && token === '--') {
+        if (style === UsageStyle.GIT && path.length === 0)
+          return usageError(name, node, 'unknown option: --', style)
         optionsEnded = true
         i += 1
         continue
@@ -656,7 +671,7 @@ export function walk(
       // An alias resolves to its canonical node; the path records the
       // canonical name (argparse prog attribution: errors under `gws co`
       // render as `gws checkout`).
-      const child = findChild(node, token)
+      const child = token.startsWith('-') ? null : findChild(node, token)
       if (child === null) {
         return unknownVerb(head, name, token)
       }

@@ -23,9 +23,15 @@ from mirage.vfs.backblaze.backblaze import BackblazeVFS
 from mirage.vfs.ceph.ceph import CephVFS
 from mirage.vfs.digitalocean.digitalocean import DigitalOceanVFS
 from mirage.vfs.disk.disk import DiskVFS
+from mirage.vfs.dropbox.config import DropboxConfig
+from mirage.vfs.dropbox.dropbox import DropboxVFS
 from mirage.vfs.gcs.gcs import GCSVFS
+from mirage.vfs.gdocs import GDocsConfig, GDocsVFS
+from mirage.vfs.gdrive import GoogleDriveConfig, GoogleDriveVFS
 from mirage.vfs.gridfs import GridFSConfig
 from mirage.vfs.gridfs.gridfs import GridFSVFS
+from mirage.vfs.gsheets import GSheetsConfig, GSheetsVFS
+from mirage.vfs.gslides import GSlidesConfig, GSlidesVFS
 from mirage.vfs.hf_buckets import HfBucketsConfig, HfBucketsVFS
 from mirage.vfs.lancedb import LanceDBConfig, LanceDBVFS
 from mirage.vfs.loader import load_attr
@@ -217,12 +223,13 @@ def test_fresh_is_refused_on_disk_which_cannot_cache_reads(tmp_path):
 
 
 def test_fresh_is_refused_on_a_backend_that_caches_but_stamps_nothing():
-    # hf_buckets reaches the gate -- it caches reads -- but its read
-    # record carries no fingerprint, so there is nothing to compare.
-    vfs = HfBucketsVFS(HfBucketsConfig(bucket="acme/data"))
+    # dropbox reaches the gate -- it caches reads -- but its read record
+    # carries no fingerprint, so there is nothing to compare.
+    vfs = DropboxVFS(
+        DropboxConfig(client_id="i", client_secret="s", refresh_token="r"))
     assert vfs.caches_reads is True
     with pytest.raises(ValueError) as exc:
-        check_read_capability("/hf/", vfs, FRESH)
+        check_read_capability("/dbx/", vfs, FRESH)
     assert "comparable content token" in str(exc.value)
 
 
@@ -267,6 +274,40 @@ def test_gridfs_is_allowed_fresh_on_a_constructed_instance():
     assert check_read_capability("/g/", vfs, FRESH) is None
 
 
+def test_gdrive_is_allowed_fresh_on_a_constructed_instance():
+    # The flag on the class is one line asserting itself; running the
+    # verdict on an instance is what proves gdrive can declare `fresh`. The
+    # token behind the claim is pinned by the read-token contract,
+    # tests/vfs/test_read_revalidatable.py.
+    assert GoogleDriveVFS.read_revalidatable is True
+    vfs = GoogleDriveVFS(
+        GoogleDriveConfig(client_id="c", client_secret="s", refresh_token="r"))
+    assert vfs.caches_reads is True
+    assert check_read_capability("/gd/", vfs, FRESH) is None
+
+
+@pytest.mark.parametrize(("cls", "config"), [(GDocsVFS, GDocsConfig),
+                                             (GSheetsVFS, GSheetsConfig),
+                                             (GSlidesVFS, GSlidesConfig)])
+def test_google_apps_are_allowed_fresh_on_a_constructed_instance(cls, config):
+    # Each stamps the file's Drive modifiedTime on stat and read; the
+    # read-token contract pins that the two agree.
+    assert cls.read_revalidatable is True
+    vfs = cls(config(client_id="c", client_secret="s", refresh_token="r"))
+    assert vfs.caches_reads is True
+    assert check_read_capability("/g/", vfs, FRESH) is None
+
+
+def test_hf_buckets_is_allowed_fresh_on_a_constructed_instance():
+    # The token behind the claim -- stat's paths-info xetHash equals the
+    # download's ETag -- is pinned in tests/core/hf_buckets and by the
+    # read-token contract; this proves the verdict itself lets it through.
+    assert HfBucketsVFS.read_revalidatable is True
+    vfs = HfBucketsVFS(HfBucketsConfig(bucket="acme/data"))
+    assert vfs.caches_reads is True
+    assert check_read_capability("/hf/", vfs, FRESH) is None
+
+
 def test_bounded_is_allowed_on_a_backend_that_cannot_revalidate():
     assert check_read_capability("/d/", RAMVFS(), ReadSpec()) is None
 
@@ -280,7 +321,9 @@ def test_bounded_is_allowed_on_a_backend_that_cannot_revalidate():
 REVALIDATABLE = {
     "s3", "aliyun", "backblaze", "ceph", "digitalocean", "gcs", "minio", "oci",
     "qingstor", "r2", "scaleway", "seaweedfs", "supabase", "tencent", "wasabi",
-    "gridfs"
+    "gridfs", "gdrive", "gdocs", "gsheets", "gslides", "hf_models",
+    "hf_datasets", "hf_spaces", "onedrive", "sharepoint", "hf_buckets",
+    "github"
 }
 
 
@@ -313,7 +356,8 @@ def test_the_typescript_roster_is_the_same_list(host):
         for name, caps in spec["capabilities"].items()
         if caps and caps.get("read_revalidatable") is True
     }
-    # gridfs has no browser implementation; nothing else differs.
+    # gridfs and the Hugging Face repos and buckets have no browser
+    # implementation; github's VFS is core, so the browser declares it too.
     assert declared == {n for n in REVALIDATABLE if n in spec["capabilities"]}
 
 

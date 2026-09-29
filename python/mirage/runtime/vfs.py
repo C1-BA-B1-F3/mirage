@@ -216,6 +216,9 @@ class RuntimeVFS:
         kernel readdir never stats at all. What went wrong is not lost:
         the guest's own stat or open of that entry asks the mount again
         and reports it. Only the listing itself failing fails the call.
+        Any failure but a missing path (a dangling link, an entry gone
+        since the listing) also warns on the host, since the row the
+        guest sees is degraded.
 
         A row that did stat carries its mode and mtime too, since the
         struct is already in hand: a guest that seeds a whole tree from
@@ -258,9 +261,14 @@ class RuntimeVFS:
                 continue
             try:
                 st = self.stat(raw)
-            except Exception as exc:
+            except (FileNotFoundError, NotADirectoryError) as exc:
                 logger.debug("runtime vfs: readdir %s: stat %s: %s", path, raw,
                              exc)
+                entries.append(unclassified)
+                continue
+            except Exception as exc:
+                logger.warning("runtime vfs: readdir %s: stat %s: %s", path,
+                               raw, exc)
                 entries.append(unclassified)
                 continue
             entries.append(

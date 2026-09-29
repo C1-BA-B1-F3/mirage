@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.builtin.generic_bind import CommandIO
 from mirage.core.hf_hub.constants import SCOPE_ERROR
 from mirage.core.hf_hub.exists import exists as _exists
 from mirage.core.hf_hub.read import read_bytes as _read
@@ -20,6 +19,8 @@ from mirage.core.hf_hub.readdir import readdir as _readdir
 from mirage.core.hf_hub.stat import stat as _stat
 from mirage.core.hf_hub.stream import range_read as _range_read
 from mirage.core.hf_hub.stream import read_stream as _read_stream
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import NativeReadOps, ReadOps
 
 # No native find or du op, and that is not an omission. Those exist to
 # spare an API tree one request per directory, and this mount has no such
@@ -44,17 +45,13 @@ from mirage.core.hf_hub.stream import read_stream as _read_stream
 # there with ordinary commands and `hf upload /work/f path` sends one
 # commit back. Pinned end to end by
 # `hf_a_local_mount_is_the_writable_copy` in integ/cli/hf.json.
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_range=_read,
-    read_stream=_read_stream,
-    stat=_stat,
-    exists=_exists,
-    is_mounted=lambda a: True,
-    local=False,
-    max_glob_matches=SCOPE_ERROR,
-)
+IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                native=NativeReadOps(read_range=_read,
+                                     read_stream=_read_stream,
+                                     exists=_exists),
+                is_mounted=lambda a: True,
+                local=False,
+                max_glob_matches=SCOPE_ERROR).to_command_io()
 
 range_read = _range_read
 resolve_glob = IO.resolve_glob

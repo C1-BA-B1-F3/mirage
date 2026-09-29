@@ -20,6 +20,7 @@ import { GENERAL_EXPR } from './expr.ts'
 import { GENERAL_JS, GENERAL_NODE } from './js.ts'
 import { GENERAL_PYTHON, GENERAL_PYTHON3 } from './python.ts'
 import { GENERAL_SEQ } from './seq.ts'
+import { GENERAL_UNAME } from './uname.ts'
 import { GENERAL_WGET } from './wget.ts'
 
 export const GENERAL_COMMANDS: readonly RegisteredCommand[] = [
@@ -32,5 +33,6 @@ export const GENERAL_COMMANDS: readonly RegisteredCommand[] = [
   ...GENERAL_PYTHON,
   ...GENERAL_PYTHON3,
   ...GENERAL_SEQ,
+  ...GENERAL_UNAME,
   ...GENERAL_WGET,
 ]

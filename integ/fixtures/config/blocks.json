@@ -135,7 +135,7 @@
       "config": {
         "mounts": {
           "/d": {
-            "vfs": "ram",
+            "vfs": "disk",
             "mode": "read",
             "config": {
               "root": "/tmp/x"

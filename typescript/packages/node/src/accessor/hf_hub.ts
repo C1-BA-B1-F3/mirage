@@ -16,9 +16,10 @@ import { Accessor } from '@struktoai/mirage-core/accessor/index'
 import type { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
 import { VFSName } from '@struktoai/mirage-core/types'
 import * as kp from '@struktoai/mirage-core/utils/key_prefix'
-import { HF_ENDPOINT, type HfRepoConfig } from '../vfs/hf_buckets/config.ts'
+import { HF_ENDPOINT, HF_TIMEOUT_MS, type HfRepoConfig } from '../vfs/hf_buckets/config.ts'
 import { DEFAULT_REVISION } from '../core/hf_hub/constants.ts'
 import type { TreeEntry } from '../core/hf_hub/tree_entry.ts'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export interface RowTables {
   entries: Map<string, IndexEntry>
@@ -50,6 +51,7 @@ export class HfHubAccessor extends Accessor {
    * wired. Derivation is O(tree), so a readdir loop over a large repo would
    * be quadratic without a memo; every reseat of `tree` clears it. */
   rowsCache: { prefix: string; rows: RowTables } | null = null
+  refills = 0
   /** Guards the lazy hydration so concurrent first reads make one request
    * rather than one per caller. */
   hydrating: Promise<void> | null = null
@@ -76,6 +78,11 @@ export class HfHubAccessor extends Accessor {
 
   get token(): string | undefined {
     return this.config.token
+  }
+
+  /** How long one Hub request may go without progress. */
+  get timeoutMs(): number {
+    return this.config.timeoutMs ?? HF_TIMEOUT_MS
   }
 
   /**
@@ -113,10 +120,10 @@ export class HfHubAccessor extends Accessor {
    */
   repoPath(rel: string): string {
     const prefix = this.keyPrefix
-    const stem = rel.replace(/^\/+|\/+$/g, '')
+    const stem = stripSlash(rel)
     if (prefix === '') return stem
-    if (stem === '') return prefix.replace(/\/+$/, '')
-    return kp.apply(prefix, rel).replace(/\/+$/, '')
+    if (stem === '') return rstripSlash(prefix)
+    return rstripSlash(kp.apply(prefix, rel))
   }
 }
 

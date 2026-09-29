@@ -25,6 +25,13 @@ import {
 } from '@struktoai/mirage-server/daemon_config'
 import { DEFAULT_ALLOWED_HOSTS } from '@struktoai/mirage-server/host_validation_constants'
 import { mirageHome } from '@struktoai/mirage-server/paths'
+import {
+  AUTHORIZED_KEYS_NAME,
+  DEFAULT_SSH_HOST,
+  HOST_KEY_NAME,
+  SSH_ENV_KEYS,
+} from '@struktoai/mirage-server/ssh/constants'
+import { defaultSSHDir } from '@struktoai/mirage-server/ssh/config'
 
 import { ENV_DAEMON_URL, ENV_TOKEN } from './env.ts'
 
@@ -89,9 +96,10 @@ const ENV_FOR_KEY: Record<string, string> = {
   auth_token: ENV_TOKEN,
   idle_grace_seconds: 'MIRAGE_IDLE_GRACE_SECONDS',
   port: 'MIRAGE_DAEMON_PORT',
+  ...SSH_ENV_KEYS,
 }
 
-function defaultForKey(key: string): string {
+function defaultForKey(key: string, home: string): string {
   const defaults: Record<string, string> = {
     url: DEFAULT_DAEMON_URL,
     allowed_hosts: DEFAULT_ALLOWED_HOSTS.join(','),
@@ -106,6 +114,10 @@ function defaultForKey(key: string): string {
     auth_token: '',
     idle_grace_seconds: '30',
     port: '8765',
+    ssh_port: '',
+    ssh_host: DEFAULT_SSH_HOST,
+    ssh_host_key_file: join(defaultSSHDir(home), HOST_KEY_NAME),
+    ssh_authorized_keys: join(defaultSSHDir(home), AUTHORIZED_KEYS_NAME),
   }
   return defaults[key] ?? ''
 }
@@ -129,7 +141,7 @@ export function resolvedConfig(
     if (fileValue !== undefined && fileValue !== '') {
       out[key] = [fileValue, 'file']
     } else {
-      out[key] = [defaultForKey(key), 'default']
+      out[key] = [defaultForKey(key, home), 'default']
     }
   }
   return out

@@ -16,8 +16,40 @@ import type { Reply } from '../kit/typescript/index.ts'
 import type { C } from './config.ts'
 import { DATA_SOURCE_VERSION, DEFAULT_API_VERSION } from './config.ts'
 import { plainTextOf } from './text.ts'
-import type { DatabaseRow, Json, PageRow } from './types.ts'
-import { apiError, asObject, dataSourceJson, databaseJson, pageJson } from './wire.ts'
+import type { Json, PageRow } from './types.ts'
+import {
+  apiError,
+  asObject,
+  dataSourceJson,
+  databaseJson,
+  pageJson,
+  cursorOf,
+  intOr,
+  dataSourceIdOf,
+} from './wire.ts'
+
+type Key = { id: string; lastEditedTime: string; position: number }
+
+// A title query is folded in JS, so rows arrive one batch at a time and the
+// scan stops as soon as a page's worth matched. Each batch resumes after the
+// last row it read by key, not by offset: no earlier row is read twice, and a
+// row trashed mid-scan cannot shift a later match out. With no query the first
+// batch is the page.
+async function firstMatches<R extends Key & { titleText: string }>(
+  fetch: (after: Key | null) => Promise<R[]>,
+  take: number,
+  matches: (row: R) => boolean,
+): Promise<R[]> {
+  const kept: R[] = []
+  let after: Key | null = null
+  while (kept.length < take) {
+    const batch = await fetch(after)
+    kept.push(...batch.filter(matches))
+    after = batch.at(-1) ?? null
+    if (batch.length < take) break
+  }
+  return kept.slice(0, take)
+}
 
 // With no object filter a search answers pages AND databases (a 2025-09-03
 // caller gets data sources, which replaced databases in search). The MCP-Atlas
@@ -31,39 +63,105 @@ export async function searchResults(
   args: Json,
   version: string = DEFAULT_API_VERSION,
 ): Promise<Json[]> {
-  const filter = asObject(args.filter)
-  const kind = filter.value
+  const kind = asObject(args.filter).value
+  // SQLite LIKE folds ASCII only, so a title query is folded here: `équipe`
+  // still finds `Équipe`, as it does on live Notion.
   const query = typeof args.query === 'string' ? args.query.toLowerCase() : ''
-  const matches = (title: string): boolean => query === '' || title.toLowerCase().includes(query)
-  const found: { edited: string; item: Json }[] = []
-  // 2022-06-28 spells this "database"; 2026-03-11 replaced it with
-  // "data_source" and rejects the old word. The fake answers both so the
-  // battery's client and the official CLI can share one server.
+  const matches = (row: { titleText: string }): boolean =>
+    query === '' || row.titleText.toLowerCase().includes(query)
+  const where = { tenant, inTrash: false }
+  const ascending = asObject(args.sort).direction === 'ascending'
+  const direction = ascending ? ('asc' as const) : ('desc' as const)
+  const orderBy = [
+    { lastEditedTime: direction },
+    { position: 'asc' as const },
+    { id: 'asc' as const },
+  ]
+  const take = Math.min(Math.max(intOr(args.page_size, 100), 1), 100) + 1
   const onlyDatabases = kind === 'database' || kind === 'data_source'
-  if (kind === undefined || onlyDatabases) {
-    const rows = (await db.notionDatabase.findMany({
-      where: { tenant, inTrash: false },
-      orderBy: [{ position: 'asc' }, { id: 'asc' }],
-    })) as DatabaseRow[]
-    const asDataSource =
-      kind === 'data_source' || (kind === undefined && version >= DATA_SOURCE_VERSION)
-    for (const row of rows.filter((r) => matches(r.titleText))) {
-      const item = asDataSource ? dataSourceJson(row) : databaseJson(row, version)
-      found.push({ edited: row.lastEditedTime, item })
+  const includeDatabases = kind === undefined || onlyDatabases
+  const asDataSource =
+    kind === 'data_source' || (kind === undefined && version >= DATA_SOURCE_VERSION)
+  const cursor = cursorOf(args.start_cursor)
+  let anchor: { row: Key; database: boolean } | null = null
+  if (cursor !== null) {
+    if (!onlyDatabases) {
+      const row = await db.notionPage.findFirst({ where: { ...where, id: cursor } })
+      if (row !== null) anchor = { row, database: false }
     }
+    if (anchor === null && includeDatabases) {
+      const rows = await db.notionDatabase.findMany({
+        where: { ...where, id: asDataSource ? { endsWith: cursor.slice(8) } : cursor },
+      })
+      const row = rows.find((r) => (asDataSource ? dataSourceIdOf(r.id) : r.id) === cursor)
+      if (row !== undefined) anchor = { row, database: true }
+    }
+    if (anchor === null) return []
+  }
+  const laterTime = (row: Key) => ({
+    lastEditedTime: ascending ? { gt: row.lastEditedTime } : { lt: row.lastEditedTime },
+  })
+  // Rows from `row` on in sort order; the cursor row itself opens its page, a
+  // batch resumes strictly after the row it ended on.
+  const from = (row: Key, inclusive: boolean) => ({
+    OR: [
+      laterTime(row),
+      {
+        lastEditedTime: row.lastEditedTime,
+        OR: [
+          { position: { gt: row.position } },
+          { position: row.position, id: inclusive ? { gte: row.id } : { gt: row.id } },
+        ],
+      },
+    ],
+  })
+  const bounds = (database: boolean) => {
+    if (anchor === null) return {}
+    const row = anchor.row
+    if (database !== anchor.database) {
+      return database
+        ? laterTime(row)
+        : { OR: [laterTime(row), { lastEditedTime: row.lastEditedTime }] }
+    }
+    return from(row, true)
+  }
+  const batch = (database: boolean, after: Key | null) => ({
+    where: { AND: [{ ...where, ...bounds(database) }, after === null ? {} : from(after, false)] },
+    orderBy,
+    take,
+  })
+  const found: { row: Key; item: Json; database: boolean }[] = []
+  if (includeDatabases) {
+    const rows = await firstMatches(
+      (after) => db.notionDatabase.findMany(batch(true, after)),
+      take,
+      matches,
+    )
+    for (const row of rows)
+      found.push({
+        row,
+        database: true,
+        item: asDataSource ? dataSourceJson(row) : databaseJson(row, version),
+      })
   }
   if (!onlyDatabases) {
-    const rows = (await db.notionPage.findMany({
-      where: { tenant, inTrash: false },
-      orderBy: [{ position: 'asc' }, { id: 'asc' }],
-    })) as PageRow[]
-    for (const row of rows.filter((r) => matches(r.titleText))) {
-      found.push({ edited: row.lastEditedTime, item: pageJson(row, version) })
-    }
+    const rows = await firstMatches(
+      (after) => db.notionPage.findMany(batch(false, after)),
+      take,
+      matches,
+    )
+    for (const row of rows) found.push({ row, database: false, item: pageJson(row, version) })
   }
-  const sign = asObject(args.sort).direction === 'ascending' ? 1 : -1
-  found.sort((a, b) => (a.edited === b.edited ? 0 : a.edited < b.edited ? -sign : sign))
-  return found.map((one) => one.item)
+  const sign = ascending ? 1 : -1
+  found.sort((a, b) => {
+    if (a.row.lastEditedTime !== b.row.lastEditedTime)
+      return a.row.lastEditedTime < b.row.lastEditedTime ? -sign : sign
+    if (a.database !== b.database) return a.database ? -1 : 1
+    return (
+      a.row.position - b.row.position || (a.row.id < b.row.id ? -1 : a.row.id > b.row.id ? 1 : 0)
+    )
+  })
+  return found.slice(0, take).map((one) => one.item)
 }
 
 // A filter, a sort and `filter_properties` all name a property by its name or

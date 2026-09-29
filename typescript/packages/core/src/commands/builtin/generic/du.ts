@@ -22,7 +22,12 @@ import {
   pathAllowed,
   pathRulesActive,
 } from '../../../context/session_context.ts'
-import { isMissingPath } from '../../../utils/errors.ts'
+import {
+  ZERO_LENGTH_NAME,
+  fsStrerror,
+  isDotWalkError,
+  isMissingPath,
+} from '../../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
 import { respellRaw } from '../../../utils/path.ts'
 import { lstripSlash, rstripSlash, stripSlash } from '../../../utils/slash.ts'
@@ -32,7 +37,7 @@ import { quoteText } from '../../quote.ts'
 import type { LinkView, MountView, StatPath } from '../../../ops/types.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 
-export type DuEntries = [entries: [string, number][], total: number]
+import type { DuEntries } from '../../../vfs/types.ts'
 export type ComputeSize = (p: PathSpec) => Promise<number>
 export type ComputeEntries = (p: PathSpec) => Promise<DuEntries>
 
@@ -261,6 +266,12 @@ async function duOperands(
       // errno it got, so the two cannot share a wording.
       if ((err as { code?: string }).code === 'ENOTDIR') {
         missing.push([path.rawPath, 'Not a directory'])
+        continue
+      }
+      // The operand did not resolve, so no channel asked about the path
+      // it simplifies to can find it there.
+      if (isDotWalkError(err)) {
+        missing.push([path.rawPath, fsStrerror(err) ?? ENOENT_TEXT])
         continue
       }
       if (!isMissingPath(err)) throw err
@@ -630,7 +641,11 @@ export async function duGeneric(
   if (flags.c) lines.push(`${fmt(grand)}\ttotal`)
 
   const notes = flags.warning === undefined ? [] : [flags.warning]
-  notes.push(...missing.map(([raw, detail]) => `du: cannot access '${raw}': ${detail}`))
+  notes.push(
+    ...missing.map(([raw, detail]) =>
+      raw === '' ? `du: ${ZERO_LENGTH_NAME}` : `du: cannot access '${raw}': ${detail}`,
+    ),
+  )
   let exitCode = missing.length > 0 ? 1 : 0
   for (const virtual of unreadable?.() ?? []) {
     notes.push(`du: cannot read directory '${respellUnder(virtual, paths)}': Permission denied`)

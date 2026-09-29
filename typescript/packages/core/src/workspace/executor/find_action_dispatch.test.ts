@@ -19,7 +19,7 @@ import { MountMode } from '../../types.ts'
 import type { Action, OpsContext, Policy } from '../../policy/index.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { Workspace } from '../workspace/workspace.ts'
-import { SharedStdin } from './find_action_dispatch.ts'
+import { SharedStdin } from '../../io/stream.ts'
 
 class NoRmdir implements Policy {
   preOps(ctx: OpsContext): Action | null {
@@ -280,9 +280,9 @@ describe('find actions', () => {
 
   it('runs the -exec head as a program', async () => {
     // execvp answers `printf` with coreutils printf, which has no -v: the
-    // word is the format (GNU adds a warning about the excess arguments,
-    // which mirage's printf does not report). A nested shell the line
-    // starts is a shell again, so its printf assigns.
+    // word is the format, and it warns about the arguments the format
+    // leaves over. A nested shell the line starts is a shell again, so its
+    // printf assigns.
     const ws = await shellWs()
     try {
       const r = await ws.shell(
@@ -290,7 +290,7 @@ describe('find actions', () => {
         { sessionId: 's' },
       )
       expect(r.stdoutText).toBe('-v[]\n[hi]\n[hi]\n')
-      expect(r.stderrText).toBe('')
+      expect(r.stderrText).toBe("printf: warning: ignoring excess arguments, starting with 'x'\n")
     } finally {
       await ws.close()
     }
@@ -311,4 +311,17 @@ describe('find actions', () => {
     }
     expect(got).toEqual(['a', 'b'])
   })
+})
+
+it('keeps a directory with an unmatched link', async () => {
+  const ws = await shellWs()
+  try {
+    await ws.shell('mkdir /d; ln -s nowhere /d/link')
+    const result = await ws.shell('find /d -type d -delete')
+    expect(result.exitCode).toBe(1)
+    expect(result.stderrText).toBe("find: cannot delete '/d': Directory not empty\n")
+    expect(ws.namespace.isLink('/d/link')).toBe(true)
+  } finally {
+    await ws.close()
+  }
 })

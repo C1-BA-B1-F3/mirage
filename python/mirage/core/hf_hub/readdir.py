@@ -17,7 +17,8 @@ from functools import partial
 
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.hf_hub.lookup import key_of, lookup, probe_dir, probe_file
+from mirage.core.hf_hub.lookup import (key_of, lookup, probe_dir, probe_file,
+                                       refusals_denied)
 from mirage.types import PathSpec
 from mirage.utils.errors import listing_error
 from mirage.utils.key_prefix import mount_prefix_of
@@ -47,13 +48,14 @@ async def readdir(
     """
     prefix = mount_prefix_of(path_spec.virtual, path_spec.vfs_path)
     path = (path_spec.dir if path_spec.pattern else path_spec).mount_path
-    found = await lookup(accessor, index, prefix, key_of(prefix, path))
-    if found.children is not None:
-        return found.children
-    # A git tree implies every directory above a path it holds, so this
-    # store cannot hold an orphan and the one-probe form is the right
-    # one; both probes are dictionary lookups against a listing already
-    # in memory, so the walk costs no requests.
-    raise await listing_error(path_spec, path,
-                              partial(probe_file, accessor, index, prefix),
-                              partial(probe_dir, accessor, index, prefix))
+    with refusals_denied(path_spec):
+        found = await lookup(accessor, index, prefix, key_of(prefix, path))
+        if found.children is not None:
+            return found.children
+        # A git tree implies every directory above a path it holds, so this
+        # store cannot hold an orphan and the one-probe form is the right
+        # one; both probes are dictionary lookups against a listing
+        # already in memory, so the walk costs no requests.
+        raise await listing_error(path_spec, path,
+                                  partial(probe_file, accessor, index, prefix),
+                                  partial(probe_dir, accessor, index, prefix))

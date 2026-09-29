@@ -15,7 +15,7 @@ from mirage.context import hidden_paths_intersect, path_rules_active
 from mirage.core.dify.find import find as find_core
 from mirage.core.dify.stat import stat as stat_core
 from mirage.core.dify.stat import stat_light
-from mirage.io.types import ByteSource, IOResult
+from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
 
@@ -45,7 +45,7 @@ async def _normalize_find_output(
 ) -> ByteSource | None:
     if stdout is None:
         return None
-    data = stdout if isinstance(stdout, bytes) else b""
+    data = await materialize(stdout)
     root = mount_prefix_of(search_path.virtual,
                            search_path.vfs_path).rstrip("/") or "/"
     lines = data.decode().splitlines()

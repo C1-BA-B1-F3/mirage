@@ -12,16 +12,21 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { JaegerAccessor } from '@struktoai/mirage-core/accessor/jaeger'
+
 import { JAEGER_COMMANDS } from '@struktoai/mirage-core/commands/builtin/jaeger/index'
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import { HttpJaegerTransport } from '@struktoai/mirage-core/core/jaeger/client'
+
 import { JAEGER_OPS } from '@struktoai/mirage-core/ops/jaeger/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import { JAEGER_PROMPT } from '@struktoai/mirage-core/vfs/jaeger/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
+
 import { redactJaegerConfig, type JaegerConfig, type JaegerConfigRedacted } from './config.ts'
+
 export interface JaegerVFSState {
   type: string
   config: JaegerConfigRedacted
@@ -34,7 +39,6 @@ export class JaegerVFS extends BaseVFS {
   // from the search payload the listing already fetched, and operations.json
   // is sized by one call per service directory the caller opens.
   override readonly sizesAlwaysKnown: boolean = true
-  override readonly indexTtl: number = 600
   override readonly prompt: string = JAEGER_PROMPT
   readonly config: JaegerConfig
   override readonly accessor: JaegerAccessor
@@ -61,6 +65,7 @@ export class JaegerVFS extends BaseVFS {
     }
     this.accessor = new JaegerAccessor(new HttpJaegerTransport(transportOpts), accessorConfig)
   }
+
   override commands(): readonly RegisteredCommand[] {
     return JAEGER_COMMANDS
   }
@@ -68,14 +73,11 @@ export class JaegerVFS extends BaseVFS {
   override ops(): readonly RegisteredOp[] {
     return JAEGER_OPS
   }
+
   override getState(): Promise<JaegerVFSState> {
     return Promise.resolve({
       type: this.name,
       config: redactJaegerConfig(this.config),
     })
-  }
-
-  override loadState(_state: JaegerVFSState): Promise<void> {
-    return Promise.resolve()
   }
 }

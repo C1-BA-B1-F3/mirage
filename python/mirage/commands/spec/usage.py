@@ -12,16 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import Sequence
+
 from mirage.commands.errors import UsageError
 from mirage.commands.quote import quote_text
 from mirage.commands.spec.argmatch import ArgmatchChoices, ArgmatchKind
-from mirage.commands.spec.constants import (OLD_OPTION_EXIT, OPERAND_EXIT,
-                                            PYTHON_NAMES, PYTHON_USAGE,
-                                            READ_FAIL_EXIT,
+from mirage.commands.spec.constants import (ARGV_IN_ORDER, OLD_OPTION_EXIT,
+                                            OPERAND_EXIT, PYTHON_NAMES,
+                                            PYTHON_USAGE, READ_FAIL_EXIT,
                                             READ_FAIL_EXIT_ISDIR, USAGE_EXIT,
                                             USAGE_HINT_PREFIX)
 from mirage.commands.spec.types import CommandName
-from mirage.utils.errors import fs_strerror
+from mirage.utils.errors import DotWalkLoop, FileTooLargeError, fs_strerror
 
 
 def usage_exit_code(cmd_name: str) -> int:
@@ -53,7 +55,8 @@ def operand_exit_code(cmd_name: str) -> int:
 # one case this leaves at 1 where GNU would answer the command's code;
 # that is the safe side to err on, and it is what the executor already
 # did before the tables existed.
-_READ_FAIL_ERRORS = (FileNotFoundError, IsADirectoryError, NotADirectoryError)
+_READ_FAIL_ERRORS = (FileNotFoundError, IsADirectoryError, NotADirectoryError,
+                     FileTooLargeError, DotWalkLoop)
 
 
 def _read_fail_code(cmd_name: str, is_dir: bool) -> int:
@@ -196,7 +199,7 @@ def unknown_option_error(cmd_name: str, token: str) -> tuple[bytes, int]:
         line = f"{cmd_name}: unrecognized option '{token}'\n"
     else:
         line = f"{cmd_name}: invalid option -- '{token}'\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -239,7 +242,7 @@ def unexpected_value_error(cmd_name: str, token: str) -> tuple[bytes, int]:
         return unknown_option_error(cmd_name, token)
     option = token.split("=", 1)[0]
     line = f"{cmd_name}: option '{option}' doesn't allow an argument\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -261,7 +264,7 @@ def ambiguous_option_error(cmd_name: str, token: str,
     listed = " ".join(f"'{c}'" for c in candidates)
     line = (f"{cmd_name}: option '{token}' is ambiguous; "
             f"possibilities: {listed}\n")
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -280,7 +283,7 @@ def invalid_int_error(cmd_name: str, option: str,
         value (str): the rejected value.
     """
     line = f"{cmd_name}: invalid int value: '{value}' for '{option}'\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -300,7 +303,7 @@ def invalid_float_error(cmd_name: str, option: str,
         return curl_option_error(
             f"curl: option {option}: expected a proper numerical parameter\n")
     line = f"{cmd_name}: invalid float value: '{value}' for '{option}'\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -323,7 +326,7 @@ def missing_value_error(cmd_name: str, token: str) -> tuple[bytes, int]:
         line = f"{cmd_name}: option '{token}' requires an argument\n"
     else:
         line = f"{cmd_name}: option requires an argument -- '{token}'\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -347,7 +350,7 @@ def old_option_error(cmd_name: str, letter: str) -> tuple[bytes, int]:
         letter (str): the cluster letter whose argument ran out.
     """
     line = f"{cmd_name}: Old option '{letter}' requires an argument.\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), OLD_OPTION_EXIT
 
 
@@ -441,7 +444,7 @@ def invalid_argument_error(
     """
     line = (f"{argmatch_line(cmd_name, option, value, kind)}\n"
             f"{argmatch_valid_block(choices)}\n")
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     code = usage_exit_code(cmd_name) if exit_code is None else exit_code
     return (line + hint).encode(), code
 
@@ -484,7 +487,7 @@ def missing_required_error(cmd_name: str, option: str) -> tuple[bytes, int]:
         option (str): canonical dashed spelling ('--output').
     """
     line = f"{cmd_name}: option '{option}' is required\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -506,8 +509,10 @@ def extra_operand_error(cmd_name: str, operand: str) -> UsageError:
     """GNU-shaped usage error for an operand past a command's arity.
 
     Shapes pinned against real GNU: ``<cmd>: extra operand '<arg>'`` with
-    the ``Try '--help'`` hint (diff and cmp prefix the hint line with the
-    command name; mktemp says ``too many templates`` with no operand).
+    the ``Try '--help'`` hint (diff, cmp and patch prefix the hint line
+    with the command name; mktemp says ``too many templates`` with no
+    operand, and patch names the operand first, bare: ``patch: x: extra
+    operand``).
     The operand must be the as-typed spelling (``raw_path``), never the
     resolved path.
 
@@ -517,7 +522,41 @@ def extra_operand_error(cmd_name: str, operand: str) -> UsageError:
     """
     if cmd_name == CommandName.MKTEMP:
         line = "mktemp: too many templates"
+    elif cmd_name == CommandName.PATCH:
+        line = f"patch: {operand}: extra operand"
     else:
         line = f"{cmd_name}: extra operand '{operand}'"
+    return UsageError(f"{line}\n{usage_hint(cmd_name)}",
+                      usage_exit_code(cmd_name))
+
+
+def missing_operand_error(
+    cmd_name: str, last: str | None, argv: Sequence[str] = ()) -> UsageError:
+    """GNU-shaped usage error for an operand short of a command's arity.
+
+    Shapes pinned against real GNU: ``<cmd>: missing operand after
+    '<arg>'`` names ``argv[argc - 1]`` once getopt has moved the operands
+    behind the options, which is the last operand given, or the line's
+    last word for a program that reads its operands in order (join).
+    With none given, coreutils says a bare ``missing operand``, while
+    diffutils still names the line's last word, an option or its value
+    included (``cmp: missing operand after '-s'``, ``diff -U 3`` names
+    ``3``), and the program itself on a bare line (``cmp: missing
+    operand after 'cmp'``; diffutils 3.10).
+
+    Args:
+        cmd_name (str): command name for the message and exit code.
+        last (str | None): the last operand as typed, or None when the
+            line has none.
+        argv (Sequence[str]): the line's words after the command name,
+            which the line's last word is read from.
+    """
+    after = last
+    if after is not None and cmd_name in ARGV_IN_ORDER and argv:
+        after = argv[-1]
+    if after is None and cmd_name in USAGE_HINT_PREFIX:
+        after = argv[-1] if argv else cmd_name
+    line = (f"{cmd_name}: missing operand" if after is None else
+            f"{cmd_name}: missing operand after '{after}'")
     return UsageError(f"{line}\n{usage_hint(cmd_name)}",
                       usage_exit_code(cmd_name))

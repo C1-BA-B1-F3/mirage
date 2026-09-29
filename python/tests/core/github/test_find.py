@@ -21,6 +21,7 @@ from mirage.core.github.find import find
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
+from mirage.utils.stat_view import DIR_SIZE
 
 
 def _accessor() -> GitHubAccessor:
@@ -99,9 +100,12 @@ async def test_find_strips_mount_prefix():
 
 @pytest.mark.asyncio
 async def test_find_size_filters():
-    # Directories contribute size 0 to -size, so the root is excluded
-    # under a positive minimum (#318).
-    results = await find(_accessor(), _spec("/"), min_size=100)
+    # A directory is DIR_SIZE bytes for -size, so a window below it keeps
+    # only the files in range.
+    results = await find(_accessor(),
+                         _spec("/"),
+                         min_size=100,
+                         max_size=DIR_SIZE - 1)
     assert results == ["/src/main.py"]
 
 

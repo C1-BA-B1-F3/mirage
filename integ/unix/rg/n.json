@@ -23,10 +23,10 @@
         "nextcloud",
         "box"
       ],
-      "command": "rg -n alpha /data/r4/notes.txt",
+      "command": "rg -n alpha /data/r4/notes.txt; rg -nN alpha /data/r4/notes.txt; rg --column alpha /data/r4/notes.txt; rg --vimgrep alpha /data/r4/notes.txt; rg --vimgrep --no-column alpha /data/r4/notes.txt",
       "expect": {
         "exit": 0,
-        "stdout": "1:alpha\n",
+        "stdout": "1:alpha\nalpha\n1:1:alpha\n/data/r4/notes.txt:1:1:alpha\n/data/r4/notes.txt:1:alpha\n",
         "stderr": ""
       },
       "flags": [
@@ -65,6 +65,75 @@
       "flags": [
         "n",
         "A"
+      ]
+    },
+    {
+      "id": "rg_prefilter_alternation_offsets",
+      "seq": 1287011,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "seq 1 20000 > /data/prefilter.txt; printf 'NEEDLE\\nneedle\\nother\\nneedleX\\n' >> /data/prefilter.txt; rg -nb 'needle|other' /data/prefilter.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "20002:108901:needle\n20003:108908:other\n20004:108914:needleX\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "byte_offset"
+      ]
+    },
+    {
+      "id": "rg_prefilter_null_data_offsets",
+      "seq": 1287014,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "seq 1 20000 | tr '\\n' '\\000' > /data/prefilter.z; printf 'NEEDLE\\000needle\\000other\\000needleX\\000' >> /data/prefilter.z; rg --null-data -nb 'needle|other' /data/prefilter.z",
+      "expect": {
+        "exit": 0,
+        "stdout": "20002:108901:needle\u000020003:108908:other\u000020004:108914:needleX\u0000",
+        "stderr": ""
+      },
+      "flags": [
+        "null_data",
+        "n",
+        "byte_offset"
       ]
     }
   ]

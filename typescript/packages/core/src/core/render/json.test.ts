@@ -125,3 +125,10 @@ describe('numberText', () => {
     expect(numberText(Number.POSITIVE_INFINITY)).toBe('null')
   })
 })
+
+it('uses ECMAScript number spelling inside nested JSONL cells', () => {
+  const rows = [{ cells: [1e-5, 1e-7, 1e20, 1e21, 1.0, -0.0, { number: -1.5e-5 }] }]
+  expect(DEC.decode(jsonlBytes(rows))).toBe(
+    '{"cells":[0.00001,1e-7,100000000000000000000,1e+21,1,0,{"number":-0.000015}]}\n',
+  )
+})

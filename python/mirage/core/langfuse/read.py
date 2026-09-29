@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import Any
+
 from mirage.accessor.langfuse import LangfuseAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.core.hierarchy.read import make_read
@@ -25,11 +27,32 @@ from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
 
-async def _read_trace(accessor: LangfuseAccessor, match: ScopeMatch,
-                      path: PathSpec, index: IndexCacheStore) -> bytes:
+async def fetch_trace_file(accessor: LangfuseAccessor, match: ScopeMatch,
+                           path: PathSpec) -> dict[str, Any]:
+    """The trace a trace path names, or ENOENT.
+
+    A trace is addressed by its id whatever the listing holds: the
+    listing stops at ``default_trace_limit`` and
+    ``default_from_timestamp``, and an older trace is still the
+    project's. Under ``sessions/<id>/`` the trace must be that session's,
+    so a path cannot name another session's trace.
+
+    Args:
+        accessor (LangfuseAccessor): The mount's accessor.
+        match (ScopeMatch): A ``trace`` or ``session_trace`` match.
+        path (PathSpec): The trace file's path.
+    """
     data = await fetch_or_enoent(
         fetch_trace(accessor.api, match.slots["trace_id"]), path.virtual)
-    return json_bytes(data)
+    session_id = match.slots.get("session_id")
+    if session_id is not None and data.get("sessionId") != session_id:
+        raise enoent(path.virtual)
+    return data
+
+
+async def _read_trace(accessor: LangfuseAccessor, match: ScopeMatch,
+                      path: PathSpec, index: IndexCacheStore) -> bytes:
+    return json_bytes(await fetch_trace_file(accessor, match, path))
 
 
 async def _read_prompt_version(accessor: LangfuseAccessor, match: ScopeMatch,

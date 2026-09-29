@@ -19,11 +19,7 @@ import { makeGenericCommands } from '../generic_bind/index.ts'
 import { QDRANT_IO } from './io.ts'
 import { QDRANT_SEARCH } from './search.ts'
 
-const QDRANT_OVERRIDES = new Set(['search'])
-
 export const QDRANT_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<QdrantAccessor>(VFSName.QDRANT, QDRANT_IO, {
-    overrides: QDRANT_OVERRIDES,
-  }),
+  ...makeGenericCommands<QdrantAccessor>(VFSName.QDRANT, QDRANT_IO),
   ...QDRANT_SEARCH,
 ]

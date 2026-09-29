@@ -38,3 +38,6 @@ os.S_IFDIR = 16384
 os.S_IFCHR = 8192
 os.S_IFREG = 32768
 os.S_IFLNK = 40960
+
+os.getcwd = () => [__mirage_getcwd(), 0]
+os.chdir = (path) => __mirage_chdir(String(path))

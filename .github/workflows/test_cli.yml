@@ -17,6 +17,7 @@ permissions:
       - integ/cross_cache.yaml
       - integ/state_store.*
       - integ/index_store.*
+      - integ/snapshot_smoke.*
       - integ/parity.sh
       - integ/execute_stdin.py
       - integ/fuse/cli_fuse.sh
@@ -68,6 +69,7 @@ jobs:
               - 'integ/cross_cache.yaml'
               - 'integ/state_store.*'
               - 'integ/index_store.*'
+              - 'integ/snapshot_smoke.*'
               - 'integ/parity.sh'
               - 'integ/execute_stdin.py'
               - 'integ/fuse/cli_fuse.sh'
@@ -750,6 +752,9 @@ jobs:
         with:
           libfuse: "true"
 
+      - name: Fast RAM snapshot interop (no services or daemon)
+        run: ./python/.venv/bin/python integ/snapshot_smoke.py
+
       - name: Run CLI feature parity (subshell, sessions, session modes, versioning, fuse)
         run: |
           bash integ/parity.sh \
@@ -790,12 +795,12 @@ jobs:
       - name: Start MinIO
         run: |
           for i in $(seq 1 5); do
-            docker pull quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z && break
+            docker pull cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 && break
             echo "docker pull failed (attempt $i), retrying"; sleep 10
           done
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio123 \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+            cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && break
             sleep 1
@@ -810,12 +815,12 @@ jobs:
       - name: Create MinIO buckets
         run: |
           for i in $(seq 1 5); do
-            docker pull quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z && break
+            docker pull cgr.dev/chainguard/minio-client@sha256:b8b144ab34694ecea25aa352c4be9de4c26ee2a02701521dce02ee5593c57338 && break
             echo "docker pull failed (attempt $i), retrying"; sleep 10
           done
           docker run --rm --network container:minio \
             -e MC_HOST_local="http://minio:minio123@localhost:9000" \
-            quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z \
+            cgr.dev/chainguard/minio-client@sha256:b8b144ab34694ecea25aa352c4be9de4c26ee2a02701521dce02ee5593c57338 \
             mb --ignore-existing local/mirage-cross local/mirage-state
 
       - name: Run daemon large-stdin and grep round trips (both languages)

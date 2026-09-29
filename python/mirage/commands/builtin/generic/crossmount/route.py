@@ -22,6 +22,7 @@ from mirage.commands.builtin.generic.crossmount.types import (CrossResult,
                                                               RunSingle,
                                                               Strategy)
 from mirage.commands.builtin.utils.stream import is_stdin, resolve_source
+from mirage.commands.errors import UsageError
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import read_fail_exit
 from mirage.io import IOResult
@@ -43,6 +44,7 @@ async def handle_cross_mount(
     storage_key: Callable[[PathSpec], str] | None = None,
     ns: NamespaceView | None = None,
     session_view: SessionView | None = None,
+    cwd: str = "/",
 ) -> CrossResult:
     """Run a command whose path operands span mounts.
 
@@ -62,7 +64,7 @@ async def handle_cross_mount(
         flag_kwargs (dict): Flags parsed from the shared command spec.
         dispatch (DispatchFn): Workspace operation dispatcher (RELAY).
         run_single (RunSingle): Executor-injected single-mount runner
-            (STREAM and FANOUT).
+            (STREAM, FANOUT and RELAY's wc).
         stdin (ByteSource | None): Original stdin (tee re-feeds it per
             operand).
         storage_key (Callable | None): Maps an operand to its storage
@@ -71,6 +73,8 @@ async def handle_cross_mount(
             generics that render them (ls).
         session_view (SessionView | None): The session plane's door, for
             the RELAY generic that renders the session's profile (ls).
+        cwd (str): The session's working directory, which a typed
+            operand resolves against (cp's link sources).
     """
     native = run_single
     input_source = resolve_source(stdin)
@@ -87,8 +91,8 @@ async def handle_cross_mount(
         strategy = strategy_for(cmd_name, flag_kwargs)
         if strategy is Strategy.RELAY:
             return await run_relay(cmd_name, scopes, text_args, flag_kwargs,
-                                   dispatch, storage_key, ns, session_view,
-                                   stdin)
+                                   dispatch, run_single, storage_key, ns,
+                                   session_view, stdin, cwd)
         if strategy is Strategy.STREAM:
             return await run_stream(cmd_name, scopes, text_args, flag_kwargs,
                                     run_single)
@@ -98,6 +102,12 @@ async def handle_cross_mount(
                                 flag_kwargs,
                                 run_single,
                                 stdin=stdin)
+    except UsageError as exc:
+        # The command's own usage refusal (cmp's bad skip, an extra
+        # operand) is its result, and the rest of the line runs, as the
+        # single-mount path answers it.
+        return None, IOResult(exit_code=exc.exit_code,
+                              stderr=f"{exc}\n".encode())
     except FS_ERRORS as exc:
         return None, IOResult(exit_code=read_fail_exit(cmd_name, exc),
                               stderr=format_fs_error(cmd_name, exc, scopes))

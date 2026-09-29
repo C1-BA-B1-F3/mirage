@@ -15,8 +15,9 @@
 /**
  * What a command name resolves to, spelled as `type -t` prints it.
  *
- * "cli" and "external" identify configured routes. Neither promises
- * a local executable path for `type -p`.
+ * bash's five words. Every word mirage runs that is not the shell's own
+ * (a mount or CLI command, a runtime capture) is a `file`: its program
+ * has one under `/usr/bin`, which is where `type` says it lives.
  *
  * Members are ordered as `type -a` prints them, which is also the order
  * the layers resolve in.
@@ -25,9 +26,8 @@ export const NameKind = Object.freeze({
   ALIAS: 'alias',
   KEYWORD: 'keyword',
   FUNCTION: 'function',
-  EXTERNAL: 'external',
-  CLI: 'cli',
   BUILTIN: 'builtin',
+  FILE: 'file',
 } as const)
 
 export type NameKind = (typeof NameKind)[keyof typeof NameKind]

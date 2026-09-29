@@ -15,14 +15,16 @@
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { PathSpec } from '../../types.ts'
 import { encodeBase64 } from '../../utils/base64.ts'
+import { efbig } from '../../utils/errors.ts'
 import { jsonBytes } from '../render/json.ts'
 import type { PostgresAccessor } from '../../accessor/postgres.ts'
 import { makeRead, type Reader, type ReadWindow, type WindowedReader } from '../hierarchy/read.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
-import { estimateSize, fetchRows } from './client.ts'
+import { estimateSize, fetchBoundedRows, fetchRows } from './client.ts'
 import { buildDatabaseJson, buildEntitySchemaJson } from './_schema_json.ts'
 import { buildEntitySemanticJson } from './semantic.ts'
 import { detectScope } from './scope.ts'
+import { stat } from './stat.ts'
 
 export interface ReadOptions {
   limit?: number | null
@@ -65,14 +67,8 @@ const readEntitySemantic: Reader<PostgresAccessor> = async (accessor, match) =>
     ),
   )
 
-const readEntityRows: WindowedReader<PostgresAccessor> = (accessor, match, _path, _index, window) =>
-  readRows(
-    accessor,
-    match.slots.schema ?? '',
-    match.slots.kind ?? '',
-    match.slots.entity ?? '',
-    window,
-  )
+const readEntityRows: WindowedReader<PostgresAccessor> = (accessor, match, path, _index, window) =>
+  readRows(accessor, match.slots.schema ?? '', match.slots.entity ?? '', path, window)
 
 const kitRead = makeRead<PostgresAccessor>(
   detectScope,
@@ -81,7 +77,7 @@ const kitRead = makeRead<PostgresAccessor>(
     entity_schema: readEntitySchema,
     entity_semantic: readEntitySemantic,
   },
-  { entity_rows: readEntityRows },
+  { windowed: { entity_rows: readEntityRows }, stat },
 )
 
 export async function read(
@@ -94,12 +90,20 @@ export async function read(
   return kitRead(accessor, spec, index, options)
 }
 
-async function readRows(
+/**
+ * Render a relation's rows.jsonl, or the window `options` picks. The whole file
+ * when neither limit nor offset is given, under the size guard: past
+ * `maxReadRows` rows or `maxReadBytes` bytes it throws EFBIG, which a command
+ * reports as `<cmd>: <path>: File too large` before moving on to its next
+ * operand, as for an Airtable table past its cap. `path` is the rows.jsonl the
+ * refusal names. Mirrors `read_rows` in `mirage/core/postgres/read.py`.
+ */
+export async function readRows(
   accessor: PostgresAccessor,
   schema: string,
-  kind: string,
   entity: string,
-  options: ReadWindow,
+  path: string | PathSpec,
+  options: ReadWindow = {},
 ): Promise<Uint8Array> {
   const cfg = accessor.config
   const limit = options.limit ?? null
@@ -107,31 +111,55 @@ async function readRows(
   let effectiveLimit: number
   let effectiveOffset: number
 
-  if (limit === null && offset === null) {
+  const whole = limit === null && offset === null
+  if (whole) {
     const [rows, width] = await estimateSize(accessor, schema, entity)
     const widthEffective = Math.max(width, 1)
-    if (rows > cfg.maxReadRows || rows * widthEffective > cfg.maxReadBytes) {
-      throw new Error(
-        `${schema}/${kind}/${entity}/rows.jsonl too large to read entirely: ` +
-          `~${String(rows)} rows / ~${String(rows * widthEffective)} bytes ` +
-          `(thresholds: ${String(cfg.maxReadRows)} rows / ${String(cfg.maxReadBytes)} bytes); ` +
-          `use head, tail, wc, grep, or pass limit/offset`,
-      )
-    }
-    effectiveLimit = rows !== 0 ? rows : cfg.defaultRowLimit
+    if (rows > cfg.maxReadRows || rows * widthEffective > cfg.maxReadBytes) throw efbig(path)
+    // The estimate only refuses; it never limits. It is planner statistics,
+    // which lag the table (a bulk load before the next ANALYZE), so taking it
+    // as the LIMIT returned fewer rows than exist, with nothing to say so. One
+    // row past the ceiling keeps the read bounded and refuses a table the
+    // estimate undercounted on the rows it really has.
+    effectiveLimit = cfg.maxReadRows + 1
     effectiveOffset = 0
   } else {
     effectiveLimit = limit ?? cfg.defaultRowLimit
     effectiveOffset = offset ?? 0
   }
 
-  const data = await fetchRows(accessor, schema, entity, {
-    limit: effectiveLimit,
-    offset: effectiveOffset,
-  })
+  const data = whole
+    ? await fetchBoundedRows(accessor, schema, entity, {
+        limit: effectiveLimit,
+        maxBytes: cfg.maxReadBytes,
+      })
+    : await fetchRows(accessor, schema, entity, {
+        limit: effectiveLimit,
+        offset: effectiveOffset,
+      })
+  if (data === null || (whole && data.length > cfg.maxReadRows)) throw efbig(path)
   if (data.length === 0) return new Uint8Array()
-  const lines = data.map((r) => JSON.stringify(r, jsonReplacer))
-  return new TextEncoder().encode(lines.join('\n') + '\n')
+  const encoder = new TextEncoder()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (const row of data) {
+    const line = encoder.encode(rowLine(row) + '\n')
+    size += line.byteLength
+    if (whole && size > cfg.maxReadBytes) throw efbig(path)
+    chunks.push(line)
+  }
+  const body = new Uint8Array(size)
+  let position = 0
+  for (const chunk of chunks) {
+    body.set(chunk, position)
+    position += chunk.byteLength
+  }
+  return body
+}
+
+/** One row as rows.jsonl spells it. Mirrors `row_line` in `core/postgres/read.py`. */
+export function rowLine(row: Record<string, unknown>): string {
+  return JSON.stringify(row, jsonReplacer)
 }
 
 function jsonReplacer(_key: string, value: unknown): unknown {

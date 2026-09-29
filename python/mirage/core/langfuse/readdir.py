@@ -12,9 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import Any
+
 from mirage.accessor.langfuse import LangfuseAccessor
 from mirage.cache.index import IndexEntry
-from mirage.core.hierarchy.readdir import make_readdir
+from mirage.core.hierarchy.readdir import DirListing, make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.langfuse.client import (fetch_dataset_items,
                                          fetch_dataset_runs, fetch_datasets,
@@ -24,8 +26,31 @@ from mirage.core.langfuse.scope import TOP_LEVEL_DIRS, detect_scope
 from mirage.core.render.json import jsonl_bytes
 
 
+def _bounded(accessor: LangfuseAccessor, traces: list[dict[str, Any]]) -> bool:
+    """Whether a trace listing may have left traces out.
+
+    It is one page of at most ``default_trace_limit`` traces from
+    ``default_from_timestamp`` on, so a full page or a set window is a
+    truncated view, not the directory: cached as complete it would prove
+    an older trace absent while read fetches it by id.
+    """
+    return (len(traces) >= accessor.config.default_trace_limit
+            or bool(accessor.config.default_from_timestamp))
+
+
+def _trace_entries(
+        traces: list[dict[str, Any]]) -> list[tuple[str, IndexEntry]]:
+    return [(f"{t.get('id', '')}.json",
+             IndexEntry(
+                 id=t.get("id", ""),
+                 name=t.get("id", ""),
+                 resource_type="langfuse/trace",
+                 vfs_name=f"{t.get('id', '')}.json",
+             )) for t in traces]
+
+
 async def _list_traces(accessor: LangfuseAccessor,
-                       match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+                       match: ScopeMatch) -> DirListing:
     traces = await fetch_traces(
         accessor.api,
         limit=accessor.config.default_trace_limit,
@@ -36,13 +61,8 @@ async def _list_traces(accessor: LangfuseAccessor,
     # fetch_trace per entry. Traces and prompts stay size-unknown until a
     # read hydrates them; the dataset .jsonl files below are sized
     # because their listing already carries every item.
-    return [(f"{t.get('id', '')}.json",
-             IndexEntry(
-                 id=t.get("id", ""),
-                 name=t.get("id", ""),
-                 resource_type="langfuse/trace",
-                 vfs_name=f"{t.get('id', '')}.json",
-             )) for t in traces]
+    return DirListing(entries=_trace_entries(traces),
+                      partial=_bounded(accessor, traces))
 
 
 async def _list_sessions(accessor: LangfuseAccessor,
@@ -57,22 +77,16 @@ async def _list_sessions(accessor: LangfuseAccessor,
              )) for s in sessions]
 
 
-async def _list_session_traces(
-        accessor: LangfuseAccessor,
-        match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_session_traces(accessor: LangfuseAccessor,
+                               match: ScopeMatch) -> DirListing:
     traces = await fetch_traces(
         accessor.api,
         session_id=match.slots["session_id"],
         limit=accessor.config.default_trace_limit,
         from_timestamp=accessor.config.default_from_timestamp,
     )
-    return [(f"{t.get('id', '')}.json",
-             IndexEntry(
-                 id=t.get("id", ""),
-                 name=t.get("id", ""),
-                 resource_type="langfuse/trace",
-                 vfs_name=f"{t.get('id', '')}.json",
-             )) for t in traces]
+    return DirListing(entries=_trace_entries(traces),
+                      partial=_bounded(accessor, traces))
 
 
 async def _list_prompts(accessor: LangfuseAccessor,

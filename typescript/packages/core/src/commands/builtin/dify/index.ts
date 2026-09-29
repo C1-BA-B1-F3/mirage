@@ -24,7 +24,7 @@ import { DIFY_SEARCH } from './search.ts'
 import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { resolveGlobOf } from '../generic_bind/adapter.ts'
 
-const DIFY_OVERRIDES = new Set(['find', 'search'])
+const DIFY_OVERRIDES = new Set(['find'])
 
 // ls stats every listed entry, so it keeps the index-only stat instead of
 // paying one document-detail call per row (mirrors _DIFY_LIGHT_STAT_OPS).

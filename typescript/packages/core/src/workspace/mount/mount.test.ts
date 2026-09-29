@@ -302,8 +302,6 @@ describe('Mount.executeCmd', () => {
     // stderr accumulates across a line, so an unterminated refusal ran
     // into the next one: `{ rm /ro/a; rm /ro/b; }` printed the single
     // line `rm: read-only mount at /ro/rm: read-only mount at /ro/`.
-    // It is also the line the node table renders for a refused symlink
-    // (shared.readOnlyError), which concatenates with this one.
     const m = makeMount(MountMode.READ)
     const [wcmd] = command({
       name: 'rm',
@@ -319,6 +317,49 @@ describe('Mount.executeCmd', () => {
       `rm: read-only mount at ${m.prefix}\n`,
     )
   })
+
+  it.each([
+    [MountMode.READ, false],
+    [MountMode.READ, true],
+    [MountMode.WRITE, false],
+    [MountMode.WRITE, true],
+  ])(
+    'refuses up front only a write command the door cannot see (%s, path guarded %s)',
+    async (mode, pathGuarded) => {
+      // A path-guarded command's writes go through the guarded op slots,
+      // which refuse each one where it happens, so a read-only mount runs
+      // it like a reader (`gzip -c`, `split -n 1/2`). A write command
+      // that reaches its service some other way has no door to refuse
+      // it, so the mount refuses it before it runs.
+      const m = makeMount(mode)
+      const calls: number[] = []
+      const [cmd] = command({
+        name: 'filter',
+        vfs: 'ram',
+        spec: BASIC_SPEC,
+        write: true,
+        pathGuarded,
+        fn: (_accessor, paths) => {
+          calls.push(paths.length)
+          return [new TextEncoder().encode('ran\n'), new IOResult()]
+        },
+      })
+      if (cmd === undefined) throw new Error('missing')
+      m.register(cmd)
+      const [stdout, io] = await m.executeCmd('filter', [PathSpec.fromStrPath('/a')], [], {})
+      if (mode === MountMode.READ && !pathGuarded) {
+        expect(io.exitCode).toBe(1)
+        expect(new TextDecoder().decode(io.stderr as Uint8Array)).toBe(
+          `filter: read-only mount at ${m.prefix}\n`,
+        )
+        expect(calls).toEqual([])
+      } else {
+        expect(io.exitCode).toBe(0)
+        expect(new TextDecoder().decode(await materialize(stdout))).toBe('ran\n')
+        expect(calls).toEqual([1])
+      }
+    },
+  )
 
   it('passes the mount prefix through PathSpecs given to the command', async () => {
     const m = makeMount()
@@ -380,11 +421,8 @@ describe('Mount.executeCmd', () => {
   })
 
   it('a null limitOverride does not shadow the mount own table', async () => {
-    // The override carries the origin mount's cap across a warm-cache
-    // redirect; a path-less command from an unmounted cwd resolves no
-    // origin and passes null, which must fall through to the serving
-    // mount's command_limits (python always reads the serving
-    // mount's own table).
+    // A caller with no profile, mount or workspace entry passes null,
+    // which must fall through to the serving mount's command_limits.
     const m = makeMount()
     m.commandLimits.set('cat', new Limit({ timeoutSeconds: 0.05 }))
     const [cmd] = command({ name: 'cat', vfs: 'ram', spec: BASIC_SPEC, fn: HANG_CMD })
@@ -524,4 +562,22 @@ describe('ExecContext parity with CommandOpts', () => {
     const parity: Shared = {} as ExecContext
     expect(parity).toBeDefined()
   })
+})
+
+it('a path-guarded command is still held at its write', async () => {
+  const vfs = new RAMVFS()
+  vfs.store.files.set('/a', new TextEncoder().encode('original'))
+  const mount = new MountEntry({ prefix: '/ram/', vfs, mode: MountMode.READ })
+  const cmd = vfs.commands().find((cmd) => cmd.name === 'gzip')
+  if (cmd === undefined) throw new Error('missing gzip')
+  expect(cmd.pathGuarded).toBe(true)
+  mount.register(cmd)
+  // The write is refused where it happens and gzip says so in its own words
+  // (the fatal write_error form), leaving the store untouched.
+  const [, io] = await mount.executeCmd('gzip', [PathSpec.fromStrPath('/ram/a')], [], {})
+  expect([io.exitCode, new TextDecoder().decode(io.stderr as Uint8Array)]).toEqual([
+    1,
+    '\ngzip: /ram/a.gz: Read-only file system\n',
+  ])
+  expect([...vfs.store.files.entries()]).toEqual([['/a', new TextEncoder().encode('original')]])
 })

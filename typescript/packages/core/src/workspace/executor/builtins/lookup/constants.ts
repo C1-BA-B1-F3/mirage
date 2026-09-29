@@ -12,7 +12,6 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { Consumer } from '../../../lookup/types.ts'
 import { NameKind } from './types.ts'
 
 export const TYPE_USAGE = 'type: usage: type [-afptP] name [name ...]\n'
@@ -22,26 +21,9 @@ export const WHICH_USAGE = 'which: usage: which [-as] name [name ...]\n'
 export const TYPE_OPTIONS = 'afptP'
 export const WHICH_OPTIONS = 'as'
 
-// Shell builtins, namespace commands and mount commands are all
-// in-process and pathless, so they share bash's runnable-and-in-process
-// category. That collapse is deliberate; `cli` is kept apart because an
-// installed CLI is the one runnable an agent cannot otherwise discover.
-// UNKNOWN is absent: it is what `lookup` reports for a name no layer
-// holds, and `lookupAll` never yields it.
-export const KIND_BY_CONSUMER: Readonly<Partial<Record<Consumer, NameKind>>> = Object.freeze({
-  [Consumer.SESSION]: NameKind.BUILTIN,
-  [Consumer.NAMESPACE]: NameKind.BUILTIN,
-  [Consumer.FUNCTION]: NameKind.FUNCTION,
-  [Consumer.CLI]: NameKind.CLI,
-  [Consumer.EXTERNAL]: NameKind.EXTERNAL,
-  [Consumer.MOUNT]: NameKind.BUILTIN,
-})
-
-export const DESCRIPTIONS: Readonly<Record<NameKind, string>> = Object.freeze({
+export const DESCRIPTIONS: Readonly<Partial<Record<NameKind, string>>> = Object.freeze({
   [NameKind.ALIAS]: 'an alias',
   [NameKind.KEYWORD]: 'a shell keyword',
   [NameKind.FUNCTION]: 'a function',
-  [NameKind.CLI]: 'a mirage CLI',
-  [NameKind.EXTERNAL]: 'a runtime command',
   [NameKind.BUILTIN]: 'a shell builtin',
 })

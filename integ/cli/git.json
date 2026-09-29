@@ -1015,11 +1015,11 @@
         "git-disk",
         "git-ram"
       ],
-      "command": "git -C /repo log --pretty=raw",
+      "command": "git -C /repo log --pretty=email",
       "expect": {
         "exit": 128,
         "stdout": "",
-        "stderr": "fatal: unsupported --pretty format: raw (this build implements oneline, short, medium, full, fuller and format:/tformat: strings)\n"
+        "stderr": "fatal: unsupported --pretty format: email (this build implements oneline, short, medium, full, fuller, raw and format:/tformat: strings)\n"
       }
     },
     {
@@ -2882,6 +2882,1868 @@
         "exit": 129,
         "stdout": "",
         "stderr": "error: unknown switch `Z'\n"
+      }
+    },
+    {
+      "id": "git_read_remote_empty",
+      "seq": 568050,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo remote -v",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_config_get",
+      "seq": 568051,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo config --get user.name",
+      "expect": {
+        "exit": 0,
+        "stdout": "Integ Author\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_config_missing",
+      "seq": 568052,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo config --get remote.absent.url",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_show_ref",
+      "seq": 568053,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo show-ref",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef25423772bbfe671c8e285ae1d63991d59db19 refs/heads/main\n225f39c50d27e015653a38d589474ce2880399e6 refs/heads/topic\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_show_ref_suffix",
+      "seq": 568054,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo show-ref topic",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c50d27e015653a38d589474ce2880399e6 refs/heads/topic\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_rev_list_count",
+      "seq": 568055,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo rev-list --all --count",
+      "expect": {
+        "exit": 0,
+        "stdout": "4\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_rev_list",
+      "seq": 568056,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo rev-list HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef25423772bbfe671c8e285ae1d63991d59db19\n225f39c50d27e015653a38d589474ce2880399e6\n265ec3adb16a0c90ad09a180687677927b9d7b7f\n98b4ffe0976edf04eebcc645df908f5a4f19e538\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_log_iso",
+      "seq": 568057,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --date=iso --format=%ad",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-01-08 14:45:00 +0000\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_log_iso_strict",
+      "seq": 568058,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --date=iso-strict --format=%ad",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-01-08T14:45:00Z\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_log_dates",
+      "seq": 568059,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --format=%aI%n%ai%n%cI%n%ci",
+      "expect": {
+        "exit": 0,
+        "stdout": "2026-01-08T14:45:00Z\n2026-01-08 14:45:00 +0000\n2026-01-08T14:45:00Z\n2026-01-08 14:45:00 +0000\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_log_raw",
+      "seq": 568060,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --pretty=raw",
+      "expect": {
+        "exit": 0,
+        "stdout": "commit 8ef25423772bbfe671c8e285ae1d63991d59db19\ntree 213a314abdd4e23f24dccd80a763c4b533bdb01d\nparent 225f39c50d27e015653a38d589474ce2880399e6\nauthor Integ Author <integ@example.com> 1767883500 +0000\ncommitter Integ Author <integ@example.com> 1767883500 +0000\n\n    add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_log_decorate",
+      "seq": 568061,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --oneline --decorate -2",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 (HEAD -> main) add two\n225f39c (topic) add docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_branch_verbose",
+      "seq": 568062,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo branch -a -vv",
+      "expect": {
+        "exit": 0,
+        "stdout": "* main  8ef2542 add two\n  topic 225f39c add docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_show_name_status",
+      "seq": 568063,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo show --name-status --format= HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "M\tnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_show_summary_modified",
+      "seq": 568064,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo show --summary --format=%h HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542\n\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_show_summary_added",
+      "seq": 568065,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo show --summary --format=%h HEAD~1",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c\n\n create mode 100644 docs/readme.md\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_diff_tree_names",
+      "seq": 568066,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff-tree --no-commit-id --name-only -r HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "numbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_read_diff_tree_status",
+      "seq": 568067,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff-tree --no-commit-id --name-status -r HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "M\tnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_remote_and_tracking_reads",
+      "seq": 568080,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "cp /repo/.git/config /repo/.git/config.saved; printf '\\n[remote \"origin\"]\\n    url = https://example.com/org/repo.git\\n    fetch = +refs/heads/*:refs/remotes/origin/*\\n    pushurl = ssh://git@example.com/org/repo.git\\n[branch \"main\"]\\n    remote = origin\\n    merge = refs/heads/main\\n' >> /repo/.git/config; mkdir -p /repo/.git/refs/remotes/origin; git -C /repo log -1 --format=%H HEAD~1 > /repo/.git/refs/remotes/origin/main; git -C /repo remote -v; git -C /repo config --get remote.origin.url; git -C /repo branch -a -vv; rm -r /repo/.git/refs/remotes; mv /repo/.git/config.saved /repo/.git/config",
+      "expect": {
+        "exit": 0,
+        "stdout": "origin\thttps://example.com/org/repo.git (fetch)\norigin\tssh://git@example.com/org/repo.git (push)\nhttps://example.com/org/repo.git\n* main                8ef2542 [origin/main: ahead 1] add two\n  topic               225f39c add docs\n  remotes/origin/main 225f39c add docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_diff_tree_raw",
+      "seq": 568081,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff-tree HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef25423772bbfe671c8e285ae1d63991d59db19\n:100644 100644 5626abf0f72e58d7a153368ba57db4c673c0e171 814f4a422927b82f5f8a43f8fab6d3839e3983f2 M\tnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_diff_tree_subtrees",
+      "seq": 568082,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff-tree --name-only HEAD~1",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c50d27e015653a38d589474ce2880399e6\ndocs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_diff_tree_recursive",
+      "seq": 568083,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff-tree --no-commit-id --name-status -r HEAD~1",
+      "expect": {
+        "exit": 0,
+        "stdout": "A\tdocs/readme.md\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_01",
+      "seq": 568365,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --oneline --after=2026-01-07T09:15:00Z 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n225f39c add docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_02",
+      "seq": 568366,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --oneline --before=2026-01-07T09:15:00Z",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c add docs\n265ec3a add delta\n98b4ffe first commit\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_03",
+      "seq": 568367,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo rev-list --max-parents=0 HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "98b4ffe0976edf04eebcc645df908f5a4f19e538\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_04",
+      "seq": 568368,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --format=%s --no-merges -n 2 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "add two\nadd docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_05",
+      "seq": 568369,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo rev-list --min-parents=2 HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_06",
+      "seq": 568370,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --format=%h --stat 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542\n\n numbers.txt | 1 +\n 1 file changed, 1 insertion(+)\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_07",
+      "seq": 568371,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --format= --name-status 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "M\tnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_08",
+      "seq": 568372,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --format= --numstat 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\t0\tnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_09",
+      "seq": 568373,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --format= --shortstat 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": " 1 file changed, 1 insertion(+)\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_10",
+      "seq": 568374,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log -1 --format= -p 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "diff --git a/numbers.txt b/numbers.txt\nindex 5626abf..814f4a4 100644\n--- a/numbers.txt\n+++ b/numbers.txt\n@@ -1 +1,2 @@\n one\n+two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_11",
+      "seq": 568375,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff --name-status 8ef25423772bbfe671c8e285ae1d63991d59db19~2 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "A\tdocs/readme.md\nM\tnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_12",
+      "seq": 568376,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff --name-only 8ef25423772bbfe671c8e285ae1d63991d59db19~2 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "docs/readme.md\nnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_13",
+      "seq": 568377,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff --numstat 8ef25423772bbfe671c8e285ae1d63991d59db19~2 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\t0\tdocs/readme.md\n1\t0\tnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_14",
+      "seq": 568378,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff --stat 8ef25423772bbfe671c8e285ae1d63991d59db19~2 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": " docs/readme.md | 1 +\n numbers.txt    | 1 +\n 2 files changed, 2 insertions(+)\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_15",
+      "seq": 568379,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo show --format= --find-renames --name-status 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "M\tnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_16",
+      "seq": 568380,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo show --format= --cc --numstat 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\t0\tnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_17",
+      "seq": 568381,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff-tree -m --no-commit-id --name-only -r 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "numbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_18",
+      "seq": 568382,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo config --get-regexp user.*",
+      "expect": {
+        "exit": 0,
+        "stdout": "user.name Integ Author\nuser.email integ@example.com\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_19",
+      "seq": 568383,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo config --show-origin --get user.name",
+      "expect": {
+        "exit": 0,
+        "stdout": "file:.git/config\tInteg Author\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_20",
+      "seq": 568384,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo config --get-regexp USER.*",
+      "expect": {
+        "exit": 0,
+        "stdout": "user.name Integ Author\nuser.email integ@example.com\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_21",
+      "seq": 568385,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo config --get-regexp 'user.[[:alpha:]]+l'",
+      "expect": {
+        "exit": 0,
+        "stdout": "user.email integ@example.com\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_readonly_shared_22",
+      "seq": 568395,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo config --get-regexp 'user.na++me'",
+      "expect": {
+        "exit": 0,
+        "stdout": "user.name Integ Author\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_root_double_dash",
+      "seq": 568396,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo -- status 2>/dev/null; echo $?; git -- status 2>&1 | head -n 1",
+      "expect": {
+        "exit": 0,
+        "stdout": "129\nunknown option: --\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_show_raw",
+      "seq": 568397,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo show --raw --format= 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": ":100644 100644 5626abf 814f4a4 M\tnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_raw_oneline",
+      "seq": 568398,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --raw --oneline -2 8ef25423772bbfe671c8e285ae1d63991d59db19",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n:100644 100644 5626abf 814f4a4 M\tnumbers.txt\n225f39c add docs\n:000000 100644 0000000 bfa6551 A\tdocs/readme.md\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_quoted_paths",
+      "seq": 568399,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo reset > /dev/null; printf 'x\\n' > '/repo/\u00e9.txt' && git -C /repo add \u00e9.txt && git -C /repo commit -m quoted > /dev/null && git -C /repo show --format= --name-status HEAD && git -C /repo show --format= --stat HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "A\t\"\\303\\251.txt\"\n \"\\303\\251.txt\" | 1 +\n 1 file changed, 1 insertion(+)\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_hunk_funcname",
+      "seq": 568400,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo reset > /dev/null; printf 'func main() {\\n1\\n2\\n3\\n4\\n5\\n6\\n' > /repo/fn.c && git -C /repo add fn.c && git -C /repo commit -m fn > /dev/null && printf 'func main() {\\n1\\n2\\n3\\n4\\n5\\nsix\\n' > /repo/fn.c && git -C /repo add fn.c && git -C /repo commit -m six > /dev/null && git -C /repo show --format= HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "diff --git a/fn.c b/fn.c\nindex dd922e4..0052bdf 100644\n--- a/fn.c\n+++ b/fn.c\n@@ -4,4 +4,4 @@ func main() {\n 3\n 4\n 5\n-6\n+six\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_range",
+      "seq": 568401,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --format=%s 225f39c..8ef2542; git -C /repo log --format=%s 98b4ffe..225f39c; git -C /repo rev-list --count ^98b4ffe 8ef2542",
+      "expect": {
+        "exit": 0,
+        "stdout": "add two\nadd docs\nadd delta\n3\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_symmetric_range",
+      "seq": 568402,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --format=%s 265ec3a...225f39c; git -C /repo log --format=%s 98b4ffe 265ec3a",
+      "expect": {
+        "exit": 0,
+        "stdout": "add docs\nadd delta\nfirst commit\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_range_errors",
+      "seq": 568403,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log nope..8ef2542 2>&1; echo $?; git -C /repo log ^nope 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "fatal: ambiguous argument 'nope..8ef2542': unknown revision or path not in the working tree.\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n128\nfatal: bad revision '^nope'\n128\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_diff_range",
+      "seq": 568404,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo diff --stat 225f39c..8ef2542; git -C /repo diff --name-only 98b4ffe...225f39c",
+      "expect": {
+        "exit": 0,
+        "stdout": " numbers.txt | 1 +\n 1 file changed, 1 insertion(+)\ndocs/readme.md\nletters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_add_verbose_reset_quiet",
+      "seq": 568405,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo reset -q; printf 'v\\n' > /repo/verbose.txt && git -C /repo add -v verbose.txt && git -C /repo add --verbose verbose.txt; git -C /repo reset -q; echo $?; rm /repo/verbose.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "add 'verbose.txt'\n0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_commit_all",
+      "seq": 568406,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo reset -q; git -C /repo add -A && git -C /repo commit -m settle > /dev/null; printf 'a\\n' > /repo/all-a.txt && printf 'b\\n' > /repo/all-b.txt && printf 'c\\n' > /repo/all-c.txt && git -C /repo add all-a.txt all-b.txt all-c.txt && git -C /repo commit -m base > /dev/null && printf 'a2\\n' >> /repo/all-a.txt && rm /repo/all-b.txt && git -C /repo mv all-c.txt all-d.txt && git -C /repo commit -a -m all | tail -n +2 && git -C /repo status --short -uno; git -C /repo commit -a -m x all-a.txt 2>&1; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": " 3 files changed, 1 insertion(+), 1 deletion(-)\n delete mode 100644 all-b.txt\n rename all-c.txt => all-d.txt (100%)\nfatal: paths 'all-a.txt ...' with -a does not make sense\n128\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_quote_path_false",
+      "seq": 568407,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo reset -q; cp /repo/.git/config /repo/.git/config.keep && printf '[core]\\n\\tquotePath = false\\n' >> /repo/.git/config && printf 'n\\n' > '/repo/\u00f1.txt' && git -C /repo add \u00f1.txt && git -C /repo commit -m n > /dev/null && git -C /repo show --format= --name-status HEAD && printf 'm\\n' >> '/repo/\u00f1.txt' && git -C /repo status --porcelain -uno && printf '[core]\\n\\tquotePath = junk\\n' >> /repo/.git/config; git -C /repo status --porcelain 2>&1; echo $?; mv /repo/.git/config.keep /repo/.git/config; git -C /repo status --porcelain -uno; git -C /repo restore \u00f1.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "A\t\u00f1.txt\n M \u00f1.txt\nfatal: bad boolean config value 'junk' for 'core.quotepath'\n128\n M \"\\303\\261.txt\"\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_graph_draws_a_linear_history",
+      "seq": 568408,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --graph --oneline 225f39c",
+      "expect": {
+        "exit": 0,
+        "stdout": "* 225f39c add docs\n* 265ec3a add delta\n* 98b4ffe first commit\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_graph_keeps_the_column_beside_every_text_line",
+      "seq": 568409,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --graph -n 2 --format='%h%n%s' 225f39c",
+      "expect": {
+        "exit": 0,
+        "stdout": "* 225f39c\n| add docs\n* 265ec3a\n| add delta\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_graph_refuses_reverse",
+      "seq": 568410,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --graph --reverse",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: options '--graph' and '--reverse' cannot be used together\n"
+      }
+    },
+    {
+      "id": "git_branch_ref_filters_list_only_what_they_name",
+      "seq": 568411,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo branch rf-old 265ec3a && git -C /repo branch rf-new 225f39c && git -C /repo branch --contains 265ec3a --list 'rf-*' && git -C /repo branch --merged 225f39c --list 'rf-*' && git -C /repo branch --no-merged 265ec3a --list 'rf-*' && git -C /repo branch --points-at 265ec3a --list 'rf-*'; git -C /repo branch -D rf-old rf-new > /dev/null",
+      "expect": {
+        "exit": 0,
+        "stdout": "  rf-new\n  rf-old\n  rf-new\n  rf-old\n  rf-new\n  rf-old\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_contains_makes_the_operand_a_pattern",
+      "seq": 568412,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo branch --contains 98b4ffe rf-none; echo \"exit=$?\"; git -C /repo branch --list 'rf-*'",
+      "expect": {
+        "exit": 0,
+        "stdout": "exit=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_contains_refuses_an_unknown_commit",
+      "seq": 568413,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo branch --contains nosuch",
+      "expect": {
+        "exit": 129,
+        "stdout": "",
+        "stderr": "error: malformed object name nosuch\n"
+      }
+    },
+    {
+      "id": "git_branch_merged_dies_on_an_unknown_commit",
+      "seq": 568414,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo branch --merged nosuch",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: malformed object name nosuch\n"
+      }
+    },
+    {
+      "id": "git_tag_ref_filters_list_only_what_they_name",
+      "seq": 568415,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo tag rf-t1 98b4ffe && git -C /repo tag rf-t2 225f39c && git -C /repo tag --contains 265ec3a -l 'rf-*' && git -C /repo tag --no-contains 265ec3a -l 'rf-*' && git -C /repo tag --merged 265ec3a -l 'rf-*'; git -C /repo tag -d rf-t1 rf-t2 > /dev/null",
+      "expect": {
+        "exit": 0,
+        "stdout": "rf-t2\nrf-t1\nrf-t1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_tag_ref_filter_refuses_to_delete",
+      "seq": 568416,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo tag rf-keep 98b4ffe && git -C /repo tag -d rf-keep --contains 98b4ffe; echo \"exit=$?\"; git -C /repo tag -l 'rf-*'; git -C /repo tag -d rf-keep > /dev/null",
+      "expect": {
+        "exit": 0,
+        "stdout": "exit=128\nrf-keep\n",
+        "stderr": "fatal: the '--contains' option is only allowed in list mode\n"
+      }
+    },
+    {
+      "id": "git_branch_resolves_an_abbreviated_option_as_git_does",
+      "seq": 568417,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo branch ab-fix 98b4ffe && git -C /repo branch --lis 'ab-*' && git -C /repo branch --verb --lis 'ab-*' | cut -c1-17; git -C /repo branch -D ab-fix > /dev/null",
+      "expect": {
+        "exit": 0,
+        "stdout": "  ab-fix\n  ab-fix 98b4ffe \n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_branch_refuses_an_ambiguous_abbreviation",
+      "seq": 568418,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo branch --no-m 98b4ffe",
+      "expect": {
+        "exit": 129,
+        "stdout": "",
+        "stderr": "error: ambiguous option: no-m (could be --no-move or --no-merged)\n"
+      }
+    },
+    {
+      "id": "git_log_takes_whole_words_only",
+      "seq": 568419,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo log --onel -1",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: unrecognized argument: --onel\n"
+      }
+    },
+    {
+      "id": "git_issue_1281_shortlog_summary",
+      "seq": 567980,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git shortlog -sne --all)",
+      "expect": {
+        "exit": 0,
+        "stdout": "     4\tInteg Author <integ@example.com>\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_rev_parse_branch",
+      "seq": 567981,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git rev-parse --abbrev-ref HEAD)",
+      "expect": {
+        "exit": 0,
+        "stdout": "main\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_log_author_equals",
+      "seq": 567982,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --all --author='integ@example.com' --format='%h %ae')",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 integ@example.com\n225f39c integ@example.com\n265ec3a integ@example.com\n98b4ffe integ@example.com\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_log_author_separate",
+      "seq": 567983,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --all --author 'integ@example.com' --format='%h %ae')",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 integ@example.com\n225f39c integ@example.com\n265ec3a integ@example.com\n98b4ffe integ@example.com\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_show_oneline",
+      "seq": 567984,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git show --stat --oneline HEAD~1)",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c add docs\n docs/readme.md | 1 +\n 1 file changed, 1 insertion(+)\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_show_unified",
+      "seq": 567985,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git show --format=%s --unified=1 HEAD)",
+      "expect": {
+        "exit": 0,
+        "stdout": "add two\n\ndiff --git a/numbers.txt b/numbers.txt\nindex 5626abf..814f4a4 100644\n--- a/numbers.txt\n+++ b/numbers.txt\n@@ -1 +1,2 @@\n one\n+two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_current_branch",
+      "seq": 567986,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git branch --show-current)",
+      "expect": {
+        "exit": 0,
+        "stdout": "main\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_cached_names",
+      "seq": 567987,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; printf 'staged\\n' > staged.txt; git add staged.txt; printf 'unstaged\\n' >> numbers.txt; git diff --cached --name-only; git reset -q; rm staged.txt; git restore numbers.txt)",
+      "expect": {
+        "exit": 0,
+        "stdout": "staged.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_porcelain_v1",
+      "seq": 567988,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; printf 'staged\\n' > staged.txt; git add staged.txt; printf 'unstaged\\n' >> numbers.txt; git status --porcelain=v1; git reset -q; rm staged.txt; git restore numbers.txt)",
+      "expect": {
+        "exit": 0,
+        "stdout": " M numbers.txt\nA  staged.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_detached_branch",
+      "seq": 567989,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git rev-parse HEAD~1 > .git/HEAD.keep; cp .git/HEAD .git/HEAD.saved; cp .git/HEAD.keep .git/HEAD; git branch --show-current; git rev-parse --abbrev-ref HEAD; mv .git/HEAD.saved .git/HEAD; rm .git/HEAD.keep)",
+      "expect": {
+        "exit": 0,
+        "stdout": "HEAD\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_issue_1281_unborn_index",
+      "seq": 567990,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; printf 'ref: refs/heads/unborn\\n' > .git/HEAD; git branch --show-current; git diff --cached --name-only; printf 'ref: refs/heads/main\\n' > .git/HEAD)",
+      "expect": {
+        "exit": 0,
+        "stdout": "unborn\ndocs/readme.md\nletters.txt\nnumbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_grep_ignore_case_reverse",
+      "seq": 567991,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --all --oneline --grep='ADD' -i --reverse)",
+      "expect": {
+        "exit": 0,
+        "stdout": "265ec3a add delta\n225f39c add docs\n8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_graph_decorate_max_count",
+      "seq": 567992,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --all --oneline --decorate --graph --max-count=30)",
+      "expect": {
+        "exit": 0,
+        "stdout": "* 8ef2542 (HEAD -> main) add two\n* 225f39c (topic) add docs\n* 265ec3a add delta\n* 98b4ffe first commit\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_grep_separate_word",
+      "seq": 567993,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --oneline --grep 'add d')",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c add docs\n265ec3a add delta\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_grep_alternatives",
+      "seq": 567994,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --format=%s --grep=delta --grep=first)",
+      "expect": {
+        "exit": 0,
+        "stdout": "add delta\nfirst commit\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_max_count_cuts_before_reverse",
+      "seq": 567995,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --oneline --grep=add --max-count=1 --reverse)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_author_ignore_case",
+      "seq": 567996,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --format=%h --author=INTEG; git log --format=%h --author=INTEG --regexp-ignore-case -n1)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_rev_list_max_count",
+      "seq": 567997,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git rev-list --max-count=2 HEAD)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef25423772bbfe671c8e285ae1d63991d59db19\n225f39c50d27e015653a38d589474ce2880399e6\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_equals",
+      "seq": 567950,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir=/repo/.git log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_separate",
+      "seq": 567951,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir /repo/.git log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_relative_after_C",
+      "seq": 567952,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo --git-dir=.git log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_before_C",
+      "seq": 567953,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir=../.git -C /repo/docs log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_environment",
+      "seq": 567954,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "GIT_DIR=/repo/.git git log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_environment_relative",
+      "seq": 567955,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "GIT_DIR=../.git git -C /repo/docs log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_option_overrides_environment",
+      "seq": 567956,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "GIT_DIR=/missing git --git-dir=/repo/.git log --oneline -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_equals",
+      "seq": 567957,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git --git-dir=/repo/.git --work-tree=/repo status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_separate",
+      "seq": 567958,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git --git-dir /repo/docs/../.git --work-tree /repo/./ status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_only",
+      "seq": 567959,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git -C /repo --work-tree=. status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_relative",
+      "seq": 567960,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git -C /repo/docs --git-dir=../.git --work-tree=.. status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M ../letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_environment",
+      "seq": 567961,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && GIT_DIR=/repo/.git GIT_WORK_TREE=/repo git status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_environment_only",
+      "seq": 567962,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && GIT_WORK_TREE=.. git -C /repo/docs status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M ../letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_option_overrides_environment",
+      "seq": 567963,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && GIT_DIR=/missing GIT_WORK_TREE=/missing git --git-dir=/repo/.git --work-tree=/repo status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_defaults_work_tree_to_cwd",
+      "seq": 567964,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /git-select-empty && git -C /git-select-empty --git-dir=/repo/.git status --short; result=$?; rmdir /git-select-empty; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " D docs/readme.md\n D letters.txt\n D numbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_explicit_does_not_discover",
+      "seq": 567965,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo --git-dir=docs log --oneline -1",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: not a git repository: 'docs'\n"
+      }
+    },
+    {
+      "id": "git_dir_missing",
+      "seq": 567966,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir=/missing log --oneline -1",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: not a git repository: '/missing'\n"
+      }
+    },
+    {
+      "id": "git_dir_invalid_C",
+      "seq": 567967,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /missing --git-dir=/repo/.git log --oneline -1",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: cannot change to '/missing': No such file or directory\n"
+      }
+    },
+    {
+      "id": "git_dir_gitfile",
+      "seq": 567968,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'gitdir: .git\\n' > /repo/select-gitfile && git --git-dir=/repo/select-gitfile log --oneline -1; result=$?; rm /repo/select-gitfile; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_core_worktree",
+      "seq": 567969,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-select-backup && printf '\\n[core]\\nworktree = ..\\n' >> /repo/.git/config && printf 'edited\\n' > /repo/letters.txt && git --git-dir=/repo/.git status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; mv /repo/.git/config-select-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_overrides_config",
+      "seq": 567970,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-select-backup && printf '\\n[core]\\nworktree = /missing\\n' >> /repo/.git/config && printf 'edited\\n' > /repo/letters.txt && git --git-dir=/repo/.git --work-tree=/repo status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; mv /repo/.git/config-select-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_stage_from_outside",
+      "seq": 567972,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git --git-dir=/repo/.git --work-tree=/repo add letters.txt && git --git-dir=/repo/.git --work-tree=/repo diff --cached --name-only; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; git -C /repo reset --quiet -- letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_porcelain_is_root_relative",
+      "seq": 567974,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git -C /repo/docs --git-dir=../.git --work-tree=.. status --porcelain; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_status_subdirectory_paths",
+      "seq": 567975,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && git -C /repo/docs status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M ../letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_environment_overrides_config",
+      "seq": 567976,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-select-backup && printf '\\n[core]\\nworktree = /missing\\n' >> /repo/.git/config && printf 'edited\\n' > /repo/letters.txt && GIT_WORK_TREE=/repo git --git-dir=/repo/.git status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; mv /repo/.git/config-select-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_shared_metadata",
+      "seq": 567977,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/.git/worktrees/select && printf 'ref: refs/heads/topic\\n' > /repo/.git/worktrees/select/HEAD && printf '../..\\n' > /repo/.git/worktrees/select/commondir && git --git-dir=/repo/.git/worktrees/select log --oneline -1; result=$?; rm -r /repo/.git/worktrees/select; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c add docs\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_across_mounts",
+      "seq": 567978,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp -r /repo/.git /git-select-meta && printf 'edited\\n' > /repo/letters.txt && git --git-dir=/git-select-meta --work-tree=/repo status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; rm -r /git-select-meta; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_linked_worktree_ignores_shared_core_worktree",
+      "seq": 567935,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/.git/worktrees/shared /git-shared-tree && printf 'ref: refs/heads/topic\\n' > /repo/.git/worktrees/shared/HEAD && printf '../..\\n' > /repo/.git/worktrees/shared/commondir && printf 'gitdir: /repo/.git/worktrees/shared\\n' > /git-shared-tree/.git && cp /repo/.git/config /repo/.git/config-shared-backup && printf '[core]\\n\\tworktree = ..\\n' >> /repo/.git/config && git -C /git-shared-tree status --short; result=$?; mv /repo/.git/config-shared-backup /repo/.git/config; rm -r /repo/.git/worktrees/shared /git-shared-tree; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "D  docs/readme.md\nD  letters.txt\nD  numbers.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_linked_worktree_reads_the_shared_exclude",
+      "seq": 567936,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/.git/worktrees/excl /git-excl-tree && printf 'ref: refs/heads/main\\n' > /repo/.git/worktrees/excl/HEAD && printf '../..\\n' > /repo/.git/worktrees/excl/commondir && cp /repo/.git/index /repo/.git/worktrees/excl/index && printf 'gitdir: /repo/.git/worktrees/excl\\n' > /git-excl-tree/.git && cp /repo/.git/info/exclude /repo/.git/info/exclude-backup && printf '*.log\\n' >> /repo/.git/info/exclude && printf 'x\\n' > /git-excl-tree/debug.log && printf 'y\\n' > /git-excl-tree/notes.txt && git -C /git-excl-tree status --short; result=$?; mv /repo/.git/info/exclude-backup /repo/.git/info/exclude; rm -r /repo/.git/worktrees/excl /git-excl-tree; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " D docs/readme.md\n D letters.txt\n D numbers.txt\n?? notes.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_linked_worktree_logs_its_branch_in_the_repository",
+      "seq": 567937,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf '8ef25423772bbfe671c8e285ae1d63991d59db19\\n' > /repo/.git/refs/heads/wtlog && mkdir -p /repo/.git/worktrees/wtlog /git-wtlog-tree && printf 'ref: refs/heads/wtlog\\n' > /repo/.git/worktrees/wtlog/HEAD && printf '../..\\n' > /repo/.git/worktrees/wtlog/commondir && cp /repo/.git/index /repo/.git/worktrees/wtlog/index && printf 'gitdir: /repo/.git/worktrees/wtlog\\n' > /git-wtlog-tree/.git && printf 'wt\\n' > /git-wtlog-tree/wt.txt && git -C /git-wtlog-tree add wt.txt && git -C /git-wtlog-tree commit -m 'from a worktree' > /dev/null && cut -f 2 /repo/.git/logs/refs/heads/wtlog && cut -f 2 /repo/.git/worktrees/wtlog/logs/HEAD && ls /repo/.git/worktrees/wtlog/logs; result=$?; rm -r /repo/.git/worktrees/wtlog /git-wtlog-tree /repo/.git/refs/heads/wtlog /repo/.git/logs/refs/heads/wtlog; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "commit: from a worktree\ncommit: from a worktree\nHEAD\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_dir_gitfile_names_a_non_repository",
+      "seq": 567938,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'gitdir: docs\\n' > /repo/select-stray && git --git-dir=/repo/select-stray log --oneline -1; result=$?; rm /repo/select-stray; exit \"$result\")",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: not a git repository: /repo/docs\n"
+      }
+    },
+    {
+      "id": "git_core_worktree_relative_is_entered_first",
+      "seq": 567939,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-wt-backup && printf '[core]\\n\\tworktree = nowhere\\n' >> /repo/.git/config && git -C /repo log --oneline -1; result=$?; mv /repo/.git/config-wt-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: cannot chdir to 'nowhere': No such file or directory\n"
+      }
+    },
+    {
+      "id": "git_core_worktree_absolute_missing",
+      "seq": 567940,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-wt-backup && printf '[core]\\n\\tworktree = /repo/nowhere\\n' >> /repo/.git/config && git -C /repo log --oneline -1; git -C /repo status --short; result=$?; mv /repo/.git/config-wt-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 128,
+        "stdout": "8ef2542 add two\n",
+        "stderr": "fatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_core_bare_needs_a_named_work_tree",
+      "seq": 567941,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-bare-backup && printf '[core]\\n\\tbare = true\\n' >> /repo/.git/config && git -C /repo log --oneline -1; git -C /repo status --short; git -C /repo reset -q; git -C /repo --work-tree=. status --short; echo done; mv /repo/.git/config-bare-backup /repo/.git/config)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\ndone\n",
+        "stderr": "fatal: this operation must be run in a work tree\nfatal: mixed reset is not allowed in a bare repository\n"
+      }
+    },
+    {
+      "id": "git_status_relative_paths_off",
+      "seq": 567942,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-rel-backup && printf '[status]\\n\\trelativePaths = false\\n' >> /repo/.git/config && printf 'edited\\n' > /repo/letters.txt && git -C /repo/docs status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; mv /repo/.git/config-rel-backup /repo/.git/config; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " M letters.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_status_long_format_is_relative_to_the_subdirectory",
+      "seq": 567943,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && mkdir -p /repo/fresh/deep && printf 'x\\n' > /repo/fresh/deep/f.txt && printf 'extra\\n' > /repo/docs/extra.md && git -C /repo/docs status && git -C /repo/fresh/deep status --short; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; rm -r /repo/fresh /repo/docs/extra.md; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": "On branch main\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   ../letters.txt\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\textra.md\n\t../fresh/\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n M ../../letters.txt\n?? ../../docs/extra.md\n?? ../\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_commit_report_is_relative_to_the_subdirectory",
+      "seq": 567944,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(printf 'edited\\n' > /repo/letters.txt && printf 'extra\\n' > /repo/docs/extra.md && git -C /repo/docs commit -m never; result=$?; printf 'alpha\\nbeta\\ngamma\\ndelta\\n' > /repo/letters.txt; rm /repo/docs/extra.md; exit \"$result\")",
+      "expect": {
+        "exit": 1,
+        "stdout": "On branch main\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   ../letters.txt\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\textra.md\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_missing_is_refused",
+      "seq": 567945,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir=/repo/.git --work-tree=/repo/missing status --short",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_work_tree_file_is_refused",
+      "seq": 567946,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git --git-dir=/repo/.git --work-tree=/repo/letters.txt status --short",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_work_tree_missing_still_reads",
+      "seq": 567947,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo --work-tree=missing log --oneline -1 && git -C /repo --work-tree=missing diff --cached --stat",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_work_tree_missing_refuses_writes",
+      "seq": 567948,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo --work-tree=missing add -A; added=$?; git -C /repo --work-tree=missing commit -am never; committed=$?; git -C /repo status --porcelain; git -C /repo log --oneline -1; echo \"$added $committed\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n128 128\n",
+        "stderr": "fatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_core_bare_is_read_as_a_git_boolean",
+      "seq": 567930,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-bool-backup && for spelling in '[Core]\\n\\tBare = yes' '[CORE]\\n\\tBARE = On' '[core]\\n\\tbare' '[core]\\n\\tbare = 1' '[core]\\n\\tbare = -1' '[core]\\n\\tbare = 0x10' '[core]\\n\\tbare = 010' '[core]\\n\\tbare = 2k' '[core]\\n\\tbare = 1g' '[core]\\n\\tbare = \" 1\"' '[core]\\n\\tbare = 0' '[core]\\n\\tbare ='; do cp /repo/.git/config-bool-backup /repo/.git/config && printf \"$spelling\\n\" >> /repo/.git/config && git -C /repo status --short; printf '%s -> %s\\n' \"$spelling\" \"$?\"; done; mv /repo/.git/config-bool-backup /repo/.git/config)",
+      "expect": {
+        "exit": 0,
+        "stdout": "[Core]\\n\\tBare = yes -> 128\n[CORE]\\n\\tBARE = On -> 128\n[core]\\n\\tbare -> 128\n[core]\\n\\tbare = 1 -> 128\n[core]\\n\\tbare = -1 -> 128\n[core]\\n\\tbare = 0x10 -> 128\n[core]\\n\\tbare = 010 -> 128\n[core]\\n\\tbare = 2k -> 128\n[core]\\n\\tbare = 1g -> 128\n[core]\\n\\tbare = \" 1\" -> 128\n[core]\\n\\tbare = 0 -> 0\n[core]\\n\\tbare = -> 0\n",
+        "stderr": "fatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\nfatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_core_bare_invalid_fails_every_verb",
+      "seq": 567931,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-badbare-backup && mkdir -p /repo/.git/worktrees/badbare /git-badbare-tree && printf 'ref: refs/heads/main\\n' > /repo/.git/worktrees/badbare/HEAD && printf '../..\\n' > /repo/.git/worktrees/badbare/commondir && printf 'gitdir: /repo/.git/worktrees/badbare\\n' > /git-badbare-tree/.git && for value in 08 2g ' true' maybe; do cp /repo/.git/config-badbare-backup /repo/.git/config && printf '[core]\\n\\tbare = \"%s\"\\n[core]\\n\\tbare = false\\n' \"$value\" >> /repo/.git/config && git -C /repo log --oneline -1; done; git -C /repo --work-tree=. status --short; git --git-dir=/repo/.git --work-tree=/repo log --oneline -1; git -C /git-badbare-tree log --oneline -1; result=$?; mv /repo/.git/config-badbare-backup /repo/.git/config; rm -r /repo/.git/worktrees/badbare /git-badbare-tree; exit \"$result\")",
+      "expect": {
+        "exit": 128,
+        "stdout": "",
+        "stderr": "fatal: bad boolean config value '08' for 'core.bare'\nfatal: bad boolean config value '2g' for 'core.bare'\nfatal: bad boolean config value ' true' for 'core.bare'\nfatal: bad boolean config value 'maybe' for 'core.bare'\nfatal: bad boolean config value 'maybe' for 'core.bare'\nfatal: bad boolean config value 'maybe' for 'core.bare'\nfatal: bad boolean config value 'maybe' for 'core.bare'\n"
+      }
+    },
+    {
+      "id": "git_linked_worktree_ignores_shared_core_bare",
+      "seq": 567932,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cp /repo/.git/config /repo/.git/config-lbare-backup && mkdir -p /repo/.git/worktrees/lbare /git-lbare-tree && printf 'ref: refs/heads/main\\n' > /repo/.git/worktrees/lbare/HEAD && printf '../..\\n' > /repo/.git/worktrees/lbare/commondir && cp /repo/.git/index /repo/.git/worktrees/lbare/index && printf 'gitdir: /repo/.git/worktrees/lbare\\n' > /git-lbare-tree/.git && printf '[core]\\n\\tbare = true\\n' >> /repo/.git/config && git -C /repo status --short; git -C /git-lbare-tree status --short; result=$?; mv /repo/.git/config-lbare-backup /repo/.git/config; rm -r /repo/.git/worktrees/lbare /git-lbare-tree; exit \"$result\")",
+      "expect": {
+        "exit": 0,
+        "stdout": " D docs/readme.md\n D letters.txt\n D numbers.txt\n",
+        "stderr": "fatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_history_casefold_message_author",
+      "seq": 1326100,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/casefold; cp -r /repo/.git /repo/casefold/.git; cd /repo/casefold; export GIT_AUTHOR_DATE=2025-08-05T10:00:00Z GIT_COMMITTER_DATE=2025-08-05T10:00:00Z; printf '\u00c9LAN Aa\\n' > case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00c9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00c9LAN Aa' > /dev/null; export GIT_AUTHOR_DATE=2025-08-06T10:00:00Z GIT_COMMITTER_DATE=2025-08-06T10:00:00Z; printf '\u00e9lan aA\\n' >> case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00e9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00e9lan aA' > /dev/null; git log --format=%s --grep=\u00e9 -i; git log --format=%s --author=\u00c9LODIE -i; git log --format=%s --grep=\u00e9 --author=\u00c9 -i; git shortlog -sn --all --grep=\u00e9 -i; cd /repo; rm -r casefold)",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u00e9lan aA\n\u00c9LAN Aa\n     1\t\u00e9lodie\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_history_casefold_count_reverse",
+      "seq": 1326101,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/casefold; cp -r /repo/.git /repo/casefold/.git; cd /repo/casefold; export GIT_AUTHOR_DATE=2025-08-05T10:00:00Z GIT_COMMITTER_DATE=2025-08-05T10:00:00Z; printf '\u00c9LAN Aa\\n' > case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00c9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00c9LAN Aa' > /dev/null; export GIT_AUTHOR_DATE=2025-08-06T10:00:00Z GIT_COMMITTER_DATE=2025-08-06T10:00:00Z; printf '\u00e9lan aA\\n' >> case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00e9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00e9lan aA' > /dev/null; git log --format=%s --grep=\u00e9 --grep=\u00c9 -i --max-count=2 --reverse; git log --format=%s --grep=\u00e9 -i --max-count=0; git log --format=%s --grep=\u00e9 --grep=\u00c9 -i --max-count=-1 -n1; cd /repo; rm -r casefold)",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u00c9LAN Aa\n\u00e9lan aA\n\u00e9lan aA\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_history_casefold_pickaxe_newline",
+      "seq": 1326102,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/casefold; cp -r /repo/.git /repo/casefold/.git; cd /repo/casefold; export GIT_AUTHOR_DATE=2025-08-05T10:00:00Z GIT_COMMITTER_DATE=2025-08-05T10:00:00Z; printf '\u00c9LAN Aa\\n' > case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00c9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00c9LAN Aa' > /dev/null; export GIT_AUTHOR_DATE=2025-08-06T10:00:00Z GIT_COMMITTER_DATE=2025-08-06T10:00:00Z; printf '\u00e9lan aA\\n' >> case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00e9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00e9lan aA' > /dev/null; git log --format=%s -S \u00c9lan -i; git log --format=%s -S \u00e9lan -i; git log --format=%s --grep='missing\n\u00e9lan' -i; cd /repo; rm -r casefold)",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u00c9LAN Aa\n\u00e9lan aA\n\u00e9lan aA\n",
+        "stderr": ""
       }
     }
   ]

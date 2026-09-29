@@ -21,10 +21,14 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-p", long="--parents"),
             Option(short="-v", long="--verbose"),
             Option(short="-m", long="--mode", type="str"),
+            # GNU: -Z never takes an argument; only --context= carries
+            # one, so the short stays clusterable (-vZ) and `-Zfoo` is
+            # refused.
             Option(short="-Z",
                    long="--context",
                    type="str",
-                   value_optional=True),
+                   value_optional=True,
+                   short_value=False),
         ),
         rest=Operand(type="path"),
     ),
@@ -67,6 +71,11 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-r"),
             Option(short="-R", long="--recursive"),
             Option(short="-a", long="--archive"),
+            # The link policy: the last of these and -a wins.
+            Option(short="-L", long="--dereference"),
+            Option(short="-P", long="--no-dereference"),
+            Option(short="-H"),
+            Option(short="-d"),
             # Non-interactive control plane (rm precedent): -f/-i are
             # accepted no-ops — there is no prompt, and an overwrite
             # proceeds unless -n/--update say otherwise.
@@ -86,12 +95,12 @@ SPECS: dict[str, CommandSpec] = {
                    type="str",
                    value_optional=True,
                    short_value=False),
-            Option(short="-S", long="--suffix", type="str"),
-            Option(short="-t", long="--target-directory", type="path"),
-            Option(short="-T", long="--no-target-directory"),
             # PathSpec normalizes trailing slashes everywhere, so the GNU
             # spelling is an accepted no-op.
             Option(long="--strip-trailing-slashes"),
+            Option(short="-t", long="--target-directory", type="path"),
+            Option(short="-T", long="--no-target-directory"),
+            Option(short="-S", long="--suffix", type="str"),
         ),
         rest=Operand(type="path"),
     ),
@@ -117,16 +126,16 @@ SPECS: dict[str, CommandSpec] = {
                    type="str",
                    value_optional=True,
                    short_value=False),
-            Option(short="-S", long="--suffix", type="str"),
-            Option(short="-t", long="--target-directory", type="path"),
-            Option(short="-T", long="--no-target-directory"),
-            Option(long="--exchange"),
-            # Cross-mount moves are copy+remove; --no-copy turns them into
-            # GNU's cross-device refusal instead.
-            Option(long="--no-copy"),
             # PathSpec normalizes trailing slashes everywhere, so the GNU
             # spelling is an accepted no-op.
             Option(long="--strip-trailing-slashes"),
+            Option(short="-t", long="--target-directory", type="path"),
+            # Cross-mount moves are copy+remove; --no-copy turns them into
+            # GNU's cross-device refusal instead.
+            Option(long="--no-copy"),
+            Option(long="--exchange"),
+            Option(short="-T", long="--no-target-directory"),
+            Option(short="-S", long="--suffix", type="str"),
         ),
         rest=Operand(type="path"),
     ),
@@ -162,7 +171,10 @@ SPECS: dict[str, CommandSpec] = {
     CommandSpec(rest=Operand(type="path")),
     'truncate':
     CommandSpec(
-        options=(Option(short="-s", long="--size", type="str"), ),
+        options=(
+            Option(short="-c", long="--no-create"),
+            Option(short="-s", long="--size", type="str"),
+        ),
         rest=Operand(type="path"),
     ),
     'basename':
@@ -267,7 +279,7 @@ SPECS: dict[str, CommandSpec] = {
     'ln':
     CommandSpec(
         options=(
-            Option(short="-s", long="--symbolic"),
+            Option(short="-S", long="--suffix", type="str"),
             Option(short="-f", long="--force"),
             Option(short="-n", long="--no-dereference"),
             Option(short="-v", long="--verbose"),
@@ -283,7 +295,7 @@ SPECS: dict[str, CommandSpec] = {
                    type="str",
                    value_optional=True,
                    short_value=False),
-            Option(short="-S", long="--suffix", type="str"),
+            Option(short="-s", long="--symbolic"),
             Option(short="-t", long="--target-directory", type="path"),
             Option(short="-T", long="--no-target-directory"),
         ),

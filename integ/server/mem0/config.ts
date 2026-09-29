@@ -20,7 +20,8 @@ export type C = PrismaClient
 export const config = parseConfig({
   service: 'mem0',
   schema: schemaFor('mem0'),
-  defaultPort: 5099,
+  // 5099 is hf's; gate_selftest keeps every fake's port unique.
+  defaultPort: 5102,
   tenantKind: 'pk-column',
 })
 

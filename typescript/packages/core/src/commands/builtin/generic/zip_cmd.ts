@@ -14,9 +14,10 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { fsStrerror, isFsError } from '../../../utils/errors.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
-import { deflateRaw } from '../../../utils/compress.ts'
+import { crc32, deflateRaw } from '../../../utils/compress.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { fnmatch } from '../../../utils/fnmatch.ts'
 import { lstripSlash, rstripSlash } from '../../../utils/slash.ts'
@@ -25,26 +26,6 @@ import type { MemberKind } from './archive/types.ts'
 import { OTHER_FILESYSTEM, scanOperand, type StatFn, type WalkFn } from './archive/walk.ts'
 
 const ENC = new TextEncoder()
-
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256)
-  for (let n = 0; n < 256; n++) {
-    let c = n
-    for (let k = 0; k < 8; k++) {
-      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-    }
-    table[n] = c >>> 0
-  }
-  return table
-})()
-
-function crc32(data: Uint8Array): number {
-  let c = 0xffffffff
-  for (let i = 0; i < data.byteLength; i++) {
-    c = (CRC_TABLE[((c ^ (data[i] ?? 0)) & 0xff) >>> 0] ?? 0) ^ (c >>> 8)
-  }
-  return (c ^ 0xffffffff) >>> 0
-}
 
 function writeU16LE(buf: Uint8Array, offset: number, value: number): void {
   buf[offset] = value & 0xff
@@ -184,6 +165,11 @@ const NOTHING_TO_DO_EXIT = 12
 const REPEATED_EXIT = 16
 const REPEATED_ERROR = '\nzip error: Invalid command arguments (cannot repeat names in zip file)\n'
 const REPEATED_INDENT = ' '.repeat(21)
+// An archive zip cannot create ends the run before any member is added, -q
+// or not (Info-ZIP's ZE_CREAT, exit 15). Info-ZIP prints it on stdout like
+// every diagnostic; mirage keeps it on stderr with the rest. Mirrors
+// zip_cmd.py.
+const CREATE_EXIT = 15
 // Unix mode bits in the high half of external_attr.
 const DIR_MODE = ((0o40755 << 16) | 0x10) >>> 0
 const FILE_MODE = (0o100644 << 16) >>> 0
@@ -282,6 +268,13 @@ async function planZip(
   const formed = new Map<string, string[]>()
   for (const path of paths) {
     const raw = path.rawPath
+    if (path.walkError !== null) {
+      // The walk refused the operand before zip ran (the empty name, a
+      // link loop above the name), which Info-ZIP matches to nothing,
+      // whatever the errno.
+      warnings.push(NOT_MATCHED + raw)
+      continue
+    }
     const base = rstripSlash(path.virtual) || '/'
     // Info-ZIP walks a bare `.` with an empty prefix, so what it finds there
     // is named bare: `zip -r out.zip . a.txt` names a.txt once.
@@ -401,7 +394,16 @@ export async function zipGeneric(
     outputLines.push(`  adding: ${member.name}`)
   }
   const archive = buildZip(items)
-  await deps.write(archivePath, archive)
+  try {
+    await deps.write(archivePath, archive)
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    const message =
+      warningText(plan.warnings, quiet) +
+      `zip I/O error: ${String(fsStrerror(err))}\n` +
+      `zip error: Could not create output file (${archivePath.rawPath})\n`
+    return [null, new IOResult({ exitCode: CREATE_EXIT, stderr: ENC.encode(message) })]
+  }
   const stdout: ByteSource | null =
     !quiet && outputLines.length > 0 ? ENC.encode(outputLines.join('\n') + '\n') : null
   return [

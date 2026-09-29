@@ -20,7 +20,7 @@ from typing import Any, Callable, ClassVar
 
 from mirage.runtime.config import HomeConfig, RuntimeConfig
 from mirage.runtime.python.base import PythonRuntime
-from mirage.runtime.python.bootstrap import bootstrap
+from mirage.runtime.python.execution import prepare_source
 from mirage.runtime.python.flags import init_argv
 from mirage.runtime.types import (FilesystemOperation, RunArgs, RunResult,
                                   RuntimeContext, RuntimeReach, ScriptSource)
@@ -122,15 +122,18 @@ class WasiRuntime(PythonRuntime):
         core = (RuntimeVFS(context.dispatch, asyncio.get_running_loop(),
                            context.resolver) if context is not None else None)
         fs = WasmVFS(WasmFsConfig(host_root=str(self._root)), core)
+        source = prepare_source(args.code,
+                                args.prog,
+                                script_cli=args.script_cli,
+                                stdin=args.stdin)
+        cwd = args.cwd or (context.cwd if context is not None else None)
+        if cwd is not None:
+            source = (
+                f"__import__('os').chdir({cwd.virtual!r})\n"
+                f"exec(compile({source!r}, '<string>', 'exec'), globals())")
         # sys.argv becomes [prog, *args.args], matching the local runtime.
         stdout, stderr, exit_code = await self._runtime.run(
-            argv=[
-                "python", *init_argv(args.flags), "-c",
-                bootstrap(args.code,
-                          args.prog,
-                          script_cli=args.script_cli,
-                          stdin=args.stdin), *args.args
-            ],
+            argv=["python", *init_argv(args.flags), "-c", source, *args.args],
             stdin=args.stdin,
             env=[
                 *args.env.items(),

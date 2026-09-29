@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 from mirage.cache.index import RAMIndexCacheStore
 from mirage.core.ram.readdir import readdir as ram_readdir
-from mirage.ops.registry import RegisteredOp
+from mirage.ops.registry import RegisteredOp, op
 from mirage.types import MountMode, PathSpec
 from mirage.utils.glob_walk import make_resolve_glob
 from mirage.utils.key_prefix import mount_key
@@ -423,9 +423,11 @@ def test_glob_operand_commands_see_mount_and_link():
     # pins the row count rather than the naming.
     assert len(_out(ws, "stat /base/*").splitlines()) == 4
     # wc follows the link and reports the target's bytes under the link's
-    # name, and names each directory operand on stderr, like GNU.
+    # name, and gives each directory operand a row of zeros beside its
+    # stderr line, like GNU.
     assert _out(ws, "wc -c /base/*").split() == [
-        "3", "/base/f1", "7", "/base/link", "10", "total"
+        "3", "/base/f1", "0", "/base/inner", "7", "/base/link", "0",
+        "/base/sub", "10", "total"
     ]
 
 
@@ -646,3 +648,50 @@ def test_trailing_slash_glob_drives_the_issue_loop():
     line = ("cd /data/records && for d in */; do for f in \"$d\"*.txt; do "
             "[ -f \"$f\" ] || continue; cat \"$f\"; done; done")
     assert _out(ws, line) == "sample\nsample\n"
+
+
+class KeyRecordingRAM(RAMVFS):
+    """A RAM mount whose ``glob`` op records the keys it was handed."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.seen: list[tuple[str, str]] = []
+
+    def ops(self) -> list[RegisteredOp]:
+        table = super().ops()
+        derived = next(ro for ro in table
+                       if ro.name == "glob" and ro.filetype is None)
+        seen = self.seen
+
+        @op("glob", vfs=self.name)
+        async def glob(accessor, path: PathSpec, **kwargs) -> list[PathSpec]:
+            seen.append((path.virtual, path.vfs_path))
+            return await derived.fn(accessor, path, **kwargs)
+
+        return [ro for ro in table if ro is not derived] + glob._registered_ops
+
+
+def test_glob_op_is_handed_keys_below_a_non_root_prefix():
+    # The ``glob`` op never sees the mount prefix: the mount stamps each
+    # spec's ``vfs_path`` with ``mount_key(virtual, prefix)`` before the
+    # op runs, on every door that expands a word (the workspace expander,
+    # its mid-path and globstar walks, and the builtins' operands). Pinned
+    # the same way in typescript's globs.test.ts.
+    vfs = KeyRecordingRAM()
+    ws = Workspace({"/mnt/x/": vfs}, mode=MountMode.WRITE)
+    ws.create_session("s")
+    for line in ("mkdir -p /mnt/x/team/sub", "printf 1 > /mnt/x/team/f1",
+                 "printf 2 > /mnt/x/tea.txt", "printf 3 > /mnt/x/other"):
+        _run(ws.shell(line, session_id="s"))
+    cases = [
+        ("echo /mnt/x/*", "/mnt/x/other /mnt/x/tea.txt /mnt/x/team"),
+        ("echo /mnt/x/*/f*", "/mnt/x/team/f1"),
+        ("cd /mnt/x && echo tea*", "tea.txt team"),
+        ("shopt -s globstar; echo /mnt/x/**/f1", "/mnt/x/team/f1"),
+        ("touch /mnt/x/tea* && echo touched", "touched"),
+    ]
+    for line, want in cases:
+        assert _out(ws, line).strip() == want, line
+    assert vfs.seen
+    assert [(v, key) for v, key in vfs.seen
+            if key != mount_key(v, "/mnt/x")] == []

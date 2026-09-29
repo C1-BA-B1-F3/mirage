@@ -83,7 +83,8 @@ async function runGrep(
     readdir,
     stream,
   )
-  return result as [GrepOut, IOResult]
+  const [out, io] = result as [GrepOut, IOResult]
+  return [out === null ? null : await materialize(out), io]
 }
 
 describe('grepGeneric recursive warnings', () => {

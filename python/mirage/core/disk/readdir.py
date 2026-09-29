@@ -12,22 +12,27 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 from pathlib import Path
-
-import aiofiles.os
 
 from mirage.accessor.disk import DiskAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.core.disk.errors import disk_error
+from mirage.core.disk.utils import read_entries, resolve_inside
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent, enotdir
 from mirage.utils.key_prefix import mount_prefix_of
 
 
-def _resolve(root: Path, path: str) -> Path:
-    relative = path.lstrip("/")
-    resolved = (root / relative).resolve()
-    resolved.relative_to(root)
-    return resolved
+def _entry_names(p: Path) -> list[str]:
+    """The names in a host directory, less its symlinks.
+
+    A host symlink is not an entry of the mount (see ``resolve_inside``).
+
+    Args:
+        p (Path): the host directory.
+    """
+    return [entry.name for entry in read_entries(p)]
 
 
 async def readdir(accessor: DiskAccessor,
@@ -47,18 +52,20 @@ async def readdir(accessor: DiskAccessor,
     listing = await index.list_dir(virtual_key)
     if listing.entries is not None:
         return listing.entries
-    p = _resolve(root, path)
+    p = await resolve_inside(root, path_spec, path)
     base = "/" + path.strip("/")
     # The kernel already separates ENOENT (a component does not exist) from
     # ENOTDIR (a component exists but is not a directory); let listdir make
     # that call instead of collapsing both into one errno. Restamped onto the
     # PathSpec so the virtual path, never the real fs path, is reported.
     try:
-        raw = await aiofiles.os.listdir(p)
+        raw = await asyncio.to_thread(_entry_names, p)
     except FileNotFoundError as exc:
         raise enoent(path_spec) from exc
     except NotADirectoryError as exc:
         raise enotdir(path_spec) from exc
+    except OSError as exc:
+        raise disk_error(exc, path_spec.virtual) from exc
     entries = sorted(base.rstrip("/") + "/" + name for name in raw)
     virtual_entries = sorted((prefix + e if prefix else e) for e in entries)
     index_entries = [(e.rsplit("/", 1)[-1],

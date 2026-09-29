@@ -12,8 +12,20 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type {
+  ReadOps,
+  NativeReadOps,
+  WriteOps,
+  SearchOps,
+  ReadStreamOp,
+  ReaddirOp,
+  ResolveGlobOp,
+  StatOp,
+} from '../../../vfs/types.ts'
+
 import type { Accessor } from '../../../accessor/base.ts'
 import {
+  requirePathsWritable,
   effectivePathMode,
   getAdmission,
   getCurrentSession,
@@ -23,7 +35,7 @@ import {
   liveSessions,
   mountGateFor,
   pathAllowed,
-  readonlyBelow,
+  walkProbeFor,
 } from '../../../context/session_context.ts'
 import { preOpsGate, type Policies } from '../../../policy/policies.ts'
 import { hasAborted, makeAbortError } from '../../../workspace/abort.ts'
@@ -31,21 +43,22 @@ import { moveReveals } from '../../../utils/hidden.ts'
 import { removeRemnants, visibleBelow, type RemnantChannel } from '../../../utils/remnants.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import type { StatOverlay } from '../../../ops/types.ts'
-import type { FindOptions } from '../../../vfs/base.ts'
+
+import { FileType, MountMode, PathSpec, type FileStat, type WalkProbe } from '../../../types.ts'
 import {
-  FileType,
-  MountMode,
-  PathSpec,
-  type CopyFn,
-  type FindFn,
-  type FileStat,
-  type MoveFn,
-  type ReadBytesFn,
-  type ReadStreamFn,
-  type ReaddirFn,
-  type StatFn,
-} from '../../../types.ts'
-import { eacces, eisdir, erofsReadOnly, isMissError } from '../../../utils/errors.ts'
+  eacces,
+  eexist,
+  eisdir,
+  enoent,
+  enotdir,
+  enotsup,
+  erofsReadOnly,
+  isDotWalkError,
+  isEnoent,
+  isMissError,
+  walkRefusal,
+} from '../../../utils/errors.ts'
+import { dotRefusal } from '../utils/paths.ts'
 import type { ChildMounts } from '../../../ops/types.ts'
 import {
   DEFAULT_MAX_GLOB_MATCHES,
@@ -53,77 +66,9 @@ import {
   type TargetStat,
 } from '../../../utils/glob_walk.ts'
 import { norm, parent } from '../../../utils/path.ts'
-import { stripSlash } from '../../../utils/slash.ts'
-import type { DuEntries } from '../generic/du.ts'
+import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
+
 import type { AggregateFn, CommandFnResult, CommandOpts, ProvisionFn } from '../../config.ts'
-
-export type ReaddirOp<A extends Accessor = Accessor> = ReaddirFn<
-  [accessor: A, path: PathSpec, index?: IndexCacheStore]
->
-
-type ReadBytesOp<A extends Accessor = Accessor> = ReadBytesFn<
-  [accessor: A, path: PathSpec, index?: IndexCacheStore]
->
-
-type ReadStreamOp<A extends Accessor = Accessor> = ReadStreamFn<
-  [accessor: A, path: PathSpec, index?: IndexCacheStore]
->
-
-export type StatOp<A extends Accessor = Accessor> = StatFn<
-  [accessor: A, path: PathSpec, index?: IndexCacheStore]
->
-
-type WriteOp<A extends Accessor = Accessor> = (
-  accessor: A,
-  path: PathSpec,
-  data: Uint8Array,
-) => Promise<void>
-
-type ExistsOp<A extends Accessor = Accessor> = (accessor: A, path: PathSpec) => Promise<boolean>
-
-type PathOp<A extends Accessor = Accessor> = (accessor: A, path: PathSpec) => Promise<void>
-
-// `PathOp` plus the rmdir slot's optional `index`: the hidden-remnant
-// guard turns a refused rmdir into a raw listing of the same directory,
-// and an indexed backend cannot list a nested path without it. Backend
-// rmdirs keep their two-parameter shape and simply never receive it.
-type RmdirOp<A extends Accessor = Accessor> = (
-  accessor: A,
-  path: PathSpec,
-  index?: IndexCacheStore,
-) => Promise<void>
-
-type MkdirOp<A extends Accessor = Accessor> = (
-  accessor: A,
-  path: PathSpec,
-  parents?: boolean,
-) => Promise<void>
-
-type RenameOp<A extends Accessor = Accessor> = MoveFn<[accessor: A, src: PathSpec, dst: PathSpec]>
-
-type CopyOp<A extends Accessor = Accessor> = CopyFn<[accessor: A, src: PathSpec, dst: PathSpec]>
-
-type FindOp<A extends Accessor = Accessor> = FindFn<
-  [accessor: A, path: PathSpec, options: FindOptions, index?: IndexCacheStore]
->
-
-type DuSizeOp<A extends Accessor = Accessor> = (
-  accessor: A,
-  path: PathSpec,
-  index?: IndexCacheStore,
-) => Promise<number>
-
-type DuEntriesOp<A extends Accessor = Accessor> = (
-  accessor: A,
-  path: PathSpec,
-  index?: IndexCacheStore,
-) => Promise<DuEntries>
-
-export type ResolveGlobOp<A extends Accessor = Accessor> = (
-  accessor: A,
-  paths: readonly PathSpec[],
-  index?: IndexCacheStore,
-) => Promise<PathSpec[]>
 
 export function makeResolveGlob<A extends Accessor = Accessor>(
   readdir: ReaddirOp<A>,
@@ -136,58 +81,19 @@ export function makeResolveGlob<A extends Accessor = Accessor>(
     resolveGlobWith(readdir, accessor, paths, index, maxGlobMatches, children, stat, targetStat)
 }
 
-// A backend's native du, both halves at once. The generic derives its
-// per-directory rows from `entries`, so a backend offering only the
-// cheaper `size` would silently print operand totals with no directory
-// rows and an inert `-a`. Pairing them makes native du all-or-nothing,
-// so that degraded shape cannot be reached by omission (#645).
-export interface DuOps<A extends Accessor = Accessor> {
-  size: DuSizeOp<A>
-  entries: DuEntriesOp<A>
-}
-
-export interface CommandIO<A extends Accessor = Accessor> {
-  readdir: ReaddirOp<A>
-  readBytes: ReadBytesOp<A>
-  // A byte window without reading the whole file. Optional: a backend that
-  // renders its content has no remote range to ask for, and the generic ops
-  // factory reads and slices for anything that omits it.
-  readRange?: (
-    accessor: A,
-    path: PathSpec,
-    index: IndexCacheStore | undefined,
-    offset: number,
-    size: number | null,
-  ) => Promise<Uint8Array>
+export interface CommandIO<A extends Accessor = Accessor>
+  extends ReadOps<A>, NativeReadOps<A>, WriteOps<A> {
   readStream: ReadStreamOp<A>
-  stat: StatOp<A>
   isMounted: (accessor: A) => boolean
+  streamsBytes?: boolean
   local?: boolean
   maxGlobMatches?: number
-  write?: WriteOp<A>
-  exists?: ExistsOp<A>
-  mkdir?: MkdirOp<A>
-  unlink?: PathOp<A>
-  rmdir?: RmdirOp<A>
-  rmR?: PathOp<A>
-  rename?: RenameOp<A>
-  copy?: CopyOp<A>
-  dirCopy?: CopyOp<A>
-  create?: PathOp<A>
-  truncate?: (accessor: A, path: PathSpec, length: number) => Promise<void>
-  find?: FindOp<A>
-  du?: DuOps<A>
   maxDuEntries?: number
-  // Typed like `write`, now that the tee generic actually calls it. It stayed
-  // an `any` bag for as long as nothing read it, which is what let five
-  // backends wire a slot no builder could consume.
-  append?: (accessor: A, path: PathSpec, data: Uint8Array) => Promise<void>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  setAttrs?: (...args: any[]) => unknown
   // Child names the namespace owes a directory (nested mount roots and
   // symlinks). Stamped per invocation from opts.childMounts by the
   // factory, because it is session-scoped state while the adapter itself
   // is built once per backend.
+  search?: SearchOps<A>
   globChildren?: ChildMounts
   // What an owed name points at, the namespace's own stat resolved
   // through the workspace. Stamped beside globChildren from opts.ns.links,
@@ -217,9 +123,9 @@ function refuseHidden(path: PathSpec, create: boolean): void {
 }
 
 function visibleChildren(entries: string[], parent: PathSpec): string[] {
-  const base = parent.virtual.replace(/\/+$/, '')
+  const base = rstripSlash(parent.virtual)
   return entries.filter((e) => {
-    const trimmed = e.replace(/\/+$/, '')
+    const trimmed = rstripSlash(e)
     return pathAllowed(`${base}/${trimmed.slice(trimmed.lastIndexOf('/') + 1)}`)
   })
 }
@@ -280,66 +186,19 @@ export function withHiddenGuard<A extends Accessor = Accessor>(ops: CommandIO<A>
       refuseHidden(path, false)
       return visibleChildren(await ops.readdir(accessor, path, index), path)
     },
-    readBytes: (accessor, path, index) => {
-      refuseHidden(path, false)
-      return ops.readBytes(accessor, path, index)
-    },
-    readStream: (accessor, path, index) => {
-      refuseHidden(path, false)
-      return ops.readStream(accessor, path, index)
-    },
-    stat: (accessor, path, index) => {
-      refuseHidden(path, false)
-      return ops.stat(accessor, path, index)
-    },
   }
-  const rr = ops.readRange
-  if (rr !== undefined) {
-    guarded.readRange = (accessor, path, index, offset, size) => {
-      refuseHidden(path, false)
-      return rr(accessor, path, index, offset, size)
-    }
-  }
-  const w = ops.write
-  if (w !== undefined) {
-    guarded.write = (accessor, path, data) => {
-      refuseHidden(path, true)
-      return w(accessor, path, data)
-    }
+  const slots = ['readBytes', 'readStream', 'stat', 'readRange', 'find', ...mutationSlots] as const
+  for (const slot of slots) {
+    if (slot === 'rename' || slot === 'dirCopy' || slot === 'rmdir') continue
+    guardSlot(ops, guarded, slot, (paths) => {
+      hiddenCheck(paths, mutationOf(slot)?.create)
+    })
   }
   const ex = ops.exists
   if (ex !== undefined) {
     guarded.exists = async (accessor, path) => {
       if (!pathAllowed(path.virtual)) return false
       return ex(accessor, path)
-    }
-  }
-  const mk = ops.mkdir
-  if (mk !== undefined) {
-    guarded.mkdir = (accessor, path, parents) => {
-      refuseHidden(path, true)
-      return mk(accessor, path, parents)
-    }
-  }
-  const ap = ops.append
-  if (ap !== undefined) {
-    guarded.append = (accessor, path, data) => {
-      refuseHidden(path, true)
-      return ap(accessor, path, data)
-    }
-  }
-  const cr = ops.create
-  if (cr !== undefined) {
-    guarded.create = (accessor, path) => {
-      refuseHidden(path, true)
-      return cr(accessor, path)
-    }
-  }
-  const ul = ops.unlink
-  if (ul !== undefined) {
-    guarded.unlink = (accessor, path) => {
-      refuseHidden(path, false)
-      return ul(accessor, path)
     }
   }
   const rd = ops.rmdir
@@ -408,22 +267,6 @@ export function withHiddenGuard<A extends Accessor = Accessor>(ops: CommandIO<A>
       }
     }
   }
-  const rt = ops.rmR
-  if (rt !== undefined) {
-    guarded.rmR = (accessor, path) => {
-      refuseHidden(path, false)
-      return rt(accessor, path)
-    }
-  }
-  const tr = ops.truncate
-  if (tr !== undefined) {
-    guarded.truncate = (accessor, path, length) => {
-      // A create: a missing file is created at the requested length,
-      // the way truncate(1) does without -c.
-      refuseHidden(path, true)
-      return tr(accessor, path, length)
-    }
-  }
   const rn = ops.rename
   if (rn !== undefined) {
     // Only a directory source can carry hidden content into view, so a
@@ -437,14 +280,6 @@ export function withHiddenGuard<A extends Accessor = Accessor>(ops: CommandIO<A>
       return rn(accessor, src, dst)
     }
   }
-  const cp = ops.copy
-  if (cp !== undefined) {
-    guarded.copy = (accessor, src, dst) => {
-      refuseHidden(src, false)
-      refuseHidden(dst, true)
-      return cp(accessor, src, dst)
-    }
-  }
   const dc = ops.dirCopy
   if (dc !== undefined) {
     guarded.dirCopy = (accessor, src, dst) => {
@@ -452,13 +287,6 @@ export function withHiddenGuard<A extends Accessor = Accessor>(ops: CommandIO<A>
       refuseHidden(dst, true)
       refuseReveal(src, dst)
       return dc(accessor, src, dst)
-    }
-  }
-  const fd = ops.find
-  if (fd !== undefined) {
-    guarded.find = (accessor, path, options, index) => {
-      refuseHidden(path, false)
-      return fd(accessor, path, options, index)
     }
   }
   return guarded
@@ -473,6 +301,57 @@ function ruleCheck(...paths: readonly PathSpec[]): void {
   const gate = getAdmission()
   if (gate === null) return
   for (const path of paths) gate.check(path.virtual)
+}
+
+interface Mutation {
+  create?: boolean
+  firstSource?: boolean
+  subtree?: boolean
+}
+
+const MUTATIONS = {
+  write: { create: true },
+  mkdir: { create: true },
+  append: { create: true },
+  create: { create: true },
+  truncate: { create: true },
+  unlink: {},
+  rmdir: {},
+  setAttrs: {},
+  rmR: { subtree: true },
+  rename: { subtree: true },
+  copy: { firstSource: true },
+  dirCopy: { firstSource: true, subtree: true },
+} satisfies Partial<Record<keyof CommandIO, Mutation>>
+
+type MutationSlot = keyof typeof MUTATIONS
+const mutationSlots = Object.keys(MUTATIONS) as MutationSlot[]
+const contentSlots = ['readBytes', 'readRange', 'readStream', 'readdir'] as const
+type GuardedSlot = MutationSlot | (typeof contentSlots)[number]
+
+function mutationOf(slot: string): Mutation | undefined {
+  return Object.hasOwn(MUTATIONS, slot) ? MUTATIONS[slot as MutationSlot] : undefined
+}
+
+function pathsOf(args: readonly unknown[]): PathSpec[] {
+  return args.filter((arg): arg is PathSpec => arg instanceof PathSpec)
+}
+
+/** Preserve each slot's arguments and return shape, including synchronous streams. */
+function guardSlot<A extends Accessor>(
+  ops: CommandIO<A>,
+  guarded: CommandIO<A>,
+  slot: GuardedSlot | 'stat' | 'find',
+  check: (paths: PathSpec[]) => void,
+): void {
+  const fn = ops[slot]
+  if (fn === undefined) return
+  Object.assign(guarded, {
+    [slot]: (...args: never[]) => {
+      check(pathsOf(args))
+      return (fn as (...values: never[]) => unknown)(...args)
+    },
+  })
 }
 
 /**
@@ -493,254 +372,112 @@ function ruleCheck(...paths: readonly PathSpec[]): void {
  * here.
  */
 export function withRuleGuard<A extends Accessor = Accessor>(ops: CommandIO<A>): CommandIO<A> {
-  const guarded: CommandIO<A> = {
-    ...ops,
-    readdir: (accessor, path, index) => {
-      ruleCheck(path)
-      return ops.readdir(accessor, path, index)
-    },
-    readBytes: (accessor, path, index) => {
-      ruleCheck(path)
-      return ops.readBytes(accessor, path, index)
-    },
-    readStream: (accessor, path, index) => {
-      ruleCheck(path)
-      return ops.readStream(accessor, path, index)
-    },
-  }
-  const rr = ops.readRange
-  if (rr !== undefined) {
-    guarded.readRange = (accessor, path, index, offset, size) => {
-      ruleCheck(path)
-      return rr(accessor, path, index, offset, size)
-    }
-  }
-  const w = ops.write
-  if (w !== undefined) {
-    guarded.write = (accessor, path, data) => {
-      ruleCheck(path)
-      return w(accessor, path, data)
-    }
-  }
-  const mk = ops.mkdir
-  if (mk !== undefined) {
-    guarded.mkdir = (accessor, path, parents) => {
-      ruleCheck(path)
-      return mk(accessor, path, parents)
-    }
-  }
-  const ap = ops.append
-  if (ap !== undefined) {
-    guarded.append = (accessor, path, data) => {
-      ruleCheck(path)
-      return ap(accessor, path, data)
-    }
-  }
-  const cr = ops.create
-  if (cr !== undefined) {
-    guarded.create = (accessor, path) => {
-      ruleCheck(path)
-      return cr(accessor, path)
-    }
-  }
-  const ul = ops.unlink
-  if (ul !== undefined) {
-    guarded.unlink = (accessor, path) => {
-      ruleCheck(path)
-      return ul(accessor, path)
-    }
-  }
-  const rd = ops.rmdir
-  if (rd !== undefined) {
-    guarded.rmdir = (accessor, path) => {
-      ruleCheck(path)
-      return rd(accessor, path)
-    }
-  }
-  const rt = ops.rmR
-  if (rt !== undefined) {
-    guarded.rmR = (accessor, path) => {
-      ruleCheck(path)
-      return rt(accessor, path)
-    }
-  }
-  const tr = ops.truncate
-  if (tr !== undefined) {
-    guarded.truncate = (accessor, path, length) => {
-      ruleCheck(path)
-      return tr(accessor, path, length)
-    }
-  }
-  const sa = ops.setAttrs
-  if (sa !== undefined) {
-    guarded.setAttrs = (accessor: A, path: PathSpec, ...rest: unknown[]) => {
-      ruleCheck(path)
-      return sa(accessor, path, ...rest)
-    }
-  }
-  const rn = ops.rename
-  if (rn !== undefined) {
-    guarded.rename = (accessor, src, dst) => {
-      ruleCheck(src, dst)
-      return rn(accessor, src, dst)
-    }
-  }
-  const cp = ops.copy
-  if (cp !== undefined) {
-    guarded.copy = (accessor, src, dst) => {
-      ruleCheck(src, dst)
-      return cp(accessor, src, dst)
-    }
-  }
-  const dc = ops.dirCopy
-  if (dc !== undefined) {
-    guarded.dirCopy = (accessor, src, dst) => {
-      ruleCheck(src, dst)
-      return dc(accessor, src, dst)
-    }
+  const guarded = { ...ops }
+  for (const slot of [...contentSlots, ...mutationSlots]) {
+    guardSlot(ops, guarded, slot, (paths) => {
+      ruleCheck(...paths)
+    })
   }
   return guarded
 }
 
-/** Hold each written path to its region's effective mode before a
- * backend mutation runs. Inert with no mount bound (a generic invoked
- * outside a mount's command). The gate is resolved per written path
- * (`mountGateFor`), so on the fallback storage a concurrent command on
- * another mount cannot lend this one its grant. */
-function modeCheck(...written: readonly PathSpec[]): void {
+/** Resolve the governing mount per path, including on fallback context storage. */
+function modeCheck(written: readonly PathSpec[], subtree = false): void {
   for (const spec of written) {
     const gate = mountGateFor(spec.virtual)
-    if (gate === null) continue
-    const [prefix, mode] = gate
-    if (effectivePathMode(spec.virtual, prefix, mode) === MountMode.READ) {
-      throw erofsReadOnly(`mount ${prefix} is read-only`, spec.virtual)
-    }
+    if (gate !== null) requirePathsWritable([spec], ...gate)
   }
-}
-
-/** Refuse a subtree mutation whose operand covers a read-only region
- * below it (`readonlyBelow`): a native `rm -r`, a directory rename or
- * a native `cp -r` mutates everything under its endpoints in one
- * backend call no per-path check ever sees. Runs after `modeCheck`
- * has judged the endpoints themselves. */
-function subtreeModeCheck(...written: readonly PathSpec[]): void {
-  for (const spec of written) {
-    const gate = mountGateFor(spec.virtual)
-    if (gate === null) continue
-    const [prefix, mode] = gate
-    const blame = readonlyBelow(spec.virtual, prefix, mode)
-    if (blame !== null) {
-      throw erofsReadOnly(`mount ${prefix} is read-only`, blame)
+  if (subtree) {
+    for (const spec of written) {
+      const gate = mountGateFor(spec.virtual)
+      if (gate !== null) requirePathsWritable([spec], ...gate, true)
     }
   }
 }
 
 /**
- * Return `ops` whose mutation slots hold each written path to its
- * region's effective mode.
- *
- * The per-path half of the mount's write gate, innermost of the three
- * guards: hides answer ENOENT first, rules refuse next, and only a path
- * both leave standing is judged for its mode, the same order the op
- * door applies. Reads are never wrapped, because `READ` allows them
- * everywhere the other guards do; a copy's source is a read too, so
- * only its destination answers, while a rename mutates both endpoints.
+ * Answer a mkdir on a read-only region the way the filesystem would. A
+ * read-only filesystem refuses only a create it would really make, so the
+ * answer is whatever the create runs into first, walking the components from
+ * the mount root: a missing one is refused with EROFS, a file in the chain is
+ * ENOTDIR, an existing leaf is EEXIST, and `mkdir -p` of a directory that is
+ * already there succeeds. The blamed path is the first component that would
+ * have been made, as GNU's `mkdir -p` names it (`'/ro/n'` for `/ro/n/m`).
+ * Pinned against GNU coreutils 9.7 on a read-only tmpfs. Mirrors Python's
+ * `_mkdir_on_read_only`.
  */
-export function withModeGuard<A extends Accessor = Accessor>(ops: CommandIO<A>): CommandIO<A> {
-  const guarded: CommandIO<A> = { ...ops }
-  const w = ops.write
-  if (w !== undefined) {
-    guarded.write = (accessor, path, data) => {
-      modeCheck(path)
-      return w(accessor, path, data)
+async function mkdirOnReadOnly<A extends Accessor>(
+  stat: StatOp<A>,
+  gate: readonly [string, MountMode],
+  accessor: A,
+  path: PathSpec,
+  parents: boolean,
+): Promise<void> {
+  const [prefix, mode] = gate
+  const base = rstripSlash(prefix)
+  const leaf = rstripSlash(path.virtual) || '/'
+  if (leaf !== base && !leaf.startsWith(base + '/')) {
+    throw erofsReadOnly(`mount ${prefix} is read-only`, path.virtual)
+  }
+  // Each component's backend key keeps the leaf's own key prefix, recovered
+  // from its (virtual, vfsPath) pair as PathSpec.dir does.
+  const cut = leaf.length - stripSlash(path.vfsPath).length
+  const parts = leaf
+    .slice(base.length)
+    .split('/')
+    .filter((part) => part !== '')
+  const chain = parts.map((_, index) => {
+    const virtual = `${base}/${parts.slice(0, index + 1).join('/')}`
+    return PathSpec.fromStrPath(virtual, stripSlash(virtual.slice(cut)))
+  })
+  for (const [index, component] of chain.entries()) {
+    let row: FileStat
+    try {
+      row = await stat(accessor, component)
+    } catch (err) {
+      if (!isEnoent(err)) throw err
+      if (!parents && index < chain.length - 1) throw enoent(path.virtual)
+      const blame =
+        chain
+          .slice(index)
+          .find((spec) => effectivePathMode(spec.virtual, prefix, mode) === MountMode.READ) ?? path
+      throw erofsReadOnly(`mount ${prefix} is read-only`, blame.virtual)
+    }
+    if (row.type !== FileType.DIRECTORY) {
+      if (index === chain.length - 1) throw eexist(path.virtual)
+      throw enotdir(parents ? component.virtual : path.virtual)
     }
   }
+  if (!parents) throw eexist(path.virtual)
+}
+
+/** Guard only written endpoints; native subtree mutations also check descendants. */
+export function withModeGuard<A extends Accessor = Accessor>(ops: CommandIO<A>): CommandIO<A> {
+  const guarded = { ...ops }
+  for (const slot of mutationSlots) {
+    const access: Mutation = MUTATIONS[slot]
+    guardSlot(ops, guarded, slot, (paths) => {
+      modeCheck(access.firstSource ? paths.slice(1) : paths, access.subtree)
+    })
+  }
+  // A directory on a read-only region answers what the create would run into
+  // instead of refusing the operand outright (mkdirOnReadOnly).
   const mk = ops.mkdir
   if (mk !== undefined) {
     guarded.mkdir = (accessor, path, parents) => {
-      modeCheck(path)
+      const gate = mountGateFor(path.virtual)
+      if (gate !== null && effectivePathMode(path.virtual, gate[0], gate[1]) === MountMode.READ) {
+        return mkdirOnReadOnly(ops.stat, gate, accessor, path, parents ?? false)
+      }
       return mk(accessor, path, parents)
-    }
-  }
-  const ap = ops.append
-  if (ap !== undefined) {
-    guarded.append = (accessor, path, data) => {
-      modeCheck(path)
-      return ap(accessor, path, data)
-    }
-  }
-  const cr = ops.create
-  if (cr !== undefined) {
-    guarded.create = (accessor, path) => {
-      modeCheck(path)
-      return cr(accessor, path)
-    }
-  }
-  const ul = ops.unlink
-  if (ul !== undefined) {
-    guarded.unlink = (accessor, path) => {
-      modeCheck(path)
-      return ul(accessor, path)
-    }
-  }
-  const rd = ops.rmdir
-  if (rd !== undefined) {
-    guarded.rmdir = (accessor, path) => {
-      modeCheck(path)
-      return rd(accessor, path)
-    }
-  }
-  const rt = ops.rmR
-  if (rt !== undefined) {
-    guarded.rmR = (accessor, path) => {
-      modeCheck(path)
-      subtreeModeCheck(path)
-      return rt(accessor, path)
-    }
-  }
-  const tr = ops.truncate
-  if (tr !== undefined) {
-    guarded.truncate = (accessor, path, length) => {
-      modeCheck(path)
-      return tr(accessor, path, length)
-    }
-  }
-  const sa = ops.setAttrs
-  if (sa !== undefined) {
-    guarded.setAttrs = (accessor: A, path: PathSpec, ...rest: unknown[]) => {
-      modeCheck(path)
-      return sa(accessor, path, ...rest)
-    }
-  }
-  const rn = ops.rename
-  if (rn !== undefined) {
-    guarded.rename = (accessor, src, dst) => {
-      modeCheck(src, dst)
-      subtreeModeCheck(src, dst)
-      return rn(accessor, src, dst)
-    }
-  }
-  const cp = ops.copy
-  if (cp !== undefined) {
-    guarded.copy = (accessor, src, dst) => {
-      modeCheck(dst)
-      return cp(accessor, src, dst)
-    }
-  }
-  const dc = ops.dirCopy
-  if (dc !== undefined) {
-    guarded.dirCopy = (accessor, src, dst) => {
-      modeCheck(dst)
-      subtreeModeCheck(dst)
-      return dc(accessor, src, dst)
     }
   }
   return guarded
 }
 
 /**
- * Return `ops` under the whole path axis: hides answer ENOENT first,
- * rules refuse next, the mode speaks last.
+ * Return `ops` under the whole path axis: the typed dots walk first,
+ * hides answer ENOENT next, rules refuse, the mode speaks last.
  *
  * The one spelling of the guard chain, used by the commands factory
  * for every generic command and by a bespoke command family that
@@ -748,8 +485,126 @@ export function withModeGuard<A extends Accessor = Accessor>(ops: CommandIO<A>):
  * override enforces the session's path axis exactly like the generic
  * it replaces.
  */
-export function withPathGuards<A extends Accessor = Accessor>(ops: CommandIO<A>): CommandIO<A> {
-  return withHiddenGuard(withRuleGuard(withModeGuard(ops)))
+export function withPathGuards<A extends Accessor = Accessor>(
+  ops: CommandIO<A>,
+  prefix?: string,
+): CommandIO<A> {
+  return withWalkGuard(withHiddenGuard(withRuleGuard(withModeGuard(ops))), prefix)
+}
+
+/** Raise what the first unwalkable operand's dots answer. Mirrors
+ * Python's _walk_admit. */
+async function walkAdmit(probe: WalkProbe, specs: readonly PathSpec[]): Promise<void> {
+  for (const spec of specs) {
+    const refusal = await dotRefusal(probe.stat, spec, probe.follow)
+    if (refusal !== null) throw refusal
+  }
+}
+
+/** The probe a slot call's dotted operands walk with, null when none is
+ * dotted or no command bound one. */
+function walkProbeOf(
+  bound: WalkProbe | null,
+  args: readonly unknown[],
+): [WalkProbe, PathSpec[]] | null {
+  const specs = args.filter((a): a is PathSpec => a instanceof PathSpec && a.dotted !== null)
+  const first = specs[0]
+  if (first === undefined) return null
+  const probe = bound ?? walkProbeFor(first.virtual)
+  return probe === null ? null : [probe, specs]
+}
+
+/** Throw the walk's verdict on the first PathSpec positional it refused
+ * before the command ran (the empty name, a link loop), before anything
+ * else reads it. Mirrors the walk_error arm of Python's _walked_call. */
+function refuseUnwalked(args: readonly unknown[]): void {
+  for (const arg of args) {
+    if (arg instanceof PathSpec && arg.walkError !== null) throw walkRefusal(arg)
+  }
+}
+
+/** Call one slot once the dots of its PathSpec positionals walk. */
+function walkedCall<Args extends unknown[], R>(
+  bound: WalkProbe | null,
+  fn: (...args: Args) => Promise<R>,
+): (...args: Args) => Promise<R> {
+  return async (...args: Args) => {
+    refuseUnwalked(args)
+    const walk = walkProbeOf(bound, args)
+    if (walk !== null) await walkAdmit(walk[0], walk[1])
+    return fn(...args)
+  }
+}
+
+/** Drain a read stream once its operand walks, before any byte is pulled. */
+async function* walkedStream(
+  probe: WalkProbe | null,
+  specs: readonly PathSpec[],
+  source: AsyncIterable<Uint8Array>,
+): AsyncIterable<Uint8Array> {
+  refuseUnwalked(specs)
+  if (probe !== null) await walkAdmit(probe, specs)
+  yield* source
+}
+
+/**
+ * Return `ops` whose slots walk an operand's `.` and `..`.
+ *
+ * `virtual` simplifies the dots away, so `cat nope/../f` would read `f` past
+ * a missing `nope`; the typed spelling rides `PathSpec.dotted` and
+ * `dotRefusal` proves every name in front of a dot a directory, raising
+ * ENOENT or ENOTDIR at the op boundary so each command words the refusal as
+ * its own miss. Judged at op time, not before the command runs, because a
+ * command can make the directory itself (`mkdir -p nope/../m`, `mkdir d
+ * d/../x`). Every slot that takes a path is walked, presence facts (stat,
+ * exists, the native find) included; `du` is a bundle a du generic reaches
+ * only after it has stat-ed its operand. The probe is the door's stat and
+ * link follow, bound by `Mount.executeCmd`: captured at wrap time for the
+ * wrap site's mount prefix (a lazily drained reader still walks after
+ * dispatch returned), resolved per path at call time otherwise. Mirrors
+ * Python's with_walk_guard.
+ */
+export function withWalkGuard<A extends Accessor = Accessor>(
+  ops: CommandIO<A>,
+  prefix?: string,
+): CommandIO<A> {
+  const bound = prefix !== undefined ? walkProbeFor(prefix) : null
+  const guarded: CommandIO<A> = {
+    ...ops,
+    readdir: walkedCall(bound, ops.readdir),
+    readBytes: walkedCall(bound, ops.readBytes),
+    stat: walkedCall(bound, ops.stat),
+    readStream: (accessor, path, index) => {
+      const inner = ops.readStream(accessor, path, index)
+      if (path.walkError !== null) return walkedStream(null, [path], inner)
+      const walk = walkProbeOf(bound, [path])
+      return walk === null ? inner : walkedStream(walk[0], walk[1], inner)
+    },
+  }
+  if (ops.readRange !== undefined) guarded.readRange = walkedCall(bound, ops.readRange)
+  if (ops.exists !== undefined) guarded.exists = walkedCall(bound, ops.exists)
+  if (ops.find !== undefined) guarded.find = walkedCall(bound, ops.find)
+  if (ops.write !== undefined) guarded.write = walkedCall(bound, ops.write)
+  if (ops.append !== undefined) guarded.append = walkedCall(bound, ops.append)
+  if (ops.create !== undefined) guarded.create = walkedCall(bound, ops.create)
+  if (ops.truncate !== undefined) guarded.truncate = walkedCall(bound, ops.truncate)
+  if (ops.mkdir !== undefined) guarded.mkdir = walkedCall(bound, ops.mkdir)
+  if (ops.unlink !== undefined) guarded.unlink = walkedCall(bound, ops.unlink)
+  if (ops.rmdir !== undefined) guarded.rmdir = walkedCall(bound, ops.rmdir)
+  if (ops.rmR !== undefined) guarded.rmR = walkedCall(bound, ops.rmR)
+  if (ops.rename !== undefined) guarded.rename = walkedCall(bound, ops.rename)
+  if (ops.copy !== undefined) guarded.copy = walkedCall(bound, ops.copy)
+  if (ops.dirCopy !== undefined) guarded.dirCopy = walkedCall(bound, ops.dirCopy)
+  const sa = ops.setAttrs
+  if (sa !== undefined) {
+    guarded.setAttrs = async (...args: unknown[]) => {
+      refuseUnwalked(args)
+      const walk = walkProbeOf(bound, args)
+      if (walk !== null) await walkAdmit(walk[0], walk[1])
+      return sa(...args)
+    }
+  }
+  return guarded
 }
 
 /** The policies to consult for one slot call, with the mount prefix
@@ -838,16 +693,6 @@ export function withPolicyGuard<A extends Accessor = Accessor>(
   const scope = opPolicyScope(prefix ?? null)
   const guarded: CommandIO<A> = {
     ...ops,
-    readdir: async (accessor, path, index) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'readdir', path, false)
-      return ops.readdir(accessor, path, index)
-    },
-    readBytes: async (accessor, path, index) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'read_bytes', path, false)
-      return ops.readBytes(accessor, path, index)
-    },
     readStream: (accessor, path, index) => {
       const p = livePolicyScope(scope)
       const inner = ops.readStream(accessor, path, index)
@@ -855,120 +700,33 @@ export function withPolicyGuard<A extends Accessor = Accessor>(
       return policyStream(p, path, inner)
     },
   }
-  const rr = ops.readRange
-  if (rr !== undefined) {
-    guarded.readRange = async (accessor, path, index, offset, size) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'read_range', path, false)
-      return rr(accessor, path, index, offset, size)
-    }
-  }
-  const w = ops.write
-  if (w !== undefined) {
-    guarded.write = async (accessor, path, data) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'write', path, true)
-      return w(accessor, path, data)
-    }
-  }
-  const mk = ops.mkdir
-  if (mk !== undefined) {
-    guarded.mkdir = async (accessor, path, parents) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'mkdir', path, true)
-      return mk(accessor, path, parents)
-    }
-  }
-  const ap = ops.append
-  if (ap !== undefined) {
-    guarded.append = async (accessor, path, data) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'append', path, true)
-      return ap(accessor, path, data)
-    }
-  }
-  const cr = ops.create
-  if (cr !== undefined) {
-    guarded.create = async (accessor, path) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'create', path, true)
-      return cr(accessor, path)
-    }
-  }
-  const ul = ops.unlink
-  if (ul !== undefined) {
-    guarded.unlink = async (accessor, path) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'unlink', path, true)
-      return ul(accessor, path)
-    }
-  }
-  const rd = ops.rmdir
-  if (rd !== undefined) {
-    guarded.rmdir = async (accessor, path) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'rmdir', path, true)
-      return rd(accessor, path)
-    }
-  }
-  const rt = ops.rmR
-  if (rt !== undefined) {
-    guarded.rmR = async (accessor, path) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'rm_r', path, true)
-      return rt(accessor, path)
-    }
-  }
-  const tr = ops.truncate
-  if (tr !== undefined) {
-    guarded.truncate = async (accessor, path, length) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'truncate', path, true)
-      return tr(accessor, path, length)
-    }
-  }
-  const sa = ops.setAttrs
-  if (sa !== undefined) {
-    guarded.setAttrs = async (accessor: A, path: PathSpec, ...rest: unknown[]) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) await policyAdmit(p, 'set_attrs', path, true)
-      return sa(accessor, path, ...rest)
-    }
-  }
-  const rn = ops.rename
-  if (rn !== undefined) {
-    guarded.rename = async (accessor, src, dst) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) {
-        await policyAdmit(p, 'rename', src, true)
-        await policyAdmit(p, 'rename', dst, true)
-      }
-      return rn(accessor, src, dst)
-    }
-  }
-  const cp = ops.copy
-  if (cp !== undefined) {
-    guarded.copy = async (accessor, src, dst) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) {
-        await policyAdmit(p, 'copy', src, false)
-        await policyAdmit(p, 'copy', dst, true)
-      }
-      return cp(accessor, src, dst)
-    }
-  }
-  const dc = ops.dirCopy
-  if (dc !== undefined) {
-    guarded.dirCopy = async (accessor, src, dst) => {
-      const p = livePolicyScope(scope)
-      if (p !== null) {
-        await policyAdmit(p, 'dir_copy', src, false)
-        await policyAdmit(p, 'dir_copy', dst, true)
-      }
-      return dc(accessor, src, dst)
+  for (const slot of ['readBytes', 'readRange', 'readdir', ...mutationSlots] as const) {
+    const fn = ops[slot]
+    if (fn !== undefined) {
+      // All slots in this set return promises; readStream keeps its own wrapper.
+      Object.assign(guarded, { [slot]: policyCall(scope, fn, slot) })
     }
   }
   return guarded
+}
+
+function policyCall<T extends (...args: never[]) => unknown>(
+  scope: OpPolicyScope | null,
+  fn: T,
+  slot: GuardedSlot,
+): T {
+  return (async (...args: never[]) => {
+    const p = livePolicyScope(scope)
+    if (p !== null) {
+      const access = mutationOf(slot)
+      const paths = pathsOf(args)
+      const name = slot.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`)
+      for (const [i, path] of paths.entries()) {
+        await policyAdmit(p, name, path, access !== undefined && !(i === 0 && access.firstSource))
+      }
+    }
+    return fn(...args)
+  }) as T
 }
 
 /** `fn`, refused with the line's abort instead of started once `signal` has fired. */
@@ -1056,14 +814,7 @@ export function withAbortGuard<A extends Accessor = Accessor>(
 export function withWriteGuards<A extends Accessor, R>(
   fn: (accessor: A, path: PathSpec, index?: IndexCacheStore) => Promise<R> | R,
 ): (accessor: A, path: PathSpec, index?: IndexCacheStore) => Promise<R> {
-  return async (accessor, path, index) => {
-    const p = opPolicyScope(null)
-    if (p !== null) await policyAdmit(p, 'unlink', path, true)
-    refuseHidden(path, false)
-    ruleCheck(path)
-    modeCheck(path)
-    return await fn(accessor, path, index)
-  }
+  return guardOperation(fn, 'unlink')
 }
 
 /**
@@ -1172,7 +923,7 @@ async function statRefusingDirs<A extends Accessor>(
   try {
     st = await ops.stat(accessor, p, index)
   } catch (e) {
-    if ((e as { code?: string }).code !== 'ENOENT') throw e
+    if ((e as { code?: string }).code !== 'ENOENT' || isDotWalkError(e)) throw e
     if (await isImplicitDir(ops, accessor, p, index)) throw eisdir(p)
     if (isNamespaceDir(opts, p)) throw eisdir(p)
     throw e
@@ -1209,28 +960,65 @@ export function overlaidStat(
   stat: (p: PathSpec) => Promise<FileStat>,
   overlay: StatOverlay | undefined,
 ): (p: PathSpec) => Promise<FileStat> {
-  if (overlay === undefined) return stat
-  return async (p) => overlay(p.virtual, await stat(p))
+  // Guarded itself, as Python's overlaid_stat is: a caller may bind a raw
+  // backend stat (the object-store family's core) rather than a slot.
+  return async (p) => {
+    if (p.walkError !== null) throw walkRefusal(p)
+    const row = await stat(p)
+    return overlay === undefined ? row : overlay(p.virtual, row)
+  }
 }
 
-// Return an optional backend op, throwing if the backend omits it.
-// Mirrors Python's `CommandIO.require`: factories wire write-side ops
-// (write/mkdir/unlink/...) that are absent on read-only backends into
-// commands that require them, and this surfaces the missing capability
-// as a clear error instead of an `undefined is not a function` crash.
-export function requireOp<T>(op: T | undefined, name: string): T {
-  if (op === undefined) {
-    throw new Error(`operation '${name}' is not supported on this backend`)
+function hiddenCheck(paths: readonly PathSpec[], create = false): void {
+  for (const [i, path] of paths.entries()) refuseHidden(path, i > 0 || create)
+}
+
+/** Guard a bare operation or capability fallback using the slot contract. */
+function guardOperation<Args extends unknown[], R>(
+  fn: (...args: Args) => Promise<R> | R,
+  name: MutationSlot | 'exists',
+): (...args: Args) => Promise<R> {
+  const access = mutationOf(name)
+  const guarded = async (...args: Args): Promise<R> => {
+    refuseUnwalked(args)
+    const walk = walkProbeOf(null, args)
+    if (walk !== null) await walkAdmit(walk[0], walk[1])
+    const specs = pathsOf(args)
+    hiddenCheck(specs, access?.create)
+    if (access !== undefined) {
+      ruleCheck(...specs)
+      modeCheck(access.firstSource ? specs.slice(1) : specs, access.subtree)
+    }
+    return fn(...args)
   }
-  return op
+  return name === 'exists' ? guarded : policyCall(opPolicyScope(null), guarded, name)
+}
+
+/** Require a capability at call time, after the same guards as an available op. */
+export function requireOp<T extends (...args: never[]) => Promise<unknown>>(
+  op: T | undefined,
+  name: MutationSlot | 'exists',
+): T {
+  if (op !== undefined) return op
+  const refuse = (...args: never[]): Promise<never> => {
+    const specs = pathsOf(args)
+    const named = mutationOf(name)?.firstSource ? specs[1] : specs[0]
+    return Promise.reject(
+      enotsup(
+        'backend',
+        name.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`),
+        named ?? '',
+      ),
+    )
+  }
+  return guardOperation(refuse, name) as unknown as T
 }
 
 /**
- * Whether a read that already failed was really a read of a directory.
+ * Whether a failed or empty read was a read of a directory.
  *
- * Asked only after the read threw, which is what keeps a successful read
- * at exactly one backend call. Nothing is lost by waiting: every backend
- * throws on a directory read. One that knows says so (gdrive, box,
+ * Asked after failure or EOF without bytes: some drivers return an empty
+ * stream for directories. Nonempty reads need no extra probe. One that knows says so (gdrive, box,
  * dropbox and disk throw EISDIR), a keyed store answers ENOENT because a
  * directory there is a set of keys rather than an object, and sftp
  * answers with an error carrying no errno at all.
@@ -1260,7 +1048,10 @@ async function readHitADir<A extends Accessor>(
   index: IndexCacheStore | undefined,
   err: unknown,
 ): Promise<boolean> {
-  if ((err as { code?: string }).code === 'EISDIR') return true
+  if ((err as { code?: string } | null)?.code === 'EISDIR') return true
+  // The path did not resolve at all, which no reading turns into a
+  // directory; its parent may well list the name it simplifies to.
+  if (isDotWalkError(err)) return false
   let st: FileStat | null = null
   try {
     st = await ops.stat(accessor, path, index)
@@ -1287,12 +1078,17 @@ async function* drainRefusingDirs<A extends Accessor>(
   index: IndexCacheStore | undefined,
   source: AsyncIterable<Uint8Array>,
 ): AsyncIterable<Uint8Array> {
+  let empty = true
   try {
-    yield* source
+    for await (const chunk of source) {
+      empty = empty && chunk.byteLength === 0
+      yield chunk
+    }
   } catch (err) {
     if (await readHitADir(ops, accessor, path, index, err)) throw eisdir(path)
     throw err
   }
+  if (empty && (await readHitADir(ops, accessor, path, index, null))) throw eisdir(path)
 }
 
 /**
@@ -1305,8 +1101,8 @@ async function* drainRefusingDirs<A extends Accessor>(
  * raw `ops.readStream` instead, so a directory on a keyed backend
  * reported ENOENT.
  *
- * Refined after the failure, never before it, so a read that succeeds
- * costs exactly what it did. The refusal is built from the operand's own
+ * Refined after failure or an empty read: some drivers return EOF for
+ * directories. Nonempty successful reads need no extra probe. The refusal is built from the operand's own
  * PathSpec, so it carries the virtual path: a raw disk error names the
  * host path, which is the mount's own business and must not reach a
  * user-facing line.
@@ -1318,7 +1114,11 @@ export function withDirGuard<A extends Accessor = Accessor>(ops: CommandIO<A>): 
     ...ops,
     readBytes: async (accessor, path, index) => {
       try {
-        return await ops.readBytes(accessor, path, index)
+        const data = await ops.readBytes(accessor, path, index)
+        if (data.byteLength === 0 && (await readHitADir(ops, accessor, path, index, null))) {
+          throw eisdir(path)
+        }
+        return data
       } catch (err) {
         if (await readHitADir(ops, accessor, path, index, err)) throw eisdir(path)
         throw err
@@ -1335,7 +1135,11 @@ export function withDirGuard<A extends Accessor = Accessor>(ops: CommandIO<A>): 
   if (readRange !== undefined) {
     guarded.readRange = async (accessor, path, index, offset, size) => {
       try {
-        return await readRange(accessor, path, index, offset, size)
+        const data = await readRange(accessor, path, index, offset, size)
+        if (data.byteLength === 0 && (await readHitADir(ops, accessor, path, index, null))) {
+          throw eisdir(path)
+        }
+        return data
       } catch (err) {
         if (await readHitADir(ops, accessor, path, index, err)) throw eisdir(path)
         throw err
@@ -1378,23 +1182,6 @@ export type BuilderFn<A extends Accessor = Accessor> = (
   opts: CommandOpts,
 ) => Promise<CommandFnResult> | CommandFnResult
 
-export type Operation =
-  | 'write'
-  | 'exists'
-  | 'mkdir'
-  | 'unlink'
-  | 'rmdir'
-  | 'rename'
-  | 'copy'
-  | 'truncate'
-
-export function supports<A extends Accessor = Accessor>(
-  ops: CommandIO<A>,
-  requirements: readonly Operation[],
-): boolean {
-  return requirements.every((op) => ops[op] !== undefined)
-}
-
 export interface Builder<A extends Accessor = Accessor> {
   name: string
   fn: BuilderFn<A>
@@ -1402,12 +1189,4 @@ export interface Builder<A extends Accessor = Accessor> {
   write?: boolean
   aggregate?: AggregateFn
   read?: boolean
-  /**
-   * Backend ops the command cannot run without. A backend missing any of
-   * them does not get the command registered at all, rather than getting a
-   * command that throws on every invocation. `write: true` is not enough on
-   * its own: rmdir needs `rmdir`, truncate needs `truncate`, and a backend
-   * can have `write` without either.
-   */
-  requirements?: readonly Operation[]
 }

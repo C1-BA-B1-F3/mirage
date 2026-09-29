@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { rstripSlash } from '../../../../utils/slash.ts'
+
 /**
  * The final segment of a readdir entry, directory marker stripped.
  *
@@ -21,7 +23,7 @@
  * @param entry one entry as the backend reported it
  */
 export function basename(entry: string): string {
-  const trimmed = entry.replace(/\/+$/, '')
+  const trimmed = rstripSlash(entry)
   const cut = trimmed.lastIndexOf('/')
   return cut === -1 ? trimmed : trimmed.slice(cut + 1)
 }

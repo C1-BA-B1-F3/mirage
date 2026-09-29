@@ -92,6 +92,7 @@ jobs:
             data:
               - 'integ/**'
               - 'python/**'
+              - 'typescript/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
               - '.github/actions/integ-battery-setup/action.yml'
@@ -115,7 +116,7 @@ jobs:
               - 'typescript/packages/core/src/core/jaeger/**'
               - 'typescript/packages/core/src/accessor/langfuse.ts'
               - 'typescript/packages/core/src/accessor/jaeger.ts'
-              - 'typescript/packages/node/src/vfs/langfuse/**'
+              - 'typescript/packages/core/src/vfs/langfuse/**'
               - 'typescript/packages/node/src/vfs/jaeger/**'
               - '.github/workflows/test_integ.yml'
               - '.github/actions/setup-node-pnpm/action.yml'
@@ -307,12 +308,12 @@ jobs:
       - name: Start MinIO
         run: |
           for i in $(seq 1 5); do
-            docker pull quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z && break
+            docker pull cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 && break
             echo "docker pull failed (attempt $i), retrying"; sleep 10
           done
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio123 \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+            cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && break
             sleep 1
@@ -320,18 +321,18 @@ jobs:
 
       - name: Create MinIO bucket
         run: |
-          # MinIO archived the open-source server and client: the Docker Hub
-          # repo is gone and dl.min.io serves 410 for the mc binary. quay.io
-          # still carries both at the tags we pin. mc runs in the server's
-          # network namespace, and MC_HOST_local replaces `mc alias set`,
-          # which would not survive a --rm container.
+          # MinIO archived the open-source server and client: Docker Hub and
+          # quay.io no longer serve them and dl.min.io answers 410 for the mc
+          # binary. Chainguard builds both, pinned here by index digest. mc
+          # runs in the server's network namespace, and MC_HOST_local replaces
+          # `mc alias set`, which would not survive a --rm container.
           for i in $(seq 1 5); do
-            docker pull quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z && break
+            docker pull cgr.dev/chainguard/minio-client@sha256:b8b144ab34694ecea25aa352c4be9de4c26ee2a02701521dce02ee5593c57338 && break
             echo "docker pull failed (attempt $i), retrying"; sleep 10
           done
           docker run --rm --network container:minio \
             -e MC_HOST_local="http://minio:minio123@localhost:9000" \
-            quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z \
+            cgr.dev/chainguard/minio-client@sha256:b8b144ab34694ecea25aa352c4be9de4c26ee2a02701521dce02ee5593c57338 \
             mb --ignore-existing local/mirage-integ local/mirage-integ-s3 \
               local/mirage-integ-gcs local/mirage-integ-minio
 
@@ -404,11 +405,17 @@ jobs:
         working-directory: integ
         run: pnpm exec tsx runners/typescript/main.ts --facet argerr --strict
 
+  # Partition the manifest, not cases: every target keeps its ordered stateful
+  # battery, and new core targets automatically run in exactly one shard.
   integ-shared-py:
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     services:
       redis:
         image: redis:7
@@ -463,60 +470,50 @@ jobs:
             -p qjs-wasi.wasm -O /tmp/quickjs/qjs-wasi.wasm
 
       - name: Run declarative battery (python hosts)
-        run: ./python/.venv/bin/python integ/runners/python/main.py --facet core --strict --target-jobs 4 --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_COUNT: ${{ strategy.job-total }}
+        run: |
+          target_ids=$(jq -er --argjson index "$SHARD_INDEX" --argjson count "$SHARD_COUNT" '
+            [.targets[] | select((.facet // "core") == "core")]
+            | to_entries | map(select(.key % $count == $index) | .value.id)
+            | if length == 0 then error("empty core shard") else .[] end
+          ' integ/targets.json)
+          args=()
+          while IFS= read -r target; do
+            args+=(--target "$target")
+          done <<< "$target_ids"
+          ./python/.venv/bin/python integ/runners/python/main.py "${args[@]}" --strict --target-jobs 4 --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
 
       # Moved here from the `integ` job when the HTTP fixture server became a
       # TypeScript kit fake: the adapter still starts it, but the interpreter is
       # tsx now, and this is the python-host job that already has node for
       # exactly that reason.
+      # HTTP is independent of the core shards and runs once per language.
       - name: Run curl/wget battery (HTTP fixture started by the adapter)
+        if: matrix.shard == 0
         run: ./python/.venv/bin/python integ/runners/python/main.py --facet http --strict
 
-  integ-shared-ts:
+  # Keep self-tests off the battery's critical path and timeout budget. These
+  # checks start their own fakes; they do not need the shared service fleet.
+  integ-selftests:
     needs: [changes, typescript-build]
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    services:
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      mongodb:
-        image: mongo:8
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      REDIS_URL: redis://localhost:6379/0
-      # The mail fake serves IMAP and SMTP on the ports GreenMail used, so only
-      # the reset URL is new: seeding moved from an IMAP APPEND loop in each
-      # adapter to one POST the fake answers.
-      EMAIL_HOST: 127.0.0.1
-      MAIL_URL: http://127.0.0.1:5085
-      MONGODB_URI: mongodb://localhost:27017
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/integ-battery-setup
         with:
           build-packages: "false"
           typescript-build-artifact: integ-typescript-dist
+          start-services: "false"
 
       # Every "verified by integ" claim rests on the runner failing when it
-      # tests nothing, so assert the gates themselves before the battery.
-      # This job hosts them because it is the only one with both halves: the
-      # setup action always installs the python venv, and this job also has
-      # the prebuilt mirage TypeScript dist the runner imports. --require-ts
-      # turns an absent tsx into a failure rather than a silent half-run.
+      # tests nothing, so assert the gates themselves in this required job.
+      # Setup installs both the Python venv and the prebuilt TypeScript dist
+      # the runner imports. --require-ts turns an absent tsx into a failure
+      # rather than a silent half-run.
       - name: Assert the integ runner gates (strict exit, services, case ids)
         run: ./python/.venv/bin/python integ/runners/tools/gate_selftest.py --require-ts
 
@@ -544,6 +541,15 @@ jobs:
       - name: Assert the hf_hub fake (card metadata, facets, search, MCP arm)
         working-directory: integ
         run: pnpm run hf-hub:selftest
+
+      # The buckets fake's read wire. mirage reads a bucket file over
+      # paths-info and resolve and stamps the download's ETag as the token
+      # stat reports, so a fake whose CDN answer lost that ETag, or whose
+      # paths-info normalised a path the Hub matches exactly, would let every
+      # `read: fresh` case pass by refetching each time.
+      - name: Assert the hf fake (bucket paths-info, resolve ETag, 416)
+        working-directory: integ
+        run: pnpm run hf:selftest
 
       # And one fake further. Nothing inside mirage speaks to Cloud Storage at
       # all, so this fake has no corpus case of any kind: its three consumers
@@ -586,6 +592,14 @@ jobs:
         working-directory: integ
         run: pnpm run slack:selftest
 
+      - name: Replay MCP-Atlas live Slack recordings
+        working-directory: integ
+        run: pnpm run slack:atlas
+
+      - name: Replay MCP-Atlas live Airtable recordings
+        working-directory: integ
+        run: pnpm run airtable:atlas
+
       # github's corpus coverage is the `gh` porcelain, which never builds
       # history: a client that does calls POST /git/trees then /git/commits, and
       # that is the only path on which a commit can state its own author and
@@ -604,18 +618,76 @@ jobs:
         working-directory: integ
         run: pnpm run launcher:selftest
 
+  integ-shared-ts:
+    needs: [changes, typescript-build]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.core == 'true' || needs.changes.outputs.ts == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1}).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379/0
+      # The mail fake serves IMAP and SMTP on the ports GreenMail used, so only
+      # the reset URL is new: seeding moved from an IMAP APPEND loop in each
+      # adapter to one POST the fake answers.
+      EMAIL_HOST: 127.0.0.1
+      MAIL_URL: http://127.0.0.1:5085
+      MONGODB_URI: mongodb://localhost:27017
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/integ-battery-setup
+        with:
+          build-packages: "false"
+          typescript-build-artifact: integ-typescript-dist
+
       - name: Run declarative battery (typescript hosts)
         working-directory: integ
-        run: pnpm exec tsx runners/typescript/main.ts --facet core --strict --target-jobs 4 --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
+        env:
+          SHARD_INDEX: ${{ matrix.shard }}
+          SHARD_COUNT: ${{ strategy.job-total }}
+        run: |
+          target_ids=$(jq -er --argjson index "$SHARD_INDEX" --argjson count "$SHARD_COUNT" '
+            [.targets[] | select((.facet // "core") == "core")]
+            | to_entries | map(select(.key % $count == $index) | .value.id)
+            | if length == 0 then error("empty core shard") else .[] end
+          ' targets.json)
+          args=()
+          while IFS= read -r target; do
+            args+=(--target "$target")
+          done <<< "$target_ids"
+          pnpm exec tsx runners/typescript/main.ts "${args[@]}" --strict --target-jobs 4 --allow-skip chroma,lancedb,nextcloud,notion,postgres,qdrant
 
       # The fixture server is python (started by the adapter through
       # startPythonServer), so this runs here rather than in integ-ts, which
       # has no python toolchain.
+      # HTTP is independent of the core shards and runs once per language.
       - name: Run curl/wget battery (typescript host)
+        if: matrix.shard == 0
         working-directory: integ
         run: pnpm exec tsx runners/typescript/main.ts --facet http --strict
 
-  # The two jobs above prove each language passes its own battery. This one
+  # The shared battery jobs prove each language passes its own battery. This one
   # runs both emitters and diffs them case by case, so a change that breaks
   # the same way in both languages still fails. Shared targets only (ram,
   # disk, redis) — the credentialed targets stay in their own jobs.
@@ -649,7 +721,7 @@ jobs:
       - name: Diff python and typescript battery output
         run: >-
           ./python/.venv/bin/python integ/runners/parity.py
-          ram disk redis ram-history
+          ram disk disk-host-links redis ram-history
 
   # One job per backend family with both hosts inside it. The postgres, chroma,
   # qdrant and mongodb fleet is the expensive part and was being started twice,
@@ -809,9 +881,7 @@ jobs:
         working-directory: python
         run: uv sync --all-extras --no-extra camel
 
-      # The notion fake is a Node server shared by both hosts, so this
-      # otherwise python-only job needs node to start it. No package build is
-      # required: the notion fake imports only node, prisma and the MCP sdk.
+      # Node runs the shared API fakes and the TypeScript watch cache cases.
       - name: Set up Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
         with:
@@ -864,18 +934,18 @@ jobs:
         run: |
           docker run -d --name minio-watch -p 9000:9000 \
             -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio123 \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+            cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && break
             sleep 1
           done
           for i in $(seq 1 5); do
-            docker pull quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z && break
+            docker pull cgr.dev/chainguard/minio-client@sha256:b8b144ab34694ecea25aa352c4be9de4c26ee2a02701521dce02ee5593c57338 && break
             echo "docker pull failed (attempt $i), retrying"; sleep 10
           done
           docker run --rm --network container:minio-watch \
             -e MC_HOST_local="http://minio:minio123@localhost:9000" \
-            quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z \
+            cgr.dev/chainguard/minio-client@sha256:b8b144ab34694ecea25aa352c4be9de4c26ee2a02701521dce02ee5593c57338 \
             mb --ignore-existing local/mirage-watch
 
       - name: Start MongoDB for the watch battery
@@ -964,11 +1034,12 @@ jobs:
 
       # Its own process on its own port, and seeded EMPTY: the watch battery
       # creates the one repository it watches, where the corpus batteries read
-      # a seeded tree.
+      # a seeded tree. 5103 is no fake's default (gate_selftest checks), so a
+      # fake started without --port cannot take it.
       - name: Start the fake GitHub server
         working-directory: integ
         run: |
-          nohup pnpm exec tsx server/github/main.ts --port 5087 --fixture empty \
+          nohup pnpm exec tsx server/github/main.ts --port 5103 --fixture empty \
             > /tmp/github-watch.log 2>&1 &
           for i in $(seq 1 30); do
             grep -q "GITHUB_URL=" /tmp/github-watch.log && break
@@ -976,6 +1047,21 @@ jobs:
           done
           cat /tmp/github-watch.log
           grep -q "GITHUB_URL=" /tmp/github-watch.log
+
+      - name: Build packages for cross-host watch cache tests
+        working-directory: typescript
+        run: pnpm --filter @struktoai/mirage-node... build
+
+      - name: Watch cache invalidation (both hosts)
+        env:
+          S3_ENDPOINT: http://localhost:9000
+          S3_BUCKET: mirage-watch
+          S3_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: minio
+          AWS_SECRET_ACCESS_KEY: minio123
+        run: |
+          ./python/.venv/bin/python integ/watch/cache/run.py
+          pnpm -C integ exec tsx watch/cache/run.ts
 
       - name: Run watch battery
         env:
@@ -993,7 +1079,7 @@ jobs:
           BOX_URL: http://127.0.0.1:5096
           ONEDRIVE_URL: http://127.0.0.1:5089
           HF_URL: http://127.0.0.1:5099
-          GITHUB_URL: http://127.0.0.1:5087
+          GITHUB_URL: http://127.0.0.1:5103
           WATCH_RESULTS_FILE: /tmp/watch-battery-results.txt
         run: ./python/.venv/bin/python integ/watch/run.py
 
@@ -1431,12 +1517,12 @@ jobs:
         if: env.NEEDS_MINIO == '1'
         run: |
           for i in $(seq 1 5); do
-            docker pull quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z && break
+            docker pull cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 && break
             echo "docker pull failed (attempt $i), retrying"; sleep 10
           done
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio123 \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+            cgr.dev/chainguard/minio@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1 server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && break
             sleep 1
@@ -1642,9 +1728,21 @@ jobs:
           echo "TRELLO_URL=http://127.0.0.1:5095" >> "$GITHUB_ENV"
           echo "LINEAR_URL=http://127.0.0.1:5094" >> "$GITHUB_ENV"
 
+      # The airtable mount runs in the project facet and its CLI in the cli
+      # facet, against the same fake.
+      - name: Start fake Airtable API
+        if: matrix.facet == 'project' || matrix.facet == 'cli'
+        working-directory: integ
+        run: |
+          nohup ./node_modules/.bin/tsx server/airtable/main.ts --port 5101 > /tmp/airtable.log 2>&1 &
+          for i in $(seq 1 30); do grep -q "AIRTABLE_URL=" /tmp/airtable.log && break; sleep 1; done
+          cat /tmp/airtable.log
+          grep -q "AIRTABLE_URL=" /tmp/airtable.log
+          echo "AIRTABLE_URL=http://127.0.0.1:5101" >> "$GITHUB_ENV"
+
       # The cli facet drives the builtin CLIs (himalaya, gws, slack, discord,
-      # ntn, linear) end to end against the same mocks the email, chat and
-      # project facets use.
+      # ntn, linear, airtable) end to end against the same mocks the email,
+      # chat and project facets use.
       - name: Start the fake mail and Google Workspace servers
         if: matrix.facet == 'email' || matrix.facet == 'cli'
         run: |
@@ -1778,7 +1876,7 @@ jobs:
   gate:
     name: integ-gate
     runs-on: ubuntu-latest
-    needs: [changes, typescript-build, integ, integ-ts, integ-shared-py, integ-shared-ts, integ-shared-parity, integ-database, integ-data, integ-fuse, integ-observability, integ-facets, integ-runtime, integ-wandb]
+    needs: [changes, typescript-build, integ, integ-ts, integ-shared-py, integ-shared-ts, integ-selftests, integ-shared-parity, integ-database, integ-data, integ-fuse, integ-observability, integ-facets, integ-runtime, integ-wandb]
     if: always()
     steps:
       - name: Check required jobs

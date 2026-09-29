@@ -474,6 +474,30 @@ class Namespace:
             return path
         return resolve_symlinks(path, targets)
 
+    def follow_parent(self, path: str) -> str:
+        """Return ``path`` with every link above its final name resolved.
+
+        The walk the kernel gives a path before the call sees it: every
+        component but the last is followed, and the last is the op's own
+        to follow or not (stat against lstat). Identity when no link sits
+        above the name, a trailing slash included.
+
+        Args:
+            path (str): absolute virtual path.
+
+        Raises:
+            CycleError: when resolution exceeds the hop limit (ELOOP).
+        """
+        trimmed = path.rstrip("/")
+        parent, _, name = trimmed.rpartition("/")
+        if not name:
+            return path
+        above = parent or "/"
+        resolved = self.follow(above)
+        if resolved == above:
+            return path
+        return resolved.rstrip("/") + path[len(parent):]
+
     def link_stat_at(self, path: str) -> FileStat | None:
         """lstat a path: the link's own stat, or None when not a link.
 
@@ -583,17 +607,22 @@ class Namespace:
         await self._store.delete([path for path, _meta in moved])
         return len(moved)
 
-    async def purge_under(self, directory: str) -> int:
+    async def purge_under(
+        self, directory: str, keep: frozenset[str] = frozenset()) -> int:
         """Drop every node entry under a directory (``rm -r`` semantics).
 
         Args:
             directory (str): absolute virtual directory path being removed.
+            keep (frozenset[str]): entries under it that survive.
 
         Returns:
             int: number of entries dropped.
         """
         base = directory.rstrip("/") + "/"
-        doomed = [path for path in self._nodes if path.startswith(base)]
+        doomed = [
+            path for path in self._nodes
+            if path.startswith(base) and path not in keep
+        ]
         for path in doomed:
             del self._nodes[path]
         if doomed:

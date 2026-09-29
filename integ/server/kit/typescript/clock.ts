@@ -37,7 +37,18 @@ export class Clock {
   }
 
   nowIso(millis = true): string {
-    const d = new Date(this.nowMs())
-    return millis ? d.toISOString() : d.toISOString().replace(/\.\d{3}Z$/, 'Z')
+    return iso(this.nowMs(), millis)
   }
+
+  // The stamp the latest tick handed out, without ticking: for a record that
+  // has to sort after the writes before it, where another tick would move
+  // every later timestamp a fixture or golden already pins.
+  lastIso(millis = true): string {
+    return iso(this.baseMs + this.ticks * TICK_MS, millis)
+  }
+}
+
+function iso(ms: number, millis: boolean): string {
+  const d = new Date(ms)
+  return millis ? d.toISOString() : d.toISOString().replace(/\.\d{3}Z$/, 'Z')
 }

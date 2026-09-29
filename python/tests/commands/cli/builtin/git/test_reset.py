@@ -128,3 +128,11 @@ async def test_an_unknown_switch_is_refused(git_rw):
     code, _out, err = await run(git_rw, "reset -Z")
     assert code == 129
     assert err == b"error: unknown switch `Z'\n"
+
+
+@pytest.mark.asyncio
+async def test_quiet_unstages_without_a_report(git_rw, repo_path: Path):
+    (repo_path / "a.txt").write_text("edited\n", encoding="utf-8")
+    await run(git_rw, "add -A")
+    assert await run(git_rw, "reset -q") == (0, b"", b"")
+    assert (await run(git_rw, "status --porcelain"))[1] == b" M a.txt\n"

@@ -18,9 +18,12 @@ import { parseRepo, type RepoRef } from '../../../../core/github/repo.ts'
 import { jqEval } from '../../../../core/jq/index.ts'
 import { UsageError } from '../../../errors.ts'
 import type { FlagView } from '../../../spec/flag_view.ts'
+import type { FlagValue } from '../../../spec/types.ts'
 import { IOResult, materialize, type ByteSource } from '../../../../io/types.ts'
 import { PathSpec } from '../../../../types.ts'
+import { fsStrerror, isEnoent, isEnotdir } from '../../../../utils/errors.ts'
 import { resolvePath } from '../../../../utils/path.ts'
+import { compareCodePoints } from '../../../../utils/sort.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
 
@@ -84,39 +87,29 @@ export function csvValues(values: readonly string[]): string[] {
   )
 }
 
-function dashOption(inv: CLIInvocation, options: readonly string[]): boolean {
-  return options.some((option) =>
-    inv.argv.some(
-      (word, index) =>
-        word === `${option}=-` ||
-        (option.length === 2 && word === `${option}-`) ||
-        (word === option && inv.argv[index + 1] === '-'),
-    ),
-  )
-}
-
 export async function readCliFile(
   inv: CLIInvocation,
-  raw: unknown,
+  raw: FlagValue,
   option: string,
-  ...aliases: string[]
 ): Promise<Uint8Array> {
-  if (typeof raw !== 'string') throw new Error(`${option} expects a file`)
-  const path = raw === '-' || dashOption(inv, [option, ...aliases]) ? '-' : raw
+  if (!(raw instanceof PathSpec) && typeof raw !== 'string') {
+    throw new Error(`${option} expects a file`)
+  }
+  const path = raw instanceof PathSpec ? raw.rawPath : raw
   if (path === '-') {
     if (inv.stdin === null) throw new Error(`${option} needs standard input`)
     return materialize(inv.stdin)
   }
   const dispatch = inv.doors?.dispatch
   if (dispatch === undefined) throw new Error(`${option} needs a workspace to read files from`)
-  const virtual = resolvePath(path, inv.env.PWD ?? '/')
+  const spec =
+    raw instanceof PathSpec ? raw : PathSpec.fromStrPath(resolvePath(raw, inv.env.PWD ?? '/'))
   try {
-    const [data] = await dispatch('read', PathSpec.fromStrPath(virtual))
+    const [data] = await dispatch('read', spec)
     return await materialize(data as ByteSource)
   } catch (err) {
-    if (err instanceof Error && err.name === 'FileNotFoundError') {
-      throw new Error(`read ${path}: No such file or directory`)
-    }
+    const strerror = isEnoent(err) || isEnotdir(err) ? fsStrerror(err) : null
+    if (strerror !== null) throw new Error(`read ${path}: ${strerror}`)
     throw err
   }
 }
@@ -137,7 +130,7 @@ export async function bodyValue(
   }
   if (inline !== undefined) return inline
   if (source !== undefined)
-    return new TextDecoder().decode(await readCliFile(inv, source, fileFlag, '-F'))
+    return new TextDecoder().decode(await readCliFile(inv, source, fileFlag))
   if (opts.required === true) throw new Error(`${valueFlag} or ${fileFlag} is required`)
   return undefined
 }
@@ -175,13 +168,48 @@ function jqLine(value: unknown): string {
   return JSON.stringify(value)
 }
 
+/**
+ * Each row cut to the fields asked for, keys in sorted order: gh exports a
+ * Go map, which its JSON encoder always writes sorted.
+ */
 function select(value: unknown, fields: string[]): unknown {
   const rows = Array.isArray(value) ? value : [value]
+  const keys = [...new Set(fields)].sort(compareCodePoints)
   const selected = rows.map((row) => {
     const source = row !== null && typeof row === 'object' ? (row as Record<string, unknown>) : {}
-    return Object.fromEntries(fields.map((field) => [field, source[field] ?? null]))
+    return Object.fromEntries(keys.map((field) => [field, source[field] ?? null]))
   })
   return Array.isArray(value) ? selected : selected[0]
+}
+
+/**
+ * The `--json` fields a line asked for, null without `--json`.
+ *
+ * Checked before any request, as gh checks them: a field gh does not export
+ * is refused with gh's own message and every field it does, sorted, exit 1.
+ */
+export function jsonFields(fl: FlagView, allowed: readonly string[]): string[] | null {
+  const spelled = fl.asStr('json')
+  if (spelled === undefined) return null
+  const fields = csvValues([spelled])
+  const listing = [...allowed].sort(compareCodePoints).map((field) => `  ${field}`)
+  if (fields.length === 0) {
+    throw new UsageError(
+      ['Specify one or more comma-separated fields for `--json`:', ...listing].join('\n'),
+      1,
+    )
+  }
+  const known = new Set(allowed)
+  const unknown = fields.find((field) => !known.has(field))
+  if (unknown !== undefined) {
+    throw new UsageError(
+      [`Unknown JSON field: ${JSON.stringify(unknown)}`, 'Available fields:', ...listing].join(
+        '\n',
+      ),
+      1,
+    )
+  }
+  return fields
 }
 
 export async function typedOut(
@@ -190,16 +218,12 @@ export async function typedOut(
   human: string,
   allowed: readonly string[],
 ): Promise<CommandFnResult> {
-  const jsonFields = fl.asStr('json')
   const program = fl.asStr('jq')
-  if (jsonFields === undefined) {
+  const fields = jsonFields(fl, allowed)
+  if (fields === null) {
     if (program !== undefined && program !== '') throw new UsageError('--jq requires --json')
     return textOut(human)
   }
-  const fields = csvValues([jsonFields])
-  const known = new Set(allowed)
-  const unknown = fields.find((field) => !known.has(field))
-  if (unknown !== undefined) throw new UsageError(`unknown JSON field: ${unknown}`)
   const selected = select(value, fields)
   if (program !== undefined && program !== '') {
     const values = await jqEval(selected, program)

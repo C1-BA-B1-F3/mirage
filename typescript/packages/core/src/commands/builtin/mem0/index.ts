@@ -6,8 +6,6 @@ import { MEM0_IO } from './io.ts'
 import { MEM0_SEARCH } from './search.ts'
 
 export const MEM0_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<Mem0Accessor>(VFSName.MEM0, MEM0_IO, {
-    overrides: new Set(['search']),
-  }),
+  ...makeGenericCommands<Mem0Accessor>(VFSName.MEM0, MEM0_IO),
   ...MEM0_SEARCH,
 ]

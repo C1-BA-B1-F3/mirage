@@ -12,13 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { stdinStream } from '../utils/stream.ts'
+import { isStdin, stdinStream } from '../utils/stream.ts'
 import { cacheAwareStreamEager } from '../../../cache/read_through.ts'
 import { guardInput } from '../utils/limit.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { fsErrorLine, isFsError } from '../../../utils/errors.ts'
+import { fsErrorLine, isEisdir, isFsError } from '../../../utils/errors.ts'
 import { resolveSource } from '../utils/stream.ts'
 import { formatRecords } from '../utils/output.ts'
 import { argmatchError } from '../../spec/usage.ts'
@@ -27,6 +27,7 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { type FlagValue } from '../../spec/types.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { advanceColumn, isSpace } from '../../../utils/width.ts'
+import { shellQuote } from '../../../utils/quote.ts'
 
 const ENC = new TextEncoder()
 
@@ -161,29 +162,60 @@ function addCounts(total: WcCounts, counts: WcCounts): void {
   total.maxLineLength = Math.max(total.maxLineLength, counts.maxLineLength)
 }
 
-// GNU wc layout: counts right-aligned to a shared width and space-separated;
-// a single count for a single operand prints unpadded, and a default-mode
-// stdin read uses GNU's width 7 for unknown sizes. Divergence from GNU: the
-// width is the widest printed number, while GNU derives it from operand file
-// sizes; the two are identical in the default mode, where the byte count is
-// the widest column.
-export function formatWcLines(rows: WcRow[]): string[] {
+/**
+ * GNU wc's column width, which it takes from the operands.
+ *
+ * One operand, or stdin, shown with one count prints unpadded. Otherwise the
+ * width is the digits of the regular files' total size, and at least 7 once
+ * any operand is a stream or a directory, whose size GNU cannot know
+ * (coreutils 9.7). A redirected file reaches mirage as a stream, so
+ * `wc < file` pads to 7 where GNU pads to the file's size. `sizes` holds, per
+ * operand that opened, a regular file's size or null for a stream or a
+ * directory; `operands` counts the operands given, 1 for stdin. Mirrors
+ * Python's number_width.
+ */
+export function numberWidth(
+  sizes: readonly (number | null)[],
+  operands: number,
+  counts: number,
+): number {
+  if (operands <= 1 && counts === 1) return 1
+  let total = 0
+  for (const size of sizes) total += size ?? 0
+  const width = String(total).length
+  return sizes.includes(null) ? Math.max(width, 7) : width
+}
+
+// One report row under GNU's name rule (coreutils 9.7 wc.c): a name holding a
+// newline is shell-quoted, as quotef does, so no row spans two lines; every
+// other name, spaces included, prints as itself. Mirrors Python's labelled.
+function labelled(body: string, label: string | null): string {
+  if (label === null) return body
+  return `${body} ${label.includes('\n') ? shellQuote(label) : label}`
+}
+
+// GNU wc layout: counts right-aligned to a shared width and space-separated.
+// A caller that knows its operands passes GNU's width (numberWidth); one that
+// holds only counts, such as a database push-down that never renders its
+// files, gets the widest printed number, with a single count for a single
+// operand unpadded and a lone unlabelled row at GNU's 7.
+export function formatWcLines(rows: WcRow[], width: number | null = null): string[] {
   const first = rows[0]
-  if (rows.length === 1 && first?.values.length === 1) {
+  if (width === null && rows.length === 1 && first?.values.length === 1) {
     const body = String(first.values[0])
-    return [first.label === null ? body : `${body} ${first.label}`]
+    return [labelled(body, first.label)]
   }
-  let width = 1
-  if (rows.length === 1 && first?.label === null) {
-    width = 7
-  } else {
+  let pad = width ?? 1
+  if (width === null && rows.length === 1 && first?.label === null) {
+    pad = 7
+  } else if (width === null) {
     for (const row of rows) {
-      for (const n of row.values) width = Math.max(width, String(n).length)
+      for (const n of row.values) pad = Math.max(pad, String(n).length)
     }
   }
   return rows.map((row) => {
-    const body = row.values.map((n) => String(n).padStart(width)).join(' ')
-    return row.label === null ? body : `${body} ${row.label}`
+    const body = row.values.map((n) => String(n).padStart(pad)).join(' ')
+    return labelled(body, row.label)
   })
 }
 
@@ -195,6 +227,7 @@ export function formatCountRows(
   totalValues: number[],
   operandCount: number,
   total: WcFlags['total'],
+  width: number | null = null,
 ): ByteSource | null {
   if (total === 'only') return ENC.encode(`${totalValues.join(' ')}\n`)
   const out = [...rows]
@@ -202,7 +235,12 @@ export function formatCountRows(
     out.push({ values: totalValues, label: 'total' })
   }
   if (out.length === 0) return null
-  return formatRecords(formatWcLines(out))
+  return formatRecords(formatWcLines(out, width))
+}
+
+/** How many columns a row shows under these flags. */
+export function shownCounts(flags: WcFlags): number {
+  return selectedValues({ lines: 0, words: 0, bytes: 0, chars: 0, maxLineLength: 0 }, flags).length
 }
 
 export async function wcGeneric(
@@ -218,6 +256,7 @@ export async function wcGeneric(
   }
   if (paths.length > 0) {
     const rows: WcRow[] = []
+    const sizes: (number | null)[] = []
     const total: WcCounts = { lines: 0, words: 0, bytes: 0, chars: 0, maxLineLength: 0 }
     let err = ''
     for (const p of paths) {
@@ -227,16 +266,28 @@ export async function wcGeneric(
       } catch (e) {
         if (!isFsError(e)) throw e
         err += fsErrorLine('wc', p, e)
+        // GNU opens a directory and fails only to read it, so it prints a row
+        // of zeros beside the error and pads as for a stream.
+        if (isEisdir(e)) {
+          const zero = { lines: 0, words: 0, bytes: 0, chars: 0, maxLineLength: 0 }
+          rows.push({ values: selectedValues(zero, parsed), label: p.rawPath })
+          sizes.push(null)
+        }
         continue
       }
       rows.push({ values: selectedValues(counts, parsed), label: p.rawPath })
+      sizes.push(isStdin(p) ? null : counts.bytes)
       addCounts(total, counts)
     }
+    const width = numberWidth(sizes, paths.length, shownCounts(parsed))
     const io = new IOResult({
       exitCode: err === '' ? 0 : 1,
       stderr: err === '' ? null : ENC.encode(err),
     })
-    return [formatCountRows(rows, selectedValues(total, parsed), paths.length, parsed.total), io]
+    return [
+      formatCountRows(rows, selectedValues(total, parsed), paths.length, parsed.total, width),
+      io,
+    ]
   }
   let source: AsyncIterable<Uint8Array>
   try {
@@ -252,5 +303,6 @@ export async function wcGeneric(
   }
   const rows: WcRow[] = [{ values, label: null }]
   if (parsed.total === 'always') rows.push({ values, label: 'total' })
-  return [formatRecords(formatWcLines(rows)), new IOResult()]
+  const width = numberWidth([null], 1, values.length)
+  return [formatRecords(formatWcLines(rows, width)), new IOResult()]
 }

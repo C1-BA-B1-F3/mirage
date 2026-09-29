@@ -12,9 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class DiscordConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     token: SecretStr
     base_url: str | None = None

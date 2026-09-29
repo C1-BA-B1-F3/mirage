@@ -1,8 +1,9 @@
 from mirage.accessor.dify import DifyAccessor
-from mirage.core.dify import search as search_core
+from mirage.commands.builtin.dify.io import IO
 from mirage.ops.registry import op
 from mirage.types import PathSpec
-from mirage.utils.key_prefix import mount_prefix_of
+from mirage.vfs.search import search_resources
+from mirage.vfs.types import SearchQuery
 
 
 @op("search", vfs="dify")
@@ -15,11 +16,10 @@ async def search(
     **kwargs,
 ) -> bytes:
     explicit_prefix = kwargs.pop("mount_prefix", "")
-    mount_prefix = mount_prefix_of(
-        paths[0].virtual, paths[0].vfs_path) if paths else explicit_prefix
-    return await search_core.search_segments(accessor,
-                                             query,
-                                             paths,
-                                             index,
-                                             mount_prefix=mount_prefix,
-                                             **kwargs)
+    targets = paths or [
+        PathSpec(virtual=explicit_prefix or "/",
+                 directory=explicit_prefix or "/",
+                 vfs_path="")
+    ]
+    return await search_resources(IO.search, accessor, targets,
+                                  SearchQuery(query, options=kwargs), index)

@@ -16,9 +16,8 @@ import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import { record, startOp } from '@struktoai/mirage-core/observe/context'
 import { VFSName } from '@struktoai/mirage-core/types'
 import type { PathSpec } from '@struktoai/mirage-core/types'
-import { eisdir, enoent } from '@struktoai/mirage-core/utils/errors'
 import type { OPFSAccessor } from '../../accessor/opfs.ts'
-import { isNotFound, resolveFileHandle } from './utils.ts'
+import { openError, resolveFileHandle } from './utils.ts'
 
 /**
  * Read a file, optionally only a byte range of it.
@@ -44,14 +43,14 @@ export async function read(
   const size = options?.size ?? null
   const root = await accessor.root()
   const timer = startOp()
-  const virtual = path.mountPath
+  const key = path.mountPath
   let handle: FileSystemFileHandle
   try {
-    handle = await resolveFileHandle(root, virtual, { create: false })
+    handle = await resolveFileHandle(root, key, { create: false })
   } catch (err) {
-    if (isNotFound(err)) throw enoent(path)
-    if (err instanceof DOMException && err.name === 'TypeMismatchError') throw eisdir(path)
-    throw err
+    // One TypeMismatchError for a directory at the leaf (EISDIR) and for a
+    // plain file in the chain (ENOTDIR); openError tells them apart.
+    throw await openError(root, key, err, path)
   }
   const file = await handle.getFile()
   const window =
@@ -59,6 +58,6 @@ export async function read(
       ? file
       : file.slice(offset, size === null ? undefined : offset + size)
   const bytes = new Uint8Array(await window.arrayBuffer())
-  record('read', virtual, VFSName.OPFS, bytes.byteLength, timer)
+  record('read', path.virtual, VFSName.OPFS, bytes.byteLength, timer)
   return bytes
 }

@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { BoxAccessor } from '../../../accessor/box.ts'
 import { size as boxDu, entries as boxDuAll } from '../../../core/box/du/index.ts'
 import { read as boxRead, stream as boxStream } from '../../../core/box/read.ts'
@@ -31,31 +33,26 @@ import {
 } from '../../../core/box/write.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const BOX_IO: CommandIO<BoxAccessor> = {
-  readdir: boxReaddir,
-  readBytes: boxRead,
-  readRange: rangeOf(boxRead),
-  readStream: boxStream,
-  stat: boxStat,
+export const BOX_IO: CommandIO<BoxAccessor> = new VFSAdapter<BoxAccessor>({
+  read: { readdir: boxReaddir, readBytes: boxRead, stat: boxStat },
+  native: {
+    readRange: rangeOf(boxRead),
+    readStream: boxStream,
+    du: { size: boxDu, entries: boxDuAll },
+    exists: boxExists,
+  },
+  writes: {
+    write: boxWrite,
+    mkdir: boxMkdir,
+    unlink: boxUnlink,
+    rmdir: boxRmdir,
+    rmR: boxRmR,
+    rename: boxRename,
+    copy: boxCopy,
+    dirCopy: boxCopy,
+    create: boxCreate,
+    truncate: boxTruncate,
+  },
   isMounted: () => true,
   local: false,
-  du: { size: boxDu, entries: boxDuAll },
-  write: boxWrite,
-  exists: boxExists,
-  mkdir: boxMkdir,
-  unlink: boxUnlink,
-  rmdir: boxRmdir,
-  rmR: boxRmR,
-  rename: boxRename,
-  copy: boxCopy,
-  dirCopy: boxCopy,
-  create: boxCreate,
-  truncate: boxTruncate,
-  // No `find` slot on purpose, matching python. A native op is worth
-  // wiring only when it pushes the search down to the API; Box has no
-  // such call, so the op could only re-walk readdir/stat — which is what
-  // the find and cp builders already do, except they walk with the
-  // mount's own index, the namespace stat overlay (`find -mtime` after a
-  // `touch -d`) and the symlink table (`-empty`). Wiring the walk as an
-  // op silently dropped all three.
-}
+}).toCommandIO()

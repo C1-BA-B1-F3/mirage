@@ -43,3 +43,16 @@ describe('isCreateMode', () => {
     expect(isCreateMode(['-cf', 'a.tar', '--', '-c'])).toBe(true)
   })
 })
+
+describe('isCreateMode on long words', () => {
+  // Mirrors python's test_a_long_word_reads_as_tars_getopt_long_reads_it.
+  it.each([
+    [['--crea', '-f', 'a.tar', 'd'], true],
+    [['--cr=x'], true],
+    // Ambiguous in tar's own table, so no mode at all.
+    [['--c', '-f', 'a.tar'], false],
+    [['--get', '-f', 'a.tar'], false],
+  ])('%j reads as tar reads it', (argv, create) => {
+    expect(isCreateMode(argv)).toBe(create)
+  })
+})

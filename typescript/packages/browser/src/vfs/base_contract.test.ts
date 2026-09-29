@@ -18,7 +18,7 @@ import { BaseVFS, VFS_BRAND } from '@struktoai/mirage-core/vfs/base'
 import { describe, expect, it } from 'vitest'
 import * as browserPkg from '../index.ts'
 import { Workspace } from '../workspace.ts'
-import { TrelloVFS } from './trello/trello.ts'
+import { SlackVFS } from './slack/slack.ts'
 
 type Ctor = new (...args: never[]) => unknown
 
@@ -31,8 +31,10 @@ const VFS_CLASSES = Object.entries(browserPkg as Record<string, unknown>).filter
     /^[A-Z]\w*VFS$/.test(entry[0]) && typeof entry[1] === 'function' && !NOT_BACKENDS.has(entry[0]),
 )
 
-function trello(): TrelloVFS {
-  return new TrelloVFS({ apiKey: 'k', apiToken: 't' })
+// A browser-owned class, so the contract is exercised on a browser VFS
+// rather than on one of the twins single-sourced in core.
+function slack(): SlackVFS {
+  return new SlackVFS({ proxyUrl: '/api/slack' })
 }
 
 // The contract is the class, so extending it is the only way to satisfy
@@ -52,11 +54,11 @@ describe('every exported VFS inherits the BaseVFS contract', () => {
 
 describe('a browser VFS honors the base contract', () => {
   it('carries the brand', () => {
-    expect(trello()[VFS_BRAND]).toBe(true)
+    expect(slack()[VFS_BRAND]).toBe(true)
   })
 
   it('runs under the index the workspace asked for', async () => {
-    const ws = new Workspace({ '/t': trello() }, { index: { type: IndexType.RAM, ttl: 5 } })
+    const ws = new Workspace({ '/t': slack() }, { index: { type: IndexType.RAM, ttl: 5 } })
     try {
       const index = ws.mount('/t').indexStore
       expect(index).toBeInstanceOf(RAMIndexCacheStore)
@@ -67,7 +69,7 @@ describe('a browser VFS honors the base contract', () => {
   })
 
   it('closes once and stays closed', async () => {
-    const r = trello()
+    const r = slack()
     expect(r.isClosed).toBe(false)
     await r.close()
     await r.close()

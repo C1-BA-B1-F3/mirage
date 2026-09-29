@@ -17,6 +17,5 @@ from typing import Callable
 
 from mirage.types import FileStat
 
-AsyncReadBytes = Callable[[str], Awaitable[bytes]]
 AsyncStat = Callable[[str], Awaitable[FileStat]]
 AsyncReaddir = Callable[[str], Awaitable[list[str]]]

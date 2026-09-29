@@ -14,7 +14,7 @@
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.cache.context import invalidate_subtree
-from mirage.core.redis.dest import check_dest_parents
+from mirage.core.redis.dest import check_dest_parents, lookup_error
 from mirage.core.timeutil import now_iso
 from mirage.types import PathSpec
 from mirage.utils.path import norm
@@ -100,6 +100,6 @@ async def rename(
             await store.set_attrs(d, attrs)
         await _move_subtree(store, s, d)
     else:
-        raise FileNotFoundError(s)
+        raise await lookup_error(store, src_spec, s)
     await invalidate_subtree(dst_spec)
     await invalidate_subtree(src_spec)

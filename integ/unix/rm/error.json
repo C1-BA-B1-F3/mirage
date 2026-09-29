@@ -96,6 +96,67 @@
       "flags": [
         "f"
       ]
+    },
+    {
+      "id": "rm_f_without_operands_is_silent",
+      "seq": 1231042,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && rm -f; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "rm_without_operands_is_a_usage_error",
+      "seq": 1231043,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && rm",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "rm: missing operand\nTry 'rm --help' for more information.\n"
+      }
     }
   ]
 }

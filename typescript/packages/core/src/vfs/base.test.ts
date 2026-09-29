@@ -14,6 +14,8 @@
 
 import { describe, expect, it } from 'vitest'
 import { Accessor } from '../accessor/base.ts'
+import { RAMAccessor } from '../accessor/ram.ts'
+import { RAM_IO } from '../commands/builtin/ram/io.ts'
 import type { CommandIO } from '../commands/builtin/generic_bind/index.ts'
 import { streamFromBytes } from '../commands/builtin/utils/wrap.ts'
 import { command, type RegisteredCommand } from '../commands/config.ts'
@@ -26,6 +28,8 @@ import { getTestParser, stdoutStr } from '../workspace/fixtures/workspace_fixtur
 import { buildMountArgs, toStateDict } from '../workspace/snapshot/state.ts'
 import { Workspace } from '../workspace/workspace/workspace.ts'
 import { BaseVFS, VFS_BRAND, type VFSOptions } from './base.ts'
+import { RAMVFS } from './ram/ram.ts'
+import { RAMStore } from './ram/store.ts'
 import { vfsStateRequiresOverride } from './secrets.ts'
 
 const ENC = new TextEncoder()
@@ -226,10 +230,11 @@ describe('BaseVFS wires a backend from one CommandIO table', () => {
     }
   })
 
-  it('leaves out write commands the table cannot serve', () => {
+  it('registers write commands the table cannot serve', () => {
+    // Their read-only modes (`tee` with no operand, `gzip -c`) run on a
+    // backend without writes; a line that writes answers ENOTSUP there.
     const names = commandNames(makeVfs())
-    expect(names).not.toContain('tee')
-    expect(names).not.toContain('rm')
+    for (const name of ['tee', 'rm', 'gzip', 'tar']) expect(names).toContain(name)
   })
 
   it('suppresses a generic the backend overrides', () => {
@@ -351,5 +356,117 @@ describe('BaseVFS wires a backend from one CommandIO table', () => {
     expect(await ops(vfs).read(spec)).toEqual(ENC.encode('written\n'))
     await ops(vfs).unlink(spec)
     expect(await exists(accessor, spec)).toBe(false)
+  })
+})
+
+describe('custom VFS capability fallbacks', () => {
+  it.each(
+    ['-r', '-rv', '-rf', '-d'].flatMap((flag) =>
+      [MountMode.READ, MountMode.WRITE].map((mode) => ({ flag, mode })),
+    ),
+  )('continues removal after an unavailable directory op: $flag $mode', async ({ flag, mode }) => {
+    const store = new RAMStore()
+    store.dirs.add('/empty')
+    store.files.set('/file', ENC.encode('keep'))
+    const io = { ...RAM_IO }
+    delete io.rmR
+    delete io.rmdir
+    const vfs = new BaseVFS({ name: 'custom', accessor: new RAMAccessor(store), io })
+    const ws = new Workspace({ '/custom': [vfs, mode] }, { shellParser: await getTestParser() })
+    try {
+      const result = await ws.shell(`rm ${flag} /custom/empty /custom/file`)
+      const reason = mode === MountMode.READ ? 'Read-only file system' : 'Operation not supported'
+      let expected = `rm: cannot remove '/custom/empty': ${reason}\n`
+      if (mode === MountMode.READ)
+        expected += "rm: cannot remove '/custom/file': Read-only file system\n"
+      expect(result.exitCode).toBe(1)
+      expect(new TextDecoder().decode(result.stderr)).toBe(expected)
+      expect(store.dirs.has('/empty')).toBe(true)
+      expect(store.files.has('/file')).toBe(mode === MountMode.READ)
+      expect(stdoutStr(result)).toBe(
+        flag === '-rv' && mode === MountMode.WRITE ? "removed '/custom/file'\n" : '',
+      )
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it.each(['-r', '-rv', '-r --update=all', '-r -n'])(
+    'copies without native copy: %s',
+    async (flags) => {
+      const store = new RAMStore()
+      for (const dir of ['/src', '/src/empty', '/src/sub']) store.dirs.add(dir)
+      store.files.set('/src/sub/file', ENC.encode('payload'))
+      const io = { ...RAM_IO }
+      delete io.copy
+      delete io.find
+      const vfs = new BaseVFS({ name: 'custom', accessor: new RAMAccessor(store), io })
+      const ws = new Workspace(
+        { '/custom': vfs },
+        { mode: MountMode.WRITE, shellParser: await getTestParser() },
+      )
+      try {
+        const result = await ws.shell(`cp ${flags} /custom/src /custom/dst`)
+        expect(result.exitCode).toBe(0)
+        expect(new TextDecoder().decode(result.stderr)).toBe('')
+        expect(store.files.get('/dst/sub/file')).toEqual(ENC.encode('payload'))
+        for (const dir of ['/dst', '/dst/empty', '/dst/sub']) expect(store.dirs.has(dir)).toBe(true)
+        const plain = await ws.shell('cp /custom/src/sub/file /custom/plain')
+        expect(plain.exitCode).toBe(0)
+        expect(store.files.get('/plain')).toEqual(ENC.encode('payload'))
+      } finally {
+        await ws.close()
+      }
+    },
+  )
+
+  it.each(
+    ['-r', '-r --update=older', '-r -n', '-r --backup'].flatMap((flags) =>
+      [MountMode.READ, MountMode.WRITE].map((mode) => ({ flags, mode })),
+    ),
+  )('leaves no directories when copy is unavailable: $flags $mode', async ({ flags, mode }) => {
+    const store = new RAMStore()
+    for (const dir of ['/src', '/src/empty']) store.dirs.add(dir)
+    store.files.set('/src/file', ENC.encode('payload'))
+    const before = new Set(store.dirs)
+    const io = { ...RAM_IO }
+    delete io.copy
+    delete io.write
+    const vfs = new BaseVFS({ name: 'custom', accessor: new RAMAccessor(store), io })
+    const ws = new Workspace({ '/custom': [vfs, mode] }, { shellParser: await getTestParser() })
+    try {
+      const result = await ws.shell(`cp ${flags} /custom/src /custom/dst`)
+      const reason = mode === MountMode.READ ? 'Read-only file system' : 'Operation not supported'
+      expect(result.exitCode).toBe(1)
+      expect(new TextDecoder().decode(result.stderr)).toBe(
+        `cp: cannot create directory '/custom/dst': ${reason}\n`,
+      )
+      expect(store.dirs).toEqual(before)
+      expect([...store.files.keys()]).toEqual(['/src/file'])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it.each([false, true])('builtin and custom writes obey mount mode, custom=%s', async (custom) => {
+    const builtin = new RAMVFS()
+    const path = new PathSpec({ virtual: '/data/a', directory: '/data', vfsPath: 'a' })
+    const before = ENC.encode('before')
+    await ops(builtin).write(path, before)
+    const vfs = custom
+      ? new BaseVFS({ name: 'probe', accessor: builtin.accessor, io: RAM_IO })
+      : builtin
+    const ws = new Workspace(
+      { '/data': vfs },
+      { mode: MountMode.READ, shellParser: await getTestParser() },
+    )
+    try {
+      const result = await ws.shell('echo after > /data/a')
+      expect(result.exitCode).not.toBe(0)
+      expect(await ops(vfs).read(path)).toEqual(before)
+    } finally {
+      await ws.close()
+      if (custom) await builtin.close()
+    }
   })
 })

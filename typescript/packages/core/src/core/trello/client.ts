@@ -115,6 +115,14 @@ export async function listBoardLists(
   return asArray(result) as Record<string, unknown>[]
 }
 
+export async function getList(
+  transport: TrelloTransport,
+  listId: string,
+): Promise<Record<string, unknown>> {
+  const result = await transport.call('GET', `/lists/${listId}`)
+  return asObject(result, `/lists/${listId}`)
+}
+
 export async function listBoardMembers(
   transport: TrelloTransport,
   boardId: string,

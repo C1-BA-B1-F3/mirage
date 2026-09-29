@@ -25,25 +25,34 @@ import { specOf } from '../../spec/builtins.ts'
 import { followFlags, tailGeneric } from '../generic/tail.ts'
 import { parseN } from '../tail_counts.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { noteAfter, rowCapNotice } from '../utils/limit.ts'
 
 const resolveGlob = resolveGlobOf(POSTGRES_IO)
 
 // Row reads on tables/views fetch only the last N rows (COUNT + OFFSET)
 // instead of the whole relation; tailGeneric then trims the already-small
 // chunk. Falls back to a full read for byte mode, +N mode, and non-row paths.
+// `maxReadRows` is the most rows one read may return; a suffix longer than
+// that prints the ceiling and says so, where the ceiling (`defaultRowLimit`)
+// used to stand in for the count with exit 0.
 async function* tailSource(
   accessor: PostgresAccessor,
   p: PathSpec,
   index: IndexCacheStore | undefined,
   lines: number,
   pushdown: boolean,
+  notices: Uint8Array[],
 ): AsyncIterable<Uint8Array> {
   const scope = detectScope(p)
   if (pushdown && scope.kind === 'entity_rows') {
-    const limit = Math.min(lines, accessor.config.defaultRowLimit)
+    const cap = accessor.config.maxReadRows
     const total = await countRows(accessor, scope.slots.schema ?? '', scope.slots.entity ?? '')
-    const offset = Math.max(0, total - limit)
-    yield* readStream(accessor, p, index, { limit, offset })
+    let limit = Math.min(lines, total)
+    if (limit > cap) {
+      limit = cap
+      notices.push(rowCapNotice('tail', p.rawPath, cap, 'rows', 'max_read_rows'))
+    }
+    yield* readStream(accessor, p, index, { limit, offset: total - limit })
     return
   }
   yield* readStream(accessor, p, index)
@@ -66,13 +75,18 @@ async function tailCommand(
   const following = followFlags(fl)
   const follow = typeof following !== 'string' && following.follow
   const pushdown = fl.asStr('c') === undefined && !plusMode && lines > 0 && !follow
-  return tailGeneric(
+  const notices: Uint8Array[] = []
+  const result = await tailGeneric(
     resolved,
     texts,
     opts,
-    (p) => tailSource(accessor, p, opts.index ?? undefined, lines, pushdown),
+    (p) => tailSource(accessor, p, opts.index ?? undefined, lines, pushdown, notices),
     (p) => POSTGRES_IO.stat(accessor, p, opts.index ?? undefined),
   )
+  if (result === null) return result
+  const [out, io] = result
+  if (out === null) return result
+  return [noteAfter(out, io, notices), io]
 }
 
 export const POSTGRES_TAIL = command({

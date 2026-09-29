@@ -352,6 +352,23 @@ async def test_ps_prints_nothing_when_no_job_is_running():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("line", [
+    "true && ps < /m/f | cat",
+    "ps | cat 2>/dev/null",
+    "true && ps | cat 2>/dev/null",
+])
+async def test_ps_lists_the_stages_of_a_pipeline_under_a_redirect(line):
+    ws = _workspace()
+    try:
+        await ws.shell("echo x > /m/f")
+        out = (await ws.shell(line)).stdout
+        commands = {row.split(b"\t", 1)[1] for row in out.splitlines()}
+        assert {b"ps", b"cat"} <= commands
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
 async def test_fg_without_an_operand_reports_when_there_is_no_job():
     _, io, _ = await handle_fg(JobTable(), ["fg"])
     assert io.exit_code == 1
@@ -428,9 +445,9 @@ async def test_wait_p_names_the_job_whose_status_is_returned():
     """`wait id1 id2` answers with the last id's status, so `-p` names
     that job however many ids were waited for."""
     ws = Workspace({"data": RAMVFS()}, mode=MountMode.WRITE)
-    io = await ws.shell("(exit 3) & (exit 5) & wait -p V %1 %2; "
-                        "echo rc=$? V=$V")
-    assert (await io.stdout_str()) == "rc=5 V=2\n"
+    io = await ws.shell("(exit 3) & (exit 5) & p=$!; wait -p V %1 %2; "
+                        "echo rc=$?; test \"$V\" = \"$p\" && echo pid-match")
+    assert (await io.stdout_str()) == "rc=5\npid-match\n"
     await ws.close()
 
 
@@ -495,7 +512,8 @@ async def test_wait_adopts_loop_body_jobs_in_id_order_after_the_foreground():
 async def test_bang_names_each_loop_body_job():
     ws = _workspace()
     res = await ws.shell("for i in 1 2; do sleep 0.1 & echo $!; done; wait")
-    assert res.stdout == b"1\n2\n"
+    pids = [int(value) for value in res.stdout.splitlines()]
+    assert len(pids) == 2 and 0 < pids[0] < pids[1]
 
 
 @pytest.mark.asyncio
@@ -551,7 +569,7 @@ async def test_jobs_are_scoped_to_the_session_that_launched_them():
         io = await ws.shell("wait %1", session_id="b")
         assert io.exit_code == 127
         assert b"no such job" in (io.stderr or b"")
-        assert (await ws.shell("ps", session_id="b")).stdout == b""
+        assert b"sleep 30" not in (await ws.shell("ps", session_id="b")).stdout
         assert (await ws.shell("kill %1", session_id="a")).exit_code == 0
     finally:
         await ws.close()
@@ -566,8 +584,9 @@ async def test_each_session_numbers_its_jobs_from_one():
         first_a = await ws.shell("sleep 30 & echo $!", session_id="a")
         first_b = await ws.shell("sleep 30 & echo $!", session_id="b")
         second_a = await ws.shell("sleep 30 & echo $!", session_id="a")
-        assert (first_a.stdout, first_b.stdout,
-                second_a.stdout) == (b"1\n", b"1\n", b"2\n")
+        assert len({first_a.stdout, first_b.stdout, second_a.stdout}) == 3
+        assert [j.id for j in ws.job_table.list_jobs("a")] == [1, 2]
+        assert [j.id for j in ws.job_table.list_jobs("b")] == [1]
     finally:
         await ws.close()
 
@@ -588,7 +607,8 @@ async def test_closing_a_session_purges_its_jobs():
         ws.create_session("a")
         assert (await ws.shell("jobs", session_id="a")).stdout == b""
         io = await ws.shell("sleep 30 & echo $!", session_id="a")
-        assert io.stdout == b"1\n"
+        assert int(io.stdout) > old.process.info.pid
+        assert ws.job_table.get(1, "a") is not None
         io = await ws.shell("wait %2", session_id="a")
         assert io.exit_code == 127
         assert b"no such job" in (io.stderr or b"")
@@ -651,3 +671,67 @@ async def test_a_job_evaluating_a_nested_line_survives_the_line_cancel():
     assert job is not None
     assert job.exit_code == 0
     assert (await job.console.snapshot(Channel.STDOUT)) == b"inner\n"
+
+
+@pytest.mark.asyncio
+async def test_ps_and_kill_reach_other_sessions_as_far_as_the_profile_says():
+    ws = _workspace()
+    ws.create_session("a")
+    ws.create_session("b")
+    ws.create_session("audit", profile={"processes": {"list": "workspace"}})
+    ws.create_session("ops", profile={"processes": "workspace"})
+    count = "ps | grep -c 'sleep 30$'"
+    stop = "kill $(ps | grep 'sleep 30$' | cut -f1); echo rc=$?"
+    try:
+        pid = (await ws.shell("sleep 30 & echo $!", session_id="a")).stdout
+        assert (await ws.shell(count, session_id="b")).stdout == b"0\n"
+        assert (await ws.shell(count, session_id="audit")).stdout == b"1\n"
+        io = await ws.shell(stop, session_id="audit")
+        assert (await io.stdout_str(), await io.stderr_str()) == (
+            "rc=1\n",
+            f"kill: ({pid.decode().strip()}) - Operation not permitted\n")
+        assert (await ws.shell(stop, session_id="ops")).stdout == b"rc=0\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_session_at_its_process_cap_cannot_fork():
+    ws = _workspace()
+    ws.create_session("capped", profile={"processes": {"max": 2}})
+    refusal = "bash: fork: Resource temporarily unavailable\n"
+
+    async def run(line: str) -> tuple[str, str, int]:
+        io = await ws.shell(line, session_id="capped")
+        return await io.stdout_str(), await io.stderr_str(), io.exit_code
+
+    try:
+        assert await run("(sleep 30 & echo in); echo sub=$?") == ("sub=254\n",
+                                                                  refusal, 0)
+        assert await run("sleep 30 & echo one") == ("one\n", "", 0)
+        for line in ("(echo sub); echo no", "echo x | cat; echo no",
+                     "sleep 30 & echo no"):
+            assert await run(line) == ("", refusal, 254)
+        assert await run("echo $?") == ("254\n", "", 0)
+        assert await run("kill %1") == ("", "", 0)
+        await ws.processes.drain()
+        assert await run("(echo sub)") == ("sub\n", "", 0)
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_a_runaway_loop_stops_at_the_process_cap():
+    ws = _workspace()
+    ws.create_session("capped", profile={"processes": {"max": 3}})
+    try:
+        io = await asyncio.wait_for(
+            ws.shell(
+                "n=0; while true; do sleep 30 & n=$((n+1)); done; echo no",
+                session_id="capped"), 10)
+        assert io.exit_code == 254
+        io = await ws.shell("echo $n; jobs", session_id="capped")
+        assert io.stdout == (b"2\n[1] running sleep 30\n"
+                             b"[2] running sleep 30\n")
+    finally:
+        await ws.close()

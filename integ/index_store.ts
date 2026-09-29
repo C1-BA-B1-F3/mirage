@@ -28,6 +28,7 @@ const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379/0'
 const TTL = 600
 const DIR = '/data'
 const EMPTY_DIR = '/data/empty'
+const PARTIAL_DIR = '/data/partial'
 const UNLISTED_DIR = '/data/never'
 const FILE_NAME = 'a.txt'
 const FOLDER_NAME = 'sub'
@@ -95,6 +96,7 @@ async function write(prefix: string): Promise<void> {
     [FOLDER_NAME, folderEntry],
   ])
   await store.setDir(EMPTY_DIR, [])
+  await store.setPartialDir(PARTIAL_DIR, [[FILE_NAME, fileEntry]])
   const listing = await store.listDir(DIR)
   check(
     'ts write: listing reads back',
@@ -140,7 +142,21 @@ async function read(prefix: string): Promise<void> {
     missing.status === LookupStatus.NOT_FOUND,
     JSON.stringify(missing),
   )
+  const partial = await store.listDir(PARTIAL_DIR)
+  check(
+    'ts read: partial listing proves only observed children',
+    partial.entries === undefined &&
+      partial.status === undefined &&
+      sameList(partial.partialEntries, [`${PARTIAL_DIR}/${FILE_NAME}`]),
+    JSON.stringify(partial),
+  )
   await store.invalidate()
+  const expiredPartial = await store.listDir(PARTIAL_DIR)
+  check(
+    'ts read: invalidate expires partial membership',
+    expiredPartial.status === LookupStatus.EXPIRED && expiredPartial.partialEntries === undefined,
+    JSON.stringify(expiredPartial),
+  )
   const stale = await store.listDir(DIR)
   check(
     'ts read: invalidate expires the foreign listing',

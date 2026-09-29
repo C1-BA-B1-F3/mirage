@@ -37,8 +37,6 @@ export interface WalkFilters {
   text: boolean
 }
 
-export const NO_FILTERS: WalkFilters = { fileGlobs: [], excludeDir: [], text: false }
-
 /**
  * The --include/--exclude rules a line typed, in line order.
  *

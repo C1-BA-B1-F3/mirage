@@ -16,6 +16,8 @@ import { describe, expect, it } from 'vitest'
 import { PathSpec } from '../../types.ts'
 import { PatternType } from './constants.ts'
 import {
+  grepSearchMeta,
+  grepSearchOptions,
   textSearchResults,
   classifyPattern,
   extractRequiredLiteral,
@@ -26,7 +28,10 @@ import {
   pushdownOperand,
   searchPushdownOk,
   searchQuery,
+  textCandidates,
+  wholeWordLiteral,
 } from './grep_pushdown.ts'
+import { stripSlash } from '../../utils/slash.ts'
 
 describe('classifyPattern', () => {
   it('newlines and regex are REGEX, plain text is SIMPLE, fixed is EXACT', () => {
@@ -162,6 +167,8 @@ describe('hasSearchShapingFlags', () => {
     [{ A: '2' }, true],
     [{ B: '2' }, true],
     [{ C: '2' }, true],
+    // rg -L walks links, which no backend's search can see.
+    [{ follow: true }, true],
   ])('hasSearchShapingFlags(%j) === %j', (flags, expected) => {
     expect(
       hasSearchShapingFlags(flags as Record<string, string | boolean | number | string[]>),
@@ -190,7 +197,7 @@ function operand(virtual: string, pattern: string | null = null): PathSpec {
   return new PathSpec({
     virtual,
     directory: virtual.slice(0, virtual.lastIndexOf('/')) || '/',
-    vfsPath: virtual.replace(/^\/+|\/+$/g, ''),
+    vfsPath: stripSlash(virtual),
     pattern,
     resolved: pattern === null,
   })
@@ -290,6 +297,21 @@ describe('loneOperand', () => {
     expect(loneOperand([])).toBe(null)
     expect(loneOperand([operand('/traces/*', '*')])).toBe(null)
   })
+
+  it('never answers for stdin', () => {
+    // A `-` is the line's stdin, which no backend holds, so every push-down
+    // defers to the scan that reads the pipe.
+    const dash = new PathSpec({
+      virtual: '/traces/-',
+      directory: '/traces/',
+      vfsPath: 'traces/-',
+      resolved: true,
+      rawPath: '-',
+    })
+    expect(loneOperand([dash])).toBe(null)
+    expect(pushdownOperand([dash], {}, 'ada')).toBe(null)
+    expect(literalPushdownOperand([dash], {}, 'ada')).toBe(null)
+  })
 })
 
 describe('literalPushdownOperand', () => {
@@ -313,4 +335,57 @@ it.each([
   ['hello\udcff', false],
 ] as const)('checks provider snippets %j', (text, expected) => {
   expect(textSearchResults([text])).toBe(expected)
+})
+
+it.each([
+  { mode: 'semantic' },
+  { mode: 'literal', stream: null },
+  { mode: 'literal', typo: true },
+  null,
+])('rejects invalid grep metadata %j', (grep) => {
+  expect(() => grepSearchMeta({ search: () => Promise.resolve([]), meta: { grep } })).toThrow()
+})
+
+it.each([{ ignore_case: 'true' }, { typo: true }, null])(
+  'rejects invalid grep options %j',
+  (grep) => {
+    expect(() => grepSearchOptions({ query: 'query', options: { grep } })).toThrow()
+  },
+)
+
+it('leaves resource namespaces opaque and treats plain queries as literal', () => {
+  expect(grepSearchOptions({ query: 'a.*b', options: { limit: 20 } }).fixedString).toBe(true)
+  expect(grepSearchMeta({ search: () => Promise.resolve([]), meta: { semantic: true } })).toBeNull()
+})
+
+// Twins of test_whole_word_literal_is_the_term_a_word_index_answers_for and
+// test_text_candidates_drops_what_a_walk_never_reads in
+// python/tests/commands/builtin/test_grep_pushdown.py.
+describe('wholeWordLiteral', () => {
+  it.each<[string | null, boolean, boolean, string | null]>([
+    ['import', false, true, 'import'],
+    ['import', true, true, 'import'],
+    ['import os', false, true, 'import os'],
+    ['import', false, false, null],
+    ['import.*os', false, true, null],
+    ['import.*os', true, true, 'import.*os'],
+    ['foo|bar', false, true, null],
+    ['a\nb', true, true, null],
+    [null, false, true, null],
+  ])('answers %j (fixed=%s, -w=%s) with %j', (pattern, fixed, wholeWord, expected) => {
+    // Only a whole-word literal is what the index is asked for: without -w
+    // a word index under-fetches substrings, a regex narrows on a term that
+    // is only part of the match, and a pattern list has no required term.
+    expect(wholeWordLiteral(pattern, fixed, wholeWord)).toBe(expected)
+  })
+})
+
+describe('textCandidates', () => {
+  it('drops what a walk never reads', () => {
+    const paths = ['/a.py', '/m.gguf', '/b.txt', '/w.bin', '/README'].map((p) =>
+      PathSpec.fromStrPath(p),
+    )
+    expect(textCandidates(paths).map((p) => p.virtual)).toEqual(['/a.py', '/b.txt', '/README'])
+    expect(textCandidates([])).toEqual([])
+  })
 })

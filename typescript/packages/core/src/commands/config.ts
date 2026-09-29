@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { ProcessView } from '../process/types.ts'
 import type { Accessor } from '../accessor/base.ts'
 import type { IndexCacheStore } from '../cache/index/index.ts'
 import { IOResult, type ByteSource } from '../io/types.ts'
@@ -58,6 +59,7 @@ export interface ExecContext {
   sessionId?: string
   env?: Record<string, string>
   sessionView?: SessionView
+  processes?: ProcessView
   execAllowed?: boolean
   execPathAllowed?: (virtual: string) => boolean
   runtime?: Runtime
@@ -66,6 +68,7 @@ export interface ExecContext {
   readdirPath?: ReaddirPath
   signal?: AbortSignal
   limitOverride?: Limit | null
+  argv?: readonly string[]
 }
 
 /**
@@ -96,6 +99,7 @@ export interface CommandOpts {
   // writes); `env` above stays the frozen process-view snapshot. A
   // command that does not read this simply ignores it.
   sessionView?: SessionView
+  processes?: ProcessView
   execAllowed?: boolean
   /**
    * Whether code may be loaded from one path, for an interpreter's file
@@ -118,6 +122,14 @@ export interface CommandOpts {
   readdirPath?: ReaddirPath
   signal?: AbortSignal
   timeoutSeconds?: number
+  // The words after the command name, as the line spelled them (an
+  // operand's rawPath), for the GNU diagnostic that quotes a word the
+  // classified operands do not hold: diffutils names the line's last
+  // argument, an option included (`cmp: missing operand after '-s'`).
+  // Flags are read through a spec-bound FlagView, never from here. Absent
+  // where a line runs split per operand or per mount, since no one word
+  // list describes such a run. Mirrors Python's `argv`.
+  argv?: readonly string[]
 }
 
 export type CommandFnResult = [ByteSource | null, IOResult] | null
@@ -157,6 +169,7 @@ export interface RegisteredCommandInit {
   dst?: string | null
   write?: boolean
   limit?: Limit | null
+  pathGuarded?: boolean
 }
 
 export interface RegisteredCommandOverrides {
@@ -175,6 +188,7 @@ export class RegisteredCommand {
   readonly src: string | null
   readonly dst: string | null
   readonly write: boolean
+  readonly pathGuarded: boolean
   readonly limit: Limit | null
 
   constructor(init: RegisteredCommandInit) {
@@ -188,6 +202,7 @@ export class RegisteredCommand {
     this.src = init.src ?? null
     this.dst = init.dst ?? null
     this.write = init.write ?? false
+    this.pathGuarded = init.pathGuarded ?? false
     this.limit = init.limit ?? null
     Object.freeze(this)
   }
@@ -206,6 +221,7 @@ export class RegisteredCommand {
       dst: this.dst,
       write: this.write,
       limit: this.limit,
+      pathGuarded: this.pathGuarded,
     })
   }
 }
@@ -263,6 +279,7 @@ export interface CommandOptions<A extends Accessor = Accessor> {
   aggregate?: AggregateFn | null
   write?: boolean
   limit?: Limit | null
+  pathGuarded?: boolean
 }
 
 const HELP_ENC = new TextEncoder()
@@ -469,6 +486,7 @@ export function command<A extends Accessor = Accessor>(
         aggregate: options.aggregate ?? null,
         write: options.write ?? false,
         limit: options.limit ?? null,
+        pathGuarded: options.pathGuarded ?? false,
       }),
   )
 }

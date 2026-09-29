@@ -1,0 +1,130 @@
+---
+title: Airtable
+description: Mount Airtable bases, tables, records, and saved views as a Mirage filesystem for Python agents.
+icon: table
+---
+The Airtable VFS exposes the bases a personal access token can reach as a
+read-only filesystem mounted at a prefix such as `/airtable/`. Writes go
+through the [airtable CLI](/python/cli/airtable), which takes the same config.
+
+For token setup, see [Airtable Setup](/home/setup/airtable).
+
+## Config
+
+```python
+import os
+
+from mirage import MountMode, Workspace
+from mirage.vfs.airtable import AirtableConfig, AirtableVFS
+
+config = AirtableConfig(token=os.environ["AIRTABLE_TOKEN"])
+vfs = AirtableVFS(config=config)
+ws = Workspace({"/airtable": vfs}, mode=MountMode.READ)
+```
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `token` | required | Personal access token (or OAuth access token). Redacted in snapshots. |
+| `base_ids` | none | Only these bases are listed or readable; every other path is `ENOENT`. |
+| `max_read_records` | `10000` | The most records one file renders; a larger table is refused on a full read. |
+| `requests_per_second` | `5` | Pacing per base. Airtable allows 5 and answers a burst with a 30 second penalty. |
+| `base_url` | `https://api.airtable.com/v0` | Override to point at a fake or proxy. |
+
+Unknown keys are refused, so a misspelled `base_ids` fails loudly instead of
+widening the mount to every base.
+
+## Filesystem Layout
+
+```text
+/airtable/
+  bases/
+    <base-name>__<base-id>/
+      base.json
+      <table-name>__<table-id>/
+        table.json
+        records.jsonl
+        views/
+          <view-name>__<view-id>.jsonl
+```
+
+Example:
+
+```text
+/airtable/
+  bases/
+    Product_Roadmap__appRoadmapBase001/
+      base.json
+      Features__tblFeatures000001/
+        table.json
+        records.jsonl
+        views/
+          Grid_view__viwGrid0000000001.jsonl
+          Done_shipped__viwDone0000000001.jsonl
+```
+
+Names are sanitized (`Ops / Finance` becomes `Ops_Finance`); the id after the
+last `__` is exact. List a directory to discover names rather than building
+them.
+
+- `base.json` holds the base id, name, the token's permission level, and the
+  table list.
+- `table.json` holds the typed field schema, with each field's options (select
+  choices, number precision, link targets), and the saved views.
+- `records.jsonl` holds one record per line:
+  `{"record_id", "created_time", "fields"}`, with `fields` keyed by field name
+  and valued exactly as Airtable returns them.
+- `views/<view>.jsonl` holds the records the view shows, filtered and ordered
+  by the view.
+
+## Reading Records
+
+```bash
+head -n 20 /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl | jq .fields
+jq -r 'select(.fields.Status == "Done") | .fields.Name' .../records.jsonl
+grep -c Done .../views/Done_shipped__viwDone0000000001.jsonl
+```
+
+- **`head -n N` fetches N records.** The line count is pushed into Airtable's
+  `maxRecords`, so the first lines of a large table cost one request.
+- **A full read is bounded.** A file holding more than `max_read_records`
+  records is refused with GNU's `File too large` (`cat: <path>: File too
+  large`), rather than paged for minutes at 5 requests per second. Every
+  command reports it per file and moves on, so `grep -l x a b` still answers
+  for the files under the cap. Use `head`, a view, or raise the cap.
+- **Order.** `records.jsonl` follows the API's own order, which Airtable calls
+  arbitrary but keeps stable; a view file applies the view's sort.
+- **Empty cells are absent.** Airtable omits empty values from a record,
+  including a `false` checkbox, so a missing key means empty.
+- **Links and attachments.** A linked-record field is a list of record ids. An
+  attachment URL expires two hours after it was read, so re-read the record
+  before downloading.
+- **Sizes.** `base.json` and `table.json` report their exact size. Record files
+  are size-unknown until read, which is what `ls -l` and `stat` show.
+- **Freshness.** Records are never served from the file cache; the listings of
+  bases, tables, and views are cached for the index TTL.
+
+## Rate Limits
+
+Requests are spaced to `requests_per_second` per base. A `429` that says
+`RATE_LIMIT_REACHED` is retried after Airtable's 30 second penalty; a `429`
+for an exhausted monthly quota is reported at once, because waiting cannot fix
+it.
+
+## Writing Records
+
+A record write is not a file write, so the mount refuses one and the
+[airtable CLI](/python/cli/airtable) makes it. The CLI names a base, a table
+and a record by id: take them from the mount's directory names, after the last
+`__` (`Product_Roadmap__appRoadmapBase001` is `appRoadmapBase001`), and a
+record's from its `record_id`. A `records.jsonl` line is the CLI's stdin
+shape, so an edit pipes straight back:
+
+```bash
+jq -c 'select(.fields.Status == "Todo") | .fields.Status = "Done"' \
+  /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl \
+  | airtable record update --base appRoadmapBase001 --table tblFeatures000001
+```
+
+The CLI also reaches what a file cannot: server-side filters (`airtable record
+list --formula` or `--view`), one record by id (`airtable record get`), and
+comments (`airtable comment list`, `airtable comment add`).

@@ -15,17 +15,22 @@
 import type { DiskAccessor } from '../../../accessor/disk.ts'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
-import { norm, resolveSafe } from '../utils.ts'
+import { diskError } from '../errors.ts'
+import { norm, resolveInside } from '../utils.ts'
 import { walkAll } from './walk.ts'
 
 export async function entries(
   accessor: DiskAccessor,
   p: PathSpec,
 ): Promise<[entries: [string, number][], total: number]> {
-  const virtual = norm(p.mountPath)
-  const full = resolveSafe(accessor.root, virtual)
-  const entries: [string, number][] = []
-  const total = await walkAll(accessor, full, entries)
-  entries.sort((a, b) => compareCodePoints(a[0], b[0]))
-  return [entries, total]
+  try {
+    const virtual = norm(p.mountPath)
+    const full = await resolveInside(accessor.root, p, virtual)
+    const entries: [string, number][] = []
+    const total = await walkAll(accessor, full, entries)
+    entries.sort((a, b) => compareCodePoints(a[0], b[0]))
+    return [entries, total]
+  } catch (error) {
+    throw diskError(error, p)
+  }
 }

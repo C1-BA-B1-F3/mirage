@@ -17,6 +17,7 @@ import json
 from mirage.accessor.trello import TrelloAccessor
 from mirage.commands.builtin.trello._input import (file_operand,
                                                    resolve_text_input)
+from mirage.commands.builtin.trello._scope import require_card
 from mirage.commands.config import CommandOpts
 from mirage.commands.registry import command
 from mirage.commands.spec.flag_view import FlagView
@@ -67,6 +68,7 @@ async def trello_card_update(
     # A card write is addressed by id, not path, so only the mount-wide
     # grant can admit it (a write-granting carve-out names no card).
     require_mount_writable()
+    await require_card(accessor, card_id)
     card = await card_update(
         config,
         card_id=card_id,
@@ -74,6 +76,7 @@ async def trello_card_update(
         desc=desc,
         closed=closed,
         due=due,
+        session=accessor.pool,
     )
     return yield_bytes(
         json.dumps(normalize_card(card),

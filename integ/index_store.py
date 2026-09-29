@@ -42,6 +42,7 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 TTL = 600.0
 DIR = "/data"
 EMPTY_DIR = "/data/empty"
+PARTIAL_DIR = "/data/partial"
 UNLISTED_DIR = "/data/never"
 FILE_NAME = "a.txt"
 FOLDER_NAME = "sub"
@@ -97,6 +98,7 @@ async def write(prefix: str) -> None:
     await store.set_dir(DIR, [(FILE_NAME, file_entry),
                               (FOLDER_NAME, folder_entry)])
     await store.set_dir(EMPTY_DIR, [])
+    await store.set_partial_dir(PARTIAL_DIR, [(FILE_NAME, file_entry)])
     listing = await store.list_dir(DIR)
     check("py write: listing reads back", listing.entries == CHILDREN,
           f"got {listing!r}")
@@ -123,7 +125,18 @@ async def read(prefix: str) -> None:
     missing = await store.list_dir(UNLISTED_DIR)
     check("py read: unlisted directory is not found", missing.status
           is LookupStatus.NOT_FOUND, f"got {missing!r}")
+    partial = await store.list_dir(PARTIAL_DIR)
+    check(
+        "py read: partial listing proves only observed children",
+        partial.entries is None and partial.status is None
+        and partial.partial_entries == [f"{PARTIAL_DIR}/{FILE_NAME}"],
+        f"got {partial!r}")
     await store.invalidate()
+    partial = await store.list_dir(PARTIAL_DIR)
+    check(
+        "py read: invalidate expires partial membership",
+        partial.status is LookupStatus.EXPIRED
+        and partial.partial_entries is None, f"got {partial!r}")
     stale = await store.list_dir(DIR)
     check("py read: invalidate expires the foreign listing", stale.status
           is LookupStatus.EXPIRED, f"got {stale!r}")

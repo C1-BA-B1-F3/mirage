@@ -1,0 +1,95 @@
+{
+  "cases": [
+    {
+      "id": "at_full_read_past_cap_refused",
+      "seq": 720200,
+      "targets": [
+        "airtable"
+      ],
+      "command": "cat /airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl: File too large\n"
+      }
+    },
+    {
+      "id": "at_head_under_cap_answers",
+      "seq": 720201,
+      "targets": [
+        "airtable"
+      ],
+      "command": "head -n 5 /airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl | jq -r .fields.Name",
+      "expect": {
+        "exit": 0,
+        "stdout": "Backlog item 01\nBacklog item 02\nBacklog item 03\nBacklog item 04\nBacklog item 05\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_head_past_cap_refused",
+      "seq": 720202,
+      "targets": [
+        "airtable"
+      ],
+      "command": "head -n 21 /airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "head: error reading '/airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl': File too large\n"
+      }
+    },
+    {
+      "id": "at_json_sizes_exact",
+      "seq": 720203,
+      "targets": [
+        "airtable"
+      ],
+      "command": "test \"$(stat -c %s /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/table.json)\" = \"$(wc -c < /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/table.json)\" && test \"$(stat -c %s /airtable/bases/Product_Roadmap__appRoadmapBase001/base.json)\" = \"$(wc -c < /airtable/bases/Product_Roadmap__appRoadmapBase001/base.json)\" && echo exact",
+      "expect": {
+        "exit": 0,
+        "stdout": "exact\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_records_size_unknown",
+      "seq": 720204,
+      "targets": [
+        "airtable"
+      ],
+      "command": "ls -l /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001",
+      "expect": {
+        "exit": 0,
+        "stdout": "total ?\n-rw-r--r-- 1 - -    - - records.jsonl\n-rw-r--r-- 1 - - 6067 - table.json\ndrwxr-xr-x 1 - - 4096 - views\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_test_s_past_cap",
+      "seq": 720205,
+      "targets": [
+        "airtable"
+      ],
+      "command": "test -s /airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl && echo nonempty",
+      "expect": {
+        "exit": 0,
+        "stdout": "nonempty\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_head_byte_read_past_cap_refused",
+      "seq": 720206,
+      "targets": [
+        "airtable"
+      ],
+      "command": "head -c 12 /airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "head: error reading '/airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl': File too large\n"
+      }
+    }
+  ]
+}

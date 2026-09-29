@@ -31,6 +31,7 @@ import type { RouteDecision, RoutePolicy } from '../../runtime/routing/index.ts'
 import type { RuntimeEntry } from '../../runtime/base.ts'
 import type { NamespaceStore } from '../mount/namespace/store.ts'
 import type { SessionProfile } from '../../policy/profile.ts'
+import type { SessionState } from '../session/session.ts'
 import type { SessionStore } from '../session/store.ts'
 import type { WorkspaceStateStore } from '../store/base.ts'
 
@@ -54,7 +55,11 @@ export interface WorkspaceOptions {
    * mount block, where it cannot be confused with `index: {ttl:}`.
    */
   read?: ReadSpec
-  commandLimits?: Record<string, Record<string, Limit>>
+  /**
+   * Workspace defaults keyed by command name. A session profile's
+   * `commandLimits` and a mount's own table take precedence.
+   */
+  commandLimits?: Record<string, Limit>
   /**
    * Behaviour for the post-load drift check on fingerprinted reads. Only
    * consulted by `Workspace.load` / `Workspace.fromState`; fresh
@@ -213,6 +218,8 @@ export interface ExecuteOptions {
   stdin?: ByteSource | null
   provision?: boolean
   sessionId?: string
+  /** @internal The exact session carried by an evaluator, including an unregistered fork. */
+  session?: SessionState
   agentId?: string
   /**
    * Abort the in-progress execution. Observed cooperatively at recursion

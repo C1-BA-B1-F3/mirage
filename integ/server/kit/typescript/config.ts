@@ -22,6 +22,7 @@ export interface KitConfig {
   tenantKind: TenantKind
   tenantFromBearer: boolean
   tenantTokenPattern: string
+  runTokenPattern: string
   mintSharing: MintSharing
   mintFormat: string
   maxBodyBytes: number
@@ -32,6 +33,7 @@ const DEFAULTS = {
   tenantKind: 'none' as TenantKind,
   tenantFromBearer: false,
   tenantTokenPattern: '',
+  runTokenPattern: process.env.MIRAGE_RUN_TOKEN_PATTERN ?? '',
   mintSharing: 'global' as MintSharing,
   mintFormat: '{kind}_new_{n}',
   maxBodyBytes: 64 * 1024 * 1024,
@@ -50,9 +52,23 @@ export function parseConfig(raw: Record<string, unknown>): KitConfig {
       throw new KitError(`KitConfig.${k} is required`)
     }
   }
+  const pattern = raw.runTokenPattern === undefined ? DEFAULTS.runTokenPattern : raw.runTokenPattern
+  if (typeof pattern !== 'string') throw new KitError('KitConfig.runTokenPattern must be a string')
+  if (pattern !== '') {
+    try {
+      new RegExp(pattern)
+    } catch {
+      throw new KitError('KitConfig.runTokenPattern must be a valid regular expression')
+    }
+    const groups = new RegExp(`(?:${pattern})|`).exec('')?.groups
+    if (groups === undefined || !Object.hasOwn(groups, 'run')) {
+      throw new KitError('KitConfig.runTokenPattern needs a named run capture')
+    }
+  }
   return {
     ...DEFAULTS,
     ...raw,
+    runTokenPattern: pattern,
     service: raw.service as string,
     schema: raw.schema as string,
   }

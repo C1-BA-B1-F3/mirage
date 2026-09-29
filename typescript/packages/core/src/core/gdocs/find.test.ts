@@ -123,9 +123,15 @@ describe('gdocs core find', () => {
     expect(dirs).toEqual(['/owned', '/shared'])
   })
 
-  it('treats a null size as 0 for size filters, dirs contribute 0 too', async () => {
-    const out = await find(makeAccessor(), ROOT, { minSize: 1024 })
-    expect(out).toEqual(['/owned/Big__d2.gdoc.json'])
+  it('treats a null size as 0 and a directory as DIR_SIZE for size filters', async () => {
+    expect(await find(makeAccessor(), ROOT, { minSize: 1024 })).toEqual([
+      '/owned',
+      '/owned/Big__d2.gdoc.json',
+      '/shared',
+    ])
+    expect(await find(makeAccessor(), ROOT, { maxSize: 100 })).toEqual([
+      '/owned/Doc_A__d1.gdoc.json',
+    ])
   })
 
   it('filters by mtime, excluding dirs without a modified time', async () => {

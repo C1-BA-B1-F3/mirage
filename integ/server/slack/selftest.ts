@@ -86,6 +86,24 @@ async function main(): Promise<void> {
     eq('client.userBoot lists DMs, none shared', (boot.ims as Json[]).length, 10)
 
     const types = 'public_channel,private_channel'
+    const listed = async (selected: string): Promise<string[]> =>
+      ((await call('conversations.list', { types: selected })).channels as Json[]).map((c) =>
+        String(c.id),
+      )
+    eq('public-only conversation list excludes private channels', await listed('public_channel'), [
+      'C1',
+      'C10',
+      'C2',
+      'C3',
+      'C4',
+      'C6',
+      'C7',
+      'C8',
+      'C9',
+    ])
+    eq('private-only conversation list excludes public channels', await listed('private_channel'), [
+      'C5',
+    ])
     const first = await call('conversations.list', { types, limit: '1' })
     const channels = first.channels as Json[]
     eq('conversations.list honours limit', channels.length, 1)
@@ -124,6 +142,56 @@ async function main(): Promise<void> {
       'an unknown cursor is refused',
       (await call('conversations.list', { cursor: 'bm9wZQ==' })).error,
       'invalid_cursor',
+    )
+
+    const historyPage = await call('conversations.history', { channel: 'C4', limit: '1' })
+    const nextHistory = await call('conversations.history', {
+      channel: 'C4',
+      limit: '1',
+      cursor: String((historyPage.response_metadata as Json).next_cursor),
+    })
+    check(
+      'history follows its cursor',
+      historyPage.has_more === true &&
+        (historyPage.messages as Json[])[0]!.ts !== (nextHistory.messages as Json[])[0]!.ts,
+    )
+    const wholeHistory = (await call('conversations.history', { channel: 'C4' })).messages as Json[]
+    const pagedHistory: JsonValue[] = []
+    let historyCursor = ''
+    do {
+      const page = await call('conversations.history', {
+        channel: 'C4',
+        limit: '2',
+        ...(historyCursor === '' ? {} : { cursor: historyCursor }),
+      })
+      for (const one of page.messages as Json[]) pagedHistory.push(one.ts!)
+      historyCursor = String((page.response_metadata as Json).next_cursor)
+    } while (historyCursor !== '')
+    eq(
+      'following the history cursor lists every message once',
+      pagedHistory,
+      wholeHistory.map((m) => m.ts!),
+    )
+    eq(
+      'an unknown history cursor is refused',
+      (
+        await call('conversations.history', {
+          channel: 'C4',
+          cursor: Buffer.from('next_ts:1000000000000001', 'utf8').toString('base64'),
+        })
+      ).error,
+      'invalid_cursor',
+    )
+    const microseconds = await call('conversations.history', {
+      channel: 'C4',
+      oldest: THREAD.replace('.000015', '.15'),
+      latest: THREAD,
+      inclusive: 'true',
+    })
+    eq(
+      'history timestamps use a microsecond suffix',
+      (microseconds.messages as Json[]).map((m) => m.ts!),
+      [THREAD],
     )
 
     const thread = await call('conversations.replies', { channel: 'C4', ts: THREAD })
@@ -194,6 +262,153 @@ async function main(): Promise<void> {
         .length,
       1,
     )
+
+    for (const [query, total] of [
+      ['deploying from:@marcus', 2],
+      ['deploying from:<@U8>', 2],
+      ['deploying in:#engineering', 4],
+      ['deploying in:engineering', 4],
+      ['deploying in:engineering from:<@U8>', 2],
+      ['deploying in:absent', 0],
+      ['"in:engineering"', 0],
+      ['deploying in:##engineering', 4],
+      ['deploying in:##engineering from:<@U8>', 2],
+    ] as const) {
+      const response = await fetch(`${fake.endpoint}/api/search.messages`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer xoxp-${TENANT}` },
+        body: new URLSearchParams({ query }),
+      })
+      const reply = (await response.json()) as Json
+      eq(query, (reply.messages as Json).total, total)
+    }
+
+    await fetch(`${fake.endpoint}/reset`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenants: [TENANT], fixture: 'search' }),
+    })
+    const search = async (
+      method: string,
+      token: string,
+      transport: string,
+      params: Record<string, string> = {},
+    ): Promise<Json> => {
+      const form = new URLSearchParams({ query: 'searchable during:2025-11-03', ...params })
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      }
+      if (transport === 'header') headers.Authorization = `Bearer ${token}-${TENANT}`
+      else form.set('token', `${token}-${TENANT}`)
+      const response = await fetch(
+        `${fake.endpoint}/api/${method}${transport === 'query' ? '?' + form.toString() : ''}`,
+        {
+          method: transport === 'query' ? 'GET' : 'POST',
+          headers,
+          ...(transport === 'query' ? {} : { body: form.toString() }),
+        },
+      )
+      eq('search uses the Slack HTTP success envelope', response.status, 200)
+      return (await response.json()) as Json
+    }
+    for (const token of ['xoxp', 'xoxc']) {
+      for (const transport of ['header', 'form', 'query']) {
+        const all = await search('search.all', token, transport)
+        const messages = (await search('search.messages', token, transport)).messages as Json
+        const files = (await search('search.files', token, transport)).files as Json
+        eq('search.all shares message format with search.messages', all.messages ?? null, messages)
+        eq('search.all shares file format with search.files', all.files, files)
+        eq('search omits joins/leaves and keeps conversation activity', messages.total, 3)
+        eq(
+          'search preserves subtype',
+          (messages.matches as Json[])[0]!.subtype,
+          'channel_convert_to_private',
+        )
+        eq('search.files has its own total', files.total, 1)
+      }
+    }
+    eq(
+      'bot search remains refused',
+      (await search('search.all', 'xoxb', 'form')).error,
+      'not_allowed_token_type',
+    )
+    eq(
+      'during and on match the same day',
+      (await search('search.messages', 'xoxc', 'form')).messages ?? null,
+      (await search('search.messages', 'xoxc', 'form', { query: 'searchable on:2025-11-03' }))
+        .messages ?? null,
+    )
+    const second = (await search('search.messages', 'xoxc', 'form', { count: '1', page: '2' }))
+      .messages as Json
+    eq('pagination totals are not truncated to count', second.total, 3)
+    eq(
+      'pagination selects a distinct second result',
+      (second.matches as Json[]).map((m) => m.ts!),
+      ['1762186003.000001'],
+    )
+    eq('paging matches the Slack wire format', second.paging, {
+      count: 1,
+      total: 3,
+      page: 2,
+      pages: 3,
+    })
+    eq(
+      'unknown channels do not broaden search',
+      ((await search('search.messages', 'xoxc', 'form', { query: 'in:#absent' })).messages as Json)
+        .total,
+      0,
+    )
+    for (const method of ['search.messages', 'search.all']) {
+      for (const query of [
+        'from:@ana',
+        'from:ana',
+        'from:<@U1>',
+        'in:#general',
+        'in:##general',
+        'in:##general from:<@U1>',
+      ]) {
+        const result = await search(method, 'xoxp', 'form', { query })
+        eq(`${method} scopes ${query}`, (result.messages as Json).total, 3)
+      }
+      for (const query of ['from:<@U404>', 'in:##absent', '"from:<@U1>"', '"in:##general"']) {
+        const result = await search(method, 'xoxp', 'form', { query })
+        eq(`${method} does not broaden ${query}`, (result.messages as Json).total, 0)
+      }
+    }
+    eq(
+      'file search cannot ignore an ID author filter',
+      ((await search('search.files', 'xoxp', 'form', { query: 'from:<@U1>' })).files as Json).total,
+      0,
+    )
+    eq(
+      'file search accepts doubled channel markers',
+      (
+        (await search('search.files', 'xoxp', 'form', { query: 'in:##general searchable' }))
+          .files as Json
+      ).total,
+      1,
+    )
+    const rendered = (await search('search.messages', 'xoxp', 'form')).messages as Json
+    eq(
+      'search renders emphasis and named mentions while preserving underscores in words',
+      (rendered.matches as Json[])[2]!.text,
+      'searchable message from <@U1|Ana>; snake_case and _unclosed',
+    )
+    const history = (await call('conversations.history', { channel: 'C1' })).messages as Json[]
+    eq(
+      'history keeps stored emphasis and bare mentions',
+      history[1]!.text,
+      'searchable _message_ from <@U1>; snake_case and _unclosed',
+    )
+    eq(
+      'history preserves joins and leaves as activity',
+      history.filter((m) => m.subtype).map((m) => m.subtype!),
+      ['channel_convert_to_private', 'channel_leave', 'channel_join'],
+    )
+    const replies = (
+      await call('conversations.replies', { channel: 'C1', ts: '1762186002.000001' })
+    ).messages as Json[]
+    eq('replies preserve the parent subtype', replies[0]!.subtype, 'channel_convert_to_private')
     process.stdout.write(`slack selftest: ${String(checks)} checks passed\n`)
   } finally {
     await fake.close()

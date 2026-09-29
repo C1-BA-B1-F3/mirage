@@ -17,11 +17,13 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
-import { formatFsError, isFsError } from '../../../utils/errors.ts'
+import { formatFsError, isEisdir, isFsError } from '../../../utils/errors.ts'
 import { CMP_SIZE_UNITS, INTMAX, XSTRTOUMAX_PATTERN } from '../constants.ts'
+import { STDIN_OPERAND } from '../utils/constants.ts'
 import { formatRecords } from '../utils/output.ts'
+import { isStdin, stdinStream } from '../utils/stream.ts'
 import { parseBase0 } from '../utils/size_suffix.ts'
-import { extraOperandError, usageHint } from '../../spec/usage.ts'
+import { extraOperandError, missingOperandError, usageHint } from '../../spec/usage.ts'
 import { CommandName } from '../../spec/types.ts'
 import { UsageError } from '../../errors.ts'
 
@@ -108,13 +110,18 @@ interface CmpFlags {
 }
 
 function parseFlags(fl: FlagView): CmpFlags {
-  const nRaw = fl.asStr('n')
-  const iRaw = fl.asStr('i')
+  const silent = fl.asBool('quiet') || fl.asBool('silent')
+  const verbose = fl.asBool('verbose')
+  // diffutils refuses the pair while it reads the options, so ahead of any
+  // operand check.
+  if (silent && verbose) throw new UsageError(`cmp: options -l and -s are incompatible${TRY_HELP}`)
+  const nRaw = fl.asStr('bytes')
+  const iRaw = fl.asStr('ignore_initial')
   return {
-    silent: fl.asBool('s'),
-    verbose: fl.asBool('args_l'),
+    silent,
+    verbose,
     limit: nRaw === undefined ? null : parseCount(nRaw, '--bytes'),
-    printBytes: fl.asBool('b'),
+    printBytes: fl.asBool('print_bytes'),
     skip: iRaw === undefined ? [0, 0] : parseSkip(iRaw),
   }
 }
@@ -129,53 +136,86 @@ function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
  * GNU's `EOF on FILE` diagnostic for a common-prefix difference.
  *
  * It is a diagnostic, not output: GNU writes it to stderr and still
- * exits 1. `-l` reports the byte only, every other mode adds the line
- * the count lands in.
+ * exits 1. A shorter file with no bytes to compare is `which is empty`.
+ * Otherwise `-l` reports the byte only, and every other mode adds the
+ * line: `line N` when the file ends on a newline, `in line N` when it
+ * ends inside line N.
  */
 function eofError(
-  paths: PathSpec[],
+  names: readonly [string, string],
   data1: Uint8Array,
   data2: Uint8Array,
   verbose: boolean,
 ): Uint8Array {
   const firstShorter = data1.byteLength < data2.byteLength
-  const shorter = firstShorter ? paths[0] : paths[1]
+  const shorter = firstShorter ? names[0] : names[1]
   const held = firstShorter ? data1 : data2
-  let msg = `cmp: EOF on ${shorter?.virtual ?? ''} after byte ${String(held.byteLength)}`
+  if (held.byteLength === 0) return ENC.encode(`cmp: EOF on ${shorter} which is empty\n`)
+  let msg = `cmp: EOF on ${shorter} after byte ${String(held.byteLength)}`
   if (!verbose) {
-    let lines = 1
+    let lines = 0
     for (const byte of held) if (byte === NEWLINE) lines += 1
-    msg += `, in line ${String(lines)}`
+    msg +=
+      held[held.byteLength - 1] === NEWLINE
+        ? `, line ${String(lines)}`
+        : `, in line ${String(lines + 1)}`
   }
   return ENC.encode(`${msg}\n`)
 }
 
-export async function cmpGeneric(
-  paths: PathSpec[],
-  opts: CommandOpts,
-  stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
-): Promise<[ByteSource | null, IOResult]> {
-  const parsed = parseFlags(new FlagView(opts.flags, specOf('cmp')))
-  if (paths.length > 2) throw extraOperandError(CommandName.CMP, paths[2]?.rawPath ?? '')
-  if (paths.length < 2) {
-    return [null, new IOResult({ exitCode: 2, stderr: ENC.encode('cmp: requires two paths\n') })]
-  }
-  const p0 = paths[0]
-  const p1 = paths[1]
-  if (p0 === undefined || p1 === undefined) return [null, new IOResult()]
-  let data1: Uint8Array
-  let data2: Uint8Array
-  try {
-    data1 = await materialize(stream(p0))
-    data2 = await materialize(stream(p1))
-  } catch (err) {
-    if (!isFsError(err)) throw err
-    // GNU cmp reserves exit 1 for "files differ"; trouble (a missing or
-    // unreadable operand) is exit 2.
-    return [null, new IOResult({ exitCode: 2, stderr: formatFsError('cmp', err, paths) })]
-  }
-  data1 = data1.slice(parsed.skip[0])
-  data2 = data2.slice(parsed.skip[1])
+/**
+ * The width GNU `cmp -l` pads its offset column to.
+ *
+ * GNU sizes the column for the largest offset it could print: the `-n`
+ * limit, cut to the bytes left in each regular file after its skip. A
+ * stream has no size to cut by, so a line comparing two of them pads to
+ * the width of the largest file offset.
+ */
+function offsetWidth(sizes: readonly number[], limit: number | null): number {
+  let most = limit !== null ? BigInt(limit) : INTMAX
+  for (const size of sizes) if (BigInt(size) < most) most = BigInt(size)
+  return String(most > 0n ? most : 0n).length
+}
+
+/**
+ * The skips cmp's SKIP1 and SKIP2 operands give, beside -i's.
+ *
+ * Each is read as -i reads its counts, and each file keeps the larger of the
+ * two skips it was given: diffutils' specify_ignore_initial only ever raises
+ * one. Past the fourth operand is an extra one, which diffutils refuses only
+ * after both skips have parsed. Mirrors Python's operand_skips.
+ */
+export function operandSkips(
+  texts: readonly string[],
+  skip: readonly [number, number],
+): [number, number] {
+  const skips: [number, number] = [skip[0], skip[1]]
+  texts.slice(0, 2).forEach((raw, f) => {
+    skips[f] = Math.max(skips[f] ?? 0, parseCount(raw, '--ignore-initial'))
+  })
+  const extra = texts[2]
+  if (extra !== undefined) throw extraOperandError(CommandName.CMP, extra)
+  return skips
+}
+
+interface Compared {
+  readonly silent: boolean
+  readonly verbose: boolean
+  readonly limit: number | null
+  readonly printBytes: boolean
+}
+
+/** cmp's answer for two inputs already past their skips. Mirrors Python's
+ * _compared. */
+function compared(
+  first: Uint8Array,
+  second: Uint8Array,
+  names: readonly [string, string],
+  sizes: readonly number[],
+  parsed: Compared,
+): [ByteSource | null, IOResult] {
+  let data1 = first
+  let data2 = second
   if (parsed.limit !== null) {
     data1 = data1.slice(0, parsed.limit)
     data2 = data2.slice(0, parsed.limit)
@@ -184,12 +224,13 @@ export async function cmpGeneric(
   if (parsed.silent) return [null, new IOResult({ exitCode: 1 })]
   const common = Math.min(data1.byteLength, data2.byteLength)
   if (parsed.verbose) {
+    const width = offsetWidth(sizes, parsed.limit)
     const outLines: string[] = []
     for (let idx = 0; idx < common; idx++) {
       const a = data1[idx] ?? 0
       const b = data2[idx] ?? 0
       if (a === b) continue
-      let row = `${String(idx + 1)} ${octal(a, 3)}`
+      let row = `${String(idx + 1).padStart(width)} ${octal(a, 3)}`
       if (parsed.printBytes) row += ` ${visible(a).padEnd(4)}`
       row += ` ${octal(b, 3)}`
       if (parsed.printBytes) row += ` ${visible(b)}`
@@ -198,7 +239,7 @@ export async function cmpGeneric(
     const io =
       data1.byteLength === data2.byteLength
         ? new IOResult({ exitCode: 1 })
-        : new IOResult({ exitCode: 1, stderr: eofError(paths, data1, data2, true) })
+        : new IOResult({ exitCode: 1, stderr: eofError(names, data1, data2, true) })
     return [formatRecords(outLines), io]
   }
   for (let idx = 0; idx < common; idx++) {
@@ -210,7 +251,7 @@ export async function cmpGeneric(
     // GNU counts in `byte` under -b and in `char` otherwise, on the
     // same offset -- the word tracks the flag, not a unit.
     const unit = parsed.printBytes ? 'byte' : 'char'
-    let msg = `${p0.virtual} ${p1.virtual} differ: ${unit} ${String(idx + 1)}, line ${String(line)}`
+    let msg = `${names[0]} ${names[1]} differ: ${unit} ${String(idx + 1)}, line ${String(line)}`
     if (parsed.printBytes) {
       msg += ` is ${octal(a, 3)} ${visible(a)} ${octal(b, 3)} ${visible(b)}`
     }
@@ -218,6 +259,87 @@ export async function cmpGeneric(
   }
   return [
     null,
-    new IOResult({ exitCode: 1, stderr: eofError(paths, data1, data2, parsed.verbose) }),
+    new IOResult({ exitCode: 1, stderr: eofError(names, data1, data2, parsed.verbose) }),
   ]
+}
+
+/**
+ * Both operands naming the one stdin, as diffutils 3.10 answers it.
+ *
+ * The same file at the same offset is equal unread. Otherwise cmp skips on
+ * the one descriptor twice, so the first file reads what is left past both
+ * skips and the second reads nothing, and closing the descriptor a second
+ * time fails: that line and exit 2 follow whatever the comparison said, -s
+ * included. Mirrors Python's _one_stdin_twice.
+ */
+async function oneStdinTwice(
+  read: (p: PathSpec) => AsyncIterable<Uint8Array>,
+  p: PathSpec,
+  skip: readonly [number, number],
+  parsed: Compared,
+): Promise<[ByteSource | null, IOResult]> {
+  if (skip[0] === skip[1]) return [null, new IOResult()]
+  const data = await materialize(read(p))
+  const [out, io] = compared(
+    data.slice(skip[0] + skip[1]),
+    new Uint8Array(),
+    ['-', '-'],
+    [],
+    parsed,
+  )
+  const held = io.stderr === null ? new Uint8Array() : await materialize(io.stderr)
+  const tail = ENC.encode('cmp: -: Bad file descriptor\n')
+  const stderr = new Uint8Array(held.byteLength + tail.byteLength)
+  stderr.set(held)
+  stderr.set(tail, held.byteLength)
+  io.stderr = stderr
+  io.exitCode = 2
+  return [out, io]
+}
+
+export async function cmpGeneric(
+  paths: PathSpec[],
+  texts: readonly string[],
+  opts: CommandOpts,
+  stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
+): Promise<[ByteSource | null, IOResult]> {
+  const parsed = parseFlags(new FlagView(opts.flags, specOf('cmp')))
+  const p0 = paths[0]
+  if (p0 === undefined) throw missingOperandError(CommandName.CMP, null, opts.argv ?? [])
+  const skip = operandSkips(texts, parsed.skip)
+  // A lone FILE1 is compared with stdin, which GNU names `-`.
+  const p1 = paths[1] ?? STDIN_OPERAND
+  const read = stdinStream(stream, opts.stdin)
+  if (isStdin(p0) && isStdin(p1)) return oneStdinTwice(read, p0, skip, parsed)
+  const names = [p0.rawPath, p1.rawPath] as const
+  // GNU cmp reserves exit 1 for "files differ"; trouble is exit 2.
+  // diffutils 3.10 opens both operands before it reads either, and -s drops
+  // the message only for an operand it cannot open: a directory opens, fails
+  // at its first read, and is reported whatever -s says, unless both operands
+  // name it, which is the same file at the same offset and so equal unread.
+  const data: Uint8Array[] = []
+  let unread: unknown = null
+  for (const p of [p0, p1]) {
+    try {
+      data.push(await materialize(read(p)))
+    } catch (err) {
+      if (isEisdir(err)) {
+        unread ??= err
+        data.push(new Uint8Array())
+        continue
+      }
+      if (!isFsError(err)) throw err
+      const stderr = parsed.silent ? null : formatFsError('cmp', err, paths)
+      return [null, new IOResult({ exitCode: 2, stderr })]
+    }
+  }
+  if (p0.virtual === p1.virtual && skip[0] === skip[1]) return [null, new IOResult()]
+  if (unread !== null)
+    return [null, new IOResult({ exitCode: 2, stderr: formatFsError('cmp', unread, paths) })]
+  const data1 = data[0] ?? new Uint8Array()
+  const data2 = data[1] ?? new Uint8Array()
+  const sizes: number[] = []
+  if (!isStdin(p0)) sizes.push(data1.byteLength - skip[0])
+  if (!isStdin(p1)) sizes.push(data2.byteLength - skip[1])
+  return compared(data1.slice(skip[0]), data2.slice(skip[1]), names, sizes, parsed)
 }

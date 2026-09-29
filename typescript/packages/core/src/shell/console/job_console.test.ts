@@ -107,6 +107,17 @@ describe('RAMConsoleStore', () => {
 })
 
 describe('JobConsole', () => {
+  it('drops writes once its store is closed', async () => {
+    const store = new RAMConsoleStore()
+    const c = new JobConsole(store)
+    await store.close()
+    await c.emit(Channel.STDOUT, enc('late'))
+    await c.finish(KILLED_OUTCOME)
+    const [chunks] = await store.readFrom(0)
+    expect(chunks).toEqual([])
+    expect(c.finished).toBe(true)
+  })
+
   it('reads emitted chunks from the start', async () => {
     const c = new JobConsole()
     await c.emit(Channel.STDOUT, enc('hello\n'))

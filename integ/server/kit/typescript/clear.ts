@@ -13,12 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { SeedError } from './errors.ts'
-import { delegateFor } from './seed.ts'
 import type { Dmmf } from './seed.ts'
 import { TENANT_FIELD } from './tenant.ts'
 
-interface DeleteDelegate {
-  deleteMany(args: { where: Record<string, unknown> }): Promise<{ count: number }>
+interface DeleteClient {
+  $executeRawUnsafe(query: string, ...values: string[]): Promise<number>
+}
+
+function identifier(name: string): string {
+  return `"${name.replaceAll('"', '""')}"`
 }
 
 // The precondition a scoped reset cannot check at compile time. Recreating the
@@ -95,12 +98,20 @@ export async function clearTenants(db: unknown, dmmf: Dmmf, tenants: string[]): 
       `a scoped reset needs a ${TENANT_FIELD} column on every model; missing on ${missing.join(', ')}`,
     )
   }
+  // Prisma's relation emulation materializes every matching key even for
+  // deleteMany. Reset owns the entire tenant, so delete directly in SQLite;
+  // memory is bounded by the statement size, not the tenant's row count.
+  const client = db as DeleteClient
   let removed = 0
-  for (const model of deleteOrder(dmmf)) {
-    const done = await delegateFor<DeleteDelegate>(db, model).deleteMany({
-      where: { [TENANT_FIELD]: { in: tenants } },
-    })
-    removed += done.count
+  for (const name of deleteOrder(dmmf)) {
+    const model = dmmf.datamodel.models.find((m) => m.name === name)!
+    const field = model.fields.find((f) => f.name === TENANT_FIELD)!
+    for (const tenant of tenants) {
+      removed += await client.$executeRawUnsafe(
+        `DELETE FROM ${identifier(model.dbName ?? model.name)} WHERE ${identifier(field.dbName ?? field.name)} = ?`,
+        tenant,
+      )
+    }
   }
   return removed
 }

@@ -92,3 +92,16 @@ export const GLOB_CHARS: readonly string[] = ['*', '?', '[']
 // a non-empty summary, and a write reaching the backend through `cp` or a
 // redirect has no message of its own to offer.
 export const DEFAULT_COMMIT_MESSAGE = 'Update from mirage'
+
+// The statuses a refused tree walk comes back with when the repository or
+// revision cannot be seen (a first-page 404 EntryNotFound, a key_prefix naming
+// no folder, lists empty before it gets here). A mount reports them as
+// permission denied, which every file tool steps past; `hf download` alone
+// folds them into an empty listing, so its failure path can ask the Hub which
+// absence it was and name it in upstream's words.
+export const ABSENT_STATUSES: ReadonlySet<number> = new Set([401, 403, 404])
+
+// The statuses a download is refused with when the listing was allowed: a
+// gated repo, or a token that expired after the tree loaded. A 404 there is one
+// file gone, not the repo withheld, so it is not among them.
+export const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403])

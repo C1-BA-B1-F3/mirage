@@ -279,6 +279,7 @@ async def test_readdir_owned_non_date_pattern_omits_range(accessor, index):
 async def test_readdir_filtered_then_stat_succeeds(accessor, index):
     files = [{
         "id": "may1",
+        "mimeType": "application/vnd.google-apps.document",
         "name": "MayDoc",
         "modifiedTime": "2026-05-15T00:00:00.000Z",
         "owners": [{
@@ -289,7 +290,9 @@ async def test_readdir_filtered_then_stat_succeeds(accessor, index):
             "mirage.core.gdocs.readdir.list_all_files",
             new_callable=AsyncMock,
             return_value=(files, True),
-    ) as mock_list:
+    ) as mock_list, patch("mirage.core.google.entry.get_file",
+                          new_callable=AsyncMock,
+                          return_value=files[0]) as mock_get:
         listed = await readdir(
             accessor,
             PathSpec(vfs_path=mount_key("/gdocs/shared/2026-05-*", "/gdocs"),
@@ -307,7 +310,8 @@ async def test_readdir_filtered_then_stat_succeeds(accessor, index):
         )
     assert result.extra["doc_id"] == "may1"
     # The filtered result cannot prove the full parent is fresh.
-    assert mock_list.await_count == 2
+    assert mock_list.await_count == 1
+    mock_get.assert_awaited_once_with(None, "may1")
 
 
 @pytest.mark.asyncio

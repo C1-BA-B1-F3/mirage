@@ -13,8 +13,10 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { compareCodePoints } from '../../utils/sort.ts'
+import { contentSize } from '../../utils/stat_view.ts'
 import { resolvePath } from '../../utils/path.ts'
-import { fsStrerror, gnuStrerror, isFsError } from '../../utils/errors.ts'
+import { enoent, gnuStrerror } from '../../utils/errors.ts'
+import { failureText } from '../../errors/classify.ts'
 import { formatFindLs } from '../../commands/builtin/utils/formatting.ts'
 import {
   expandPrintf,
@@ -27,21 +29,15 @@ import type { Identity } from '../../commands/builtin/utils/identity.ts'
 import { PolicyDenied } from '../../policy/errors.ts'
 import { shellJoin } from '../../shell/join.ts'
 import { type ByteSource, materialize } from '../../io/types.ts'
-import {
-  getCurrentSession,
-  runAsProgram,
-  runWithSuspendedOpPolicies,
-} from '../../context/session_context.ts'
-import { preOpsGate } from '../../policy/policies.ts'
+import { getCurrentSession, runAsProgram } from '../../context/session_context.ts'
 import type { FileStat, PathSpec } from '../../types.ts'
 import type { MountRegistry } from '../mount/registry.ts'
 import { SHELL_ONLY_BUILTINS } from '../lookup/constants.ts'
 import { lookupAll } from '../lookup/lookup.ts'
 import { Consumer } from '../lookup/types.ts'
 import type { NamespaceView, StatPath } from '../../ops/types.ts'
-import { yieldBytes } from '../../io/stream.ts'
+import { SharedStdin } from '../../io/stream.ts'
 import { FileType } from '../../types.ts'
-import type { Namespace } from '../mount/namespace/namespace.ts'
 import {
   execActions,
   type FindExpr,
@@ -51,6 +47,7 @@ import { EXEC_PLACEHOLDER } from '../../commands/builtin/constants.ts'
 import type { ExecAction, FindAction, PrintfAction } from '../../commands/builtin/types.ts'
 import type { ExecuteFn } from '../expand/node.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 export interface FindActionDoors {
   // Runs an `-exec` line in the session; absent outside a workspace,
@@ -72,7 +69,6 @@ export interface FindActionDoors {
   dispatch?: DispatchFn | null
   // Who the session is, for the owner and group columns of `-ls`.
   identity?: Identity | null
-  namespace?: Namespace | null
   // find's own input, which its `-exec` children share as one cursor, as
   // GNU's do (a pipe feeds one reader, and a child that never reads leaves
   // it for the next).
@@ -158,62 +154,6 @@ async function headState(
   return [!program, shadowed]
 }
 
-/**
- * Run one `-exec` invocation, collecting its streams. A command that
- * cannot be found is GNU's `find: 'cmd': No such file or directory` rather
- * than the shell's `command not found`, and counts as a failed run. That
- * is decided by looking the head word up before the line runs (GNU fails
- * in `execvp`), never from the exit status: a program that exists and
- * exits 127 keeps its own stderr and is just a failed run. Returns
- * whether the run succeeded, which is the action's truth value.
- */
-/**
- * find's own input, shared by its `-exec` children as one cursor. GNU's
- * children inherit find's stdin descriptor, so its offset moves only
- * when a child reads: `-exec true \; -exec cat \;` leaves the bytes for
- * cat, while two cats see them once. The same object rides into every
- * child as its stdin, and the first read drains it.
- */
-export class SharedStdin implements AsyncIterable<Uint8Array> {
-  private chunks: AsyncIterator<Uint8Array> | null
-  private buffer: Uint8Array = new Uint8Array()
-  private pos = 0
-
-  constructor(source: ByteSource) {
-    this.chunks = (source instanceof Uint8Array ? yieldBytes(source) : source)[
-      Symbol.asyncIterator
-    ]()
-  }
-
-  // The source is pulled only as a child reads: find itself never reads
-  // its stdin, so a walk with no reading child (`yes | find d -maxdepth
-  // 0`) must not wait on it, and a child that reads a little of an
-  // unbounded input (`-exec head -c 1`) must get its byte without waiting
-  // for EOF. One byte per pull, so a child that stops reading early
-  // leaves the rest at the cursor for the next child, the way a shared
-  // descriptor's offset does; the next source chunk is pulled only once
-  // the buffered one is spent.
-  [Symbol.asyncIterator](): AsyncIterator<Uint8Array> {
-    return {
-      next: async () => {
-        while (this.pos >= this.buffer.byteLength) {
-          if (this.chunks === null) return { done: true, value: undefined }
-          const step = await this.chunks.next()
-          if (step.done === true) {
-            this.chunks = null
-            return { done: true, value: undefined }
-          }
-          this.buffer = step.value
-          this.pos = 0
-        }
-        const chunk = this.buffer.subarray(this.pos, this.pos + 1)
-        this.pos += 1
-        return { done: false, value: chunk }
-      },
-    }
-  }
-}
-
 async function runExec(
   executeFn: ExecuteFn,
   sessionId: string,
@@ -253,80 +193,26 @@ async function runExec(
   return io.exitCode === 0
 }
 
-/**
- * Delete one accepted row; returns whether it succeeded.
- *
- * A symlink row came from the namespace, which no backend can see, so
- * it is unlinked through the op dispatcher the way `rm link` is
- * (`stripLinkOperands`): that door is where the path gate, the turf's
- * mode and the op ledger fire, and it removes the node the mount's `rm`
- * would only report as absent. Every other row is a backend entry,
- * removed by the mount's own `rm`.
- */
+/** Remove a matched entry through the operation door, which owns admission,
+ * backend support, cache invalidation and namespace cleanup. */
 async function deleteRow(
   ps: PathSpec,
-  registry: MountRegistry,
-  cwd: string,
   ns: NamespaceView | null,
   dispatch: DispatchFn | null,
   errors: Uint8Array[],
-  namespace: Namespace | null,
   statPath: StatPath | null,
 ): Promise<boolean> {
   const path = ps.rawPath || ps.virtual
-  const link = dispatch !== null && (ns?.links?.statAt(ps.virtual) ?? null) !== null
-  const mount = registry.tryMountFor(ps.virtual)
-  if (mount === null && !link) {
-    errors.push(enc.encode(`find: cannot delete '${path}': no mount\n`))
+  if (dispatch === null) {
+    errors.push(enc.encode('find: -delete requires an operation dispatcher\n'))
     return false
   }
   try {
-    if (link) {
-      await dispatch('unlink', ps)
-      return true
-    }
-    if (mount === null) return false
-    // -delete is find's own action, not an `rm` line, so no command rule
-    // sees it; it is a removal all the same, so it clears the op door a
-    // path rule guards (the same gate `ws.vfs`, FUSE and a redirect
-    // clear), by the session the line runs under, and a refusal reports
-    // in find's voice. The delegated rm's own slots are suspended for the
-    // call, so the deletion admits exactly once. -d so a directory
-    // emptied by the rows before it in -depth order is removable,
-    // matching GNU -delete's rmdir behavior.
-    // Admitted as the op the row's removal is: a directory row is an
-    // rmdir, so a rule that refuses rmdir and allows unlink judges `find
-    // emptydir -delete` as it judges `rmdir emptydir`.
-    const st = statPath === null ? null : await statPath(ps.virtual)
+    const link = (ns?.links?.statAt(ps.virtual) ?? null) !== null
+    const st = link || statPath === null ? null : await statPath(ps.virtual)
+    if (!link && statPath !== null && st === null) throw enoent(ps)
     const op = st !== null && st.type === FileType.DIRECTORY ? 'rmdir' : 'unlink'
-    await preOpsGate(
-      registry.policies,
-      op,
-      ps,
-      true,
-      mount.prefix,
-      getCurrentSession()?.sessionId ?? '',
-    )
-    const [, rmIo] = await runWithSuspendedOpPolicies(() =>
-      mount.executeCmd('rm', [ps], [], { d: true }, { stdin: null, cwd }),
-    )
-    if (rmIo.exitCode !== 0) {
-      // rm names the reason last (`rm: cannot remove '/w/d': Directory
-      // not empty`), and find says the same thing about the row as it
-      // was typed.
-      const line = new TextDecoder().decode(await materialize(rmIo.stderr)).trim()
-      const why = line.slice(line.lastIndexOf(': ') + 2)
-      errors.push(enc.encode(`find: cannot delete '${path}'${why ? `: ${why}` : ''}\n`))
-      return false
-    }
-    if (namespace !== null) {
-      // The row's node meta (a chmod/chown overlay) goes with it and a
-      // directory's subtree purges, as the `rm` command path does in
-      // command_dispatch: a file later created at the same name must not
-      // inherit the removed one's mode.
-      await namespace.unlink(ps.virtual)
-      await namespace.purgeUnder(ps.virtual)
-    }
+    await dispatch(op, ps)
     return true
   } catch (err) {
     errors.push(enc.encode(`find: cannot delete '${path}': ${refusalWhy(err)}\n`))
@@ -342,9 +228,7 @@ async function deleteRow(
  */
 function refusalWhy(err: unknown): string {
   if (err instanceof PolicyDenied) return err.message
-  return (
-    (isFsError(err) ? fsStrerror(err) : null) ?? (err instanceof Error ? err.message : String(err))
-  )
+  return failureText(err)
 }
 
 /**
@@ -407,7 +291,7 @@ async function printfFacts(
   const link = links !== null && links.statAt(ps.virtual) !== null
   const target = link ? await links.targetStat(ps.virtual) : null
   return {
-    size: st.size ?? 0,
+    size: contentSize(st),
     kind: link ? 'l' : printfKind(st),
     mtimeEpoch: modifiedTs(st.modified) ?? 0,
     mode: st.mode,
@@ -453,8 +337,8 @@ function startBase(start: PathSpec | undefined): string {
  * order `-delete` cannot remove a tree in.
  */
 export function compareDepthFirst(a: string, b: string): number {
-  const pa = a.replace(/\/+$/, '').split('/')
-  const pb = b.replace(/\/+$/, '').split('/')
+  const pa = rstripSlash(a).split('/')
+  const pb = rstripSlash(b).split('/')
   const n = Math.min(pa.length, pb.length)
   for (let i = 0; i < n; i++) {
     const byName = compareCodePoints(pa[i] ?? '', pb[i] ?? '')
@@ -553,10 +437,10 @@ export async function applyFindActions(
   const dispatch = doors.dispatch ?? null
   const identity = doors.identity ?? null
   const starts = doors.starts ?? []
-  const namespace = doors.namespace ?? null
   const signal = doors.signal
   const once =
     doors.stdin === undefined || doors.stdin === null ? null : new SharedStdin(doors.stdin)
+  await materialize(stdout)
   if (matchedRuns === null)
     return [null, enc.encode('find: actions require structured matches\n'), 1]
   // The runs arrive one per start point, in operand order, so each row
@@ -632,7 +516,7 @@ export async function applyFindActions(
         // A structural row is skipped, not refused, the way Unix leaves
         // a mount point in place.
         if (structural(match, registry)) continue
-        if (!(await deleteRow(match, registry, cwd, ns, dispatch, errors, namespace, statPath))) {
+        if (!(await deleteRow(match, ns, dispatch, errors, statPath))) {
           exitCode = 1
           break
         }

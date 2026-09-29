@@ -71,11 +71,16 @@ async def test_du_bare_measures_the_cwd_dot_spelled(workspace):
     # (sizes are bytes, mirage's documented divergence from blocks);
     # the implicit /dev child mount rides along as ./dev, in its
     # post-order position rather than appended, and keeps GNU's `0` row
-    # even though it holds nothing. Pinned on coreutils 9.7 with a tmpfs
-    # at ./dev: `0 ./dev`, `6 ./sub`, `12 .`.
+    # even though it holds nothing; the /usr/bin view rides along the
+    # same way. Pinned on coreutils 9.7 with a tmpfs at ./dev: `0 ./dev`,
+    # `6 ./sub`, `12 .`, plus the program files' own total.
+    listed = await seeded.shell("du -s /usr/bin")
+    programs = int((listed.stdout or b"0").split(b"\t")[0])
     io = await seeded.shell("du", cwd="/")
     assert io.exit_code == 0
-    assert (io.stdout or b"") == b"0\t./dev\n6\t./sub\n12\t.\n"
+    assert (io.stdout
+            or b"") == (f"0\t./dev\n6\t./sub\n{programs}\t./usr/bin\n"
+                        f"{programs}\t./usr\n{12 + programs}\t.\n").encode()
 
 
 @pytest.mark.asyncio

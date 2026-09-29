@@ -55,18 +55,27 @@ describe('classify', () => {
     session.functions.deploy = 'deploy() { :; }'
     expect(classify('if', session, registry)).toBe(NameKind.KEYWORD)
     expect(classify('deploy', session, registry)).toBe(NameKind.FUNCTION)
-    expect(classify('linear', session, registry)).toBe(NameKind.CLI)
+    expect(classify('linear', session, registry)).toBe(NameKind.FILE)
     expect(classify('cd', session, registry)).toBe(NameKind.BUILTIN)
-    expect(classify('cat', session, registry)).toBe(NameKind.BUILTIN)
+    expect(classify('cat', session, registry)).toBe(NameKind.FILE)
+    // Not one of bash's builtins, so a program with a file (GNU xargs).
+    expect(classify('xargs', session, registry)).toBe(NameKind.FILE)
     expect(classify('nope', session, registry)).toBeNull()
   })
 
   it('classifyAll reports a function shadowing a CLI, winner first', () => {
     const session = makeSession()
     const registry = makeRegistry(true)
-    expect(classifyAll('linear', session, registry)).toEqual([NameKind.CLI])
+    expect(classifyAll('linear', session, registry)).toEqual([NameKind.FILE])
     session.functions.linear = 'linear() { :; }'
-    expect(classifyAll('linear', session, registry)).toEqual([NameKind.FUNCTION, NameKind.CLI])
+    expect(classifyAll('linear', session, registry)).toEqual([NameKind.FUNCTION, NameKind.FILE])
+  })
+
+  it('classifyAll ends a builtin that is also a program with its file', () => {
+    // bash: `type -a echo` prints the builtin line, then /usr/bin/echo.
+    const registry = makeRegistry(true)
+    expect(classifyAll('echo', makeSession(), registry)).toEqual([NameKind.BUILTIN, NameKind.FILE])
+    expect(classifyAll('cd', makeSession(), registry)).toEqual([NameKind.BUILTIN])
   })
 
   it('keeps the layers under a keyword', () => {

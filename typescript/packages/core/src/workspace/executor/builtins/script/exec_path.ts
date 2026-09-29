@@ -12,6 +12,12 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { runAsShell } from '../../../../context/session_context.ts'
+import { resolvePath } from '../../../../utils/path.ts'
+import { BinViewVFS } from '../../../../vfs/bin/bin.ts'
+import type { MountRegistry } from '../../../mount/registry.ts'
+import type { Namespace } from '../../../mount/namespace/namespace.ts'
+import { handleCommandBuiltin } from '../command/command.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import { fsStrerror } from '../../../../utils/errors.ts'
 import type { SessionState } from '../../../session/session.ts'
@@ -20,6 +26,7 @@ import type { DispatchFn } from '../../../../runtime/types.ts'
 import { handleBash } from './bash.ts'
 import { readScriptText, scriptError } from './script.ts'
 import type { ExecuteStringFn, Result } from '../types.ts'
+import { stripSlash } from '../../../../utils/slash.ts'
 
 /** The interpreter words a script's first line names, env resolved. */
 /**
@@ -96,6 +103,8 @@ export async function handleExecPath(
   path: string,
   args: string[],
   session: SessionState,
+  registry: MountRegistry,
+  namespace: Namespace,
   stdin: ByteSource | null = null,
 ): Promise<Result> {
   let script: string
@@ -106,6 +115,26 @@ export async function handleExecPath(
     if (strerror === null) throw exc
     const code = (exc as { code?: string }).code
     return scriptError(path, strerror, code === 'ENOENT' ? 127 : 126)
+  }
+  const target = namespace.follow(resolvePath(path, session.cwd))
+  const [vfs, spec] = registry.resolve(target)
+  if (vfs instanceof BinViewVFS) {
+    // The read enforces visibility and path policy; the target still passes
+    // its command gate, without needing permission for the stub's helper.
+    const saved = session.snapshot()
+    try {
+      return await runAsShell(() =>
+        handleCommandBuiltin(
+          executeFn,
+          ['--', stripSlash(spec.mountPath), ...args],
+          session,
+          registry,
+          stdin,
+        ),
+      )
+    } finally {
+      session.restore(saved)
+    }
   }
   const words = shebangWords(script)
   const interp = words[0] ?? 'sh'

@@ -105,6 +105,27 @@ def test_strict_load_raises_when_s3_etag_drifts(tmp_path):
         assert live != recorded
 
 
+def test_strict_drift_names_the_virtual_path_of_a_key_named_like_its_mount(
+        tmp_path):
+    # Drift is checked on the recorded path. Key "m/x.csv" under /m
+    # recorded mount-relative lands on "/m/x.csv", the wrong file.
+    store = {"m/x.csv": b"version 1 bytes\n"}
+    with ExitStack() as stack:
+        stack.enter_context(patch_s3_multi({"test-bucket": store}))
+        src = Workspace({"/m": (S3VFS(_config()), MountMode.WRITE)},
+                        mode=MountMode.WRITE)
+        asyncio.run(src.shell("cat /m/m/x.csv"))
+
+        snap = tmp_path / "snap.tar"
+        asyncio.run(src.snapshot(snap))
+        store["m/x.csv"] = b"VERSION 2 DRIFTED\n"
+
+        dst = _load(snap, mounts={"/m": S3VFS(_config())})
+        with pytest.raises(ContentDriftError) as exc_info:
+            asyncio.run(dst.shell("cat /m/m/x.csv"))
+        assert exc_info.value.path == "/m/m/x.csv"
+
+
 def test_strict_load_checks_drift_before_an_ops_write(tmp_path):
     """The ops facade (the FUSE path) reaches the dispatcher without
     passing Workspace.dispatch, so the pending checks must run at the
@@ -216,6 +237,31 @@ def test_version_pin_serves_original_bytes_on_versioned_bucket(tmp_path):
         # pin path, not the cache path.
         _drop_path_from_cache(dst, "/s3/data.csv")
         result = asyncio.run(dst.shell("cat /s3/data.csv"))
+        assert result.stdout == b"original\n"
+
+
+def test_version_pin_serves_original_bytes_for_a_key_named_like_its_mount(
+        tmp_path):
+    # The pin is keyed by the recorded path and looked up by the virtual
+    # one. Key "m/x.csv" under /m recorded mount-relative pins "/m/x.csv",
+    # so the replay read finds no pin and serves the mutated head.
+    store = {"m/x.csv": b"original\n"}
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch_s3_multi({"test-bucket": store}, versioned={"test-bucket"}))
+        src = Workspace({"/m": (S3VFS(_config()), MountMode.WRITE)},
+                        mode=MountMode.WRITE)
+        asyncio.run(src.shell("cat /m/m/x.csv"))
+
+        snap = tmp_path / "snap.tar"
+        asyncio.run(src.snapshot(snap))
+        store["m/x.csv"] = b"mutated bytes\n"
+
+        dst = _load(snap, mounts={"/m": S3VFS(_config())})
+        assert list(
+            dst._registry.mount_for("/m/m/x.csv").revisions) == ["/m/m/x.csv"]
+        _drop_path_from_cache(dst, "/m/m/x.csv")
+        result = asyncio.run(dst.shell("cat /m/m/x.csv"))
         assert result.stdout == b"original\n"
 
 

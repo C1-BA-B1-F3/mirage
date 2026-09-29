@@ -33,6 +33,18 @@ ALLOWED = {
     ("vfs/dev/dev.py", "__contains__"),
     ("vfs/dev/dev.py", "pop"),
     ("workspace/workspace/guard.py", "reject_config_script"),
+    # Override asyncssh.SFTPServer, which types the file handle it hands
+    # back as `object`; `opened` is the one place it is narrowed.
+    ("server/ssh/sftp.py", "opened"),
+    ("server/ssh/sftp.py", "fstat"),
+    ("server/ssh/sftp.py", "fsetstat"),
+    ("server/ssh/sftp.py", "read"),
+    ("server/ssh/sftp.py", "write"),
+    ("server/ssh/sftp.py", "fsync"),
+    ("server/ssh/sftp.py", "close"),
+    ("server/ssh/sftp.py", "lock"),
+    ("server/ssh/sftp.py", "unlock"),
+    ("server/ssh/sftp.py", "fstatvfs"),
 }
 
 

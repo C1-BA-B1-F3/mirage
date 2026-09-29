@@ -12,130 +12,89 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
-from typing import Any
-
-from pymongo import AsyncMongoClient
+import re
 
 from mirage.accessor.mongodb import MongoDBAccessor
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.hierarchy.search import Searcher, SearchQuery
+from mirage.core.hierarchy.search import Searcher, query_matcher
+from mirage.core.mongodb._schema_json import (build_collection_schema_json,
+                                              build_database_json)
 from mirage.core.mongodb.client import list_collections, list_databases
-from mirage.core.mongodb.stream import render_doc
-from mirage.core.mongodb.types import PRIMARY_KEY, EntityKind
+from mirage.core.mongodb.scope import entity_kind
+from mirage.core.mongodb.stream import read_stream, render_doc
+from mirage.core.mongodb.types import KIND_TO_DIR, EntityKind
+from mirage.types import PathSpec
+from mirage.vfs.types import SearchQuery
+
+# A directory's answer is grep -r's over the files under it, spelled
+# relative to the mount, in the order a walk visits them (sorted, so
+# `collections/` < `database.json` < `views/`, and within an entity
+# `documents.jsonl` < `schema.json`). Each file is rendered exactly as
+# `cat` renders it and decided by the matcher grep compiles, which is the
+# only answer a schemaless collection can prove: the server-side $regex
+# this replaced saw only string fields found in a 100-document sample,
+# folded case whatever -i said, skipped views and the metadata files,
+# and stopped at `default_search_limit` documents per collection.
 
 
-def _collect_string_paths(value, prefix: str, out: set[str]) -> None:
-    if isinstance(value, dict):
-        for k, v in value.items():
-            sub = f"{prefix}.{k}" if prefix else k
-            _collect_string_paths(v, sub, out)
-        return
-    if isinstance(value, str) and prefix and prefix != PRIMARY_KEY:
-        out.add(prefix)
-
-
-async def _sampled_string_paths(col, sample_size: int = 100) -> list[str]:
-    paths: set[str] = set()
-    async for doc in await col.aggregate([{"$sample": {"size": sample_size}}]):
-        _collect_string_paths(doc, "", paths)
-    return sorted(paths)
-
-
-async def search_collection(
-    client: AsyncMongoClient[Any],
-    database: str,
-    collection: str,
-    pattern: str,
-    limit: int = 100,
-) -> list[dict[str, Any]]:
-    db = client[database]
-    col = db[collection]
-    # Always $regex, never $text. A $text index matches whole words and
-    # stems them, while grep matches substrings, and these rows are
-    # returned as the grep output without a local re-scan: $text would
-    # both miss `foo` inside `foobar` and match stems the pattern never
-    # had. $regex takes the pattern as written.
-    paths = await _sampled_string_paths(col)
-    if not paths:
-        return []
-    filter_expr: dict[str, Any] = {
-        "$or": [{
-            p: {
-                "$regex": pattern,
-                "$options": "i"
-            }
-        } for p in paths]
-    }
-    cursor = col.find(filter_expr).limit(limit)
-    return await cursor.to_list(length=limit)
-
-
-async def search_database(
-    client: AsyncMongoClient[Any],
-    database: str,
-    pattern: str,
-    limit: int,
-) -> list[tuple[str, str, list[dict[str, Any]]]]:
-    collections = await list_collections(client,
-                                         database,
-                                         kind=EntityKind.COLLECTION)
-    tasks = [
-        search_collection(client, database, col, pattern, limit=limit)
-        for col in collections
+def _matched(rel: str, text: str, matcher: re.Pattern[str]) -> list[str]:
+    return [
+        f"{rel}:{line}" for line in text.splitlines() if matcher.search(line)
     ]
-    results_per_col = await asyncio.gather(*tasks)
-    return [(database, col, docs)
-            for col, docs in zip(collections, results_per_col) if docs]
 
 
-def format_grep_results(
-    results: list[tuple[str, str, list[dict[str, Any]]]]
-) -> list[str]:  # noqa: E125
+async def search_entity(accessor: MongoDBAccessor, database: str,
+                        kind: EntityKind, name: str,
+                        matcher: re.Pattern[str]) -> list[str]:
+    rel = f"{database}/{KIND_TO_DIR[kind]}/{name}"
+    docs = f"{rel}/documents.jsonl"
     lines: list[str] = []
-    for db_name, col_name, docs in results:
-        path = f"{db_name}/collections/{col_name}/documents.jsonl"
-        for doc in docs:
-            line_json = render_doc(doc)
-            lines.append(f"{path}:{line_json}")
+    async for chunk in read_stream(
+            accessor,
+            PathSpec(virtual="/" + docs, directory="/" + rel, vfs_path=docs)):
+        lines.extend(_matched(docs, chunk.decode(), matcher))
+    schema = await build_collection_schema_json(accessor, database, name)
+    return lines + _matched(f"{rel}/schema.json", render_doc(schema), matcher)
+
+
+async def _kind_lines(accessor: MongoDBAccessor, database: str,
+                      kind: EntityKind, matcher: re.Pattern[str]) -> list[str]:
+    lines: list[str] = []
+    for name in await list_collections(accessor.client, database, kind=kind):
+        lines.extend(await search_entity(accessor, database, kind, name,
+                                         matcher))
     return lines
+
+
+async def search_database(accessor: MongoDBAccessor, database: str,
+                          matcher: re.Pattern[str]) -> list[str]:
+    payload = render_doc(await build_database_json(accessor, database))
+    return (
+        await _kind_lines(accessor, database, EntityKind.COLLECTION, matcher) +
+        _matched(f"{database}/database.json", payload, matcher) +
+        await _kind_lines(accessor, database, EntityKind.VIEW, matcher))
 
 
 async def _entity_searcher(accessor: MongoDBAccessor, match: ScopeMatch,
                            query: SearchQuery) -> list[str]:
-    database = match.slots["database"]
-    name = match.slots["name"]
-    docs = await search_collection(accessor.client,
-                                   database,
-                                   name,
-                                   query.pattern,
-                                   limit=accessor.config.default_search_limit)
-    return format_grep_results([(database, name, docs)] if docs else [])
+    return await search_entity(accessor, match.slots["database"],
+                               entity_kind(match), match.slots["name"],
+                               query_matcher(query))
 
 
 async def _database_searcher(accessor: MongoDBAccessor, match: ScopeMatch,
                              query: SearchQuery) -> list[str]:
-    results = await search_database(accessor.client,
-                                    match.slots["database"],
-                                    query.pattern,
-                                    limit=accessor.config.default_search_limit)
-    return format_grep_results(results)
+    return await search_database(accessor, match.slots["database"],
+                                 query_matcher(query))
 
 
 async def _root_searcher(accessor: MongoDBAccessor, match: ScopeMatch,
                          query: SearchQuery) -> list[str]:
-    config = accessor.config
-    databases = await list_databases(accessor.client, config)
-    tasks = [
-        search_database(accessor.client,
-                        db_name,
-                        query.pattern,
-                        limit=config.default_search_limit)
-        for db_name in databases
-    ]
-    nested = await asyncio.gather(*tasks)
-    results = [r for sub in nested for r in sub]
-    return format_grep_results(results)
+    matcher = query_matcher(query)
+    lines: list[str] = []
+    for database in await list_databases(accessor.client, accessor.config):
+        lines.extend(await search_database(accessor, database, matcher))
+    return lines
 
 
 SEARCHERS: dict[str, Searcher[MongoDBAccessor]] = {

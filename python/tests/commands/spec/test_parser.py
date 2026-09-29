@@ -99,7 +99,7 @@ def test_provided_by_only_skips_slot_when_flag_present():
 
 def test_grep_dash_f_frees_positional_and_routes_pattern_file():
     parsed = parse_command(SPECS["grep"], ["-f", "pats.txt", "a.txt"], "/data")
-    assert parsed.flags["-f"] == ["/data/pats.txt"]
+    assert parsed.flags["--file"] == ["/data/pats.txt"]
     assert parsed.texts() == []
     assert parsed.paths() == ["/data/a.txt"]
     assert "/data/pats.txt" in parsed.routing_paths()
@@ -116,14 +116,14 @@ def test_grep_dash_e_and_dash_f_together():
     parsed = parse_command(SPECS["grep"],
                            ["-e", "foo", "-f", "/p.txt", "/a.txt"], "/")
     assert parsed.flags["-e"] == ["foo"]
-    assert parsed.flags["-f"] == ["/p.txt"]
+    assert parsed.flags["--file"] == ["/p.txt"]
     assert parsed.paths() == ["/a.txt"]
 
 
 def test_grep_repeated_dash_f_accumulates_and_routes_each_file():
     parsed = parse_command(SPECS["grep"],
                            ["-f", "p1.txt", "-f", "p2.txt", "a.txt"], "/data")
-    assert parsed.flags["-f"] == ["/data/p1.txt", "/data/p2.txt"]
+    assert parsed.flags["--file"] == ["/data/p1.txt", "/data/p2.txt"]
     assert parsed.paths() == ["/data/a.txt"]
     assert "/data/p1.txt" in parsed.routing_paths()
     assert "/data/p2.txt" in parsed.routing_paths()
@@ -131,9 +131,18 @@ def test_grep_repeated_dash_f_accumulates_and_routes_each_file():
 
 def test_rg_dash_e_frees_positional_and_accumulates():
     parsed = parse_command(SPECS["rg"], ["-e", "foo", "-e", "bar", "/x"], "/")
-    assert parsed.flags["-e"] == ["foo", "bar"]
+    assert parsed.flags["--regexp"] == ["foo", "bar"]
     assert parsed.texts() == []
     assert parsed.paths() == ["/x"]
+
+
+def test_rg_dash_f_dash_stays_stdin_as_grep_does():
+    # Resolved against the cwd, `-` became a pattern file named `/-`.
+    parsed = parse_command(SPECS["rg"], ["-f", "-", "/a.txt"],
+                           "/data",
+                           cmd_name="rg")
+    assert parsed.flags["--file"] == ["-"]
+    assert parsed.paths() == ["/a.txt"]
 
 
 def test_long_value_flag_equals_syntax():
@@ -144,7 +153,7 @@ def test_long_value_flag_equals_syntax():
 
 def test_long_value_flag_equals_syntax_rg():
     parsed = parse_command(SPECS["rg"], ["--type=md", "pat", "/x"], "/")
-    assert parsed.flags["--type"] == "md"
+    assert parsed.flags["--type"] == ["md"]
     assert parsed.texts() == ["pat"]
     assert parsed.paths() == ["/x"]
 
@@ -368,13 +377,38 @@ def test_short_value_false_keeps_short_boolean_and_clusterable():
 
 
 def test_short_value_optional_uses_only_attached_value():
-    bare = parse_command(SPECS["split"],
-                         ["-d", "-l", "2", "/input", "/prefix"], "/")
-    attached = parse_command(SPECS["split"], ["-d10", "/input"], "/")
-    assert bare.flags["--numeric-suffixes"] is True
-    assert bare.flags["--lines"] == "2"
-    assert bare.paths() == ["/input", "/prefix"]
-    assert attached.flags["--numeric-suffixes"] == "10"
+    # date's -I[FMT] is getopt's `I::`: the value only rides attached,
+    # and a detached word stays an operand (coreutils 9.7).
+    bare = parse_command(SPECS["date"], ["-I", "-d", "now", "+%F"], "/")
+    attached = parse_command(SPECS["date"], ["-Is", "+%F"], "/")
+    assert bare.flags["--iso-8601"] is True
+    assert bare.flags["--date"] == "now"
+    assert bare.texts() == ["+%F"]
+    assert attached.flags["--iso-8601"] == "seconds"
+
+
+def test_optional_value_short_takes_the_rest_of_a_cluster():
+    # getopt's `I::` inside a cluster: whatever follows the letter is its
+    # value, and nothing after it leaves it bare (coreutils 9.7:
+    # `date -uIs` is `date -u -Is`, `date -uI` is `date -u -I`).
+    valued = parse_command(SPECS["date"], ["-uIs"], "/")
+    assert valued.flags["--utc"] is True
+    assert valued.flags["--iso-8601"] == "seconds"
+    assert valued.invalid_options == []
+    bare = parse_command(SPECS["date"], ["-uI"], "/")
+    assert bare.flags["--iso-8601"] is True
+
+
+def test_plain_short_of_an_optional_long_refuses_an_attached_value():
+    # GNU mkdir's -Z takes no argument, only --context= does, so -vZ is a
+    # cluster and -Zfoo refuses the `f` (coreutils 9.7).
+    clustered = parse_command(SPECS["mkdir"], ["-vZ", "/d"], "/")
+    assert clustered.flags["--verbose"] is True
+    assert clustered.flags["--context"] is True
+    attached = parse_command(SPECS["mkdir"], ["-Zfoo", "/d"], "/")
+    assert attached.invalid_options == ["f"]
+    valued = parse_command(SPECS["mkdir"], ["--context=ctx", "/d"], "/")
+    assert valued.flags["--context"] == "ctx"
 
 
 def test_overflow_operands_pass_through_like_last_slot():
@@ -409,19 +443,39 @@ def test_multiple_accumulates_across_spellings_in_line_order():
 
 
 def test_attached_short_value_lands_on_canonical_dest():
-    # The attached-value spelling (`-d10`) unifies too, so last-wins holds
+    # The attached-value spelling (`-Ih`) unifies too, so last-wins holds
     # for `--long=` and the short form alike.
-    attached = parse_command(SPECS["split"], ["-d10", "/in", "/pre"], "/")
-    assert attached.flags["--numeric-suffixes"] == "10"
-    assert "-d" not in attached.flags
-    short_last = parse_command(SPECS["split"],
-                               ["--numeric-suffixes=3", "-d10", "/in", "/p"],
-                               "/")
-    assert short_last.flags["--numeric-suffixes"] == "10"
-    long_last = parse_command(SPECS["split"],
-                              ["-d10", "--numeric-suffixes=3", "/in", "/p"],
-                              "/")
-    assert long_last.flags["--numeric-suffixes"] == "3"
+    attached = parse_command(SPECS["date"], ["-Ih"], "/")
+    assert attached.flags["--iso-8601"] == "hours"
+    assert "-I" not in attached.flags
+    short_last = parse_command(SPECS["date"], ["--iso-8601=ns", "-Ih"], "/")
+    assert short_last.flags["--iso-8601"] == "hours"
+    long_last = parse_command(SPECS["date"], ["-Ih", "--iso-8601=ns"], "/")
+    assert long_last.flags["--iso-8601"] == "ns"
+
+
+def test_digit_options_build_split_line_count():
+    # split's getopt string lists the digits: those of one word build the
+    # count wherever they sit, a later word replaces it, and -d stays a
+    # plain flag (coreutils 9.7: `split -d10` is -d and ten lines).
+    for argv in (["-d10"], ["-10d"], ["-1d0"], ["-d", "-10"]):
+        parsed = parse_command(SPECS["split"], argv + ["/in"], "/", "split")
+        assert parsed.flags["--numeric-suffixes"] is True, argv
+        assert parsed.flags["--lines"] == "10", argv
+        assert parsed.invalid_options == [], argv
+    later = parse_command(SPECS["split"], ["-12", "-5", "/in"], "/", "split")
+    assert later.flags["--lines"] == "5"
+    valued = parse_command(SPECS["split"], ["--numeric-suffixes=3", "/in"],
+                           "/", "split")
+    assert valued.flags["--numeric-suffixes"] == "3"
+
+
+def test_digit_options_are_the_builtin_programs_own():
+    # A mount's own command borrowing the name gets getopt's plain rule.
+    spec = CommandSpec(options=(Option(
+        short="-d"), Option(short="-l", type="str", numeric_shorthand=True)))
+    parsed = parse_command(spec, ["-d10"], "/", "split")
+    assert parsed.invalid_options == ["1"]
 
 
 def test_count_flag_accumulates_occurrences():
@@ -917,12 +971,32 @@ def test_typed_values_reject_unicode_digits():
 
 
 def test_synonym_spellings_resolve_a_shared_prefix_like_glibc():
-    parsed = parse_command(SPECS["grep"], ["--colo", "pat", "/a.txt"], "/")
+    parsed = parse_command(SPECS["grep"], ["--colo", "pat", "/a.txt"], "/",
+                           "grep")
     assert parsed.ambiguous_options == []
     assert parsed.flags["--color"] is True
     attached = parse_command(SPECS["grep"], ["--colo=never", "pat", "/a.txt"],
-                             "/")
+                             "/", "grep")
     assert attached.flags["--color"] == "never"
+    utc = parse_command(SPECS["date"], ["--u"], "/", "date")
+    assert utc.flags["--utc"] is True
+
+
+def test_distinct_options_sharing_a_prefix_are_ambiguous():
+    # Two declared options are two options, whatever their shape, so a
+    # prefix of both is ambiguous, listed in GNU's table order
+    # (coreutils 9.7).
+    cases = [
+        ("ls", ["--re", "/"], ("--reverse", "--recursive")),
+        ("uname", ["--k"], ("--kernel-name", "--kernel-release",
+                            "--kernel-version")),
+        ("mv", ["--no-c", "/a", "/b"], ("--no-clobber", "--no-copy")),
+        ("md5sum", ["--st", "/f"], ("--status", "--strict")),
+        ("sort", ["--m", "/f"], ("--merge", "--month-sort")),
+    ]
+    for name, argv, possible in cases:
+        parsed = parse_command(SPECS[name], argv, "/", name)
+        assert parsed.ambiguous_options == [(argv[0], possible)], name
 
 
 def test_ambiguity_lists_synonyms_like_gnu():
@@ -1023,17 +1097,17 @@ def test_operands_stay_paths_without_the_args_flags():
 
 def test_tar_old_style_cluster_parses_as_flags():
     parsed = parse_command(SPECS["tar"], ["xzf", "/data/a.tgz"], "/")
-    assert parsed.flags["-x"] is True
-    assert parsed.flags["-z"] is True
-    assert parsed.flags["-f"] == "/data/a.tgz"
+    assert parsed.flags["--extract"] is True
+    assert parsed.flags["--gzip"] is True
+    assert parsed.flags["--file"] == "/data/a.tgz"
     assert parsed.paths() == []
     assert parsed.path_flag_values == ["/data/a.tgz"]
 
 
 def test_tar_old_style_cluster_word_is_text_not_a_path():
-    # The cluster carries no dash, so without an explicit TEXT kind the
-    # shape heuristic would classify it and dispatch would re-read it as
-    # a resolved path instead of letters.
+    # The cluster carries no dash, so without a TEXT kind the shape
+    # heuristic would classify it and dispatch would re-read it as a
+    # resolved path instead of letters.
     parsed = parse_command(SPECS["tar"], ["xzf", "/data/a.tgz"], "/")
     assert parsed.word_kinds == ["str", "path"]
 
@@ -1049,14 +1123,14 @@ def test_tar_old_style_operands_keep_their_argv_slots():
 def test_tar_old_style_two_value_letters_bind_in_letter_order():
     parsed = parse_command(SPECS["tar"], ["xfC", "/data/a.tgz", "/data/out"],
                            "/")
-    assert parsed.flags["-f"] == "/data/a.tgz"
-    assert parsed.flags["-C"] == ["/data/out"]
+    assert parsed.flags["--file"] == "/data/a.tgz"
+    assert parsed.flags["--directory"] == ["/data/out"]
 
 
 def test_tar_old_style_value_letter_before_bool_letter():
     parsed = parse_command(SPECS["tar"], ["cfz", "/data/a.tgz"], "/")
-    assert parsed.flags["-f"] == "/data/a.tgz"
-    assert parsed.flags["-z"] is True
+    assert parsed.flags["--file"] == "/data/a.tgz"
+    assert parsed.flags["--gzip"] is True
 
 
 def test_tar_old_style_missing_argument_is_reported_not_raised():
@@ -1074,7 +1148,7 @@ def test_tar_dashed_line_reports_no_old_option():
     parsed = parse_command(SPECS["tar"], ["-x", "-z", "-f", "/data/a.tgz"],
                            "/")
     assert parsed.old_option_needs_value is None
-    assert parsed.word_kinds == [None, None, None, "path"]
+    assert parsed.word_kinds == ["str", "str", "str", "path"]
 
 
 def test_tar_old_style_still_accepts_long_options_after_the_cluster():
@@ -1083,7 +1157,7 @@ def test_tar_old_style_still_accepts_long_options_after_the_cluster():
         ["xzf", "/data/a.tgz", "--strip-components", "1", "-C", "/data/out"],
         "/")
     assert parsed.flags["--strip-components"] == "1"
-    assert parsed.flags["-C"] == ["/data/out"]
+    assert parsed.flags["--directory"] == ["/data/out"]
 
 
 def test_old_option_style_is_off_for_every_other_command():
@@ -1091,6 +1165,47 @@ def test_old_option_style_is_off_for_every_other_command():
     parsed = parse_command(SPECS["gzip"], ["dkf"], "/")
     assert parsed.paths() == ["/dkf"]
     assert parsed.old_option_needs_value is None
+
+
+@pytest.mark.parametrize("argv", [
+    ["-o/data/s1.txt", "/data/in.txt"],
+    ["-uo/data/s1.txt", "/data/in.txt"],
+    ["--output=/data/s1.txt", "/data/in.txt"],
+])
+def test_option_word_carrying_its_path_is_text(argv):
+    # A None kind sent the word to the shape heuristic, which read
+    # `-o/data/s1.txt` as the relative path <cwd>/-o/data/s1.txt, so sort
+    # got a phantom input file and no output option at all.
+    parsed = parse_command(SPECS["sort"], argv, "/")
+    assert parsed.word_kinds == ["str", "path"]
+    assert parsed.path_flag_values == ["/data/s1.txt"]
+    assert parsed.paths() == ["/data/in.txt"]
+
+
+def test_value_word_keeps_its_option_kind():
+    parsed = parse_command(SPECS["sort"],
+                           ["-o", "/data/s1.txt", "/data/in.txt"], "/")
+    assert parsed.word_kinds == ["str", "path", "path"]
+
+
+def test_invalid_option_word_is_text():
+    # GNU refuses the letter: `sort: invalid option -- '/'`. Read as a
+    # path, the word reached dispatch resolved and was opened instead.
+    parsed = parse_command(SPECS["sort"], ["-/data/x.txt", "/data/in.txt"],
+                           "/")
+    assert parsed.word_kinds == ["str", "path"]
+    assert parsed.invalid_options == ["/"]
+
+
+def test_dash_word_that_is_an_operand_keeps_the_operand_kind():
+    after_end = parse_command(SPECS["head"], ["--", "-o/data/x.txt"], "/")
+    assert after_end.word_kinds == ["str", "path"]
+    # unzip has no long-option parser, so an undeclared `--` word is its
+    # archive operand.
+    lenient = parse_command(SPECS["unzip"], ["--a/b.zip"],
+                            "/",
+                            cmd_name="unzip")
+    assert lenient.word_kinds == ["path"]
 
 
 def test_required_operand_is_reported_not_raised():
@@ -1141,8 +1256,8 @@ def test_operand_base_rebases_the_operands_typed_after_it():
         SPECS["tar"], ["-czf", "out.tgz", "-C", "/work/check", "my_paper"],
         cwd="/home")
     assert parsed.paths() == ["/work/check/my_paper"]
-    assert parsed.flags["-f"] == "/home/out.tgz"
-    assert parsed.flags["-C"] == ["/work/check"]
+    assert parsed.flags["--file"] == "/home/out.tgz"
+    assert parsed.flags["--directory"] == ["/work/check"]
 
 
 def test_operand_base_is_cumulative_like_a_real_chdir():
@@ -1151,7 +1266,7 @@ def test_operand_base_is_cumulative_like_a_real_chdir():
         cwd="/work")
     assert parsed.paths() == ["/work/d1/x", "/work/d2/y"]
     # Every occurrence is kept in order: GNU chdirs at each one.
-    assert parsed.flags["-C"] == ["/work/d1", "/work/d2"]
+    assert parsed.flags["--directory"] == ["/work/d1", "/work/d2"]
 
 
 def test_operand_base_only_moves_what_follows_it():
@@ -1205,16 +1320,53 @@ def test_every_interpreter_stops_parsing_flags_at_the_stdin_operand(cmd):
     # `node - -e x` and `python3 - -c x` both run the piped program and
     # hand it the rest as argv (node 22.8.0, CPython 3.12). Pinning all
     # four together is what keeps js from drifting off python again.
-    parsed = parse_command(SPECS[cmd], ["-", "-e", "PROG"], "/")
+    parsed = parse_command(SPECS[cmd], ["-", "-e", "PROG"], "/", cmd)
     assert parsed.flags == {}
-    assert parsed.texts() == ["-", "-e", "PROG"]
+    assert parsed.raw_operands == [("-", "str"), ("-e", "str"),
+                                   ("PROG", "str")]
 
 
 @pytest.mark.parametrize("cmd", ["js", "node", "python", "python3"])
 def test_every_interpreter_hands_a_script_its_own_flags(cmd):
     parsed = parse_command(SPECS[cmd], ["s.js", "-m", "--module"], "/")
     assert parsed.flags == {}
-    assert parsed.texts() == ["s.js", "-m", "--module"]
+    assert parsed.raw_operands == [("s.js", "path"), ("-m", "str"),
+                                   ("--module", "str")]
+
+
+@pytest.mark.parametrize("cmd, payload", [("js", "-e"), ("node", "-e"),
+                                          ("python", "-c"), ("python", "-m"),
+                                          ("python3", "-c"),
+                                          ("python3", "-m")])
+def test_every_interpreter_reads_only_its_script_as_a_path(cmd, payload):
+    # The script is a file the interpreter opens, so a rule on its path
+    # has to see it typed as one; the words after it are the program's
+    # own argv, and once a payload option names the program there is no
+    # script at all (`python3 -c code x` hands x to the code).
+    parsed = parse_command(SPECS[cmd], ["s.py", "t.py"], "/")
+    assert parsed.raw_operands == [("s.py", "path"), ("t.py", "str")]
+    parsed = parse_command(SPECS[cmd], [payload, "PROG", "s.py"], "/")
+    assert parsed.raw_operands == [("s.py", "str")]
+
+
+@pytest.mark.parametrize("cmd", ["js", "node", "python", "python3"])
+@pytest.mark.parametrize("registered", [False, True])
+@pytest.mark.parametrize("marker", [[], ["--"]])
+def test_interpreter_stdin_is_text_but_explicit_dash_filename_is_a_path(
+        cmd, registered, marker):
+    spec = _registered(cmd) if registered else SPECS[cmd]
+    for word, kind, value in (("-", "str", "-"), ("./-", "path", "/data/-"),
+                              ("/data/-", "path", "/data/-")):
+        parsed = parse_command(spec, [*marker, word, "-e", "/data/arg"],
+                               "/data", cmd)
+        assert parsed.args == [(value, kind), ("-e", "str"),
+                               ("/data/arg", "str")]
+        assert parsed.word_kinds == [
+            *["str"] * len(marker), kind, "str", "str"
+        ]
+        assert parsed.invalid_options == []
+    custom = CommandSpec(positional=(Operand(type="path"), ))
+    assert parse_command(custom, ["-"], "/data", cmd).paths() == ["/data/-"]
 
 
 def test_js_flags_before_the_first_operand_are_still_the_interpreters():
@@ -1297,3 +1449,53 @@ def test_the_two_reports_keep_scan_order(argv, kinds):
     """GNU stops at the first offending token, so order decides."""
     parsed = parse_command(SPECS["grep"], [*argv, "x"], "/")
     assert parsed.option_error_kinds == kinds
+
+
+@pytest.mark.parametrize("argv", [["-O", "-"], ["-O-"]])
+def test_wget_stdout_is_not_a_path_operand(argv):
+    parsed = parse_command(SPECS["wget"],
+                           argv + ["https://example.test/"],
+                           "/data",
+                           cmd_name="wget")
+    assert parsed.flags["-O"] == "-"
+    assert parsed.path_flag_values == []
+    literal = parse_command(SPECS["wget"],
+                            ["-O", "./-", "https://example.test/"],
+                            "/data",
+                            cmd_name="wget")
+    assert literal.flags["-O"] == "/data/-"
+    assert literal.path_flag_values == ["/data/-"]
+
+
+@pytest.mark.parametrize("words,dest", [
+    (["--file=/data/a.tar", "-t"], "--file"),
+    (["--file", "/data/a.tar", "-t"], "--file"),
+    (["--get", "-f", "/data/a.tar"], "--extract"),
+    (["--gun", "-tf", "/data/a.tar"], "--gzip"),
+    (["--crea", "-f", "/data/a.tar", "/data/x"], "--create"),
+])
+def test_tar_long_options_resolve_against_tars_whole_table(words, dest):
+    parsed = parse_command(SPECS["tar"], words, "/", "tar")
+    assert dest in parsed.flags
+    assert parsed.invalid_options == [] and parsed.ambiguous_options == []
+
+
+def test_tar_names_an_ambiguity_with_every_option_its_table_holds():
+    # `--fil` could be --files-from, which mirage never declared; glibc
+    # names the word as typed, `=value` and all (GNU tar 1.35).
+    parsed = parse_command(SPECS["tar"], ["--fil=/data/a.tar", "-t"], "/",
+                           "tar")
+    assert parsed.ambiguous_options == [("--fil=/data/a.tar",
+                                         ("--file", "--files-from"))]
+
+
+def test_an_option_tar_has_and_mirage_does_not_stays_unrecognized():
+    parsed = parse_command(SPECS["tar"], ["--files-from=x", "-t"], "/", "tar")
+    assert parsed.invalid_options == ["--files-from=x"]
+
+
+def test_an_ambiguous_long_names_the_word_with_its_value():
+    # glibc prints d->__nextchar, the whole word after `--` (coreutils
+    # 9.7: `ls: option '--re=x' is ambiguous`).
+    parsed = parse_command(SPECS["ls"], ["--re=x", "/data"], "/", "ls")
+    assert parsed.ambiguous_options[0][0] == "--re=x"

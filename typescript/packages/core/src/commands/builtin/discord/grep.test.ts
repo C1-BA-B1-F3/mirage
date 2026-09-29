@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { mountKey } from '../../../utils/key_prefix.ts'
+import { DiscordAccessor } from '../../../accessor/discord.ts'
 import { describe, expect, it } from 'vitest'
 import { RAMIndexCacheStore } from '../../../cache/index/ram.ts'
 import { materialize } from '../../../io/types.ts'
@@ -230,5 +231,32 @@ describe('discord grep', () => {
     const searches = transport.calls.filter((c) => c.endpoint.includes('/messages/search'))
     expect(searches).toHaveLength(0)
     expect(out.exitCode).not.toBe(0)
+  })
+})
+
+describe('discord grep on a time-scoped mount', () => {
+  it('scans the in-scope days instead of searching', async () => {
+    const idx = new RAMIndexCacheStore()
+    await seedGuild(idx, '/mnt/discord', 'My Server__G1', 'G1')
+    await seedChannel(idx, '/mnt/discord', 'My Server__G1', 'general__C1', 'C1', {
+      dates: ['2016-04-30'],
+    })
+    const transport = new FakeDiscordTransport()
+    const cmd = DISCORD_GREP[0]
+    if (cmd === undefined) throw new Error('grep not registered')
+    await cmd.fn(
+      new DiscordAccessor(transport, { endTime: '2016-05-01T00:00:00Z' }),
+      [
+        new PathSpec({
+          virtual: '/mnt/discord/My Server__G1/channels/general__C1',
+          directory: '/mnt/discord/My Server__G1/channels/general__C1',
+          resolved: false,
+          vfsPath: mountKey('/mnt/discord/My Server__G1/channels/general__C1', '/mnt/discord'),
+        }),
+      ],
+      ['hello'],
+      { stdin: null, flags: { w: true, r: true }, filetypeFns: null, cwd: '/', index: idx },
+    )
+    expect(transport.calls.map((c) => c.endpoint)).not.toContain('/guilds/G1/messages/search')
   })
 })

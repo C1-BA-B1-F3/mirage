@@ -12,21 +12,19 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { detectScope } from '../../../core/postgres/scope.ts'
-import { SEARCHERS } from '../../../core/postgres/search.ts'
+import type { PostgresAccessor } from '../../../accessor/postgres.ts'
+
 import { VFSName } from '../../../types.ts'
 import { command } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { makeSearch } from '../generic_bind/search.ts'
-import { literalPushdownOperand } from '../grep_pushdown.ts'
+import { runSearch } from '../generic_bind/search.ts'
+
 import { POSTGRES_IO } from './io.ts'
 
 export const POSTGRES_RG = command({
   name: 'rg',
   vfs: VFSName.POSTGRES,
   spec: specOf('rg'),
-  fn: makeSearch('rg', detectScope, SEARCHERS, POSTGRES_IO, {
-    qualify: literalPushdownOperand,
-    guard: true,
-  }),
+  fn: (accessor: PostgresAccessor, paths, texts, opts) =>
+    runSearch<PostgresAccessor>(POSTGRES_IO, 'rg', accessor, paths, texts, opts),
 })

@@ -56,12 +56,13 @@ def test_type_a_prints_the_function_under_a_keyword():
         make_registry())) == ("then is a shell keyword\nthen is a function\n")
 
 
-def test_type_reports_installed_cli():
-    assert _out(handle_type(["linear"], make_session(),
-                            make_registry(True))) == "linear is a mirage CLI\n"
+def test_type_reports_installed_cli_by_its_file():
+    assert _out(
+        handle_type(["linear"], make_session(),
+                    make_registry(True))) == "linear is /usr/bin/linear\n"
     assert _out(
         handle_type(["-t", "linear"], make_session(),
-                    make_registry(True))) == "cli\n"
+                    make_registry(True))) == "file\n"
 
 
 def test_type_t_prints_word():
@@ -82,9 +83,24 @@ def test_type_last_of_t_and_p_wins():
                             make_registry())) == ""
 
 
-def test_type_mount_command_is_builtin():
+def test_type_mount_command_is_its_file():
     assert _out(handle_type(["cat"], make_session(),
-                            make_registry())) == "cat is a shell builtin\n"
+                            make_registry())) == "cat is /usr/bin/cat\n"
+
+
+def test_type_p_prints_a_programs_file_and_P_searches_past_a_builtin():
+    # bash 5.2: -p is quiet for a builtin (still found), -P finds the
+    # file behind one, and misses one that has none.
+    assert _out(handle_type(["-p", "cat"], make_session(),
+                            make_registry())) == "/usr/bin/cat\n"
+    assert _out(handle_type(["-p", "echo"], make_session(),
+                            make_registry())) == ""
+    assert _out(handle_type(["-P", "echo"], make_session(),
+                            make_registry())) == "/usr/bin/echo\n"
+    assert _out(handle_type(["-ap", "echo"], make_session(),
+                            make_registry())) == "/usr/bin/echo\n"
+    _, io, _ = handle_type(["-P", "cd"], make_session(), make_registry())
+    assert io.exit_code == 1
 
 
 def test_type_a_prints_every_layer():
@@ -92,17 +108,21 @@ def test_type_a_prints_every_layer():
     session.functions["linear"] = []
     assert _out(handle_type(
         ["-a", "linear"], session, make_registry(True))) == (
-            "linear is a function\nlinear is a mirage CLI\n")
+            "linear is a function\nlinear is /usr/bin/linear\n")
     assert _out(handle_type(["-at", "linear"], session,
-                            make_registry(True))) == "function\ncli\n"
+                            make_registry(True))) == "function\nfile\n"
+    assert _out(handle_type(
+        ["-a", "echo"], make_session(), make_registry())) == (
+            "echo is a shell builtin\necho is /usr/bin/echo\n")
 
 
 def test_type_f_skips_functions_without_touching_the_session():
     session = make_session()
     body: list[str] = []
     session.functions["linear"] = body
-    assert _out(handle_type(["-f", "linear"], session,
-                            make_registry(True))) == "linear is a mirage CLI\n"
+    assert _out(
+        handle_type(["-f", "linear"], session,
+                    make_registry(True))) == "linear is /usr/bin/linear\n"
     assert session.functions["linear"] is body
 
 
@@ -146,11 +166,18 @@ def test_type_invalid_option():
     assert io.stderr.startswith(b"type: -x: invalid option\n")
 
 
-@pytest.mark.parametrize("name", ["linear", "cd", "cat"])
-def test_which_prints_the_name_for_every_runnable(name: str):
+@pytest.mark.parametrize("name", ["linear", "cat", "echo", "xargs"])
+def test_which_prints_the_file_of_every_program(name: str):
     out, io, _ = handle_which([name], make_session(), make_registry(True))
-    assert out.decode() == f"{name}\n"
+    assert out.decode() == f"/usr/bin/{name}\n"
     assert io.exit_code == 0
+
+
+def test_which_misses_a_builtin_with_no_program():
+    # debianutils which: cd is bash's alone, so nothing and exit 1.
+    out, io, _ = handle_which(["cd"], make_session(), make_registry())
+    assert out is None
+    assert io.exit_code == 1
 
 
 def test_which_miss_is_silent_and_exits_1():
@@ -166,19 +193,20 @@ def test_which_does_not_resolve_a_keyword():
     assert io.exit_code == 1
 
 
-def test_which_reports_the_layer_under_a_keyword():
-    # The keyword is filtered before the winner is picked, so the
-    # function below it is what `which` resolves.
+def test_which_does_not_resolve_a_function():
+    # `which` searches PATH, which holds no function.
     session = make_session()
     session.functions["then"] = []
-    out, io, _ = handle_which(["then"], session, make_registry())
-    assert out.decode() == "then\n"
-    assert io.exit_code == 0
+    session.functions["myfn"] = []
+    for name in ("then", "myfn"):
+        out, io, _ = handle_which([name], session, make_registry())
+        assert out is None
+        assert io.exit_code == 1
 
 
 def test_which_all_found_exit_rule():
-    out, io, _ = handle_which(["cd", "nope"], make_session(), make_registry())
-    assert out.decode() == "cd\n"
+    out, io, _ = handle_which(["cat", "nope"], make_session(), make_registry())
+    assert out.decode() == "/usr/bin/cat\n"
     assert io.exit_code == 1
 
 
@@ -188,16 +216,17 @@ def test_which_no_operands_exits_1():
     assert io.exit_code == 1
 
 
-def test_which_a_prints_a_line_per_layer():
+def test_which_a_prints_the_one_file_past_a_shadowing_function():
+    # One directory on PATH, so one line; the function has no file.
     session = make_session()
     session.functions["linear"] = []
     out, io, _ = handle_which(["-a", "linear"], session, make_registry(True))
-    assert out.decode() == "linear\nlinear\n"
+    assert out.decode() == "/usr/bin/linear\n"
     assert io.exit_code == 0
 
 
 def test_which_s_reports_through_the_status():
-    out, io, _ = handle_which(["-s", "cd"], make_session(), make_registry())
+    out, io, _ = handle_which(["-s", "cat"], make_session(), make_registry())
     assert out is None
     assert io.exit_code == 0
     assert handle_which(["-s", "nope"], make_session(),

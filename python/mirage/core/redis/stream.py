@@ -16,6 +16,7 @@ from collections.abc import AsyncIterator
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.core.redis.dest import lookup_error
 from mirage.observe.context import record_stream
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -36,8 +37,8 @@ async def stream(accessor: RedisAccessor,
     key = norm(raw)
     data = await store.get_file(key)
     if data is None:
-        raise enoent(virtual)
-    rec = record_stream("read", raw, "redis")
+        raise await lookup_error(store, path, key)
+    rec = record_stream("read", virtual, "redis")
     if rec is not None:
         rec.bytes = len(data)
     yield data

@@ -16,9 +16,13 @@ import { describe, expect, it } from 'vitest'
 import type { NamespaceLinks } from '../../ops/config.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { BaseVFS } from '../../vfs/base.ts'
+import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { FileStat, FileType, MountMode, PathSpec } from '../../types.ts'
 import { enoent } from '../../utils/errors.ts'
+import { mountKey } from '../../utils/key_prefix.ts'
+import { getTestParser } from '../fixtures/workspace_fixture.ts'
 import { MountRegistry } from '../mount/registry.ts'
+import { Workspace } from '../workspace/workspace.ts'
 import { resolveGlobs } from './globs.ts'
 
 class PlainVFS extends BaseVFS {
@@ -294,5 +298,64 @@ describe('matchRaw via resolveGlobs', () => {
     })
     const out = await resolveGlobs([p], reg)
     expect((out[0] as PathSpec).rawPath).toBe('*.nope')
+  })
+})
+
+// A RAM mount whose `glob` op records the keys it was handed.
+class KeyRecordingRAM extends RAMVFS {
+  readonly seen: [string, string][] = []
+
+  override ops(): readonly RegisteredOp[] {
+    const table = super.ops()
+    const derived = table.find((ro) => ro.name === 'glob' && ro.filetype === null)
+    if (derived === undefined) throw new Error('RAM serves no glob op')
+    const seen = this.seen
+    return [
+      ...table.filter((ro) => ro !== derived),
+      {
+        ...derived,
+        fn: (accessor, path, args, kwargs) => {
+          const spec = path
+          seen.push([spec.virtual, spec.vfsPath])
+          return derived.fn(accessor, path, args, kwargs)
+        },
+      },
+    ]
+  }
+}
+
+// The `glob` op never sees the mount prefix: the mount stamps each spec's
+// `vfsPath` with `mountKey(virtual, prefix)` before the op runs, on every
+// door that expands a word (the workspace expander, its mid-path and
+// globstar walks, and the builtins' operands). Pinned the same way in
+// python's test_globs.py.
+describe('the glob op under a non-root mount prefix', () => {
+  it('is handed keys below the prefix on every expansion path', async () => {
+    const vfs = new KeyRecordingRAM()
+    const ws = new Workspace(
+      { '/mnt/x/': vfs },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    for (const line of [
+      'mkdir -p /mnt/x/team/sub',
+      'printf 1 > /mnt/x/team/f1',
+      'printf 2 > /mnt/x/tea.txt',
+      'printf 3 > /mnt/x/other',
+    ]) {
+      await ws.shell(line)
+    }
+    const cases: [string, string][] = [
+      ['echo /mnt/x/*', '/mnt/x/other /mnt/x/tea.txt /mnt/x/team'],
+      ['echo /mnt/x/*/f*', '/mnt/x/team/f1'],
+      ['cd /mnt/x && echo tea*', 'tea.txt team'],
+      ['shopt -s globstar; echo /mnt/x/**/f1', '/mnt/x/team/f1'],
+      ['touch /mnt/x/tea* && echo touched', 'touched'],
+    ]
+    for (const [line, want] of cases) {
+      expect((await ws.shell(line)).stdoutText.trim(), line).toBe(want)
+    }
+    expect(vfs.seen.length).toBeGreaterThan(0)
+    expect(vfs.seen.filter(([v, key]) => key !== mountKey(v, '/mnt/x'))).toEqual([])
+    await ws.close()
   })
 })

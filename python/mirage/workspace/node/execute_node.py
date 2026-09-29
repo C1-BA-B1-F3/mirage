@@ -13,25 +13,33 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+from dataclasses import replace
 from functools import partial
 from typing import Any, Callable
 
+from mirage.context import (program_invocation, reset_program_invocation,
+                            set_program_invocation)
 from mirage.io import IOResult
+from mirage.io.async_line_iterator import share
 from mirage.io.stream import async_chain
+from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
 from mirage.policy import HandOff, PolicyDenied
+from mirage.process.supervisor import ProcessSupervisor
 from mirage.runtime.routing import RouteDecision
 from mirage.runtime.types import DispatchFn
 from mirage.shell.arith import evaluate_arith
 from mirage.shell.barrier import BarrierPolicy, apply_barrier
 from mirage.shell.call_stack import CallStack
 from mirage.shell.console import Channel, JobConsole
-from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
+from mirage.shell.constants import (ERREXIT_EXEMPT_TYPES, FORK_FAILED,
+                                    FORK_FAILED_STATUS)
 from mirage.shell.errors import ArithError, ExitSignal, ReadonlyError
 from mirage.shell.job_table import JobTable
 from mirage.shell.node_kind import NodeKind, node_kind, pipeline_transparent
 from mirage.shell.types import NodeType as NT
-from mirage.shell.types import Redirect, RedirectKind
+from mirage.shell.types import PipelineStages, Redirect, RedirectKind
+from mirage.types import PathSpec
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.executor.builtins import handle_test, handle_unset
 from mirage.workspace.executor.builtins.exec import install_exec_redirects
@@ -44,7 +52,7 @@ from mirage.workspace.executor.pipes import (handle_connection, handle_pipe,
                                              handle_subshell)
 from mirage.workspace.executor.redirect import handle_redirect
 from mirage.workspace.executor.statement import (assignment_status,
-                                                 finish_statement,
+                                                 fd0_binding, finish_statement,
                                                  record_status)
 from mirage.workspace.expand import (expand_and_classify, expand_node,
                                      expand_redirects)
@@ -59,7 +67,8 @@ from mirage.workspace.node.declaration import execute_declaration
 from mirage.workspace.node.program import execute_program
 from mirage.workspace.node.test_expr import (expand_double_bracket,
                                              expand_test_expr)
-from mirage.workspace.session import SessionState
+from mirage.workspace.session import (SessionState, reset_current_session,
+                                      set_current_session)
 from mirage.workspace.session.elements import assign_element
 from mirage.workspace.session.state import (ensure_var_visible, random_reader,
                                             session_elements, session_view,
@@ -69,7 +78,7 @@ from mirage.workspace.types import ExecutionNode
 from mirage.shell.helpers import (  # isort: skip
     get_case_items, get_case_word, get_cfor_parts, get_for_parts,
     get_function_body, get_function_name, get_if_branches, get_list_parts,
-    get_negated_command, get_parts, get_pipeline_commands, get_redirects,
+    get_negated_command, get_parts, get_pipeline_stages, get_redirects,
     get_text, get_unset_args, get_while_parts, take_continuation)
 
 
@@ -165,17 +174,21 @@ async def _recurse_reassociated(
     execute_fn: Callable[..., Any],
     registry: MountRegistry,
     redirects: list[Any],
+    processes: ProcessSupervisor | None,
     right: Any,
     node: Any,
     session: SessionState,
     stdin: Any = None,
     call_stack: CallStack | None = None,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Recurse wrapper for a re-associated trailing redirect.
 
-    Executes the list's last command with the hoisted redirects,
-    expanding targets only at that point (after the left side ran, so
-    cwd changes apply); every other node recurses normally.
+    Runs the list's right operand under the hoisted redirects, bound by
+    the same rule in turn (``_run_redirected``), so a pipeline there
+    hands them to its last command and a nested list to its own right
+    operand; targets expand only at that point (after the left side
+    ran, so cwd changes apply). Every other node recurses normally.
 
     Args:
         recurse (Callable): the plain execute_node recursion.
@@ -183,32 +196,182 @@ async def _recurse_reassociated(
         execute_fn (Callable): recursive execute (for expansions).
         registry (MountRegistry): mount registry.
         redirects (list): parsed redirects hoisted off the list.
-        right (Any): the list's last command node.
+        processes (ProcessSupervisor | None): where the stages run as
+            managed processes.
+        right (Any): the list's right operand.
         node (Any): node being executed by handle_connection.
         session (SessionState): shell session state.
         stdin (Any): input stream.
         call_stack (CallStack | None): shell call stack.
     """
+    if node is not right:
+        return await recurse(node, session, stdin, call_stack, sink=sink)
     # The session plane's door, bound once for the line: every
     # expansion-time write (`${X:=d}`, `$((X=5))`) lands through it,
     # so a pre_session rule governs those exactly as it governs `X=d`.
     view = session_view(session, registry.policies)
+    return await _run_redirected(recurse, dispatch, execute_fn, registry, view,
+                                 right, redirects, processes, session, stdin,
+                                 call_stack)
+
+
+async def _recurse_lifted(
+    recurse: Callable[..., Any],
+    dispatch: DispatchFn,
+    execute_fn: Callable[..., Any],
+    registry: MountRegistry,
+    stages: PipelineStages,
+    processes: ProcessSupervisor | None,
+    right: Any,
+    node: Any,
+    session: SessionState,
+    stdin: Any = None,
+    call_stack: CallStack | None = None,
+    sink: JobConsole | None = None,
+) -> tuple[Any, IOResult, ExecutionNode]:
+    """Recurse wrapper for a list the parse pulled into a pipeline's first
+    stage: the list's right operand, where the pipeline starts, runs the
+    pipeline; every other node recurses normally.
+
+    Args:
+        recurse (Callable): the plain execute_node recursion.
+        dispatch (DispatchFn): VFS op dispatcher.
+        execute_fn (Callable): recursive execute (for expansions).
+        registry (MountRegistry): mount registry.
+        stages (PipelineStages): the pipeline, its lead already taken.
+        processes (ProcessSupervisor | None): where the stages run as
+            managed processes.
+        right (Any): the list's right operand.
+        node (Any): node being executed by handle_connection.
+        session (SessionState): shell session state.
+        stdin (Any): input stream.
+        call_stack (CallStack | None): shell call stack.
+    """
     if node is not right:
-        return await recurse(node, session, stdin, call_stack)
-    expanded, pipe_node = await expand_redirects(redirects,
-                                                 session,
-                                                 execute_fn,
-                                                 registry,
-                                                 call_stack,
-                                                 view=view)
-    stdout, io, exec_node = await handle_redirect(recurse, dispatch, right,
-                                                  expanded, session, stdin,
-                                                  call_stack)
-    if pipe_node is not None and stdout is not None:
-        stdout, io2, exec_node2 = await recurse(pipe_node, session, stdout,
-                                                call_stack)
-        io = await io.merge(io2)
-        exec_node = exec_node2
+        return await recurse(node, session, stdin, call_stack, sink=sink)
+    return await _run_pipeline(recurse, dispatch, execute_fn, registry, stages,
+                               session, stdin, call_stack, processes)
+
+
+async def _recurse_stage(
+    recurse: Callable[..., Any],
+    dispatch: DispatchFn,
+    execute_fn: Callable[..., Any],
+    registry: MountRegistry,
+    stages: PipelineStages,
+    targets: list[Any],
+    processes: ProcessSupervisor | None,
+    node: Any,
+    session: SessionState,
+    stdin: Any = None,
+    call_stack: CallStack | None = None,
+    *,
+    sink: JobConsole | None = None,
+) -> tuple[Any, IOResult, ExecutionNode]:
+    """Recurse wrapper for one pipeline stage.
+
+    A stage the parse hoisted redirects off runs under them, with the
+    ``2>&1`` of a ``|&`` after it applied last, as bash applies it after
+    the command's own redirections; a stage holding its own redirects
+    gets that ``2>&1`` from ``_recurse_pipe_stderr``.
+
+    Args:
+        recurse (Callable): the plain execute_node recursion.
+        dispatch (DispatchFn): VFS op dispatcher.
+        execute_fn (Callable): recursive execute (for expansions).
+        registry (MountRegistry): mount registry.
+        stages (PipelineStages): the pipeline being run.
+        targets (list[Any]): the stages a ``|&`` follows.
+        processes (ProcessSupervisor | None): where the stages run as
+            managed processes.
+        node (Any): the stage handle_pipe asks for.
+        session (SessionState): the stage's session.
+        stdin (Any): input stream.
+        call_stack (CallStack | None): shell call stack.
+        sink (JobConsole | None): the stage's pipe console.
+    """
+    for command, hoisted in zip(stages.commands, stages.redirects):
+        if command is not node or not hoisted:
+            continue
+        bound = list(hoisted)
+        if any(target is node for target in targets):
+            bound.append(
+                Redirect(fd=2, target=1, kind=RedirectKind.STDERR_TO_STDOUT))
+        view = session_view(session, registry.policies)
+        return await _run_redirected(recurse, dispatch, execute_fn, registry,
+                                     view, node, bound, processes, session,
+                                     stdin, call_stack)
+    return await _recurse_pipe_stderr(recurse,
+                                      dispatch,
+                                      execute_fn,
+                                      registry,
+                                      targets,
+                                      node,
+                                      session,
+                                      stdin,
+                                      call_stack,
+                                      sink=sink)
+
+
+async def _run_pipeline(
+    recurse: Callable[..., Any],
+    dispatch: DispatchFn,
+    execute_fn: Callable[..., Any],
+    registry: MountRegistry,
+    stages: PipelineStages,
+    session: SessionState,
+    stdin: Any,
+    call_stack: CallStack | None,
+    processes: ProcessSupervisor | None = None,
+) -> tuple[Any, IOResult, ExecutionNode]:
+    """Run a pipeline as bash reads it (``get_pipeline_stages``).
+
+    A list the parse pulled into the first stage runs as the list it
+    is, its right operand standing for the pipeline, so the pipeline
+    runs only when the list's operator says it does and its status is
+    the list's. A leading ``!`` negates the whole pipeline's status.
+
+    Args:
+        recurse (Callable): the plain execute_node recursion.
+        dispatch (DispatchFn): VFS op dispatcher.
+        execute_fn (Callable): recursive execute (for expansions).
+        registry (MountRegistry): mount registry.
+        stages (PipelineStages): the pipeline's stages.
+        session (SessionState): shell session state.
+        stdin (Any): input stream.
+        call_stack (CallStack | None): shell call stack.
+        processes (ProcessSupervisor | None): where the stages run as
+            managed processes.
+    """
+    if stages.lead is not None:
+        left, op, right = stages.lead
+        wrapped = partial(_recurse_lifted, recurse,
+                          dispatch, execute_fn, registry,
+                          replace(stages, lead=None), processes, right)
+        return await handle_connection(wrapped, left, op, right, session,
+                                       stdin, call_stack)
+    commands = list(stages.commands)
+    stderr_flags = list(stages.stderr_flags)
+    targets = [
+        command for i, command in enumerate(commands)
+        if i < len(stderr_flags) and stderr_flags[i]
+    ]
+    pipe_recurse = partial(_recurse_stage, recurse, dispatch, execute_fn,
+                           registry, stages, targets, processes)
+    stdout, io, exec_node = await handle_pipe(pipe_recurse, commands,
+                                              stderr_flags, session, stdin,
+                                              call_stack, processes)
+    if stages.negated:
+        io = IOResult(
+            exit_code=0 if io.exit_code != 0 else 1,
+            stderr=io.stderr,
+            reads=io.reads,
+            writes=io.writes,
+            cache=io.cache,
+            refusal=io.refusal,
+        )
+        exec_node.exit_code = io.exit_code
+        session.errexit_immune = True
     return stdout, io, exec_node
 
 
@@ -222,13 +385,15 @@ async def _recurse_pipe_stderr(
     session: SessionState,
     stdin: Any = None,
     call_stack: CallStack | None = None,
+    *,
+    sink: JobConsole | None = None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     # The session plane's door, bound once for the line: every
     # expansion-time write (`${X:=d}`, `$((X=5))`) lands through it,
     # so a pre_session rule governs those exactly as it governs `X=d`.
     view = session_view(session, registry.policies)
     if node not in targets or node_kind(node) != NodeKind.REDIRECT:
-        return await recurse(node, session, stdin, call_stack)
+        return await recurse(node, session, stdin, call_stack, sink=sink)
     command, redirects = get_redirects(node)
     redirects.append(
         Redirect(fd=2, target=1, kind=RedirectKind.STDERR_TO_STDOUT))
@@ -249,6 +414,44 @@ async def _recurse_pipe_stderr(
     return stdout, io, exec_node
 
 
+async def _negated(
+    stdout: Any,
+    io: IOResult,
+    exec_node: ExecutionNode,
+    session: SessionState,
+    inner: Any,
+) -> tuple[Any, IOResult, ExecutionNode]:
+    """What ``!`` makes of the statement it wraps once that has run.
+
+    Args:
+        stdout (Any): the wrapped statement's stdout.
+        io (IOResult): its result, the status still its own.
+        exec_node (ExecutionNode): its record.
+        session (SessionState): shell session state.
+        inner (Any): the wrapped statement's node.
+    """
+    # Lazy exit codes (exit_on_empty in grep) must be final before
+    # inverting, or `! grep miss f` negates the provisional 0.
+    stdout = await apply_barrier(stdout, io, BarrierPolicy.VALUE)
+    # bash reports the negated pipeline's own statuses in PIPESTATUS
+    # (`! false` leaves `1`), so what `!` wraps is closed as a statement
+    # of its own before `$?` inverts.
+    record_status(session,
+                  io.exit_code,
+                  transparent=pipeline_transparent(inner))
+    io = IOResult(
+        exit_code=0 if io.exit_code != 0 else 1,
+        stderr=io.stderr,
+        reads=io.reads,
+        writes=io.writes,
+        cache=io.cache,
+        refusal=io.refusal,
+    )
+    exec_node.exit_code = io.exit_code
+    session.errexit_immune = True
+    return stdout, io, exec_node
+
+
 async def _run_redirected(
     recurse: Callable[..., Any],
     dispatch: DispatchFn,
@@ -257,12 +460,19 @@ async def _run_redirected(
     view: SessionView | None,
     command: Any,
     redirects: list[Redirect],
+    processes: ProcessSupervisor | None,
     session: SessionState,
     stdin: Any,
     call_stack: CallStack | None,
 ) -> tuple[Any, IOResult, ExecutionNode]:
     """Run a redirected statement: the command under its redirects, then
     the pipeline a heredoc's operator line fed it into.
+
+    The parse hoists a trailing redirect over whatever precedes it, so
+    the redirects are bound where bash binds them first: past a list to
+    its right operand, past a pipeline to its last stage, and inside a
+    ``!`` to the command it negates, recursively, until they reach the
+    command they follow.
 
     Args:
         recurse (Callable): the plain execute_node recursion.
@@ -273,6 +483,8 @@ async def _run_redirected(
         command (Any): the redirected command node, None for a bare
             redirect.
         redirects (list[Redirect]): the statement's parsed redirects.
+        processes (ProcessSupervisor | None): where the stages run as
+            managed processes.
         session (SessionState): shell session state.
         stdin (Any): input stream.
         call_stack (CallStack | None): shell call stack.
@@ -282,21 +494,30 @@ async def _run_redirected(
         # &&/|| list; bash binds it to the last command:
         #   redirected(list(L, op, R), r) == list(L, op, redirected(R, r))
         # Re-associate and defer target expansion until R runs, so
-        # `cd /x && echo hi > f` writes under /x. Compound and
-        # subshell bodies keep the whole-body redirect (bash group
-        # semantics).
+        # `cd /x && echo hi > f` writes under /x. R is bound by this
+        # same rule, so `a && b | c < f` reaches `c`, not the pipeline.
+        # Compound and subshell bodies keep the whole-body redirect
+        # (bash group semantics).
         left, op, right = get_list_parts(command)
         wrapped = partial(_recurse_reassociated, recurse, dispatch, execute_fn,
-                          registry, redirects, right)
+                          registry, redirects, processes, right)
         return await handle_connection(wrapped, left, op, right, session,
                                        stdin, call_stack)
     if command is not None and command.type == NT.PIPELINE:
-        commands, stderr_flags = get_pipeline_commands(command)
-        right = commands[-1]
-        wrapped = partial(_recurse_reassociated, recurse, dispatch, execute_fn,
-                          registry, redirects, right)
-        return await handle_pipe(wrapped, commands, stderr_flags, session,
-                                 stdin, call_stack)
+        return await _run_pipeline(recurse, dispatch, execute_fn, registry,
+                                   get_pipeline_stages(command, redirects),
+                                   session, stdin, call_stack, processes)
+    if command is not None and command.type == NT.NEGATED_COMMAND:
+        # `! cmd < f` parses as redirected(negated(cmd), < f), but the
+        # redirect is the command's: bash negates what `cmd < f` returns,
+        # a redirect that failed to open included.
+        inner = get_negated_command(command)
+        stdout, io, exec_node = await _run_redirected(recurse, dispatch,
+                                                      execute_fn, registry,
+                                                      view, inner, redirects,
+                                                      processes, session,
+                                                      stdin, call_stack)
+        return await _negated(stdout, io, exec_node, session, inner)
     expanded_redirects, pipe_node = await expand_redirects(redirects,
                                                            session,
                                                            execute_fn,
@@ -552,6 +773,12 @@ async def _execute_node(
 
     kind = node_kind(node)
 
+    # The statements a construct runs all read one descriptor, as bash's
+    # do: `read` takes its line and the command after it gets the rest,
+    # in a group, a loop, a list, a subshell or a nested shell alike.
+    if kind in STREAMING_KINDS:
+        stdin = share(stdin)
+
     # A sink turns this walk from "return your output" into "write your
     # output". Sequencing constructs pass it to their children so each
     # statement lands as it finishes; everything else runs unchanged and
@@ -597,35 +824,14 @@ async def _execute_node(
 
     # ── pipeline ────────────────────────────────
     if kind == NodeKind.PIPELINE:
-        commands, stderr_flags = get_pipeline_commands(node)
-        # `! a | b` parses as pipeline(negated_command(a), b) but bash
-        # negates the WHOLE pipeline's exit status.
-        negated = bool(commands) and commands[0].type == NT.NEGATED_COMMAND
-        if negated:
-            commands = [get_negated_command(commands[0])] + commands[1:]
-        pipe_recurse = recurse
-        if any(stderr_flags):
-            targets = [
-                command for i, command in enumerate(commands)
-                if i < len(stderr_flags) and stderr_flags[i]
-            ]
-            pipe_recurse = partial(_recurse_pipe_stderr, recurse, dispatch,
-                                   execute_fn, registry, targets)
-        stdout, io, exec_node = await handle_pipe(pipe_recurse, commands,
-                                                  stderr_flags, session, stdin,
-                                                  cs)
-        if negated:
-            io = IOResult(
-                exit_code=0 if io.exit_code != 0 else 1,
-                stderr=io.stderr,
-                reads=io.reads,
-                writes=io.writes,
-                cache=io.cache,
-                refusal=io.refusal,
-            )
-            exec_node.exit_code = io.exit_code
-            session.errexit_immune = True
-        return stdout, io, exec_node
+        # `! a | b` parses as pipeline(negated_command(a), b), and a
+        # redirect followed by `|` closes over everything to its left, so
+        # the stages are read the way bash reads them rather than as the
+        # parse nested them (see get_pipeline_stages).
+        return await _run_pipeline(
+            recurse, dispatch, execute_fn, registry, get_pipeline_stages(node),
+            session, stdin, cs,
+            job_table.processes if job_table is not None else None)
 
     # ── list (&&, ||) ───────────────────────────
     if kind == NodeKind.LIST:
@@ -641,8 +847,10 @@ async def _execute_node(
         # list and all, exactly as a `list` node would have wrapped it
         # had the parser read the line the way bash does.
         continuation = take_continuation(redirects)
-        run_left = partial(_run_redirected, recurse, dispatch, execute_fn,
-                           registry, view, command, redirects)
+        run_left = partial(
+            _run_redirected, recurse, dispatch, execute_fn, registry, view,
+            command, redirects,
+            job_table.processes if job_table is not None else None)
         if not continuation:
             return await run_left(session, stdin, cs)
         return await _run_continuation(recurse, run_left, node, continuation,
@@ -654,7 +862,8 @@ async def _execute_node(
         # live in a private job table (`$!`/`wait`/`kill` in the body
         # see them; the parent's table never does), mirroring bash's
         # forked process.
-        sub_table = JobTable()
+        sub_table = JobTable(
+            processes=job_table.processes if job_table is not None else None)
         sub_recurse = partial(execute_node,
                               dispatch,
                               registry,
@@ -666,9 +875,40 @@ async def _execute_node(
                               routing_decision=routing_decision,
                               sink=sink,
                               handed=handed)
-        return await handle_subshell(sub_recurse, list(node.children), session,
-                                     stdin, cs, sub_table, agent_id, dispatch,
-                                     handed, registry.decisions)
+        child_session = session.fork()
+        as_program = program_invocation(session)
+        results: list[tuple[ByteSource | None, IOResult, ExecutionNode]] = []
+
+        async def run_subshell() -> int:
+            token = set_current_session(child_session)
+            program_token = set_program_invocation(
+                child_session) if as_program else None
+            try:
+                result = await handle_subshell(sub_recurse,
+                                               list(node.children),
+                                               child_session, stdin, cs,
+                                               sub_table, agent_id, dispatch,
+                                               handed, registry.decisions)
+                results.append(result)
+                return result[1].exit_code
+            finally:
+                reset_current_session(token)
+                if program_token is not None:
+                    reset_program_invocation(program_token)
+
+        try:
+            process = sub_table.processes.start(session_id=session.session_id,
+                                                command=get_text(node),
+                                                cwd=PathSpec.from_str_path(
+                                                    session.cwd),
+                                                parent_pid=session.process_id,
+                                                run=run_subshell,
+                                                limit=session.processes.max)
+        except BlockingIOError as exc:
+            raise ExitSignal(FORK_FAILED_STATUS, stderr=FORK_FAILED) from exc
+        child_session.process_id = process.info.pid
+        await process.task
+        return results[0]
 
     # ── arithmetic command ((( ... ))) ──────────
     if (kind == NodeKind.COMPOUND and node.children
@@ -734,12 +974,13 @@ async def _execute_node(
         all_stdout: list[Any] = []
         merged_io = IOResult()
         last_exec = ExecutionNode(command="{}", exit_code=0)
+        bound = fd0_binding(session)
         for child in node.named_children:
             if child.type == NT.COMMENT:
                 continue
             stdout, io, last_exec = await run_statement(
-                stream, child, session, stdin, cs, job_table, agent_id, handed,
-                registry.decisions)
+                stream, child, session, stdin, bound, cs, job_table, agent_id,
+                handed, registry.decisions)
             stdout = await finish_statement(stdout, io, session, child)
             if stdout is not None:
                 all_stdout.append(stdout)
@@ -751,7 +992,7 @@ async def _execute_node(
                 break
         if len(all_stdout) == 1:
             return all_stdout[0], merged_io, last_exec
-        combined = async_chain(*all_stdout) if all_stdout else None
+        combined = async_chain(all_stdout) if all_stdout else None
         return combined, merged_io, last_exec
 
     # ── if ──────────────────────────────────────
@@ -936,26 +1177,7 @@ async def _execute_node(
     if kind == NodeKind.NEGATED:
         inner = get_negated_command(node)
         stdout, io, exec_node = await stream(inner, session, stdin, cs)
-        # Lazy exit codes (exit_on_empty in grep) must be final before
-        # inverting, or `! grep miss f` negates the provisional 0.
-        stdout = await apply_barrier(stdout, io, BarrierPolicy.VALUE)
-        # bash reports the negated pipeline's own statuses in
-        # PIPESTATUS (`! false` leaves `1`), so what `!` wraps is
-        # closed as a statement of its own before `$?` inverts.
-        record_status(session,
-                      io.exit_code,
-                      transparent=pipeline_transparent(inner))
-        io = IOResult(
-            exit_code=0 if io.exit_code != 0 else 1,
-            stderr=io.stderr,
-            reads=io.reads,
-            writes=io.writes,
-            cache=io.cache,
-            refusal=io.refusal,
-        )
-        exec_node.exit_code = io.exit_code
-        session.errexit_immune = True
-        return stdout, io, exec_node
+        return await _negated(stdout, io, exec_node, session, inner)
 
     # ── variable assignment at top level ────────
     if kind == NodeKind.VAR_ASSIGN:

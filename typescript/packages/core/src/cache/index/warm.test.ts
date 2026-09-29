@@ -17,6 +17,7 @@ import { enoent, enotdir } from '../../utils/errors.ts'
 import { IndexEntry, LookupStatus } from './config.ts'
 import { RAMIndexCacheStore } from './ram.ts'
 import { RedisIndexCacheStore } from './redis.ts'
+import { IndexCacheStore } from './store.ts'
 import { entryOrWarm } from './warm.ts'
 
 const KEY = '/owned/notes.json'
@@ -26,6 +27,17 @@ function entryFor(id: string): IndexEntry {
 }
 
 describe('cache/index/warm: entryOrWarm', () => {
+  it('lets a custom store inherit the conservative partial write', async () => {
+    const index = new RAMIndexCacheStore()
+    await index.setDir('/owned', [['old.json', entryFor('old')]])
+    await IndexCacheStore.prototype.setPartialDir.call(index, '/owned', [
+      ['notes.json', entryFor('new')],
+    ])
+    expect((await index.listDir('/owned')).entries).toBeUndefined()
+    expect((await index.get('/owned/old.json')).entry).toBeUndefined()
+    expect((await index.get(KEY)).entry?.id).toBe('new')
+  })
+
   it('returns a warm hit without listing the parent', async () => {
     const index = new RAMIndexCacheStore()
     await index.setDir('/owned', [['notes.json', entryFor('doc-1')]])
@@ -87,6 +99,57 @@ for (const backend of ['ram', 'redis']) {
   describe.skipIf(backend === 'redis' && process.env.REDIS_URL === undefined)(
     `retained entries with ${backend}`,
     () => {
+      it.each(['expired', 'directory', 'prefix', 'all', 'clear'])(
+        'partial membership is positive only and respects %s invalidation',
+        async (stale) => {
+          const url = process.env.REDIS_URL
+          const index =
+            backend === 'ram'
+              ? new RAMIndexCacheStore()
+              : new RedisIndexCacheStore({
+                  ...(url === undefined ? {} : { url }),
+                  keyPrefix: `partial:${crypto.randomUUID()}:`,
+                })
+          let calls = 0
+          const warm = async (): Promise<void> => {
+            calls += 1
+            await index.setPartialDir('/owned', [['notes.json', entryFor('new')]])
+          }
+          try {
+            await index.setDir('/owned', [['other.json', entryFor('old')]])
+            await index.setPartialDir('/owned', [['notes.json', entryFor('current')]])
+            const listing = await index.listDir('/owned')
+            expect(listing.entries).toBeUndefined()
+            expect(listing.partialEntries).toEqual([KEY])
+            expect((await entryOrWarm(index, KEY, warm))?.id).toBe('current')
+            expect(calls).toBe(0)
+            expect(await entryOrWarm(index, '/owned/other.json', warm)).toBeNull()
+            expect(calls).toBe(1)
+            if (stale === 'expired')
+              await index.setPartialDir(
+                '/owned',
+                [['notes.json', entryFor('old')]],
+                new Date(Date.now() - 1000),
+              )
+            else if (stale === 'directory') await index.invalidateDir('/owned')
+            else if (stale === 'prefix') await index.invalidatePrefix('/owned')
+            else if (stale === 'all') await index.invalidate()
+            else await index.clear()
+            expect((await entryOrWarm(index, KEY, warm))?.id).toBe('new')
+            expect(calls).toBe(2)
+            expect((await entryOrWarm(index, KEY, warm))?.id).toBe('new')
+            expect(calls).toBe(2)
+            await index.setDir('/owned', [])
+            expect((await index.listDir('/owned')).partialEntries).toBeUndefined()
+            expect(await entryOrWarm(index, KEY, warm)).toBeNull()
+            expect(calls).toBe(2)
+          } finally {
+            await index.clear()
+            await index.close()
+          }
+        },
+      )
+
       describe.each([false, true])('orphan rows, globally invalidated: %s', (invalidated) => {
         it.each(['updated', 'renamed', 'deleted', 'partial', 'absent', 'error'])(
           'revalidates every direct lookup until the parent is complete: %s',

@@ -60,12 +60,13 @@ async def test_find_maxdepth(fake_drive, gdrive_accessor):
 
 
 @pytest.mark.asyncio
-async def test_find_size_bounds_dirs_are_zero(fake_drive, gdrive_accessor):
+async def test_find_size_bounds_count_a_directory_as_dir_size(
+        fake_drive, gdrive_accessor):
     seed_tree(fake_drive)
     assert await find(gdrive_accessor, spec("/sub"), min_size=1024) == \
-        ["/sub/big.bin"]
+        ["/sub", "/sub/big.bin"]
     assert await find(gdrive_accessor, spec("/sub"), max_size=100) == \
-        ["/sub", "/sub/small.bin"]
+        ["/sub/small.bin"]
 
 
 @pytest.mark.asyncio

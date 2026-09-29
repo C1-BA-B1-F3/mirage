@@ -14,8 +14,9 @@
 
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
-from mirage.core.hf_hub.client import hub_bytes, resolve_url
-from mirage.core.hf_hub.lookup import key_of, lookup
+from mirage.core.hf_hub.client import etag_value, hub_bytes_tagged, resolve_url
+from mirage.core.hf_hub.constants import REFUSED_STATUSES
+from mirage.core.hf_hub.lookup import key_of, lookup_retrying, refusals_denied
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils.errors import eisdir, enoent
@@ -33,6 +34,7 @@ async def resolve_entry(
     Shared by every content read so a file, a directory and an absence
     are told apart in exactly one place. It also means a read never
     reaches the network for a path the listing already knows is absent.
+    The row is also where the read's token comes from (``row_token``).
 
     Args:
         accessor (HfHubAccessor): backend handle.
@@ -51,12 +53,39 @@ async def resolve_entry(
     rel = path_spec.mount_path.strip("/")
     if not rel:
         raise eisdir(virtual)
-    found = await lookup(accessor, index, prefix, key_of(prefix, rel))
+    with refusals_denied(path_spec):
+        found = await lookup_retrying(accessor, index, prefix,
+                                      key_of(prefix, rel))
     if found.is_dir:
         raise eisdir(virtual)
     if found.entry is None:
         raise enoent(virtual)
     return found.entry
+
+
+def row_token(entry: IndexEntry, etag: str) -> str | None:
+    """The row's oid, if the response's ETag shows the bytes are that row's.
+
+    The listing can be older than the download: the tree lives until a
+    verdict clears it, while resolve always serves the revision's current
+    bytes. Stamping the listing's oid on newer bytes would let a later
+    revert to that oid pass them off as fresh, so the oid is stamped only
+    when the ETag names one of the row's own ids (the oid for a plain file,
+    the xet hash for a Xet one), and otherwise nothing is.
+
+    Args:
+        entry (IndexEntry): the tree row the read resolved.
+        etag (str): the final response's ETag header.
+
+    Returns:
+        str | None: the oid to stamp, or None.
+    """
+    ids = {entry.id,
+           entry.extra.get("lfs_oid"),
+           entry.extra.get("xet_hash")} - {"", None}
+    if etag_value(etag) not in ids:
+        return None
+    return entry.id or None
 
 
 async def read_bytes(accessor: HfHubAccessor,
@@ -76,13 +105,22 @@ async def read_bytes(accessor: HfHubAccessor,
     Returns:
         bytes: the content.
     """
-    await resolve_entry(accessor, path, index)
+    entry = await resolve_entry(accessor, path, index)
     raw = path.mount_path
     url = resolve_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
                       accessor.revision, accessor.repo_path(raw))
     window = ByteWindow(offset=offset,
                         size=size) if offset or size is not None else None
     timer = start_op()
-    data = await hub_bytes(accessor.token, url, window, session=accessor.pool)
-    record("read", raw, accessor.VFS_NAME, len(data), timer)
+    with refusals_denied(path, REFUSED_STATUSES):
+        data, etag = await hub_bytes_tagged(accessor.token,
+                                            url,
+                                            window,
+                                            session=accessor.pool)
+    record("read",
+           path.virtual,
+           accessor.VFS_NAME,
+           len(data),
+           timer,
+           fingerprint=row_token(entry, etag))
     return data

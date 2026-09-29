@@ -13,18 +13,25 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import json
+from unittest.mock import AsyncMock
 
 import pytest
 
 from mirage.commands.cli.builtin.gh import GH
-from mirage.commands.cli.builtin.gh.accessor import body_value, repo_number
+from mirage.commands.cli.builtin.gh.accessor import (body_value, read_cli_file,
+                                                     repo_number)
 from mirage.commands.cli.builtin.gh.api import api
-from mirage.commands.cli.builtin.gh.repo import fork, rename, summary, view
+from mirage.commands.cli.builtin.gh.issue import comments_for, comments_text
+from mirage.commands.cli.builtin.gh.repo import (fork, list_cmd, rename,
+                                                 summary, view)
 from mirage.commands.cli.specs import cli_spec_for
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
+from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.api.client import ApiResponse
+from mirage.core.github.client import GitHubApiError
 from mirage.core.github.config import GhConfig
+from mirage.core.github.repo import RepoRef, repository_fields
 from mirage.io.types import materialize
 from mirage.types import PathSpec
 
@@ -136,8 +143,10 @@ def _inv(texts=(), flags=None,
 
 def test_registers_itself_under_the_grammar_gh_uses():
     assert cli_spec_for("gh") is GH
-    assert [c.name for c in GH.subcommands
-            ] == ["api", "issue", "pr", "repo", "release", "run", "workflow"]
+    assert [c.name for c in GH.subcommands] == [
+        "version", "api", "issue", "pr", "repo", "release", "run", "workflow",
+        "search"
+    ]
     repo = next(c for c in GH.subcommands if c.name == "repo")
     assert [c.name for c in repo.subcommands
             ] == ["list", "view", "create", "fork", "rename"]
@@ -172,7 +181,10 @@ def _doors(files: dict[str, bytes]) -> CLIDoors:
 
 @pytest.mark.asyncio
 async def test_short_body_file_dash_reads_standard_input():
-    flags = {"body_file": _path("/-")}
+    flags = {
+        "body_file":
+        PathSpec(virtual="/-", directory="/", vfs_path="-", raw_path="-")
+    }
     for argv in (("issue", "create", "-F", "-"), ("issue", "create", "-F-")):
         value = await body_value(
             _inv(flags=flags, stdin=b"short body", argv=argv), FlagView(flags))
@@ -200,16 +212,191 @@ async def test_views_the_repository_the_operand_names():
     assert CALLS == [{"method": "GET", "path": "/repos/o/r"}]
 
 
+def _graphql(monkeypatch) -> None:
+    """Answer the core GraphQL client from REPLY, recording each call."""
+
+    async def fake_request(token, method, path, body=_MISSING, **_kwargs):
+        return _record(method=method, path=path, body=body)
+
+    monkeypatch.setitem(repository_fields.__globals__, "github_request",
+                        fake_request)
+
+
 @pytest.mark.asyncio
-async def test_json_repo_view_does_not_fetch_the_readme(monkeypatch):
+async def test_json_repo_view_asks_graphql_for_the_fields_named(monkeypatch):
 
     async def unexpected_readme(config, ref):
         raise AssertionError("JSON output must not fetch README content")
 
     monkeypatch.setitem(view.__globals__, "read_readme", unexpected_readme)
-    _reset({"name": "r", "full_name": "o/r"})
-    await view(_inv(["o/r"], {"json": "name"}))
-    assert CALLS == [{"method": "GET", "path": "/repos/o/r"}]
+    _graphql(monkeypatch)
+    _reset({"data": {"repository": {"parent": None, "name": "r"}}})
+    out, _io = await view(_inv(["o/r"], {"json": "parent,name"}))
+    assert CALLS == [{
+        "method": "POST",
+        "path": "/graphql",
+        "body": {
+            "query":
+            "query RepositoryInfo($owner: String!, $name: String!) {\n"
+            "    repository(owner: $owner, name: $name) "
+            "{parent{id,name,owner{id,login}},name}\n  }",
+            "variables": {
+                "owner": "o",
+                "name": "r"
+            },
+        },
+    }]
+    assert await materialize(out
+                             ) == b'{\n  "name": "r",\n  "parent": null\n}\n'
+
+
+# gh decodes the answer into Go structs and prints those: a null string
+# is "", a struct keeps every field (a user's databaseId is 0), a
+# repository with no topics prints null, and projectsV2 prints its
+# untagged `Nodes`.
+@pytest.mark.asyncio
+async def test_json_repo_view_prints_the_shape_gh_decodes(monkeypatch):
+    _graphql(monkeypatch)
+    _reset({
+        "data": {
+            "repository": {
+                "description": None,
+                "assignableUsers": {
+                    "nodes": [{
+                        "id": "U1",
+                        "login": "ada",
+                        "name": None
+                    }]
+                },
+                "repositoryTopics": {
+                    "nodes": []
+                },
+                "projectsV2": {
+                    "nodes": []
+                },
+                "latestRelease": None,
+                "watchers": {
+                    "totalCount": 3
+                },
+                "owner": {
+                    "id": "O1",
+                    "login": "o"
+                },
+                "parent": {
+                    "id": "R0",
+                    "name": "up",
+                    "owner": {
+                        "id": "O0",
+                        "login": "u"
+                    }
+                },
+            }
+        }
+    })
+    fields = ("watchers,parent,owner,latestRelease,projectsV2,"
+              "repositoryTopics,assignableUsers,description")
+    out, _io = await view(_inv(["o/r"], {"json": fields}))
+    printed = json.loads(await materialize(out))
+    assert printed == {
+        "assignableUsers": [{
+            "id": "U1",
+            "login": "ada",
+            "name": "",
+            "databaseId": 0
+        }],
+        "description":
+        "",
+        "latestRelease":
+        None,
+        "owner": {
+            "id": "O1",
+            "login": "o"
+        },
+        "parent": {
+            "id": "R0",
+            "name": "up",
+            "owner": {
+                "id": "O0",
+                "login": "u"
+            }
+        },
+        "projectsV2": {
+            "Nodes": []
+        },
+        "repositoryTopics":
+        None,
+        "watchers": {
+            "totalCount": 3
+        },
+    }
+    assert list(printed) == sorted(printed)
+
+
+@pytest.mark.asyncio
+async def test_json_repo_view_refuses_an_unknown_field_before_asking(
+        monkeypatch):
+    _graphql(monkeypatch)
+    with pytest.raises(UsageError) as caught:
+        await view(_inv(["o/r"], {"json": "isFork,bogus"}))
+    assert caught.value.exit_code == 1
+    assert str(caught.value).startswith(
+        'Unknown JSON field: "bogus"\nAvailable fields:\n  archivedAt\n'
+        '  assignableUsers\n')
+    assert CALLS == []
+
+
+@pytest.mark.asyncio
+async def test_json_repo_view_words_a_graphql_error_as_gh_does(monkeypatch):
+    _graphql(monkeypatch)
+    _reset({
+        "data": {
+            "repository": None
+        },
+        "errors": [{
+            "message":
+            "Could not resolve to a Repository with the name 'o/r'.",
+            "path": ["repository"]
+        }],
+    })
+    with pytest.raises(ValueError,
+                       match=r"^GraphQL: Could not resolve to a Repository "
+                       r"with the name 'o/r'\. \(repository\)$"):
+        await view(_inv(["o/r"], {"json": "name"}))
+
+
+@pytest.mark.asyncio
+async def test_json_repo_list_asks_graphql_for_the_owner(monkeypatch):
+    _graphql(monkeypatch)
+    _reset({
+        "data": {
+            "repositoryOwner": {
+                "repositories": {
+                    "nodes": [{
+                        "name": "a",
+                        "isFork": True
+                    }],
+                    "pageInfo": {
+                        "hasNextPage": False,
+                        "endCursor": None
+                    },
+                }
+            }
+        }
+    })
+    out, _io = await list_cmd(
+        _inv(["acme"], {
+            "json": "name,isFork",
+            "limit": 5
+        }))
+    assert len(CALLS) == 1
+    body = CALLS[0]["body"]
+    assert "repositoryOwner(login: $owner)" in body["query"]
+    assert "nodes{name,isFork}" in body["query"]
+    assert body["variables"] == {"perPage": 5, "owner": "acme"}
+    assert json.loads(await materialize(out)) == [{
+        "isFork": True,
+        "name": "a"
+    }]
 
 
 @pytest.mark.asyncio
@@ -555,3 +742,198 @@ async def test_api_renders_non_ascii_across_pages_as_raw_utf8():
     assert '"Café"' in printed
     assert '"東京"' in printed
     assert "\\u" not in printed
+
+
+@pytest.mark.asyncio
+async def test_comment_metadata_matches_gh(monkeypatch):
+    row = {
+        "author":
+        None,
+        "authorAssociation":
+        "CONTRIBUTOR",
+        "includesCreatedEdit":
+        True,
+        "isMinimized":
+        True,
+        "minimizedReason":
+        "OUTDATED",
+        "body":
+        "comment",
+        "viewerDidAuthor":
+        False,
+        "reactionGroups": [
+            {
+                "content": "THUMBS_UP",
+                "users": {
+                    "totalCount": 2
+                }
+            },
+            {
+                "content": "LAUGH",
+                "users": {
+                    "totalCount": 0
+                }
+            },
+        ]
+    }
+
+    async def comments(*args):
+        return [row.copy()]
+
+    monkeypatch.setitem(comments_for.__globals__, "issue_comments", comments)
+    rows = await comments_for(_inv([], {"comments": True}),
+                              FlagView({"comments": True}), RepoRef("o", "r"),
+                              1)
+    assert rows == [{
+        **row, "author": {
+            "login": ""
+        },
+        "reactionGroups": row["reactionGroups"][:1]
+    }]
+    assert comments_text(rows) == ("author:\t\nassociation:\tcontributor\n"
+                                   "edited:\ttrue\nstatus:\toutdated\n"
+                                   "--\ncomment\n--\n")
+
+
+@pytest.mark.asyncio
+async def test_file_reader_keeps_resolved_path_and_materializes_stream():
+    path = PathSpec(virtual="/scratch/body.md",
+                    directory="/scratch/",
+                    vfs_path="body.md",
+                    raw_path="./body.md")
+    content = [b"first ", b"second"]
+
+    async def chunks():
+        for chunk in content:
+            yield chunk
+
+    async def dispatch(op, spec, *args, **kwargs):
+        assert op == "read"
+        assert spec is path
+        return chunks(), None
+
+    value = await read_cli_file(_inv(doors=CLIDoors(dispatch=dispatch)), path,
+                                "--body-file")
+    assert value == b"first second"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,body,stdout,stderr", [
+    ({}, ' {"message":"Not Found"}\n', ' {"message":"Not Found"}\n',
+     'gh: Not Found (HTTP 404)\n'),
+    ({
+        "silent": True
+    }, '{"message":"Not Found"}', '', 'gh: Not Found (HTTP 404)\n'),
+    ({
+        "jq": ".message"
+    }, '{"message":"Not Found"}', '{"message":"Not Found"}',
+     'gh: Not Found (HTTP 404)\n'),
+    ({}, 'not found\n', 'not found\n', 'gh: HTTP 404\n'),
+    ({}, '', '', 'gh: HTTP 404\n'),
+])
+async def test_api_http_failure_keeps_the_response(monkeypatch, flags, body,
+                                                   stdout, stderr):
+    request = AsyncMock(
+        side_effect=GitHubApiError("Not Found", 404, body=body))
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    out, io = await api(_inv(("repos/o/missing", ), flags))
+    assert await materialize(out) == stdout.encode()
+    assert await io.stderr_str() == stderr
+    assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body,stderr", [
+    ('{"message":"Validation Failed","errors":"bad thing"}',
+     "gh: bad thing (Validation Failed)\n"),
+    ('{"errors":"bad thing"}', "gh: bad thing\n"),
+    ('{"message":"Validation Failed","errors":[{"message":"one"}]}',
+     "gh: Validation Failed (HTTP 422)\n"),
+    ('{"errors":[{"message":"one"},"two"]}', "gh: one\ntwo\n"),
+    ('{"errors":[{"code":"x"}]}', "gh: HTTP 422\n"),
+    ('{"errors":[]}', "gh: HTTP 422\n"),
+    ('{"message":""}', "gh: HTTP 422\n"),
+    ('["not", "an", "object"]', "gh: HTTP 422\n"),
+])
+async def test_api_failure_names_what_gh_reads_off_the_body(
+        monkeypatch, body, stderr):
+    request = AsyncMock(
+        side_effect=GitHubApiError("Validation Failed", 422, body=body))
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    out, io = await api(_inv(("repos/o/r", )))
+    assert await materialize(out) == body.encode()
+    assert await io.stderr_str() == stderr
+    assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,body,stdout,stderr", [
+    ({
+        "jq": ".value"
+    }, '{"message":"Validation Failed"}',
+     'first\n{"message":"Validation Failed"}',
+     "gh: Validation Failed (HTTP 422)\n"),
+    ({
+        "slurp": True
+    }, '{"message":"Validation Failed"}',
+     '[{"value":"first"},{"message":"Validation Failed"}]',
+     "gh: Validation Failed (HTTP 422)\n"),
+    ({
+        "slurp": True
+    }, "upstream unavailable\n", '[{"value":"first"},upstream unavailable\n]',
+     "gh: HTTP 422\n"),
+    ({
+        "slurp": True
+    }, "", '[{"value":"first"},]', "gh: HTTP 422\n"),
+    ({
+        "silent": True
+    }, '{"message":"Validation Failed"}', "",
+     "gh: Validation Failed (HTTP 422)\n"),
+])
+async def test_api_later_page_failure_keeps_rendered_pages(
+        monkeypatch, flags, body, stdout, stderr):
+    request = AsyncMock(side_effect=[
+        ApiResponse({"value": "first"}, 200, {"link": '</page2>; rel="next"'}),
+        GitHubApiError("Validation Failed", 422, body=body),
+    ])
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    out, io = await api(_inv(("page1", ), {"paginate": True, **flags}))
+    assert await materialize(out) == stdout.encode()
+    assert io.exit_code == 1
+    assert await io.stderr_str() == stderr
+    assert request.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,stdout", [
+    ({}, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'),
+    ({
+        "jq": ".data"
+    }, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'),
+    ({
+        "silent": True
+    }, ""),
+])
+async def test_api_graphql_errors_fail_as_gh_fails(monkeypatch, flags, stdout):
+    data = {"errors": [{"message": "one"}, {"message": "two"}], "data": None}
+    request = AsyncMock(return_value=ApiResponse(data, 200, {}))
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    out, io = await api(
+        _inv(("graphql", ), {
+            "raw_field": ["query={ viewer { login } }"],
+            **flags
+        }))
+    assert await materialize(out) == stdout.encode()
+    assert await io.stderr_str() == "gh: one\ntwo\n"
+    assert io.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_api_graphql_errors_only_count_on_the_graphql_endpoint(
+        monkeypatch):
+    data = {"errors": [{"message": "one"}]}
+    request = AsyncMock(return_value=ApiResponse(data, 200, {}))
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    out, io = await api(_inv(("repos/o/r", )))
+    assert json.loads(await materialize(out)) == data
+    assert io.exit_code == 0

@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 
@@ -59,10 +60,6 @@ class CompiledSpec:
         long_spellings (tuple[str, ...]): every long spelling in
             declaration order (the order GNU's ambiguity refusal lists
             possibilities), for getopt_long prefix expansion.
-        long_signatures (dict[str, str]): behavior signature per long
-            spelling. Prefix candidates whose signatures all match are
-            one option in glibc's eyes (same action struct), so the
-            prefix resolves instead of refusing as ambiguous.
         int_dests (frozenset[str]): canonical spellings of int-typed
             options; the parser refuses a non-integer value at parse
             time (argparse ``type=int``).
@@ -94,7 +91,6 @@ class CompiledSpec:
     long_value_spellings: frozenset[str] = frozenset()
     long_optional_spellings: frozenset[str] = frozenset()
     long_spellings: tuple[str, ...] = ()
-    long_signatures: dict[str, str] = field(default_factory=dict)
     int_dests: frozenset[str] = frozenset()
     float_dests: frozenset[str] = frozenset()
     kind_of: dict[str, ValueType] = field(default_factory=dict)
@@ -121,23 +117,111 @@ class CompiledSpec:
         return self.dest.get(spelling, spelling)
 
 
-def expand_long(cs: CompiledSpec, spelling: str) -> tuple[str, ...]:
+# git's notation for an option parse-options also answers as
+# `--no-<name>`, and the prefix itself.
+NEGATABLE = "[no-]"
+NO = "no-"
+
+
+def _git_spelling(long: str, unset: bool) -> str:
+    """The long spelling one of git's options answers to, negated or not.
+
+    Args:
+        long (str): the option's name in git's table.
+        unset (bool): whether it was matched negated.
+    """
+    if not unset:
+        return f"--{long}"
+    return f"--{long[len(NO):]}" if long.startswith(NO) else f"--{NO}{long}"
+
+
+def _git_shown(long: str, unset: bool) -> str:
+    """How git names a candidate in its ambiguity refusal.
+
+    Args:
+        long (str): the option's name in git's table.
+        unset (bool): whether it was matched negated.
+    """
+    return f"--{NO if unset else ''}{long}"
+
+
+def expand_git_long(table: Sequence[str],
+                    typed: str) -> str | tuple[str, str] | None:
+    """git's parse-options resolution of one long option against the
+    program's own table, which lists each option in git's ``--[no-]``
+    notation.
+
+    An exact name wins at once, a negatable option answering to its
+    ``--no-`` form too. Otherwise the word may abbreviate one option,
+    ``--no-`` abbreviating a negation, and a word that abbreviates two
+    is ambiguous: git names the last two it found, each with the ``no-``
+    it was matched under. A word matching nothing is None, and the
+    caller decides what that is. A string is the spelling the table
+    resolves to, which the spec may or may not declare; a pair is the
+    two candidates of an ambiguity.
+
+    Args:
+        table (Sequence[str]): the program's long options, e.g.
+            ``("[no-]verbose", "contains")``.
+        typed (str): the word as typed, ``--`` included and any
+            ``=value`` removed.
+    """
+    arg = typed[2:]
+    found: tuple[str, bool] | None = None
+    earlier: tuple[str, bool] | None = None
+    for entry in table:
+        negatable = entry.startswith(NEGATABLE)
+        long = entry[len(NEGATABLE):] if negatable else entry
+        inverted = (not arg.startswith(NO) and negatable
+                    and long.startswith(NO))
+        name = long[len(NO):] if inverted else long
+        unset = False
+        exact = arg == name
+        abbreviated = not exact and name.startswith(arg)
+        if not exact and not abbreviated and negatable:
+            if NO.startswith(arg):
+                unset = True
+                abbreviated = True
+            elif arg.startswith(NO):
+                unset = True
+                exact = arg[len(NO):] == name
+                abbreviated = not exact and name.startswith(arg[len(NO):])
+        if exact:
+            return _git_spelling(long, unset != inverted)
+        if abbreviated:
+            earlier = found
+            found = (long, unset != inverted)
+    if found is None:
+        return None
+    if earlier is not None:
+        return _git_shown(*earlier), _git_shown(*found)
+    return _git_spelling(*found)
+
+
+def expand_long(cs: CompiledSpec,
+                spelling: str,
+                synonyms: Mapping[str, str] | None = None) -> tuple[str, ...]:
     """getopt_long prefix matching for a long spelling.
 
     An exact declared spelling always wins (GNU: ``--binary`` never
     trips over ``--binary-files``); otherwise the candidates are every
-    declared long the typed spelling prefixes. Candidates whose behavior
-    signatures all match count as one option, the way glibc treats
-    several table entries with one action struct (``grep --colo``
-    resolves despite ``--color``/``--colour`` being separate entries),
-    and the prefix resolves to the first. The result length tells the
-    caller everything: 0 unknown, 1 match, 2+ ambiguous (every matching
+    declared long the typed spelling prefixes. Two declared options are
+    two options, so a prefix of both is ambiguous (``ls --re`` is
+    ``--reverse`` or ``--recursive``), unless ``synonyms`` names them
+    one option under two names, the way glibc treats several table
+    entries sharing one ``val`` (``grep --colo`` resolves despite
+    ``--color``/``--colour`` being separate entries); then the prefix
+    resolves to the first. The result length tells the caller
+    everything: 0 unknown, 1 match, 2+ ambiguous (every matching
     spelling in declaration order, the order GNU lists possibilities,
     synonyms included like GNU's own listing).
 
     Args:
         cs (CompiledSpec): compiled tables to match against.
         spelling (str): the typed long spelling, without any ``=value``.
+        synonyms (Mapping[str, str] | None): long spelling to the long it
+            is another name for, from LONG_SYNONYMS; None when the
+            grammar has none.
     """
     if spelling in cs.dest:
         return (spelling, )
@@ -147,10 +231,44 @@ def expand_long(cs: CompiledSpec, spelling: str) -> tuple[str, ...]:
                     if declared.startswith(spelling))
     if not matches:
         return ()
-    signatures = {cs.long_signatures[declared] for declared in matches}
-    if len(signatures) == 1:
+    same = synonyms or {}
+    if len({same.get(declared, declared) for declared in matches}) == 1:
         return (matches[0], )
     return matches
+
+
+def expand_table_long(table: Sequence[Sequence[str]],
+                      spelling: str) -> tuple[str, ...]:
+    """getopt_long prefix matching against a program's whole table.
+
+    An entry spelled exactly names its option; otherwise every entry the
+    typed spelling prefixes is a candidate. glibc sets aside a later
+    candidate that names the same option as the first one, so one
+    option's aliases resolve where two options are ambiguous. The result
+    length tells the caller everything: 0 unknown, 1 the option's primary
+    spelling, 2+ the possibilities glibc lists (the first candidate and
+    every later one naming another option, in table order).
+
+    Args:
+        table (Sequence[Sequence[str]]): each option's primary spelling
+            then its aliases, in the program's table order
+            (LONG_OPTION_TABLES).
+        spelling (str): the typed long spelling, without any ``=value``.
+    """
+    entries = [(name, group[0]) for group in table for name in group]
+    for name, primary in entries:
+        if name == spelling:
+            return (primary, )
+    if len(spelling) <= 2:
+        return ()
+    matches = [(name, primary) for name, primary in entries
+               if name.startswith(spelling)]
+    if not matches:
+        return ()
+    first = matches[0][1]
+    listed = (matches[0][0],
+              *(name for name, primary in matches[1:] if primary != first))
+    return (first, ) if len(listed) == 1 else listed
 
 
 @lru_cache(maxsize=512)
@@ -168,7 +286,6 @@ def compile_spec(spec: CommandSpec) -> CompiledSpec:
     long_value_spellings: set[str] = set()
     long_optional_spellings: set[str] = set()
     long_spellings: list[str] = []
-    long_signatures: dict[str, str] = {}
     int_dests: set[str] = set()
     float_dests: set[str] = set()
     kind_of: dict[str, ValueType] = {}
@@ -263,12 +380,6 @@ def compile_spec(spec: CommandSpec) -> CompiledSpec:
                     numeric_dest = canonical
         if opt.long:
             long_spellings.append(opt.long)
-            # Everything parsing-relevant except the spellings and the
-            # help text: two options that agree here are one action.
-            long_signatures[opt.long] = "|".join(
-                (opt.type, str(opt.value_optional), str(opt.multiple),
-                 str(opt.pair), str(opt.count), ",".join(opt.choices),
-                 str(opt.required), str(opt.default)))
             if opt.type == "bool":
                 long_bool_spellings.add(opt.long)
             elif opt.value_optional:
@@ -304,7 +415,6 @@ def compile_spec(spec: CommandSpec) -> CompiledSpec:
         long_value_spellings=frozenset(long_value_spellings),
         long_optional_spellings=frozenset(long_optional_spellings),
         long_spellings=tuple(long_spellings),
-        long_signatures=long_signatures,
         int_dests=frozenset(int_dests),
         float_dests=frozenset(float_dests),
         kind_of=kind_of,

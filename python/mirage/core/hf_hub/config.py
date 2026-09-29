@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 from mirage.core.hf_hub.constants import API_BASE
 
@@ -30,6 +30,8 @@ class HfConfig(BaseModel):
         token (SecretStr | None): a User Access Token.
         endpoint (str): the Hub origin, for a private deployment.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     token: SecretStr | None = None
     endpoint: str = API_BASE

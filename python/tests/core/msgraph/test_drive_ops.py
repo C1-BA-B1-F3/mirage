@@ -3,11 +3,17 @@ from aioresponses import aioresponses
 from yarl import URL
 
 import mirage.core.msgraph.drive_ops as drive_ops
+from mirage.accessor.onedrive import OneDriveAccessor, OneDriveConfig
 from mirage.core.msgraph.client import GraphError
 from mirage.core.msgraph.config import MsGraphConfig
 from mirage.core.msgraph.drive_ops import (DriveLoc, _move_body,
                                            _parent_reference, copy_tree,
                                            iter_tree, rename_replace)
+from mirage.core.onedrive.read import read_bytes as onedrive_read
+from mirage.core.onedrive.stream import read_stream as onedrive_stream
+from mirage.observe.context import (RecordingScope, push_revisions,
+                                    reset_revisions)
+from mirage.types import PathSpec
 
 _CONFLICT = {"error": {"code": "nameAlreadyExists", "message": "x"}}
 
@@ -270,3 +276,51 @@ async def test_rename_keeps_the_conflict_for_a_non_empty_folder():
                                  _loc("d1", "dst"))
         assert not [k for k in m.requests if k[0] == "DELETE"]
         assert len(m.requests[("PATCH", URL(_url("src")))]) == 1
+
+
+_OD_BASE = "https://graph.microsoft.com/v1.0/me/drive"
+_OD_SPEC = PathSpec(virtual="/m/m/k.txt",
+                    directory="/m/m/",
+                    vfs_path="m/k.txt")
+
+
+def _od_accessor() -> OneDriveAccessor:
+    return OneDriveAccessor(OneDriveConfig(access_token="tok"))
+
+
+@pytest.mark.asyncio
+async def test_read_item_records_the_virtual_path_on_a_pinned_read():
+    # A pinned read must record the full virtual path, or the pin a
+    # snapshot restores is never found again. Reached through the onedrive
+    # reader; the pinned branch is the one the onedrive read test skips.
+    revisions = push_revisions({"/m/m/k.txt": "3.0"})
+    scope = RecordingScope()
+    try:
+        with aioresponses() as m:
+            m.get(_OD_BASE + "/root:/m/k.txt:/versions/3.0/content",
+                  body=b"old")
+            data = await onedrive_read(_od_accessor(), _OD_SPEC)
+    finally:
+        scope.close()
+        reset_revisions(revisions)
+    assert data == b"old"
+    assert [r.path for r in scope.records] == ["/m/m/k.txt"]
+
+
+@pytest.mark.asyncio
+async def test_stream_item_records_the_virtual_path_on_a_pinned_read():
+    # The stream twin of the above, through the onedrive streamer.
+    revisions = push_revisions({"/m/m/k.txt": "3.0"})
+    scope = RecordingScope()
+    try:
+        with aioresponses() as m:
+            m.get(_OD_BASE + "/root:/m/k.txt:/versions/3.0/content",
+                  body=b"old")
+            chunks = [
+                c async for c in onedrive_stream(_od_accessor(), _OD_SPEC)
+            ]
+    finally:
+        scope.close()
+        reset_revisions(revisions)
+    assert b"".join(chunks) == b"old"
+    assert [r.path for r in scope.records] == ["/m/m/k.txt"]

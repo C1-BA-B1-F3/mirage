@@ -45,8 +45,8 @@ async def test_split_by_lines_default():
                         stdin=b"a\nb\nc\nd\ne\n",
                         lines_per_file=2)
     assert len(io.writes) == 3
-    assert b"a\nb\n" in io.writes["xaa"]
-    assert b"c\nd\n" in io.writes["xab"]
+    assert b"a\nb\n" in io.writes["/xaa"]
+    assert b"c\nd\n" in io.writes["/xab"]
 
 
 @pytest.mark.asyncio
@@ -57,9 +57,9 @@ async def test_split_by_bytes():
                         write_bytes=wb,
                         stdin=b"abcdefghij",
                         byte_limit=4)
-    assert io.writes["xaa"] == b"abcd"
-    assert io.writes["xab"] == b"efgh"
-    assert io.writes["xac"] == b"ij"
+    assert io.writes["/xaa"] == b"abcd"
+    assert io.writes["/xab"] == b"efgh"
+    assert io.writes["/xac"] == b"ij"
 
 
 @pytest.mark.asyncio
@@ -82,8 +82,8 @@ async def test_split_numeric_suffix():
                         stdin=b"a\nb\n",
                         lines_per_file=1,
                         numeric_suffix=True)
-    assert "x00" in io.writes
-    assert "x01" in io.writes
+    assert "/x00" in io.writes
+    assert "/x01" in io.writes
 
 
 @pytest.mark.asyncio
@@ -93,9 +93,9 @@ async def test_csplit_by_line_number():
                               read_bytes=rb,
                               write_bytes=wb,
                               stdin=b"a\nb\nc\nd\ne\n")
-    assert "xx00" in io.writes
-    assert "xx01" in io.writes
-    assert b"a\nb\n" == io.writes["xx00"]
+    assert "/xx00" in io.writes
+    assert "/xx01" in io.writes
+    assert b"a\nb\n" == io.writes["/xx00"]
 
 
 @pytest.mark.asyncio
@@ -105,8 +105,8 @@ async def test_csplit_by_regex():
                          read_bytes=rb,
                          write_bytes=wb,
                          stdin=b"a\nb\nMARK\nc\nd\n")
-    assert b"a\nb\n" == io.writes["xx00"]
-    assert b"MARK\nc\nd\n" == io.writes["xx01"]
+    assert b"a\nb\n" == io.writes["/xx00"]
+    assert b"MARK\nc\nd\n" == io.writes["/xx01"]
 
 
 @pytest.mark.asyncio
@@ -129,8 +129,8 @@ async def test_csplit_custom_prefix_and_digits():
                          stdin=b"a\nb\nc\n",
                          prefix="part_",
                          digits=3)
-    assert "part_000" in io.writes
-    assert "part_001" in io.writes
+    assert "/part_000" in io.writes
+    assert "/part_001" in io.writes
 
 
 @pytest.mark.asyncio
@@ -151,7 +151,7 @@ async def test_join_basic_inner_join():
 @pytest.mark.asyncio
 async def test_join_requires_two_paths():
     rb, _, _, _ = _make_backend({"/a.txt": b"x"})
-    with pytest.raises(ValueError, match="two paths"):
+    with pytest.raises(ValueError, match="^join: missing operand after "):
         await join_cmd([_spec("/a.txt")], read_bytes=rb)
 
 
@@ -205,7 +205,11 @@ async def test_tee_append_concatenates():
 
 
 @pytest.mark.asyncio
-async def test_tee_missing_path_raises():
-    _, wb, rs, _ = _make_backend({})
-    with pytest.raises(ValueError, match="missing operand"):
-        await tee([], (), read_stream=rs, write_bytes=wb, stdin=b"data")
+async def test_tee_without_a_path_copies_stdin():
+    _, wb, rs, store = _make_backend({})
+    output, io = await tee([], (),
+                           read_stream=rs,
+                           write_bytes=wb,
+                           stdin=b"data")
+    assert (output, io.exit_code) == (b"data", 0)
+    assert store == {}

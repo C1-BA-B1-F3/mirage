@@ -51,6 +51,7 @@ class LookupResult(BaseModel):
 
 class ListResult(BaseModel):
     entries: list[str] | None = None
+    partial_entries: list[str] | None = None
     status: LookupStatus | None = None
 
 
@@ -58,6 +59,7 @@ class IndexDirectory(BaseModel):
     entries: list[str]
     expires_at: float
     generation: str
+    partial: bool = False
 
 
 class IndexConfig(BaseModel):

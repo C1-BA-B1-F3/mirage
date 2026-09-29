@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
 from collections.abc import Sequence
 
 from mirage.shell.helpers import byte_offset
@@ -78,6 +79,57 @@ def match_offset(line_start: int, line: str, index: int) -> int:
         index (int): a character index into that line.
     """
     return line_start + byte_offset(line, index)
+
+
+def rust_matches(pat: re.Pattern[str], line: str) -> list[tuple[int, str]]:
+    """Every match of a pattern in a line, found as ripgrep finds them.
+
+    ripgrep iterates matches the way Rust's regex crate does: after an
+    empty match the search resumes one character on, and an empty match
+    where the previous match ended is skipped. Python's ``finditer`` keeps
+    that one, so ``b*`` on ``abc`` is four matches to it and three to
+    ripgrep; ``search`` from a position steps the way Rust does.
+
+    Args:
+        pat (re.Pattern[str]): the compiled pattern.
+        line (str): the line, terminator stripped.
+
+    Returns:
+        list[tuple[int, str]]: each match's character index and text.
+    """
+    matches: list[tuple[int, str]] = []
+    pos = 0
+    last_end = -1
+    while pos <= len(line):
+        m = pat.search(line, pos)
+        if m is None:
+            break
+        if m.start() == m.end():
+            pos = m.end() + 1
+            if m.end() == last_end:
+                continue
+        else:
+            pos = m.end()
+        last_end = m.end()
+        matches.append((m.start(), m.group()))
+    return matches
+
+
+def rg_pieces(pat: re.Pattern[str], line: str) -> list[tuple[int, str]]:
+    """What ripgrep's -o prints for one line, one piece per output line.
+
+    Each match, empty ones included (``rust_matches``), or the whole line
+    when nothing in it matches, which is how ripgrep prints an inverted
+    selection and a context line under -o (14.1.1).
+
+    Args:
+        pat (re.Pattern[str]): the compiled pattern.
+        line (str): the line, terminator stripped.
+
+    Returns:
+        list[tuple[int, str]]: each piece's character index and text.
+    """
+    return rust_matches(pat, line) or [(0, line)]
 
 
 class MatchOffsets:

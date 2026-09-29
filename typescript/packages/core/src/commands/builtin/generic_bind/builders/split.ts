@@ -13,24 +13,29 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { splitGeneric } from '../../generic/split.ts'
-import { type Builder, resolveGlobOf } from '../adapter.ts'
+import { type Builder, requireOp, resolveGlobOf } from '../adapter.ts'
 
 export const SPLIT_BUILDER: Builder = {
   name: 'split',
   write: true,
-  requirements: ['write'],
   fn: async (ops, accessor, paths, _texts, opts) => {
     const idx = opts.index ?? undefined
-    const { write } = ops
-    if (write === undefined) {
-      throw new Error('split: backend provides no write op')
-    }
+    const write = requireOp(ops.write, 'write')
     const resolved = paths.length > 0 ? await resolveGlobOf(ops)(accessor, paths, idx) : []
+    // The pieces go to the prefix, or `x` in the working directory, which
+    // need not be this mount, so a dispatcher routes each write to the mount
+    // that owns it. Mirrors the Python builder.
+    const dispatch = opts.dispatch
     return splitGeneric(
       resolved,
       opts,
       (p) => ops.readStream(accessor, p, idx),
-      (p, d) => write(accessor, p, d),
+      dispatch !== undefined
+        ? async (p, d) => {
+            await dispatch('write', p, [d])
+          }
+        : (p, d) => write(accessor, p, d),
+      dispatch !== undefined,
     )
   },
 }

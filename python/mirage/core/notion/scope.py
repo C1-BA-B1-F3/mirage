@@ -17,10 +17,13 @@ from mirage.types import ContentType
 
 # A page tree nests arbitrarily, so the page level is one VARIADIC slot:
 # `pages/a__1/b__2` is a page at any depth, and the slots hold the DEEPEST
-# page's label and id, which is the one the path addresses. Under
-# `databases/` the same run starts below the data source, because a row
-# page is an ordinary page whose parent is the data source.
+# page's label and id, which is the one the path addresses. A database row
+# is a page too, but one level of its own: the data source lists its rows
+# as `rows.jsonl` rather than as directories, so a row is reached by its
+# path alone and proves itself (`row` and `row_json`), while the pages
+# under a row are listed by the row as any child page is.
 _PAGE = Slot("page", id_key="page_id", variadic=True)
+_ROW = Slot("row", id_key="row_id")
 _DB = ("databases", Slot("database", id_key="database_id"))
 _DS = _DB + (Slot("data_source", id_key="data_source_id"), )
 
@@ -45,12 +48,21 @@ SCOPES = (
           segments=_DS + ("data_source.json", ),
           leaf=True,
           filetype=ContentType.JSON),
+    Scope(kind="rows_jsonl",
+          segments=_DS + ("rows.jsonl", ),
+          leaf=True,
+          filetype=ContentType.TEXT),
     Scope(kind="data_source", segments=_DS),
-    Scope(kind="page_json",
-          segments=_DS + (_PAGE, "page.json"),
+    Scope(kind="row_json",
+          segments=_DS + (_ROW, "page.json"),
           leaf=True,
           filetype=ContentType.JSON),
-    Scope(kind="page", segments=_DS + (_PAGE, )),
+    Scope(kind="row", segments=_DS + (_ROW, )),
+    Scope(kind="page_json",
+          segments=_DS + (_ROW, _PAGE, "page.json"),
+          leaf=True,
+          filetype=ContentType.JSON),
+    Scope(kind="page", segments=_DS + (_ROW, _PAGE)),
 )
 
 detect_scope = make_detect_scope(SCOPES)

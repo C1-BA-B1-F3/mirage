@@ -16,17 +16,18 @@ from dataclasses import replace
 
 from mirage.accessor.qdrant import QdrantAccessor
 from mirage.commands.builtin.qdrant._provision import metadata_provision
+from mirage.commands.builtin.qdrant.io import IO
 from mirage.commands.builtin.utils.paths import default_paths
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.core.qdrant.search import search_rows_output
 from mirage.io.types import ByteSource, IOResult
 from mirage.provision.types import ProvisionResult
 from mirage.types import PathSpec
-from mirage.utils.key_prefix import mount_prefix_of
+from mirage.vfs.search import search_resources
+from mirage.vfs.types import SearchQuery
 
 
 async def search_provision(accessor: QdrantAccessor, paths: list[PathSpec],
@@ -53,17 +54,16 @@ async def search(
     if (fl.as_str("method") or "semantic") != "semantic":
         raise UsageError("search: only the 'semantic' method is supported")
     query = texts[0]
-    target_paths = default_paths(paths, opts.cwd)
-    mount_prefix = mount_prefix_of(
-        target_paths[0].virtual,
-        target_paths[0].vfs_path) if target_paths else ""
     top_k = fl.as_int("top_k")
-    limit = top_k if top_k is not None else accessor.config.search_limit
-    output = await search_rows_output(accessor,
-                                      query,
-                                      target_paths,
-                                      top_k=limit,
-                                      threshold=fl.as_float("threshold")
-                                      or 0.0,
-                                      mount_prefix=mount_prefix)
+    target_paths = default_paths(paths, opts.cwd)
+    output = await search_resources(
+        IO.search, accessor, target_paths,
+        SearchQuery(
+            query,
+            options={
+                "top_k":
+                top_k if top_k is not None else accessor.config.search_limit,
+                "method": fl.as_str("method") or "semantic",
+                "threshold": fl.as_float("threshold") or 0.0
+            }), opts.index)
     return output, IOResult()

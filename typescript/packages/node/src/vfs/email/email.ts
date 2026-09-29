@@ -12,19 +12,24 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import { VFSName } from '@struktoai/mirage-core/types'
+
 import { EmailAccessor } from '../../accessor/email.ts'
 import { EMAIL_COMMANDS } from '../../commands/builtin/email/index.ts'
+
 import { EMAIL_OPS } from '../../ops/email/index.ts'
 import {
   redactEmailConfig,
   type EmailConfig,
   type EmailConfigRedacted,
 } from '../../core/email/config.ts'
-import { EMAIL_PROMPT } from './prompt.ts'
+import { EMAIL_PROMPT, EMAIL_WRITE_PROMPT } from './prompt.ts'
+
 export interface EmailVFSState {
   type: string
   config: EmailConfigRedacted
@@ -39,6 +44,7 @@ export class EmailVFS extends BaseVFS {
   override readonly sizesAlwaysKnown: boolean = true
   override readonly indexTtl: number = 86_400
   override readonly prompt: string = EMAIL_PROMPT
+  override readonly writePrompt: string = EMAIL_WRITE_PROMPT
   readonly config: EmailConfig
   override readonly accessor: EmailAccessor
 
@@ -47,6 +53,7 @@ export class EmailVFS extends BaseVFS {
     this.config = config
     this.accessor = new EmailAccessor(config)
   }
+
   override async close(): Promise<void> {
     await this.accessor.close()
     await super.close()
@@ -59,14 +66,11 @@ export class EmailVFS extends BaseVFS {
   override ops(): readonly RegisteredOp[] {
     return EMAIL_OPS
   }
+
   override getState(): Promise<EmailVFSState> {
     return Promise.resolve({
       type: this.name,
       config: redactEmailConfig(this.config),
     })
-  }
-
-  override loadState(_state: EmailVFSState): Promise<void> {
-    return Promise.resolve()
   }
 }

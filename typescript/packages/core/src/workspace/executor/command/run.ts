@@ -28,9 +28,16 @@ import type {
 import { namespaceNames } from '../../../ops/namespace_view.ts'
 import type { Namespace } from '../../mount/namespace/namespace.ts'
 import { envSnapshot, sessionView } from '../../session/state.ts'
-import { linkTargetStat, pathExists, pathReaddir, pathStat } from '../builtins/links/index.ts'
+import {
+  linkTargetStat,
+  pathExists,
+  pathReaddir,
+  pathStat,
+  resolveLink,
+} from '../builtins/links/index.ts'
 import { mergeOverlayStat } from '../../mount/namespace/overlay.ts'
 import { MountCommandUnsupported, type MountRegistry } from '../../mount/registry.ts'
+import { ownLimit } from '../../../policy/builtin/output_cap.ts'
 import type { Runtime } from '../../../runtime/base.ts'
 import { WorkspaceRuntime } from '../../../runtime/table.ts'
 import type { RouteDecision } from '../../../runtime/routing/index.ts'
@@ -80,6 +87,9 @@ interface RunOnMountOpts {
   stdin?: ByteSource | null
   resolveHint?: PathSpec | null
   mount?: MountEntry | null
+  // The words after the command name, as the line spelled them; absent for
+  // a run split out of a line.
+  argv?: readonly string[]
 }
 
 /** The 126 result for a command no runtime accepted. */
@@ -249,14 +259,12 @@ export async function runOnMount(
   let flags = flagKwargs
   if (cmdName === 'find') flags = scalarFindFlags(flags)
 
-  // resolveMount may redirect a warm remote read to the cache mount, which
-  // does not carry the origin mount's per-command limits. Resolve the
-  // limit from the real (pre-redirect) mount so the cap survives the hit.
-  // A spec can bucket a path-shaped operand as TEXT (python3's script), so
-  // when the spec-split paths are empty fall back to the classified scope
-  // hint before cwd, mirroring the Python executor.
-  const realMount = registry.tryMountFor(paths[0]?.virtual ?? hint?.virtual ?? session.cwd)
-  const limitOverride = realMount?.commandLimits.get(cmdName) ?? null
+  // The profile, serving mount and workspace entries, in precedence order;
+  // the mount folds in the command's declared default and the built-in.
+  const limitOverride =
+    ownLimit(session.commandLimits, cmdName) ??
+    mount.commandLimits.get(cmdName) ??
+    ownLimit(registry.commandLimits, cmdName)
 
   // The name plane's facts, bundled as one view: the attr overlay so
   // ls -l and stat -c agree (cp/mv -u freshness and find -mtime compare
@@ -297,6 +305,7 @@ export async function runOnMount(
       sessionId: session.sessionId,
       env: envSnapshot(session),
       sessionView: sessionView(session, registry.policies),
+      ...(registry.processView === undefined ? {} : { processes: registry.processView(session) }),
       execAllowed: registry.isExecAllowed(),
       execPathAllowed: registry.execAllowedAt,
       ...(lineRuntime !== undefined ? { runtime: lineRuntime } : {}),
@@ -305,6 +314,7 @@ export async function runOnMount(
       readdirPath,
       ...(signal !== undefined ? { signal } : {}),
       limitOverride,
+      ...(opts.argv !== undefined ? { argv: opts.argv } : {}),
     })
     const stdout = initialStdout
     const prefix = rstripSlash(mount.prefix)
@@ -370,7 +380,7 @@ function linkView(
     statAt: (path: string) => namespace.linkStatAt(path),
     children: (directory: string) => namespace.linkStatsUnder(directory),
     subtree: (directory: string) => namespace.linkStatsBelow(directory),
-    resolve: (path: string) => namespace.follow(path),
+    resolve: (path: string) => resolveLink(namespace, path),
     exists: (path: string) => pathExists(dispatch, path),
     targetStat: (path: string) => linkTargetStat(namespace, dispatch, path, overlay),
   }

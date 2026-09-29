@@ -21,8 +21,6 @@ from dulwich.objects import Blob, Commit, ObjectID
 from mirage.commands.cli.builtin.git.format import short
 
 ROOT_COMMIT = "(root-commit) "
-CREATE = "create"
-DELETE = "delete"
 # git's diffstat geometry for piped output: 80 columns total, binary
 # sniffing over the first 8000 bytes, and the 3/8 cap that splits the
 # line between the name column and the +/- graph (diff.c show_stats).
@@ -199,7 +197,9 @@ def stat_table(stats: list[FileStat], width: int = STAT_WIDTH) -> list[str]:
     max_change = max((stat.insertions + stat.deletions
                       for stat in stats if not stat.binary),
                      default=0)
-    number_width = len(str(max_change)) if max_change else 1
+    number_width = max(
+        len(str(max_change)) if max_change else 1,
+        3 if any(stat.binary for stat in stats) else 1)
     bin_width = max((len(f"Bin {stat.old_size} -> {stat.new_size} bytes") - 4
                      for stat in stats if stat.binary),
                     default=0)
@@ -276,53 +276,23 @@ def stat_line(files: int, insertions: int, deletions: int) -> str:
     return ", ".join(parts)
 
 
-def mode_lines(before: dict[bytes, tuple[int, bytes]],
-               after: dict[bytes, tuple[int, bytes]]) -> list[str]:
-    """The ``create mode`` / ``delete mode`` lines, in git's order.
-
-    Args:
-        before (dict): the parent tree, path to (mode, blob id).
-        after (dict): the new tree, path to (mode, blob id).
-    """
-    lines = []
-    for path in sorted(set(after) - set(before)):
-        mode = after[path][0]
-        lines.append(f" {CREATE} mode {mode:06o} "
-                     f"{path.decode('utf-8', errors='replace')}")
-    for path in sorted(set(before) - set(after)):
-        mode = before[path][0]
-        lines.append(f" {DELETE} mode {mode:06o} "
-                     f"{path.decode('utf-8', errors='replace')}")
-    return lines
-
-
-def report(store: BaseObjectStore, commit: Commit, branch: str | None,
-           before: dict[bytes, tuple[int, bytes]],
-           after: dict[bytes, tuple[int,
-                                    bytes]], width: int, root: bool) -> bytes:
+def report(commit: Commit, branch: str | None, changes: bytes, width: int,
+           root: bool) -> bytes:
     """What ``git commit`` prints once the commit exists.
 
-    The counts come from ``diffstat``, so a binary file adds to the
-    file total but zero lines, exactly as git reports it.
+    The title line, then the counts and ``--summary`` lines that
+    ``commit_summary`` renders for the change the commit records.
 
     Args:
-        store (BaseObjectStore): the object database.
         commit (Commit): the commit just written.
         branch (str | None): the branch it landed on, None when
             detached.
-        before (dict): the parent tree, path to (mode, blob id).
-        after (dict): the new tree, path to (mode, blob id).
+        changes (bytes): the rendered counts and summary lines.
         width (int): how many hex digits to abbreviate the id to.
         root (bool): whether this is the repository's first commit.
     """
-    stats = diffstat(store, before, after)
     title = commit.message.decode("utf-8", errors="replace").split("\n")[0]
     where = branch if branch is not None else "detached HEAD"
     marker = ROOT_COMMIT if root else ""
-    lines = [f"[{where} {marker}{short(commit.id, width)}] {title}"]
-    if stats:
-        insertions = sum(stat.insertions for stat in stats)
-        deletions = sum(stat.deletions for stat in stats)
-        lines.append(stat_line(len(stats), insertions, deletions))
-    lines.extend(mode_lines(before, after))
-    return "".join(f"{line}\n" for line in lines).encode()
+    return (f"[{where} {marker}{short(commit.id, width)}] {title}\n".encode() +
+            changes)

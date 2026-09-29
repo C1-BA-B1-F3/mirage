@@ -27,6 +27,10 @@ FILE_MODE = S_IFREG | 0o644
 # by any POSIX system, so this is the one mode every translator reports
 # for one (FUSE's link_stat, find's -type l row, a guest's lstat).
 LINK_MODE = S_IFLNK | 0o777
+# A directory is one ext4 block, the st_size GNU tools show for one,
+# whatever aggregate a backend reports; ls, stat, find and FUSE all
+# report this, so find -size agrees with what the listing shows.
+DIR_SIZE = 4096
 
 
 def mtime_ns(st: FileStat) -> int | None:
@@ -115,13 +119,13 @@ def device_rdev(st: FileStat) -> int:
 def content_size(st: FileStat) -> int:
     """The byte size a stat consumer should report, 0 when unknown.
 
-    A directory is always 0, whatever aggregate a backend put in
-    ``size`` (Graph folders report a subtree total there); an unknown
-    file size is 0 and rides the unknown-size machinery above.
+    A directory is always ``DIR_SIZE``, whatever aggregate a backend
+    put in ``size`` (Graph folders report a subtree total there); an
+    unknown file size is 0 and rides the unknown-size machinery above.
 
     Args:
         st (FileStat): the stat to inspect.
     """
     if is_dir(st):
-        return 0
+        return DIR_SIZE
     return st.size or 0

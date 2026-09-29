@@ -1,16 +1,18 @@
 import difflib
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from mirage.commands.builtin.diff_format import ed_script, normal_diff
 from mirage.commands.builtin.utils.lines import split_lines_keepends
+from mirage.commands.builtin.utils.stream import (is_stdin, stdin_bytes,
+                                                  stdin_stat)
 from mirage.commands.config import CommandOpts
-from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName, FlagValue
-from mirage.commands.spec.usage import extra_operand_error
+from mirage.commands.spec.usage import (extra_operand_error,
+                                        missing_operand_error)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS, format_fs_error
@@ -32,7 +34,12 @@ def _child_spec(parent: PathSpec, name: str) -> PathSpec:
     child = parent.virtual.rstrip("/") + "/" + name
     return PathSpec(virtual=child,
                     directory=child,
-                    vfs_path=rekey(parent.virtual, parent.vfs_path, child))
+                    vfs_path=rekey(parent.virtual, parent.vfs_path, child),
+                    raw_path=_name(parent).rstrip("/") + "/" + name)
+
+
+def _name(path: PathSpec) -> str:
+    return path.raw_path or path.virtual
 
 
 async def _diff_pair(
@@ -41,8 +48,8 @@ async def _diff_pair(
     read_bytes: Callable[..., Awaitable[bytes]],
     flags: _DiffFlags,
 ) -> bytes:
-    name1 = path1.virtual
-    name2 = path2.virtual
+    name1 = _name(path1)
+    name2 = _name(path2)
     text_a = (await read_bytes(path1)).decode(errors="replace")
     text_b = (await read_bytes(path2)).decode(errors="replace")
     if flags.i:
@@ -85,8 +92,8 @@ async def _diff_dirs(
     raw_b = await readdir_fn(dir_b)
     names_a = {gnu_basename(entry) for entry in raw_a}
     names_b = {gnu_basename(entry) for entry in raw_b}
-    left = dir_a.virtual.rstrip("/")
-    right = dir_b.virtual.rstrip("/")
+    left = _name(dir_a).rstrip("/")
+    right = _name(dir_b).rstrip("/")
     parts: list[bytes] = []
     for name in sorted(names_a | names_b):
         if name not in names_b:
@@ -108,38 +115,53 @@ async def _diff_dirs(
                 if flags.q:
                     parts.append(body)
                 else:
-                    header = f"diff -r {child_a.virtual} {child_b.virtual}\n"
+                    header = f"diff -r {_name(child_a)} {_name(child_b)}\n"
                     parts.append(header.encode() + body)
         elif a_dir:
-            parts.append((f"File {child_a.virtual} is a directory while file "
-                          f"{child_b.virtual} is a regular file\n").encode())
+            parts.append((f"File {_name(child_a)} is a directory while file "
+                          f"{_name(child_b)} is a regular file\n").encode())
         else:
             parts.append(
-                (f"File {child_a.virtual} is a regular file while file "
-                 f"{child_b.virtual} is a directory\n").encode())
+                (f"File {_name(child_a)} is a regular file while file "
+                 f"{_name(child_b)} is a directory\n").encode())
     return b"".join(parts)
 
 
 async def diff(
-    paths: list[PathSpec],
-    *,
-    read_bytes: Callable[..., Awaitable[bytes]],
-    readdir_fn: Callable[..., Awaitable[list[str]]],
-    stat_fn: Callable[..., Awaitable[FileStat]],
-    i: bool = False,
-    w: bool = False,
-    b: bool = False,
-    e: bool = False,
-    u: bool = False,
-    q: bool = False,
-    r: bool = False,
+        paths: list[PathSpec],
+        *,
+        read_bytes: Callable[..., Awaitable[bytes]],
+        readdir_fn: Callable[..., Awaitable[list[str]]],
+        stat_fn: Callable[..., Awaitable[FileStat]],
+        stdin: ByteSource | None = None,
+        i: bool = False,
+        w: bool = False,
+        b: bool = False,
+        e: bool = False,
+        u: bool = False,
+        q: bool = False,
+        r: bool = False,
+        argv: Sequence[str] = (),
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 2:
         raise extra_operand_error(CommandName.DIFF, paths[2].raw_path)
     if len(paths) < 2:
-        raise UsageError("diff: requires two paths")
+        raise missing_operand_error(CommandName.DIFF,
+                                    _name(paths[-1]) if paths else None, argv)
+    if is_stdin(paths[0]) and is_stdin(paths[1]):
+        # Both name the one stdin, which GNU sees as the same file.
+        return None, IOResult()
     flags = _DiffFlags(i=i, w=w, b=b, e=e, u=u, q=q)
+    read_bytes = stdin_bytes(read_bytes, stdin)
+    stat_fn = stdin_stat(stat_fn)
+    dashes = [p.raw_path == "-" for p in paths]
     try:
+        if any(dashes) and not all(dashes):
+            other = paths[1] if dashes[0] else paths[0]
+            if (await stat_fn(other)).type == FileType.DIRECTORY:
+                return None, IOResult(
+                    exit_code=2,
+                    stderr=b"diff: cannot compare '-' to a directory\n")
         both_dirs = False
         if r:
             both_dirs = ((await stat_fn(paths[0])).type == FileType.DIRECTORY
@@ -156,8 +178,9 @@ async def diff(
         return None, IOResult(exit_code=2,
                               stderr=format_fs_error("diff", exc, paths))
     exit_code = 1 if output else 0
-    return output, IOResult(exit_code=exit_code,
-                            cache=[paths[0].mount_path, paths[1].mount_path])
+    return output, IOResult(
+        exit_code=exit_code,
+        cache=[p.mount_path for p in paths if not is_stdin(p)])
 
 
 __all__ = ["diff"]
@@ -200,10 +223,12 @@ async def diff_generic(
                       read_bytes=read_bytes,
                       readdir_fn=readdir_fn,
                       stat_fn=stat_fn,
+                      stdin=opts.stdin,
                       i=parsed.ignore_case,
                       w=parsed.ignore_all_space,
                       b=parsed.ignore_space_change,
                       e=parsed.ed,
                       u=parsed.unified,
                       q=parsed.brief,
-                      r=parsed.recursive)
+                      r=parsed.recursive,
+                      argv=opts.argv)

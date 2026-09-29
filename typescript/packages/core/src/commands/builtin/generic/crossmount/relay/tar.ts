@@ -15,12 +15,10 @@
 import { IOResult } from '../../../../../io/types.ts'
 import type { NamespaceView } from '../../../../../ops/types.ts'
 import type { PathSpec } from '../../../../../types.ts'
-import { specOf } from '../../../../spec/builtins.ts'
-import { FlagView } from '../../../../spec/flag_view.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
 import { rstripSlash } from '../../../../../utils/slash.ts'
 import { relayIsDirOf, relayWalkOf } from '../../../generic_bind/archive_io.ts'
-import { tarGeneric } from '../../tar.ts'
+import { parseTarFlags, tarGeneric } from '../../tar.ts'
 import { crossOpts, flatten, statOp, streamOp } from '../utils.ts'
 import type { CrossResult, DispatchFn } from '../types.ts'
 
@@ -56,10 +54,10 @@ export async function runTar(
   // The symlinks and mount boundaries the create scan merges into each walk.
   ns?: NamespaceView,
 ): Promise<CrossResult> {
-  const fl = new FlagView(flagKwargs, specOf('tar'))
-  const archive = fl.asStr('f') ?? null
+  const parsed = parseTarFlags(flagKwargs)
+  const archive = parsed.archive
   const created =
-    archive !== null && fl.asBool('c') ? operands(scopes, [archive, ...fl.asList('C')]) : []
+    archive !== null && parsed.create ? operands(scopes, [archive, ...parsed.directories]) : []
   const result = await tarGeneric(
     flatten(created),
     textArgs,

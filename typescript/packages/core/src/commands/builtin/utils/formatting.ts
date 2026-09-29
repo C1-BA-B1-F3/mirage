@@ -22,6 +22,7 @@ import {
 import { strftime } from './strftime.ts'
 import { UINTMAX } from '../constants.ts'
 import { UTC_ZONE } from '../../../utils/timezone.ts'
+import { contentSize, isDir } from '../../../utils/stat_view.ts'
 import {
   DEFAULT_MODES,
   EPOCH_LS_TIME,
@@ -38,6 +39,12 @@ import { UNKNOWN_NAME, groupName, ownerName, type Identity } from './identity.ts
 // What a stat field a VFS cannot know renders as, in `stat -c` and in
 // the inode and block columns of `find -ls`.
 export const UNKNOWN_STAT_FIELD = '?'
+
+// FileStat.extra key marking an `ls` row whose stat failed: the listing
+// named the entry, so GNU keeps its row, and every fact only a stat
+// supplies prints as UNKNOWN_STAT_FIELD. Its type is a directory's when
+// the listing slash-marked it, and unknown otherwise.
+export const STAT_FAILED_KEY = 'stat_failed'
 
 // GNU's --block-size units: the letter and its power; K prints as K for
 // KiB and kB for KB. xstrtoumax's table, which takes every letter in upper
@@ -342,8 +349,9 @@ export function lsName(s: FileStat): string {
 
 // The size and time columns of one `ls -l` row. A device row carries its
 // major and minor numbers where GNU puts them. An entry with neither a
-// size nor a time (a synthetic API-backend directory) shows `-` in both
-// rather than inventing size 0 and the epoch, mirroring the python
+// size nor a time (a synthetic API-backend directory) shows `-` for the
+// time rather than inventing the epoch; its size is `-` too unless it is
+// a directory, whose size is always DIR_SIZE. Mirrors the python
 // formatter.
 function lsSizeAndTime(
   s: FileStat,
@@ -352,8 +360,6 @@ function lsSizeAndTime(
   columns: LsColumns = DEFAULT_COLUMNS,
 ): [string, string] {
   const whenIso = timeOf(s, columns.timeKind)
-  // An unknown modification time renders the epoch, as it always has;
-  // only a kind no backend reports at all (birth) is honestly `-`.
   const knownTime = columns.timeKind !== 'birth'
   const renderTime = (): string =>
     !knownTime
@@ -368,27 +374,47 @@ function lsSizeAndTime(
       whenIso === null ? UNKNOWN_NAME : renderTime(),
     ]
   }
-  if (s.size == null && s.modified == null) return [UNKNOWN_NAME, UNKNOWN_NAME]
-  return [scaledSize(s.size ?? 0, columns.blockSize, human), renderTime()]
+  const size =
+    !isDir(s) && s.size === null
+      ? UNKNOWN_NAME
+      : scaledSize(contentSize(s), columns.blockSize, human)
+  return [size, whenIso === null ? UNKNOWN_NAME : renderTime()]
 }
 
 // `ls -l` rows: mode, links, owner, group, size, time, name. The owner is
 // the entry's uid when a backend or the attr overlay reports one, else
 // the workspace user; the group is the gid, else the session's profile;
-// `-` when nothing names one.
+// `-` when nothing names one. A row whose stat failed is GNU's: the type
+// letter the listing gave, then `?` for every stat field, the time
+// right-aligned in its column.
 export function formatLsLong(stats: readonly FileStat[], opts: LsLongOptions = {}): string[] {
   const identity = opts.identity ?? null
   const human = opts.human ?? false
   const columns = opts.columns ?? DEFAULT_COLUMNS
-  const cells = stats.map((s) => lsSizeAndTime(s, human, false, columns))
+  const cells = stats.map((s): [string, string] =>
+    s.extra[STAT_FAILED_KEY] === true
+      ? [UNKNOWN_STAT_FIELD, UNKNOWN_STAT_FIELD]
+      : lsSizeAndTime(s, human, false, columns),
+  )
   const width = opts.sizeWidth ?? cells.reduce((m, [size]) => Math.max(m, size.length), 1)
+  const timeWidth = cells.reduce((m, [, time]) => Math.max(m, time.length), 1)
   return stats.map((s, i) => {
     const [rawSize, time] = cells[i] ?? [UNKNOWN_NAME, UNKNOWN_NAME]
-    const fields = [lsModeString(s), '1']
-    if (columns.owner) fields.push(ownerName(s.uid, identity))
-    if (columns.group) fields.push(groupName(s.gid, identity))
+    const failed = s.extra[STAT_FAILED_KEY] === true
+    const fields = failed
+      ? [
+          (s.type === FileType.DIRECTORY ? 'd' : UNKNOWN_STAT_FIELD) + UNKNOWN_STAT_FIELD.repeat(9),
+          UNKNOWN_STAT_FIELD,
+        ]
+      : [lsModeString(s), '1']
+    if (columns.owner) fields.push(failed ? UNKNOWN_STAT_FIELD : ownerName(s.uid, identity))
+    if (columns.group) fields.push(failed ? UNKNOWN_STAT_FIELD : groupName(s.gid, identity))
     if (columns.context) fields.push(UNKNOWN_STAT_FIELD)
-    fields.push(padLeft(rawSize, width), time, opts.names?.[i] ?? lsName(s))
+    fields.push(
+      padLeft(rawSize, width),
+      failed ? padLeft(time, timeWidth) : time,
+      opts.names?.[i] ?? lsName(s),
+    )
     const lead = columns.inode ? `${UNKNOWN_STAT_FIELD} ` : ''
     return lead + fields.join(' ')
   })

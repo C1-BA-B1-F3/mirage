@@ -174,14 +174,14 @@ async function checkPartialRead(ws: Workspace, dst: string, label: string): Prom
     `${label}: head keeps banner`,
     out === `==> ${src} <==\naaa\n` &&
       code === 1 &&
-      err === `head: ${miss}: No such file or directory\n`,
+      err === `head: cannot open '${miss}' for reading: No such file or directory\n`,
   )
   ;[out, err, code] = await run(ws, `tail -n 1 ${src} ${miss}`)
   check(
     `${label}: tail keeps banner`,
     out === `==> ${src} <==\naaa\n` &&
       code === 1 &&
-      err === `tail: ${miss}: No such file or directory\n`,
+      err === `tail: cannot open '${miss}' for reading: No such file or directory\n`,
   )
   // nl rides the STREAM strategy cross-mount: the error line must carry
   // nl's own name, not the cat sub-run that fetched the operand.
@@ -203,7 +203,7 @@ async function checkPartialRead(ws: Workspace, dst: string, label: string): Prom
     `${label}: stat keeps good row`,
     out.includes('name=a.txt') &&
       code === 1 &&
-      err === `stat: ${miss}: No such file or directory\n`,
+      err === `stat: cannot statx '${miss}': No such file or directory\n`,
   )
   ;[out, err, code] = await run(ws, `cut -c1 ${src} ${miss}`)
   check(
@@ -213,7 +213,9 @@ async function checkPartialRead(ws: Workspace, dst: string, label: string): Prom
   ;[out, err, code] = await run(ws, `tac ${src} ${miss}`)
   check(
     `${label}: tac keeps partial output`,
-    out === 'aaa\n' && code === 1 && err === `tac: ${miss}: No such file or directory\n`,
+    out === 'aaa\n' &&
+      code === 1 &&
+      err === `tac: failed to open '${miss}' for reading: No such file or directory\n`,
   )
   // sed and sort exit 2 on a failed operand where the commands above exit 1:
   // the code belongs to the command, not to the errno (GNU sed 4.9,
@@ -221,13 +223,13 @@ async function checkPartialRead(ws: Workspace, dst: string, label: string): Prom
   ;[out, err, code] = await run(ws, `sed s/a/X/ ${src} ${miss}`)
   check(
     `${label}: sed keeps partial output`,
-    out === 'Xaa\n' && code === 2 && err === `sed: ${miss}: No such file or directory\n`,
+    out === 'Xaa\n' && code === 2 && err === `sed: can't read ${miss}: No such file or directory\n`,
   )
   // sort aborts on any failed operand, single- and cross-mount alike.
   ;[out, err, code] = await run(ws, `sort ${src} ${miss}`)
   check(
     `${label}: sort aborts`,
-    out === '' && code === 2 && err === `sort: ${miss}: No such file or directory\n`,
+    out === '' && code === 2 && err === `sort: cannot read: ${miss}: No such file or directory\n`,
   )
 }
 

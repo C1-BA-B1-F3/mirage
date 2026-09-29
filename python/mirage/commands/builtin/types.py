@@ -57,3 +57,19 @@ class PrintfAction:
 
 
 FindAction = ExecAction | RowAction | PrintfAction
+
+
+@dataclass(frozen=True, slots=True)
+class GrepSearchOptions:
+    """The grep integration's per-request options, parsed from SearchQuery."""
+    ignore_case: bool = False
+    fixed_string: bool = True
+    whole_word: bool = False
+    basic: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class GrepSearchMeta:
+    """The grep integration's declared search dialect and scan strategy."""
+    mode: Literal["literal", "regex"]
+    stream: bool = False

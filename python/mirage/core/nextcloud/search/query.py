@@ -11,6 +11,7 @@ from mirage.core.nextcloud.search.types import (BooleanOperation, Comparison,
                                                 SearchTarget, XmlElement)
 from mirage.core.nextcloud.search.xml import dav, searchdav
 from mirage.types import FindType, PathSpec
+from mirage.utils.stat_view import DIR_SIZE
 
 
 def property_element(parent: XmlElement, field: Property) -> XmlElement:
@@ -155,9 +156,10 @@ def size_condition(query: FilesSearchQuery) -> XmlElement | None:
     if not bounds:
         return None
     file_bounds = combine(BooleanOperation.AND, [not_collection(), *bounds])
-    includes_zero = ((query.size.lower is None or query.size.lower <= 0)
-                     and (query.size.upper is None or query.size.upper >= 0))
-    if includes_zero:
+    includes_dir_size = (
+        (query.size.lower is None or query.size.lower <= DIR_SIZE)
+        and (query.size.upper is None or query.size.upper >= DIR_SIZE))
+    if includes_dir_size:
         return combine(BooleanOperation.OR, [is_collection(), file_bounds])
     return file_bounds
 

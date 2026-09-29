@@ -12,6 +12,10 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { SearchQuery } from '../../vfs/types.ts'
+import { validateOptions, intOption } from '../../vfs/search.ts'
+import { readdir } from './readdir.ts'
+import { makeResolveGlob } from '../../commands/builtin/generic_bind/adapter.ts'
 import { mountPrefixOf, rekey } from '../../utils/key_prefix.ts'
 import type { Where } from 'chromadb'
 import type { ChromaAccessor } from '../../accessor/chroma.ts'
@@ -139,4 +143,30 @@ function firstResultList(value: unknown): unknown[] {
   if (!Array.isArray(value)) return []
   if (value.length > 0 && Array.isArray(value[0])) return value[0] as unknown[]
   return value
+}
+
+export async function searchMany(
+  accessor: ChromaAccessor,
+  paths: PathSpec[],
+  query: SearchQuery,
+  index?: IndexCacheStore,
+): Promise<string[]> {
+  validateOptions(query, ['top_k'])
+  const topK = intOption(query, 'top_k', 10)
+  const first = paths[0]
+  if (first === undefined) throw new Error('search: at least one scope is required')
+  const prefix = mountPrefixOf(first.virtual, first.vfsPath)
+  const all = paths.some((p) => stripSlash(p.vfsPath) === '')
+  const targets = all ? [] : await makeResolveGlob(readdir)(accessor, paths, index)
+  const output = await searchSegments(accessor, query.query, targets, index, topK, prefix)
+  return output.length === 0 ? [] : new TextDecoder().decode(output).replace(/\n$/, '').split('\n')
+}
+
+export function searchResource(
+  accessor: ChromaAccessor,
+  path: PathSpec,
+  query: SearchQuery,
+  index?: IndexCacheStore,
+): Promise<string[]> {
+  return searchMany(accessor, [path], query, index)
 }

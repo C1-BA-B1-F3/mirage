@@ -14,9 +14,10 @@
 
 import { isStdin } from '../utils/stream.ts'
 import { stdinStream, stdinStat } from '../utils/stream.ts'
-import { CachableAsyncIterator } from '../../../io/cachable_iterator.ts'
+import { CachableAsyncIterator, concat } from '../../../io/cachable_iterator.ts'
 import { asyncChain } from '../../../io/stream.ts'
-import { IOResult, type ByteSource } from '../../../io/types.ts'
+import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
+import { fsErrorLine, isFsError } from '../../../utils/errors.ts'
 import { FileType, Limit, type FileStat, type PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { splitReadable } from '../utils/operands.ts'
@@ -89,6 +90,24 @@ function visible(
     }
   }
   return Uint8Array.from(out)
+}
+
+// One operand of a multi-operand cat: a read that fails once the stat passed
+// (a table past its read cap) is reported like a missing operand, and the
+// next operand still prints. A failed cachable discards itself, so nothing
+// partial reaches the cache. Mirrors the python non-local loop in cat_generic.
+async function* reported(
+  source: AsyncIterable<Uint8Array>,
+  io: IOResult,
+  path: PathSpec,
+): AsyncIterable<Uint8Array> {
+  try {
+    yield* source
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    io.stderr = concat([await materialize(io.stderr), ENC.encode(fsErrorLine('cat', path, err))])
+    io.exitCode = 1
+  }
 }
 
 /** Line-process a stream for GNU cat's display flags (-n -E -T -v -s). */
@@ -177,9 +196,9 @@ export async function catGeneric(
         reads[p.mountPath] = cachable
         cacheKeys.push(p.mountPath)
       }
-      outputs.push(cachable)
+      outputs.push(readable.length === 1 ? cachable : reported(cachable, io, p))
     }
-    const merged = outputs.length === 1 ? outputs[0] : asyncChain(...outputs)
+    const merged = outputs.length === 1 ? outputs[0] : asyncChain(outputs)
     if (merged === undefined) throw new Error('cat: missing readable stream')
     const out: ByteSource = wantsDisplay ? displayLines(merged, display) : merged
     return [out, io]

@@ -68,7 +68,7 @@ interface CheckRow {
   appName: string
 }
 
-interface StatusRow {
+export interface StatusRow {
   context: string
   state: string
   targetUrl: string
@@ -274,7 +274,10 @@ async function checkRuns(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
 // The rolled-up state of a commit's statuses. Failure wins over pending, which
 // wins over success, and no statuses at all reads as pending rather than as a
 // green commit nothing has reported on.
-async function commitStatus(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
+export async function combinedStatus(
+  ctx: Ctx<C>,
+  repo: RepoRow,
+): Promise<{ state: string; rows: StatusRow[] }> {
   const rows = (await ctx.db.githubStatus.findMany({
     where: { ...scope(ctx.tenant), repo: repo.fullName },
     orderBy: { seq: 'asc' },
@@ -283,6 +286,11 @@ async function commitStatus(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   let state = 'success'
   if (states.has('error') || states.has('failure')) state = 'failure'
   else if (rows.length === 0 || states.has('pending')) state = 'pending'
+  return { state, rows }
+}
+
+async function commitStatus(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
+  const { state, rows } = await combinedStatus(ctx, repo)
   return {
     status: 200,
     body: {

@@ -19,7 +19,7 @@ async def read_stream(
     raw = path.mount_path
     key = raw.lstrip("/")
     op = accessor.operator()
-    rec = record_stream("read", raw, "nextcloud")
+    rec = record_stream("read", path.virtual, "nextcloud")
     try:
         async with await op.open(key, "rb") as f:
             while True:

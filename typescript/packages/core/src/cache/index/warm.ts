@@ -16,6 +16,7 @@ import { isEnoent } from '../../utils/errors.ts'
 import { type IndexEntry, LookupStatus } from './config.ts'
 import type { IndexCacheStore } from './store.ts'
 import { withIndexLock } from './lock.ts'
+import { rstripSlash } from '../../utils/slash.ts'
 
 /**
  * Resolve an index entry, listing the parent directory once when its listing
@@ -27,9 +28,9 @@ import { withIndexLock } from './lock.ts'
  * this is the one place that decides what a failed listing means.
  *
  * A missing parent listing does not prove a retained entry is current: a
- * partial warm may have stored the child without publishing the listing. Such
- * a child is dropped before the refresh. A newly warmed child is usable for this
- * lookup; without a complete parent, the next lookup refreshes again.
+ * partial warm may have stored the child without publishing freshness. Such
+ * a child is dropped before the refresh. A fresh partial listing proves only
+ * the children it names; an omitted child still refreshes.
  * A parent that is simply absent is not an error here — the caller reports
  * ENOENT against the operand, which is the
  * path GNU names (`rm nodir/f` says "cannot remove 'nodir/f'", not "nodir").
@@ -49,12 +50,16 @@ export async function entryOrWarm(
   virtualKey: string,
   warm: (() => Promise<unknown>) | null,
 ): Promise<IndexEntry | null> {
-  const parent = virtualKey.replace(/\/+$/, '').replace(/\/[^/]+$/, '') || '/'
+  const parent = rstripSlash(virtualKey).replace(/\/[^/]+$/, '') || '/'
   return withIndexLock(index, parent, async () => {
     let listing = await index.listDir(parent)
     if (listing.entries != null && !listing.entries.includes(virtualKey)) return null
     const hit = await index.get(virtualKey)
-    if (hit.entry != null && listing.entries != null) return hit.entry
+    if (
+      hit.entry != null &&
+      (listing.entries != null || listing.partialEntries?.includes(virtualKey) === true)
+    )
+      return hit.entry
     if (warm === null) return null
     if (listing.status === LookupStatus.EXPIRED) {
       // Retained metadata is not proof of existence. Drop the old children

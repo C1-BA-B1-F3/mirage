@@ -13,7 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.workspace.executor.builtins.lookup.types import NameKind
-from mirage.workspace.lookup import Consumer
 
 TYPE_USAGE = "type: usage: type [-afptP] name [name ...]\n"
 WHICH_USAGE = "which: usage: which [-as] name [name ...]\n"
@@ -22,25 +21,8 @@ WHICH_USAGE = "which: usage: which [-as] name [name ...]\n"
 TYPE_OPTIONS = "afptP"
 WHICH_OPTIONS = "as"
 
-# Shell builtins, namespace commands and mount commands are all
-# in-process and pathless, so they share bash's runnable-and-in-process
-# category. That collapse is deliberate; `cli` is kept apart because an
-# installed CLI is the one runnable an agent cannot otherwise discover.
-# UNKNOWN is absent: it is what `lookup` reports for a name no layer
-# holds, and `lookup_all` never yields it.
-KIND_BY_CONSUMER: dict[Consumer, NameKind] = {
-    Consumer.SESSION: NameKind.BUILTIN,
-    Consumer.NAMESPACE: NameKind.BUILTIN,
-    Consumer.FUNCTION: NameKind.FUNCTION,
-    Consumer.CLI: NameKind.CLI,
-    Consumer.EXTERNAL: NameKind.EXTERNAL,
-    Consumer.MOUNT: NameKind.BUILTIN,
-}
-
 DESCRIPTIONS: dict[NameKind, str] = {
     NameKind.KEYWORD: "a shell keyword",
     NameKind.FUNCTION: "a function",
-    NameKind.CLI: "a mirage CLI",
-    NameKind.EXTERNAL: "a runtime command",
     NameKind.BUILTIN: "a shell builtin",
 }

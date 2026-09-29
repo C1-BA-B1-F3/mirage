@@ -1,0 +1,208 @@
+{
+  "cases": [
+    {
+      "id": "wc_lw_pads_to_the_file_size",
+      "seq": 917200,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "wc -lw /data/a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": " 5  5 /data/a.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "wc_pipe_pads_to_seven",
+      "seq": 917201,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cat /data/a.txt | wc -lw",
+      "expect": {
+        "exit": 0,
+        "stdout": "      5       5\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "wc_dash_beside_a_file_pads_to_seven",
+      "seq": 917202,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cat /data/a.txt | wc - /data/a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "      5       5      24 -\n      5       5      24 /data/a.txt\n     10      10      48 total\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "wc_dev_stdin_pads_to_seven",
+      "seq": 917203,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | wc -lc /dev/stdin",
+      "expect": {
+        "exit": 0,
+        "stdout": "      1       2 /dev/stdin\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "wc_directory_prints_a_row_of_zeros",
+      "seq": 917204,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "wc -l /data/sub /data/a.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "      0 /data/sub\n      5 /data/a.txt\n      5 total\n",
+        "stderr": "wc: /data/sub: Is a directory\n"
+      }
+    },
+    {
+      "id": "wc_total_always_pads_a_pipe_to_seven",
+      "seq": 917205,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cat /data/a.txt | wc --total=always",
+      "expect": {
+        "exit": 0,
+        "stdout": "      5       5      24\n      5       5      24 total\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

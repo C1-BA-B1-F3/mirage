@@ -12,18 +12,23 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import { normalizeKeyPrefix } from '@struktoai/mirage-core/vfs/s3/config'
 import { VFSName } from '@struktoai/mirage-core/types'
+
 import { GridFSAccessor } from '../../accessor/gridfs.ts'
 import { GRIDFS_COMMANDS } from '../../commands/builtin/gridfs/index.ts'
+
 import { GRIDFS_OPS } from '../../ops/gridfs/index.ts'
 import { redactConfig, type GridFSConfig, type GridFSConfigRedacted } from './config.ts'
 import { GRIDFS_PROMPT } from './prompt.ts'
 import { type DeltaHook } from '@struktoai/mirage-core/watch/index'
 import { buildDeltaHook } from '../../core/gridfs/watch.ts'
+
 export interface GridFSVFSState {
   type: string
   config: GridFSConfigRedacted
@@ -38,10 +43,10 @@ export class GridFSVFS extends BaseVFS {
   // stat and read both stamp str(file_id), so the gate compares like
   // with like.
   override readonly readRevalidatable: boolean = true
-  override readonly indexTtl: number = 600
   override readonly prompt: string = GRIDFS_PROMPT
   readonly config: GridFSConfig
   override readonly accessor: GridFSAccessor
+
   constructor(config: GridFSConfig) {
     super()
     const normalized = normalizeKeyPrefix(config.keyPrefix)
@@ -54,6 +59,7 @@ export class GridFSVFS extends BaseVFS {
     this.config = cfg
     this.accessor = new GridFSAccessor(this.config)
   }
+
   override async close(): Promise<void> {
     await this.accessor.close()
     await super.close()
@@ -66,6 +72,7 @@ export class GridFSVFS extends BaseVFS {
   override ops(): readonly RegisteredOp[] {
     return GRIDFS_OPS
   }
+
   override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
   }
@@ -75,9 +82,5 @@ export class GridFSVFS extends BaseVFS {
       type: this.name,
       config: redactConfig(this.config),
     })
-  }
-
-  override loadState(_state: GridFSVFSState): Promise<void> {
-    return Promise.resolve()
   }
 }

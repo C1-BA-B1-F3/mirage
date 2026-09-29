@@ -13,39 +13,20 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import AsyncIterator
-from typing import Any
 
 from mirage.accessor.mem0 import Mem0Accessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.hierarchy.read import make_read
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.mem0.client import get_memory
+from mirage.core.mem0.readdir import listed_memory
 from mirage.core.mem0.scope import detect_scope
 from mirage.core.render.json import json_bytes
 from mirage.types import PathSpec
-from mirage.utils.errors import enoent
-
-
-async def _resolve_memory(
-    accessor: Mem0Accessor,
-    path: PathSpec,
-    index: IndexCacheStore,
-) -> dict[str, Any]:
-    match = detect_scope(path)
-    if match.kind != "memory":
-        raise enoent(path)
-    lookup = await index.get(path.virtual)
-    cached = (lookup.entry.extra.get("memory")
-              if lookup.entry is not None else None)
-    if isinstance(cached, dict):
-        return cached
-    return await get_memory(accessor.client, match.slots["memory_id"], path)
 
 
 async def _read_memory(accessor: Mem0Accessor, match: ScopeMatch,
                        path: PathSpec, index: IndexCacheStore) -> bytes:
-    memory = await _resolve_memory(accessor, path, index)
-    return json_bytes(memory)
+    return json_bytes(await listed_memory(accessor, path, index))
 
 
 read = make_read(detect_scope, {"memory": _read_memory})
@@ -63,5 +44,4 @@ async def read_stream(
         path (PathSpec): the memory file path.
         index (IndexCacheStore): index cache.
     """
-    memory = await _resolve_memory(accessor, path, index)
-    yield json_bytes(memory)
+    yield json_bytes(await listed_memory(accessor, path, index))

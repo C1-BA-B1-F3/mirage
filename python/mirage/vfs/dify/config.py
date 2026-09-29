@@ -3,7 +3,7 @@ from pydantic import (BaseModel, ConfigDict, PositiveFloat, PositiveInt,
 
 
 class DifyConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     api_key: str
     base_url: str

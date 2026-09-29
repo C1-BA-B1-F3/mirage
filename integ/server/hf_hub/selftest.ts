@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { testMcpRuns } from './runs.ts'
 import { spawn } from 'node:child_process'
 import type { ChildProcessByStdio } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
@@ -2388,6 +2389,69 @@ async function main(): Promise<void> {
     )
     check('raw 404s a path that is not there', rawMissing.status === 404, String(rawMissing.status))
 
+    // ---- paths-info: one row per path that exists, JSON only
+    // The client's one-path stat. A body without a JSON content type is what
+    // an untyped fetch sends, and the real Hub answers it with 400 (measured
+    // against huggingface.co, 2026-09-24); a fake that read it anyway would
+    // hide a client that forgot the header.
+    const folder = await fetch(`${fake.endpoint}/api/datasets/${TENANT}/raw-dataset/commit/main`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${TENANT}`, 'Content-Type': 'application/x-ndjson' },
+      body: [
+        JSON.stringify({ key: 'header', value: { summary: 'add a folder' } }),
+        JSON.stringify({ key: 'file', value: { path: 'sub/x.txt', content: 'nested' } }),
+      ].join('\n'),
+    })
+    check('a folder is pushed', folder.status === 200, String(folder.status))
+    const pathsInfo = async (body: string, type: string): Promise<Response> =>
+      fetch(`${fake.endpoint}/api/datasets/${TENANT}/raw-dataset/paths-info/main`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TENANT}`, 'Content-Type': type },
+        body,
+      })
+    const asked = JSON.stringify({ paths: ['README.md', 'sub', 'nope.txt'] })
+    const infoReply = await pathsInfo(asked, 'application/json')
+    check('paths-info answers JSON', infoReply.status === 200, String(infoReply.status))
+    const infoRows = (await infoReply.json()) as { type: string; path: string; oid: string }[]
+    eq(
+      'one row per existing path, a folder as a directory, the missing one left out',
+      infoRows.map((r) => `${r.type}:${r.path}`),
+      ['file:README.md', 'directory:sub'],
+    )
+    const listing = (await get(
+      fake.endpoint,
+      `/api/datasets/${TENANT}/raw-dataset/tree/main?recursive=true`,
+    )) as { path: string; oid: string }[]
+    eq(
+      'the file row carries the same oid the tree does',
+      infoRows.find((r) => r.path === 'README.md')?.oid ?? '',
+      listing.find((r) => r.path === 'README.md')?.oid ?? '',
+    )
+    const untyped = await pathsInfo(asked, 'text/plain;charset=UTF-8')
+    check('a body without a JSON type is refused', untyped.status === 400, String(untyped.status))
+    const noRepo = await fetch(
+      `${fake.endpoint}/api/datasets/${TENANT}/no-such-repo/paths-info/main`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TENANT}`, 'Content-Type': 'application/json' },
+        body: asked,
+      },
+    )
+    eq('a missing repo is RepoNotFound', noRepo.headers.get('x-error-code') ?? '', 'RepoNotFound')
+    const noRev = await fetch(
+      `${fake.endpoint}/api/datasets/${TENANT}/raw-dataset/paths-info/nope`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TENANT}`, 'Content-Type': 'application/json' },
+        body: asked,
+      },
+    )
+    eq(
+      'a missing revision is RevisionNotFound',
+      noRev.headers.get('x-error-code') ?? '',
+      'RevisionNotFound',
+    )
+
     await mcpChecks()
     await launchChecks()
 
@@ -2398,3 +2462,4 @@ async function main(): Promise<void> {
 }
 
 await main()
+await testMcpRuns()

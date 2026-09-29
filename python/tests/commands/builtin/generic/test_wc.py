@@ -1,8 +1,8 @@
 import pytest
 
 from mirage.commands.builtin.generic.wc import (WCCounts, format_multi,
-                                                format_wc_lines, parse_flags,
-                                                wc)
+                                                format_wc_lines, number_width,
+                                                parse_flags, wc)
 from mirage.commands.errors import UsageError
 from mirage.types import PathSpec
 
@@ -200,6 +200,13 @@ def test_format_wc_lines_args_l():
     assert _fmt(counts, lines=True, label="/f.txt") == "2 /f.txt"
 
 
+def test_format_wc_lines_quotes_only_a_name_holding_a_newline():
+    # coreutils 9.7 wc.c: `strchr (file, '\n') ? quotef (file) : file`.
+    counts = WCCounts(lines=2)
+    assert _fmt(counts, lines=True, label="/a/n\nq") == "2 '/a/n'$'\\n''q'"
+    assert _fmt(counts, lines=True, label="/a/b c") == "2 /a/b c"
+
+
 def test_format_wc_lines_w_c_m():
     counts = WCCounts(lines=2, words=4, bytes_=20, chars=18)
     assert _fmt(counts, words=True) == "4"
@@ -256,7 +263,8 @@ async def test_format_multi_multi_path_emits_total_and_trailing_newline():
     assert err == b""
     assert out.endswith(b"\n")
     lines = out.decode().rstrip("\n").split("\n")
-    assert lines == ["1 /a.txt", "2 /b.txt", "3 total"]
+    # GNU pads to the digits of the files' 18 bytes, not the widest count.
+    assert lines == [" 1 /a.txt", " 2 /b.txt", " 3 total"]
 
 
 @pytest.mark.asyncio
@@ -397,3 +405,46 @@ def test_total_refuses_a_prefix_spanning_two_values():
                               "  - 'only'\n  - 'never'\n"
                               "Try 'wc --help' for more information.")
     assert exc.value.exit_code == 1
+
+
+@pytest.mark.parametrize("sizes,operands,counts,width", [
+    ([24], 1, 1, 1),
+    ([24], 1, 3, 2),
+    ([24, 6], 2, 1, 2),
+    ([0, 0], 2, 3, 1),
+    ([None], 1, 3, 7),
+    ([None], 1, 1, 1),
+    ([None, 24], 2, 1, 7),
+    ([123456789], 2, 1, 9),
+])
+def test_number_width_follows_the_operands(sizes, operands, counts, width):
+    # coreutils 9.7: one operand with one count is unpadded; otherwise the
+    # regular files' total size, at least 7 beside a stream or directory.
+    assert number_width(sizes, operands, counts) == width
+
+
+@pytest.mark.asyncio
+async def test_format_multi_sizes_columns_by_the_files():
+    paths = [PathSpec.from_str_path("/a.txt")]
+
+    async def fake_read(_path):
+        return b"hello\nworld\nfoo\nbar\nbaz\n"
+
+    out, _ = await format_multi(paths, read=fake_read, lines=True, words=True)
+    assert out == b" 5  5 /a.txt\n"
+
+
+@pytest.mark.asyncio
+async def test_format_multi_prints_zeros_for_a_directory_and_pads_to_seven():
+    paths = [PathSpec.from_str_path("/sub"), PathSpec.from_str_path("/a.txt")]
+
+    async def fake_read(path):
+        if path.virtual == "/sub":
+            raise IsADirectoryError(21, "Is a directory", path.virtual)
+        return b"hello\n"
+
+    out, err = await format_multi(paths, read=fake_read)
+    assert out == (b"      0       0       0 /sub\n"
+                   b"      1       1       6 /a.txt\n"
+                   b"      1       1       6 total\n")
+    assert err == b"wc: /sub: Is a directory\n"

@@ -86,6 +86,22 @@ function handleQuery(sql: string, params?: unknown[]): { rows: unknown[]; rowCou
   if (sql.startsWith('SELECT COUNT(*)')) {
     return ok([{ count: 5 }])
   }
+  if (sql.startsWith('WITH data AS MATERIALIZED')) {
+    const limit = Number(params?.[0] ?? 5)
+    const maxBytes = Number(params?.[1])
+    const rows = Array.from({ length: Math.min(limit, 5) }, (_, i) => ({
+      id: String(i + 1),
+      name: `user_${String(i + 1)}`,
+    }))
+    const size = new TextEncoder().encode(
+      rows.map((row) => JSON.stringify(row) + '\n').join(''),
+    ).length
+    return ok(
+      size > maxBytes
+        ? [{ __mirage_bytes: size }]
+        : rows.map((row) => ({ ...row, __mirage_bytes: size })),
+    )
+  }
   if (sql.startsWith('SELECT * FROM "public"."users" LIMIT')) {
     const limit = (params?.[0] as number | undefined) ?? 5
     const offset = (params?.[1] as number | undefined) ?? 0
@@ -172,6 +188,8 @@ describe('PostgresVFS mount integration', () => {
 
   it('cat /pg/public/tables/users/rows.jsonl returns JSONL when small', async () => {
     const r = await ws.shell('cat /pg/public/tables/users/rows.jsonl')
+    expect(r.exitCode).toBe(0)
+    expect(new TextDecoder().decode(r.stderr)).toBe('')
     const text = new TextDecoder().decode(r.stdout)
     const lines = text.trim().split('\n')
     expect(lines).toHaveLength(5)
@@ -183,7 +201,9 @@ describe('PostgresVFS mount integration', () => {
     largeWidth = 100
     const r = await ws.shell('cat /pg/public/tables/users/rows.jsonl')
     expect(r.exitCode).toBe(1)
-    expect(new TextDecoder().decode(r.stderr)).toContain('too large to read entirely')
+    expect(new TextDecoder().decode(r.stderr)).toBe(
+      'cat: /pg/public/tables/users/rows.jsonl: File too large\n',
+    )
   })
 
   it('head -n 2 pushes down to fetchRows and bypasses guard', async () => {

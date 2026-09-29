@@ -29,4 +29,10 @@ describe('opfs/unlink', () => {
     const accessor = makeMockAccessor()
     await expect(unlink(accessor, spec('/missing'))).resolves.toBeUndefined()
   })
+  it('answers ENOTDIR for a name under a plain file', async () => {
+    const accessor = makeMockAccessor()
+    await writeBytes(accessor, spec('/f'), new Uint8Array([1]))
+    await expect(unlink(accessor, spec('/f/x'))).rejects.toMatchObject({ code: 'ENOTDIR' })
+    expect(await exists(accessor, spec('/f'))).toBe(true)
+  })
 })

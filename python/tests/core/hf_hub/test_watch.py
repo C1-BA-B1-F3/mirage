@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
+from mirage.core.hf_hub.client import HfHubError
 from mirage.core.hf_hub.tree import parse_entry
 from mirage.core.hf_hub.watch import HfHubWalk, build_delta_hook
 from tests.core.hf_hub.conftest import dir_row, file_row, ps
@@ -65,3 +66,17 @@ async def test_walk_narrows_to_the_watch_root(mock_fetch, accessor):
 
 def test_build_delta_hook_returns_a_hook(accessor):
     assert build_delta_hook(accessor) is not None
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_get_response")
+async def test_walk_raises_for_a_repo_it_cannot_see(mock_get, accessor):
+    # An expired token used to list as an empty repository, which a watch
+    # pull reported as every file deleted.
+    accessor.tree = {"a.txt": parse_entry(file_row("a.txt"))}
+    accessor.tree_loaded = True
+    tree = accessor.tree
+    mock_get.side_effect = HfHubError("expired", 401)
+    with pytest.raises(HfHubError):
+        [e async for e in HfHubWalk(accessor)(ps(""))]
+    assert accessor.tree is tree

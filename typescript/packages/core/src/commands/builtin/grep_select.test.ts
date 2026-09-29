@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { type FileGlob, fileAdmitted, NO_FILTERS, parseFileGlobs } from './grep_select.ts'
+import { type FileGlob, fileAdmitted, parseFileGlobs } from './grep_select.ts'
 import { SPECS } from '../spec/index.ts'
 import { FlagView } from '../spec/flag_view.ts'
 
@@ -44,7 +44,7 @@ describe('fileAdmitted', () => {
   })
 
   it('admits everything with no rules', () => {
-    expect(fileAdmitted('/d/a.bin', NO_FILTERS)).toBe(true)
+    expect(fileAdmitted('/d/a.bin', rules())).toBe(true)
   })
 })
 

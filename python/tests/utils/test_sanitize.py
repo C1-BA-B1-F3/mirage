@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import pytest
+
 from mirage.utils.sanitize import (ESCAPE_LEAD, NAME_MAX_BYTES, SAFE_SLASH,
                                    byte_len, is_blank, path_safe_name,
                                    sanitize_label, sanitize_name)
@@ -143,3 +145,31 @@ def test_unsafe_chars_read_the_same_white_space_class():
         assert sanitize_name(f"a{odd}b") == "a_b"
         assert sanitize_label(f"a{odd}b", fallback="X", max_len=10) == "a_b"
     assert sanitize_name("a\x85b") == "a\x85b"
+
+
+# Every hierarchy classifier treats a dot-led segment as hidden, so a label
+# that rendered one was dropped from its listing and refused as a path; an
+# empty one rendered `__<id>`, which no `label__id` slot decodes.
+@pytest.mark.parametrize(("raw", "name"), [
+    (".plan", "plan"),
+    ("..", "unknown"),
+    (".", "unknown"),
+    ("_.env", "env"),
+    (" .x", "x"),
+    ("..x..", "x.."),
+    ("!!!", "unknown"),
+    ("🚀🚀", "unknown"),
+    ("a.b.", "a.b."),
+])
+def test_sanitize_name_is_never_dot_led_or_empty(raw, name):
+    assert sanitize_name(raw) == name
+
+
+@pytest.mark.parametrize(("raw", "label"), [
+    (".plan", "plan"),
+    ("...", "No_Subject"),
+    ("!!!", "No_Subject"),
+    ("_.x", "x"),
+])
+def test_sanitize_label_is_never_dot_led_or_empty(raw, label):
+    assert sanitize_label(raw, fallback="No_Subject", max_len=80) == label

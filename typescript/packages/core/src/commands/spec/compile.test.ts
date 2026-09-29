@@ -13,7 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { compileSpec, expandLong } from './compile.ts'
+import { compileSpec, expandGitLong, expandLong, expandTableLong } from './compile.ts'
+import { TAR_LONG_OPTIONS } from './constants.ts'
 import { CommandSpec, Option } from './types.ts'
 
 describe('compileSpec — count/choices/required/default tables', () => {
@@ -129,6 +130,27 @@ describe('expandLong', () => {
     expect(expandLong(cs, '--zz')).toEqual([])
     expect(expandLong(cs, '--')).toEqual([])
   })
+
+  // Two options of one shape are still two options; only a named synonym
+  // folds a shared prefix into one (glibc's entries sharing one `val`).
+  it('resolves a shared prefix only across named synonyms', () => {
+    const cs = compileSpec(
+      new CommandSpec({
+        options: [
+          new Option({ long: '--color' }),
+          new Option({ long: '--colour' }),
+          new Option({ long: '--count' }),
+        ],
+      }),
+    )
+    expect(expandLong(cs, '--col')).toEqual(['--color', '--colour'])
+    expect(expandLong(cs, '--col', new Map([['--colour', '--color']]))).toEqual(['--color'])
+    expect(expandLong(cs, '--co', new Map([['--colour', '--color']]))).toEqual([
+      '--color',
+      '--colour',
+      '--count',
+    ])
+  })
 })
 
 describe('pair options', () => {
@@ -161,5 +183,73 @@ describe('pair options', () => {
     const compiled = compileSpec(spec)
     expect(compiled.pairDests.has('--arg')).toBe(true)
     expect(compiled.multipleDests.has('--arg')).toBe(true)
+  })
+})
+
+// git 2.50.1's `branch` and `show-ref` tables, as far as these cases reach.
+const BRANCH = [
+  '[no-]verbose',
+  '[no-]color',
+  'contains',
+  'no-contains',
+  '[no-]move',
+  'merged',
+  'no-merged',
+]
+const SHOW_REF = ['[no-]heads', '[no-]head']
+
+describe('expandGitLong', () => {
+  it('lets an exact name win over a longer one it prefixes', () => {
+    expect(expandGitLong(SHOW_REF, '--head')).toEqual({ spelling: '--head' })
+  })
+
+  it('expands a unique abbreviation, `no-` included', () => {
+    expect(expandGitLong(BRANCH, '--verb')).toEqual({ spelling: '--verbose' })
+    expect(expandGitLong(BRANCH, '--no-verb')).toEqual({ spelling: '--no-verbose' })
+    expect(expandGitLong(BRANCH, '--no-cont')).toEqual({ spelling: '--no-contains' })
+  })
+
+  it('names the last two candidates of an ambiguity, as git does', () => {
+    expect(expandGitLong(BRANCH, '--no-m')).toEqual({ ambiguous: ['--no-move', '--no-merged'] })
+    expect(expandGitLong(SHOW_REF, '--hea')).toEqual({ ambiguous: ['--heads', '--head'] })
+  })
+
+  it('answers nothing for a word no option starts with', () => {
+    expect(expandGitLong(BRANCH, '--zzz')).toBeNull()
+    expect(expandGitLong([], '--verb')).toBeNull()
+  })
+})
+
+describe('expandTableLong', () => {
+  // Mirrors python's test_table_long_resolves_as_the_programs_getopt_long_does.
+  it.each([
+    // An entry spelled exactly names its option, an alias its primary.
+    ['--file', ['--file']],
+    ['--get', ['--extract']],
+    ['--ungzip', ['--gzip']],
+    // A prefix one option owns resolves, its aliases included.
+    ['--crea', ['--create']],
+    ['--gun', ['--gzip']],
+    ['--dir', ['--directory']],
+    ['--vers', ['--version']],
+    // A prefix of two options is ambiguous in table order, an option mirage
+    // never declared included (GNU tar 1.35's own lines).
+    ['--fil', ['--file', '--files-from']],
+    ['--li', ['--list', '--listed-incremental']],
+    ['--us', ['--use-compress-program', '--usage']],
+    ['--ver', ['--verify', '--verbose', '--verbatim-files-from', '--version']],
+    ['--to', ['--to-stdout', '--to-command', '--touch', '--totals']],
+    ['--zzz', []],
+    ['--', []],
+  ])('resolves %s as tar does', (typed, found) => {
+    expect(expandTableLong(TAR_LONG_OPTIONS, typed)).toEqual(found)
+  })
+
+  it('lists every later candidate naming another option', () => {
+    // glibc compares each later match with the FIRST one only, so a later
+    // alias of a third option is listed beside its own primary.
+    const table = [['--apple'], ['--apricot', '--apron'], ['--ape']]
+    expect(expandTableLong(table, '--ap')).toEqual(['--apple', '--apricot', '--apron', '--ape'])
+    expect(expandTableLong([['--apricot', '--apron']], '--apr')).toEqual(['--apricot'])
   })
 })

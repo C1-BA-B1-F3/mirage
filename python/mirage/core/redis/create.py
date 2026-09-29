@@ -28,5 +28,5 @@ async def create(accessor: RedisAccessor, path: PathSpec) -> None:
     await check_dest_parents(store, path, p)
     await store.set_file(p, b"")
     await store.set_modified(p, now_iso())
-    record("create", path.mount_path, "redis", 0, timer)
+    record("create", path.virtual, "redis", 0, timer)
     await invalidate_after_write(path)

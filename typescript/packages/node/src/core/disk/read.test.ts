@@ -12,9 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { runWithRecording } from '@struktoai/mirage-core/observe/context'
+import { PathSpec } from '@struktoai/mirage-core/types'
 import type { DiskAccessor } from '../../accessor/disk.ts'
 import { spec, tmpRoot } from '../../test-utils.ts'
 import { read, readRange } from './read.ts'
@@ -71,5 +73,44 @@ describe('core/disk/readRange', () => {
     await expect(readRange(accessor, spec('/missing'), undefined, 0, 4)).rejects.toMatchObject({
       code: 'ENOENT',
     })
+  })
+})
+
+// A key named like its mount: neither `m/k.txt` nor `/m/k.txt` is virtual.
+describe('core/disk/readRange record path', () => {
+  const path = new PathSpec({ virtual: '/m/m/k.txt', vfsPath: 'm/k.txt', directory: '/m/m/' })
+
+  beforeEach(async () => {
+    await mkdir(join(root, 'm'))
+    await writeFile(join(root, 'm', 'k.txt'), '0123456789')
+  })
+
+  it('a sized window records the virtual path', async () => {
+    const [data, records] = await runWithRecording(() => readRange(accessor, path, undefined, 0, 1))
+    expect(new TextDecoder().decode(data)).toBe('0')
+    expect(records.map((r) => r.path)).toEqual(['/m/m/k.txt'])
+  })
+
+  it('a rest-of-file window records the virtual path', async () => {
+    const [data, records] = await runWithRecording(() =>
+      readRange(accessor, path, undefined, 0, null),
+    )
+    expect(new TextDecoder().decode(data)).toBe('0123456789')
+    expect(records.map((r) => r.path)).toEqual(['/m/m/k.txt'])
+  })
+})
+
+// A path under a plain file is ENOTDIR on the real filesystem, stamped with
+// the virtual path: Node's own message names the host path, which must never
+// reach a diagnostic. Mirrors the disk tests in python/tests/core/disk.
+describe('core/disk/read under a plain file', () => {
+  it('is ENOTDIR against the virtual path', async () => {
+    await writeFile(join(root, 'a.txt'), 'a')
+    const err: unknown = await read(accessor, spec('/a.txt/x')).then(
+      () => null,
+      (e: unknown) => e,
+    )
+    expect(err).toMatchObject({ code: 'ENOTDIR', virtualPath: '/a.txt/x' })
+    expect((err as Error).message).not.toContain(root)
   })
 })

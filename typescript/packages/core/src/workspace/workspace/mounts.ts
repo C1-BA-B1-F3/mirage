@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BIN_PREFIX } from '../../shell/constants.ts'
 import { HISTORY_PREFIX } from '../../vfs/history/history.ts'
 import type { OpsRegistry } from '../../ops/registry.ts'
 import type { BaseVFS } from '../../vfs/base.ts'
@@ -139,6 +140,9 @@ export async function unmountPrefix(deps: UnmountDeps, prefix: string): Promise<
   }
   if (norm === HISTORY_PREFIX + '/') {
     throw new Error(`cannot unmount history view: ${HISTORY_PREFIX}`)
+  }
+  if (norm === BIN_PREFIX + '/') {
+    throw new Error(`cannot unmount program view: ${BIN_PREFIX}`)
   }
   const entry = deps.registry.tryMountForPrefix(prefix)
   if (entry === null) throw new Error(`no mount at prefix: ${norm}`)

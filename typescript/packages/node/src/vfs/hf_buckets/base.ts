@@ -12,18 +12,23 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import type { VFSStateBase } from '@struktoai/mirage-core/vfs/base'
-import type { HfAccessor } from '../../accessor/hf.ts'
+
+import type { HfBucketsAccessor } from '../../accessor/hf.ts'
 import { HF_COMMANDS } from '../../commands/builtin/hf/index.ts'
+
 import { HF_OPS } from '../../ops/hf/index.ts'
 import { type DeltaHook } from '@struktoai/mirage-core/watch/index'
 import { buildDeltaHook } from '../../core/hf/watch.ts'
+
 export abstract class HfVFS extends BaseVFS {
   abstract override readonly prompt: string
-  abstract override readonly accessor: HfAccessor
+  abstract override readonly accessor: HfBucketsAccessor
   // Narrowed back to abstract, so BaseVFS's bare `{type}` cannot reach
   // a Hub VFS: all four carry a config and so owe their own redaction,
   // and inheriting the default would drop it and read back as an empty
@@ -36,6 +41,11 @@ export abstract class HfVFS extends BaseVFS {
   // size with one stat.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly supportsSnapshot: boolean = true
+  // stat stamps the paths-info xet hash and a read stamps its download's
+  // strong ETag, which is that same hash, so a `fresh` probe compares like
+  // with like.
+  override readonly readRevalidatable: boolean = true
+
   override commands(): readonly RegisteredCommand[] {
     return HF_COMMANDS
   }
@@ -43,10 +53,8 @@ export abstract class HfVFS extends BaseVFS {
   override ops(): readonly RegisteredOp[] {
     return HF_OPS
   }
+
   override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
-  }
-  override loadState(_state: unknown): Promise<void> {
-    return Promise.resolve()
   }
 }

@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class GitHubConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     token: SecretStr
     owner: str | None = None
     repo: str | None = None
@@ -35,6 +37,8 @@ class GhConfig(BaseModel):
     carries it. `branch` stands in the same way for the checked-out branch,
     which is what `{branch}` expands to in an endpoint.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     token: SecretStr
     base_url: str | None = None

@@ -18,9 +18,12 @@ import pytest
 
 from mirage.cache.index import IndexCacheStore
 from mirage.core.hierarchy.read import make_read, make_read_range
+from mirage.core.hierarchy.readdir import make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
+from mirage.core.hierarchy.stat import make_stat
 from mirage.types import PathSpec
-from tests.core.hierarchy.conftest import FakeAccessor, detect_scope, spec
+from tests.core.hierarchy.conftest import (FakeAccessor, detect_scope,
+                                           list_notes, list_rooms, spec)
 
 
 async def _read_note(accessor: FakeAccessor, match: ScopeMatch, path: PathSpec,
@@ -103,3 +106,31 @@ def test_unranged_kind_slices_the_full_read(accessor):
 def test_ranged_read_defaults_to_the_whole_file(accessor):
     out = asyncio.run(READ_RANGE(accessor, spec("/rooms/red/a.json")))
     assert out == b"red:a"
+
+
+PROVEN_STAT = make_stat(
+    detect_scope,
+    make_readdir(detect_scope,
+                 listers={
+                     "rooms": list_rooms,
+                     "room": list_notes
+                 }))
+PROVEN_READ = make_read(detect_scope, {"note": _read_note}, stat=PROVEN_STAT)
+
+
+def test_a_read_proves_its_parent_through_stat(accessor):
+    # "green" is not a room the listing names: the read is ENOENT for the
+    # file itself, and its reader never runs.
+    with pytest.raises(FileNotFoundError) as caught:
+        asyncio.run(PROVEN_READ(accessor, spec("/rooms/green/a.json")))
+    assert caught.value.args == ("/h/rooms/green/a.json", )
+    assert accessor.calls == ["rooms"]
+    out = asyncio.run(PROVEN_READ(accessor, spec("/rooms/red/z.json")))
+    # The parent is proven; the file stays the reader's to prove.
+    assert out == b"red:z"
+
+
+def test_a_read_without_stat_trusts_the_path(accessor):
+    out = asyncio.run(READ(accessor, spec("/rooms/green/a.json")))
+    assert out == b"green:a"
+    assert accessor.calls == []

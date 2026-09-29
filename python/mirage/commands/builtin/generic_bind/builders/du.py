@@ -18,14 +18,14 @@ from functools import partial
 from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.du import (ComputeEntries, ComputeSize,
-                                                DuEntries, du_generic)
-from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          OperationFn)
+                                                du_generic)
+from mirage.commands.builtin.generic_bind.adapter import Builder, CommandIO
 from mirage.commands.config import CommandOpts
 from mirage.context import path_rules_active
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileType, PathSpec
 from mirage.utils.key_prefix import mount_key, mount_prefix_of, rekey
+from mirage.vfs.types import DuEntries, OperationFn
 
 
 @dataclass(slots=True)
@@ -78,7 +78,7 @@ async def _walk(
 ) -> int:
     try:
         info = await ops.stat(accessor, path, index)
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, NotADirectoryError, ValueError):
         return 0
     if info.type != FileType.DIRECTORY:
         size = info.size or 0
@@ -88,7 +88,7 @@ async def _walk(
         return size
     try:
         children = await ops.readdir(accessor, path, index)
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, NotADirectoryError, ValueError):
         return 0
     except PermissionError:
         budget.unreadable.append(path.virtual)

@@ -149,6 +149,93 @@ def resolve_path(path: str, cwd: str) -> str:
     return resolved
 
 
+_DOTS = (".", "..")
+
+
+def dotted_spelling(word: str, base: str = "/") -> str | None:
+    """The absolute spelling of a typed path whose dots a walk proves.
+
+    The kernel resolves ``.`` and ``..`` against the directory they sit
+    in, so every component in front of one has to be a directory, while
+    the textual simplification a virtual path gets lets ``nope/../f``
+    reach ``f`` past a missing ``nope``. This keeps the spelling a walk
+    needs. None when no dot follows a named component: a leading climb
+    (``../x``) only walks up from ``base``, a directory already, so the
+    common ``cd ..`` and ``cat ../f`` cost nothing.
+
+    Args:
+        word (str): the path as typed, absolute or relative.
+        base (str): the directory a relative word resolves against (the
+            cwd, or tar's ``-C`` directory).
+    """
+    parts = [part for part in word.split("/") if part]
+    lead = 0
+    while lead < len(parts) and parts[lead] in _DOTS:
+        lead += 1
+    rest = parts[lead:]
+    if not any(part in _DOTS for part in rest):
+        return None
+    start = resolve_path("/".join(parts[:lead]) or ".",
+                         "/" if word.startswith("/") else base)
+    return start.rstrip("/") + "/" + "/".join(rest)
+
+
+def dot_prefixes(dotted: str) -> list[str]:
+    """The directories a walk of ``dotted`` has to find, in walk order.
+
+    Whatever stands in front of a ``.`` or ``..`` is where it resolves,
+    so it has to be a directory; each is spelled as the walk has
+    simplified it so far, and the root, always one, is left out.
+
+    Args:
+        dotted (str): an absolute spelling from :func:`dotted_spelling`.
+    """
+    current = "/"
+    found: list[str] = []
+    for part in (p for p in dotted.split("/") if p):
+        if part in _DOTS:
+            if current != "/" and current not in found:
+                found.append(current)
+            if part == "..":
+                current = parent(current)
+            continue
+        current = current.rstrip("/") + "/" + part
+    return found
+
+
+def walk_nodes(dotted: str, raw: str) -> list[tuple[str, str]]:
+    """The intermediate names a walk enters, each with its spelling.
+
+    What ``mkdir -p`` creates on the way and names when it cannot: GNU
+    makes each component as it reaches it, so ``mkdir -p nope/../m``
+    leaves ``nope`` behind as well as ``m``, and a plain file in the way
+    is quoted as the operand spells it (``'a.txt'``, not the absolute
+    path). Only the typed components are entered: the directory a
+    relative word starts from is there already.
+
+    Args:
+        dotted (str): an absolute spelling from :func:`dotted_spelling`.
+        raw (str): the operand as typed, whose prefixes spell each name.
+    """
+    typed = [part for part in raw.split("/") if part]
+    lead = 0
+    while lead < len(typed) and typed[lead] in _DOTS:
+        lead += 1
+    parts = [part for part in dotted.split("/") if part]
+    start = parts[:len(parts) - (len(typed) - lead)]
+    current = "/" + "/".join(start)
+    head = "/" if raw.startswith("/") else ""
+    entered: list[tuple[str, str]] = []
+    for index in range(lead, len(typed) - 1):
+        part = typed[index]
+        if part in _DOTS:
+            current = parent(current) if part == ".." else current
+            continue
+        current = current.rstrip("/") + "/" + part
+        entered.append((current, head + "/".join(typed[:index + 1])))
+    return entered
+
+
 MAX_SYMLINK_HOPS = 40
 
 

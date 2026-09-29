@@ -12,13 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '../base.ts'
 import { ChromaAccessor } from '../../accessor/chroma.ts'
 import { CHROMA_COMMANDS } from '../../commands/builtin/chroma/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
+
 import { CHROMA_OPS } from '../../ops/chroma/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
-import { BaseVFS } from '../base.ts'
 import {
   type ChromaConfigRedacted,
   redactChromaConfig,
@@ -27,6 +28,7 @@ import {
   type ChromaConfigResolved,
 } from './config.ts'
 import { CHROMA_PROMPT } from './prompt.ts'
+
 export interface ChromaVFSOptions {
   config: ChromaConfig
 }
@@ -69,11 +71,6 @@ export class ChromaVFS extends BaseVFS {
     }
   }
 
-  // Nothing to take back: the bytes live in the remote store, so a
-  // restored mount reaches them through its config alone.
-  override loadState(_state: ChromaVFSState): Promise<void> {
-    return Promise.resolve()
-  }
   override ops(): readonly RegisteredOp[] {
     return CHROMA_OPS
   }

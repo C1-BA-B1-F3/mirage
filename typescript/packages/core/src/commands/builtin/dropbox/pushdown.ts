@@ -17,10 +17,8 @@ import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { narrowPaths } from '../../../core/dropbox/search.ts'
 import { stat as dropboxStat } from '../../../core/dropbox/stat.ts'
 import { FileType, type PathSpec } from '../../../types.ts'
-import { getExtension } from '../../resolve.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
-import { BINARY_EXTENSIONS } from '../constants.ts'
-import { isLiteralPattern, searchQuery } from '../grep_pushdown.ts'
+import { textCandidates, wholeWordLiteral } from '../grep_pushdown.ts'
 import { DROPBOX_IO } from './io.ts'
 
 const resolveGlob = resolveGlobOf(DROPBOX_IO)
@@ -50,25 +48,17 @@ async function allDirectories(
 
 // Resolve grep/rg scope paths, narrowing via Dropbox file search. Push-down
 // needs every gate to hold: the mount opted in via contentSearch, the scan
-// is recursive, a single-line literal can be pushed down (regex patterns
-// narrow on an extracted required literal and stay exact because the caller
-// still scans the regex locally), the output mode tolerates a
-// narrowed-superset file set (exactFileSet covers flags like -v that must
-// see every file), and every scope operand is a directory. Unlike the
-// GitHub narrow there is no scope-size gate: one search call plus targeted
-// downloads beats a readdir-walk-plus-download-everything scan at every
-// scope size. An empty search result still falls back to the full scan
-// (GitHub parity) because search indexing lags recent writes.
+// is recursive, a whole-word literal can be pushed down (wholeWordLiteral,
+// which is what makes a word-based search complete), the output mode
+// tolerates a narrowed-superset file set (exactFileSet covers flags like -v
+// that must see every file), and every scope operand is a directory. Unlike
+// the GitHub narrow there is no scope-size gate: one search call plus
+// targeted downloads beats a readdir-walk-plus-download-everything scan at
+// every scope size. An empty search result still falls back to the full
+// scan (GitHub parity) because search indexing lags recent writes.
 // Binary-extension candidates are dropped from the narrowed set because the
 // recursive walk it replaces skips them; a narrowed set may therefore be
 // empty, which callers must not treat as a stdin run.
-// Push-down also requires -w. Dropbox search matches whole words while
-// grep matches substrings, so for a bare literal the search result is a
-// strict subset of the grep matches and a file containing the literal
-// only inside a longer word would be silently dropped. Under -w both
-// sides agree and disagreement can only over-fetch, which the local
-// scan filters. A regex narrowed on an extracted literal stays excluded
-// even under -w, since the searched term is then only part of the match.
 export async function narrowScope(
   accessor: DropboxAccessor,
   paths: PathSpec[],
@@ -81,13 +71,9 @@ export async function narrowScope(
     index?: IndexCacheStore
   },
 ): Promise<NarrowResult> {
-  const query =
-    pattern !== null && !pattern.includes('\n') ? searchQuery(pattern, opts.fixedString) : null
+  const query = wholeWordLiteral(pattern, opts.fixedString, opts.wholeWord)
   const useSearch =
     query !== null &&
-    opts.wholeWord &&
-    pattern !== null &&
-    isLiteralPattern(pattern, opts.fixedString) &&
     opts.recursive &&
     !opts.exactFileSet &&
     accessor.contentSearch &&
@@ -95,8 +81,7 @@ export async function narrowScope(
   if (useSearch) {
     const narrowed = await narrowPaths(accessor, query, paths)
     if (narrowed !== null && narrowed.length > 0) {
-      const kept = narrowed.filter((p) => !BINARY_EXTENSIONS.has(getExtension(p.virtual) ?? ''))
-      return { resolved: kept, usedSearch: true }
+      return { resolved: textCandidates(narrowed), usedSearch: true }
     }
   }
   const resolved = await resolveGlob(accessor, paths, opts.index)

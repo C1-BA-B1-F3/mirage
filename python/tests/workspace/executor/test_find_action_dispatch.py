@@ -23,6 +23,7 @@ import re
 
 import pytest
 
+from mirage.io.stream import SharedStdin
 from mirage.policy import Deny, Policy
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -222,8 +223,8 @@ def test_delete_removes_emptied_directories() -> None:
         r = await ws.shell("find /tree -delete", session_id="s")
         assert r.exit_code == 0
         assert await r.stderr_str() == ""
-        check = await ws.shell("find / -name tree", session_id="s")
-        assert await check.stdout_str() == ""
+        check = await ws.shell("test -e /tree", session_id="s")
+        assert check.exit_code == 1
         await ws.close()
 
     _run(_go())
@@ -876,14 +877,13 @@ async def test_exec_child_reads_a_slow_stdin_incrementally():
     # A source that only ever yields its first chunk after a while and
     # never ends must still feed `head -c 1` its byte: the cursor pulls
     # a chunk at a time rather than waiting for EOF.
-    from mirage.workspace.executor.find_action_dispatch import _SharedStdin
 
     async def endless():
         yield b"ab"
         while True:
             await asyncio.sleep(3600)
 
-    shared = _SharedStdin(endless())
+    shared = SharedStdin(endless())
     got = []
     async for chunk in shared:
         got.append(chunk)
@@ -924,9 +924,9 @@ async def test_ls_renders_the_stat_find_already_holds():
 @pytest.mark.asyncio
 async def test_exec_runs_the_head_as_a_program():
     # execvp answers `printf` with coreutils printf, which has no -v: the
-    # word is the format (GNU adds a warning about the excess arguments,
-    # which mirage's printf does not report). A nested shell the line
-    # starts is a shell again, so its printf assigns.
+    # word is the format, and it warns about the arguments the format
+    # leaves over. A nested shell the line starts is a shell again, so
+    # its printf assigns.
     ws = _ws()
     try:
         io = await ws.shell(
@@ -935,6 +935,18 @@ async def test_exec_runs_the_head_as_a_program():
             "find . -type f -exec sh -c 'printf -v y hi; echo \"[$y]\"' \\; ; "
             "printf -v z hi; echo \"[$z]\"")
         assert await io.stdout_str() == "-v[]\n[hi]\n[hi]\n"
-        assert await io.stderr_str() == ""
+        assert await io.stderr_str() == (
+            "printf: warning: ignoring excess arguments, starting with 'x'\n")
     finally:
         await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_delete_keeps_a_directory_with_an_unmatched_link():
+    with Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE) as ws:
+        await ws.shell("mkdir /data/d; ln -s nowhere /data/d/link")
+        result = await ws.shell("find /data/d -type d -delete")
+        assert result.exit_code == 1
+        assert await result.stderr_str(
+        ) == "find: cannot delete '/data/d': Directory not empty\n"
+        assert ws.namespace.is_link("/data/d/link")

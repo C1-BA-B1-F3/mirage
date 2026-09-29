@@ -114,9 +114,10 @@ export function statFields(st: VFSStat): GuestStat {
  * its own name, so attribute access and `repr` both read as CPython's.
  * The sequence half of a real `stat_result` does not cross: the guest
  * cannot subscript, iterate or take `len` of the answer, because the
- * wire has no namedtuple shape and a wrapper exposes no dunders. That
- * is the one remaining divergence from the python host, which hands
- * monty a real `StatResult`.
+ * JS input encoder cannot construct a NamedTuple node. The protocol
+ * supports it, and Python sends a real `StatResult`; the JS binding
+ * cannot send that value back. This also prevents `os.chdir()`, which
+ * requires a native NamedTuple stat result to validate the directory.
  *
  * Args:
  *   bits: the loaded binding's door pieces.

@@ -13,6 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import math
+import re
+import string
 import time
 from dataclasses import dataclass, field
 from datetime import timezone
@@ -46,34 +48,38 @@ def parse_depth(value: str, flag: str) -> int:
 def parse_size(spec: str) -> tuple[int | None, int | None]:
     """One -size argument as inclusive byte bounds.
 
-    GNU rounds the file size up to whole units before comparing, and
-    +N / -N are strict: +N keeps ceil(size/unit) > N, -N keeps
-    ceil(size/unit) < N, N alone keeps ceil(size/unit) == N. Expressed
-    as inclusive byte bounds: +N -> [N*unit + 1, inf), -N ->
-    [0, (N-1)*unit], N -> [(N-1)*unit + 1, N*unit].
+    The last character names the unit (b, c, w, k, M, G); a bare
+    number counts 512-byte blocks, like b. GNU rounds the file size up
+    to whole units before comparing, and +N / -N are strict: +N keeps
+    ceil(size/unit) > N, -N keeps ceil(size/unit) < N, N alone keeps
+    ceil(size/unit) == N. Expressed as inclusive byte bounds: +N ->
+    [N*unit + 1, inf), -N -> [0, (N-1)*unit], N -> [(N-1)*unit + 1,
+    N*unit]. N past UINTMAX is invalid in any unit, as GNU's get_num
+    refuses it.
 
     Args:
         spec (str): the argument as typed.
     """
-    suffixes = {"c": 1, "k": 1024, "M": 1024**2, "G": 1024**3}
-    if spec.startswith(("+", "-")):
-        raw = spec[1:]
+    units = {"b": 512, "c": 1, "w": 2, "k": 1024, "M": 1024**2, "G": 1024**3}
+    if not spec:
+        raise FindParseError("find: invalid null argument to -size")
+    if spec[-1] in string.digits:
+        unit, body = units["b"], spec
+    elif spec[-1] in units:
+        unit, body = units[spec[-1]], spec[:-1]
     else:
-        raw = spec
-    digits = raw.rstrip("ckMG")
-    if not digits:
-        raise FindParseError(f"find: invalid argument '{spec}' to '-size'")
-    mult = suffixes.get(raw[-1], 1)
-    try:
-        n = int(digits)
-    except ValueError:
-        raise FindParseError(
-            f"find: invalid argument '{spec}' to '-size'") from None
-    if spec.startswith("+"):
-        return n * mult + 1, None
-    if spec.startswith("-"):
-        return None, (n - 1) * mult
-    return (n - 1) * mult + 1, n * mult
+        raise FindParseError(f"find: invalid -size type `{spec[-1]}'")
+    sign = body[:1] if body.startswith(("+", "-")) else ""
+    number = body[len(sign):]
+    if (not re.fullmatch(rf"{constants.C_SPACE}\+?[0-9]+", number)
+            or int(number) > constants.UINTMAX):
+        raise FindParseError(f"find: Invalid argument `{spec}' to -size")
+    n = int(number)
+    if sign == "+":
+        return n * unit + 1, None
+    if sign == "-":
+        return None, (n - 1) * unit
+    return (n - 1) * unit + 1, n * unit
 
 
 def parse_mtime(spec: str) -> tuple[float | None, float | None]:
@@ -457,14 +463,6 @@ def _type_node(value: str) -> Type:
     raise FindParseError(f"find: Unknown argument to -type: {value}")
 
 
-def _size_arg(value: str) -> tuple[int | None, int | None]:
-    try:
-        return parse_size(value)
-    except (ValueError, IndexError) as exc:
-        raise FindParseError(
-            f"find: invalid argument '{value}' to '-size'") from exc
-
-
 def _mtime_arg(value: str) -> tuple[float | None, float | None]:
     try:
         return parse_mtime(value)
@@ -511,7 +509,7 @@ def _parse_primary(state: _State) -> PredNode:
             state.expr.mindepth = parse_depth(value, "-mindepth")
             return TrueNode()
         if tok == "-size":
-            state.expr.min_size, state.expr.max_size = _size_arg(value)
+            state.expr.min_size, state.expr.max_size = parse_size(value)
             return TrueNode()
         if tok in ("-newer", "-newermt"):
             _check_window_placement(state, tok)

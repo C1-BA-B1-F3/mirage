@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { resolvePath } from '../../../utils/path.ts'
+import { PathSpec } from '../../../types.ts'
 import { isMissingPath } from '../../../utils/errors.ts'
 import { WASI } from './wasi.ts'
 import { wasiErrno } from './errors.ts'
@@ -44,6 +46,11 @@ const ENOENT = WASI.ENOENT
  */
 export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null): void {
   const table = new FileTable<FileHandle>()
+  let cwd = PathSpec.fromStrPath('/')
+  const absolute = (handle: QuickJSHandle): string => {
+    const path = ctx.getString(handle)
+    return path === '' ? '' : resolvePath(path, cwd.virtual)
+  }
 
   const mountOf = (path: string): string | null => (vfs === null ? null : vfs.mountOf(path))
 
@@ -64,8 +71,24 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
     handle.dispose()
   }
 
+  defineSync('__mirage_getcwd', () => ctx.newString(cwd.virtual))
+
+  defineAsync('__mirage_chdir', async (pathH) => {
+    const path = absolute(pathH)
+    if (path !== '/') {
+      if (vfs === null || path === '') return ctx.newNumber(-ENOENT)
+      try {
+        if (!(await vfs.stat(path)).isDir) return ctx.newNumber(-WASI.ENOTDIR)
+      } catch (err) {
+        return ctx.newNumber(-wasiErrno(err))
+      }
+    }
+    cwd = PathSpec.fromStrPath(path)
+    return ctx.newNumber(0)
+  })
+
   defineAsync('__mirage_open', async (pathH, modeH) => {
-    const path = ctx.getString(pathH)
+    const path = absolute(pathH)
     // The engine validates the mode before touching the filesystem
     // (qjs-libc throws TypeError before any open); -2 tells the
     // bootstrap to raise that refusal, since a host throw would not
@@ -127,7 +150,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
     return ctx.undefined
   })
 
-  defineAsync('__mirage_readdir', (pathH) => readdir(ctx, vfs, pathH))
+  defineAsync('__mirage_readdir', (pathH) => readdir(ctx, vfs, absolute(pathH)))
 
   defineSync('__mirage_read', (fdH, maxH) => {
     const file = table.get(ctx.getNumber(fdH))
@@ -177,7 +200,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
   // success, -errno on failure in WASI numbering; os.remove takes
   // files and empty directories; os.stat answers [obj, errno].
   defineAsync('__mirage_remove', async (pathH) => {
-    const path = ctx.getString(pathH)
+    const path = absolute(pathH)
     if (vfs === null || !underMount(path)) return ctx.newNumber(-ENOENT)
     try {
       const st = await vfs.stat(path)
@@ -193,7 +216,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
   })
 
   defineAsync('__mirage_mkdir', async (pathH) => {
-    const path = ctx.getString(pathH)
+    const path = absolute(pathH)
     if (vfs === null || !underMount(path)) return ctx.newNumber(-ENOENT)
     try {
       await vfs.mkdir(path)
@@ -204,7 +227,7 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
   })
 
   defineAsync('__mirage_utimes', async (pathH, atimeH, mtimeH) => {
-    const path = ctx.getString(pathH)
+    const path = absolute(pathH)
     if (vfs === null || !underMount(path)) return ctx.newNumber(-ENOENT)
     // The engine's stamps are milliseconds (qjs-libc splits them into
     // tv_sec/tv_nsec at 1000), and the op takes ISO text.
@@ -219,8 +242,8 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
   })
 
   defineAsync('__mirage_rename', async (srcH, dstH) => {
-    const src = ctx.getString(srcH)
-    const dst = ctx.getString(dstH)
+    const src = absolute(srcH)
+    const dst = absolute(dstH)
     if (vfs === null || !underMount(src) || !underMount(dst)) return ctx.newNumber(-ENOENT)
     // The dispatcher addresses the rename's endpoints against the
     // source's mount, so a cross-mount pair would land inside the
@@ -235,5 +258,5 @@ export function installMirageFs(ctx: QuickJSAsyncContext, vfs: RuntimeVFS | null
     }
   })
 
-  defineAsync('__mirage_stat', (pathH) => stat(ctx, vfs, pathH))
+  defineAsync('__mirage_stat', (pathH) => stat(ctx, vfs, absolute(pathH)))
 }

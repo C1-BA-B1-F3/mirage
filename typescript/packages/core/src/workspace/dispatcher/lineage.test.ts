@@ -42,14 +42,11 @@ describe('turfOf', () => {
 })
 
 describe('requireTurfWritable', () => {
-  it('a read mount still takes a link', () => {
-    // A read-only MOUNT is a statement about a backend that cannot
-    // write, and a symlink is namespace state that needs no write
-    // capability from it -- which is why a link is pinned working above
-    // postgres, mongodb, chroma and qdrant, all mounted read. Only a
-    // session grant binds this plane.
+  it('mount mode governs namespace writes', () => {
     requireTurfWritable(entry('/data/', MountMode.WRITE), path('/data/lk'))
-    requireTurfWritable(entry('/ro/', MountMode.READ), path('/ro/lk'))
+    expect(() => {
+      requireTurfWritable(entry('/ro/', MountMode.READ), path('/ro/lk'))
+    }).toThrow(/read-only/)
   })
 
   it('bare turf is writable without a session', () => {

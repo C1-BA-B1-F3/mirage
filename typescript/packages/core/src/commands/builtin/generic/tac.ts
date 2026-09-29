@@ -17,7 +17,7 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { resolveSource } from '../utils/stream.ts'
+import { isStdin, resolveSource, stdinStream } from '../utils/stream.ts'
 import { operandsIo, readOperands, singleChunk } from '../utils/operands.ts'
 
 const ENC = new TextEncoder()
@@ -54,6 +54,7 @@ export async function tacGeneric(
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
 ): Promise<CommandFnResult> {
+  stream = stdinStream(stream, opts.stdin)
   const fl = new FlagView(opts.flags, specOf('tac'))
   const separatorValue = fl.asStr('separator')
   const separator = typeof separatorValue === 'string' ? separatorValue : '\n'
@@ -63,7 +64,9 @@ export async function tacGeneric(
     // A missing operand is reported and skipped; the remaining operands
     // still reverse (GNU tac).
     const [ok, err] = await readOperands(paths, stream, 'tac')
-    const io = operandsIo(err, { cache: ok.map((o) => o.path.virtual) })
+    const io = operandsIo(err, {
+      cache: ok.filter((o) => !isStdin(o.path)).map((o) => o.path.virtual),
+    })
     if (ok.length === 0 && err !== '') return [null, io]
     const parts: Uint8Array[] = []
     let total = 0

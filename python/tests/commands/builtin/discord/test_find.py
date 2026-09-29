@@ -21,6 +21,7 @@ from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.commands.builtin.discord import COMMANDS
 from mirage.commands.config import CommandOpts
 from mirage.core.discord.config import DiscordConfig
+from mirage.io.types import materialize
 from mirage.types import PathSpec
 
 GUILDS = [{"id": "G1", "name": "myguild"}]
@@ -51,7 +52,7 @@ async def _run(paths, *texts: str, **flags) -> list[str]:
         stdout, _io = await find(
             accessor, paths, list(texts),
             CommandOpts(index=RAMIndexCacheStore(), flags={**flags}))
-    data = stdout if isinstance(stdout, bytes) else b""
+        data = await materialize(stdout)
     return data.decode().splitlines()
 
 
@@ -70,6 +71,7 @@ async def test_path_pattern_is_honored():
 
 
 @pytest.mark.asyncio
-async def test_size_is_honored_dirs_count_as_zero():
-    lines = await _run([_spec("/")], maxdepth="2", size="+0c")
-    assert lines == []
+async def test_size_counts_a_directory_as_dir_size():
+    dirs = await _run([_spec("/")], maxdepth="2")
+    assert await _run([_spec("/")], maxdepth="2", size="+0c") == dirs
+    assert await _run([_spec("/")], maxdepth="2", size="-1k") == []

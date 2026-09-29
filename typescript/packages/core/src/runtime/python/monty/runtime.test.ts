@@ -21,7 +21,7 @@ import { PyodideRuntime } from '../pyodide/runtime.ts'
 import { buildRuntime } from '../../table.ts'
 import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
-import { ContentType, FileStat, FileType, MountMode } from '../../../types.ts'
+import { ContentType, FileStat, FileType, MountMode, PathSpec } from '../../../types.ts'
 import { Workspace } from '../../../workspace/workspace/workspace.ts'
 import { PrefixResolver } from '../../resolver.ts'
 
@@ -445,6 +445,52 @@ describe('MontyRuntime', () => {
     expect(result.status).toBe('complete')
     expect(text(result.stdout)).toBe('42\n')
   }, 30_000)
+
+  it('inherits context cwd and honors an explicit run cwd', async () => {
+    const rt = new MontyRuntime()
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.EXEC, shellParser: await getTestParser(), runtimes: [rt, 'workspace'] },
+    )
+    try {
+      expect((await ws.shell('mkdir /data/sub; cd /data')).exitCode).toBe(0)
+      const code = 'import os; print(os.getcwd())'
+      expect(text((await run(rt, code)).stdout)).toBe('/data\n')
+      const explicit = await rt.run({
+        code,
+        args: [],
+        env: {},
+        stdin: null,
+        cwd: PathSpec.fromStrPath('/data/sub'),
+      })
+      expect(text(explicit.stdout)).toBe('/data/sub\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('seeds eval cwd once per session', async () => {
+    const rt = new MontyRuntime()
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.EXEC, shellParser: await getTestParser(), runtimes: [rt, 'workspace'] },
+    )
+    try {
+      expect(
+        (await ws.shell('mkdir /data/sub; echo child > /data/sub/item; cd /data')).exitCode,
+      ).toBe(0)
+      expect((await rt.eval('import os; os.getcwd()')).value).toBe('/data')
+      const first = await rt.eval('import os; os.getcwd()', { session: 'a' })
+      expect(first.exitCode, text(first.stderr)).toBe(0)
+      expect(first.value).toBe('/data')
+      expect((await ws.shell('cd /')).exitCode).toBe(0)
+      expect((await rt.eval("open('sub/item').read()", { session: 'a' })).value).toBe('child\n')
+      expect((await rt.eval('import os; os.getcwd()', { session: 'b' })).value).toBe('/')
+      expect((await rt.eval('import os; os.getcwd()')).value).toBe('/')
+    } finally {
+      await ws.close()
+    }
+  })
 
   it('eval returns the last expression with inputs bound', async () => {
     const rt = make()

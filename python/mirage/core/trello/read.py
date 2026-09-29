@@ -25,6 +25,7 @@ from mirage.core.trello.normalize import (normalize_board, normalize_card,
                                           normalize_list, normalize_member,
                                           normalize_workspace, to_json_bytes)
 from mirage.core.trello.scope import detect_scope
+from mirage.core.trello.stat import stat
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
 
@@ -115,4 +116,5 @@ read = make_read(
         "card_json": _read_card_json,
         "comments_jsonl": _read_comments,
     },
+    stat=stat,
 )

@@ -277,7 +277,7 @@ export function captureFingerprints(
 export function liveOnlyMountPrefixes(registry: RegistryLike): string[] {
   const out: string[] = []
   for (const m of registry.allMounts()) {
-    if (m.prefix === '/dev/' || m.prefix === '/.bash_history/') continue
+    if (m.prefix === '/dev/' || m.prefix === '/.bash_history/' || m.prefix === '/usr/bin/') continue
     if (!m.vfs.supportsSnapshot) out.push(m.prefix)
   }
   return out
@@ -306,7 +306,8 @@ export async function checkDrift(
   try {
     stat = (await statFn(path)) as FileStat
   } catch (err) {
-    if ((err as { code?: string } | null)?.code === 'ENOENT') {
+    const code = (err as { code?: string } | null)?.code
+    if (code === 'ENOENT' || code === 'ENOTDIR') {
       if (registry.tryMountFor(path) !== mount) return
       throw new ContentDriftError(path, recorded, null)
     }

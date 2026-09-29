@@ -503,9 +503,10 @@ async def resolve_globs(
     """Resolve glob patterns in PathSpec args, preserving PathSpec type.
 
     Globs are resolved via VFS.resolve_glob. Non-glob PathSpec
-    and plain str items pass through unchanged. Spec-TEXT words never
-    arrive here as PathSpec: per-position kinds keep them plain text at
-    classification time.
+    and plain str items pass through unchanged. Spec-TEXT words arrive
+    here as PathSpec only from a native program's line, which bash
+    globs whatever the slot: everywhere else per-position kinds keep
+    them plain text at classification time.
 
     Args:
         classified (list[str | PathSpec]): text arguments (str) and

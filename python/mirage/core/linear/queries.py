@@ -61,54 +61,33 @@ query TeamMembers($teamId: String!, $first: Int!, $after: String) {
 }
 """
 
+# The one selection an issue renders from. issue.json's size rides the
+# team listing (sizes_always_known) while a read fetches the issue alone,
+# so the two queries must select the same fields or the listed size
+# disagrees with the bytes a read delivers; both are built from this.
+ISSUE_FIELDS = """
+id
+identifier
+title
+description
+priority
+url
+createdAt
+updatedAt
+team { id key name }
+state { id name }
+project { id name }
+cycle { id name number }
+assignee { id name email }
+creator { id name email }
+labels { nodes { id name } }
+"""
+
 TEAM_ISSUES_QUERY = """
 query TeamIssues($teamId: String!, $first: Int!, $after: String) {
   team(id: $teamId) {
     issues(first: $first, after: $after) {
-      nodes {
-        id
-        identifier
-        title
-        description
-        priority
-        url
-        createdAt
-        updatedAt
-        team {
-          id
-          key
-          name
-        }
-        state {
-          id
-          name
-        }
-        project {
-          id
-          name
-        }
-        cycle {
-          id
-          name
-          number
-        }
-        assignee {
-          id
-          name
-          email
-        }
-        creator {
-          id
-          name
-          email
-        }
-        labels {
-          nodes {
-            id
-            name
-          }
-        }
-      }
+      nodes {""" + ISSUE_FIELDS + """}
       pageInfo {
         hasNextPage
         endCursor
@@ -215,50 +194,7 @@ query TeamDocuments($teamId: String!, $first: Int!, $after: String) {
 
 ISSUE_QUERY = """
 query Issue($issueId: String!) {
-  issue(id: $issueId) {
-    id
-    identifier
-    title
-    description
-    priority
-    url
-    createdAt
-    updatedAt
-    team {
-      id
-      key
-      name
-    }
-    state {
-      id
-      name
-    }
-    project {
-      id
-      name
-    }
-    cycle {
-      id
-      name
-      number
-    }
-    assignee {
-      id
-      name
-      email
-    }
-    creator {
-      id
-      name
-      email
-    }
-    labels {
-      nodes {
-        id
-        name
-      }
-    }
-  }
+  issue(id: $issueId) {""" + ISSUE_FIELDS + """}
 }
 """
 

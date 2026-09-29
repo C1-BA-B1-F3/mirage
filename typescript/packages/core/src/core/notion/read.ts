@@ -12,14 +12,34 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { PathSpec } from '../../types.ts'
+import { jsonlBytes } from '../render/json.ts'
+import { guardRow, resolveRow } from './resolve.ts'
 import type { NotionAccessor } from '../../accessor/notion.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { makeRead } from '../hierarchy/read.ts'
-import { normalizeDataSource, normalizeDatabase, normalizePage, toJsonBytes } from './normalize.ts'
-import { getBlockTree, getDataSource, getDatabase, getPage } from './pages.ts'
+import {
+  normalizeDataSource,
+  normalizeDatabase,
+  normalizePage,
+  normalizeRow,
+  toJsonBytes,
+} from './normalize.ts'
+import { getBlockTree, getDataSource, getDatabase, getPage, queryDataSource } from './pages.ts'
+import { stat } from './stat.ts'
 import { detectScope } from './scope.ts'
 
-async function readPageJson(accessor: NotionAccessor, match: ScopeMatch): Promise<Uint8Array> {
+async function readPageJson(
+  accessor: NotionAccessor,
+  match: ScopeMatch,
+  path: PathSpec,
+): Promise<Uint8Array> {
+  if (match.kind === 'row_json') {
+    const page = await resolveRow(accessor, match, path.virtual)
+    const blocks = await getBlockTree(accessor.transport, match.slots.row_id ?? '')
+    return toJsonBytes(normalizePage(page, blocks))
+  }
+  await guardRow(accessor, match, path.virtual)
   const pageId = match.slots.page_id ?? ''
   const [page, blocks] = await Promise.all([
     getPage(accessor.transport, pageId),
@@ -41,8 +61,19 @@ async function readDataSourceJson(
   return toJsonBytes(normalizeDataSource(dataSource))
 }
 
-export const read = makeRead<NotionAccessor>(detectScope, {
-  page_json: readPageJson,
-  database_json: readDatabaseJson,
-  data_source_json: readDataSourceJson,
-})
+async function readRowsJsonl(accessor: NotionAccessor, match: ScopeMatch): Promise<Uint8Array> {
+  const rows = await queryDataSource(accessor.transport, match.slots.data_source_id ?? '')
+  return jsonlBytes(rows.filter((row) => row.object === 'page').map(normalizeRow))
+}
+
+export const read = makeRead<NotionAccessor>(
+  detectScope,
+  {
+    page_json: readPageJson,
+    row_json: readPageJson,
+    database_json: readDatabaseJson,
+    data_source_json: readDataSourceJson,
+    rows_jsonl: readRowsJsonl,
+  },
+  { stat },
+)

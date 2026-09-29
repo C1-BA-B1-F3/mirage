@@ -14,8 +14,8 @@
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.core.ram.dest import lookup_error
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import enoent
 from mirage.utils.filetype import content_type_for_path
 from mirage.utils.path import norm
 
@@ -23,7 +23,6 @@ from mirage.utils.path import norm
 async def stat(accessor: RAMAccessor,
                path_spec: PathSpec,
                index: IndexCacheStore = NULL_INDEX) -> FileStat:
-    virtual = path_spec.virtual
     path = path_spec.mount_path
     store = accessor.store
     p = norm(path)
@@ -52,4 +51,4 @@ async def stat(accessor: RAMAccessor,
             gid=attrs.get("gid"),
             atime=attrs.get("atime"),
         )
-    raise enoent(virtual)
+    raise lookup_error(store, path_spec, p)

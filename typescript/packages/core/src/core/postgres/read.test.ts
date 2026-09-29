@@ -18,6 +18,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('./client.ts', () => ({
   estimateSize: vi.fn(),
   fetchRows: vi.fn(),
+  fetchBoundedRows: vi.fn(),
+  // A read proves the entity directory first, through the guards stat runs,
+  // so the catalog those guards consult is faked too.
+  listSchemas: vi.fn(),
+  listTables: vi.fn(),
+  listViews: vi.fn(),
+  listMatviews: vi.fn(),
 }))
 
 vi.mock('./_schema_json.ts', () => ({
@@ -52,9 +59,17 @@ function decode(bytes: Uint8Array): string {
 describe('read', () => {
   beforeEach(() => {
     vi.mocked(client.estimateSize).mockReset()
+    vi.mocked(client.fetchBoundedRows).mockReset()
     vi.mocked(client.fetchRows).mockReset()
     vi.mocked(_schema.buildDatabaseJson).mockReset()
     vi.mocked(_schema.buildEntitySchemaJson).mockReset()
+    // `listSchemas`'s contract over a catalog holding two schemas.
+    vi.mocked(client.listSchemas).mockImplementation((_accessor, allow) =>
+      Promise.resolve(['public', 'secret'].filter((s) => allow == null || allow.includes(s))),
+    )
+    vi.mocked(client.listTables).mockResolvedValue(['users'])
+    vi.mocked(client.listViews).mockResolvedValue([])
+    vi.mocked(client.listMatviews).mockResolvedValue([])
   })
 
   it('serializes database.json with 2-space indent', async () => {
@@ -117,12 +132,12 @@ describe('read', () => {
           vfsPath: mountKey('/pg/public/tables/users/rows.jsonl', '/pg'),
         }),
       ),
-    ).rejects.toThrow(/too large to read entirely/)
+    ).rejects.toMatchObject({ code: 'EFBIG', virtualPath: '/pg/public/tables/users/rows.jsonl' })
   })
 
   it('returns JSONL bytes when row count under threshold', async () => {
     vi.mocked(client.estimateSize).mockResolvedValue([2, 64])
-    vi.mocked(client.fetchRows).mockResolvedValue([
+    vi.mocked(client.fetchBoundedRows).mockResolvedValue([
       { id: 1, name: 'a' },
       { id: 2, name: 'b' },
     ])
@@ -158,7 +173,9 @@ describe('read', () => {
 
   it('serializes Date values as ISO strings', async () => {
     vi.mocked(client.estimateSize).mockResolvedValue([1, 64])
-    vi.mocked(client.fetchRows).mockResolvedValue([{ ts: new Date('2026-04-30T00:00:00.000Z') }])
+    vi.mocked(client.fetchBoundedRows).mockResolvedValue([
+      { ts: new Date('2026-04-30T00:00:00.000Z') },
+    ])
     const out = await read(
       makeAccessor(),
       new PathSpec({
@@ -168,5 +185,105 @@ describe('read', () => {
       }),
     )
     expect(decode(out)).toBe('{"ts":"2026-04-30T00:00:00.000Z"}\n')
+  })
+
+  // `schemas` hid the schema from `ls` while `cat` of a table under it fetched
+  // its rows: the read addressed the database by the names in the path and
+  // never asked whether the mount could see them.
+  it('refuses a table under a schema outside schemas', async () => {
+    vi.mocked(client.estimateSize).mockResolvedValue([1, 10])
+    vi.mocked(client.fetchBoundedRows).mockResolvedValue([{ id: 1 }])
+    const accessor = makeAccessor({ dsn: 'postgres://h/db', schemas: ['public'] })
+    for (const name of ['rows.jsonl', 'schema.json']) {
+      await expect(
+        read(
+          accessor,
+          new PathSpec({
+            virtual: `/pg/secret/tables/users/${name}`,
+            directory: '/pg/secret/tables/users/',
+            vfsPath: mountKey(`/pg/secret/tables/users/${name}`, '/pg'),
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'ENOENT' })
+    }
+    expect(client.fetchBoundedRows).not.toHaveBeenCalled()
+    expect(_schema.buildEntitySchemaJson).not.toHaveBeenCalled()
+    const out = await read(
+      accessor,
+      new PathSpec({
+        virtual: '/pg/public/tables/users/rows.jsonl',
+        directory: '/pg/public/tables/users/',
+        vfsPath: mountKey('/pg/public/tables/users/rows.jsonl', '/pg'),
+      }),
+    )
+    expect(decode(out)).toBe('{"id":1}\n')
+  })
+
+  // The estimate is planner statistics and lags the table; it used to be the
+  // LIMIT, so a table loaded since the last ANALYZE read back as only the rows
+  // the statistics knew about.
+  it('does not truncate a whole read to a stale estimate', async () => {
+    const table = Array.from({ length: 40 }, (_, id) => ({ id }))
+    vi.mocked(client.estimateSize).mockResolvedValue([2, 10])
+    vi.mocked(client.fetchBoundedRows).mockImplementation((_a, _s, _e, window) =>
+      Promise.resolve(table.slice(0, window.limit)),
+    )
+    const out = await read(
+      makeAccessor({ dsn: 'postgres://h/db', maxReadRows: 100 }),
+      new PathSpec({
+        virtual: '/pg/public/tables/users/rows.jsonl',
+        directory: '/pg/public/tables/users/',
+        vfsPath: mountKey('/pg/public/tables/users/rows.jsonl', '/pg'),
+      }),
+    )
+    expect(decode(out).trim().split('\n')).toHaveLength(40)
+  })
+
+  it('refuses a table the estimate undercounted on the rows it has', async () => {
+    const table = Array.from({ length: 40 }, (_, id) => ({ id }))
+    vi.mocked(client.estimateSize).mockResolvedValue([2, 10])
+    vi.mocked(client.fetchBoundedRows).mockImplementation((_a, _s, _e, window) =>
+      Promise.resolve(table.slice(0, window.limit)),
+    )
+    await expect(
+      read(
+        makeAccessor({ dsn: 'postgres://h/db', maxReadRows: 10 }),
+        new PathSpec({
+          virtual: '/pg/public/tables/users/rows.jsonl',
+          directory: '/pg/public/tables/users/',
+          vfsPath: mountKey('/pg/public/tables/users/rows.jsonl', '/pg'),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'EFBIG', virtualPath: '/pg/public/tables/users/rows.jsonl' })
+    expect(vi.mocked(client.fetchBoundedRows).mock.calls[0]?.[3]).toEqual({
+      limit: 11,
+      maxBytes: 10 * 1024 * 1024,
+    })
+  })
+})
+
+describe('whole-read byte budget', () => {
+  it('refuses a server-side overflow without using the unbounded fetch', async () => {
+    vi.mocked(client.estimateSize).mockResolvedValue([1, 10])
+    vi.mocked(client.fetchBoundedRows).mockResolvedValue(null)
+    vi.mocked(client.fetchRows).mockClear()
+    await expect(
+      read(
+        makeAccessor({ dsn: 'postgres://h/db', maxReadBytes: 100 }),
+        PathSpec.fromStrPath('/public/tables/users/rows.jsonl'),
+      ),
+    ).rejects.toMatchObject({ code: 'EFBIG', virtualPath: '/public/tables/users/rows.jsonl' })
+    expect(client.fetchRows).not.toHaveBeenCalled()
+  })
+
+  it.each([10, 11])('checks rendered UTF-8 bytes at a budget of %i', async (maxReadBytes) => {
+    vi.mocked(client.estimateSize).mockResolvedValue([1, 1])
+    vi.mocked(client.fetchBoundedRows).mockResolvedValue([{ x: 'é' }])
+    const result = read(
+      makeAccessor({ dsn: 'postgres://h/db', maxReadBytes }),
+      PathSpec.fromStrPath('/public/tables/users/rows.jsonl'),
+    )
+    if (maxReadBytes === 10) await expect(result).rejects.toMatchObject({ code: 'EFBIG' })
+    else expect(decode(await result)).toBe('{"x":"é"}\n')
   })
 })

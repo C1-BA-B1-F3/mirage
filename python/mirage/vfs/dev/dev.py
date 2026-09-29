@@ -18,9 +18,11 @@ from mirage.accessor.ram import RAMAccessor
 from mirage.commands.builtin.dev import COMMANDS
 from mirage.commands.config import RegisteredCommand
 from mirage.commands.registry import registered_commands
+from mirage.context import get_current_session
 from mirage.ops.dev import OPS as DEV_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
+from mirage.utils.errors import eacces, enoent
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.ram.store import RAMStore
 
@@ -41,6 +43,44 @@ class _DevFiles(dict[str, bytes]):
     def __init__(self) -> None:
         super().__init__()
         self._tombstones: set[str] = set()
+        self._inputs: dict[str, tuple[str, int, bytes]] = {}
+        self._next_allocation = 0
+
+    def _visible_inputs(self) -> dict[str, bytes]:
+        session = get_current_session()
+        if session is None:
+            return {}
+        return {
+            key: data
+            for key, (owner, _, data) in self._inputs.items()
+            if owner == session.session_id
+        }
+
+    def allocate_input(self) -> tuple[str, int]:
+        session = get_current_session()
+        if session is None:
+            raise eacces("/dev/fd")
+        fd = 63
+        while f"/fd/{fd}" in self._inputs:
+            fd -= 1
+        key = f"/fd/{fd}"
+        allocation = self._next_allocation
+        self._next_allocation += 1
+        self._inputs[key] = (session.session_id, allocation, b"")
+        return f"/dev{key}", allocation
+
+    def set_input(self, path: str, allocation: int, data: bytes) -> None:
+        row = self._inputs.get(path[4:])
+        if row is None or row[1] != allocation:
+            raise enoent(path)
+        self[path[4:]] = data
+
+    def release_input(self, path: str, allocation: int) -> bool:
+        row = self._inputs.get(path[4:])
+        if row is None or row[1] != allocation:
+            return False
+        del self._inputs[path[4:]]
+        return True
 
     def _synthetic_active(self, name: str) -> bool:
         return (name in _DEV_NAMES and name not in self._tombstones
@@ -61,11 +101,15 @@ class _DevFiles(dict[str, bytes]):
     def __contains__(self, key: object) -> bool:
         if not isinstance(key, str):
             return False
+        if key.startswith("/fd/"):
+            return key in self._visible_inputs()
         if dict.__contains__(self, key):
             return True
         return self._synthetic_active(key.strip("/"))
 
     def __getitem__(self, key: str) -> bytes:
+        if key.startswith("/fd/"):
+            return self._visible_inputs()[key]
         if dict.__contains__(self, key):
             return dict.__getitem__(self, key)
         name = key.strip("/")
@@ -74,6 +118,12 @@ class _DevFiles(dict[str, bytes]):
         raise KeyError(key)
 
     def __setitem__(self, key: str, value: bytes) -> None:
+        if key == "/fd" or key.startswith("/fd/"):
+            if key not in self._visible_inputs():
+                raise enoent(f"/dev{key}")
+            owner, allocation, _ = self._inputs[key]
+            self._inputs[key] = (owner, allocation, value)
+            return
         name = key.strip("/")
         if self._synthetic_active(name):
             return
@@ -81,6 +131,11 @@ class _DevFiles(dict[str, bytes]):
         self._tombstones.discard(name)
 
     def __delitem__(self, key: str) -> None:
+        if key.startswith("/fd/"):
+            if key not in self._visible_inputs():
+                raise enoent(f"/dev{key}")
+            del self._inputs[key]
+            return
         name = key.strip("/")
         if dict.__contains__(self, key):
             dict.__delitem__(self, key)
@@ -114,20 +169,60 @@ class _DevFiles(dict[str, bytes]):
         return value
 
     def __iter__(self):
-        return iter([*self._synthetic_names(), *dict.__iter__(self)])
+        return iter(self.keys())
 
     def __len__(self) -> int:
-        return len(self._synthetic_names()) + dict.__len__(self)
+        return len(self.keys())
+
+    def get(self, key, default=None):
+        return self[key] if key in self else default
+
+    def items(self):
+        return [(key, self[key]) for key in self.keys()]
+
+    def values(self):
+        return [self[key] for key in self.keys()]
 
     def keys(self):
-        return [*self._synthetic_names(), *dict.keys(self)]
+        return [
+            *self._synthetic_names(), *dict.keys(self),
+            *self._visible_inputs()
+        ]
+
+
+class _DevDirs(set[str]):
+    """Keep the virtual descriptor directory separate from ordinary writes."""
+
+    def __init__(self, files: _DevFiles) -> None:
+        super().__init__({"/"})
+        self._files = files
+
+    def __contains__(self, key) -> bool:
+        if key == "/fd":
+            return bool(self._files._visible_inputs())
+        return super().__contains__(key)
+
+    def __iter__(self):
+        return iter([*super().__iter__(), *(["/fd"] if "/fd" in self else [])])
+
+    def add(self, key: str) -> None:
+        if key == "/fd" or key.startswith("/fd/"):
+            raise eacces(f"/dev{key}")
+        super().add(key)
+
+    def discard(self, key) -> None:
+        if key == "/fd" or key.startswith("/fd/"):
+            raise eacces(f"/dev{key}")
+        super().discard(key)
 
 
 class DevStore(RAMStore):
 
+    files: _DevFiles
+
     def __init__(self) -> None:
         self.files = _DevFiles()
-        self.dirs = {"/"}
+        self.dirs = _DevDirs(self.files)
         self.modified = {}
         self.attrs = {}
 
@@ -149,3 +244,14 @@ class DevVFS(BaseVFS):
 
     def commands(self) -> list[RegisteredCommand]:
         return registered_commands(COMMANDS)
+
+    def allocate_input(self) -> tuple[str, int]:
+        return self._store.files.allocate_input()
+
+    def set_input(self, path: str, allocation: int, data: bytes) -> None:
+        self._store.files.set_input(path, allocation, data)
+
+    def release_input(self, path: str, allocation: int) -> None:
+        if self._store.files.release_input(path, allocation):
+            self._store.modified.pop(path[4:], None)
+            self._store.attrs.pop(path[4:], None)

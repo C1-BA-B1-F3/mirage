@@ -16,8 +16,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mirage.core.box.api import (SEARCH_FIELDS, absent_on_404,
-                                 list_folder_items, search_content)
+from mirage.core.box.api import (SEARCH_FIELDS, absent_on_404, events_now,
+                                 events_since, list_folder_items,
+                                 realtime_server, search_content)
 from mirage.core.box.client import BoxApiError, BoxTokenManager
 from mirage.core.box.config import BoxConfig
 
@@ -145,3 +146,148 @@ async def test_absent_on_404_leaves_every_other_status_a_failure():
         with pytest.raises(BoxApiError) as caught:
             await absent_on_404("/docs", call)
         assert caught.value.status == status
+
+
+@pytest.mark.asyncio
+async def test_events_since_reads_until_an_empty_page(tm):
+    # Box may return a short page while more events remain, so only an
+    # empty page ends the read.
+    pages = [
+        {
+            "chunk_size": 1,
+            "next_stream_position": 11,
+            "entries": [{
+                "event_id": "a"
+            }]
+        },
+        {
+            "chunk_size": 1,
+            "next_stream_position": "12",
+            "entries": [{
+                "event_id": "b"
+            }]
+        },
+        {
+            "chunk_size": 0,
+            "next_stream_position": "12",
+            "entries": []
+        },
+    ]
+    with patch(
+            "mirage.core.box.api.box_get",
+            new_callable=AsyncMock,
+            side_effect=pages,
+    ) as mock_get:
+        found, position = await events_since(tm, "10", "changes")
+    assert [e["event_id"] for e in found] == ["a", "b"]
+    assert position == "12"
+    positions = [
+        call.kwargs["params"]["stream_position"]
+        for call in mock_get.await_args_list
+    ]
+    assert positions == ["10", "11", "12"]
+    assert mock_get.await_args_list[0].args[
+        1] == "https://api.box.com/2.0/events"
+    assert mock_get.await_args_list[0].kwargs["params"]["stream_type"] == (
+        "changes")
+
+
+@pytest.mark.asyncio
+async def test_events_now_returns_the_stream_head(tm):
+    with patch(
+            "mirage.core.box.api.box_get",
+            new_callable=AsyncMock,
+            return_value={
+                "chunk_size": 0,
+                "next_stream_position": 1152922976252290886,
+                "entries": []
+            },
+    ) as mock_get:
+        position = await events_now(tm, "changes")
+    assert position == "1152922976252290886"
+    assert mock_get.await_args.kwargs["params"]["stream_position"] == "now"
+
+
+@pytest.mark.asyncio
+async def test_realtime_server_asks_options_events(tm):
+    server = {
+        "type": "realtime_server",
+        "url": "http://2.realtime.services.box.net/subscribe?channel=c",
+        "ttl": "10",
+        "max_retries": "10",
+        "retry_timeout": 610,
+    }
+    with patch(
+            "mirage.core.box.api.box_options",
+            new_callable=AsyncMock,
+            return_value={
+                "chunk_size": 1,
+                "entries": [server]
+            },
+    ) as mock_options:
+        got = await realtime_server(tm)
+    assert got["url"] == server["url"]
+    assert mock_options.await_args.args[1] == "https://api.box.com/2.0/events"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stuck", [None, "10", 10])
+async def test_events_since_refuses_events_that_do_not_advance(tm, stuck):
+    page = {
+        "chunk_size": 1,
+        "next_stream_position": stuck,
+        "entries": [{
+            "event_id": "a"
+        }]
+    }
+    with patch("mirage.core.box.api.box_get",
+               new_callable=AsyncMock,
+               side_effect=[page, page, {
+                   "entries": []
+               }]):
+        with pytest.raises(RuntimeError, match="did not advance"):
+            await events_since(tm, "10", "changes")
+
+
+@pytest.mark.asyncio
+async def test_events_since_keeps_its_position_on_an_empty_page(tm):
+    pages = [
+        {
+            "chunk_size": 1,
+            "next_stream_position": "11",
+            "entries": [{
+                "event_id": "a"
+            }]
+        },
+        {
+            "chunk_size": 0,
+            "entries": []
+        },
+    ]
+    with patch("mirage.core.box.api.box_get",
+               new_callable=AsyncMock,
+               side_effect=pages):
+        found, position = await events_since(tm, "10", "changes")
+    assert [e["event_id"] for e in found] == ["a"]
+    assert position == "11"
+
+
+@pytest.mark.asyncio
+async def test_events_now_refuses_an_answer_without_a_position(tm):
+    with patch("mirage.core.box.api.box_get",
+               new_callable=AsyncMock,
+               return_value={
+                   "chunk_size": 0,
+                   "entries": []
+               }):
+        with pytest.raises(RuntimeError, match="next_stream_position"):
+            await events_now(tm, "changes")
+
+
+@pytest.mark.asyncio
+async def test_realtime_server_refuses_an_empty_answer(tm):
+    with patch("mirage.core.box.api.box_options",
+               new_callable=AsyncMock,
+               return_value={"chunk_size": 0}):
+        with pytest.raises(RuntimeError, match="realtime server"):
+            await realtime_server(tm)

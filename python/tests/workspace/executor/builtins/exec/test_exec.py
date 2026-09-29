@@ -275,6 +275,39 @@ async def test_a_stream_bound_to_stdin_cannot_be_written():
         ('printf x >/data/f; exec 2</data/f; exec 0<&2; cat >&2', '', '', 1),
         ('printf x >/data/f; exec 1</data/f; cat <&1 >&2; echo rc=$? >&2', '',
          'xrc=0\n', 0),
+        # A dup is another descriptor on the same open file: a read
+        # through either moves the one offset, whatever fd 0 was bound
+        # to in between, and each open starts its own.
+        ("printf 'a\\nb\\n' >/data/f; exec </data/f; exec 1<&0; "
+         "read x; exec 0<&1; read y; echo \"[$x][$y]\" >&2", "", "[a][b]\n", 0
+         ),
+        ("printf 'a\\nb\\n' >/data/f; exec 1</data/f; read x <&1; "
+         "read y <&1; echo \"[$x][$y]\" >&2", "", "[a][b]\n", 0),
+        ("printf 'a\\nb\\n' >/data/f; exec 1</data/f; exec 0<&1; "
+         "read x; exec 1</data/f; exec 0<&1; read y; "
+         "echo \"[$x][$y]\" >&2", "", "[a][a]\n", 0),
+        ("printf 'a\\nb\\n' >/data/f; exec </data/f; exec 1<&0; "
+         "exec </data/f; read x; read y; exec 0<&1; read z; "
+         "echo \"[$x][$y][$z]\" >&2", "", "[a][b][a]\n", 0),
+        ("printf 'a\\n' >/data/f; exec 1</data/f; cat <&1 >&2; "
+         "cat <&1 >&2; echo rc=$? >&2", "", "a\nrc=0\n", 0),
+        ("printf 'a\\nb\\n' >/data/f; exec 1</data/f; ( read x <&1; "
+         "echo \"[$x]\" >&2 ); read y <&1; echo \"[$y]\" >&2", "",
+         "[a]\n[b]\n", 0),
+        ("printf 'a\\nb\\nc\\n' >/data/f; exec 1</data/f; exec 0<&1; "
+         "read x; read y <&1; read z; echo \"[$x][$y][$z]\" >&2", "",
+         "[a][b][c]\n", 0),
+        ("printf 'a\\nb\\n' >/data/f; ( exec 2</data/f; exec 1<&2; "
+         "read x <&1; read y <&2; echo \"[$x][$y]\" >/data/o ); "
+         "cat /data/o", "[a][b]\n", "", 0),
+        ("printf 'a\\nb\\n' >/data/f; ( exec 1</data/f; exec 2>&1; "
+         "read x <&2; read y <&1; echo \"[$x][$y]\" >/data/o ); "
+         "cat /data/o", "[a][b]\n", "", 0),
+        ("printf 'a\\n' >/data/f; printf 'p\\n' | ( exec 1<&0; "
+         "exec </data/f; exec 0<&1; read x; echo \"[$x]\" >&2 )", "", "[p]\n",
+         0),
+        ("printf 'a\\n' >/data/f; exec 1</data/f; rm /data/f; "
+         "read x <&1; echo \"[$x]\" >&2", "", "[a]\n", 0),
         ('exec 0>/data/f; echo x >&0; echo y >&0; cat /data/f', 'x\ny\n', '',
          0),
         ('exec 0>/data/f; { echo a; echo b; } >&0; cat /data/f', 'a\nb\n', '',

@@ -1,0 +1,76 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import { describe, expect, it } from 'vitest'
+import { FileStat, FileType, PathSpec } from '../../../types.ts'
+import { materialize } from '../../../io/types.ts'
+import { isStdin, operandLabel, stdinStat, stdinStream } from './stream.ts'
+
+function operand(raw: string, virtual: string): PathSpec {
+  return new PathSpec({
+    virtual,
+    directory: '/',
+    vfsPath: virtual.slice(1),
+    resolved: true,
+    rawPath: raw,
+  })
+}
+
+describe('operandLabel', () => {
+  it('names only a dash stdin', () => {
+    // GNU grep, head and tail call only `-` standard input: /dev/stdin reads
+    // the same bytes and is named as the path it is.
+    const dash = operand('-', '/-')
+    const dev = operand('/dev/stdin', '/dev/stdin')
+    expect([isStdin(dash), isStdin(dev)]).toEqual([true, true])
+    expect(operandLabel(dash, '(standard input)')).toBe('(standard input)')
+    expect(operandLabel(dev, '(standard input)')).toBe('/dev/stdin')
+    expect(operandLabel(operand('a.txt', '/data/a.txt'), '-')).toBe('a.txt')
+  })
+})
+
+describe('dash', () => {
+  it('keeps a dash a file and /dev/stdin stdin when false', () => {
+    // util-linux rev and binutils strings open `-` as a path; only
+    // /dev/stdin reads stdin for them.
+    const dash = operand('-', '/-')
+    const dev = operand('/dev/stdin', '/dev/stdin')
+    expect([isStdin(dash, false), isStdin(dev, false)]).toEqual([false, true])
+  })
+
+  it('is honored by stdinStat and stdinStream', async () => {
+    const backendHits: string[] = []
+    const stat = (p: PathSpec): Promise<FileStat> => {
+      backendHits.push(p.virtual)
+      return Promise.resolve(new FileStat({ name: '-', type: FileType.FILE }))
+    }
+    const read = (p: PathSpec): AsyncIterable<Uint8Array> => {
+      backendHits.push(p.virtual)
+      return (async function* gen() {
+        await Promise.resolve()
+        yield new TextEncoder().encode('backend')
+      })()
+    }
+    const dash = operand('-', '/-')
+    const dev = operand('/dev/stdin', '/dev/stdin')
+    const probe = stdinStat(stat, false)
+    expect((await probe(dev)).type).toBe(FileType.FIFO)
+    expect((await probe(dash)).type).toBe(FileType.FILE)
+    const stream = stdinStream(read, new TextEncoder().encode('piped'), false, false)
+    const DEC = new TextDecoder()
+    expect(DEC.decode(await materialize(stream(dev)))).toBe('piped')
+    expect(DEC.decode(await materialize(stream(dash)))).toBe('backend')
+    expect(backendHits).toEqual(['/-', '/-'])
+  })
+})

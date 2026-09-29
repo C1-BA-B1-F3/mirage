@@ -1,0 +1,150 @@
+{
+  "cases": [
+    {
+      "id": "truncate_open_seed",
+      "seq": 910060,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/t2topen && printf abcdef > /data/t2topen/a && printf abcdef > /data/t2topen/b && echo ok",
+      "expect": {
+        "exit": 0,
+        "stdout": "ok\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "truncate_open_creates_a_missing_file",
+      "seq": 910061,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "s"
+      ],
+      "command": "truncate -s 3 /data/t2topen/new && wc -c < /data/t2topen/new",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "truncate_open_relative_size_starts_from_nothing",
+      "seq": 910062,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "s"
+      ],
+      "command": "truncate -s +2 /data/t2topen/new2 && wc -c < /data/t2topen/new2",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "truncate_open_missing_parent_is_refused",
+      "seq": 910063,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "s"
+      ],
+      "command": "truncate -s 0 /data/t2topen/nope/x; echo rc=$?; test -e /data/t2topen/nope; echo nope=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nnope=1\n",
+        "stderr": "truncate: cannot open '/data/t2topen/nope/x' for writing: No such file or directory\n"
+      }
+    },
+    {
+      "id": "truncate_open_keeps_going_past_a_refused_operand",
+      "seq": 910064,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "s"
+      ],
+      "command": "truncate -s 2 /data/t2topen/a /data/t2topen/nope/x /data/t2topen/b; echo rc=$?; wc -c < /data/t2topen/a; wc -c < /data/t2topen/b",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n2\n2\n",
+        "stderr": "truncate: cannot open '/data/t2topen/nope/x' for writing: No such file or directory\n"
+      }
+    },
+    {
+      "id": "truncate_open_quotes_the_name_always",
+      "seq": 910065,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "s"
+      ],
+      "command": "truncate -s 0 \"/data/t2topen/it's/x\"",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "truncate: cannot open \"/data/t2topen/it's/x\" for writing: No such file or directory\n"
+      }
+    },
+    {
+      "id": "truncate_open_names_the_operand_as_typed",
+      "seq": 910066,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "flags": [
+        "s"
+      ],
+      "command": "(cd /data/t2topen && truncate -s 0 nope/x)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "truncate: cannot open 'nope/x' for writing: No such file or directory\n"
+      }
+    },
+    {
+      "id": "truncate_open_cleanup",
+      "seq": 910067,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "rm -r /data/t2topen && echo ok",
+      "expect": {
+        "exit": 0,
+        "stdout": "ok\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

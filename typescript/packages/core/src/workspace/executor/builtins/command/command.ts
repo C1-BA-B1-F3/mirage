@@ -20,7 +20,7 @@ import type { MountRegistry } from '../../../mount/registry.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
 import { lastOf, scanOptions } from '../getopt.ts'
-import { classify, describe } from '../lookup/index.ts'
+import { classify, describe, programFile } from '../lookup/index.ts'
 import { NameKind } from '../lookup/types.ts'
 import { sessionEntry } from '../../../session/session.ts'
 import type { BuiltinCall, ExecuteStringFn, Result } from '../types.ts'
@@ -32,9 +32,10 @@ const USAGE = 'command: usage: command [-pVv] command [arg ...]\n'
  *
  * The exit status is 0 when no names are given, otherwise 0 if any name
  * resolved and 1 if none did (bash's `command` uses this any-found rule,
- * unlike `type`'s all-found rule). `-v` prints the name for a resolvable
- * command (no fake path); `-V` prints a verbose line. Not-found names are
- * silent under `-v` and warn on stderr under `-V`.
+ * unlike `type`'s all-found rule). `-v` prints a program's file and any
+ * other resolvable name bare (a builtin, a function); `-V` prints a
+ * verbose line. Not-found names are silent under `-v` and warn on stderr
+ * under `-V`.
  */
 function probe(
   mode: string,
@@ -59,7 +60,9 @@ function probe(
         ? describe(name, kind, session)
         : kind === NameKind.ALIAS
           ? `alias ${name}=${singleQuote(sessionEntry(session.aliases, name) ?? '')}`
-          : name
+          : kind === NameKind.FILE
+            ? programFile(name)
+            : name
     outLines.push(line)
   }
   const enc = new TextEncoder()
@@ -82,7 +85,8 @@ function probe(
  * while builtins and mount commands still resolve. Already expanded
  * operands are re-joined with shellJoin so they survive re-parsing as one
  * token each; the pipe stdin flows to the inner command. `-p` is accepted
- * but inert (mirage has no PATH) and the last of `-v`/`-V` wins.
+ * but inert (the default PATH is the one PATH there is) and the last of
+ * `-v`/`-V` wins.
  */
 export async function handleCommandBuiltin(
   executeFn: ExecuteStringFn,

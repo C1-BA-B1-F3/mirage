@@ -602,6 +602,42 @@ def test_latest_fingerprint_ignores_an_op_in_neither_set():
                                        WRITE_FINGERPRINT_OPS, 3) is None
 
 
+def test_latest_fingerprint_stops_at_a_newer_read_without_a_token():
+    # One line read the path twice and the backend vouched only for the
+    # first: the bytes stored are the second read's, so the first read's
+    # token would label bytes it never described.
+    records = [
+        _record("read", "/m/f.txt", "token-a", 3),
+        _record("read", "/m/f.txt", None, 3),
+    ]
+    assert cache_io.latest_fingerprint(records, "/m/f.txt",
+                                       READ_FINGERPRINT_OPS, 3) is None
+
+
+def test_latest_fingerprint_keeps_an_older_write_token():
+    # The write direction is unchanged: a tokenless write record does not
+    # hide the token of the write before it.
+    records = [
+        _record("write", "/m/f.txt", "put-a", 3),
+        _record("write", "/m/f.txt", None, 3),
+    ]
+    assert cache_io.latest_fingerprint(records, "/m/f.txt",
+                                       WRITE_FINGERPRINT_OPS, 3) == "put-a"
+
+
+@pytest.mark.asyncio
+async def test_apply_io_leaves_bytes_from_an_unvouched_read_untokened(cache):
+    io = IOResult(reads={"/m/f.txt": b"new"}, cache=["/m/f.txt"])
+    await cache_io.apply_io(cache,
+                            io,
+                            records=[
+                                _read_record("/m/f.txt", "token-a"),
+                                _read_record("/m/f.txt", None),
+                            ])
+    assert await cache.exists("/m/f.txt")
+    assert not await cache.is_fresh("/m/f.txt", "token-a")
+
+
 def test_latest_fingerprint_does_not_size_check_a_read():
     """A read record's byte count tracks what was consumed, which a
     partially drained stream makes smaller than the bytes cached, so the

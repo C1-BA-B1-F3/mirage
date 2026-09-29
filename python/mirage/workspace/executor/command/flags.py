@@ -13,10 +13,11 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections import defaultdict, deque
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from mirage.commands.spec import (CommandSpec, flag_kwarg_name, parse_command,
                                   parse_to_kwargs)
+from mirage.commands.spec.flag_view import FlagBag
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import (  # yapf: disable
     ambiguous_option_error, invalid_argument_error, invalid_float_error,
@@ -26,7 +27,7 @@ from mirage.types import PathSpec
 from mirage.workspace.executor.command.types import ParsedCommand
 
 
-def synthesize_path_spec(value: str) -> PathSpec:
+def synthesize_path_spec(value: str, raw_path: str | None = None) -> PathSpec:
     """A PathSpec for a path the classifier never saw.
 
     Covers a relative value cwd-resolved by ``parse_command`` (e.g.
@@ -36,19 +37,26 @@ def synthesize_path_spec(value: str) -> PathSpec:
     positional path and path-shaped flag value at execute time
     (``Mount.execute_cmd``), so a parse-time stamp is dead weight —
     proven by running the full suite with this field set to a
-    sentinel.
+    sentinel. The empty name, which only an attached value can spell
+    (``--file=``), names nothing, however it resolved: its walk answers
+    ENOENT, as a typed ``''`` operand's does.
 
     Args:
         value (str): the resolved absolute virtual path.
+        raw_path (str | None): the value before parser path resolution.
     """
     return PathSpec(virtual=value,
+                    raw_path=raw_path,
                     directory=value[:value.rfind("/") + 1] or "/",
                     vfs_path="",
-                    resolved=True)
+                    resolved=True,
+                    walk_error="ENOENT" if raw_path == "" else None)
 
 
 def take_spelling(spellings: dict[str, deque[PathSpec]],
-                  scope_map: Mapping[str, PathSpec], value: str) -> PathSpec:
+                  scope_map: Mapping[str, PathSpec],
+                  value: str,
+                  raw_path: str | None = None) -> PathSpec:
     """The next classified word spelling ``value``, in argv order.
 
     Two words can resolve to one path (`ls -d dir/ link/` with link ->
@@ -68,11 +76,12 @@ def take_spelling(spellings: dict[str, deque[PathSpec]],
         scope_map (Mapping[str, PathSpec]): the classified words by path,
             last spelling wins.
         value (str): the resolved path the parser reported.
+        raw_path (str | None): spelling retained by the parser.
     """
     queue = spellings.get(value.rstrip("/") or "/")
     if queue:
         return queue.popleft()
-    return scope_map.get(value) or synthesize_path_spec(value)
+    return scope_map.get(value) or synthesize_path_spec(value, raw_path)
 
 
 def parse_flags(
@@ -84,6 +93,7 @@ def parse_flags(
     env: Mapping[str, str] | None = None,
     *,
     unknown_is_operand: bool = False,
+    abbreviations: Sequence[str] | None = None,
 ) -> ParsedCommand:
     """Parse flags from classified parts, recovering PathSpec for PATH values.
 
@@ -112,6 +122,9 @@ def parse_flags(
             line after mirage, passed straight to parse_command. True
             only for an installed CLI's node, whose spec is deliberately
             partial.
+        abbreviations (Sequence[str] | None): the program's own
+            long-option table, when it resolves abbreviations against it
+            (git's parse-options), passed straight to parse_command.
 
     Returns:
         ParsedCommand: positional paths, positional texts, parsed flag dict
@@ -119,9 +132,8 @@ def parse_flags(
         list[PathSpec]), and parser warnings (e.g. ignored unknown options).
     """
     # Build string argv and PathSpec lookup
-    argv = [
-        item.virtual if isinstance(item, PathSpec) else item for item in parts
-    ]
+    argv = [("-" if item.raw_path == "-" else item.virtual) if isinstance(
+        item, PathSpec) else item for item in parts]
     scope_map: dict[str, PathSpec] = {}
     for item in parts:
         if isinstance(item, PathSpec):
@@ -140,10 +152,11 @@ def parse_flags(
                                cwd=cwd,
                                cmd_name=cmd_name,
                                env=env,
-                               unknown_is_operand=unknown_is_operand)
+                               unknown_is_operand=unknown_is_operand,
+                               abbreviations=abbreviations)
         # Widens from ParsedFlagValue to FlagValue: PATH values
         # become PathSpec just below.
-        flag_kwargs: dict[str, FlagValue] = dict(parse_to_kwargs(parsed))
+        flag_kwargs: dict[str, FlagValue] = FlagBag(parse_to_kwargs(parsed))
 
         # Recover PathSpec for PATH flag values; multiple PATH flags
         # arrive as a list of resolved paths and become list[PathSpec].
@@ -176,6 +189,8 @@ def parse_flags(
         # two spellings and nothing else.
         if not str_flag_paths:
             for key, value in flag_kwargs.items():
+                raw = parsed.raw_path_flags.get(key)
+                raw_parts = raw if isinstance(raw, list) else []
                 # Only the parser's own list[str] values reach here; a
                 # PathSpec list is already promoted.
                 texts_in: list[str] = ([
@@ -186,16 +201,19 @@ def parse_flags(
                     pairs: list[str | PathSpec] = list(texts_in)
                     for index in range(1, len(pairs), 2):
                         pairs[index] = take_spelling(spellings, scope_map,
-                                                     texts_in[index])
+                                                     texts_in[index],
+                                                     raw_parts[index])
                     flag_kwargs[key] = pairs
                 elif key in repeat_path_keys and isinstance(value, list):
                     flag_kwargs[key] = [
-                        take_spelling(spellings, scope_map, part)
-                        for part in texts_in
+                        take_spelling(spellings, scope_map, part,
+                                      raw_parts[index])
+                        for index, part in enumerate(texts_in)
                     ]
                 elif key in single_path_keys and isinstance(value, str):
-                    flag_kwargs[key] = take_spelling(spellings, scope_map,
-                                                     value)
+                    flag_kwargs[key] = take_spelling(
+                        spellings, scope_map, value,
+                        raw if isinstance(raw, str) else None)
                 elif isinstance(value, str) and value in scope_map:
                     flag_kwargs[key] = scope_map[value]
         else:
@@ -204,12 +222,16 @@ def parse_flags(
             for value in parsed.path_flag_values:
                 take_spelling(spellings, scope_map, value)
 
-        # Classify positional args: each operand takes its own word.
+        # Classify positional args: each operand takes its own word. The
+        # spelling rides along for a word the classifier left as text
+        # (an interpreter's bare script name under the shell's word
+        # policy), so the handler still sees it as typed: CPython puts
+        # the operand itself in argv[0].
         paths: list[PathSpec] = []
         texts: list[str] = []
-        for value, kind in parsed.args:
+        for (value, kind), (raw, _) in zip(parsed.args, parsed.raw_operands):
             if kind == "path":
-                paths.append(take_spelling(spellings, scope_map, value))
+                paths.append(take_spelling(spellings, scope_map, value, raw))
             else:
                 texts.append(value)
         return ParsedCommand(

@@ -7,7 +7,8 @@ from mirage.commands.builtin.utils.bre import BreError, search_bre
 from mirage.commands.builtin.utils.operands import (merge_split_errors,
                                                     normalized_read,
                                                     split_readable)
-from mirage.commands.builtin.utils.stream import resolve_source
+from mirage.commands.builtin.utils.stream import (resolve_source, stdin_stat,
+                                                  stdin_stream)
 from mirage.commands.config import CommandOpts
 from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
@@ -640,6 +641,8 @@ async def nl_generic(
         stream (PolymorphicReadFn): Bound reader called as
             ``stream(path)``.
     """
+    stat = stdin_stat(stat)
+    stream = stdin_stream(stream, opts.stdin)
     try:
         parsed = parse_flags(opts.flags)
     except ValueError as exc:

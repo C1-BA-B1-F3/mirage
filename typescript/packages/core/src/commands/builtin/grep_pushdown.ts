@@ -12,9 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { Accessor } from '../../accessor/base.ts'
+import type { SearchOps, SearchQuery } from '../../vfs/types.ts'
+import type { GrepSearchOptions, GrepSearchMeta } from './types.ts'
 import type { PathSpec } from '../../types.ts'
-import { PatternType } from './constants.ts'
+import { getExtension } from '../resolve.ts'
+import { BINARY_EXTENSIONS, PatternType } from './constants.ts'
 import { hasUnresolvedGlob } from './utils/operands.ts'
+import { isStdin } from './utils/stream.ts'
 import { breSource } from './grep_pattern.ts'
 import { FlagView } from '../spec/flag_view.ts'
 import { type FlagValue } from '../spec/types.ts'
@@ -141,6 +146,36 @@ export function isLiteralPattern(pattern: string, fixedString: boolean): boolean
   return pt === PatternType.EXACT || (pt === PatternType.SIMPLE && !pattern.includes('.'))
 }
 
+// The term a whole-word search index may narrow a scan on, or null. A
+// word-based index (GitHub code search, Dropbox and Box file search) matches
+// whole words while grep matches substrings, so for a bare literal its answer
+// is a strict subset of the grep matches: a file holding the literal only
+// inside a longer word (quokka in quokkabuild) never comes back and would be
+// silently dropped from the scan. Under -w both sides mean the same thing,
+// and any tokenizer disagreement can only over-fetch, which the local scan
+// filters. A regex narrowed on an extracted literal stays excluded even under
+// -w (isLiteralPattern), and a newline-joined pattern list is a set of
+// alternatives no one literal is required by.
+export function wholeWordLiteral(
+  pattern: string | null,
+  fixedString: boolean,
+  wholeWord: boolean,
+): string | null {
+  if (pattern === null || !wholeWord || pattern.includes('\n')) return null
+  return isLiteralPattern(pattern, fixedString) ? pattern : null
+}
+
+// Drop the candidates a recursive walk would never have read. A narrowing
+// stands in for the walk it replaces, and that walk skips binary extensions,
+// so a candidate with one is dropped rather than downloaded. The result may
+// be empty, which a caller must not hand to grep as its operand list: no
+// operands means standard input.
+export function textCandidates(paths: readonly PathSpec[]): PathSpec[] {
+  return paths.filter((p) => !BINARY_EXTENSIONS.has(getExtension(p.virtual) ?? ''))
+}
+
+// grep's dests, then rg's, which spells each flag by its long name; a
+// spec-less view reads both, and neither command sets the other's.
 const PUSHDOWN_SHAPING_BOOL = [
   'v',
   'n',
@@ -155,21 +190,72 @@ const PUSHDOWN_SHAPING_BOOL = [
   'h',
   'args_I',
   'text',
+  'invert_match',
+  'line_number',
+  'count',
+  'files_with_matches',
+  'word_regexp',
+  'only_matching',
+  'quiet',
+  'with_filename',
+  'no_filename',
+  'line_regexp',
+  'column',
+  'vimgrep',
+  'trim',
+  'null',
+  'count_matches',
+  'include_zero',
+  'files',
+  'type_list',
+  'heading',
+  'passthru',
+  'passthrough',
+  'binary',
+  'sort_files',
+  'follow',
 ] as const
 const PUSHDOWN_SHAPING_INT = ['m', 'A', 'B', 'C'] as const
+// rg's valued options defer on presence alone: a value the generic would
+// refuse in ripgrep's words is not the push-down's to parse.
+const PUSHDOWN_SHAPING_VALUE = [
+  'max_count',
+  'after_context',
+  'before_context',
+  'context',
+  'max_columns',
+  'replace',
+  'field_match_separator',
+  'max_depth',
+  'max_filesize',
+  'sort',
+  'sortr',
+] as const
 // Split the way Python's `_PUSHDOWN_FILTER_STR` / `_PUSHDOWN_FILTER_LIST`
 // are, because the two halves are tested differently: a repeatable option
 // arrives as a list and an empty list means "not supplied", while a
 // single-valued one arrives as a string. One flat list tested with
-// `!== undefined` answered differently from Python for both.
-const PUSHDOWN_FILTER_STR = ['type', 'glob', 'binary_files'] as const
-const PUSHDOWN_FILTER_LIST = ['include', 'exclude', 'exclude_dir'] as const
+// `!== undefined` answered differently from Python for both. -f adds
+// patterns the pushed-down one never carried.
+const PUSHDOWN_FILTER_STR = ['binary_files'] as const
+const PUSHDOWN_FILTER_LIST = [
+  'include',
+  'exclude',
+  'exclude_dir',
+  'file',
+  'glob',
+  'iglob',
+  'type',
+  'type_not',
+] as const
 
 // True when a flag alters the match set or output shape of grep/rg. A search
 // push-down prints each matching record as one whole line, so it cannot honor
-// -v/-n/-b/-c/-l/-w/-o/-m/-A/-B/-C/-q/-H/-h, rg's -I (no filename), nor rg's
-// file-filtering --glob/--type; the wrapper must defer to the generic scan
-// when any is present.
+// -v/-n/-b/-c/-l/-w/-o/-m/-A/-B/-C/-q/-H/-h, rg's -I (no filename), -x, -r,
+// --column and the rest of its output options, nor the file filters
+// (--include/--exclude, rg's -g/-t/-T/-d), the patterns -f adds, or rg's -L,
+// which walks links no backend can see; the wrapper must defer to the generic
+// scan when any is present.
 //
 // `honored` names the flags this particular push-down implements itself, so
 // their presence is not a reason to defer. Two shapes need it. A provider
@@ -190,6 +276,7 @@ export function hasSearchShapingFlags(
   const gated = (name: string): boolean => !honored.includes(name)
   if (PUSHDOWN_SHAPING_BOOL.some((name) => gated(name) && fl.asBool(name))) return true
   if (PUSHDOWN_SHAPING_INT.some((name) => gated(name) && fl.asInt(name) !== undefined)) return true
+  if (PUSHDOWN_SHAPING_VALUE.some((name) => gated(name) && fl.raw(name) !== undefined)) return true
   if (PUSHDOWN_FILTER_LIST.some((name) => gated(name) && fl.asList(name).length > 0)) return true
   return PUSHDOWN_FILTER_STR.some((name) => gated(name) && fl.asStr(name) !== undefined)
 }
@@ -201,7 +288,9 @@ export function hasSearchShapingFlags(
 // down (mongodb) gate on hasSearchShapingFlags alone instead.
 export function searchPushdownOk(bag: Record<string, FlagValue>, pattern: string): boolean {
   if (pattern.includes('\n')) return false
-  return isLiteralPattern(pattern, new FlagView(bag).asBool('F')) && !hasSearchShapingFlags(bag)
+  const fl = new FlagView(bag)
+  const fixed = fl.asBool('F') || fl.asBool('fixed_strings')
+  return isLiteralPattern(pattern, fixed) && !hasSearchShapingFlags(bag)
 }
 
 // The one operand a search push-down may answer for, or null. A push-down
@@ -215,9 +304,11 @@ export function searchPushdownOk(bag: Record<string, FlagValue>, pattern: string
 // A multi-operand line therefore takes the generic scan, which searches each
 // operand in turn the way GNU does. A glob operand defers for the older
 // reason: an unexpanded pattern segment would be read as a literal entity
-// name.
+// name. A `-` operand defers because it is the line's stdin, which no backend
+// holds: asked about `<mount>/-`, the search answered "no match" and the pipe
+// was never read.
 export function loneOperand(paths: PathSpec[]): PathSpec | null {
-  if (paths.length !== 1 || hasUnresolvedGlob(paths)) return null
+  if (paths.length !== 1 || hasUnresolvedGlob(paths) || paths.some((p) => isStdin(p))) return null
   return paths[0] ?? null
 }
 
@@ -258,4 +349,49 @@ export function textSearchResults(lines: readonly string[]): boolean {
         return cp >= 0xd800 && cp <= 0xdfff
       }),
   )
+}
+
+/** Read only grep's opt-in namespace; other capability metadata is opaque. */
+export function grepSearchMeta<A extends Accessor>(
+  search: SearchOps<A> | undefined,
+): GrepSearchMeta | null {
+  if (search?.meta?.grep === undefined) return null
+  const meta = search.meta.grep
+  if (
+    meta === null ||
+    typeof meta !== 'object' ||
+    Array.isArray(meta) ||
+    Object.keys(meta).some((key) => !['mode', 'stream'].includes(key))
+  ) {
+    throw new Error('search.meta.grep must contain mode and optional stream')
+  }
+  const mode = meta.mode
+  const stream = meta.stream === undefined ? false : meta.stream
+  if ((mode !== 'literal' && mode !== 'regex') || typeof stream !== 'boolean') {
+    throw new Error('search.meta.grep requires mode=literal|regex and boolean stream')
+  }
+  return { mode, stream }
+}
+
+/** A plain resource query is literal text; grep owns its optional namespace. */
+export function grepSearchOptions(query: SearchQuery): GrepSearchOptions {
+  const options = query.options?.grep === undefined ? {} : query.options.grep
+  const allowed = ['ignore_case', 'fixed_string', 'whole_word', 'basic']
+  if (
+    options === null ||
+    typeof options !== 'object' ||
+    Array.isArray(options) ||
+    Object.keys(options).some((key) => !allowed.includes(key))
+  ) {
+    throw new Error('search.options.grep contains unknown options')
+  }
+  if (Object.values(options).some((value) => typeof value !== 'boolean')) {
+    throw new Error('search.options.grep values must be boolean')
+  }
+  return {
+    ignoreCase: options.ignore_case === true,
+    fixedString: options.fixed_string !== false,
+    wholeWord: options.whole_word === true,
+    basic: options.basic === true,
+  }
 }

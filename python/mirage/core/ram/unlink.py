@@ -14,6 +14,7 @@
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.context import invalidate_after_unlink
+from mirage.core.ram.dest import lookup_error
 from mirage.types import PathSpec
 from mirage.utils.path import norm
 
@@ -23,7 +24,7 @@ async def unlink(accessor: RAMAccessor, path_spec: PathSpec) -> None:
     store = accessor.store
     p = norm(path)
     if p not in store.files:
-        raise FileNotFoundError(p)
+        raise lookup_error(store, path_spec, p)
     del store.files[p]
     store.modified.pop(p, None)
     store.attrs.pop(p, None)

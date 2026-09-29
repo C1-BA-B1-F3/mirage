@@ -25,6 +25,8 @@ export default defineConfig({
     'src/workspace_config.ts',
     'src/auth/config.ts',
     'src/auth/storage.ts',
+    'src/ssh/config.ts',
+    'src/ssh/constants.ts',
   ],
   format: ['esm'],
   dts: {

@@ -18,7 +18,7 @@ import { ClientPool } from './db.ts'
 import type { ClientCtor, MinimalClient } from './db.ts'
 import type { KitConfig } from './config.ts'
 import type { Dmmf } from './seed.ts'
-import type { KitRoute } from './route.ts'
+import type { KitRoute, Router } from './route.ts'
 import type { JsonValue, MintSharing, Reply, ResetResponse } from './types.ts'
 
 // What a service implements. Everything else in the kit is machinery around
@@ -62,6 +62,11 @@ export interface Fake<C extends MinimalClient> {
   // rows, so a view built before it is stale either way.
   afterReset?: (db: C, tenants: readonly string[]) => void
   defaultTenants?: string[]
+  requestToken?: (
+    headers: Record<string, string | string[] | undefined>,
+    url: URL,
+    body: Buffer,
+  ) => string | undefined
   // How this fake refuses a tenant it was never seeded with, and by being
   // present, THAT it refuses one at all. Declaring it is opt-in for the same
   // reason tenantFromBearer is: what an unseeded tenant means is the vendor's
@@ -137,9 +142,11 @@ export class RunState {
 export interface Runtime<C extends MinimalClient> {
   fake: Fake<C>
   pool: ClientPool<C>
+  router: Router<C>
   fixtureRoot: string
   state: (run: string) => RunState
   reset: (body: JsonValue) => Promise<ResetResponse>
+  drop: (run: string) => Promise<void>
   dispose: () => Promise<void>
 }
 

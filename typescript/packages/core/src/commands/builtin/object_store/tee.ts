@@ -13,7 +13,6 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Accessor } from '../../../accessor/base.ts'
-import { IOResult } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import type { RegisteredCommand } from '../../config.ts'
@@ -21,8 +20,6 @@ import { specOf } from '../../spec/builtins.ts'
 import { teeGeneric } from '../generic/tee.ts'
 import { requireOp } from '../generic_bind/adapter.ts'
 import { resolveGlobOf, type CommandIO } from '../generic_bind/index.ts'
-
-const ENC = new TextEncoder()
 
 /** Build the write-tracking tee override for one keyed store. */
 export function makeTee<A extends Accessor>(vfs: string, io: CommandIO<A>): RegisteredCommand[] {
@@ -36,10 +33,8 @@ export function makeTee<A extends Accessor>(vfs: string, io: CommandIO<A>): Regi
     texts: string[],
     opts: CommandOpts,
   ): Promise<CommandFnResult> {
-    if (paths.length === 0) {
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tee: missing operand\n') })]
-    }
-    const resolved = await resolveGlob(accessor, paths, opts.index ?? undefined)
+    const resolved =
+      paths.length > 0 ? await resolveGlob(accessor, paths, opts.index ?? undefined) : []
     // Wiring only: every flag semantic, the write to each operand and the
     // append fallback live in the generic.
     return teeGeneric(
@@ -57,5 +52,6 @@ export function makeTee<A extends Accessor>(vfs: string, io: CommandIO<A>): Regi
     spec: specOf('tee'),
     fn: teeCommand,
     write: true,
+    pathGuarded: true,
   })
 }

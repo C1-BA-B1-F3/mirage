@@ -33,7 +33,12 @@ import {
 const resolveGlob = resolveGlobOf(DATABRICKS_VOLUME_IO)
 
 class FakeManager {
+  readThrough(_path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {
+    return fetch()
+  }
+
   writes: string[] = []
+  ancestors: string[] = []
   unlinks: string[] = []
   subtrees: string[] = []
 
@@ -44,6 +49,11 @@ class FakeManager {
 
   invalidateAfterUnlink(path: string | PathSpec): Promise<void> {
     this.unlinks.push(typeof path === 'string' ? path : path.mountPath)
+    return Promise.resolve()
+  }
+
+  invalidateAncestors(path: PathSpec): Promise<void> {
+    this.ancestors.push(path.virtual)
     return Promise.resolve()
   }
 
@@ -151,7 +161,8 @@ describe('copy', () => {
     // The destination's own listing must go (a merge target can pre-exist)
     // along with every ancestor listing create_directory materialized.
     expect(manager.unlinks).toEqual(['/deep/dst'])
-    expect(manager.writes).toEqual(['/deep'])
+    expect(manager.writes).toEqual([])
+    expect(manager.ancestors).toEqual(['/volume/deep/dst'])
   })
 
   it('refuses copying a directory into its own subtree before any write', async () => {

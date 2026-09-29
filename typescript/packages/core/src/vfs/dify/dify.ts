@@ -12,13 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '../base.ts'
 import { DifyAccessor } from '../../accessor/dify.ts'
 import { DIFY_COMMANDS } from '../../commands/builtin/dify/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
+
 import { DIFY_OPS } from '../../ops/dify/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
-import { BaseVFS } from '../base.ts'
 import {
   type DifyConfigRedacted,
   redactDifyConfig,
@@ -27,6 +28,7 @@ import {
   type DifyConfigResolved,
 } from './config.ts'
 import { DIFY_PROMPT } from './prompt.ts'
+
 export interface DifyVFSOptions {
   config: DifyConfig
 }
@@ -65,11 +67,6 @@ export class DifyVFS extends BaseVFS {
     }
   }
 
-  // Nothing to take back: the bytes live in the remote store, so a
-  // restored mount reaches them through its config alone.
-  override loadState(_state: DifyVFSState): Promise<void> {
-    return Promise.resolve()
-  }
   override ops(): readonly RegisteredOp[] {
     return DIFY_OPS
   }

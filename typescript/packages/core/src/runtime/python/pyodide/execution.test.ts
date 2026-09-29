@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { WorkspaceBinding } from '../../binding.ts'
+import { captureBinding, WorkspaceBinding } from '../../binding.ts'
 import { PyodideWorkerClient } from './worker/client.ts'
 import { describe, expect, it, vi } from 'vitest'
 import { PathSpec } from '../../../types.ts'
@@ -20,6 +20,10 @@ import { PyodideRuntime } from './runtime.ts'
 import { PrefixResolver } from '../../resolver.ts'
 import { loadPyodideRuntime } from './loader.ts'
 import { PyodideExecution } from './execution.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
+import { RAMVFS } from '../../../vfs/ram/ram.ts'
+import { MountMode } from '../../../types.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
 describe('Python guest module', { timeout: 120_000 }, () => {
   it('preserves output bytes across calls with buffers above the signed wasm32 boundary', async () => {
     const pyodide = await loadPyodideRuntime()
@@ -340,6 +344,8 @@ describe('Pyodide command cwd', { timeout: 120_000 }, () => {
           new WorkspaceBinding(
             () => Promise.reject(new Error('root mount must not be read')),
             new PrefixResolver(() => ['/']),
+            (binding) =>
+              captureBinding(binding, { cwd: PathSpec.fromStrPath('/unservable/nested') }),
           ),
         )
         const before = await rt.eval('import os; os.getcwd()')
@@ -508,3 +514,118 @@ it.each([false, true])(
   },
   120_000,
 )
+
+describe('Pyodide evaluation cwd', { timeout: 120_000 }, () => {
+  it.each([false, true])(
+    'recovers a console after its cwd disappears (eager: %s)',
+    async (eager) => {
+      const rt = new PyodideRuntime({ config: { autoLoadFromImports: false } })
+      if (eager) await rt.eval('pass')
+      const ws = new Workspace(
+        { '/data': new RAMVFS() },
+        { mode: MountMode.EXEC, shellParser: await getTestParser(), runtimes: [rt, 'workspace'] },
+      )
+      const dec = new TextDecoder()
+      try {
+        expect((await ws.shell('cd /data')).exitCode).toBe(0)
+        for (const mutation of ['rmdir /data/sub', 'mv /data/sub /data/moved']) {
+          expect((await ws.shell('mkdir /data/sub')).exitCode).toBe(0)
+          const session = mutation
+          const first = await rt.eval("import os; token = 42; os.chdir('sub')", { session })
+          expect(first.exitCode).toBe(0)
+          expect((await ws.shell(mutation)).exitCode).toBe(0)
+          const missing = await rt.eval("print('must not run')", { session })
+          expect(missing.exitCode).toBe(1)
+          expect(dec.decode(missing.stdout)).toBe('')
+          expect(dec.decode(missing.stderr ?? new Uint8Array())).toContain('FileNotFoundError')
+          const recovered = await rt.eval("print(token, os.getcwd()); os.chdir('/data')", {
+            session,
+          })
+          expect(recovered.exitCode).toBe(0)
+          expect(dec.decode(recovered.stdout)).toBe('42 /\n')
+          const next = await rt.eval('print(os.getcwd())', { session })
+          expect(next.exitCode).toBe(0)
+          expect(dec.decode(next.stdout)).toBe('/data\n')
+          expect((await rt.eval('import os; os.getcwd()')).value).toBe('/data')
+        }
+      } finally {
+        await ws.close()
+      }
+    },
+  )
+
+  it.each([false, true])('inherits cwd and isolates consoles (eager: %s)', async (eager) => {
+    const rt = new PyodideRuntime({ config: { autoLoadFromImports: false } })
+    if (eager) await rt.eval('pass')
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      {
+        mode: MountMode.EXEC,
+        shellParser: await getTestParser(),
+        runtimes: [rt, 'workspace'],
+      },
+    )
+    const dec = new TextDecoder()
+    try {
+      expect(
+        (await ws.shell('mkdir /data/sub; echo child > /data/sub/item; cd /data')).exitCode,
+      ).toBe(0)
+      expect((await rt.eval('import os; os.getcwd()')).value).toBe('/data')
+      const run = await rt.run({
+        code: 'import os; print(os.getcwd())',
+        args: [],
+        env: {},
+        stdin: null,
+      })
+      expect(dec.decode(run.stdout)).toBe('/data\n')
+      const explicit = await rt.run({
+        code: 'import os; print(os.getcwd())',
+        args: [],
+        env: {},
+        stdin: null,
+        cwd: PathSpec.fromStrPath('/data/sub'),
+      })
+      expect(dec.decode(explicit.stdout)).toBe('/data/sub\n')
+      const first = await rt.eval(
+        "import os; os.chdir('sub'); print(os.getcwd()); raise ValueError('expected')",
+        { session: 'a' },
+      )
+      expect(first.exitCode).toBe(1)
+      expect(dec.decode(first.stdout)).toBe('/data/sub\n')
+      expect(
+        dec.decode((await rt.eval('import os; print(os.getcwd())', { session: 'b' })).stdout),
+      ).toBe('/data\n')
+      expect((await rt.eval('import os; os.getcwd()')).value).toBe('/data')
+      await expect(
+        rt.eval("import os; os.chdir('sub'); del os.chdir; raise ValueError('expected')"),
+      ).rejects.toThrow('expected')
+      expect((await rt.eval('import os; os.getcwd()')).value).toBe('/data')
+      expect((await ws.shell('cd /')).exitCode).toBe(0)
+      expect(
+        dec.decode((await rt.eval("print(open('item').read(), end='')", { session: 'a' })).stdout),
+      ).toBe('child\n')
+      expect(
+        dec.decode(
+          (
+            await rt.eval(
+              "import os; os.getcwd = lambda: '/wrong'; os.chdir = lambda _: None; print('ok')",
+              { session: 'a' },
+            )
+          ).stdout,
+        ),
+      ).toBe('ok\n')
+      expect(
+        dec.decode((await rt.eval('import os; print(os.getcwd())', { session: 'a' })).stdout),
+      ).toBe('/data/sub\n')
+      expect(
+        dec.decode((await rt.eval('import os; print(os.getcwd())', { session: 'b' })).stdout),
+      ).toBe('/data\n')
+      expect(
+        dec.decode((await rt.eval('import os; print(os.getcwd())', { session: 'c' })).stdout),
+      ).toBe('/\n')
+      expect((await rt.eval('import os; os.getcwd()')).value).toBe('/')
+    } finally {
+      await ws.close()
+    }
+  })
+})

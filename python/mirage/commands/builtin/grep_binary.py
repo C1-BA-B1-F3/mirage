@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from mirage.commands.builtin.grep_offsets import (MatchOffsets, decode_line,
                                                   encode_line, prefix_of)
+from mirage.commands.builtin.grep_prefilter import required_needles
 from mirage.commands.builtin.grep_select import WalkFilters
 from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.stream import close_quietly
@@ -178,9 +179,21 @@ async def grep_input(source: AsyncIterator[bytes],
     # to cover the terminator the iterator strips. The extra byte past a
     # final line with no newline is never read.
     byte_pos = 0
+    needles = (required_needles(pat) if not f.invert and
+               (not has_context or f.count_only or f.quiet or f.files_only
+                or f.files_without_match) else None)
+    fold = bool(pat.flags & re.IGNORECASE)
     input_stream = binary.read(source)
+    lines = AsyncLineIterator(input_stream)
     try:
-        async for raw in AsyncLineIterator(input_stream):
+        while True:
+            if needles is not None:
+                skipped, size = lines.skip_nonmatching_lines(needles, fold)
+                number += skipped
+                byte_pos += size
+            raw = await lines.readline()
+            if raw is None:
+                break
             if binary.nul and f.binary_mode == "without-match":
                 break
             number += 1
@@ -203,6 +216,16 @@ async def grep_input(source: AsyncIterator[bytes],
                     # A selected line is all -L needs to know: the file
                     # is not listed, and the status still says it matched.
                     return
+            # NUL runs become empty lines. Batch decisions only when no
+            # per-line output or context must be retained.
+            if not raw and (f.count_only or (not hit and not has_context)):
+                limit = (f.max_count -
+                         count if hit and f.max_count is not None else None)
+                skipped = lines.skip_empty_lines(limit)
+                number += skipped
+                byte_pos += skipped
+                if hit:
+                    count += skipped
             if f.count_only:
                 if f.max_count is not None and count >= f.max_count:
                     break

@@ -12,6 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
+
+from mirage.core.github.constants import CODE_SEARCH_SIZE_LIMIT
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
@@ -45,12 +48,49 @@ def is_repo_root(key: str) -> bool:
     return key in ("", "/")
 
 
+def is_directory_key(tree: dict[str, TreeEntry], key: str) -> bool:
+    """Return whether a scope key names a directory of the git tree.
+
+    Args:
+        tree (dict[str, TreeEntry]): The recursive git tree.
+        key (str): Repo-relative key from :func:`scope_relative_key`.
+
+    Returns:
+        bool: True for the repository root or a ``tree`` entry.
+    """
+    if is_repo_root(key):
+        return True
+    entry = tree.get(key.strip("/"))
+    return entry is not None and entry.type == "tree"
+
+
+def scope_blobs(tree: dict[str, TreeEntry],
+                key: str) -> list[tuple[str, TreeEntry]]:
+    """The file entries at or below a repo-relative scope key.
+
+    Read off the git tree rather than the index, mirroring TypeScript's:
+    the tree keys are repo-relative with no leading slash, which is the
+    space ``key`` is already in. A sibling that merely shares the scope's
+    spelling (``srcx/`` beside ``src/``) is outside it.
+
+    Args:
+        tree (dict[str, TreeEntry]): The recursive git tree.
+        key (str): Repo-relative scope key from :func:`scope_relative_key`.
+
+    Returns:
+        list[tuple[str, TreeEntry]]: each blob's key and entry, in tree
+            order; every blob for the repository root.
+    """
+    norm = key.strip("/")
+    prefix = norm + "/"
+    return [
+        (p, e) for p, e in tree.items()
+        if e.type == "blob" and (not norm or p == norm or p.startswith(prefix))
+    ]
+
+
 def count_scope_files(tree: dict[str, TreeEntry], key: str) -> int:
     """Count files under a repo-relative scope key.
-
-    Counted off the git tree rather than the index, mirroring
-    TypeScript's: the tree keys are repo-relative with no leading slash,
-    which is the space ``key`` is already in.
 
     Args:
         tree (dict[str, TreeEntry]): The recursive git tree.
@@ -59,12 +99,7 @@ def count_scope_files(tree: dict[str, TreeEntry], key: str) -> int:
     Returns:
         int: Number of file entries at or below the scope.
     """
-    if is_repo_root(key):
-        return sum(1 for e in tree.values() if e.type == "blob")
-    norm = key.strip("/")
-    prefix = norm + "/"
-    return sum(1 for p, e in tree.items()
-               if e.type == "blob" and (p == norm or p.startswith(prefix)))
+    return len(scope_blobs(tree, key))
 
 
 def should_use_search(
@@ -78,3 +113,47 @@ def should_use_search(
     the scope is large enough to bother, is decided by the caller.
     """
     return recursive and on_default_branch
+
+
+_NARROWING = re.compile(r'[:"]|(?:^|[^A-Za-z0-9_])-'
+                        r'|(?:^|[^A-Za-z0-9_])NOT(?:[^A-Za-z0-9_]|$)')
+_WORD = re.compile(r"[A-Za-z0-9_]")
+
+
+def search_safe(query: str) -> bool:
+    """Whether a literal can be sent to code search without rescoping it.
+
+    The literal goes into the query verbatim, so any part of it the search
+    grammar reads as syntax narrows the answer to less than the files that
+    hold it. Measured against api.github.com: a ``name:`` word is a
+    qualifier, a quote opens a phrase, a word-leading ``-`` negates and
+    ``NOT`` is an operator; lowercase ``not`` and ``OR`` are plain terms, and
+    parentheses are refused with a 422, which already falls back. Word
+    characters are ASCII so both hosts gate the same literals, and a literal
+    holding none of them would send a query that is only its scope.
+
+    Args:
+        query (str): the literal grep would push down.
+
+    Returns:
+        bool: True when the search answers for exactly this literal.
+    """
+    return bool(_WORD.search(query)) and not _NARROWING.search(query)
+
+
+def unsearchable_keys(tree: dict[str, TreeEntry], key: str) -> list[str]:
+    """List the files under a scope that code search never indexes.
+
+    A file at or over ``CODE_SEARCH_SIZE_LIMIT`` is not indexed, so no
+    search can name it; a size the tree did not report is counted with them,
+    since nothing vouches for it either.
+
+    Args:
+        tree (dict[str, TreeEntry]): The recursive git tree.
+        key (str): Repo-relative scope key from :func:`scope_relative_key`.
+
+    Returns:
+        list[str]: Sorted repo-relative keys of those files.
+    """
+    return sorted(p for p, e in scope_blobs(tree, key)
+                  if e.size is None or e.size >= CODE_SEARCH_SIZE_LIMIT)

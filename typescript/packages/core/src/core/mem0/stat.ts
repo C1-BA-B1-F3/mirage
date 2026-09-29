@@ -18,8 +18,7 @@ import { ContentType, FileStat, FileType, type PathSpec } from '../../types.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { makeStat } from '../hierarchy/stat.ts'
 import { jsonBytes } from '../render/json.ts'
-import { getMemory } from './client.ts'
-import { readdir } from './readdir.ts'
+import { listedMemory, readdir } from './readdir.ts'
 import { detectScope } from './scope.ts'
 
 function fileStat(memory: Record<string, unknown>): FileStat {
@@ -40,25 +39,11 @@ function fileStat(memory: Record<string, unknown>): FileStat {
 
 async function memoryStat(
   accessor: Mem0Accessor,
-  match: ScopeMatch,
+  _match: ScopeMatch,
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<FileStat> {
-  // The root listing caches each memory's whole payload, so a warm index
-  // answers without a network call.
-  if (index !== undefined) {
-    const lookup = await index.get(path.virtual)
-    const cached = lookup.entry?.extra.memory
-    if (
-      cached !== null &&
-      cached !== undefined &&
-      typeof cached === 'object' &&
-      !Array.isArray(cached)
-    ) {
-      return fileStat(cached as Record<string, unknown>)
-    }
-  }
-  return fileStat(await getMemory(accessor, match.slots.memory_id ?? '', path))
+  return fileStat(await listedMemory(accessor, path, index))
 }
 
 export const stat = makeStat(detectScope, readdir, {

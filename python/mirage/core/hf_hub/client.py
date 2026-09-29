@@ -13,7 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Mapping
 from typing import Any
 from urllib.parse import quote
 
@@ -58,6 +58,30 @@ class HfHubError(Exception):
         super().__init__(message)
         self.status = status
         self.error_code = error_code
+
+
+def stall_timeout(seconds: float) -> aiohttp.ClientTimeout:
+    """How long a mount's Hub request may go without progress.
+
+    The clock runs while connecting and waiting for the answer, and
+    restarts on every chunk of the body, so a large download that keeps
+    flowing is never cut off; a total bound would fail any file that takes
+    longer than it to arrive. It is what huggingface_hub's own timeout
+    means, and the TypeScript twin is ``stallFetch``. A bound of zero or
+    less is none: aiohttp reads a zero that way, but a negative read bound
+    would fire at once.
+
+    Args:
+        seconds (float): the mount's configured timeout.
+
+    Returns:
+        aiohttp.ClientTimeout: the bound, for the accessor's pool.
+    """
+    if seconds <= 0:
+        return aiohttp.ClientTimeout(total=None)
+    return aiohttp.ClientTimeout(total=None,
+                                 sock_connect=seconds,
+                                 sock_read=seconds)
 
 
 def hub_headers(token: SecretStr | None) -> dict[str, str]:
@@ -159,7 +183,22 @@ def resolve_url(endpoint: str, repo_type: str, repo_id: str, revision: str,
     if segment:
         base += f"{segment}/"
     return (f"{base}{repo_id}/resolve/{rev_segment(revision)}/"
-            f"{quote(path.lstrip('/'))}")
+            f"{quote_path(path)}")
+
+
+def quote_path(path: str) -> str:
+    """A repo-relative path percent-encoded per segment, no leading slash.
+
+    A Hub repo or bucket may hold a file whose name carries a space or a
+    "#", and pasting it raw truncates the URL at the fragment.
+
+    Args:
+        path (str): the repo-relative path.
+
+    Returns:
+        str: the encoded path.
+    """
+    return quote(path.lstrip("/"))
 
 
 def _error_of(resp: aiohttp.ClientResponse, text: str) -> Exception:
@@ -361,12 +400,64 @@ async def hub_bytes(
     return content
 
 
+async def hub_bytes_tagged(
+    token: SecretStr | None,
+    url: str,
+    window: ByteWindow | None = None,
+    *,
+    session: SessionArg = None,
+) -> tuple[bytes, str]:
+    """Fetch file content together with the ETag the bytes came with.
+
+    The ETag is the final response's, after the redirect to the CDN: the
+    first hop answers for the LFS object, the last one for the bytes
+    actually served, which is the only one that can vouch for them.
+
+    Args:
+        token (SecretStr | None): the user access token.
+        url (str): the resolve URL.
+        window (ByteWindow | None): the byte range to ask for.
+        session (SessionArg): pool or live session to ride.
+
+    Returns:
+        tuple[bytes, str]: the content, trimmed to the window when the CDN
+        ignored the Range header, and the raw ETag header ("" when none).
+    """
+    response: ApiResponse = await api_request(
+        "GET",
+        url,
+        error_of=_error_of,
+        headers=hub_headers(token),
+        retry=RETRY,
+        read="bytes_response",
+        window=window,
+        session=session,
+    )
+    return response.data, response.headers.get("etag", "")
+
+
+def etag_value(raw: str) -> str:
+    """An ETag header's value, without the weak marker or the quotes.
+
+    Args:
+        raw (str): the header as sent, e.g. ``W/"abc"``.
+
+    Returns:
+        str: the bare value, e.g. ``abc``.
+    """
+    value = raw.strip()
+    if value.startswith("W/"):
+        value = value[2:]
+    return value.strip('"')
+
+
 async def hub_stream(
     token: SecretStr | None,
     url: str,
     chunk_size: int,
     *,
     session: SessionArg = None,
+    on_response: Callable[[Mapping[str, str]], None] | None = None,
 ) -> AsyncIterator[bytes]:
     """Stream file content without holding it whole in memory.
 
@@ -379,6 +470,9 @@ async def hub_stream(
         url (str): the resolve URL.
         chunk_size (int): bytes per yielded chunk.
         session (SessionArg): pool or live session to ride.
+        on_response (Callable | None): told the final response's headers,
+            lower-cased, once and before the first chunk, so an empty file
+            reports them too.
 
     Yields:
         bytes: the next chunk of content.
@@ -391,6 +485,11 @@ async def hub_stream(
         async with sess.get(url, headers=hub_headers(token)) as resp:
             if resp.status >= 400:
                 raise _error_of(resp, await resp.text())
+            if on_response is not None:
+                on_response({
+                    key.lower(): ", ".join(resp.headers.getall(key))
+                    for key in resp.headers.keys()
+                })
             async for chunk in resp.content.iter_chunked(chunk_size):
                 yield chunk
     finally:
@@ -401,7 +500,9 @@ async def hub_stream(
 __all__ = [
     "HfHubError",
     "api_url",
+    "etag_value",
     "hub_bytes",
+    "hub_bytes_tagged",
     "hub_get",
     "hub_get_response",
     "hub_headers",

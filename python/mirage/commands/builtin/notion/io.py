@@ -12,26 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from functools import partial
-
-from mirage.commands.builtin.generic_bind import CommandIO
-from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.core.notion.find import find as _find
 from mirage.core.notion.read import read as _read
 from mirage.core.notion.readdir import readdir as _readdir
 from mirage.core.notion.stat import stat as _stat
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import NativeReadOps, ReadOps
 
 # Notion pages/databases are read through the generic factory; writes go
 # through the bespoke notion_* commands, so the generic byte-mutation commands
 # are intentionally absent (no write op wired).
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_stream=partial(stream_from_bytes, _read),
-    stat=_stat,
-    is_mounted=lambda a: True,
-    local=False,
-    find=_find,
-)
+IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                native=NativeReadOps(find=_find),
+                is_mounted=lambda a: True,
+                local=False).to_command_io()
 
 resolve_glob = IO.resolve_glob

@@ -14,16 +14,27 @@
 
 import dataclasses
 import functools
-from typing import Any
+from typing import Any, cast
 
-from mirage.commands.builtin.generic.crossmount.types import (OperandRun,
+from mirage.commands.builtin.generic.cp import TransferLinks
+from mirage.commands.builtin.generic.crossmount.types import (Cmd, OperandRun,
                                                               RunSingle)
+from mirage.commands.builtin.generic.grep import \
+    parse_flags as parse_grep_flags
+from mirage.commands.builtin.generic.grep import \
+    prints_context as grep_prints_context
+from mirage.commands.builtin.generic.rg import \
+    between_files as rg_between_files
+from mirage.commands.builtin.generic.rg import parse_flags as parse_rg_flags
+from mirage.commands.spec import SPECS
+from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import read_fail_exit
 from mirage.io import IOResult
 from mirage.io.stream import materialize
+from mirage.ops.types import LinkView
 from mirage.runtime.types import DispatchFn
-from mirage.types import PathSpec
+from mirage.types import FileType, PathSpec, PrimitiveCopy
 from mirage.utils.errors import FS_ERRORS, fs_error_line
 
 
@@ -32,6 +43,25 @@ async def relay(dispatch: DispatchFn, name: str, path: PathSpec,
     # Relay one op for one path to the mount that owns it. The generics call
     # ops as (path); dispatch keys off the path.
     data, _ = await dispatch(name, path, **kwargs)
+    return data
+
+
+async def read_file(dispatch: DispatchFn, io: IOResult,
+                    path: PathSpec) -> bytes:
+    """Read a relayed file and retain its cache/accounting envelope.
+
+    Args:
+        dispatch (DispatchFn): Workspace operation dispatcher.
+        io (IOResult): Input accounting to merge with the generic's result.
+        path (PathSpec): Full virtual input path.
+    """
+    info = await relay(dispatch, "stat", path)
+    if info.type is FileType.DIRECTORY:
+        raise IsADirectoryError(path.virtual)
+    data = cast(bytes, await relay(dispatch, "read", path))
+    io.reads[path.virtual] = data
+    if path.virtual not in io.cache:
+        io.cache.append(path.virtual)
     return data
 
 
@@ -55,7 +85,8 @@ async def run_operands(run_single: RunSingle,
                        scopes: list[PathSpec],
                        texts: list[str],
                        flag_kwargs: dict[str, FlagValue],
-                       stdin_bytes: bytes | None = None) -> list[OperandRun]:
+                       stdin_bytes: bytes | None = None,
+                       stop_at_success: bool = False) -> list[OperandRun]:
     """Run one native single-mount command per operand, in operand order.
 
     Each operand executes on its owning mount through ``run_single`` (which
@@ -69,6 +100,8 @@ async def run_operands(run_single: RunSingle,
         texts (list[str]): Positional text operands shared by every run.
         flag_kwargs (dict): Flags shared by every run.
         stdin_bytes (bytes | None): Stdin re-fed to every run (tee).
+        stop_at_success (bool): run no operand after one that exits 0,
+            which is how grep -q and rg -q stop at their first match.
     """
     results: list[OperandRun] = []
     for scope in scopes:
@@ -91,6 +124,8 @@ async def run_operands(run_single: RunSingle,
             io.exit_code = read_fail_exit(cmd_name, exc)
             data = b""
         results.append(OperandRun(scope, data, io))
+        if stop_at_success and io.exit_code == 0:
+            break
     return results
 
 
@@ -118,6 +153,28 @@ async def merge_operand_ios(results: list[OperandRun],
     return io
 
 
+def run_separator(cmd_name: str, flags: dict[str, FlagValue]) -> bytes:
+    """What sets one run's grep or rg output off from the next's.
+
+    Both print a separator between one file's context and the next file's
+    (rg's own, or none under --no-context-separator), and rg a blank line
+    between --heading groups, so the runs a line splits into join the way
+    one run would. Nothing for any other output, a plain line stream.
+
+    Args:
+        cmd_name (str): the command the runs ran.
+        flags (dict[str, FlagValue]): its flags.
+    """
+    if cmd_name == Cmd.RG:
+        fl = FlagView(flags, spec=SPECS[Cmd.RG])
+        return rg_between_files(parse_rg_flags(fl))
+    if cmd_name == Cmd.GREP:
+        fl = FlagView(flags, spec=SPECS[Cmd.GREP])
+        if grep_prints_context(parse_grep_flags(fl, never_match=False)):
+            return b"--\n"
+    return b""
+
+
 def flat_scopes(scopes: list[PathSpec]) -> list[PathSpec]:
     # Address by full virtual path so a generic sees one flat namespace;
     # the relayed primitives route each full path to its mount.
@@ -140,3 +197,23 @@ def transfer_primitives(dispatch: DispatchFn) -> dict[str, Any]:
         mkdir=p(relay, dispatch, "mkdir"),
         readdir=p(relay, dispatch, "readdir"),
     )
+
+
+def transfer_links(links: LinkView, dispatch: DispatchFn,
+                   cwd: str) -> TransferLinks:
+    """Namespace links with the dispatcher primitives shared by cp and mv.
+
+    Args:
+        links (LinkView): the namespace's symlink facts.
+        dispatch (DispatchFn): the op door.
+        cwd (str): the directory a typed operand resolves against.
+    """
+    prim = transfer_primitives(dispatch)
+    return TransferLinks(links=links,
+                         dispatch=dispatch,
+                         cwd=cwd,
+                         relay=PrimitiveCopy(read_bytes=prim["read_bytes"],
+                                             write=prim["write"],
+                                             mkdir=prim["mkdir"],
+                                             readdir=prim["readdir"]),
+                         relay_stat=prim["stat"])

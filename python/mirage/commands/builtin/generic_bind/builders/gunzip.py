@@ -32,10 +32,8 @@ async def gunzip(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         resolved, list(texts), opts,
         bound_op(ops.read_bytes, accessor, opts.index),
         partial(ops.require(Operation.WRITE), accessor),
-        partial(ops.require(Operation.UNLINK), accessor))
+        partial(ops.require(Operation.UNLINK), accessor),
+        partial(ops.stat, accessor))
 
 
-BUILDER = Builder('gunzip',
-                  gunzip,
-                  write=True,
-                  requirements=frozenset({Operation.WRITE, Operation.UNLINK}))
+BUILDER = Builder('gunzip', gunzip, write=True)

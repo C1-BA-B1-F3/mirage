@@ -21,24 +21,30 @@ from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
-from mirage.utils.posix import translate_classes
+from mirage.utils.posix import compile_posix_regex, translate_classes
 
 NEVER_MATCH = r"(?!)"
+# The dest -e fills in each search command's spec: rg spells its options
+# by their long names.
+PATTERN_KEYS = {"grep": "e", "zgrep": "e", "rg": "regexp"}
 
 
-def pattern_arg(texts: Sequence[str], flags: FlagView) -> str | None:
+def pattern_arg(texts: Sequence[str],
+                flags: FlagView,
+                pattern_key: str = "e") -> str | None:
     """Resolve the pattern-list argument from -e values or the positional.
 
     Args:
         texts (Sequence[str]): positional TEXT operands.
         flags (FlagView): typed view over raw flag kwargs.
+        pattern_key (str): the dest -e fills (rg's is ``regexp``).
 
     Returns:
         str | None: POSIX newline-joined pattern list (each -e value may
             itself be a newline-separated list), or None when neither -e nor
             a positional pattern was supplied.
     """
-    e_values = flags.as_list("e")
+    e_values = flags.as_list(pattern_key)
     if e_values:
         return "\n".join(e_values)
     if texts:
@@ -51,6 +57,8 @@ async def resolve_pattern(
     flags: FlagView,
     read_bytes: Callable[[PathSpec], Awaitable[bytes]],
     usage: str,
+    file_key: str = "f",
+    pattern_key: str = "e",
 ) -> tuple[str, bool]:
     """Resolve the search pattern from -e/positional/-f flag arguments.
 
@@ -60,15 +68,17 @@ async def resolve_pattern(
         read_bytes (Callable[[PathSpec], Awaitable[bytes]]): bound
             whole-file reader used for -f pattern files.
         usage (str): usage error message when no pattern was supplied.
+        file_key (str): canonical option key for pattern files.
+        pattern_key (str): canonical option key for -e patterns.
 
     Returns:
         tuple[str, bool]: (newline-separated pattern list, never_match) where
             never_match is True when -f supplied zero patterns (GNU: match
             nothing; -F escaping must be skipped for the sentinel).
     """
-    pattern = pattern_arg(texts, flags)
+    pattern = pattern_arg(texts, flags, pattern_key)
 
-    pattern_file = flags.raw("f")
+    pattern_file = flags.raw(file_key)
     if isinstance(pattern_file, (PathSpec, list)):
         raw = (pattern_file
                if isinstance(pattern_file, list) else [pattern_file])
@@ -212,13 +222,23 @@ def compile_pattern(
         whole_word (bool): True if -w flag is set.
         basic (bool): True for a basic regular expression.
     """
-    # `re.ASCII` because GNU's word boundary and its case folding are the
-    # ASCII ones under `LC_ALL=C` while python's defaults are Unicode, and
-    # because a non-`u` RegExp is ASCII for both, so the TypeScript twin
-    # was already answering GNU's way. Without it `grep -w ab` matched
-    # `éab`, `grep -w a` matched `aé`, and `grep -i k` and
-    # `grep -i s` matched U+212A and U+017F. `compile_bre` in
-    # `utils/bre.py` already passes it; this was grep's own gap.
-    flags = re.ASCII | (re.IGNORECASE if ignore_case else 0)
-    return re.compile(
-        build_pattern_str(pattern, fixed_string, whole_word, basic), flags)
+    flags = re.IGNORECASE if ignore_case else 0
+    source = build_pattern_str(pattern, fixed_string, whole_word, basic)
+    try:
+        return compile_posix_regex(source, flags)
+    except re.error as exc:
+        # GNU grep 3.11 diagnostics, also used by zgrep. Syntax outside
+        # our supported dialect gets a stable generic refusal.
+        message = "Invalid regular expression"
+        for prefix, diagnostic in (
+            ("missing ), unterminated subpattern", "Unmatched ( or \\("),
+            ("bad character range", "Invalid range end"),
+            ("min repeat greater than max repeat",
+             "Invalid content of \\{\\}"),
+            ("bad escape (end of pattern)", "Trailing backslash"),
+            ("invalid group reference", "Invalid back reference"),
+        ):
+            if exc.msg.startswith(prefix):
+                message = diagnostic
+                break
+        raise UsageError(f"grep: {message}") from exc

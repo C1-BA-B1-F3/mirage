@@ -24,6 +24,7 @@ import { runRelay } from './relay/index.ts'
 import { runStream } from './stream/index.ts'
 import type { FlagValue } from '../../../spec/types.ts'
 import { readFailExitCode } from '../../../spec/usage.ts'
+import { UsageError } from '../../../errors.ts'
 
 // Run a command whose path operands span mounts. Every command combines
 // per-mount work under one of three strategies (see Strategy): STREAM merges
@@ -48,13 +49,16 @@ export async function handleCrossMount(
   // The session plane's door, for the RELAY generic that renders the
   // session's profile (ls).
   sessionView?: SessionView,
+  // The session's working directory, which a typed operand resolves against
+  // (cp's link sources).
+  cwd = '/',
 ): Promise<CrossResult> {
   const native = runSingle
   const input = resolveSource(stdin)
   runSingle = (name, paths, texts, flags, options) =>
     native(name, paths, texts, flags, {
       ...options,
-      stdin: paths.some(isStdin) ? input : (options?.stdin ?? null),
+      stdin: paths.some((p) => isStdin(p)) ? input : (options?.stdin ?? null),
     })
   try {
     // isCrossMount gated on CROSS_MOUNT_COMMANDS membership, so the name is
@@ -68,10 +72,12 @@ export async function handleCrossMount(
         textArgs,
         flagKwargs,
         dispatch,
+        runSingle,
         storageKey,
         ns,
         sessionView,
         stdin,
+        cwd,
       )
     }
     if (strategy === Strategy.STREAM) {
@@ -79,6 +85,18 @@ export async function handleCrossMount(
     }
     return await runFanout(cmd, scopes, textArgs, flagKwargs, runSingle, stdin)
   } catch (err) {
+    // The command's own usage refusal (cmp's bad skip, an extra operand) is
+    // its result, and the rest of the line runs, as the single-mount path
+    // answers it.
+    if (err instanceof UsageError) {
+      return [
+        null,
+        new IOResult({
+          exitCode: err.exitCode,
+          stderr: new TextEncoder().encode(`${err.message}\n`),
+        }),
+      ]
+    }
     // Only typed fs errors format as a GNU operand line, matching the
     // Python chokepoint (FS_ERRORS). Internal errors keep propagating
     // instead of being mangled into a plausible-looking stderr line.

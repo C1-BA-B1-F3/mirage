@@ -149,6 +149,58 @@ describe('parseFindExpression', () => {
     expect([e.minSize, e.maxSize]).toEqual([1025, null])
   })
 
+  it('a bare -size number counts 512-byte blocks', () => {
+    // GNU: a bare -size N is N 512-byte blocks, so -2 keeps a 4-byte
+    // file and 1 keeps 1..512 bytes.
+    let e = parseFindExpression(['-size', '-2'])
+    expect([e.minSize, e.maxSize]).toEqual([null, 512])
+    e = parseFindExpression(['-size', '1'])
+    expect([e.minSize, e.maxSize]).toEqual([1, 512])
+    e = parseFindExpression(['-size', '+1'])
+    expect([e.minSize, e.maxSize]).toEqual([513, null])
+    e = parseFindExpression(['-size', '0'])
+    expect([e.minSize, e.maxSize]).toEqual([-511, 0])
+  })
+
+  it.each([
+    ['2b', [513, 1024]],
+    ['-2b', [null, 512]],
+    ['2w', [3, 4]],
+    ['-3w', [null, 4]],
+    ['+1w', [3, null]],
+    ['++1', [513, null]],
+    ['-+1', [null, 0]],
+  ])('reads -size %s in block and word units', (spec, bounds) => {
+    const e = parseFindExpression(['-size', spec])
+    expect([e.minSize, e.maxSize]).toEqual(bounds)
+  })
+
+  it.each(['18446744073709551615c', '18446744073709551615', '18446744073709551615G'])(
+    'takes -size %s, since GNU bounds the number alone',
+    (spec) => {
+      expect(parseFindExpression(['-size', spec]).maxSize).toBeGreaterThan(0)
+    },
+  )
+
+  it.each([
+    ['', 'find: invalid null argument to -size'],
+    ['+', "find: invalid -size type `+'"],
+    ['5x', "find: invalid -size type `x'"],
+    ['5K', "find: invalid -size type `K'"],
+    ['5 ', "find: invalid -size type ` '"],
+    ['k', "find: Invalid argument `k' to -size"],
+    ['5kk', "find: Invalid argument `5kk' to -size"],
+    ['1.5', "find: Invalid argument `1.5' to -size"],
+    ['+-1', "find: Invalid argument `+-1' to -size"],
+    ['12ab', "find: Invalid argument `12ab' to -size"],
+    ['18446744073709551616c', "find: Invalid argument `18446744073709551616c' to -size"],
+    ['18446744073709551616G', "find: Invalid argument `18446744073709551616G' to -size"],
+    ['+18446744073709551616', "find: Invalid argument `+18446744073709551616' to -size"],
+    [' 18446744073709551616', "find: Invalid argument ` 18446744073709551616' to -size"],
+  ])('refuses -size %j in GNU wording', (spec, message) => {
+    expect(() => parseFindExpression(['-size', spec])).toThrow(new FindParseError(message))
+  })
+
   it('empty expression is true', () => {
     expect(parseFindExpression([]).tree).toEqual({ op: 'true' })
   })

@@ -18,14 +18,14 @@ import { record, startOp } from '@struktoai/mirage-core/observe/context'
 import { VFSName } from '@struktoai/mirage-core/types'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { enoent } from '@struktoai/mirage-core/utils/errors'
-import { resolveSafe } from './utils.ts'
+import { diskError } from './errors.ts'
+import { resolveInside } from './utils.ts'
 
 const CHUNK = 1 << 20
 
 export async function read(accessor: DiskAccessor, path: PathSpec): Promise<Uint8Array> {
   const timer = startOp()
-  const virtual = path.mountPath
-  const full = resolveSafe(accessor.root, virtual)
+  const full = await resolveInside(accessor.root, path)
   let data: Buffer
   try {
     data = await readFile(full)
@@ -33,9 +33,9 @@ export async function read(accessor: DiskAccessor, path: PathSpec): Promise<Uint
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw enoent(path)
     }
-    throw err
+    throw diskError(err, path)
   }
-  record('read', virtual, VFSName.DISK, data.byteLength, timer)
+  record('read', path.virtual, VFSName.DISK, data.byteLength, timer)
   return new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
 }
 
@@ -60,8 +60,7 @@ export async function readRange(
   size: number | null,
 ): Promise<Uint8Array> {
   const timer = startOp()
-  const virtual = path.mountPath
-  const full = resolveSafe(accessor.root, virtual)
+  const full = await resolveInside(accessor.root, path)
   let handle
   try {
     handle = await open(full, 'r')
@@ -69,14 +68,14 @@ export async function readRange(
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw enoent(path)
     }
-    throw err
+    throw diskError(err, path)
   }
   try {
     if (size !== null) {
       const buf = Buffer.allocUnsafe(size)
       const { bytesRead } = await handle.read(buf, 0, size, offset)
       const out = new Uint8Array(buf.buffer, buf.byteOffset, bytesRead)
-      record('read', virtual, VFSName.DISK, bytesRead, timer)
+      record('read', path.virtual, VFSName.DISK, bytesRead, timer)
       return out
     }
     const parts: Buffer[] = []
@@ -91,7 +90,7 @@ export async function readRange(
       at += bytesRead
     }
     const joined = Buffer.concat(parts, total)
-    record('read', virtual, VFSName.DISK, total, timer)
+    record('read', path.virtual, VFSName.DISK, total, timer)
     return new Uint8Array(joined.buffer, joined.byteOffset, joined.byteLength)
   } finally {
     await handle.close()

@@ -19,7 +19,7 @@ import { isFsError } from '../../utils/errors.ts'
 import type { SessionState } from '../session/session.ts'
 
 /**
- * Write a file, giving it the umask's mode if the write created it.
+ * Write or append, giving a newly created file the umask's mode.
  *
  * Every shell path that opens a file for writing goes through here, so
  * `echo x > f` and `exec > f` agree about the mode a fresh file gets:
@@ -38,6 +38,7 @@ export async function createFile(
   session: SessionState,
   scope: PathSpec,
   data: Uint8Array,
+  append = false,
 ): Promise<void> {
   let created = false
   if (session.umask !== DEFAULT_UMASK) {
@@ -48,7 +49,7 @@ export async function createFile(
       created = true
     }
   }
-  await dispatch('write', scope, [data])
+  await dispatch(append ? 'append' : 'write', scope, [data])
   if (!created) return
   try {
     await dispatch('setattr', scope, [], { mode: 0o666 & ~session.umask })

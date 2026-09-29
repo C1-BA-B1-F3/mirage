@@ -21,6 +21,7 @@ import type { RegisteredOp } from '../ops/registry.ts'
 import type { CapacityResult } from '../types.ts'
 import { CapacityState } from '../types.ts'
 import type { DeltaHook } from '../watch/base.ts'
+import { VFSAdapter } from './adapter.ts'
 
 export interface FindOptions {
   name?: string | null
@@ -89,8 +90,8 @@ export interface VFSOptions<A extends Accessor = Accessor> {
   name: string
   /** Backend handle passed to every core function on the table. */
   accessor: A
-  /** The backend's IO table. */
-  io: CommandIO<A>
+  /** The backend's resource capabilities, or a prebuilt IO table. */
+  io: CommandIO<A> | VFSAdapter<A>
   /** LLM-facing description of the mounted layout. */
   prompt?: string
   /** Appended to `prompt` when the mount is writable. */
@@ -159,16 +160,18 @@ export interface VFSOptions<A extends Accessor = Accessor> {
  * and returns from `ops()` and `commands()` the tables its `ops/<name>`
  * and `commands/builtin/<name>` modules build, so it calls `super()`
  * bare. A custom backend hands the constructor a {@link VFSOptions}: an
- * accessor and a {@link CommandIO} table, from which the whole generic
- * command set (`ls`, `cat`, `grep`, `find`, `head`, `wc`, ...) plus glob
- * resolution and the VFS/FUSE ops are derived. That is the one-file
- * path, which `examples/typescript/other/custom_vfs.ts` walks end to
- * end. Optional fields on the table unlock more surface (`write` enables
- * the byte-mutation family, `find` and `du` become native fast paths),
- * and a command whose requirements the table cannot meet is never
- * registered rather than registered and broken. The accessor generic
- * type-checks the table against the accessor the core functions
- * actually take, which Python leaves as `Any`.
+ * accessor and a {@link VFSAdapter} (or a prebuilt {@link CommandIO}
+ * table), from which the whole generic command set (`ls`, `cat`, `grep`,
+ * `find`, `head`, `wc`, ...) plus glob resolution and the VFS/FUSE ops
+ * are derived. That is the one-file path, which
+ * `examples/typescript/other/custom_vfs.ts` walks end to end. Optional
+ * capabilities unlock more surface (`writes` enables the byte-mutation
+ * family, `find` and `du` become native fast paths). A table without an
+ * op still gets every command: `gzip -c` and `tar -t` run as readers,
+ * and a line that needs the missing op answers `Operation not supported`
+ * at that op. The accessor generic type-checks the table against the
+ * accessor the core functions actually take, which Python leaves as
+ * `Any`.
  *
  * Snapshots and versions see one of two things, and a subclass picks
  * which by what it owns. Content the VFS holds itself (an in-memory
@@ -197,8 +200,8 @@ export class BaseVFS<A extends Accessor = Accessor> {
   readonly cachesReads: boolean = false
   /**
    * Whether this VFS carries enough version information for
-   * snapshot+replay drift detection. When true, the VFS's
-   * {@link BaseVFS.stat} must populate {@link FileStat.fingerprint}
+   * snapshot+replay drift detection. When true, the driver's `stat` op
+   * must populate {@link FileStat.fingerprint}
    * (and optionally {@link FileStat.revision}) with stable per-path
    * markers. When false (the default), reads are treated as live-only
    * at replay time: no fingerprint is captured at snapshot, no drift
@@ -206,7 +209,7 @@ export class BaseVFS<A extends Accessor = Accessor> {
    */
   readonly supportsSnapshot: boolean = false
   /**
-   * Whether {@link BaseVFS.stat} can size every regular file without
+   * Whether the driver's `stat` op can size every regular file without
    * fetching its content, i.e. {@link FileStat.size} is null only for
    * directories. True for byte stores that keep a length in their
    * metadata (ram, disk, redis, s3, gridfs); false for mounts that
@@ -222,27 +225,22 @@ export class BaseVFS<A extends Accessor = Accessor> {
   readonly sizesAlwaysKnown: boolean = false
   /**
    * Whether a `read: fresh` mount can actually be revalidated against this
-   * backend: {@link BaseVFS.stat} and the read record must stamp the *same
-   * kind* of content token, so the gate can compare them with `===`. False
+   * backend: the driver's `stat` op and the read record must stamp the
+   * *same kind* of content token, so the gate can compare them with `===`. False
    * (the default) is refused at mount time rather than degraded, because a
    * mount that declares fresh and silently serves bounded is the bug the
    * policy exists to prevent.
    *
    * Distinct from {@link BaseVFS.supportsSnapshot}, which asks whether a
-   * token exists at all: gdrive stamps one on both sides and still cannot
-   * honour fresh, because stat returns a timestamp where read returns an
-   * md5. Distinct from {@link BaseVFS.cachesReads}, which asks whether the
-   * gate can fire.
+   * token exists at all, and from {@link BaseVFS.cachesReads}, which asks
+   * whether the gate can fire. A backend can have a token on both sides
+   * and still fail this one, by stamping two different kinds.
    *
-   * onedrive and sharepoint look like they qualify and do not: both stamp
-   * a cTag on stat and on read, so on token kind alone the refusal reads
-   * as unnecessary. It is correct for a second reason this flag does not
-   * name -- both label the read record with the slashless `vfsPath`, so
-   * the record key comes out malformed (`/oda/b.txt` rather than
-   * `/od/a/b.txt`) and the cTag can never be matched against the cache
-   * entry. The backends that do qualify pass the mount path instead.
-   * gdrive carries the same slashless label on top of its token-kind
-   * mismatch. Fix the label before reconsidering the flag.
+   * A declarer must stamp the token on every read, not only while a
+   * recorder is active: node's read_revalidatable.test.ts holds each one to
+   * that (#1165). onedrive and sharepoint qualify because every unpinned
+   * byte read fetches the item's cTag before its bytes, recorded or not; a
+   * stream stamps only under a recorder, the one place its token can land.
    *
    * Mirrors Python's `BaseVFS.read_revalidatable`.
    */
@@ -272,7 +270,7 @@ export class BaseVFS<A extends Accessor = Accessor> {
     // which always carries `io`, builds the generic tables. Python is
     // immune to this by construction (its `__init__` is keyword-only, so
     // a forwarded positional raises rather than being read as a table).
-    const io = (options as { io?: CommandIO<A> } | undefined)?.io
+    const io = (options as { io?: CommandIO<A> | VFSAdapter<A> } | undefined)?.io
     if (options === undefined || io === undefined) {
       this.name = 'base'
       this.#fromTable = false
@@ -290,8 +288,9 @@ export class BaseVFS<A extends Accessor = Accessor> {
     this.sizesAlwaysKnown = options.sizesAlwaysKnown ?? false
     this.supportsSnapshot = options.supportsSnapshot ?? false
     this.readRevalidatable = options.readRevalidatable ?? false
+    const table = io instanceof VFSAdapter ? io.toCommandIO() : io
     this.#commands = [
-      ...makeGenericCommands<A>(options.name, options.io, {
+      ...makeGenericCommands<A>(options.name, table, {
         ...(options.overrides !== undefined ? { overrides: options.overrides } : {}),
         ...(options.provisionOverrides !== undefined
           ? { provisionOverrides: options.provisionOverrides }
@@ -307,7 +306,7 @@ export class BaseVFS<A extends Accessor = Accessor> {
     const derived =
       options.autoOps === false
         ? []
-        : makeGenericOps<A>(options.name, options.io, { overrides: shadowed })
+        : makeGenericOps<A>(options.name, table, { overrides: shadowed })
     this.#ops = [...derived, ...userOps]
   }
 

@@ -48,7 +48,7 @@ export async function start<C extends MinimalClient>(
   fixture?: string,
   fixtureRoot?: string,
 ): Promise<Started<C>> {
-  const runtime = makeRuntime(fake, fixtureRoot)
+  const runtime = makeRuntime(fake, fixtureRoot, fixture)
   // Seed the default run BEFORE listening. Every fake this kit replaces called
   // seed() inside its own startServer, so it answered the fixture the instant
   // the socket opened; a kit fake that served nothing until the first /reset

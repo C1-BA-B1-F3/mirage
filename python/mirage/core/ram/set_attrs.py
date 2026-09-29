@@ -13,8 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.accessor.ram import RAMAccessor
+from mirage.core.ram.dest import lookup_error
 from mirage.types import PathSpec
-from mirage.utils.errors import enoent
 from mirage.utils.path import norm
 
 
@@ -48,7 +48,7 @@ async def set_attrs(
     store = accessor.store
     p = norm(path.mount_path)
     if p not in store.files and p not in store.dirs:
-        raise enoent(path.raw_path)
+        raise lookup_error(store, path, p)
     entry = store.attrs.setdefault(p, {})
     if mode is not None:
         entry["mode"] = mode

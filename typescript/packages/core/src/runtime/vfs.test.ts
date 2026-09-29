@@ -15,7 +15,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { enotsup } from '../utils/errors.ts'
 import { ContentType, DEVICE_NUMBERS_KEY, FileStat, FileType } from '../types.ts'
-import { CHAR_MODE, DIR_MODE, FILE_MODE, LINK_MODE } from '../utils/stat_view.ts'
+import { CHAR_MODE, DIR_MODE, DIR_SIZE, FILE_MODE, LINK_MODE } from '../utils/stat_view.ts'
 import { LISTING_ENTRY_CONCURRENCY } from './constants.ts'
 import { CrossMountError } from './errors.ts'
 import type { BridgeDispatchFn } from './types.ts'
@@ -61,7 +61,7 @@ describe('RuntimeVFS transport', () => {
     const entries = await new RuntimeVFS(dispatch).readdir('/ram/')
     expect(entries).toEqual([
       { path: '/ram/a.txt', size: 4, isDir: false, mode: FILE_MODE, mtimeMs: 0 },
-      { path: '/ram/sub', size: 0, isDir: true, mode: DIR_MODE, mtimeMs: 0 },
+      { path: '/ram/sub', size: DIR_SIZE, isDir: true, mode: DIR_MODE, mtimeMs: 0 },
     ])
   })
 
@@ -154,9 +154,15 @@ describe('RuntimeVFS transport', () => {
       if (op === 'readdir') return Promise.resolve(['/ram/gone'])
       return Promise.reject(Object.assign(new Error('nope'), { code: 'ENOENT' }))
     })
-    expect(await new RuntimeVFS(dispatch).readdir('/ram/')).toEqual([
-      { path: '/ram/gone', size: 0, isDir: false },
-    ])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      expect(await new RuntimeVFS(dispatch).readdir('/ram/')).toEqual([
+        { path: '/ram/gone', size: 0, isDir: false },
+      ])
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 
   // One record a remote API refuses must not cost the guest the whole
@@ -168,10 +174,22 @@ describe('RuntimeVFS transport', () => {
       if (path === '/ram/bad.txt') return Promise.reject(new Error('upstream 502 Bad Gateway'))
       return Promise.resolve(new FileStat({ name: 'a.txt', size: 4, type: FileType.FILE }))
     })
-    expect(await new RuntimeVFS(dispatch).readdir('/ram/')).toEqual([
-      { path: '/ram/a.txt', size: 4, isDir: false, mode: FILE_MODE, mtimeMs: 0 },
-      { path: '/ram/bad.txt', size: 0, isDir: false },
-    ])
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const stdout = (['debug', 'log', 'info'] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation(() => undefined),
+    )
+    try {
+      expect(await new RuntimeVFS(dispatch).readdir('/ram/')).toEqual([
+        { path: '/ram/a.txt', size: 4, isDir: false, mode: FILE_MODE, mtimeMs: 0 },
+        { path: '/ram/bad.txt', size: 0, isDir: false },
+      ])
+      expect(warn.mock.calls).toEqual([
+        ['runtime vfs: readdir /ram/: stat /ram/bad.txt: Error: upstream 502 Bad Gateway'],
+      ])
+      for (const spy of stdout) expect(spy).not.toHaveBeenCalled()
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 
   it('still fails when the listing itself fails', async () => {

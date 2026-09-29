@@ -20,7 +20,7 @@ import { isReply } from '../wire/reply.ts'
 import { bandColor } from './banding.ts'
 import { ruleFormat } from './conditional.ts'
 import { CELL_DATA, CELL_FORMAT, canonical, merged, ordered } from './fields.ts'
-import { cellData, cellText } from './grid.ts'
+import { cellText } from './grid.ts'
 import type { Grid } from './grid.ts'
 import { applyMask, isWhole } from './mask.ts'
 import type { MaskPath } from './mask.ts'
@@ -89,12 +89,13 @@ export function effectiveFormat(
   grid: Grid,
   row: number,
   col: number,
+  value: JsonObj,
 ): JsonObj | undefined {
   const key = `${String(row)},${String(col)}`
   const own = tab.props.get(key)?.userEnteredFormat
-  const kind = Object.keys(asObj(cellData(tab.cells.get(key) ?? '').effectiveValue))[0]
+  const kind = Object.keys(asObj(value.effectiveValue))[0]
   const band = bandColor(tab, grid, row, col)
-  const rule = ruleFormat(tab, grid, row, col)
+  const rule = ruleFormat(tab, grid, row, col, value)
   if (kind === undefined && own === undefined && band === undefined && rule === undefined) {
     return undefined
   }
@@ -140,7 +141,6 @@ export function writeCell(
     if (text === null) tab.cells.delete(key)
     else tab.cells.set(key, text)
   }
-  delete next.userEnteredValue
   for (const field of DERIVED) delete next[field]
   if (Object.keys(next).length === 0) tab.props.delete(key)
   else tab.props.set(key, next)

@@ -7,11 +7,14 @@ import pytest
 from mirage.commands.builtin.generic.archive.types import Walked
 from mirage.commands.builtin.generic.tar import (excluded, member_name, pruned,
                                                  strip_prefix, tar)
+from mirage.commands.errors import UsageError
 from mirage.ops.types import LinkView, MountView
 from mirage.types import (LINK_TARGET_KEY, ContentType, FileStat, FileType,
-                          PathSpec)
+                          MountMode, PathSpec)
 from mirage.utils.key_prefix import mount_key
 from mirage.utils.path import CycleError
+from mirage.vfs.ram import RAMVFS
+from mirage.workspace import Workspace
 
 
 def _spec(path: str, prefix: str = "") -> PathSpec:
@@ -457,7 +460,7 @@ async def test_extract_strips_leading_components():
     _, io_res = await _create(tree, [],
                               x=True,
                               f=_spec("/out.tar"),
-                              strip_components="2",
+                              strip_components=2,
                               C=[_spec("/out")])
     assert "/out/a.txt" in io_res.writes
 
@@ -465,7 +468,7 @@ async def test_extract_strips_leading_components():
 @pytest.mark.asyncio
 async def test_requires_a_mode():
     tree = _Tree({})
-    with pytest.raises(ValueError, match="-c, -x, or -t"):
+    with pytest.raises(UsageError, match="You must specify one of"):
         await _create(tree, [])
 
 
@@ -574,3 +577,96 @@ async def test_create_reports_what_it_may_not_open_and_exits_two():
     assert _names(io_res.writes["/out.tar"]) == [
         "d/", "d/a.txt", "d/locked/", "d/sealed/"
     ]
+
+
+def _tar_bytes(name: str, data: bytes) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as archive:
+        info = tarfile.TarInfo(name)
+        info.size = len(data)
+        archive.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def _read_only_tar_mount() -> tuple[Workspace, RAMVFS]:
+    vfs = RAMVFS()
+    vfs._store.files["/f.txt"] = b"hello\n"
+    vfs._store.files["/a.tar"] = _tar_bytes("g.txt", b"hello\n")
+    return Workspace({
+        "/ro/": (vfs, MountMode.READ),
+        "/rw/": (RAMVFS(), MountMode.WRITE),
+    }), vfs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,stdout", [
+    ("tar -tf /ro/a.tar", b"g.txt\n"),
+    ("cd /ro && tar tf a.tar", b"g.txt\n"),
+    ("tar -xOf /ro/a.tar", b"hello\n"),
+    ("tar -x --to-stdout -f /ro/a.tar", b"hello\n"),
+    ("tar -xf /ro/a.tar -C /rw && cat /rw/g.txt", b"hello\n"),
+])
+async def test_a_read_only_mount_runs_tar_where_it_writes_nothing(
+        line: str, stdout: bytes):
+    ws, vfs = _read_only_tar_mount()
+    before = dict(vfs._store.files)
+    result = await ws.shell(line)
+    assert (result.exit_code, await result.materialize_stdout()) == (0, stdout)
+    assert vfs._store.files == before
+
+
+_EXTRACT_REFUSED = (b"tar: g.txt: Cannot open: Read-only file system\n"
+                    b"tar: Exiting with failure status due to previous "
+                    b"errors\n")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,stderr", [
+    ("cd /ro && tar -xf a.tar", _EXTRACT_REFUSED),
+    ("cd /ro && tar xf a.tar", _EXTRACT_REFUSED),
+    ("tar -cf /ro/b.tar /ro/f.txt",
+     b"tar: /ro/b.tar: Cannot open: Read-only file system\n"
+     b"tar: Error is not recoverable: exiting now\n"),
+])
+async def test_a_read_only_mount_refuses_tar_at_the_write(
+        line: str, stderr: bytes):
+    # GNU tar 1.35 on a read-only filesystem: each member it cannot
+    # create is its own line and the run goes on; an archive it cannot
+    # create is fatal before any member is read.
+    ws, vfs = _read_only_tar_mount()
+    before = dict(vfs._store.files)
+    result = await ws.shell(line)
+    assert (result.exit_code, result.stderr) == (2, stderr)
+    assert vfs._store.files == before
+
+
+_FATAL = "tar: Error is not recoverable: exiting now\n"
+_CHILD_FATAL = ("tar (child): Error is not recoverable: exiting now\n",
+                "tar: Child returned status 2\n" + _FATAL)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, want", [
+    ("tar -tf nope.tar",
+     "tar: nope.tar: Cannot open: No such file or directory\n" + _FATAL),
+    ("tar -xf d", "tar: d: Cannot read: Is a directory\n"
+     "tar: At beginning of tape, quitting now\n" + _FATAL),
+    ("tar -tzf nope.tgz",
+     "tar (child): nope.tgz: Cannot open: No such file or directory\n" +
+     _CHILD_FATAL[0] + _CHILD_FATAL[1]),
+    ("tar -tzf d", "tar (child): d: Cannot read: Is a directory\n"
+     "tar (child): At beginning of tape, quitting now\n" + _CHILD_FATAL[0] +
+     "\ngzip: stdin: unexpected end of file\n" + _CHILD_FATAL[1]),
+    ("tar -czf d a", "tar (child): d: Cannot open: Is a directory\n" +
+     _CHILD_FATAL[0] + _CHILD_FATAL[1]),
+])
+async def test_an_archive_tar_cannot_open_is_named_as_typed(line, want):
+    # tar 1.35 names -f as typed. A directory opens and fails the first
+    # read, where a backend keying files alone reports it absent. With a
+    # compressor tar's child speaks, the reading one's gzip meets an empty
+    # pipe unless the name was missing, and tar reports the child's status.
+    ws = Workspace({"/data": RAMVFS()}, mode=MountMode.WRITE)
+    await ws.shell("mkdir -p /data/d && printf a > /data/a")
+    r = await ws.shell(f"cd /data && {line}")
+    assert r.exit_code == 2
+    assert await r.stderr_str() == want

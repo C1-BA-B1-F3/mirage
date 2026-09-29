@@ -30,7 +30,7 @@
       "command": "wc -l /data/a.txt /data2/xm.txt",
       "expect": {
         "exit": 0,
-        "stdout": "5 /data/a.txt\n1 /data2/xm.txt\n6 total\n",
+        "stdout": " 5 /data/a.txt\n 1 /data2/xm.txt\n 6 total\n",
         "stderr": ""
       }
     }

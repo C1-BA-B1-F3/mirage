@@ -15,6 +15,8 @@
 import { compareCodePoints } from '../utils/sort.ts'
 import { BuiltinGroup, BuiltinTier, NodeType, ShellBuiltin } from './types.ts'
 
+export const PARAMETER_NAME = /^(?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*#?$!-])/
+
 // Bash arithmetic tokens: integer literals (base#value/decimal/hex/
 // octal), variable names, then operators longest-first so `<<=` never
 // lexes as `<<` + `=`.
@@ -95,6 +97,25 @@ export const RANDOM_UNSET = ''
 // A nested `bash`/`sh` overrides it through SessionState.scriptName, and
 // `SessionState.argv0` is the one place the two are folded together.
 export const SHELL_ARGV0 = 'mirage'
+
+// The one directory PATH names, bash's default PATH for a shell that
+// starts without one: every program a session can run has a file here
+// (the /usr/bin view mount), which is the path which, type and command -v
+// report.
+export const BIN_PREFIX = '/usr/bin'
+
+// The IFS a shell starts with, what an unset IFS splits on, and the
+// characters of any IFS that count as its whitespace.
+export const IFS_DEFAULT = ' \t\n'
+
+// What bash says when fork(2) fails with EAGAIN, as at `ulimit -u`: the
+// forking shell abandons the rest of its line with status 254 (bash 5.2,
+// pinned in debian:stable-slim), and a subshell dying of it reports 254 to
+// its parent. A session's `processes.max` is the cap here. bash first
+// retries with backoff, printing `fork: retry:`; the refusal here is
+// immediate.
+export const FORK_FAILED = 'bash: fork: Resource temporarily unavailable\n'
+export const FORK_FAILED_STATUS = 254
 
 // Node types whose failure never triggers `set -e` by shape alone.
 // Lists are NOT exempt: bash exits when the command after the final

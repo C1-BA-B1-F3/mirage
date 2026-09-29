@@ -22,12 +22,11 @@ from mirage.core.dropbox.api import (continue_folder, list_folder,
                                      list_folder_state)
 from mirage.core.dropbox.client import DropboxApiError
 from mirage.core.dropbox.paths import dropbox_path_of
-from mirage.types import (Delta, FileChangeKind, FileEvent, FileMetadata,
-                          PathSpec, WalkEntry)
+from mirage.types import Delta, PathSpec, WalkEntry
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.watch.base import DeltaHook
 from mirage.watch.constants import DIR_FINGERPRINT
-from mirage.watch.delta import ListingDeltaHook, spec_for
+from mirage.watch.delta import ListingDeltaHook, diff_snapshots
 from mirage.watch.fingerprint import stat_fingerprint
 
 _NATIVE = 1
@@ -163,44 +162,6 @@ def _decode(
     return None, None, False
 
 
-def _event(root: PathSpec, virtual: str, kind: FileChangeKind,
-           entry: WalkEntry | None, observed: datetime) -> FileEvent:
-    metadata = None
-    if (entry is not None and not entry.is_dir
-            and kind is not FileChangeKind.DELETE):
-        metadata = FileMetadata(fingerprint=entry.fingerprint,
-                                size=entry.size,
-                                modified=entry.modified)
-    return FileEvent(kind=kind,
-                     path=spec_for(root, virtual),
-                     timestamp=observed,
-                     metadata=metadata)
-
-
-def _diff_snapshots(
-    root: PathSpec,
-    previous: dict[str, str],
-    current: dict[str, str],
-    entries: dict[str, WalkEntry],
-    observed: datetime,
-) -> list[FileEvent]:
-    changes: list[FileEvent] = []
-    for virtual in sorted(current.keys() | previous.keys()):
-        old = previous.get(virtual)
-        new = current.get(virtual)
-        if old == new:
-            continue
-        if old is None and new is not None:
-            kind = FileChangeKind.CREATE
-        elif new is None:
-            kind = FileChangeKind.DELETE
-        else:
-            kind = FileChangeKind.UPDATE
-        changes.append(
-            _event(root, virtual, kind, entries.get(virtual), observed))
-    return changes
-
-
 def _drop_prefix(snapshot: dict[str, str], virtual: str) -> None:
     prefix = virtual.rstrip("/") + "/"
     for key in list(snapshot):
@@ -274,8 +235,8 @@ class DropboxDeltaHook:
             return await self._listing.pull(
                 root, None if previous is None else json.dumps(previous,
                                                                sort_keys=True))
-        changes = () if previous is None else tuple(
-            _diff_snapshots(root, previous, snapshot, entries, observed))
+        changes = () if previous is None else diff_snapshots(
+            root, previous, snapshot, entries, observed)
         return Delta(changes=changes, checkpoint=_encode(cursor, snapshot))
 
     async def pull(self, root: PathSpec, checkpoint: str | None) -> Delta:
@@ -310,9 +271,8 @@ class DropboxDeltaHook:
                 continue
             snapshot[virtual] = (DIR_FINGERPRINT
                                  if entry.is_dir else entry.fingerprint or "")
-        return Delta(changes=tuple(
-            _diff_snapshots(root, previous or {}, snapshot, applied,
-                            observed)),
+        return Delta(changes=diff_snapshots(root, previous or {}, snapshot,
+                                            applied, observed),
                      checkpoint=_encode(next_cursor, snapshot))
 
 

@@ -12,14 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from functools import partial
-
-from mirage.commands.builtin.generic_bind import CommandIO
-from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.core.github.constants import SCOPE_ERROR
 from mirage.core.github.read import read as _read
 from mirage.core.github.readdir import readdir as _readdir
 from mirage.core.github.stat import stat as _stat
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import ReadOps
 
 # GitHub repo files are read through the generic factory; find keeps a wrapper
 # for the "no tree loaded" guard and native tree-backed walk, grep and rg push
@@ -27,18 +25,9 @@ from mirage.core.github.stat import stat as _stat
 # GitHub is read-only, so the generic byte-mutation
 # commands are intentionally absent (no write op wired). There is no native
 # streaming read, so the stream op is synthesized from the whole-blob read.
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_stream=partial(stream_from_bytes, _read),
-    stat=_stat,
-    is_mounted=lambda a: True,
-    local=False,
-    # A glob over a large repo walks the whole tree, so the refusal point
-    # is lower than the 10000 default every other backend takes. The
-    # typescript twin has always passed SCOPE_ERROR here; python left the
-    # constant with no importers and refused only at 10001.
-    max_glob_matches=SCOPE_ERROR,
-)
+IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                is_mounted=lambda a: True,
+                local=False,
+                max_glob_matches=SCOPE_ERROR).to_command_io()
 
 resolve_glob = IO.resolve_glob

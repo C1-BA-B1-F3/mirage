@@ -1,27 +1,18 @@
 import pytest
-from mem0.exceptions import MemoryNotFoundError, RateLimitError
 
-from mirage.core.mem0.client import (get_all_memories, get_memory,
-                                     search_memories)
-from mirage.types import PathSpec
+from mirage.core.mem0.client import get_all_memories, search_memories
 
 
 class FakeClient:
 
-    def __init__(self, pages, error=None):
+    def __init__(self, pages):
         self.pages = pages
-        self.error = error
         self.calls = []
 
     async def get_all(self, options=None):
         self.calls.append(options.model_dump(exclude_unset=True))
         page = options.page or 1
         return self.pages[page - 1]
-
-    async def get(self, memory_id):
-        if self.error is not None:
-            raise self.error
-        return {"id": memory_id, "memory": "hi"}
 
     async def search(self, query, options=None):
         self.calls.append({
@@ -57,36 +48,6 @@ async def test_get_all_paginates():
     assert client.calls[0]["filters"] == {"user_id": "alex"}
     assert client.calls[0]["page"] == 1
     assert client.calls[1]["page"] == 2
-
-
-@pytest.mark.asyncio
-async def test_get_memory():
-    client = FakeClient([])
-    path = PathSpec.from_str_path("/memories/xyz.json", "xyz.json")
-    assert await get_memory(client, "xyz", path) == {
-        "id": "xyz",
-        "memory": "hi"
-    }
-
-
-@pytest.mark.asyncio
-async def test_get_memory_missing_is_enoent():
-    client = FakeClient([],
-                        error=MemoryNotFoundError(message="Memory not found",
-                                                  error_code="HTTP_404"))
-    path = PathSpec.from_str_path("/memories/gone.json", "gone.json")
-    with pytest.raises(FileNotFoundError):
-        await get_memory(client, "gone", path)
-
-
-@pytest.mark.asyncio
-async def test_get_memory_other_provider_error_propagates():
-    client = FakeClient([],
-                        error=RateLimitError(message="slow down",
-                                             error_code="HTTP_429"))
-    path = PathSpec.from_str_path("/memories/gone.json", "gone.json")
-    with pytest.raises(RateLimitError):
-        await get_memory(client, "gone", path)
 
 
 @pytest.mark.asyncio

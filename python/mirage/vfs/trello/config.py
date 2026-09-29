@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class TrelloConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     api_key: SecretStr
     api_token: SecretStr
     workspace_id: str | None = None

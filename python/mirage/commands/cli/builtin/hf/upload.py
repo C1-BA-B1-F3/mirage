@@ -29,6 +29,7 @@ from mirage.core.hf_hub.config import HfConfig
 from mirage.core.hf_hub.constants import DEFAULT_COMMIT_MESSAGE
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileType, PathSpec
+from mirage.utils.errors import fs_strerror
 
 
 async def collect(doors: CLIDoors,
@@ -62,8 +63,8 @@ async def collect(doors: CLIDoors,
     spec = PathSpec.from_str_path(local)
     try:
         stat, _ = await dispatch("stat", spec)
-    except FileNotFoundError:
-        raise UsageError(f"{local}: No such file or directory") from None
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise UsageError(f"{local}: {fs_strerror(exc)}") from None
     if getattr(stat, "type", None) is not FileType.DIRECTORY:
         data, _ = await dispatch("read", spec)
         return [(posixpath.basename(local.rstrip("/")), bytes(data))], False

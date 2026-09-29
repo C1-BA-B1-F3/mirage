@@ -18,6 +18,7 @@ from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
                                                start_basename, tree_has_empty)
 from mirage.types import PathSpec
 from mirage.utils.dates import matches_mtime
+from mirage.utils.stat_view import DIR_SIZE
 
 
 async def find(
@@ -82,8 +83,7 @@ async def find(
         depth = p.count("/") + 1 - base_depth
         if maxdepth is not None and depth > maxdepth:
             continue
-        # Directories count as size 0 for -size (deliberate GNU divergence).
-        size = 0 if is_dir else (entry_meta.size or 0)
+        size = DIR_SIZE if is_dir else (entry_meta.size or 0)
         is_empty = None
         if tree_has_empty(tree):
             is_empty = (p not in non_empty_dirs if is_dir else size == 0)

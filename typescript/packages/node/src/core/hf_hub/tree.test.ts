@@ -15,7 +15,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { HfHubError } from './client.ts'
-import { collect, fetchTree, indexRows, nextCursor, parseEntry, treeUrl } from './tree.ts'
+import {
+  collect,
+  fetchPath,
+  fetchTree,
+  indexRows,
+  nextCursor,
+  parseEntry,
+  pathsInfoUrl,
+  treeUrl,
+} from './tree.ts'
 import * as client from './client.ts'
 import type { TreeEntry } from './tree_entry.ts'
 
@@ -165,10 +174,61 @@ describe('fetchTree', () => {
     spy.mockRestore()
   })
 
-  it.each([401, 403, 404])('reads status %i as an empty tree', async (status) => {
-    // The Hub answers 401 rather than 404 for a repo an anonymous caller may
-    // not know exists, so all three mean the same thing here.
-    const spy = vi.spyOn(client, 'hubGetResponse').mockRejectedValue(new HfHubError('nope', status))
+  it('reads a missing subtree as empty', async () => {
+    // A key_prefix that names no folder: the Hub answers 404 EntryNotFound,
+    // and there really is nothing under it (measured against huggingface.co,
+    // 2026-09-24).
+    const spy = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockRejectedValue(new HfHubError('nope', 404, 'EntryNotFound'))
+    expect((await fetchTree(accessor())).size).toBe(0)
+    spy.mockRestore()
+  })
+
+  it.each([
+    [401, ''],
+    [403, ''],
+    [404, 'RevisionNotFound'],
+    [404, 'RepoNotFound'],
+  ])('raises %i %s for a repo it cannot see', async (status, code) => {
+    // The tree is seeded as the whole index, so an empty one for a repo the
+    // token cannot see would read every file as deleted; an error does not.
+    const spy = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockRejectedValue(new HfHubError('nope', status, code))
+    await expect(fetchTree(accessor())).rejects.toBeInstanceOf(HfHubError)
+    spy.mockRestore()
+  })
+
+  it('raises for a missing subtree on a later page', async () => {
+    // Folding here would keep page one as if it were the whole listing.
+    const spy = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockResolvedValueOnce(page([fileRow('a.txt')], 'https://h/p2'))
+      .mockRejectedValueOnce(new HfHubError('gone', 404, 'EntryNotFound'))
+    await expect(fetchTree(accessor({ expandCommits: false }))).rejects.toBeInstanceOf(HfHubError)
+    spy.mockRestore()
+  })
+
+  it('raises for a missing subtree on the continuation', async () => {
+    // The expanded walk continues in a second walkPages call, whose first
+    // request is already a cursor page; "first page" is the request that
+    // carries the first page's params, not the first turn of a loop.
+    const spy = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockResolvedValueOnce(page([fileRow('a.txt')], 'https://h/p2'))
+      .mockRejectedValueOnce(new HfHubError('gone', 404, 'EntryNotFound'))
+    await expect(fetchTree(accessor({ expandCommits: true }))).rejects.toBeInstanceOf(HfHubError)
+    spy.mockRestore()
+  })
+
+  it('folds a missing subtree on the bare restart', async () => {
+    // The bare walk restarts from the first page with fresh params and an
+    // empty result, so a subtree gone by then is truthfully empty.
+    const spy = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockResolvedValueOnce(page([fileRow('a.txt')], 'https://h/p2'))
+      .mockRejectedValueOnce(new HfHubError('gone', 404, 'EntryNotFound'))
     expect((await fetchTree(accessor())).size).toBe(0)
     spy.mockRestore()
   })
@@ -219,6 +279,67 @@ describe('fetchTree page ceiling', () => {
       .spyOn(client, 'hubGetResponse')
       .mockResolvedValue(page([fileRow('a.txt')], 'https://h/next'))
     await expect(fetchTree(accessor())).rejects.toThrow(/listing exceeds/)
+    spy.mockRestore()
+  })
+})
+
+describe('pathsInfoUrl', () => {
+  it.each([
+    ['model', 'models'],
+    ['dataset', 'datasets'],
+    ['space', 'spaces'],
+  ])('names the %s repo type', (kind, segment) => {
+    const acc = new HfHubAccessor({ repoId: 'acme/widget' } as never, kind)
+    expect(pathsInfoUrl(acc)).toBe(
+      `https://huggingface.co/api/${segment}/acme/widget/paths-info/main`,
+    )
+  })
+
+  it('encodes a revision and carries no prefix', () => {
+    // The prefix belongs in the requested path, not the route: the route's
+    // trailing segment is the whole revision.
+    const acc = accessor({ revision: 'refs/pr/1', keyPrefix: 'sub/dir' })
+    expect(pathsInfoUrl(acc)).toBe(
+      'https://huggingface.co/api/models/acme/widget/paths-info/refs%2Fpr%2F1',
+    )
+  })
+})
+
+describe('fetchPath', () => {
+  it('refuses an answer that is not a list', async () => {
+    // Only an empty list says the path is missing; any other shape is an
+    // answer the client cannot read, and must not become absence.
+    const spy = vi.spyOn(client, 'hubPost').mockResolvedValue({ error: 'unexpected' })
+    await expect(fetchPath(accessor(), 'a.txt')).rejects.toBeInstanceOf(client.HfHubError)
+    spy.mockRestore()
+  })
+
+  it('reads an empty list as absence', async () => {
+    const spy = vi.spyOn(client, 'hubPost').mockResolvedValue([])
+    expect((await fetchPath(accessor(), 'a.txt')).size).toBe(0)
+    spy.mockRestore()
+  })
+
+  it('asks for the prefixed path', async () => {
+    const spy = vi.spyOn(client, 'hubPost').mockResolvedValue([
+      { ...fileRow('a.txt'), oid: 'decoy' },
+      { ...fileRow('sub/dir/a.txt'), oid: 'real' },
+    ])
+    const found = await fetchPath(accessor({ keyPrefix: 'sub/dir' }), 'a.txt')
+    expect((spy.mock.calls[0]?.[2] as { paths: string[] }).paths).toEqual(['sub/dir/a.txt'])
+    expect([...found.keys()]).toEqual(['a.txt'])
+    expect(found.get('a.txt')?.oid).toBe('real')
+    spy.mockRestore()
+  })
+
+  it.each([
+    [true, true],
+    [undefined, false],
+    [false, false],
+  ])('expands only when asked (%s)', async (expand, sent) => {
+    const spy = vi.spyOn(client, 'hubPost').mockResolvedValue([])
+    await fetchPath(accessor({ expandCommits: expand }), 'a.txt')
+    expect((spy.mock.calls[0]?.[2] as { expand: boolean }).expand).toBe(sent)
     spy.mockRestore()
   })
 })

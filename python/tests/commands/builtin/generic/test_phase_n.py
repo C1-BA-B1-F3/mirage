@@ -173,7 +173,7 @@ async def test_comm_suppress1():
 @pytest.mark.asyncio
 async def test_comm_requires_two_paths():
     rb, _, _, _ = _make_backend({"/a.txt": b"a\n"})
-    with pytest.raises(ValueError, match="two paths"):
+    with pytest.raises(ValueError, match="^comm: missing operand after "):
         await comm([_spec("/a.txt")], read_bytes=rb)
 
 

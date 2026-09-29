@@ -43,9 +43,6 @@ export async function saveState(db: C, dmmf: Dmmf, tenant: string, st: GwsState)
   const rows = buildRows(tenant, st)
   await db.$transaction(
     async (tx) => {
-      // Cells are leaves. Clear them before Prisma emulates the tab relations;
-      // otherwise a large workbook is read back just to delete its cells.
-      await tx.$executeRaw`DELETE FROM "SheetCell" WHERE "tenant" = ${tenant}`
       await clearTenants(tx, dmmf, [tenant])
       await tx.meta.create({
         data: { tenant, epochMs: BigInt(st.epochMs), ticks: st.ticks },

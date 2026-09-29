@@ -14,6 +14,11 @@
 
 import type { Mem0Accessor } from '../../accessor/mem0.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
+import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
+import type { IndexCacheStore } from '../../cache/index/store.ts'
+import type { PathSpec } from '../../types.ts'
+import { enoent } from '../../utils/errors.ts'
+import { resolveEntry } from '../hierarchy/probe.ts'
 import { makeReaddir } from '../hierarchy/readdir.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { jsonBytes } from '../render/json.ts'
@@ -53,3 +58,34 @@ export const readdir = makeReaddir<Mem0Accessor>(detectScope, {
   listers: { root: listMemories },
   leafError: 'enotdir',
 })
+
+/**
+ * The memory a path names, as the scoped listing holds it.
+ *
+ * Which memories exist is a function of the configured entity filter, and the
+ * listing is the one place that filter is applied: fetching by the id in the
+ * file name served a memory of any user, agent or run the API key reaches,
+ * while `ls` hid it. The listing carries every payload, so a warm index
+ * answers with no call and a cold one costs the listing it would have cost
+ * `ls`. Mirrors `listed_memory` in `mirage/core/mem0/readdir.py`.
+ */
+export async function listedMemory(
+  accessor: Mem0Accessor,
+  path: PathSpec,
+  index?: IndexCacheStore,
+): Promise<Record<string, unknown>> {
+  if (detectScope(path).kind !== 'memory') throw enoent(path)
+  // resolveEntry reads back what its warm just listed, so a caller with no
+  // cache still needs one for the duration of the call.
+  const entry = await resolveEntry(readdir, accessor, path, index ?? new RAMIndexCacheStore())
+  const memory = entry?.extra.memory
+  if (
+    memory === null ||
+    memory === undefined ||
+    typeof memory !== 'object' ||
+    Array.isArray(memory)
+  ) {
+    throw enoent(path)
+  }
+  return memory as Record<string, unknown>
+}

@@ -14,10 +14,12 @@
 
 import { Language, type Node, Parser } from 'web-tree-sitter'
 
-import { ARITH_OPEN_TOKEN, DIGIT, NAME_CONT, QUOTES } from './constants.ts'
+import { scanParameter } from '../parameter.ts'
+import { ARITH_OPEN_TOKEN, QUOTES, VERBATIM_TYPES } from './constants.ts'
+import { expansionSource } from './expansion.ts'
 import { heredocOperators, protectedSource, sameShape } from './heredoc/index.ts'
 import { discoverHeredocs } from './heredoc/reader.ts'
-import { lowerHeredocs, rebaseSource } from './heredoc/lower.ts'
+import { dropChars, dropSourceChars, lowerHeredocs, rebaseSource } from './heredoc/lower.ts'
 import { HeredocNode } from './heredoc/node.ts'
 import type { ShellNode } from '../types.ts'
 
@@ -85,23 +87,20 @@ function isArithmetic(parser: Parser, command: string, start: number): boolean {
 }
 
 /**
- * Parse `text` with every heredoc body shielded from the lexer.
- *
- * tree-sitter-bash mis-lexes a body whose first line opens with a
- * backslash or with whitespace (see protectedSource). The shielded copy
- * has the same length, so its clean tree is handed back to tree-sitter as
- * the old tree for a reparse of the untouched text: with no edit to
- * apply, every node is reused as it stands, and the result reads the
- * typed text at the shielded structure. The reuse is verified node by
- * node; when anything differs, or the shielded copy does not parse
- * cleanly, the plain parse stands.
+ * Parse structure using same-width lexical shields. Heredoc bodies and
+ * substring operands need word grammar where tree-sitter otherwise rejects
+ * them. Reuse the shielded tree against the original text without edits and
+ * verify every node's span. If shielding or reuse fails, keep the original
+ * parse so structural errors still reach syntax validation.
  */
 function parseProtected(parser: Parser, text: string): Node {
   const tree = parser.parse(text)
   if (tree === null) throw new Error('shell parse returned null')
-  if (!text.includes('<<')) return tree.rootNode
-  const shieldedText = protectedSource(text, tree.rootNode)
-  if (shieldedText === null) return tree.rootNode
+  const shieldedText = expansionSource(
+    (text.includes('<<') ? protectedSource(text, tree.rootNode) : null) ?? text,
+    tree.rootNode,
+  )
+  if (shieldedText === text) return tree.rootNode
   const shielded = parser.parse(shieldedText)
   if (shielded === null || shielded.rootNode.hasError) return tree.rootNode
   const reused = parser.parse(text, shielded)
@@ -130,16 +129,63 @@ function failedArithOpeners(root: Node): number[] {
   return offsets
 }
 
-// Drop a trailing backslash that continues the line, as bash does. The
-// reader removes `\<newline>` before the parser ever sees it, and a
-// backslash ending the input is the same thing with nothing left to
-// continue onto: `echo a\` runs `echo a`. Only an odd-length run of
-// trailing backslashes ends in a live one, since each earlier pair is an
-// escaped backslash (`echo a\\` keeps its literal backslash).
-export function stripLineContinuation(command: string): string {
-  let trailing = 0
-  for (let i = command.length - 1; i >= 0 && command[i] === '\\'; i -= 1) trailing += 1
-  return trailing % 2 === 1 ? command.slice(0, -1) : command
+/**
+ * Spans whose backslashes escape nothing: comments and strings in single
+ * quotes, ANSI-C ones included.
+ */
+function verbatimSpans(root: Node): [number, number][] {
+  const spans: [number, number][] = []
+  const stack: Node[] = [root]
+  for (;;) {
+    const node = stack.pop()
+    if (node === undefined) break
+    if (VERBATIM_TYPES.has(node.type)) {
+      spans.push([node.startIndex, node.endIndex])
+      continue
+    }
+    for (const child of node.children) stack.push(child)
+  }
+  return spans.sort((a, b) => a[0] - b[0])
+}
+
+/**
+ * Offsets of the characters bash's reader deletes as line continuations.
+ *
+ * The reader removes `\<newline>` before a token is read, so the halves it
+ * joins are one word (`a\<newline>b` is `ab`, `$\<newline>{x}` an
+ * expansion); tree-sitter reads the pair as whitespace instead.
+ * Single-quoted and ANSI-C text and a comment keep theirs, and an escaped
+ * backslash continues nothing: only an odd-length run of backslashes
+ * before the newline ends in a live one. A live backslash ending the
+ * input continues onto nothing and goes too: `echo a\` runs `echo a`. A
+ * heredoc body is lowered into a quoted word before this runs, where
+ * every backslash it holds is escaped, so no body loses a character here.
+ */
+function continuationIndices(parser: Parser, text: string): number[] {
+  if (!text.includes('\\\n') && !text.endsWith('\\')) return []
+  const tree = parser.parse(text)
+  if (tree === null) throw new Error('shell parse returned null')
+  const spans = verbatimSpans(tree.rootNode)
+  const dropped: number[] = []
+  let at = 0
+  let index = text.indexOf('\\')
+  while (index >= 0) {
+    let end = index
+    while (end < text.length && text[end] === '\\') end += 1
+    while (at < spans.length && (spans[at]?.[1] ?? 0) <= end - 1) at += 1
+    const verbatim = at < spans.length && (spans[at]?.[0] ?? 0) <= end - 1
+    if ((end - index) % 2 === 1 && !verbatim && (end === text.length || text[end] === '\n')) {
+      dropped.push(end - 1)
+      if (end < text.length) dropped.push(end)
+    }
+    index = text.indexOf('\\', end)
+  }
+  return dropped
+}
+
+/** The line as bash's reader hands it on, continuations removed. */
+export function joinContinuations(parser: Parser, command: string): string {
+  return dropChars(command, continuationIndices(parser, command))
 }
 
 /**
@@ -149,8 +195,8 @@ export function stripLineContinuation(command: string): string {
  * word when a name-terminating character follows it, so
  * `> /api/$c/$id.json` parses as `/api/$c/$` plus a sibling word
  * `id.json`: the `$` lands in the tree as a literal token and the
- * expansion is gone. A literal `$` directly followed by a name
- * character is a shape no correct bash lex produces (bash would have
+ * expansion is gone. A literal `$` starting a recognized unbraced
+ * parameter is a shape no correct bash lex produces (bash would have
  * read an expansion), so each one marks a mis-parse. The `$` opening a
  * simple_expansion is that expansion's own token and is skipped.
  */
@@ -165,7 +211,8 @@ function orphanedDollarOffsets(root: Node, text: string): number[] {
         !child.isNamed &&
         child.type === '$' &&
         node.type !== 'simple_expansion' &&
-        NAME_CONT.test(text[child.endIndex] ?? '')
+        text[child.endIndex] !== '{' &&
+        scanParameter(text, child.startIndex) !== null
       ) {
         offsets.push(child.startIndex)
       }
@@ -183,13 +230,10 @@ function orphanedDollarOffsets(root: Node, text: string): number[] {
  * `$` as one positional parameter, so `$12` rebraces as `${1}2`.
  */
 function rebraceDollar(text: string, offset: number): string {
-  let end = offset + 1
-  if (DIGIT.test(text[end] ?? '')) {
-    end += 1
-  } else {
-    while (end < text.length && NAME_CONT.test(text[end] ?? '')) end += 1
-  }
-  return `${text.slice(0, offset)}\${${text.slice(offset + 1, end)}}${text.slice(end)}`
+  const ref = scanParameter(text, offset)
+  if (ref === null) return text
+  const [name, end] = ref
+  return `${text.slice(0, offset)}\${${name}}${text.slice(end)}`
 }
 
 /**
@@ -285,8 +329,12 @@ export async function createShellParser(config: ShellParserConfig): Promise<Shel
         command.includes('<<') && original !== null
           ? discoverHeredocs(command, heredocOperators(original.rootNode))
           : []
-      const heredocs = documents.length > 0 ? lowerHeredocs(command, documents) : null
-      const source = heredocs?.source ?? stripLineContinuation(command)
+      const lowered = documents.length > 0 ? lowerHeredocs(command, documents) : null
+      const heredocs =
+        lowered === null
+          ? null
+          : dropSourceChars(lowered, continuationIndices(parser, lowered.source))
+      const source = heredocs?.source ?? joinContinuations(parser, command)
       let root = parseProtected(parser, source)
       let text = source
       if (root.hasError) {

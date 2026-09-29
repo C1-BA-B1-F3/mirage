@@ -93,7 +93,7 @@ this subtree.” Precision degrades, but dirtiness is not lost.
 
 Your application hosts the endpoint; mirage opens no socket and runs no
 watcher. What arrives is the provider's own payload, and turning that into a
-path is the only real work. Three backends ship a mapper for it:
+path is the only real work. Four backends ship a mapper for it:
 
 ```ts
 import { SlackEventHook } from "@struktoai/mirage-core/core/slack/watch/index";
@@ -117,6 +117,7 @@ buy nothing.
 | Slack | `SlackEventHook` (`mirage-core/core/slack/watch/index`) | Events API delivery (inner `event` object) |
 | Disk | `DiskEventHook` (`mirage-node`, `core/disk/watch/hook`) | watchdog-shaped fields (`src_path`, `dest_path`) |
 | Redis | `RedisEventHook` (`mirage-node`, `core/redis/watch/hook`) | keyspace notification (`__keyevent@N__:<verb>`, the key) |
+| Box | `BoxEventHook` (`mirage-core/core/box/watch`) | one `/events` entry, read after the long poll (`realtimeServer`) answers `new_change` |
 
 A mapper answers with zero or more `FileEvent`s and never invents a path it
 was not told about. When a notification names only a scope, it returns

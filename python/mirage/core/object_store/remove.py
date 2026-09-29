@@ -43,7 +43,7 @@ def make_unlink(driver: ObjectStoreDriver[A, C]) -> PathFn[A]:
                 # outlives the object it names fails the next snapshot
                 # load. The connect is outside, because a connection that
                 # never opened removed nothing.
-                record("unlink", path, driver.vfs, 0, timer)
+                record("unlink", path_spec.virtual, driver.vfs, 0, timer)
                 # The eviction rides with the record: a retracted pin and
                 # a cached body for the same path must not both survive,
                 # or a restored snapshot serves the body with nothing
@@ -80,7 +80,7 @@ def make_remove_prefix(driver: ObjectStoreDriver[A, C]) -> PathFn[A]:
                 # A prefix delete is a paginated walk, so a failure
                 # mid-walk has already removed keys. The eviction rides
                 # with the record, as in unlink.
-                record("rm_r", path, driver.vfs, 0, timer)
+                record("rm_r", path_spec.virtual, driver.vfs, 0, timer)
                 # Not invalidate_after_unlink: a prefix delete takes
                 # every key below with it, and each of those listings
                 # and bodies was cached under its own key, so nothing
@@ -162,7 +162,7 @@ def make_rmdir(driver: ObjectStoreDriver[A, C]) -> RmdirFn[A]:
                 # marker and a pin can only ever name the "d" object
                 # beside it.
                 if deleted:
-                    record("rmdir", path, driver.vfs, 0, timer)
+                    record("rmdir", path_spec.virtual, driver.vfs, 0, timer)
         if has_child:
             raise enotempty(path_spec)
         if not saw_key and not is_root:

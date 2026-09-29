@@ -64,6 +64,32 @@
         "stdout": "5 /pg/public/tables/books/rows.jsonl\n3 /pg/public/tables/authors/rows.jsonl\n8 total\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "pg_wc_l_cross_mount_counts_on_each_mount",
+      "seq": 610025,
+      "targets": [
+        "postgres"
+      ],
+      "command": "wc -l /pg-limited/public/tables/books/rows.jsonl /pg/public/tables/authors/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "5 /pg-limited/public/tables/books/rows.jsonl\n3 /pg/public/tables/authors/rows.jsonl\n8 total\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "pg_wc_cross_mount_reads_under_the_limit",
+      "seq": 610026,
+      "targets": [
+        "postgres"
+      ],
+      "command": "wc /pg/public/tables/books/rows.jsonl /pg-limited/public/tables/authors/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "  5   5 323 /pg/public/tables/books/rows.jsonl\n  3   3  97 /pg-limited/public/tables/authors/rows.jsonl\n  8   8 420 total\n",
+        "stderr": ""
+      }
     }
   ]
 }

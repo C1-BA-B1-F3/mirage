@@ -37,7 +37,7 @@ import { PathSpec } from '../../../types.ts'
 import { mountKey, mountPrefixOf } from '../../../utils/key_prefix.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { UsageError } from '../../errors.ts'
-import { readStdinAsync } from '../utils/stream.ts'
+import { readStdinAsync, stdinStream } from '../utils/stream.ts'
 
 type Stream = (p: PathSpec) => AsyncIterable<Uint8Array>
 
@@ -224,6 +224,7 @@ export async function jqGeneric(
   opts: CommandOpts,
   stream: Stream,
 ): Promise<CommandFnResult> {
+  stream = stdinStream(stream, opts.stdin)
   const fl = new FlagView(opts.flags, specOf('jq'))
   const toSpec = pathSpecFactory(paths, opts)
   const hasProgramFile = fl.asStr('from_file') !== undefined

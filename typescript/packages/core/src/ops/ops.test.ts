@@ -21,9 +21,10 @@ import { PolicyDenied, PolicyError } from '../policy/errors.ts'
 import type { Action, OpsContext, OpsResultContext } from '../policy/types.ts'
 import { RAMVFS } from '../vfs/ram/ram.ts'
 import { FileType, Limit, MountMode, OnExceed } from '../types.ts'
-import { enoent, enotdir } from '../utils/errors.ts'
+import { eacces, enoent, enotdir } from '../utils/errors.ts'
 import { Session } from '../workspace/workspace/handle.ts'
 import { Workspace } from '../workspace/workspace/workspace.ts'
+import { rstripSlash } from '../utils/slash.ts'
 
 const DEC = new TextDecoder()
 
@@ -164,11 +165,26 @@ describe('Ops existence probes', () => {
     await expect(ws.vfs.isFile('/data/a.txt')).rejects.toThrow('401 Unauthorized')
   })
 
-  it('propagate a non-ENOENT fs error, matching Python which swallows only two', async () => {
-    const ws = mkFailingStat(enotdir('/data/a.txt'))
+  it('propagate an fs error that is not a lookup failure, matching Python', async () => {
+    const ws = mkFailingStat(eacces('/data/a.txt'))
     await expect(ws.vfs.exists('/data/a.txt')).rejects.toThrow('/data/a.txt')
     await expect(ws.vfs.isDir('/data/a.txt')).rejects.toThrow('/data/a.txt')
     await expect(ws.vfs.isFile('/data/a.txt')).rejects.toThrow('/data/a.txt')
+  })
+
+  // A path under a plain file does not resolve, the other lookup failure
+  // besides ENOENT: `test -e` and every stdlib exists() answer false.
+  it('report false for a path under a plain file', async () => {
+    const ws = mkWorkspace()
+    await ws.vfs.writeFile('/data/a.txt', 'x')
+    expect(await ws.vfs.exists('/data/a.txt/x')).toBe(false)
+    expect(await ws.vfs.isDir('/data/a.txt/x')).toBe(false)
+    expect(await ws.vfs.isFile('/data/a.txt/x')).toBe(false)
+  })
+
+  it('report false when the stat answers ENOTDIR', async () => {
+    const ws = mkFailingStat(enotdir('/data/a.txt/x'))
+    expect(await ws.vfs.exists('/data/a.txt/x')).toBe(false)
   })
 })
 
@@ -764,7 +780,7 @@ describe('Ops.readlink', () => {
       filetype: null,
       fn: async (accessor, path, args, kwargs) => {
         const entries = (await realReaddir(accessor, path, args, kwargs)) as string[]
-        return entries.filter((entry) => !entry.replace(/\/+$/, '').endsWith('hollow'))
+        return entries.filter((entry) => !rstripSlash(entry).endsWith('hollow'))
       },
       write: false,
     })

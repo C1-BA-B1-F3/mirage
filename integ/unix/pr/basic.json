@@ -269,7 +269,7 @@
       "expect": {
         "exit": 1,
         "stdout": "==> /data/pr/one.txt <==\n1\n",
-        "stderr": "head: /data/pr/missing.txt: No such file or directory\n"
+        "stderr": "head: cannot open '/data/pr/missing.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -303,7 +303,7 @@
       "expect": {
         "exit": 1,
         "stdout": "==> /data/pr/one.txt <==\n2\n",
-        "stderr": "tail: /data/pr/missing.txt: No such file or directory\n"
+        "stderr": "tail: cannot open '/data/pr/missing.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -507,7 +507,7 @@
       "expect": {
         "exit": 1,
         "stdout": "2\n1\n",
-        "stderr": "tac: /data/pr/missing.txt: No such file or directory\n"
+        "stderr": "tac: failed to open '/data/pr/missing.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -711,7 +711,7 @@
       "expect": {
         "exit": 1,
         "stdout": "1 2\n",
-        "stderr": "fmt: /data/pr/missing.txt: No such file or directory\n"
+        "stderr": "fmt: cannot open '/data/pr/missing.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -745,7 +745,7 @@
       "expect": {
         "exit": 1,
         "stdout": "z\n",
-        "stderr": "zcat: /data/pr/missing.gz: No such file or directory\n"
+        "stderr": "gzip: /data/pr/missing.gz: No such file or directory\n"
       }
     },
     {
@@ -779,7 +779,7 @@
       "expect": {
         "exit": 2,
         "stdout": "X\n2\n",
-        "stderr": "sed: /data/pr/missing.txt: No such file or directory\n"
+        "stderr": "sed: can't read /data/pr/missing.txt: No such file or directory\n"
       }
     },
     {
@@ -813,7 +813,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sort: /data/pr/missing.txt: No such file or directory\n"
+        "stderr": "sort: cannot read: /data/pr/missing.txt: No such file or directory\n"
       }
     },
     {
@@ -949,7 +949,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "head: /data/pr: Is a directory\n"
+        "stderr": "head: error reading '/data/pr': Is a directory\n"
       }
     },
     {
@@ -982,7 +982,7 @@
       "command": "wc /data/pr/one.txt /data/pr",
       "expect": {
         "exit": 1,
-        "stdout": "2 2 4 /data/pr/one.txt\n2 2 4 total\n",
+        "stdout": "      2       2       4 /data/pr/one.txt\n      0       0       0 /data/pr\n      2       2       4 total\n",
         "stderr": "wc: /data/pr: Is a directory\n"
       }
     },
@@ -1017,7 +1017,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "tac: /data/pr: Is a directory\n"
+        "stderr": "tac: /data/pr: read error: Is a directory\n"
       }
     },
     {

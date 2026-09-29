@@ -106,7 +106,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "tail: /data/tf_nope.txt: No such file or directory\ntail: no files remaining\n"
+        "stderr": "tail: cannot open '/data/tf_nope.txt' for reading: No such file or directory\ntail: no files remaining\n"
       },
       "flags": [
         "f"
@@ -156,7 +156,7 @@
       "expect": {
         "exit": 0,
         "stdout": "code=1\n",
-        "stderr": "tail: /data/tfd2: Is a directory\ntail: /data/tfd2: cannot follow end of this type of file; giving up on this name\ntail: no files remaining\n"
+        "stderr": "tail: error reading '/data/tfd2': Is a directory\ntail: /data/tfd2: cannot follow end of this type of file; giving up on this name\ntail: no files remaining\n"
       },
       "flags": [
         "f"

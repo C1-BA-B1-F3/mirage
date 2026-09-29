@@ -20,9 +20,8 @@ import { wasiErrno } from './errors.ts'
 export async function stat(
   ctx: QuickJSAsyncContext,
   vfs: RuntimeVFS | null,
-  pathH: QuickJSHandle,
+  path: string,
 ): Promise<QuickJSHandle> {
-  const path = ctx.getString(pathH)
   let st: VFSStat | null = null
   let errno = 0
   if (!vfs?.mountOf(path)) {

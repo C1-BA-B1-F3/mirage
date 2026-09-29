@@ -51,7 +51,7 @@ function tokenConfig(input: Record<string, unknown>): { token: string } {
 
 function send(inv: CLIInvocation): [Uint8Array, IOResult] {
   const token = (inv.config as { token: string }).token
-  const to = inv.flags.to
+  const to = inv.flags.to as string | undefined
   const body = inv.texts.join(' ')
   return [new TextEncoder().encode(`sent[${token}] to=${String(to)}: ${body}\n`), new IOResult()]
 }
@@ -159,7 +159,7 @@ describe('CLI dispatch e2e', () => {
     expect(missing.exitCode).toBe(127)
     expect(dec.decode(missing.stderr)).toContain('h2: command not found')
     const typed = await ws.shell('type -t h1; type -t h2', { sessionId: 's' })
-    expect([typed.exitCode, dec.decode(typed.stdout)]).toEqual([1, 'cli\n'])
+    expect([typed.exitCode, dec.decode(typed.stdout)]).toEqual([1, 'file\n'])
     const listed = await ws.shell('h1 message send -t x hi', { sessionId: 's' })
     expect([listed.exitCode, dec.decode(listed.stdout)]).toEqual([0, 'sent[one] to=x: hi\n'])
   })

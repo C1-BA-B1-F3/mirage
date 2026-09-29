@@ -12,14 +12,19 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { FileStat } from '../../../../types.ts'
 import { PathSpec } from '../../../../types.ts'
-import { isEnoent } from '../../../../utils/errors.ts'
-import { CycleError } from '../../../../utils/path.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
-import { expandOperands, fail, finish, readOnlyError, splitValueFlags } from '../shared.ts'
-import { isReadOnlyError, parseOwner, setattrLink, setattrVia, walkOwned } from './metadata.ts'
+import { expandOperands, fail, finish, splitValueFlags } from '../shared.ts'
+import {
+  isReadOnlyError,
+  permissionError,
+  parseOwner,
+  resolveOperand,
+  setattrLink,
+  setattrVia,
+  walkOwned,
+} from './metadata.ts'
 import type { Result } from '../types.ts'
 
 // chown OWNER[:GROUP] FILE...: set ownership via setattr. Ownership is
@@ -52,28 +57,9 @@ export async function handleChown(
       })
       continue
     }
-    let virtual: string
-    try {
-      virtual = namespace.follow(target.virtual)
-    } catch (err) {
-      if (err instanceof CycleError) {
-        errors.push(`chown: cannot access '${target.rawPath}': Too many levels of symbolic links\n`)
-        continue
-      }
-      throw err
-    }
-    const resolved = PathSpec.fromStrPath(virtual)
-    let stat: FileStat
-    try {
-      const [result] = await dispatch('stat', resolved)
-      stat = result as FileStat
-    } catch (err) {
-      if (isEnoent(err)) {
-        errors.push(`chown: cannot access '${target.rawPath}': No such file or directory\n`)
-        continue
-      }
-      throw err
-    }
+    const found = await resolveOperand(namespace, dispatch, 'chown', target, errors)
+    if (found === null) continue
+    const [resolved, stat] = found
     const { paths, links } = recursive
       ? await walkOwned(namespace, dispatch, resolved, stat)
       : { paths: [resolved], links: [] as string[] }
@@ -85,7 +71,7 @@ export async function handleChown(
         })
       } catch (err) {
         if (!isReadOnlyError(err)) throw err
-        errors.push(readOnlyError('chown', namespace, path))
+        errors.push(permissionError('chown', 'changing ownership of', path, err))
       }
     }
     for (const link of links) {

@@ -12,9 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mountPrefixOf } from '../../../utils/key_prefix.ts'
+import { QDRANT_IO } from './io.ts'
+import { searchResources } from '../../../vfs/search.ts'
+
 import type { QdrantAccessor } from '../../../accessor/qdrant.ts'
-import { searchRowsOutput } from '../../../core/qdrant/search.ts'
+
 import { IOResult } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import { VFSName } from '../../../types.ts'
@@ -47,15 +49,22 @@ async function searchCommand(
       }),
     ]
   }
-  const target = defaultPaths(paths, opts.cwd)
-  const mountPrefix =
-    (target[0] === undefined ? undefined : mountPrefixOf(target[0].virtual, target[0].vfsPath)) ??
-    opts.mountPrefix ??
-    ''
-  const topK = fl.asInt('top_k') ?? accessor.config.searchLimit
-  const threshold = fl.asFloat('threshold') ?? 0
+  const targets = defaultPaths(paths, opts.cwd, opts.mountPrefix ?? '')
   try {
-    const out = await searchRowsOutput(accessor, query, target, topK, threshold, mountPrefix)
+    const out = await searchResources(
+      QDRANT_IO.search,
+      accessor,
+      targets,
+      {
+        query,
+        options: {
+          top_k: fl.asInt('top_k') ?? accessor.config.searchLimit,
+          method: fl.asStr('method') ?? 'semantic',
+          threshold: fl.asFloat('threshold') ?? 0,
+        },
+      },
+      opts.index ?? undefined,
+    )
     return [out, new IOResult()]
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

@@ -12,21 +12,24 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from mirage.commands.spec import constants
 from mirage.commands.spec.argmatch import (ArgmatchChoices, ArgmatchMatch,
                                            argmatch, value_classes)
 from mirage.commands.spec.builtin_specs import SPECS, is_builtin_grammar
 from mirage.commands.spec.compile import (CompiledSpec, compile_spec,
-                                          expand_long)
+                                          expand_git_long, expand_long,
+                                          expand_table_long)
 from mirage.commands.spec.constants import (ARG_PLACEHOLDER,
                                             ARGMATCH_CHOICE_OPTIONS,
                                             FLOAT_VALUE, INT_VALUE,
                                             NO_LONG_OPTIONS, NUMERIC_SHORT,
                                             SOLE_ARGUMENT_LONG_OPTIONS,
                                             flag_kwarg_name)
+from mirage.commands.spec.flag_view import FlagBag
 from mirage.commands.spec.oldstyle import expand_old_style
 from mirage.commands.spec.types import (CommandSpec, Option, ParsedFlagValue,
                                         ValueType)
@@ -86,7 +89,8 @@ def _argmatch_dests(spec: CommandSpec) -> frozenset[str]:
 class ParsedArgs:
     flags: dict[str, ParsedFlagValue]
     args: list[tuple[str, ValueType]]
-    cache_paths: list[str] = field(default_factory=list)
+    # Selected PATH values before cwd resolution; keys match parse_to_kwargs.
+    raw_path_flags: dict[str, ParsedFlagValue] = field(default_factory=dict)
     path_flag_values: list[str] = field(default_factory=list)
     raw_operands: list[tuple[str, ValueType]] = field(default_factory=list)
     text_flag_values: list[str] = field(default_factory=list)
@@ -127,8 +131,8 @@ class ParsedArgs:
     # above is what orders them against each other: a value that is a
     # prefix of two candidates reads `ambiguous argument 'ie'`, one that
     # is a prefix of none reads `invalid argument 'a'`, and both print
-    # the same candidate block. Only the three ARGMATCH_CHOICE_OPTIONS
-    # tables can fill the ambiguous one, because only a prefix can be
+    # the same candidate block. Only the ARGMATCH_CHOICE_OPTIONS tables
+    # can fill the ambiguous one, because only a prefix can be
     # ambiguous and every other choices set compares the whole word.
     invalid_value_options: list[tuple[str, str, ArgmatchChoices]] = field(
         default_factory=list)
@@ -195,7 +199,7 @@ def _check_value(refusals: _Refusals, cs: CompiledSpec,
     choices reports the conversion failure, not the choice list.
 
     A declared ``choices`` set compares the WHOLE word, argparse's rule,
-    unless the option declaring it is one of the three gnulib ARGMATCH
+    unless the option declaring it is one of the gnulib ARGMATCH
     tables the parser owns, in which case an unambiguous prefix resolves
     to its candidate. The resolved word is what the caller stores, so a
     command reads `none` where the line typed `non` and never learns the
@@ -277,6 +281,8 @@ def _set_value_flag(
     """
     name = cs.dest_of(spelling)
     stored = _check_value(refusals, cs, argmatch_dests, name, value)
+    if isinstance(flags, FlagBag):
+        flags.occurrences.append((name, stored))
     if name in cs.multiple_dests:
         prev = flags.get(name)
         if isinstance(prev, list):
@@ -361,6 +367,8 @@ def _set_bool_flag(
         spelling (str): dashed spelling as typed.
     """
     name = cs.dest_of(spelling)
+    if isinstance(flags, FlagBag):
+        flags.occurrences.append((name, True))
     if name in cs.count_dests:
         prev = flags.get(name)
         flags[name] = prev + 1 if isinstance(prev, int) else 1
@@ -369,11 +377,26 @@ def _set_bool_flag(
         flags[name] = True
 
 
+def _attached(value: str, equals: bool) -> str:
+    """An attached short-option value, one leading ``=`` dropped for a
+    program that reads ``-x=VALUE`` as ``VALUE`` (EQUALS_SHORT_VALUES).
+
+    Args:
+        value (str): the value as it follows the option letter.
+        equals (bool): whether this program drops the ``=``.
+    """
+    return value[1:] if equals and value.startswith("=") else value
+
+
 def _match_mixed_cluster(
     tok: str,
     cs: CompiledSpec,
 ) -> tuple[list[str], str, str | None] | None:
     """Match a getopt-style cluster of bool flags ending in a value flag.
+
+    An optional-value short (getopt's ``x::``) takes whatever follows
+    it in the cluster as its value, as getopt does, so ``date -uIs`` is
+    ``-u -Is``; with nothing after it, it is one more bool flag.
 
     Args:
         tok (str): token like "-ne" or "-nepat".
@@ -389,14 +412,44 @@ def _match_mixed_cluster(
     chars = tok[1:]
     for idx, ch in enumerate(chars):
         name = f"-{ch}"
+        rest = chars[idx + 1:]
+        if rest and name in cs.attach_spellings:
+            return bools, name, rest
         if name in cs.bool_spellings:
             bools.append(name)
             continue
         if name in cs.value_spellings:
-            rest = chars[idx + 1:]
             return bools, name, (rest if rest else None)
         return None
     return None
+
+
+def _match_digit_cluster(tok: str,
+                         cs: CompiledSpec) -> tuple[list[str], str] | None:
+    """Match a cluster of bool flags and digit options (``-d10``).
+
+    For a DIGIT_OPTIONS program the digits are option letters too, and
+    getopt hands them over one at a time into one number: every digit of
+    the word joins it, wherever it sits (``-1d0`` is ten).
+
+    Args:
+        tok (str): token like "-d10" or "-10d".
+        cs (CompiledSpec): compiled spec tables.
+
+    Returns:
+        tuple[list[str], str] | None: (bool flag spellings, the digits),
+            or None when a character is neither or no digit is present.
+    """
+    bools: list[str] = []
+    digits: list[str] = []
+    for ch in tok[1:]:
+        if "0" <= ch <= "9":
+            digits.append(ch)
+        elif f"-{ch}" in cs.bool_spellings:
+            bools.append(f"-{ch}")
+        else:
+            return None
+    return (bools, "".join(digits)) if digits else None
 
 
 def parse_command(
@@ -407,6 +460,7 @@ def parse_command(
     env: Mapping[str, str] | None = None,
     *,
     unknown_is_operand: bool = False,
+    abbreviations: Sequence[str] | None = None,
 ) -> ParsedArgs:
     """Read one command line against a spec.
 
@@ -433,9 +487,19 @@ def parse_command(
             say it: the shared grammar stays what POSIX and argparse can
             both express. It says nothing about ``choices``, which
             compares the whole word for every spec unless the option
-            declaring the set is one of the three builtin ARGMATCH
+            declaring the set is one of the builtin ARGMATCH
             declarations -- an identity the spec itself settles, so
             it is not a fact about the caller at all.
+        abbreviations (Sequence[str] | None): the same kind of fact
+            about the program reading the line: its own full table of
+            long options (git's ``--[no-]`` notation), when it resolves
+            an abbreviated long option against that table the way git's
+            parse-options does. A partial spec cannot answer whether
+            ``--no-m`` is ambiguous, since the option git would also
+            match is one mirage never declared, so the program's table
+            is what is asked; an empty table is a program that takes
+            whole words only (git's revision walkers). None leaves the
+            getopt_long reading against the spec.
 
     Returns:
         ParsedArgs: the flag bag, operands, and every refusal the line
@@ -452,23 +516,7 @@ def parse_command(
     scan_argv = old.argv if old is not None else argv
     scan_origins = old.origins if old is not None else list(range(len(argv)))
 
-    cache_paths: list[str] = []
-    filtered_argv: list[str] = []
-    # orig_indices[j] = argv position of filtered_argv[j]
-    orig_indices: list[int] = []
-    i = 0
-    while i < len(scan_argv):
-        if scan_argv[i] == "--cache":
-            i += 1
-            while i < len(scan_argv) and not scan_argv[i].startswith("-"):
-                cache_paths.append(resolve_path(scan_argv[i], cwd))
-                i += 1
-        else:
-            filtered_argv.append(scan_argv[i])
-            orig_indices.append(scan_origins[i])
-            i += 1
-
-    flags: dict[str, ParsedFlagValue] = {}
+    flags: FlagBag[ParsedFlagValue] = FlagBag()
     # Every scalar value-flag occurrence, in scan order, beside the bag
     # that keeps only the last of each. Appended to by _set_value_flag
     # and read by nobody here: it leaves on the parse result.
@@ -476,21 +524,18 @@ def parse_command(
     # raw_indices[k] = argv position of raw_args[k]
     raw_indices: list[int] = []
     # Per-position operand kinds aligned with the caller's argv (None =
-    # flag token or ignored word). Positions, not value sets, so the
-    # same word can be TEXT in one slot and PATH in another:
-    #   grep  *.txt  *.txt               -> [TEXT, PATH]
-    #   find  /data  -name  *.txt        -> [PATH, None, TEXT]
-    #   grep  --cache  /c  pat  f.txt    -> [None, None, TEXT, PATH]
-    # orig_indices/raw_indices map the parser's shrunken views back to
-    # argv slots (filtered_argv drops --cache tokens, raw_args keeps
-    # only operands); kinds must be written at the original positions
-    # or one dropped token shifts every later kind onto the wrong word.
+    # a word the scan never reads, such as tar's empty old-style
+    # cluster). Positions, not value sets, so the same word can be TEXT
+    # in one slot and PATH in another:
+    #   grep  *.txt  *.txt                  -> [TEXT, PATH]
+    #   find  /data  -name  *.txt           -> [PATH, TEXT, TEXT]
+    #   tar   ""  f.txt                     -> [None, PATH]
+    # scan_origins/raw_indices map the parser's views back to argv slots
+    # (scan_argv spells a tar cluster as one word per letter, raw_args
+    # keeps only operands); kinds must be written at the original
+    # positions or one expanded cluster shifts every later kind onto the
+    # wrong word.
     word_kinds: list[ValueType | None] = [None] * len(argv)
-    if old is not None and old.cluster is not None:
-        # A cluster carries no dash, so leaving it None would send it to
-        # the shape heuristic and a path-shaped one (`tar sub/a.tgz`)
-        # would reach dispatch resolved and unreadable as letters.
-        word_kinds[0] = "str"
     # The directory the next path operand resolves against, and where it
     # was for each word already read. It only ever moves for a spec that
     # declares operand_base, so every other command records None
@@ -520,6 +565,10 @@ def parse_command(
                                  and not cs.remainder)
         no_long_option_parser = lenient_dash_operands
         outside_sole_argument = False
+        digit_options = False
+        equals_values = False
+        synonyms: dict[str, str] = {}
+        long_table = None
     else:
         # getopt_long, with exactly two exceptions, both named rather
         # than derived from the spec because nothing in a declaration
@@ -539,19 +588,33 @@ def parse_command(
         # gnulib's parse_long_options reads argv[1] only when it is the
         # whole line, so outside that one-argument window the program
         # has no long options AT ALL and even an exact `--help` is an
-        # operand. Counted over filtered_argv because `--cache` is
-        # mirage's own out-of-band word and not part of the command line
-        # being emulated.
+        # operand.
         sole_argument = builtin and cmd_name in SOLE_ARGUMENT_LONG_OPTIONS
-        outside_sole_argument = sole_argument and len(filtered_argv) != 1
+        outside_sole_argument = sole_argument and len(argv) != 1
         # A dash-leading word this program answers by printing it as an
         # operand rather than by refusing it.
         lenient_dash_operands = no_long_option_parser or sole_argument
+        # Gated the same way: the digit letters and the synonym pairs
+        # are the real program's own tables, not facts any declaration
+        # states.
+        digit_options = builtin and cmd_name in constants.DIGIT_OPTIONS
+        equals_values = builtin and cmd_name in constants.EQUALS_SHORT_VALUES
+        synonyms = {
+            spelling: same
+            for (name, spelling), same in constants.LONG_SYNONYMS.items()
+            if builtin and name == cmd_name
+        }
+        long_table = (constants.LONG_OPTION_TABLES.get(cmd_name)
+                      if builtin else None)
     i = 0
     end_of_flags = False
 
-    while i < len(filtered_argv):
-        tok = filtered_argv[i]
+    while i < len(scan_argv):
+        tok = scan_argv[i]
+        # Keep option words literal: the shape heuristic would treat
+        # `-o/data/out` as a relative path. Synthesized tar flags mark the
+        # original cluster here; values and operands receive their own kinds.
+        word_kinds[scan_origins[i]] = "str"
 
         if tok == "--" and not end_of_flags:
             end_of_flags = True
@@ -560,7 +623,7 @@ def parse_command(
 
         if end_of_flags:
             raw_args.append(tok)
-            raw_indices.append(orig_indices[i])
+            raw_indices.append(scan_origins[i])
             raw_bases.append(base)
             i += 1
             continue
@@ -572,7 +635,7 @@ def parse_command(
                 # whether or not it is declared: `expr --help x` is a
                 # syntax error on `x`, not a help request.
                 raw_args.append(tok)
-                raw_indices.append(orig_indices[i])
+                raw_indices.append(scan_origins[i])
                 raw_bases.append(base)
                 i += 1
                 continue
@@ -586,12 +649,34 @@ def parse_command(
             eq = tok.find("=")
             typed = tok if eq == -1 else tok[:eq]
             spelling = typed
-            if typed not in cs.dest and not no_long_option_parser:
-                expansions = expand_long(cs, typed)
+            if typed not in cs.dest and abbreviations is not None:
+                resolved = expand_git_long(abbreviations, typed)
+                if isinstance(resolved, tuple):
+                    ambiguous_options.append((tok, resolved))
+                    option_error_kinds.append("ambiguous")
+                    i += 1
+                    continue
+                if resolved is not None and resolved in cs.dest:
+                    spelling = resolved
+            elif typed not in cs.dest and long_table is not None:
+                # The program's own table decides, since a prefix of an
+                # option mirage never declared is still ambiguous.
+                found = expand_table_long(long_table, typed)
+                if len(found) > 1:
+                    ambiguous_options.append((tok, found))
+                    option_error_kinds.append("ambiguous")
+                    i += 1
+                    continue
+                if found and found[0] in cs.dest:
+                    spelling = found[0]
+            elif typed not in cs.dest and not no_long_option_parser:
+                expansions = expand_long(cs, typed, synonyms)
                 if len(expansions) == 1:
                     spelling = expansions[0]
                 elif len(expansions) > 1:
-                    ambiguous_options.append((typed, expansions))
+                    # glibc names the word as typed, `=value` and all
+                    # (`ls: option '--re=x' is ambiguous`).
+                    ambiguous_options.append((tok, expansions))
                     option_error_kinds.append("ambiguous")
                     i += 1
                     continue
@@ -600,26 +685,26 @@ def parse_command(
             if etok in cs.long_bool_spellings:
                 _set_bool_flag(flags, cs, etok)
                 i += 1
-            elif is_pair and eq == -1 and i + 2 < len(filtered_argv):
+            elif is_pair and eq == -1 and i + 2 < len(scan_argv):
                 # Two tokens, both recorded under the one dest, so the
                 # command reads the accumulated list in twos.
                 _set_value_flag(flags, refusals, cs, argmatch_dests, spelling,
-                                filtered_argv[i + 1])
+                                scan_argv[i + 1])
                 _set_value_flag(flags, refusals, cs, argmatch_dests, spelling,
-                                filtered_argv[i + 2])
+                                scan_argv[i + 2])
                 # The first token names the value and is always textual;
                 # the option's own kind describes the second.
-                word_kinds[orig_indices[i + 1]] = "str"
-                word_kinds[orig_indices[i + 2]] = cs.kind_of[spelling]
+                word_kinds[scan_origins[i + 1]] = "str"
+                word_kinds[scan_origins[i + 2]] = cs.kind_of[spelling]
                 i += 3
             elif (not is_pair and etok in cs.long_value_spellings
-                  and i + 1 < len(filtered_argv)):
+                  and i + 1 < len(scan_argv)):
                 _set_value_flag(flags, refusals, cs, argmatch_dests, etok,
-                                filtered_argv[i + 1])
-                word_kinds[orig_indices[i + 1]] = cs.kind_of[etok]
+                                scan_argv[i + 1])
+                word_kinds[scan_origins[i + 1]] = cs.kind_of[etok]
                 if cs.dest_of(etok) == cs.base_dest:
-                    word_bases[orig_indices[i + 1]] = base
-                base = _rebase(flags, cs, etok, filtered_argv[i + 1], base)
+                    word_bases[scan_origins[i + 1]] = base
+                base = _rebase(flags, cs, etok, scan_argv[i + 1], base)
                 i += 2
             elif is_pair:
                 if eq == -1:
@@ -643,7 +728,7 @@ def parse_command(
                     option_error_kinds.append("needs_value")
                 elif lenient_dash_operands:
                     raw_args.append(tok)
-                    raw_indices.append(orig_indices[i])
+                    raw_indices.append(scan_origins[i])
                     raw_bases.append(base)
                 elif eq != -1 and spelling in cs.long_bool_spellings:
                     # A boolean long handed a value. getopt_long knows
@@ -685,20 +770,21 @@ def parse_command(
                 continue
             matched_value = False
             for vf in cs.value_spellings:
-                if tok == vf and i + 1 < len(filtered_argv):
+                if tok == vf and i + 1 < len(scan_argv):
                     _set_value_flag(flags, refusals, cs, argmatch_dests, vf,
-                                    filtered_argv[i + 1])
-                    word_kinds[orig_indices[i + 1]] = cs.kind_of[vf]
+                                    scan_argv[i + 1])
+                    word_kinds[scan_origins[i + 1]] = cs.kind_of[vf]
                     if cs.dest_of(vf) == cs.base_dest:
-                        word_bases[orig_indices[i + 1]] = base
-                    base = _rebase(flags, cs, vf, filtered_argv[i + 1], base)
+                        word_bases[scan_origins[i + 1]] = base
+                    base = _rebase(flags, cs, vf, scan_argv[i + 1], base)
                     i += 2
                     matched_value = True
                     break
                 if tok.startswith(vf) and len(tok) > len(vf):
+                    attached_value = _attached(tok[len(vf):], equals_values)
                     _set_value_flag(flags, refusals, cs, argmatch_dests, vf,
-                                    tok[len(vf):])
-                    base = _rebase(flags, cs, vf, tok[len(vf):], base)
+                                    attached_value)
+                    base = _rebase(flags, cs, vf, attached_value, base)
                     i += 1
                     matched_value = True
                     break
@@ -707,6 +793,17 @@ def parse_command(
 
             if tok in cs.bool_spellings:
                 _set_bool_flag(flags, cs, tok)
+                i += 1
+                continue
+
+            count_dest = cs.numeric_dest if digit_options else None
+            digit_cluster = (_match_digit_cluster(tok, cs)
+                             if count_dest is not None else None)
+            if count_dest is not None and digit_cluster is not None:
+                for name in digit_cluster[0]:
+                    _set_bool_flag(flags, cs, name)
+                flags.pop(count_dest, None)
+                flags[count_dest] = digit_cluster[1]
                 i += 1
                 continue
 
@@ -725,6 +822,7 @@ def parse_command(
             if mixed is not None:
                 cluster_bools, vflag, attached = mixed
                 if attached is not None:
+                    attached = _attached(attached, equals_values)
                     for name in cluster_bools:
                         _set_bool_flag(flags, cs, name)
                     _set_value_flag(flags, refusals, cs, argmatch_dests, vflag,
@@ -732,22 +830,21 @@ def parse_command(
                     base = _rebase(flags, cs, vflag, attached, base)
                     i += 1
                     continue
-                if i + 1 < len(filtered_argv):
+                if i + 1 < len(scan_argv):
                     for name in cluster_bools:
                         _set_bool_flag(flags, cs, name)
                     _set_value_flag(flags, refusals, cs, argmatch_dests, vflag,
-                                    filtered_argv[i + 1])
-                    word_kinds[orig_indices[i + 1]] = cs.kind_of[vflag]
+                                    scan_argv[i + 1])
+                    word_kinds[scan_origins[i + 1]] = cs.kind_of[vflag]
                     if cs.dest_of(vflag) == cs.base_dest:
-                        word_bases[orig_indices[i + 1]] = base
-                    base = _rebase(flags, cs, vflag, filtered_argv[i + 1],
-                                   base)
+                        word_bases[scan_origins[i + 1]] = base
+                    base = _rebase(flags, cs, vflag, scan_argv[i + 1], base)
                     i += 2
                     continue
 
             if lenient_dash_operands or NUMERIC_SHORT.match(tok):
                 raw_args.append(tok)
-                raw_indices.append(orig_indices[i])
+                raw_indices.append(scan_origins[i])
                 raw_bases.append(base)
             elif tok in cs.value_spellings or (mixed is not None
                                                and mixed[2] is None):
@@ -774,7 +871,7 @@ def parse_command(
             continue
 
         raw_args.append(tok)
-        raw_indices.append(orig_indices[i])
+        raw_indices.append(scan_origins[i])
         raw_bases.append(base)
         # argparse's REMAINDER: the first operand ends option parsing,
         # so a script's own flags reach the script instead of being read
@@ -875,6 +972,8 @@ def parse_command(
     # UsageError (#452). The parser classifies, it never drops or raises.
     overflow_kind = positional[-1] if positional else "str"
 
+    stdin_script = (cmd_name in constants.STDIN_SCRIPT_COMMANDS
+                    and is_builtin_grammar(cmd_name, spec))
     classified: list[tuple[str, ValueType]] = []
     raw_operands: list[tuple[str, ValueType]] = []
     for j, arg in enumerate(raw_args):
@@ -891,6 +990,8 @@ def parse_command(
             kind = rest_kind
         else:
             kind = overflow_kind
+        if stdin_script and kind == "path" and arg == "-":
+            kind = "str"
         if kind == "path":
             # Against the base an operand_base option left in effect at
             # this position, which is the session cwd for every command
@@ -904,11 +1005,13 @@ def parse_command(
             raw_operands.append((arg, kind))
         word_kinds[raw_indices[j]] = kind
 
+    raw_path_flags: dict[str, ParsedFlagValue] = {}
     path_flag_values: list[str] = []
     for flag_name, kind in cs.kind_by_dest.items():
         if kind != "path" or flag_name not in flags:
             continue
         value = flags[flag_name]
+        raw_path_flags[flag_kwarg_name(flag_name)] = value
         if isinstance(value, list) and flag_name in cs.pair_dests:
             # Only the odd slots are the paths: the even ones name them.
             paired = [
@@ -918,10 +1021,16 @@ def parse_command(
             flags[flag_name] = paired
             path_flag_values.extend(paired[1::2])
         elif isinstance(value, list):
-            resolved_list = [resolve_path(part, cwd) for part in value]
+            resolved_list = [
+                "-" if part == "-" and cmd_name in ("grep", "rg", "sed", "awk")
+                and flag_name in ("-f", "--file") else resolve_path(part, cwd)
+                for part in value
+            ]
             flags[flag_name] = resolved_list
             path_flag_values.extend(resolved_list)
         elif isinstance(value, str):
+            if cmd_name == "wget" and flag_name == "-O" and value == "-":
+                continue
             resolved = resolve_path(value, cwd)
             flags[flag_name] = resolved
             path_flag_values.append(resolved)
@@ -936,10 +1045,16 @@ def parse_command(
         elif isinstance(value, str):
             text_flag_values.append(value)
 
+    flags.occurrences = [
+        (name, resolve_path(value, cwd)
+         if cs.kind_by_dest.get(name) == "path" and isinstance(value, str)
+         and not (cmd_name == "wget" and name == "-O" and value == "-") else
+         value) for name, value in flags.occurrences
+    ]
     return ParsedArgs(
         flags=flags,
         args=classified,
-        cache_paths=cache_paths,
+        raw_path_flags=raw_path_flags,
         path_flag_values=path_flag_values,
         raw_operands=raw_operands,
         text_flag_values=text_flag_values,
@@ -962,7 +1077,10 @@ def parse_command(
 
 
 def parse_to_kwargs(parsed: ParsedArgs) -> dict[str, ParsedFlagValue]:
-    result: dict[str, ParsedFlagValue] = {}
+    result: FlagBag[ParsedFlagValue] = FlagBag()
+    if isinstance(parsed.flags, FlagBag):
+        result.occurrences = [(flag_kwarg_name(name), value)
+                              for name, value in parsed.flags.occurrences]
     for key, value in parsed.flags.items():
         result[flag_kwarg_name(key)] = value
     return result

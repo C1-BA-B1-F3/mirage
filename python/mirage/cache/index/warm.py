@@ -36,9 +36,9 @@ async def entry_or_warm(
     that block; this is the one place that decides what a failed listing means.
 
     A missing parent listing does not prove a retained entry is current: a
-    partial warm may have stored the child without publishing the listing.
-    Such a child is dropped before the refresh. A newly warmed child is usable
-    for this lookup; without a complete parent, each lookup refreshes again.
+    partial warm may have stored the child without publishing freshness.
+    Such a child is dropped before the refresh. A fresh partial listing
+    proves only the children it names; an omitted child still refreshes.
     A parent that is simply absent is not an error here -- the caller reports
     ENOENT against the operand,
     which is the path GNU names (``rm nodir/f`` says "cannot remove 'nodir/f'",
@@ -59,7 +59,9 @@ async def entry_or_warm(
         if listing.entries is not None and virtual_key not in listing.entries:
             return None
         hit = await index.get(virtual_key)
-        if hit.entry is not None and listing.entries is not None:
+        if hit.entry is not None and (listing.entries is not None
+                                      or virtual_key
+                                      in (listing.partial_entries or [])):
             return hit.entry
         if warm is None:
             return None

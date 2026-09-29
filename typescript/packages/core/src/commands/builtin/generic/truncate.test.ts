@@ -31,7 +31,7 @@ async function runTruncate(size: string, current = 10): Promise<number[]> {
   const lengths: number[] = []
   await truncateGeneric(
     [fPath()],
-    size,
+    { size, noCreate: false },
     () =>
       Promise.resolve(
         new FileStat({ name: 'f', type: FileType.FILE, content: ContentType.TEXT, size: current }),
@@ -133,7 +133,7 @@ describe('truncate sizes', () => {
     await expect(
       truncateGeneric(
         [fPath()],
-        value,
+        { size: value, noCreate: false },
         () =>
           Promise.resolve(
             new FileStat({ name: 'f', type: FileType.FILE, content: ContentType.TEXT, size: 10 }),
@@ -175,27 +175,59 @@ describe('truncate sizes', () => {
 })
 
 describe('truncate operands', () => {
-  function operand(rawPath: string): PathSpec {
-    return new PathSpec({ virtual: '/missing', directory: '/', vfsPath: 'missing', rawPath })
+  function operand(rawPath: string, virtual = '/missing'): PathSpec {
+    return new PathSpec({ virtual, directory: '/', vfsPath: virtual.slice(1), rawPath })
   }
 
   it('settles a slashed operand by the truncate op', async () => {
     // GNU opens with O_CREAT before it stats, so `missing/` and `reg/` are
-    // the open's EISDIR, not the stat's miss; a bare operand keeps its own
-    // ENOENT.
+    // the open's EISDIR, not the stat's miss, and an absent bare name is
+    // made where its directory exists. The chain answers first: under an
+    // absent directory the name is ENOENT and the op never runs, every
+    // operand is still tried, and -c leaves an absent name alone.
     const lengths: [string, number][] = []
     const stat = (path: PathSpec): Promise<FileStat> => Promise.reject(enoent(path))
     const truncate = (path: PathSpec, length: number): Promise<void> => {
       lengths.push([path.rawPath, length])
       return Promise.resolve()
     }
-    await truncateGeneric([operand('/missing/')], '4', stat, truncate)
-    expect(lengths).toEqual([['/missing/', 4]])
-    await expect(truncateGeneric([operand('/missing')], '4', stat, truncate)).rejects.toMatchObject(
-      {
-        code: 'ENOENT',
-      },
+    const [, io] = await truncateGeneric(
+      [operand('/missing/'), operand('/nodir/x', '/nodir/x'), operand('/missing')],
+      { size: '4', noCreate: false },
+      stat,
+      truncate,
     )
-    expect(lengths).toEqual([['/missing/', 4]])
+    expect(lengths).toEqual([
+      ['/missing/', 4],
+      ['/missing', 4],
+    ])
+    expect(io.exitCode).toBe(1)
+    expect(new TextDecoder().decode(io.stderr as Uint8Array)).toBe(
+      "truncate: cannot open '/nodir/x' for writing: No such file or directory\n",
+    )
+    const [, kept] = await truncateGeneric(
+      [operand('/missing')],
+      { size: '4', noCreate: true },
+      stat,
+      truncate,
+    )
+    expect(kept.exitCode).toBe(0)
+    expect(lengths).toHaveLength(2)
   })
+})
+
+it('passes no-create to the mutation after a successful stat', async () => {
+  const calls: boolean[] = []
+  const path = PathSpec.fromStrPath('/file')
+  const [, result] = await truncateGeneric(
+    [path],
+    { size: '2', noCreate: true },
+    () => Promise.resolve(new FileStat({ name: 'file', type: FileType.FILE, size: 4 })),
+    (_path, _length, noCreate) => {
+      calls.push(noCreate)
+      return Promise.resolve()
+    },
+  )
+  expect(result.exitCode).toBe(0)
+  expect(calls).toEqual([true])
 })

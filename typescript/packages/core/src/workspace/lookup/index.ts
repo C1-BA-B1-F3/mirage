@@ -20,15 +20,20 @@ export {
   dereferences,
   endOptionsAfterProgram,
   followsLastComponent,
+  lsLinkMode,
   readsSubtrees,
   walksMounts,
 } from './constants.ts'
 export {
   commandVisible,
+  execs,
   isTool,
   listed,
   lookup,
   lookupAll,
+  program,
+  programNote,
+  programs,
   runtimeRefused,
   verbVisible,
 } from './lookup.ts'

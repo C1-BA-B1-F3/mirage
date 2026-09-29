@@ -16,10 +16,13 @@ import { describe, expect, it } from 'vitest'
 import { SortKeyError } from './errors.ts'
 import {
   buildConfig,
+  compareLines,
   computeFields,
   extract,
   type KeyMods,
+  mergeLines,
   parseKeydef,
+  type SortConfig,
   sortLines,
 } from './sort_keys.ts'
 
@@ -32,31 +35,32 @@ const G: KeyMods = {
   reverse: false,
 }
 
+function configOf(flags: Record<string, string | boolean | number | string[]> = {}): SortConfig {
+  const on = (name: string): boolean => flags[name] === true
+  const rawK = flags.k
+  return buildConfig({
+    keyDefs: Array.isArray(rawK) ? rawK : typeof rawK === 'string' ? [rawK] : [],
+    fieldSep: typeof flags.t === 'string' ? flags.t : null,
+    reverse: on('r'),
+    numeric: on('n'),
+    unique: on('u'),
+    foldCase: on('f'),
+    humanNumeric: on('h'),
+    versionSort: on('V'),
+    monthSort: on('M'),
+    ignoreBlanks: on('b'),
+    stable: on('s'),
+    generalNumeric: on('g'),
+    dictionary: on('d'),
+    ignoreNonprinting: on('i'),
+  })
+}
+
 function lines(
   text: string,
   flags: Record<string, string | boolean | number | string[]> = {},
 ): string[] {
-  const on = (name: string): boolean => flags[name] === true
-  const rawK = flags.k
-  return sortLines(
-    text.split('\n'),
-    buildConfig({
-      keyDefs: Array.isArray(rawK) ? rawK : typeof rawK === 'string' ? [rawK] : [],
-      fieldSep: typeof flags.t === 'string' ? flags.t : null,
-      reverse: on('r'),
-      numeric: on('n'),
-      unique: on('u'),
-      foldCase: on('f'),
-      humanNumeric: on('h'),
-      versionSort: on('V'),
-      monthSort: on('M'),
-      ignoreBlanks: on('b'),
-      stable: on('s'),
-      generalNumeric: on('g'),
-      dictionary: on('d'),
-      ignoreNonprinting: on('i'),
-    }),
-  )
+  return sortLines(text.split('\n'), configOf(flags))
 }
 
 describe('field model', () => {
@@ -111,6 +115,126 @@ describe('parseKeydef', () => {
 
   it('unknown ordering letter throws', () => {
     expect(() => parseKeydef('2x', G, false)).toThrow(SortKeyError)
+  })
+
+  it('h is an ordering letter', () => {
+    const key = parseKeydef('1,1h', { ...G, numeric: true }, false)
+    expect(key.mods.human).toBe(true)
+    expect(key.mods.numeric).toBe(false)
+  })
+
+  it('a number takes leading blanks and a plus', () => {
+    expect(parseKeydef('+2', G, false).startField).toBe(2)
+    expect(parseKeydef(' 2', G, false).startField).toBe(2)
+    expect(parseKeydef('\t2', G, false).startField).toBe(2)
+    expect(parseKeydef('1.+2', G, false).startChar).toBe(2)
+    expect(parseKeydef('1,+2', G, false).endField).toBe(2)
+  })
+
+  it('a zero end offset is the end of its field', () => {
+    const key = parseKeydef('2,2.0n', G, false)
+    expect([key.endField, key.endChar]).toEqual([2, 0])
+    expect(key.mods.numeric).toBe(true)
+  })
+})
+
+// GNU coreutils 9.7's own words for a KEYDEF it refuses, measured on
+// debian:stable-slim under LC_ALL=C. Mirrors test_sort_keys.py.
+describe('a refused keydef in GNU words', () => {
+  it.each([
+    ['a', "invalid number at field start: invalid count at start of 'a'"],
+    ['', "invalid number at field start: invalid count at start of ''"],
+    ['-1', "invalid number at field start: invalid count at start of '-1'"],
+    ['1.a', "invalid number after '.': invalid count at start of 'a'"],
+    ['1.', "invalid number after '.': invalid count at start of ''"],
+    ['1,a', "invalid number after ',': invalid count at start of 'a'"],
+    ['1,', "invalid number after ',': invalid count at start of ''"],
+    ['1,-2', "invalid number after ',': invalid count at start of '-2'"],
+    ['1,1.a', "invalid number after '.': invalid count at start of 'a'"],
+    ['0', "field number is zero: invalid field specification '0'"],
+    ['0.x', "field number is zero: invalid field specification '0.x'"],
+    ['1.0', "character offset is zero: invalid field specification '1.0'"],
+    ['1.0x', "character offset is zero: invalid field specification '1.0x'"],
+    ['1,0', "field number is zero: invalid field specification '1,0'"],
+    ['1x', "stray character in field spec: invalid field specification '1x'"],
+    ['1,1x', "stray character in field spec: invalid field specification '1,1x'"],
+    ['1x,2', "stray character in field spec: invalid field specification '1x,2'"],
+    ['1n.2', "stray character in field spec: invalid field specification '1n.2'"],
+    ['1,2,3', "stray character in field spec: invalid field specification '1,2,3'"],
+    ['1N', "stray character in field spec: invalid field specification '1N'"],
+    ['1nMx', "stray character in field spec: invalid field specification '1nMx'"],
+    ["'1", "invalid number at field start: invalid count at start of '\\'1'"],
+    ["1'x", "stray character in field spec: invalid field specification '1\\'x'"],
+    ['1\nx', "stray character in field spec: invalid field specification '1\\nx'"],
+    ['1é', "stray character in field spec: invalid field specification '1\\303\\251'"],
+  ])('%j', (spec, message) => {
+    expect(() => parseKeydef(spec, G, false)).toThrow(new SortKeyError(message))
+  })
+})
+
+// sort.c's check_ordering_compatibility, measured against GNU coreutils 9.7
+// under LC_ALL=C. Mirrors TestOrderingCompatibility in test_sort_keys.py.
+describe('ordering compatibility', () => {
+  it.each([
+    [{ n: true, g: true }, 'gn'],
+    [{ n: true, d: true }, 'dn'],
+    [{ h: true, M: true }, 'hM'],
+    [{ n: true, i: true }, 'in'],
+    [{ n: true, d: true, i: true }, 'dn'],
+    [{ n: true, g: true, f: true }, 'fgn'],
+    [{ n: true, g: true, b: true, r: true }, 'gn'],
+    [{ M: true, V: true }, 'MV'],
+    [{ h: true, n: true }, 'hn'],
+    [{ g: true, M: true }, 'gM'],
+    [{ d: true, M: true }, 'dM'],
+  ])('the global options %j are the one key', (flags, letters) => {
+    expect(() => configOf(flags)).toThrow(
+      new SortKeyError(`options '-${letters}' are incompatible`),
+    )
+  })
+
+  it.each([
+    [['1n,1g'], 'gn'],
+    [['1nM'], 'Mn'],
+    [['1,1nR'], 'nR'],
+    [['1bn,1g'], 'gn'],
+    [['1hM'], 'hM'],
+    [['1fiM'], 'fiM'],
+    [['1idn'], 'dn'],
+    [['1,1Mg'], 'gM'],
+    [['2Mn', '1gn'], 'Mn'],
+    [['1n', '2gh'], 'gh'],
+  ])('each key is checked in the order typed: %j', (k, letters) => {
+    expect(() => configOf({ k })).toThrow(
+      new SortKeyError(`options '-${letters}' are incompatible`),
+    )
+  })
+
+  it('a key without letters inherits the conflict', () => {
+    expect(() => configOf({ k: ['1,1'], n: true, g: true })).toThrow(
+      new SortKeyError("options '-gn' are incompatible"),
+    )
+    expect(() => configOf({ k: ['1'], n: true, d: true })).toThrow(
+      new SortKeyError("options '-dn' are incompatible"),
+    )
+  })
+
+  it('globals no key inherits are not checked', () => {
+    const cfg = configOf({ k: ['1,1n'], n: true, g: true })
+    expect(cfg.keys.map((key) => key.mods.generalNumeric)).toEqual([false])
+    expect(() => configOf({ k: ['1d'], n: true })).not.toThrow()
+  })
+
+  it.each([
+    [{ k: ['1dVR'] }],
+    [{ k: ['1,1VR'] }],
+    [{ V: true, d: true }],
+    [{ V: true, i: true }],
+    [{ d: true, f: true }],
+    [{ k: ['1n', '2g'] }],
+    [{ n: true, r: true, b: true }],
+  ])('orderings that combine: %j', (flags) => {
+    expect(() => configOf(flags)).not.toThrow()
   })
 })
 
@@ -172,5 +296,129 @@ describe('sortLines KEYDEF', () => {
   it('char offsets with explicit separator', () => {
     const data = 'apple:12\nbee:3\ncat:100'
     expect(lines(data, { k: '1.2,1.3', t: ':' })).toEqual(['cat:100', 'bee:3', 'apple:12'])
+  })
+})
+
+// Measured against GNU coreutils 9.7 on debian:stable-slim, LC_ALL=C.
+// Mirrors TestUniqueStopsAtTheKeys in test_sort_keys.py.
+describe('unique stops at the keys', () => {
+  it('compares key-equal lines equal under unique', () => {
+    expect(compareLines('b 1', 'a 1', configOf({ k: '2,2', u: true }))).toBe(0)
+    expect(compareLines('b 1', 'a 1', configOf({ k: '2,2' }))).toBeGreaterThan(0)
+  })
+
+  it('keeps the first key-equal line in input order', () => {
+    expect(lines('b 1\na 1', { k: '2,2', u: true })).toEqual(['b 1'])
+    expect(lines('b\na\nB', { f: true, u: true })).toEqual(['a', 'b'])
+  })
+
+  it('keeps input order among ties under reverse', () => {
+    expect(lines('a 1\nb 1\nc 2', { k: '2,2', u: true, r: true })).toEqual(['c 2', 'a 1'])
+  })
+})
+
+// -n and -h in the C locale, pinned against GNU sort 9.7. Mirrors
+// TestNumericKeys in test_sort_keys.py.
+describe('numeric keys', () => {
+  it('takes a newline as a blank before a number', () => {
+    // A -z record may hold one; sort.c's blanks table counts it.
+    expect(sortLines(['\n5', '3', '\n-5', '-4'], configOf({ n: true }))).toEqual([
+      '\n-5',
+      '-4',
+      '3',
+      '\n5',
+    ])
+  })
+
+  it('separates fields at a newline', () => {
+    expect(sortLines(['b\n1', 'a\n2'], configOf({ k: '2,2n' }))).toEqual(['b\n1', 'a\n2'])
+  })
+
+  it('ranks the unit above the magnitude', () => {
+    expect(lines('1500\n1.5K\n2000\n1K', { h: true })).toEqual(['1500', '2000', '1K', '1.5K'])
+  })
+
+  it('takes only k as a unit in lowercase', () => {
+    expect(lines('1m\n1M\n2\n1k', { h: true })).toEqual(['1m', '2', '1k', '1M'])
+  })
+
+  it('negates a negative number unit and gives zero none', () => {
+    expect(lines('-1K\n-2\n1\n-1M\n0\n-0K\n0K', { h: true })).toEqual([
+      '-1M',
+      '-1K',
+      '-2',
+      '-0K',
+      '0',
+      '0K',
+      '1',
+    ])
+  })
+
+  it('reads the unit after the digits and points', () => {
+    expect(lines('5.K\n3K\n.5K\n3\nK', { h: true, s: true })).toEqual([
+      'K',
+      '3',
+      '.5K',
+      '3K',
+      '5.K',
+    ])
+  })
+
+  it('compares human numbers exactly', () => {
+    expect(lines('1.000000000000000002K\n1.000000000000000001K', { h: true, s: true })).toEqual([
+      '1.000000000000000001K',
+      '1.000000000000000002K',
+    ])
+  })
+})
+
+// Mirrors TestMergeLines in test_sort_keys.py.
+describe('mergeLines', () => {
+  it('never reorders a run', () => {
+    expect(mergeLines([['b', 'a']], configOf())).toEqual(['b', 'a'])
+  })
+
+  it('emits the smallest head first', () => {
+    expect(mergeLines([['c', 'a'], ['b']], configOf())).toEqual(['b', 'c', 'a'])
+    expect(
+      mergeLines(
+        [
+          ['a', 'd'],
+          ['b', 'e'],
+          ['c', 'f'],
+        ],
+        configOf(),
+      ),
+    ).toEqual(['a', 'b', 'c', 'd', 'e', 'f'])
+  })
+
+  it('gives a tie to the earlier run', () => {
+    const runs = [['k 3'], ['k 1'], ['k 2']]
+    expect(mergeLines(runs, configOf({ k: '1,1', s: true }))).toEqual(['k 3', 'k 1', 'k 2'])
+    expect(mergeLines(runs, configOf({ k: '1,1' }))).toEqual(['k 1', 'k 2', 'k 3'])
+  })
+
+  it('skips empty runs', () => {
+    expect(mergeLines([[], ['b', 'a'], []], configOf())).toEqual(['b', 'a'])
+    expect(mergeLines([[], []], configOf())).toEqual([])
+  })
+
+  it('collapses only adjacent duplicates under unique', () => {
+    const cfg = configOf({ u: true })
+    expect(mergeLines([['a', 'b', 'a']], cfg)).toEqual(['a', 'b', 'a'])
+    expect(
+      mergeLines(
+        [
+          ['a', 'b'],
+          ['a', 'c'],
+        ],
+        cfg,
+      ),
+    ).toEqual(['a', 'b', 'c'])
+  })
+
+  it('keeps the first line of a key-equal series under unique', () => {
+    expect(mergeLines([['x 1'], ['a 1']], configOf({ k: '2,2', u: true }))).toEqual(['x 1'])
+    expect(mergeLines([['b'], ['B']], configOf({ f: true, u: true }))).toEqual(['b'])
   })
 })

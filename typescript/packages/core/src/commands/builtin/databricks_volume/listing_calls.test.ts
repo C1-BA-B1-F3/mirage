@@ -131,13 +131,14 @@ async function runCmd(
   index: IndexCacheStore,
 ): Promise<void> {
   const cmd = cmdOf(name)
-  await cmd.fn(makeAccessor(), paths, texts, {
+  const result = await cmd.fn(makeAccessor(), paths, texts, {
     stdin: null,
     flags,
     filetypeFns: null,
     cwd: '/',
     index,
   })
+  if (result !== null) await materialize(result[0])
 }
 
 const listDirCalls = (calls: FetchCall[]): FetchCall[] =>

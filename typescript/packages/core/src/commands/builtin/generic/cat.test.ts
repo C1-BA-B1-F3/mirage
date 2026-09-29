@@ -17,6 +17,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { IOResult, materialize } from '../../../io/types.ts'
 import { ContentType, FileStat, FileType, PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
+import { efbig } from '../../../utils/errors.ts'
 import { catGeneric } from './cat.ts'
 
 const ENC = new TextEncoder()
@@ -76,6 +77,27 @@ describe('catGeneric multi-file streaming', () => {
     expect(first.done).toBe(false)
     expect(DEC.decode(first.value as Uint8Array)).toBe('a1\na2\na3\n')
     expect(pulled).toEqual(['/a.txt'])
+  })
+})
+
+describe('catGeneric per-operand read failure', () => {
+  it('reports a read refused past the stat and prints the next file', async () => {
+    // A table past its mount's read cap stats fine and refuses the read; GNU
+    // cat reports the operand and goes on to the next.
+    const result = await catGeneric([spec('/a.txt'), spec('/b.txt')], [], opts(), statFn, (p) =>
+      p.virtual === '/a.txt'
+        ? (async function* () {
+            await Promise.resolve()
+            yield* []
+            throw efbig(p)
+          })()
+        : fileStream(p.virtual, []),
+    )
+    const [stdout, io] = result ?? [null, new IOResult()]
+    expect(DEC.decode(await materialize(stdout))).toBe('b1\nb2\n')
+    expect(DEC.decode(await materialize(io.stderr))).toBe('cat: /a.txt: File too large\n')
+    expect(io.exitCode).toBe(1)
+    expect(await materialize(io.reads['/a.txt'])).toEqual(new Uint8Array())
   })
 })
 

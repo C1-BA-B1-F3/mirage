@@ -73,12 +73,15 @@ function cursorStart(ctx: Ctx<C>, prefix: string, keys: string[]): number | null
 export async function conversationsList(ctx: Ctx<C>): Promise<Reply> {
   const args = argsOf(ctx)
   const types = (args.get('types') ?? '').split(',').filter((t) => t !== '')
-  const kinds = types.map((t) =>
-    t === 'public_channel' || t === 'private_channel' ? 'channel' : t,
-  )
+  const requested = types.length > 0 ? types : ['public_channel', 'private_channel']
+  const filters: Record<string, JsonValue>[] = []
+  if (requested.includes('public_channel')) filters.push({ kind: 'channel', isPrivate: false })
+  if (requested.includes('private_channel')) filters.push({ kind: 'channel', isPrivate: true })
+  if (requested.includes('im')) filters.push({ kind: 'im' })
+  if (requested.includes('mpim')) filters.push({ kind: 'mpim' })
   const where: Record<string, JsonValue> = {
     tenant: ctx.tenant,
-    kind: { in: kinds.length > 0 ? kinds : ['channel'] },
+    OR: filters,
   }
   if (args.get('exclude_archived') === 'true') where.isArchived = false
   const rows = await ctx.db.channel.findMany({ where, orderBy: { id: 'asc' } })
@@ -214,31 +217,60 @@ export async function clientUserBoot(ctx: Ctx<C>): Promise<Reply> {
   }
 }
 
+/** Slack's suffix is a microsecond counter: .116 means .000116, not .116000. */
+function historyTimestamp(value: string): string {
+  const [seconds, micros = '0'] = value.split('.')
+  return `${seconds}.${micros.padStart(6, '0')}`
+}
+
+/** The ts a `next_ts:<ts without its dot>` cursor names, or null for any other cursor. */
+function cursorTs(cursor: string): string | null {
+  const key = /^next_ts:(\d{7,})$/.exec(Buffer.from(cursor, 'base64').toString('utf8'))?.[1]
+  return key === undefined ? null : `${key.slice(0, -6)}.${key.slice(-6)}`
+}
+
 export async function conversationsHistory(ctx: Ctx<C>): Promise<Reply> {
   const args = argsOf(ctx)
   const channel = args.get('channel') ?? ''
   const oldest = args.get('oldest')
   const latest = args.get('latest')
+  const cursor = args.get('cursor') ?? ''
+  const inclusive = ['true', '1'].includes(args.get('inclusive') ?? '')
   const where: Record<string, JsonValue> = { tenant: ctx.tenant, channelId: channel }
   const ts: Record<string, string> = {}
-  if (oldest !== null) ts.gte = oldest
-  if (latest !== null) ts.lte = latest
+  if (oldest !== null) ts[inclusive ? 'gte' : 'gt'] = historyTimestamp(oldest)
+  if (latest !== null) ts[inclusive ? 'lte' : 'lt'] = historyTimestamp(latest)
   if (Object.keys(ts).length > 0) where.ts = ts
-  // Slack returns most-recent-first; the backend re-sorts the day window.
+  const from = cursor === '' ? '' : cursorTs(cursor)
+  if (from === null) return fail('invalid_cursor')
+  if (from !== '') where.AND = [{ ts: { lte: from } }]
+  const size = pageSize(ctx, 100, 1000)
   const rows: MessageRow[] = await ctx.db.message.findMany({
     where,
     orderBy: { ts: 'desc' },
-    take: intQuery(ctx, 'limit', 100),
+    take: size + 1,
   })
+  if (from !== '' && rows[0]?.ts !== from) return fail('invalid_cursor')
+  const next = rows[size]
   const files = await filesIn(ctx.db, ctx.tenant, channel)
-  const messages = rows.map((m) =>
+  const messages = rows.slice(0, size).map((m) =>
     messageJson(
       m,
       files.filter((f) => f.messageTs === m.ts),
       ctx.url.origin,
     ),
   )
-  return { status: 200, body: { ok: true, messages, response_metadata: { next_cursor: '' } } }
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      messages,
+      has_more: next !== undefined,
+      response_metadata: {
+        next_cursor: next === undefined ? '' : cursorFor('next_ts', next.ts.replace('.', '')),
+      },
+    },
+  }
 }
 
 export async function usersList(ctx: Ctx<C>): Promise<Reply> {

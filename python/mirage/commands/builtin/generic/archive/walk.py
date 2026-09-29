@@ -17,6 +17,7 @@ OTHER_FILESYSTEM = "file is on a different filesystem; not dumped"
 # on a fatal Problem; tar prints them after "Cannot stat: " and Info-ZIP
 # words every unreachable name the same way, so it ignores the reason.
 _NO_SUCH = "No such file or directory"
+_NOT_DIR = "Not a directory"
 _TOO_MANY_LEVELS = "Too many levels of symbolic links"
 # A directory below the operand the walk could not open: a rule refused
 # it. Rides on an ``unreadable`` Problem; tar prints it after "Cannot
@@ -187,6 +188,8 @@ async def _follow(
     spec = _child_spec(target, root)
     try:
         target_stat = await stat(spec)
+    except NotADirectoryError:
+        return [], [], _NOT_DIR, []
     except (FileNotFoundError, ValueError):
         return [], [], _NO_SUCH, []
     if target_stat.type != FileType.DIRECTORY:
@@ -265,9 +268,10 @@ async def scan_operand(
     else:
         try:
             root_stat = await stat(path)
-        except (FileNotFoundError, ValueError):
-            return Scan(problems=(Problem(path=base,
-                                          reason=_NO_SUCH,
+        except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+            reason = (_NOT_DIR
+                      if isinstance(exc, NotADirectoryError) else _NO_SUCH)
+            return Scan(problems=(Problem(path=base, reason=reason,
                                           fatal=True), ),
                         missing=True)
         if root_stat.type != FileType.DIRECTORY:

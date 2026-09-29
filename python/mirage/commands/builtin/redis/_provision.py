@@ -38,7 +38,7 @@ async def _resolve_sizes(
             try:
                 file_stat = await redis_stat(accessor, p, index)
                 size = file_stat.size
-            except (FileNotFoundError, ValueError):
+            except (FileNotFoundError, NotADirectoryError, ValueError):
                 # provision estimates degrade, never fail: unresolved
                 # sizes stay UNKNOWN
                 pass

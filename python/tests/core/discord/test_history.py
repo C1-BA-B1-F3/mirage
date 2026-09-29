@@ -19,6 +19,7 @@ import pytest
 
 from mirage.core.discord.config import DiscordConfig
 from mirage.core.discord.history import get_history_jsonl
+from mirage.core.time_range import TimeRange
 
 
 @pytest.fixture
@@ -30,11 +31,11 @@ def config():
 async def test_get_history_jsonl(config):
     messages = [
         {
-            "id": "200",
+            "id": "1196242344345600200",
             "content": "second"
         },
         {
-            "id": "100",
+            "id": "1196242344345600100",
             "content": "first"
         },
     ]
@@ -43,7 +44,8 @@ async def test_get_history_jsonl(config):
             new_callable=AsyncMock,
             return_value=messages,
     ):
-        result = await get_history_jsonl(config, "C001", "2024-01-15")
+        result = await get_history_jsonl(config, "C001", "2024-01-15",
+                                         TimeRange())
 
     lines = result.decode().strip().split("\n")
     assert len(lines) == 2
@@ -61,6 +63,7 @@ async def test_get_history_empty(config):
             new_callable=AsyncMock,
             return_value=[],
     ):
-        result = await get_history_jsonl(config, "C001", "2024-01-15")
+        result = await get_history_jsonl(config, "C001", "2024-01-15",
+                                         TimeRange())
 
     assert result == b""

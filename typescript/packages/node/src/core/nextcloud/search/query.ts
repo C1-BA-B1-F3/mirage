@@ -1,5 +1,6 @@
 import type { PredNode } from '@struktoai/mirage-core/commands/builtin/find_eval'
 import type { PathSpec } from '@struktoai/mirage-core/types'
+import { DIR_SIZE } from '@struktoai/mirage-core/utils/stat_view'
 import {
   DISPLAY_NAME,
   LAST_MODIFIED,
@@ -167,9 +168,10 @@ function sizeCondition(query: FilesSearchQuery): string | null {
   }
   if (conditions.length === 0) return null
   const fileBounds = combine(BooleanOperation.AND, [negate(isCollection()), ...conditions])
-  const includesZero =
-    (size.lower === null || size.lower <= 0) && (size.upper === null || size.upper >= 0)
-  return includesZero ? combine(BooleanOperation.OR, [isCollection(), fileBounds]) : fileBounds
+  const includesDirSize =
+    (size.lower === null || size.lower <= DIR_SIZE) &&
+    (size.upper === null || size.upper >= DIR_SIZE)
+  return includesDirSize ? combine(BooleanOperation.OR, [isCollection(), fileBounds]) : fileBounds
 }
 
 function whereCondition(query: FilesSearchQuery): string | null {

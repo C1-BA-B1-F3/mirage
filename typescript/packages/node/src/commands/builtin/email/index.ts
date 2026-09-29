@@ -12,7 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { makeGenericCommands } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
+import {
+  makeGenericCommands,
+  resolveGlobOf,
+  withDefaultProvisions,
+} from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import { VFSName } from '@struktoai/mirage-core/types'
 import type { EmailAccessor } from '../../../accessor/email.ts'
@@ -29,7 +33,10 @@ export const EMAIL_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<EmailAccessor>(VFSName.EMAIL, EMAIL_IO, {
     overrides: EMAIL_OVERRIDES,
   }),
-  ...EMAIL_FIND,
-  ...EMAIL_GREP,
-  ...EMAIL_RG,
+  ...withDefaultProvisions(
+    [...EMAIL_FIND, ...EMAIL_GREP, ...EMAIL_RG],
+    EMAIL_IO.stat,
+    resolveGlobOf(EMAIL_IO),
+    EMAIL_IO.readdir,
+  ),
 ]

@@ -23,7 +23,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "/mongodb/mirage_integ/collections/books/documents.jsonl: Operation not supported\n"
+        "stderr": "/mongodb/mirage_integ/collections/books/documents.jsonl: Read-only file system\n"
       }
     },
     {
@@ -117,7 +117,7 @@
       "command": "cat /mongodb/__nf_missing__.txt /mongodb/mirage_integ/database.json",
       "expect": {
         "exit": 1,
-        "stdout": "{\"database\": \"mirage_integ\", \"collections\": [{\"name\": \"authors\", \"document_count\": 3}, {\"name\": \"books\", \"document_count\": 5}, {\"name\": \"system.views\", \"document_count\": 1}], \"views\": [{\"name\": \"recent_books\"}]}\n",
+        "stdout": "{\"database\": \"mirage_integ\", \"collections\": [{\"name\": \"authors\"}, {\"name\": \"books\"}, {\"name\": \"system.views\"}], \"views\": [{\"name\": \"recent_books\"}]}\n",
         "stderr": "cat: /mongodb/__nf_missing__.txt: No such file or directory\n"
       }
     },
@@ -130,7 +130,7 @@
       "command": "wc -l /mongodb/mirage_integ/collections/books/documents.jsonl /mongodb/__nf_missing__.txt",
       "expect": {
         "exit": 1,
-        "stdout": "5 /mongodb/mirage_integ/collections/books/documents.jsonl\n5 total\n",
+        "stdout": "  5 /mongodb/mirage_integ/collections/books/documents.jsonl\n  5 total\n",
         "stderr": "wc: /mongodb/__nf_missing__.txt: No such file or directory\n"
       }
     },
@@ -144,7 +144,7 @@
       "expect": {
         "exit": 1,
         "stdout": "==> /mongodb/mirage_integ/collections/books/documents.jsonl <==\n{\"_id\": 1, \"title\": \"alpha\", \"author\": \"ada\", \"year\": 2020, \"tags\": [\"fiction\", \"classic\"], \"rating\": 4.5}\n{\"_id\": 2, \"title\": \"beta\", \"author\": \"ben\", \"year\": 2021, \"tags\": [\"fiction\"], \"rating\": 3.2}\n",
-        "stderr": "head: /mongodb/__nf_missing__.txt: No such file or directory\n"
+        "stderr": "head: cannot open '/mongodb/__nf_missing__.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -157,7 +157,7 @@
       "expect": {
         "exit": 1,
         "stdout": "==> /mongodb/mirage_integ/collections/books/documents.jsonl <==\n{\"_id\": 4, \"title\": \"delta\", \"author\": \"ada\", \"year\": 2023, \"tags\": [\"history\"], \"rating\": 4}\n{\"_id\": 5, \"title\": \"epsilon\", \"author\": \"ben\", \"year\": 2024, \"rating\": 2.5}\n",
-        "stderr": "tail: /mongodb/__nf_missing__.txt: No such file or directory\n"
+        "stderr": "tail: cannot open '/mongodb/__nf_missing__.txt' for reading: No such file or directory\n"
       }
     },
     {

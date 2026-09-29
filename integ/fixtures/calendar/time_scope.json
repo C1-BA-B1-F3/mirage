@@ -1,0 +1,67 @@
+{
+  "events": [
+    {
+      "summary": "Historical",
+      "start": {
+        "dateTime": "2025-01-05T09:00:00Z"
+      },
+      "end": {
+        "dateTime": "2025-01-05T10:00:00Z"
+      }
+    },
+    {
+      "summary": "Before",
+      "start": {
+        "dateTime": "2026-06-01T09:00:00Z"
+      },
+      "end": {
+        "dateTime": "2026-06-01T10:00:00Z"
+      }
+    },
+    {
+      "summary": "Cross start",
+      "start": {
+        "dateTime": "2026-06-01T09:30:00Z"
+      },
+      "end": {
+        "dateTime": "2026-06-01T10:30:00Z"
+      }
+    },
+    {
+      "summary": "At start",
+      "start": {
+        "dateTime": "2026-06-01T10:00:00Z"
+      },
+      "end": {
+        "dateTime": "2026-06-01T11:00:00Z"
+      }
+    },
+    {
+      "summary": "Cross end",
+      "start": {
+        "dateTime": "2026-06-01T23:30:00Z"
+      },
+      "end": {
+        "dateTime": "2026-06-02T00:30:00Z"
+      }
+    },
+    {
+      "summary": "At end",
+      "start": {
+        "dateTime": "2026-06-02T00:00:00Z"
+      },
+      "end": {
+        "dateTime": "2026-06-02T01:00:00Z"
+      }
+    },
+    {
+      "summary": "All day",
+      "start": {
+        "date": "2026-06-01"
+      },
+      "end": {
+        "date": "2026-06-02"
+      }
+    }
+  ]
+}

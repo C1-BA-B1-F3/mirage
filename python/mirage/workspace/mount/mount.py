@@ -14,7 +14,7 @@
 
 import asyncio
 import dataclasses
-import errno
+import functools
 import inspect
 from collections.abc import AsyncIterator, Awaitable, Iterable
 from contextlib import asynccontextmanager
@@ -25,25 +25,28 @@ from mirage.cache.index.factory import build_index
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.utils.limit import run_with_timeout
+from mirage.commands.builtin.utils.paths import dispatch_stat, link_follow
 from mirage.commands.config import (CommandOpts, ExecContext,
                                     RegisteredCommand, has_injected_version)
 from mirage.commands.resolve import get_extension
 from mirage.commands.spec import CommandSpec
+from mirage.commands.spec.flag_view import FlagBag
 from mirage.commands.spec.types import FlagValue
-from mirage.context import (effective_mount_mode, effective_path_mode,
-                            readonly_below, reset_mount_gate, set_mount_gate,
-                            strongest_mode_under)
+from mirage.context import (effective_mount_mode, require_paths_writable,
+                            reset_mount_gate, reset_walk_probe, set_mount_gate,
+                            set_walk_probe, strongest_mode_under)
 from mirage.io.cachable_iterator import CachableAsyncIterator
 from mirage.io.types import ByteSource, IOResult
 from mirage.observe.context import (push_mount_context, push_revisions,
                                     reset_active_recorder, reset_revisions,
-                                    with_mount_prefix, with_revisions)
+                                    with_mount_context, with_revisions)
 from mirage.ops.host_io import host_io, with_host_io
 from mirage.ops.registry import RegisteredOp
 from mirage.policy import resolve_limit
 from mirage.types import (FileType, Limit, MountMode, PathSpec, Producer,
-                          ReadSpec)
-from mirage.utils.errors import ReadOnlyError, ebusy, enotsup
+                          ReadSpec, WalkProbe)
+from mirage.utils.context_scope import ContextScope
+from mirage.utils.errors import ebusy, enotsup
 from mirage.utils.ids import uuid7
 from mirage.utils.key_prefix import mount_key
 from mirage.vfs.base import BaseVFS
@@ -60,13 +63,12 @@ _SUBTREE_OPS = frozenset({"rename"})
 
 def _wrap_cmd_streams(
     result: tuple[ByteSource | None, IOResult],
-    mount_prefix: str,
     revisions: dict[str, str] | None,
     mount_id: str | None = None,
     activity: VFSActivity | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     """Wrap any async-iterator streams in ``result`` with the mount
-    prefix and active revisions, so ``record_stream`` and
+    identity and active revisions, so ``record_stream`` and
     ``revision_for`` calls inside the lazy backend body see the right
     context when consumed after this frame exits.
 
@@ -77,13 +79,13 @@ def _wrap_cmd_streams(
 
     Args:
         result: ``(stream, io)`` as returned by a command handler.
-        mount_prefix: prefix to push during stream consumption.
         revisions: revisions map to push during stream consumption
             (None when the mount has no pins installed).
         mount_id (str | None): identity of the serving mount.
     """
     stream, io = result
     seen: dict[int, ByteSource] = {}
+    scope = ContextScope()
 
     def _wrap(obj: ByteSource) -> ByteSource:
         if isinstance(obj, (bytes, bytearray)):
@@ -92,10 +94,10 @@ def _wrap_cmd_streams(
         if oid in seen:
             return seen[oid]
         source = obj.source if isinstance(obj, CachableAsyncIterator) else obj
-        wrapped = with_mount_prefix(mount_prefix, source, mount_id)
+        wrapped = with_mount_context(source, mount_id)
         if revisions:
             wrapped = with_revisions(revisions, wrapped)
-        wrapped = with_host_io(wrapped)
+        wrapped = scope.stream(with_host_io(wrapped))
         if isinstance(obj, CachableAsyncIterator):
             obj.replace_source(wrapped)
             wrapped = obj
@@ -111,8 +113,7 @@ def _wrap_cmd_streams(
     return stream, io
 
 
-def _wrap_op_stream(result: Any, mount_prefix: str, mount_id: str,
-                    activity: VFSActivity) -> Any:
+def _wrap_op_stream(result: Any, mount_id: str, activity: VFSActivity) -> Any:
     """Hold the host-I/O bypass around an op result that streams.
 
     An op that returns an async iterator has not run its body yet: the
@@ -122,17 +123,15 @@ def _wrap_op_stream(result: Any, mount_prefix: str, mount_id: str,
 
     Args:
         result (Any): whatever the op returned.
-        mount_prefix (str): virtual mount prefix.
         mount_id (str): identity of the serving mount.
     """
     if isinstance(result, CachableAsyncIterator):
         result.replace_source(
-            with_host_io(
-                with_mount_prefix(mount_prefix, result.source, mount_id)))
+            with_host_io(with_mount_context(result.source, mount_id)))
         return activity.hold(result)
     if hasattr(result, "__aiter__"):
-        return activity.hold(
-            with_host_io(with_mount_prefix(mount_prefix, result, mount_id)))
+        return activity.hold(with_host_io(with_mount_context(result,
+                                                             mount_id)))
     return result
 
 
@@ -674,7 +673,7 @@ class MountEntry:
             # single grep -f) or a list of PathSpec (multiple grep -f).
             # Everything else (bools, strings, list[str] like repeated -e) is
             # not a path and passes through unchanged.
-            flags: dict[str, FlagValue] = {}
+            flags: dict[str, FlagValue] = FlagBag(flag_kwargs)
             for k, v in flag_kwargs.items():
                 if isinstance(v, PathSpec):
                     flags[k] = dataclasses.replace(v,
@@ -719,33 +718,47 @@ class MountEntry:
                 stat_path=stat_path,
                 readdir_path=context.readdir_path,
                 session_view=context.session_view,
+                processes=context.processes,
+                argv=context.argv,
             )
 
-            recording_token = push_mount_context(mount_prefix, self.mount_id)
+            recording_token = push_mount_context(self.mount_id)
             revs_token = push_revisions(self.revisions or None)
             prev_manager = push_cache_manager(self.cache_manager)
-            # What the command tier's mode guard reads: the write-command
-            # gate below admits a command when any shown subtree grants
-            # writes, and this binding is how each write the handler then
-            # makes is held to its own region's mode.
+            # What the command tier's mode guard reads: each write the
+            # handler makes is held to its own region's mode.
             gate_token = set_mount_gate(self.prefix, self.mode)
+            # What the command tier's walk guard proves an operand's `.`
+            # and `..` with: the handler reaches its backend past the
+            # door, so the door's stat and link follow are bound here.
+            links = context.ns.links if context.ns is not None else None
+            walk_token = (set_walk_probe(
+                WalkProbe(stat=functools.partial(dispatch_stat,
+                                                 context.dispatch),
+                          follow=link_follow(links)))
+                          if context.dispatch is not None else None)
             try:
                 for cmd in handlers:
                     # Only wrapper-owned responses bypass the write guard.
                     info_only = (flags.get("help") is True
                                  or (flags.get("version") is True
                                      and has_injected_version(cmd.spec)))
-                    # strongest_mode_under, not effective_mode: a mount
-                    # whose only writable region is a show entry still runs
-                    # the command, and the op door refuses per path. The
-                    # trailing newline is load-bearing: stderr accumulates
-                    # across a line, so two refusals in one list ran
-                    # together as `...at /ro/rm: read-only mount at /ro/`,
-                    # and the node table's twin of this refusal (a symlink
-                    # `rm`, rendered by shared.read_only_error) concatenates
-                    # with it.
-                    if (cmd.write and not info_only and strongest_mode_under(
-                            self.prefix, self.mode) == MountMode.READ):
+                    # A command whose I/O runs under the path guards is
+                    # refused where it writes, because only the write
+                    # knows whether a line writes: `gzip -c`, `tar -t` and
+                    # `split -n 1/2` read a read-only mount like any
+                    # reader, and `gzip f` is refused at the write of
+                    # `f.gz`, in gzip's own GNU voice. A write command
+                    # that reaches its service some other way (trello's
+                    # id-addressed card writes, a custom backend's own
+                    # verb) is refused here, before it runs, because no
+                    # door would see its write. strongest_mode_under, not
+                    # effective_mode: a mount whose only writable region
+                    # is a show entry still runs it. The trailing newline
+                    # is load-bearing: stderr accumulates across a line.
+                    if (cmd.write and not cmd.path_guarded
+                            and not info_only and strongest_mode_under(
+                                self.prefix, self.mode) == MountMode.READ):
                         return None, IOResult(
                             exit_code=1,
                             stderr=(f"{cmd_name}: read-only mount "
@@ -758,7 +771,8 @@ class MountEntry:
                     resolved_limit = resolve_limit(
                         cmd_name,
                         command_default=cmd.limit,
-                        mount_override=self.command_limits.get(cmd_name))
+                        mount_override=context.limit_override
+                        or self.command_limits.get(cmd_name))
                     cmd_timeout = (resolved_limit.timeout_seconds
                                    if resolved_limit is not None else None)
                     with host_io():
@@ -766,9 +780,8 @@ class MountEntry:
                             cmd.fn(self.vfs.accessor, paths, texts, opts),
                             cmd_timeout, cmd_name)
                     if result is not None:
-                        stream, io = _wrap_cmd_streams(result, mount_prefix,
-                                                       self.revisions or None,
-                                                       self.mount_id,
+                        stream, io = _wrap_cmd_streams(result, self.revisions
+                                                       or None, self.mount_id,
                                                        self.activity)
                         io.producer = Producer(command=cmd_name,
                                                prefixes=(self.prefix, ),
@@ -776,6 +789,8 @@ class MountEntry:
                         return stream, io
                 return None, IOResult()
             finally:
+                if walk_token is not None:
+                    reset_walk_probe(walk_token)
                 reset_mount_gate(gate_token)
                 reset_revisions(revs_token)
                 reset_active_recorder(recording_token)
@@ -826,34 +841,14 @@ class MountEntry:
                 raise enotsup(str(self.vfs.name), op_name, path)
 
             if any(o.write for o in levels):
-                # GNU reports the operand, not the guard's own wording, so
-                # stamp errno + filename and let format_fs_error render
-                # "<cmd>: <path>: Read-only file system" (mirrors the
-                # TypeScript erofsReadOnly stamp). Per path, not per mount:
-                # a show entry can hold one subtree below `w` on a writable
-                # mount, or one writable region on a read mount. A rename
-                # mutates its destination too, so both endpoints answer,
-                # and it relocates whole subtrees in one call, so a
-                # read-only region below either endpoint refuses it too.
-                if effective_path_mode(path, self.prefix,
-                                       self.mode) == MountMode.READ:
-                    raise ReadOnlyError(errno.EROFS, "Read-only file system",
-                                        path)
                 dst = kwargs.get("dst")
-                if isinstance(dst, PathSpec) and effective_path_mode(
-                        dst.virtual, self.prefix, self.mode) == MountMode.READ:
-                    raise ReadOnlyError(errno.EROFS, "Read-only file system",
-                                        dst.virtual)
-                if op_name in _SUBTREE_OPS:
-                    endpoints = [path]
-                    if isinstance(dst, PathSpec):
-                        endpoints.append(dst.virtual)
-                    for endpoint in endpoints:
-                        blame = readonly_below(endpoint, self.prefix,
-                                               self.mode)
-                        if blame is not None:
-                            raise ReadOnlyError(errno.EROFS,
-                                                "Read-only file system", blame)
+                endpoints = [PathSpec.from_str_path(path)]
+                if isinstance(dst, PathSpec):
+                    endpoints.append(dst)
+                require_paths_writable(endpoints,
+                                       self.prefix,
+                                       self.mode,
+                                       subtree=op_name in _SUBTREE_OPS)
 
             mount_prefix = self.prefix.rstrip("/")
             scope = PathSpec(
@@ -867,7 +862,7 @@ class MountEntry:
             op_override = self.command_limits.get(op_name)
             op_timeout = (op_override.timeout_seconds
                           if op_override is not None else None)
-            recording_token = push_mount_context(mount_prefix, self.mount_id)
+            recording_token = push_mount_context(self.mount_id)
             revs_token = push_revisions(self.revisions or None)
             try:
                 for op in levels:
@@ -883,8 +878,8 @@ class MountEntry:
                             result = await run_with_timeout(
                                 result, op_timeout, op_name)
                     if result is not None:
-                        return _wrap_op_stream(result, mount_prefix,
-                                               self.mount_id, self.activity)
+                        return _wrap_op_stream(result, self.mount_id,
+                                               self.activity)
                 return None
             finally:
                 reset_revisions(revs_token)

@@ -20,7 +20,7 @@
   "exit": 0,
   "lines": [
     "$ type -t pager-eng",
-    "cli",
+    "file",
     "",
     "$ pager-eng --help",
     "pager-eng: Task-specific incident CLI",

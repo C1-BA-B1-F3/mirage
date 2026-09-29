@@ -14,6 +14,7 @@
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.cache.context import invalidate_after_unlink
+from mirage.core.redis.dest import lookup_error
 from mirage.types import PathSpec
 from mirage.utils.path import norm
 
@@ -23,7 +24,7 @@ async def unlink(accessor: RedisAccessor, path_spec: PathSpec) -> None:
     store = accessor.store
     p = norm(path)
     if not await store.has_file(p):
-        raise FileNotFoundError(p)
+        raise await lookup_error(store, path_spec, p)
     await store.del_file(p)
     await store.del_modified(p)
     await store.del_attrs(p)

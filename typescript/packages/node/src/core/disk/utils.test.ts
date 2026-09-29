@@ -12,9 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { resolve, sep } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { basename, norm, parent, resolveSafe } from './utils.ts'
+import { chmod, mkdir, realpath, symlink, writeFile } from 'node:fs/promises'
+import { join, resolve, sep } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { spec, tmpRoot } from '../../test-utils.ts'
+import { basename, norm, parent, resolveInside, resolveSafe } from './utils.ts'
 
 describe('resolveSafe', () => {
   it('joins root with virtual path', () => {
@@ -74,5 +76,76 @@ describe('basename', () => {
   })
   it('handles single-segment paths', () => {
     expect(basename('/x')).toBe('x')
+  })
+})
+
+describe('resolveInside', () => {
+  let root: string
+  let outside: string
+  let cleanup: () => void
+  let cleanupOutside: () => void
+
+  beforeEach(async () => {
+    ;({ root, cleanup } = tmpRoot('mirage-core-disk-inside-'))
+    ;({ root: outside, cleanup: cleanupOutside } = tmpRoot('mirage-core-disk-outside-'))
+    await mkdir(join(root, 'lib'))
+    await writeFile(join(root, 'lib', 'a.txt'), 'a')
+    await writeFile(join(outside, 'secret.txt'), 's')
+    await symlink('lib', join(root, 'lib64'))
+    await symlink(join(outside, 'secret.txt'), join(root, 'abs'))
+    await symlink(join('..', 'nope', 'python3'), join(root, 'dangling'))
+  })
+  afterEach(() => {
+    cleanup()
+    cleanupOutside()
+  })
+
+  it('answers the host path for a path with no link in it', async () => {
+    expect(await resolveInside(root, spec('/lib/a.txt'))).toBe(join(resolve(root), 'lib', 'a.txt'))
+  })
+  it('answers a path past an absent component, for the op to create or refuse', async () => {
+    expect(await resolveInside(root, spec('/new/x.txt'))).toBe(join(resolve(root), 'new', 'x.txt'))
+  })
+  it('refuses a directory link on the way as ENOENT naming the operand', async () => {
+    await expect(resolveInside(root, spec('/lib64/a.txt'))).rejects.toMatchObject({
+      code: 'ENOENT',
+      message: '/lib64/a.txt',
+    })
+  })
+  it('refuses a link out of the root as the leaf', async () => {
+    await expect(resolveInside(root, spec('/abs'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+  it('refuses a dangling link', async () => {
+    await expect(resolveInside(root, spec('/dangling'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+  it('names the operand, not the host, when a component is unreadable', async () => {
+    await mkdir(join(root, 'locked'))
+    await writeFile(join(root, 'locked', 'f.txt'), 'x')
+    await chmod(join(root, 'locked'), 0)
+    try {
+      const err = await resolveInside(root, spec('/locked/f.txt')).then(
+        () => null,
+        (e: unknown) => e as Error & { code?: string },
+      )
+      expect(err?.code).toBe('EACCES')
+      expect(err?.message).toBe('/locked/f.txt')
+    } finally {
+      await chmod(join(root, 'locked'), 0o755)
+    }
+  })
+  it('accepts infrastructure root aliases but rejects links below them', async () => {
+    const alias = join(outside, 'root-alias')
+    await symlink(root, alias)
+    expect(await resolveInside(alias, spec('/lib/a.txt'))).toBe(join(alias, 'lib/a.txt'))
+    await expect(resolveInside(alias, spec('/lib64/a.txt'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+  })
+  it('allows a filesystem root mount', async () => {
+    const canonical = await realpath(root)
+    expect(await resolveInside('/', spec(canonical))).toBe(canonical)
+  })
+  it('still refuses a .. escape', async () => {
+    await expect(resolveInside(root, spec('/../escaped'))).rejects.toThrow(/escapes root/)
   })
 })

@@ -13,8 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { Prisma } from '../../generated/gws/index.js'
-import { parseConfig, schemaFor, unroutedLine } from '../kit/typescript/index.ts'
-import type { Dmmf, Fake, KitConfig, KitRoute } from '../kit/typescript/index.ts'
+import { parseConfig, route as kitRoute, schemaFor, unroutedLine } from '../kit/typescript/index.ts'
+import type { Ctx, Dmmf, Fake, KitConfig, KitRoute } from '../kit/typescript/index.ts'
 import { calendarRoutes } from './calendar/routes.ts'
 import { docsRoutes } from './docs/routes.ts'
 import { driveRoutes } from './drive/routes.ts'
@@ -28,7 +28,7 @@ import { PrismaClient } from './store/client.ts'
 import type { C } from './store/client.ts'
 import { loadState } from './store/load.ts'
 import { saveState } from './store/save.ts'
-import { ok, unknownRoute } from './wire/reply.ts'
+import { googleError, header, ok, unknownRoute } from './wire/reply.ts'
 import { route } from './wire/route.ts'
 import type { RouteOpts } from './wire/route.ts'
 
@@ -39,11 +39,9 @@ export const GWS_DEFAULT_PORT = 19999
 // server stop deleting each other's world, and a fresh run served by COPYING an
 // already-seeded template rather than reseeding from scratch.
 //
-// gws does NOT read the tenant off a bearer token. Every google client here
-// sends `Authorization: Bearer gws-integ-token`, the same string for everybody,
-// so a bearer fallback would file every caller under one tenant named after
-// that constant. The tenant is the mirage header or the query parameter, which
-// is what the adapters already have a base URL to carry.
+// Legacy Google credentials select the default tenant. The kit's opt-in
+// runTokenPattern can carry a separate run and tenant in the refresh token;
+// /token preserves that credential for the subsequent bearer requests.
 //
 // `mintSharing` is inert now and kept off the config for that reason: gws mints
 // through its own persisted Counter rows, because the kit's Minter lives in
@@ -82,12 +80,47 @@ function catchAllRoutes(): KitRoute<C>[] {
   )
 }
 
+function refreshToken(
+  _headers: Record<string, string | string[] | undefined>,
+  url: URL,
+  body: Buffer,
+): string | undefined {
+  if (url.pathname !== '/token') return undefined
+  return new URLSearchParams(body.toString('utf8')).get('refresh_token') ?? undefined
+}
+
+// The fixture's credential. It is a bearer as it is, and outside credential
+// routing it is the one refresh token /token exchanges.
+const FIXTURE_TOKEN = 'gws-integ-token'
+
+function credentialKey(ctx: Ctx<C>, token: string): string {
+  return JSON.stringify([ctx.run, ctx.tenant, token])
+}
+
 // The fake OAuth exchange every google client makes before its first call.
-function tokenRoutes(): KitRoute<C>[] {
+// Google exchanges only a refresh token it issued, and so does this: the
+// fixture credential, or under credential routing a credential that names its
+// own run. Anything else is `invalid_grant`. Exchanging whatever arrived made
+// the check on every other route a formality, since a caller that was never
+// given a token could mint one here and read the fixture's data with it.
+function tokenRoutes(issued: Set<string>, runTokenPattern: string): KitRoute<C>[] {
+  const routed = runTokenPattern === '' ? null : new RegExp(runTokenPattern)
   return [
-    route('POST', '/token', () =>
-      ok({ access_token: 'gws-integ-token', expires_in: 3600, token_type: 'Bearer' }),
-    ),
+    kitRoute('POST', '/token', (ctx) => {
+      const token = refreshToken(ctx.headers, ctx.url, ctx.body)
+      if (token === undefined || token.trim() === '') {
+        return { status: 400, body: { error: 'invalid_request' } }
+      }
+      if (token !== FIXTURE_TOKEN && routed?.exec(token)?.groups?.run === undefined) {
+        return { status: 400, body: { error: 'invalid_grant', error_description: 'Bad Request' } }
+      }
+      issued.add(credentialKey(ctx, token))
+      return ok({
+        access_token: token,
+        expires_in: 3600,
+        token_type: 'Bearer',
+      })
+    }),
   ]
 }
 
@@ -100,7 +133,9 @@ function tokenRoutes(): KitRoute<C>[] {
 //   - ids and timestamps are counters over a fixed clock, not random
 //   - `fields` masks are ignored (full resources are returned), except on
 //     updateCells, where the mask decides whether values are touched at all
-//   - sheets store literal values; formulas are not evaluated
+//   - sheets formulas support literals, A1 cell/range references, + - * /,
+//     SUM/AVERAGE/MIN/MAX/COUNT; other syntax reports an explicit error.
+//     Locale-aware date/currency input and array formulas are not modeled.
 //   - files.list paginates on pageSize/pageToken; the token is the next
 //     item's index, so pages are stable for a fixed query
 //   - Gmail search matches case-insensitive substrings, not word stems
@@ -136,9 +171,15 @@ function tokenRoutes(): KitRoute<C>[] {
 // One list, in the order the old single route() function tried its patterns:
 // the API-prefixed surfaces first, then Drive, then the editors. Order only
 // matters inside a surface, and each module states its own.
-export function gwsRoutes(): KitRoute<C>[] {
-  return [
-    ...tokenRoutes(),
+export function gwsRoutes(runTokenPattern = gwsConfig.runTokenPattern): KitRoute<C>[] {
+  // The fixed fixture token and tokens exchanged on this server are the fake's
+  // credentials. Tenant selectors choose data; they never authorize a request.
+  // Each routes() call belongs to one runtime, with exchanges scoped by run
+  // and tenant so a token issued in one world cannot open another. The routes
+  // cannot see the runtime's config, so a caller that starts the fake with a
+  // run-token pattern of its own passes the same pattern here.
+  const issued = new Set<string>()
+  const apiRoutes = [
     ...gmailRoutes(),
     ...calendarRoutes(),
     ...formsRoutes(),
@@ -147,6 +188,36 @@ export function gwsRoutes(): KitRoute<C>[] {
     ...sheetsRoutes(),
     ...slidesRoutes(),
     ...catchAllRoutes(),
+  ]
+  return [
+    ...tokenRoutes(issued, runTokenPattern),
+    ...apiRoutes.map(
+      (r): KitRoute<C> => ({
+        ...r,
+        handler: (ctx) => {
+          const auth = header(ctx.headers, 'authorization')
+          if (auth === '') {
+            return googleError(
+              403,
+              "Method doesn't allow unregistered callers.",
+              'PERMISSION_DENIED',
+            )
+          }
+          const token = /^Bearer\s+(\S+)$/i.exec(auth)?.[1]
+          if (
+            token === undefined ||
+            (token !== FIXTURE_TOKEN && !issued.has(credentialKey(ctx, token)))
+          ) {
+            return googleError(
+              401,
+              'Request had invalid authentication credentials.',
+              'UNAUTHENTICATED',
+            )
+          }
+          return r.handler(ctx)
+        },
+      }),
+    ),
   ]
 }
 
@@ -160,6 +231,7 @@ export const gwsFake: Fake<C> = {
   client: PrismaClient,
   dmmf: Prisma.dmmf as unknown as Dmmf,
   routes: gwsRoutes,
+  requestToken: refreshToken,
   afterSeed: async (db, tenant, _counts, extras, _fixtureRoot, epoch) => {
     const st = await loadState(db, tenant, epoch === undefined ? undefined : Date.parse(epoch))
     applyExtras(st, extras)

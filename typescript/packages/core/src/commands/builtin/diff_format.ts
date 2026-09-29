@@ -181,7 +181,7 @@ export function unifiedDiff(
   return out
 }
 
-function groupOpcodes(opcodes: readonly Opcode[], n: number): Opcode[][] {
+export function groupOpcodes(opcodes: readonly Opcode[], n: number): Opcode[][] {
   if (opcodes.length === 0) return []
   const codes = opcodes.map((op) => [...op] as [Opcode[0], number, number, number, number])
   const first = codes[0]

@@ -15,215 +15,35 @@
 import errno
 import functools
 import os
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Any, Protocol, overload
+from typing import Any, NoReturn, Protocol, overload
 
 from mirage.accessor.base import Accessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.commands.builtin.generic.du import (DEFAULT_MAX_DU_ENTRIES,
-                                                DuEntries)
+from mirage.commands.builtin.generic.du import DEFAULT_MAX_DU_ENTRIES
+from mirage.commands.builtin.utils.paths import dot_refusal
 from mirage.commands.config import CommandFnResult, CommandOpts, ProvisionFn
 from mirage.context import (effective_path_mode, get_admission,
                             get_current_session, get_mount_gate,
-                            get_op_policies, hidden_paths_intersect,
-                            hidden_refusal, path_allowed, readonly_below)
+                            get_op_policies, get_walk_probe,
+                            hidden_paths_intersect, hidden_refusal,
+                            path_allowed)
+from mirage.context.session_context import require_paths_writable
 from mirage.ops.types import ChildMounts, LinkTargetStat, StatOverlay
 from mirage.policy.policies import Policies, pre_ops_gate
-from mirage.types import FileStat, FileType, MountMode, PathSpec
-from mirage.utils.errors import MISS_ERRORS, ReadOnlyError, eisdir
+from mirage.types import FileStat, FileType, MountMode, PathSpec, WalkProbe
+from mirage.utils.errors import (MISS_ERRORS, DotWalkError, ReadOnlyError,
+                                 eexist, eisdir, enoent, enotdir, enotsup,
+                                 walk_refusal)
 from mirage.utils.glob_walk import DEFAULT_MAX_GLOB_MATCHES, make_resolve_glob
 from mirage.utils.hidden import move_reveals
 from mirage.utils.path import norm, parent
 from mirage.utils.remnants import remove_remnants, visible_below
-
-OperationFn = Callable[..., Any]
-
-# Per-slot op shapes, the twins of adapter.ts's ReaddirOp/StatOp/...
-# generics. The accessor parameter stays Any on purpose: every backend
-# annotates its own concrete accessor, and a `accessor: Accessor`
-# protocol parameter would reject all of them under contravariance
-# (TS solves this with `<A extends Accessor>`; a generic frozen
-# dataclass plus functools.partial makes that plumbing cost more here
-# than the accessor check is worth — the slot SHAPE is the guard that
-# stops readdir being wired where stat belongs). The leading two
-# parameters are positional-only because backends name the path
-# parameter both `path` and `path_spec`.
-
-
-class ReaddirOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[list[str]]:
-        ...
-
-
-class ReadBytesOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[bytes]:
-        ...
-
-
-class ReadStreamOp(Protocol):
-    """Backend streams are async iterators; the polymorphic reader
-    contract (bytes / awaitable) exists only at the generics' bound-
-    reader boundary (``normalized_read``), never on the slot itself:
-    the cache wrapper and the dir-refusing chokepoint both ``async
-    for`` over this directly."""
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> AsyncIterator[bytes]:
-        ...
-
-
-class StatOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[FileStat]:
-        ...
-
-
-class ReadRangeOp(Protocol):
-    """A byte window without reading the whole object.
-
-    Called as ``(accessor, path, index, offset, size)``; most backends
-    point it at their own ``read_bytes``, which already takes the
-    window.
-    """
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...,
-                 offset: int = ...,
-                 size: int | None = ...) -> Awaitable[bytes]:
-        ...
-
-
-class WriteOp(Protocol):
-
-    def __call__(self, accessor: Any, path: PathSpec, data: bytes,
-                 /) -> Awaitable[None]:
-        ...
-
-
-class ExistsOp(Protocol):
-
-    def __call__(self, accessor: Any, path: PathSpec, /) -> Awaitable[bool]:
-        ...
-
-
-class PathOp(Protocol):
-
-    def __call__(self, accessor: Any, path: PathSpec, /) -> Awaitable[None]:
-        ...
-
-
-class RmdirOp(Protocol):
-    """Remove an empty directory. ``index`` joins the read-family slots'
-    contract because the hidden-remnant guard turns a refused rmdir into
-    a raw listing of the same directory, and an indexed backend cannot
-    list a nested path through ``NULL_INDEX``; the backend itself does
-    not consult it."""
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[None]:
-        ...
-
-
-class RmTreeOp(Protocol):
-    """Remove a subtree. The builders ignore any returned value
-    (databricks reports the removed keys for its own rename path), so
-    the return stays loose where unlink/rmdir pin None."""
-
-    def __call__(self, accessor: Any, path: PathSpec, /) -> Awaitable[Any]:
-        ...
-
-
-class MkdirOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 parents: bool = ...) -> Awaitable[None]:
-        ...
-
-
-class PairOp(Protocol):
-    """Rename/copy/dir-copy: two paths on the same backend."""
-
-    def __call__(self, accessor: Any, src: PathSpec, dst: PathSpec,
-                 /) -> Awaitable[None]:
-        ...
-
-
-class TruncateOp(Protocol):
-
-    def __call__(self, accessor: Any, path: PathSpec, length: int,
-                 /) -> Awaitable[None]:
-        ...
-
-
-class IsMountedOp(Protocol):
-
-    def __call__(self, accessor: Any, /) -> bool:
-        ...
-
-
-class DuSizeOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[int]:
-        ...
-
-
-class DuEntriesOp(Protocol):
-
-    def __call__(self,
-                 accessor: Any,
-                 path: PathSpec,
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[DuEntries]:
-        ...
-
-
-class ResolveGlobOp(Protocol):
-    """Glob resolution as the builders consume it.
-
-    Paths only, no text words: the dispatcher has split the command line
-    before a builder runs, and every backend resolver takes PathSpec.
-    The union this used to carry is the argv type (workspace/expand),
-    where a word really can be either, leaking one layer down.
-    """
-
-    def __call__(self,
-                 accessor: Any,
-                 paths: Sequence[PathSpec],
-                 /,
-                 index: IndexCacheStore = ...) -> Awaitable[list[PathSpec]]:
-        ...
+from mirage.vfs.types import (IsMountedOp, NativeReadOps, OperationFn, ReadOps,
+                              ReadStreamOp, ResolveGlobOp, SearchOps, StatOp,
+                              WriteOps)
 
 
 class BuilderFn(Protocol):
@@ -253,6 +73,8 @@ async def overlaid_stat(stat: OperationFn, overlay: StatOverlay,
         path (PathSpec): entry being statted.
         index (IndexCacheStore): cache index threaded through.
     """
+    if path.walk_error is not None:
+        raise walk_refusal(path)
     _refuse_hidden(path, create=False)
     return overlay(path.virtual, await stat(path, index))
 
@@ -364,7 +186,7 @@ async def _pair_src_is_dir(stat: StatOp, accessor: Any, src: PathSpec) -> bool:
     """
     try:
         row = await stat(accessor, src)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         # Nothing moves; the op itself reports the absence.
         return False
     except OSError:
@@ -579,29 +401,10 @@ class Operation(StrEnum):
     MKDIR = "mkdir"
     UNLINK = "unlink"
     RMDIR = "rmdir"
+    RM_R = "rm_r"
     RENAME = "rename"
     COPY = "copy"
     TRUNCATE = "truncate"
-
-
-@dataclass(frozen=True, slots=True)
-class DuOps:
-    """A backend's native ``du`` implementation, both halves at once.
-
-    ``size`` and ``entries`` are not independent: the generic derives its
-    per-directory rows from ``entries``, so a backend offering only the
-    cheaper ``size`` would silently print operand totals with no
-    directory rows and an inert ``-a``. Pairing them in one value makes
-    native du all-or-nothing, so that degraded shape cannot be reached
-    by omission.
-
-    Args:
-        size (DuSizeOp): recursive byte total for one path.
-        entries (DuEntriesOp): per-file breakdown, leaf files only.
-    """
-
-    size: DuSizeOp
-    entries: DuEntriesOp
 
 
 @dataclass(frozen=True)
@@ -612,52 +415,21 @@ class Builder:
     write: bool = False
     aggregate: AggregateFn | None = None
     read: bool = False
-    requirements: frozenset[Operation] = frozenset()
 
 
 @dataclass(frozen=True)
-class CommandIO:
-    readdir: ReaddirOp
-    read_bytes: ReadBytesOp
-    read_stream: ReadStreamOp
-    stat: StatOp
-    is_mounted: IsMountedOp
+class CommandIO(ReadOps, NativeReadOps, WriteOps):
+    read_stream: ReadStreamOp = field()
+    is_mounted: IsMountedOp = field()
+    streams_bytes: bool = False
     local: bool = True
     max_glob_matches: int | None = DEFAULT_MAX_GLOB_MATCHES
-    # Fetch a byte range without pulling the whole object. Absent means
-    # the generic read fetches everything and slices, which is correct
-    # everywhere and is the only meaningful behavior for a backend that
-    # renders its content rather than storing it: there is no remote
-    # range to ask for when the bytes do not exist until we make them.
-    # Called as (accessor, path, index, offset, size), so most backends
-    # point it at their own read_bytes, which already takes the window;
-    # disk needs a separate function because its read_bytes does not.
-    read_range: ReadRangeOp | None = None
-    write: WriteOp | None = None
-    exists: ExistsOp | None = None
-    mkdir: MkdirOp | None = None
-    unlink: PathOp | None = None
-    rmdir: RmdirOp | None = None
-    rm_r: RmTreeOp | None = None
-    rename: PairOp | None = None
-    copy: PairOp | None = None
-    dir_copy: PairOp | None = None
-    create: PathOp | None = None
-    truncate: TruncateOp | None = None
-    # Filter kwargs drift per backend (name/type/size bounds/...), the
-    # repo's kwargs spelling of TS's FindOptions object; a Protocol
-    # naming them would reject every backend, so the slot stays loose.
-    find: OperationFn | None = None
-    du: DuOps | None = None
     max_du_entries: int | None = DEFAULT_MAX_DU_ENTRIES
-    # Typed like `write`, now that the tee generic actually calls it.
-    append: WriteOp | None = None
-    # Kwargs vary per backend (mode/times/owner); loose like TS's any.
-    set_attrs: OperationFn | None = None
     # Child names the namespace owes a directory (nested mount roots and
     # symlinks). Stamped per invocation from opts.ns.child_mounts by the
     # factory, because it is session-scoped state and the adapter itself
     # is built once per backend.
+    search: SearchOps | None = None
     glob_children: ChildMounts | None = None
     # What an owed name points at, the namespace's own stat resolved
     # through the workspace. Stamped beside glob_children from
@@ -672,46 +444,98 @@ class CommandIO:
                                  self.glob_target_stat)
 
     def operation(self, op: Operation) -> OperationFn | None:
-        operations = {
-            Operation.WRITE: self.write,
-            Operation.EXISTS: self.exists,
-            Operation.MKDIR: self.mkdir,
-            Operation.UNLINK: self.unlink,
-            Operation.RMDIR: self.rmdir,
-            Operation.RENAME: self.rename,
-            Operation.COPY: self.copy,
-            Operation.TRUNCATE: self.truncate,
-        }
-        return operations[op]
-
-    def supports(self, requirements: frozenset[Operation]) -> bool:
-        return all(self.operation(op) is not None for op in requirements)
+        fn: OperationFn | None = getattr(self, op.value)
+        return fn
 
     def require(self, op: Operation) -> OperationFn:
-        """Return an optional backend op, raising if the backend omits it.
+        """Return a backend op, or one that refuses when the backend
+        omits it.
 
-        Builders wire write-side ops (write/mkdir/unlink/rename/...) that
-        are ``None`` on read-only backends into generic commands that
-        require them. This surfaces the missing capability as a clear
-        error instead of a ``NoneType is not callable`` crash.
+        A backend without the write-side ops (github, notion, a
+        database) still runs every generic command, because only the
+        write itself knows whether a line writes: ``gzip -c``, ``tar
+        -t`` and ``split -n 1/2`` never call the op, and a line that
+        does is refused at that call with ENOTSUP for the path it
+        named, which the command renders in its own GNU voice, as a
+        filesystem that does not allow the operation would. Mirrors TS
+        ``requireOp``.
 
         Args:
             op (Operation): Required backend operation.
         """
         fn = self.operation(op)
         if fn is None:
-            raise NotImplementedError(
-                f"operation {op!r} is not supported on this backend")
+            return _with_operation_guards(
+                functools.partial(_refuse_missing, op), op.value)
         return fn
 
 
-_GUARD_ENOENT_SLOTS = ("read_bytes", "read_stream", "stat", "read_range",
-                       "set_attrs", "unlink", "rm_r", "copy", "find")
+async def _refuse_missing(op: Operation, *args: Any,
+                          **kwargs: Any) -> NoReturn:
+    """Refuse a call to an op the backend does not have.
 
-# The slots that create the path they name, truncate among them: a
-# missing file is created at the requested length, the way
-# truncate(1) does without -c.
-_GUARD_EACCES_SLOTS = ("write", "mkdir", "append", "create", "truncate")
+    The path it names is the one the op would have written: a copy's
+    destination, otherwise its first path.
+
+    Args:
+        op (Operation): the missing operation.
+        *args: the call's positionals, the accessor and PathSpecs among
+            them.
+        **kwargs: ignored.
+    """
+    specs = [arg for arg in args if isinstance(arg, PathSpec)]
+    access = _MUTATIONS.get(op)
+    raise enotsup("backend", op.value,
+                  specs[1] if access and access.first_source else specs[0])
+
+
+@dataclass(frozen=True)
+class Mutation:
+    create: bool = False
+    first_source: bool = False
+    subtree: bool = False
+
+
+_MUTATIONS = {
+    "write": Mutation(create=True),
+    "mkdir": Mutation(create=True),
+    "append": Mutation(create=True),
+    "create": Mutation(create=True),
+    "truncate": Mutation(create=True),
+    "unlink": Mutation(),
+    "rmdir": Mutation(),
+    "set_attrs": Mutation(),
+    "rm_r": Mutation(subtree=True),
+    "rename": Mutation(subtree=True),
+    "copy": Mutation(first_source=True),
+    "dir_copy": Mutation(first_source=True, subtree=True),
+}
+
+_GUARD_ENOENT_SLOTS = (
+    "read_bytes", "read_stream", "stat", "read_range", "find",
+    *(slot for slot, access in _MUTATIONS.items()
+      if not access.create and slot not in ("rename", "dir_copy", "rmdir")))
+_GUARD_EACCES_SLOTS = tuple(slot for slot, access in _MUTATIONS.items()
+                            if access.create)
+
+
+def _with_operation_guards(fn: OperationFn, slot: str) -> OperationFn:
+    """Guard bare writes and capability failures with the slot contract.
+
+    Args:
+        fn (OperationFn): a bare op or missing-capability fallback.
+        slot (str): operation name in the shared contract.
+    """
+    access = _MUTATIONS.get(slot)
+    if access is None:
+        return functools.partial(_walked_call, None,
+                                 functools.partial(_guarded_call, fn, False))
+    fn = functools.partial(_mode_call, fn, access.first_source, access.subtree)
+    fn = functools.partial(_rule_call, fn)
+    fn = functools.partial(_guarded_call, fn, access.create)
+    fn = functools.partial(_walked_call, None, fn)
+    return functools.partial(_policy_call, _op_policy_scope(), fn, slot, True,
+                             access.first_source)
 
 
 def with_hidden_guard(ops: CommandIO) -> CommandIO:
@@ -755,9 +579,132 @@ def with_hidden_guard(ops: CommandIO) -> CommandIO:
     return replace(ops, **changes)
 
 
-_RULE_SLOTS = ("read_bytes", "read_stream", "read_range", "write", "append",
-               "create", "truncate", "set_attrs", "mkdir", "unlink", "rmdir",
-               "rm_r", "rename", "copy", "dir_copy")
+# Every op slot that takes a path: the kernel resolves a path before
+# the op sees it, whatever the op then does, so presence facts (stat,
+# exists, the native find) are walked too. `du` is a bundle of ops a
+# du generic reaches only after it has stat-ed its operand.
+_WALK_SLOTS = ("read_bytes", "read_stream", "read_range", "stat", "exists",
+               "readdir", "find", "write", "append", "create", "truncate",
+               "set_attrs", "mkdir", "unlink", "rmdir", "rm_r", "rename",
+               "copy", "dir_copy")
+
+
+async def _walk_admit(probe: WalkProbe, specs: list[PathSpec]) -> None:
+    """Raise what the first unwalkable operand's dots answer.
+
+    Args:
+        probe (WalkProbe): the workspace stat and link follow the walk
+            reads.
+        specs (list[PathSpec]): the call's PathSpec positionals that
+            carry a dotted spelling.
+    """
+    for spec in specs:
+        refusal = await dot_refusal(probe.stat, spec, probe.follow)
+        if refusal is not None:
+            raise refusal
+
+
+async def _walked_await(probe: WalkProbe, specs: list[PathSpec],
+                        pending: Awaitable[Any]) -> Any:
+    """Await an op once its operands walk; close it unstarted if not.
+
+    Args:
+        probe (WalkProbe): what the walk reads.
+        specs (list[PathSpec]): the dotted operands.
+        pending (Awaitable[Any]): the op's not-yet-awaited result.
+    """
+    try:
+        await _walk_admit(probe, specs)
+    except BaseException:
+        close = getattr(pending, "close", None)
+        if close is not None:
+            close()
+        raise
+    return await pending
+
+
+async def _walked_stream(probe: WalkProbe, specs: list[PathSpec],
+                         source: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    """Drain a stream once its operands walk; close it if they do not.
+
+    Args:
+        probe (WalkProbe): what the walk reads.
+        specs (list[PathSpec]): the dotted operands.
+        source (AsyncIterator[bytes]): the not-yet-started stream.
+    """
+    try:
+        await _walk_admit(probe, specs)
+    except BaseException:
+        close = getattr(source, "aclose", None)
+        if close is not None:
+            await close()
+        raise
+    async for chunk in source:
+        yield chunk
+
+
+def _walked_call(walk: WalkProbe | None, fn: OperationFn, *args: Any,
+                 **kwargs: Any) -> Any:
+    """Call a backend op once the dots of its PathSpec positionals walk.
+
+    A plain def, as ``_guarded_call`` is one: the op's own return shape
+    passes through, an awaitable awaited after the walk and a stream
+    drained after it, so a refused walk never starts the op. An operand
+    with no dotted spelling, the common case, costs one attribute read.
+    One the walk already refused (``walk_error``) raises at call time,
+    before anything else reads it.
+
+    Args:
+        walk (WalkProbe | None): the wrap-time probe, else the one bound
+            to the running command is read at call time.
+        fn (OperationFn): the guarded backend op.
+        *args: the call's positionals, PathSpecs among them.
+        **kwargs: forwarded untouched.
+    """
+    for arg in args:
+        if isinstance(arg, PathSpec) and arg.walk_error is not None:
+            raise walk_refusal(arg)
+    specs = [
+        arg for arg in args
+        if isinstance(arg, PathSpec) and arg.dotted is not None
+    ]
+    probe = walk if walk is not None else get_walk_probe()
+    if not specs or probe is None:
+        return fn(*args, **kwargs)
+    result = fn(*args, **kwargs)
+    if hasattr(result, "__aiter__") and not hasattr(result, "__await__"):
+        return _walked_stream(probe, specs, result)
+    return _walked_await(probe, specs, result)
+
+
+def with_walk_guard(ops: CommandIO) -> CommandIO:
+    """Return ``ops`` whose slots walk an operand's ``.`` and ``..``.
+
+    ``virtual`` simplifies the dots away, so ``cat nope/../f`` would
+    read ``f`` past a missing ``nope``; the typed spelling rides
+    ``PathSpec.dotted`` and :func:`dot_refusal` proves every name in
+    front of a dot a directory, raising ENOENT or ENOTDIR at the op
+    boundary so each command words the refusal as its own miss. Judged
+    at op time, not before the command runs, because a command can make
+    the directory itself (``mkdir -p nope/../m``, ``mkdir d d/../x``).
+    The probe is the door's stat and link follow, bound by
+    ``Mount.execute_cmd``: captured at wrap time inside a command's
+    window (a lazily drained reader still walks after dispatch
+    returned), read at call time otherwise.
+
+    Args:
+        ops (CommandIO): the backend's IO adapter.
+    """
+    walk = get_walk_probe()
+    changes: dict[str, Any] = {}
+    for slot in _WALK_SLOTS:
+        fn = getattr(ops, slot)
+        if fn is not None:
+            changes[slot] = functools.partial(_walked_call, walk, fn)
+    return replace(ops, **changes)
+
+
+_RULE_SLOTS = ("read_bytes", "read_stream", "read_range", *_MUTATIONS)
 
 
 def _rule_call(fn: OperationFn, *args: Any, **kwargs: Any) -> Any:
@@ -783,41 +730,24 @@ def _rule_call(fn: OperationFn, *args: Any, **kwargs: Any) -> Any:
     return fn(*args, **kwargs)
 
 
-# slot -> (skip_first, subtree): whether the leading PathSpec is a
-# read-only source (the copy slots), and whether the op mutates the
-# whole subtree under its written paths in one backend call.
-_MODE_SLOTS: dict[str, tuple[bool, bool]] = {
-    "write": (False, False),
-    "mkdir": (False, False),
-    "append": (False, False),
-    "create": (False, False),
-    "truncate": (False, False),
-    "unlink": (False, False),
-    "rmdir": (False, False),
-    "set_attrs": (False, False),
-    "rm_r": (False, True),
-    "rename": (False, True),
-    "copy": (True, False),
-    "dir_copy": (True, True),
-}
-
-
 def _mode_call(fn: OperationFn, skip_first: bool, subtree: bool, *args: Any,
                **kwargs: Any) -> Any:
     """Call a backend mutation op after holding each written path to
     its region's effective mode.
 
-    The write-command gate admits a command when any shown subtree
-    grants writes, so each individual write must still answer for its
-    own path: ``mkdir /repo/private/x`` on a mount whose only writable
-    region is ``/repo/build`` refuses here. A copy's source is a read,
-    so the first PathSpec is skipped for the copy slots; a rename
-    mutates both endpoints, so both are held. An op that covers a
-    whole subtree also answers for the regions below its operand
-    (``readonly_below``): a native ``rm -r`` would otherwise delete a
-    read-only carve-out in one backend call no per-path check ever
-    sees. Sync like ``_guarded_call``, and inert with no mount bound
-    (a generic invoked outside a mount's command).
+    The one place a path-guarded command's write is refused for its
+    mode: nothing refuses the command before it runs, so each
+    individual write answers for its own path, whether the mount is
+    read-only (``gzip f`` refuses the write of ``f.gz``, ``gzip -c f``
+    never writes) or only a region is (``mkdir /repo/private/x`` on a
+    mount whose only writable region is ``/repo/build``). A copy's
+    source is a read, so the first PathSpec is skipped for the copy
+    slots; a rename mutates both endpoints, so both are held. An op
+    that covers a whole subtree also answers for the regions below its
+    operand (``readonly_below``): a native ``rm -r`` would otherwise
+    delete a read-only carve-out in one backend call no per-path check
+    ever sees. Sync like ``_guarded_call``, and inert with no mount
+    bound (a generic invoked outside a mount's command).
 
     Args:
         fn (OperationFn): the raw backend op.
@@ -832,38 +762,117 @@ def _mode_call(fn: OperationFn, skip_first: bool, subtree: bool, *args: Any,
     if gate is not None:
         prefix, mode = gate
         specs = [arg for arg in args if isinstance(arg, PathSpec)]
-        for spec in (specs[1:] if skip_first else specs):
-            if effective_path_mode(spec.virtual, prefix,
-                                   mode) == MountMode.READ:
-                raise ReadOnlyError(errno.EROFS, "Read-only file system",
-                                    spec.virtual)
-            if subtree:
-                blame = readonly_below(spec.virtual, prefix, mode)
-                if blame is not None:
-                    raise ReadOnlyError(errno.EROFS, "Read-only file system",
-                                        blame)
+        require_paths_writable(specs[1:] if skip_first else specs,
+                               prefix,
+                               mode,
+                               subtree=subtree)
     return fn(*args, **kwargs)
+
+
+async def _mkdir_on_read_only(stat: StatOp, gate: tuple[str, MountMode],
+                              accessor: Any, path: PathSpec,
+                              parents: bool) -> None:
+    """Answer a mkdir on a read-only region the way the filesystem would.
+
+    A read-only filesystem refuses only a create it would really make,
+    so the answer is whatever the create runs into first, walking the
+    components from the mount root: a missing one is refused with EROFS,
+    a file in the chain is ENOTDIR, an existing leaf is EEXIST, and
+    ``mkdir -p`` of a directory that is already there succeeds. The
+    blamed path is the first component that would have been made, as
+    GNU's ``mkdir -p`` names it (``'/ro/n'`` for ``/ro/n/m``). Pinned
+    against GNU coreutils 9.7 on a read-only tmpfs. Mirrors TS
+    ``mkdirOnReadOnly``.
+
+    Args:
+        stat (StatOp): the backend stat, for walking the components.
+        gate (tuple[str, MountMode]): the mount prefix and its mode.
+        accessor (Any): the mkdir call's accessor.
+        path (PathSpec): the directory to make.
+        parents (bool): ``-p``.
+    """
+    prefix, mode = gate
+    base = prefix.rstrip("/")
+    leaf = path.virtual.rstrip("/") or "/"
+    if leaf != base and not leaf.startswith(base + "/"):
+        raise ReadOnlyError(errno.EROFS, "Read-only file system", path.virtual)
+    # Each component's backend key keeps the leaf's own key prefix,
+    # recovered from its (virtual, vfs_path) pair as PathSpec.dir does.
+    cut = len(leaf) - len(path.vfs_path.strip("/"))
+    parts = [part for part in leaf[len(base):].split("/") if part]
+    chain = []
+    for depth in range(1, len(parts) + 1):
+        virtual = f"{base}/{'/'.join(parts[:depth])}"
+        chain.append(PathSpec.from_str_path(virtual, virtual[cut:].strip("/")))
+    for index, component in enumerate(chain):
+        try:
+            row = await stat(accessor, component)
+        except FileNotFoundError as exc:
+            if not parents and index < len(chain) - 1:
+                raise enoent(path) from exc
+            blame = next(
+                (spec for spec in chain[index:] if effective_path_mode(
+                    spec.virtual, prefix, mode) == MountMode.READ), path)
+            raise ReadOnlyError(errno.EROFS, "Read-only file system",
+                                blame.virtual) from exc
+        if row.type is not FileType.DIRECTORY:
+            if index == len(chain) - 1:
+                raise eexist(path)
+            raise enotdir(component if parents else path)
+    if not parents:
+        raise eexist(path)
+
+
+def _mode_mkdir(fn: OperationFn,
+                stat: StatOp,
+                accessor: Any,
+                path: Any,
+                parents: bool = False,
+                **options: Any) -> Any:
+    """The mkdir slot of ``_mode_call``: a directory on a read-only
+    region answers what the create would run into instead of refusing
+    the operand outright (``_mkdir_on_read_only``). Sync like
+    ``_mode_call``.
+
+    Args:
+        fn (OperationFn): the raw backend mkdir.
+        stat (StatOp): the backend stat.
+        accessor (Any): the call's accessor.
+        path (Any): the directory to make.
+        parents (bool): ``-p``.
+        **options: forwarded untouched.
+    """
+    gate = get_mount_gate()
+    if (gate is not None and isinstance(path, PathSpec)
+            and effective_path_mode(path.virtual, *gate) == MountMode.READ):
+        return _mkdir_on_read_only(stat, gate, accessor, path, parents)
+    return fn(accessor, path, parents=parents, **options)
 
 
 def with_mode_guard(ops: CommandIO) -> CommandIO:
     """Return ``ops`` whose mutation slots hold each written path to
     its region's effective mode.
 
-    The per-path half of the mount's write gate, innermost of the three
-    guards: hides answer ENOENT first, rules refuse next, and only a
-    path both leave standing is judged for its mode, the same order the
-    op door applies. Reads are never wrapped, because ``READ`` allows
-    them everywhere the other guards do.
+    The mount's write gate, innermost of the three guards: hides answer
+    ENOENT first, rules refuse next, and only a path both leave standing
+    is judged for its mode, the same order the op door applies. Reads
+    are never wrapped, because ``READ`` allows them everywhere the other
+    guards do.
 
     Args:
         ops (CommandIO): the backend's IO adapter.
     """
     changes: dict[str, Any] = {}
-    for slot, (skip_first, subtree) in _MODE_SLOTS.items():
+    for slot, access in _MUTATIONS.items():
         fn = getattr(ops, slot)
-        if fn is not None:
-            changes[slot] = functools.partial(_mode_call, fn, skip_first,
-                                              subtree)
+        if fn is None:
+            continue
+        if slot == "mkdir":
+            changes[slot] = functools.partial(_mode_mkdir, fn, ops.stat)
+        else:
+            changes[slot] = functools.partial(_mode_call, fn,
+                                              access.first_source,
+                                              access.subtree)
     return replace(ops, **changes)
 
 
@@ -898,8 +907,8 @@ def with_rule_guard(ops: CommandIO) -> CommandIO:
 
 
 def with_path_guards(ops: CommandIO) -> CommandIO:
-    """Return ``ops`` under the whole path axis: hides answer ENOENT
-    first, rules refuse next, the mode speaks last.
+    """Return ``ops`` under the whole path axis: the typed dots walk
+    first, hides answer ENOENT next, rules refuse, the mode speaks last.
 
     The one spelling of the guard chain, used by the commands factory
     for every generic command and by a bespoke command family that
@@ -910,7 +919,8 @@ def with_path_guards(ops: CommandIO) -> CommandIO:
     Args:
         ops (CommandIO): the backend's IO adapter.
     """
-    return with_hidden_guard(with_rule_guard(with_mode_guard(ops)))
+    return with_walk_guard(
+        with_hidden_guard(with_rule_guard(with_mode_guard(ops))))
 
 
 def with_write_guards(fn: OperationFn) -> OperationFn:
@@ -926,35 +936,8 @@ def with_write_guards(fn: OperationFn) -> OperationFn:
     Args:
         fn (OperationFn): the raw backend write.
     """
-    guarded: OperationFn = functools.partial(_mode_call, fn, False, False)
-    guarded = functools.partial(_rule_call, guarded)
-    guarded = functools.partial(_guarded_call, guarded, False)
-    return functools.partial(_policy_call, _UNBOUND_SCOPE, guarded, "unlink",
-                             True, False)
+    return _with_operation_guards(fn, "unlink")
 
-
-# slot -> (write, first_is_source): whether the op mutates its PathSpec
-# positionals, and whether the leading one is a read-only source (the
-# copy slots), mirroring _MODE_SLOTS' skip_first. The surface is the
-# rule guard's (_RULE_SLOTS); stat/exists and the native find/du slots
-# stay unguarded as presence facts, and readdir/read_stream have their
-# own wrappers below.
-_POLICY_SLOTS: dict[str, tuple[bool, bool]] = {
-    "read_bytes": (False, False),
-    "read_range": (False, False),
-    "write": (True, False),
-    "append": (True, False),
-    "create": (True, False),
-    "truncate": (True, False),
-    "set_attrs": (True, False),
-    "mkdir": (True, False),
-    "unlink": (True, False),
-    "rmdir": (True, False),
-    "rm_r": (True, False),
-    "rename": (True, False),
-    "copy": (True, True),
-    "dir_copy": (True, True),
-}
 
 # (policies, mount prefix, session id); the unbound spelling for a
 # registration-time wrap, which reads the live context per call.
@@ -1145,11 +1128,13 @@ def with_policy_guard(ops: CommandIO) -> CommandIO:
         "read_stream": functools.partial(_policy_stream, scope,
                                          ops.read_stream),
     }
-    for slot, (write, first_source) in _POLICY_SLOTS.items():
+    for slot in ("read_bytes", "read_range", *_MUTATIONS):
+        access = _MUTATIONS.get(slot)
         fn = getattr(ops, slot)
         if fn is not None:
-            changes[slot] = functools.partial(_policy_call, scope, fn, slot,
-                                              write, first_source)
+            changes[slot] = functools.partial(
+                _policy_call, scope, fn, slot, access is not None,
+                access.first_source if access else False)
     return replace(ops, **changes)
 
 
@@ -1235,12 +1220,12 @@ _READ_SLOTS = ("read_bytes", "read_stream", "read_range")
 
 async def _read_hit_a_dir(ops: CommandIO, accessor: Accessor,
                           index: IndexCacheStore, path: PathSpec,
-                          exc: BaseException) -> bool:
-    """Whether a read that already failed was really a read of a directory.
+                          exc: BaseException | None) -> bool:
+    """Whether a failed or empty read was a read of a directory.
 
-    Asked only after the read raised, which is what keeps a successful
-    read at exactly one backend call. Nothing is lost by waiting: every
-    backend raises on a directory read. One that knows says so (gdrive,
+    Asked after a failure or EOF without bytes: some drivers report an
+    empty stream for directories. Nonempty reads need no extra probe.
+    One that knows says so (gdrive,
     box, dropbox and disk raise IsADirectoryError), a keyed store answers
     ENOENT because a directory there is a set of keys rather than an
     object, and sftp answers with an opaque non-OSError.
@@ -1272,10 +1257,14 @@ async def _read_hit_a_dir(ops: CommandIO, accessor: Accessor,
         accessor (Accessor): backend handle.
         index (IndexCacheStore): the call's cache index.
         path (PathSpec): the operand whose read failed.
-        exc (BaseException): what the backend raised.
+        exc (BaseException | None): the failure, or None for an empty read.
     """
     if isinstance(exc, IsADirectoryError):
         return True
+    if isinstance(exc, DotWalkError):
+        # The path did not resolve at all, which no reading turns into a
+        # directory; its parent may well list the name it simplifies to.
+        return False
     try:
         st: FileStat | None = await ops.stat(accessor, path, index)
     except Exception:
@@ -1303,13 +1292,17 @@ async def _read_hit_a_dir(ops: CommandIO, accessor: Accessor,
 async def _drain_refusing_dirs(
         ops: CommandIO, accessor: Accessor, index: IndexCacheStore,
         path: PathSpec, source: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
+    empty = True
     try:
         async for chunk in source:
+            empty = empty and not chunk
             yield chunk
     except Exception as exc:
         if await _read_hit_a_dir(ops, accessor, index, path, exc):
             raise eisdir(path) from None
         raise
+    if empty and await _read_hit_a_dir(ops, accessor, index, path, None):
+        raise eisdir(path)
 
 
 def _guarded_read_stream(ops: CommandIO,
@@ -1339,6 +1332,8 @@ async def _guarded_read(ops: CommandIO,
         if await _read_hit_a_dir(ops, accessor, index, path, exc):
             raise eisdir(path) from None
         raise
+    if not data and await _read_hit_a_dir(ops, accessor, index, path, None):
+        raise eisdir(path)
     return data
 
 
@@ -1352,8 +1347,9 @@ def with_dir_guard(ops: CommandIO) -> CommandIO:
     passed a bare ``bound_op(ops.read_stream, ...)`` instead, so a
     directory on a keyed backend reported ENOENT.
 
-    Refined after the failure, never before it, so a read that succeeds
-    costs exactly what it did. The refusal is built from the operand's
+    Refined after failure or an empty read: some drivers return EOF for
+    directories. Nonempty successful reads need no extra probe.
+    The refusal is built from the operand's
     own PathSpec, so it carries the virtual path: a raw disk error names
     the host path, which is the mount's own business and must not reach a
     user-facing line.
@@ -1382,6 +1378,8 @@ async def _stat_refusing_dirs(ops: CommandIO, accessor: Accessor,
                               opts: CommandOpts, path: PathSpec) -> FileStat:
     try:
         st: FileStat = await ops.stat(accessor, path, opts.index)
+    except DotWalkError:
+        raise
     except FileNotFoundError:
         if await _is_implicit_dir(ops, accessor, path, opts.index):
             raise eisdir(path) from None

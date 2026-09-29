@@ -117,8 +117,8 @@ describe('find action layer', () => {
       const r = await ws.shell('find /tree -delete', { sessionId: 's' })
       expect(r.exitCode).toBe(0)
       expect(r.stderrText).toBe('')
-      const after = await ws.shell('find / -name tree', { sessionId: 's' })
-      expect(after.stdoutText).toBe('')
+      const after = await ws.shell('test -e /tree', { sessionId: 's' })
+      expect(after.exitCode).toBe(1)
     })
   })
 
@@ -651,7 +651,10 @@ for (const nested of [false, true]) {
       try {
         const root = nested ? '/a/d' : '/d'
         await ws.shell(`mkdir -p ${root}; touch "${root}/a\nb" /bystander`)
-        const io = await ws.shell(`find ${nested ? '/' : '/d'} -name 'a*' -type f ${action}`)
+        // /usr is left out: its program files (awk) are a read-only view.
+        const io = await ws.shell(
+          `find ${nested ? '/' : '/d'} -name 'a*' -type f -not -path '/usr/*' ${action}`,
+        )
         expect(io.exitCode).toBe(0)
         expect(io.stderrText).toBe('')
         const check = await ws.shell(`test -f /bystander && test ! -e "${root}/a\nb"`)

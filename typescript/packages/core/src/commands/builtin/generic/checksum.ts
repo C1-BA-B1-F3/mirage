@@ -20,7 +20,8 @@ import { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { fsStrerror, isEisdir, isMissingPath, isWalkError } from '../../../utils/errors.ts'
 import { resolvePath } from '../../../utils/path.ts'
-import { resolveSource } from '../utils/stream.ts'
+import { STDIN_HEADER_NAME, STDIN_OPERAND } from '../utils/constants.ts'
+import { isStdin, resolveSource, stdinStream } from '../utils/stream.ts'
 import { operandsIo, readOperands } from '../utils/operands.ts'
 
 const ENC = new TextEncoder()
@@ -87,8 +88,11 @@ async function checkFile(
 ): Promise<[string, string, number]> {
   const fl = new FlagView(opts.flags, specOf(name))
   const data = DEC.decode(await materialize(stream(p)))
-  const mountPrefix = mountPrefixOf(p.virtual, p.vfsPath)
-  const checkLabel = p.rawPath !== '' ? p.rawPath : p.virtual
+  // A list read from stdin names files on the mount the command runs on.
+  const mountPrefix = isStdin(p) ? (opts.mountPrefix ?? '') : mountPrefixOf(p.virtual, p.vfsPath)
+  // GNU quotes its stdin name, which holds a space.
+  const checkLabel =
+    p.rawPath === '-' ? `'${STDIN_HEADER_NAME}'` : p.rawPath !== '' ? p.rawPath : p.virtual
   const output: string[] = []
   const errors: string[] = []
   let verified = 0
@@ -184,20 +188,21 @@ function parseCheckLine(line: string, name: string): [string, string] | null {
 export async function checksumGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
-  stream: Stream,
+  read: Stream,
   hasher: Hasher,
   name: string,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf(name))
-  const check = fl.asBool('check')
-  if (check && paths.length > 0) {
+  const stream = stdinStream(read, opts.stdin)
+  if (fl.asBool('check')) {
     let output = ''
     let errors = ''
     let exitCode = 0
     // Every operand is its own checksum list: GNU verifies each in turn
     // and keeps going when one cannot be read; a directory operand reads
-    // as the literal "read error" (pinned on coreutils 9.7).
-    for (const p of paths) {
+    // as the literal "read error" (pinned on coreutils 9.7). With no
+    // operand the checksum list is stdin.
+    for (const p of paths.length > 0 ? paths : [STDIN_OPERAND]) {
       let checked: [string, string, number]
       try {
         checked = await checkFile(stream, p, hasher, name, opts)
@@ -224,7 +229,9 @@ export async function checksumGeneric(
     // A missing operand is reported and skipped; the good hashes still
     // print (GNU coreutils checksum commands).
     const [ok, err] = await readOperands(paths, stream, name)
-    const io = operandsIo(err, { cache: ok.map((o) => o.path.mountPath) })
+    const io = operandsIo(err, {
+      cache: ok.filter((o) => !isStdin(o.path)).map((o) => o.path.mountPath),
+    })
     if (ok.length === 0 && err !== '') return [null, io]
     let body = ''
     for (const o of ok) body += hashLine(await hasher(o.data), o.path.rawPath, name, opts)

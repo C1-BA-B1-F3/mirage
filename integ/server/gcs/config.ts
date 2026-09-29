@@ -26,8 +26,9 @@ export type C = PrismaClient
 export const config = parseConfig({
   service: 'gcs',
   schema: schemaFor('gcs'),
-  // 5094 is the one gap left in the 5086-5099 block.
-  defaultPort: 5094,
+  // Clear of every other fake's default and CI port (linear runs on 5094
+  // in CI); gate_selftest fails on any two fakes sharing one.
+  defaultPort: 5104,
   tenantKind: 'pk-column',
   mintFormat: '{n}',
 })

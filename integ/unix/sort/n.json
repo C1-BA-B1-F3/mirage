@@ -74,6 +74,192 @@
         "n",
         "r"
       ]
+    },
+    {
+      "id": "sort_incompatible_orderings_outrank_a_missing_input",
+      "seq": 1299073,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort -n -g /data/sortq_missing.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-gn' are incompatible\n"
+      },
+      "flags": [
+        "n",
+        "g"
+      ]
+    },
+    {
+      "id": "sort_decimal_signed",
+      "seq": 1302000,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '%s\\n' 4.89 4.98 4.5 -1.25 -1.5 -.5 .5 | sort -ns",
+      "expect": {
+        "exit": 0,
+        "stdout": "-1.5\n-1.25\n-.5\n.5\n4.5\n4.89\n4.98\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_numeric_prefix",
+      "seq": 1302001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '%s\\n' +5 3 1.2.3 1.15 2e3 10 .5 -.5 junk -0 000.000 '  2.5x' | sort -ns",
+      "expect": {
+        "exit": 0,
+        "stdout": "-.5\n+5\njunk\n-0\n000.000\n.5\n1.15\n1.2.3\n2e3\n  2.5x\n3\n10\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_ascii_blanks",
+      "seq": 1302002,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '\\v2\\n\\f3\\n\\r4\\n\\t.5\\n .25\\n' | sort -ns",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u000b2\n\f3\n\r4\n .25\n\t.5\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_exact_precision",
+      "seq": 1302003,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '%s\\n' 9007199254740993 9007199254740992 1.00000000000000002 1.00000000000000001 -9007199254740992 -9007199254740993 -.00000000000000002 -.00000000000000001 | sort -ns",
+      "expect": {
+        "exit": 0,
+        "stdout": "-9007199254740993\n-9007199254740992\n-.00000000000000002\n-.00000000000000001\n1.00000000000000001\n1.00000000000000002\n9007199254740992\n9007199254740993\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
     }
   ]
 }

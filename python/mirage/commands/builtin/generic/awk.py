@@ -2,6 +2,7 @@ import codecs
 from collections.abc import (AsyncGenerator, AsyncIterator, Awaitable,
                              Callable, Mapping, Sequence)
 from contextlib import aclosing
+from functools import partial
 
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.generic.awk_types import (FS_ESCAPES, USAGE,
@@ -22,7 +23,7 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.io.yield_budget import YieldBudget
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
-from mirage.utils.errors import WALK_ERRORS, fs_strerror
+from mirage.utils.errors import FS_ERRORS, WALK_ERRORS, fs_strerror
 from mirage.utils.path import resolve_path
 
 
@@ -147,7 +148,7 @@ async def _records(source: AsyncIterator[bytes],
 
 
 async def _awk_stream(
-    sources: Sequence[tuple[str, AsyncIterator[bytes]]],
+    sources: Sequence[tuple[str, Callable[[], AsyncIterator[bytes]]]],
     interp: Interpreter,
     io: IOResult,
     dispatch: DispatchFn | None,
@@ -168,12 +169,13 @@ async def _awk_stream(
     if failed:
         return
     if not exited and interp.has_main_rules():
-        for name, source in sources:
+        for name, open_source in sources:
             if exited:
                 break
             interp.start_file(name)
             try:
-                async with aclosing(_records(source, interp)) as records:
+                async with aclosing(_records(open_source(),
+                                             interp)) as records:
                     async for record in records:
                         interp.run_record(record)
                         chunk, failed = await _settle(io, interp, None,
@@ -189,6 +191,14 @@ async def _awk_stream(
                 exited = True
             except (AwkRuntimeError, AwkSyntaxError) as exc:
                 chunk, _ = await _settle(io, interp, exc, dispatch, cwd)
+                yield chunk
+                return
+            except FS_ERRORS as exc:
+                # An input awk cannot open ends the run there, END and
+                # the files after it unread (mawk 1.3.4, exit 2).
+                failure = AwkRuntimeError(
+                    f'awk: cannot open "{name}" ({fs_strerror(exc)})')
+                chunk, _ = await _settle(io, interp, failure, dispatch, cwd)
                 yield chunk
                 return
     try:
@@ -245,10 +255,10 @@ async def awk(
         for prog in f.program_files:
             try:
                 raw = await read_bytes(prog)
-            except FileNotFoundError as exc:
+            except (FileNotFoundError, NotADirectoryError) as exc:
                 # GNU awk exits 2 when a -f program file cannot be opened.
                 raise UsageError(f"awk: {prog.raw_path}: "
-                                 "No such file or directory") from exc
+                                 f"{fs_strerror(exc)}") from exc
             pieces.append(raw.decode(errors="replace"))
         source = "\n".join(pieces)
     elif texts:
@@ -266,12 +276,18 @@ async def awk(
         interp.set_var("FS", text_value(unescape(f.field_separator)))
 
     read_stream = stdin_stream(read_stream, stdin)
-    if paths:
-        # FILENAME reports the operand as typed, matching every awk.
-        sources = [(p.raw_path, read_stream(p)) for p in paths]
-        cache = [p.mount_path for p in paths if not is_stdin(p)]
+    # An empty operand names no file and mawk skips it, reading stdin
+    # when nothing else is left.
+    files = [p for p in paths if p.raw_path != ""]
+    sources: list[tuple[str, Callable[[], AsyncIterator[bytes]]]]
+    if files:
+        # FILENAME reports the operand as typed, matching every awk. Each
+        # input opens when its turn comes, so one that cannot be opened
+        # is reported after the output of those before it.
+        sources = [(p.raw_path, partial(read_stream, p)) for p in files]
+        cache = [p.mount_path for p in files if not is_stdin(p)]
     else:
-        sources = [("", resolve_source(stdin))]
+        sources = [("", partial(resolve_source, stdin))]
         cache = []
 
     io = IOResult(cache=cache)

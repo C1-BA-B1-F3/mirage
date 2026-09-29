@@ -6,13 +6,14 @@ from enum import Enum
 
 from mirage.commands.builtin.constants import C_SPACE
 from mirage.commands.builtin.utils.lines import split_lines
-from mirage.commands.builtin.utils.stream import read_stdin_async
+from mirage.commands.builtin.utils.stream import read_stdin_async, stdin_bytes
 from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
+from mirage.utils.errors import FS_ERRORS, fs_strerror
 
 # A `-o` reached a backend wired without a write op, which is a wiring
 # fault rather than anything the command line did wrong. The TypeScript
@@ -445,9 +446,10 @@ async def shuf(
         result = _sample(items, count, with_replacement)
         rendered = _render(result, sep)
     elif paths:
+        read = stdin_bytes(read_bytes, stdin)
         all_lines: list[str] = []
         for p in paths:
-            data = (await read_bytes(p)).decode(errors="replace")
+            data = (await read(p)).decode(errors="replace")
             if zero_terminated:
                 all_lines.extend(data.split("\x00"))
             else:
@@ -465,7 +467,13 @@ async def shuf(
     if output is not None:
         if write_bytes is None:
             raise ValueError(NO_WRITE_OP)
-        await write_bytes(output, rendered)
+        try:
+            await write_bytes(output, rendered)
+        except FS_ERRORS as exc:
+            return None, IOResult(
+                exit_code=1,
+                stderr=f"shuf: {output.raw_path}: {fs_strerror(exc)}\n".encode(
+                ))
         return None, IOResult(writes={output.mount_path: rendered})
     return rendered, IOResult()
 

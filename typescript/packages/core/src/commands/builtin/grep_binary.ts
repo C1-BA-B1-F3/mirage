@@ -12,9 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { compilePosixRegex } from '../../utils/posix.ts'
 import { YieldBudget } from '../../io/yield_budget.ts'
 import { closeQuietly } from '../../io/stream.ts'
 import { decodeLine, encodeLine, MatchOffsets, prefixOf } from './grep_offsets.ts'
+import { requiredNeedles } from './grep_prefilter.ts'
 import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import type { IOResult } from '../../io/types.ts'
 import type { WalkFilters } from './grep_select.ts'
@@ -78,7 +80,10 @@ export class BinaryInput {
   }
 
   private deliver(block: Uint8Array): Uint8Array {
-    return this.nul ? block.map((byte) => (byte === 0 ? 10 : byte)) : block
+    if (!this.nul) return block
+    const out = new Uint8Array(block)
+    for (let at = 0; at < out.length; at++) if (out[at] === 0) out[at] = 10
+    return out
   }
 }
 
@@ -171,9 +176,21 @@ export async function* grepInput(
   // terminator the iterator strips. The extra byte past a final line with no
   // newline is never read.
   let bytePos = 0
+  const needles =
+    !f.invert && (!hasContext || f.countOnly || f.quiet || f.filesOnly || f.filesWithoutMatch)
+      ? requiredNeedles(pat)
+      : null
   const input = binary.read(source)
+  const lines = new AsyncLineIterator(input)
   try {
-    for await (const raw of new AsyncLineIterator(input)) {
+    for (;;) {
+      if (needles !== null) {
+        const [skipped, bytes] = lines.skipNonmatchingLines(needles, pat.ignoreCase)
+        number += skipped
+        bytePos += bytes
+      }
+      const raw = await lines.readline(signal)
+      if (raw === null) break
       if (binary.nul && f.binaryMode === 'without-match') break
       number += 1
       const lineStart = bytePos
@@ -193,6 +210,15 @@ export async function* grepInput(
         // and the status still says it matched.
         if (f.filesWithoutMatch) return
       }
+      // NUL runs become empty lines. Batch identical decisions within the
+      // current buffer when no per-line output or context must be retained.
+      if (raw.length === 0 && (f.countOnly || (!hit && !hasContext))) {
+        const limit = hit && f.maxCount !== null ? f.maxCount - count : Infinity
+        const skipped = lines.skipEmptyLines(limit)
+        number += skipped
+        bytePos += skipped
+        if (hit) count += skipped
+      }
       if (f.countOnly) {
         if (f.maxCount !== null && count >= f.maxCount) break
         continue
@@ -201,7 +227,10 @@ export async function* grepInput(
       if (hit) {
         if (f.onlyMatching) {
           if (!f.invert) {
-            const re = new RegExp(pat.source, pat.flags.includes('g') ? pat.flags : pat.flags + 'g')
+            const re = compilePosixRegex(
+              pat.source,
+              pat.flags.includes('g') ? pat.flags : pat.flags + 'g',
+            )
             const offsets = f.byteOffsets ? new MatchOffsets(lineStart, line) : null
             for (const m of line.matchAll(re)) {
               const pending = budget.run()
@@ -304,5 +333,5 @@ function utf8Pattern(pat: RegExp): RegExp {
     } else if (char === '.' && !inClass) pattern += '[^\\n\\udc80-\\udcff]'
     else pattern += char
   }
-  return new RegExp(pattern, pat.flags)
+  return compilePosixRegex(pattern, pat.flags)
 }

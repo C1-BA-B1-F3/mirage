@@ -12,9 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { Mem0Error, type Mem0Accessor } from '../../accessor/mem0.ts'
-import type { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
+import type { Mem0Accessor } from '../../accessor/mem0.ts'
 
 function records(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value)
@@ -38,22 +36,6 @@ export async function getAllMemories(accessor: Mem0Accessor): Promise<Record<str
     results.push(...batch)
     if (!response.next || batch.length === 0) return results
     page += 1
-  }
-}
-
-// A deleted or unknown memory id 404s; filesystem callers need ENOENT so
-// `test -e`, `cat` and friends report "No such file or directory" instead
-// of leaking the provider error.
-export async function getMemory(
-  accessor: Mem0Accessor,
-  memoryId: string,
-  path: PathSpec,
-): Promise<Record<string, unknown>> {
-  try {
-    return await accessor.request('GET', `/v1/memories/${encodeURIComponent(memoryId)}/`)
-  } catch (error) {
-    if (error instanceof Mem0Error && error.status === 404) throw enoent(path)
-    throw error
   }
 }
 

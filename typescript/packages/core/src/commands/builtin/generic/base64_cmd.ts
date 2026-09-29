@@ -15,10 +15,11 @@
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, materialize } from '../../../io/types.ts'
-import type { PathSpec } from '../../../types.ts'
+import type { FileStat, PathSpec } from '../../../types.ts'
 import { decodeBase64, encodeBase64 } from '../../../utils/base64.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { resolveSource } from '../utils/stream.ts'
+import { isStdin, resolveSource, stdinStat, stdinStream } from '../utils/stream.ts'
+import { splitReadable } from '../utils/operands.ts'
 import { extraOperandError } from '../../spec/usage.ts'
 import { CommandName } from '../../spec/types.ts'
 
@@ -54,14 +55,23 @@ async function* base64DecodeStream(
   yield decodeBase64(text)
 }
 
-// eslint-disable-next-line @typescript-eslint/require-await
+// The operand is stat'ed before the lazy encode starts, so a missing or
+// unreadable one is reported in base64's own words (`base64: nope: No such
+// file or directory`) instead of surfacing mid-drain. Mirrors Python's
+// base64_generic.
 export async function base64Generic(
   paths: PathSpec[],
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
+  stat: (p: PathSpec) => Promise<FileStat>,
 ): Promise<CommandFnResult> {
+  stream = stdinStream(stream, opts.stdin)
   const fl = new FlagView(opts.flags, specOf('base64'))
   if (paths.length > 1) throw extraOperandError(CommandName.BASE64, paths[1]?.rawPath ?? '')
+  if (paths.length === 1) {
+    const [, err] = await splitReadable(paths, stdinStat(stat), 'base64')
+    if (err !== '') return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(err) })]
+  }
   const decode = fl.asBool('D') || fl.asBool('decode')
   const wrapValue = fl.asStr('wrap')
   const wrap = typeof wrapValue === 'string' ? Number.parseInt(wrapValue, 10) : null
@@ -72,7 +82,7 @@ export async function base64Generic(
     const first = paths[0]
     if (first === undefined) return [null, new IOResult()]
     source = stream(first)
-    cache.push(first.virtual)
+    if (!isStdin(first)) cache.push(first.virtual)
   } else {
     source = resolveSource(opts.stdin)
   }

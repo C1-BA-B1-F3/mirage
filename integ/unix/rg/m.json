@@ -23,10 +23,10 @@
         "nextcloud",
         "box"
       ],
-      "command": "rg -m1 error /data/r4/app.log",
+      "command": "rg -m1 error /data/r4/app.log; rg --max-count=1 error /data/r4/app.log; rg -m=1 error /data/r4/app.log; printf 'a1\\na2\\nb\\na3\\n' > /data/rson.txt; rg --stop-on-nonmatch a /data/rson.txt",
       "expect": {
         "exit": 0,
-        "stdout": "error: disk full\n",
+        "stdout": "error: disk full\nerror: disk full\nerror: disk full\na1\na2\n",
         "stderr": ""
       },
       "flags": [
@@ -233,6 +233,40 @@
         "m",
         "A"
       ]
+    },
+    {
+      "id": "rg_m_trailing_match_prints_as_selected",
+      "seq": 612195,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "rg -n -m1 -A2 o /data/a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "1:hello\n2:world\n3:foo\n",
+        "stderr": ""
+      }
     }
   ]
 }

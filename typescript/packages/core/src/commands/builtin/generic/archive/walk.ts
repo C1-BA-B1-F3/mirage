@@ -15,6 +15,7 @@
 import type { LinkView, MountView } from '../../../../ops/types.ts'
 import { type FileStat, FileType, LINK_TARGET_KEY, PathSpec } from '../../../../types.ts'
 import { mountKey } from '../../../../utils/key_prefix.ts'
+import { isEnotdir } from '../../../../utils/errors.ts'
 import { CycleError } from '../../../../utils/path.ts'
 import { rstripSlash, stripSlash } from '../../../../utils/slash.ts'
 import type { Entry, MemberKind, Problem, Scan, Walked } from './types.ts'
@@ -29,6 +30,7 @@ export const OTHER_FILESYSTEM = 'file is on a different filesystem; not dumped'
 // on a fatal Problem; tar prints them after "Cannot stat: " and Info-ZIP
 // words every unreachable name the same way, so it ignores the reason.
 const NO_SUCH = 'No such file or directory'
+const NOT_DIR = 'Not a directory'
 const TOO_MANY_LEVELS = 'Too many levels of symbolic links'
 // A directory below the operand the walk could not open: a rule refused
 // it. Rides on an `unreadable` Problem; tar prints it after "Cannot open: "
@@ -175,8 +177,8 @@ async function follow(
   let targetStat: FileStat
   try {
     targetStat = await deps.stat(spec)
-  } catch {
-    return [[], [], NO_SUCH, []]
+  } catch (err) {
+    return [[], [], isEnotdir(err) ? NOT_DIR : NO_SUCH, []]
   }
   if (targetStat.type !== FileType.DIRECTORY) {
     return [[{ namePath: virtual, kind: 'file', read: spec }], [], '', []]
@@ -231,11 +233,11 @@ export async function scanOperand(path: PathSpec, deps: ScanDeps): Promise<Scan>
     let rootStat: FileStat
     try {
       rootStat = await deps.stat(path)
-    } catch {
+    } catch (err) {
       return {
         entries: [],
         crossings: [],
-        problems: [{ path: base, reason: NO_SUCH, fatal: true }],
+        problems: [{ path: base, reason: isEnotdir(err) ? NOT_DIR : NO_SUCH, fatal: true }],
         missing: true,
       }
     }

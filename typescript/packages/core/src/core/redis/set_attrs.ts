@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
+import { lookupError } from './dest.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { norm } from './utils.ts'
 
@@ -38,7 +38,7 @@ export async function setAttrs(
   const store = accessor.store
   const p = norm(path.mountPath)
   if (!(await store.hasFile(p)) && !(await store.hasDir(p))) {
-    throw enoent(path)
+    throw await lookupError(store, path, p)
   }
   const encoded: Record<string, string> = {}
   if (fields.mode !== undefined) encoded.mode = String(fields.mode)

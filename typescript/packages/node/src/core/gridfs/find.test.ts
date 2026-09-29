@@ -60,51 +60,49 @@ describe('globRegex', () => {
 })
 
 describe('buildQuery', () => {
-  it('prefix only', () => {
-    expect(buildQuery('data/', {}, true)).toEqual({ filename: { $regex: '^data/' } })
+  const filesOnly = { filename: { $not: { $regex: '/$' } } }
+
+  it('a pushed query selects files only', () => {
+    expect(buildQuery('data/', {}, true)).toEqual({
+      $and: [{ filename: { $regex: '^data/' } }, filesOnly],
+    })
   })
 
-  it('name matches files and markers at any depth', () => {
+  it('name matches files at any depth', () => {
     const query = buildQuery('data/', { name: '*.csv' }, true) as {
       $and: { filename: Record<string, unknown> }[]
     }
     const nameCond = query.$and[1]?.filename ?? {}
     expect(matches(nameCond, 'data/b.csv')).toBe(true)
     expect(matches(nameCond, 'data/sub/deep.csv')).toBe(true)
-    expect(matches(nameCond, 'data/sub.csv/')).toBe(true)
+    expect(matches(nameCond, 'data/sub.csv/')).toBe(false)
     expect(matches(nameCond, 'data/b.txt')).toBe(false)
   })
 
   it('iname is case-insensitive', () => {
-    const query = buildQuery('', { iname: '*.CSV' }, true) as { filename: Record<string, unknown> }
-    expect(query.filename.$options).toBe('i')
-    expect(matches(query.filename, 'b.csv')).toBe(true)
-  })
-
-  it('type narrows to files or markers', () => {
-    expect(buildQuery('', { type: 'f' }, true)).toEqual({
-      filename: { $not: { $regex: '/$' } },
-    })
-    expect(buildQuery('', { type: 'd' }, true)).toEqual({ filename: { $regex: '/$' } })
-  })
-
-  it('size lets markers through', () => {
-    const query = buildQuery('', { minSize: 1, maxSize: 100 }, true) as {
-      $or: Record<string, unknown>[]
+    const query = buildQuery('', { iname: '*.CSV' }, true) as {
+      $and: { filename: Record<string, unknown> }[]
     }
-    expect(query.$or).toContainEqual({ length: { $gte: 1, $lte: 100 } })
-    expect(query.$or).toContainEqual({ filename: { $regex: '/$' } })
+    const nameCond = query.$and[0]?.filename ?? {}
+    expect(nameCond.$options).toBe('i')
+    expect(matches(nameCond, 'b.csv')).toBe(true)
+  })
+
+  it('size bounds the length', () => {
+    expect(buildQuery('', { minSize: 1, maxSize: 100 }, true)).toEqual({
+      $and: [filesOnly, { length: { $gte: 1, $lte: 100 } }],
+    })
   })
 
   it('no pushdown keeps prefix only', () => {
-    expect(buildQuery('data/', { name: '*.csv', type: 'f', minSize: 1 }, false)).toEqual({
+    expect(buildQuery('data/', { name: '*.csv', minSize: 1 }, false)).toEqual({
       filename: { $regex: '^data/' },
     })
   })
 
   it('unpushable glob falls back to prefix', () => {
     expect(buildQuery('data/', { name: '[ab].csv' }, true)).toEqual({
-      filename: { $regex: '^data/' },
+      $and: [{ filename: { $regex: '^data/' } }, filesOnly],
     })
   })
 })

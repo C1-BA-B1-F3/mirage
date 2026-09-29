@@ -245,7 +245,8 @@ describe('cross-mount strategies (STREAM/FANOUT) end to end', () => {
   it('wc re-totals across mounts and globs', async () => {
     const ws = await twoMounts()
     const io = await ws.shell('wc -l /m1/*.txt /m2/c.txt')
-    expect(dec(io)).toBe('2 /m1/a.txt\n1 /m1/b.txt\n1 /m2/c.txt\n4 total\n')
+    // GNU pads to the digits of the files' total size, 12 bytes here.
+    expect(dec(io)).toBe(' 2 /m1/a.txt\n 1 /m1/b.txt\n 1 /m2/c.txt\n 4 total\n')
     await ws.close()
   })
 

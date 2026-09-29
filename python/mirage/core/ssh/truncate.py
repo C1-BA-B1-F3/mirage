@@ -17,14 +17,18 @@ from mirage.cache.context import invalidate_after_write
 from mirage.core.ssh.client import _abs
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
+from mirage.utils.errors import enotsup
 
 
 async def truncate(accessor: SSHAccessor,
                    path: PathSpec,
-                   length: int = 0) -> None:
+                   length: int = 0,
+                   no_create: bool = False) -> None:
+    if no_create:
+        raise enotsup("ssh", "truncate --no-create", path)
     config = accessor.config
     timer = start_op()
     sftp = await accessor.sftp()
     await sftp.truncate(_abs(config, path.mount_path), length)
-    record("truncate", path.mount_path, "ssh", 0, timer)
+    record("truncate", path.virtual, "ssh", 0, timer)
     await invalidate_after_write(path)

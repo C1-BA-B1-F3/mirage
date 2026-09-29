@@ -23,10 +23,10 @@ import { getText } from '../../shell/helpers.ts'
 import { ERREXIT_EXEMPT_TYPES } from '../../shell/constants.ts'
 import { pipelineTransparent } from '../../shell/node_kind.ts'
 import { NodeType as NT } from '../../shell/types.ts'
-import { recordStatus } from '../executor/statement.ts'
+import { fd0Binding, recordStatus, statementStdin } from '../executor/statement.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import { readFailExitCode } from '../../commands/spec/usage.ts'
-import { errorVirtualPath, gnuStrerror } from '../../utils/errors.ts'
+import { formatFsError, isFsError } from '../../utils/errors.ts'
 import { ReturnSignal } from '../../shell/errors.ts'
 import { BreakSignal, ContinueSignal } from '../executor/control.ts'
 import { divertStatement, stdoutToStderr } from '../executor/builtins/exec/index.ts'
@@ -34,7 +34,6 @@ import { handleBackground } from '../executor/jobs.ts'
 import type { Decisions } from '../../policy/decisions.ts'
 import type { HandOff } from '../../policy/types.ts'
 import type { DispatchFn } from '../../runtime/types.ts'
-import { unreadableStdin } from '../../shell/descriptors.ts'
 import type { SessionState } from '../session/session.ts'
 import { ExecutionNode } from '../types.ts'
 
@@ -110,6 +109,7 @@ async function runProgram(
   // Source lines and the highest one `set -v` has already echoed.
   const sourceLines = getText(node).split('\n')
   let echoedRow = -1
+  const bound = fd0Binding(session)
 
   let i = 0
   while (i < children.length) {
@@ -172,18 +172,37 @@ async function runProgram(
     let stdout: ByteSource | null
     let io: IOResult
     if (isBg) {
-      const [bgStdout, bgIo, bgExec] = await handleBackground(
-        recurse,
-        child,
-        null,
-        session,
-        jobTable,
-        agentId,
-        stdin,
-        callStack,
-        handed,
-        decisions,
-      )
+      let launched: [ByteSource | null, IOResult, ExecutionNode]
+      try {
+        launched = await handleBackground(
+          recurse,
+          child,
+          null,
+          session,
+          jobTable,
+          agentId,
+          stdin,
+          callStack,
+          handed,
+          decisions,
+        )
+      } catch (err) {
+        if (!(err instanceof ExitSignal)) throw err
+        // A job the shell cannot fork ends the line, as a failed fork(2)
+        // ends bash's.
+        mergedIo = await mergedIo.merge(
+          new IOResult({ exitCode: err.exitCode, stderr: err.stderr }),
+        )
+        mergedIo.exitCode = err.exitCode
+        recordStatus(session, err.exitCode)
+        lastExec = new ExecutionNode({
+          command: child.text,
+          exitCode: err.exitCode,
+          stderr: err.stderr,
+        })
+        break
+      }
+      const [bgStdout, bgIo, bgExec] = launched
       stdout = bgStdout
       io = bgIo
       lastExec = bgExec
@@ -197,13 +216,9 @@ async function runProgram(
       let execNode: ExecutionNode
       try {
         // `exec < file` feeds the shell's stdin: a later `read` or
-        // `while read` sees it. The same bytes reach each statement, and
-        // the identity-keyed line buffer advances a sequence of reads
-        // through them.
-        // `exec <&-` or `exec 0<&1` left nothing to read: a reader gets
-        // EBADF, as bash's does.
-        const childStdin =
-          stdin ?? (session.execStdinUnreadable ? unreadableStdin() : session.execStdin)
+        // `while read` sees it, and each statement reads on from where
+        // the one before it stopped.
+        const childStdin = statementStdin(session, stdin, bound)
         ;[s, ioResult, execNode] = await recurse(child, session, childStdin, callStack)
       } catch (err) {
         if (err instanceof ExitSignal) {
@@ -260,21 +275,18 @@ async function runProgram(
         // errors format as a GNU coreutils line, respelling the path as
         // typed via the operands the leaf node carries, mirroring the
         // eager executor chokepoint.
-        const strerror = gnuStrerror((err as { code?: string }).code)
-        if (strerror !== null) {
-          const vpath = errorVirtualPath(err)
+        if (isFsError(err)) {
           const cmdName = execNode.command?.split(' ')[0] ?? ''
-          const spelled = execNode.paths.find((p) => p.virtual === vpath)?.rawPath ?? vpath
-          drainErr = `${cmdName}: ${spelled}: ${strerror}`
+          drainErr = new TextDecoder().decode(formatFsError(cmdName, err, execNode.paths))
           drainExit = readFailExitCode(cmdName, err)
         } else {
-          drainErr = err instanceof Error ? err.message : String(err)
+          drainErr = `${err instanceof Error ? err.message : String(err)}\n`
         }
         stdout = null
       }
       if (drainErr !== null) {
         const existing = await materialize(ioResult.stderr)
-        const added = new TextEncoder().encode(`${drainErr}\n`)
+        const added = new TextEncoder().encode(drainErr)
         const merged = new Uint8Array(existing.byteLength + added.byteLength)
         merged.set(existing, 0)
         merged.set(added, existing.byteLength)
@@ -324,6 +336,6 @@ async function runProgram(
   if (allStdout.length === 1 && allStdout[0] !== undefined) {
     return [allStdout[0], mergedIo, lastExec]
   }
-  const combined = allStdout.length > 0 ? asyncChain(...allStdout) : null
+  const combined = allStdout.length > 0 ? asyncChain(allStdout) : null
   return [combined, mergedIo, lastExec]
 }

@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { z, type ZodObject, type ZodRawShape } from 'zod'
-import { type FieldNormalizer, normalizeFields } from '../utils/normalize.ts'
+import { type FieldNormalizer, normalizedKey, normalizeFields } from '../utils/normalize.ts'
 
 // Re-exported so a config schema in the browser or node package is built
 // with the zod core resolves, not with a second copy of its own. The
@@ -84,19 +84,65 @@ export function secretSchema<T extends z.ZodType>(schema: T): T {
  * left every requiredness rule in these schemas unreachable from the mount
  * path -- `GitHubConfigSchema` required `owner` and nothing ever asked it.
  *
- * Unknown keys are stripped, not refused, because pydantic's default
- * `extra="ignore"` does the same on the python side; the CLI registry adds
- * its own fail-loud check on top for both languages. A callable a config
- * carries (a token provider, a refresh hook) must be declared in the schema
- * through `secretSchema(z.custom(...))` or parse strips it -- that is also
- * what keeps it out of snapshot state.
+ * Unknown keys are refused, as every python config refuses them with
+ * `extra="forbid"`: they used to be stripped, so a typo'd `team_idz` built
+ * a mount that exposed every team, with no error on either side. The check
+ * runs on the input before the renames, so a snake_case spelling of a
+ * declared field is known and an unknown key is named as the block wrote
+ * it. A callable a config carries (a token provider, a refresh hook) must
+ * be declared in the schema through `secretSchema(z.custom(...))` or it is
+ * an unknown key too -- the declaration is also what keeps it out of
+ * snapshot state.
  */
 export function parseConfigWithSchema<T extends ZodRawShape>(
   schema: ZodObject<T>,
   input: Record<string, unknown>,
   normalizer: FieldNormalizer = {},
 ): ConfigOf<ZodObject<T>> {
+  if (refusesExtraKeys(schema)) refuseUnknownKeys(input, Object.keys(schema.shape), normalizer)
   return schema.parse(normalizeFields(input, normalizer)) as ConfigOf<ZodObject<T>>
+}
+
+/**
+ * Refuse the keys of a config block that no field takes.
+ *
+ * Each key is looked up under the name the normalizer writes it to, and an
+ * unknown one is reported in the block's own spelling, one
+ * `unrecognized_keys` issue per key: the summary then reads
+ * `<vfs>: team_idz: unrecognized_keys` where python's reads
+ * `<vfs>: team_idz: extra_forbidden`, the same field named the same way.
+ * Exported for the backends that take their options without a schema
+ * (`ram`, `disk`, `redis`, `opfs`), which python builds from constructor
+ * keywords and refuses the same way.
+ */
+export function refuseUnknownKeys(
+  input: Record<string, unknown>,
+  fields: Iterable<string>,
+  normalizer: FieldNormalizer = {},
+): void {
+  const known = new Set(fields)
+  const drop = new Set(normalizer.drop ?? [])
+  const unknown = Object.keys(input).filter(
+    (key) => !drop.has(key) && !known.has(normalizedKey(key, normalizer)),
+  )
+  if (unknown.length === 0) return
+  throw new z.ZodError(
+    unknown.map((key) => ({
+      code: 'unrecognized_keys' as const,
+      keys: [key],
+      path: [],
+      message: `Unrecognized key: ${JSON.stringify(key)}`,
+    })),
+  )
+}
+
+// A schema that declares its own policy for extra keys keeps it: a loose
+// one passes them through the way pydantic's `extra="allow"` does. A strict
+// one refuses them in parse as well, but after the renames, so zod would
+// name the camelCase spelling; it is checked up front like the default.
+function refusesExtraKeys(schema: ZodObject<ZodRawShape>): boolean {
+  const catchall = schema.def.catchall
+  return catchall === undefined || catchall instanceof z.ZodNever
 }
 
 export function redactConfigWithSchema<T extends ZodRawShape>(

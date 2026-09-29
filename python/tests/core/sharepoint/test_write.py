@@ -5,6 +5,7 @@ import mirage.core.msgraph.drive_ops as drive_ops
 import mirage.core.sharepoint.write as write_mod
 from mirage.accessor.sharepoint import SharePointAccessor, SharePointConfig
 from mirage.core.sharepoint.write import write_bytes
+from mirage.observe.context import RecordingScope
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
 
@@ -91,3 +92,24 @@ async def test_upload_session_requests_replace(monkeypatch):
         await write_bytes(_accessor(), path, b"abcdef")
     behavior = captured["item"]["@microsoft.graph.conflictBehavior"]
     assert behavior == "replace"
+
+
+@pytest.mark.asyncio
+async def test_write_records_the_virtual_path():
+    # The site is named like its mount, so m/Documents/k.txt is not virtual.
+    accessor = SharePointAccessor(SharePointConfig(access_token="tok"))
+    accessor.site_cache["m"] = _SITE_ID
+    accessor.drive_cache[(_SITE_ID, "Documents")] = _DRIVE_ID
+    spec = PathSpec(virtual="/m/m/Documents/k.txt",
+                    directory="/m/m/Documents/",
+                    vfs_path="m/Documents/k.txt")
+    scope = RecordingScope()
+    try:
+        with aioresponses() as m:
+            m.put(f"{_BASE}/drives/{_DRIVE_ID}/root:/k.txt:/content",
+                  status=201,
+                  payload={"id": "X"})
+            await write_bytes(accessor, spec, b"hello")
+    finally:
+        scope.close()
+    assert [r.path for r in scope.records] == ["/m/m/Documents/k.txt"]

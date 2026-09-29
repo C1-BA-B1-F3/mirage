@@ -12,18 +12,20 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { makeSearchOp } from '../../../core/hierarchy/search.ts'
+import { detectScope } from '../../../core/langfuse/scope.ts'
+import { SEARCHERS } from '../../../core/langfuse/search.ts'
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { LangfuseAccessor } from '../../../accessor/langfuse.ts'
 import { read as langfuseRead } from '../../../core/langfuse/read.ts'
 import { readdir as langfuseReaddir } from '../../../core/langfuse/readdir.ts'
 import { stat as langfuseStat } from '../../../core/langfuse/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
-import { streamFromBytes } from '../utils/wrap.ts'
 
-export const LANGFUSE_IO: CommandIO<LangfuseAccessor> = {
-  readdir: langfuseReaddir,
-  readBytes: langfuseRead,
-  readStream: (a, p, i) => streamFromBytes(langfuseRead, a, p, i),
-  stat: langfuseStat,
+export const LANGFUSE_IO: CommandIO<LangfuseAccessor> = new VFSAdapter<LangfuseAccessor>({
+  search: { search: makeSearchOp(detectScope, SEARCHERS), meta: { grep: { mode: 'regex' } } },
+  read: { readdir: langfuseReaddir, readBytes: langfuseRead, stat: langfuseStat },
   isMounted: () => true,
   local: false,
-}
+}).toCommandIO()

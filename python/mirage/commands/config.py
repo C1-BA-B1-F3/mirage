@@ -33,6 +33,7 @@ from mirage.commands.spec.types import FlagValue
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import NamespaceView, ReaddirPath, SessionView, StatPath
+from mirage.process.types import ProcessView
 from mirage.runtime.base import Runtime
 from mirage.runtime.types import DispatchFn, ExecPathFn
 from mirage.types import Limit, PathSpec
@@ -78,8 +79,11 @@ class ExecContext:
             one path.
         session_view (SessionView | None): The session plane's live,
             gated handle.
+        argv (tuple[str, ...]): The words after the command name, as the
+            line spelled them.
     """
 
+    limit_override: Limit | None = None
     stdin: ByteSource | None = None
     cwd: str = "/"
     dispatch: DispatchFn | None = None
@@ -93,6 +97,8 @@ class ExecContext:
     stat_path: StatPath | None = None
     readdir_path: ReaddirPath | None = None
     session_view: SessionView | None = None
+    processes: ProcessView | None = None
+    argv: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +159,14 @@ class CommandOpts:
         session_view (SessionView | None): The session plane's live,
             gated handle (reads and gate-cleared writes); ``env`` above
             stays the frozen process-view snapshot.
+        argv (tuple[str, ...]): The words after the command name, as the
+            line spelled them (an operand's ``raw_path``), for the GNU
+            diagnostic that quotes a word the classified operands do not
+            hold: diffutils names the line's last argument, an option
+            included (``cmp: missing operand after '-s'``). Flags are read
+            through a spec-bound ``FlagView``, never from here. Empty
+            where a line runs split per operand or per mount, since no
+            one word list describes such a run.
     """
 
     stdin: ByteSource | None = None
@@ -174,6 +188,8 @@ class CommandOpts:
     stat_path: StatPath | None = None
     readdir_path: ReaddirPath | None = None
     session_view: SessionView | None = None
+    processes: ProcessView | None = None
+    argv: tuple[str, ...] = ()
 
 
 CommandFnResult = tuple[ByteSource | None, IOResult] | None
@@ -473,6 +489,7 @@ class RegisteredCommand:
     dst: str | None = None
     write: bool = False
     limit: Limit | None = None
+    path_guarded: bool = False
 
     def with_overrides(
         self,
@@ -500,6 +517,7 @@ def command(
     aggregate: Callable[..., Any] | None = None,
     write: bool = False,
     limit: Limit | None = None,
+    path_guarded: bool = False,
 ) -> Callable[..., Any]:
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -521,6 +539,7 @@ def command(
                 aggregate=aggregate,
                 write=write,
                 limit=limit,
+                path_guarded=path_guarded,
             )
             cmds.append(rc)
         setattr(wrapped_fn, "_registered_commands", cmds)

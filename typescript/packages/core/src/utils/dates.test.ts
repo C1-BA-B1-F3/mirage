@@ -18,6 +18,7 @@ import {
   inMtimeWindow,
   isoToEpoch,
   parseDateExpr,
+  parsePosixTime,
   toIsoZ,
   utcDateFolder,
 } from './dates.ts'
@@ -223,5 +224,66 @@ describe('toIsoZ', () => {
     ['1969-12-31T23:59:59.500Z', '1969-12-31T23:59:59.500000Z'],
   ])('formats %s like Python', (input, expected) => {
     expect(toIsoZ(new Date(input))).toBe(expected)
+  })
+})
+
+// gnulib's posixtime with date's syntax bits, measured on coreutils 9.7
+// (`date MMDDhhmm[[CC]YY][.ss]` as a user without the privilege to set the
+// clock). Mirrors test_dates.py.
+describe('parsePosixTime', () => {
+  const NOW = new Date(Date.UTC(2026, 8, 22, 12))
+
+  it.each([
+    ['01010000', Date.UTC(2026, 0, 1)],
+    ['0101000024', Date.UTC(2024, 0, 1)],
+    ['0101000069', Date.UTC(1969, 0, 1)],
+    ['010100002024', Date.UTC(2024, 0, 1)],
+    ['01010000.30', Date.UTC(2026, 0, 1, 0, 0, 30)],
+    ['0229000024', Date.UTC(2024, 1, 29)],
+    ['1231235924.60', Date.UTC(2025, 0, 1)],
+  ])('reads %s', (text, epochMs) => {
+    expect(parsePosixTime(text, UTC_ZONE, NOW)?.getTime()).toBe(epochMs)
+  })
+
+  it.each([
+    'x',
+    '0101',
+    '0101000',
+    '010100002',
+    '01010000.3',
+    '01010000.61',
+    '1301000024',
+    '01320000',
+    '01012500',
+    '0229000025',
+    '0101000\uff10',
+  ])('refuses %s', (text) => {
+    expect(parsePosixTime(text, UTC_ZONE, NOW)).toBeNull()
+  })
+
+  // mirage holds what Python's datetime holds, years 1-9999 in UTC and on the
+  // wall clock, where GNU also shows year 0 and year 10000.
+  it.each([
+    ['010100000000', 'UTC'],
+    ['123123599999.60', 'UTC'],
+    ['123123599999', 'America/New_York'],
+    ['123118599999.60', 'America/New_York'],
+    ['010100000001', 'Asia/Tokyo'],
+    ['123123599999.60', 'Asia/Tokyo'],
+  ])('refuses %s in %s, a moment datetime cannot hold', (text, zone) => {
+    expect(parsePosixTime(text, resolveTz(zone))).toBeNull()
+  })
+
+  it('reads the last second datetime holds', () => {
+    expect(parsePosixTime('123123599999.59', UTC_ZONE)?.getTime()).toBe(253402300799000)
+    expect(parsePosixTime('123118599999.59', resolveTz('America/New_York'))?.getTime()).toBe(
+      253402300799000,
+    )
+  })
+
+  it('refuses a wall clock the zone skips', () => {
+    const berlin = resolveTz('Europe/Berlin')
+    expect(parsePosixTime('033002302025', berlin)).toBeNull()
+    expect(parsePosixTime('033003302025', berlin)?.getTime()).toBe(Date.UTC(2025, 2, 30, 1, 30))
   })
 })

@@ -12,31 +12,38 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
+from functools import partial
 from typing import Any
 
 from mirage.commands.builtin.utils.limit import run_with_timeout
 from mirage.io import IOResult
 from mirage.io.stream import (async_chain, close_quietly, discard_io,
-                              discard_streams, merge_stdout_stderr)
+                              discard_streams)
 from mirage.io.types import ByteSource, materialize
 from mirage.policy.decisions import Decisions
 from mirage.policy.types import HandOff
+from mirage.process.supervisor import ProcessSupervisor
 from mirage.runtime.types import DispatchFn
 from mirage.shell.call_stack import CallStack
-from mirage.shell.constants import ERREXIT_EXEMPT_TYPES
-from mirage.shell.descriptors import unreadable_stdin
-from mirage.shell.errors import ExitSignal
-from mirage.shell.helpers import get_text
+from mirage.shell.console.pipe import PipeConsole
+from mirage.shell.console.types import Channel
+from mirage.shell.constants import (ERREXIT_EXEMPT_TYPES, FORK_FAILED,
+                                    FORK_FAILED_STATUS)
+from mirage.shell.errors import ExitSignal, PipeClosed
 from mirage.shell.job_table import JobTable
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import TSNodeLike
+from mirage.types import PathSpec
 from mirage.workspace.executor.builtins.exec import (divert_statement,
                                                      stdout_to_stderr)
-from mirage.workspace.executor.jobs import handle_background
-from mirage.workspace.executor.statement import (carry_status,
+from mirage.workspace.executor.jobs import handle_background, pump
+from mirage.workspace.executor.statement import (carry_status, fd0_binding,
                                                  finish_statement,
-                                                 record_status)
-from mirage.workspace.session import SessionState
+                                                 record_status,
+                                                 statement_stdin)
+from mirage.workspace.session import (SessionState, reset_current_session,
+                                      set_current_session)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -47,71 +54,103 @@ async def handle_pipe(
     session: SessionState,
     stdin: ByteSource | None = None,
     call_stack: CallStack | None = None,
+    processes: ProcessSupervisor | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Connect commands via pipes: stdout -> stdin."""
-    current_stdin = stdin
-    last_stdout: ByteSource | None = None
-    child_nodes: list[ExecutionNode] = []
-    ios: list[IOResult] = []
-    intermediate_streams: list[ByteSource] = []
-    # Every segment is a child shell forked before the pipeline ran, so
-    # each expands `$?` to the status the pipeline started with, not to
-    # what a sibling's inner statements left behind (`false; { true; } |
-    # echo $?` prints 1). The snapshot does not carry it: after a child
-    # shell `$?` is the child's status, which is the one thing it
-    # reports back. Seeded through the status door, which leaves
-    # `${PIPESTATUS[@]}` alone.
-    before = session.last_exit_code
+    # Reassociated pipelines can enter here without execute_node resetting
+    # the parent. An exemption belongs to the preceding statement only;
+    # the caller applies this pipeline's own negation after it finishes.
+    session.errexit_immune = False
+    pipes = [
+        PipeConsole(i < len(stderr_flags) and stderr_flags[i])
+        for i in range(len(commands))
+    ]
+    ios: list[IOResult] = [IOResult() for _ in commands]
+    child_nodes: list[ExecutionNode] = [ExecutionNode() for _ in commands]
 
+    children = [session.fork() for _ in commands]
+
+    async def run_segment(i: int, cmd: TSNodeLike) -> int:
+        child = children[i]
+        child.terminal_output = session.terminal_output and i == len(
+            commands) - 1
+        token = set_current_session(child)
+        output = pipes[i]
+        input_stream = stdin if i == 0 else pipes[i - 1].stream()
+        io = IOResult()
+        child_exec = ExecutionNode()
+        try:
+            stdout, io, child_exec = await execute_node(
+                cmd,
+                child,
+                input_stream,
+                call_stack.fork() if call_stack is not None else None,
+                sink=output)
+            await pump(output, Channel.STDOUT, stdout)
+            await pump(output, Channel.STDERR, io.stderr)
+        except PipeClosed:
+            io.exit_code = 141
+        except ExitSignal as sig:
+            io.exit_code = sig.contained_code
+            await pump(output, Channel.STDOUT, sig.stdout)
+            await pump(output, Channel.STDERR, sig.stderr)
+        except BaseException as error:
+            output.end(error)
+            raise
+        finally:
+            if i > 0:
+                pipes[i - 1].close_reader()
+            if input_stream is not None and not isinstance(
+                    input_stream, bytes):
+                await close_quietly(input_stream)
+            output.end()
+            io.stderr = await output.snapshot(Channel.STDERR)
+            ios[i] = io
+            child_nodes[i] = child_exec
+            reset_current_session(token)
+        return io.exit_code
+
+    tasks: list[asyncio.Task[int]] = []
+    failed = False
     try:
         for i, cmd in enumerate(commands):
-            saved = session.snapshot()
-            record_status(session, before, transparent=True)
+            if processes is None:
+                tasks.append(asyncio.create_task(run_segment(i, cmd)))
+                continue
             try:
-                stdout, io, child_exec = await execute_node(
-                    cmd, session, current_stdin, call_stack)
-            except ExitSignal as sig:
-                # Each pipeline segment is its own shell in bash: exit
-                # (or ${var:?}) ends the segment, not the pipeline.
-                stdout = sig.stdout
-                io = IOResult(exit_code=sig.contained_code,
-                              stderr=sig.stderr or None)
-                child_exec = ExecutionNode(command=get_text(cmd),
-                                           exit_code=sig.contained_code,
-                                           stderr=sig.stderr)
-            finally:
-                session.restore(saved)
-            ios.append(io)
-            child_nodes.append(child_exec)
-
-            if i < len(commands) - 1:
-                pipe_stderr = (i < len(stderr_flags) and stderr_flags[i])
-                if pipe_stderr:
-                    current_stdin = merge_stdout_stderr(stdout, io)
-                else:
-                    current_stdin = stdout
-                if current_stdin is None:
-                    current_stdin = b""
-                if not isinstance(current_stdin, bytes):
-                    intermediate_streams.append(current_stdin)
-            last_stdout = stdout
-
-        if last_stdout is not None and not isinstance(last_stdout, bytes):
-            materialized = await run_with_timeout(
-                materialize(last_stdout), session.pipeline_timeout_seconds,
-                "pipeline")
-            last_stdout = materialized
+                process = processes.start(session_id=session.session_id,
+                                          command=(cmd.text or b"").decode(),
+                                          cwd=PathSpec.from_str_path(
+                                              session.cwd),
+                                          parent_pid=session.process_id,
+                                          run=partial(run_segment, i, cmd),
+                                          limit=session.processes.max)
+            except BlockingIOError as exc:
+                raise ExitSignal(FORK_FAILED_STATUS,
+                                 stderr=FORK_FAILED) from exc
+            children[i].process_id = process.info.pid
+            tasks.append(process.task)
+        result = await run_with_timeout(
+            asyncio.gather(materialize(pipes[-1].stream()), *tasks),
+            session.pipeline_timeout_seconds, "pipeline")
+        last_stdout = result[0]
     except BaseException:
-        for io in ios:
-            await discard_io(io)
-        await discard_streams(last_stdout, stdin)
+        failed = True
         raise
     finally:
-        # Explicitly close any intermediate generators that may still
-        # be holding VFS resources (HTTP connections, file
-        # handles). Harmless on exhausted streams.
-        for s in intermediate_streams:
-            await close_quietly(s)
+        for pipe in pipes:
+            pipe.close_reader()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if failed:
+            for io in ios:
+                await discard_io(io)
+            # The shell's own fd 0 outlives the line, as bash's does:
+            # the next line reads on from it.
+            if stdin is not session.exec_stdin:
+                await discard_streams(stdin)
 
     last_io = ios[-1]
     # Parked for the boundary that closes this statement to claim as
@@ -171,6 +210,7 @@ async def handle_connection(
     call_stack: CallStack | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Handle &&, ||"""
+    bound = fd0_binding(session)
     left_stdout, left_io, left_exec = await execute_node(
         left, session, stdin, call_stack)
     children = [left_exec]
@@ -188,13 +228,14 @@ async def handle_connection(
                 op="&&", exit_code=left_io.exit_code, children=children)
         try:
             right_stdout, right_io, right_exec = (await execute_node(
-                right, session, stdin, call_stack))
+                right, session, statement_stdin(session, stdin, bound),
+                call_stack))
         except ExitSignal as sig:
             raise await _merge_left_into_exit(sig, left_bytes, left_io)
         children.append(right_exec)
         right_bytes = await materialize(right_stdout)
         merged = await left_io.merge(right_io)
-        combined = async_chain(left_bytes, right_bytes)
+        combined = async_chain([left_bytes, right_bytes])
         return combined, merged, ExecutionNode(op="&&",
                                                exit_code=merged.exit_code,
                                                children=children)
@@ -208,13 +249,14 @@ async def handle_connection(
                 op="||", exit_code=left_io.exit_code, children=children)
         try:
             right_stdout, right_io, right_exec = (await execute_node(
-                right, session, stdin, call_stack))
+                right, session, statement_stdin(session, stdin, bound),
+                call_stack))
         except ExitSignal as sig:
             raise await _merge_left_into_exit(sig, left_bytes, left_io)
         children.append(right_exec)
         right_bytes = await materialize(right_stdout)
         merged = await left_io.merge(right_io)
-        combined = async_chain(left_bytes, right_bytes)
+        combined = async_chain([left_bytes, right_bytes])
         return combined, merged, ExecutionNode(op="||",
                                                exit_code=merged.exit_code,
                                                children=children)
@@ -223,7 +265,7 @@ async def handle_connection(
     left_bytes = await finish_statement(left_stdout, left_io, session, left)
     try:
         right_stdout, right_io, right_exec = await execute_node(
-            right, session, stdin, call_stack)
+            right, session, statement_stdin(session, stdin, bound), call_stack)
     except ExitSignal as sig:
         raise await _merge_left_into_exit(sig, left_bytes, left_io)
     children.append(right_exec)
@@ -232,7 +274,7 @@ async def handle_connection(
     # the combined stream is returned to the caller.
     right_bytes = await materialize(right_stdout)
     merged = await left_io.merge(right_io)
-    combined = async_chain(left_bytes, right_bytes)
+    combined = async_chain([left_bytes, right_bytes])
     return combined, merged, ExecutionNode(op=str(op),
                                            exit_code=merged.exit_code,
                                            children=children)
@@ -274,6 +316,7 @@ async def handle_subshell(
         all_stdout: list[Any] = []
         merged_io = IOResult()
         last_exec = ExecutionNode(command="()", exit_code=0)
+        bound = fd0_binding(session)
         i = 0
         while i < len(body):
             child = body[i]
@@ -287,9 +330,22 @@ async def handle_subshell(
             # what keeps the option from leaking to the parent.
             is_bg = (i + 1 < len(body) and body[i + 1].type == NT.BACKGROUND)
             if is_bg and job_table is not None:
-                stdout, io, last_exec = await handle_background(
-                    execute_node, child, None, session, job_table, agent_id
-                    or "", stdin, call_stack, handed, decisions)
+                try:
+                    stdout, io, last_exec = await handle_background(
+                        execute_node, child, None, session, job_table, agent_id
+                        or "", stdin, call_stack, handed, decisions)
+                except ExitSignal as sig:
+                    # A job the subshell cannot fork ends the subshell
+                    # only, its status the subshell's.
+                    merged_io = await merged_io.merge(
+                        IOResult(exit_code=sig.contained_code,
+                                 stderr=sig.stderr or None))
+                    merged_io.exit_code = sig.contained_code
+                    record_status(session, sig.contained_code)
+                    last_exec = ExecutionNode(command="()",
+                                              exit_code=sig.contained_code,
+                                              stderr=sig.stderr)
+                    break
                 merged_io = await merged_io.merge(io)
                 # Seed $? for later body commands (mirrors program loop).
                 record_status(session, io.exit_code)
@@ -298,11 +354,7 @@ async def handle_subshell(
                 i += 2
                 continue
             i += 1
-            child_stdin = stdin
-            if child_stdin is None and session.exec_stdin_unreadable:
-                child_stdin = unreadable_stdin()
-            elif child_stdin is None and session.exec_stdin is not None:
-                child_stdin = session.exec_stdin
+            child_stdin = statement_stdin(session, stdin, bound)
             try:
                 stdout, io, last_exec = await execute_node(
                     child, session, child_stdin, call_stack)
@@ -342,7 +394,7 @@ async def handle_subshell(
                 break
         if len(all_stdout) == 1:
             return all_stdout[0], merged_io, last_exec
-        combined = async_chain(*all_stdout) if all_stdout else None
+        combined = async_chain(all_stdout) if all_stdout else None
         return combined, merged_io, last_exec
     finally:
         session.restore(saved)

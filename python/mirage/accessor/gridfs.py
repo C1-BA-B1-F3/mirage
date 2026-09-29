@@ -24,7 +24,7 @@ from mirage.vfs.secrets import reveal_secret
 
 
 class GridFSConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     uri: SecretStr
     database: str

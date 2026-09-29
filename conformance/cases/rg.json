@@ -29,7 +29,7 @@
       }
     },
     {
-      "id": "rg_o_empty_match_prints_nothing",
+      "id": "rg_o_empty_match_prints_an_empty_line",
       "cmd": "rg -o '[0-9]*'",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -38,12 +38,12 @@
       "stdin_text": "ab\n",
       "expect": {
         "exit": 0,
-        "stdout_text": "",
+        "stdout_text": "\n\n\n",
         "stderr_text": ""
       }
     },
     {
-      "id": "rg_o_empty_pattern_prints_nothing",
+      "id": "rg_o_empty_pattern_prints_every_empty_match",
       "cmd": "rg -o ''",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -52,12 +52,12 @@
       "stdin_text": "ab\n",
       "expect": {
         "exit": 0,
-        "stdout_text": "",
+        "stdout_text": "\n\n\n",
         "stderr_text": ""
       }
     },
     {
-      "id": "rg_o_start_anchor_prints_nothing",
+      "id": "rg_o_start_anchor_prints_one_empty_line",
       "cmd": "rg -o '^'",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -66,12 +66,12 @@
       "stdin_text": "ab\n",
       "expect": {
         "exit": 0,
-        "stdout_text": "",
+        "stdout_text": "\n",
         "stderr_text": ""
       }
     },
     {
-      "id": "rg_o_end_anchor_prints_nothing",
+      "id": "rg_o_end_anchor_prints_one_empty_line",
       "cmd": "rg -o '$'",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -80,12 +80,12 @@
       "stdin_text": "ab\n",
       "expect": {
         "exit": 0,
-        "stdout_text": "",
+        "stdout_text": "\n",
         "stderr_text": ""
       }
     },
     {
-      "id": "rg_o_empty_matches_dropped_around_a_real_one",
+      "id": "rg_o_empty_matches_print_around_a_real_one",
       "cmd": "rg -o '[0-9]*'",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -94,12 +94,12 @@
       "stdin_text": "a1b\n",
       "expect": {
         "exit": 0,
-        "stdout_text": "1\n",
+        "stdout_text": "\n1\n\n",
         "stderr_text": ""
       }
     },
     {
-      "id": "rg_o_nonempty_runs_kept_in_order",
+      "id": "rg_o_matches_kept_in_order",
       "cmd": "rg -o '[0-9]*'",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -108,12 +108,12 @@
       "stdin_text": "1a22b\n",
       "expect": {
         "exit": 0,
-        "stdout_text": "1\n22\n",
+        "stdout_text": "1\n22\n\n",
         "stderr_text": ""
       }
     },
     {
-      "id": "rg_o_star_keeps_only_the_nonempty_match",
+      "id": "rg_o_star_skips_the_empty_match_after_one",
       "cmd": "rg -o 'b*'",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -122,12 +122,12 @@
       "stdin_text": "abc\n",
       "expect": {
         "exit": 0,
-        "stdout_text": "b\n",
+        "stdout_text": "\nb\n\n",
         "stderr_text": ""
       }
     },
     {
-      "id": "rg_oc_still_counts_the_selected_line",
+      "id": "rg_oc_counts_every_match",
       "cmd": "rg -oc '[0-9]*'",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -136,12 +136,12 @@
       "stdin_text": "ab\n",
       "expect": {
         "exit": 0,
-        "stdout_text": "1\n",
+        "stdout_text": "3\n",
         "stderr_text": ""
       }
     },
     {
-      "id": "rg_o_empty_match_on_every_line_prints_nothing",
+      "id": "rg_o_empty_matches_print_on_every_line",
       "cmd": "rg -o '[0-9]*'",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -150,7 +150,7 @@
       "stdin_text": "a\nb\n",
       "expect": {
         "exit": 0,
-        "stdout_text": "",
+        "stdout_text": "\n\n\n\n",
         "stderr_text": ""
       }
     },
@@ -194,7 +194,7 @@
       }
     },
     {
-      "id": "rg_ob_empty_matches_dropped_around_a_real_one",
+      "id": "rg_ob_empty_matches_offset_around_a_real_one",
       "cmd": "rg -ob '[0-9]*'",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -203,7 +203,7 @@
       "stdin_text": "a1b\n",
       "expect": {
         "exit": 0,
-        "stdout_text": "1:1\n",
+        "stdout_text": "0:\n1:1\n3:\n",
         "stderr_text": ""
       }
     },
@@ -216,7 +216,7 @@
       },
       "expect": {
         "exit": 0,
-        "stdout_text": "",
+        "stdout_text": "/data/rgo5/z.txt:\n/data/rgo5/z.txt:\n/data/rgo5/z.txt:\n",
         "stderr_text": ""
       }
     },
@@ -377,7 +377,7 @@
       }
     },
     {
-      "id": "rg_ov_prints_nothing",
+      "id": "rg_ov_prints_the_unmatched_lines_whole",
       "cmd": "rg -ov hello /data/a.txt",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -385,12 +385,12 @@
       },
       "expect": {
         "exit": 0,
-        "stdout_text": "",
+        "stdout_text": "world\nfoo\nbar\nbaz\n",
         "stderr_text": ""
       }
     },
     {
-      "id": "rg_ovc_still_counts_the_selected_lines",
+      "id": "rg_ovc_counts_no_matches",
       "cmd": "rg -ovc hello /data/a.txt",
       "matrix": {
         "python": ["ram", "disk", "redis"],
@@ -398,7 +398,7 @@
       },
       "expect": {
         "exit": 0,
-        "stdout_text": "4\n",
+        "stdout_text": "0\n",
         "stderr_text": ""
       }
     },
@@ -425,7 +425,7 @@
       "expect": {
         "exit": 2,
         "stdout_text": "",
-        "stderr_text": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr_text": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -438,7 +438,7 @@
       "expect": {
         "exit": 2,
         "stdout_text": "/data/a.txt\n",
-        "stderr_text": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr_text": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -451,7 +451,7 @@
       "expect": {
         "exit": 2,
         "stdout_text": "/data/a.txt:1\n",
-        "stderr_text": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr_text": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -463,8 +463,8 @@
       },
       "expect": {
         "exit": 2,
-        "stdout_text": "/data/a.txt:hello\n",
-        "stderr_text": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stdout_text": "/data/a.txt:hello\n/data/a.txt-world\n",
+        "stderr_text": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {

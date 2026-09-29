@@ -21,12 +21,14 @@ from mirage.accessor.notion import NotionAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.notion import read as notion_read
 from mirage.core.notion import readdir as notion_readdir
+from mirage.core.notion import resolve as notion_resolve
+from mirage.core.notion.client import NotionAPIError
 from mirage.core.notion.config import NotionConfig
 from mirage.core.notion.normalize import normalize_database, to_json_bytes
 from mirage.core.notion.read import read
 from mirage.core.notion.readdir import readdir
 from mirage.core.notion.stat import stat
-from mirage.types import FileType, PathSpec
+from mirage.types import ContentType, FileType, PathSpec
 
 DATABASE_ID = "db123"
 SOURCE_ID = "ds789"
@@ -69,7 +71,13 @@ DATA_SOURCE = {
 
 
 @pytest.fixture
-def accessor():
+def accessor(monkeypatch):
+    monkeypatch.setattr(notion_readdir, "search_data_sources",
+                        AsyncMock(return_value=[DATA_SOURCE]))
+    monkeypatch.setattr(notion_readdir, "get_database",
+                        AsyncMock(return_value=DATABASE))
+    monkeypatch.setattr(notion_readdir, "get_data_source",
+                        AsyncMock(return_value=DATA_SOURCE))
     return NotionAccessor(NotionConfig(api_key="ntn_test"))
 
 
@@ -142,31 +150,16 @@ async def test_readdir_database_dir_sizes_database_json_from_the_database(
 
 
 @pytest.mark.asyncio
-async def test_readdir_data_source_lists_row_pages(accessor, monkeypatch):
-    monkeypatch.setattr(notion_readdir, "get_data_source",
-                        AsyncMock(return_value=DATA_SOURCE))
-    monkeypatch.setattr(
-        notion_readdir,
-        "query_data_source",
-        AsyncMock(return_value=[{
-            "object": "page",
-            "id": ROW_ID,
-            "properties": {
-                "Name": {
-                    "type": "title",
-                    "title": [{
-                        "plain_text": "Row A"
-                    }],
-                }
-            },
-            "last_edited_time": "2026-01-02T00:00:00Z",
-        }]),
-    )
+async def test_readdir_data_source_lists_the_schema_and_rows_jsonl(
+        accessor, monkeypatch):
+    get_data_source = AsyncMock(return_value=DATA_SOURCE)
+    monkeypatch.setattr(notion_readdir, "get_data_source", get_data_source)
     entries = await readdir(accessor, PathSpec.from_str_path(SOURCE_DIR))
     assert entries == [
         f"{SOURCE_DIR}/data_source.json",
-        f"{SOURCE_DIR}/Row_A__{ROW_ID}",
+        f"{SOURCE_DIR}/rows.jsonl",
     ]
+    get_data_source.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -215,6 +208,8 @@ async def test_readdir_database_row_lists_page_json_and_child_pages(
             },
         }]),
     )
+    monkeypatch.setattr(notion_resolve, "get_page",
+                        AsyncMock(return_value=_row()))
     entries = await readdir(
         accessor, PathSpec.from_str_path(f"{SOURCE_DIR}/Row-A__{ROW_ID}"))
     assert entries == [
@@ -258,30 +253,170 @@ async def test_stat_data_source_dir(accessor, monkeypatch):
     assert result.extra == {"data_source_id": SOURCE_ID}
 
 
+def _row(**overrides):
+    return {
+        "object": "page",
+        "id": ROW_ID,
+        "url": "https://notion.test/row456",
+        "created_time": "2026-01-01T00:00:00Z",
+        "last_edited_time": "2026-01-02T00:00:00Z",
+        "in_trash": False,
+        "parent": {
+            "type": "data_source_id",
+            "data_source_id": SOURCE_ID,
+            "database_id": DATABASE_ID,
+        },
+        "properties": {
+            "Name": {
+                "type": "title",
+                "title": [{
+                    "plain_text": "Row-A"
+                }],
+            },
+            "Priority": {
+                "type": "number",
+                "number": 2
+            },
+        },
+        **overrides,
+    }
+
+
+@pytest.mark.asyncio
+async def test_read_rows_jsonl_is_one_line_per_row(accessor, monkeypatch):
+    query = AsyncMock(return_value=[_row(), {"object": "database", "id": "x"}])
+    monkeypatch.setattr(notion_read, "query_data_source", query)
+    data = await read(accessor,
+                      PathSpec.from_str_path(f"{SOURCE_DIR}/rows.jsonl"))
+    lines = data.decode().split("\n")
+    assert len(lines) == 2
+    assert lines[1] == ""
+    decoded = json.loads(lines[0])
+    assert list(decoded) == [
+        "page_id", "title", "path", "url", "created_time", "last_edited_time",
+        "parent_type", "parent_id", "archived", "created_by", "last_edited_by",
+        "properties"
+    ]
+    assert decoded["path"] == f"Row-A__{ROW_ID}/page.json"
+    assert decoded["parent_id"] == SOURCE_ID
+    assert decoded["properties"] == _row()["properties"]
+    assert query.await_args.args[1] == SOURCE_ID
+
+
+@pytest.mark.asyncio
+async def test_read_rows_jsonl_of_no_rows_is_empty(accessor, monkeypatch):
+    monkeypatch.setattr(notion_read, "query_data_source",
+                        AsyncMock(return_value=[]))
+    data = await read(accessor,
+                      PathSpec.from_str_path(f"{SOURCE_DIR}/rows.jsonl"))
+    assert data == b""
+
+
 @pytest.mark.asyncio
 async def test_stat_database_row_dir(accessor, monkeypatch):
-    monkeypatch.setattr(notion_readdir, "get_data_source",
-                        AsyncMock(return_value=DATA_SOURCE))
-    monkeypatch.setattr(
-        notion_readdir,
-        "query_data_source",
-        AsyncMock(return_value=[{
-            "object": "page",
-            "id": ROW_ID,
-            "properties": {
-                "Name": {
-                    "type": "title",
-                    "title": [{
-                        "plain_text": "Row-A"
-                    }],
-                }
-            },
-            "last_edited_time": "2026-01-02T00:00:00Z",
-        }]),
-    )
+    get_page = AsyncMock(return_value=_row())
+    monkeypatch.setattr(notion_resolve, "get_page", get_page)
     result = await stat(
         accessor, PathSpec.from_str_path(f"{SOURCE_DIR}/Row-A__{ROW_ID}"),
         RAMIndexCacheStore())
     assert result.name == f"Row-A__{ROW_ID}"
     assert result.type == FileType.DIRECTORY
+    assert result.modified == "2026-01-02T00:00:00Z"
     assert result.extra == {"page_id": ROW_ID}
+    get_page.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("page,segment", [
+    (_row(parent={
+        "type": "data_source_id",
+        "data_source_id": "other"
+    }), f"Row-A__{ROW_ID}"),
+    (_row(), f"Row-B__{ROW_ID}"),
+    (_row(in_trash=True), f"Row-A__{ROW_ID}"),
+])
+async def test_stat_database_row_dir_that_is_not_this_row(
+        accessor, monkeypatch, page, segment):
+    monkeypatch.setattr(notion_resolve, "get_page",
+                        AsyncMock(return_value=page))
+    with pytest.raises(FileNotFoundError):
+        await stat(accessor, PathSpec.from_str_path(f"{SOURCE_DIR}/{segment}"),
+                   RAMIndexCacheStore())
+
+
+@pytest.mark.asyncio
+async def test_stat_database_row_dir_notion_does_not_know(
+        accessor, monkeypatch):
+    monkeypatch.setattr(
+        notion_resolve, "get_page",
+        AsyncMock(side_effect=NotionAPIError(
+            "Could not find page", status=404, code="object_not_found")))
+    with pytest.raises(FileNotFoundError):
+        await stat(accessor,
+                   PathSpec.from_str_path(f"{SOURCE_DIR}/Row-A__{ROW_ID}"),
+                   RAMIndexCacheStore())
+
+
+@pytest.mark.asyncio
+async def test_stat_rows_jsonl_through_the_data_source_listing(
+        accessor, monkeypatch):
+    monkeypatch.setattr(notion_readdir, "get_data_source",
+                        AsyncMock(return_value=DATA_SOURCE))
+    result = await stat(accessor,
+                        PathSpec.from_str_path(f"{SOURCE_DIR}/rows.jsonl"),
+                        RAMIndexCacheStore())
+    assert result.type == FileType.FILE
+    assert result.content == ContentType.TEXT
+    assert result.size is None
+    assert result.extra == {"data_source_id": SOURCE_ID}
+
+
+@pytest.mark.asyncio
+async def test_stat_row_page_json_without_fetching_blocks(
+        accessor, monkeypatch):
+    monkeypatch.setattr(notion_resolve, "get_page",
+                        AsyncMock(return_value=_row()))
+    monkeypatch.setattr(notion_readdir, "list_block_children",
+                        AsyncMock(return_value=[]))
+    result = await stat(
+        accessor,
+        PathSpec.from_str_path(f"{SOURCE_DIR}/Row-A__{ROW_ID}/page.json"),
+        RAMIndexCacheStore())
+    assert result.type == FileType.FILE
+    assert result.content == ContentType.JSON
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("number,spelling", [
+    (100000000000000000000, "100000000000000000000"),
+    (1e-5, "0.00001"),
+    (1e-7, "1e-7"),
+    (1.0, "1"),
+    (-0.0, "0"),
+])
+async def test_rows_jsonl_spells_numeric_cells(accessor, monkeypatch, number,
+                                               spelling):
+    row = _row()
+    row["properties"]["Priority"]["number"] = number
+    monkeypatch.setattr(notion_read, "query_data_source",
+                        AsyncMock(return_value=[row]))
+    data = await read(accessor,
+                      PathSpec.from_str_path(f"{SOURCE_DIR}/rows.jsonl"))
+    assert json.loads(data)["properties"]["Priority"]["number"] == number
+    assert f'"number":{spelling}}}'.encode() in data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("directory", [
+    "/databases/Wrong__db123",
+    "/databases/Tasks__db123/Wrong__ds789",
+    "/databases/Tasks__db123/Other__foreign",
+])
+@pytest.mark.parametrize("operation", [read, readdir, stat])
+async def test_paths_must_be_listed_by_their_parent(accessor, directory,
+                                                    operation):
+    suffix = "/database.json" if directory.count("/") == 2 else "/rows.jsonl"
+    path = directory + suffix if operation is read else directory
+    for index in (RAMIndexCacheStore(), None):
+        with pytest.raises(FileNotFoundError):
+            await operation(accessor, PathSpec.from_str_path(path), index)

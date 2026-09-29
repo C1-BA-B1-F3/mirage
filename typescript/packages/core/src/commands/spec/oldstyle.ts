@@ -17,16 +17,8 @@ import type { CompiledSpec } from './compile.ts'
 export interface OldStyleArgv {
   // The rewritten words.
   argv: string[]
-  // For each rewritten word, the position it came from in the caller's
-  // argv. Synthesized flag tokens all carry the cluster's own position,
-  // so a word kind written back through this table can only land on a
-  // real word.
+  // Original argv positions; synthesized flags use the cluster's position.
   origins: number[]
-  // The word read as a letter cluster, when the line had one. The parser
-  // marks its slot TEXT so the word survives path classification
-  // verbatim and the dispatch-time scan reads the same letters the
-  // hint-time scan did.
-  cluster: string | null
   // The cluster letter whose argument ran off the end of the line.
   needsValue: string | null
 }
@@ -57,7 +49,7 @@ export interface OldStyleArgv {
 export function expandOldStyle(cs: CompiledSpec, argv: string[]): OldStyleArgv {
   const first = argv[0]
   if (first === undefined || first.startsWith('-')) {
-    return { argv: [...argv], origins: argv.map((_, idx) => idx), cluster: null, needsValue: null }
+    return { argv: [...argv], origins: argv.map((_, idx) => idx), needsValue: null }
   }
   const out: string[] = []
   const origins: number[] = []
@@ -68,7 +60,7 @@ export function expandOldStyle(cs: CompiledSpec, argv: string[]): OldStyleArgv {
     if (!cs.valueSpellings.includes(`-${ch}`)) continue
     const value = argv[nxt]
     if (value === undefined) {
-      return { argv: out, origins, cluster: first, needsValue: ch }
+      return { argv: out, origins, needsValue: ch }
     }
     out.push(value)
     origins.push(nxt)
@@ -80,5 +72,5 @@ export function expandOldStyle(cs: CompiledSpec, argv: string[]): OldStyleArgv {
     out.push(word)
     origins.push(idx)
   }
-  return { argv: out, origins, cluster: first, needsValue: null }
+  return { argv: out, origins, needsValue: null }
 }

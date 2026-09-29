@@ -19,7 +19,7 @@ from typing import Protocol, TypeVar
 from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore, IndexEntry
 from mirage.cache.index.warm import entry_or_warm
-from mirage.types import PathSpec
+from mirage.types import PathSpec, StatFn
 from mirage.utils.errors import enoent
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 
@@ -34,6 +34,19 @@ class ReaddirFn(Protocol[A_contra]):
                  path_spec: PathSpec,
                  index: IndexCacheStore = ...) -> Awaitable[list[str]]:
         ...
+
+
+def parent_spec(path: PathSpec) -> PathSpec:
+    """The PathSpec of the directory holding ``path``, same mount.
+
+    Args:
+        path (PathSpec): a path below the mount root.
+    """
+    prefix = mount_prefix_of(path.virtual, path.vfs_path)
+    parent_virtual = path.virtual.rstrip("/").rsplit("/", 1)[0] or "/"
+    return PathSpec(virtual=parent_virtual,
+                    directory=parent_virtual,
+                    vfs_path=mount_key(parent_virtual, prefix))
 
 
 async def assert_listed(readdir: ReaddirFn[A], accessor: A, path: PathSpec,
@@ -54,18 +67,39 @@ async def assert_listed(readdir: ReaddirFn[A], accessor: A, path: PathSpec,
     Raises:
         FileNotFoundError: the entry is absent from its parent listing.
     """
-    prefix = mount_prefix_of(path.virtual, path.vfs_path)
-    parent_virtual = path.virtual.rstrip("/").rsplit("/", 1)[0] or "/"
-    entries = await readdir(
-        accessor,
-        PathSpec(virtual=parent_virtual,
-                 directory=parent_virtual,
-                 vfs_path=mount_key(parent_virtual, prefix)),
-        index=index,
-    )
+    entries = await readdir(accessor, parent_spec(path), index=index)
     names = {entry.rstrip("/").rsplit("/", 1)[-1] for entry in entries}
     if path.vfs_path.rstrip("/").rsplit("/", 1)[-1] not in names:
         raise enoent(path.virtual)
+
+
+async def assert_parent(stat: StatFn, accessor: A, path: PathSpec,
+                        index: IndexCacheStore) -> None:
+    """Raise ENOENT for ``path`` unless its parent directory exists.
+
+    The parent is proven the way the backend's own stat proves it (a
+    guard, the listing chain, or construction for a fixed directory), so
+    a container its listing refuses reads as absent to everything inside
+    it. That is where a mount's id filters live: a board outside
+    ``board_ids`` or a schema outside ``schemas`` is simply not listed,
+    and a reader that went straight to the id in the path served it
+    anyway.
+
+    Args:
+        stat (StatFn): the backend's stat.
+        accessor (Accessor): backend accessor.
+        path (PathSpec): the file about to be read.
+        index (IndexCacheStore): index cache.
+
+    Raises:
+        FileNotFoundError: the parent directory does not exist.
+    """
+    try:
+        await stat(accessor, parent_spec(path), index)
+    except FileNotFoundError as exc:
+        # Named as the file the caller asked for, the way GNU reports
+        # `cat missing/f` against the operand rather than its directory.
+        raise enoent(path.virtual) from exc
 
 
 async def listed_size(index: IndexCacheStore, path: PathSpec) -> int | None:

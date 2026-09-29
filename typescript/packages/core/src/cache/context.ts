@@ -12,8 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { PathSpec } from '../types.ts'
-import { createAsyncContext } from '../utils/async_context.ts'
+import type { PathSpec } from '../types.ts'
+import { type ContextCall, createAsyncContext } from '../utils/async_context.ts'
 
 /**
  * What this module needs from a cache manager. `CacheManager` in
@@ -25,7 +25,9 @@ export interface CacheInvalidator {
   invalidateAfterWrite(path: string | PathSpec): Promise<void>
   invalidateAfterUnlink(path: string | PathSpec): Promise<void>
   invalidateSubtree(path: string | PathSpec): Promise<void>
+  invalidateAncestors(path: PathSpec): Promise<void>
   cachedBytes(path: PathSpec): Promise<Uint8Array | null>
+  readThrough(path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array>
   cachedSize(path: PathSpec): Promise<number | null>
 }
 
@@ -46,6 +48,11 @@ export function runWithCacheManager<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   return Promise.resolve(storage.run({ manager }, fn))
+}
+
+/** Keep the mount's cache manager bound while a command's lazy output is read. */
+export function captureCacheContext(): ContextCall {
+  return storage.capture()
 }
 
 /**
@@ -136,9 +143,7 @@ export async function invalidateSubtree(path: string | PathSpec): Promise<void> 
  * the index TTL expires. Walking the chain refreshes each one.
  */
 export async function invalidateAncestors(path: PathSpec): Promise<void> {
-  let parent = path.mountPath.slice(0, path.mountPath.lastIndexOf('/'))
-  while (parent !== '') {
-    await invalidateAfterWrite(PathSpec.fromStrPath(parent))
-    parent = parent.slice(0, parent.lastIndexOf('/'))
+  for (const manager of liveManagers()) {
+    await manager.invalidateAncestors(path)
   }
 }

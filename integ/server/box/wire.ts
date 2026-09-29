@@ -70,6 +70,43 @@ export function searchEntry(item: Item, ancestors: Item[]): JsonValue {
   }
 }
 
+// An event's `source` is the full item plus the chain that places it, the
+// shape the vendor sends on the user stream.
+export function eventSource(item: Item, ancestors: Item[]): JsonValue {
+  return {
+    ...(render(item) as Record<string, JsonValue>),
+    path_collection: {
+      total_count: ancestors.length,
+      entries: ancestors.map((a) => ({ type: 'folder', id: a.id, name: a.name })),
+    },
+  }
+}
+
+// A trashed item as the vendor renders one: its path_collection is the Trash,
+// never the folder it was trashed from.
+export function trashedSource(item: Item): JsonValue {
+  return {
+    ...(render(item) as Record<string, JsonValue>),
+    item_status: 'trashed',
+    path_collection: { total_count: 1, entries: [{ type: 'folder', id: '1', name: 'Trash' }] },
+  }
+}
+
+export function eventEntry(
+  seq: number,
+  eventType: string,
+  source: string,
+  createdAt: string,
+): JsonValue {
+  return {
+    type: 'event',
+    event_id: `event-${String(seq)}`,
+    event_type: eventType,
+    created_at: createdAt,
+    source: JSON.parse(source) as JsonValue,
+  }
+}
+
 // Real Box indexes content by whole words, so `foo` never matches `foobar`.
 // Modelling that is what lets the battery prove grep/rg push-down cannot
 // silently drop substring matches; a substring fake would agree with a full

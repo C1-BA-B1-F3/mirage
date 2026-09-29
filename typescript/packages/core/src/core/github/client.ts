@@ -16,6 +16,7 @@ import { Octokit } from '@octokit/core'
 import { RequestError } from '@octokit/request-error'
 import { retry } from '@octokit/plugin-retry'
 import { throttling } from '@octokit/plugin-throttling'
+import { SEARCH_PAGE_SIZE } from './constants.ts'
 
 export const GITHUB_API_BASE = 'https://api.github.com'
 export const GITHUB_API_VERSION = '2022-11-28'
@@ -53,17 +54,21 @@ const Kit = Octokit.plugin(retry, throttling)
  * Octokit reads `{name}` in a url as a route-template placeholder and drops
  * the segment when nothing fills it, silently and without an error. Every
  * caller here passes a path that is already final -- `gh api` takes one
- * straight from the agent's command line -- so the braces are escaped to
- * the percent forms a server sees them as.
+ * straight from the agent's command line. Escape braces and query colons
+ * before Octokit can interpret them as route-template placeholders.
  *
  * Args:
  *   path (string): the request path as the caller spelled it.
  *
  * Returns:
- *   string: the path with `{` and `}` percent-encoded.
+ *   string: braces and query colons percent-encoded, preserving the URL scheme.
  */
-function escapeBraces(path: string): string {
-  return path.replace(/\{/g, '%7B').replace(/\}/g, '%7D')
+function escapeRoute(path: string): string {
+  const escaped = path.replace(/\{/g, '%7B').replace(/\}/g, '%7D')
+  const query = escaped.indexOf('?')
+  return query < 0
+    ? escaped
+    : escaped.slice(0, query + 1) + escaped.slice(query + 1).replace(/:/g, '%3A')
 }
 
 export class HttpGitHubTransport implements GitHubTransport {
@@ -112,6 +117,7 @@ export class HttpGitHubTransport implements GitHubTransport {
     params?: Record<string, string>,
     headers?: Record<string, string>,
   ): Promise<GitHubResponse> {
+    let failed: Response | undefined
     try {
       // Octokit reads loose parameters off the same object that carries
       // `url`, `method` and `headers`, so a field the agent typed would
@@ -123,8 +129,16 @@ export class HttpGitHubTransport implements GitHubTransport {
       const query = new URLSearchParams(params ?? {}).toString()
       const r = await this.kit.request({
         method: method.toUpperCase(),
-        url: escapeBraces(path) + (query === '' ? '' : `${path.includes('?') ? '&' : '?'}${query}`),
+        url: escapeRoute(path) + (query === '' ? '' : `${path.includes('?') ? '&' : '?'}${query}`),
         headers: { 'X-GitHub-Api-Version': GITHUB_API_VERSION, ...headers },
+        request: {
+          fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+            failed = undefined
+            const response = await globalThis.fetch(input, init)
+            if (response.status >= 400) failed = response.clone()
+            return response
+          },
+        },
         ...(body === undefined ? {} : { data: body }),
       })
       // 204 and an empty 202 decode to '' rather than a body; the caller gets
@@ -144,22 +158,62 @@ export class HttpGitHubTransport implements GitHubTransport {
         // The suffix is octokit's, not GitHub's: the service says only the
         // message, real gh prints only the message, and the python client
         // reports only the message. Read it off the body rather than
-        // trimming the composed string.
-        const data = err.response?.data as { message?: string } | undefined
-        const message = typeof data?.message === 'string' ? data.message : err.message
-        throw new GitHubApiError(message, err.status)
+        // trimming the composed string. The body itself travels verbatim,
+        // since `gh api` prints it.
+        if (failed === undefined) throw new GitHubApiError(err.message, err.status)
+        const body = await failed.text()
+        throw new GitHubApiError(
+          apiMessage(body, failed.statusText),
+          err.status,
+          body,
+          failed.url || err.request.url,
+        )
       }
       throw err
     }
   }
 }
 
+/** A response body decoded as JSON, the text itself when it is not JSON. */
+function decodedBody(body: string): unknown {
+  if (body === '') return null
+  try {
+    return JSON.parse(body)
+  } catch {
+    return body
+  }
+}
+
+/**
+ * GitHub's own wording for a failure, or the status reason, the twin of
+ * python's `_api_message`.
+ */
+function apiMessage(body: string, reason: string): string {
+  const data = decodedBody(body)
+  const message =
+    typeof data === 'object' && data !== null ? (data as { message?: unknown }).message : undefined
+  return typeof message === 'string' ? message : reason || body
+}
+
+/**
+ * A GitHub call that answered with a status the caller cannot use.
+ *
+ * `body` is the response text as it arrived, `data` that text decoded (the
+ * text itself when it is not JSON) and `url` the final request URL, query
+ * included.
+ */
 export class GitHubApiError extends Error {
   readonly status: number
-  constructor(message: string, status: number) {
+  readonly body: string
+  readonly url: string
+  readonly data: unknown
+  constructor(message: string, status: number, body = '', url = '') {
     super(message)
     this.name = 'GitHubApiError'
     this.status = status
+    this.body = body
+    this.url = url
+    this.data = decodedBody(body)
   }
 }
 
@@ -196,9 +250,12 @@ export async function fetchTree(
   repo: string,
   ref: string,
 ): Promise<{ tree: GitHubTreeItem[]; truncated: boolean }> {
-  const data = (await transport.get(`/repos/${owner}/${repo}/git/trees/${ref}`, {
-    recursive: '1',
-  })) as { tree?: GitHubTreeItem[]; truncated?: boolean }
+  const data = (await transport.get(
+    `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}`,
+    {
+      recursive: '1',
+    },
+  )) as { tree?: GitHubTreeItem[]; truncated?: boolean }
   return { tree: dropSubmodules(data.tree ?? []), truncated: data.truncated === true }
 }
 
@@ -208,16 +265,65 @@ function dropSubmodules(tree: GitHubTreeItem[]): GitHubTreeItem[] {
   return tree.filter((item) => item.type !== 'commit')
 }
 
+/**
+ * Fetch one directory's tree (non-recursive), and whether GitHub cut it.
+ *
+ * Args:
+ *   treeSha (string): a raw tree sha, ref, or `{ref}:{dir}` expression.
+ *
+ * Returns:
+ *   { tree, truncated }: the rows, submodule gitlinks excluded, and
+ *   GitHub's `truncated` flag.
+ *
+ * Throws:
+ *   GitHubApiError: the response carries no tree, which must not read as
+ *   an empty directory.
+ */
+export async function fetchDirTreePage(
+  transport: GitHubTransport,
+  owner: string,
+  repo: string,
+  treeSha: string,
+): Promise<{ tree: GitHubTreeItem[]; truncated: boolean }> {
+  const data = (await transport.get(
+    `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(treeSha)}`,
+  )) as {
+    tree?: GitHubTreeItem[]
+    truncated?: boolean
+  }
+  if (data.tree === undefined) {
+    throw new GitHubApiError(
+      `GitHub tree response for ${owner}/${repo} ${treeSha} carries no tree`,
+      0,
+    )
+  }
+  return { tree: dropSubmodules(data.tree), truncated: data.truncated === true }
+}
+
+/**
+ * Fetch a single directory's whole tree (non-recursive).
+ *
+ * Used as fallback when the recursive tree was truncated, where the listing
+ * is cached as complete, so a directory GitHub cut short is refused rather
+ * than returned: a name past the cut would otherwise read as absent, which a
+ * `read: fresh` probe or a drift check takes as gone.
+ *
+ * Mirrors Python's `fetch_dir_tree`.
+ *
+ * Throws:
+ *   GitHubApiError: GitHub truncated the listing, or sent no tree.
+ */
 export async function fetchDirTree(
   transport: GitHubTransport,
   owner: string,
   repo: string,
   treeSha: string,
 ): Promise<GitHubTreeItem[]> {
-  const data = (await transport.get(`/repos/${owner}/${repo}/git/trees/${treeSha}`)) as {
-    tree?: GitHubTreeItem[]
+  const page = await fetchDirTreePage(transport, owner, repo, treeSha)
+  if (page.truncated) {
+    throw new GitHubApiError(`GitHub truncated the tree listing of ${owner}/${repo} ${treeSha}`, 0)
   }
-  return dropSubmodules(data.tree ?? [])
+  return page.tree
 }
 
 export async function fetchBlob(
@@ -241,17 +347,48 @@ export interface GitHubCodeSearchResult {
   sha: string
 }
 
+export interface GitHubCodeSearch {
+  results: GitHubCodeSearchResult[]
+  truncated: boolean
+}
+
+// The literal is sent verbatim, so the answer has to vouch for itself: an
+// item is kept only when its repository.full_name names this repository
+// (compared case-insensitively, as GitHub resolves `repo:`), and the answer is
+// complete only when incomplete_results is false and total_count is an
+// integer no larger than the rows returned. A missing or malformed field
+// counts against it, which costs a full scan and never a missed file.
 export async function searchCode(
   transport: GitHubTransport,
   owner: string,
   repo: string,
   query: string,
   pathFilter?: string,
-): Promise<GitHubCodeSearchResult[]> {
+): Promise<GitHubCodeSearch> {
   let q = `${query} repo:${owner}/${repo}`
   if (pathFilter !== undefined && pathFilter !== '') q += ` path:${pathFilter}`
-  const data = (await transport.get(`/search/code`, { q })) as {
-    items?: { path: string; sha: string }[]
+  const data = (await transport.get(`/search/code`, {
+    q,
+    per_page: String(SEARCH_PAGE_SIZE),
+  })) as {
+    total_count?: unknown
+    incomplete_results?: unknown
+    items?: { path: string; sha: string; repository?: { full_name?: unknown } | null }[] | null
   }
-  return (data.items ?? []).map((it) => ({ path: it.path, sha: it.sha }))
+  const items = data.items ?? []
+  const total = data.total_count
+  const complete =
+    data.incomplete_results === false &&
+    typeof total === 'number' &&
+    Number.isInteger(total) &&
+    total <= items.length
+  const want = `${owner}/${repo}`.toLowerCase()
+  const results: GitHubCodeSearchResult[] = []
+  for (const it of items) {
+    const name = it.repository?.full_name
+    if (typeof name === 'string' && name.toLowerCase() === want) {
+      results.push({ path: it.path, sha: it.sha })
+    }
+  }
+  return { results, truncated: !complete }
 }

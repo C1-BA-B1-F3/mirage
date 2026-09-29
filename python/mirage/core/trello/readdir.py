@@ -12,13 +12,16 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import Any
+
 from mirage.accessor.trello import TrelloAccessor
 from mirage.cache.index import IndexEntry
 from mirage.core.hierarchy.readdir import make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.trello.client import (list_board_labels, list_board_lists,
-                                       list_board_members, list_list_cards,
-                                       list_workspace_boards, list_workspaces)
+from mirage.core.trello.client import (get_board, list_board_labels,
+                                       list_board_lists, list_board_members,
+                                       list_list_cards, list_workspace_boards,
+                                       list_workspaces)
 from mirage.core.trello.normalize import (normalize_board, normalize_card,
                                           normalize_label, normalize_list,
                                           normalize_member,
@@ -29,17 +32,81 @@ from mirage.core.trello.pathing import (board_dirname, card_dirname,
 from mirage.core.trello.scope import detect_scope
 
 
-async def _list_workspaces_dir(
-        accessor: TrelloAccessor,
-        match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def filtered_workspaces(
+        accessor: TrelloAccessor) -> list[dict[str, Any]]:
+    """The workspaces the mount shows: the member's, narrowed to
+    ``workspace_id`` when it is set.
+
+    Args:
+        accessor (TrelloAccessor): The mount's accessor.
+    """
     workspaces = await list_workspaces(accessor.config, session=accessor.pool)
     if accessor.config.workspace_id:
         workspaces = [
             w for w in workspaces
             if w.get("id") == accessor.config.workspace_id
         ]
+    return workspaces
+
+
+async def filtered_boards(accessor: TrelloAccessor,
+                          workspace_id: str) -> list[dict[str, Any]]:
+    """A workspace's open boards the mount shows, narrowed to
+    ``board_ids`` when it is set.
+
+    Args:
+        accessor (TrelloAccessor): The mount's accessor.
+        workspace_id (str): The workspace whose boards to list.
+    """
+    boards = await list_workspace_boards(accessor.config,
+                                         workspace_id,
+                                         session=accessor.pool)
+    if accessor.config.board_ids:
+        boards = [
+            b for b in boards if b.get("id") in accessor.config.board_ids
+        ]
+    return boards
+
+
+def scope_is_narrowed(accessor: TrelloAccessor) -> bool:
+    """Whether ``workspace_id`` or ``board_ids`` narrows the mount.
+
+    Args:
+        accessor (TrelloAccessor): The mount's accessor.
+    """
+    return bool(accessor.config.workspace_id or accessor.config.board_ids)
+
+
+async def board_in_scope(accessor: TrelloAccessor, board_id: str) -> bool:
+    """Whether the mount's scope admits a board addressed by id.
+
+    The two knobs that narrow the listing narrow an id too: a board
+    ``board_ids`` leaves out, or one outside ``workspace_id``, is not
+    this mount's to read or write. Unnarrowed, every id is admitted
+    without a call; ``workspace_id`` costs one board fetch.
+
+    Args:
+        accessor (TrelloAccessor): The mount's accessor.
+        board_id (str): The board's id.
+    """
+    config = accessor.config
+    if not scope_is_narrowed(accessor):
+        return True
+    if not board_id:
+        return False
+    if config.board_ids and board_id not in config.board_ids:
+        return False
+    if not config.workspace_id:
+        return True
+    board = await get_board(config, board_id, session=accessor.pool)
+    return board.get("idOrganization") == config.workspace_id
+
+
+async def _list_workspaces_dir(
+        accessor: TrelloAccessor,
+        match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
     entries = []
-    for workspace in workspaces:
+    for workspace in await filtered_workspaces(accessor):
         dirname = workspace_dirname(workspace)
         # workspace.json renders the workspace object this listing already
         # fetched, so its exact size rides the directory entry for the
@@ -84,15 +151,8 @@ async def _list_workspace(accessor: TrelloAccessor, match: ScopeMatch,
 
 async def _list_boards(accessor: TrelloAccessor, match: ScopeMatch,
                        entry: IndexEntry) -> list[tuple[str, IndexEntry]]:
-    boards = await list_workspace_boards(accessor.config,
-                                         match.slots["workspace_id"],
-                                         session=accessor.pool)
-    if accessor.config.board_ids:
-        boards = [
-            b for b in boards if b.get("id") in accessor.config.board_ids
-        ]
     entries = []
-    for board in boards:
+    for board in await filtered_boards(accessor, match.slots["workspace_id"]):
         dirname = board_dirname(board)
         # board.json's normalizer only uses fields the board listing
         # already carries, so its exact size is free here.

@@ -12,15 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import aclosing
 from typing import Any
 
 from bson.json_util import RELAXED_JSON_OPTIONS, dumps
 
 from mirage.accessor.mongodb import MongoDBAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.mongodb.client import (find_documents, iter_documents,
-                                        iter_inserts)
+from mirage.core.mongodb.client import (count_documents, find_documents,
+                                        iter_documents, iter_inserts)
+from mirage.core.mongodb.readdir import entity_guard
 from mirage.core.mongodb.scope import detect_scope
 from mirage.core.mongodb.types import PRIMARY_KEY
 from mirage.types import PathSpec
@@ -62,22 +64,34 @@ async def read_tail(
     path: PathSpec,
     n: int,
     index: IndexCacheStore = NULL_INDEX,
-) -> bytes:
+) -> tuple[bytes, bool]:
     """Read only the last ``n`` documents of a collection.
 
     Pushes the tail into MongoDB (sort by primary key descending + limit)
-    instead of streaming the whole collection.
+    instead of streaming the whole collection. ``max_doc_limit`` is the
+    most documents one read may return; a count past it that the
+    collection could fill returns the last ``max_doc_limit`` and says
+    it stopped, where the ceiling used to stand in for the count in
+    silence.
 
     Args:
         accessor (MongoDBAccessor): Backend accessor.
         path (PathSpec): A documents.jsonl path; other scopes raise.
         n (int): Number of trailing documents to fetch.
         index (IndexCacheStore): Unused; kept for reader-signature parity.
+
+    Returns:
+        tuple[bytes, bool]: the rendered documents, and whether the
+            ceiling cut the count short.
     """
     scope = detect_scope(path)
     if scope.kind != "documents":
         raise enoent(path)
-    limit = min(n, accessor.config.max_doc_limit)
+    await entity_guard(accessor, scope, path.virtual)
+    cap = accessor.config.max_doc_limit
+    limit = min(n, cap)
+    stopped = n > cap and await count_documents(
+        accessor.client, scope.slots["database"], scope.slots["name"]) > cap
     docs = await find_documents(
         accessor.client,
         scope.slots["database"],
@@ -87,7 +101,7 @@ async def read_tail(
     )
     docs.reverse()
     if not docs:
-        return b""
+        return b"", stopped
     elide = _elision_paths(accessor.config, scope.slots["database"],
                            scope.slots["name"])
     lines = []
@@ -95,7 +109,7 @@ async def read_tail(
         if elide:
             doc = _apply_elision(doc, elide)
         lines.append(render_doc(doc))
-    return ("\n".join(lines) + "\n").encode()
+    return ("\n".join(lines) + "\n").encode(), stopped
 
 
 async def read_stream(
@@ -103,22 +117,29 @@ async def read_stream(
     path: PathSpec,
     index: IndexCacheStore = NULL_INDEX,
     batch_size: int = 100,
-) -> AsyncIterator[bytes]:
+) -> AsyncGenerator[bytes, None]:
     scope = detect_scope(path)
     if scope.kind != "documents":
         raise enoent(path)
+    # The entity guard is what applies the mount's `databases` filter;
+    # this stream is the read_stream op, which a caller reaches without
+    # a stat first (a redirect, a runtime's open), so it proves the
+    # collection itself rather than trusting the names in the path.
+    await entity_guard(accessor, scope, path.virtual)
     elide = _elision_paths(accessor.config, scope.slots["database"],
                            scope.slots["name"])
-    async for doc in iter_documents(
-            accessor.client,
-            scope.slots["database"],
-            scope.slots["name"],
-            sort=[(PRIMARY_KEY, 1)],
-            batch_size=batch_size,
-    ):
-        if elide:
-            doc = _apply_elision(doc, elide)
-        yield (render_doc(doc) + "\n").encode()
+    async with aclosing(
+            iter_documents(
+                accessor.client,
+                scope.slots["database"],
+                scope.slots["name"],
+                sort=[(PRIMARY_KEY, 1)],
+                batch_size=batch_size,
+            )) as documents:
+        async for doc in documents:
+            if elide:
+                doc = _apply_elision(doc, elide)
+            yield (render_doc(doc) + "\n").encode()
 
 
 async def watch_stream(
@@ -129,6 +150,7 @@ async def watch_stream(
     scope = detect_scope(path)
     if scope.kind != "documents":
         raise enoent(path)
+    await entity_guard(accessor, scope, path.virtual)
     elide = _elision_paths(accessor.config, scope.slots["database"],
                            scope.slots["name"])
     async for doc in iter_inserts(accessor.client, scope.slots["database"],

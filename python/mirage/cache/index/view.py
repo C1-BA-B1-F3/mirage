@@ -54,12 +54,17 @@ class IndexView(IndexCacheStore):
             result = await self._store.list_dir(vfs_path)
             if not self._owns(vfs_path):
                 return ListResult(status=LookupStatus.NOT_FOUND)
-            if result.entries is None:
-                return result
-            return result.model_copy(update={
-                "entries":
-                [path for path in result.entries if self._owns(path)]
-            })
+            return result.model_copy(
+                update={
+                    "entries":
+                    None if result.entries is None else
+                    [path for path in result.entries if self._owns(path)],
+                    "partial_entries":
+                    None if result.partial_entries is None else [
+                        path for path in result.partial_entries
+                        if self._owns(path)
+                    ],
+                })
 
     async def put(self, vfs_path: str, entry: IndexEntry) -> None:
         async with mutation_lock(self._cache):
@@ -70,12 +75,25 @@ class IndexView(IndexCacheStore):
                       vfs_path: str,
                       entries: list[tuple[str, IndexEntry]],
                       expired_at: datetime | None = None) -> None:
+        await self._set_dir(vfs_path, entries, expired_at, partial=False)
+
+    async def set_partial_dir(self,
+                              vfs_path: str,
+                              entries: list[tuple[str, IndexEntry]],
+                              expired_at: datetime | None = None) -> None:
+        await self._set_dir(vfs_path, entries, expired_at, partial=True)
+
+    async def _set_dir(self, vfs_path: str, entries: list[tuple[str,
+                                                                IndexEntry]],
+                       expired_at: datetime | None, *, partial: bool) -> None:
         async with mutation_lock(self._cache):
             if self._owns(vfs_path):
                 prefix = vfs_path.rstrip("/") + "/"
                 owned = [(name, entry) for name, entry in entries
                          if self._owns(prefix + name)]
-                await self._store.set_dir(vfs_path, owned, expired_at)
+                setter = (self._store.set_partial_dir
+                          if partial else self._store.set_dir)
+                await setter(vfs_path, owned, expired_at)
 
     def seed(self, entries: dict[str, IndexEntry],
              children: dict[str, list[str]], expires_at: datetime) -> None:

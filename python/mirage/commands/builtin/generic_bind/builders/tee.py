@@ -26,9 +26,8 @@ from mirage.types import PathSpec
 async def tee(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
               texts: list[str],
               opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
-    if not paths:
-        raise ValueError("tee: missing operand")
-    paths = await ops.resolve_glob(accessor, paths, opts.index)
+    paths = await ops.resolve_glob(accessor, paths,
+                                   opts.index) if paths else []
     # A backend that can append natively does; the rest fall back to the
     # read-modify-write inside the generic.
     append = ops.append
@@ -42,7 +41,4 @@ async def tee(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         flags=opts.flags)
 
 
-BUILDER = Builder('tee',
-                  tee,
-                  write=True,
-                  requirements=frozenset({Operation.WRITE}))
+BUILDER = Builder('tee', tee, write=True)

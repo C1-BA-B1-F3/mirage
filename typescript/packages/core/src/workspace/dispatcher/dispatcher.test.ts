@@ -13,9 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
+import { materialize } from '../../io/types.ts'
 import { runWithSession } from '../../context/session_context.ts'
 import { revisionFor } from '../../observe/context.ts'
 import { OpsRegistry, type RegisteredOp } from '../../ops/registry.ts'
+import { POLICY_WRITE_OPS } from './constants.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { FileStat, FileType, Limit, MountMode, PathSpec } from '../../types.ts'
 import { getTestParser } from '../fixtures/workspace_fixture.ts'
@@ -289,6 +291,77 @@ describe('the node table answers every verb that names a link', () => {
       await ws.close()
     }
   })
+
+  it('refuses a symlink whose parent cannot hold it', async () => {
+    // symlink(2) resolves the directory a name goes in before the name:
+    // ENOENT when it is absent, ENOTDIR when a plain file stands in the
+    // chain at any depth, and a link above the name is followed first.
+    // Unchecked, the node was an orphan that invented the directories above
+    // it, which ls then listed.
+    const ws = await linkWorkspace()
+    try {
+      await ws.shell('ln -s missing /ram/dangling')
+      const cases: [string, string][] = [
+        ['/ram/nope/y', 'ENOENT'],
+        ['/ram/nope/deeper/y', 'ENOENT'],
+        ['/ram/dangling/y', 'ENOENT'],
+        ['/ram/a.txt/y', 'ENOTDIR'],
+        ['/ram/a.txt/sub/y', 'ENOTDIR'],
+        ['/ram/link/y', 'ENOTDIR'],
+      ]
+      for (const [name, code] of cases) {
+        await expect(ws.dispatch('symlink', name, [], { target: 'x' })).rejects.toMatchObject({
+          code,
+        })
+      }
+      expect([...ws.namespace.symlinkTargets().keys()].sort()).toEqual([
+        '/ram/dangling',
+        '/ram/link',
+      ])
+      expect(DEC.decode((await ws.shell('ls /ram')).stdout)).toBe('a.txt\nd\ndangling\nlink\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('files a link made under a linked directory in its target', async () => {
+    // Every link above the final name is followed before the op sees the
+    // path, whichever surface named it. The node table filed a relative
+    // `ln -s t alias/x` under the alias's own name, where no listing of the
+    // directory and no read through it ever looked.
+    const ws = await linkWorkspace()
+    try {
+      await ws.shell('mkdir /ram/e; ln -s d /ram/alias')
+      await ws.dispatch('symlink', '/ram/alias/x', [], { target: 't' })
+      await ws.dispatch('symlink', '/ram/e/empty', [], { target: 't' })
+      expect(ws.namespace.readlink('/ram/d/x')).toBe('t')
+      expect(ws.namespace.isLink('/ram/alias/x')).toBe(false)
+      expect(await ws.dispatch('readlink', '/ram/alias/x')).toBe('t')
+      expect(ws.namespace.readlink('/ram/e/empty')).toBe('t')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('refuses a link rename whose landing parent cannot hold it', async () => {
+    // rename(2) resolves the destination's directory as symlink(2) does,
+    // and the node table moved a link anywhere at all.
+    const ws = await linkWorkspace()
+    try {
+      for (const [landing, code] of [
+        ['/ram/nope/x', 'ENOENT'],
+        ['/ram/a.txt/x', 'ENOTDIR'],
+      ] as const) {
+        await expect(
+          ws.dispatch('rename', '/ram/link', [PathSpec.fromStrPath(landing)]),
+        ).rejects.toMatchObject({ code })
+        expect(ws.namespace.isLink(landing)).toBe(false)
+      }
+      expect(ws.namespace.readlink('/ram/link')).toBe('a.txt')
+    } finally {
+      await ws.close()
+    }
+  })
 })
 
 describe('the fenced remnant cascade rides the mount revisions', () => {
@@ -373,21 +446,14 @@ describe('the turf mode gates the node table', () => {
     }
   })
 
-  it('a read mount still takes a link sessionless', async () => {
-    // The mount's own mode is NOT this gate. `mode: read` says the
-    // backend cannot write, and a symlink is namespace state needing no
-    // write capability from it -- which is why a link above postgres,
-    // mongodb, chroma and qdrant (all mounted read) is pinned working in
-    // integ/vfs/<svc>/sym.json. Only a session grant binds here.
+  it.each([...POLICY_WRITE_OPS])('%s refuses before backend support and I/O', async (op) => {
     const ws = new Workspace({ '/ro': [new RAMVFS(), MountMode.READ] })
     try {
-      await ws.dispatch('symlink', '/ro/lk', [], { target: 't' })
-      expect(ws.namespace.isLink('/ro/lk')).toBe(true)
-      // And the backend write on that same mount is still refused, so
-      // the two planes are told apart rather than both waved through.
-      await expect(
-        ws.dispatch('write', '/ro/f.txt', [], { data: ENC.encode('x') }),
-      ).rejects.toMatchObject({ code: 'EROFS' })
+      const mount = ws.namespace.mountFor('/ro/file')
+      const ready = vi.spyOn(mount, 'ensureReady').mockRejectedValue(new Error('backend reached'))
+      await expect(ws.dispatch(op, '/ro/file')).rejects.toMatchObject({ code: 'EROFS' })
+      expect(ready).not.toHaveBeenCalled()
+      expect(ws.namespace.isLink('/ro/file')).toBe(false)
     } finally {
       await ws.close()
     }
@@ -689,6 +755,96 @@ describe('the door answers extended attributes from the node table', () => {
       expect(await ws.vfs.listxattr('/r/f')).toEqual(['user.tag'])
     } finally {
       stat.mockRestore()
+      await ws.close()
+    }
+  })
+})
+
+describe('shell mutations share read-only admission', () => {
+  it.each([
+    ['echo x >> /ro/file', '/ro/file: Read-only file system\n'],
+    ['exec >> /ro/file', '/ro/file: Read-only file system\n'],
+    [
+      'ln -s file /ro/link',
+      "ln: failed to create symbolic link '/ro/link': Read-only file system\n",
+    ],
+    ['chmod 600 /ro/file', "chmod: changing permissions of '/ro/file': Read-only file system\n"],
+    ['find /ro/file -delete', "find: cannot delete '/ro/file': Read-only file system\n"],
+    ['rm /ro/file', "rm: cannot remove '/ro/file': Read-only file system\n"],
+    ['mv /ro/file /ro/moved', "mv: cannot move '/ro/file' to '/ro/moved': Read-only file system\n"],
+    ['touch /ro/file', "touch: cannot touch '/ro/file': Read-only file system\n"],
+    [
+      'truncate -s 0 /ro/file',
+      "truncate: cannot open '/ro/file' for writing: Read-only file system\n",
+    ],
+  ])('%s', async (command, diagnostic) => {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/ro': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: parser },
+    )
+    try {
+      await ws.dispatch('write', '/ro/file', [ENC.encode('original')])
+      ws.namespace.mountFor('/ro/file').mode = MountMode.READ
+      const read = vi.spyOn(ws.opsRegistry, 'call')
+      const result = await ws.shell(command)
+      expect(result.exitCode).toBe(1)
+      expect(DEC.decode(await materialize(result.stderr))).toBe(diagnostic)
+      expect(read.mock.calls.some(([op]) => op === 'read' || op === 'read_bytes')).toBe(false)
+      expect(ws.namespace.isLink('/ro/link')).toBe(false)
+      expect(DEC.decode((await ws.dispatch('read', '/ro/file')) as Uint8Array)).toBe('original')
+    } finally {
+      await ws.close()
+    }
+  })
+})
+
+describe('rmdir namespace entries', () => {
+  it.each([false, true])(
+    'accounts for a directory containing only a link (hidden=%s)',
+    async (hidden) => {
+      const parser = await getTestParser()
+      const ws = new Workspace(
+        { '/data': new RAMVFS() },
+        { mode: MountMode.WRITE, shellParser: parser },
+      )
+      try {
+        await ws.shell('mkdir /data/d; ln -s nowhere /data/d/link')
+        const session = ws.createSession('remover', {
+          profile: { paths: { hide: hidden ? ['/data/d/link'] : [] } },
+        })
+        await runWithSession(session, async () => {
+          if (hidden) await ws.vfs.rmdir('/data/d')
+          else await expect(ws.vfs.rmdir('/data/d')).rejects.toMatchObject({ code: 'ENOTEMPTY' })
+        })
+        expect(ws.namespace.isLink('/data/d/link')).toBe(!hidden)
+      } finally {
+        await ws.close()
+      }
+    },
+  )
+
+  it('keeps a link created while the backend removes the directory', async () => {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: parser },
+    )
+    try {
+      await ws.shell('mkdir /data/d; ln -s nowhere /data/d/old')
+      const call = ws.opsRegistry.call.bind(ws.opsRegistry)
+      vi.spyOn(ws.opsRegistry, 'call').mockImplementation(async (name, ...rest) => {
+        if (name === 'rmdir')
+          await ws.dispatch('symlink', '/data/d/late', [], { target: 'nowhere' })
+        return call(name, ...rest)
+      })
+      const session = ws.createSession('remover', {
+        profile: { paths: { hide: ['/data/d/old'] } },
+      })
+      await runWithSession(session, () => ws.vfs.rmdir('/data/d'))
+      expect(ws.namespace.isLink('/data/d/old')).toBe(false)
+      expect(ws.namespace.readlink('/data/d/late')).toBe('nowhere')
+    } finally {
       await ws.close()
     }
   })

@@ -31,6 +31,406 @@
       "flags": [
         "o"
       ]
+    },
+    {
+      "id": "sort_o_attached",
+      "seq": 610209,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/sort-oatt && printf 'b\\na\\n' > /data/sort-oatt/in.txt && sort -o/data/sort-oatt/out.txt /data/sort-oatt/in.txt && cat /data/sort-oatt/out.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o"
+      ]
+    },
+    {
+      "id": "sort_o_attached_in_cluster",
+      "seq": 610210,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/sort-ouatt && printf 'b\\na\\nb\\n' > /data/sort-ouatt/in.txt && sort -uo/data/sort-ouatt/out.txt /data/sort-ouatt/in.txt && cat /data/sort-ouatt/out.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\n",
+        "stderr": ""
+      },
+      "flags": [
+        "u",
+        "o"
+      ]
+    },
+    {
+      "id": "sort_o_attached_relative",
+      "seq": 610211,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/sort-orel/sub && printf 'b\\na\\n' > /data/sort-orel/in.txt && (cd /data/sort-orel && sort -osub/out.txt in.txt) && cat /data/sort-orel/sub/out.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o"
+      ]
+    },
+    {
+      "id": "sort_o_twice_is_refused",
+      "seq": 1299010,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort -o /data/sortq_p1 -o /data/sortq_p2 /data/a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: multiple output files specified\n"
+      },
+      "flags": [
+        "o"
+      ]
+    },
+    {
+      "id": "sort_o_twice_compares_the_words_typed",
+      "seq": 1299075,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && sort -o ./sortq_same -o sortq_same a.txt)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: multiple output files specified\n"
+      },
+      "flags": [
+        "o"
+      ]
+    },
+    {
+      "id": "sort_o_twice_outranks_a_later_bad_key",
+      "seq": 1299011,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort -o /data/sortq_p1 -o /data/sortq_p2 -k0 /data/a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: multiple output files specified\n"
+      },
+      "flags": [
+        "o",
+        "k"
+      ]
+    },
+    {
+      "id": "sort_o_bad_key_outranks_a_later_second_o",
+      "seq": 1299012,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort -k0 -o /data/sortq_p1 -o /data/sortq_p2 /data/a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: field number is zero: invalid field specification '0'\n"
+      },
+      "flags": [
+        "o",
+        "k"
+      ]
+    },
+    {
+      "id": "sort_o_twice_outranks_incompatible_orderings",
+      "seq": 1299074,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort -n -g -o /data/sortq_p1 -o /data/sortq_p2 /data/a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: multiple output files specified\n"
+      },
+      "flags": [
+        "o",
+        "n",
+        "g"
+      ]
+    },
+    {
+      "id": "sort_interleaved_key_before_output",
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort -o /data/out -k 2,2 -k 0 -o /data/out2",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: field number is zero: invalid field specification '0'\n"
+      }
+    },
+    {
+      "id": "sort_interleaved_output_before_key",
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort -k 2,2 -o /data/out -o /data/out2 -k 0",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: multiple output files specified\n"
+      }
+    },
+    {
+      "id": "sort_repeated_check_modes",
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort --check --check=quiet",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-cC' are incompatible\n"
+      }
     }
   ]
 }

@@ -12,7 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { CLAP_EXIT, CLI_CONFIG_ENV } from '../../../commands/cli/constants.ts'
+import { flagOccurrences } from '../../../commands/spec/flag_view.ts'
+import type { ProcessView } from '../../../process/types.ts'
+import { CLAP_EXIT, CLI_CONFIG_ENV, GIT_LONG_OPTIONS } from '../../../commands/cli/constants.ts'
 import { clapMissingOperands, leafRefusal } from '../../../commands/cli/refusal.ts'
 import { CLISpec, type CLIInvocation, type CLIDoors } from '../../../commands/cli/types.ts'
 import { ownsArgv, walk } from '../../../commands/cli/walk.ts'
@@ -25,7 +27,7 @@ import { renderHelp } from '../../../commands/spec/help.ts'
 import { Operand, type FlagValue } from '../../../commands/spec/types.ts'
 import { UsageError } from '../../../commands/errors.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
-import { wordText, PathSpec } from '../../../types.ts'
+import { wordText, PathSpec, type Limit } from '../../../types.ts'
 import { concatBytes } from '../../../core/jq/format.ts'
 import { maybeWithTimeout, runWithTimeout } from '../../../commands/builtin/utils/limit.ts'
 import { CommandTimeoutError } from '../../../commands/errors.ts'
@@ -163,6 +165,9 @@ async function scriptOutput(
  * `links` follows for mount commands).
  */
 export interface CLIContext {
+  shell?: (command: string) => Promise<IOResult>
+  signal?: AbortSignal
+  commandLimits?: Readonly<Record<string, Limit>>
   /**
    * The workspace's ordered runtime world, which a script leaf selects
    * its interpreter from; absent (outside a workspace) refuses script
@@ -173,6 +178,7 @@ export interface CLIContext {
   statPath?: StatPath
   ns?: NamespaceView
   sessionView?: SessionView
+  processes?: ProcessView
 }
 
 /**
@@ -246,6 +252,10 @@ export async function handleCli(
   // The environment goes into the parse, not on top of it: an option
   // declaring one is coerced, choice-checked, path-resolved and credited
   // against required exactly as a typed value is.
+  // git resolves an abbreviated long option against the verb's own full table
+  // (parse-options), and its revision walkers take whole words only.
+  const abbreviations =
+    install.spec.name === 'git' ? (GIT_LONG_OPTIONS.get(result.path.join(' ')) ?? []) : undefined
   const parsed = parseFlags(
     [...result.argv],
     parseSpec,
@@ -253,6 +263,7 @@ export async function handleCli(
     session.cwd,
     envSnapshot(session),
     true,
+    abbreviations,
   )
   const { paths, texts, flagKwargs, warnings } = parsed
   if (mirageHelp && flagKwargs.help === true) {
@@ -264,7 +275,7 @@ export async function handleCli(
   let msg: Uint8Array | null = null
   let code = 0
   if (refusal !== null) {
-    ;[msg, code] = leafRefusal(style, refusal[0], parsed.invalidOptions)
+    ;[msg, code] = leafRefusal(style, refusal[0], parsed)
   } else if (parsed.missingRequiredOperands.length > 0 && style === UsageStyle.CLAP) {
     // Only clap names the empty slots. Under every other style a required
     // operand stays the leaf's own business, worded by the command, which is
@@ -294,6 +305,7 @@ export async function handleCli(
     flags[flagKwargName(spelling)] = value
   }
   Object.assign(flags, flagKwargs)
+  flagOccurrences(flags).push(...flagOccurrences(flagKwargs))
   // Only the injected flag is dropped; a leaf that declared --help
   // itself is handed the value it asked for.
   if (mirageHelp) delete flags.help
@@ -303,13 +315,23 @@ export async function handleCli(
   // while `git` is nothing but one. Absent outside a workspace, so a verb
   // that needs a mount refuses there on its own.
   const doors: CLIDoors = {
+    ...(context.processes === undefined ? {} : { processes: context.processes }),
     ...(context.dispatch !== undefined ? { dispatch: context.dispatch } : {}),
     ...(context.statPath !== undefined ? { statPath: context.statPath } : {}),
     ...(context.ns !== undefined ? { ns: context.ns } : {}),
     ...(context.sessionView !== undefined ? { sessionView: context.sessionView } : {}),
   }
+  let active = true
+  const shell = async (command: string): Promise<IOResult> => {
+    if (!active || context.signal?.aborted === true) {
+      throw new Error('CLI shell is no longer active')
+    }
+    if (context.shell === undefined) throw new Error('CLI shell is unavailable')
+    return context.shell(command)
+  }
   const inv: CLIInvocation = {
     config: install.config,
+    ...(context.shell !== undefined ? { shell } : {}),
     argv,
     paths,
     texts,
@@ -323,7 +345,14 @@ export async function handleCli(
   // The outer timer bounds the whole invocation; the runtime deadline
   // also interrupts engines that block their event loop. Unlike Python's
   // asyncio cancellation, racing a promise does not stop its work.
-  const limit = resolveLimit(prog, [], leaf.limit)
+  const limit = resolveLimit(
+    prog,
+    [],
+    leaf.limit,
+    null,
+    context.commandLimits,
+    session.commandLimits,
+  )
   const timeout = limit?.timeoutSeconds ?? null
   const abort = new AbortController()
   let body: Promise<[ByteSource | null, IOResult] | null>
@@ -359,7 +388,7 @@ export async function handleCli(
     // Defer the call into the promise: a synchronously-thrown leaf
     // error must land in the catch arms below, exactly as when the
     // call sat inside the try.
-    body = (async () => fn(inv))()
+    body = Promise.resolve().then(() => fn(inv))
   }
   // The leaf's declared limit bounds the handler body and its
   // streams, exactly like mount dispatch: without the wrap a blocking
@@ -419,6 +448,8 @@ export async function handleCli(
       new IOResult({ exitCode: 1, stderr }),
       new ExecutionNode({ command: cmdStr, exitCode: 1, stderr }),
     ]
+  } finally {
+    active = false
   }
   // The spec's `write` is the one answer: what policy calls a write, the
   // cache does too, so a verb that can mutate (`gh api` under any method)

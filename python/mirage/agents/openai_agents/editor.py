@@ -45,7 +45,7 @@ class MirageEditor(ApplyPatchEditor):
         ops = self._ws.vfs
         try:
             data = await ops.read(op.path)
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, NotADirectoryError, ValueError):
             return ApplyPatchResult(status="failed",
                                     output=f"File not found: {op.path}")
         current = data.decode("utf-8", errors="replace")
@@ -57,7 +57,7 @@ class MirageEditor(ApplyPatchEditor):
         ops = self._ws.vfs
         try:
             await ops.unlink(op.path)
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, NotADirectoryError, ValueError):
             return ApplyPatchResult(status="failed",
                                     output=f"File not found: {op.path}")
         return ApplyPatchResult(status="completed")

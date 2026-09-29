@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { mountKey } from '../../../utils/key_prefix.ts'
+import { SlackAccessor } from '../../../accessor/slack.ts'
 import { describe, expect, it } from 'vitest'
 import { RAMIndexCacheStore } from '../../../cache/index/ram.ts'
 import { materialize } from '../../../io/types.ts'
@@ -98,9 +99,9 @@ describe('slack grep', () => {
         return {
           ok: true,
           messages: [
-            { ts: '1.0', text: 'hello world' },
-            { ts: '2.0', text: 'goodbye' },
-            { ts: '3.0', text: 'hello again' },
+            { ts: '1704067201.000000', text: 'hello world' },
+            { ts: '1704067202.000000', text: 'goodbye' },
+            { ts: '1704067203.000000', text: 'hello again' },
           ],
         }
       }
@@ -124,5 +125,31 @@ describe('slack grep', () => {
     for (const l of lines) {
       expect(l).toContain('hello')
     }
+  })
+})
+
+describe('slack grep on a time-scoped mount', () => {
+  it('scans instead of searching, so a bare directory is EISDIR', async () => {
+    const idx = new RAMIndexCacheStore()
+    await seedChannel(idx, '/mnt/slack', 'general__C1', 'C1', { dates: ['2026-01-02'] })
+    const transport = new FakeSlackTransport()
+    const cmd = SLACK_GREP[0]
+    if (cmd === undefined) throw new Error('grep not registered')
+    const result = await cmd.fn(
+      new SlackAccessor(transport, { startTime: '2026-01-01T00:00:00Z' }),
+      [
+        new PathSpec({
+          virtual: '/mnt/slack/channels/general__C1',
+          directory: '/mnt/slack/channels/general__C1',
+          resolved: false,
+          vfsPath: mountKey('/mnt/slack/channels/general__C1', '/mnt/slack'),
+        }),
+      ],
+      ['hello'],
+      { stdin: null, flags: { w: true }, filetypeFns: null, cwd: '/', index: idx },
+    )
+    expect(transport.calls.map((c) => c.endpoint)).not.toContain('search.messages')
+    expect(result?.[1].exitCode).toBe(2)
+    expect(await result?.[1].stderrStr()).toContain('Is a directory')
   })
 })

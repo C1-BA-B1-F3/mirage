@@ -25,11 +25,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cp /data/a.txt /data/b.txt /data/c.txt",
+      "command": "cp /data/a.txt /data/b.txt /data/c.txt; ln -s /data/cpdangle_t /data/cpdangle && cp /data/a.txt /data/cpdangle; cp -r /data/sub /data/cpdangle; test ! -e /data/cpdangle_t && rm /data/cpdangle",
       "expect": {
-        "exit": 1,
+        "exit": 0,
         "stdout": "",
-        "stderr": "cp: target '/data/c.txt': Not a directory\n"
+        "stderr": "cp: target '/data/c.txt': Not a directory\ncp: not writing through dangling symlink '/data/cpdangle'\ncp: cannot overwrite non-directory '/data/cpdangle' with directory '/data/sub'\n"
       }
     }
   ]

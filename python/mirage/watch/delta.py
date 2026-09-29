@@ -36,6 +36,50 @@ def spec_for(root: PathSpec, virtual: str) -> PathSpec:
     return PathSpec.from_str_path(virtual, vfs_path=virtual[cut:].strip("/"))
 
 
+def diff_snapshots(root: PathSpec, previous: dict[str, str],
+                   current: dict[str, str], entries: dict[str, WalkEntry],
+                   observed: datetime) -> tuple[FileEvent, ...]:
+    """Classify two ``{virtual: fingerprint}`` snapshots as changes.
+
+    A key only in ``current`` is a CREATE, one only in ``previous`` a
+    DELETE, and a changed fingerprint an UPDATE. A file change that is
+    not a DELETE carries the metadata of its row in ``entries``, when
+    there is one.
+
+    Args:
+        root (PathSpec): Watch root carrying the mount prefix.
+        previous (dict[str, str]): Snapshot the last pull handed out.
+        current (dict[str, str]): Snapshot as of this pull.
+        entries (dict[str, WalkEntry]): Rows read this pull, by path.
+        observed (datetime): Timestamp every change carries.
+    """
+    changes: list[FileEvent] = []
+    for virtual in sorted(current.keys() | previous.keys()):
+        old = previous.get(virtual)
+        new = current.get(virtual)
+        if old == new:
+            continue
+        if old is None:
+            kind = FileChangeKind.CREATE
+        elif new is None:
+            kind = FileChangeKind.DELETE
+        else:
+            kind = FileChangeKind.UPDATE
+        entry = entries.get(virtual)
+        metadata = None
+        if (entry is not None and not entry.is_dir
+                and kind is not FileChangeKind.DELETE):
+            metadata = FileMetadata(fingerprint=entry.fingerprint,
+                                    size=entry.size,
+                                    modified=entry.modified)
+        changes.append(
+            FileEvent(kind=kind,
+                      path=spec_for(root, virtual),
+                      timestamp=observed,
+                      metadata=metadata))
+    return tuple(changes)
+
+
 class ListingDeltaHook:
     """Generic checkpointed delta over a full backend walk.
 
@@ -77,28 +121,6 @@ class ListingDeltaHook:
         if checkpoint is None:
             return Delta(changes=(), checkpoint=serialized)
         previous: dict[str, str] = json.loads(checkpoint)
-        observed = datetime.now(timezone.utc)
-        changes: list[FileEvent] = []
-        for virtual in sorted(snapshot.keys() | previous.keys()):
-            old = previous.get(virtual)
-            new = snapshot.get(virtual)
-            if old == new:
-                continue
-            if old is None and new is not None:
-                kind = FileChangeKind.CREATE
-            elif new is None:
-                kind = FileChangeKind.DELETE
-            else:
-                kind = FileChangeKind.UPDATE
-            current = entries.get(virtual)
-            metadata = None
-            if current is not None and not current.is_dir:
-                metadata = FileMetadata(fingerprint=current.fingerprint,
-                                        size=current.size,
-                                        modified=current.modified)
-            changes.append(
-                FileEvent(kind=kind,
-                          path=spec_for(root, virtual),
-                          timestamp=observed,
-                          metadata=metadata))
-        return Delta(changes=tuple(changes), checkpoint=serialized)
+        return Delta(changes=diff_snapshots(root, previous, snapshot, entries,
+                                            datetime.now(timezone.utc)),
+                     checkpoint=serialized)

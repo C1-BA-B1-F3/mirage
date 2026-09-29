@@ -43,7 +43,7 @@ async function main(): Promise<void> {
 
   const driver = new HttpMongoDriver({ endpoint: '/api/mongo' })
   const vfs = new MongoDBVFS({
-    config: { uri: 'http://proxy', defaultDocLimit: 200 },
+    config: { uri: 'http://proxy' },
     driver,
   })
   const ws = new Workspace({ '/mongodb/': vfs }, { mode: MountMode.READ })

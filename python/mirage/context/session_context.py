@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from mirage.types import (MOUNT_MODE_RANK, EntryGate, MountMode, PathSpec,
-                          weaker_mode)
+                          WalkProbe, weaker_mode)
 from mirage.utils.errors import ReadOnlyError
 from mirage.utils.hidden import (anchor_depth, hides_intersect, is_glob,
                                  path_visible, show_head, shown_mode)
@@ -358,9 +358,10 @@ def set_mount_gate(prefix: str, mode: MountMode) -> Token[Any]:
 
     Set by ``Mount.execute_cmd`` around the handler, so the mode guard
     on the command tier's I/O can resolve ``effective_path_mode`` for
-    every path a handler mutates: the write-command gate admits a
-    command when any shown subtree grants writes, and this binding is
-    how each individual write is then held to its own region's mode.
+    every path a handler mutates: a path-guarded command is refused only
+    at its writes, the write-command gate admits any other when a shown
+    subtree grants writes, and this binding is how each individual write
+    is then held to its own region's mode.
 
     Args:
         prefix (str): the mount's prefix.
@@ -379,6 +380,38 @@ def get_mount_gate() -> tuple[str, MountMode] | None:
     mount's command (a generic invoked directly in a test, or the
     scratch tier)."""
     return _current_mount_gate.get()
+
+
+_current_walk_probe: ContextVar[WalkProbe | None] = ContextVar(
+    "mirage_current_walk_probe",
+    default=None,
+)
+
+
+def set_walk_probe(probe: WalkProbe) -> Token[Any]:
+    """Bind what a command's dot walks read, for the run of one command.
+
+    Set by ``Mount.execute_cmd`` around the handler, beside the mount
+    gate: the command tier reaches its backend without passing the
+    dispatcher's door, so the walk guard on its I/O proves an operand's
+    ``.`` and ``..`` with the door's stat and link follow through this
+    binding.
+
+    Args:
+        probe (WalkProbe): the door's stat and the namespace's follow.
+    """
+    return _current_walk_probe.set(probe)
+
+
+def reset_walk_probe(token: Token[Any]) -> None:
+    """Restore the previous walk-probe binding."""
+    _current_walk_probe.reset(token)
+
+
+def get_walk_probe() -> WalkProbe | None:
+    """The walk probe bound to the running command, None outside a
+    mount's command (a generic invoked directly in a test)."""
+    return _current_walk_probe.get()
 
 
 def path_rules_active() -> bool:
@@ -638,6 +671,32 @@ def readonly_below(virtual: str, mount_prefix: str,
                                mount_mode) == MountMode.READ:
             return anchor
     return None
+
+
+def require_paths_writable(paths: list[PathSpec],
+                           mount_prefix: str,
+                           mount_mode: MountMode,
+                           *,
+                           subtree: bool = False) -> None:
+    """Apply the same mode ceiling to command, dispatcher and namespace writes.
+
+    Args:
+        paths (list[PathSpec]): written endpoints, excluding copy sources.
+        mount_prefix (str): the governing mount prefix.
+        mount_mode (MountMode): the configured authorization ceiling.
+        subtree (bool): whether each endpoint's descendants are mutated.
+    """
+    for path in paths:
+        if effective_path_mode(path.virtual, mount_prefix,
+                               mount_mode) == MountMode.READ:
+            raise ReadOnlyError(errno.EROFS, "Read-only file system",
+                                path.virtual)
+    if subtree:
+        for path in paths:
+            blame = readonly_below(path.virtual, mount_prefix, mount_mode)
+            if blame is not None:
+                raise ReadOnlyError(errno.EROFS, "Read-only file system",
+                                    blame)
 
 
 def require_mount_writable() -> None:

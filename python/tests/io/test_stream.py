@@ -14,7 +14,11 @@
 
 import asyncio
 
-from mirage.io.stream import (async_chain, drain, exit_on_empty,
+import pytest
+
+from mirage.io.async_line_iterator import SharedInput
+from mirage.io.stream import (SharedStdin, async_chain, close_quietly,
+                              discard_streams, drain, exit_on_empty,
                               merge_stdout_stderr, quiet_match)
 from mirage.io.types import IOResult
 
@@ -103,7 +107,7 @@ def test_async_chain_two_streams():
         a = _make_stream(b"hello ")
         b = _make_stream(b"world")
         chunks = []
-        async for chunk in async_chain(a, b):
+        async for chunk in async_chain([a, b]):
             chunks.append(chunk)
         assert b"".join(chunks) == b"hello world"
 
@@ -116,7 +120,7 @@ def test_async_chain_with_none():
         a = None
         b = _make_stream(b"world")
         chunks = []
-        async for chunk in async_chain(a, b):
+        async for chunk in async_chain([a, b]):
             chunks.append(chunk)
         assert b"".join(chunks) == b"world"
 
@@ -129,7 +133,7 @@ def test_async_chain_with_bytes():
         a = b"hello "
         b = b"world"
         chunks = []
-        async for chunk in async_chain(a, b):
+        async for chunk in async_chain([a, b]):
             chunks.append(chunk)
         assert b"".join(chunks) == b"hello world"
 
@@ -140,7 +144,7 @@ def test_async_chain_empty():
 
     async def run():
         chunks = []
-        async for chunk in async_chain(None, None):
+        async for chunk in async_chain([None, None]):
             chunks.append(chunk)
         assert chunks == []
 
@@ -343,3 +347,49 @@ def test_chain_cachables_early_stop_leaves_later_untouched():
         assert not b.exhausted
 
     asyncio.run(_run())
+
+
+@pytest.mark.asyncio
+async def test_a_shared_input_outlives_a_close_and_not_a_discard():
+    closed = False
+
+    async def source():
+        nonlocal closed
+        try:
+            yield b"a\n"
+            yield b"b\n"
+            yield b"c\n"
+        finally:
+            closed = True
+
+    shared = SharedInput(source())
+    assert await shared.lines.readline() == b"a"
+    await close_quietly(shared)
+    assert await shared.lines.readline() == b"b"
+    await discard_streams(shared)
+    assert closed
+    assert await shared.lines.readline() is None
+
+
+@pytest.mark.asyncio
+async def test_shared_stdin_preserves_unread_bytes_and_serializes_readers():
+    pulls = []
+
+    async def source():
+        for chunk in [b"", b"abc", b"", b"def"]:
+            await asyncio.sleep(0)
+            pulls.append(chunk)
+            yield chunk
+
+    shared = SharedStdin(source())
+    assert not pulls
+    first = aiter(shared)
+    assert await anext(first) == b"a"
+    second = aiter(shared)
+    results = await asyncio.gather(*(anext(second) for _ in range(5)))
+    assert b"".join(results) == b"bcdef"
+    with pytest.raises(StopAsyncIteration):
+        await anext(first)
+    with pytest.raises(StopAsyncIteration):
+        await anext(second)
+    assert pulls == [b"", b"abc", b"", b"def"]

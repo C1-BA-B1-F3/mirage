@@ -19,6 +19,7 @@ import type { PathSpec } from '../../types.ts'
 import { buildTree, emitStartPath, keep, startBasename } from '../../commands/builtin/find_eval.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { DIR_SIZE } from '../../utils/stat_view.ts'
 
 function strip(path: PathSpec): string {
   const prefix = mountPrefixOf(path.virtual, path.vfsPath)
@@ -77,8 +78,7 @@ export function find(
     ) {
       continue
     }
-    // Directories count as size 0 for -size (deliberate GNU divergence).
-    const size = isDir ? 0 : (entry.size ?? 0)
+    const size = isDir ? DIR_SIZE : (entry.size ?? 0)
     if (options.minSize !== null && options.minSize !== undefined && size < options.minSize) {
       continue
     }

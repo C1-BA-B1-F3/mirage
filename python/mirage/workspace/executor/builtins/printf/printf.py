@@ -14,6 +14,8 @@
 
 import re
 
+from mirage.commands.quote import quote_text
+from mirage.commands.spec.usage import usage_hint
 from mirage.context import program_invocation
 from mirage.io import IOResult
 from mirage.io.stream import yield_bytes
@@ -143,7 +145,8 @@ async def handle_printf(
     out-of-range subscript still reports the format's own errors first,
     then fails with status 1 and leaves the variable untouched. ``-v``
     is the builtin's alone: run as a program (``find -exec printf``,
-    which execvp answers with coreutils printf) the word is the format.
+    which execvp answers with coreutils printf) the word is the format,
+    and a format that takes no argument warns about the ones it drops.
 
     Args:
         args (list[str]): the format followed by its arguments, optionally
@@ -205,6 +208,16 @@ async def handle_printf(
                                   stderr=err), ExecutionNode(command="printf",
                                                              exit_code=2,
                                                              stderr=err)
+    elif args and args[0] == "--":
+        # coreutils printf takes one leading `--` as the end of its
+        # options.
+        args = args[1:]
+    if not args and program_invocation(session):
+        err = f"printf: missing operand\n{usage_hint('printf')}\n".encode()
+        return None, IOResult(exit_code=1,
+                              stderr=err), ExecutionNode(command="printf",
+                                                         exit_code=1,
+                                                         stderr=err)
     if not args:
         if target is not None:
             # `printf -v x` with no format is a usage error in bash.
@@ -213,8 +226,9 @@ async def handle_printf(
                                   stderr=err), ExecutionNode(command="printf",
                                                              exit_code=2)
         return b"", IOResult(), ExecutionNode(command="printf", exit_code=0)
-    output, errors = run_printf(args[0], args[1:])
-    err_bytes = "".join(errors).encode() if errors else b""
+    output, messages, failed, excess = run_printf(args[0], args[1:])
+    err_bytes = "".join(messages).encode() if messages else b""
+    exit_code = 1 if failed else 0
     if target is not None and parsed is not None:
         base, subscript = parsed.group(1), parsed.group(2)
         try:
@@ -246,16 +260,22 @@ async def handle_printf(
                 exit_code=1, stderr=err_bytes), ExecutionNode(command="printf",
                                                               exit_code=1,
                                                               stderr=err_bytes)
-        exit_code = 1 if errors else 0
         return None, IOResult(exit_code=exit_code, stderr=err_bytes
                               or None), ExecutionNode(command="printf",
                                                       exit_code=exit_code)
     out = encode_text(output)
-    if errors:
-        return out, IOResult(exit_code=1,
-                             stderr=err_bytes), ExecutionNode(command="printf",
-                                                              exit_code=1,
-                                                              stderr=err_bytes)
+    if excess is not None and program_invocation(session):
+        # coreutils printf names the first argument a format that takes
+        # none left over, where bash's builtin drops them silently; a
+        # warning, so the status stays the format's own.
+        err_bytes += ("printf: warning: ignoring excess arguments, "
+                      f"starting with '{quote_text(excess)}'\n").encode()
+    if err_bytes:
+        return out, IOResult(exit_code=exit_code,
+                             stderr=err_bytes), ExecutionNode(
+                                 command="printf",
+                                 exit_code=exit_code,
+                                 stderr=err_bytes)
     return out, IOResult(), ExecutionNode(command="printf", exit_code=0)
 
 

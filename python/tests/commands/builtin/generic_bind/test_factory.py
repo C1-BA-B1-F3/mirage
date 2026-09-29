@@ -20,6 +20,7 @@ from mirage.cache.context import push_cache_manager
 from mirage.cache.file.ram import RAMFileCacheStore
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
+from mirage.commands.builtin.generic_bind.builders import BUILDERS
 from mirage.commands.builtin.generic_bind.factory import (
     _run_with_namespace_globs, make_generic_commands, with_read_cache,
     with_slash_guard)
@@ -74,20 +75,20 @@ async def _drain(source) -> bytes:
     return b"".join([c async for c in source])
 
 
-def test_factory_registers_only_commands_with_available_capabilities():
+def test_factory_registers_every_command_whatever_the_backend_lacks():
+    # A backend without the write-side ops still gets the whole family:
+    # `gzip -c`, `tar -t` and `split -n 1/2` only read, and a line that
+    # writes is refused at the missing op instead of the command being
+    # absent.
     backend = _CountingBackend(b"payload")
-    ops = replace(_ops(backend), write=backend.read_bytes)
-    commands = make_generic_commands("limited", ops)
+    commands = make_generic_commands("limited", _ops(backend))
     names = {
         registered.name
         for command in commands
         for registered in command._registered_commands
     }
 
-    assert "tee" in names
-    assert {
-        "cp", "mv", "rm", "mkdir", "tar", "unzip", "gzip", "gunzip", "touch"
-    }.isdisjoint(names)
+    assert names == {b.name for b in BUILDERS}
 
 
 @pytest.mark.asyncio
@@ -241,3 +242,44 @@ async def test_slash_guard_leaves_write_absent_when_the_backend_has_none():
     assert guarded.write is None
     assert guarded.append is None
     assert guarded.truncate is None
+
+
+@pytest.mark.parametrize("option", [
+    {
+        "overrides": {"cat", "search"}
+    },
+    {
+        "provision_overrides": {
+            "gerp": lambda *a, **k: None
+        }
+    },
+    {
+        "ops_overrides": {
+            "lss": _ops(_CountingBackend(b""))
+        }
+    },
+])
+def test_a_name_no_builder_has_is_refused(option):
+    """A name no builder has did nothing, so a typo left the generic
+    registered beside the bespoke command, and mem0's ``search`` read as
+    if it displaced something."""
+    with pytest.raises(ValueError, match="no generic builder named"):
+        make_generic_commands("fake", _ops(_CountingBackend(b"")), **option)
+
+
+@pytest.mark.asyncio
+async def test_partial_consumer_caches_complete_synthesized_stream():
+    backend = _CountingBackend(b'first\nsecond\n')
+    manager = CacheManager(RAMFileCacheStore(), None, '/s3/', True)
+    prev = push_cache_manager(manager)
+    try:
+        ops = with_read_cache(replace(_ops(backend), streams_bytes=True))
+    finally:
+        push_cache_manager(prev)
+    source = ops.read_stream(None, _spec())
+    assert (await anext(source))[:5] == b'first'
+    await source.aclose()
+    assert await manager.cached_bytes(_spec()) == backend.data
+    assert await ops.read_bytes(None, _spec()) == backend.data
+    assert backend.bytes_calls == 1
+    assert backend.stream_calls == 0

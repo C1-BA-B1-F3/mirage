@@ -20,12 +20,15 @@ from mirage.commands.builtin.generic.join import join_cmd as generic_join
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
+from mirage.io.types import ByteSource
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 
 
-async def run_join(scopes: list[PathSpec], flag_kwargs: dict[str, FlagValue],
-                   dispatch: DispatchFn) -> CrossResult:
+async def run_join(scopes: list[PathSpec],
+                   flag_kwargs: dict[str, FlagValue],
+                   dispatch: DispatchFn,
+                   stdin: ByteSource | None = None) -> CrossResult:
     """Join two files on different mounts via the shared generic join.
 
     Pure wiring: both sides are read through dispatch-relayed primitives
@@ -35,11 +38,14 @@ async def run_join(scopes: list[PathSpec], flag_kwargs: dict[str, FlagValue],
         scopes (list[PathSpec]): The two path operands.
         flag_kwargs (dict): Flags parsed against the shared join spec.
         dispatch (DispatchFn): Workspace operation dispatcher.
+        stdin (ByteSource | None): The line's input, which a ``-`` or
+            ``/dev/stdin`` operand reads.
     """
     fl = FlagView(flag_kwargs, spec=SPECS["join"])
     field1 = fl.as_str("args_1")
     field2 = fl.as_str("2")
     return await generic_join(flat_scopes(scopes),
+                              stdin=stdin,
                               read_bytes=functools.partial(
                                   relay, dispatch, "read"),
                               field1=int(field1 or 1) - 1,

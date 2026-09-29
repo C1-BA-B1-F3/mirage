@@ -190,7 +190,7 @@ class LangchainWorkspace(SandboxBackendProtocol):
         ops = self._ws.vfs
         try:
             data = await ops.read(file_path)
-        except (FileNotFoundError, ValueError) as exc:
+        except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
             return ReadResult(error=f"Error: {exc}")
         return _to_read_result(file_path, data, offset, limit)
 
@@ -205,7 +205,7 @@ class LangchainWorkspace(SandboxBackendProtocol):
             await ops.stat(file_path)
             return WriteResult(
                 error=f"Error: file '{file_path}' already exists")
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, NotADirectoryError, ValueError):
             # missing file is the good path: the write may proceed
             pass
         parent = "/".join(file_path.rstrip("/").split("/")[:-1]) or "/"
@@ -239,7 +239,7 @@ class LangchainWorkspace(SandboxBackendProtocol):
         ops = self._ws.vfs
         try:
             data = await ops.read(file_path)
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, NotADirectoryError, ValueError):
             return EditResult(error=f"Error: file '{file_path}' not found")
         content = data.decode("utf-8", errors="replace")
         count = content.count(old_string)
@@ -354,7 +354,7 @@ class LangchainWorkspace(SandboxBackendProtocol):
             try:
                 data = await ops.read(path)
                 results.append(FileDownloadResponse(path=path, content=data))
-            except (FileNotFoundError, ValueError):
+            except (FileNotFoundError, NotADirectoryError, ValueError):
                 results.append(
                     FileDownloadResponse(path=path,
                                          content=None,

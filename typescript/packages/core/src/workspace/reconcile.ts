@@ -18,7 +18,7 @@ import type { FileCache } from '../cache/file/mixin.ts'
 import type { OpsRegistry } from '../ops/registry.ts'
 import type { BaseVFS } from '../vfs/base.ts'
 import { FileStat, PathSpec, ReadPolicy } from '../types.ts'
-import { enoent, isEnoent, isMissingOp } from '../utils/errors.ts'
+import { enoent, isEnoent, isEnotdir, isMissingOp } from '../utils/errors.ts'
 import { mountKey } from '../utils/key_prefix.ts'
 import { rstripSlash } from '../utils/slash.ts'
 import type { MountEntry } from './mount/mount.ts'
@@ -93,7 +93,7 @@ export class Reconciler {
         { index: new RAMIndexCacheStore() },
       )
     } catch (err) {
-      if (isEnoent(err)) {
+      if (isEnoent(err) || isEnotdir(err)) {
         await this.onMissing(path)
         await mount.index.clear()
         return Verdict.GONE
@@ -136,14 +136,14 @@ export class Reconciler {
     try {
       return await this.probe(mount, path)
     } catch (err) {
-      if (isEnoent(err)) throw err
+      if (isEnoent(err) || isEnotdir(err)) throw err
       // A backend that cannot answer is one thing; a bug in the probe path
       // is another, and degrading it to "cannot verify" would hide it behind
       // a log line and a lifetime of cold reads.
       if (err instanceof TypeError || err instanceof ReferenceError) throw err
       await this.cache.remove(path)
       await mount.index.clear()
-      console.debug(`probe failed for ${path}: ${String(err)}`)
+      console.warn(`probe failed for ${path}: ${String(err)}`)
       return Verdict.UNKNOWN
     }
   }
@@ -160,8 +160,8 @@ export class Reconciler {
   // short-circuit this function, dropping every cached copy on a resource
   // that declares it false. That is a proxy for "the stat carries no content
   // token", and it is the wrong one: box and dropbox stamp a fingerprint
-  // without setting the flag (as do ssh and github on the python side, whose
-  // rosters differ here), so the shortcut threw away entries this probe can
+  // without setting the flag (as does ssh on the python side, whose roster
+  // differs here), so the shortcut threw away entries this probe can
   // verify. The backends that really cannot be checked are answered by
   // probe's own UNKNOWN arm, one stat later.
   async mayServeCached(mount: MountEntry, path: string): Promise<boolean> {
@@ -206,7 +206,7 @@ export class Reconciler {
     } catch (err) {
       await this.cache.remove(path)
       await mount.index.clear()
-      console.debug(`reconcile probe failed for ${path}: ${String(err)}`)
+      console.warn(`reconcile probe failed for ${path}: ${String(err)}`)
     }
   }
 
@@ -223,7 +223,11 @@ export class Reconciler {
   // `isEnoent` is load-bearing and stays: the call site is a generic
   // catch, so without it a 500, a timeout or an auth failure would GC.
   async onOpMissing(mount: MountEntry, opName: string, path: string, err: unknown): Promise<void> {
-    if (mount.read.policy === ReadPolicy.FRESH && REVALIDATE_OPS.has(opName) && isEnoent(err)) {
+    if (
+      mount.read.policy === ReadPolicy.FRESH &&
+      REVALIDATE_OPS.has(opName) &&
+      (isEnoent(err) || isEnotdir(err))
+    ) {
       await this.onMissing(path)
     }
   }

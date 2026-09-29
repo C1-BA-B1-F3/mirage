@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { ContextScope } from '../../utils/context_scope.ts'
+import { captureSessionContext } from '../../context/session_context.ts'
 import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
 import { coerceReadPolicy } from './read_policy.ts'
 import { KeyLock } from '../../cache/lock.ts'
@@ -28,20 +30,27 @@ import type {
 import { hasInjectedVersion } from '../../commands/config.ts'
 import { ROOT_CWD } from '../../commands/constants.ts'
 import type { OpKwargs } from '../../ops/registry.ts'
+import type { LinkView } from '../../ops/types.ts'
 
 const NOOP_ACCESSOR = new NOOPAccessor()
 import { getExtension } from '../../commands/resolve.ts'
 import { resolveLimit } from '../../policy/index.ts'
 import { runWithTimeout } from '../../commands/builtin/utils/limit.ts'
 import { CommandTimeoutError } from '../../commands/errors.ts'
+import { flagOccurrences } from '../../commands/spec/flag_view.ts'
 import type { CommandSpec, FlagValue } from '../../commands/spec/types.ts'
 import { CachableAsyncIterator } from '../../io/cachable_iterator.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult } from '../../io/types.ts'
-import { runWithCacheManager } from '../../cache/context.ts'
+import { captureCacheContext, runWithCacheManager } from '../../cache/context.ts'
 import type { CacheManager } from '../../cache/manager.ts'
 import { mergeSignals } from '../abort.ts'
-import { runWithMountPrefix, runWithRevisions, withMountPrefix } from '../../observe/context.ts'
+import {
+  captureRecordingContext,
+  runWithMountContext,
+  runWithRevisions,
+  withMountContext,
+} from '../../observe/context.ts'
 import { uuid7 } from '../../utils/ids.ts'
 import { VFSActivity } from './activity.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
@@ -54,15 +63,17 @@ import {
   MountMode,
   PathSpec,
 } from '../../types.ts'
-import { ebusy, enotsup, erofsReadOnly } from '../../utils/errors.ts'
+import { ebusy, enotsup } from '../../utils/errors.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import {
   effectiveMountMode,
-  effectivePathMode,
-  readonlyBelow,
+  requirePathsWritable,
   runWithMountGate,
+  runWithWalkProbe,
   strongestModeUnder,
 } from '../../context/session_context.ts'
+import { dispatchStat, linkFollow } from '../../commands/builtin/utils/paths.ts'
+import type { DispatchFn } from '../../runtime/types.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 
 type CmdKey = string
@@ -104,6 +115,20 @@ export interface MountInit {
   // The `vfs:` value the driver was built from, recorded for snapshots;
   // null for one constructed in code.
   vfsRef?: string | null
+}
+
+// What the command tier's walk guard proves an operand's `.` and `..` with:
+// the handler reaches its backend past the door, so the door's stat and link
+// follow are bound around it. No dispatcher (a mount driven directly) binds
+// nothing. Mirrors the Python set_walk_probe binding in Mount.execute_cmd.
+function withWalkProbe<T>(
+  prefix: string,
+  dispatch: DispatchFn | undefined,
+  links: LinkView | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (dispatch === undefined) return fn()
+  return runWithWalkProbe(prefix, { stat: dispatchStat(dispatch), follow: linkFollow(links) }, fn)
 }
 
 export class MountEntry {
@@ -567,17 +592,31 @@ export class MountEntry {
       const isFiletypeCmd =
         extension !== null && extension !== '' && this.cmds.has(cmdKey(cmdName, extension))
 
-      const prefixedPaths = paths.map(
-        (p) =>
-          new PathSpec({
-            virtual: p.virtual,
-            directory: p.directory,
-            pattern: p.pattern,
-            resolved: p.resolved,
-            vfsPath: mountKey(p.virtual, mountPrefix),
-            rawPath: p.rawPath,
-          }),
-      )
+      const stamp = (p: PathSpec): PathSpec =>
+        new PathSpec({
+          virtual: p.virtual,
+          directory: p.directory,
+          pattern: p.pattern,
+          resolved: p.resolved,
+          vfsPath: mountKey(p.virtual, mountPrefix),
+          rawPath: p.rawPath,
+          dotted: p.dotted,
+          walkError: p.walkError,
+        })
+      const prefixedPaths = paths.map(stamp)
+      // Stamp this mount's backend key onto path-shaped flag values so
+      // backend reads can address them: a single PathSpec (awk -f, tar -f)
+      // or a list (repeated grep -f, jq's --rawfile pairs). Everything else
+      // passes through unchanged. Mirrors Python's execute_cmd.
+      const stampedFlags: Record<string, FlagValue> = { ...flags }
+      flagOccurrences(stampedFlags).push(...flagOccurrences(flags))
+      for (const [key, value] of Object.entries(flags)) {
+        if (value instanceof PathSpec) stampedFlags[key] = stamp(value)
+        else if (Array.isArray(value) && value.some((item) => item instanceof PathSpec)) {
+          const items: readonly (string | PathSpec)[] = value
+          stampedFlags[key] = items.map((item) => (item instanceof PathSpec ? stamp(item) : item))
+        }
+      }
 
       // A pattern operand travels to the handler whole. The handler
       // resolves it once, through the shared adapter, which is where the
@@ -589,7 +628,7 @@ export class MountEntry {
       const accessor = (this.vfs as { accessor?: Accessor }).accessor ?? NOOP_ACCESSOR
       const cmdOpts: CommandOpts = {
         stdin: context.stdin ?? null,
-        flags,
+        flags: stampedFlags,
         filetypeFns: isFiletypeCmd ? null : filetypeFns,
         mountPrefix,
         command: cmdName,
@@ -599,6 +638,7 @@ export class MountEntry {
         ...(context.sessionId !== undefined ? { sessionId: context.sessionId } : {}),
         ...(context.env !== undefined ? { env: context.env } : {}),
         ...(context.sessionView !== undefined ? { sessionView: context.sessionView } : {}),
+        ...(context.processes !== undefined ? { processes: context.processes } : {}),
         ...(context.execAllowed !== undefined ? { execAllowed: context.execAllowed } : {}),
         ...(context.execPathAllowed !== undefined
           ? { execPathAllowed: context.execPathAllowed }
@@ -607,118 +647,115 @@ export class MountEntry {
         ...(context.ns !== undefined ? { ns: context.ns } : {}),
         ...(context.statPath !== undefined ? { statPath: context.statPath } : {}),
         ...(context.readdirPath !== undefined ? { readdirPath: context.readdirPath } : {}),
+        ...(context.argv !== undefined ? { argv: context.argv } : {}),
       }
 
-      // What the command tier's mode guard reads: the write-command gate
-      // below admits a command when any shown subtree grants writes, and
-      // this binding is how each write the handler then makes is held to
-      // its own region's mode.
+      // What the command tier's mode guard reads: each write the handler
+      // makes is held to its own region's mode.
       return runWithMountGate(this.prefix, this.mode, () =>
-        runWithMountPrefix(
-          mountPrefix,
-          () =>
-            runWithCacheManager(this.cacheManager, () =>
-              runWithRevisions(
-                this.revisions.size > 0 ? this.revisions : null,
-                async (): Promise<[ByteSource | null, IOResult]> => {
-                  for (const cmd of handlers) {
-                    // Only wrapper-owned responses bypass the write guard.
-                    const infoOnly =
-                      flags.help === true ||
-                      (flags.version === true && hasInjectedVersion(cmd.spec))
-                    // strongestModeUnder, not effectiveMode: a mount whose
-                    // only writable region is a show entry still runs the
-                    // command, and the op door refuses per path. The
-                    // trailing newline is load-bearing: stderr accumulates
-                    // across a line, so two refusals in one list ran
-                    // together as `...at /ro/rm: read-only mount at /ro/`,
-                    // and the node table's twin of this refusal (a symlink
-                    // `rm`, rendered by shared.readOnlyError) concatenates
-                    // with it.
-                    if (
-                      cmd.write &&
-                      !infoOnly &&
-                      strongestModeUnder(this.prefix, this.mode) === MountMode.READ
-                    ) {
-                      return [
-                        null,
-                        new IOResult({
-                          exitCode: 1,
-                          stderr: new TextEncoder().encode(
-                            `${cmdName}: read-only mount at ${this.prefix}\n`,
-                          ),
-                        }),
-                      ]
-                    }
-                    // The dispatch-level guard only sees default limits
-                    // (the mount is unknown before routing), so the
-                    // mount-resolved timeout must also bound the command
-                    // body: eager commands do their work inside cmd.fn,
-                    // where the stream-consumption guard never runs.
-                    // limitOverride carries the origin mount's cap across
-                    // a warm-cache redirect; a null one is "no opinion" and
-                    // must not shadow the serving mount's own table (a
-                    // path-less command with cwd outside every mount resolves
-                    // no origin, but the serving mount's cap still applies —
-                    // python always reads the serving mount).
-                    const resolvedLimit = resolveLimit(
-                      cmdName,
-                      [],
-                      cmd.limit,
-                      context.limitOverride ?? this.commandLimits.get(cmdName) ?? null,
-                    )
-                    const cmdTimeout = resolvedLimit !== null ? resolvedLimit.timeoutSeconds : null
-                    // runWithTimeout abandons the promise, it cannot cancel
-                    // it; the aborted signal lets a runtime kill what it
-                    // spawned (python cancels the task instead). The ambient
-                    // context.signal is a background job's kill channel, folded
-                    // into the same wire. timeoutSeconds rides along so an
-                    // engine that executes on the event loop (quickjs) can
-                    // interrupt itself when the timer cannot fire.
-                    const guard =
-                      cmdTimeout !== null && cmdTimeout > 0 ? new AbortController() : null
-                    const runSignal = mergeSignals(guard?.signal, context.signal)
-                    const runOpts =
-                      runSignal !== undefined
-                        ? {
-                            ...cmdOpts,
-                            signal: runSignal,
-                            ...(cmdTimeout !== null && cmdTimeout > 0
-                              ? { timeoutSeconds: cmdTimeout }
-                              : {}),
-                          }
-                        : cmdOpts
-                    let result: CommandFnResult
-                    try {
-                      result = await runWithTimeout(
-                        Promise.resolve(cmd.fn(accessor, prefixedPaths, texts, runOpts)),
-                        cmdTimeout,
+        withWalkProbe(this.prefix, context.dispatch, context.ns?.links, () =>
+          runWithMountContext(
+            () =>
+              runWithCacheManager(this.cacheManager, () =>
+                runWithRevisions(
+                  this.revisions.size > 0 ? this.revisions : null,
+                  async (): Promise<[ByteSource | null, IOResult]> => {
+                    for (const cmd of handlers) {
+                      // Only wrapper-owned responses bypass the write guard.
+                      const infoOnly =
+                        flags.help === true ||
+                        (flags.version === true && hasInjectedVersion(cmd.spec))
+                      // A command whose I/O runs under the path guards is
+                      // refused where it writes, because only the write knows
+                      // whether a line writes: `gzip -c`, `tar -t` and
+                      // `split -n 1/2` read a read-only mount like any reader,
+                      // and `gzip f` is refused at the write of `f.gz`, in
+                      // gzip's own GNU voice. A write command that reaches its
+                      // service some other way (trello's id-addressed card
+                      // writes, a custom backend's own verb) is refused here,
+                      // before it runs, because no door would see its write.
+                      // strongestModeUnder, not effectiveMode: a mount whose
+                      // only writable region is a show entry still runs it.
+                      // The trailing newline is load-bearing: stderr
+                      // accumulates across a line.
+                      if (
+                        cmd.write &&
+                        !cmd.pathGuarded &&
+                        !infoOnly &&
+                        strongestModeUnder(this.prefix, this.mode) === MountMode.READ
+                      ) {
+                        return [
+                          null,
+                          new IOResult({
+                            exitCode: 1,
+                            stderr: new TextEncoder().encode(
+                              `${cmdName}: read-only mount at ${this.prefix}\n`,
+                            ),
+                          }),
+                        ]
+                      }
+                      // The dispatch-level guard only sees default limits
+                      // (the mount is unknown before routing), so the
+                      // mount-resolved timeout must also bound the command
+                      // body: eager commands do their work inside cmd.fn,
+                      // where the stream-consumption guard never runs.
+                      // limitOverride is the caller's profile, mount and
+                      // workspace entry; a null one is "no opinion" and must
+                      // not shadow this mount's own table.
+                      const resolvedLimit = resolveLimit(
                         cmdName,
+                        [],
+                        cmd.limit,
+                        context.limitOverride ?? this.commandLimits.get(cmdName) ?? null,
                       )
-                    } catch (err) {
-                      if (guard !== null && err instanceof CommandTimeoutError) guard.abort()
-                      throw err
-                    }
-                    if (result !== null) {
-                      // A warm-cache redirect already resolved the origin
-                      // mount's cap (limitOverride); fold it as the
-                      // declared bound since the origin prefix is not ours.
-                      result[1].producer =
-                        context.limitOverride != null
-                          ? { command: cmdName, prefixes: [], declared: resolvedLimit }
-                          : {
-                              command: cmdName,
-                              prefixes: [this.prefix],
-                              declared: cmd.limit ?? null,
+                      const cmdTimeout =
+                        resolvedLimit !== null ? resolvedLimit.timeoutSeconds : null
+                      // runWithTimeout abandons the promise, it cannot cancel
+                      // it; the aborted signal lets a runtime kill what it
+                      // spawned (python cancels the task instead). The ambient
+                      // context.signal is a background job's kill channel, folded
+                      // into the same wire. timeoutSeconds rides along so an
+                      // engine that executes on the event loop (quickjs) can
+                      // interrupt itself when the timer cannot fire.
+                      const guard =
+                        cmdTimeout !== null && cmdTimeout > 0 ? new AbortController() : null
+                      const runSignal = mergeSignals(guard?.signal, context.signal)
+                      const runOpts =
+                        runSignal !== undefined
+                          ? {
+                              ...cmdOpts,
+                              signal: runSignal,
+                              ...(cmdTimeout !== null && cmdTimeout > 0
+                                ? { timeoutSeconds: cmdTimeout }
+                                : {}),
                             }
-                      return wrapMountStreams(result, mountPrefix, this.mountId, this.activity)
+                          : cmdOpts
+                      let result: CommandFnResult
+                      try {
+                        result = await runWithTimeout(
+                          Promise.resolve(cmd.fn(accessor, prefixedPaths, texts, runOpts)),
+                          cmdTimeout,
+                          cmdName,
+                        )
+                      } catch (err) {
+                        if (guard !== null && err instanceof CommandTimeoutError) guard.abort()
+                        throw err
+                      }
+                      if (result !== null) {
+                        result[1].producer = {
+                          command: cmdName,
+                          prefixes: [this.prefix],
+                          declared: cmd.limit ?? null,
+                        }
+                        return wrapMountStreams(result, this.mountId, this.activity)
+                      }
                     }
-                  }
-                  return [null, new IOResult()]
-                },
+                    return [null, new IOResult()]
+                  },
+                ),
               ),
-            ),
-          this.mountId,
+            this.mountId,
+          ),
         ),
       )
     })
@@ -736,31 +773,11 @@ export class MountEntry {
       if (levels.length === 0) {
         throw enotsup(this.vfs.name, opName, path)
       }
-      // Per path, not per mount: a show entry can hold one subtree below
-      // `w` on a writable mount, or one writable region on a read mount.
-      // A rename mutates its destination too, so both endpoints answer,
-      // and it relocates whole subtrees in one call, so a read-only
-      // region below either endpoint refuses it too.
       if (levels.some((o) => o.write)) {
-        if (effectivePathMode(path, this.prefix, this.mode) === MountMode.READ) {
-          throw erofsReadOnly(`mount ${this.prefix} is read-only`, path)
-        }
         const dst = kwargs.dst
-        if (
-          dst instanceof PathSpec &&
-          effectivePathMode(dst.virtual, this.prefix, this.mode) === MountMode.READ
-        ) {
-          throw erofsReadOnly(`mount ${this.prefix} is read-only`, dst.virtual)
-        }
-        if (SUBTREE_OPS.has(opName)) {
-          const endpoints = dst instanceof PathSpec ? [path, dst.virtual] : [path]
-          for (const endpoint of endpoints) {
-            const blame = readonlyBelow(endpoint, this.prefix, this.mode)
-            if (blame !== null) {
-              throw erofsReadOnly(`mount ${this.prefix} is read-only`, blame)
-            }
-          }
-        }
+        const endpoints = [PathSpec.fromStrPath(path)]
+        if (dst instanceof PathSpec) endpoints.push(dst)
+        requirePathsWritable(endpoints, this.prefix, this.mode, SUBTREE_OPS.has(opName))
       }
       const mountPrefix = rstripSlash(this.prefix)
       const lastSlash = path.lastIndexOf('/')
@@ -779,8 +796,7 @@ export class MountEntry {
       // the timeout stays here, bounding the backend call itself.
       const opOverride = this.commandLimits.get(opName) ?? null
       const opTimeout = opOverride !== null ? opOverride.timeoutSeconds : null
-      return runWithMountPrefix(
-        mountPrefix,
+      return runWithMountContext(
         () =>
           runWithRevisions(this.revisions.size > 0 ? this.revisions : null, async () => {
             for (const op of levels) {
@@ -790,7 +806,7 @@ export class MountEntry {
                 opName,
               )
               if (result !== null && result !== undefined) {
-                return wrapOpStream(result, mountPrefix, this.mountId, this.activity)
+                return wrapOpStream(result, this.mountId, this.activity)
               }
             }
             return null
@@ -802,45 +818,44 @@ export class MountEntry {
 }
 
 /** Preserve a streaming operation's recording owner after its dispatch frame exits. */
-export function wrapOpStream(
-  result: unknown,
-  mountPrefix: string,
-  mountId: string,
-  activity: VFSActivity,
-): unknown {
+export function wrapOpStream(result: unknown, mountId: string, activity: VFSActivity): unknown {
   if (result instanceof CachableAsyncIterator) {
-    result.wrapSource((source) => withMountPrefix(mountPrefix, source, mountId))
+    result.wrapSource((source) => withMountContext(source, mountId))
     return activity.hold(result)
   }
   if (result !== null && typeof result === 'object' && Symbol.asyncIterator in result) {
-    return activity.hold(withMountPrefix(mountPrefix, result as AsyncIterable<Uint8Array>, mountId))
+    return activity.hold(withMountContext(result as AsyncIterable<Uint8Array>, mountId))
   }
   return result
 }
 
-// Push `mountPrefix` back during lazy consumption of anything the command
-// handed back, so a deferred backend read names its record the same way an
-// eager one does. Dedup by identity: a stream that appears both as the
+// Push `mountId` back during lazy consumption of anything the command
+// handed back, so a deferred backend read attributes its record the same
+// way an eager one does. Dedup by identity: a stream that appears both as the
 // primary stdout and in IOResult.reads/writes is wrapped once.
 // Mirrors python's _wrap_cmd_streams.
 function wrapMountStreams(
   result: [ByteSource | null, IOResult],
-  mountPrefix: string,
   mountId: string,
   activity: VFSActivity,
 ): [ByteSource | null, IOResult] {
   const [stream, io] = result
   const seen = new Map<ByteSource, ByteSource>()
+  const scope = new ContextScope([
+    ...captureSessionContext(),
+    ...captureRecordingContext(),
+    captureCacheContext(),
+  ])
   const wrap = (obj: ByteSource): ByteSource => {
     if (obj instanceof Uint8Array) return obj
     const hit = seen.get(obj)
     if (hit !== undefined) return hit
     let wrapped: ByteSource
     if (obj instanceof CachableAsyncIterator) {
-      obj.wrapSource((src) => withMountPrefix(mountPrefix, src, mountId))
+      obj.wrapSource((src) => scope.stream(withMountContext(src, mountId)))
       wrapped = obj
     } else {
-      wrapped = withMountPrefix(mountPrefix, obj, mountId)
+      wrapped = scope.stream(withMountContext(obj, mountId))
     }
     wrapped = activity.hold(wrapped)
     seen.set(obj, wrapped)

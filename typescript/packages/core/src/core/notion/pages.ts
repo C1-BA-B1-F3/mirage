@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { NotionTransport } from './client.ts'
+import { NotionAPIError, type NotionTransport } from './client.ts'
 import { MAX_PAGE_SIZE } from './constants.ts'
 import { cursorItems } from '../api/paginate.ts'
 
@@ -22,6 +22,17 @@ function asObject(value: unknown): Json {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Json) : {}
 }
 
+/** Refuse a list response Notion marked incomplete. */
+function completePage(page: Json): Json {
+  const status = asObject(page.request_status)
+  if (status.type === 'incomplete') {
+    const reason =
+      typeof status.incomplete_reason === 'string' ? status.incomplete_reason : 'unknown'
+    throw new NotionAPIError(`Notion query incomplete: ${reason}`, null, reason)
+  }
+  return page
+}
+
 async function paginateTool(
   transport: NotionTransport,
   toolName: string,
@@ -29,10 +40,12 @@ async function paginateTool(
   maxResults?: number,
 ): Promise<Json[]> {
   const items = await cursorItems(
-    (cursor) =>
-      transport.callTool(
-        toolName,
-        cursor === null ? { ...baseArgs } : { ...baseArgs, start_cursor: cursor },
+    async (cursor) =>
+      completePage(
+        await transport.callTool(
+          toolName,
+          cursor === null ? { ...baseArgs } : { ...baseArgs, start_cursor: cursor },
+        ),
       ),
     maxResults,
   )
@@ -104,16 +117,19 @@ export async function replacePageMarkdown(
 
 // `ntn datasources query` is explicitly one page at a time: it honors
 // --limit, reports has_more and hands the caller the cursor, so it cannot
-// use the paginating helper the mount uses.
+// use the paginating helper the mount uses. An incomplete page still
+// refuses, so a truncated result never prints as a successful query.
 export async function queryDataSourcePage(
   transport: NotionTransport,
   dataSourceId: string,
   body: Json,
 ): Promise<Json> {
-  return transport.callTool('API-post-data-source-query', {
-    ...body,
-    data_source_id: dataSourceId,
-  })
+  return completePage(
+    await transport.callTool('API-post-data-source-query', {
+      ...body,
+      data_source_id: dataSourceId,
+    }),
+  )
 }
 
 export async function getChildBlocks(transport: NotionTransport, blockId: string): Promise<Json[]> {

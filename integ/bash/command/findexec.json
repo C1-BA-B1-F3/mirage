@@ -2129,9 +2129,9 @@
       "expect": {
         "exit": 0,
         "stdout": "-v[]\n[hi]\n",
-        "stderr": ""
+        "stderr": "printf: warning: ignoring excess arguments, starting with 'fpx'\n"
       },
-      "note": "GNU findutils 4.9 on debian:stable-slim: execvp answers `printf` with coreutils printf, which has no -v (the word is the format; GNU also warns about the excess arguments, which mirage's printf does not), and a nested `sh -c` is a shell again whose printf assigns."
+      "note": "GNU findutils 4.9 on debian:stable-slim: execvp answers `printf` with coreutils printf, which has no -v (the word is the format, and it warns about the arguments the format leaves over), and a nested `sh -c` is a shell again whose printf assigns."
     },
     {
       "id": "find_ls_renders_the_stat_find_already_holds",

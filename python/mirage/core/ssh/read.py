@@ -39,7 +39,7 @@ async def read_bytes(accessor: SSHAccessor,
                 await f.seek(offset)
             raw = await f.read(size if size is not None else -1)
         data = raw if isinstance(raw, bytes) else raw.encode()
-        record("read", path, "ssh", len(data), timer)
+        record("read", virtual, "ssh", len(data), timer)
         return data
     except asyncssh.SFTPNoSuchFile:
         raise enoent(virtual)

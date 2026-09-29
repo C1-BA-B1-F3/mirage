@@ -17,18 +17,21 @@ from typing import Any
 from mirage.ops.types import SessionView
 from mirage.shell.types import NodeType as NT
 from mirage.types import PathSpec
+from mirage.utils.glob_walk import unmark_globs
 from mirage.workspace.executor.builtins.condition import (CondAnd, CondBinary,
                                                           CondNode, CondNot,
                                                           CondOr, CondUnary,
                                                           CondWord)
 from mirage.workspace.expand import expand_node
+from mirage.workspace.expand.fields import split_fields
+from mirage.workspace.expand.node import expand_chunks
 from mirage.workspace.expand.pattern import expand_pattern
+from mirage.workspace.expand.variable import ifs_value
 
 _CONTAINER_TYPES = (NT.BINARY_EXPRESSION, NT.UNARY_EXPRESSION,
                     NT.NEGATION_EXPRESSION, NT.PARENTHESIZED_EXPRESSION)
 _FLAT_OP_TOKENS = frozenset({"=", "==", "!=", "<", ">", "!", "(", ")"})
 _COND_OP_TOKENS = frozenset({"=", "==", "!=", "=~", "<", ">", "&&", "||"})
-_SPLIT_TYPES = (NT.SIMPLE_EXPANSION, NT.EXPANSION)
 
 
 async def expand_test_expr(node,
@@ -107,11 +110,10 @@ async def _flatten(node,
         if ctype == NT.TEST_OPERATOR:
             out.append(child.text.decode())
             continue
-        expanded = await expand_node(child, session, execute_fn, cs, view=view)
-        if ctype in _SPLIT_TYPES:
-            out.extend(expanded.split())
-            continue
-        out.append(expanded)
+        chunks = await expand_chunks(child, session, execute_fn, cs, view=view)
+        out.extend(
+            unmark_globs(word)
+            for word in split_fields(chunks, ifs_value(session, cs)))
     return True
 
 

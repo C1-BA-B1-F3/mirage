@@ -12,14 +12,22 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { materialize } from '../../../io/types.ts'
+
 import { stripSlash } from '../../../utils/slash.ts'
 import { describe, expect, it } from 'vitest'
 import type { IOResult } from '../../../io/types.ts'
 import type { FindOptions } from '../../../vfs/base.ts'
-import { ContentType, type FileStat, FileType, PathSpec } from '../../../types.ts'
+import { ContentType, FileStat, FileType, PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
 import type { LinkView } from '../../../ops/types.ts'
-import { findGeneric, linkResults } from './find.ts'
+import { findGeneric as streamFind, linkResults } from './find.ts'
+
+async function findGeneric(...args: Parameters<typeof streamFind>) {
+  const result = await streamFind(...args)
+  if (result === null) return null
+  return [result[0] === null ? null : await materialize(result[0]), result[1]] as const
+}
 
 const DEC = new TextDecoder()
 
@@ -57,7 +65,7 @@ describe('generic command find', () => {
   it('skips roots whose find raises ENOENT', async () => {
     const result = await findGeneric([spec('/missing'), spec('/')], [], makeOpts(), fakeFind)
     expect(result).not.toBeNull()
-    expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/found.txt\n')
+    expect(DEC.decode(result?.[0] ?? undefined)).toBe('/found.txt\n')
   })
 
   it('prints start points in operand order without a cross-root sort', async () => {
@@ -67,7 +75,7 @@ describe('generic command find', () => {
       Promise.resolve(root.virtual === '/sub' ? ['/sub/z.txt'] : ['/a.txt'])
     const result = await findGeneric([spec('/sub'), spec('/')], [], makeOpts(), perRoot)
     expect(result?.[1].exitCode).toBe(0)
-    expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/sub/z.txt\n/a.txt\n')
+    expect(DEC.decode(result?.[0] ?? undefined)).toBe('/sub/z.txt\n/a.txt\n')
   })
 
   // GNU findutils 4.10.0, pinned on debian:stable-slim:
@@ -87,10 +95,20 @@ describe('generic command find', () => {
       throw new Error('find op must not be called for a file start point')
     }
 
+    it.each([null, 0, 1])('-empty requires known zero size (%s)', async (size) => {
+      const result = await findGeneric(
+        [spec('/mnt/a.txt')],
+        [],
+        optsWith(new FileStat({ name: 'a.txt', type: FileType.FILE, size }), { empty: true }),
+        unreachedFind,
+      )
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe(size === 0 ? '/mnt/a.txt\n' : '')
+    })
+
     it('reports the file and never asks the backend to walk it', async () => {
       const result = await findGeneric([spec('/mnt/a.txt')], [], optsWith(fileStat), unreachedFind)
       expect(result?.[1].exitCode).toBe(0)
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/mnt/a.txt\n')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('/mnt/a.txt\n')
     })
 
     it.each([
@@ -104,7 +122,7 @@ describe('generic command find', () => {
         optsWith(fileStat),
         unreachedFind,
       )
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe(expected)
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe(expected)
     })
 
     it.each([
@@ -127,7 +145,7 @@ describe('generic command find', () => {
         optsWith(fileStat, flags),
         unreachedFind,
       )
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe(expected)
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe(expected)
     })
 
     it('prints the operand as typed, not the path it resolved to', async () => {
@@ -139,7 +157,7 @@ describe('generic command find', () => {
         rawPath: '/other/link.txt',
       })
       const result = await findGeneric([linked], [], optsWith(fileStat), unreachedFind)
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/other/link.txt\n')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('/other/link.txt\n')
     })
 
     // The probe answers on both channels a backend can offer, so null
@@ -155,7 +173,7 @@ describe('generic command find', () => {
       })
       const result = await findGeneric([root], [], optsWith(null), unreachedFind)
       expect(result?.[1].exitCode).toBe(1)
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('')
       expect(DEC.decode(result?.[1].stderr as Uint8Array)).toBe(
         "find: '/mnt/nope': No such file or directory\n",
       )
@@ -179,7 +197,7 @@ describe('generic command find', () => {
       expect(result?.[1].exitCode).toBe(0)
       // GNU lists the start point before descending, and this op reports
       // descendants only, so the row comes from the generic.
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/mnt/logs\n/mnt/logs/child.txt\n')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('/mnt/logs\n/mnt/logs/child.txt\n')
     })
 
     it('still walks a directory start point', async () => {
@@ -193,7 +211,7 @@ describe('generic command find', () => {
       const result = await findGeneric([root], [], optsWith(dirStat), () =>
         Promise.resolve(['/a.txt']),
       )
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/mnt\n/mnt/a.txt\n')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('/mnt\n/mnt/a.txt\n')
     })
   })
 
@@ -218,7 +236,7 @@ describe('generic command find', () => {
     it('is reported even though the listing is empty', async () => {
       const result = await findGeneric([root()], [], optsWith(dirStat), noRows)
       expect(result?.[1].exitCode).toBe(0)
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/mnt\n')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('/mnt\n')
     })
 
     it('matches -empty, answered by a listing rather than a guess', async () => {
@@ -230,7 +248,7 @@ describe('generic command find', () => {
         undefined,
         () => Promise.resolve(true),
       )
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/mnt\n')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('/mnt\n')
     })
 
     it('fails -empty when it has children', async () => {
@@ -242,7 +260,7 @@ describe('generic command find', () => {
         undefined,
         () => Promise.resolve(false),
       )
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('')
     })
 
     it('keeps the backend row when emptiness cannot be asked', async () => {
@@ -252,7 +270,7 @@ describe('generic command find', () => {
       const result = await findGeneric([root()], [], optsWith(dirStat, { empty: true }), () =>
         Promise.resolve(['/']),
       )
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('/mnt\n')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('/mnt\n')
     })
 
     it('is not empty when it holds only a namespace link', async () => {
@@ -277,7 +295,7 @@ describe('generic command find', () => {
       const result = await findGeneric([root()], [], opts, noRows, undefined, () =>
         Promise.resolve(true),
       )
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('')
     })
 
     it('replaces the backend row for the start point', async () => {
@@ -291,7 +309,7 @@ describe('generic command find', () => {
         undefined,
         () => Promise.resolve(true),
       )
-      expect(DEC.decode(result?.[0] as Uint8Array)).toBe('')
+      expect(DEC.decode(result?.[0] ?? undefined)).toBe('')
     })
   })
 
@@ -354,12 +372,13 @@ describe('generic command find', () => {
   })
 
   it.each([
-    ['maxdepth', 'abc', '-maxdepth'],
-    ['mindepth', 'xx', '-mindepth'],
-    ['size', '', '-size'],
-    ['size', 'abc', '-size'],
-    ['mtime', 'abc', '-mtime'],
-  ])('exits 1 with clean stderr for invalid %s=%s', async (flag, value, label) => {
+    ['maxdepth', 'abc', "find: invalid argument 'abc' to '-maxdepth'"],
+    ['mindepth', 'xx', "find: invalid argument 'xx' to '-mindepth'"],
+    ['size', '', 'find: invalid null argument to -size'],
+    ['size', 'abc', "find: Invalid argument `abc' to -size"],
+    ['size', '5x', "find: invalid -size type `x'"],
+    ['mtime', 'abc', "find: invalid argument 'abc' to '-mtime'"],
+  ])('exits 1 with clean stderr for invalid %s=%s', async (flag, value, message) => {
     const opts = {
       stdin: null,
       flags: { [flag]: value },
@@ -371,8 +390,23 @@ describe('generic command find', () => {
     const [out, io] = result as [Uint8Array | null, IOResult]
     expect(out).toBeNull()
     expect(io.exitCode).toBe(1)
-    expect(DEC.decode(io.stderr as Uint8Array)).toBe(
-      `find: invalid argument '${value}' to '${label}'\n`,
-    )
+    expect(DEC.decode(io.stderr as Uint8Array)).toBe(`${message}\n`)
   })
+})
+
+it('streams the start point before calling a native backend', async () => {
+  const result = await streamFind(
+    [spec('/remote')],
+    [],
+    optsWith({ name: 'remote', type: FileType.DIRECTORY } as FileStat),
+    () => {
+      throw new Error('must not fetch descendants')
+    },
+  )
+  if (result === null) throw new Error('find returned no result')
+  const out = result[0] as AsyncGenerator<Uint8Array, void>
+  const first = await out.next()
+  if (first.done) throw new Error('find returned no start point')
+  expect(DEC.decode(first.value)).toBe('/remote\n')
+  await out.return(undefined)
 })

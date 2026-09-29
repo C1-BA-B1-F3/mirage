@@ -15,7 +15,7 @@ async def test_search_op_delegates_to_core(monkeypatch):
 
     async def search_segments(accessor, query, paths, index, **kwargs):
         calls.append((query, paths, kwargs))
-        return b"result"
+        return b"result\n"
 
     monkeypatch.setattr(search, "search_segments", search_segments)
     paths = [
@@ -30,8 +30,10 @@ async def test_search_op_delegates_to_core(monkeypatch):
                              index=RAMIndexCacheStore(),
                              method="keyword")
 
-    assert result == b"result"
+    assert result == b"result\n"
     assert calls == [("query", paths, {
         "method": "keyword",
+        "top_k": 10,
+        "threshold": 0.0,
         "mount_prefix": ""
     })]

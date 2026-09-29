@@ -85,7 +85,6 @@ export async function read(
     accessor.config,
     accessor.loc(path.vfsPath),
     path.virtual,
-    path.vfsPath,
     'onedrive',
     options?.offset ?? 0,
     options?.size ?? null,
@@ -97,13 +96,7 @@ export async function* stream(
   path: PathSpec,
   _index?: IndexCacheStore,
 ): AsyncIterable<Uint8Array> {
-  yield* streamItem(
-    accessor.config,
-    accessor.loc(path.vfsPath),
-    path.virtual,
-    path.vfsPath,
-    'onedrive',
-  )
+  yield* streamItem(accessor.config, accessor.loc(path.vfsPath), path.virtual, 'onedrive')
 }
 
 export async function readdir(
@@ -161,7 +154,7 @@ export async function write(
 ): Promise<void> {
   const timer = startOp()
   await writeItem(accessor.config, accessor.loc(path.vfsPath), data)
-  record('write', path.vfsPath, 'onedrive', data.length, timer)
+  record('write', path.virtual, 'onedrive', data.length, timer)
   await invalidateAfterWrite(path)
 }
 

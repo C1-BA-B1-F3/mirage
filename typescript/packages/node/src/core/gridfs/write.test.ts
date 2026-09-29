@@ -30,6 +30,7 @@ import { write } from './write.ts'
 
 class FakeManager {
   writes: string[] = []
+  ancestors: string[] = []
 
   invalidateAfterWrite(path: PathSpec): Promise<void> {
     this.writes.push(path.mountPath)
@@ -40,8 +41,17 @@ class FakeManager {
     return Promise.resolve()
   }
 
+  invalidateAncestors(path: PathSpec): Promise<void> {
+    this.ancestors.push(path.virtual)
+    return Promise.resolve()
+  }
+
   invalidateSubtree(_path: PathSpec): Promise<void> {
     return Promise.resolve()
+  }
+
+  readThrough(_path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {
+    return fetch()
   }
 
   cachedBytes(_path: PathSpec): Promise<Uint8Array | null> {
@@ -97,7 +107,8 @@ describe('gridfs core write', () => {
     const { manager, keys } = await runWrite('/a/b/c.txt')
     expect(keys).toEqual(['a/b/c.txt'])
     // The upload materializes `a` and `a/b` too, so their listings are stale.
-    expect(manager.writes).toEqual(['/a/b/c.txt', '/a/b', '/a'])
+    expect(manager.writes).toEqual(['/a/b/c.txt'])
+    expect(manager.ancestors).toEqual(['/mnt/a/b/c.txt'])
   })
 
   it('invalidates only itself at the mount root', async () => {

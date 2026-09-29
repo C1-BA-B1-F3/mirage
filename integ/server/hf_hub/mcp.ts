@@ -21,28 +21,16 @@ import type { CallToolRequest, Tool } from '@modelcontextprotocol/sdk/types.js'
 import { Server as McpServer } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import {
-  DEFAULT_RUN,
   DEFAULT_TENANT,
-  resolveRun,
-  resolveTenant,
+  resolveIdentity,
   splitRunPath,
   DEFAULT_FIXTURE_ROOT,
-  Router,
   bindHost,
   start,
 } from '../kit/typescript/index.ts'
-import type {
-  Clock,
-  Ctx,
-  JsonValue,
-  Minter,
-  Reply,
-  Runtime,
-  Started,
-} from '../kit/typescript/index.ts'
+import type { Ctx, JsonValue, Reply, Runtime, Started } from '../kit/typescript/index.ts'
 import { KINDS, type C } from './config.ts'
 import { hfHubFake } from './fake.ts'
-import { hfHubRoutes } from './routes.ts'
 import {
   FS_INVALID,
   FS_BUDGET,
@@ -117,14 +105,11 @@ export function loadToolDoc(): ToolDoc {
 // at one world through one implementation, and a second code path that reads
 // the same tables is exactly how the two arms drift apart without anyone
 // noticing. The router here is the fake's own.
-const routes = hfHubRoutes()
-const router = new Router<C>(routes)
 
 interface Dispatch {
-  db: C
+  runtime: Runtime<C>
+  run: string
   tenant: string
-  clock: Clock
-  minter: Minter
 }
 
 async function callRoute(
@@ -137,25 +122,29 @@ async function callRoute(
   for (const [name, value] of Object.entries(query)) {
     for (const one of Array.isArray(value) ? value : [value]) url.searchParams.append(name, one)
   }
+  const router = at.runtime.router
   const hit = router.match(method, url.pathname)
   if (hit === null) return { status: 404, body: { error: `no route for ${method} ${path}` } }
-  const ctx: Ctx<C> = {
-    params: hit.params,
-    query: url.searchParams,
-    body: Buffer.alloc(0),
-    run: DEFAULT_RUN,
-    tenant: at.tenant,
-    runPrefix: '',
-    db: at.db,
-    clock: at.clock,
-    minter: at.minter,
-    // The routes authenticate off a bearer, and the tenant IS the token in this
-    // fake, so the tool arm presents the same credential the REST arm does.
-    headers: { authorization: `Bearer ${at.tenant}` },
-    url,
-    json: () => ({}),
-  }
-  return router.run(hit.spec, ctx)
+  return router.run(at.run, hit.spec.write, () => {
+    const state = at.runtime.state(at.run).of(at.tenant)
+    const ctx: Ctx<C> = {
+      params: hit.params,
+      query: url.searchParams,
+      body: Buffer.alloc(0),
+      run: at.run,
+      tenant: at.tenant,
+      runPrefix: '',
+      db: at.runtime.pool.client(at.run),
+      clock: state.clock,
+      minter: state.minter,
+      // The routes authenticate off a bearer, and the tenant IS the token in this
+      // fake, so the tool arm presents the same credential the REST arm does.
+      headers: { authorization: `Bearer ${at.tenant}` },
+      url,
+      json: () => ({}),
+    }
+    return hit.spec.handler(ctx)
+  })
 }
 
 function ok(reply: Reply): reply is Reply & { body: JsonValue } {
@@ -1623,8 +1612,7 @@ export const MCP_PATH = '/mcp'
 // a tool call and a REST read in the same run must see the same rows, and two
 // runtimes would be two SQLite files that silently diverge.
 export function mcpServerFor(runtime: Runtime<C>): Server {
-  const fallback = (hfHubFake.defaultTenants ?? [])[0] ?? DEFAULT_TENANT
-  const { tenantKind, tenantFromBearer, tenantTokenPattern } = hfHubFake.config
+  const fallback = (runtime.fake.defaultTenants ?? [])[0] ?? DEFAULT_TENANT
   const doc = loadToolDoc()
   return createServer((req, res) => {
     void (async () => {
@@ -1641,22 +1629,15 @@ export function mcpServerFor(runtime: Runtime<C>): Server {
         res.end(JSON.stringify({ error: 'not_found', path: url.pathname, expected: MCP_PATH }))
         return
       }
-      const run = resolveRun(req.headers, url, split.run)
-      const named = resolveTenant(
+      const { run, tenant: named } = resolveIdentity(
+        runtime.fake.config,
         req.headers,
         url,
-        tenantKind,
-        tenantFromBearer,
-        tenantTokenPattern,
+        split.run,
       )
       const tenant = named === DEFAULT_TENANT ? fallback : named
-      const state = runtime.state(run).of(tenant)
-      const at: Dispatch = {
-        db: runtime.pool.client(run),
-        tenant,
-        clock: state.clock,
-        minter: state.minter,
-      }
+      await runtime.router.settled(run)
+      const at: Dispatch = { runtime, run, tenant }
       const mcp = buildMcpServer(at, doc)
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,

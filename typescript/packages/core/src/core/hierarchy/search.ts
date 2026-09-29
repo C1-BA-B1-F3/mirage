@@ -12,18 +12,29 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { grepSearchOptions } from '../../commands/builtin/grep_pushdown.ts'
+import type { SearchQuery, SearchOp, StatOp } from '../../vfs/types.ts'
+
 import type { Accessor } from '../../accessor/base.ts'
-import type { ScopeMatch } from './scope.ts'
+import { compilePattern } from '../../commands/builtin/grep_pattern.ts'
+import { ROOT, type DetectFn, type ScopeMatch } from './scope.ts'
 
 /**
- * One qualified grep/rg push-down request: the resolved pattern list as the
- * line typed it, plus the flags a searcher may honor itself (-i, -F, -w).
+ * The matcher the generic scan would compile for this request. A searcher
+ * that has to decide a line itself (a candidate the service returned, or a
+ * line it rendered) decides it with this, so what it prints is what grep over
+ * the same file would print. Mirrors `query_matcher` in
+ * `mirage/core/hierarchy/search.py`.
  */
-export interface SearchQuery {
-  readonly pattern: string
-  readonly ignoreCase: boolean
-  readonly fixedString: boolean
-  readonly wholeWord: boolean
+export function queryMatcher(query: SearchQuery): RegExp {
+  const options = grepSearchOptions(query)
+  return compilePattern(
+    query.query,
+    options.ignoreCase,
+    options.fixedString,
+    options.wholeWord,
+    options.basic,
+  )
 }
 
 export type Searcher<A extends Accessor> = (
@@ -31,3 +42,18 @@ export type Searcher<A extends Accessor> = (
   match: ScopeMatch,
   query: SearchQuery,
 ) => Promise<string[]>
+
+/** Adapt scope-specific handlers; an unhandled scope requests a scan. */
+export function makeSearchOp<A extends Accessor>(
+  detect: DetectFn,
+  searchers: Readonly<Record<string, Searcher<A>>>,
+  stat?: StatOp<A>,
+): SearchOp<A> {
+  return async (accessor, path, query, index) => {
+    const match = detect(path)
+    const searcher = searchers[match.kind]
+    if (searcher === undefined) return null
+    if (stat !== undefined && match.kind !== ROOT) await stat(accessor, path, index)
+    return searcher(accessor, match, query)
+  }
+}

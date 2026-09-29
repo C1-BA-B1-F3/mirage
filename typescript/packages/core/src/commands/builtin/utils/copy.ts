@@ -15,7 +15,13 @@
 import { rekey } from '../../../utils/key_prefix.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { FileType, PathSpec, type StatFn } from '../../../types.ts'
-import { enoent, enotdir, isMissingPath } from '../../../utils/errors.ts'
+import { ELOOP_STRERROR, eloop, enoent, enotdir, isMissingPath } from '../../../utils/errors.ts'
+
+// The destination verdicts GNU meets at the destination's own stat, before
+// any create or rename: a plain file in its chain, or a link loop in it. cp
+// and mv both word them `cannot stat 'DST'` (coreutils 9.7). Mirrors
+// Python's STAT_REFUSALS.
+export const STAT_REFUSALS: ReadonlySet<string> = new Set(['Not a directory', ELOOP_STRERROR])
 import { rstripSlash } from '../../../utils/slash.ts'
 
 export type BackendKeyFn = (path: PathSpec) => string
@@ -43,6 +49,7 @@ export function copyTargets(
   dstErr: string | null = null,
 ): [PathSpec, PathSpec][] {
   if (sources.length > 1 && !dstIsDir) {
+    if (dstErr === ELOOP_STRERROR) throw eloop(`target '${dst.rawPath}'`)
     if (!dstExists && dstErr !== 'Not a directory') throw enoent(`target '${dst.rawPath}'`)
     throw enotdir(`target '${dst.rawPath}'`)
   }
@@ -50,10 +57,20 @@ export function copyTargets(
     const first = sources[0]
     return first === undefined ? [] : [[first, dst]]
   }
-  return sources.map((src): [PathSpec, PathSpec] => {
-    const name = rstripSlash(src.mountPath).split('/').pop() ?? ''
-    return [src, childPath(dst, name)]
-  })
+  return sources.map((src): [PathSpec, PathSpec] => [src, childPath(dst, landingName(src))])
+}
+
+/**
+ * The name a source lands under inside a directory destination. GNU names it
+ * after the operand as typed, so a link the router followed still lands under
+ * its own name (`cp al dir` makes `dir/al`, not `dir/a.txt`). `''`, `.` and
+ * `..` name no entry of their own, so they keep the name of what they resolve
+ * to. Mirrors Python's landing_name.
+ */
+export function landingName(src: PathSpec): string {
+  const typed = rstripSlash(src.rawPath).split('/').pop() ?? ''
+  if (typed !== '' && typed !== '.' && typed !== '..') return typed
+  return rstripSlash(src.mountPath).split('/').pop() ?? ''
 }
 
 export async function pathExists(stat: StatFn, path: PathSpec): Promise<boolean> {

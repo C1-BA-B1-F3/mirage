@@ -12,6 +12,10 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { CLISpec } from '../../commands/cli/types.ts'
+import { runWithSession } from '../../context/session_context.ts'
+import { SessionState } from '../../workspace/session/session.ts'
+import { IOResult } from '../../io/types.ts'
 import { describe, expect, it } from 'vitest'
 import { OpsRegistry } from '../../ops/registry.ts'
 import { MountMode, PathSpec, VFSName } from '../../types.ts'
@@ -253,5 +257,161 @@ describe('DevVFS auto-mount in Workspace', () => {
     expect(() => new Workspace({ '/dev': new DevVFS() }, { mode: MountMode.WRITE })).toThrow(
       /duplicate mount prefix/,
     )
+  })
+})
+
+it('keeps process substitution private while another session runs', async () => {
+  let readyResolve!: () => void
+  const ready = new Promise<void>((resolve) => {
+    readyResolve = resolve
+  })
+  let releaseResolve!: () => void
+  const release = new Promise<void>((resolve) => {
+    releaseResolve = resolve
+  })
+  const ws = await makeWs()
+  ws.createSession('owner')
+  ws.createSession('peer')
+  ws.registerCli(
+    'hold',
+    new CLISpec({
+      name: 'hold',
+      fn: async () => {
+        readyResolve()
+        await release
+        return [null, new IOResult()]
+      },
+    }),
+  )
+  const owner = ws.shell(
+    'consume() { ls /dev/fd >/dev/null; hold; cat "$1"; }; consume <(echo private)',
+    { sessionId: 'owner' },
+  )
+  try {
+    await ready
+    for (const command of [
+      'cat /dev/fd/63',
+      'stat /dev/fd/63',
+      'ls /dev/fd',
+      'echo corrupt > /dev/fd/63',
+      'rm /dev/fd/63',
+      'mkdir -p /dev/fd/63',
+      'mv /dev/fd /dev/stolen',
+    ]) {
+      const result = await ws.shell(command, { sessionId: 'peer' })
+      expect(result.exitCode, command).not.toBe(0)
+      expect(new TextDecoder().decode(result.stdout)).not.toContain('private')
+    }
+    expect(
+      new TextDecoder().decode((await ws.shell('cat <(echo peer)', { sessionId: 'peer' })).stdout),
+    ).toBe('peer\n')
+    releaseResolve()
+    const result = await owner
+    expect(result.exitCode).toBe(0)
+    expect(new TextDecoder().decode(result.stdout)).toBe('private\n')
+    expect(
+      new TextDecoder().decode((await ws.shell('ls /dev', { sessionId: 'owner' })).stdout),
+    ).not.toContain('fd')
+  } finally {
+    releaseResolve()
+    await owner
+    await ws.close()
+  }
+})
+
+it('preserves a reused descriptor when an earlier substitution finishes', async () => {
+  let oldReadyResolve!: () => void
+  const oldReady = new Promise<void>((resolve) => {
+    oldReadyResolve = resolve
+  })
+  let oldReleaseResolve!: () => void
+  const oldRelease = new Promise<void>((resolve) => {
+    oldReleaseResolve = resolve
+  })
+  let newReadyResolve!: () => void
+  const newReady = new Promise<void>((resolve) => {
+    newReadyResolve = resolve
+  })
+  let newReleaseResolve!: () => void
+  const newRelease = new Promise<void>((resolve) => {
+    newReleaseResolve = resolve
+  })
+  const ws = await makeWs()
+  ws.createSession('owner')
+  ws.createSession('peer')
+  ws.registerCli(
+    'hold-old',
+    new CLISpec({
+      name: 'hold-old',
+      fn: async () => {
+        oldReadyResolve()
+        await oldRelease
+        return [null, new IOResult()]
+      },
+    }),
+  )
+  ws.registerCli(
+    'hold-new',
+    new CLISpec({
+      name: 'hold-new',
+      fn: async () => {
+        newReadyResolve()
+        await newRelease
+        return [null, new IOResult()]
+      },
+    }),
+  )
+  const owner = ws.shell('consume() { echo "$1"; rm "$1"; hold-old; }; consume <(echo old)', {
+    sessionId: 'owner',
+  })
+  let peer: typeof owner | undefined
+  try {
+    await oldReady
+    peer = ws.shell('consume() { echo "$1"; hold-new; cat "$1"; }; consume <(echo new)', {
+      sessionId: 'peer',
+    })
+    await newReady
+    oldReleaseResolve()
+    const oldResult = await owner
+    expect(oldResult.exitCode).toBe(0)
+    expect(oldResult.stdoutText).toBe('/dev/fd/63\n')
+    newReleaseResolve()
+    const newResult = await peer
+    expect(newResult.exitCode).toBe(0)
+    expect(newResult.stdoutText).toBe('/dev/fd/63\nnew\n')
+    expect((await ws.shell('ls /dev/fd', { sessionId: 'peer' })).exitCode).not.toBe(0)
+  } finally {
+    oldReleaseResolve()
+    newReleaseResolve()
+    await owner
+    await peer
+    await ws.close()
+  }
+})
+
+it('rejects stale writes and releases after the same session reuses an input', async () => {
+  const dev = new DevVFS()
+  await runWithSession(new SessionState({ sessionId: 'owner' }), () => {
+    const [path, oldAllocation] = dev.allocateInput()
+    dev.store.files.delete(path.slice(4))
+    const [newPath, newAllocation] = dev.allocateInput()
+    expect(newPath).toBe(path)
+    const data = new TextEncoder().encode('new')
+    dev.setInput(newPath, newAllocation, data)
+    dev.store.modified.set(path.slice(4), '2026-09-23T00:00:00Z')
+    dev.store.attrs.set(path.slice(4), { mode: 0o600 })
+    expect(() => {
+      dev.setInput(path, oldAllocation, new Uint8Array())
+    }).toThrow()
+    dev.releaseInput(path, oldAllocation)
+    expect(dev.store.files.get(path.slice(4))).toEqual(data)
+    expect(dev.store.modified.get(path.slice(4))).toBe('2026-09-23T00:00:00Z')
+    expect(dev.store.attrs.get(path.slice(4))).toEqual({ mode: 0o600 })
+    dev.releaseInput(newPath, newAllocation)
+    dev.releaseInput(newPath, newAllocation)
+    expect(dev.store.files.has(path.slice(4))).toBe(false)
+    expect(dev.store.modified.has(path.slice(4))).toBe(false)
+    expect(dev.store.attrs.has(path.slice(4))).toBe(false)
+    return Promise.resolve()
   })
 })

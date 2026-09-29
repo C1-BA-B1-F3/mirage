@@ -1236,10 +1236,10 @@ def test_redirect_concat_target():
 
 
 def test_redirect_append():
-    """echo hello >> /data/out.txt → dispatch cat then tee."""
+    """Append routes through the op door without a content pre-read."""
     _, _, _, _, _, dispatch = _exec("echo hello >> /data/out.txt")
     ops = [c[0][0] for c in dispatch.call_args_list]
-    assert "write" in ops
+    assert ops == ["append"]
 
 
 def test_redirect_stdin():
@@ -1648,13 +1648,12 @@ def test_redirect_stderr_path():
 
 
 def test_redirect_append_var():
-    """echo x >> $LOG → expanded, cat+tee dispatched."""
+    """echo x >> $LOG → expanded, append dispatched."""
     _, _, _, _, _, dispatch = _exec("echo x >> $LOG",
                                     env={"LOG": "/data/app.log"})
     ops = [c[0][0] for c in dispatch.call_args_list]
-    assert "read" in ops
-    assert "write" in ops
-    write_calls = [c for c in dispatch.call_args_list if c[0][0] == "write"]
+    assert ops == ["append"]
+    write_calls = [c for c in dispatch.call_args_list if c[0][0] == "append"]
     assert write_calls[0][0][1].virtual == "/data/app.log"
 
 

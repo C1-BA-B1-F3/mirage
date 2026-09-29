@@ -49,8 +49,27 @@ YAML registration, constructor validation, snapshots and credentials, the
 `CLISpec` / `Option` / `Operand` reference, and an agent authoring checklist.
 
 Installed CLIs are self-discovering through `man`, `--help`, `type`, and
-`which`. Installation remains a host-side API, so an agent can use and inspect
-the programs it was given but cannot uninstall them.
+`which`: each has an executable file under `/usr/bin`, the directory `$PATH`
+names, so `which linear` prints `/usr/bin/linear`. Installation remains a
+host-side API, so an agent can use and inspect the programs it was given but
+cannot uninstall them.
+
+These are read-only virtual command stubs. Agents can use `cat`, `grep`,
+`head`, and `file` to inspect them. For example, `cat /usr/bin/linear`
+shows which kind of command runs and points to `linear --help`; it does
+not expose the implementation, account configuration, or credentials.
+Use `linear --help` or `man linear` for the command's interface.
+
+`ls -l`, `stat -c %s`, and `wc -c` report the stub's actual UTF-8 byte
+length, not the installed program's size or a zero-byte placeholder.
+Executing `/usr/bin/linear` dispatches the registered command with the
+same arguments and command policy checks. Only programs visible to the
+session are listed; shell-only builtins such as `cd` have no file.
+
+The virtual program directory is fixed at `/usr/bin`: changing `PATH`
+does not change Mirage's command catalog or lookup order. Host and remote
+runtimes use their own executable search paths; the default virtual
+`PATH` is not exported to them.
 
 ## Builtin CLIs
 
@@ -62,6 +81,7 @@ the programs it was given but cannot uninstall them.
 | [discord](/python/cli/discord)       | Discord          | OpenClaw Discord actions (`send`, `poll`, …)|
 | [ntn](/python/cli/ntn)               | Notion           | official Notion CLI (`pages`, `datasources`)|
 | [linear](/python/cli/linear)         | Linear           | noun/verb (`issue create`, `team list`)     |
+| [airtable](/python/cli/airtable)     | Airtable         | noun/verb (`record update`, `comment add`)  |
 | [gh](/python/cli/gh)                 | GitHub           | repositories, issues, pull requests, releases, Actions, API |
 | [git](/python/cli/git)               | git repositories | git (`status`, `log`, `add`, `commit`)      |
 

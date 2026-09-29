@@ -13,7 +13,6 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { DiskAccessor } from '../../accessor/disk.ts'
-import { readdir as fsReaddir } from 'node:fs/promises'
 import { IndexEntry, ResourceType } from '@struktoai/mirage-core/cache/index/config'
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import type { PathSpec } from '@struktoai/mirage-core/types'
@@ -21,7 +20,8 @@ import { enoent, enotdir } from '@struktoai/mirage-core/utils/errors'
 import { mountPrefixOf } from '@struktoai/mirage-core/utils/key_prefix'
 import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
-import { norm, resolveSafe } from './utils.ts'
+import { diskError } from './errors.ts'
+import { norm, readEntries, resolveInside } from './utils.ts'
 
 export async function readdir(
   accessor: DiskAccessor,
@@ -45,10 +45,12 @@ export async function readdir(
       return cached.entries
     }
   }
-  const full = resolveSafe(accessor.root, virtual)
+  const full = await resolveInside(accessor.root, path, virtual)
   let entries: string[]
   try {
-    entries = await fsReaddir(full)
+    // A host symlink is not an entry of the mount (see resolveInside).
+    const listed = await readEntries(full)
+    entries = listed.map((e) => e.name)
   } catch (err) {
     // The kernel already separates ENOENT (a component does not exist) from
     // ENOTDIR (a component exists but is not a directory); keep that split
@@ -57,7 +59,7 @@ export async function readdir(
     const code = (err as NodeJS.ErrnoException).code
     if (code === 'ENOTDIR') throw enotdir(path)
     if (code === 'ENOENT') throw enoent(path)
-    throw err
+    throw diskError(err, path)
   }
   const base = norm(virtual)
   const dirPrefix = base === '/' ? '/' : `${base}/`

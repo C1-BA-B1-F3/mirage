@@ -25,6 +25,7 @@ from mirage.runtime.python.monty.constants import (DEFAULT_PROG,
                                                    INCOMPLETE_MARKERS)
 from mirage.runtime.python.monty.osaccess import MirageOSAccess
 from mirage.runtime.types import EvalResult, EvalValue, RunArgs, RunResult
+from mirage.types import PathSpec
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,7 @@ class MontyExecution:
         # Monty has no `sys.stdin`, so piped bytes ride in as a global
         # the same way argv does: raw bytes, None when nothing was piped.
         inputs = {"argv": argv, "stdin": args.stdin}
+        cwd = args.cwd.virtual if args.cwd is not None else None
         try:
             async with pool.checkout() as session:
                 # Read the pid before the turn starts: the getter reports
@@ -96,6 +98,7 @@ class MontyExecution:
                     await session.feed_run(args.code,
                                            inputs=inputs,
                                            print_callback=collector,
+                                           cwd=cwd,
                                            os=bridge)
                 except asyncio.CancelledError:
                     _kill_worker(worker_pid)
@@ -124,7 +127,8 @@ class MontyExecution:
                    bridge: MirageOSAccess,
                    *,
                    inputs: dict[str, EvalValue] | None = None,
-                   session: str | None = None) -> EvalResult:
+                   session: str | None = None,
+                   cwd: PathSpec | None = None) -> EvalResult:
         """Evaluate code; the last expression is the value.
 
         One-shot mode checks a worker out for the feed and hands it
@@ -142,6 +146,8 @@ class MontyExecution:
             inputs (dict[str, EvalValue] | None): named globals.
             session (str | None): console session id, None for
                 one-shot.
+            cwd (PathSpec | None): initial virtual working directory;
+                existing console sessions retain their own directory.
 
         Raises:
             EvalError: the code failed to parse or raised; the
@@ -155,6 +161,7 @@ class MontyExecution:
         # one-shot arm hands its worker back as soon as the feed ends
         # while a console session keeps its own until close().
         one_shot = repl is None and session is None
+        initial_cwd = cwd.virtual if repl is None and cwd is not None else None
         if repl is None:
             repl = await pool.checkout().__aenter__()
             if session is not None:
@@ -164,6 +171,7 @@ class MontyExecution:
             value = await repl.feed_run(code,
                                         inputs=dict(inputs or {}),
                                         print_callback=collector,
+                                        cwd=initial_cwd,
                                         os=bridge)
         except asyncio.CancelledError:
             # Same reclaim as run(): cancelling the await leaves the

@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { runSearch } from '../search.ts'
+
 import { rgGeneric } from '../../generic/rg.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
 
@@ -19,6 +21,7 @@ export const RG_BUILDER: Builder = {
   name: 'rg',
   read: true,
   fn: async (ops, accessor, paths, texts, opts) => {
+    if (ops.search !== undefined) return runSearch(ops, 'rg', accessor, paths, texts, opts)
     const idx = opts.index ?? undefined
     const resolved = paths.length > 0 ? await resolveGlobOf(ops)(accessor, paths, idx) : []
     return rgGeneric(

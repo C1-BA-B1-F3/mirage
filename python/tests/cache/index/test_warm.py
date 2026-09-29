@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -9,6 +10,7 @@ from redis.asyncio import Redis
 from mirage.cache.index.config import IndexEntry, LookupStatus
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.index.redis import RedisIndexCacheStore
+from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.index.warm import entry_or_warm
 from mirage.utils.errors import enoent, enotdir
 
@@ -20,6 +22,19 @@ def entry_for(entry_id: str) -> IndexEntry:
                       name="notes",
                       resource_type="gdocs",
                       vfs_name="notes.json")
+
+
+@pytest.mark.asyncio
+async def test_custom_store_default_partial_write_drops_complete_membership():
+    index = RAMIndexCacheStore()
+    await index.set_dir("/owned", [("old.json", entry_for("old"))])
+    # A custom store can inherit the base implementation until it supports
+    # freshness for partial directories itself.
+    await IndexCacheStore.set_partial_dir(index, "/owned",
+                                          [("notes.json", entry_for("new"))])
+    assert (await index.list_dir("/owned")).entries is None
+    assert (await index.get("/owned/old.json")).entry is None
+    assert (await index.get(KEY)).entry.id == "new"
 
 
 @pytest.mark.asyncio
@@ -164,6 +179,53 @@ async def orphan_index(request):
         await index.close()
         if client is not None:
             await client.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stale",
+                         ["expired", "directory", "prefix", "all", "clear"])
+async def test_partial_membership_is_positive_only_and_expires(
+        orphan_index, stale):
+    index = orphan_index
+    calls = []
+
+    async def warm():
+        calls.append(1)
+        await index.set_partial_dir("/owned",
+                                    [("notes.json", entry_for("new"))])
+
+    await index.set_dir("/owned", [("other.json", entry_for("old"))])
+    await index.set_partial_dir("/owned",
+                                [("notes.json", entry_for("current"))])
+    listing = await index.list_dir("/owned")
+    assert listing.entries is None
+    assert listing.partial_entries == [KEY]
+    assert (await entry_or_warm(index, KEY, warm)).id == "current"
+    assert calls == []
+    # An omitted row is not a negative cache hit, nor is retained metadata
+    # proof of membership in the current page.
+    assert await entry_or_warm(index, "/owned/other.json", warm) is None
+    assert calls == [1]
+    if stale == "expired":
+        await index.set_partial_dir(
+            "/owned", [("notes.json", entry_for("old"))],
+            expired_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+    elif stale == "directory":
+        await index.invalidate_dir("/owned")
+    elif stale == "prefix":
+        await index.invalidate_prefix("/owned")
+    elif stale == "all":
+        await index.invalidate()
+    else:
+        await index.clear()
+    assert (await entry_or_warm(index, KEY, warm)).id == "new"
+    assert calls == [1, 1]
+    assert (await entry_or_warm(index, KEY, warm)).id == "new"
+    assert calls == [1, 1]
+    await index.set_dir("/owned", [])
+    assert (await index.list_dir("/owned")).partial_entries is None
+    assert await entry_or_warm(index, KEY, warm) is None
+    assert calls == [1, 1]
 
 
 @pytest.mark.asyncio

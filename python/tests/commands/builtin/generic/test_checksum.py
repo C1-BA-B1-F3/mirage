@@ -12,10 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import hashlib
+
 import pytest
 
 from mirage.commands.builtin.generic.checksum import checksum
-from mirage.types import PathSpec
+from mirage.types import MountMode, PathSpec
+from mirage.vfs.ram import RAMVFS
+from mirage.workspace import Workspace
 
 
 class _FakeDigest:
@@ -307,3 +311,37 @@ async def test_check_status_keeps_missing_list_strerror():
     assert stdout == ""
     assert stderr == "md5sum: /nope.txt: No such file or directory\n"
     assert code == 1
+
+
+async def _shell(line: str,
+                 stdin: bytes | None = None) -> tuple[str, str, int]:
+    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
+                   mode=MountMode.WRITE)
+    await ws.shell("tee /data/a.txt > /dev/null", stdin=b"hello\n")
+    r = await ws.shell(line, stdin=stdin)
+    out = await r.materialize_stdout() or b""
+    err = await r.materialize_stderr() or b""
+    return out.decode(), err.decode(), r.exit_code
+
+
+@pytest.mark.asyncio
+async def test_dash_and_dev_stdin_hash_stdin_under_their_own_names():
+    # One stdin: the second operand reads what the first left, nothing.
+    first = hashlib.sha256(b"a\nb\n").hexdigest()
+    empty = hashlib.sha256(b"").hexdigest()
+    assert await _shell("sha256sum - /dev/stdin",
+                        b"a\nb\n") == (f"{first}  -\n{empty}  /dev/stdin\n",
+                                       "", 0)
+
+
+@pytest.mark.asyncio
+async def test_check_with_no_operand_reads_the_list_from_stdin():
+    assert await _shell("cd /data && sha256sum a.txt | sha256sum -c") == (
+        "a.txt: OK\n", "", 0)
+
+
+@pytest.mark.asyncio
+async def test_a_stdin_list_is_called_standard_input():
+    assert await _shell("sha256sum -c -", b"junk\n") == (
+        "", "sha256sum: 'standard input': no properly formatted checksum "
+        "lines found\n", 1)

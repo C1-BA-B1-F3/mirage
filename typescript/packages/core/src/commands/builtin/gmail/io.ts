@@ -12,18 +12,16 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { GmailAccessor } from '../../../accessor/gmail.ts'
 import { read as gmailRead } from '../../../core/gmail/read.ts'
 import { readdir as gmailReaddir } from '../../../core/gmail/readdir.ts'
 import { stat as gmailStat } from '../../../core/gmail/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
-import { streamFromBytes } from '../utils/wrap.ts'
 
-export const GMAIL_IO: CommandIO<GmailAccessor> = {
-  readdir: gmailReaddir,
-  readBytes: gmailRead,
-  readStream: (a, p, i) => streamFromBytes(gmailRead, a, p, i),
-  stat: gmailStat,
+export const GMAIL_IO: CommandIO<GmailAccessor> = new VFSAdapter<GmailAccessor>({
+  read: { readdir: gmailReaddir, readBytes: gmailRead, stat: gmailStat },
   isMounted: () => true,
   local: false,
-}
+}).toCommandIO()

@@ -4,6 +4,7 @@
       "id": "find_arg_mtime",
       "seq": 320003,
       "targets": [
+        "argerr-airtable",
         "argerr-databricks",
         "argerr-discord",
         "argerr-email",
@@ -31,6 +32,7 @@
       "id": "find_arg_mtime_trailing",
       "seq": 320007,
       "targets": [
+        "argerr-airtable",
         "argerr-databricks",
         "argerr-discord",
         "argerr-email",

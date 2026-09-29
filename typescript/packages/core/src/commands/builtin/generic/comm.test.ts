@@ -48,3 +48,18 @@ describe('commGeneric', () => {
     expect(DEC.decode(await materialize(io.stderr))).toBe('comm: file 1 is not in sorted order\n')
   })
 })
+
+describe('commGeneric with stdin', () => {
+  it('reads a dash operand from stdin', async () => {
+    const dash = new PathSpec({ virtual: '/-', directory: '/', vfsPath: '-', rawPath: '-' })
+    const result = await commGeneric(
+      [dash, PathSpec.fromStrPath('/right.txt')],
+      { ...opts({}), stdin: ENC.encode('apple\nzebra\n') },
+      stream,
+    )
+    if (result === null) throw new Error('comm returned nothing')
+    const [out, io] = result
+    expect(io.exitCode).toBe(0)
+    expect(DEC.decode(await materialize(out))).toBe('apple\n\tb\n\tc\nzebra\n')
+  })
+})

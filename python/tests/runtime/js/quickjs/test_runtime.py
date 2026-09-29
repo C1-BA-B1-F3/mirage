@@ -25,6 +25,7 @@ from mirage.runtime.js import QuickJsRuntime
 from mirage.runtime.js.quickjs import QUICKJS_HOME_ENV
 from mirage.runtime.types import RunArgs
 from mirage.runtime.wasm import WasmVFS
+from mirage.types import PathSpec
 from mirage.vfs.ram import RAMVFS
 
 
@@ -310,3 +311,36 @@ async def test_eval_failures_raise_eval_error():
 
 def test_reach_is_vfs():
     assert QuickJsRuntime.reach == "workspace"
+
+
+@live
+@pytest.mark.asyncio
+async def test_cwd_inherits_context_and_eval_is_isolated():
+    runtime = QuickJsRuntime()
+    ws = Workspace({"/data": RAMVFS()},
+                   mode=MountMode.EXEC,
+                   runtimes=[runtime, "workspace"])
+    try:
+        assert (
+            await
+            ws.shell("mkdir /data/sub; echo child > /data/sub/item; cd /data")
+        ).exit_code == 0
+        args = RunArgs(code="console.log(os.getcwd()[0])")
+        assert (await runtime.run(args)).stdout == b"/data\n"
+        explicit = await runtime.run(
+            RunArgs(code=args.code, cwd=PathSpec.from_str_path("/data/sub")))
+        assert explicit.stdout == b"/data/sub\n"
+        assert (await runtime.eval(
+            "os.chdir('sub'); std.open('item', 'r').readAsString()")
+                ).value == "child\n"
+        assert (await runtime.eval("os.getcwd()[0]")).value == "/data"
+        assert (await runtime.eval("os", inputs={"os": 42})).value == 42
+        bad = await runtime.run(
+            RunArgs(code="console.log('must not run')",
+                    cwd=PathSpec.from_str_path("/missing")))
+        assert bad.exit_code == 1
+        assert bad.stdout == b""
+        assert b"cannot change directory" in bad.stderr
+        assert (await runtime.eval("os.getcwd()[0]")).value == "/data"
+    finally:
+        await ws.close()

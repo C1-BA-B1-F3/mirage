@@ -32,6 +32,6 @@ export async function writeBytes(
   await checkWriteTarget(store, path, p)
   await store.setFile(p, data)
   await store.setModified(p, nowIso())
-  record('write', p, VFSName.REDIS, data.byteLength, timer)
+  record('write', path.virtual, VFSName.REDIS, data.byteLength, timer)
   await invalidateAfterWrite(p)
 }

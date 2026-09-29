@@ -58,8 +58,12 @@ export class PyodideExecution {
   constructor(
     private readonly pyodide: PyodideInterface,
     xattr: XattrCall = NO_XATTRS,
+    subprocess: (payload: string) => string = () => {
+      throw new Error('subprocess requires a Pyodide worker with shared memory')
+    },
   ) {
     pyodide.registerJsModule('_mirage_xattr', { call: xattr })
+    pyodide.registerJsModule('_mirage_process', { run: subprocess })
     this.namespace = pyodide.toPy({ __name__: '_mirage_pyodide' }) as PyNamespace
     try {
       pyodide.runPython(source, { globals: this.namespace, filename: 'mirage/execution.py' })
@@ -86,8 +90,9 @@ export class PyodideExecution {
   evaluate(
     code: string,
     inputs: Record<string, EvalValue>,
+    cwd = '',
   ): [string, Uint8Array, Uint8Array, boolean, boolean] {
-    const [value, stdout, stderr, ok, syntax] = this.call('evaluate', code, inputs) as [
+    const [value, stdout, stderr, ok, syntax] = this.call('evaluate', code, inputs, cwd) as [
       string,
       number[],
       number[],
@@ -101,8 +106,9 @@ export class PyodideExecution {
     code: string,
     session: string,
     inputs: Record<string, EvalValue>,
+    cwd = '',
   ): [Uint8Array, Uint8Array, number, EvalStatus] {
-    const [stdout, stderr, exitCode, status] = this.call('repl', code, session, inputs) as [
+    const [stdout, stderr, exitCode, status] = this.call('repl', code, session, inputs, cwd) as [
       number[],
       number[],
       number,

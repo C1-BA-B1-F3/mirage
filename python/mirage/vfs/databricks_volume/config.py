@@ -20,7 +20,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class DatabricksVolumeConfig(BaseModel):
     model_config = ConfigDict(frozen=True,
                               populate_by_name=True,
-                              serialize_by_alias=True)
+                              serialize_by_alias=True,
+                              extra="forbid")
 
     catalog: str
     # Public config key is still "schema"

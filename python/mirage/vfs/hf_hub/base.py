@@ -55,6 +55,7 @@ class HfHubVFS(BaseVFS, Generic[A]):
     # this off the source, and an imported name reads as unresolvable.
     index_ttl: float = 86_400
     supports_snapshot: bool = True
+    read_revalidatable: bool = True
 
     def __init__(self, config: Any) -> None:
         super().__init__()
@@ -72,6 +73,3 @@ class HfHubVFS(BaseVFS, Generic[A]):
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)
-
-    def load_state(self, state: dict[str, Any]) -> None:
-        pass

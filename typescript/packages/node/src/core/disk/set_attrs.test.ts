@@ -117,3 +117,18 @@ describe('core/disk setAttrs', () => {
     expect(s.mode).toBe(0o601)
   })
 })
+
+// A path under a plain file is ENOTDIR on the real filesystem, stamped with
+// the virtual path: Node's own message names the host path, which must never
+// reach a diagnostic. Mirrors the disk tests in python/tests/core/disk.
+describe('core/disk/set_attrs under a plain file', () => {
+  it('is ENOTDIR against the virtual path', async () => {
+    await writeFile(join(root, 'a.txt'), 'a')
+    const err: unknown = await setAttrs(accessor, spec('/a.txt/x'), { mode: 0o644 }).then(
+      () => null,
+      (e: unknown) => e,
+    )
+    expect(err).toMatchObject({ code: 'ENOTDIR', virtualPath: '/a.txt/x' })
+    expect((err as Error).message).not.toContain(root)
+  })
+})

@@ -15,7 +15,7 @@
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { PathSpec } from '../../types.ts'
 import { ancestors } from '../../utils/path.ts'
-import { eexist, eisdir, enoent, enotdir } from '../../utils/errors.ts'
+import { eexist, eisdir, enoent, enotdir, type FsError } from '../../utils/errors.ts'
 import { mountedPath } from '../../utils/key_prefix.ts'
 
 // Reject a destination whose parent chain is not all directories. Mirrors how
@@ -28,11 +28,28 @@ import { mountedPath } from '../../utils/key_prefix.ts'
 // creates parents (that is `mkdir -p`), so all owe the destination the same
 // probe. The real-filesystem backends get this from the kernel.
 export function checkDestParents(accessor: RAMAccessor, dst: PathSpec, d: string): void {
-  for (const ancestor of ancestors(d)) {
+  const broken = brokenParent(accessor, dst, d)
+  if (broken !== null) throw broken
+}
+
+// The error a lookup of a key the store does not hold answers with.
+// open(2) and stat(2) resolve a path one component at a time and stop at the
+// first that is not a directory, so a plain file above the key is ENOTDIR
+// (`cat a.txt/x` is "Not a directory") and a missing component, or a key that
+// is simply absent, is ENOENT. It is the walk checkDestParents makes for a
+// destination, so a read, a stat and a write of one path agree on its errno.
+// Mirrors lookup_error in dest.py.
+export function lookupError(accessor: RAMAccessor, spec: PathSpec, key: string): FsError {
+  return brokenParent(accessor, spec, key) ?? enoent(spec)
+}
+
+function brokenParent(accessor: RAMAccessor, spec: PathSpec, key: string): FsError | null {
+  for (const ancestor of ancestors(key)) {
     if (accessor.store.dirs.has(ancestor)) continue
-    if (accessor.store.files.has(ancestor)) throw enotdir(dst)
-    throw enoent(dst)
+    if (accessor.store.files.has(ancestor)) return enotdir(spec)
+    return enoent(spec)
   }
+  return null
 }
 
 // Reject a `mkdir` the store cannot satisfy. The companion of

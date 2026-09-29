@@ -17,6 +17,8 @@ from mirage.commands.builtin.discord.head import head
 from mirage.commands.builtin.discord.io import IO as _IO
 from mirage.commands.builtin.discord.rg import rg
 from mirage.commands.builtin.generic_bind import make_generic_commands
+from mirage.commands.builtin.generic_bind.provision import \
+    with_default_provisions
 
 COMMANDS = [
     *make_generic_commands(
@@ -24,7 +26,6 @@ COMMANDS = [
         _IO,
         overrides={"grep", "rg", "head"},
     ),
-    grep,
-    rg,
-    head,
+    *with_default_provisions([grep, rg, head], _IO.stat, _IO.resolve_glob,
+                             _IO.readdir),
 ]

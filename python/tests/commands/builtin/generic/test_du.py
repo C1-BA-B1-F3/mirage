@@ -5,12 +5,13 @@ from mirage.commands.builtin.generic.du import (DuFlags, _depth, du,
                                                 parse_depth, parse_flags,
                                                 rollup, run_du, separate_total,
                                                 to_virtual)
-from mirage.commands.builtin.generic_bind import CommandIO, DuOps
+from mirage.commands.builtin.generic_bind import CommandIO
 from mirage.commands.errors import UsageError
 from mirage.ops.types import LinkView, MountView
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
+from mirage.vfs.types import DuOps
 
 
 async def _ok(value):
@@ -822,13 +823,15 @@ async def test_du_on_a_directory_implied_only_by_a_link_below_it():
 
     ``namespace_names`` synthesizes a directory for a link's ancestors
     too, so the mount table alone is not enough evidence; the probe that
-    answers here is the one that asks the namespace as a whole.
+    answers here is the one that asks the namespace as a whole. ``ln``
+    refuses a link under an absent directory, so the link is seeded the
+    way a node table restored from an older snapshot holds one.
     """
     ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
     ws.create_session("s")
     await ws.shell("mkdir -p /real", session_id="s")
     await ws.shell("echo hi > /real/f.txt", session_id="s")
-    await ws.shell("ln -s /real/f.txt /ghost/deep/lnk", session_id="s")
+    await ws.namespace.symlink("/ghost/deep/lnk", "/real/f.txt", 0.0)
     result = await ws.shell("du /ghost", session_id="s")
     assert await result.stderr_str() == ""
     assert result.exit_code == 0

@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { pathRulesActive } from '../../../../context/session_context.ts'
-import { isEacces, isMissingPath } from '../../../../utils/errors.ts'
+import { isEacces, isEnotdir, isMissingPath } from '../../../../utils/errors.ts'
 import { mountKey, mountPrefixOf, rekey } from '../../../../utils/key_prefix.ts'
 import type { Accessor } from '../../../../accessor/base.ts'
 import type { IndexCacheStore } from '../../../../cache/index/store.ts'
@@ -23,9 +23,9 @@ import {
   DEFAULT_MAX_DU_ENTRIES,
   type ComputeEntries,
   type ComputeSize,
-  type DuEntries,
   runDu,
 } from '../../generic/du.ts'
+import { type DuEntries } from '../../../../vfs/types.ts'
 import { type Builder, type CommandIO, resolveGlobOf } from '../adapter.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 
@@ -67,7 +67,8 @@ class WalkBudget {
  *
  * Absence counts as zero, because an entry listed a moment ago can be
  * gone by the time the walk reaches it; `isMissingPath` is that set (a
- * stamped ENOENT, or a path outside every mount). A refusal counts as
+ * stamped ENOENT, or a path outside every mount), with ENOTDIR for one
+ * whose directory became a plain file meanwhile. A refusal counts as
  * zero too, but never silently: GNU `du` skips what it cannot read,
  * names it on stderr and exits 1, so the path is recorded here for the
  * generic to report. Everything else -- a 429, a 5xx, an aborted line --
@@ -90,7 +91,7 @@ function accountForWalkError(err: unknown, path: PathSpec, budget: WalkBudget): 
     budget.unreadable.push(path.virtual)
     return
   }
-  if (!isMissingPath(err)) throw err
+  if (!isMissingPath(err) && !isEnotdir(err)) throw err
 }
 
 async function duWalk(

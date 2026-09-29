@@ -130,11 +130,10 @@ export async function applyReset<C extends MinimalClient>(
     return out
   }
   if (scoped && fresh) {
-    const template = await pool.seededTemplate(templateKey(req), seedInto)
-    const made = pool.clientFromSeeded(req.run, template)
+    const { client: made, rows } = await pool.clientFromSeeded(req.run, templateKey(req), seedInto)
     const st = state(req.run)
     // Marked right after the copy, because the copy IS the seed here. Reached
-    // only once seededTemplate has resolved, so a template build that threw
+    // only once clientFromSeeded has resolved, so a template build that threw
     // leaves every tenant unmarked exactly as a failed seed does.
     for (const tenant of req.tenants) {
       st.reset(tenant, req.epoch)
@@ -150,7 +149,7 @@ export async function applyReset<C extends MinimalClient>(
       epoch: req.epoch ?? null,
       scoped,
       tenants: req.tenants,
-      seeded: template.rows,
+      seeded: rows,
     }
   }
   const db = scoped ? pool.client(req.run) : await pool.recreate(req.run)

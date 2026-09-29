@@ -12,28 +12,33 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdirSync } from 'node:fs'
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import {
   chmod,
   mkdir,
-  readdir,
   readFile,
   stat as fsStat,
   statfs as fsStatfs,
   writeFile,
 } from 'node:fs/promises'
+import { mkdirSync } from 'node:fs'
 import path from 'node:path'
+
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
-import { CapacityState, VFSName } from '@struktoai/mirage-core/types'
+
+import { CapacityState, PathSpec, VFSName } from '@struktoai/mirage-core/types'
 import type { CapacityResult } from '@struktoai/mirage-core/types'
+
 import { DISK_COMMANDS } from '../../commands/builtin/disk/index.ts'
+
+import { readEntries, resolveInside } from '../../core/disk/utils.ts'
 import { DiskAccessor } from '../../accessor/disk.ts'
 import { DISK_OPS } from '../../ops/disk/index.ts'
 import { DISK_PROMPT } from './prompt.ts'
 import { type DeltaHook } from '@struktoai/mirage-core/watch/index'
 import { buildDeltaHook } from '../../core/disk/watch/index.ts'
+
 export interface DiskVFSOptions {
   root: string
 }
@@ -44,12 +49,12 @@ export interface DiskVFSState {
   modes?: Record<string, number>
 }
 
-async function walkFiles(root: string, current: string, out: string[]): Promise<void> {
-  const entries = await readdir(current, { withFileTypes: true })
+async function walkFiles(current: string, out: string[]): Promise<void> {
+  const entries = await readEntries(current)
   for (const e of entries) {
     const child = path.join(current, e.name)
     if (e.isDirectory()) {
-      await walkFiles(root, child, out)
+      await walkFiles(child, out)
     } else if (e.isFile()) {
       out.push(child)
     }
@@ -65,6 +70,7 @@ export class DiskVFS extends BaseVFS {
   override readonly prompt = DISK_PROMPT
   readonly root: string
   override readonly accessor: DiskAccessor
+
   constructor(options: DiskVFSOptions) {
     super()
     this.root = path.resolve(options.root)
@@ -77,6 +83,7 @@ export class DiskVFS extends BaseVFS {
   override storageLocation(): string {
     return `${this.name}:${this.root}`
   }
+
   // A real filesystem reports real numbers (QUOTA). GNU df: used counts
   // reserved blocks (blocks - bfree), available excludes them (bavail).
   override async capacity(): Promise<CapacityResult> {
@@ -100,15 +107,17 @@ export class DiskVFS extends BaseVFS {
   override commands(): readonly RegisteredCommand[] {
     return DISK_COMMANDS
   }
+
   override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
   }
+
   override async getState(): Promise<DiskVFSState> {
     await mkdir(this.root, { recursive: true })
     const files: Record<string, Uint8Array> = {}
     const modes: Record<string, number> = {}
     const fileList: string[] = []
-    await walkFiles(this.root, this.root, fileList)
+    await walkFiles(this.root, fileList)
     for (const full of fileList) {
       const rel = path.relative(this.root, full).split(path.sep).join('/')
       const data = await readFile(full)
@@ -128,7 +137,8 @@ export class DiskVFS extends BaseVFS {
   override async loadState(state: DiskVFSState): Promise<void> {
     await mkdir(this.root, { recursive: true })
     for (const [rel, data] of Object.entries(state.files)) {
-      const full = path.join(this.root, rel)
+      if (path.isAbsolute(rel)) throw new Error(`snapshot path must be relative: ${rel}`)
+      const full = await resolveInside(this.root, PathSpec.fromStrPath('/' + rel), rel)
       await mkdir(path.dirname(full), { recursive: true })
       await writeFile(full, data)
       const mode = state.modes?.[rel]

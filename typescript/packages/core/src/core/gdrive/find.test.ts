@@ -70,10 +70,10 @@ describe('gdrive core find', () => {
     expect(out).toEqual(['/', '/Report.gdoc.json', '/a.txt', '/sub'])
   })
 
-  it('size bounds treat directories as zero', async () => {
+  it('size bounds treat a directory as DIR_SIZE bytes', async () => {
     seedTree()
-    expect(await find(accessor, spec('/sub'), { minSize: 1024 })).toEqual(['/sub/big.bin'])
-    expect(await find(accessor, spec('/sub'), { maxSize: 100 })).toEqual(['/sub', '/sub/small.bin'])
+    expect(await find(accessor, spec('/sub'), { minSize: 1024 })).toEqual(['/sub', '/sub/big.bin'])
+    expect(await find(accessor, spec('/sub'), { maxSize: 100 })).toEqual(['/sub/small.bin'])
   })
 
   it('a missing root returns nothing', async () => {

@@ -12,14 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from dataclasses import replace
 from functools import partial
 
 import pytest
 
 from mirage import MountMode, Workspace
 from mirage.accessor.base import Accessor
+from mirage.accessor.ram import RAMAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.generic_bind import CommandIO
+from mirage.commands.builtin.ram.io import IO as RAM_IO
 from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.commands.config import command
 from mirage.commands.spec import CommandSpec
@@ -29,7 +32,10 @@ from mirage.ops.registry import RegisteredOp
 from mirage.types import (CapacityState, ContentType, FileStat, FileType,
                           PathSpec, ReadPolicy, ReadSpec)
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.ram.ram import RAMVFS
+from mirage.vfs.ram.store import RAMStore
 from mirage.workspace.mount.read_policy import check_read_capability
+from tests.fixtures.driver_ops import ops
 
 PAGES = {
     "guides": {
@@ -200,10 +206,11 @@ def test_generic_commands_registered():
     assert {"ls", "cat", "grep", "find", "head", "wc"} <= names
 
 
-def test_write_commands_absent_without_write_op():
+def test_write_commands_register_without_write_op():
+    # Their read-only modes (`tee` with no operand, `gzip -c`) run on a
+    # backend without writes; a line that writes answers ENOTSUP there.
     names = command_names(make_vfs())
-    assert "tee" not in names
-    assert "rm" not in names
+    assert {"tee", "rm", "gzip", "tar"} <= names
 
 
 def test_overrides_suppress_generic():
@@ -329,3 +336,101 @@ def test_a_script_registered_vfs_is_named_in_the_read_refusal():
     with pytest.raises(ValueError) as exc:
         check_read_capability("/w/", vfs, ReadSpec(policy=ReadPolicy.FRESH))
     assert "wiki does not" in str(exc.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flag", ["-r", "-rv", "-rf", "-d"])
+@pytest.mark.parametrize("mode", [MountMode.READ, MountMode.WRITE])
+async def test_missing_directory_removal_continues_to_later_operands(
+        flag, mode):
+    store = RAMStore()
+    store.dirs.add("/empty")
+    store.files["/file"] = b"keep"
+    vfs = BaseVFS(name="custom",
+                  accessor=RAMAccessor(store),
+                  io=replace(RAM_IO, rm_r=None, rmdir=None))
+    ws = Workspace({"/custom": (vfs, mode)})
+    try:
+        result = await ws.shell(f"rm {flag} /custom/empty /custom/file")
+        reason = ("Read-only file system"
+                  if mode == MountMode.READ else "Operation not supported")
+        expected = f"rm: cannot remove '/custom/empty': {reason}\n"
+        if mode == MountMode.READ:
+            expected += ("rm: cannot remove '/custom/file': "
+                         "Read-only file system\n")
+        assert result.exit_code == 1
+        assert result.stderr.decode() == expected
+        assert "/empty" in store.dirs
+        assert ("/file" in store.files) == (mode == MountMode.READ)
+        assert await result.stdout_str() == (
+            "removed '/custom/file'\n"
+            if flag == "-rv" and mode == MountMode.WRITE else "")
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags", ["-r", "-rv", "-r --update=all", "-r -n"])
+async def test_custom_vfs_copies_without_native_copy(flags):
+    store = RAMStore()
+    store.dirs.update({"/src", "/src/empty", "/src/sub"})
+    store.files["/src/sub/file"] = b"payload"
+    vfs = BaseVFS(name="custom",
+                  accessor=RAMAccessor(store),
+                  io=replace(RAM_IO, copy=None, find=None))
+    ws = Workspace({"/custom": vfs}, mode=MountMode.WRITE)
+    try:
+        result = await ws.shell(f"cp {flags} /custom/src /custom/dst")
+        assert (result.exit_code, result.stderr or b"") == (0, b"")
+        assert store.files["/dst/sub/file"] == b"payload"
+        assert {"/dst", "/dst/empty", "/dst/sub"} <= store.dirs
+        result = await ws.shell("cp /custom/src/sub/file /custom/plain")
+        assert (result.exit_code, result.stderr or b"") == (0, b"")
+        assert store.files["/plain"] == b"payload"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags",
+                         ["-r", "-r --update=older", "-r -n", "-r --backup"])
+@pytest.mark.parametrize("mode", [MountMode.READ, MountMode.WRITE])
+async def test_unavailable_copy_does_not_create_directories(flags, mode):
+    store = RAMStore()
+    store.dirs.update({"/src", "/src/empty"})
+    store.files["/src/file"] = b"payload"
+    before = set(store.dirs)
+    vfs = BaseVFS(name="custom",
+                  accessor=RAMAccessor(store),
+                  io=replace(RAM_IO, copy=None, write=None))
+    ws = Workspace({"/custom": (vfs, mode)})
+    try:
+        result = await ws.shell(f"cp {flags} /custom/src /custom/dst")
+        reason = ("Read-only file system"
+                  if mode == MountMode.READ else "Operation not supported")
+        assert result.exit_code == 1
+        assert result.stderr.decode(
+        ) == f"cp: cannot create directory '/custom/dst': {reason}\n"
+        assert store.dirs == before
+        assert store.files == {"/src/file": b"payload"}
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("custom", [False, True])
+async def test_builtin_and_custom_writes_obey_mount_mode(custom):
+    builtin = RAMVFS()
+    path = PathSpec(virtual="/data/a", directory="/data", vfs_path="a")
+    await ops(builtin).write(path, b"before")
+    vfs = BaseVFS(name="probe", accessor=builtin.accessor,
+                  io=RAM_IO) if custom else builtin
+    ws = Workspace({"/data": vfs}, mode=MountMode.READ)
+    try:
+        result = await ws.shell("echo after > /data/a")
+        assert result.exit_code != 0
+        assert await ops(vfs).read(path) == b"before"
+    finally:
+        await ws.close()
+        if custom:
+            await builtin.close()

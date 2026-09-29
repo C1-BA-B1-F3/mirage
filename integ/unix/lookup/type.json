@@ -168,6 +168,72 @@
         "stdout": "",
         "stderr": ""
       }
+    },
+    {
+      "id": "lookup_type_program_is_its_file",
+      "seq": 991508,
+      "targets": [
+        "ram"
+      ],
+      "note": "bash 5.2: echo is one of bash's builtins, so type calls it one though /usr/bin/echo exists; env is not, so type names its file.",
+      "command": "type ls cd echo env",
+      "expect": {
+        "exit": 0,
+        "stdout": "ls is /usr/bin/ls\ncd is a shell builtin\necho is a shell builtin\nenv is /usr/bin/env\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "lookup_type_t_file",
+      "seq": 991509,
+      "targets": [
+        "ram"
+      ],
+      "command": "type -t ls echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "file\nbuiltin\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "lookup_type_a_builtin_then_its_file",
+      "seq": 991510,
+      "targets": [
+        "ram"
+      ],
+      "command": "type -a echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "echo is a shell builtin\necho is /usr/bin/echo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "lookup_type_p_prints_a_file_and_P_searches_past_a_builtin",
+      "seq": 991511,
+      "targets": [
+        "ram"
+      ],
+      "command": "type -p ls; type -P echo; type -p cd; echo \"rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "/usr/bin/ls\n/usr/bin/echo\nrc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "lookup_type_P_misses_a_shell_only_builtin",
+      "seq": 991512,
+      "targets": [
+        "ram"
+      ],
+      "command": "type -P cd; echo \"rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": ""
+      }
     }
   ]
 }

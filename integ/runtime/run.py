@@ -35,7 +35,11 @@ from mirage import ProcessExecution  # noqa: E402
 from mirage import ProcessExecutorMixin  # noqa: E402
 from mirage import Workspace  # noqa: E402
 from mirage.accessor.base import Accessor  # noqa: E402
+from mirage.commands.builtin.generic_bind import \
+    make_generic_commands  # noqa: E402,E501
+from mirage.commands.builtin.ram.io import IO as RAM_IO  # noqa: E402
 from mirage.commands.cli.types import CLISpec  # noqa: E402
+from mirage.commands.config import RegisteredCommand  # noqa: E402
 from mirage.errors import classify  # noqa: E402
 from mirage.ops.registry import RegisteredOp  # noqa: E402
 from mirage.policy import Policy  # noqa: E402
@@ -363,7 +367,10 @@ class FailingRAMVFS(RAMVFS):
 
     The shape of one broken record behind a REST collection: the
     listing names it, and every question about it errors with whatever
-    the upstream said, which is no filesystem error at all.
+    the upstream said, which is no filesystem error at all. The stat
+    its commands ask fails too, so ``ls`` and ``find`` meet the record
+    where a remote mount's commands do, and with no native find op, as
+    such a mount has none, ``find`` walks.
 
     Args:
         failing (list[str]): names, spelled as a mount's ``files``
@@ -373,6 +380,15 @@ class FailingRAMVFS(RAMVFS):
     def __init__(self, failing: list[str]) -> None:
         super().__init__()
         self._failing = frozenset(failing)
+        self._guarded_commands = [
+            rc for fn in make_generic_commands(
+                "ram", replace(
+                    RAM_IO, stat=self._guard(RAM_IO.stat), find=None))
+            for rc in fn._registered_commands
+        ]
+
+    def commands(self) -> list[RegisteredCommand]:
+        return self._guarded_commands
 
     def ops(self) -> list[RegisteredOp]:
         return [
@@ -386,11 +402,11 @@ class FailingRAMVFS(RAMVFS):
             fn: Callable[...,
                          Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
 
-        async def guarded(accessor: Accessor, path: PathSpec,
+        async def guarded(accessor: Accessor, path: PathSpec, *args: Any,
                           **kwargs: Any) -> Any:
             if path.vfs_path.strip("/") in self._failing:
                 raise RuntimeError("upstream 502 Bad Gateway")
-            return await fn(accessor, path, **kwargs)
+            return await fn(accessor, path, *args, **kwargs)
 
         return guarded
 
@@ -479,12 +495,19 @@ async def _build_workspace(world: dict[str, Any], run_id: str) -> Workspace:
         for name, content in spec.get("files", {}).items():
             seeds.append((prefix, name, content.encode()))
     kwargs: dict[str, Any] = {}
+    if "session_id" in world:
+        kwargs["session_id"] = world["session_id"]
     if "runtimes" in world:
         kwargs["runtimes"] = [_build_entry(e) for e in world["runtimes"]]
     if "route_policy" in world:
         kwargs["route_policy"] = ScriptSource(world["route_policy"])
     if "policies" in world:
         kwargs["policies"] = [_build_policy(s) for s in world["policies"]]
+    if "command_limits" in world:
+        kwargs["command_limits"] = {
+            name: Limit(**limit)
+            for name, limit in world["command_limits"].items()
+        }
     if "profiles" in world:
         kwargs["profiles"] = world["profiles"]
     if "profile" in world:

@@ -26,6 +26,7 @@ from mirage.core.linear.normalize import (normalize_comment, normalize_cycle,
                                           normalize_user, project_issue_rows,
                                           to_json_bytes)
 from mirage.core.linear.scope import detect_scope
+from mirage.core.linear.stat import stat
 from mirage.core.render.json import jsonl_bytes_by_created_at
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -143,4 +144,5 @@ read = make_read(
         "cycle": _read_cycle,
         "document": _read_document,
     },
+    stat=stat,
 )

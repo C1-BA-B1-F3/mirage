@@ -12,12 +12,15 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mountedPath, rekey } from '../../../utils/key_prefix.ts'
+import { pathAllowed } from '../../../context/session_context.ts'
+import { mountedPath, rekey, respelled } from '../../../utils/key_prefix.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import {
   FileType,
+  LINK_TARGET_KEY,
   PathSpec,
+  type CopyDeref,
   type CopyStrategy,
   type FileStat,
   type NativeCopy,
@@ -35,16 +38,29 @@ import { modifiedTs } from '../../../core/generic/find.ts'
 import { backupControl, backupTarget } from '../utils/backup.ts'
 import { DEFAULT_BACKUP_SUFFIX } from '../utils/constants.ts'
 import {
+  STAT_REFUSALS,
   backendKeyDefault,
   copyTargets,
   isDirectory,
   pathExists,
   type BackendKeyFn,
 } from '../utils/copy.ts'
-import { fsStrerror, isEacces, isFsError, isMissingPath } from '../../../utils/errors.ts'
+import {
+  ELOOP_STRERROR,
+  fsStrerror,
+  isDotWalkError,
+  isEacces,
+  isEnotdir,
+  isFsError,
+  isMissingPath,
+} from '../../../utils/errors.ts'
+import { typedLink } from '../utils/links.ts'
+import { absentDestStrerror, descendantPath, nearestAncestor } from '../utils/paths.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
-import { norm, parent } from '../../../utils/path.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
+import type { LinkView } from '../../../ops/types.ts'
+import type { DispatchFn } from '../../../runtime/types.ts'
+import { CycleError, resolvePath } from '../../../utils/path.ts'
 
 const ENC = new TextEncoder()
 
@@ -59,6 +75,32 @@ export interface CpFlags {
   suffix: string
   targetDir: PathSpec | string | null
   noTargetDir: boolean
+  dereference: CopyDeref
+}
+
+/**
+ * Namespace symlink facts and dispatcher primitives for cp and mv.
+ * Links live above every backend, so no copy strategy lists one and a tree
+ * copy has to recreate each by name. `relay` and `relayStat` are the door's
+ * own transfer primitives, which copy what a followed link leads to on
+ * whatever mount it lives. Mirrors Python's TransferLinks.
+ */
+export interface TransferLinks {
+  links: LinkView
+  dispatch: DispatchFn
+  cwd: string
+  relay: PrimitiveCopy
+  relayStat: StatFn
+}
+
+// Each option of cp's link policy, and what it asks for; the last typed wins
+// (coreutils 9.7: `-L -P` copies the link, `-P -L` what it names).
+const DEREF_OPTIONS: Readonly<Record<string, CopyDeref>> = {
+  dereference: 'always',
+  no_dereference: 'never',
+  H: 'command_line',
+  d: 'never',
+  archive: 'never',
 }
 
 export function cpFlags(init: Partial<CpFlags> = {}): CpFlags {
@@ -71,6 +113,7 @@ export function cpFlags(init: Partial<CpFlags> = {}): CpFlags {
     suffix: init.suffix ?? DEFAULT_BACKUP_SUFFIX,
     targetDir: init.targetDir ?? null,
     noTargetDir: init.noTargetDir ?? false,
+    dereference: init.dereference ?? 'always',
   }
 }
 
@@ -130,10 +173,9 @@ export function backupRaw(fl: FlagView): string | boolean | undefined {
   return undefined
 }
 
-// -t arrives as a resolved virtual-path string. PathSpec is accepted for
-// the shape Python's executor promotes PATH flag values into
-// (`workspace/executor/command/flags.py`); the TypeScript executor keeps
-// the string on both the single-mount and the relay path.
+// -t arrives as the PathSpec of the word that spelled it on the
+// single-mount path, and as its resolved virtual-path string on the relay
+// path, which parses for a cross-mount strategy. Mirrors Python.
 export function targetFlags(cmdName: string, fl: FlagView): [PathSpec | string | null, boolean] {
   const raw: unknown = fl.raw('target_directory')
   const targetDir: PathSpec | string | null =
@@ -165,8 +207,14 @@ export function parseFlags(fl: FlagView): CpFlags {
     )
   }
   const [targetDir, noTargetDir] = targetFlags('cp', fl)
+  const recursive = fl.asBool('r') || fl.asBool('recursive') || fl.asBool('archive')
+  const last = fl.typedOrder(...Object.keys(DEREF_OPTIONS)).at(-1)
+  // With no link option a recursive copy copies links as links and any other
+  // copy follows them (cp.c's DEREF_UNDEFINED default).
+  const dereference: CopyDeref =
+    last !== undefined ? (DEREF_OPTIONS[last] ?? 'always') : recursive ? 'never' : 'always'
   return cpFlags({
-    recursive: fl.asBool('r') || fl.asBool('recursive') || fl.asBool('archive'),
+    recursive,
     noClobber,
     verbose: fl.asBool('verbose'),
     update,
@@ -174,7 +222,207 @@ export function parseFlags(fl: FlagView): CpFlags {
     suffix: suffix ?? DEFAULT_BACKUP_SUFFIX,
     targetDir,
     noTargetDir,
+    dereference,
   })
+}
+
+// What stands at a path, asked through the door; null where nothing does,
+// which is where a new link goes. Mirrors Python's _entry_at.
+async function entryAt(dispatch: DispatchFn, spec: PathSpec): Promise<FileStat | null> {
+  try {
+    const [there] = await dispatch('stat', spec)
+    return there !== null && typeof there === 'object' && 'type' in there
+      ? (there as FileStat)
+      : null
+  } catch (err) {
+    if (isMissingPath(err) || isEnotdir(err) || (err as { code?: string }).code === 'ELOOP')
+      return null
+    throw err
+  }
+}
+
+/** Stat the entry itself for overwrite and backup decisions. */
+export async function linkStat(copies: TransferLinks, path: PathSpec): Promise<FileStat> {
+  return copies.links.statAt(path.virtual) ?? (await copies.relayStat(path))
+}
+
+export async function renameLink(
+  copies: TransferLinks,
+  src: PathSpec,
+  target: PathSpec,
+): Promise<void> {
+  await copies.dispatch('rename', src, [target])
+}
+
+/** Copy a symlink through the shared overwrite and backup policy. */
+export async function makeLink(
+  copies: TransferLinks,
+  src: PathSpec,
+  target: PathSpec,
+  text: string,
+  policy: TransferPolicy,
+  writes: Record<string, ByteSource>,
+  errors: string[],
+  lines: string[] | undefined,
+): Promise<boolean> {
+  const stat: StatFn = (path) => linkStat(copies, path)
+  const targetLink = copies.links.statAt(target.virtual)
+  const there = targetLink ?? (await entryAt(copies.dispatch, target))
+  if (there?.type === FileType.DIRECTORY) {
+    errors.push(
+      `${policy.cmdName}: cannot overwrite directory '${target.rawPath}' with non-directory`,
+    )
+    return false
+  }
+  if (!(await overwriteGate(policy, stat, src, target, errors))) return false
+  const made = await makeBackup(
+    policy,
+    targetLink === null ? copies.relay : { rename: (a, b) => renameLink(copies, a, b) },
+    stat,
+    copies.relay.readdir,
+    target,
+    writes,
+    errors,
+    undefined,
+    copies,
+  )
+  if (!made.ok) return false
+  try {
+    if (await pathExists(stat, target)) await copies.dispatch('unlink', target)
+    await copies.dispatch('symlink', target, [], { target: text })
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    errors.push(
+      `${policy.cmdName}: cannot create symbolic link '${target.rawPath}': ${String(fsStrerror(err))}`,
+    )
+    return false
+  }
+  writes[target.mountPath] = new Uint8Array()
+  lines?.push(transferLine(src, target, made.backup))
+  return true
+}
+
+/**
+ * Recreate the links below a copied directory, which its copy could not see.
+ * Without -L each lands as a link with its target verbatim, dangling and
+ * looping ones included. Under -L each is what it leads to: a file's bytes, a
+ * directory's whole tree (the links below it included), and `cannot stat` for
+ * one that leads nowhere or loops (coreutils 9.7). A link that leads back into
+ * a tree being copied is refused as GNU names it, `cannot copy cyclic symbolic
+ * link`, rather than copied until the name is too long, which is where GNU
+ * stops. Mirrors Python's copy_tree_links.
+ */
+export async function copyTreeLinks(
+  copies: TransferLinks,
+  deref: CopyDeref,
+  src: PathSpec,
+  target: PathSpec,
+  errors: string[],
+  lines: string[] | undefined,
+  policy: TransferPolicy,
+  writes: Record<string, ByteSource>,
+  reads: Record<string, Uint8Array>,
+  seen: readonly string[] = [],
+): Promise<void> {
+  const base = rstripSlash(src.virtual) || '/'
+  const dstBase = rstripSlash(target.virtual)
+  const shownSrc = rstripSlash(src.rawPath) || src.rawPath
+  const shownDst = rstripSlash(target.rawPath) || target.rawPath
+  const below = [...copies.links.subtree(base)].sort((a, b) => compareCodePoints(a[0], b[0]))
+  for (const [virtual, row] of below) {
+    if (!pathAllowed(virtual)) continue
+    const rel = virtual.slice(rstripSlash(base).length + 1)
+    const landing = `${dstBase}/${rel}`
+    const shown = `${shownSrc}/${rel}`
+    if (deref !== 'always') {
+      const raw = row.extra[LINK_TARGET_KEY]
+      const text = typeof raw === 'string' ? raw : ''
+      await makeLink(
+        copies,
+        respelled(PathSpec.fromStrPath(virtual), shown),
+        respelled(PathSpec.fromStrPath(landing), `${shownDst}/${rel}`),
+        text,
+        policy,
+        writes,
+        errors,
+        lines,
+      )
+      continue
+    }
+    let resolved: string
+    try {
+      resolved = copies.links.resolve(virtual)
+    } catch (err) {
+      if (!(err instanceof CycleError)) throw err
+      errors.push(`cp: cannot stat '${shown}': ${ELOOP_STRERROR}`)
+      continue
+    }
+    const leads = await copies.links.targetStat(virtual)
+    if (leads === null) {
+      errors.push(`cp: cannot stat '${shown}': No such file or directory`)
+      continue
+    }
+    if (leads.type !== FileType.DIRECTORY) {
+      const entry = respelled(PathSpec.fromStrPath(resolved), shown)
+      await copyEntries(
+        'cp',
+        copies.relay,
+        copies.relayStat,
+        entry,
+        PathSpec.fromStrPath(landing),
+        [{ path: entry.virtual, isDir: false }],
+        errors,
+        undefined,
+        { policy, writes, reads, lines, copies },
+      )
+      continue
+    }
+    const inside = rstripSlash(resolved) || '/'
+    if ([...seen, base].some((d) => d === inside || d.startsWith(`${rstripSlash(inside)}/`))) {
+      errors.push(`cp: cannot copy cyclic symbolic link '${shown}'`)
+      continue
+    }
+    const followed = PathSpec.fromStrPath(inside)
+    const placed = PathSpec.fromStrPath(landing)
+    const entries = await cpWalk(
+      copies.relay.readdir,
+      copies.relayStat,
+      followed,
+      undefined,
+      'cp',
+      errors,
+      copies.links,
+    )
+    await copyEntries(
+      'cp',
+      copies.relay,
+      copies.relayStat,
+      followed,
+      placed,
+      entries,
+      errors,
+      undefined,
+      {
+        policy,
+        writes,
+        reads,
+        ...(lines !== undefined ? { lines } : {}),
+        copies,
+      },
+    )
+    await copyTreeLinks(
+      copies,
+      deref,
+      respelled(followed, shown),
+      respelled(placed, `${shownDst}/${rel}`),
+      errors,
+      lines,
+      policy,
+      writes,
+      reads,
+      [...seen, base],
+    )
+  }
 }
 
 // Split operands into sources and destination, GNU arity errors. With -t
@@ -221,11 +469,15 @@ export async function targetDirError(
   try {
     info = await stat(target)
   } catch (err) {
+    if (isEnotdir(err)) return `${cmdName}: target directory '${target.rawPath}': Not a directory`
+    if ((err as { code?: unknown }).code === 'ELOOP') {
+      return `${cmdName}: target directory '${target.rawPath}': ${ELOOP_STRERROR}`
+    }
     if (!isMissingPath(err)) throw err
-    return `${cmdName}: target directory '${target.virtual}': No such file or directory`
+    return `${cmdName}: target directory '${target.rawPath}': No such file or directory`
   }
   if (info.type !== FileType.DIRECTORY) {
-    return `${cmdName}: target directory '${target.virtual}': Not a directory`
+    return `${cmdName}: target directory '${target.rawPath}': Not a directory`
   }
   return null
 }
@@ -260,8 +512,9 @@ function slashAwareKind(
 //
 // The backends answer ENOENT for a path under a plain file just as they do
 // for a genuinely absent one (only a slashed operand makes the stat itself
-// say ENOTDIR), so the chain is walked upward until something exists; the
-// common case (the parent is there) costs a single stat.
+// say ENOTDIR), so the chain is walked upward until something exists
+// (absentDestStrerror); the common case (the parent is there) costs a
+// single stat.
 export async function destKind(
   stat: StatFn,
   target: PathSpec,
@@ -272,32 +525,16 @@ export async function destKind(
   } catch (err) {
     const code = (err as { code?: unknown }).code
     if (code === 'ENOTDIR') return { exists: false, isDir: false, strerror: 'Not a directory' }
+    if (code === 'ELOOP') return { exists: false, isDir: false, strerror: ELOOP_STRERROR }
+    // Its `..` passes a name that is not there: the chain of the path it
+    // simplifies to says nothing about this one.
+    if (isDotWalkError(err)) {
+      return { exists: false, isDir: false, strerror: 'No such file or directory' }
+    }
     if (!isMissingPath(err)) throw err
   }
   if (info !== null) return slashAwareKind(target, info)
-  const immediate = parent(norm(target.virtual))
-  let node = immediate
-  while (node !== '/') {
-    const { exists, isDir } = await entryKind(stat, descendantPath(target, node))
-    if (exists) {
-      if (!isDir) return { exists: false, isDir: false, strerror: 'Not a directory' }
-      // An existing directory higher up means the intermediate components
-      // are simply absent.
-      return {
-        exists: false,
-        isDir: false,
-        strerror: node === immediate ? null : 'No such file or directory',
-      }
-    }
-    node = parent(node)
-  }
-  // The mount root always exists as a directory and is never stat-ed: a
-  // backend that cannot stat "/" must not fail every copy into it.
-  return {
-    exists: false,
-    isDir: false,
-    strerror: immediate === '/' ? null : 'No such file or directory',
-  }
+  return { exists: false, isDir: false, strerror: await absentDestStrerror(stat, target) }
 }
 
 // Whether a slash-terminated destination refuses a non-directory. POSIX
@@ -317,28 +554,6 @@ export function slashRefusesFile(
   return !targetExists && target.rawPath.endsWith('/') && !srcIsDir
 }
 
-// Probe a path once for {exists, isDir}. ENOTDIR counts as "does not exist":
-// a path whose parent chain runs through a plain file cannot exist. This is
-// the probe for a path that is not an operand (an ancestor in a chain walk,
-// an overwrite target already paired); an operand itself goes through
-// sourceKind or destKind, which keep the ENOTDIR a slashed spelling earns.
-// isMissingPath stays ENOENT-only so read-family commands keep reporting
-// "Not a directory" verbatim.
-export async function entryKind(
-  stat: StatFn,
-  path: PathSpec,
-): Promise<{ exists: boolean; isDir: boolean }> {
-  let info: FileStat
-  try {
-    info = await stat(path)
-  } catch (err) {
-    const code = (err as { code?: unknown }).code
-    if (!isMissingPath(err) && code !== 'ENOTDIR') throw err
-    return { exists: false, isDir: false }
-  }
-  return { exists: true, isDir: info.type === FileType.DIRECTORY }
-}
-
 // Probe a source operand, keeping the errno GNU reports: `cp /plain/child /dst`
 // is `cannot stat 'X': Not a directory`, not "No such file or directory". The
 // backends cannot supply that distinction, because stat answers ENOENT for a
@@ -356,19 +571,16 @@ export async function sourceKind(
   } catch (err) {
     const code = (err as { code?: unknown }).code
     if (code === 'ENOTDIR') return { exists: false, isDir: false, strerror: 'Not a directory' }
+    if (code === 'ELOOP') return { exists: false, isDir: false, strerror: ELOOP_STRERROR }
     if (!isMissingPath(err)) throw err
   }
   if (info !== null) return slashAwareKind(path, info)
-  let node = parent(norm(path.virtual))
-  while (node !== '/') {
-    const up = await entryKind(stat, descendantPath(path, node))
-    if (up.exists) {
-      if (!up.isDir) return { exists: false, isDir: false, strerror: 'Not a directory' }
-      break
-    }
-    node = parent(node)
+  const [, isDir] = await nearestAncestor(stat, path)
+  return {
+    exists: false,
+    isDir: false,
+    strerror: isDir ? 'No such file or directory' : 'Not a directory',
   }
-  return { exists: false, isDir: false, strerror: 'No such file or directory' }
 }
 
 // GNU dir/non-dir overwrite mismatch line, or null when compatible.
@@ -411,7 +623,7 @@ export async function overwriteGate(
   } catch (err) {
     // A probe failure here is not permission to clobber: returning true on an
     // auth error or timeout would silently defeat -n / --update=none.
-    if (!isMissingPath(err)) throw err
+    if (!isMissingPath(err) && !isEnotdir(err)) throw err
     return true
   }
   if (policy.noClobber || policy.update === 'none') return false
@@ -424,7 +636,7 @@ export async function overwriteGate(
     try {
       srcInfo = await stat(src)
     } catch (err) {
-      if (!isMissingPath(err)) throw err
+      if (!isMissingPath(err) && !isEnotdir(err)) throw err
       return true
     }
     const srcTs = modifiedTs(srcInfo.modified)
@@ -484,6 +696,25 @@ async function duplicateForBackup(
   return true
 }
 
+async function restoreBackupLink(
+  copies: TransferLinks,
+  backup: PathSpec,
+  link: FileStat,
+  cmdName: string,
+  errors: string[],
+): Promise<void> {
+  try {
+    if (await pathExists((path) => linkStat(copies, path), backup)) {
+      await copies.dispatch('unlink', backup)
+    }
+    const raw = link.extra[LINK_TARGET_KEY]
+    await copies.dispatch('symlink', backup, [], { target: typeof raw === 'string' ? raw : '' })
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    errors.push(`${cmdName}: cannot restore backup '${backup.virtual}': ${String(fsStrerror(err))}`)
+  }
+}
+
 // Back up an existing target before it is overwritten. Returns the backup
 // path (null when no backup was needed) and whether the transfer may
 // proceed.
@@ -496,6 +727,7 @@ export async function makeBackup(
   writes: Record<string, ByteSource>,
   errors: string[],
   index?: IndexCacheStore,
+  copies?: TransferLinks,
 ): Promise<{ backup: PathSpec | null; ok: boolean }> {
   if (policy.backup === null) return { backup: null, ok: true }
   if (!(await pathExists(stat, target))) return { backup: null, ok: true }
@@ -503,20 +735,36 @@ export async function makeBackup(
   try {
     // A failed version scan must not degrade to `.~1~`/the simple suffix:
     // that would overwrite existing backup history.
-    backup = await backupTarget(readdir, target, policy.backup, policy.suffix)
+    backup = await backupTarget(
+      copies?.relay.readdir ?? readdir,
+      target,
+      policy.backup,
+      policy.suffix,
+    )
   } catch (err) {
     if (!isFsError(err)) throw err
     errors.push(`${policy.cmdName}: cannot backup '${target.virtual}': ${String(fsStrerror(err))}`)
     return { backup: null, ok: false }
   }
   if (backup === null) return { backup: null, ok: true }
-  let made: boolean
+  const backupLink =
+    copies !== undefined && !('rename' in strategy) ? copies.links.statAt(backup.virtual) : null
+  let removedLink = false
+  let made = false
   try {
+    if (copies !== undefined && backupLink !== null) {
+      await copies.dispatch('unlink', backup)
+      removedLink = true
+    }
     made = await duplicateForBackup(strategy, stat, target, backup, errors, policy.cmdName, index)
   } catch (err) {
     if (!isFsError(err)) throw err
     errors.push(`${policy.cmdName}: cannot backup '${target.virtual}': ${String(fsStrerror(err))}`)
     return { backup: null, ok: false }
+  } finally {
+    if (removedLink && !made && copies !== undefined && backupLink !== null) {
+      await restoreBackupLink(copies, backup, backupLink, policy.cmdName, errors)
+    }
   }
   if (!made) return { backup: null, ok: false }
   writes[backup.mountPath] = new Uint8Array()
@@ -528,10 +776,6 @@ function transferLine(src: PathSpec, target: PathSpec, backup: PathSpec | null):
   let line = `'${src.virtual}' -> '${target.virtual}'`
   if (backup !== null) line += ` (backup: '${backup.virtual}')`
   return line
-}
-
-function descendantPath(root: PathSpec, virtual: string): PathSpec {
-  return PathSpec.fromStrPath(virtual, rekey(root.virtual, root.vfsPath, virtual))
 }
 
 // Recreate a source tree's directories under the destination root. Only
@@ -620,6 +864,7 @@ export async function cpWalk(
   index?: IndexCacheStore,
   cmdName = 'cp',
   errors?: string[],
+  links?: LinkView,
 ): Promise<{ path: string; isDir: boolean }[]> {
   const info = await stat(root, index)
   if (info.type !== FileType.DIRECTORY) return [{ path: root.virtual, isDir: false }]
@@ -638,6 +883,7 @@ export async function cpWalk(
     }
     for (const child of children) {
       const childSpec = descendantPath(root, child)
+      if (links?.statAt(childSpec.virtual) != null) continue
       let childInfo
       try {
         childInfo = await stat(childSpec, index)
@@ -679,6 +925,7 @@ export async function copyEntries(
     writes?: Record<string, ByteSource>
     reads?: Record<string, Uint8Array>
     lines?: string[] | undefined
+    copies?: TransferLinks | undefined
   } = {},
 ): Promise<{ copiedAll: boolean; wroteAny: boolean }> {
   const srcBase = rstripSlash(src.virtual)
@@ -709,6 +956,30 @@ export async function copyEntries(
       }
       continue
     }
+    const link = opts.copies?.links.statAt(entry)
+    if (opts.copies !== undefined && link != null) {
+      const errorCount = errors.length
+      const raw = link.extra[LINK_TARGET_KEY]
+      const made = await makeLink(
+        opts.copies,
+        entrySpec,
+        entryDstSpec,
+        typeof raw === 'string' ? raw : '',
+        opts.policy ?? {
+          cmdName,
+          noClobber: false,
+          update: null,
+          backup: null,
+          suffix: DEFAULT_BACKUP_SUFFIX,
+        },
+        opts.writes ?? {},
+        errors,
+        opts.lines,
+      )
+      wroteAny = wroteAny || made
+      if (errors.length > errorCount) copiedAll = false
+      continue
+    }
     let backup: PathSpec | null = null
     if (opts.policy !== undefined) {
       if (!(await overwriteGate(opts.policy, stat, entrySpec, entryDstSpec, errors))) continue
@@ -721,6 +992,7 @@ export async function copyEntries(
         opts.writes ?? {},
         errors,
         index,
+        opts.copies,
       )
       if (!made.ok) {
         copiedAll = false
@@ -772,6 +1044,14 @@ export async function cpGeneric(
   index?: IndexCacheStore,
   backendKey?: BackendKeyFn,
   readdir?: ReaddirFn,
+  // The link standing at the name a destination was typed as, its own row,
+  // null where none stands (the router has followed the operand by the time
+  // cp runs); undefined outside a workspace. Mirrors Python's link_at.
+  linkAt?: (path: PathSpec) => FileStat | null,
+  // The namespace's links and the door that makes them, so a link is copied
+  // as a link where the policy says to; undefined outside a workspace, where
+  // no link can stand.
+  copies?: TransferLinks,
 ): Promise<[ByteSource | null, IOResult]> {
   const keyOf = backendKey ?? backendKeyDefault
   const [sources, dstOperand] = splitOperands('cp', paths, flags.targetDir, flags.noTargetDir)
@@ -814,15 +1094,55 @@ export async function cpGeneric(
     backup: flags.backup,
     suffix: flags.suffix,
   }
-  const perEntryNative = updateGates(flags.update) || backupDisplaces(flags.backup)
+  const perEntryNative =
+    flags.noClobber || updateGates(flags.update) || backupDisplaces(flags.backup)
   const writes: Record<string, ByteSource> = {}
   const reads: Record<string, Uint8Array> = {}
   const lines: string[] = []
   const errors: string[] = []
   for (const [src, target] of copyTargets(sources, dst, dstIsDir, dstExists, dstErr)) {
+    const link =
+      copies !== undefined && flags.dereference === 'never'
+        ? typedLink(copies.links, src, copies.cwd)
+        : null
+    if (copies !== undefined && link !== null) {
+      // The router followed the operand, but the policy copies the link
+      // itself, whatever it leads to (coreutils 9.7). Onto a destination that
+      // is no directory the link replaces the name as typed, never what a link
+      // standing there leads to.
+      const named = resolvePath(src.rawPath || src.virtual, copies.cwd)
+      const landing =
+        target !== dst ? target.virtual : resolvePath(dst.rawPath || dst.virtual, copies.cwd)
+      if (named === landing) {
+        errors.push(`cp: '${named}' and '${landing}' are the same file`)
+        continue
+      }
+      const raw = link.extra[LINK_TARGET_KEY]
+      const text = typeof raw === 'string' ? raw : ''
+      await makeLink(
+        copies,
+        respelled(PathSpec.fromStrPath(named), src.rawPath),
+        respelled(PathSpec.fromStrPath(landing), target.rawPath),
+        text,
+        policy,
+        writes,
+        errors,
+        flags.verbose ? lines : undefined,
+      )
+      continue
+    }
     const { exists: srcExists, isDir: srcIsDir, strerror: srcErr } = await sourceKind(stat, src)
     if (!srcExists) {
       errors.push(`cp: cannot stat '${src.rawPath}': ${String(srcErr)}`)
+      continue
+    }
+    if (flags.noTargetDir && !srcIsDir && target.walkError !== null && target.rawPath === '') {
+      // Under -T, GNU stats an empty destination as the directory it is
+      // typed in, which a file cannot overwrite (coreutils 9.7). A
+      // directory source it merges into the working directory; mirage
+      // refuses that at the create, since reading the empty name as the
+      // working directory is what `walkError` is for.
+      errors.push(`cp: cannot overwrite directory '' with non-directory '${src.rawPath}'`)
       continue
     }
     if (keyOf(src) === keyOf(target)) {
@@ -843,8 +1163,8 @@ export async function cpGeneric(
         : await destKind(stat, target)
     const { exists: targetExists, isDir: targetIsDir } = probe
     let targetErr = probe.strerror
-    if (targetErr === 'Not a directory') {
-      errors.push(`cp: cannot stat '${target.rawPath}': Not a directory`)
+    if (targetErr !== null && STAT_REFUSALS.has(targetErr)) {
+      errors.push(`cp: cannot stat '${target.rawPath}': ${targetErr}`)
       continue
     }
     // The create fails on the absent parent before the slash matters, so a
@@ -860,21 +1180,56 @@ export async function cpGeneric(
       errors.push(mismatch)
       continue
     }
+    if (!targetExists && linkAt !== undefined && linkAt(target) !== null) {
+      // A dangling link: the stat followed it to nothing, but the name is
+      // taken. GNU will not create the file it points at (POSIX would), and
+      // the link is a non-directory to a tree.
+      if (srcIsDir) {
+        errors.push(
+          `cp: cannot overwrite non-directory '${target.rawPath}' with directory '${src.rawPath}'`,
+        )
+        continue
+      }
+      if (flags.verbose) lines.push(transferLine(src, target, null))
+      errors.push(`cp: not writing through dangling symlink '${target.rawPath}'`)
+      continue
+    }
     if (flags.recursive && srcIsDir) {
       const srcBase = rstripSlash(src.mountPath)
       const dstBase = rstripSlash(target.mountPath)
       if (isPrimitiveCopy(strategy)) {
-        const entries = await cpWalk(strategy.readdir, stat, src, index, 'cp', errors)
+        const entries = await cpWalk(
+          strategy.readdir,
+          stat,
+          src,
+          index,
+          'cp',
+          errors,
+          copies?.links,
+        )
         await copyEntries('cp', strategy, stat, src, target, entries, errors, index, {
           policy,
           writes,
           reads,
           lines: flags.verbose ? lines : undefined,
+          copies,
         })
+        if (copies !== undefined) {
+          await copyTreeLinks(
+            copies,
+            flags.dereference,
+            src,
+            target,
+            errors,
+            flags.verbose ? lines : undefined,
+            policy,
+            writes,
+            reads,
+          )
+        }
         continue
       }
       if (strategy.dirCopy !== undefined && !perEntryNative) {
-        if (flags.noClobber && targetExists) continue
         await strategy.dirCopy(src, target)
         for (const entryMount of await strategy.find(src, { type: 'f' })) {
           const entryDst = mountedPath(target, dstBase + entryMount.slice(srcBase.length))
@@ -882,6 +1237,19 @@ export async function cpGeneric(
         }
         if (flags.verbose) {
           lines.push(...(await treeLines(strategy, src, target, srcBase, dstBase)))
+        }
+        if (copies !== undefined) {
+          await copyTreeLinks(
+            copies,
+            flags.dereference,
+            src,
+            target,
+            errors,
+            flags.verbose ? lines : undefined,
+            policy,
+            writes,
+            reads,
+          )
         }
         continue
       }
@@ -914,11 +1282,25 @@ export async function cpGeneric(
           writes,
           errors,
           index,
+          copies,
         )
         if (!made.ok) continue
         await strategy.copy(entry, entryDst)
         writes[entryDst.mountPath] = new Uint8Array()
         if (flags.verbose) lines.push(transferLine(entry, entryDst, made.backup))
+      }
+      if (copies !== undefined) {
+        await copyTreeLinks(
+          copies,
+          flags.dereference,
+          src,
+          target,
+          errors,
+          flags.verbose ? lines : undefined,
+          policy,
+          writes,
+          reads,
+        )
       }
       continue
     }
@@ -932,6 +1314,7 @@ export async function cpGeneric(
       writes,
       errors,
       index,
+      copies,
     )
     if (!made.ok) continue
     if (isPrimitiveCopy(strategy)) {
@@ -955,7 +1338,15 @@ export async function cpGeneric(
       }
       reads[src.virtual] = data
     } else {
-      await strategy.copy(src, target)
+      try {
+        await strategy.copy(src, target)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        errors.push(
+          `cp: cannot create regular file '${target.virtual}': ${String(fsStrerror(err))}`,
+        )
+        continue
+      }
     }
     writes[target.mountPath] = new Uint8Array()
     if (flags.verbose) lines.push(transferLine(src, target, made.backup))

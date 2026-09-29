@@ -170,9 +170,10 @@ describe('--help and man through the executor', () => {
 
   it('an installed CLI is discoverable from the shell', async () => {
     const ws = await cliWs()
-    expect(stdoutStr(await ws.shell('type linear'))).toBe('linear is a mirage CLI\n')
-    expect(stdoutStr(await ws.shell('type -t linear'))).toBe('cli\n')
-    expect(stdoutStr(await ws.shell('which linear'))).toBe('linear\n')
+    expect(stdoutStr(await ws.shell('type linear'))).toBe('linear is /usr/bin/linear\n')
+    expect(stdoutStr(await ws.shell('type -t linear'))).toBe('file\n')
+    expect(stdoutStr(await ws.shell('which linear'))).toBe('/usr/bin/linear\n')
+    expect(stdoutStr(await ws.shell('cat /usr/bin/linear'))).toContain('command linear')
     expect(stdoutStr(await ws.shell('man linear'))).toContain('Usage: linear')
     expect(stdoutStr(await ws.shell('man'))).toContain('# clis')
   })
@@ -186,7 +187,9 @@ describe('--help and man through the executor', () => {
     expect(page).toContain('issue')
     expect(page).not.toContain('team')
     // The head word still routes, because one line of the tree runs.
-    expect(stdoutStr(await ws.shell('which linear', { sessionId: 'narrow' }))).toBe('linear\n')
+    expect(stdoutStr(await ws.shell('which linear', { sessionId: 'narrow' }))).toBe(
+      '/usr/bin/linear\n',
+    )
     // A verb the list does not reach has no page.
     const io = await ws.shell('man linear team', { sessionId: 'narrow' })
     expect(io.exitCode).toBe(1)
@@ -205,7 +208,7 @@ describe('--help and man through the executor', () => {
   it('a shell function shadows a CLI and type -a shows both', async () => {
     const ws = await cliWs()
     const io = await ws.shell('linear() { echo shadowed; }; type -a linear')
-    expect(stdoutStr(io)).toBe('linear is a function\nlinear is a mirage CLI\n')
+    expect(stdoutStr(io)).toBe('linear is a function\nlinear is /usr/bin/linear\n')
   })
 
   it('workspace filePrompt mentions --help and man (with and without args)', async () => {

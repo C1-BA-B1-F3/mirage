@@ -133,21 +133,24 @@ async function exploreDatabases(ws: Workspace): Promise<void> {
   await run(ws, `cat "${sourceBase}/data_source.json"`)
   await run(ws, `jq ".properties | keys" "${sourceBase}/data_source.json"`)
 
-  const row = await pickChild(ws, sourceBase, 'data_source.json')
+  await run(ws, `head -n 2 "${sourceBase}/rows.jsonl"`, 1200)
+  await run(ws, `wc -l "${sourceBase}/rows.jsonl"`)
+  await run(ws, `jq -r ".title" "${sourceBase}/rows.jsonl"`)
+  // A row's cells ride on its line, as Notion's own property objects,
+  // answering to the schema in the data_source.json above.
+  await run(ws, `head -n 1 "${sourceBase}/rows.jsonl" | jq ".properties | keys"`)
+
+  const row = (await run(ws, `head -n 1 "${sourceBase}/rows.jsonl" | jq -r ".path"`)).trim()
   if (row === '') {
-    console.log('Data source has no row pages\n')
+    console.log('Data source has no rows\n')
     return
   }
-  const rowBase = `${sourceBase}/${row}`
+  const rowJson = `${sourceBase}/${row}`
   console.log(`--- row page: ${row} ---\n`)
-  await run(ws, `ls "${rowBase}/"`)
-  await run(ws, `stat "${rowBase}/page.json"`)
-  await run(ws, `cat "${rowBase}/page.json"`, 1200)
-  await run(ws, `jq ".parent_type" "${rowBase}/page.json"`)
-  await run(ws, `jq ".parent_id" "${rowBase}/page.json"`)
-  // A row's cells ride in the file, as Notion's own property objects,
-  // answering to the schema in the data_source.json above.
-  await run(ws, `jq ".properties | keys" "${rowBase}/page.json"`)
+  await run(ws, `stat "${rowJson}"`)
+  await run(ws, `cat "${rowJson}"`, 1200)
+  await run(ws, `jq ".parent_type" "${rowJson}"`)
+  await run(ws, `jq ".markdown" "${rowJson}"`)
 }
 
 async function exploreCrossCutting(ws: Workspace): Promise<void> {

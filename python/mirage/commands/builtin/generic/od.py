@@ -5,7 +5,7 @@ from mirage.commands.builtin.constants import (OD_OVERFLOW_UNITS,
                                                OD_SIZE_UNITS, UINTMAX,
                                                XSTRTOUMAX_PATTERN)
 from mirage.commands.builtin.utils.size_suffix import parse_base0
-from mirage.commands.builtin.utils.stream import resolve_source
+from mirage.commands.builtin.utils.stream import resolve_source, stdin_stream
 from mirage.commands.errors import UsageError
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
@@ -97,8 +97,9 @@ async def od(
     # and limit offsets apply across the whole run, not per file.
     chunks: list[bytes] = []
     if paths:
+        read = stdin_stream(read_stream, stdin)
         for p in paths:
-            chunks.extend([chunk async for chunk in read_stream(p)])
+            chunks.extend([chunk async for chunk in read(p)])
     else:
         chunks.extend([chunk async for chunk in resolve_source(stdin)])
     raw = b"".join(chunks)

@@ -115,6 +115,38 @@ def test_s3_always_warm_read_serves_cache_for_non_md5_fingerprint():
         "cache; a second get_object means the entry was evicted")
 
 
+def test_s3_fresh_warm_read_hits_cache_for_a_key_named_like_its_mount():
+    # The cache finds the read's token through the record path. With key
+    # "m/a.txt" under /m, a mount-relative record ("/m/a.txt") names the
+    # wrong entry, the warm read finds no token and refetches.
+    store = {"m/a.txt": b"name,age\nalice,30\n"}
+    session = MultiBucketSession({"test-bucket": store}, etag_suffix="-2")
+    client = session._client
+    with patch_s3_session(session):
+        config = S3Config(
+            bucket="test-bucket",
+            region="us-east-1",
+            aws_access_key_id="fake",
+            aws_secret_access_key="fake",
+        )
+        ws = Workspace(
+            {"/m": (S3VFS(config), MountMode.WRITE)},
+            mode=MountMode.WRITE,
+            read=ReadSpec(policy=ReadPolicy.FRESH),
+        )
+
+        async def run() -> tuple[bytes, bytes]:
+            io1 = await ws.shell("cat /m/m/a.txt")
+            first = await io1.materialize_stdout()
+            io2 = await ws.shell("cat /m/m/a.txt")
+            second = await io2.materialize_stdout()
+            return first, second
+
+        first, second = asyncio.run(run())
+    assert first == second == b"name,age\nalice,30\n"
+    assert client.calls["get_object"] == 1
+
+
 def test_a_tokenless_entry_costs_one_extra_get_then_carries_the_etag():
     """The measured price of storing no token instead of a fabricated md5.
 
@@ -639,6 +671,135 @@ def test_two_mounts_carry_two_different_bounds():
             return fast, slow
 
     assert asyncio.run(run()) == (30, 90)
+
+
+def _s3(bucket: str) -> S3VFS:
+    return S3VFS(
+        S3Config(bucket=bucket,
+                 region="us-east-1",
+                 aws_access_key_id="fake",
+                 aws_secret_access_key="fake"))
+
+
+_SHAPES = {
+    "siblings": ("/a", "/b", "grep -r v /a/ /b/"),
+    "nested": ("/x", "/x/y", "grep -r v /x/"),
+    "shared-vfs": ("/a", "/b", "grep -r v /a/ /b/"),
+}
+
+
+@pytest.mark.parametrize("default", [ReadPolicy.FRESH, ReadPolicy.BOUNDED])
+@pytest.mark.parametrize("fresh_side", ["first", "second"])
+@pytest.mark.parametrize("shape", list(_SHAPES))
+def test_one_line_serves_each_mount_under_its_own_policy(
+        shape: str, fresh_side: str, default: ReadPolicy) -> None:
+    """#1101 Design §2: a read policy is a property of the byte source.
+
+    One line reads a `fresh` mount and a `bounded` one after both objects
+    changed out of band, so each leg must answer to its own mount: the
+    fresh leg prints v2 and pays one gate probe plus one refetch, the
+    bounded leg prints v1 and sends nothing at all. The `ls` warm-up is
+    what makes "nothing" true -- after `cat` alone each mount root is
+    still unlisted and the walk pays one listing per leg.
+
+    Every axis separates a wrong implementation the others let pass.
+    `shape` reaches both executor paths (`siblings` goes through the
+    cross-mount handler, `nested` through the traversal fan-out) and
+    `shared-vfs` puts one VFS instance under both prefixes, the only
+    shape a policy keyed by VFS rather than by mount fails. The mount
+    whose policy equals `default` inherits it, so a policy read from the
+    workspace is wrong on the other leg whichever way `default` points.
+    `fresh_side` matters because a manager leaking from the first leg
+    into the second leaves the bytes right when the bounded leg runs
+    first; only the fresh leg's missing probe shows it.
+
+    The closing `cat` of the bounded leg is the other door: a
+    single-mount read reconciles at routing, which a walk over directory
+    operands never reaches, so a routing reconcile reading the
+    workspace's `fresh` would refetch v2 there and nothing above would
+    notice.
+    """
+    first, second, line = _SHAPES[shape]
+    fresh, bounded = ((first, second) if fresh_side == "first" else
+                      (second, first))
+    fresh_objects = {"f.txt": b"v1\n"}
+    bounded_objects = {"f.txt": b"v1\n"}
+    session = MultiBucketSession({
+        "fresh-bkt": fresh_objects,
+        "bounded-bkt": bounded_objects
+    })
+    client = session._client
+    fresh_vfs = _s3("fresh-bkt")
+    bounded_vfs = fresh_vfs if shape == "shared-vfs" else _s3("bounded-bkt")
+
+    def mount(vfs: S3VFS, read: ReadSpec) -> Mount:
+        if read.policy is default:
+            return Mount(vfs=vfs, mode=MountMode.WRITE)
+        return Mount(vfs=vfs, mode=MountMode.WRITE, read=read)
+
+    ws = Workspace(
+        {
+            fresh:
+            mount(fresh_vfs, ReadSpec(policy=ReadPolicy.FRESH)),
+            bounded:
+            mount(bounded_vfs, ReadSpec(policy=ReadPolicy.BOUNDED, ttl=900)),
+        },
+        mode=MountMode.WRITE,
+        read=ReadSpec(policy=default),
+    )
+
+    async def run() -> tuple[int, bytes, list[tuple[str, str]], dict[tuple[
+        str, str], int], bytes, dict[tuple[str, str], int]]:
+        with patch_s3_session(session):
+            await ws.shell(f"ls {first}/ {second}/")
+            await ws.shell(f"cat {first}/f.txt")
+            await ws.shell(f"cat {second}/f.txt")
+            fresh_objects["f.txt"] = b"v2\n"
+            bounded_objects["f.txt"] = b"v2\n"
+            client.calls.clear()
+            client.bucket_calls.clear()
+            mark = len(ws.vfs.network_records)
+            result = await ws.shell(line)
+            out = await result.materialize_stdout()
+            records = [(r.op, r.path) for r in ws.vfs.network_records[mark:]]
+            line_calls = dict(client.bucket_calls)
+            client.bucket_calls.clear()
+            single = await ws.shell(f"cat {bounded}/f.txt")
+            single_out = await single.materialize_stdout()
+            single_calls = dict(client.bucket_calls)
+            await ws.close()
+            return (result.exit_code, out, records, line_calls, single_out,
+                    single_calls)
+
+    (code, out, records, line_calls, single_out,
+     single_calls) = asyncio.run(run())
+
+    def version(prefix: str) -> str:
+        return "v2" if prefix == fresh else "v1"
+
+    assert code == 0
+    assert out == (f"{first}/f.txt:{version(first)}\n"
+                   f"{second}/f.txt:{version(second)}\n").encode(), (
+                       "each leg must print what its own policy serves")
+    assert {
+        k: n
+        for k, n in line_calls.items() if k[1] == "bounded-bkt"
+    } == {}, ("the bounded leg must send nothing; a probe or a refetch "
+              "here means the fresh mount's policy reached it")
+    # One bucket in shared-vfs, so this is the whole line's cost there.
+    assert {
+        k: n
+        for k, n in line_calls.items() if k[1] == "fresh-bkt"
+    } == {
+        ("head_object", "fresh-bkt"): 1,
+        ("get_object", "fresh-bkt"): 1
+    }, ("the fresh leg pays its gate probe and one refetch, and no listing; "
+        "a missing head_object means it was served without being checked")
+    assert records == [("read", f"{fresh}/f.txt")
+                       ], "only the fresh leg's refetch reaches the backend"
+    assert (single_out, single_calls) == (b"v1\n", {}), (
+        "a single-mount read of the bounded leg must not reconcile at "
+        "routing; v2 here means the routing door read another policy")
 
 
 def test_the_live_cache_facts_door_reads_the_mounts_bound():

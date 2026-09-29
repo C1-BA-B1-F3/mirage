@@ -157,3 +157,16 @@ def test_unknown_key_lists_entry_points(clean_entry_points, monkeypatch):
                         lambda *, group: [ep])
     with pytest.raises(ValueError, match="epcli"):
         cli_spec_for("spectest6")
+
+
+def test_every_builtin_config_model_forbids_extra_keys():
+    """The registry refuses a key no field takes before the model runs,
+    but the model is also what a mount of the same account validates
+    with, and pydantic's default ``extra="ignore"`` would drop the key
+    there without a word."""
+    lax = []
+    for name in specs.BUILTIN_CLI_SPECS:
+        model = cli_spec_for(name).config_model
+        if model is not None and model.model_config.get("extra") != "forbid":
+            lax.append(f"{name}: {model.__name__}")
+    assert lax == []

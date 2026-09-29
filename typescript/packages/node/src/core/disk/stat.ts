@@ -19,11 +19,10 @@ import { FileStat, FileType } from '@struktoai/mirage-core/types'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { contentTypeForPath } from '@struktoai/mirage-core/utils/filetype'
 import { diskError } from './errors.ts'
-import { resolveSafe } from './utils.ts'
+import { resolveInside } from './utils.ts'
 
 export async function stat(accessor: DiskAccessor, p: PathSpec): Promise<FileStat> {
-  const virtual = p.mountPath
-  const full = resolveSafe(accessor.root, virtual)
+  const full = await resolveInside(accessor.root, p)
   let st
   try {
     st = await fsStat(full)

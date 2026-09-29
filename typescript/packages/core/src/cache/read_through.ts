@@ -48,8 +48,7 @@ async function serveBytes(
   produce: () => Promise<Uint8Array>,
 ): Promise<Uint8Array> {
   if (manager !== null && path instanceof PathSpec) {
-    const cached = await manager.cachedBytes(path)
-    if (cached !== null) return cached
+    return manager.readThrough(path, produce)
   }
   return produce()
 }
@@ -69,8 +68,9 @@ export function cacheAwareReadStream<A extends Accessor>(raw: OpStream<A>): OpSt
 
 /** Wrap a backend `readBytes` op (factory shape) for warm read-through. */
 export function cacheAwareReadBytes<A extends Accessor>(raw: OpBytes<A>): OpBytes<A> {
+  const manager = activeCacheManager()
   return (accessor, path, index) =>
-    serveBytes(activeCacheManager(), path, () => raw(accessor, path, index))
+    serveBytes(manager ?? activeCacheManager(), path, () => raw(accessor, path, index))
 }
 
 /**

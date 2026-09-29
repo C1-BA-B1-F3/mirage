@@ -6,7 +6,7 @@
       "targets": [
         "postgres"
       ],
-      "command": "ln -s /pg/public/tables/books/schema.json /pg/meta_link",
+      "command": "ln -s /pg/public/tables/books/schema.json /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "",
@@ -19,7 +19,7 @@
       "targets": [
         "postgres"
       ],
-      "command": "readlink /pg/meta_link",
+      "command": "readlink /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "/pg/public/tables/books/schema.json\n",
@@ -32,7 +32,7 @@
       "targets": [
         "postgres"
       ],
-      "command": "cat /pg/meta_link",
+      "command": "cat /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "{\n  \"schema\": \"public\",\n  \"name\": \"books\",\n  \"kind\": \"table\",\n  \"columns\": [\n    {\n      \"name\": \"id\",\n      \"type\": \"integer\",\n      \"nullable\": false,\n      \"primary_key\": true\n    },\n    {\n      \"name\": \"title\",\n      \"type\": \"text\",\n      \"nullable\": true\n    },\n    {\n      \"name\": \"author\",\n      \"type\": \"text\",\n      \"nullable\": true\n    },\n    {\n      \"name\": \"year\",\n      \"type\": \"integer\",\n      \"nullable\": true\n    },\n    {\n      \"name\": \"rating\",\n      \"type\": \"double precision\",\n      \"nullable\": true\n    }\n  ],\n  \"primary_key\": [\n    \"id\"\n  ],\n  \"foreign_keys\": [],\n  \"indexes\": [\n    {\n      \"name\": \"books_pkey\",\n      \"columns\": [\n        \"id\"\n      ],\n      \"unique\": true\n    }\n  ],\n  \"row_count_estimate\": 5,\n  \"size_bytes_estimate\": 32768\n}",
@@ -45,7 +45,7 @@
       "targets": [
         "postgres"
       ],
-      "command": "ls -F /pg | grep meta_link",
+      "command": "ls -F / | grep meta_link",
       "expect": {
         "exit": 0,
         "stdout": "meta_link@\n",
@@ -58,7 +58,7 @@
       "targets": [
         "postgres"
       ],
-      "command": "rm /pg/meta_link && ls /pg",
+      "command": "rm /meta_link && ls /pg",
       "expect": {
         "exit": 0,
         "stdout": "database.json\npublic\n",

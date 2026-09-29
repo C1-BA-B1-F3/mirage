@@ -14,6 +14,7 @@
 
 import asyncio
 import base64
+import dataclasses
 import functools
 import gzip
 import importlib.util
@@ -29,6 +30,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import quote
 
 import aiohttp
 import asyncpg
@@ -41,18 +43,22 @@ from pymongo import AsyncMongoClient
 from qdrant_client import AsyncQdrantClient, models
 
 from mirage import MountMode, Workspace
+from mirage.accessor.github import GitHubAccessor
+from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.accessor.onedrive import OneDriveConfig
 from mirage.accessor.sharepoint import SharePointConfig
 from mirage.commands.cli.specs import cli_spec_for
 from mirage.commands.cli.types import CLISpec
 from mirage.core.databricks_volume.path import configured_root
-from mirage.core.discord.config import DiscordConfig
 from mirage.core.email.config import EmailConfig
+from mirage.core.github.client import GitHubApiError, github_request
+from mirage.core.hf_hub.commit import Addition, commit
 from mirage.runtime.types import ScriptSource
 from mirage.shell.console import JobConsole
 from mirage.shell.console.redis import RedisConsoleStore
 from mirage.shell.job_table import ConsoleFactory
 from mirage.types import ReadSpec
+from mirage.vfs.airtable import AirtableConfig, AirtableVFS
 from mirage.vfs.aliyun import AliyunConfig, AliyunVFS
 from mirage.vfs.backblaze import BackblazeConfig, BackblazeVFS
 from mirage.vfs.box import BoxConfig, BoxVFS
@@ -62,6 +68,7 @@ from mirage.vfs.databricks_volume import (DatabricksVolumeConfig,
                                           DatabricksVolumeVFS)
 from mirage.vfs.dify import DifyConfig, DifyVFS
 from mirage.vfs.digitalocean import DigitalOceanConfig, DigitalOceanVFS
+from mirage.vfs.discord.config import DiscordConfig
 from mirage.vfs.discord.discord import DiscordVFS
 from mirage.vfs.disk import DiskVFS
 from mirage.vfs.dropbox import DropboxConfig, DropboxVFS
@@ -112,6 +119,8 @@ from mirage.vfs.supabase import SupabaseConfig, SupabaseVFS
 from mirage.vfs.tencent import TencentConfig, TencentVFS
 from mirage.vfs.trello import TrelloConfig, TrelloVFS
 from mirage.vfs.wasabi import WasabiConfig, WasabiVFS
+from mirage.workspace.mount.spec import Mount
+from mirage.workspace.workspace.types import VFSMount
 
 from .secrets import build_secrets_env
 
@@ -136,6 +145,14 @@ EMAIL_ACCOUNTS = ("integ", "alpha", "beta")
 EMAIL_MANIFEST_DIR = "email"
 # Doubles as the workspace id on the fake notion server.
 NOTION_TOKEN = "integ-test"
+
+# The fixture's full-access token (integ/fixtures/airtable/v1.json). Airtable
+# tokens are data in that world rather than tenants, so it is the same value
+# on both hosts; the run in the base URL is what keeps them apart.
+AIRTABLE_TOKEN = "patIntegFullAccess.fake"
+# The bases the airtable CLI install is scoped to: the fixture's Roadmap and
+# Ops bases, leaving its read-only Archive outside.
+AIRTABLE_CLI_BASES = ("appRoadmapBase001", "appOpsFinance0002")
 MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
 S3_ENDPOINT = os.environ.get("S3_ENDPOINT")
 S3_REGION = os.environ.get("S3_REGION", "us-east-1")
@@ -510,6 +527,9 @@ class NextcloudService:
 
 
 FOLDER_MIME = "application/vnd.google-apps.folder"
+# The gws fake's credential: a bearer as it is, and the one refresh token its
+# /token exchanges.
+GWS_TOKEN = "gws-integ-token"
 
 
 class GwsService:
@@ -564,7 +584,8 @@ class GwsService:
             extras["docs"] = docs
         if extras:
             reset_body["extras"] = extras
-        async with aiohttp.ClientSession() as session:
+        headers = {"Authorization": f"Bearer {GWS_TOKEN}"}
+        async with aiohttp.ClientSession(headers=headers) as session:
             async with session.post(f"{url}/reset", json=reset_body) as resp:
                 resp.raise_for_status()
             for mount in target["mounts"]:
@@ -706,47 +727,48 @@ class GwsService:
     def vfs(self, mount: dict) -> GoogleDriveVFS:
         return GoogleDriveVFS(
             GoogleDriveConfig(client_id="integ",
-                              refresh_token="integ",
+                              refresh_token=GWS_TOKEN,
                               api_base=self.url,
                               folder_id=self.folder_ids[mount["path"]]))
 
     def gdocs_vfs(self) -> GDocsVFS:
         return GDocsVFS(
             GDocsConfig(client_id="integ",
-                        refresh_token="integ",
+                        refresh_token=GWS_TOKEN,
                         api_base=self.url))
 
     def gsheets_vfs(self) -> GSheetsVFS:
         return GSheetsVFS(
             GSheetsConfig(client_id="integ",
-                          refresh_token="integ",
+                          refresh_token=GWS_TOKEN,
                           api_base=self.url))
 
     def gslides_vfs(self) -> GSlidesVFS:
         return GSlidesVFS(
             GSlidesConfig(client_id="integ",
-                          refresh_token="integ",
+                          refresh_token=GWS_TOKEN,
                           api_base=self.url))
 
-    def gcal_vfs(self) -> GCalVFS:
+    def gcal_vfs(self, config: dict) -> GCalVFS:
         # today is pinned so the rolling window is the same on both hosts
         # and lands on the seeded events.
         return GCalVFS(
             GCalConfig(client_id="integ",
-                       refresh_token="integ",
+                       refresh_token=GWS_TOKEN,
                        api_base=self.url,
-                       today="2026-02-11"))
+                       today="2026-02-11",
+                       **config))
 
     def gmail_vfs(self) -> GmailVFS:
         return GmailVFS(
             GmailConfig(client_id="integ",
-                        refresh_token="integ",
+                        refresh_token=GWS_TOKEN,
                         api_base=self.url))
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         config: dict[str, object] = {
             "client_id": "integ",
-            "refresh_token": "integ",
+            "refresh_token": GWS_TOKEN,
             "api_base": self.url,
         }
         if self.cli_scope is not None:
@@ -1258,13 +1280,15 @@ class SlackService:
         self.workspace = workspace
 
     @classmethod
-    async def create(cls, run_id: str) -> "SlackService":
+    async def create(cls, run_id: str, fixture: str = "v1") -> "SlackService":
         url = os.environ["SLACK_URL"].rstrip("/")
         service = cls(url, f"integ-{run_id}")
         async with aiohttp.ClientSession() as session:
             async with session.post(f"{url}/reset",
-                                    json={"tenants":
-                                          [service.workspace]}) as resp:
+                                    json={
+                                        "tenants": [service.workspace],
+                                        "fixture": fixture
+                                    }) as resp:
                 resp.raise_for_status()
         return service
 
@@ -1286,7 +1310,8 @@ class SlackService:
         return SlackVFS(
             SlackConfig(token=bot,
                         search_token=search,
-                        base_url=f"{self.url}/api"))
+                        base_url=f"{self.url}/api",
+                        **mount.get("config", {})))
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         return {
@@ -1414,9 +1439,12 @@ class TrelloService:
 
     def vfs(self, mount: dict) -> TrelloVFS:
         return TrelloVFS(
-            TrelloConfig(api_key="integ-key",
-                         api_token="integ-token",
-                         base_url=self.base))
+            TrelloConfig.model_validate({
+                "api_key": "integ-key",
+                "api_token": "integ-token",
+                "base_url": self.base,
+                **mount.get("config", {}),
+            }))
 
     async def teardown(self) -> None:
         return None
@@ -1439,17 +1467,19 @@ class DiscordService:
         self.base = base
 
     @classmethod
-    async def create(cls) -> "DiscordService":
+    async def create(cls, fixture: str = "v1") -> "DiscordService":
         base = os.environ["DISCORD_URL"].rstrip("/")
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{base}/reset") as resp:
+            async with session.post(f"{base}/reset", json={"fixture":
+                                                           fixture}) as resp:
                 resp.raise_for_status()
         return cls(base)
 
     def vfs(self, mount: dict) -> DiscordVFS:
         return DiscordVFS(
             DiscordConfig(token="integ-bot-token",
-                          base_url=f"{self.base}/api/v10"))
+                          base_url=f"{self.base}/api/v10",
+                          **mount.get("config", {})))
 
     def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
         return {
@@ -1629,6 +1659,70 @@ class SharePointService:
                              site="Main",
                              drive=mount["drive"],
                              key_prefix=mount.get("prefix")))
+
+    async def teardown(self) -> None:
+        return None
+
+
+class AirtableService:
+    """Points airtable mounts at the shared fake Airtable Web API.
+
+    The server (integ/server/airtable/) is external, Prisma-backed and shared
+    across both hosts. Each run takes its own world through a leading
+    `/_run/<id>` segment on the base URL, so the hosts reset and read
+    concurrently without a shared lane; the token is the fixture's, the same
+    on both, because Airtable tokens are data there rather than tenants.
+
+    Args:
+        url (str): AIRTABLE_URL origin (the REST surface lives under /v0).
+        run_id (str): this run's id, which names its own server-side file.
+    """
+
+    def __init__(self, url: str, run_id: str) -> None:
+        self.url = url
+        self.run_id = run_id
+
+    @property
+    def base(self) -> str:
+        """Return the run-scoped origin every mount is pointed at.
+
+        Returns:
+            str: the origin with this run's `/_run/<id>` prefix.
+        """
+        return f"{self.url}/_run/{self.run_id}"
+
+    @classmethod
+    async def create(cls, run_id: str) -> "AirtableService":
+        made = cls(os.environ["AIRTABLE_URL"].rstrip("/"), run_id)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{made.base}/reset", json={}) as resp:
+                resp.raise_for_status()
+        return made
+
+    def vfs(self, mount: dict) -> AirtableVFS:
+        # max_read_records is set below the fixture's 25-record Backlog so a
+        # full read of it is refused while head still answers; the fake meters
+        # nothing, so pacing is relaxed to keep the battery quick.
+        return AirtableVFS(config=AirtableConfig(
+            token=AIRTABLE_TOKEN,
+            base_url=f"{self.base}/v0",
+            base_ids=mount.get("base_ids"),
+            max_read_records=20,
+            requests_per_second=50.0,
+        ))
+
+    def cli_installs(self) -> dict[str, tuple[CLISpec, dict[str, object]]]:
+        # The same bounds as the mount, scoped to two of the fixture's three
+        # bases so the battery can show a refused one (the Archive).
+        return {
+            "airtable": (cli_spec_for("airtable"), {
+                "token": AIRTABLE_TOKEN,
+                "base_url": f"{self.base}/v0",
+                "base_ids": list(AIRTABLE_CLI_BASES),
+                "max_read_records": 20,
+                "requests_per_second": 50.0,
+            }),
+        }
 
     async def teardown(self) -> None:
         return None
@@ -2033,7 +2127,11 @@ class MongoDBService:
 
     def vfs(self, mount: dict) -> MongoDBVFS:
         return MongoDBVFS(
-            config=MongoDBConfig(uri=self.uri, databases=[MONGODB_DB]))
+            config=MongoDBConfig.model_validate({
+                "uri": self.uri,
+                "databases": [MONGODB_DB],
+                **mount.get("config", {}),
+            }))
 
     async def teardown(self) -> None:
         return None
@@ -2051,6 +2149,14 @@ POSTGRES_AUTHORS = [
     (1, "ada", 2),
     (2, "ben", 2),
     (3, "cara", 1),
+]
+
+POSTGRES_PROBES = [
+    (1, "Ada\ttab", True),
+    (2, "left\u2028right", False),
+    (3, "left\u2029right", True),
+    (4, "left\u0085right", False),
+    (5, None, True),
 ]
 
 
@@ -2088,18 +2194,47 @@ class PostgresService:
             await conn.execute('CREATE SCHEMA ".hidden"')
             await conn.execute(
                 'CREATE TABLE ".hidden".ghost (id int PRIMARY KEY)')
+            await conn.execute('DROP SCHEMA IF EXISTS contract CASCADE')
+            await conn.execute('CREATE SCHEMA contract')
+            await conn.execute(
+                'CREATE TABLE contract.probes '
+                '(id int PRIMARY KEY, body text, active boolean)')
+            await conn.executemany(
+                'INSERT INTO contract.probes VALUES ($1, $2, $3)',
+                POSTGRES_PROBES)
+            await conn.execute('ANALYZE contract.probes')
+            await conn.execute('DROP SCHEMA IF EXISTS byte_budget CASCADE')
+            await conn.execute('CREATE SCHEMA byte_budget')
+            await conn.execute('CREATE TABLE byte_budget.wide (body text) '
+                               'WITH (autovacuum_enabled = false)')
+            await conn.execute("INSERT INTO byte_budget.wide VALUES ('x')")
+            await conn.execute('ANALYZE byte_budget.wide')
+            await conn.execute(
+                "UPDATE byte_budget.wide SET body = repeat('é', 1000000)")
+            await conn.execute('CREATE TABLE byte_budget.empty (body text)')
+            await conn.execute(
+                'CREATE TABLE byte_budget.exact (__mirage_bytes text)')
+            await conn.execute("INSERT INTO byte_budget.exact VALUES (NULL)")
+            await conn.execute('ANALYZE byte_budget.empty')
+            await conn.execute('ANALYZE byte_budget.exact')
         finally:
             await conn.close()
         return cls(dsn)
 
     def vfs(self, mount: dict) -> PostgresVFS:
-        return PostgresVFS(PostgresConfig(dsn=self.dsn, max_read_rows=200))
+        return PostgresVFS(
+            PostgresConfig.model_validate({
+                "dsn": self.dsn,
+                "max_read_rows": 200,
+                **mount.get("config", {}),
+            }))
 
     async def teardown(self) -> None:
         return None
 
 
-Service = (S3Service | OneDriveService | SharePointService | Mem0Service
+Service = (AirtableService | S3Service | OneDriveService | SharePointService
+           | Mem0Service
            | SSHService | PostgresService | MongoDBService | ChromaService
            | QdrantService | LanceDBService | NotionService
            | NextcloudService | GwsService | HfService | HfHubService
@@ -2123,7 +2258,21 @@ def build_disk(
     async def cleanup() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
-    return DiskVFS(root=root), cleanup
+    mount_root = Path(root)
+    if fixture_name := mount.get("host_fixture"):
+        fixture = json.loads(
+            (Path(__file__).resolve().parents[3] / "fixtures" /
+             (fixture_name + ".json")).read_text())
+        for relative, text in fixture["files"].items():
+            target = mount_root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
+        for relative in fixture["directories"]:
+            (mount_root / relative).mkdir(parents=True, exist_ok=True)
+        for relative, target in fixture["symlinks"].items():
+            (mount_root / relative).symlink_to(target)
+        mount_root /= "root"
+    return DiskVFS(root=str(mount_root)), cleanup
 
 
 def build_redis(
@@ -2211,6 +2360,14 @@ def build_lancedb(
         mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, LanceDBService)
+    vfs = service.vfs(mount)
+    return vfs, vfs.accessor.close
+
+
+def build_airtable(
+        mount: dict, run_id: str, service: Service | None
+) -> tuple[object, Callable[[], Awaitable[None]]]:
+    assert isinstance(service, AirtableService)
     vfs = service.vfs(mount)
     return vfs, vfs.accessor.close
 
@@ -2338,7 +2495,7 @@ def build_gcal(
         mount: dict, run_id: str, service: Service | None
 ) -> tuple[object, Callable[[], Awaitable[None]]]:
     assert isinstance(service, GwsService)
-    return service.gcal_vfs(), _noop
+    return service.gcal_vfs(mount.get("config", {})), _noop
 
 
 def build_gmail(
@@ -2376,6 +2533,9 @@ def build_slack(
 # github needs a live repo at construct, notion an OAuth provider, and
 # hf_buckets validates the bucket id.
 ARG_ERROR_VFS: dict[str, tuple[type, type, dict[str, object]]] = {
+    "airtable": (AirtableVFS, AirtableConfig, {
+        "token": "t"
+    }),
     "databricks": (DatabricksVolumeVFS, DatabricksVolumeConfig, {
         "host": "h",
         "token": "t",
@@ -2475,6 +2635,7 @@ BUILDERS = {
     "chroma": build_chroma,
     "qdrant": build_qdrant,
     "lancedb": build_lancedb,
+    "airtable": build_airtable,
     "notion": build_notion,
     "ssh": build_ssh,
     "nextcloud": build_nextcloud,
@@ -2528,6 +2689,8 @@ async def make_service(target: dict, run_id: str) -> "Service | None":
         return await QdrantService.create(target)
     if target.get("service") == "lancedb":
         return await LanceDBService.create(target)
+    if target.get("service") == "airtable":
+        return await AirtableService.create(run_id)
     if target.get("service") == "notion":
         return await NotionService.create(run_id)
     if target.get("service") == "ssh":
@@ -2554,11 +2717,11 @@ async def make_service(target: dict, run_id: str) -> "Service | None":
             await github.reset()
         return github
     if target.get("service") == "slack":
-        return await SlackService.create(run_id)
+        return await SlackService.create(run_id, target.get("dataset", "v1"))
     if target.get("service") == "trello":
         return await TrelloService.create()
     if target.get("service") == "discord":
-        return await DiscordService.create()
+        return await DiscordService.create(target.get("dataset", "v1"))
     if target.get("service") == "linear":
         return await LinearService.create()
     if target.get("service") == "dify":
@@ -2574,8 +2737,8 @@ async def make_service(target: dict, run_id: str) -> "Service | None":
 
 async def build_mounts(
     target: dict, run_id: str, service: "Service | None"
-) -> tuple[dict[str, object], list[Callable[[], Awaitable[None]]]]:
-    mounts: dict[str, object] = {}
+) -> tuple[dict[str, VFSMount], list[Callable[[], Awaitable[None]]]]:
+    mounts: dict[str, VFSMount] = {}
     cleanups: list[Callable[[], Awaitable[None]]] = []
     built: dict[str, object] = {}
     for mount in target["mounts"]:
@@ -2630,14 +2793,106 @@ def cli_install(service: "Service | None",
         return cli_spec_for(cli_name), None
     # Widen the assert when another service grows a CLI.
     assert isinstance(
-        service, (DiscordService, EmailService, GitHubService, GwsService,
-                  HfHubService, LinearService, NotionService, SlackService))
+        service,
+        (AirtableService, DiscordService, EmailService, GitHubService,
+         GwsService, HfHubService, LinearService, NotionService, SlackService))
     return service.cli_installs()[cli_name]
 
 
 async def mutate_write(shadow_ws: Workspace, path: str,
                        content: bytes) -> None:
     await shadow_ws.vfs.write(path, content)
+
+
+async def mutate_line(shadow_ws: Workspace, command: str) -> None:
+    """Change the backend by running one line on the shadow workspace.
+
+    A file an account CLI edits by id (a Google Doc through ``gws``) has
+    no bytes to write, and the same line on the read workspace would drop
+    that workspace's own caches, so the other client runs it.
+
+    Args:
+        shadow_ws (Workspace): the workspace the case does not read from.
+        command (str): the line to run.
+    """
+    result = await shadow_ws.shell(command)
+    if result.exit_code != 0:
+        raise RuntimeError(f"{command}: {await result.stderr_str()}")
+
+
+async def mutate_commit(shadow_ws: Workspace, path: str,
+                        content: bytes) -> None:
+    """Change a Hub file the way the Hub changes: one commit.
+
+    A Hub repo mount is read-only (a write is a commit, which is the `hf`
+    CLI's verb, not a POSIX one), so the out-of-band change a consistency
+    case needs goes through the backend's own commit call on the shadow
+    mount's accessor, against the same fake the read side is looking at.
+
+    Args:
+        shadow_ws (Workspace): the workspace the case does not read from.
+        path (str): the virtual path to change.
+        content (bytes): the new content.
+    """
+    mount = shadow_ws.mount(path)
+    accessor = getattr(mount.vfs, "accessor", None)
+    if not isinstance(accessor, HfHubAccessor):
+        raise ValueError(f"hf-hub cannot commit {path}")
+    rel = path[len(mount.prefix.rstrip("/")):]
+    await commit(accessor,
+                 additions=[Addition(accessor.repo_path(rel), content)])
+
+
+async def mutate_github(shadow_ws: Workspace, path: str,
+                        content: bytes) -> None:
+    """Change a repository file the way GitHub changes one: a contents PUT.
+
+    A github mount is read-only, so the out-of-band change a consistency
+    case needs goes through the contents API on the shadow mount's config,
+    against the same fake the read side is looking at. It creates the file
+    when absent and replaces it otherwise, so a scenario runs the same on a
+    fresh fake and on one an earlier run left behind.
+
+    Args:
+        shadow_ws (Workspace): the workspace the case does not read from.
+        path (str): the virtual path to change.
+        content (bytes): the new content.
+    """
+    mount = shadow_ws.mount(path)
+    accessor = getattr(mount.vfs, "accessor", None)
+    if not isinstance(accessor, GitHubAccessor):
+        raise ValueError(f"github cannot change {path}")
+    rel = path[len(mount.prefix.rstrip("/")):].lstrip("/")
+    endpoint = (f"/repos/{accessor.owner}/{accessor.repo}/contents/"
+                f"{quote(rel)}")
+    body: dict[str, str] = {
+        "message": f"integ: change {rel}",
+        "content": base64.b64encode(content).decode(),
+    }
+    config = accessor.config
+    try:
+        current = await github_request(config.token,
+                                       "GET",
+                                       endpoint,
+                                       base_url=config.base_url)
+    except GitHubApiError as exc:
+        # Absent: create it. GitHub refuses a sha for a new file.
+        if exc.status != 404:
+            raise
+        logging.getLogger(__name__).debug("creating %s: %s", rel, exc)
+    else:
+        body["sha"] = str(current["sha"])
+    await github_request(config.token,
+                         "PUT",
+                         endpoint,
+                         body,
+                         base_url=config.base_url)
+
+
+MUTATORS: dict[str, Callable[[Workspace, str, bytes], Awaitable[None]]] = {
+    "hf-hub": mutate_commit,
+    "github": mutate_github,
+}
 
 
 async def teardown_target(
@@ -2744,28 +2999,83 @@ async def open_target(
     return ws, functools.partial(teardown_target, [ws], cleanups, service)
 
 
+def apply_mount_read(mounts: dict[str, VFSMount],
+                     mount_read: dict[str, ReadSpec]) -> dict[str, VFSMount]:
+    """The mount table with each named prefix under its own read policy.
+
+    A mount keeps everything its builder gave it but the policy: a bare
+    VFS still takes the workspace's mode, a ``(vfs, mode)`` pair keeps its
+    mode and limits. A prefix the override does not name is left exactly
+    as built, so it inherits the workspace's policy.
+
+    Raises:
+        ValueError: an override names no mount in ``mounts``.
+
+    Args:
+        mounts (dict[str, VFSMount]): ``build_mounts`` output.
+        mount_read (dict[str, ReadSpec]): the case's per-mount policies.
+    """
+    out = dict(mounts)
+    for prefix, spec in mount_read.items():
+        entry = out.get(prefix)
+        if entry is None:
+            raise ValueError(f"mount_read names no mount: {prefix}")
+        if isinstance(entry, Mount):
+            out[prefix] = dataclasses.replace(entry, read=spec)
+        elif isinstance(entry, tuple):
+            out[prefix] = Mount(
+                vfs=entry[0],
+                mode=entry[1],
+                command_limits=(entry[2] if len(entry) == 3 else {}),
+                read=spec)
+        else:
+            out[prefix] = Mount(vfs=entry, read=spec)
+    return out
+
+
 async def open_consistency(
-    target: dict, read: ReadSpec
+    target: dict, read: ReadSpec, mount_read: dict[str, ReadSpec]
 ) -> tuple[
         Workspace,
         Callable[[str, bytes], Awaitable[None]],
+        Callable[[str], Awaitable[None]],
         Callable[[], Awaitable[None]],
 ]:
+    # Refused before anything opens, so there is nothing to clean up.
+    unknown = sorted(set(mount_read) - {m["path"] for m in target["mounts"]})
+    if unknown:
+        raise ValueError(f"{target['id']}: mount_read names no mount: "
+                         f"{', '.join(unknown)}")
     run_id = uuid.uuid4().hex[:8]
     service = await make_service(target, run_id)
     read_mounts, read_cleanups = await build_mounts(target, run_id, service)
     shadow_mounts, shadow_cleanups = await build_mounts(
         target, run_id, service)
-    read_ws = Workspace(read_mounts, mode=MountMode.WRITE, read=read)
+    # A refused policy fails here, after the mounts and service exist.
+    try:
+        read_ws = Workspace(apply_mount_read(read_mounts, mount_read),
+                            mode=MountMode.WRITE,
+                            read=read)
+    except Exception:
+        await teardown_target([], [*read_cleanups, *shadow_cleanups], service)
+        raise
     shadow_ws = Workspace(shadow_mounts, mode=MountMode.WRITE)
     # Same rule as open_target: a target's declared environment reaches
     # every workspace a case can run against, or a consistency scenario
     # would silently run under a different one.
     read_ws.env = {**read_ws.env, **target.get("env", {})}
     shadow_ws.env = {**shadow_ws.env, **target.get("env", {})}
+    # And its CLIs, as open_target installs them, so a scenario can change
+    # a file through the shadow's CLI the way another client would.
+    for cli_name in target.get("clis", []):
+        spec, config = cli_install(service, cli_name)
+        read_ws.register_cli(cli_name, spec, config)
+        shadow_ws.register_cli(cli_name, spec, config)
+    mutate = MUTATORS.get(target.get("service") or "", mutate_write)
     return (
         read_ws,
-        functools.partial(mutate_write, shadow_ws),
+        functools.partial(mutate, shadow_ws),
+        functools.partial(mutate_line, shadow_ws),
         functools.partial(teardown_target, [read_ws, shadow_ws],
                           [*read_cleanups, *shadow_cleanups], service),
     )

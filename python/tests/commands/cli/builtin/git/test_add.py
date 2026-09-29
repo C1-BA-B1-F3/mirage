@@ -312,3 +312,25 @@ async def test_a_staged_symlink_is_not_reported_modified(git_rw):
     assert (await run(git_rw, "add link"))[0] == 0
     _code, out, _err = await run(git_rw, "status --porcelain")
     assert out == b"A  link\n"
+
+
+@pytest.mark.asyncio
+async def test_verbose_names_each_change_in_gits_order(git_rw,
+                                                       repo_path: Path):
+    # Paths the index already held come first, in index order and a
+    # removal among them, then new ones; pinned against git 2.50.
+    (repo_path / "a.txt").write_text("edited\n", encoding="utf-8")
+    (repo_path / "b.txt").unlink()
+    (repo_path / "aa.txt").write_text("new\n", encoding="utf-8")
+    assert await run(
+        git_rw,
+        "add -v -A") == (0, b"add 'a.txt'\nremove 'b.txt'\nadd 'aa.txt'\n",
+                         b"")
+
+
+@pytest.mark.asyncio
+async def test_verbose_names_nothing_restaged_unchanged(
+        git_rw, repo_path: Path):
+    (repo_path / "a.txt").write_text("edited\n", encoding="utf-8")
+    await run(git_rw, "add a.txt")
+    assert await run(git_rw, "add --verbose a.txt") == (0, b"", b"")

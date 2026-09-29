@@ -15,13 +15,13 @@
 from typing import Any
 
 from mirage.accessor.github import GitHubAccessor
-from mirage.commands.builtin.github import COMMANDS as _github_cmds
+from mirage.commands.builtin.github import COMMANDS
 from mirage.commands.config import RegisteredCommand
 from mirage.commands.registry import registered_commands
 from mirage.core.github.config import GitHubConfig
 from mirage.core.github.tree_entry import TreeEntry
 from mirage.core.github.watch import build_delta_hook
-from mirage.ops.github import OPS as _github_vfs_ops
+from mirage.ops.github import OPS as GITHUB_VFS_OPS
 from mirage.ops.registry import RegisteredOp
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
@@ -38,6 +38,9 @@ class GitHubVFS(BaseVFS):
     # blob read returns those same bytes, and submodule gitlinks (which
     # have no size and no blob) are excluded from the tree.
     sizes_always_known: bool = True
+    # stat and a read both stamp the content-addressed blob sha.
+    supports_snapshot: bool = True
+    read_revalidatable: bool = True
     # An API-backed tree that changes rarely; a day-long index spares the
     # provider a full re-walk every 10 minutes. Mirrors the TypeScript
     # VFS.
@@ -112,10 +115,10 @@ class GitHubVFS(BaseVFS):
         super().__init__()
 
     def ops(self) -> list[RegisteredOp]:
-        return _github_vfs_ops
+        return GITHUB_VFS_OPS
 
     def commands(self) -> list[RegisteredCommand]:
-        return registered_commands(_github_cmds)
+        return registered_commands(COMMANDS)
 
     def delta_hook(self) -> DeltaHook:
         return build_delta_hook(self.accessor)
@@ -159,6 +162,3 @@ class GitHubVFS(BaseVFS):
             default_branch=self.accessor.default_branch,
             truncated=self.accessor.truncated,
         )
-
-    def load_state(self, state: dict[str, Any]) -> None:
-        pass

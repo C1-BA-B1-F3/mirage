@@ -23,7 +23,6 @@ def test_bools_only_cluster_becomes_dashed_flags():
     old = expand_old_style(TAR, ["xz"])
     assert old.argv == ["-x", "-z"]
     assert old.origins == [0, 0]
-    assert old.cluster == "xz"
     assert old.needs_value is None
 
 
@@ -78,20 +77,17 @@ def test_dashed_first_word_is_left_alone():
     old = expand_old_style(TAR, ["-x", "-z", "-f", "a.tgz"])
     assert old.argv == ["-x", "-z", "-f", "a.tgz"]
     assert old.origins == [0, 1, 2, 3]
-    assert old.cluster is None
 
 
 def test_double_dash_first_word_is_left_alone():
     old = expand_old_style(TAR, ["--extract", "--file", "a.tgz"])
     assert old.argv == ["--extract", "--file", "a.tgz"]
-    assert old.cluster is None
 
 
 def test_empty_argv_is_left_alone():
     old = expand_old_style(TAR, [])
     assert old.argv == []
     assert old.origins == []
-    assert old.cluster is None
 
 
 def test_empty_first_word_is_an_empty_cluster():
@@ -100,4 +96,3 @@ def test_empty_first_word_is_an_empty_cluster():
     old = expand_old_style(TAR, ["", "one.txt"])
     assert old.argv == ["one.txt"]
     assert old.origins == [1]
-    assert old.cluster == ""

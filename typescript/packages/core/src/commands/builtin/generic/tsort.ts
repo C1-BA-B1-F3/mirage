@@ -15,7 +15,7 @@
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { readStdinAsync } from '../utils/stream.ts'
+import { readStdinAsync, stdinStream } from '../utils/stream.ts'
 import { extraOperandError } from '../../spec/usage.ts'
 import { CommandName } from '../../spec/types.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
@@ -73,6 +73,7 @@ export async function tsortGeneric(
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
 ): Promise<CommandFnResult> {
+  stream = stdinStream(stream, opts.stdin)
   if (paths.length > 1) throw extraOperandError(CommandName.TSORT, paths[1]?.rawPath ?? '')
   let raw: Uint8Array
   if (paths.length > 0) {
@@ -86,8 +87,9 @@ export async function tsortGeneric(
   const text = DEC.decode(raw)
   const tokens = text.split(/\s+/).filter((s) => s !== '')
   if (tokens.length % 2 !== 0) {
-    const out: ByteSource = ENC.encode('tsort: odd number of tokens\n')
-    return [out, new IOResult({ exitCode: 1 })]
+    const name = paths[0]?.rawPath ?? '-'
+    const msg = `tsort: ${name}: input contains an odd number of tokens\n`
+    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(msg) })]
   }
   const pairs: [string, string][] = []
   for (let i = 0; i < tokens.length; i += 2) {

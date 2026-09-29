@@ -10,7 +10,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "/.bash_history: Operation not supported\n"
+        "stderr": "/.bash_history: Read-only file system\n"
       }
     },
     {

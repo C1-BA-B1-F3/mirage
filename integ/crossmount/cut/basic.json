@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "cut -c1 /data/a.txt /data2/xm.txt",
+      "command": "cut -c1 /data/a.txt /data2/xm.txt; cut -c1 /data/no_nl.txt /data2/xm.txt",
       "expect": {
         "exit": 0,
-        "stdout": "h\nw\nf\nb\nb\nc\n",
+        "stdout": "h\nw\nf\nb\nb\nc\nn\nc\n",
         "stderr": ""
       }
     }

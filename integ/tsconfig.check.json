@@ -5,5 +5,12 @@
   // typechecked clean by never being looked at, and `tsc -p tsconfig.check.json`
   // reported success over three fakes it had not read. A plain type error
   // (calling http.Server's closeAllConnections on a net.Server) shipped that way.
-  "include": ["server/**/*.ts", "wandb/**/*.ts"]
+  "include": [
+    "server/**/*.ts",
+    "watch/cache/**/*.ts",
+    "wandb/**/*.ts",
+    "slack_atlas.ts",
+    "airtable_atlas.ts",
+    "scripts/capture_airtable_atlas.ts"
+  ]
 }

@@ -1,0 +1,88 @@
+{
+  "cases": [
+    {
+      "id": "split_digits_after_d",
+      "seq": 991445,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sdg1 && seq 1 25 > /data/sdg1/f && split -d10 /data/sdg1/f /data/sdg1/p && ls /data/sdg1 | tr '\\n' ' '",
+      "expect": {
+        "exit": 0,
+        "stdout": "f p00 p01 p02 ",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "split_digits_whole_word",
+      "seq": 991446,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sdg2 && seq 1 25 > /data/sdg2/f && split -10 /data/sdg2/f /data/sdg2/p && ls /data/sdg2 | tr '\\n' ' '",
+      "expect": {
+        "exit": 0,
+        "stdout": "f paa pab pac ",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "split_digits_before_d",
+      "seq": 991447,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sdg3 && seq 1 25 > /data/sdg3/f && split -10d /data/sdg3/f /data/sdg3/p && ls /data/sdg3 | tr '\\n' ' '",
+      "expect": {
+        "exit": 0,
+        "stdout": "f p00 p01 p02 ",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "split_digits_around_d",
+      "seq": 991448,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sdg4 && seq 1 25 > /data/sdg4/f && split -dx10 /data/sdg4/f /data/sdg4/p && split -1d0 /data/sdg4/f /data/sdg4/q && ls /data/sdg4 | tr '\\n' ' '",
+      "expect": {
+        "exit": 0,
+        "stdout": "f p00 p01 p02 q00 q01 q02 ",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "split_later_digits_replace",
+      "seq": 991449,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sdg5 && seq 1 25 > /data/sdg5/f && split -12 -5 /data/sdg5/f /data/sdg5/p && ls /data/sdg5 | tr '\\n' ' '",
+      "expect": {
+        "exit": 0,
+        "stdout": "f paa pab pac pad pae ",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "split_digits_with_suffix_start",
+      "seq": 991450,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sdg6 && seq 1 25 > /data/sdg6/f && split --numeric-suffixes=3 -10 /data/sdg6/f /data/sdg6/p && ls /data/sdg6 | tr '\\n' ' '",
+      "expect": {
+        "exit": 0,
+        "stdout": "f p03 p04 p05 ",
+        "stderr": ""
+      }
+    }
+  ]
+}

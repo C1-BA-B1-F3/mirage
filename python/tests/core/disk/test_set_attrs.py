@@ -129,3 +129,17 @@ async def test_rename_carries_inode_mode(accessor):
     await rename(accessor, _spec("/f.txt"), _spec("/g.txt"))
     result = await stat(accessor, _spec("/g.txt"))
     assert result.mode == 0o601
+
+
+# A path under a plain file is ENOTDIR on the real filesystem, and the
+# error names the virtual path, never the host one the mount resolves to.
+@pytest.mark.asyncio
+async def test_set_attrs_under_a_plain_file_is_not_a_directory(tmp_path):
+    (tmp_path / "a.txt").write_text("a")
+    spec = PathSpec(vfs_path="a.txt/x",
+                    virtual="/a.txt/x",
+                    directory="/a.txt/")
+    with pytest.raises(NotADirectoryError) as exc:
+        await set_attrs(DiskAccessor(tmp_path), spec, mode=0o644)
+    assert exc.value.filename == "/a.txt/x"
+    assert str(tmp_path) not in str(exc.value)

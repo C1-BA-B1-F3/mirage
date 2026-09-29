@@ -25,7 +25,8 @@ import { compileSpec } from '../../spec/compile.ts'
 import { flagKwargName } from '../../spec/constants.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { type FlagValue } from '../../spec/types.ts'
-import type { ReaddirOp, ResolveGlobOp, StatOp } from './adapter.ts'
+
+import type { ReaddirOp, ResolveGlobOp, StatOp } from '../../../vfs/types.ts'
 
 // Cap on entries visited by a planning walk (grep -r): beyond it the
 // estimate degrades to an UNKNOWN floor instead of walking forever.

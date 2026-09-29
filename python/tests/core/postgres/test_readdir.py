@@ -102,6 +102,7 @@ async def test_readdir_views_kind_unions_views_and_matviews(accessor, index):
 @pytest.mark.asyncio
 async def test_readdir_entity_lists_schema_and_rows(accessor, index):
     with patch("mirage.core.postgres.readdir.client") as mc:
+        mc.list_schemas = AsyncMock(return_value=["public"])
         mc.list_tables = AsyncMock(return_value=["users"])
         result = await readdir(
             accessor,
@@ -118,6 +119,7 @@ async def test_readdir_entity_lists_schema_and_rows(accessor, index):
 @pytest.mark.asyncio
 async def test_readdir_view_entity_lists_schema_and_rows(accessor, index):
     with patch("mirage.core.postgres.readdir.client") as mc:
+        mc.list_schemas = AsyncMock(return_value=["analytics"])
         mc.list_views = AsyncMock(return_value=["daily_revenue"])
         mc.list_matviews = AsyncMock(return_value=[])
         result = await readdir(
@@ -183,6 +185,7 @@ async def test_readdir_kind_under_unknown_schema_raises(accessor, index):
 @pytest.mark.asyncio
 async def test_readdir_unknown_entity_raises(accessor, index):
     with patch("mirage.core.postgres.readdir.client") as mc:
+        mc.list_schemas = AsyncMock(return_value=["public"])
         mc.list_tables = AsyncMock(return_value=["users"])
         with pytest.raises(FileNotFoundError):
             await readdir(
@@ -190,3 +193,29 @@ async def test_readdir_unknown_entity_raises(accessor, index):
                 PathSpec(vfs_path="public/tables/ghost",
                          virtual="/public/tables/ghost",
                          directory="/public/tables/ghost"), index)
+
+
+async def _catalog_schemas(conn, allowlist):
+    # `client.list_schemas`'s contract over a catalog holding two schemas.
+    return [
+        s for s in ("public", "secret") if allowlist is None or s in allowlist
+    ]
+
+
+@pytest.mark.asyncio
+async def test_an_entity_under_a_schema_outside_schemas_is_enoent(index):
+    """The entity guard stands in for the listing chain, so it has to
+    answer for the schema as well: it used to check only that the table
+    existed, and a table under a schema ``schemas`` leaves out listed,
+    stat'd and read as if the mount could see it."""
+    accessor = _accessor(schemas=["public"])
+    with patch("mirage.core.postgres.readdir.client") as mc:
+        mc.list_schemas = AsyncMock(side_effect=_catalog_schemas)
+        mc.list_tables = AsyncMock(return_value=["users"])
+        with pytest.raises(FileNotFoundError):
+            await readdir(
+                accessor,
+                PathSpec(vfs_path="secret/tables/users",
+                         virtual="/secret/tables/users",
+                         directory="/secret/tables/users"), index)
+        mc.list_tables.assert_not_awaited()

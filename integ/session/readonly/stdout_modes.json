@@ -1,0 +1,845 @@
+{
+  "targets": [
+    "ram",
+    "disk",
+    "redis",
+    "s3",
+    "s3-prefix",
+    "gridfs"
+  ],
+  "cases": [
+    {
+      "id": "sro_prep",
+      "seq": 1231020,
+      "command": "mkdir -p /res/sro && printf 'hello\\n' > /res/sro/f.txt && cd /res/sro && gzip -k f.txt && tar -cf a.tar f.txt && zip -q a.zip f.txt && printf 'a\\nb\\n' > two.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_gunzip_c_reads_a_read_only_archive",
+      "seq": 1231021,
+      "session": "narrowed",
+      "command": "gunzip -c /res/sro/f.txt.gz",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "sro_gunzip_t_tests_a_read_only_archive",
+      "seq": 1231022,
+      "session": "narrowed",
+      "command": "gunzip -t /res/sro/f.txt.gz && echo ok",
+      "expect": {
+        "exit": 0,
+        "stdout": "ok\n",
+        "stderr": ""
+      },
+      "flags": [
+        "t"
+      ]
+    },
+    {
+      "id": "sro_gzip_c_compresses_to_stdout",
+      "seq": 1231023,
+      "session": "narrowed",
+      "command": "gzip -c /res/sro/f.txt | gunzip",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "sro_gzip_filters_stdin_in_a_read_only_cwd",
+      "seq": 1231024,
+      "session": "narrowed",
+      "command": "cd /res/sro && printf 'x\\n' | gzip | gunzip",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_tar_lists_a_read_only_archive",
+      "seq": 1231025,
+      "session": "narrowed",
+      "command": "tar -tf /res/sro/a.tar",
+      "expect": {
+        "exit": 0,
+        "stdout": "f.txt\n",
+        "stderr": ""
+      },
+      "flags": [
+        "t",
+        "f"
+      ]
+    },
+    {
+      "id": "sro_tar_extracts_to_stdout",
+      "seq": 1231026,
+      "session": "narrowed",
+      "command": "tar -xOf /res/sro/a.tar",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      },
+      "flags": [
+        "x",
+        "to_stdout",
+        "f"
+      ]
+    },
+    {
+      "id": "sro_unzip_pipes_a_member",
+      "seq": 1231027,
+      "session": "narrowed",
+      "command": "unzip -p /res/sro/a.zip f.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      },
+      "flags": [
+        "p"
+      ]
+    },
+    {
+      "id": "sro_unzip_lists_member_names",
+      "seq": 1231028,
+      "session": "narrowed",
+      "command": "unzip -Z1 /res/sro/a.zip",
+      "expect": {
+        "exit": 0,
+        "stdout": "f.txt\n",
+        "stderr": ""
+      },
+      "flags": [
+        "Z",
+        "1"
+      ]
+    },
+    {
+      "id": "sro_iconv_converts_to_stdout",
+      "seq": 1231029,
+      "session": "narrowed",
+      "command": "iconv -f utf-8 -t utf-8 /res/sro/f.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      },
+      "flags": [
+        "f",
+        "t"
+      ]
+    },
+    {
+      "id": "sro_mktemp_dry_run_names_a_file",
+      "seq": 1231030,
+      "session": "narrowed",
+      "command": "cd /res/sro && mktemp -u > /dev/null && echo ok",
+      "expect": {
+        "exit": 0,
+        "stdout": "ok\n",
+        "stderr": ""
+      },
+      "flags": [
+        "dry_run"
+      ]
+    },
+    {
+      "id": "sro_gzip_in_place_is_still_refused",
+      "seq": 1231031,
+      "session": "narrowed",
+      "command": "gzip /res/sro/f.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "gzip: /res/sro/f.txt.gz already exists;\tnot overwritten\n"
+      }
+    },
+    {
+      "id": "sro_tar_extract_to_files_is_still_refused",
+      "seq": 1231032,
+      "session": "narrowed",
+      "command": "tar -xf /res/sro/a.tar -C /res/sro",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: f.txt: Cannot open: Read-only file system\ntar: Exiting with failure status due to previous errors\n"
+      },
+      "flags": [
+        "x",
+        "f",
+        "C"
+      ]
+    },
+    {
+      "id": "sro_unzip_extract_is_still_refused",
+      "seq": 1231033,
+      "session": "narrowed",
+      "command": "unzip -o /res/sro/a.zip -d /res/sro",
+      "expect": {
+        "exit": 50,
+        "stdout": "Archive:  /res/sro/a.zip\n",
+        "stderr": "error:  cannot delete old /res/sro/f.txt\n        Read-only file system\n"
+      },
+      "flags": [
+        "o",
+        "d"
+      ]
+    },
+    {
+      "id": "sro_split_n_reads_one_chunk",
+      "seq": 1231050,
+      "session": "narrowed",
+      "command": "split -n 1/2 /res/sro/f.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "hel",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sro_split_n_reads_the_last_chunk",
+      "seq": 1231051,
+      "session": "narrowed",
+      "command": "split -n 2/2 /res/sro/f.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "lo\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sro_split_n_reads_a_line_chunk",
+      "seq": 1231052,
+      "session": "narrowed",
+      "command": "split -n l/1/2 /res/sro/f.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sro_split_n_reads_a_round_robin_chunk",
+      "seq": 1231053,
+      "session": "narrowed",
+      "command": "split -n r/1/2 /res/sro/f.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sro_split_n_filters_stdin_in_a_read_only_cwd",
+      "seq": 1231054,
+      "session": "narrowed",
+      "command": "(cd /res/sro && printf 'a\\nb\\n' | split -n 1/2)",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sro_tee_copies_stdin_and_refuses_the_file",
+      "seq": 1231055,
+      "session": "narrowed",
+      "command": "echo x | tee /res/sro/t.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "x\n",
+        "stderr": "tee: /res/sro/t.txt: Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_tar_create_is_refused",
+      "seq": 1231056,
+      "session": "narrowed",
+      "command": "tar -cf /res/sro/b.tar /res/sro/f.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: /res/sro/b.tar: Cannot open: Read-only file system\ntar: Error is not recoverable: exiting now\n"
+      },
+      "flags": [
+        "c",
+        "f"
+      ]
+    },
+    {
+      "id": "sro_rm_is_refused",
+      "seq": 1231057,
+      "session": "narrowed",
+      "command": "rm /res/sro/f.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "rm: cannot remove '/res/sro/f.txt': Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_mkdir_is_refused",
+      "seq": 1231058,
+      "session": "narrowed",
+      "command": "mkdir /res/sro/n",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mkdir: cannot create directory '/res/sro/n': Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_cp_is_refused",
+      "seq": 1231059,
+      "session": "narrowed",
+      "command": "cp /res/sro/f.txt /res/sro/g.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cp: cannot create regular file '/res/sro/g.txt': Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_mv_is_refused",
+      "seq": 1231060,
+      "session": "narrowed",
+      "command": "mv /res/sro/f.txt /res/sro/g.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mv: cannot move '/res/sro/f.txt' to '/res/sro/g.txt': Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_truncate_is_refused",
+      "seq": 1231061,
+      "session": "narrowed",
+      "command": "truncate -s 0 /res/sro/f.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "truncate: cannot open '/res/sro/f.txt' for writing: Read-only file system\n"
+      },
+      "flags": [
+        "s"
+      ]
+    },
+    {
+      "id": "sro_truncate_missing_is_refused",
+      "seq": 1231063,
+      "session": "narrowed",
+      "flags": [
+        "s"
+      ],
+      "command": "truncate -s 0 /res/sro/new.txt; echo rc=$?; test -e /res/sro/new.txt; echo new=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nnew=1\n",
+        "stderr": "truncate: cannot open '/res/sro/new.txt' for writing: Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_truncate_c_leaves_a_missing_file_alone",
+      "seq": 1231064,
+      "session": "narrowed",
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s 0 /res/sro/gone.txt; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_truncate_c_still_refuses_an_existing_file",
+      "seq": 1231065,
+      "session": "narrowed",
+      "flags": [
+        "c",
+        "s"
+      ],
+      "command": "truncate -c -s 0 /res/sro/f.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "truncate: cannot open '/res/sro/f.txt' for writing: Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_unlink_is_refused",
+      "seq": 1231062,
+      "session": "narrowed",
+      "command": "unlink /res/sro/f.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "unlink: cannot unlink '/res/sro/f.txt': Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_tar_c_names_a_relative_archive_as_typed",
+      "seq": 1231110,
+      "session": "narrowed",
+      "command": "(cd /res/sro && tar -cf c.tar f.txt)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: c.tar: Cannot open: Read-only file system\ntar: Error is not recoverable: exiting now\n"
+      },
+      "flags": [
+        "c",
+        "f"
+      ]
+    },
+    {
+      "id": "sro_sort_o_names_a_relative_output_as_typed",
+      "seq": 1231111,
+      "session": "narrowed",
+      "command": "(cd /res/sro && sort -o o.txt f.txt)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: open failed: o.txt: Read-only file system\n"
+      },
+      "flags": [
+        "o"
+      ]
+    },
+    {
+      "id": "sro_shuf_o_names_a_relative_output_as_typed",
+      "seq": 1231112,
+      "session": "narrowed",
+      "command": "(cd /res/sro && shuf -o o.txt f.txt)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "shuf: o.txt: Read-only file system\n"
+      },
+      "flags": [
+        "o"
+      ]
+    },
+    {
+      "id": "sro_grep_f_names_a_relative_pattern_file_as_typed",
+      "seq": 1231113,
+      "session": "narrowed",
+      "command": "(cd /res/sro && grep -f nofile f.txt)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: nofile: No such file or directory\n"
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "sro_sed_f_names_a_relative_script_as_typed",
+      "seq": 1231114,
+      "session": "narrowed",
+      "command": "(cd /res/sro && sed -f nofile f.txt)",
+      "expect": {
+        "exit": 4,
+        "stdout": "",
+        "stderr": "sed: couldn't open file nofile: No such file or directory\n"
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "sro_cp_t_names_a_relative_target_as_typed",
+      "seq": 1231115,
+      "session": "narrowed",
+      "command": "(cd /res/sro && cp -t nodir f.txt)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cp: target directory 'nodir': No such file or directory\n"
+      },
+      "flags": [
+        "t"
+      ]
+    },
+    {
+      "id": "sro_split_names_its_default_outputs_as_formed",
+      "seq": 1231116,
+      "session": "narrowed",
+      "command": "(cd /res/sro && split -l 1 f.txt)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "split: xaa: Read-only file system\n"
+      },
+      "flags": [
+        "l"
+      ]
+    },
+    {
+      "id": "sro_split_names_an_absolute_prefix_as_typed",
+      "seq": 1231117,
+      "session": "narrowed",
+      "command": "split -l 1 /res/sro/f.txt /res/sro/pre",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "split: /res/sro/preaa: Read-only file system\n"
+      },
+      "flags": [
+        "l"
+      ]
+    },
+    {
+      "id": "sro_split_names_a_dot_prefix_as_typed",
+      "seq": 1231118,
+      "session": "narrowed",
+      "command": "(cd /res/sro && split -l 1 f.txt ./pre)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "split: ./preaa: Read-only file system\n"
+      },
+      "flags": [
+        "l"
+      ]
+    },
+    {
+      "id": "sro_csplit_names_its_default_outputs_as_formed",
+      "seq": 1231119,
+      "session": "narrowed",
+      "command": "(cd /res/sro && csplit two.txt 2)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "csplit: xx00: Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_csplit_k_still_reports_the_refusal",
+      "seq": 1231120,
+      "session": "narrowed",
+      "command": "(cd /res/sro && csplit -k -f pp two.txt 2)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "csplit: pp00: Read-only file system\n"
+      },
+      "flags": [
+        "k",
+        "f"
+      ]
+    },
+    {
+      "id": "sro_split_and_csplit_write_into_the_cwd",
+      "seq": 1231121,
+      "session": "narrowed",
+      "command": "(mkdir -p /data/sro_sp && cd /data/sro_sp && split -l 1 /res/sro/two.txt && csplit /res/sro/two.txt 2 && ls; cd / && rm -r /data/sro_sp)",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n2\nxaa\nxab\nxx00\nxx01\n",
+        "stderr": ""
+      },
+      "flags": [
+        "l"
+      ]
+    },
+    {
+      "id": "sro_unzip_o_names_the_file_it_cannot_replace",
+      "seq": 1231122,
+      "session": "narrowed",
+      "command": "(cd /res/sro && unzip -o a.zip)",
+      "expect": {
+        "exit": 50,
+        "stdout": "Archive:  a.zip\n",
+        "stderr": "error:  cannot delete old f.txt\n        Read-only file system\n"
+      },
+      "flags": [
+        "o"
+      ]
+    },
+    {
+      "id": "sro_unzip_d_cannot_make_its_directory",
+      "seq": 1231123,
+      "session": "narrowed",
+      "command": "unzip -q /res/sro/a.zip -d /res/sro/out",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "checkdir:  cannot create extraction directory: /res/sro/out\n           Read-only file system\n"
+      },
+      "flags": [
+        "q",
+        "d"
+      ]
+    },
+    {
+      "id": "sro_zip_cannot_create_its_archive",
+      "seq": 1231124,
+      "session": "narrowed",
+      "command": "(cd /res/sro && zip b.zip f.txt)",
+      "expect": {
+        "exit": 15,
+        "stdout": "",
+        "stderr": "zip I/O error: Read-only file system\nzip error: Could not create output file (b.zip)\n"
+      }
+    },
+    {
+      "id": "sro_mkdir_p_blames_the_first_missing_component",
+      "seq": 1231125,
+      "session": "narrowed",
+      "command": "mkdir -p /res/sro/n/m",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mkdir: cannot create directory '/res/sro/n': Read-only file system\n"
+      },
+      "flags": [
+        "p"
+      ]
+    },
+    {
+      "id": "sro_mkdir_p_blames_a_relative_component_as_typed",
+      "seq": 1231126,
+      "session": "narrowed",
+      "command": "(cd /res/sro && mkdir -p n/m)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mkdir: cannot create directory 'n': Read-only file system\n"
+      },
+      "flags": [
+        "p"
+      ]
+    },
+    {
+      "id": "sro_mkdir_p_of_an_existing_directory_succeeds",
+      "seq": 1231127,
+      "session": "narrowed",
+      "command": "mkdir -p /res/sro && echo ok",
+      "expect": {
+        "exit": 0,
+        "stdout": "ok\n",
+        "stderr": ""
+      },
+      "flags": [
+        "p"
+      ]
+    },
+    {
+      "id": "sro_mkdir_of_an_existing_directory_exists",
+      "seq": 1231128,
+      "session": "narrowed",
+      "command": "mkdir /res/sro",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mkdir: cannot create directory '/res/sro': File exists\n"
+      }
+    },
+    {
+      "id": "sro_gzip_f_cannot_replace_its_output",
+      "seq": 1231129,
+      "session": "narrowed",
+      "command": "gzip -f /res/sro/f.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "gzip: /res/sro/f.txt.gz: Read-only file system\n"
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "sro_gzip_cannot_create_a_new_output",
+      "seq": 1231130,
+      "session": "narrowed",
+      "command": "(cd /res/sro && gzip a.tar)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "\ngzip: a.tar.gz: Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_gzip_warns_then_stops_at_the_first_create",
+      "seq": 1231131,
+      "session": "narrowed",
+      "command": "gzip /res/sro/f.txt /res/sro/a.tar /res/sro/a.zip",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "gzip: /res/sro/f.txt.gz already exists;\tnot overwritten\n\ngzip: /res/sro/a.tar.gz: Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_gzip_goes_on_past_a_missing_input",
+      "seq": 1231132,
+      "session": "narrowed",
+      "command": "(mkdir -p /data/sro_gz && cd /data/sro_gz && printf g > g.txt && gzip nope.txt g.txt; echo rc=$?; ls; cd / && rm -r /data/sro_gz)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\ng.txt.gz\n",
+        "stderr": "gzip: nope.txt: No such file or directory\n"
+      }
+    },
+    {
+      "id": "sro_mktemp_names_a_relative_template",
+      "seq": 1231133,
+      "session": "narrowed",
+      "command": "(cd /res/sro && mktemp -p .)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mktemp: failed to create file via template './tmp.XXXXXXXXXX': Read-only file system\n"
+      },
+      "flags": [
+        "p"
+      ]
+    },
+    {
+      "id": "sro_mktemp_d_names_the_template",
+      "seq": 1231134,
+      "session": "narrowed",
+      "command": "mktemp -d -p /res/sro",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mktemp: failed to create directory via template '/res/sro/tmp.XXXXXXXXXX': Read-only file system\n"
+      },
+      "flags": [
+        "d",
+        "p"
+      ]
+    },
+    {
+      "id": "sro_mktemp_bare_template_is_the_cwd",
+      "seq": 1231135,
+      "session": "narrowed",
+      "command": "(cd /res/sro && mktemp x.XXX)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "mktemp: failed to create file via template 'x.XXX': Read-only file system\n"
+      }
+    },
+    {
+      "id": "sro_mktemp_pathless_creates_under_tmp",
+      "seq": 1231136,
+      "session": "narrowed",
+      "command": "(cd /res/sro && p=$(mktemp) && dirname \"$p\" && test -f \"$p\" && rm \"$p\" && echo ok)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/tmp\nok\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_refusals_wrote_nothing",
+      "seq": 1231140,
+      "command": "ls /res/sro",
+      "expect": {
+        "exit": 0,
+        "stdout": "a.tar\na.zip\nf.txt\nf.txt.gz\ntwo.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_cleanup",
+      "seq": 1231141,
+      "command": "rm -r /res/sro",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_gzip_and_gunzip_filter_a_dash_in_a_read_only_cwd",
+      "seq": 1231036,
+      "session": "narrowed",
+      "command": "(cd /res && printf 'x\\n' | gzip - | gunzip -)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_nested_tar_prep",
+      "seq": 1231066,
+      "command": "mkdir -p /res/sro-src/sub /res/sro-out && printf 'nested\\n' > /res/sro-src/sub/f.txt && printf 'flat\\n' > /res/sro-src/f.txt && tar -cf /res/sro-nested.tar -C /res/sro-src sub/f.txt f.txt && rm -r /res/sro-src",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_nested_tar_reports_parent_and_member_failures",
+      "seq": 1231067,
+      "session": "narrowed",
+      "command": "tar -xf /res/sro-nested.tar -C /res/sro-out",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "tar: sub: Cannot mkdir: Read-only file system\ntar: sub/f.txt: Cannot open: No such file or directory\ntar: f.txt: Cannot open: Read-only file system\ntar: Exiting with failure status due to previous errors\n"
+      }
+    },
+    {
+      "id": "sro_nested_tar_wrote_nothing",
+      "seq": 1231068,
+      "command": "ls -A /res/sro-out",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sro_nested_tar_cleanup",
+      "seq": 1231069,
+      "command": "rm -r /res/sro-nested.tar /res/sro-out",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  ]
+}

@@ -18,13 +18,10 @@ import { resolve } from 'node:path'
 import { RemoteSandbox } from '@struktoai/mirage-core/runtime/sandbox/base'
 import { registerRuntime } from '@struktoai/mirage-core/runtime/table'
 import type { RunResult, RuntimeOptions } from '@struktoai/mirage-core/runtime/types'
-import { loadOptionalPeer } from '@struktoai/mirage-core/utils/optional_peer'
+import { loadSdk, type Ssh2Sdk } from './sdk.ts'
 import { SSH_RUNTIME_CONFIG_KEYS, type SSHRuntimeConfig } from './config.ts'
 import { wrapLine } from './constants.ts'
 import type { Client, ClientChannel, ConnectConfig } from 'ssh2'
-import type * as Ssh2Mod from 'ssh2'
-
-export type Ssh2Sdk = typeof Ssh2Mod
 
 interface SshResult {
   stdout: Uint8Array
@@ -68,10 +65,7 @@ export class SSHRuntime extends RemoteSandbox<SSHRuntimeConfig> {
 
   // The SDK loader as a seam: tests substitute a fake module here.
   protected loadSdk(): Promise<Ssh2Sdk> {
-    return loadOptionalPeer(() => import('ssh2'), {
-      feature: "the 'ssh' runtime",
-      packageName: 'ssh2',
-    })
+    return loadSdk()
   }
 
   private async connectOpts(): Promise<ConnectConfig> {

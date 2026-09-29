@@ -14,11 +14,13 @@
 
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { PathSpec } from '../../types.ts'
+import { lookupError } from './dest.ts'
 import { norm } from './utils.ts'
 import { invalidateAfterUnlink } from '../../cache/context.ts'
 
 export async function unlink(accessor: RAMAccessor, path: PathSpec): Promise<void> {
   const p = norm(path.mountPath)
+  if (!accessor.store.files.has(p)) throw lookupError(accessor, path, p)
   accessor.store.files.delete(p)
   accessor.store.modified.delete(p)
   accessor.store.attrs.delete(p)

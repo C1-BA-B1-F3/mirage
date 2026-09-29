@@ -17,8 +17,9 @@ import type { SessionView } from '../../ops/types.ts'
 import { scopesPaths } from '../../policy/match/reads.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { PathSpec, wordText } from '../../types.ts'
-import { literalWord, markGlobs, unmarkGlobs } from '../../utils/glob_walk.ts'
+import { hasGlob, literalWord, markGlobs, unmarkGlobs } from '../../utils/glob_walk.ts'
 import type { MountRegistry } from '../mount/registry.ts'
+import { INTERPRETER_NAMES } from '../lookup/constants.ts'
 import {
   Consumer,
   WordPolicy,
@@ -33,7 +34,7 @@ import type { NamespaceLinks } from '../../ops/config.ts'
 import { globNeedsShell, globOptions, resolveGlobs } from './globs.ts'
 import { type ExecuteFn } from './node.ts'
 import { expandWords } from './parts.ts'
-import { type ValueType } from '../../commands/spec/types.ts'
+import { type CommandSpec, type ValueType } from '../../commands/spec/types.ts'
 import { specForCommand, specWordBases, specWordKinds } from './spec_hints.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 
@@ -96,7 +97,9 @@ export class Argv {
  *
  * Uses the cwd mount's CommandSpec (when it has one for the command) to
  * decide which words are TEXT (skip classification) and which are PATH
- * (classify even bare filenames).
+ * (classify even bare filenames). A native program's line is globbed
+ * whatever the slots, as bash globs it, and its words are then
+ * classified for the slots the expanded words fill.
  */
 export async function expandArgv(
   parts: TSNodeLike[],
@@ -134,19 +137,49 @@ export async function expandArgv(
   const lineWords = [...expanded.slice(0, consumed), ...tail]
 
   const policy = wordPolicy(consumer)
+  // A native program gets its words the way bash hands them over, with
+  // every unquoted glob already expanded, whatever slot the word fills.
+  const native = consumer === Consumer.EXTERNAL && !refused
+  // An interpreter run in-process keeps the shell's reading of its words,
+  // which is what its argv is built from, but its script is a file it
+  // opens: the spec's script slot makes that one word a path, so a rule
+  // protecting `secret.py` reads `python3 secret.py` however the script
+  // is spelled.
+  const inProcess = consumer === Consumer.SESSION && INTERPRETER_NAMES.has(name)
+  let spec: CommandSpec | null = null
   let wordKinds: (ValueType | null)[] | null = null
   let wordBases: (string | null)[] | null = null
-  // Native captures still need the spec's path roles for admission.
-  if (policy === WordPolicy.MOUNT || consumer === Consumer.EXTERNAL) {
-    const spec = specForCommand(name, registry, session.cwd)
+  // Native captures and interpreters still need the spec's path roles
+  // for admission.
+  if (policy === WordPolicy.MOUNT || consumer === Consumer.EXTERNAL || inProcess) {
+    spec = specForCommand(name, registry, session.cwd)
     if (spec !== null) {
       const extra: (ValueType | null)[] = new Array<ValueType | null>(consumed - 1).fill('str')
-      wordKinds = [...extra, ...specWordKinds(spec, lineWords.slice(consumed), name)]
+      const program = lineWords.slice(consumed)
+      let kinds = specWordKinds(spec, program, name)
+      if (inProcess) kinds = kinds.map((kind) => (kind === 'path' ? kind : null))
+      wordKinds = [...extra, ...kinds]
       const bases = specWordBases(spec, lineWords.slice(consumed), session.cwd)
       if (bases !== null) {
         wordBases = [...new Array<string | null>(consumed - 1).fill(null), ...bases]
       }
     }
+  }
+  if (native) {
+    // bash globs every unquoted word before the program reads any of
+    // them, whatever slot it fills and whatever it looks like:
+    // `python3 s.py *.txt` gets the matches, `.*.txt` the dotfiles and
+    // `x=*` a file named `x=1`, and a glob that matches nothing stays the
+    // word as typed. So a word carrying a live glob character is a
+    // pattern here, spec or no spec, rather than a shell word the shape
+    // rules read. A quoted one carries marks rather than glob characters,
+    // so it stays text.
+    const tail = lineWords.slice(consumed)
+    const own = wordKinds !== null ? wordKinds.slice(consumed - 1) : tail.map(() => null)
+    wordKinds = [
+      ...new Array<ValueType | null>(consumed - 1).fill('str'),
+      ...tail.map((word, i): ValueType | null => (hasGlob(word) ? 'path' : (own[i] ?? null))),
+    ]
   }
 
   const classified = classifyParts(lineWords, registry, session.cwd, wordKinds, wordBases)
@@ -159,7 +192,7 @@ export async function expandArgv(
   // only later matches under the rule's path would pass a gate its
   // matches fail.
   const globOpts = globOptions(session)
-  const words =
+  let words =
     !refused &&
     (policy === WordPolicy.SHELL || globNeedsShell(globOpts) || scopesPaths(session.commands, name))
       ? await resolveGlobs(classified, registry, false, namespace, globOpts)
@@ -169,6 +202,9 @@ export async function expandArgv(
         classified.map((item) =>
           item instanceof PathSpec && item.pattern !== null ? item : literalWord(item),
         )
+  if (native && spec !== null) {
+    words = programWords(words, spec, name, consumed, registry, session.cwd)
+  }
   // The text view renders words as typed (rawPath): bash hands
   // programs their words unchanged, so `echo sub/file.txt` prints the
   // relative form, not the resolved absolute path. Quote removal is part
@@ -180,4 +216,54 @@ export async function expandArgv(
     words.slice(consumed),
     expanded.slice(0, consumed).map(unmarkGlobs),
   )
+}
+
+/**
+ * Classify a native program's words for the argv it receives.
+ *
+ * bash expands every glob before the program parses its argv, so a
+ * match can fill a slot of another kind than the word it came from:
+ * `grep *.txt` hands grep its pattern and its files out of one word, and
+ * a glob's extra matches push every later word into a later slot. The
+ * spec therefore reads the expanded words, which are literal from here
+ * on, and each word is classified for the slot it now fills. Admission
+ * then judges the paths the program opens, and a match in a text slot is
+ * text, exactly like the same word typed by hand. A glob that matched
+ * nothing keeps the pattern spec the resolver left in a path slot, and is
+ * its typed text in a text slot.
+ */
+function programWords(
+  words: readonly (string | PathSpec)[],
+  spec: CommandSpec,
+  name: string,
+  consumed: number,
+  registry: MountRegistry,
+  cwd: string,
+): (string | PathSpec)[] {
+  const literal = words.map((w) => markGlobs(wordText(w)))
+  const kinds: (ValueType | null)[] = [
+    ...new Array<ValueType | null>(consumed - 1).fill('str'),
+    ...specWordKinds(spec, literal.slice(consumed), name),
+  ]
+  const bases = specWordBases(spec, literal.slice(consumed), cwd)
+  const reread = classifyParts(
+    literal,
+    registry,
+    cwd,
+    kinds,
+    bases === null ? null : [...new Array<string | null>(consumed - 1).fill(null), ...bases],
+  )
+  const out: (string | PathSpec)[] = [words[0] ?? '']
+  for (let i = 1; i < words.length; i++) {
+    const word = words[i] ?? ''
+    const kind = kinds[i - 1] ?? null
+    if (!(word instanceof PathSpec && word.pattern !== null)) {
+      out.push(literalWord(reread[i] ?? ''))
+    } else if (kind === null || kind === 'path') {
+      out.push(word)
+    } else {
+      out.push(literalWord(wordText(word)))
+    }
+  }
+  return out
 }

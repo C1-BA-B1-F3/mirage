@@ -13,37 +13,40 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from functools import partial
-from typing import Any
 
 import orjson
 
 from mirage.accessor.postgres import PostgresAccessor
+from mirage.commands.builtin.grep_pushdown import grep_search_options
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.hierarchy.search import Searcher, SearchQuery
+from mirage.core.hierarchy.search import Searcher, query_matcher
 from mirage.core.postgres import client
 from mirage.core.postgres._schema_json import build_entity_schema_json
 from mirage.core.postgres.client import (canonicalize_row, qualified,
                                          quote_ident)
+from mirage.core.postgres.read import read_rows, row_line
 from mirage.core.postgres.semantic import build_entity_semantic_json
+from mirage.utils.errors import efbig
+from mirage.vfs.types import SearchQuery
 
-_TEXT_TYPES = (
-    "text",
-    "character varying",
-    "character",
-    "name",
-    "uuid",
-    "json",
-    "jsonb",
-)
-
-
-async def _text_columns(conn, schema: str, name: str) -> list[str]:
-    rows = await conn.fetch(
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_schema = $1 AND table_name = $2 "
-        "AND data_type = ANY($3::text[]) "
-        "ORDER BY ordinal_position", schema, name, list(_TEXT_TYPES))
-    return [r["column_name"] for r in rows]
+# Column types whose `::text` is the value exactly as a rows.jsonl line
+# spells it, so a LIKE over the cast finds every row whose line holds
+# the pattern inside that value. Everything else renders differently in
+# the line (a timestamp's separator, a float's digits, a `char(n)`'s
+# padding, json's spacing), and a table holding one is not searchable.
+_SAME_TEXT_TYPES = frozenset({
+    "text", "character varying", "name", "uuid", "smallint", "integer",
+    "bigint", "boolean"
+})
+# The ones that can hold a control character, which the line spells as
+# an escape (`\n`, `\u0001`), so a pattern can match the escape's letters
+# in a row whose value never holds them: such rows are candidates too.
+_STRING_TYPES = frozenset({"text", "character varying", "name"})
+# What a line spells around and between values: a pattern holding one
+# can match where no single value holds it (`:4` after a key).
+_STRUCTURAL = frozenset('"\\:,{}')
+# How a NULL spells in the line; no LIKE over a NULL ever matches it.
+_NULL = "null"
 
 
 def _escape_like(pattern: str) -> str:
@@ -60,53 +63,125 @@ def _escape_like(pattern: str) -> str:
                                                   "\\%").replace("_", "\\_"))
 
 
-async def search_entity(
-        accessor: PostgresAccessor,
-        schema: str,
-        kind: str,
-        entity: str,
-        pattern: str,
-        limit: int,
-        *,
-        case_insensitive: bool = False) -> list[dict[str, Any]]:
-    pool = await accessor.pool()
-    async with pool.acquire() as conn:
-        cols = await _text_columns(conn, schema, entity)
-        if not cols:
-            return []
-        op = "ILIKE" if case_insensitive else "LIKE"
-        where = " OR ".join(f"{quote_ident(c)}::text {op} $1" for c in cols)
-        sql = (f"SELECT * FROM {qualified(schema, entity)} "
-               f"WHERE {where} LIMIT $2")
-        rows = await conn.fetch(sql, f"%{_escape_like(pattern)}%", limit)
-        return [canonicalize_row(dict(r)) for r in rows]
+def _answerable(columns: list[tuple[str, str]], query: SearchQuery) -> bool:
+    """Whether a LIKE over the columns finds every row a scan would.
+
+    The push-down prints what grep over rows.jsonl would print, and a
+    LIKE per column sees only values: a pattern that can match a key
+    (every row holds every key), the text between values, a NULL's
+    ``null`` or a value the line spells differently from its cast would
+    be found by the scan and missed by the query. Any of those, and the
+    wrapper scans instead of answering short.
+
+    Args:
+        columns (list[tuple[str, str]]): the entity's ``(name, data type)``
+            in column order.
+        query (SearchQuery): the qualified request; a literal pattern.
+    """
+    pattern = query.query
+    if any(ch in _STRUCTURAL or ord(ch) < 0x20 for ch in pattern):
+        return False
+    folded = pattern.lower() if grep_search_options(
+        query).ignore_case else pattern
+    if folded in _NULL:
+        return False
+    for name, data_type in columns:
+        if data_type not in _SAME_TEXT_TYPES:
+            return False
+        key = name.lower() if grep_search_options(query).ignore_case else name
+        if folded in key:
+            return False
+    return True
 
 
-async def search_entity_metadata(accessor: PostgresAccessor,
-                                 schema: str,
-                                 kind: str,
-                                 entity: str,
-                                 pattern: str,
-                                 *,
-                                 case_insensitive: bool = False) -> list[str]:
-    """Grep an entity's rendered metadata files.
+async def search_entity(accessor: PostgresAccessor, schema: str, kind: str,
+                        entity: str, query: SearchQuery) -> list[str]:
+    """The rows.jsonl lines of one entity that grep would print.
 
-    The LIKE push-down only ever sees row values, so schema.json and
-    semantic.json would be invisible at directory scope: `grep -r` would
-    report "not found" for content that is plainly there. These documents
-    are rendered, not stored, so the only honest way to match them is to
-    render and scan. Matching mirrors grep: case-sensitive unless -i is set.
+    When the columns and the pattern let a LIKE see every match
+    (``_answerable``), the query picks candidates (a value holding the
+    pattern, or one holding a control character the line escapes) and
+    the matcher grep compiles decides each candidate's line. Otherwise
+    the file is read and scanned the way ``cat | grep`` would, through
+    the same read and its size guard, so a table too large to read is
+    refused rather than answered short. There is no result cap: the
+    push-down used to stop at ``default_search_limit`` rows and print
+    those as grep's whole answer; past ``max_read_rows`` candidates it
+    now refuses with EFBIG, as a whole read of that many rows is refused.
 
     Args:
         accessor (PostgresAccessor): backend handle.
         schema (str): the owning schema.
         kind (str): "tables" or "views".
         entity (str): the entity name.
-        pattern (str): the literal substring to match.
-        case_insensitive (bool): True when -i folds case.
+        query (SearchQuery): the qualified request.
+
+    Raises:
+        FileTooLargeError: more rows match than one read may return.
+    """
+    cap = accessor.config.max_read_rows
+    rows_path = f"{schema}/{kind}/{entity}/rows.jsonl"
+    matcher = query_matcher(query)
+    pool = await accessor.pool()
+    async with pool.acquire() as conn:
+        columns = [(c["name"], c["type"])
+                   for c in await client.fetch_columns(conn, schema, entity)]
+        if not columns:
+            return []
+        if _answerable(columns, query):
+            op = "ILIKE" if grep_search_options(query).ignore_case else "LIKE"
+            clauses = [
+                f"{quote_ident(name)}::text {op} $1" for name, _ in columns
+            ]
+            clauses += [
+                f"{quote_ident(name)} ~ '[[:cntrl:]]'"
+                for name, data_type in columns if data_type in _STRING_TYPES
+            ]
+            sql = (f"SELECT * FROM {qualified(schema, entity)} "
+                   f"WHERE {' OR '.join(clauses)} LIMIT $2")
+            max_bytes = accessor.config.max_read_bytes
+            rows = await client.fetch_bounded_query(
+                conn, sql, [f"%{_escape_like(query.query)}%", cap + 1],
+                {name
+                 for name, _ in columns}, max_bytes)
+            if rows is None or len(rows) > cap:
+                raise efbig(rows_path)
+            lines: list[str] = []
+            rendered_bytes = 0
+            for row in rows:
+                line = row_line(canonicalize_row(dict(row)))
+                rendered_bytes += len(line.encode()) + 1
+                if rendered_bytes > max_bytes:
+                    raise efbig(rows_path)
+                if matcher.search(line):
+                    lines.append(line)
+            return lines
+    data = await read_rows(accessor, schema, entity, path=rows_path)
+    return [
+        line for line in data.decode().split("\n")[:-1] if matcher.search(line)
+    ]
+
+
+async def search_entity_metadata(accessor: PostgresAccessor, schema: str,
+                                 kind: str, entity: str,
+                                 query: SearchQuery) -> list[str]:
+    """Grep an entity's rendered metadata files.
+
+    The LIKE push-down only ever sees row values, so schema.json and
+    semantic.json would be invisible at directory scope: `grep -r` would
+    report "not found" for content that is plainly there. These documents
+    are rendered, not stored, so the only honest way to match them is to
+    render and scan, with the matcher grep itself compiles.
+
+    Args:
+        accessor (PostgresAccessor): backend handle.
+        schema (str): the owning schema.
+        kind (str): "tables" or "views".
+        entity (str): the entity name.
+        query (SearchQuery): the qualified request.
     """
     entity_kind = "table" if kind == "tables" else "view"
-    needle = pattern.lower() if case_insensitive else pattern
+    matcher = query_matcher(query)
     docs = (
         ("schema.json", await build_entity_schema_json(accessor, schema,
                                                        entity, entity_kind)),
@@ -117,87 +192,62 @@ async def search_entity_metadata(accessor: PostgresAccessor,
     for name, doc in docs:
         rendered = orjson.dumps(doc, option=orjson.OPT_INDENT_2).decode()
         for line in rendered.splitlines():
-            hay = line.lower() if case_insensitive else line
-            if needle in hay:
+            if matcher.search(line):
                 lines.append(f"{schema}/{kind}/{entity}/{name}:{line}")
     return lines
 
 
-async def search_kind_metadata(accessor: PostgresAccessor,
-                               schema: str,
-                               kind: str,
-                               pattern: str,
-                               *,
-                               case_insensitive: bool = False) -> list[str]:
+async def search_kind_metadata(accessor: PostgresAccessor, schema: str,
+                               kind: str, query: SearchQuery) -> list[str]:
     """Grep every entity's metadata files under one kind directory.
 
     Args:
         accessor (PostgresAccessor): backend handle.
         schema (str): the owning schema.
         kind (str): "tables" or "views".
-        pattern (str): the literal substring to match.
-        case_insensitive (bool): True when -i folds case.
+        query (SearchQuery): the qualified request.
     """
     names = await _entity_names(accessor, schema, kind)
     lines: list[str] = []
     for n in names:
-        lines.extend(await
-                     search_entity_metadata(accessor,
-                                            schema,
-                                            kind,
-                                            n,
-                                            pattern,
-                                            case_insensitive=case_insensitive))
+        lines.extend(await search_entity_metadata(accessor, schema, kind, n,
+                                                  query))
     return lines
 
 
-async def search_schema_metadata(accessor: PostgresAccessor,
-                                 schema: str,
-                                 pattern: str,
-                                 *,
-                                 case_insensitive: bool = False) -> list[str]:
+async def search_schema_metadata(accessor: PostgresAccessor, schema: str,
+                                 query: SearchQuery) -> list[str]:
     """Grep metadata files across both kinds of one schema.
 
     Args:
         accessor (PostgresAccessor): backend handle.
         schema (str): the owning schema.
-        pattern (str): the literal substring to match.
-        case_insensitive (bool): True when -i folds case.
+        query (SearchQuery): the qualified request.
     """
     lines: list[str] = []
     for kind in ("tables", "views"):
-        lines.extend(await
-                     search_kind_metadata(accessor,
-                                          schema,
-                                          kind,
-                                          pattern,
-                                          case_insensitive=case_insensitive))
+        lines.extend(await search_kind_metadata(accessor, schema, kind, query))
     return lines
 
 
-async def search_database_metadata(
-        accessor: PostgresAccessor,
-        pattern: str,
-        *,
-        case_insensitive: bool = False) -> list[str]:
+async def search_database_metadata(accessor: PostgresAccessor,
+                                   query: SearchQuery) -> list[str]:
     """Grep metadata files across every visible schema.
 
     Args:
         accessor (PostgresAccessor): backend handle.
-        pattern (str): the literal substring to match.
-        case_insensitive (bool): True when -i folds case.
+        query (SearchQuery): the qualified request.
     """
+    lines: list[str] = []
+    for s in await _schemas(accessor):
+        lines.extend(await search_schema_metadata(accessor, s, query))
+    return lines
+
+
+async def _schemas(accessor: PostgresAccessor) -> list[str]:
     pool = await accessor.pool()
     async with pool.acquire() as conn:
-        schemas = await client.list_schemas(conn, accessor.config.schemas)
-    lines: list[str] = []
-    for s in schemas:
-        lines.extend(await
-                     search_schema_metadata(accessor,
-                                            s,
-                                            pattern,
-                                            case_insensitive=case_insensitive))
-    return lines
+        return await client.list_schemas(conn, accessor.config.schemas)
 
 
 async def _entity_names(accessor: PostgresAccessor, schema: str,
@@ -211,78 +261,61 @@ async def _entity_names(accessor: PostgresAccessor, schema: str,
         return sorted(set(views) | set(mviews))
 
 
-async def search_kind(
-    accessor: PostgresAccessor,
-    schema: str,
-    kind: str,
-    pattern: str,
-    limit: int,
-    *,
-    case_insensitive: bool = False
-) -> list[tuple[str, str, str, list[dict[str, Any]]]]:
-    names = await _entity_names(accessor, schema, kind)
-    out: list[tuple[str, str, str, list[dict[str, Any]]]] = []
-    for n in names:
-        rows = await search_entity(accessor,
-                                   schema,
-                                   kind,
-                                   n,
-                                   pattern,
-                                   limit,
-                                   case_insensitive=case_insensitive)
-        if rows:
-            out.append((schema, kind, n, rows))
+EntityLines = tuple[str, str, str, list[str]]
+
+
+async def search_kind(accessor: PostgresAccessor, schema: str, kind: str,
+                      query: SearchQuery) -> list[EntityLines]:
+    """Every entity's matching rows under one kind directory.
+
+    Args:
+        accessor (PostgresAccessor): backend handle.
+        schema (str): the owning schema.
+        kind (str): "tables" or "views".
+        query (SearchQuery): the qualified request.
+    """
+    out: list[EntityLines] = []
+    for n in await _entity_names(accessor, schema, kind):
+        lines = await search_entity(accessor, schema, kind, n, query)
+        if lines:
+            out.append((schema, kind, n, lines))
     return out
 
 
-async def search_schema(
-    accessor: PostgresAccessor,
-    schema: str,
-    pattern: str,
-    limit: int,
-    *,
-    case_insensitive: bool = False
-) -> list[tuple[str, str, str, list[dict[str, Any]]]]:
-    out: list[tuple[str, str, str, list[dict[str, Any]]]] = []
+async def search_schema(accessor: PostgresAccessor, schema: str,
+                        query: SearchQuery) -> list[EntityLines]:
+    """Matching rows across both kinds of one schema.
+
+    Args:
+        accessor (PostgresAccessor): backend handle.
+        schema (str): the owning schema.
+        query (SearchQuery): the qualified request.
+    """
+    out: list[EntityLines] = []
     for kind in ("tables", "views"):
-        out.extend(await search_kind(accessor,
-                                     schema,
-                                     kind,
-                                     pattern,
-                                     limit,
-                                     case_insensitive=case_insensitive))
+        out.extend(await search_kind(accessor, schema, kind, query))
     return out
 
 
-async def search_database(
-    accessor: PostgresAccessor,
-    pattern: str,
-    limit: int,
-    *,
-    case_insensitive: bool = False
-) -> list[tuple[str, str, str, list[dict[str, Any]]]]:
-    pool = await accessor.pool()
-    async with pool.acquire() as conn:
-        schemas = await client.list_schemas(conn, accessor.config.schemas)
-    out: list[tuple[str, str, str, list[dict[str, Any]]]] = []
-    for s in schemas:
-        out.extend(await search_schema(accessor,
-                                       s,
-                                       pattern,
-                                       limit,
-                                       case_insensitive=case_insensitive))
+async def search_database(accessor: PostgresAccessor,
+                          query: SearchQuery) -> list[EntityLines]:
+    """Matching rows across every visible schema.
+
+    Args:
+        accessor (PostgresAccessor): backend handle.
+        query (SearchQuery): the qualified request.
+    """
+    out: list[EntityLines] = []
+    for s in await _schemas(accessor):
+        out.extend(await search_schema(accessor, s, query))
     return out
 
 
-def format_grep_results(
-        results: list[tuple[str, str, str, list[dict[str,
-                                                     Any]]]]) -> list[str]:
-    lines: list[str] = []
-    for schema, kind, entity, rows in results:
-        for r in rows:
-            line = orjson.dumps(r, default=str).decode()
-            lines.append(f"{schema}/{kind}/{entity}/rows.jsonl:{line}")
-    return lines
+def format_grep_results(results: list[EntityLines]) -> list[str]:
+    return [
+        f"{schema}/{kind}/{entity}/rows.jsonl:{line}"
+        for schema, kind, entity, lines in results for line in lines
+    ]
 
 
 # Directory scopes cover every file under them, so the rendered
@@ -291,53 +324,24 @@ def format_grep_results(
 # rather than in per-entity readdir order.
 async def _root_searcher(accessor: PostgresAccessor, match: ScopeMatch,
                          query: SearchQuery) -> list[str]:
-    limit = accessor.config.default_search_limit
-    ci = query.ignore_case
-    lines = format_grep_results(await search_database(accessor,
-                                                      query.pattern,
-                                                      limit,
-                                                      case_insensitive=ci))
-    lines += await search_database_metadata(accessor,
-                                            query.pattern,
-                                            case_insensitive=ci)
-    return lines
+    return (format_grep_results(await search_database(accessor, query)) +
+            await search_database_metadata(accessor, query))
 
 
 async def _schema_searcher(accessor: PostgresAccessor, match: ScopeMatch,
                            query: SearchQuery) -> list[str]:
     schema = match.slots["schema"]
-    limit = accessor.config.default_search_limit
-    ci = query.ignore_case
-    lines = format_grep_results(await search_schema(accessor,
-                                                    schema,
-                                                    query.pattern,
-                                                    limit,
-                                                    case_insensitive=ci))
-    lines += await search_schema_metadata(accessor,
-                                          schema,
-                                          query.pattern,
-                                          case_insensitive=ci)
-    return lines
+    return (format_grep_results(await search_schema(accessor, schema, query)) +
+            await search_schema_metadata(accessor, schema, query))
 
 
 async def _kind_searcher(accessor: PostgresAccessor, match: ScopeMatch,
                          query: SearchQuery) -> list[str]:
     schema = match.slots["schema"]
     kind = match.slots["kind"]
-    limit = accessor.config.default_search_limit
-    ci = query.ignore_case
-    lines = format_grep_results(await search_kind(accessor,
-                                                  schema,
-                                                  kind,
-                                                  query.pattern,
-                                                  limit,
-                                                  case_insensitive=ci))
-    lines += await search_kind_metadata(accessor,
-                                        schema,
-                                        kind,
-                                        query.pattern,
-                                        case_insensitive=ci)
-    return lines
+    return (
+        format_grep_results(await search_kind(accessor, schema, kind, query)) +
+        await search_kind_metadata(accessor, schema, kind, query))
 
 
 async def _entity_lines(accessor: PostgresAccessor, match: ScopeMatch,
@@ -345,26 +349,14 @@ async def _entity_lines(accessor: PostgresAccessor, match: ScopeMatch,
     schema = match.slots["schema"]
     kind = match.slots["kind"]
     entity = match.slots["entity"]
-    limit = accessor.config.default_search_limit
-    ci = query.ignore_case
-    rows = await search_entity(accessor,
-                               schema,
-                               kind,
-                               entity,
-                               query.pattern,
-                               limit,
-                               case_insensitive=ci)
-    lines = format_grep_results([(schema, kind, entity, rows)])
+    lines = await search_entity(accessor, schema, kind, entity, query)
+    found = format_grep_results([(schema, kind, entity, lines)])
     # entity_rows names rows.jsonl explicitly; only the directory scope
     # pulls in the sibling metadata files.
     if metadata:
-        lines += await search_entity_metadata(accessor,
-                                              schema,
-                                              kind,
-                                              entity,
-                                              query.pattern,
-                                              case_insensitive=ci)
-    return lines
+        found += await search_entity_metadata(accessor, schema, kind, entity,
+                                              query)
+    return found
 
 
 _entity_searcher = partial(_entity_lines, metadata=True)

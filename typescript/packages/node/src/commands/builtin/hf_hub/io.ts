@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '@struktoai/mirage-core/vfs/adapter'
+
 import { rangeOf } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { CommandIO } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { HfHubAccessor } from '../../../accessor/hf_hub.ts'
@@ -44,14 +46,10 @@ import { stream as hubStream } from '../../../core/hf_hub/stream.ts'
 // which is an ordinary writable filesystem, so the files are edited there with
 // ordinary commands and `hf upload /work/f path` sends one commit back. Pinned
 // end to end by `hf_a_local_mount_is_the_writable_copy` in integ/cli/hf.json.
-export const HF_HUB_IO: CommandIO<HfHubAccessor> = {
-  readdir: hubReaddir,
-  readBytes: hubRead,
-  readRange: rangeOf(hubRead),
-  readStream: hubStream,
-  stat: hubStat,
-  exists: hubExists,
+export const HF_HUB_IO: CommandIO<HfHubAccessor> = new VFSAdapter<HfHubAccessor>({
+  read: { readdir: hubReaddir, readBytes: hubRead, stat: hubStat },
+  native: { readRange: rangeOf(hubRead), readStream: hubStream, exists: hubExists },
   isMounted: () => true,
   local: false,
   maxGlobMatches: SCOPE_ERROR,
-}
+}).toCommandIO()

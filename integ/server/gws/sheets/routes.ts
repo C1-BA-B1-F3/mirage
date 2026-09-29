@@ -18,7 +18,7 @@ import type { KitRoute, Reply } from '../../kit/typescript/index.ts'
 import { createDriveItem, touchNative } from '../drive/item.ts'
 import type { C } from '../store/client.ts'
 import type { GwsState } from '../store/state.ts'
-import { asGrid, asObj, asObjArr, asStrArr } from '../wire/json.ts'
+import { asGrid, asObj, asObjArr, asStr, asStrArr } from '../wire/json.ts'
 import { SHEET_MIME } from '../wire/mime.ts'
 import { NOT_FOUND, idVerbOf, ok, unknownRoute, verbOf } from '../wire/reply.ts'
 import type { Ctx } from '../../kit/typescript/index.ts'
@@ -45,14 +45,24 @@ const RANGE_WRITE: RouteOpts = { classes: { range: 'rest' }, write: true }
 function valuesBatchGet(ctx: GwsCtx): Reply {
   const id = verbOf(ctx.params.op ?? '', 'batchGet')
   if (id !== 'values') return unknownRoute('GET', ctx.url.pathname)
-  return batchGetValues(ctx.db, ctx.params.id ?? '', ctx.query.getAll('ranges'))
+  return batchGetValues(
+    ctx.db,
+    ctx.params.id ?? '',
+    ctx.query.getAll('ranges'),
+    ctx.query.get('valueRenderOption') ?? 'FORMATTED_VALUE',
+  )
 }
 
 function valuesBatchWrite(ctx: GwsCtx): Reply {
   const op = ctx.params.op ?? ''
   const body = asObj(ctx.json())
   if (verbOf(op, 'batchUpdate') === 'values') {
-    return batchUpdateValues(ctx.db, ctx.params.id ?? '', asObjArr(body.data))
+    return batchUpdateValues(
+      ctx.db,
+      ctx.params.id ?? '',
+      asObjArr(body.data),
+      asStr(body.valueInputOption) ?? 'USER_ENTERED',
+    )
   }
   if (verbOf(op, 'batchClear') === 'values') {
     return batchClearValues(ctx.db, ctx.params.id ?? '', asStrArr(body.ranges) ?? [])
@@ -87,7 +97,7 @@ function readValues(ctx: GwsCtx): Reply {
   return ok({
     range: rangeLabelFor(range, rangeStr),
     majorDimension: 'ROWS',
-    values: rangeValues(range),
+    values: rangeValues(range, sheet.tabs, ctx.query.get('valueRenderOption') ?? 'FORMATTED_VALUE'),
   })
 }
 
@@ -107,7 +117,12 @@ function writeRange(ctx: GwsCtx): Reply {
   const values = asGrid(asObj(ctx.json()).values)
   const extent = tabExtent(range.tab)
   const startRow = Math.max(extent.rows, range.startRow)
-  const cells = writeValues(range, values, startRow)
+  const cells = writeValues(
+    range,
+    values,
+    startRow,
+    ctx.query.get('valueInputOption') ?? 'USER_ENTERED',
+  )
   touchNative(ctx.db, id)
   return ok({
     spreadsheetId: id,
@@ -137,7 +152,12 @@ function putValues(ctx: GwsCtx): Reply {
   const range = parseA1(sheet, rangeStr)
   if (range === null) return unparseable(rangeStr)
   const values = asGrid(asObj(ctx.json()).values)
-  const cells = writeValues(range, values, range.startRow)
+  const cells = writeValues(
+    range,
+    values,
+    range.startRow,
+    ctx.query.get('valueInputOption') ?? 'USER_ENTERED',
+  )
   touchNative(ctx.db, id)
   return ok({
     spreadsheetId: id,

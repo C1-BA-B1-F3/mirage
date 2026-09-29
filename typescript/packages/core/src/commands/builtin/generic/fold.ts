@@ -17,17 +17,12 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { readStdinAsync } from '../utils/stream.ts'
+import { readStdinAsync, stdinStream } from '../utils/stream.ts'
 import { operandsIo, readOperands } from '../utils/operands.ts'
+import { mapLines } from '../utils/lines.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
-
-function splitLinesNoTrailing(text: string): string[] {
-  if (text === '') return []
-  const stripped = text.endsWith('\n') ? text.slice(0, -1) : text
-  return stripped.split('\n')
-}
 
 function foldLine(line: string, width: number, breakSpaces: boolean): string {
   if (line.length <= width) return line
@@ -86,6 +81,7 @@ export async function foldGeneric(
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
 ): Promise<CommandFnResult> {
+  stream = stdinStream(stream, opts.stdin)
   const fl = new FlagView(opts.flags, specOf('fold'))
   const widthValue = fl.asStr('width')
   const width = typeof widthValue === 'string' ? Number.parseInt(widthValue, 10) : 80
@@ -98,15 +94,14 @@ export async function foldGeneric(
     const io = operandsIo(err)
     if (ok.length === 0 && err !== '') return [null, io]
     if (countBytes) return [concatBytes(ok.map((operand) => foldBytes(operand.data, width))), io]
-    const allLines: string[] = []
-    for (const o of ok) {
-      const data = DEC.decode(o.data)
-      for (const line of splitLinesNoTrailing(data)) {
-        allLines.push(foldLine(line, width, breakSpaces))
-      }
-    }
-    const result: ByteSource =
-      allLines.length === 0 ? new Uint8Array(0) : ENC.encode(allLines.join('\n') + '\n')
+    // GNU folds each file on its own, a column fresh at its start, and writes
+    // a newline only where the file had one: `ab` then `cd` fold to `abcd`,
+    // not to two lines. Mirrors Python's fold.
+    const result: ByteSource = ENC.encode(
+      ok
+        .map((o) => mapLines(DEC.decode(o.data), (line) => foldLine(line, width, breakSpaces)))
+        .join(''),
+    )
     return [result, io]
   }
   const stdinData = await readStdinAsync(opts.stdin)
@@ -114,10 +109,6 @@ export async function foldGeneric(
     return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('fold: missing operand\n') })]
   }
   if (countBytes) return [foldBytes(stdinData, width), new IOResult()]
-  const lines = splitLinesNoTrailing(DEC.decode(stdinData))
-  const result: ByteSource =
-    lines.length === 0
-      ? new Uint8Array(0)
-      : ENC.encode(lines.map((ln) => foldLine(ln, width, breakSpaces)).join('\n') + '\n')
-  return [result, new IOResult()]
+  const text = mapLines(DEC.decode(stdinData), (line) => foldLine(line, width, breakSpaces))
+  return [ENC.encode(text), new IOResult()]
 }

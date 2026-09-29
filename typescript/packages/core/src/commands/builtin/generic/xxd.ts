@@ -18,7 +18,7 @@ import { type FlagValue } from '../../spec/types.ts'
 import { IOResult } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { resolveSource } from '../utils/stream.ts'
+import { isStdin, resolveSource, stdinStream } from '../utils/stream.ts'
 import { extraOperandError } from '../../spec/usage.ts'
 import { CommandName } from '../../spec/types.ts'
 
@@ -156,6 +156,7 @@ export async function xxdGeneric(
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
 ): Promise<CommandFnResult> {
+  stream = stdinStream(stream, opts.stdin)
   const fl = new FlagView(opts.flags, specOf('xxd'))
   if (paths.length > 2) throw extraOperandError(CommandName.XXD, paths[2]?.rawPath ?? '')
   const cache: string[] = []
@@ -164,7 +165,7 @@ export async function xxdGeneric(
     const first = paths[0]
     if (first === undefined) return [null, new IOResult()]
     source = stream(first)
-    cache.push(first.virtual)
+    if (!isStdin(first)) cache.push(first.virtual)
   } else {
     source = resolveSource(opts.stdin)
   }

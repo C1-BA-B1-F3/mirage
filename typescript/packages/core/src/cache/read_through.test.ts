@@ -160,3 +160,45 @@ it('stdin wrapper preserves file cache context', async () => {
   expect(DEC.decode(await drain(reader(PathSpec.fromStrPath('-'))))).toBe('')
   expect(backend.streamCalls).toBe(0)
 })
+
+it('caches a complete render and its byte size before lazy consumers transform it', async () => {
+  const backend = new CountingBackend(ENC.encode('雪\n'))
+  const manager = new CacheManager(new RAMFileCacheStore(), null, '/s3/', true)
+  const reader = await runWithCacheManager(manager, () =>
+    Promise.resolve(cacheAwareReadBytes(backend.readBytes)),
+  )
+  expect(await reader(null as unknown as Accessor, spec())).toEqual(ENC.encode('雪\n'))
+  expect(await reader(null as unknown as Accessor, spec())).toEqual(ENC.encode('雪\n'))
+  expect(await manager.cachedSize(spec())).toBe(4)
+  expect(backend.bytesCalls).toBe(1)
+})
+
+it('does not repopulate a cache invalidated during a read', async () => {
+  const manager = new CacheManager(new RAMFileCacheStore(), null, '/s3/', true)
+  expect(
+    await manager.readThrough(spec(), async () => {
+      await manager.invalidateAfterWrite(spec())
+      return ENC.encode('old')
+    }),
+  ).toEqual(ENC.encode('old'))
+  expect(await manager.cachedBytes(spec())).toBeNull()
+})
+
+it('does not repopulate a retired mount after a read', async () => {
+  let live = true
+  const manager = new CacheManager(new RAMFileCacheStore(), null, '/s3/', true, () => live)
+  await manager.readThrough(spec(), () => {
+    live = false
+    return Promise.resolve(ENC.encode('old'))
+  })
+  live = true
+  expect(await manager.cachedBytes(spec())).toBeNull()
+})
+
+it('does not cache failed reads', async () => {
+  const manager = new CacheManager(new RAMFileCacheStore(), null, '/s3/', true)
+  await expect(
+    manager.readThrough(spec(), () => Promise.reject(new Error('failed read'))),
+  ).rejects.toThrow('failed read')
+  expect(await manager.cachedBytes(spec())).toBeNull()
+})

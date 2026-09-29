@@ -60,6 +60,7 @@ export function valueText(value: unknown): string {
   return compactJsonText(value)
 }
 
+// JSON.stringify supplies ECMAScript number spelling, including nested cells.
 // An empty row list renders as empty bytes rather than a lone newline, so an
 // empty .jsonl leaf sizes and reads as a zero-byte file.
 export function jsonlBytes(rows: readonly unknown[]): Uint8Array {

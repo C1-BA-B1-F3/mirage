@@ -30,7 +30,9 @@ import { SessionState } from '../../workspace/session/session.ts'
 import { Workspace } from '../../workspace/workspace/workspace.ts'
 
 const cases = ['backend', 'store'].flatMap((phase) =>
-  ['put', 'setDir'].flatMap((method) => [false, true].map((shadow) => ({ phase, method, shadow }))),
+  ['put', 'setDir', 'setPartialDir'].flatMap((method) =>
+    [false, true].map((shadow) => ({ phase, method, shadow })),
+  ),
 )
 
 for (const type of [IndexType.RAM, IndexType.REDIS]) {
@@ -156,8 +158,9 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
               await original(...args)
             })
           } else {
-            const original = index.setDir.bind(index)
-            vi.spyOn(index, 'setDir').mockImplementation(async (...args) => {
+            const setter = method === 'setPartialDir' ? 'setPartialDir' : 'setDir'
+            const original = index[setter].bind(index)
+            vi.spyOn(index, setter).mockImplementation(async (...args) => {
               await pause()
               await original(...args)
             })
@@ -172,6 +175,8 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
             if (index === undefined) throw new Error('missing index')
             if (phase === 'backend') await pause()
             if (method === 'put') await index.put('/data/stale', entry)
+            else if (method === 'setPartialDir')
+              await index.setPartialDir('/data', [['stale', entry]])
             else await index.setDir('/data', [['stale', entry]])
             return ['/data/stale']
           },

@@ -14,17 +14,19 @@
 
 import asyncio
 import errno
+from collections.abc import Callable
 from typing import Protocol
 from weakref import WeakValueDictionary
 
 from mirage.cache.file.mixin import FileCacheMixin
-from mirage.cache.index import IndexConfig
+from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexConfig
 from mirage.cache.index.factory import build_index
 from mirage.cache.manager import CacheManager
 from mirage.commands.builtin.general import COMMANDS as GENERAL_COMMANDS
 from mirage.context import effective_path_mode, strongest_mode_under
 from mirage.ops.config import OpsMount
 from mirage.policy import Decisions, MountRootPolicy, OutputCapPolicy, Policies
+from mirage.process.types import ProcessView
 from mirage.runtime.base import Runtime
 from mirage.runtime.table import WorkspaceRuntime
 from mirage.types import Limit, MountMode, PathSpec, ReadPolicy, ReadSpec
@@ -34,6 +36,7 @@ from mirage.vfs.base import BaseVFS
 from mirage.vfs.dev import DevVFS
 from mirage.workspace.cli import CLIRegistry
 from mirage.workspace.mount.mount import MountEntry
+from mirage.workspace.session.session import SessionState
 
 DEV_PREFIX = "/dev/"
 
@@ -77,6 +80,7 @@ class MountRegistry:
     """
 
     def __init__(self) -> None:
+        self.process_view: Callable[[SessionState], ProcessView] | None = None
         self._mounts: list[MountEntry] = []
         self.retiring_mounts: dict[int, asyncio.Task[None]] = {}
         self.retired_mounts: WeakValueDictionary[int, BaseVFS] = (
@@ -98,6 +102,7 @@ class MountRegistry:
         # script's language), which the bindings dict cannot answer:
         # an entry behind another capturer never binds a command.
         self.runtime_entries: list[Runtime] = []
+        self.command_limits: dict[str, Limit] = {}
         # Why a command that SOME runtime class captures has no live
         # binding: default-world entries that failed to build (missing
         # extra) record their construction error per captured command,
@@ -132,8 +137,14 @@ class MountRegistry:
         self._file_cache: FileCacheMixin | None = None
         self._reconciler: ReadReconciler | None = None
         # Explicit at the construction site: /dev does not cache reads,
-        # so its policy can only ever be bounded.
-        self.mount(DEV_PREFIX, DevVFS(), MountMode.WRITE, ReadSpec())
+        # so its policy can only ever be bounded, and it keeps no index,
+        # since a path-only index would expose one session's descriptors
+        # to another.
+        self.mount(DEV_PREFIX,
+                   DevVFS(),
+                   MountMode.WRITE,
+                   ReadSpec(),
+                   store=NULL_INDEX)
 
     async def invalidate_after_external(self) -> None:
         """Refetch cached data after native code may have changed files."""
@@ -208,9 +219,13 @@ class MountRegistry:
             return await self._may_serve_cached(m, key)
 
         m.cache_manager = CacheManager(
-            self._file_cache, m.index_store, m.prefix, m.vfs.caches_reads,
+            self._file_cache,
+            m.index_store,
+            m.prefix,
+            m.vfs.caches_reads,
             lambda path: not m.retiring and self.try_mount_for(path) is m,
-            gate)
+            gate,
+            read_ttl=m.read.ttl)
 
     def check_vfs_available(self, vfs: BaseVFS) -> None:
         """A removed VFS instance cannot start a second lifecycle."""
@@ -229,14 +244,15 @@ class MountRegistry:
         *,
         index: IndexConfig | None = None,
         vfs_ref: str | None = None,
+        store: IndexCacheStore | None = None,
     ) -> MountEntry:
         """Place a VFS and return its mount.
 
         The mount is built with everything the tree needs to run the
         driver: its index store (shared with any earlier mount of the
-        same instance, else built from ``index`` or the driver's
-        ``index_ttl``), the driver's op and command tables, and the
-        reference it was built from.
+        same instance, else ``store``, else built from ``index`` or the
+        driver's ``index_ttl``), the driver's op and command tables, and
+        the reference it was built from.
 
         Args:
             prefix (str): the virtual prefix.
@@ -248,6 +264,8 @@ class MountRegistry:
                 takes a RAM store at the driver's ``index_ttl``.
             vfs_ref (str | None): the ``vfs:`` value the driver was
                 built from, recorded for snapshots.
+            store (IndexCacheStore | None): a store the placement
+                supplies itself, as the reserved /dev mount does.
         """
         self.check_vfs_available(vfs)
         stripped = prefix.strip("/")
@@ -257,8 +275,10 @@ class MountRegistry:
                 raise ValueError(f"duplicate mount prefix: "
                                  f"{norm_prefix!r}")
         alias = next((e for e in self._mounts if e.vfs is vfs), None)
-        store = (alias.index_store if alias is not None else build_index(
-            index, vfs.index_ttl))
+        if alias is not None:
+            store = alias.index_store
+        elif store is None:
+            store = build_index(index, vfs.index_ttl)
         m = MountEntry(norm_prefix, vfs, mode,
                        read if read is not None else self._default_read, store,
                        vfs_ref)

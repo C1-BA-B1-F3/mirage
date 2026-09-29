@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { PathSpec } from '../../types.ts'
-import { eexist, eisdir, enoent, enotdir } from '../../utils/errors.ts'
+import { eexist, eisdir, enoent, enotdir, type FsError } from '../../utils/errors.ts'
 import { mountedPath } from '../../utils/key_prefix.ts'
 import { ancestors } from '../../utils/path.ts'
 import type { RedisStoreLike } from '../../vfs/redis/store.ts'
@@ -37,11 +37,37 @@ export async function checkDestParents(
   dst: PathSpec,
   d: string,
 ): Promise<void> {
-  for (const ancestor of ancestors(d)) {
+  const broken = await brokenParent(store, dst, d)
+  if (broken !== null) throw broken
+}
+
+// The error a lookup of a key the store does not hold answers with.
+// open(2) and stat(2) resolve a path one component at a time and stop at the
+// first that is not a directory, so a plain file above the key is ENOTDIR
+// (`cat a.txt/x` is "Not a directory") and a missing component, or a key that
+// is simply absent, is ENOENT. It is the walk checkDestParents makes for a
+// destination, so a read, a stat and a write of one path agree on its errno;
+// it runs on a miss only, so a hit still costs one round trip. Mirrors
+// lookup_error in dest.py.
+export async function lookupError(
+  store: RedisStoreLike,
+  spec: PathSpec,
+  key: string,
+): Promise<FsError> {
+  return (await brokenParent(store, spec, key)) ?? enoent(spec)
+}
+
+async function brokenParent(
+  store: RedisStoreLike,
+  spec: PathSpec,
+  key: string,
+): Promise<FsError | null> {
+  for (const ancestor of ancestors(key)) {
     if (await store.hasDir(ancestor)) continue
-    if (await store.hasFile(ancestor)) throw enotdir(dst)
-    throw enoent(dst)
+    if (await store.hasFile(ancestor)) return enotdir(spec)
+    return enoent(spec)
   }
+  return null
 }
 
 // Reject a `mkdir` the store cannot satisfy. The companion of

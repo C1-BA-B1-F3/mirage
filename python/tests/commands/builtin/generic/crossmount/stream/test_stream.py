@@ -74,14 +74,14 @@ def test_plain_cat_skips_the_final_run():
 
 
 def test_flagged_command_runs_once_on_the_merged_stream():
-    rs = FakeRunSingle({"/a/x": b"1\n", "/b/y": b"2\n"})
+    rs = FakeRunSingle({"/a/x": b"1", "/b/y": b"2\n"})
     out, io = _run(
-        run_stream("sort", [_scope("/a/x"), _scope("/b/y")], [], {"r": True},
+        run_stream("cut", [_scope("/a/x"), _scope("/b/y")], [], {"r": True},
                    rs))
     assert _run(materialize(out)) == b"FINAL:1\n2\n"
     assert io.exit_code == 0
     final = rs.calls[-1]
-    assert final["cmd"] == "sort"
+    assert final["cmd"] == "cut"
     assert final["paths"] == []
     assert final["flags"] == {"r": True}
     assert final["resolve_hint"] == "/a/x"
@@ -89,11 +89,11 @@ def test_flagged_command_runs_once_on_the_merged_stream():
 
 
 def test_cat_with_flags_reapplies_cat_on_the_merged_stream():
-    rs = FakeRunSingle({"/a/x": b"1\n", "/b/y": b"2\n"})
+    rs = FakeRunSingle({"/a/x": b"1", "/b/y": b"2\n"})
     out, _ = _run(
         run_stream("cat", [_scope("/a/x"), _scope("/b/y")], [], {"n": True},
                    rs))
-    assert _run(materialize(out)) == b"FINAL:1\n2\n"
+    assert _run(materialize(out)) == b"FINAL:12\n"
     assert rs.calls[-1]["cmd"] == "cat"
     assert rs.calls[-1]["flags"] == {"n": True}
 

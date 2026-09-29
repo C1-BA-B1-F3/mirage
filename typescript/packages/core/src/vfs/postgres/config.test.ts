@@ -23,7 +23,6 @@ describe('PostgresConfig', () => {
     expect(resolved.defaultRowLimit).toBe(1000)
     expect(resolved.maxReadRows).toBe(10_000)
     expect(resolved.maxReadBytes).toBe(10 * 1024 * 1024)
-    expect(resolved.defaultSearchLimit).toBe(100)
   })
 
   it('keeps explicit overrides', () => {
@@ -33,13 +32,11 @@ describe('PostgresConfig', () => {
       maxReadRows: 50,
       maxReadBytes: 1024,
       defaultRowLimit: 25,
-      defaultSearchLimit: 7,
     })
     expect(resolved.schemas).toEqual(['public'])
     expect(resolved.defaultRowLimit).toBe(25)
     expect(resolved.maxReadRows).toBe(50)
     expect(resolved.maxReadBytes).toBe(1024)
-    expect(resolved.defaultSearchLimit).toBe(7)
   })
 })
 
@@ -50,14 +47,12 @@ describe('normalizePostgresConfig', () => {
       max_read_rows: 50,
       max_read_bytes: 2048,
       default_row_limit: 25,
-      default_search_limit: 5,
     })
     expect(out).toEqual({
       dsn: 'postgres://h/d',
       maxReadRows: 50,
       maxReadBytes: 2048,
       defaultRowLimit: 25,
-      defaultSearchLimit: 5,
     })
   })
 

@@ -14,12 +14,15 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, PositiveInt, SecretStr, model_validator
+from pydantic import (BaseModel, ConfigDict, PositiveInt, SecretStr,
+                      model_validator)
 
 ScopeKind = Literal["user", "agent", "run"]
 
 
 class Mem0Config(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     api_key: SecretStr
     host: str = "https://api.mem0.ai"
     user_id: str | None = None

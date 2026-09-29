@@ -16,15 +16,17 @@ import { describe, expect, it } from 'vitest'
 import { Accessor } from '../../../accessor/base.ts'
 import { JSON_NAME } from '../../../core/hierarchy/codec.ts'
 import { Slot, Scope, makeDetectScope } from '../../../core/hierarchy/scope.ts'
-import type { Searcher, SearchQuery } from '../../../core/hierarchy/search.ts'
+import type { Searcher } from '../../../core/hierarchy/search.ts'
+import type { SearchQuery } from '../../../vfs/types.ts'
 import { ContentType, FileStat, FileType, PathSpec } from '../../../types.ts'
-import { enoent } from '../../../utils/errors.ts'
+import { efbig, enoent } from '../../../utils/errors.ts'
 import { stripSlash } from '../../../utils/slash.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import type { ByteSource, IOResult } from '../../../io/types.ts'
-import { literalPushdownOperand } from '../grep_pushdown.ts'
+
 import type { CommandIO } from './adapter.ts'
-import { makeSearch } from './search.ts'
+import { runSearch } from './search.ts'
+import { makeSearchOp } from '../../../core/hierarchy/search.ts'
 
 const SCOPES: readonly Scope[] = [
   new Scope({ kind: 'rooms', segments: ['rooms'], probed: false }),
@@ -76,7 +78,7 @@ function makeIO(overrides: Partial<CommandIO<FakeAccessor>> = {}): CommandIO<Fak
 }
 
 const roomSearcher: Searcher<FakeAccessor> = (_accessor, match, query) =>
-  Promise.resolve([`rooms/${match.slots.room ?? ''}:${query.pattern}`])
+  Promise.resolve([`rooms/${match.slots.room ?? ''}:${query.query}`])
 
 const emptySearcher: Searcher<FakeAccessor> = () => Promise.resolve([])
 
@@ -97,11 +99,61 @@ async function drain(source: ByteSource | null): Promise<string> {
   return chunks.map((c) => new TextDecoder().decode(c)).join('')
 }
 
-describe('makeSearch', () => {
-  it('answers a matched kind from its searcher', async () => {
-    const search = makeSearch<FakeAccessor>('grep', detectScope, { room: roomSearcher }, makeIO(), {
-      qualify: literalPushdownOperand,
+function searchCommand(
+  searchers: Readonly<Record<string, Searcher<FakeAccessor>>>,
+  io: CommandIO<FakeAccessor>,
+  options: { guard?: boolean; stream?: boolean },
+) {
+  const search = makeSearchOp(detectScope, searchers, options.guard === true ? io.stat : undefined)
+  return (accessor: FakeAccessor, paths: PathSpec[], texts: string[], opts: CommandOpts) =>
+    runSearch(
+      {
+        ...io,
+        search: { search, meta: { grep: { mode: 'literal', stream: options.stream ?? false } } },
+      },
+      'grep',
+      accessor,
+      paths,
+      texts,
+      opts,
+    )
+}
+
+describe('adapter search on a - operand', () => {
+  it('reads the pipe, not the backend', async () => {
+    // A `-` operand is the line's stdin, which no backend holds. Asked about
+    // it, a search that answers any operand said "no match" and the pipe was
+    // never read.
+    const asked: string[] = []
+    const answerEverything = (_accessor: FakeAccessor, operand: PathSpec): Promise<string[]> => {
+      asked.push(operand.rawPath)
+      return Promise.resolve([])
+    }
+    const dash = new PathSpec({
+      virtual: '/h/-',
+      directory: '/h/',
+      vfsPath: '-',
+      resolved: true,
+      rawPath: '-',
     })
+    for (const name of ['grep', 'rg'] as const) {
+      const io: CommandIO<FakeAccessor> = {
+        ...makeIO(),
+        search: { search: answerEverything, meta: { grep: { mode: 'literal', stream: false } } },
+      }
+      const stdin = new TextEncoder().encode('x ada\n')
+      const [out, result] = unwrap(
+        await runSearch(io, name, new FakeAccessor(), [dash], ['ada'], { ...opts(), stdin }),
+      )
+      expect([await drain(out), result.exitCode]).toEqual(['x ada\n', 0])
+    }
+    expect(asked).toEqual([])
+  })
+})
+
+describe('adapter search', () => {
+  it('answers a matched kind from its searcher', async () => {
+    const search = searchCommand({ room: roomSearcher }, makeIO(), {})
     const [out, result] = unwrap(
       await search(new FakeAccessor(), [spec('/rooms/red')], ['ada'], opts()),
     )
@@ -110,13 +162,7 @@ describe('makeSearch', () => {
   })
 
   it('answers an empty search with exit 1', async () => {
-    const search = makeSearch<FakeAccessor>(
-      'grep',
-      detectScope,
-      { room: emptySearcher },
-      makeIO(),
-      { qualify: literalPushdownOperand },
-    )
+    const search = searchCommand({ room: emptySearcher }, makeIO(), {})
     const [out, result] = unwrap(
       await search(new FakeAccessor(), [spec('/rooms/red')], ['ada'], opts()),
     )
@@ -125,9 +171,7 @@ describe('makeSearch', () => {
   })
 
   it('sends an unmatched kind to the generic scan', async () => {
-    const search = makeSearch<FakeAccessor>('grep', detectScope, { room: roomSearcher }, makeIO(), {
-      qualify: literalPushdownOperand,
-    })
+    const search = searchCommand({ room: roomSearcher }, makeIO(), {})
     const [out, result] = unwrap(
       await search(new FakeAccessor(), [spec('/rooms/red/a.json')], ['ada'], opts()),
     )
@@ -136,9 +180,7 @@ describe('makeSearch', () => {
   })
 
   it('defers a shaping flag to the generic scan', async () => {
-    const search = makeSearch<FakeAccessor>('grep', detectScope, { room: roomSearcher }, makeIO(), {
-      qualify: literalPushdownOperand,
-    })
+    const search = searchCommand({ room: roomSearcher }, makeIO(), {})
     const [out, result] = unwrap(
       await search(new FakeAccessor(), [spec('/rooms/red/a.json')], ['ada'], opts({ v: true })),
     )
@@ -157,10 +199,7 @@ describe('makeSearch', () => {
         throw enoent(p)
       },
     })
-    const search = makeSearch<FakeAccessor>('grep', detectScope, { room: roomSearcher }, io, {
-      qualify: literalPushdownOperand,
-      stream: true,
-    })
+    const search = searchCommand({ room: roomSearcher }, io, { stream: true })
     const [out, result] = unwrap(
       await search(new FakeAccessor(), [spec('/rooms/red/a.json')], ['ada'], opts()),
     )
@@ -176,10 +215,7 @@ describe('makeSearch', () => {
         throw enoent(p)
       },
     })
-    const search = makeSearch<FakeAccessor>('grep', detectScope, { room: roomSearcher }, io, {
-      qualify: literalPushdownOperand,
-      stream: true,
-    })
+    const search = searchCommand({ room: roomSearcher }, io, { stream: true })
     await expect(
       (async () => {
         const [out] = unwrap(
@@ -190,12 +226,26 @@ describe('makeSearch', () => {
     ).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
+  it('falls back to the scan when the push-down is past the read cap', async () => {
+    // A push-down past the mount's read cap cannot print its answer; the scan
+    // reads the operand, which refuses the same way against the operand, and
+    // the executor reports it as typed (`grep: <path>: File too large`).
+    const refusing: Searcher<FakeAccessor> = (_accessor, match) =>
+      Promise.reject(efbig(`rooms/${match.slots.room ?? ''}/${match.slots.note ?? ''}`))
+    const io = makeIO({ readBytes: (_accessor, p) => Promise.reject(efbig(p)) })
+    const search = searchCommand({ note: refusing }, io, {})
+    const [out] = unwrap(
+      await search(new FakeAccessor(), [spec('/rooms/red/a.json')], ['ada'], opts()),
+    )
+    await expect(drain(out)).rejects.toMatchObject({
+      code: 'EFBIG',
+      virtualPath: '/h/rooms/red/a.json',
+    })
+  })
+
   it('probes existence before searching when guarded', async () => {
     const io = makeIO({ stat: (_accessor, p) => Promise.reject(enoent(p)) })
-    const search = makeSearch<FakeAccessor>('grep', detectScope, { room: roomSearcher }, io, {
-      qualify: literalPushdownOperand,
-      guard: true,
-    })
+    const search = searchCommand({ room: roomSearcher }, io, { guard: true })
     await expect(
       search(new FakeAccessor(), [spec('/rooms/red')], ['ada'], opts()),
     ).rejects.toMatchObject({ code: 'ENOENT' })
@@ -207,11 +257,8 @@ describe('makeSearch', () => {
       seen.push(query)
       return Promise.resolve(['line'])
     }
-    const search = makeSearch<FakeAccessor>('grep', detectScope, { room: recorder }, makeIO(), {
-      qualify: literalPushdownOperand,
-    })
+    const search = searchCommand({ room: recorder }, makeIO(), {})
     await search(new FakeAccessor(), [spec('/rooms/red')], ['ada'], opts({ i: true }))
-    expect(seen[0]?.ignoreCase).toBe(true)
-    expect(seen[0]?.fixedString).toBe(false)
+    expect(seen[0]?.options?.grep).toMatchObject({ ignore_case: true, fixed_string: false })
   })
 })

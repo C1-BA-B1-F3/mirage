@@ -49,28 +49,28 @@ def test_basic_grep_pattern_and_path():
 
 def test_text_flag_values_positional():
     kinds = spec_word_kinds(SPECS["find"], ["/data", "-name", "*.txt"])
-    assert kinds == [PATH, None, TEXT]
+    assert kinds == [PATH, TEXT, TEXT]
 
 
 def test_long_value_flag_equals_not_classified():
     kinds = spec_word_kinds(SPECS["du"], ["--max-depth=1", "/data"])
-    assert kinds == [None, PATH]
+    assert kinds == [TEXT, PATH]
 
 
 def test_mixed_cluster_value_is_text():
     kinds = spec_word_kinds(SPECS["grep"], ["-ne", "pat", "/a.txt"])
-    assert kinds == [None, TEXT, PATH]
+    assert kinds == [TEXT, TEXT, PATH]
 
 
 def test_repeated_dash_e_values_are_text():
     kinds = spec_word_kinds(SPECS["grep"],
                             ["-e", "foo", "-e", "bar", "/a.txt"])
-    assert kinds == [None, TEXT, None, TEXT, PATH]
+    assert kinds == [TEXT, TEXT, TEXT, TEXT, PATH]
 
 
 def test_numeric_shorthand_not_a_path():
     kinds = spec_word_kinds(SPECS["head"], ["-5", "file.txt"])
-    assert kinds == [None, PATH]
+    assert kinds == [TEXT, PATH]
 
 
 def test_find_ignore_tokens_classified_as_text():
@@ -97,18 +97,18 @@ def test_find_bare_bang_is_text_in_every_expression_position():
     two predicates.
     """
     assert spec_word_kinds(SPECS["find"],
-                           ["/data", "!", "-empty"]) == [PATH, TEXT, None]
+                           ["/data", "!", "-empty"]) == [PATH, TEXT, TEXT]
     assert spec_word_kinds(SPECS["find"],
                            ["/data", "-empty", "!", "-name", "x"]) == [
-                               PATH, None, TEXT, None, TEXT
+                               PATH, TEXT, TEXT, TEXT, TEXT
                            ]
-    assert spec_word_kinds(SPECS["find"], ["!", "-empty"]) == [TEXT, None]
+    assert spec_word_kinds(SPECS["find"], ["!", "-empty"]) == [TEXT, TEXT]
 
 
 def test_find_bang_as_a_name_pattern_keeps_its_slot():
     """A `!` filling an option's value slot is that value, not grammar."""
     assert spec_word_kinds(SPECS["find"],
-                           ["/data", "-name", "!"]) == [PATH, None, TEXT]
+                           ["/data", "-name", "!"]) == [PATH, TEXT, TEXT]
 
 
 def test_duplicate_word_text_and_path_slots():
@@ -116,6 +116,30 @@ def test_duplicate_word_text_and_path_slots():
     # value sets could not tell the two slots apart.
     kinds = spec_word_kinds(SPECS["grep"], ["*.txt", "*.txt"])
     assert kinds == [TEXT, PATH]
+
+
+def test_attached_path_value_is_not_a_relative_path():
+    # `-o/` is a well-formed first directory, so the shape heuristic
+    # took each of these words for a path under the cwd.
+    assert spec_word_kinds(SPECS["sort"],
+                           ["-o/data/s1.txt", "/data/in.txt"]) == [TEXT, PATH]
+    assert spec_word_kinds(SPECS["grep"],
+                           ["-f/data/p.txt", "/data/in.txt"]) == [TEXT, PATH]
+    assert spec_word_kinds(SPECS["tar"],
+                           ["-cf/data/a.tar", "t"]) == [TEXT, PATH]
+
+
+@pytest.mark.asyncio
+async def test_sort_attached_output_writes_the_file():
+    ws = Workspace({"/data/": (RAMVFS(), MountMode.WRITE)})
+    await ws.shell("printf 'b\\na\\n' > /data/in.txt && mkdir /data/sub")
+    io = await ws.shell("sort -o/data/s1.txt /data/in.txt")
+    assert io.exit_code == 0, await io.stderr_str()
+    io = await ws.shell("cat /data/s1.txt")
+    assert await io.stdout_str() == "a\nb\n"
+    io = await ws.shell(
+        "cd /data && sort -osub/s2.txt in.txt && cat sub/s2.txt")
+    assert await io.stdout_str() == "a\nb\n"
 
 
 @pytest.mark.asyncio

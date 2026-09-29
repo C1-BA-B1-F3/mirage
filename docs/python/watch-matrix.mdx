@@ -30,7 +30,7 @@ Watching splits into two halves, and they have different support stories:
 | SSH / SFTP | ✓ per-directory descent | mtime\|size | — | — |
 | Google Drive | ✓ per-folder descent | `modifiedTime` | `changes.watch` push channels | — |
 | OneDrive / SharePoint | ✓ per-folder descent | `cTag` | Graph change notifications + delta API | — |
-| Box | ✓ per-folder descent | content `sha1` | Box `/events` long poll | — |
+| Box | ✓ `/events` stream (walk is reset) | content `sha1` | Box `/events` long poll, mapped by `BoxEventHook` | — |
 | Slack | — | — | Events API, mapped by `SlackEventHook` | [example](https://github.com/strukto-ai/mirage/blob/main/examples/python/slack/slack_watch.py) |
 | Redis | — | — | keyspace notifications, mapped by `RedisEventHook` | — |
 | RAM, others | — | — | (no external writers to observe) | — |
@@ -49,9 +49,11 @@ Not every hook costs the same, and the poll cadence should follow the shape:
 - **One request per pull**, whatever the tree: GitHub (one recursive tree
   call), Nextcloud (one recursive PROPFIND), Hugging Face, and GridFS (one
   prefix query). S3 is one request per 1000 keys.
-- **One request per directory**: Google Drive, OneDrive/SharePoint and Box key
+- **One request per directory**: Google Drive and OneDrive/SharePoint key
   their trees by opaque id and offer no whole-subtree listing, so the walk
-  descends folder by folder. SFTP does too, for the same reason.
+  descends folder by folder. SFTP does too, for the same reason. Box has the
+  same tree, but its pull reads the `/events` stream instead: an idle pull is
+  one request, and the per-folder walk only runs as the reset.
 
 Where a provider offers a native cursor (Dropbox `list_folder/continue`, Graph
 `/delta`, Drive `changes.list`), that is a **faster** pull, not a more correct
@@ -129,12 +131,16 @@ writes neither loop itself:
   as absent.
 
 Dropbox `pull` already uses `list_folder/continue` and keeps the listing walk
-as the reset path. Other backends with a native cursor (Graph delta, Drive
-`changes.list`) can do the same: the opaque checkpoint is the server cursor,
-and consumers cannot tell the difference. Keep the
-walk as the reset path, though. A cursor is a promise the server keeps, and
-when it breaks (`path/reset`, `resyncRequired`) a full listing is the only
-answer.
+as the reset path. Box `pull` reads the account's `/events` stream from a
+stored `stream_position` and places each event through its `path_collection`.
+Box never refuses an old position and may repeat an event or send it out of
+order, so the tree is walked again once the last walk is two weeks old, and
+whenever an event moves the watch root itself or a folder above it. Other
+backends with a native cursor (Graph delta, Drive `changes.list`) can do the
+same: the opaque checkpoint is the server cursor, and consumers cannot tell the
+difference. Keep the walk as the reset path, though. A cursor is a promise the
+server keeps, and when it breaks (`path/reset`, `resyncRequired`) a full
+listing is the only answer.
 
 A walk that knows it saw only part of the tree must raise
 `IncompleteWalkError` rather than return what it has. A snapshot diff reads

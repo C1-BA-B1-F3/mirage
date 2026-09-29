@@ -20,7 +20,8 @@ from mirage.accessor.trello import TrelloAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.trello.normalize import (normalize_card, normalize_workspace,
                                           to_json_bytes)
-from mirage.core.trello.readdir import readdir
+from mirage.core.trello.readdir import (board_in_scope, filtered_boards,
+                                        filtered_workspaces, readdir)
 from mirage.types import PathSpec
 from mirage.vfs.trello.config import TrelloConfig
 
@@ -201,3 +202,61 @@ async def test_readdir_unrecognized_nested_path_raises(accessor, index):
             PathSpec(vfs_path="workspaces/w/nope/deeper",
                      virtual="/workspaces/w/nope/deeper",
                      directory="/workspaces/w/nope/deeper"), index)
+
+
+def _scoped(**knobs) -> TrelloAccessor:
+    return TrelloAccessor(TrelloConfig(api_key="k", api_token="t", **knobs))
+
+
+@pytest.mark.asyncio
+async def test_board_in_scope_admits_every_id_on_an_unnarrowed_mount():
+    with patch("mirage.core.trello.readdir.get_board",
+               new_callable=AsyncMock) as get_board:
+        assert await board_in_scope(_scoped(), "b_any") is True
+    get_board.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_board_in_scope_holds_an_id_to_board_ids_without_a_call():
+    accessor = _scoped(board_ids=["b_in"])
+    with patch("mirage.core.trello.readdir.get_board",
+               new_callable=AsyncMock) as get_board:
+        assert await board_in_scope(accessor, "b_in") is True
+        assert await board_in_scope(accessor, "b_out") is False
+        assert await board_in_scope(accessor, "") is False
+    get_board.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_board_in_scope_holds_an_id_to_workspace_id():
+    accessor = _scoped(workspace_id="ws1")
+    boards = {
+        "b_in": {
+            "id": "b_in",
+            "idOrganization": "ws1"
+        },
+        "b_out": {
+            "id": "b_out",
+            "idOrganization": "ws2"
+        },
+    }
+
+    async def fake_board(config, board_id, session=None):
+        return boards[board_id]
+
+    with patch("mirage.core.trello.readdir.get_board", new=fake_board):
+        assert await board_in_scope(accessor, "b_in") is True
+        assert await board_in_scope(accessor, "b_out") is False
+
+
+@pytest.mark.asyncio
+async def test_filtered_boards_and_workspaces_apply_both_knobs():
+    accessor = _scoped(workspace_id="ws1", board_ids=["b1"])
+    with patch("mirage.core.trello.readdir.list_workspaces",
+               new_callable=AsyncMock,
+               return_value=[{"id": "ws1"}, {"id": "ws2"}]), \
+            patch("mirage.core.trello.readdir.list_workspace_boards",
+                  new_callable=AsyncMock,
+                  return_value=[{"id": "b1"}, {"id": "b2"}]):
+        assert await filtered_workspaces(accessor) == [{"id": "ws1"}]
+        assert await filtered_boards(accessor, "ws1") == [{"id": "b1"}]

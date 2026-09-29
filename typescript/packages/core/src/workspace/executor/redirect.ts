@@ -17,8 +17,9 @@ import { formatFsError, fsStrerror, isFsError } from '../../utils/errors.ts'
 import { readFailExitCode } from '../../commands/spec/usage.ts'
 import { concatBytes } from '../../core/jq/format.ts'
 import { stripSlash } from '../../utils/slash.ts'
+import type { SharedInput } from '../../io/async_line_iterator.ts'
 import type { ByteSource } from '../../io/types.ts'
-import { IOResult, materialize } from '../../io/types.ts'
+import { DeviceInput, IOResult, materialize } from '../../io/types.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
 import { encodeText } from '../../shell/bytes.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
@@ -43,7 +44,6 @@ import {
   TO_STDIN as EXEC_TO_STDIN,
   TO_STDOUT as EXEC_TO_STDOUT,
 } from './builtins/exec/constants.ts'
-import { readOpenSource } from './builtins/exec/exec.ts'
 import type { ExecuteNodeFn } from './jobs.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
@@ -103,6 +103,16 @@ type FdDest = typeof TO_STDOUT | typeof TO_STDERR | typeof CLOSED | string
 // A descriptor a read cannot use: closed, or open for writing only.
 const UNREADABLE: unique symbol = Symbol('unreadable')
 
+function terminalStdout(redirects: readonly Redirect[], session: SessionState): boolean {
+  const fds = [session.execStdinIdentity === EXEC_TO_STDOUT, true, false]
+  for (const r of redirects) {
+    if (typeof r.target === 'number') fds[r.fd] = r.target !== FD_CLOSE && fds[r.target] === true
+    else if (r.fd === FD_BOTH) fds[FD_STDOUT] = fds[FD_STDERR] = false
+    else fds[r.fd] = false
+  }
+  return session.terminalOutput && fds[FD_STDOUT] === true
+}
+
 export async function handleRedirect(
   executeNode: ExecuteNodeFn,
   dispatch: DispatchFn,
@@ -131,14 +141,15 @@ export async function handleRedirect(
   // `cat <&-`), while one that never reads is untouched (`true 0<&1`).
   const inputs: (ByteSource | null | typeof UNREADABLE)[] = [stdin, UNREADABLE, UNREADABLE]
   // A stream `exec 1<f` opened for reading answers a read through it
-  // (`cat <&1`) with the file, from its start, and one `exec 1<&0` aliased
-  // onto stdin's own read end reads what stdin reads.
-  for (const [fd, binding] of [
-    [FD_STDOUT, session.execStdout],
-    [FD_STDERR, session.execStderr],
-  ] as [number, string | null][]) {
+  // (`cat <&1`) from where the last read through that end stopped, and
+  // one `exec 1<&0` aliased onto stdin's own read end reads what stdin
+  // reads.
+  for (const [fd, binding, readEnd] of [
+    [FD_STDOUT, session.execStdout, session.execStdoutInput],
+    [FD_STDERR, session.execStderr, session.execStderrInput],
+  ] as [number, string | null, SharedInput | null][]) {
     if (binding?.startsWith(OPEN_FOR_READING)) {
-      inputs[fd] = await readOpenSource(dispatch, binding)
+      inputs[fd] = readEnd
     } else if (binding === EXEC_TO_STDIN) {
       inputs[fd] = inputs[FD_STDIN] ?? null
     }
@@ -179,6 +190,11 @@ export async function handleRedirect(
       } catch (err) {
         if (!isFsError(err)) throw err
         return redirectFailure(scope, err)
+      }
+      // Only an empty read is probed: the device worth telling apart
+      // (/dev/null) reads empty, so a file with content costs no stat.
+      if (data instanceof Uint8Array && data.length === 0 && (await isDevice(dispatch, scope))) {
+        data = new DeviceInput(0)
       }
       inputs[r.fd] = data as ByteSource | null
     } else if (r.kind === RedirectKind.HEREDOC) {
@@ -237,9 +253,17 @@ export async function handleRedirect(
       .map((r) => ensureScope(r.target))
     const given = inputs[FD_STDIN] ?? null
     const commandStdin = given === UNREADABLE ? unreadableStdin() : given
-    const [stdout, execIo, execNode] = await runWithRedirectPaths(command, targets, () =>
-      executeNode(command, session, commandStdin, callStack),
-    )
+    const terminalOutput = session.terminalOutput
+    session.terminalOutput = terminalStdout(redirects, session)
+    let result: Result
+    try {
+      result = await runWithRedirectPaths(command, targets, () =>
+        executeNode(command, session, commandStdin, callStack),
+      )
+    } finally {
+      session.terminalOutput = terminalOutput
+    }
+    const [stdout, execIo, execNode] = result
     io = execIo
     refused = execNode.refused
     try {
@@ -266,6 +290,7 @@ export async function handleRedirect(
   const fds: FdDest[] = [stdinDest(session), TO_STDOUT, TO_STDERR]
   const fileBufs = new Map<string, Uint8Array>()
   const fileScopes = new Map<string, PathSpec>()
+  const appends = new Set<string>()
 
   for (const r of redirects) {
     if (typeof r.target === 'number') {
@@ -277,7 +302,8 @@ export async function handleRedirect(
         // through bash's shared offset do.
         const scope = ensureScope(dest)
         fileScopes.set(dest, scope)
-        fileBufs.set(dest, await readExisting(dispatch, scope))
+        fileBufs.set(dest, new Uint8Array())
+        appends.add(dest)
       }
       continue
     }
@@ -305,10 +331,12 @@ export async function handleRedirect(
     fileScopes.set(path, scope)
     if (r.append) {
       if (!fileBufs.has(path)) {
-        fileBufs.set(path, await readExisting(dispatch, scope))
+        fileBufs.set(path, new Uint8Array())
+        appends.add(path)
       }
     } else {
       fileBufs.set(path, new Uint8Array())
+      appends.delete(path)
     }
 
     if (r.fd === FD_BOTH) {
@@ -343,7 +371,7 @@ export async function handleRedirect(
       const scope = fileScopes.get(path)
       if (scope === undefined) continue
       try {
-        await createFile(dispatch, session, scope, data)
+        await createFile(dispatch, session, scope, data, appends.has(path))
         io.writes[path] = data
       } catch (err) {
         if (!isFsError(err)) throw err
@@ -418,6 +446,18 @@ function redirectFailure(scope: PathSpec, err: unknown): Result {
 function shellFailure(line: Uint8Array): Result {
   const io = new IOResult({ exitCode: 1, stderr: line })
   return [null, io, new ExecutionNode({ command: 'redirect', exitCode: 1 })]
+}
+
+/** Whether a redirect target is a character device (`/dev/null`). */
+async function isDevice(dispatch: DispatchFn, scope: PathSpec): Promise<boolean> {
+  let stat: unknown
+  try {
+    ;[stat] = await dispatch('stat', scope)
+  } catch (err) {
+    if (!isFsError(err)) throw err
+    return false
+  }
+  return stat instanceof FileStat && stat.type === FileType.CHAR_DEVICE
 }
 
 /**
@@ -577,19 +617,6 @@ function stdinDest(session: SessionState): FdDest {
   if (id === EXEC_TO_STDOUT) return TO_STDOUT
   if (id === EXEC_TO_STDERR) return TO_STDERR
   return id
-}
-
-async function readExisting(dispatch: DispatchFn, scope: PathSpec): Promise<Uint8Array> {
-  try {
-    const [existing] = await dispatch('read', scope)
-    if (existing instanceof Uint8Array) return existing
-  } catch (err) {
-    // file doesn't exist yet, or not readable — appending starts fresh and
-    // the write that follows reports the real failure as a shell-attributed
-    // line. Non-filesystem errors are bugs and still propagate.
-    if (!isFsError(err)) throw err
-  }
-  return new Uint8Array()
 }
 
 function ensureScope(target: unknown): PathSpec {

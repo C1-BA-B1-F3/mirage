@@ -14,6 +14,7 @@
 
 import base64
 import importlib.util
+import logging
 import os
 import tempfile
 import uuid
@@ -41,10 +42,15 @@ from mirage.vfs.onedrive import OneDriveConfig, OneDriveVFS
 from mirage.vfs.s3 import S3VFS, S3Config
 from mirage.vfs.ssh import SSHVFS, SSHConfig
 
+logger = logging.getLogger(__name__)
+
 SERVER_DIR = Path(__file__).resolve().parents[1] / "server"
 GITHUB_OWNER = "integ"
 GITHUB_REPO = "watch"
 GITHUB_REF = "main"
+# The gws fake's credential: a bearer as it is, and the one refresh token its
+# /token exchanges.
+GWS_TOKEN = "gws-integ-token"
 
 Pair = tuple[Workspace, "WorkspaceWriter | GitHubWriter"]
 VFSFactory = Callable[[], Any]
@@ -149,9 +155,21 @@ class GitHubWriter:
         self._ref = ref
 
     async def _tree(self) -> dict[str, TreeEntry]:
-        """The ref's recursive tree, which names every blob's sha."""
-        tree, _truncated = await fetch_tree(self._config, self._owner,
-                                            self._repo, self._ref)
+        """The ref's recursive tree, which names every blob's sha.
+
+        A repository nothing was committed to has no tree, and GitHub
+        answers 409 "Git Repository is empty." for it: to a committer that
+        is an empty listing, and the first PUT creates the tree.
+        """
+        try:
+            tree, _truncated = await fetch_tree(self._config, self._owner,
+                                                self._repo, self._ref)
+        except aiohttp.ClientResponseError as exc:
+            if exc.status != 409:
+                raise
+            logger.debug("%s/%s has no tree yet: %s", self._owner, self._repo,
+                         exc)
+            return {}
         return tree
 
     async def _commit(self, method: str, path: str, body: dict[str,
@@ -386,9 +404,10 @@ async def build_onedrive(spec: dict) -> Pair | None:
 async def build_box(spec: dict) -> Pair | None:
     """Box battery against the external box fake.
 
-    The second ReaddirWalk target, and the one that proves the walk is
-    not Graph-shaped: Box addresses folders by its own ids and answers a
-    different listing endpoint.
+    Box pulls through the fake's ``/events`` stream, with the per-folder
+    walk (Box addresses folders by its own ids) as the baseline and the
+    reset, so a case passes only if the event it caused is placed on the
+    right path.
 
     Args:
         spec (dict): Parsed case file.
@@ -456,7 +475,8 @@ async def build_gdrive(spec: dict) -> Pair | None:
     if not url:
         return None
     url = url.rstrip("/")
-    async with aiohttp.ClientSession() as session:
+    headers = {"Authorization": f"Bearer {GWS_TOKEN}"}
+    async with aiohttp.ClientSession(headers=headers) as session:
         async with session.post(f"{url}/reset", json={}) as resp:
             resp.raise_for_status()
         folder = f"watch-{uuid.uuid4().hex[:8]}"
@@ -473,7 +493,7 @@ async def build_gdrive(spec: dict) -> Pair | None:
         spec, lambda: GoogleDriveVFS(
             GoogleDriveConfig(client_id="integ-client",
                               client_secret="integ-secret",
-                              refresh_token="integ-refresh",
+                              refresh_token=GWS_TOKEN,
                               api_base=url,
                               folder_id=folder_id)))
 

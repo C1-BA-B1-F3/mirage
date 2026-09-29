@@ -34,6 +34,7 @@ import * as readModule from '../../../core/postgres/read.ts'
 import * as statModule from '../../../core/postgres/stat.ts'
 import { resolvePostgresConfig } from '../../../vfs/postgres/config.ts'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
+import { materialize } from '../../../io/types.ts'
 import type { FlagValue } from '../../spec/types.ts'
 import { POSTGRES_TAIL } from './tail.ts'
 
@@ -97,6 +98,45 @@ describe('postgres tail pushdown', () => {
     await run({ n: '1' })
     expect(clientModule.countRows).toHaveBeenCalledTimes(1)
     expect(vi.mocked(readModule.readStream).mock.calls[0]?.[3]).toEqual({ limit: 1, offset: 1 })
+  })
+
+  // `defaultRowLimit` clamped the suffix, so `tail -n 1200` of a 1500-row
+  // table fetched the last 1000 rows and exited 0.
+  it('fetches every row asked for past the default', async () => {
+    vi.mocked(clientModule.countRows).mockResolvedValue(1500)
+    await run({ n: '1200' })
+    expect(vi.mocked(readModule.readStream).mock.calls[0]?.[3]).toEqual({
+      limit: 1200,
+      offset: 300,
+    })
+  })
+
+  it('stops at the read ceiling and says so', async () => {
+    vi.mocked(clientModule.countRows).mockResolvedValue(1500)
+    const cmd = POSTGRES_TAIL[0]
+    if (cmd === undefined) throw new Error('tail not registered')
+    const accessor = new PostgresAccessor(
+      new StubDriver(),
+      resolvePostgresConfig({ dsn: 'postgres://h/db', maxReadRows: 100 }),
+    )
+    const result = await cmd.fn(accessor, [ROWS], [], {
+      stdin: null,
+      flags: { n: '1200' },
+      filetypeFns: null,
+      cwd: '/',
+    })
+    if (result === null) throw new Error('tail returned nothing')
+    const [out, io] = result
+    await materialize(out)
+    expect(vi.mocked(readModule.readStream).mock.calls[0]?.[3]).toEqual({
+      limit: 100,
+      offset: 1400,
+    })
+    expect(io.exitCode).toBe(1)
+    expect(DEC.decode(await materialize(io.stderr))).toBe(
+      'tail: /pg/public/tables/users/rows.jsonl: stopped at 100 rows (max_read_rows); ' +
+        'the output is incomplete\n',
+    )
   })
 
   it.each([{ follow: true }, { F: true }])(

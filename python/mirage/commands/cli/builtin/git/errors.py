@@ -110,6 +110,45 @@ class AmbiguousArgumentError(GitError):
             f"'git <command> [<revision>...] -- [<file>...]'")
 
 
+class BadRevisionError(GitError):
+    """A negated revision (``^<rev>``) that resolves to nothing.
+
+    git words this one differently from a plain unknown revision, and
+    refuses a negated range (``^A..B``) the same way (pinned against
+    git 2.50).
+
+    Args:
+        revision (str): the revision as the user spelled it, caret
+            included.
+    """
+
+    def __init__(self, revision: str) -> None:
+        super().__init__(f"bad revision '{revision}'")
+
+
+class NoMergeBaseError(GitError):
+    """``diff A...B`` between two histories that share no commit.
+
+    Args:
+        revision (str): the range as the user spelled it.
+    """
+
+    def __init__(self, revision: str) -> None:
+        super().__init__(f"{revision}: no merge base")
+
+
+class BadConfigValueError(GitError):
+    """A boolean config variable whose value git cannot read as one.
+
+    Args:
+        value (str): the value as the config file spells it.
+        key (str): the variable, section and name lowercased.
+    """
+
+    def __init__(self, value: str, key: str) -> None:
+        super().__init__(f"bad boolean config value '{value}' for '{key}'")
+
+
 class BadDateError(GitError):
     """A date flag whose value could not be read.
 
@@ -136,6 +175,42 @@ class NoWorkspaceError(GitError):
 
     def __init__(self) -> None:
         super().__init__("this operation must be run in a work tree")
+
+
+class NotAWorkTreeError(GitError):
+    """A verb that reads or writes files, run with no work tree to enter.
+
+    git's ``setup_work_tree`` refuses a bare repository and a work tree
+    that is not a directory in the same words (pinned against git 2.54),
+    so a mistyped ``--work-tree`` is never taken for an empty tree.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("this operation must be run in a work tree")
+
+
+class BareResetError(GitError):
+    """``git reset`` in a bare repository, refused in its own words."""
+
+    def __init__(self) -> None:
+        super().__init__("mixed reset is not allowed in a bare repository")
+
+
+class WorkTreeChdirError(GitError):
+    """A relative ``core.worktree`` that git cannot enter.
+
+    git resolves one by entering it before any verb runs, so every verb
+    fails, the read-only ones included (pinned against git 2.54).
+
+    Args:
+        path (str): the value as the config spells it.
+        reason (str): the strerror git names, absence by default.
+    """
+
+    def __init__(self,
+                 path: str,
+                 reason: str = "No such file or directory") -> None:
+        super().__init__(f"cannot chdir to '{path}': {reason}")
 
 
 class NoWorkingDirectoryError(GitError):
@@ -194,6 +269,37 @@ class RevisionResetError(GitError):
                          f"the index from HEAD only")
 
 
+class AllWithPathsError(GitError):
+    """``commit -a`` given paths as well.
+
+    git refuses the pair before reading anything, naming the first path
+    (pinned against git 2.50).
+
+    Args:
+        path (str): the first path operand as the user spelled it.
+    """
+
+    def __init__(self, path: str) -> None:
+        super().__init__(f"paths '{path} ...' with -a does not make sense")
+
+
+class PartialCommitError(GitError):
+    """``commit`` given paths, which this build does not take.
+
+    Real git commits only those paths, from the working tree, and leaves
+    the rest of the index staged. mirage commits the whole index, and
+    doing that while the caller named a subset would record changes
+    they never asked to commit, so the operand is refused instead.
+
+    Args:
+        path (str): the first path operand as the user spelled it.
+    """
+
+    def __init__(self, path: str) -> None:
+        super().__init__(f"cannot commit '{path}' alone: this build commits "
+                         f"the whole index; stage it and commit without paths")
+
+
 class BadPrettyError(GitError):
     """A --pretty/--format value naming no format at all.
 
@@ -210,7 +316,7 @@ class BadPrettyError(GitError):
 class UnsupportedPrettyError(GitError):
     """A --pretty/--format preset git has but this build does not.
 
-    ``raw``, ``email``, ``mboxrd`` and ``reference`` are real git
+    ``email``, ``mboxrd`` and ``reference`` are real git
     formats; answering "invalid" for them would gaslight an agent that
     spelled a valid one, so the refusal says unsupported and names what
     exists instead.
@@ -222,7 +328,7 @@ class UnsupportedPrettyError(GitError):
     def __init__(self, value: str) -> None:
         super().__init__(
             f"unsupported --pretty format: {value} (this build implements "
-            f"oneline, short, medium, full, fuller and format:/tformat: "
+            f"oneline, short, medium, full, fuller, raw and format:/tformat: "
             f"strings)")
 
 
@@ -383,14 +489,12 @@ class InvalidBranchNameError(GitError):
 
 
 class BranchNameRequiredError(GitError):
-    """``branch -d`` with nothing to delete.
+    """``branch -d`` with nothing to delete: git dies, 128 (pinned against
+    git 2.50.1).
 
     Args:
         None.
     """
-
-    prefix = "error"
-    code = OPTION_EXIT
 
     def __init__(self) -> None:
         super().__init__("branch name required")
@@ -991,23 +1095,26 @@ class TagNotFoundError(GitError):
 
 
 class ListModeOnlyError(GitError):
-    """``-n`` on a ``tag`` line that deletes rather than lists.
+    """A listing option on a ``tag`` line that deletes rather than lists.
 
-    ``-n`` asks for message lines beside each name, which only a listing
-    prints, and git makes it *imply* a listing rather than refuse it:
-    ``git tag -n1 nosuch`` is a listing whose pattern matches nothing
-    and exits 0. The implication is what cannot happen once ``-d`` has
-    already said what mode the line is in, so git dies there instead,
-    with the tags untouched. Refusing it matters more here than the
-    wording does: read as a listing flag and dropped, the line went on
-    to delete the refs its operands named. Pinned against git 2.50.1.
+    ``-n`` asks for message lines beside each name and ``--contains``
+    and its kin narrow which names are listed, all of which only a
+    listing does, and git makes each *imply* a listing rather than
+    refuse it: ``git tag -n1 nosuch`` is a listing whose pattern matches
+    nothing and exits 0. The implication is what cannot happen once
+    ``-d`` has already said what mode the line is in, so git dies there
+    instead, with the tags untouched, naming the first of ``-n``,
+    ``--contains``, ``--no-contains``, ``--points-at``, ``--merged``,
+    ``--no-merged`` the line holds. Refusing it matters more here than
+    the wording does: read as a listing flag and dropped, the line went
+    on to delete the refs its operands named. Pinned against git 2.50.1.
 
     Args:
-        None.
+        option (str): the listing option the line holds.
     """
 
-    def __init__(self) -> None:
-        super().__init__("the '-n' option is only allowed in list mode")
+    def __init__(self, option: str = "-n") -> None:
+        super().__init__(f"the '{option}' option is only allowed in list mode")
 
 
 class TagLinesError(GitError):
@@ -1161,3 +1268,105 @@ class IncompatibleOptionsError(GitError):
     def __init__(self, first: str, second: str) -> None:
         super().__init__(f"options '{first}' and '{second}' cannot be used "
                          f"together")
+
+
+class IncompatibleLogOptionsError(GitError):
+    """Two revision-walk options git refuses to take together.
+
+    The same sentence as IncompatibleOptionsError, from the revision
+    parser rather than parse-options, so git dies with 128 instead of
+    refusing with 129: ``log --graph --reverse`` (pinned against git
+    2.50.1).
+
+    Args:
+        first (str): the first option as git names it.
+        second (str): the second.
+    """
+
+    def __init__(self, first: str, second: str) -> None:
+        super().__init__(f"options '{first}' and '{second}' cannot be used "
+                         f"together")
+
+
+class MalformedObjectError(GitError):
+    """``--contains`` or ``--points-at`` given a name that resolves to
+    no object.
+
+    Both refuse while the options are parsed, so the line exits 129 and
+    nothing is listed; ``--points-at`` quotes the name and
+    ``--contains`` does not, which is git's own inconsistency (pinned
+    against git 2.50.1).
+
+    Args:
+        name (str): the name as typed.
+        quoted (bool): whether git quotes it.
+    """
+
+    prefix = "error"
+    code = OPTION_EXIT
+
+    def __init__(self, name: str, quoted: bool = False) -> None:
+        shown = f"'{name}'" if quoted else name
+        super().__init__(f"malformed object name {shown}")
+
+
+class MalformedMergeFilterError(GitError):
+    """``--merged`` or ``--no-merged`` given a name that resolves to no
+    object.
+
+    The same mistake ``MalformedObjectError`` reports, and git dies on
+    this one instead of refusing the option: exit 128 (pinned against
+    git 2.50.1).
+
+    Args:
+        name (str): the name as typed.
+    """
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"malformed object name {name}")
+
+
+class NotACommitError(GitError):
+    """A commit filter given an object that is no commit, such as a blob.
+
+    git names the object and its type, then says which option could not
+    use it: ``--contains`` as ``no such commit <name>`` and ``--merged``
+    as the option itself (pinned against git 2.50.1).
+
+    Args:
+        sha (str): the object's id.
+        kind (str): its type.
+        reason (str): git's second line, after its ``error:``.
+    """
+
+    prefix = "error"
+    code = OPTION_EXIT
+
+    def __init__(self, sha: str, kind: str, reason: str) -> None:
+        super().__init__(
+            f"object {sha} is a {kind}, not a commit\nerror: {reason}")
+
+
+class BranchUsageError(GitError):
+    """``branch`` asked to list and to delete on one line.
+
+    ``--contains`` and its kin imply a listing, and a listing is one
+    mode among the others, so a line that also deletes names two: git
+    prints its usage and exits 129 (pinned against git 2.50.1). The
+    lines are git's own, less the forms this build does not implement.
+
+    Args:
+        None.
+    """
+
+    prefix = None
+    code = OPTION_EXIT
+
+    def __init__(self) -> None:
+        super().__init__(
+            "usage: git branch [<options>] [-r | -a] [--merged] "
+            "[--no-merged]\n"
+            "   or: git branch [<options>] <branch-name> [<start-point>]\n"
+            "   or: git branch [<options>] [-l] [<pattern>...]\n"
+            "   or: git branch [<options>] [-r] (-d | -D) <branch-name>...\n"
+            "   or: git branch [<options>] [-r | -a] [--points-at]")

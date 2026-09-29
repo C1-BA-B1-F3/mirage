@@ -16,8 +16,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from mirage.core.github.pushdown import (count_scope_files, is_repo_root,
-                                         scope_relative_key)
+from mirage.core.github.pushdown import (count_scope_files, is_directory_key,
+                                         is_repo_root, scope_blobs,
+                                         scope_relative_key, search_safe,
+                                         unsearchable_keys)
+from mirage.core.github.tree_entry import TreeEntry
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
 
@@ -76,3 +79,86 @@ def test_count_scope_files_single_file(entries):
 
 def test_count_scope_files_missing(entries):
     assert count_scope_files(entries, "/nope") == 0
+
+
+def test_scope_blobs_lists_the_files_at_or_below_a_key(entries):
+    # Tree order, files only; the root key is every file, a file key is
+    # itself, and a sibling sharing the spelling (srcx/) is outside.
+    entries["srcx/other.py"] = entries["src/main.py"]
+    assert [p for p, _ in scope_blobs(entries, "/")] == [
+        "README.md", "src/main.py", "src/utils.py", "src/models/user.py",
+        "srcx/other.py"
+    ]
+    assert [p for p, _ in scope_blobs(entries, "/src")
+            ] == ["src/main.py", "src/utils.py", "src/models/user.py"]
+    assert [p for p, _ in scope_blobs(entries, "/src/main.py")
+            ] == ["src/main.py"]
+    assert scope_blobs(entries, "/nope") == []
+
+
+# Measured against api.github.com on 2026-09-25: a `name:` word is a
+# qualifier, a quote starts a phrase, a word-leading `-` negates and `NOT` is
+# an operator, each narrowing the answer; lowercase `not` and `OR` are plain
+# terms. Word characters are ASCII here, the same rule the TypeScript twin
+# applies, so the two hosts gate the same literals.
+@pytest.mark.parametrize("query", [
+    "foo path:docs",
+    'say "hi"',
+    "foo -bar",
+    "-foo",
+    "foo NOT bar",
+    "NOT",
+    "a\tNOT\tb",
+    "   ",
+    "\t",
+    "a\x1c-b",
+    "a\ufeff-b",
+    "x(-y",
+    "\u00e9-b",
+    "\u00e9NOT x",
+    "\u00e9",
+])
+def test_search_safe_refuses_a_literal_that_narrows_the_search(query):
+    assert not search_safe(query)
+
+
+@pytest.mark.parametrize("query", [
+    "foo",
+    "foo bar",
+    "foo-bar",
+    "not",
+    "OR",
+    "NOTE",
+    "NOTHING x",
+    "a_NOT",
+])
+def test_search_safe_accepts_plain_terms(query):
+    assert search_safe(query)
+
+
+def test_unsearchable_keys_lists_what_code_search_never_indexes():
+    limit = 384 * 1024
+
+    def blob(path, size):
+        return TreeEntry(path=path, type="blob", sha=path, size=size)
+
+    tree = {
+        "src": TreeEntry(path="src", type="tree", sha="t", size=None),
+        "src/big.bin": blob("src/big.bin", limit),
+        "src/edge.py": blob("src/edge.py", limit - 1),
+        "src/none.py": blob("src/none.py", None),
+        "docs/big.md": blob("docs/big.md", limit + 1),
+        "srcx/big.bin": blob("srcx/big.bin", limit),
+    }
+    # srcx/ shares src's spelling but is not under it.
+    assert unsearchable_keys(tree, "/src") == ["src/big.bin", "src/none.py"]
+    assert unsearchable_keys(tree, "/") == [
+        "docs/big.md", "src/big.bin", "src/none.py", "srcx/big.bin"
+    ]
+
+
+def test_is_directory_key(entries):
+    assert is_directory_key(entries, "/")
+    assert is_directory_key(entries, "/src")
+    assert not is_directory_key(entries, "/src/main.py")
+    assert not is_directory_key(entries, "/nope")

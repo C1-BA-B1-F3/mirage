@@ -16,12 +16,9 @@ import { RemoteSandbox } from '@struktoai/mirage-core/runtime/sandbox/base'
 import { stdinPath, stdinRedirect } from '@struktoai/mirage-core/runtime/sandbox/constants'
 import { registerRuntime } from '@struktoai/mirage-core/runtime/table'
 import type { RunResult, RuntimeOptions } from '@struktoai/mirage-core/runtime/types'
-import { loadOptionalPeer } from '@struktoai/mirage-core/utils/optional_peer'
+import { loadSdk, type DaytonaSdk } from './sdk.ts'
 import { DAYTONA_CONFIG_KEYS, type DaytonaConfig } from './config.ts'
 import type { Daytona, Sandbox } from '@daytonaio/sdk'
-import type * as daytonaSdk from '@daytonaio/sdk'
-
-export type DaytonaSdk = typeof daytonaSdk
 
 const ENC = new TextEncoder()
 
@@ -49,10 +46,7 @@ export class DaytonaRuntime extends RemoteSandbox<DaytonaConfig> {
 
   // The SDK loader as a seam: tests substitute a fake module here.
   protected loadSdk(): Promise<DaytonaSdk> {
-    return loadOptionalPeer(() => import('@daytonaio/sdk'), {
-      feature: "the 'daytona' runtime",
-      packageName: '@daytonaio/sdk',
-    })
+    return loadSdk()
   }
 
   async connect(): Promise<void> {

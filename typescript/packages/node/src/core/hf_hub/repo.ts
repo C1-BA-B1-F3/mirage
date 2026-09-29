@@ -18,7 +18,7 @@ import { apiUrl, HfHubError, hubGet, revSegment } from './client.ts'
 /** The repository's branches, tags and conversion refs. */
 export async function fetchRefs(accessor: HfHubAccessor): Promise<Record<string, unknown>> {
   const url = apiUrl(accessor.endpoint, accessor.repoType, accessor.repoId, '/refs')
-  const data = await hubGet(accessor.token, url)
+  const data = await hubGet(accessor.token, url, undefined, accessor.timeoutMs)
   return typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : {}
 }
 
@@ -36,7 +36,7 @@ export async function fetchRefs(accessor: HfHubAccessor): Promise<Record<string,
  * finds the snapshot already there and serves dev's bytes.
  */
 export async function headCommit(accessor: HfHubAccessor): Promise<string> {
-  const data = await hubGet(accessor.token, revisionUrl(accessor))
+  const data = await hubGet(accessor.token, revisionUrl(accessor), undefined, accessor.timeoutMs)
   if (data === null || typeof data !== 'object' || Array.isArray(data)) return ''
   const sha = (data as Record<string, unknown>).sha
   return typeof sha === 'string' ? sha : ''
@@ -62,11 +62,10 @@ export function revisionUrl(accessor: HfHubAccessor): string {
 /**
  * Why a listing came back empty, asked of the Hub directly.
  *
- * `fetchTree` folds 401/403/404 into an empty listing on purpose: a mount's
- * readdir over a repository it cannot see has to render an empty directory
- * rather than raise. A CLI verb wants the opposite, so it asks this on the
- * failure path only, which costs one request and only when something already
- * went wrong.
+ * `hf download` folds a tree walk the Hub refused (401/403/404) into an empty
+ * listing itself, so its failure path can name the absence upstream would. It
+ * asks this on that path only, which costs one request and only when something
+ * already went wrong.
  *
  * The status cannot answer it. A missing repository, a missing revision and a
  * missing file are all 404, and only the Hub's `X-Error-Code` header tells
@@ -74,7 +73,7 @@ export function revisionUrl(accessor: HfHubAccessor): string {
  */
 export async function classifyAbsence(accessor: HfHubAccessor): Promise<Absence> {
   try {
-    await hubGet(accessor.token, revisionUrl(accessor))
+    await hubGet(accessor.token, revisionUrl(accessor), undefined, accessor.timeoutMs)
   } catch (err) {
     if (err instanceof HfHubError) {
       if (err.errorCode === 'RepoNotFound') return Absence.REPO

@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs'
 import { announceFor, emit, start } from '../kit/typescript/index.ts'
 import type { Announce, Arm, Fake, JsonValue, MinimalClient } from '../kit/typescript/index.ts'
 import { KitError } from '../kit/typescript/errors.ts'
+import { airtableFake } from '../airtable/fake.ts'
 import { boxFake } from '../box/fake.ts'
 import { databricksFake } from '../databricks/fake.ts'
 import { difyFake } from '../dify/fake.ts'
@@ -140,6 +141,7 @@ function portOf(extras: Record<string, JsonValue>, key: string): number {
 // vendored upstream MCP server beside it is a separate process this launcher
 // does not manage.
 const REGISTRY: Record<string, Entry> = {
+  airtable: plain(airtableFake),
   box: plain(boxFake),
   databricks: plain(databricksFake),
   dify: plain(difyFake),

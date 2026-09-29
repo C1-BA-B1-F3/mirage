@@ -1,0 +1,103 @@
+{
+  "cases": [
+    {
+      "id": "disk_host_links_listing",
+      "seq": 1,
+      "targets": ["disk-host-links"],
+      "command": "ls /data",
+      "expect": {
+        "exit": 0,
+        "stdout": "destination\nempty\nlib\nonly-links\nplain.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "disk_host_links_find",
+      "seq": 2,
+      "targets": ["disk-host-links"],
+      "command": "find /data -type f",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/lib/a.txt\n/data/plain.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "disk_host_links_empty",
+      "seq": 3,
+      "targets": ["disk-host-links"],
+      "command": "find /data -empty",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/destination\n/data/empty\n/data/only-links\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "disk_host_links_read_escape",
+      "seq": 4,
+      "targets": ["disk-host-links"],
+      "command": "cat /data/escape",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /data/escape: No such file or directory\n"
+      }
+    },
+    {
+      "id": "disk_host_links_read_internal",
+      "seq": 5,
+      "targets": ["disk-host-links"],
+      "command": "cat /data/dir-link/a.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /data/dir-link/a.txt: No such file or directory\n"
+      }
+    },
+    {
+      "id": "disk_host_links_read_dangling",
+      "seq": 6,
+      "targets": ["disk-host-links"],
+      "command": "cat /data/dangling",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /data/dangling: No such file or directory\n"
+      }
+    },
+    {
+      "id": "disk_host_links_read_loop",
+      "seq": 7,
+      "targets": ["disk-host-links"],
+      "command": "cat /data/loop",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /data/loop: No such file or directory\n"
+      }
+    },
+    {
+      "id": "disk_host_links_copy_destination",
+      "seq": 8,
+      "targets": ["disk-host-links"],
+      "command": "cp /data/plain.txt /data/destination",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cp: cannot create regular file '/data/destination/plain.txt': No such file or directory\n"
+      }
+    },
+    {
+      "id": "disk_host_links_namespace",
+      "seq": 9,
+      "targets": ["disk-host-links"],
+      "command": "ln -s /data/plain.txt /data/virtual-link && cat /data/virtual-link",
+      "expect": {
+        "exit": 0,
+        "stdout": "inside\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

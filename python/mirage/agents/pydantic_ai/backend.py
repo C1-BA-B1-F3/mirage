@@ -79,7 +79,7 @@ class PydanticAIWorkspace(SandboxProtocol):
     async def aexists(self, path: str) -> bool:
         try:
             await self._ws.vfs.stat(path)
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, NotADirectoryError, ValueError):
             return False
         return True
 
@@ -133,7 +133,7 @@ class PydanticAIWorkspace(SandboxProtocol):
         ops = self._ws.vfs
         try:
             data = await ops.read(path)
-        except (FileNotFoundError, ValueError) as exc:
+        except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
             return f"Error: {exc}"
         text = data.decode("utf-8", errors="replace")
         lines = text.splitlines(keepends=True)
@@ -153,7 +153,7 @@ class PydanticAIWorkspace(SandboxProtocol):
         try:
             await ops.stat(path)
             return WriteResult(error=f"Error: file '{path}' already exists")
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, NotADirectoryError, ValueError):
             # missing file is the good path: the write may proceed
             pass
         parent = "/".join(path.rstrip("/").split("/")[:-1]) or "/"
@@ -187,7 +187,7 @@ class PydanticAIWorkspace(SandboxProtocol):
         ops = self._ws.vfs
         try:
             data = await ops.read(path)
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, NotADirectoryError, ValueError):
             return EditResult(error=f"Error: file '{path}' not found")
         content = data.decode("utf-8", errors="replace")
         count = content.count(old_string)

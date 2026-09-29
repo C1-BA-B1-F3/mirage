@@ -12,13 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.hf_hub.client import hub_stream, resolve_url
-from mirage.core.hf_hub.constants import DEFAULT_CHUNK_SIZE
-from mirage.core.hf_hub.read import read_bytes, resolve_entry
+from mirage.core.hf_hub.constants import DEFAULT_CHUNK_SIZE, REFUSED_STATUSES
+from mirage.core.hf_hub.lookup import refusals_denied
+from mirage.core.hf_hub.read import read_bytes, resolve_entry, row_token
 from mirage.observe.context import record_stream
 from mirage.types import PathSpec
 
@@ -56,15 +57,22 @@ async def read_stream(
     Yields:
         bytes: the next chunk of content.
     """
-    await resolve_entry(accessor, path, index)
+    entry = await resolve_entry(accessor, path, index)
     raw = path.mount_path
     url = resolve_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
                       accessor.revision, accessor.repo_path(raw))
-    rec = record_stream("read", raw, accessor.VFS_NAME)
-    async for chunk in hub_stream(accessor.token,
-                                  url,
-                                  chunk_size,
-                                  session=accessor.pool):
+    rec = record_stream("read", path.virtual, accessor.VFS_NAME)
+
+    def stamp(headers: Mapping[str, str]) -> None:
         if rec is not None:
-            rec.bytes += len(chunk)
-        yield chunk
+            rec.fingerprint = row_token(entry, headers.get("etag", ""))
+
+    with refusals_denied(path, REFUSED_STATUSES):
+        async for chunk in hub_stream(accessor.token,
+                                      url,
+                                      chunk_size,
+                                      session=accessor.pool,
+                                      on_response=stamp):
+            if rec is not None:
+                rec.bytes += len(chunk)
+            yield chunk

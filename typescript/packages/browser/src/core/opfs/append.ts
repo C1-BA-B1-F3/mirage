@@ -25,12 +25,12 @@ export async function appendBytes(
 ): Promise<void> {
   const root = await accessor.root()
   const timer = startOp()
-  const virtual = p.mountPath
+  const key = p.mountPath
   let handle: FileSystemFileHandle
   try {
-    handle = await resolveFileHandle(root, virtual, { create: true })
+    handle = await resolveFileHandle(root, key, { create: true })
   } catch (err) {
-    throw await openError(root, virtual, err, p)
+    throw await openError(root, key, err, p)
   }
   const existing = await handle.getFile()
   const existingBytes = new Uint8Array(await existing.arrayBuffer())
@@ -40,5 +40,5 @@ export async function appendBytes(
   const writable = await handle.createWritable()
   await writable.write(toWritableChunk(merged))
   await writable.close()
-  record('append', virtual, VFSName.OPFS, data.byteLength, timer)
+  record('append', p.virtual, VFSName.OPFS, data.byteLength, timer)
 }

@@ -49,9 +49,7 @@ const mongo = new MongoDBVFS({
 | --- | --- | --- |
 | `uri` | required | Mongo connection URI. Redacted in snapshots. |
 | `databases` | none | Optional allowlist of database names. |
-| `defaultDocLimit` | `100` | Default page size for ad-hoc reads. |
-| `defaultSearchLimit` | `100` | Default page size for search-style queries. |
-| `maxDocLimit` | `10_000` | Hard ceiling per read. |
+| `maxDocLimit` | `5000` | Most documents one `tail -n` returns; past it, a notice on stderr and exit 1. |
 
 ## Mount mode
 

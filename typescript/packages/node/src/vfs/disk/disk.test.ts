@@ -13,9 +13,10 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { chmodSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { chmod, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { CapacityState, FileType, VFSName } from '@struktoai/mirage-core/types'
+import { CapacityState, FileType, PathSpec, VFSName } from '@struktoai/mirage-core/types'
 import { ops } from '@struktoai/mirage-core/test-utils'
 import { copy as copyCore } from '../../core/disk/copy.ts'
 import { size as duSize } from '../../core/disk/du/index.ts'
@@ -201,6 +202,139 @@ describe('DiskVFS — getState / loadState round-trip', () => {
       expect(statSync(join(root2, 'f.txt')).mode & 0o777).toBe(0o640)
     } finally {
       c2()
+    }
+  })
+})
+
+interface HostFixture {
+  files: Record<string, string>
+  directories: string[]
+  symlinks: Record<string, string>
+  visible_files: string[]
+  hidden_paths: string[]
+}
+
+describe('DiskVFS — shared host-link contract', () => {
+  let fixture: HostFixture
+  let vfs: DiskVFS
+
+  beforeEach(async () => {
+    fixture = JSON.parse(
+      await readFile(
+        new URL('../../../../../../integ/fixtures/disk/host-links.json', import.meta.url),
+        'utf8',
+      ),
+    ) as HostFixture
+    for (const [relative, text] of Object.entries(fixture.files)) {
+      const full = join(root, relative)
+      await mkdir(dirname(full), { recursive: true })
+      await writeFile(full, text)
+    }
+    for (const relative of fixture.directories)
+      await mkdir(join(root, relative), { recursive: true })
+    for (const [relative, target] of Object.entries(fixture.symlinks))
+      await symlink(target, join(root, relative))
+    vfs = new DiskVFS({ root: join(root, 'root') })
+  })
+
+  it('uses the same visible tree for snapshots, find, du and the op table', async () => {
+    expect(Object.keys((await vfs.getState()).files).sort()).toEqual(fixture.visible_files)
+    expect(await findCore(vfs.accessor, spec('/'), { type: 'f' })).toEqual(
+      fixture.visible_files.map((p) => '/' + p),
+    )
+    expect(await duSize(vfs.accessor, spec('/'))).toBe(13)
+    for (const p of fixture.hidden_paths) {
+      expect(await existsCore(vfs.accessor, spec(p))).toBe(false)
+      await expect(ops(vfs).read(spec(p))).rejects.toMatchObject({ code: 'ENOENT' })
+      await expect(
+        ops(vfs).write(spec(p), new TextEncoder().encode('changed')),
+      ).rejects.toMatchObject({ code: 'ENOENT' })
+    }
+    expect(await readFile(join(root, 'outside/secret.txt'), 'utf8')).toBe('outside\n')
+  })
+
+  it('keeps the same visible tree when the mount root is an alias', async () => {
+    const alias = join(root, 'alias')
+    await symlink(vfs.root, alias)
+    const mounted = new DiskVFS({ root: alias })
+    expect(await duSize(mounted.accessor, spec('/'))).toBe(13)
+    expect(Object.keys((await mounted.getState()).files).sort()).toEqual(fixture.visible_files)
+  })
+
+  it('requires an exact copy destination', async () => {
+    await expect(
+      copyCore(vfs.accessor, spec('/plain.txt'), spec('/destination')),
+    ).rejects.toMatchObject({
+      code: 'EISDIR',
+    })
+    expect(await readFile(join(root, 'outside/secret.txt'), 'utf8')).toBe('outside\n')
+  })
+
+  it.each(['escape', 'escape-dir/secret.txt', 'destination/plain.txt', '../outside/secret.txt'])(
+    'refuses restoring through %s',
+    async (relative) => {
+      const before = statSync(join(root, 'outside/secret.txt')).mode
+      await expect(
+        vfs.loadState({
+          type: 'disk',
+          files: { [relative]: new TextEncoder().encode('changed') },
+          modes: { [relative]: 0o600 },
+        }),
+      ).rejects.toThrow()
+      expect(statSync(join(root, 'outside/secret.txt')).mode).toBe(before)
+      expect(await readFile(join(root, 'outside/secret.txt'), 'utf8')).toBe('outside\n')
+    },
+  )
+
+  it('creates missing restore parents and applies modes', async () => {
+    await vfs.loadState({
+      type: 'disk',
+      files: { 'new/deep/file': new TextEncoder().encode('restored') },
+      modes: { 'new/deep/file': 0o640 },
+    })
+    const target = join(root, 'root/new/deep/file')
+    expect(await readFile(target, 'utf8')).toBe('restored')
+    expect(statSync(target).mode & 0o777).toBe(0o640)
+  })
+
+  it('refuses absolute snapshot keys', async () => {
+    const outside = join(root, 'outside/secret.txt')
+    await expect(
+      vfs.loadState({ type: 'disk', files: { [outside]: new TextEncoder().encode('changed') } }),
+    ).rejects.toThrow(/relative/)
+    expect(await readFile(outside, 'utf8')).toBe('outside\n')
+  })
+
+  it('does not stat unreadable symlink targets during snapshot capture', async () => {
+    await chmod(join(root, 'outside'), 0)
+    try {
+      expect(Object.keys((await vfs.getState()).files).sort()).toEqual(fixture.visible_files)
+    } finally {
+      await chmod(join(root, 'outside'), 0o700)
+    }
+  })
+
+  it('does not report unreadable trees as absent or empty', async () => {
+    await chmod(join(root, 'root/lib'), 0)
+    try {
+      const file = PathSpec.fromStrPath('/data/lib/a.txt', 'lib/a.txt')
+      const directory = PathSpec.fromStrPath('/data/lib', 'lib')
+      await expect(existsCore(vfs.accessor, file)).rejects.toMatchObject({
+        code: 'EACCES',
+        message: file.virtual,
+      })
+      for (const operation of [
+        () => findCore(vfs.accessor, directory),
+        () => duSize(vfs.accessor, directory),
+        () => ops(vfs).readdir(directory),
+      ]) {
+        await expect(operation()).rejects.toMatchObject({
+          code: 'EACCES',
+          message: directory.virtual,
+        })
+      }
+    } finally {
+      await chmod(join(root, 'root/lib'), 0o700)
     }
   })
 })

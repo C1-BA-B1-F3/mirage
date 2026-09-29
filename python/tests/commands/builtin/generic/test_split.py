@@ -12,10 +12,15 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import AsyncIterator
+
 import pytest
 
 from mirage.commands.builtin.generic import split as split_generic
 from mirage.commands.errors import UsageError
+from mirage.types import MountMode, PathSpec
+from mirage.vfs.ram import RAMVFS
+from mirage.workspace import Workspace
 
 from mirage.commands.builtin.generic.split import (  # isort: skip
     ChunkKind, ChunkSpec, chunk_at, chunk_parts, parse_bytes_value,
@@ -489,3 +494,42 @@ def test_hex_start_values_are_lower_case_only():
 def test_an_empty_numeric_start_is_zero_with_the_width_pinned():
     assert parse_suffix_start("", False, 2) == 0
     assert parse_suffix_start("", True, 2) == 0
+
+
+def _no_read_stream(path: PathSpec) -> AsyncIterator[bytes]:
+    raise AssertionError(f"read {path.virtual}: the input is stdin")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cwd,named", [
+    ("/data", ["/data/xaa", "/data/xab"]),
+    ("/data/sub", ["/data/sub/xaa", "/data/sub/xab"]),
+])
+async def test_stdin_outputs_are_named_in_the_working_directory(
+        cwd: str, named: list[str]):
+    # No operand to read a prefix from: `x` in the working directory
+    # names the outputs (GNU), and the writes keys stay mount-relative
+    # like every other command's, so the executor can prefix them.
+    specs: list[PathSpec] = []
+
+    async def write_bytes(path: PathSpec, data: bytes) -> None:
+        specs.append(path)
+
+    _, io = await split_generic.split([],
+                                      read_stream=_no_read_stream,
+                                      write_bytes=write_bytes,
+                                      stdin=b"a\nb\n",
+                                      lines_per_file=1,
+                                      mount_prefix="/data",
+                                      cwd=cwd)
+    assert [p.virtual for p in specs] == named
+    assert list(io.writes) == [name[len("/data"):] for name in named]
+
+
+@pytest.mark.asyncio
+async def test_a_dash_input_reads_stdin():
+    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
+                   mode=MountMode.WRITE)
+    r = await ws.shell("cd /data && split -l 1 - sp_ && cat sp_aa sp_ab",
+                       stdin=b"a\nb\n")
+    assert await r.materialize_stdout() == b"a\nb\n"

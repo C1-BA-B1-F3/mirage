@@ -28,6 +28,7 @@ from mirage.policy.errors import PolicyError
 from mirage.policy.match import Outcome
 from mirage.policy.profile import SessionProfile
 from mirage.policy.types import CommandRule, HideReason
+from mirage.process.config import ProcessPermissions
 from mirage.runtime.base import Runtime
 from mirage.runtime.mixin import LineExecutorMixin
 from mirage.runtime.types import RunResult, ScriptSource
@@ -245,6 +246,35 @@ def test_commands_block_refuses_scalars_blank_patterns_and_mount(bad):
     # about or deny every command; `mount` is the compiler's field.
     with pytest.raises(ValidationError):
         SessionProfile.model_validate({"commands": bad})
+
+
+def test_processes_takes_a_scope_or_its_fields():
+    whole = SessionProfile.model_validate({"processes": "workspace"})
+    assert whole.processes == ProcessPermissions(list="workspace",
+                                                 kill="workspace")
+    capped = SessionProfile.model_validate({"processes": {"max": 4}})
+    assert capped.processes == ProcessPermissions(max=4)
+
+
+@pytest.mark.parametrize("bad", [
+    "none",
+    {
+        "list": "session",
+        "kill": "workspace"
+    },
+    {
+        "max": 0
+    },
+    {
+        "max": True
+    },
+    {
+        "spawn": False
+    },
+])
+def test_processes_refuses_what_typescript_refuses(bad):
+    with pytest.raises(ValidationError):
+        SessionProfile.model_validate({"processes": bad})
 
 
 def test_profile_is_frozen():
@@ -1056,9 +1086,11 @@ async def test_a_profiles_allow_list_is_the_only_one_a_session_reads():
         code, _, err = await _line(ws, "git -C /repo status", "rev")
         assert "not allowed" not in err
         # Nested runners re-enter the chokepoint: the hidden `rm` stays
-        # hidden inside xargs, eval and a function body.
+        # hidden inside xargs (which, as GNU's, finds no such program),
+        # eval and a function body.
         assert await _line(ws, "echo /repo/d/x | xargs rm",
-                           "rev") == (127, "", "rm: command not found\n")
+                           "rev") == (127, "",
+                                      "xargs: rm: No such file or directory\n")
         assert await _line(ws, "eval 'rm /repo/d/x'",
                            "rev") == (127, "", "rm: command not found\n")
         assert await _line(ws, "f() { rm /repo/d/x; }; f",

@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { GDriveAccessor } from '../../../accessor/gdrive.ts'
 import { copy as gdriveCopy } from '../../../core/gdrive/copy.ts'
 import { create as gdriveCreate } from '../../../core/gdrive/create.ts'
@@ -30,25 +32,27 @@ import { unlink as gdriveUnlink } from '../../../core/gdrive/unlink.ts'
 import { write as gdriveWrite } from '../../../core/gdrive/write.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const GDRIVE_IO: CommandIO<GDriveAccessor> = {
-  readdir: gdriveReaddir,
-  readBytes: gdriveRead,
-  readRange: rangeOf(gdriveRead),
-  readStream: gdriveStream,
-  stat: gdriveStat,
+export const GDRIVE_IO: CommandIO<GDriveAccessor> = new VFSAdapter<GDriveAccessor>({
+  read: { readdir: gdriveReaddir, readBytes: gdriveRead, stat: gdriveStat },
+  native: {
+    readRange: rangeOf(gdriveRead),
+    readStream: gdriveStream,
+    exists: gdriveExists,
+    find: gdriveFind,
+    du: { size: gdriveDu, entries: gdriveDuAll },
+  },
+  writes: {
+    write: gdriveWrite,
+    mkdir: gdriveMkdir,
+    unlink: gdriveUnlink,
+    rmdir: gdriveRmdir,
+    rmR: gdriveRmR,
+    rename: gdriveRename,
+    copy: gdriveCopy,
+    dirCopy: gdriveCopy,
+    create: gdriveCreate,
+    truncate: gdriveTruncate,
+  },
   isMounted: () => true,
   local: false,
-  write: gdriveWrite,
-  exists: gdriveExists,
-  mkdir: gdriveMkdir,
-  unlink: gdriveUnlink,
-  rmdir: gdriveRmdir,
-  rmR: gdriveRmR,
-  rename: gdriveRename,
-  copy: gdriveCopy,
-  dirCopy: gdriveCopy,
-  create: gdriveCreate,
-  truncate: gdriveTruncate,
-  find: gdriveFind,
-  du: { size: gdriveDu, entries: gdriveDuAll },
-}
+}).toCommandIO()

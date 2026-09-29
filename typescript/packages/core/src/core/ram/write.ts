@@ -30,7 +30,7 @@ export async function writeBytes(
   checkWriteTarget(accessor, path, p)
   accessor.store.files.set(p, data)
   accessor.store.modified.set(p, nowIso())
-  record('write', p, VFSName.RAM, data.byteLength, timer)
+  record('write', path.virtual, VFSName.RAM, data.byteLength, timer)
   await invalidateAfterWrite(path)
   return Promise.resolve()
 }

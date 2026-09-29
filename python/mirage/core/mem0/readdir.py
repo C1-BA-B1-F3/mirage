@@ -12,13 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import Any
+
 from mirage.accessor.mem0 import Mem0Accessor
-from mirage.cache.index import IndexEntry
+from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
+from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.core.hierarchy.probe import resolve_entry
 from mirage.core.hierarchy.readdir import make_readdir
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.mem0.client import get_all_memories
 from mirage.core.mem0.scope import detect_scope
 from mirage.core.render.json import json_bytes
+from mirage.types import PathSpec
+from mirage.utils.errors import enoent
 
 
 async def _list_memories(accessor: Mem0Accessor,
@@ -51,3 +57,35 @@ readdir = make_readdir(
     listers={"root": _list_memories},
     leaf_error="enotdir",
 )
+
+
+async def listed_memory(accessor: Mem0Accessor, path: PathSpec,
+                        index: IndexCacheStore) -> dict[str, Any]:
+    """The memory a path names, as the scoped listing holds it.
+
+    Which memories exist is a function of the configured entity filter,
+    and the listing is the one place that filter is applied: fetching by
+    the id in the file name served a memory of any user, agent or run
+    the API key reaches, while ``ls`` hid it. The listing carries every
+    payload, so a warm index answers with no call and a cold one costs
+    the listing it would have cost ``ls``.
+
+    Args:
+        accessor (Mem0Accessor): mem0 accessor.
+        path (PathSpec): the memory file path.
+        index (IndexCacheStore): index cache.
+
+    Raises:
+        FileNotFoundError: the path names no memory the scope holds.
+    """
+    if detect_scope(path).kind != "memory":
+        raise enoent(path.virtual)
+    if index is NULL_INDEX or index is None:
+        # resolve_entry reads back what its warm just listed, so a caller
+        # with no cache still needs one for the duration of the call.
+        index = RAMIndexCacheStore()
+    entry = await resolve_entry(readdir, accessor, path, index)
+    memory = entry.extra.get("memory") if entry is not None else None
+    if not isinstance(memory, dict):
+        raise enoent(path.virtual)
+    return memory

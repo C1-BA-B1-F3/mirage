@@ -14,6 +14,7 @@
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.core.ram.dest import lookup_error
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils.errors import enoent
@@ -45,11 +46,11 @@ async def read_bytes(accessor: RAMAccessor,
     timer = start_op()
     key = norm(path)
     if key not in store.files:
-        raise enoent(virtual)
+        raise lookup_error(store, path_spec, key)
     data = store.files[key]
     if offset or size is not None:
         data = slice_window(data, offset, size)
-    record("read", path, "ram", len(data), timer)
+    record("read", virtual, "ram", len(data), timer)
     return data
 
 

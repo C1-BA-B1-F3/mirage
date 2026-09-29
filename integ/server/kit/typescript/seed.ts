@@ -20,6 +20,7 @@ export const SEQ_FIELD = 'seq'
 
 export interface DmmfField {
   name: string
+  dbName?: string | null
   kind: string
   isList: boolean
   isRequired?: boolean
@@ -30,6 +31,7 @@ export interface DmmfField {
 
 export interface DmmfModel {
   name: string
+  dbName?: string | null
   fields: readonly DmmfField[]
 }
 

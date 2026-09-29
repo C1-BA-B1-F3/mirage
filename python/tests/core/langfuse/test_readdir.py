@@ -16,9 +16,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from mirage import BaseVFS, Workspace
 from mirage.accessor.langfuse import LangfuseAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.commands.builtin.langfuse.io import IO
 from mirage.core.langfuse.readdir import readdir
+from mirage.core.langfuse.stat import stat
 from mirage.core.render.json import jsonl_bytes
 from mirage.types import PathSpec
 from mirage.vfs.langfuse.config import LangfuseConfig
@@ -37,6 +40,67 @@ def accessor():
 @pytest.fixture
 def index():
     return RAMIndexCacheStore()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("config", [
+    {
+        "default_trace_limit": 2
+    },
+    {
+        "default_from_timestamp": "2026-01-01T00:00:00Z"
+    },
+])
+async def test_partial_trace_page_serves_child_stats_without_refetch(
+        config, index):
+    with patch("mirage.accessor.langfuse.Langfuse"):
+        accessor = LangfuseAccessor(config=LangfuseConfig(
+            public_key="pk-test", secret_key="sk-test", **config))
+    parent = PathSpec(vfs_path="traces",
+                      virtual="/traces",
+                      directory="/traces")
+    with patch("mirage.core.langfuse.readdir.fetch_traces",
+               new_callable=AsyncMock,
+               return_value=[{
+                   "id": "t1"
+               }, {
+                   "id": "t2"
+               }]) as fetch:
+        paths = await readdir(accessor, parent, index)
+        for path in paths:
+            await stat(
+                accessor,
+                PathSpec(vfs_path=path.lstrip("/"),
+                         virtual=path,
+                         directory=path), index)
+        assert fetch.await_count == 1
+        # A new directory read must still refresh the bounded page.
+        await readdir(accessor, parent, index)
+        assert fetch.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_workspace_long_listing_fetches_a_full_trace_page_once():
+    with patch("mirage.accessor.langfuse.Langfuse"):
+        accessor = LangfuseAccessor(config=LangfuseConfig(
+            public_key="pk-test", secret_key="sk-test", default_trace_limit=2))
+    ws = Workspace(
+        {"/nested/lf/": BaseVFS(name="langfuse", accessor=accessor, io=IO)})
+    try:
+        with patch("mirage.core.langfuse.readdir.fetch_traces",
+                   new_callable=AsyncMock,
+                   return_value=[{
+                       "id": "t1"
+                   }, {
+                       "id": "t2"
+                   }]) as fetch:
+            result = await ws.shell("ls -l /nested/lf/traces")
+            assert result.exit_code == 0
+            assert "t1.json" in await result.stdout_str()
+            assert "t2.json" in await result.stdout_str()
+            assert fetch.await_count == 1
+    finally:
+        await ws.close()
 
 
 @pytest.mark.asyncio
@@ -259,3 +323,50 @@ async def test_readdir_traces_passes_explicit_window(index):
                      directory="/traces"), index)
 
     assert fake.await_args.kwargs["from_timestamp"] == "2026-01-01T00:00:00Z"
+
+
+def _bounded_accessor(**knobs) -> LangfuseAccessor:
+    config = LangfuseConfig(public_key="pk-test",
+                            secret_key="sk-test",
+                            **knobs)
+    with patch("mirage.accessor.langfuse.Langfuse"):
+        return LangfuseAccessor(config=config)
+
+
+async def _list_traces_dir(accessor, index, traces):
+    with patch("mirage.core.langfuse.readdir.fetch_traces",
+               new_callable=AsyncMock,
+               return_value=traces):
+        return await readdir(
+            accessor,
+            PathSpec(vfs_path="traces", virtual="/traces",
+                     directory="/traces"), index)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("knobs", [
+    {
+        "default_trace_limit": 2
+    },
+    {
+        "default_from_timestamp": "2026-01-01T00:00:00Z"
+    },
+],
+                         ids=["full page", "time window"])
+async def test_a_bounded_trace_listing_is_not_cached_as_the_directory(
+        knobs, index):
+    """A full page or a set window leaves older traces out, so the
+    listing must not become the index's proof that they are absent."""
+    accessor = _bounded_accessor(**knobs)
+    traces = [{"id": "t1"}, {"id": "t2"}]
+    result = await _list_traces_dir(accessor, index, traces)
+    assert result == ["/traces/t1.json", "/traces/t2.json"]
+    assert (await index.list_dir("/traces")).entries is None
+    assert (await index.get("/traces/t1.json")).entry is not None
+
+
+@pytest.mark.asyncio
+async def test_a_trace_listing_short_of_the_limit_is_the_directory(index):
+    accessor = _bounded_accessor(default_trace_limit=3)
+    await _list_traces_dir(accessor, index, [{"id": "t1"}, {"id": "t2"}])
+    assert (await index.list_dir("/traces")).entries is not None

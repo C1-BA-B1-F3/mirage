@@ -13,9 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
-import { IOResult } from '../../io/types.ts'
+import { DeviceInput, IOResult } from '../../io/types.ts'
 import { Redirect, RedirectKind } from '../../shell/types.ts'
-import { PathSpec } from '../../types.ts'
+import { FileStat, FileType, PathSpec } from '../../types.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import { makeIntegrationWS, run, runExit, runResult } from '../fixtures/integration_fixture.ts'
 import { SessionState } from '../session/session.ts'
@@ -67,12 +67,12 @@ describe('handleRedirect > / >>', () => {
     expect(io.writes['/ram/out.txt']).toBeDefined()
   })
 
-  it('>> appends to existing file', async () => {
+  it('>> dispatches append without reading the target', async () => {
     const writes: { path: string; data: Uint8Array }[] = []
     const dispatch = vi.fn<DispatchFn>((op, path, args) => {
       if (op === 'read')
         return Promise.resolve<[unknown, IOResult]>([encode('pre-'), new IOResult()])
-      if (op === 'write') writes.push({ path: path.virtual, data: args?.[0] as Uint8Array })
+      if (op === 'append') writes.push({ path: path.virtual, data: args?.[0] as Uint8Array })
       return Promise.resolve<[unknown, IOResult]>([null, new IOResult()])
     })
     const execute: ExecuteNodeFn = () =>
@@ -87,7 +87,8 @@ describe('handleRedirect > / >>', () => {
       redirects,
       new SessionState({ sessionId: 'test' }),
     )
-    expect(decode(writes[0]?.data ?? null)).toBe('pre-new')
+    expect(decode(writes[0]?.data ?? null)).toBe('new')
+    expect(dispatch.mock.calls.map(([op]) => op)).toEqual(['append'])
   })
 })
 
@@ -113,6 +114,53 @@ describe('handleRedirect < (stdin)', () => {
     )
     expect(receivedStdin).not.toBeNull()
     expect(decode(receivedStdin)).toBe('file-contents')
+  })
+})
+
+describe('handleRedirect < from a character device', () => {
+  // ripgrep searches stdin only when a file, FIFO or socket is attached, so
+  // the command is told when `<` names a device; it still reads as empty.
+  async function stdinFor(read: Uint8Array, type: FileType): Promise<[unknown, string[]]> {
+    const ops: string[] = []
+    const dispatch = vi.fn<DispatchFn>((op) => {
+      ops.push(op)
+      if (op === 'read') return Promise.resolve<[unknown, IOResult]>([read, new IOResult()])
+      return Promise.resolve<[unknown, IOResult]>([
+        new FileStat({ name: 'n', type }),
+        new IOResult(),
+      ])
+    })
+    let received: unknown = null
+    const execute: ExecuteNodeFn = async (_n, _s, stdin) => {
+      received = stdin
+      return Promise.resolve([null, new IOResult(), new ExecutionNode()])
+    }
+    const redirects = [new Redirect({ fd: 0, target: '/dev/null', kind: RedirectKind.STDIN })]
+    await handleRedirect(
+      execute,
+      dispatch,
+      STUB_NODE,
+      redirects,
+      new SessionState({ sessionId: 't' }),
+    )
+    return [received, ops]
+  }
+
+  it('marks a device as a DeviceInput that reads as empty', async () => {
+    const [stdin] = await stdinFor(new Uint8Array(0), FileType.CHAR_DEVICE)
+    expect(stdin).toBeInstanceOf(DeviceInput)
+    expect((stdin as Uint8Array).length).toBe(0)
+  })
+
+  it('leaves an empty regular file plain', async () => {
+    const [stdin] = await stdinFor(new Uint8Array(0), FileType.FILE)
+    expect(stdin).toBeInstanceOf(Uint8Array)
+    expect(stdin).not.toBeInstanceOf(DeviceInput)
+  })
+
+  it('stats nothing when the read holds content', async () => {
+    const [, ops] = await stdinFor(encode('x'), FileType.CHAR_DEVICE)
+    expect(ops).toEqual(['read'])
   })
 })
 
@@ -239,6 +287,62 @@ describe('handleRedirect accepts PathSpec targets', () => {
       new SessionState({ sessionId: 'test' }),
     )
     expect(decode(writes[0]?.data ?? null)).toBe('ok')
+  })
+})
+
+// A trailing redirect binds to the command it follows, whatever the parse
+// wrapped it around: a pipeline in an &&/|| list, a list the parse pulled
+// into a pipeline's first stage, a pipeline pulled in the same way, and a
+// `!`. Every row is GNU bash 5.2 in debian:stable-slim (redirect errors
+// without bash's `bash: line N:` prefix); PS prints $? and PIPESTATUS.
+const PS = '; echo "rc=$? ps=${PIPESTATUS[*]}"'
+const BINDS: [string, string, string, number][] = [
+  ["true && printf 'x\\n' | cat < /data/b.txt", '1\n2\n3\n', '', 0],
+  ["true && printf 'x\\n' | wc -l < /dev/null", '0\n', '', 0],
+  ["false || printf 'x\\n' | cat < /dev/null", '', '', 0],
+  ["(cd /data && printf 'x\\n' | cat < b.txt)", '1\n2\n3\n', '', 0],
+  ["true && printf 'x\\n' | cat | cat < /data/b.txt", '1\n2\n3\n', '', 0],
+  ["false && true || printf 'x\\n' | cat < /data/b.txt", '1\n2\n3\n', '', 0],
+  [
+    "true && printf 'x\\n' | cat < /nonexistent" + PS,
+    'rc=1 ps=0 1\n',
+    '/nonexistent: No such file or directory\n',
+    0,
+  ],
+  ["true && printf 'x\\n' | cat < /data/b.txt && echo after", '1\n2\n3\nafter\n', '', 0],
+  ["f() { true && printf 'x\\n' | cat < /data/b.txt; }; f", '1\n2\n3\n', '', 0],
+  [
+    'true && { echo e1 >&2; echo o; } | { cat; echo e2 >&2; } 2> /data/e; echo ---; cat /data/e',
+    'o\n---\ne2\n',
+    'e1\n',
+    0,
+  ],
+  ['false || { echo e1 >&2; echo o; } | { cat; echo e2 >&2; } 2>&1', 'o\ne2\n', 'e1\n', 0],
+  ["true && printf 'x\\n' | cat <<EOF\nH\nEOF", 'H\n', '', 0],
+  ["true && { printf 'x\\n' | cat; } < /data/b.txt", 'x\n', '', 0],
+  ["true && (printf 'x\\n' | cat) < /data/b.txt", 'x\n', '', 0],
+  ["true && printf 'x\\n' | cat < /data/b.txt | tr 3 Z" + PS, '1\n2\nZ\nrc=0 ps=0 0 0\n', '', 0],
+  ["false && printf 'x\\n' | cat < /data/b.txt | cat" + PS, 'rc=1 ps=1\n', '', 0],
+  ['false && cat <<EOF | tr a-z A-Z\nhi\nEOF\n' + PS.slice(2), 'rc=1 ps=1\n', '', 0],
+  ["printf 'x\\n' | false && cat < /data/b.txt | tr 1 X" + PS, 'rc=1 ps=0 1\n', '', 0],
+  ['(set -e; false && cat < /data/b.txt | tr 1 X; echo survived)', 'survived\n', '', 0],
+  ["printf 'x\\n' | cat < /data/b.txt | cat" + PS, '1\n2\n3\nrc=0 ps=0 0 0\n', '', 0],
+  ["! printf 'x\\n' | cat < /data/b.txt | cat" + PS, '1\n2\n3\nrc=1 ps=0 0 0\n', '', 0],
+  ['! cat < /data/b.txt | tr 1 X' + PS, 'X\n2\n3\nrc=1 ps=0 0\n', '', 0],
+  ['! false | true > /dev/null' + PS, 'rc=1 ps=1 0\n', '', 0],
+  ['! cat < /nonexistent' + PS, 'rc=0 ps=1\n', '/nonexistent: No such file or directory\n', 0],
+  ['true && { echo e >&2; echo o; } |& cat > /data/p; cat /data/p', 'e\no\n', '', 0],
+]
+
+describe('a trailing redirect binds to the command it follows', () => {
+  it.each(BINDS)('%s', async (line, stdout, stderr, code) => {
+    const { ws } = await makeIntegrationWS({ 'b.txt': '1\n2\n3\n' })
+    try {
+      const [exit, out, err] = await runResult(ws, line)
+      expect([out, err, exit]).toEqual([stdout, stderr, code])
+    } finally {
+      await ws.close()
+    }
   })
 })
 
@@ -563,11 +667,9 @@ describe('handleRedirect unwritable > target', () => {
     }
   })
 
-  it('rethrows a non-filesystem append pre-read error', async () => {
-    // The `>>` pre-read swallows filesystem errors (the write reports
-    // them) but must not hide a backend bug.
+  it('rethrows a non-filesystem append error', async () => {
     const dispatch = vi.fn<DispatchFn>((op) => {
-      if (op === 'read') return Promise.reject(new Error('backend exploded'))
+      if (op === 'append') return Promise.reject(new Error('backend exploded'))
       return Promise.resolve<[unknown, IOResult]>([null, new IOResult()])
     })
     const execute: ExecuteNodeFn = () =>
@@ -748,6 +850,75 @@ describe('descriptor identities survive dups', () => {
     ['printf x >/data/f; exec 1</data/f; exec 0<&1; exec 1>&2; cat', '', 'x', 0],
     ['printf x >/data/f; exec 2</data/f; exec 0<&2; cat >&2', '', '', 1],
     ['printf x >/data/f; exec 1</data/f; cat <&1 >&2; echo rc=$? >&2', '', 'xrc=0\n', 0],
+    // A dup is another descriptor on the same open file: a read through
+    // either moves the one offset, whatever fd 0 was bound to in between,
+    // and each open starts its own.
+    [
+      'printf \'a\\nb\\n\' >/data/f; exec </data/f; exec 1<&0; read x; exec 0<&1; read y; echo "[$x][$y]" >&2',
+      '',
+      '[a][b]\n',
+      0,
+    ],
+    [
+      'printf \'a\\nb\\n\' >/data/f; exec 1</data/f; read x <&1; read y <&1; echo "[$x][$y]" >&2',
+      '',
+      '[a][b]\n',
+      0,
+    ],
+    [
+      'printf \'a\\nb\\n\' >/data/f; exec 1</data/f; exec 0<&1; read x; exec 1</data/f; exec 0<&1; read y; echo "[$x][$y]" >&2',
+      '',
+      '[a][a]\n',
+      0,
+    ],
+    [
+      'printf \'a\\nb\\n\' >/data/f; exec </data/f; exec 1<&0; exec </data/f; read x; read y; exec 0<&1; read z; echo "[$x][$y][$z]" >&2',
+      '',
+      '[a][b][a]\n',
+      0,
+    ],
+    [
+      "printf 'a\\n' >/data/f; exec 1</data/f; cat <&1 >&2; cat <&1 >&2; echo rc=$? >&2",
+      '',
+      'a\nrc=0\n',
+      0,
+    ],
+    [
+      'printf \'a\\nb\\n\' >/data/f; exec 1</data/f; ( read x <&1; echo "[$x]" >&2 ); read y <&1; echo "[$y]" >&2',
+      '',
+      '[a]\n[b]\n',
+      0,
+    ],
+    [
+      'printf \'a\\nb\\nc\\n\' >/data/f; exec 1</data/f; exec 0<&1; read x; read y <&1; read z; echo "[$x][$y][$z]" >&2',
+      '',
+      '[a][b][c]\n',
+      0,
+    ],
+    [
+      'printf \'a\\nb\\n\' >/data/f; ( exec 2</data/f; exec 1<&2; read x <&1; read y <&2; echo "[$x][$y]" >/data/o ); cat /data/o',
+      '[a][b]\n',
+      '',
+      0,
+    ],
+    [
+      'printf \'a\\nb\\n\' >/data/f; ( exec 1</data/f; exec 2>&1; read x <&2; read y <&1; echo "[$x][$y]" >/data/o ); cat /data/o',
+      '[a][b]\n',
+      '',
+      0,
+    ],
+    [
+      "printf 'a\\n' >/data/f; printf 'p\\n' | ( exec 1<&0; exec </data/f; exec 0<&1; read x; echo \"[$x]\" >&2 )",
+      '',
+      '[p]\n',
+      0,
+    ],
+    [
+      'printf \'a\\n\' >/data/f; exec 1</data/f; rm /data/f; read x <&1; echo "[$x]" >&2',
+      '',
+      '[a]\n',
+      0,
+    ],
     ['exec 0>/data/f; echo x >&0; echo y >&0; cat /data/f', 'x\ny\n', '', 0],
     ['exec 0>/data/f; { echo a; echo b; } >&0; cat /data/f', 'a\nb\n', '', 0],
     ['exec 0>/data/f; echo x >&0; exec 0<&-; cat /data/f', 'x\n', '', 0],
@@ -813,5 +984,21 @@ describe('handleRedirect trailing slash', () => {
     expect(await runExit(ws, 'test -e /data/nodir')).toBe(1)
     expect(await runExit(ws, 'test -e /data/missing')).toBe(1)
     expect(await run(ws, 'cat /data/reg')).toBe('y')
+  })
+})
+
+describe('stdin from a character device end-to-end', () => {
+  it('leaves rg the cwd, while an empty file is still stdin', async () => {
+    // ripgrep 14.1.1 searches stdin only when a file, FIFO or socket is
+    // attached: /dev/null is neither, so rg searches the cwd.
+    const { ws } = await makeIntegrationWS()
+    try {
+      await ws.shell("printf 'hit\\n' > /data/x.txt && printf '' > /data/e")
+      expect(await run(ws, 'cd /data && rg hit < /dev/null')).toBe('x.txt:hit\n')
+      expect(await runResult(ws, 'cd /data && rg hit < /data/e')).toEqual([1, '', ''])
+      expect(await run(ws, 'cat < /dev/null')).toBe('')
+    } finally {
+      await ws.close()
+    }
   })
 })

@@ -15,12 +15,9 @@
 import { RemoteSandbox } from '../base.ts'
 import { registerRuntime } from '../../table.ts'
 import type { RunResult, RuntimeOptions } from '../../types.ts'
-import { loadOptionalPeer } from '../../../utils/optional_peer.ts'
+import { loadSdk, type E2bSdk } from './sdk.ts'
 import { E2B_CONFIG_KEYS, type E2BConfig } from './config.ts'
 import type { CommandResult, Sandbox } from 'e2b'
-import type * as e2bSdk from 'e2b'
-
-export type E2bSdk = typeof e2bSdk
 
 const ENC = new TextEncoder()
 
@@ -47,10 +44,7 @@ export class E2BRuntime extends RemoteSandbox<E2BConfig> {
 
   // The SDK loader as a seam: tests substitute a fake module here.
   protected loadSdk(): Promise<E2bSdk> {
-    return loadOptionalPeer(() => import('e2b'), {
-      feature: "the 'e2b' runtime",
-      packageName: 'e2b',
-    })
+    return loadSdk()
   }
 
   private async ensureSdk(): Promise<E2bSdk> {

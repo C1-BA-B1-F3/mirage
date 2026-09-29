@@ -229,3 +229,118 @@ async def test_an_empty_expression_is_today_at_midnight(line):
         assert (today, err, code) == (now, "", 0)
     finally:
         await ws.close()
+
+
+_AT = "2024-03-05T07:08:09.5Z"
+_ISO_VALID = ("Valid arguments are:\n  - 'hours'\n  - 'minutes'\n"
+              "  - 'date'\n  - 'seconds'\n  - 'ns'\n"
+              "Try 'date --help' for more information.\n")
+
+
+# GNU's output formats, one per option, measured on coreutils 9.7
+# (debian:stable-slim): -I[FMT] takes its precision attached or after
+# `=` and matches it by prefix, --rfc-3339=FMT takes the narrower set,
+# and a line with no format option prints `%e`, a space-padded day.
+# Mirrored in date.test.ts.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,expected", [
+    (f"date -u -d {_AT} -I", "2024-03-05\n"),
+    (f"date -u -d {_AT} -Id", "2024-03-05\n"),
+    (f"date -u -d {_AT} -Ih", "2024-03-05T07+00:00\n"),
+    (f"date -u -d {_AT} -Im", "2024-03-05T07:08+00:00\n"),
+    (f"date -u -d {_AT} -Is", "2024-03-05T07:08:09+00:00\n"),
+    (f"date -u -d {_AT} -Ins", "2024-03-05T07:08:09,500000000+00:00\n"),
+    (f"date -u -d {_AT} -Isec", "2024-03-05T07:08:09+00:00\n"),
+    (f"date -u -d {_AT} -Iho", "2024-03-05T07+00:00\n"),
+    (f"date -d {_AT} -uIs", "2024-03-05T07:08:09+00:00\n"),
+    (f"date -u -d {_AT} --iso-8601", "2024-03-05\n"),
+    (f"date -u -d {_AT} --iso-8601=seconds", "2024-03-05T07:08:09+00:00\n"),
+    (f"date -u -d {_AT} --iso=m", "2024-03-05T07:08+00:00\n"),
+    (f"TZ=Asia/Kolkata date -d {_AT} -Is", "2024-03-05T12:38:09+05:30\n"),
+    (f"TZ=America/St_Johns date -d {_AT} -Im", "2024-03-05T03:38-03:30\n"),
+    (f"date -u -d {_AT} --rfc-3339=date", "2024-03-05\n"),
+    (f"date -u -d {_AT} --rfc-3339=seconds", "2024-03-05 07:08:09+00:00\n"),
+    (f"date -u -d {_AT} --rfc-3339=ns",
+     "2024-03-05 07:08:09.500000000+00:00\n"),
+    (f"date --utc --date={_AT} --rfc-email",
+     "Tue, 05 Mar 2024 07:08:09 +0000\n"),
+    (f"date --universal -d {_AT} -I", "2024-03-05\n"),
+    (f"date -u -d {_AT}", "Tue Mar  5 07:08:09 UTC 2024\n"),
+])
+async def test_date_output_formats(line, expected):
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    try:
+        assert await _run(ws, line) == (expected, "", 0)
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,stderr", [
+    (f"date -d {_AT} -Ix",
+     "date: invalid argument 'x' for '--iso-8601'\n" + _ISO_VALID),
+    (f"date -d {_AT} -Isu",
+     "date: invalid argument 'su' for '--iso-8601'\n" + _ISO_VALID),
+    (f"date -d {_AT} --iso-8601=",
+     "date: ambiguous argument '' for '--iso-8601'\n" + _ISO_VALID),
+    (f"date -d {_AT} --rfc-3339=hours",
+     "date: invalid argument 'hours' for '--rfc-3339'\n"
+     "Valid arguments are:\n  - 'date'\n  - 'seconds'\n  - 'ns'\n"
+     "Try 'date --help' for more information.\n"),
+    (f"date -d {_AT} --rfc-3339",
+     "date: option '--rfc-3339' requires an argument\n"
+     "Try 'date --help' for more information.\n"),
+    (f"date -d {_AT} -I -R", "date: multiple output formats specified\n"),
+    (f"date -d {_AT} --rfc-3339=s -Is",
+     "date: multiple output formats specified\n"),
+    (f"date -d {_AT} -Is +%Y", "date: multiple output formats specified\n"),
+    (f"date -d {_AT} -I -R a b", "date: multiple output formats specified\n"),
+])
+async def test_date_output_format_refusals(line, stderr):
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    try:
+        assert await _run(ws, line) == ("", stderr, 1)
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_date_iso_now_carries_the_offset():
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    try:
+        out, err, code = await _run(ws, "date -u -Is")
+        assert (err, code) == ("", 0)
+        assert out.endswith("+00:00\n") and out[10] == "T"
+    finally:
+        await ws.close()
+
+
+# An operand without `+` sets the clock (coreutils 9.7, as a user without
+# the privilege to): a readable one prints the date it names and exits 1
+# with `cannot set date`, anything else is `invalid date`, and beside -d
+# it is a usage error. Mirrored in date.test.ts.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,out,err", [
+    ("date -u 010100002024", "Mon Jan  1 00:00:00 UTC 2024\n",
+     "date: cannot set date: Operation not permitted\n"),
+    ("date -u -I 0229000024", "2024-02-29\n",
+     "date: cannot set date: Operation not permitted\n"),
+    ("date -u 1231235924.60", "Wed Jan  1 00:00:00 UTC 2025\n",
+     "date: cannot set date: Operation not permitted\n"),
+    ("date -I seconds", "", "date: invalid date 'seconds'\n"),
+    ("date 0229000025", "", "date: invalid date '0229000025'\n"),
+    ("TZ=Europe/Berlin date 033002302025", "",
+     "date: invalid date '033002302025'\n"),
+    (f"date -d {_AT} x", "", "date: the argument 'x' lacks a leading '+';\n"
+     "when using an option to specify date(s), any non-option\n"
+     "argument must be a format string beginning with '+'\n"
+     "Try 'date --help' for more information.\n"),
+    ("date 010100002024 +%F", "",
+     "date: extra operand '+%F'\nTry 'date --help' for more information.\n"),
+])
+async def test_date_operand_sets_the_clock(line, out, err):
+    ws = Workspace({"/": RAMVFS()}, mode=MountMode.WRITE)
+    try:
+        assert await _run(ws, line) == (out, err, 1)
+    finally:
+        await ws.close()

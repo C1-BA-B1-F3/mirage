@@ -27,6 +27,538 @@
         "stdout": "printf: printf [-v var] format [arguments]\n    Formats and prints ARGUMENTS under control of the FORMAT.\n    \n    Options:\n      -v var\tassign the output to shell variable VAR rather than\n    \t\tdisplay it on the standard output\n    \n    FORMAT is a character string which contains three types of objects: plain\n    characters, which are simply copied to standard output; character escape\n    sequences, which are converted and copied to the standard output; and\n    format specifications, each of which causes printing of the next successive\n    argument.\n    \n    In addition to the standard format specifications described in printf(1),\n    printf interprets:\n    \n      %b\texpand backslash escape sequences in the corresponding argument\n      %q\tquote the argument in a way that can be reused as shell input\n    \n    The format is re-used as necessary to consume all of the arguments.  If\n    there are fewer arguments than the format requires,  extra format\n    specifications behave as if a zero value or null string, as appropriate,\n    had been supplied.\n    \n    Exit Status:\n    Returns success unless an invalid option is given or a write or assignment\n    error occurs.\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "printf_format_octal_0003_is_nul_then_3",
+      "seq": 991110,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\0003' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00 33\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_0003_is_byte_3",
+      "seq": 991111,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\0003' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 03\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_0_is_nul",
+      "seq": 991112,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\0' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_0_is_nul",
+      "seq": 991113,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\0' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_00_is_nul",
+      "seq": 991114,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\00' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_00_is_nul",
+      "seq": 991115,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\00' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_000_is_nul",
+      "seq": 991116,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_000_is_nul",
+      "seq": 991117,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_0000_is_nul_then_0",
+      "seq": 991118,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\0000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00 30\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_0000_is_one_nul",
+      "seq": 991119,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\0000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_08_is_nul_then_8",
+      "seq": 991120,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\08' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00 38\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_08_is_nul_then_8",
+      "seq": 991121,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\08' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00 38\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_101_is_A",
+      "seq": 991122,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\101' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 41\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_101_is_A",
+      "seq": 991123,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\101' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 41\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_octal_1011_is_A_then_1",
+      "seq": 991124,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\1011' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 41 31\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_1011_is_A_then_1",
+      "seq": 991125,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\1011' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 41 31\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_octal_400_keeps_the_low_byte",
+      "seq": 991126,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\400' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 00\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_format_x_without_digits_warns_and_exits_0",
+      "seq": 991140,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x|' | od -An -tc",
+      "expect": {
+        "exit": 0,
+        "stdout": "   \\   x   |\n",
+        "stderr": "printf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_b_x_without_digits_warns_and_exits_0",
+      "seq": 991141,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b' '\\x|' | od -An -tc",
+      "expect": {
+        "exit": 0,
+        "stdout": "   \\   x   |\n",
+        "stderr": "printf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_format_u_and_U_without_digits_warn_in_order",
+      "seq": 991142,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\u|\\U|' | od -An -tc",
+      "expect": {
+        "exit": 0,
+        "stdout": "   \\   u   |   \\   U   |\n",
+        "stderr": "printf: missing unicode digit for \\u\nprintf: missing unicode digit for \\U\n"
+      }
+    },
+    {
+      "id": "printf_format_x_u_U_without_digits_warn_in_order",
+      "seq": 991143,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x\\u\\U\\n'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\x\\u\\U\n",
+        "stderr": "printf: missing hex digit for \\x\nprintf: missing unicode digit for \\u\nprintf: missing unicode digit for \\U\n"
+      }
+    },
+    {
+      "id": "printf_warning_comes_before_a_later_invalid_number",
+      "seq": 991144,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x%d\\n' abc",
+      "expect": {
+        "exit": 1,
+        "stdout": "\\x0\n",
+        "stderr": "printf: missing hex digit for \\x\nprintf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_invalid_number_comes_before_a_later_warning",
+      "seq": 991145,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d\\x\\n' abc",
+      "expect": {
+        "exit": 1,
+        "stdout": "0\\x\n",
+        "stderr": "printf: abc: invalid number\nprintf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_b_warning_follows_an_earlier_invalid_number",
+      "seq": 991146,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d%b\\n' abc '\\x'",
+      "expect": {
+        "exit": 1,
+        "stdout": "0\\x\n",
+        "stderr": "printf: abc: invalid number\nprintf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_reused_format_warns_once_per_pass",
+      "seq": 991147,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x%s\\n' a b",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\xa\n\\xb\n",
+        "stderr": "printf: missing hex digit for \\x\nprintf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_format_without_conversions_warns_once",
+      "seq": 991148,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x\\n' a b",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\x\n",
+        "stderr": "printf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_b_stops_before_a_later_x_and_does_not_warn",
+      "seq": 991149,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b\\n' 'a\\cb\\x'",
+      "expect": {
+        "exit": 0,
+        "stdout": "a",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_warns_before_its_precision_cuts",
+      "seq": 991150,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%.1b\\n' '\\xy'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\\n",
+        "stderr": "printf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_v_warns_and_still_assigns",
+      "seq": 991151,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf -v v '\\x|'; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n\\x|\n",
+        "stderr": "printf: missing hex digit for \\x\n"
+      }
+    },
+    {
+      "id": "printf_v_warning_and_invalid_number_exit_1",
+      "seq": 991152,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf -v v '\\x%d' abc; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n\\x0\n",
+        "stderr": "printf: missing hex digit for \\x\nprintf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_b_stop_exits_0_after_an_invalid_number",
+      "seq": 991153,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d%b' abc '\\c'; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "0 rc=0\n",
+        "stderr": "printf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_b_stop_mid_argument_exits_0_after_an_invalid_number",
+      "seq": 991154,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d%b\\n' abc 'x\\cy'; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "0x rc=0\n",
+        "stderr": "printf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_b_stop_in_a_later_pass_exits_0",
+      "seq": 991155,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d%b' abc x def '\\c'; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "0x0 rc=0\n",
+        "stderr": "printf: abc: invalid number\nprintf: def: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_b_stop_before_an_invalid_number_never_reads_it",
+      "seq": 991156,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%b%d' '\\c' abc; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": " rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_invalid_number_without_a_b_stop_exits_1",
+      "seq": 991157,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%d%b' abc x; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "0x rc=1\n",
+        "stderr": "printf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_warning_and_invalid_number_then_b_stop_exit_0",
+      "seq": 991158,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '\\x%d%b' abc '\\c'; echo \" rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "\\x0 rc=0\n",
+        "stderr": "printf: missing hex digit for \\x\nprintf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_v_b_stop_exits_0_after_an_invalid_number",
+      "seq": 991159,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf -v v '%d%b' abc '\\c'; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n0\n",
+        "stderr": "printf: abc: invalid number\n"
+      }
+    },
+    {
+      "id": "printf_v_b_stop_in_a_later_pass_exits_0",
+      "seq": 991160,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf -v v '%d%b' abc x def '\\c'; echo \"rc=$?\"; printf '%s\\n' \"$v\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n0x0\n",
+        "stderr": "printf: abc: invalid number\nprintf: def: invalid number\n"
+      }
     }
   ]
 }

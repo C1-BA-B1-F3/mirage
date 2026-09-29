@@ -24,9 +24,26 @@ import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { SED_MISSING_SCRIPT, SED_NO_INPUT_EXIT, SED_NO_INPUT_FILES } from '../constants.ts'
 import { executeProgram, parseOneCommand, parseProgram, type SedCommand } from '../sed_script.ts'
 import { readStdinAsync } from '../utils/stream.ts'
+import { joinFileLines } from '../utils/lines.ts'
+import { encodeText } from '../../../shell/bytes.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
+
+// Run the script over the operands as GNU does without -i: one stream. Line
+// numbers and `$` span the files, and a file whose last line has no newline
+// still ends that line where the next file begins, so `ab` then `cd` are two
+// lines; only the stream's own last line keeps a missing newline missing.
+// -i edits each file on its own instead. Mirrors Python's _run_stream.
+function runStream(
+  texts: readonly string[],
+  commands: SedCommand[],
+  suppress: boolean,
+  extended: boolean,
+): string {
+  if (texts.length === 0) return ''
+  return executeProgram(joinFileLines(texts), commands, suppress, extended)
+}
 
 export async function sedGeneric(
   paths: PathSpec[],
@@ -66,7 +83,12 @@ export async function sedGeneric(
   const extended = fl.asBool('E') || fl.asBool('r')
   let commands: SedCommand[]
   try {
-    if (script.includes(';') || script.includes('{') || script.includes('\n')) {
+    if (script.trim() === '') {
+      // An empty script is a program with no commands, which prints its
+      // input unchanged (`sed ''`); an address with no command still is
+      // GNU's `missing command`.
+      commands = []
+    } else if (script.includes(';') || script.includes('{') || script.includes('\n')) {
       commands = parseProgram(script)
     } else {
       commands = [parseOneCommand(script)[0]]
@@ -121,7 +143,7 @@ export async function sedGeneric(
           }
           const text = DEC.decode(data)
           const newText = executeProgram(text, commands, false, extended)
-          const newData = ENC.encode(newText)
+          const newData = encodeText(newText)
           await write(p, newData)
           writes[p.mountPath] = newData
           edited.push(p.mountPath)
@@ -136,7 +158,7 @@ export async function sedGeneric(
           }),
         ]
       }
-      const outputs: string[] = []
+      const texts: string[] = []
       const readOk: string[] = []
       for (const p of paths) {
         let data: Uint8Array
@@ -149,11 +171,10 @@ export async function sedGeneric(
           if ((e as { code?: string }).code === 'EISDIR') break
           continue
         }
-        const text = DEC.decode(data)
-        outputs.push(executeProgram(text, commands, false, extended))
+        texts.push(DEC.decode(data))
         readOk.push(p.mountPath)
       }
-      const out: ByteSource = ENC.encode(outputs.join(''))
+      const out: ByteSource = encodeText(runStream(texts, commands, false, extended))
       return [
         out,
         new IOResult({
@@ -169,7 +190,7 @@ export async function sedGeneric(
     // land their text. Gating on the command set left every non-s/d script
     // printing to stdout while reporting success.
     const modifying = inPlace
-    const allOutputs: string[] = []
+    const texts: string[] = []
     const writes: Record<string, Uint8Array> = {}
     const edited: string[] = []
     for (const p of paths) {
@@ -184,15 +205,14 @@ export async function sedGeneric(
         continue
       }
       const text = DEC.decode(data)
-      const result = executeProgram(text, commands, suppress, extended)
-      if (modifying) {
-        const newData = ENC.encode(result)
-        await write(p, newData)
-        writes[p.mountPath] = newData
-        edited.push(p.mountPath)
-      } else {
-        allOutputs.push(result)
+      if (!modifying) {
+        texts.push(text)
+        continue
       }
+      const newData = encodeText(executeProgram(text, commands, suppress, extended))
+      await write(p, newData)
+      writes[p.mountPath] = newData
+      edited.push(p.mountPath)
     }
     const io = new IOResult({
       exitCode: code,
@@ -203,9 +223,7 @@ export async function sedGeneric(
       io.cache = edited
       return [null, io]
     }
-    // GNU concatenates per-file output with no separator (each file's
-    // output already carries its own newlines).
-    const out: ByteSource = ENC.encode(allOutputs.join(''))
+    const out: ByteSource = encodeText(runStream(texts, commands, suppress, extended))
     return [out, io]
   }
 
@@ -221,5 +239,5 @@ export async function sedGeneric(
   }
   const text = DEC.decode(raw)
   const result = executeProgram(text, commands, suppress, extended)
-  return [ENC.encode(result), new IOResult()]
+  return [encodeText(result), new IOResult()]
 }

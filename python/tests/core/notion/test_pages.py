@@ -18,6 +18,8 @@ import pytest
 
 from mirage.core.api.client import SessionArg, SessionPool
 from mirage.core.notion import pages as pages_mod
+from mirage.core.notion.client import NotionAPIError
+from mirage.core.notion.config import NotionConfig
 
 ROOT_ID = "aaaa1111-2222-3333-4444-555566667777"
 NESTED_ID = "bbbb1111-2222-3333-4444-555566667777"
@@ -53,3 +55,24 @@ async def test_block_tree_threads_one_session_through_every_level(monkeypatch):
     assert [b["id"] for b in blocks] == [NESTED_ID]
     assert len(seen) == 2
     assert all(s is pool for s in seen)
+
+
+@pytest.mark.asyncio
+async def test_one_page_query_refuses_an_incomplete_page(monkeypatch):
+
+    async def post(*_args, **_kwargs) -> dict[str, Any]:
+        return {
+            "results": [{
+                "id": "partial"
+            }],
+            "has_more": False,
+            "request_status": {
+                "type": "incomplete",
+                "incomplete_reason": "query_result_limit_reached"
+            },
+        }
+
+    monkeypatch.setattr(pages_mod, "notion_post", post)
+    with pytest.raises(NotionAPIError, match="query_result_limit_reached"):
+        await pages_mod.query_data_source_page(NotionConfig(api_key="key"),
+                                               "ds", {"page_size": 10})

@@ -628,3 +628,54 @@ describe('suppliedEnvNames', () => {
     expect(suppliedEnvNames(envFillTree(), ['--token', 'x', '--'])).toEqual(new Set(['ROOT_T']))
   })
 })
+
+it('resolves option-shaped aliases through their declared leaf, after real options', () => {
+  const leaf = new CLISpec({ name: 'version', aliases: ['--version', '-v'], fn: verb })
+  const spec = new CLISpec({
+    name: 'tool',
+    options: [new Option({ short: '-C', type: 'path', default: '.' })],
+    subcommands: [leaf],
+  })
+  const result = walk('tool', spec, ['--version'], '/work')
+  expect(result.leaf).toBe(leaf)
+  expect(result.path).toEqual(['version'])
+  expect(result.groupFlags['-C']).toBe('/work')
+  expect(result.argv).toEqual([])
+  const other = new CLISpec({
+    name: 'tool',
+    options: [new Option({ short: '-v' })],
+    subcommands: [leaf],
+  })
+  const flagged = walk('tool', other, ['-v', 'version'])
+  expect(flagged.leaf).toBe(leaf)
+  expect(flagged.groupFlags['-v']).toBe(true)
+})
+
+it('reads an option-shaped alias after -- as an operand, never as the verb', () => {
+  const leaf = new CLISpec({ name: 'version', aliases: ['--version', '-v'], fn: verb })
+  const spec = new CLISpec({ name: 'tool', subcommands: [leaf] })
+  for (const word of ['--version', '-v']) {
+    const result = walk('tool', spec, ['--', word])
+    expect(result.leaf).toBeNull()
+    expect(result.exitCode).toBe(1)
+    expect(new TextDecoder().decode(result.output)).toBe(
+      `tool: '${word}' is not a tool command. See 'tool --help'.\n`,
+    )
+  }
+  expect(walk('tool', spec, ['--', 'version']).leaf).toBe(leaf)
+})
+
+it('refuses -- at the git root like an unknown option, and only there', () => {
+  const leaf = new CLISpec({ name: 'status', fn: verb })
+  const inner = new CLISpec({ name: 'remote', subcommands: [leaf] })
+  const spec = new CLISpec({ name: 'git', usageStyle: UsageStyle.GIT, subcommands: [leaf, inner] })
+  for (const argv of [['--', 'status'], ['--']]) {
+    const result = walk('git', spec, argv)
+    expect(result.leaf).toBeNull()
+    expect(result.exitCode).toBe(129)
+    expect(new TextDecoder().decode(result.output)).toMatch(/^unknown option: --\n/)
+  }
+  expect(walk('git', spec, ['remote', '--', 'status']).leaf).toBe(leaf)
+  const plain = new CLISpec({ name: 'git', subcommands: [leaf, inner] })
+  expect(walk('git', plain, ['--', 'status']).leaf).toBe(leaf)
+})

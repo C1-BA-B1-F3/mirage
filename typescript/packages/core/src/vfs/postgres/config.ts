@@ -29,7 +29,6 @@ const PostgresConfigSchema = z.object({
   defaultRowLimit: z.number().optional(),
   maxReadRows: z.number().optional(),
   maxReadBytes: z.number().optional(),
-  defaultSearchLimit: z.number().optional(),
 })
 
 export type PostgresConfig = ConfigOf<typeof PostgresConfigSchema>
@@ -40,7 +39,6 @@ export interface PostgresConfigResolved {
   defaultRowLimit: number
   maxReadRows: number
   maxReadBytes: number
-  defaultSearchLimit: number
 }
 
 export function normalizePostgresConfig(input: Record<string, unknown>): PostgresConfig {
@@ -54,7 +52,6 @@ export function resolvePostgresConfig(config: PostgresConfig): PostgresConfigRes
     defaultRowLimit: config.defaultRowLimit ?? 1000,
     maxReadRows: config.maxReadRows ?? 10_000,
     maxReadBytes: config.maxReadBytes ?? 10 * 1024 * 1024,
-    defaultSearchLimit: config.defaultSearchLimit ?? 100,
   }
 }
 

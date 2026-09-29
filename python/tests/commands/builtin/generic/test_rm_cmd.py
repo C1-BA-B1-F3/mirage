@@ -12,11 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from dataclasses import replace
+
 import pytest
 
 from mirage.cache.index import NULL_INDEX
 from mirage.commands.builtin.generic.rm_cmd import make_rm
 from mirage.commands.config import CommandOpts
+from mirage.commands.errors import UsageError
 from mirage.context import (reset_current_session, reset_mount_gate,
                             set_current_session, set_mount_gate)
 from mirage.types import MountMode, PathSpec, ShowEntry, ShownPaths
@@ -55,8 +58,21 @@ async def test_rm_threads_accessor_and_index_into_unlink():
 @pytest.mark.asyncio
 async def test_rm_missing_operand():
     rm = _make_rm(set(), [])
-    with pytest.raises(ValueError, match="missing operand"):
+    with pytest.raises(UsageError) as info:
         await rm(FakeAccessor(), [], [], CommandOpts())
+    assert str(info.value) == ("rm: missing operand\n"
+                               "Try 'rm --help' for more information.")
+    assert info.value.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_rm_force_without_operands_does_nothing():
+    calls: list[tuple] = []
+    rm = _make_rm(set(), calls)
+    out, result = await rm(FakeAccessor(), [], [],
+                           CommandOpts(flags={"f": True}))
+    assert (out, result.exit_code, result.stderr) == (None, 0, None)
+    assert calls == []
 
 
 @pytest.mark.asyncio
@@ -133,3 +149,16 @@ async def test_rm_verbose_reports_each_removal():
     assert "removed '/owned/b.gdoc.json'" in text
     assert result.exit_code == 0
     assert not files
+
+
+@pytest.mark.asyncio
+async def test_rm_empty_operand_keeps_its_spelling():
+    calls: list[tuple] = []
+    rm = _make_rm(set(), calls)
+    path = replace(PathSpec.from_str_path('/owned'),
+                   raw_path='',
+                   walk_error='ENOENT')
+    _, result = await rm(FakeAccessor(), [path], [], CommandOpts())
+    assert result.stderr == (b"rm: cannot remove '': "
+                             b"No such file or directory\n")
+    assert calls == []

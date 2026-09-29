@@ -12,8 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { isStdin } from '../utils/stream.ts'
+import { isStdin, operandLabel } from '../utils/stream.ts'
 import { stdinStream, stdinStat } from '../utils/stream.ts'
+import { STDIN_HEADER_NAME } from '../utils/constants.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { cacheAwareStreamEager } from '../../../cache/read_through.ts'
@@ -31,7 +32,7 @@ import {
   tailBytes,
   type TailCounts,
 } from '../tail_counts.ts'
-import { fsErrorLine, fsStrerror, isEisdir, isFsError } from '../../../utils/errors.ts'
+import { eisdir, fsErrorLine, fsStrerror, isEisdir, isFsError } from '../../../utils/errors.ts'
 import { readStdinAsync } from '../utils/stream.ts'
 import { quoteText } from '../../quote.ts'
 
@@ -241,7 +242,7 @@ async function* follow(
     }
     if (showHeaders) {
       yield ENC.encode(
-        `${last === null ? '' : '\n'}==> ${isStdin(p) ? '(standard input)' : p.rawPath} <==\n`,
+        `${last === null ? '' : '\n'}==> ${operandLabel(p, STDIN_HEADER_NAME)} <==\n`,
       )
     }
     last = slot
@@ -309,7 +310,7 @@ async function* follow(
       const [data, pos] = grown
       if (data.byteLength > 0) {
         if (showHeaders && last !== slot)
-          yield ENC.encode(`\n==> ${isStdin(p) ? '(standard input)' : p.rawPath} <==\n`)
+          yield ENC.encode(`\n==> ${operandLabel(p, STDIN_HEADER_NAME)} <==\n`)
         last = slot
         yield data
       }
@@ -423,7 +424,7 @@ export async function tailGeneric(
       try {
         const found = await stat(p)
         if (found.type === FileType.DIRECTORY) {
-          err += `tail: ${p.rawPath}: Is a directory\n`
+          err += fsErrorLine('tail', p, eisdir(p))
           continue
         }
         readable.push(p)
@@ -489,8 +490,8 @@ export async function tailGeneric(
         // after a failed operand starts without a leading blank line (GNU).
         const header =
           printed > 0
-            ? `\n==> ${isStdin(p) ? '(standard input)' : p.rawPath} <==\n`
-            : `==> ${isStdin(p) ? '(standard input)' : p.rawPath} <==\n`
+            ? `\n==> ${operandLabel(p, STDIN_HEADER_NAME)} <==\n`
+            : `==> ${operandLabel(p, STDIN_HEADER_NAME)} <==\n`
         chunks.push(ENC.encode(header))
       }
       printed += 1
@@ -510,8 +511,11 @@ export async function tailGeneric(
   if (raw === null) {
     return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tail: missing operand\n') })]
   }
+  const body = tailBytes(raw, counts)
+  // -v heads a stdin nobody named with the name it gives `-`.
+  const header = ENC.encode(`==> ${STDIN_HEADER_NAME} <==\n`)
   return [
-    tailBytes(raw, counts),
+    vFlag && !qFlag ? concat([header, body]) : body,
     new IOResult({ stderr: retryWarning === '' ? null : ENC.encode(retryWarning) }),
   ]
 }

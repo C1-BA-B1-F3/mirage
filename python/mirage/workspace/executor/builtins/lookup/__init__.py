@@ -13,7 +13,8 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.workspace.executor.builtins.lookup.classify import (classify,
-                                                                describe)
+                                                                describe,
+                                                                program_file)
 from mirage.workspace.executor.builtins.lookup.lookup import (handle_type,
                                                               handle_which)
 
@@ -24,4 +25,5 @@ __all__ = [
     "describe",
     "handle_type",
     "handle_which",
+    "program_file",
 ]

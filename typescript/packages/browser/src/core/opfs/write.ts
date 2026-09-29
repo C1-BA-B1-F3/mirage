@@ -25,15 +25,15 @@ export async function writeBytes(
 ): Promise<void> {
   const root = await accessor.root()
   const timer = startOp()
-  const virtual = p.mountPath
+  const key = p.mountPath
   let handle: FileSystemFileHandle
   try {
-    handle = await resolveFileHandle(root, virtual, { create: true })
+    handle = await resolveFileHandle(root, key, { create: true })
   } catch (err) {
-    throw await openError(root, virtual, err, p)
+    throw await openError(root, key, err, p)
   }
   const writable = await handle.createWritable()
   await writable.write(toWritableChunk(data))
   await writable.close()
-  record('write', virtual, VFSName.OPFS, data.byteLength, timer)
+  record('write', p.virtual, VFSName.OPFS, data.byteLength, timer)
 }

@@ -14,7 +14,7 @@
 
 import type { LangfuseAccessor } from '../../accessor/langfuse.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
-import { makeReaddir } from '../hierarchy/readdir.ts'
+import { type DirListing, makeReaddir } from '../hierarchy/readdir.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { jsonlBytes } from '../render/json.ts'
 import {
@@ -46,23 +46,21 @@ function promptVersions(record: Record<string, unknown>): string[] {
   return numbers.sort((a, b) => a - b).map(String)
 }
 
-async function listTraces(
-  accessor: LangfuseAccessor,
-  _match: ScopeMatch,
-): Promise<[string, IndexEntry][]> {
+/**
+ * Whether a trace listing may have left traces out.
+ *
+ * It is one page of at most `defaultTraceLimit` traces from
+ * `defaultFromTimestamp` on, so a full page or a set window is a truncated
+ * view, not the directory: cached as complete it would prove an older
+ * trace absent while read fetches it by id. Mirrors python's `_bounded`.
+ */
+function bounded(accessor: LangfuseAccessor, traces: readonly Record<string, unknown>[]): boolean {
   const limit = accessor.config.defaultTraceLimit ?? DEFAULT_TRACE_LIMIT
-  // No implicit time window: an unset defaultFromTimestamp lists whatever the
-  // project holds, up to defaultTraceLimit. A rolling default would hide
-  // traces that read() happily serves, and python applies no window either.
-  const opts: { limit: number; fromTimestamp?: string } = { limit }
   const from = accessor.config.defaultFromTimestamp
-  if (from !== undefined && from !== '') opts.fromTimestamp = from
-  const traces = await fetchTraces(accessor.transport, opts)
-  // The list endpoint returns trace summaries while a read renders the full
-  // trace with its observations, so a size here would cost one fetchTrace per
-  // entry. Traces and prompts stay size-unknown until a read hydrates them;
-  // the dataset .jsonl files are sized because their listing already carries
-  // every item.
+  return traces.length >= limit || (from !== undefined && from !== '')
+}
+
+function traceEntries(traces: readonly Record<string, unknown>[]): [string, IndexEntry][] {
   return traces.map((t): [string, IndexEntry] => {
     const traceId = pickString(t, 'id')
     const filename = `${traceId}.json`
@@ -76,6 +74,23 @@ async function listTraces(
       }),
     ]
   })
+}
+
+async function listTraces(accessor: LangfuseAccessor, _match: ScopeMatch): Promise<DirListing> {
+  const limit = accessor.config.defaultTraceLimit ?? DEFAULT_TRACE_LIMIT
+  // No implicit time window: an unset defaultFromTimestamp lists whatever the
+  // project holds, up to defaultTraceLimit. A rolling default would hide
+  // traces that read() happily serves, and python applies no window either.
+  const opts: { limit: number; fromTimestamp?: string } = { limit }
+  const from = accessor.config.defaultFromTimestamp
+  if (from !== undefined && from !== '') opts.fromTimestamp = from
+  const traces = await fetchTraces(accessor.transport, opts)
+  // The list endpoint returns trace summaries while a read renders the full
+  // trace with its observations, so a size here would cost one fetchTrace per
+  // entry. Traces and prompts stay size-unknown until a read hydrates them;
+  // the dataset .jsonl files are sized because their listing already carries
+  // every item.
+  return { entries: traceEntries(traces), seeds: {}, partial: bounded(accessor, traces) }
 }
 
 async function listSessions(
@@ -100,7 +115,7 @@ async function listSessions(
 async function listSessionTraces(
   accessor: LangfuseAccessor,
   match: ScopeMatch,
-): Promise<[string, IndexEntry][]> {
+): Promise<DirListing> {
   const limit = accessor.config.defaultTraceLimit ?? DEFAULT_TRACE_LIMIT
   const opts: { sessionId: string; limit: number; fromTimestamp?: string } = {
     sessionId: match.slots.session_id ?? '',
@@ -109,19 +124,7 @@ async function listSessionTraces(
   const from = accessor.config.defaultFromTimestamp
   if (from !== undefined && from !== '') opts.fromTimestamp = from
   const traces = await fetchTraces(accessor.transport, opts)
-  return traces.map((t): [string, IndexEntry] => {
-    const traceId = pickString(t, 'id')
-    const filename = `${traceId}.json`
-    return [
-      filename,
-      new IndexEntry({
-        id: traceId,
-        name: traceId,
-        resourceType: 'langfuse/trace',
-        vfsName: filename,
-      }),
-    ]
-  })
+  return { entries: traceEntries(traces), seeds: {}, partial: bounded(accessor, traces) }
 }
 
 async function listPrompts(

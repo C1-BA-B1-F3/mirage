@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '@struktoai/mirage-core/vfs/adapter'
+
 import { type CommandIO, rangeOf } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { OPFSAccessor } from '../../../accessor/opfs.ts'
 import { appendBytes as opfsAppend } from '../../../core/opfs/append.ts'
@@ -33,26 +35,28 @@ import { truncate as opfsTruncate } from '../../../core/opfs/truncate.ts'
 import { unlink as opfsUnlink } from '../../../core/opfs/unlink.ts'
 import { writeBytes as opfsWrite } from '../../../core/opfs/write.ts'
 
-export const OPFS_IO: CommandIO<OPFSAccessor> = {
-  readdir: opfsReaddir,
-  readBytes: opfsRead,
-  readRange: rangeOf(opfsRead),
-  readStream: opfsStream,
-  stat: opfsStat,
+export const OPFS_IO: CommandIO<OPFSAccessor> = new VFSAdapter<OPFSAccessor>({
+  read: { readdir: opfsReaddir, readBytes: opfsRead, stat: opfsStat },
+  native: {
+    readRange: rangeOf(opfsRead),
+    readStream: opfsStream,
+    exists: opfsExists,
+    find: opfsFind,
+    du: { size: opfsDu, entries: opfsDuAll },
+  },
+  writes: {
+    write: opfsWrite,
+    mkdir: opfsMkdir,
+    unlink: opfsUnlink,
+    rmdir: opfsRmdir,
+    rmR: opfsRmR,
+    rename: opfsRename,
+    copy: opfsCopy,
+    create: opfsCreate,
+    truncate: opfsTruncate,
+    append: opfsAppend,
+  },
   isMounted: () => true,
   local: true,
   maxGlobMatches: SCOPE_ERROR,
-  write: opfsWrite,
-  exists: opfsExists,
-  mkdir: opfsMkdir,
-  unlink: opfsUnlink,
-  rmdir: opfsRmdir,
-  rmR: opfsRmR,
-  rename: opfsRename,
-  copy: opfsCopy,
-  create: opfsCreate,
-  truncate: opfsTruncate,
-  append: opfsAppend,
-  find: opfsFind,
-  du: { size: opfsDu, entries: opfsDuAll },
-}
+}).toCommandIO()

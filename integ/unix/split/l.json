@@ -1,6 +1,52 @@
 {
   "cases": [
     {
+      "id": "split_stdin_output_replaces_a_file_read_before",
+      "seq": 601068,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "ssh"
+      ],
+      "command": "(cd /data && printf 'old\\n' > xaa && cat xaa && printf 'new\\n' | split -l 1 && cat xaa && rm xaa)",
+      "expect": {
+        "exit": 0,
+        "stdout": "old\nnew\n",
+        "stderr": ""
+      },
+      "flags": [
+        "l"
+      ]
+    },
+    {
+      "id": "split_prefix_under_missing_dir_names_the_path",
+      "seq": 601069,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "databricks",
+        "databricks-prefix",
+        "box"
+      ],
+      "command": "split -l 1 /data/a.txt /data/nosuchdir/p",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "split: /data/nosuchdir/paa: No such file or directory\n"
+      },
+      "flags": [
+        "l"
+      ]
+    },
+    {
       "id": "split_l",
       "seq": 601070,
       "targets": [

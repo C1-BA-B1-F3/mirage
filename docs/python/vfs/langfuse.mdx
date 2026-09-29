@@ -83,7 +83,10 @@ Example:
 
 ### Traces
 
-`/langfuse/traces/` lists recent traces (capped at `default_trace_limit`).
+`/langfuse/traces/` lists recent traces (capped at `default_trace_limit`,
+from `default_from_timestamp` on). The cap bounds the listing, not the tree:
+`stat` and `cat` still reach an older trace by its id, and `sessions/<id>/`
+serves only that session's traces.
 Each trace is a `.json` file containing the full trace object with nested
 observations (spans, generations, events).
 

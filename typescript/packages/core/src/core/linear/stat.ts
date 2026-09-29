@@ -21,7 +21,7 @@ export const stat = makeStat(detectScope, readdir, {
   entryStats: {
     team: entryStat('team_id', FileType.DIRECTORY),
     team_json: entryStat('team_id', ContentType.JSON),
-    member: entryStat('user_id', ContentType.JSON),
+    member: entryStat('member_id', ContentType.JSON),
     issue: entryStat('issue_id', FileType.DIRECTORY),
     issue_json: entryStat('issue_id', ContentType.JSON),
     comments_jsonl: entryStat('issue_id', ContentType.TEXT),

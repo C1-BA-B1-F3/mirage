@@ -243,6 +243,40 @@
       ]
     },
     {
+      "id": "shuf_o_twice_compares_the_words_typed",
+      "seq": 1299076,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && shuf -o ./shufq_same -o shufq_same a.txt)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "shuf: multiple output files specified\n"
+      },
+      "flags": [
+        "o"
+      ]
+    },
+    {
       "id": "shuf_accepts_the_same_output_twice",
       "seq": 991049,
       "targets": [

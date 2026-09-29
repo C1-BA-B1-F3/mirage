@@ -27,8 +27,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def accessor():
-    s = RedisStore(url=REDIS_URL, key_prefix="test:du:")
+async def accessor(redis_prefix):
+    s = RedisStore(url=REDIS_URL, key_prefix=redis_prefix)
     await s.clear()
     await s.add_dir("/")
     await s.add_dir("/sub")

@@ -1,0 +1,166 @@
+// Schema for the Airtable fake (integ/server/airtable/). The vendor returns
+// bases, tables, fields, views and records in a caller-visible order that the
+// fixture fixes and writes append to, so every listable table carries an
+// explicit `seq` and is read back with orderBy seq: `include` does not read
+// back insertion order.
+//
+// A record's cells are ONE JSON object per record (`fields`), keyed by field
+// NAME in the fixture and rewritten to field ID by afterSeed, which is also
+// where every fixture cell is validated against its field's type. Storing by
+// id is what the vendor does; it keeps a cell attached to its field whatever
+// the field is called, and it is the key both returnFieldsByFieldId and the
+// computed fields (lookups, counts, formulas) read.
+//
+// Field options, view sorts and a token's base grant are JSON too, written by
+// the generic seeder straight from the fixture. A view's `filter` is a formula
+// in the same subset filterByFormula accepts; it and `sort` are the fake's own
+// columns, because the real API never shows a view's filter or order, only
+// applies them.
+//
+// Every model carries `tenant` in its key (tenantKind 'pk-column'), although
+// callers isolate by RUN (`/_run/<id>`, one SQLite file each), not by tenant:
+// the column is what buys a scoped /reset and the kit's seeded-template copy
+// for a fresh run.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/airtable"
+}
+
+datasource db {
+  provider     = "sqlite"
+  url          = env("INTEG_DB_URL")
+  relationMode = "prisma"
+}
+
+// One row per tenant: the knobs a fixture sets for the whole world. pageCap is
+// the server-side ceiling on records (and comments) per page, below the API's
+// own 100, so a small fixture still spans several pages.
+model AirtableMeta {
+  tenant  String @id
+  pageCap Int    @default(100)
+}
+
+model AirtableUser {
+  tenant String
+  id     String
+  email  String
+  name   String
+  seq    Int
+
+  @@id([tenant, id])
+}
+
+// `bases` is a JSON list of the base ids the token may reach, or null for
+// every base. A base outside it answers exactly like one that does not exist.
+model AirtableToken {
+  tenant String
+  token  String
+  userId String
+  bases  String?
+  seq    Int
+
+  @@id([tenant, token])
+}
+
+model AirtableBase {
+  tenant          String
+  id              String
+  name            String
+  permissionLevel String          @default("create")
+  seq             Int
+  tables          AirtableTable[]
+
+  @@id([tenant, id])
+}
+
+// autoNumberNext is the table's high-water mark: an autoNumber is never
+// reused, even after the record holding the highest one is deleted.
+model AirtableTable {
+  tenant         String
+  id             String
+  baseId         String
+  name           String
+  description    String?
+  primaryFieldId String
+  autoNumberNext Int     @default(1)
+  seq            Int
+
+  base    AirtableBase     @relation(fields: [tenant, baseId], references: [tenant, id])
+  fields  AirtableField[]
+  views   AirtableView[]
+  records AirtableRecord[]
+
+  @@id([tenant, id])
+  @@index([tenant, baseId])
+}
+
+model AirtableField {
+  tenant      String
+  id          String
+  tableId     String
+  name        String
+  type        String
+  description String?
+  options     String?
+  seq         Int
+
+  table AirtableTable @relation(fields: [tenant, tableId], references: [tenant, id])
+
+  @@id([tenant, id])
+  @@index([tenant, tableId])
+}
+
+model AirtableView {
+  tenant          String
+  id              String
+  tableId         String
+  name            String
+  type            String  @default("grid")
+  filter          String?
+  sort            String?
+  visibleFieldIds String?
+  seq             Int
+
+  table AirtableTable @relation(fields: [tenant, tableId], references: [tenant, id])
+
+  @@id([tenant, id])
+  @@index([tenant, tableId])
+}
+
+// createdTime, modifiedTime and autoNumber are the record's own facts, which
+// the createdTime, lastModifiedTime and autoNumber FIELDS render; a fixture
+// that omits the last two gets createdTime and seq + 1 from afterSeed.
+model AirtableRecord {
+  tenant       String
+  id           String
+  tableId      String
+  createdTime  String
+  modifiedTime String?
+  autoNumber   Int?
+  fields       String  @default("{}")
+  seq          Int
+
+  table    AirtableTable     @relation(fields: [tenant, tableId], references: [tenant, id])
+  comments AirtableComment[]
+
+  @@id([tenant, id])
+  @@index([tenant, tableId])
+}
+
+model AirtableComment {
+  tenant          String
+  id              String
+  recordId        String
+  authorId        String
+  text            String
+  parentCommentId String?
+  createdTime     String
+  lastUpdatedTime String?
+  seq             Int
+
+  record AirtableRecord @relation(fields: [tenant, recordId], references: [tenant, id])
+
+  @@id([tenant, id])
+  @@index([tenant, recordId])
+}

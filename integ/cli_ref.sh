@@ -129,7 +129,7 @@ expect() {
 for case in py.py ts.mjs ts.ts ts.js; do
   expect "$case.sum" "total 9 kg"
   expect "$case.man" "1"
-  expect "$case.type" "cli"
+  expect "$case.type" "file"
 done
 expect "py.missing_export" "refused_naming_the_export"
 expect "ts.missing_export" "refused_naming_the_export"

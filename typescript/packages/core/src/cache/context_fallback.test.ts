@@ -18,9 +18,11 @@ import {
   activeCacheManager,
   invalidateAfterUnlink,
   invalidateAfterWrite,
+  invalidateAncestors,
   invalidateSubtree,
   runWithCacheManager,
 } from './context.ts'
+import { PathSpec } from '../types.ts'
 import type * as asyncContextModule from '../utils/async_context.ts'
 
 // The browser-runtime branch under node's test runner: the real
@@ -54,9 +56,16 @@ function fakeManager(log: string[], name: string): CacheInvalidator {
       log.push(`${name}:unlink:${typeof path === 'string' ? path : path.virtual}`)
       return Promise.resolve()
     },
+    invalidateAncestors(path) {
+      log.push(`${name}:ancestors:${path.virtual}`)
+      return Promise.resolve()
+    },
     invalidateSubtree(path) {
       log.push(`${name}:subtree:${typeof path === 'string' ? path : path.virtual}`)
       return Promise.resolve()
+    },
+    readThrough(_path, fetch: () => Promise<Uint8Array>) {
+      return fetch()
     },
     cachedBytes() {
       return Promise.resolve(null)
@@ -102,12 +111,15 @@ describe('cache invalidation on the fallback storage', () => {
     const short = runWithCacheManager(managerB, async () => {
       await invalidateAfterUnlink('/m/x')
       await invalidateSubtree('/m/d')
+      await invalidateAncestors(PathSpec.fromStrPath('/m/d/file'))
       release()
     })
     await Promise.all([long, short])
     expect(log.sort()).toEqual([
+      'a:ancestors:/m/d/file',
       'a:subtree:/m/d',
       'a:unlink:/m/x',
+      'b:ancestors:/m/d/file',
       'b:subtree:/m/d',
       'b:unlink:/m/x',
     ])

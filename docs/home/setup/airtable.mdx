@@ -1,0 +1,30 @@
+---
+title: Airtable
+icon: table
+description: Create an Airtable personal access token for the Airtable VFS.
+---
+
+## Credentials
+
+### 1. Create a Personal Access Token
+
+1. Go to [airtable.com/create/tokens](https://airtable.com/create/tokens)
+1. Create a token with the scopes `data.records:read` and `schema.bases:read`
+1. For the [airtable CLI](/home/setup/cli/airtable)'s writes, add
+   `data.records:write`, and for comments `data.recordComments:read` and
+   `data.recordComments:write`
+1. Under **Access**, add the bases the mount should see
+1. Copy the token (it starts with `pat`)
+
+The mount only reads; writes go through the airtable CLI. A token without
+`schema.bases:read` cannot list tables, and a base left out of the token's
+access list is invisible to it.
+
+### 2. Set Environment Variables
+
+```bash
+# .env.development
+AIRTABLE_TOKEN=patXXXXXXXXXXXXXX.xxxx...
+```
+
+For Python configuration, see the [Python Airtable VFS](/python/vfs/airtable) page.

@@ -6,6 +6,7 @@ from mirage.commands.builtin.generic.gunzip import gunzip
 from mirage.commands.builtin.generic.gzip import gzip
 from mirage.commands.builtin.generic.zcat import zcat
 from mirage.commands.builtin.generic.zgrep import zgrep
+from mirage.io.types import materialize
 from mirage.types import PathSpec
 
 
@@ -131,7 +132,7 @@ async def test_gunzip_to_stdout():
                              write_bytes=wb,
                              unlink=un,
                              to_stdout=True)
-    assert output == b"hi there"
+    assert await materialize(output) == b"hi there"
 
 
 @pytest.mark.asyncio
@@ -139,7 +140,7 @@ async def test_zcat_decompresses_file():
     raw = gziplib.compress(b"compressed text\n")
     rb, _, _, _ = _make_backend({"/a.gz": raw})
     output, _ = await zcat([_spec("/a.gz")], read_bytes=rb)
-    assert output == b"compressed text\n"
+    assert await materialize(output) == b"compressed text\n"
 
 
 @pytest.mark.asyncio
@@ -147,7 +148,7 @@ async def test_zcat_stdin():
     raw = gziplib.compress(b"from stdin")
     rb, _, _, _ = _make_backend({})
     output, _ = await zcat([], read_bytes=rb, stdin=raw)
-    assert output == b"from stdin"
+    assert await materialize(output) == b"from stdin"
 
 
 @pytest.mark.asyncio

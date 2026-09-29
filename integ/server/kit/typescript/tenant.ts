@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { randomUUID } from 'node:crypto'
+import type { KitConfig } from './config.ts'
 import { TenantError } from './errors.ts'
 import type { JsonValue, TenantKind } from './types.ts'
 
@@ -87,10 +88,19 @@ export function splitRunPath(pathname: string): { run?: string; path: string } {
 // and never reaches a WHERE clause. The path segment wins over the header and
 // the query because it is the one a mount can carry, so a base URL naming a
 // run cannot be overridden by an ambient header the caller forgot to drop.
-export function resolveRun(headers: Headers, url: URL, fromPath?: string): string {
+export function resolveRun(
+  headers: Headers,
+  url: URL,
+  fromPath?: string,
+  fromToken?: string,
+): string {
   if (fromPath !== undefined) return fromPath
   const raw = headerValue(headers, RUN_HEADER) ?? url.searchParams.get(RUN_QUERY) ?? undefined
-  return raw === undefined || raw === '' ? DEFAULT_RUN : checkName('run', raw)
+  return raw === undefined || raw === ''
+    ? fromToken === undefined
+      ? DEFAULT_RUN
+      : checkName('run', fromToken)
+    : checkName('run', raw)
 }
 
 // A tenant is a column inside one run file. The bearer fallback is what
@@ -120,11 +130,14 @@ export function resolveTenant(
   kind: TenantKind,
   fromBearer = false,
   tokenPattern = '',
+  requestToken?: string,
+  credentialTenant?: string,
 ): string {
   if (kind === 'none') return DEFAULT_TENANT
   const named =
     headerValue(headers, TENANT_HEADER) ?? url.searchParams.get(TENANT_QUERY) ?? undefined
   if (named !== undefined && named !== '') return checkName('tenant', named)
+  if (credentialTenant !== undefined) return checkName('tenant', credentialTenant)
   if (!fromBearer) return DEFAULT_TENANT
   // The bearer is a FALLBACK, not a request. A caller that spells the mirage
   // header or the query parameter has asked for a tenant and gets told when the
@@ -134,10 +147,39 @@ export function resolveTenant(
   // OUTSIDE the reset try/catch, so `Authorization: Bearer a/b` answered 500 on
   // every route of every pk-column fake, where the fakes it replaces answered
   // their own 401.
-  const raw = bearer(headers)
+  const raw = bearer(headers) ?? requestToken
   if (raw === undefined) return DEFAULT_TENANT
   const token = tenantFromToken(raw, tokenPattern)
   return token !== undefined && NAME_RE.test(token) ? token : DEFAULT_TENANT
+}
+
+// Opt-in credential transport: named captures keep the private run separate
+// from a vendor-visible tenant. Explicit path/header/query selectors win.
+export function resolveIdentity(
+  config: KitConfig,
+  headers: Headers,
+  url: URL,
+  fromPath?: string,
+  requestToken?: string,
+): { run: string; tenant: string } {
+  const auth = headerValue(headers, 'authorization')
+  const token = /^(?:Bearer|token)\s+(\S+)$/i.exec(auth ?? '')?.[1] ?? requestToken
+  const groups =
+    config.runTokenPattern === '' || token === undefined
+      ? undefined
+      : new RegExp(config.runTokenPattern).exec(token)?.groups
+  return {
+    run: resolveRun(headers, url, fromPath, groups?.run),
+    tenant: resolveTenant(
+      headers,
+      url,
+      config.tenantKind,
+      config.tenantFromBearer,
+      config.tenantTokenPattern,
+      requestToken,
+      groups?.tenant,
+    ),
+  }
 }
 
 // The pk-column mechanism, in three helpers so no fake spells a compound key

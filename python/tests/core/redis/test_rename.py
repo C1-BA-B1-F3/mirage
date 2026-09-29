@@ -31,8 +31,8 @@ def spec(path: str) -> PathSpec:
 
 
 @pytest_asyncio.fixture()
-async def accessor():
-    store = RedisStore(url=REDIS_URL, key_prefix="test:rename:")
+async def accessor(redis_prefix):
+    store = RedisStore(url=REDIS_URL, key_prefix=redis_prefix)
     await store.clear()
     await store.add_dir("/")
     await store.add_dir("/dir")

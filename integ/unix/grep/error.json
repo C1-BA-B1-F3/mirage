@@ -38,6 +38,43 @@
       ]
     },
     {
+      "id": "grep_cache_is_an_unknown_flag",
+      "seq": 1231001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "grep --cache /c world /data/a.txt 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "grep: unrecognized option '--cache'\nTry 'grep --help' for more information.\ncode=2\n",
+        "stderr": ""
+      },
+      "flags": [
+        "cache"
+      ]
+    },
+    {
       "id": "grep_unknown_short_flag",
       "seq": 272,
       "targets": [

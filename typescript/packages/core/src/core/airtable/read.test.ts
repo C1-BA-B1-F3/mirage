@@ -1,0 +1,168 @@
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+// ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import { describe, expect, it } from 'vitest'
+import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
+import { PathSpec } from '../../types.ts'
+import { mountKey } from '../../utils/key_prefix.ts'
+import { FakeAirtable, makeAccessor } from './_test_util.ts'
+import { read } from './read.ts'
+
+const ROOT = '/at'
+const BASE = `${ROOT}/bases/Product_Roadmap__appRoadmapBase001`
+const TABLE = `${BASE}/Features__tblFeatures000001`
+const RECORDS = `${TABLE}/records.jsonl`
+const DONE = `${TABLE}/views/Done_shipped__viwDone0000000001.jsonl`
+const DEC = new TextDecoder()
+
+function spec(virtual: string): PathSpec {
+  return new PathSpec({
+    virtual,
+    directory: virtual.slice(0, virtual.lastIndexOf('/')),
+    vfsPath: mountKey(virtual, ROOT),
+  })
+}
+
+function ids(body: Uint8Array): string[] {
+  return DEC.decode(body)
+    .split('\n')
+    .filter((l) => l !== '')
+    .map((l) => (JSON.parse(l) as { record_id: string }).record_id)
+}
+
+describe('airtable read', () => {
+  it('renders every record across pages', async () => {
+    const body = await read(
+      makeAccessor(new FakeAirtable()),
+      spec(RECORDS),
+      new RAMIndexCacheStore(),
+    )
+    expect(ids(body)).toHaveLength(7)
+    expect(JSON.parse(DEC.decode(body).split('\n')[0] ?? '')).toEqual({
+      record_id: 'rec00000000000001',
+      created_time: '2026-01-01T09:00:00.000Z',
+      fields: { Name: 'Feature 1', Priority: 1, Status: 'Done' },
+    })
+  })
+
+  it('fetches only as many records as a limit asks for', async () => {
+    const fake = new FakeAirtable()
+    const body = await read(makeAccessor(fake), spec(RECORDS), new RAMIndexCacheStore(), {
+      limit: 2,
+    })
+    expect(ids(body)).toEqual(['rec00000000000001', 'rec00000000000002'])
+    const calls = fake.recordCalls()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.maxRecords).toBe('2')
+  })
+
+  it('applies the view of a view file', async () => {
+    const fake = new FakeAirtable()
+    const body = await read(makeAccessor(fake), spec(DONE), new RAMIndexCacheStore())
+    expect(ids(body)).toHaveLength(4)
+    expect(fake.recordCalls()[0]?.view).toBe('viwDone0000000001')
+  })
+
+  it('refuses a full read past the cap', async () => {
+    const fake = new FakeAirtable()
+    const accessor = makeAccessor(fake, { maxReadRecords: 5 })
+    await expect(read(accessor, spec(RECORDS), new RAMIndexCacheStore())).rejects.toMatchObject({
+      code: 'EFBIG',
+    })
+    // the refusal needed cap + 1 records, not the whole table
+    expect(fake.recordCalls().at(-1)?.maxRecords).toBe('6')
+    const body = await read(accessor, spec(RECORDS), new RAMIndexCacheStore(), { limit: 3 })
+    expect(ids(body)).toHaveLength(3)
+  })
+
+  it('reads a window past the cap on a small view', async () => {
+    const body = await read(
+      makeAccessor(new FakeAirtable(), { maxReadRecords: 5 }),
+      spec(DONE),
+      new RAMIndexCacheStore(),
+      { limit: 50 },
+    )
+    expect(ids(body)).toHaveLength(4)
+  })
+
+  it('skips records for an offset', async () => {
+    const body = await read(
+      makeAccessor(new FakeAirtable()),
+      spec(RECORDS),
+      new RAMIndexCacheStore(),
+      { limit: 2, offset: 3 },
+    )
+    expect(ids(body)).toEqual(['rec00000000000004', 'rec00000000000005'])
+  })
+
+  it('answers ENOENT for missing tables and views', async () => {
+    const accessor = makeAccessor(new FakeAirtable())
+    for (const path of [
+      `${BASE}/Gone__tblGone0000000001/records.jsonl`,
+      `${TABLE}/views/Gone__viwGone0000000001.jsonl`,
+      `${BASE}/Gone__tblGone0000000001/table.json`,
+    ]) {
+      await expect(read(accessor, spec(path), new RAMIndexCacheStore())).rejects.toMatchObject({
+        code: 'ENOENT',
+      })
+    }
+  })
+
+  it('answers ENOENT for a base outside baseIds', async () => {
+    const fake = new FakeAirtable()
+    const accessor = makeAccessor(fake, { baseIds: ['appOpsFinance0001'] })
+    for (const path of [RECORDS, `${BASE}/base.json`, `${TABLE}/table.json`]) {
+      await expect(read(accessor, spec(path), new RAMIndexCacheStore())).rejects.toMatchObject({
+        code: 'ENOENT',
+      })
+    }
+    expect(fake.recordCalls()).toEqual([])
+  })
+
+  it('answers ENOENT for a name the listing does not hold', async () => {
+    const fake = new FakeAirtable()
+    const accessor = makeAccessor(fake)
+    const ops = `${ROOT}/bases/Ops_Finance__appOpsFinance0001`
+    for (const path of [
+      `${ROOT}/bases/Wrong__appRoadmapBase001/base.json`,
+      `${BASE}/Wrong__tblFeatures000001/table.json`,
+      `${BASE}/Wrong__tblFeatures000001/records.jsonl`,
+      `${TABLE}/views/Wrong__viwDone0000000001.jsonl`,
+      `${ops}/Q3_Budget__tblBudget00000001/views/Grid_view__viwGrid0000000001.jsonl`,
+    ]) {
+      await expect(read(accessor, spec(path), new RAMIndexCacheStore())).rejects.toMatchObject({
+        code: 'ENOENT',
+      })
+    }
+    // the ids resolve at the API; only the listing knows the names
+    expect(fake.recordCalls()).toEqual([])
+  })
+
+  it('still proves the path when read without an index', async () => {
+    const accessor = makeAccessor(new FakeAirtable())
+    expect(ids(await read(accessor, spec(DONE)))).toHaveLength(4)
+    await expect(
+      read(accessor, spec(`${BASE}/Wrong__tblFeatures000001/records.jsonl`)),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('answers ENOENT for a view gone since its listing', async () => {
+    const fake = new FakeAirtable()
+    // the schema still lists the view; Airtable answers its id missing
+    Reflect.deleteProperty(fake.views, 'viwDone0000000001')
+    await expect(
+      read(makeAccessor(fake), spec(DONE), new RAMIndexCacheStore()),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})

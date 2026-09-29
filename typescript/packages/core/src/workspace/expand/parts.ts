@@ -14,18 +14,19 @@
 
 import type { SessionView } from '../../ops/types.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
-import { NodeType as NT } from '../../shell/types.ts'
 import type { PathSpec } from '../../types.ts'
-import { markEscapedGlobs, markGlobs, unmarkGlobs } from '../../utils/glob_walk.ts'
+import { markEscapedGlobs, unmarkGlobs } from '../../utils/glob_walk.ts'
 import { expandTilde } from '../../utils/path.ts'
 import type { MountRegistry } from '../mount/registry.ts'
 import type { SessionState } from '../session/session.ts'
 import { homeDir } from '../session/shell_dirs.ts'
 import { expandTemplate, makeInert, substitute } from './brace.ts'
 import { classifyWord } from './classify/index.ts'
-import { BRACE_LITERAL_TYPES, BRACE_WORD_TYPES, SPLIT_TYPES } from './constants.ts'
-import { expandNode, expandNodeMarked, foldedWhitespace, type ExecuteFn } from './node.ts'
-import { expandArrayAt, isMultiwordAt } from './variable.ts'
+import { BRACE_LITERAL_TYPES, BRACE_WORD_TYPES } from './constants.ts'
+import { splitFields } from './fields.ts'
+import { expandChunks, type ExecuteFn } from './node.ts'
+import type { Chunk } from './types.ts'
+import { ifsValue } from './variable.ts'
 import { unescapeUnquoted } from '../../shell/escapes.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 
@@ -41,90 +42,44 @@ import type { TSNodeLike } from '../../shell/types.ts'
 // Quoting rides along per character: an atom keeps whatever marks its
 // own expansion produced, and the template's escapes are marked before
 // quote removal drops them, so `{'*',x}` stays literal while `{$p,x}`
-// keeps the value live.
+// keeps the value live. Each word keeps its atoms' pieces, so an
+// unquoted value still splits: `{a,b}$x` is `a$x b$x`.
 async function expandBraceWord(
   node: TSNodeLike,
   session: SessionState,
   executeFn: ExecuteFn,
   callStack: CallStack | null,
   view?: SessionView,
-): Promise<string[] | null> {
+): Promise<Chunk[][] | null> {
   const pieces: string[] = []
-  const values: string[] = []
+  const atoms: TSNodeLike[] = []
   for (const child of node.children) {
     if (child.isNamed !== true || BRACE_LITERAL_TYPES.has(child.type)) {
       pieces.push(child.text)
     } else {
-      values.push(await expandNodeMarked(child, session, executeFn, callStack, view))
-      pieces.push(makeInert(values.length - 1))
+      atoms.push(child)
+      pieces.push(makeInert(atoms.length - 1))
     }
   }
   const words = expandTemplate(pieces.join(''))
   if (words === null) return null
+  const values: Chunk[][] = []
+  for (const atom of atoms) {
+    values.push(await expandChunks(atom, session, executeFn, callStack, view))
+  }
   const home = homeDir(session)
   return words.map((w) =>
     substitute(expandTilde(unescapeUnquoted(markEscapedGlobs(w)), home), values),
   )
 }
 
-function stringHasArrayAt(node: TSNodeLike): boolean {
-  for (const c of node.children) {
-    if (isMultiwordAt(c)) return true
-  }
-  return false
-}
-
-async function expandStringWithArray(
-  node: TSNodeLike,
-  session: SessionState,
-  executeFn: ExecuteFn,
-  callStack: CallStack | null,
-  view?: SessionView,
-): Promise<string[]> {
-  const expandChild = (n: TSNodeLike) => expandNode(n, session, executeFn, callStack, view)
-  const fragments: string[] = ['']
-  let splatYielded = false
-  for (const child of node.children) {
-    if (child.type === NT.DQUOTE) continue
-    if (isMultiwordAt(child)) {
-      const words = await expandArrayAt(child, session, callStack, expandChild, view)
-      // The separating whitespace is folded into this node, and survives
-      // even when the array is empty: bash renders "$x ${empty[@]}" as
-      // the single word "a ".
-      const gap = fragments.length - 1
-      fragments[gap] = (fragments[gap] ?? '') + foldedWhitespace(child)
-      if (words.length === 0) continue
-      splatYielded = true
-      const last = fragments.length - 1
-      if (words.length === 1) {
-        fragments[last] = (fragments[last] ?? '') + (words[0] ?? '')
-      } else {
-        fragments[last] = (fragments[last] ?? '') + (words[0] ?? '')
-        for (let i = 1; i < words.length - 1; i++) fragments.push(words[i] ?? '')
-        fragments.push(words[words.length - 1] ?? '')
-      }
-      continue
-    }
-    const text = await expandNode(child, session, executeFn, callStack, view)
-    const last = fragments.length - 1
-    fragments[last] = (fragments[last] ?? '') + text
-  }
-  // A splat that yielded nothing, with no text around it, is no word at
-  // all. One empty ELEMENT is a word though (set -- "" passes one empty
-  // argument), so the rendered text cannot decide this; only the element
-  // count can. An empty expansion beside it does not rescue the word
-  // either: with no parameters, "$u$@" is nothing.
-  if (!splatYielded && fragments.length === 1 && fragments[0] === '') return []
-  // Every fragment came from inside the quotes, so its glob characters
-  // are literal.
-  return fragments.map((f) => markGlobs(f))
-}
-
 /**
  * Expand tree-sitter child nodes to words that still know their quoting.
  *
- * The words are exactly expandParts', except that a glob character
- * quoting made literal travels under its own mark, so
+ * Each node expands to its pieces, which IFS then splits into fields, so
+ * an unquoted expansion anywhere in a word splits (`q$x` too) and quoted
+ * text never does. The words are exactly expandParts', except that a
+ * glob character quoting made literal travels under its own mark, so
  * `"/data/"*.txt` still globs while `'/data/*'.txt` does not and
  * `'/data/*'?.txt` globs on the `?` alone. Only pathname expansion reads
  * these; everything else takes the unmarked `expandParts`.
@@ -136,48 +91,18 @@ export async function expandWords(
   callStack: CallStack | null = null,
   view?: SessionView,
 ): Promise<string[]> {
+  const ifs = ifsValue(session, callStack)
   const result: string[] = []
   for (const p of parts) {
-    if (p.type === NT.STRING && stringHasArrayAt(p)) {
-      const words = await expandStringWithArray(p, session, executeFn, callStack, view)
-      result.push(...words)
-      continue
-    }
     if (BRACE_WORD_TYPES.has(p.type) && session.shellOptions.braceexpand !== false) {
       const braceWords = await expandBraceWord(p, session, executeFn, callStack, view)
       if (braceWords !== null) {
-        // Empty unquoted words vanish, like bash: {,x} -> x.
-        for (const w of braceWords) {
-          if (w !== '') result.push(w)
-        }
+        for (const chunks of braceWords) for (const w of splitFields(chunks, ifs)) result.push(w)
         continue
       }
     }
-    const expanded = await expandNodeMarked(p, session, executeFn, callStack, view)
-    if (p.type === NT.COMMAND_SUBSTITUTION) {
-      for (const word of expanded.split(/\s+/)) {
-        if (word !== '') result.push(word)
-      }
-      continue
-    }
-    if (SPLIT_TYPES.has(p.type)) {
-      for (const word of expanded.split(/\s+/)) {
-        if (word !== '') result.push(word)
-      }
-    } else if (p.type === NT.STRING) {
-      // A quoted word stays a word even when it expands to '' (echo ""
-      // or "$EMPTY"). The splats that yield zero words instead ("$@",
-      // "${a[@]}") never reach here; they took the branch above.
-      result.push(expanded)
-    } else if (
-      p.type === NT.RAW_STRING ||
-      p.type === NT.ANSI_C_STRING ||
-      p.type === NT.TRANSLATED_STRING
-    ) {
-      result.push(expanded)
-    } else if (expanded !== '') {
-      result.push(expanded)
-    }
+    const chunks = await expandChunks(p, session, executeFn, callStack, view)
+    for (const w of splitFields(chunks, ifs)) result.push(w)
   }
   return result
 }

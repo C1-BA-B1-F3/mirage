@@ -3,12 +3,15 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
+from mirage.commands.builtin.utils.constants import (STDIN_HEADER_NAME,
+                                                     STDIN_OPERAND)
 from mirage.commands.builtin.utils.lines import split_lines
 from mirage.commands.builtin.utils.operands import (materialized_read,
                                                     merge_split_errors,
                                                     normalized_read,
                                                     split_readable)
-from mirage.commands.builtin.utils.stream import resolve_source
+from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
+                                                  stdin_stat, stdin_stream)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -173,6 +176,7 @@ async def _hash_check(
     factory: DigestFactory,
     algorithm: str,
     cwd: str,
+    cwd_prefix: str,
     strict: bool,
     ignore_missing: bool,
     status: bool,
@@ -181,8 +185,12 @@ async def _hash_check(
 ) -> tuple[bytes, bytes | None, int]:
     prog = f"{algorithm}sum"
     data = (await read_bytes(path)).decode(errors="replace")
-    mount_prefix = mount_prefix_of(path.virtual, path.vfs_path)
-    check_label = path.raw_path or path.virtual
+    # A list read from stdin names files on the mount the command runs on.
+    mount_prefix = (cwd_prefix if is_stdin(path) else mount_prefix_of(
+        path.virtual, path.vfs_path))
+    # GNU quotes its stdin name, which holds a space.
+    check_label = (f"'{STDIN_HEADER_NAME}'"
+                   if path.raw_path == "-" else path.raw_path or path.virtual)
     lines: list[str] = []
     stderr_lines: list[str] = []
     parsed_lines = 0
@@ -281,7 +289,11 @@ async def checksum(
     cwd: PathSpec | str = "/",
 ) -> tuple[ByteSource | None, IOResult]:
     if check and paths:
-        cwd_dir = cwd.virtual if isinstance(cwd, PathSpec) else (cwd or "/")
+        if isinstance(cwd, PathSpec):
+            cwd_dir = cwd.virtual
+            cwd_prefix = mount_prefix_of(cwd.virtual, cwd.vfs_path)
+        else:
+            cwd_dir, cwd_prefix = cwd or "/", ""
         outs: list[bytes] = []
         errs: list[bytes] = []
         exit_code = 0
@@ -289,11 +301,9 @@ async def checksum(
         # turn and keeps going when one cannot be read (coreutils 9.7).
         for p in paths:
             try:
-                out, stderr, code = await _hash_check(p, read_bytes,
-                                                      read_stream, factory,
-                                                      algorithm, cwd_dir,
-                                                      strict, ignore_missing,
-                                                      status, quiet, warn)
+                out, stderr, code = await _hash_check(
+                    p, read_bytes, read_stream, factory, algorithm, cwd_dir,
+                    cwd_prefix, strict, ignore_missing, status, quiet, warn)
             except WALK_ERRORS as exc:
                 errs.append(_check_list_error(algorithm, p, exc))
                 exit_code = 1
@@ -306,8 +316,10 @@ async def checksum(
         return b"".join(outs), IOResult(exit_code=exit_code,
                                         stderr=b"".join(errs) or None)
     if paths:
-        return _hash_multi(paths, read_stream, factory, algorithm, binary, tag,
-                           zero), IOResult(cache=[p.mount_path for p in paths])
+        return _hash_multi(
+            paths, read_stream, factory, algorithm, binary, tag,
+            zero), IOResult(
+                cache=[p.mount_path for p in paths if not is_stdin(p)])
     source = resolve_source(stdin)
     return _hash_stream(source, "-", factory, algorithm, binary, tag,
                         zero), IOResult()
@@ -343,8 +355,11 @@ async def checksum_generic(
         name (str): The invoked command name, for its spec and stderr.
     """
     parsed = parse_flags(opts.flags, name)
-    if parsed.check and paths:
-        return await checksum(paths,
+    stat = stdin_stat(stat)
+    stream = stdin_stream(stream, opts.stdin)
+    if parsed.check:
+        # With no operand the checksum list is stdin.
+        return await checksum(paths or [STDIN_OPERAND],
                               factory=factory,
                               algorithm=algorithm,
                               read_bytes=materialized_read(stream),

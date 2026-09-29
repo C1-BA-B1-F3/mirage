@@ -20,7 +20,8 @@ import {
   redactGoogleConfig,
 } from './config.ts'
 import { GCalConfigSchema, normalizeGCalConfig } from '../../vfs/gcal/config.ts'
-import { REDACTED_SECRET } from '../../vfs/secrets.ts'
+import { errorSummary } from '../../secrets/summary.ts'
+import { REDACTED_SECRET, z } from '../../vfs/secrets.ts'
 
 describe('GoogleConfig', () => {
   it('accepts the refresh-token grant from snake_case', () => {
@@ -78,14 +79,20 @@ describe('GoogleConfig', () => {
 
   // Python scopes time_zone / min_access_role / today to GCalConfig, and a
   // drive or docs mount has no use for them; hoisting them onto the base let
-  // every Google mount accept a time zone that meant nothing to it.
+  // every Google mount accept a time zone that meant nothing to it. A drive
+  // mount given one refuses it by name rather than dropping it.
   it('keeps the calendar knobs off the shared base and on GCalConfig', () => {
     expect(Object.keys(GoogleConfigSchema.shape)).not.toContain('timeZone')
     expect(Object.keys(GCalConfigSchema.shape)).toEqual(
       expect.arrayContaining(['timeZone', 'minAccessRole', 'today']),
     )
-    const drive = normalizeGoogleConfig({ access_token: 'tok', time_zone: 'UTC' })
-    expect(drive).not.toHaveProperty('timeZone')
+    let refusal = ''
+    try {
+      normalizeGoogleConfig({ access_token: 'tok', time_zone: 'UTC' })
+    } catch (err) {
+      if (err instanceof z.ZodError) refusal = errorSummary(err)
+    }
+    expect(refusal).toBe('time_zone: unrecognized_keys')
     const calendar = normalizeGCalConfig({
       access_token: 'tok',
       time_zone: 'UTC',

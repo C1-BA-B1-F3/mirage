@@ -17,6 +17,7 @@ import { EJSON } from 'bson'
 import type { MongoDBAccessor } from '../../accessor/mongodb.ts'
 import { PathSpec } from '../../types.ts'
 import { iterDocuments, iterInserts } from './client.ts'
+import { entityGuard } from './readdir.ts'
 import { detectScope } from './scope.ts'
 import { PRIMARY_KEY } from './types.ts'
 
@@ -108,6 +109,11 @@ export async function* readStream(
   if (scope.kind !== 'documents') {
     throw notFound(ps.virtual)
   }
+  // The entity guard is what applies the mount's `databases` filter; this
+  // stream is the read_stream op, which a caller reaches without a stat first
+  // (a redirect, a runtime's open), so it proves the collection itself
+  // rather than trusting the names in the path.
+  await entityGuard(accessor, scope, ps.virtual)
   const elide = elisionPaths(accessor, scope.slots.database ?? '', scope.slots.name ?? '')
   const batchSize = options.batchSize ?? 100
   for await (const doc of iterDocuments(
@@ -136,6 +142,7 @@ export async function* watchStream(
   if (scope.kind !== 'documents') {
     throw notFound(ps.virtual)
   }
+  await entityGuard(accessor, scope, ps.virtual)
   const elide = elisionPaths(accessor, scope.slots.database ?? '', scope.slots.name ?? '')
   for await (const doc of iterInserts(
     accessor,

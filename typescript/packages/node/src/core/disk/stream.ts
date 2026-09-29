@@ -18,12 +18,12 @@ import { recordStream } from '@struktoai/mirage-core/observe/context'
 import { VFSName } from '@struktoai/mirage-core/types'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { enoent } from '@struktoai/mirage-core/utils/errors'
-import { resolveSafe } from './utils.ts'
+import { diskError } from './errors.ts'
+import { resolveInside } from './utils.ts'
 
 export async function* stream(accessor: DiskAccessor, path: PathSpec): AsyncIterable<Uint8Array> {
-  const virtual = path.mountPath
-  const full = resolveSafe(accessor.root, virtual)
-  const rec = recordStream('read', virtual, VFSName.DISK)
+  const full = await resolveInside(accessor.root, path)
+  const rec = recordStream('read', path.virtual, VFSName.DISK)
   const rs = createReadStream(full, { highWaterMark: 65536 })
   try {
     for await (const chunk of rs) {
@@ -36,6 +36,6 @@ export async function* stream(accessor: DiskAccessor, path: PathSpec): AsyncIter
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw enoent(path)
     }
-    throw err
+    throw diskError(err, path)
   }
 }

@@ -107,7 +107,7 @@ async def _stat_at(stat: StatFn, virtual: str, prefix: str,
                     vfs_path=mount_key(virtual, prefix))
     try:
         return await stat(spec, index)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         # Removed between the readdir and the stat; the next pull
         # reports the DELETE from the snapshot diff. Only absence is
         # swallowed, an API error still propagates.
@@ -128,7 +128,7 @@ async def _descend(readdir: ReaddirFn, stat: StatFn, spec: PathSpec,
     """
     try:
         children = await readdir(spec, index)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return
     for child in children:
         # Classification is stat's job, the same rule find's walk

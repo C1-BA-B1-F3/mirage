@@ -34,6 +34,25 @@
       ]
     },
     {
+      "id": "python3_file_names_its_runtime",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ]
+      },
+      "steps": [
+        {
+          "command": "cat /usr/bin/python3",
+          "expect": {
+            "exit": 0,
+            "stdout": "#!/bin/sh\n# python3 runs on the workspace's monty runtime.\ncommand python3 \"$@\"\n",
+            "stderr": ""
+          }
+        }
+      ]
+    },
+    {
       "id": "module_flag_refused_by_name",
       "world": {
         "runtimes": [
@@ -846,10 +865,10 @@
       },
       "steps": [
         {
-          "command": "python3 -c \"import os; st = os.stat('/data/seed.txt'); print(st[6], st[0] == st.st_mode, len(st))\"",
+          "command": "python3 -c \"import os; st = os.stat('/data/seed.txt'); print(st[6], st[0] == st.st_mode, len(st), list(st)[6])\"",
           "expect": {
             "exit": 0,
-            "stdout": "5 True 10\n"
+            "stdout": "5 True 10 5\n"
           }
         }
       ]
@@ -879,6 +898,20 @@
           "expect": {
             "exit": 1,
             "stderr_contains": "'stat_result' object is not subscriptable"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; print(len(os.stat('/data/seed.txt')))\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "TypeError"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; print(list(os.stat('/data/seed.txt')))\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "TypeError"
           }
         }
       ]
@@ -1098,6 +1131,379 @@
           "expect": {
             "exit": 0,
             "stdout": "['0.json', '1.json', '2.json', '3.json']\n10\nfailed\nfailed\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cwd_relative_vfs_operations",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "in.txt": "hello",
+              "sub/child.txt": "child"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /data && python3 -c \"import os; from pathlib import Path; print(os.getcwd(), Path.cwd()); print(open('in.txt').read()); Path('out.txt').write_text('written'); Path('out.txt').rename('renamed.txt'); print(Path('./sub/../renamed.txt').read_text()); print(sorted(p.name for p in Path('.').iterdir())); print(Path('in.txt').absolute())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data /data\nhello\nwritten\n['in.txt', 'renamed.txt', 'sub']\n/data/in.txt\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "cat /data/renamed.txt",
+          "expect": {
+            "exit": 0,
+            "stdout": "written"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cwd_guest_chdir_isolated_from_shell",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "in.txt": "hello",
+              "sub/child.txt": "child"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /data && python3 -c \"import os; os.chdir('sub'); print(os.getcwd()); print(open('child.txt').read()); print(open('../in.txt').read()); os.chdir('..'); print(os.getcwd())\" && pwd",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data/sub\nchild\nhello\n/data\n/data\n",
+            "stderr": ""
+          }
+        },
+        {
+          "command": "python3 -c \"import os; print(os.getcwd())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data\n",
+            "stderr": ""
+          }
+        }
+      ],
+      "hosts": [
+        "python"
+      ]
+    },
+    {
+      "id": "cwd_chdir_rejects_missing_and_file",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "in.txt": "hello",
+              "sub/child.txt": "child"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /data && python3 -c \"import os; os.chdir('missing')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; os.chdir('in.txt')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "NotADirectoryError"
+          }
+        }
+      ],
+      "hosts": [
+        "python"
+      ]
+    },
+    {
+      "id": "cwd_relative_write_obeys_policy",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "in.txt": "hello"
+            }
+          }
+        },
+        "policies": [
+          {
+            "name": "lock_writes",
+            "prefix": "/data/blocked"
+          }
+        ]
+      },
+      "steps": [
+        {
+          "command": "cd /data && python3 -c \"print(open('in.txt').read())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "hello\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; Path('blocked').write_text('changed')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "PermissionError"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print(Path('blocked').exists())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "False\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "script_operand_obeys_policy",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/ram": {
+            "vfs": "ram",
+            "files": {
+              "secret.py": "print('secret')\n",
+              "s.py": "print(argv[1:])\n"
+            }
+          }
+        },
+        "profiles": {
+          "default": {
+            "commands": {
+              "deny": [
+                {
+                  "reason": "protected",
+                  "commands": {
+                    "python3": [
+                      "/ram/secret.py"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /ram",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 secret.py",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "python3: secret.py: protected\n"
+          }
+        },
+        {
+          "command": "python3 -u -- secret.py",
+          "expect": {
+            "exit": 1,
+            "stdout": "",
+            "stderr": "python3: secret.py: protected\n"
+          }
+        },
+        {
+          "command": "python3 s.py secret.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "['secret.py']\n"
+          }
+        },
+        {
+          "command": "echo 'print(argv[1:])' | python3 - secret.py",
+          "expect": {
+            "exit": 0,
+            "stdout": "['secret.py']\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "cwd_chdir_js_binding_requires_namedtuple",
+      "hosts": [
+        "typescript"
+      ],
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "in.txt": "hello",
+              "sub/child.txt": "child"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /data && python3 -c \"import os; os.chdir('sub')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "os.chdir requires the host to return a stat result"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; os.chdir('missing')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "FileNotFoundError"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; os.chdir('in.txt')\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "os.chdir requires the host to return a stat result"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; print(os.getcwd()); print(open('in.txt').read())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data\nhello\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "os_urandom",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "item": "hello"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "python3 -c \"import os; print([(type(os.urandom(n)).__name__, len(os.urandom(n))) for n in [0, 8, 65537, 1048576]])\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "[('bytes', 0), ('bytes', 8), ('bytes', 65537), ('bytes', 1048576)]\n"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; os.urandom(1048577)\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "MemoryError: os.urandom() size exceeds max_urandom_bytes (1048576)"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; os.urandom(-1)\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "ValueError"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; os.urandom(1.5)\"",
+          "expect": {
+            "exit": 1,
+            "stderr_contains": "TypeError"
+          }
+        }
+      ]
+    },
+    {
+      "id": "fs_iterdir_native_paths",
+      "world": {
+        "runtimes": [
+          "monty",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "item": "hello"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /data",
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print([(type(p).__name__, str(p), p.name, p.read_text()) for p in Path('/data').iterdir()])\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "[('PosixPath', '/data/item', 'item', 'hello')]\n"
+          }
+        },
+        {
+          "command": "python3 -c \"from pathlib import Path; print([(type(p).__name__, str(p), p.name, p.read_text()) for p in Path('.').iterdir()])\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "[('PosixPath', 'item', 'item', 'hello')]\n"
+          }
+        },
+        {
+          "command": "python3 -c \"import os; print(os.listdir('.'))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "['item']\n"
           }
         }
       ]

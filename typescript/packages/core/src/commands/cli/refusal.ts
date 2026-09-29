@@ -16,6 +16,7 @@ import { USAGE_EXIT } from './constants.ts'
 import { CLAP_EXIT } from './constants.ts'
 import { operandSlot, optionMetavar } from '../spec/help.ts'
 import { type CommandSpec, UsageStyle } from '../spec/types.ts'
+import type { ParsedCommand } from '../../workspace/executor/command/types.ts'
 
 export const ARGPARSE_EXIT = 2
 const LONG_PREFIX = '--'
@@ -118,20 +119,30 @@ export function clapMissingOperands(
  * nor its own 128 for a fatal. clap exits 2, agreeing with argparse by
  * coincidence rather than by lineage.
  *
+ * git words the first refusal on the line its own way: an unknown option as
+ * `unknown option`, and an abbreviation that could be two options as parse-
+ * options does, naming the two it found (pinned against git 2.50.1).
+ *
  * @param style the dialect the CLI's root declares
  * @param argparseMessage the message the spec machinery built, used as-is for
  *   argparse and for anything git words the same
- * @param invalidOptions the offending tokens the parser reported, read when the
- *   style rewrites the message
+ * @param parsed the parse, read for the offending tokens when the style
+ *   rewrites the message
  */
 export function leafRefusal(
   style: UsageStyle,
   argparseMessage: Uint8Array,
-  invalidOptions: readonly string[],
+  parsed: Pick<ParsedCommand, 'invalidOptions' | 'ambiguousOptions' | 'optionErrorKinds'>,
 ): [Uint8Array, number] {
   if (style === UsageStyle.CLAP) return [argparseMessage, CLAP_EXIT]
   if (style !== UsageStyle.GIT) return [argparseMessage, ARGPARSE_EXIT]
-  const first = invalidOptions[0]
+  const ambiguous = parsed.ambiguousOptions[0]
+  if (parsed.optionErrorKinds[0] === 'ambiguous' && ambiguous !== undefined) {
+    const [token, [first = '', second = '']] = ambiguous
+    const line = `error: ambiguous option: ${token.slice(2)} (could be ${first} or ${second})\n`
+    return [ENC.encode(line), USAGE_EXIT]
+  }
+  const first = parsed.invalidOptions[0]
   if (first !== undefined) return [gitUnknownOption(first), USAGE_EXIT]
   return [argparseMessage, USAGE_EXIT]
 }

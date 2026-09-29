@@ -18,11 +18,12 @@ from mirage.accessor.slack import SlackAccessor
 from mirage.commands.builtin.slack import COMMANDS
 from mirage.commands.config import RegisteredCommand
 from mirage.commands.registry import registered_commands
-from mirage.core.slack.config import SlackConfig
+from mirage.core.time_range import TimeRange
 from mirage.ops.registry import RegisteredOp
 from mirage.ops.slack import OPS as SLACK_VFS_OPS
 from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.slack.config import SlackConfig
 from mirage.vfs.slack.prompt import PROMPT, WRITE_PROMPT
 
 
@@ -42,7 +43,10 @@ class SlackVFS(BaseVFS):
     def __init__(self, config: SlackConfig) -> None:
         super().__init__()
         self.config = config
-        self.accessor = SlackAccessor(self.config)
+        self.accessor = SlackAccessor(
+            self.config,
+            TimeRange.from_strings(config.start_time, config.end_time))
+        self.prompt = PROMPT + self.accessor.time_range.prompt()
 
     def ops(self) -> list[RegisteredOp]:
         return SLACK_VFS_OPS
@@ -52,6 +56,3 @@ class SlackVFS(BaseVFS):
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)
-
-    def load_state(self, state: dict[str, Any]) -> None:
-        pass

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { commentsFor, commentsText } from './issue.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
@@ -143,7 +144,12 @@ export async function viewCmd(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   const [ref, number] = target(inv, fl)
   const row = pull(await getPull(ghTransport(inv.config), ref, number))
-  return typedOut(row, fl, viewText(row), PR_FIELDS)
+  const comments = await commentsFor(inv, fl, ref, number)
+  if (comments !== null) row.comments = comments
+  return typedOut(row, fl, fl.asBool('comments') ? commentsText(comments ?? []) : viewText(row), [
+    ...PR_FIELDS,
+    'comments',
+  ])
 }
 
 export async function createCmd(inv: CLIInvocation): Promise<CommandFnResult> {

@@ -17,9 +17,13 @@ import { describe, expect, it } from 'vitest'
 import { materialize } from '../../../io/types.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import type { PathSpec } from '../../../types.ts'
+import { MountMode } from '../../../types.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
 const RAM_ICONV = RAM_COMMANDS.filter((c) => c.name === 'iconv' && c.filetype == null)
 
 const ENC = new TextEncoder()
+const DEC = new TextDecoder()
 
 async function runIconv(
   vfs: RAMVFS,
@@ -54,5 +58,51 @@ describe('iconv', () => {
     expect(r.exitCode).toBe(0)
     const expected = new Uint8Array([0x63, 0x61, 0x66, 0xe9, 0x0a])
     expect(Array.from(r.out)).toEqual(Array.from(expected))
+  })
+})
+
+async function readOnlyShell(
+  seed: string,
+  line: string,
+): Promise<[number, string, string, string[]]> {
+  const vfs = new RAMVFS()
+  const ws = new Workspace(
+    { '/ro/': [vfs, MountMode.WRITE] },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  try {
+    const seeded = await ws.shell(seed)
+    if (seeded.exitCode !== 0) throw new Error(DEC.decode(seeded.stderr))
+    ws.setMountMode('/ro/', MountMode.READ)
+    const before = [...vfs.store.files.keys()].sort()
+    const r = await ws.shell(line)
+    const after = [...vfs.store.files.keys()].sort()
+    expect(after).toEqual(before)
+    return [r.exitCode, DEC.decode(r.stdout), DEC.decode(r.stderr), after]
+  } finally {
+    await ws.close()
+  }
+}
+
+describe('iconv on a read-only mount', () => {
+  const seed = "printf 'caf\\351\\n' > /ro/in.txt"
+
+  it('converts to stdout, which writes nothing', async () => {
+    expect(await readOnlyShell(seed, 'iconv -f latin1 -t utf-8 /ro/in.txt')).toEqual([
+      0,
+      'caf\u00e9\n',
+      '',
+      ['/in.txt'],
+    ])
+    const [exitCode, out] = await readOnlyShell(seed, 'cd /ro && iconv -f latin1 -t utf-8 < in.txt')
+    expect([exitCode, out]).toEqual([0, 'caf\u00e9\n'])
+  })
+
+  it('refuses its output file at the write', async () => {
+    const [exitCode, , stderr] = await readOnlyShell(
+      seed,
+      'iconv -f latin1 -t utf-8 -o /ro/out.txt /ro/in.txt',
+    )
+    expect([exitCode, stderr]).toEqual([1, 'iconv: /ro/out.txt: Read-only file system\n'])
   })
 })

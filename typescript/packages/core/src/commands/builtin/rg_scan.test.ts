@@ -13,9 +13,119 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { IOResult } from '../../io/types.ts'
-import { ContentType, FileStat, FileType } from '../../types.ts'
-import { rgFull, type RgFullOptions } from './rg_scan.ts'
+import { IOResult, materialize } from '../../io/types.ts'
+import { ContentType, FileStat, FileType, PathSpec } from '../../types.ts'
+import type { CommandOpts } from '../config.ts'
+import { specOf } from '../spec/builtins.ts'
+import { FlagView } from '../spec/flag_view.ts'
+import type { FlagValue } from '../spec/types.ts'
+import { parseFlags, rgGeneric, walkFilter } from './generic/rg.ts'
+import { eacces, enoent } from '../../utils/errors.ts'
+import { decodeLine } from './grep_offsets.ts'
+import {
+  type WalkFilter,
+  loopErrorLine,
+  onOtherMount,
+  openErrorLine,
+  osErrorText,
+  walkCandidates,
+  walkErrorLine,
+} from './rg_scan.ts'
+
+// The keywords the scan used to take, which these cases were written
+// against.
+interface RgFullOptions {
+  ignoreCase: boolean
+  invert: boolean
+  lineNumbers: boolean
+  countOnly: boolean
+  filesOnly: boolean
+  filesWithoutMatch?: boolean
+  fixedString: boolean
+  onlyMatching: boolean
+  maxCount: number | null
+  wholeWord: boolean
+  contextBefore: number
+  contextAfter: number
+  fileType: string | null
+  globPattern: string | null
+  hidden: boolean
+  byteOffsets?: boolean
+  noFilename?: boolean
+}
+
+// Each keyword as the rg dest it stands for.
+const DESTS: Readonly<Record<string, string>> = {
+  ignoreCase: 'ignore_case',
+  invert: 'invert_match',
+  lineNumbers: 'line_number',
+  countOnly: 'count',
+  filesOnly: 'files_with_matches',
+  filesWithoutMatch: 'files_without_match',
+  fixedString: 'fixed_strings',
+  onlyMatching: 'only_matching',
+  wholeWord: 'word_regexp',
+  hidden: 'hidden',
+  byteOffsets: 'byte_offset',
+  noFilename: 'no_filename',
+  maxCount: 'max_count',
+  contextBefore: 'before_context',
+  contextAfter: 'after_context',
+}
+
+/**
+ * Run the generic rg over one operand and answer with its printed lines, the
+ * way the scan these cases were written for answered. `warnings` receives
+ * stderr's lines, a `label` names the file on every line (-H), and `io`
+ * receives the exit status.
+ */
+async function rgFull(
+  readdirFn: (path: string) => Promise<string[]>,
+  statFn: (path: string) => Promise<FileStat>,
+  readBytesFn: (path: string) => Promise<Uint8Array>,
+  path: string,
+  pattern: string,
+  options: RgFullOptions,
+  warnings: string[] | null,
+  label: string | null = null,
+  io: IOResult | null = null,
+): Promise<string[]> {
+  const flags: Record<string, FlagValue> = {}
+  for (const [key, value] of Object.entries(options)) {
+    const dest = DESTS[key]
+    if (dest === undefined || value === null || value === false) continue
+    if (typeof value === 'number') {
+      if (key !== 'maxCount' && value === 0) continue
+      flags[dest] = String(value)
+    } else if (typeof value === 'boolean') flags[dest] = value
+  }
+  if (options.fileType !== null) flags.type = [options.fileType]
+  if (options.globPattern !== null) flags.glob = [options.globPattern]
+  if (label !== null) flags.with_filename = true
+  const opts = { stdin: null, flags, filetypeFns: null, cwd: '/' } as unknown as CommandOpts
+  const operand = new PathSpec({ virtual: path, directory: path, vfsPath: path.slice(1) })
+  const [out, result] = (await rgGeneric(
+    [operand],
+    [pattern],
+    opts,
+    (p) => statFn(p.virtual),
+    (p) => readdirFn(p.virtual),
+    async function* (p) {
+      yield await readBytesFn(p.virtual)
+    },
+  )) as [Uint8Array | AsyncIterable<Uint8Array> | null, IOResult]
+  const text = out === null ? '' : decodeLine(await materialize(out))
+  if (io !== null) io.exitCode = result.exitCode
+  if (warnings !== null) {
+    const stderr = decodeLine(await materialize(result.stderr))
+    if (stderr !== '') warnings.push(...stderr.split('\n').slice(0, -1))
+  }
+  return text === '' ? [] : text.split('\n').slice(0, -1)
+}
+
+function walk(flags: Record<string, FlagValue> = {}): WalkFilter {
+  return walkFilter(parseFlags(new FlagView(flags, specOf('rg'))))
+}
 
 const ENC = new TextEncoder()
 
@@ -47,8 +157,10 @@ function readBytesFn(path: string): Promise<Uint8Array> {
   return Promise.resolve(ENC.encode(content))
 }
 
+// The overrides go last and in the order given, which is line order to a
+// last-wins option (`--files-without-match -c` prints counts).
 function opts(overrides: Partial<RgFullOptions> = {}): RgFullOptions {
-  return {
+  const base: Record<string, unknown> = {
     ignoreCase: false,
     invert: false,
     lineNumbers: false,
@@ -63,8 +175,9 @@ function opts(overrides: Partial<RgFullOptions> = {}): RgFullOptions {
     fileType: null,
     globPattern: null,
     hidden: false,
-    ...overrides,
   }
+  for (const key of Object.keys(overrides)) Reflect.deleteProperty(base, key)
+  return { ...base, ...overrides } as RgFullOptions
 }
 
 describe('rgFull countOnly', () => {
@@ -214,7 +327,9 @@ describe('rgFull single-file context', () => {
     expect(out).toEqual(['error: disk full', 'warning: low memory'])
   })
 
-  it('skips context on directory walks (documented divergence)', async () => {
+  it('prints labelled context on directory walks', async () => {
+    // ripgrep 14.1.1 prints context in a walk too, each line led by its
+    // file's name: `name:` on a match, `name-` on context.
     const out = await rgFull(
       logReaddirFn,
       logStatFn,
@@ -224,7 +339,7 @@ describe('rgFull single-file context', () => {
       opts({ contextAfter: 1 }),
       null,
     )
-    expect(out).toEqual(['/log/app.log:warning: low memory'])
+    expect(out).toEqual(['/log/app.log:warning: low memory', '/log/app.log-info: all good'])
   })
 })
 
@@ -281,11 +396,10 @@ function digitReaddirFn(path: string): Promise<string[]> {
   return Promise.reject(new Error(`not a dir: ${path}`))
 }
 
-describe('rgFull -o GNU semantics', () => {
-  // GNU grep 3.11: an empty match prints nothing at all, but the line is
-  // still selected, so -c says 1 and the exit status is 0. Every non-empty
-  // match prints, one per line.
-  it('prints nothing for an empty match yet counts the line', async () => {
+describe('rgFull -o ripgrep semantics', () => {
+  // ripgrep 14.1.1: every match prints on its own line, an empty one included,
+  // found the way Rust's regex iterates, and -c counts the matches.
+  it('prints each empty match and counts it', async () => {
     const printed = await rgFull(
       digitReaddirFn,
       digitStatFn,
@@ -295,7 +409,7 @@ describe('rgFull -o GNU semantics', () => {
       opts({ onlyMatching: true }),
       null,
     )
-    expect(printed).toEqual([])
+    expect(printed).toEqual(['', '', ''])
     const counted = await rgFull(
       digitReaddirFn,
       digitStatFn,
@@ -305,7 +419,7 @@ describe('rgFull -o GNU semantics', () => {
       opts({ onlyMatching: true, countOnly: true }),
       null,
     )
-    expect(counted).toEqual(['1'])
+    expect(counted).toEqual(['3'])
   })
 
   it('prints every non-empty match on the line', async () => {
@@ -321,7 +435,7 @@ describe('rgFull -o GNU semantics', () => {
     expect(out).toEqual(['1', '2'])
   })
 
-  it('drops the empty matches around a non-empty one', async () => {
+  it('prints the empty matches around a non-empty one', async () => {
     const out = await rgFull(
       digitReaddirFn,
       digitStatFn,
@@ -331,7 +445,7 @@ describe('rgFull -o GNU semantics', () => {
       opts({ onlyMatching: true }),
       null,
     )
-    expect(out).toEqual(['1'])
+    expect(out).toEqual(['', '1', ''])
   })
 })
 
@@ -451,8 +565,8 @@ describe('rg -b / --byte-offset', () => {
 })
 
 describe('rgFull reports selection on the IOResult it is given', () => {
-  // Selection cannot be read off the printed lines under -o: a directory
-  // whose only matches are zero-width prints nothing and GNU still exits 0.
+  // The status rides the IOResult, not the printed lines; a zero-width match
+  // selects its line and prints an empty piece.
   function emptyReaddirFn(path: string): Promise<string[]> {
     if (path === '/off') return Promise.resolve(['/off/empty.txt'])
     return Promise.reject(new Error(`not a dir: ${path}`))
@@ -471,7 +585,7 @@ describe('rgFull reports selection on the IOResult it is given', () => {
       null,
       io,
     )
-    expect(out).toEqual([])
+    expect(out).toEqual(['/off/empty.txt:', '/off/empty.txt:', '/off/empty.txt:'])
     expect(io.exitCode).toBe(0)
   })
 
@@ -505,7 +619,7 @@ describe('rgFull reports selection on the IOResult it is given', () => {
       null,
       io,
     )
-    expect(out).toEqual([])
+    expect(out).toEqual(['', '', ''])
     expect(io.exitCode).toBe(0)
   })
 })
@@ -622,24 +736,28 @@ describe('rgFull -m 0 selects nothing', () => {
   })
 })
 
-describe('rgFull -o -v prints nothing', () => {
-  // GNU grep 3.11 over `abc\ndef\n` answers zero bytes and exit 0 for
-  // `grep -ov abc`, and `1` for `grep -ovc`. ripgrep prints the whole line,
-  // and GNU is the reference this family already follows for -o.
-  it('prints nothing', async () => {
+describe('rgFull -o -v prints each selected line whole', () => {
+  // ripgrep 14.1.1 over `abc\ndef\n` answers `def` for `rg -ov abc` and `0`
+  // for `rg -ovc abc`, counting matches, where GNU grep prints nothing and
+  // counts the line. rg follows ripgrep.
+  it('prints the line whole', async () => {
     const io = new IOResult({ exitCode: 1 })
-    expect(await raw('/raw/ov.txt', 'abc', { onlyMatching: true, invert: true }, io)).toEqual([])
+    expect(await raw('/raw/ov.txt', 'abc', { onlyMatching: true, invert: true }, io)).toEqual([
+      'def',
+    ])
     expect(io.exitCode).toBe(0)
   })
 
-  it('still counts the selected line', async () => {
+  it('counts no matches', async () => {
     expect(
       await raw('/raw/ov.txt', 'abc', { onlyMatching: true, invert: true, countOnly: true }),
-    ).toEqual(['1'])
+    ).toEqual(['0'])
   })
 
-  it('prints nothing from a walk', async () => {
-    expect(await raw('/rawdir', 'abc', { onlyMatching: true, invert: true })).toEqual([])
+  it('prints the line whole from a walk', async () => {
+    expect(await raw('/rawdir', 'abc', { onlyMatching: true, invert: true })).toEqual([
+      '/raw/ov.txt:def',
+    ])
   })
 })
 
@@ -715,10 +833,214 @@ describe('rgFull --files-without-match', () => {
     expect(await raw('/raw/m.txt', 'a', { filesWithoutMatch: true })).toEqual([])
   })
 
-  it('lets -c print counts and lists nothing under -m0', async () => {
+  it('yields to a later -c and lists nothing under -m0', async () => {
+    // ripgrep 14.1.1: `--files-without-match -c` prints counts, and
+    // `-c --files-without-match` lists the matchless files.
     expect(await raw('/raw/m.txt', 'a', { filesWithoutMatch: true, countOnly: true })).toEqual(
       await raw('/raw/m.txt', 'a', { countOnly: true }),
     )
+    expect(await raw('/raw/m.txt', 'a', { countOnly: true, filesWithoutMatch: true })).toEqual([])
     expect(await raw('/raw/m.txt', 'zzz', { filesWithoutMatch: true, maxCount: 0 })).toEqual([])
+  })
+})
+
+// A walk prints context the way ripgrep 14.1.1 does: every line leads with its
+// file's name, `name:` on a match and `name-` on context, and `--` sits between
+// one file's context and the next file's.
+describe('rgFull walk context', () => {
+  const WALK: Record<string, string> = {
+    '/w/a.txt': 'x\nhit\ny\n',
+    '/w/b.txt': 'miss\n',
+    '/w/c.txt': 'hit\nz\n',
+  }
+  const readdirFn = (path: string): Promise<string[]> =>
+    path === '/w'
+      ? Promise.resolve(Object.keys(WALK))
+      : Promise.reject(new Error(`ENOTDIR: ${path}`))
+  const statFn = (path: string): Promise<FileStat> =>
+    path === '/w'
+      ? Promise.resolve(new FileStat({ name: 'w', type: FileType.DIRECTORY }))
+      : Promise.resolve(new FileStat({ name: path.slice(3), type: FileType.FILE }))
+  const readBytesFn = (path: string): Promise<Uint8Array> =>
+    Promise.resolve(ENC.encode(WALK[path] ?? ''))
+
+  it('labels every line and separates the files that print', async () => {
+    const out = await rgFull(
+      readdirFn,
+      statFn,
+      readBytesFn,
+      '/w',
+      'hit',
+      opts({ contextAfter: 1, lineNumbers: true }),
+      null,
+    )
+    expect(out).toEqual(['/w/a.txt:2:hit', '/w/a.txt-3-y', '--', '/w/c.txt:1:hit', '/w/c.txt-2-z'])
+  })
+
+  it('gives counts no separator', async () => {
+    const out = await rgFull(
+      readdirFn,
+      statFn,
+      readBytesFn,
+      '/w',
+      'hit',
+      opts({ contextAfter: 1, countOnly: true }),
+      null,
+    )
+    expect(out).toEqual(['/w/a.txt:1', '/w/c.txt:1'])
+  })
+})
+
+describe('walkCandidates', () => {
+  // Narrowed candidates pass the filters the walk they replace applies.
+  const scope = (virtual = '/data'): PathSpec =>
+    new PathSpec({ virtual, directory: virtual, vfsPath: '' })
+  const candidate = (virtual: string): PathSpec =>
+    new PathSpec({
+      virtual,
+      directory: '',
+      vfsPath: virtual.replace(/^\/data\//, ''),
+      resolved: true,
+    })
+
+  it('prunes below the longest matching scope', () => {
+    const kept = walkCandidates(
+      [candidate('/data/.cfg/a.txt'), candidate('/data/.cfg/.secret')],
+      [scope(), scope('/data/.cfg')],
+      walk(),
+      '/',
+    )
+    expect(kept.map((p) => p.virtual)).toEqual(['/data/.cfg/a.txt'])
+  })
+
+  it('drops dotfiles below the scope', () => {
+    const kept = walkCandidates(
+      [candidate('/data/.env'), candidate('/data/.git/config'), candidate('/data/a.txt')],
+      [scope()],
+      walk(),
+      '/',
+    )
+    expect(kept.map((p) => p.virtual)).toEqual(['/data/a.txt'])
+  })
+
+  it('keeps dotfiles under --hidden', () => {
+    const paths = [candidate('/data/.env'), candidate('/data/a.txt')]
+    expect(walkCandidates(paths, [scope()], walk({ hidden: true }), '/')).toEqual(paths)
+  })
+
+  it('ignores dots in the scope itself', () => {
+    const kept = walkCandidates([candidate('/data/.cfg/a.txt')], [scope('/data/.cfg')], walk(), '/')
+    expect(kept.map((p) => p.virtual)).toEqual(['/data/.cfg/a.txt'])
+  })
+
+  it('applies --type and --glob to the file', () => {
+    const paths = [candidate('/data/a.py'), candidate('/data/b.md')]
+    expect(
+      walkCandidates(paths, [scope()], walk({ type: ['py'] }), '/').map((p) => p.virtual),
+    ).toEqual(['/data/a.py'])
+    expect(
+      walkCandidates(paths, [scope()], walk({ glob: ['*.md'] }), '/').map((p) => p.virtual),
+    ).toEqual(['/data/b.md'])
+  })
+})
+
+// ripgrep 14.1.1 searches a file named on the line whatever --type, --glob or
+// a leading dot say (`rg --type rust b in` prints `b`); a walked file is still
+// filtered.
+describe('rgFull named operands', () => {
+  const NAMED: Record<string, string> = { '/t/.in': 'b\n', '/t/w/in': 'b\n', '/t/w/.h.rs': 'b\n' }
+  const readdirFn = (path: string): Promise<string[]> =>
+    path === '/t/w'
+      ? Promise.resolve(['/t/w/in', '/t/w/.h.rs'])
+      : Promise.reject(new Error(`ENOTDIR: ${path}`))
+  const statFn = (path: string): Promise<FileStat> =>
+    Promise.resolve(
+      new FileStat({
+        name: path.slice(path.lastIndexOf('/') + 1),
+        type: path === '/t/w' ? FileType.DIRECTORY : FileType.FILE,
+      }),
+    )
+  const readBytesFn = (path: string): Promise<Uint8Array> =>
+    Promise.resolve(ENC.encode(NAMED[path] ?? ''))
+
+  it.each([[{ fileType: 'rust' }], [{ globPattern: '*.rs' }], [{}]])(
+    'searches a named file: %j',
+    async (filters) => {
+      const out = await rgFull(
+        readdirFn,
+        statFn,
+        readBytesFn,
+        '/t/.in',
+        'b',
+        opts({ lineNumbers: true, ...filters }),
+        null,
+      )
+      expect(out).toEqual(['1:b'])
+    },
+  )
+
+  it('still filters a walked file', async () => {
+    // The type keeps .h.rs whatever its leading dot says (ripgrep 14.1.1's
+    // `rg -t txt` searches .hid.txt), and drops `in`.
+    const out = await rgFull(
+      readdirFn,
+      statFn,
+      readBytesFn,
+      '/t/w',
+      'b',
+      opts({ fileType: 'rust' }),
+      null,
+    )
+    expect(out).toEqual(['/t/w/.h.rs:b'])
+  })
+})
+
+describe('rgFull warnings', () => {
+  it('names a walked path it could not read as typed', async () => {
+    const warnings: string[] = []
+    const readSome = (p: string): Promise<Uint8Array> =>
+      p === '/db/b.txt' ? Promise.reject(enoent(p)) : readBytesFn(p)
+    const out = await rgFull(readdirFn, statFn, readSome, '/db', 'Graph', opts(), warnings)
+    expect(out).toEqual(['/db/a.txt:Graph', '/db/a.txt:Graph again'])
+    expect(warnings).toEqual(['rg: /db/b.txt: No such file or directory (os error 2)'])
+  })
+})
+
+describe('ripgrep error lines', () => {
+  it('numbers what the vocabulary names', () => {
+    // Rust's io::Error display: the strerror, then Linux's errno. A failure
+    // the vocabulary cannot number keeps its own words.
+    expect(osErrorText(enoent('x'))).toBe('No such file or directory (os error 2)')
+    expect(osErrorText(new Error('Server disconnected'))).toBe('Server disconnected')
+  })
+
+  it("takes ripgrep's two shapes", () => {
+    // ripgrep 14.1.1: the walker names the path twice, the searcher once.
+    expect(walkErrorLine('nope', enoent('nope'))).toBe(
+      'rg: nope: IO error for operation on nope: No such file or directory (os error 2)',
+    )
+    expect(openErrorLine('locked', eacces('locked'))).toBe(
+      'rg: locked: Permission denied (os error 13)',
+    )
+  })
+})
+
+describe('rg -L walk lines', () => {
+  it('names the link, then the ancestor it leads to', () => {
+    // ripgrep 14.1.1's ignore crate, for a link -L follows back up the walk.
+    expect(loopErrorLine('s/sub/up', 's')).toBe(
+      'rg: File system loop found: s/sub/up points to an ancestor s',
+    )
+  })
+
+  it.each([
+    ['/data/s', false],
+    ['/data/m', true],
+    ['/ro/sub', true],
+  ])('keeps --one-file-system on the operand mount: %s crosses %s', (path, crosses) => {
+    // A directory crosses by being a mount root, a link by leading onto
+    // another mount: both are a different mount root than the operand's.
+    const roots: Record<string, string> = { '/data/m': '/data/m/', '/ro/sub': '/ro/' }
+    expect(onOtherMount((p) => roots[p] ?? '/data/', '/data/', path)).toBe(crosses)
   })
 })

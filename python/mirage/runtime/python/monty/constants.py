@@ -21,6 +21,7 @@ MISSING_EXTRA_HINT = (
 
 # What argv[0] is when the caller has no program name of its own.
 DEFAULT_PROG = "main.py"
+MAX_URANDOM_BYTES = 1_048_576
 
 # Monty reports an unfinished suite as a syntax error like any other, so
 # a console can only tell "keep typing" from "this is broken" by the

@@ -30,8 +30,13 @@ ALLOWED_KEYS = frozenset({
     "jwt_authorized_parties",
     "idle_grace_seconds",
     "port",
+    "ssh_port",
+    "ssh_host",
+    "ssh_host_key_file",
+    "ssh_authorized_keys",
 })
-NUMERIC_KEYS = frozenset({"idle_grace_seconds", "jwt_clock_skew", "port"})
+NUMERIC_KEYS = frozenset(
+    {"idle_grace_seconds", "jwt_clock_skew", "port", "ssh_port"})
 
 
 class DaemonConfigError(Exception):

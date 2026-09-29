@@ -43,8 +43,8 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
     is the script name) and piped input as the `stdin` global (bytes,
     None when nothing was piped). Monty implements a Python subset;
     host-only features (`sys.stdin`, `sys.argv`, third-party imports)
-    are unavailable, the importable stdlib is the sixteen modules
-    listed in docs/python/runtime/python.mdx, and the parser refuses
+    are unavailable; supported stdlib modules are listed in
+    docs/python/runtime/python.mdx. The parser refuses
     class inheritance, method decorators and `yield` — use the `wasi`
     or `local` runtime for a program that needs those.
     """
@@ -92,8 +92,18 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
             args (RunArgs): the execution request.
         """
         notice = unhonored_notice(args.flags, self.name)
-        result = await self._execution.run(
-            args, self._bridge(args.env, context or self._capture_context()))
+        context = context or self._capture_context()
+        if args.cwd is None and context is not None:
+            args = replace(args, cwd=context.cwd)
+        # A nested call must not queue behind a parent holding this pool.
+        nested = (context is not None and context.processes is not None
+                  and context.processes.depth > 0)
+        execution = MontyExecution() if nested else self._execution
+        try:
+            result = await execution.run(args, self._bridge(args.env, context))
+        finally:
+            if execution is not self._execution:
+                await execution.close()
         if not notice:
             return result
         return replace(result, stderr=notice + (result.stderr or b""))
@@ -103,11 +113,23 @@ class MontyRuntime(PythonRuntime, EvaluatorMixin):
                    *,
                    inputs: dict[str, EvalValue] | None = None,
                    session: str | None = None) -> EvalResult:
-        bridge = self._bridge({}, self._capture_context())
-        return await self._execution.eval(code,
-                                          bridge,
-                                          inputs=inputs,
-                                          session=session)
+        context = self._capture_context()
+        bridge = self._bridge({}, context)
+        nested = (context is not None and context.processes is not None
+                  and context.processes.depth > 0)
+        if nested and session is not None:
+            raise ValueError("nested persistent evaluation is unsupported")
+        execution = MontyExecution() if nested else self._execution
+        try:
+            return await execution.eval(
+                code,
+                bridge,
+                inputs=inputs,
+                session=session,
+                cwd=context.cwd if context is not None else None)
+        finally:
+            if execution is not self._execution:
+                await execution.close()
 
     async def close(self) -> None:
         await self._execution.close()

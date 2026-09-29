@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "id": "xm_wc_quotes_a_name_holding_a_newline",
+      "seq": 917214,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/wcnl && printf 'x\\ny\\n' > \"/data/wcnl/n$(printf '\\nq')\" && wc -l /data/wcnl/n* /data2/xm.txt; rm -r /data/wcnl",
+      "expect": {
+        "exit": 0,
+        "stdout": " 2 '/data/wcnl/n'$'\\n''q'\n 1 /data2/xm.txt\n 3 total\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

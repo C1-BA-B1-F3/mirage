@@ -12,14 +12,20 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { TransferLinks } from '../cp.ts'
+import type { LinkView } from '../../../../ops/types.ts'
 import { mountKey } from '../../../../utils/key_prefix.ts'
-import { fsErrorLine, isFsError } from '../../../../utils/errors.ts'
+import { eisdir, fsErrorLine, isFsError } from '../../../../utils/errors.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
-import { type FileStat, PathSpec } from '../../../../types.ts'
+import { type FileStat, FileType, PathSpec } from '../../../../types.ts'
 import type { CommandOpts } from '../../../config.ts'
 import type { DispatchFn, OperandRun, RunSingle } from './types.ts'
 import type { FlagValue } from '../../../spec/types.ts'
 import { readFailExitCode } from '../../../spec/usage.ts'
+import { FlagView } from '../../../spec/flag_view.ts'
+import { specOf } from '../../../spec/builtins.ts'
+import { parseFlags as parseGrepFlags, printsContext as grepPrintsContext } from '../grep.ts'
+import { betweenFiles as rgBetweenFiles, parseFlags as parseRgFlags } from '../rg.ts'
 
 const ENC = new TextEncoder()
 
@@ -27,6 +33,23 @@ const ENC = new TextEncoder()
 // operand executes on its owning mount through `runSingle` (which also
 // expands the operand's glob natively). Output is materialized and the lazy
 // exit code synced, so combiners see final values.
+/**
+ * What sets one run's grep or rg output off from the next's. Both print a
+ * separator between one file's context and the next file's (rg's own, or
+ * none under --no-context-separator), and rg a blank line between --heading
+ * groups, so the runs a line splits into join the way one run would. Nothing
+ * for any other output, a plain line stream.
+ */
+export function runSeparator(cmdName: string, flagKwargs: Record<string, FlagValue>): string {
+  if (cmdName === 'rg') {
+    return rgBetweenFiles(parseRgFlags(new FlagView(flagKwargs, specOf('rg'))))
+  }
+  if (cmdName === 'grep') {
+    return grepPrintsContext(parseGrepFlags(new FlagView(flagKwargs, specOf('grep')))) ? '--\n' : ''
+  }
+  return ''
+}
+
 export async function runOperands(
   runSingle: RunSingle,
   cmdName: string,
@@ -34,7 +57,10 @@ export async function runOperands(
   texts: string[],
   flagKwargs: Record<string, FlagValue>,
   stdinBytes: Uint8Array | null = null,
+  stopAtSuccess = false,
 ): Promise<OperandRun[]> {
+  // `stopAtSuccess` runs no operand after one that exits 0, which is how
+  // grep -q and rg -q stop at their first match.
   const results: OperandRun[] = []
   for (const scope of scopes) {
     const [out, io] = await runSingle(cmdName, [scope], texts, flagKwargs, {
@@ -61,6 +87,7 @@ export async function runOperands(
       data = new Uint8Array()
     }
     results.push({ scope, data, io })
+    if (stopAtSuccess && io.exitCode === 0) break
   }
   return results
 }
@@ -98,6 +125,8 @@ export function flatten(scopes: PathSpec[]): PathSpec[] {
         resolved: s.resolved,
         vfsPath: mountKey(s.virtual, ''),
         rawPath: s.rawPath,
+        dotted: s.dotted,
+        walkError: s.walkError,
       }),
   )
 }
@@ -136,10 +165,47 @@ export function readBytesOp(dispatch: DispatchFn): (p: PathSpec) => Promise<Uint
   }
 }
 
+/** A directory-aware whole-file reader that preserves cache and read accounting. */
+export function fileStreamOp(
+  dispatch: DispatchFn,
+  io: IOResult,
+): (p: PathSpec) => AsyncIterable<Uint8Array> {
+  const stat = statOp(dispatch)
+  const read = readBytesOp(dispatch)
+  async function* stream(path: PathSpec): AsyncIterable<Uint8Array> {
+    if ((await stat(path)).type === FileType.DIRECTORY) throw eisdir(path)
+    const data = await read(path)
+    io.reads[path.virtual] = data
+    if (!io.cache.includes(path.virtual)) io.cache.push(path.virtual)
+    yield data
+  }
+  return stream
+}
+
 export function streamOp(dispatch: DispatchFn): (p: PathSpec) => AsyncIterable<Uint8Array> {
   const readBytes = readBytesOp(dispatch)
   async function* gen(p: PathSpec): AsyncIterable<Uint8Array> {
     yield await readBytes(p)
   }
   return gen
+}
+
+export function transferLinksOf(links: LinkView, dispatch: DispatchFn, cwd: string): TransferLinks {
+  const relayStat = statOp(dispatch)
+  return {
+    links,
+    dispatch,
+    cwd,
+    relay: {
+      readBytes: readBytesOp(dispatch),
+      write: async (p: PathSpec, data: Uint8Array) => {
+        await dispatch('write', p, [data])
+      },
+      mkdir: async (p: PathSpec) => {
+        await dispatch('mkdir', p)
+      },
+      readdir: readdirOp(dispatch),
+    },
+    relayStat,
+  }
 }

@@ -19,7 +19,7 @@ import type { PathSpec } from '@struktoai/mirage-core/types'
 import { norm } from '@struktoai/mirage-core/utils/path'
 import { mkdirComponentError } from './dest.ts'
 import { diskError } from './errors.ts'
-import { resolveSafe } from './utils.ts'
+import { resolveInside } from './utils.ts'
 
 export async function mkdir(
   accessor: DiskAccessor,
@@ -27,7 +27,7 @@ export async function mkdir(
   parents = false,
 ): Promise<void> {
   const root = accessor.root
-  const full = resolveSafe(root, path.mountPath)
+  const full = await resolveInside(root, path)
   if (parents) {
     try {
       await fsMkdir(full, { recursive: true })

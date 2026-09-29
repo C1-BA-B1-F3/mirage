@@ -23,7 +23,12 @@ export const githubFake: Fake<C> = {
   config,
   client: PrismaClient,
   dmmf: Prisma.dmmf as unknown as Dmmf,
-  seedRoots: { repos: 'GithubRepo', settings: 'GithubSetting' },
+  seedRoots: {
+    repos: 'GithubRepo',
+    settings: 'GithubSetting',
+    issues: 'GithubIssue',
+    comments: 'GithubComment',
+  },
   // A repository's files come from the directory its row names, and every
   // repository starts with the same workflows, checks, statuses and one run.
   // Neither is stateable in a fixture, so both happen here.

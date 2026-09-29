@@ -17,17 +17,17 @@ import posixpath
 from functools import partial
 
 from mirage.commands.builtin.generic.cp import dest_kind
+from mirage.commands.builtin.utils.paths import dispatch_stat
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.types import FlagValue
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import FS_ERRORS, ReadOnlyError, fs_strerror
+from mirage.utils.errors import (ELOOP_STRERROR, FS_ERRORS, DotWalkLoop,
+                                 fs_strerror)
 from mirage.utils.path import CycleError
-from mirage.workspace.executor.builtins.links.probe import (dispatch_stat,
-                                                            stat_or_none)
-from mirage.workspace.executor.builtins.shared import (fail, ok,
-                                                       read_only_error,
-                                                       split_flags)
+from mirage.workspace.executor.builtins.links.probe import stat_or_none
+from mirage.workspace.executor.builtins.shared import fail, split_flags
 from mirage.workspace.executor.builtins.types import Result
 from mirage.workspace.mount.namespace import Namespace
 
@@ -44,7 +44,10 @@ def follow_parent(namespace: Namespace, virtual: str) -> str:
     is exempt for an lstat-style command: ``stat dlink/f2`` reports
     ``f2`` because ``dlink`` was resolved on the way to it, while
     ``stat dlink`` reports the link. A no-follow command therefore still
-    needs its operand's directory prefix resolved.
+    needs its operand's directory prefix resolved. The walk is the
+    namespace's (``Namespace.follow_parent``, which the op door runs for
+    every surface); the operand comes back without a trailing slash,
+    which the slash-keeping commands read off ``raw_path`` instead.
 
     Args:
         namespace (Namespace): addressing authority holding the links.
@@ -53,11 +56,8 @@ def follow_parent(namespace: Namespace, virtual: str) -> str:
     Raises:
         CycleError: when a prefix loops past the hop limit (ELOOP).
     """
-    parent, _, name = virtual.rstrip("/").rpartition("/")
-    if not name:
-        return virtual
-    resolved = namespace.follow(parent or "/")
-    return resolved.rstrip("/") + "/" + name
+    trimmed = virtual.rstrip("/")
+    return namespace.follow_parent(trimmed) if trimmed else virtual
 
 
 def follow_paths(
@@ -78,7 +78,10 @@ def follow_paths(
     Non-path items and paths that resolve to themselves pass through
     untouched. A rewritten spec keeps the user-typed form in ``raw_path``
     so error messages still name the operand as typed; the mount re-stamps
-    ``vfs_path`` at dispatch.
+    ``vfs_path`` at dispatch. A path a link loop stands in resolves to
+    nothing, so it stays as typed with ``walk_error`` set, and the op that
+    reaches it answers ELOOP: GNU reports the one operand in the command's
+    own words and goes on to the next.
 
     Args:
         namespace (Namespace): addressing authority holding the link table.
@@ -88,9 +91,6 @@ def follow_paths(
         slash_follows (bool): whether a trailing slash may override
             ``follow_last``; False only for ``tar``, which strips the
             slash before it stats.
-
-    Raises:
-        CycleError: when a path loops past the hop limit (ELOOP).
     """
     out: list[str | PathSpec] = []
     for item in items:
@@ -99,10 +99,19 @@ def follow_paths(
             continue
         last = follow_last or (slash_follows and item.raw_path.endswith("/"))
         try:
-            virtual = (namespace.follow(item.virtual)
-                       if last else follow_parent(namespace, item.virtual))
+            followed = (namespace.follow(item.virtual)
+                        if last else follow_parent(namespace, item.virtual))
         except CycleError:
-            raise CycleError(item.raw_path) from None
+            out.append(dataclasses.replace(item, walk_error="ELOOP"))
+            continue
+        # A relative target climbs from the link's own directory, which
+        # is a real one, so its `..` collapses the way resolve_link
+        # collapses it; left in, the path no longer matched the word that
+        # spelled it and the operand lost its typed name (`wc -c sub/al`
+        # printed `/data/sub/../a`).
+        virtual = posixpath.normpath(followed)
+        if followed.endswith("/") and virtual != "/":
+            virtual += "/"
         if virtual == item.virtual:
             out.append(item)
             continue
@@ -112,6 +121,43 @@ def follow_paths(
                                 directory=virtual[:virtual.rfind("/") + 1]
                                 or "/",
                                 vfs_path=""))
+    return out
+
+
+async def follow_directory_links(
+        namespace: Namespace, dispatch: DispatchFn,
+        items: list[str | PathSpec]) -> list[str | PathSpec]:
+    """Resolve each command-line link that leads to a directory.
+
+    GNU ls's default (ls.c's DEREF_COMMAND_LINE_SYMLINK_TO_DIR, coreutils
+    9.7): ``ls dlink`` lists the directory, while ``ls flink`` and a
+    dangling ``ls dang`` report the link itself, and so does a loop, whose
+    stat fails where GNU then lstats it. Where a link leads takes a stat
+    through the door to know, since the target may live on any mount, so
+    this runs after ``follow_paths`` has resolved every operand's prefix.
+
+    Args:
+        namespace (Namespace): addressing authority holding the links.
+        dispatch (DispatchFn): op dispatcher used to stat each target.
+        items (list[str | PathSpec]): classified command parts, their
+            last components not yet resolved.
+    """
+    out: list[str | PathSpec] = []
+    for item in items:
+        if (not isinstance(item, PathSpec) or item.walk_error is not None
+                or not namespace.is_link(item.virtual)):
+            out.append(item)
+            continue
+        followed = follow_paths(namespace, [item])[0]
+        leads_to_dir = False
+        if isinstance(followed, PathSpec) and followed.walk_error is None:
+            try:
+                target = await stat_or_none(dispatch, followed)
+            except DotWalkLoop:
+                target = None
+            leads_to_dir = (target is not None
+                            and target.type == FileType.DIRECTORY)
+        out.append(followed if leads_to_dir else item)
     return out
 
 
@@ -171,10 +217,8 @@ async def strip_link_operands(
     no-name-leak rule).
 
     The refusal is voiced the way the same refusal on a backend file is
-    voiced, so one grant does not describe itself two ways: a mount-mode
-    refusal renders ``read_only_error`` (naming the mount, deduplicated
-    because two operands on one mount are one fact), everything else
-    renders GNU's per-operand line.
+    voiced, so one grant does not describe itself two ways: GNU's
+    per-operand line, a read-only region's EROFS included.
 
     An operand typed with a trailing slash is deliberately kept: the
     slash asked for a directory, and GNU refuses rather than removing
@@ -215,15 +259,6 @@ async def strip_link_operands(
                 if not force:
                     errors.append(f"{name}: cannot {verb} '{item.raw_path}': "
                                   f"{fs_strerror(exc)}\n")
-            except ReadOnlyError:
-                # The mount voice, because the mount is what refused:
-                # a backend file on this operand's turf is answered by
-                # `Mount.execute_cmd` with this exact line, and one
-                # grant must not describe itself two ways depending on
-                # whether the name it stopped was a link.
-                line = read_only_error(name, namespace, item)
-                if line not in errors:
-                    errors.append(line)
             except FS_ERRORS as exc:
                 errors.append(f"{name}: cannot {verb} '{item.raw_path}': "
                               f"{fs_strerror(exc)}\n")
@@ -257,7 +292,12 @@ async def _slashed_link_refusal(
         dst_stat (FileStat | None): the destination's stat, None when it
             does not exist.
     """
-    followed = namespace.follow(src.virtual)
+    try:
+        followed = namespace.follow(src.virtual)
+    except CycleError:
+        return fail(
+            "mv", f"mv: cannot stat '{src.raw_path}': "
+            f"{ELOOP_STRERROR}\n")
     target = await stat_or_none(dispatch, PathSpec.from_str_path(followed))
     if target is None:
         return fail(
@@ -284,74 +324,139 @@ async def prepare_mv(
     items: list[str | PathSpec],
     args: tuple[str, ...],
     cwd: str,
-) -> tuple[list[str | PathSpec], str | None, tuple[str, str] | None, Result
-           | None]:
-    """Adjust a two-operand ``mv`` for node-meta operands.
+) -> tuple[list[str | PathSpec], Result | None]:
+    """Resolve the destination directory without transferring any source.
 
-    A link source renames the link entry itself. A destination that is
-    (a link to) a directory receives the move inside it (rename(2)
-    preceded by mv's dst stat); any other destination is replaced, so its
-    node entry, link or overlay attrs alike, drops once the backend move
-    succeeds. A plain source hands back the pair to re-anchor once the
-    backend move succeeds, so whatever the node table holds at it and
-    below it travels with the bytes.
+    Args:
+        namespace (Namespace): Namespace holding the link table.
+        dispatch (DispatchFn): Door used to probe the destination.
+        items (list[str | PathSpec]): Classified command parts.
+        args (tuple[str, ...]): Original arguments, including target flags.
+        cwd (str): Working directory for parsing.
+    """
+    paths = [p for p in items if isinstance(p, PathSpec)]
+    fl = FlagView(parse_to_kwargs(
+        parse_command(SPECS["mv"], list(args), cwd, "mv")),
+                  spec=SPECS["mv"])
+    target = fl.raw("target_directory")
+    if target is not None or len(paths) > 2:
+        return _prepare_many(namespace, items, paths, target)
+    if len(paths) != 2:
+        return items, None
+    return await _prepare_pair(namespace, dispatch, items, paths, fl)
 
-    The pair is where this can be done at all: a single-mount ``mv``
-    renames through the backend op bound to the accessor rather than
-    through the dispatcher, so the re-anchoring the dispatcher does for
-    every other caller has to be repeated here. Only a two-operand line
-    qualifies, because a path-shaped word is classified into a PathSpec
-    whether it filled an operand slot or a flag's value, and nothing
-    here can tell ``mv a b dst`` from ``mv -t dst a b``.
+
+async def settle_moves(namespace: Namespace, moves: list[tuple[str,
+                                                               str]]) -> None:
+    """Re-anchor only the renames the generic actually completed.
+
+    Args:
+        namespace (Namespace): Addressing authority holding node metadata.
+        moves (list[tuple[str, str]]): Completed source/destination pairs,
+            including backups, in execution order.
+    """
+    for src, landing in moves:
+        await namespace.unlink(landing)
+        await namespace.purge_under(landing)
+        await namespace.rename(src, landing)
+        await namespace.rename_under(src, landing)
+
+
+def _landing_key(path: str) -> str:
+    return path.rstrip("/") or "/"
+
+
+def _prepare_many(
+    namespace: Namespace,
+    items: list[str | PathSpec],
+    paths: list[PathSpec],
+    target: FlagValue | None,
+) -> tuple[list[str | PathSpec], Result | None]:
+    """An ``mv`` of sources into one destination directory.
+
+    ``mv a b dst`` and ``mv -t dst a ...``. GNU stats the destination
+    through its link before anything moves: a link to a directory takes
+    the sources, a link to anything else is not a directory, a dangling
+    one is missing and a loop is ELOOP, each worded by the generic mv from
+    the destination handed to it here (coreutils 9.7). Every source then
+    lands at the directory plus its basename: a link source through the
+    namespace, which no backend mv can see, and every other one with its
+    node entries re-anchored once the backend confirms the move.
+
+    Args:
+        namespace (Namespace): addressing authority holding the node table.
+        items (list[str | PathSpec]): classified command parts.
+        paths (list[PathSpec]): the PathSpecs among them, in line order.
+        target (FlagValue | None): ``-t``'s resolved value, if given.
+    """
+    if target is not None:
+        spelled = target.virtual if isinstance(target,
+                                               PathSpec) else str(target)
+        dst = next((p for p in paths
+                    if _landing_key(p.virtual) == _landing_key(spelled)), None)
+        if dst is None:
+            return items, None
+    else:
+        dst = paths[-1]
+    if dst.walk_error is not None:
+        return items, None
+    followed = follow_paths(namespace, [dst])[0]
+    assert isinstance(followed, PathSpec)
+    rewritten = [followed if item is dst else item for item in items]
+    return rewritten, None
+
+
+async def _prepare_pair(
+    namespace: Namespace,
+    dispatch: DispatchFn,
+    items: list[str | PathSpec],
+    paths: list[PathSpec],
+    fl: FlagView,
+) -> tuple[list[str | PathSpec], Result | None]:
+    """A two-operand ``mv``: one source and the destination it replaces
+    or lands inside.
 
     Args:
         namespace (Namespace): addressing authority holding the node table.
         dispatch (DispatchFn): op dispatcher used to stat the destination.
         items (list[str | PathSpec]): classified command parts.
-        args (tuple[str, ...]): the line's words after the name, read
-            for the two options that move the destination.
-        cwd (str): session working directory, which the parser resolves
-            path operands against.
-
-    Returns:
-        tuple: (possibly rewritten parts, node entry to drop after a
-        successful backend move (the replaced destination), (src, dst)
-        meta rename to apply after a successful backend move, early
-        result when the mv completed as a pure namespace rename).
+        paths (list[PathSpec]): the two PathSpecs, source first.
+        fl (FlagView): the parsed line, read for ``-T``.
     """
-    paths = [p for p in items if isinstance(p, PathSpec)]
-    if len(paths) != 2:
-        return items, None, None, None
-    # ``-t`` makes every positional a source and the flag's value the
-    # destination, which is the many-source shape above; ``-T`` names
-    # the destination outright, so no basename is appended to it. Both
-    # are read off the parsed line rather than guessed from the parts,
-    # since a path-shaped flag value is classified into a PathSpec there
-    # exactly as an operand is.
-    fl = FlagView(parse_to_kwargs(
-        parse_command(SPECS["mv"], list(args), cwd, "mv")),
-                  spec=SPECS["mv"])
-    if fl.raw("target_directory") is not None:
-        return items, None, None, None
     src, dst = paths
+    if src.walk_error is not None or dst.walk_error is not None:
+        # The walk refused the operand, so there is no entry to move or
+        # land on; the generic mv reports it through its own stat, which
+        # cannot see a link source. A link is a non-directory, and GNU
+        # stats an empty destination as a directory (see mv_generic).
+        if (dst.raw_path == "" and src.walk_error is None
+                and namespace.is_link(src.virtual)):
+            return items, fail(
+                "mv", "mv: cannot overwrite directory '' with "
+                f"non-directory '{src.raw_path}'\n")
+        if (dst.walk_error == "ELOOP" and src.walk_error is None
+                and namespace.is_link(src.virtual)):
+            return items, fail(
+                "mv", f"mv: cannot stat '{dst.raw_path}': {ELOOP_STRERROR}\n")
+        return items, None
 
     # Where the move lands: inside a directory destination (followed, so
     # node-meta keys line up with the followed paths stat merges on), else
-    # the destination itself, replaced like rename(2).
-    followed = namespace.follow(dst.virtual)
-    stat = await stat_or_none(dispatch, PathSpec.from_str_path(followed))
+    # the destination itself, replaced like rename(2). A destination a
+    # link loop stands in stats ELOOP, which mv reads as not a directory:
+    # the rename replaces the link itself (GNU 9.7).
+    try:
+        followed: str | None = namespace.follow(dst.virtual)
+    except CycleError:
+        followed = None
+    stat = (None if followed is None else await stat_or_none(
+        dispatch, PathSpec.from_str_path(followed)))
     into_dir = (not fl.as_bool("no_target_directory") and stat is not None
                 and stat.type == FileType.DIRECTORY)
-    if into_dir:
-        target_dst = (followed.rstrip("/") + "/" +
-                      posixpath.basename(src.virtual))
-    else:
-        target_dst = dst.virtual
-
     if namespace.is_link(src.virtual):
         if src.raw_path.endswith("/"):
-            return items, None, None, await _slashed_link_refusal(
-                namespace, dispatch, src, dst, stat)
+            return items, await _slashed_link_refusal(namespace, dispatch, src,
+                                                      dst, stat)
         if not into_dir and dst.raw_path.endswith("/"):
             # rename(2) never follows the source, so a link is not a
             # directory whatever it points at, and a slashed destination
@@ -363,50 +468,16 @@ async def prepare_mv(
             _, _, verdict = await dest_kind(partial(dispatch_stat, dispatch),
                                             dst)
             if verdict == "Not a directory":
-                return items, None, None, fail(
+                return items, fail(
                     "mv", f"mv: cannot stat '{dst.raw_path}': "
                     "Not a directory\n")
-            return items, None, None, fail(
+            return items, fail(
                 "mv", f"mv: cannot move '{src.raw_path}' to "
                 f"'{dst.raw_path}': {verdict or 'Not a directory'}\n")
-        # The move is a node-table rename, which the door answers: a
-        # link has no backend entry for the generic mv to move. Reaching
-        # the table directly from here would skip the admission gates
-        # every other mv passes, so the dispatch is the point.
-        try:
-            await dispatch("rename",
-                           src,
-                           dst=PathSpec.from_str_path(target_dst))
-        except ReadOnlyError as exc:
-            # Voiced as the same refusal on a backend file is: the mount
-            # voice when the source's own turf is what refused (the case
-            # `Mount.execute_cmd` answers, since the command runs on the
-            # source mount), GNU's per-operand line when it was the
-            # destination -- which is what a cross-mount `mv f /ro/f`
-            # already answers for a regular file.
-            blame = exc.filename or src.virtual
-            if blame == src.virtual:
-                return items, None, None, fail(
-                    "mv", read_only_error("mv", namespace, src))
-            return items, None, None, fail(
-                "mv", f"mv: cannot move '{src.raw_path}' to "
-                f"'{dst.raw_path}': {fs_strerror(exc)}\n")
-        except PermissionError as exc:
-            # A policy deny, which GNU voices per operand and which the
-            # backend mv path voices the same way.
-            return items, None, None, fail(
-                "mv", f"mv: cannot move '{src.raw_path}' to "
-                f"'{dst.raw_path}': {fs_strerror(exc)}\n")
-        return items, None, None, ok("mv")
-
-    # Unconditional: a directory source carries a whole subtree of node
-    # entries that no exact-path lookup at the source can see, and a
-    # symlink below it is destroyed rather than merely forgotten when
-    # they are left behind. Both halves are no-ops when the table holds
-    # nothing there.
-    post_rename = (src.virtual, target_dst)
-
     rewritten = items
     if into_dir and namespace.is_link(dst.virtual):
-        rewritten = follow_paths(namespace, items)
-    return rewritten, target_dst, post_rename, None
+        rewritten = [
+            follow_paths(namespace, [item])[0] if item is dst else item
+            for item in items
+        ]
+    return rewritten, None

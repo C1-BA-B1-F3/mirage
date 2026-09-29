@@ -12,9 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { effectivePathMode } from '../../context/session_context.ts'
+import { requirePathsWritable } from '../../context/session_context.ts'
 import { MountMode, type PathSpec } from '../../types.ts'
-import { erofsReadOnly } from '../../utils/errors.ts'
 import type { MountEntry } from '../mount/mount.ts'
 
 // The prefix governing a path no mount owns. Inside a workspace there is
@@ -42,7 +41,7 @@ export function turfOf(mount: MountEntry | null): string {
 }
 
 /**
- * Refuse a node-table write the session's grant does not cover.
+ * Refuse a mutation outside the mount mode or session's grant.
  *
  * A symlink create, a link unlink or rename endpoint, and the no-mount
  * attr overlay all mutate namespace state at a path, and a session
@@ -51,25 +50,9 @@ export function turfOf(mount: MountEntry | null): string {
  * through. Same voice as the backend gate: EROFS stamped with the
  * operand, so chokepoints render 'Read-only file system'.
  *
- * **The gate is the session's grant, not the mount's own mode**, and the
- * ceiling passed to `effectivePathMode` is WRITE for exactly that
- * reason. The two planes say different things with one word.
- * `mode: read` on a mount is overwhelmingly a statement about a
- * *backend* that cannot write — notion, github, mem0, postgres, mongodb,
- * every vector store — and symlinks are namespace state, so a link above
- * such a mount needs no write capability from it and is pinned working
- * on four of them (`integ/vfs/<svc>/sym.json`). A session grant is a
- * statement about what this *session* may do, which covers both planes,
- * so it is the one that binds here. The consequence to know:
- * sessionless, a deliberately read-mode mount still takes a link.
- * Separating "this backend cannot write" from "this deployment forbids
- * names here" needs a second field on the mount table, which does not
- * exist and is not worth inventing for it; a deployment wanting that
- * today states it in `preOps`.
+ * Mount mode is an authorization ceiling for both backend and namespace
+ * writes. Backend capabilities are resolved only after admission.
  */
 export function requireTurfWritable(mount: MountEntry | null, path: PathSpec): void {
-  const granted = effectivePathMode(path.virtual, turfOf(mount), MountMode.WRITE)
-  if (granted === MountMode.READ) {
-    throw erofsReadOnly(`mount at '${path.virtual}' is read-only`, path)
-  }
+  requirePathsWritable([path], turfOf(mount), mount?.mode ?? MountMode.WRITE)
 }

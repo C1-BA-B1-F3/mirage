@@ -15,9 +15,9 @@
 from collections.abc import Awaitable, Callable, Mapping
 
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
-from mirage.core.hierarchy.probe import A
+from mirage.core.hierarchy.probe import A, assert_parent
 from mirage.core.hierarchy.scope import ROOT, DetectFn, ScopeMatch
-from mirage.types import PathSpec
+from mirage.types import PathSpec, StatFn
 from mirage.utils.errors import enoent
 from mirage.utils.ranges import slice_window
 
@@ -39,6 +39,7 @@ def make_read(
     readers: Mapping[str, Reader[A]],
     *,
     windowed: Mapping[str, WindowedReader[A]] | None = None,
+    stat: StatFn | None = None,
 ) -> Callable[..., Awaitable[bytes]]:
     """Build a hierarchy read: classify, dispatch, refuse the rest.
 
@@ -53,6 +54,15 @@ def make_read(
             limit/offset the backend pushes into the query); they receive
             the caller's ``limit``/``offset``, which every plain reader
             ignores, matching a filesystem read that has no row notion.
+        stat (StatFn | None): the backend's stat. Given, every read
+            first proves the file's parent directory exists the way stat
+            proves it (``assert_parent``), so a container the listing
+            refuses reads as absent exactly as ``ls`` and ``stat`` report
+            it. A backend whose readers address the API by the ids in
+            the path passes it: without it, ``cat`` of a board outside
+            ``board_ids`` fetched that board by its id. The file itself
+            stays the reader's to prove, since a bounded listing need
+            not name every file that exists.
     """
 
     windows = windowed if windowed is not None else {}
@@ -65,9 +75,11 @@ def make_read(
                    offset: int | None = None) -> bytes:
         match = detect(path)
         window = windows.get(match.kind)
+        reader = readers.get(match.kind)
+        if stat is not None and (window is not None or reader is not None):
+            await assert_parent(stat, accessor, path, index)
         if window is not None:
             return await window(accessor, match, path, index, limit, offset)
-        reader = readers.get(match.kind)
         if reader is None:
             # A directory that exists by construction (the root, or a
             # probed=False scope) read as a file is EISDIR. Everything

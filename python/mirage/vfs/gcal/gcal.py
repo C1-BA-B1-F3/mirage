@@ -44,6 +44,7 @@ class GCalVFS(BaseVFS):
         self.config = config
         self._token_manager = TokenManager(config)
         self.accessor = GCalAccessor(self.config, self._token_manager)
+        self.prompt = PROMPT + self.accessor.time_range.prompt()
 
     def ops(self) -> list[RegisteredOp]:
         return GCAL_VFS_OPS
@@ -58,6 +59,3 @@ class GCalVFS(BaseVFS):
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)
-
-    def load_state(self, state: dict[str, Any]) -> None:
-        pass

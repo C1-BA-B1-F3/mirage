@@ -15,7 +15,9 @@
 import type { GitHubAccessor } from '../../../accessor/github.ts'
 import { VFSName } from '../../../types.ts'
 import type { ProvisionFn, RegisteredCommand } from '../../config.ts'
+import { resolveGlobOf } from '../generic_bind/adapter.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
+import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { GITHUB_DU } from './du.ts'
 import { GITHUB_FIND } from './find.ts'
 import { GITHUB_GREP } from './grep.ts'
@@ -32,8 +34,10 @@ export const GITHUB_COMMANDS: readonly RegisteredCommand[] = [
       ls: metadataProvision as ProvisionFn,
     },
   }),
-  ...GITHUB_DU,
-  ...GITHUB_FIND,
-  ...GITHUB_GREP,
-  ...GITHUB_RG,
+  ...withDefaultProvisions(
+    [...GITHUB_DU, ...GITHUB_FIND, ...GITHUB_GREP, ...GITHUB_RG],
+    GITHUB_IO.stat,
+    resolveGlobOf(GITHUB_IO),
+    GITHUB_IO.readdir,
+  ),
 ]

@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from mirage.commands.builtin.utils.operands import (materialized_read,
                                                     merge_split_errors,
                                                     split_readable)
-from mirage.commands.builtin.utils.stream import read_stdin_async
+from mirage.commands.builtin.utils.stream import (read_stdin_async, stdin_stat,
+                                                  stdin_stream)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -67,6 +68,9 @@ async def strings_generic(
         stream (PolymorphicReadFn): Bound reader called as
             ``stream(path)``.
     """
+    # binutils strings never reads `-` as stdin; only /dev/stdin is.
+    stat = stdin_stat(stat, dash=False)
+    stream = stdin_stream(stream, opts.stdin, dash=False)
     parsed = parse_flags(opts.flags)
     readable, err = await split_readable(paths, stat, "strings")
     if err and not readable:

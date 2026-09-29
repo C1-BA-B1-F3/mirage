@@ -17,16 +17,25 @@ import { LangfuseAccessor } from '../../accessor/langfuse.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { ContentType, FileType, PathSpec } from '../../types.ts'
 import { stripSlash } from '../../utils/slash.ts'
-import type { LangfuseTransport } from './client.ts'
+import { LangfuseApiError, type LangfuseTransport } from './client.ts'
+import { jsonBytes } from '../render/json.ts'
 import { stat } from './stat.ts'
 
+// A trace fetch the table does not hold is the API's 404, the way the
+// service answers an id it does not have; any other path lists nothing.
 class StaticTransport implements LangfuseTransport {
+  readonly paths: string[] = []
+
   constructor(private readonly bodies: Record<string, unknown>) {}
 
   request(path: string): Promise<unknown> {
+    this.paths.push(path)
     const body = this.bodies[path]
-    if (body === undefined) return Promise.resolve({ data: [] })
-    return Promise.resolve(body)
+    if (body !== undefined) return Promise.resolve(body)
+    if (path.startsWith('/api/public/traces/')) {
+      return Promise.reject(new LangfuseApiError('not found', [], 404))
+    }
+    return Promise.resolve({ data: [] })
   }
 }
 
@@ -55,7 +64,9 @@ describe('langfuse stat existence', () => {
   })
 
   it('raises ENOENT for a trace absent from the listing', async () => {
-    // A recognizable path shape is not evidence the trace exists.
+    // A recognizable path shape is not evidence the trace exists: an id
+    // absent from the parent listing is asked of the API (the listing is
+    // bounded), and the API's 404 is ENOENT, not a confident stat.
     await expect(
       stat(
         accessor(new StaticTransport(TRACES)),
@@ -97,5 +108,36 @@ describe('langfuse stat existence', () => {
     )
     expect(s.type).toBe(FileType.DIRECTORY)
     expect(s.name).toBe('traces')
+  })
+})
+
+// Mirrors python's test_stat_finds_a_trace_the_bounded_listing_left_out and
+// test_stat_refuses_another_sessions_trace.
+describe('langfuse stat of a trace the bounded listing left out', () => {
+  it('probes the trace by id and sizes it from the fetch', async () => {
+    const trace = { id: 't_old', name: 'chat' }
+    const transport = new StaticTransport({
+      '/api/public/traces': { data: [{ id: 't_new' }] },
+      '/api/public/traces/t_old': trace,
+    })
+    const bounded = new LangfuseAccessor(transport, { defaultTraceLimit: 1 })
+    const index = new RAMIndexCacheStore()
+    const listed = await stat(bounded, spec('/traces/t_new.json'), index)
+    expect(transport.paths).toEqual(['/api/public/traces'])
+    const older = await stat(bounded, spec('/traces/t_old.json'), index)
+    expect(listed.type).toBe(FileType.FILE)
+    expect(listed.size).toBeNull()
+    expect(older.type).toBe(FileType.FILE)
+    expect(older.content).toBe(ContentType.JSON)
+    expect(older.size).toBe(jsonBytes(trace).byteLength)
+  })
+
+  it("refuses another session's trace", async () => {
+    const transport = new StaticTransport({
+      '/api/public/traces/t1': { id: 't1', sessionId: 's2' },
+    })
+    await expect(
+      stat(accessor(transport), spec('/sessions/s1/t1.json'), new RAMIndexCacheStore()),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

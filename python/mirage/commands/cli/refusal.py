@@ -135,6 +135,13 @@ def leaf_refusal(style: UsageStyle, argparse_message: bytes,
         return argparse_message, CLAP_EXIT
     if style is not UsageStyle.GIT:
         return argparse_message, ARGPARSE_EXIT
+    kinds = parsed.option_error_kinds
+    if kinds and kinds[0] == "ambiguous" and parsed.ambiguous_options:
+        token, candidates = parsed.ambiguous_options[0]
+        first, second = (list(candidates) + ["", ""])[:2]
+        line = (f"error: ambiguous option: {token[2:]} "
+                f"(could be {first} or {second})\n")
+        return line.encode(), USAGE_EXIT
     if parsed.invalid_options:
         return git_unknown_option(parsed.invalid_options[0]), USAGE_EXIT
     return argparse_message, USAGE_EXIT

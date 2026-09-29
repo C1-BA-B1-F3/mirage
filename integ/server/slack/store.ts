@@ -22,6 +22,7 @@ export interface MessageRow {
   userId: string
   text: string
   type: string
+  subtype: string | null
   threadTs: string | null
   reactionsJson: string | null
   seq: number

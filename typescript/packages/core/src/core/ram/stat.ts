@@ -16,7 +16,7 @@ import type { RAMAccessor } from '../../accessor/ram.ts'
 import { FileStat, FileType, type PathSpec } from '../../types.ts'
 import { contentTypeForPath } from '../../utils/filetype.ts'
 import { basename, norm } from './utils.ts'
-import { enoent } from '../../utils/errors.ts'
+import { lookupError } from './dest.ts'
 
 export function stat(accessor: RAMAccessor, path: PathSpec): Promise<FileStat> {
   const p = norm(path.mountPath)
@@ -36,7 +36,7 @@ export function stat(accessor: RAMAccessor, path: PathSpec): Promise<FileStat> {
   }
   const data = accessor.store.files.get(p)
   if (data === undefined) {
-    throw enoent(path)
+    throw lookupError(accessor, path, p)
   }
   return Promise.resolve(
     new FileStat({

@@ -18,6 +18,8 @@ import { ContentType, FileStat, FileType, PathSpec } from '../../types.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import type { NotionAccessor } from '../../accessor/notion.ts'
 
+const listings: string[] = []
+
 const DIRS = new Set(['/db', '/db/sub'])
 const FILES: Record<string, number> = {
   '/db/page1.md': 10,
@@ -34,7 +36,10 @@ function normalize(p: PathSpec): string {
 }
 
 vi.mock('./readdir.ts', () => ({
-  readdir: (_accessor: unknown, path: PathSpec) => Promise.resolve(CHILDREN[normalize(path)] ?? []),
+  readdir: (_accessor: unknown, path: PathSpec) => {
+    listings.push(path.virtual)
+    return Promise.resolve(CHILDREN[normalize(path)] ?? [])
+  },
 }))
 
 vi.mock('./stat.ts', () => ({
@@ -118,4 +123,13 @@ describe('notion core find', () => {
     const out = await find(accessor, root(), { type: 'f', minSize: 15 })
     expect(out).toEqual(['/db/sub/page2.md'])
   })
+})
+
+it.each([
+  [0, []],
+  [1, ['/db']],
+] as const)('depth %s bounds backend requests', async (maxDepth, calls) => {
+  listings.length = 0
+  await find(accessor, root(), { maxDepth })
+  expect(listings).toEqual(calls)
 })

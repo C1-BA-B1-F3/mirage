@@ -36,9 +36,10 @@ from mirage.core.msgraph.config import MsGraphConfig
 from mirage.observe.context import (active_recorder, record, record_stream,
                                     revision_for, start_op)
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import enoent, listing_error
+from mirage.utils.errors import enoent, enotsup, listing_error
 from mirage.utils.filetype import content_type_for_path
 from mirage.utils.ranges import window_for
+from mirage.utils.stat_view import DIR_SIZE
 
 SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024
 UPLOAD_CHUNK = 10 * 327680
@@ -324,14 +325,30 @@ def current_version_id(versions: list[dict[str, Any]]) -> str | None:
     return current.get("id")
 
 
-async def capture_item_metadata(config: MsGraphConfig,
-                                loc: DriveLoc,
-                                session: SessionArg = None
-                                ) -> tuple[str | None, str | None, str | None]:
-    item = await graph_get(config,
-                           loc.item(),
-                           params={"$expand": "versions"},
-                           session=session)
+async def capture_item_metadata(
+        config: MsGraphConfig,
+        loc: DriveLoc,
+        session: SessionArg = None,
+        versions: bool = True) -> tuple[str | None, str | None, str | None]:
+    """The item's cTag, current version and download URL, in one GET.
+
+    Callers fetch this before the bytes and download from the URL it
+    returns. Graph can change the item between the two requests, and in
+    this order a change can only pair an older token with newer bytes,
+    which the next freshness probe sees as stale; the other order would
+    label old bytes with the new token and serve them as fresh.
+
+    Args:
+        config (MsGraphConfig): Graph credentials and endpoint.
+        loc (DriveLoc): the drive item.
+        session (SessionArg): pool or live session to ride.
+        versions (bool): also expand the version history for the current
+            revision, which only a snapshot needs; without it the revision
+            is None. Every shell line records, so only reads outside one
+            (FUSE, a runtime's guest, the ops facade) skip it.
+    """
+    params = {"$expand": "versions"} if versions else None
+    item = await graph_get(config, loc.item(), params=params, session=session)
     fingerprint = item.get("cTag")
     revision = current_version_id(item.get("versions", []))
     download_url = item.get("@microsoft.graph.downloadUrl")
@@ -341,7 +358,6 @@ async def capture_item_metadata(config: MsGraphConfig,
 async def read_item(config: MsGraphConfig,
                     loc: DriveLoc,
                     virtual: str,
-                    label: str,
                     backend: str,
                     offset: int = 0,
                     size: int | None = None,
@@ -358,9 +374,12 @@ async def read_item(config: MsGraphConfig,
                                          loc.item(action),
                                          window,
                                          session=session)
-        elif active_recorder() is not None:
+        else:
             fingerprint, revision, download_url = await capture_item_metadata(
-                config, loc, session=session)
+                config,
+                loc,
+                session=session,
+                versions=active_recorder() is not None)
             if download_url:
                 data = await graph_get_bytes(config,
                                              download_url,
@@ -372,17 +391,12 @@ async def read_item(config: MsGraphConfig,
                                              loc.item("/content"),
                                              window,
                                              session=session)
-        else:
-            data = await graph_get_bytes(config,
-                                         loc.item("/content"),
-                                         window,
-                                         session=session)
     except GraphError as exc:
         if exc.status == 404:
             raise enoent(virtual)
         raise
     record("read",
-           label,
+           virtual,
            backend,
            len(data),
            timer,
@@ -394,12 +408,11 @@ async def read_item(config: MsGraphConfig,
 async def stream_item(config: MsGraphConfig,
                       loc: DriveLoc,
                       virtual: str,
-                      label: str,
                       backend: str,
                       chunk_size: int = 8192,
                       session: SessionArg = None) -> AsyncIterator[bytes]:
     pinned = revision_for(virtual)
-    rec = record_stream("read", label, backend)
+    rec = record_stream("read", virtual, backend)
     url = loc.item("/content")
     auth = True
     try:
@@ -411,7 +424,8 @@ async def stream_item(config: MsGraphConfig,
             (rec.fingerprint, rec.revision,
              download_url) = await capture_item_metadata(config,
                                                          loc,
-                                                         session=session)
+                                                         session=session,
+                                                         versions=True)
             if download_url:
                 url = download_url
                 auth = False
@@ -568,9 +582,7 @@ async def find_items(
             if not keep(entry, tree, mindepth):
                 continue
             if min_size is not None or max_size is not None:
-                # Directories count as size 0 for -size (deliberate GNU
-                # divergence).
-                effective = 0 if is_dir else size
+                effective = DIR_SIZE if is_dir else size
                 if min_size is not None and effective < min_size:
                     continue
                 if max_size is not None and effective > max_size:
@@ -692,10 +704,13 @@ async def readdir_items(config: MsGraphConfig,
         rtype = ResourceType.FOLDER if is_dir else ResourceType.FILE
         # Folder `size` is aggregate storage metadata, never rendered
         # content length: cache it as extra, not as the entry size.
-        extra = ({
-            "size_bytes": child.get("size"),
-            "child_count": folder_child_count(child),
-        } if is_dir else {})
+        extra: dict[str, Any] = {
+            "ctag": child.get("cTag"),
+            "etag": child.get("eTag"),
+        }
+        if is_dir:
+            extra.update(size_bytes=child.get("size"),
+                         child_count=folder_child_count(child))
         index_entries.append(
             (cname,
              IndexEntry(id=key,
@@ -730,6 +745,7 @@ async def stat_item(config: MsGraphConfig,
                         modified=entry.remote_time or None,
                         type=FileType.FILE,
                         content=content_type_for_path(entry.name),
+                        fingerprint=entry.extra.get("ctag"),
                         extra=dict(entry.extra))
     parent = virtual_key.rsplit("/", 1)[0] or "/"
     parent_listing = await index.list_dir(parent)
@@ -786,8 +802,11 @@ class WriteFn(Protocol[A_contra]):
 
 class TruncateFn(Protocol[A_contra]):
 
-    def __call__(self, accessor: A_contra, path: PathSpec,
-                 length: int) -> Awaitable[None]:
+    def __call__(self,
+                 accessor: A_contra,
+                 path: PathSpec,
+                 length: int,
+                 no_create: bool = False) -> Awaitable[None]:
         ...
 
 
@@ -831,7 +850,12 @@ def make_truncate(read: ReadFn[A], write: WriteFn[A]) -> TruncateFn[A]:
         TruncateFn: the truncation.
     """
 
-    async def truncate(accessor: A, path: PathSpec, length: int) -> None:
+    async def truncate(accessor: A,
+                       path: PathSpec,
+                       length: int,
+                       no_create: bool = False) -> None:
+        if no_create:
+            raise enotsup("msgraph", "truncate --no-create", path)
         try:
             data = await read(accessor, path, index=NULL_INDEX)
         except FileNotFoundError:

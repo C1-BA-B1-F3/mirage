@@ -728,6 +728,108 @@
         "stdout": "/data/name.txt:needle\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "grep_binary_integ_malformed_offsets",
+      "seq": 990140,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '\\377\\300\\257\\355\\240\\200\\364\\220\\200\\200é😀needle\\n\\360\\220\\200needle\\n' > /data/malformed.so; grep -abo needle /data/malformed.so",
+      "expect": {
+        "exit": 0,
+        "stdout": "16:needle\n26:needle\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_binary_integ_nul_run_count",
+      "seq": 990141,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '%20003s' '' | tr ' ' '\\000' > /data/zeros.so; grep -c '^$' /data/zeros.so; grep -cm17000 '^$' /data/zeros.so",
+      "expect": {
+        "exit": 0,
+        "stdout": "20003\n17000\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_binary_integ_empty_run_offsets",
+      "seq": 990142,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '%17003s' '' | tr ' ' '\\n' > /data/blanks.txt; printf 'é needle\\n' >> /data/blanks.txt; grep -nbo needle /data/blanks.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "17004:17006:needle\n",
+        "stderr": ""
+      }
     }
   ]
 }

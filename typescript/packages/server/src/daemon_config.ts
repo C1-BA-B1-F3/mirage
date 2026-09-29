@@ -30,11 +30,16 @@ export const ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'jwt_authorized_parties',
   'idle_grace_seconds',
   'port',
+  'ssh_port',
+  'ssh_host',
+  'ssh_host_key_file',
+  'ssh_authorized_keys',
 ])
 export const NUMERIC_KEYS: ReadonlySet<string> = new Set([
   'idle_grace_seconds',
   'jwt_clock_skew',
   'port',
+  'ssh_port',
 ])
 
 export class DaemonConfigError extends Error {

@@ -74,8 +74,7 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
 }
 
 function errorText(err: unknown): string {
-  if (err instanceof Error) return err.message
-  return typeof err === 'string' ? err : 'unknown error'
+  return err instanceof Error ? err.message : 'unknown error'
 }
 
 function reply(res: ServerResponse, status: number, payload: Json): void {

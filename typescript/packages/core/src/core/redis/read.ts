@@ -16,7 +16,7 @@ import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { record, startOp } from '../../observe/context.ts'
 import { VFSName } from '../../types.ts'
 import type { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
+import { lookupError } from './dest.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { norm } from './utils.ts'
 
@@ -44,8 +44,8 @@ export async function read(
       ? await accessor.store.getFileRange(p, offset, size)
       : await accessor.store.getFile(p)
   if (data === null) {
-    throw enoent(path)
+    throw await lookupError(accessor.store, path, p)
   }
-  record('read', p, VFSName.REDIS, data.byteLength, timer)
+  record('read', path.virtual, VFSName.REDIS, data.byteLength, timer)
   return data
 }

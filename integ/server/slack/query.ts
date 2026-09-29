@@ -14,9 +14,10 @@
 
 // Slack search-query DSL (a faithful subset). Unquoted operator tokens are
 // stripped and interpreted; a "quoted phrase" is kept verbatim as literal:
-//   in:#channel   scope to a channel by name
+//   in:#channel   scope to a channel by name (also in:##channel)
 //   in:@user      scope to a DM by the other member's name
 //   from:@user    only messages authored by that user (name resolved to id)
+//   from:<@U…>    only messages authored by that user ID
 //   after:DATE    strictly after that UTC day (DATE = YYYY-MM-DD)
 //   before:DATE   strictly before that UTC day
 //   on:DATE       within that UTC day
@@ -29,6 +30,7 @@ export interface ParsedQuery {
   channelName?: string
   dmName?: string
   fromName?: string
+  fromId?: string
   after?: string
   before?: string
   on?: string
@@ -39,11 +41,13 @@ const TOKEN_RE = /"([^"]*)"|(\S+)/g
 const PREFIXES: [string, keyof ParsedQuery][] = [
   ['in:#', 'channelName'],
   ['in:@', 'dmName'],
+  ['in:', 'channelName'],
   ['from:@', 'fromName'],
   ['from:', 'fromName'],
   ['after:', 'after'],
   ['before:', 'before'],
   ['on:', 'on'],
+  ['during:', 'on'],
 ]
 
 function tokenize(query: string): { value: string; quoted: boolean }[] {
@@ -61,12 +65,20 @@ export function parseQuery(query: string): ParsedQuery {
   const terms: string[] = []
   const out: ParsedQuery = { literal: '' }
   for (const { value, quoted } of tokenize(query)) {
+    const mention = quoted ? null : /^from:<@([A-Z0-9]+)>$/.exec(value)
+    if (mention !== null) {
+      delete out.fromName
+      out.fromId = mention[1]!
+      continue
+    }
     // Order matters: `from:@x` must be tried before `from:x`, which is why
     // PREFIXES is a list rather than a map.
     const hit = quoted ? undefined : PREFIXES.find(([p]) => value.startsWith(p))
     if (hit !== undefined) {
       const [prefix, key] = hit
       out[key] = value.slice(prefix.length)
+      if (key === 'channelName') out.channelName = out.channelName!.replace(/^#+/, '')
+      if (key === 'fromName') delete out.fromId
       continue
     }
     terms.push(value)

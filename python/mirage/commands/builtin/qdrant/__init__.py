@@ -16,13 +16,7 @@ from mirage.commands.builtin.generic_bind import make_generic_commands
 from mirage.commands.builtin.qdrant.io import IO as _IO
 from mirage.commands.builtin.qdrant.search import search
 
-_QDRANT_OVERRIDES = {"search"}
-
 COMMANDS = [
-    *make_generic_commands(
-        "qdrant",
-        _IO,
-        overrides=_QDRANT_OVERRIDES,
-    ),
+    *make_generic_commands("qdrant", _IO),
     search,
 ]

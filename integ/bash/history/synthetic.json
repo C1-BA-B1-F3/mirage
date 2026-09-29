@@ -36,7 +36,7 @@
       "expect": {
         "exit": 1,
         "stdout": "==> /.bash_history <==\n#",
-        "stderr": "head: /nope: No such file or directory\n"
+        "stderr": "head: cannot open '/nope' for reading: No such file or directory\n"
       }
     },
     {
@@ -49,7 +49,7 @@
       "expect": {
         "exit": 1,
         "stdout": "==> /.bash_history <==\n\n",
-        "stderr": "tail: /nope: No such file or directory\n"
+        "stderr": "tail: cannot open '/nope' for reading: No such file or directory\n"
       }
     }
   ]

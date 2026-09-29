@@ -27,6 +27,7 @@ import {
   commitList,
   metaOf,
   repoByName,
+  scope,
   treeOfBranch,
 } from './store.ts'
 import type { RepoRow } from './store.ts'
@@ -47,7 +48,7 @@ import type { Handler } from './http.ts'
 // default_branch, which seeding decides.
 export function repoJson(repo: RepoRow): JsonValue {
   const meta = metaOf(repo)
-  const { default_branch: _ignored, ...rest } = meta
+  const { default_branch: _ignored, parent_seq: _parent, ...rest } = meta
   return {
     name: repo.name,
     full_name: repo.fullName,
@@ -63,6 +64,208 @@ export function repoJson(repo: RepoRow): JsonValue {
     archived: false,
     fork: false,
     ...rest,
+  }
+}
+
+// Every date the fresh-repository defaults report, unless a fixture states one.
+const REPO_DATE = '2026-01-01T00:00:00Z'
+
+/** A GraphQL global id in the vendor's base64 `<type><id>` spelling. */
+function nodeId(type: string, key: string | number): string {
+  return Buffer.from(`${type}${String(key)}`).toString('base64')
+}
+
+/** The GraphQL `owner` of a repository, a user or an organization. */
+function ownerNode(login: string): Record<string, JsonValue> {
+  return { id: nodeId(login === DEFAULT_LOGIN ? '04:User' : '012:Organization', login), login }
+}
+
+/**
+ * The GraphQL `Repository` for one row: the same facts the REST object reports,
+ * in GraphQL's spelling, plus what GraphQL alone exposes. A fixture's
+ * `metaJson` overrides the fresh-repository defaults field by field, under the
+ * REST names both views share (`description`, `stargazers_count`, `topics`,
+ * `language`, `private`), so one fixture answers both.
+ *
+ * Counts and the latest release are read off the fake's own rows, open issues
+ * and pull requests counted apart the way GraphQL counts them. `projects`
+ * refuses the way the vendor now refuses Projects (classic), and a fork names
+ * the repository it was forked from as `parent`.
+ */
+export async function repositoryNode(
+  ctx: { db: C; tenant: string },
+  repo: RepoRow,
+): Promise<Record<string, unknown>> {
+  const meta = metaOf(repo)
+  const text = (key: string): string | null =>
+    typeof meta[key] === 'string' ? (meta[key] as string) : null
+  const count = (key: string): number => (typeof meta[key] === 'number' ? (meta[key] as number) : 0)
+  const email = `${DEFAULT_LOGIN}@users.noreply.github.com`
+  const where = { ...scope(ctx.tenant), repo: repo.fullName }
+  const topics = Array.isArray(meta.topics) ? meta.topics.map(String) : []
+  const language = text('language')
+  const owned = repo.owner === DEFAULT_LOGIN
+  const user = { id: nodeId('04:User', DEFAULT_LOGIN), login: DEFAULT_LOGIN, name: DEFAULT_LOGIN }
+  // A fork records its source by seq, the identity a rename keeps, so the
+  // parent is found under whatever name it carries now.
+  const parentSeq = typeof meta.parent_seq === 'number' ? meta.parent_seq : null
+  const parent = async (): Promise<Record<string, unknown> | null> => {
+    if (parentSeq === null) return null
+    const row = (await allRepos(ctx.db, ctx.tenant)).find((each) => each.seq === parentSeq)
+    return row === undefined ? null : repositoryNode(ctx, row)
+  }
+  return {
+    id: nodeId('010:Repository', repo.seq),
+    name: repo.name,
+    nameWithOwner: repo.fullName,
+    owner: ownerNode(repo.owner),
+    parent,
+    templateRepository: null,
+    description: text('description'),
+    homepageUrl: text('homepage'),
+    openGraphImageUrl: `https://opengraph.githubassets.com/1/${repo.fullName}`,
+    usesCustomOpenGraphImage: false,
+    url: `https://github.com/${repo.fullName}`,
+    sshUrl: `git@github.com:${repo.fullName}.git`,
+    mirrorUrl: null,
+    securityPolicyUrl: null,
+    createdAt: text('created_at') ?? REPO_DATE,
+    pushedAt: text('pushed_at') ?? REPO_DATE,
+    updatedAt: text('updated_at') ?? REPO_DATE,
+    archivedAt: meta.archived === true ? (text('updated_at') ?? REPO_DATE) : null,
+    isBlankIssuesEnabled: true,
+    isSecurityPolicyEnabled: false,
+    hasIssuesEnabled: meta.has_issues !== false,
+    hasProjectsEnabled: meta.has_projects !== false,
+    hasDiscussionsEnabled: meta.has_discussions === true,
+    hasWikiEnabled: meta.has_wiki !== false,
+    mergeCommitAllowed: true,
+    squashMergeAllowed: true,
+    rebaseMergeAllowed: true,
+    forkCount: count('forks_count'),
+    stargazerCount: count('stargazers_count'),
+    watchers: { totalCount: count('watchers_count') },
+    issues: async () => ({
+      totalCount: await ctx.db.githubIssue.count({ where: { ...where, state: 'open' } }),
+    }),
+    pullRequests: async () => ({
+      totalCount: await ctx.db.githubPull.count({ where: { ...where, state: 'open' } }),
+    }),
+    codeOfConduct: null,
+    contactLinks: [],
+    defaultBranchRef: { name: repo.defaultBranch },
+    deleteBranchOnMerge: false,
+    diskUsage: 0,
+    fundingLinks: [],
+    isArchived: meta.archived === true,
+    isEmpty: false,
+    isFork: meta.fork === true,
+    isInOrganization: !owned,
+    isMirror: false,
+    isPrivate: meta.private === true,
+    isTemplate: false,
+    isUserConfigurationRepository: repo.name === repo.owner,
+    licenseInfo: null,
+    viewerCanAdminister: true,
+    viewerDefaultCommitEmail: email,
+    viewerDefaultMergeMethod: 'MERGE',
+    viewerHasStarred: false,
+    viewerPermission: 'ADMIN',
+    viewerPossibleCommitEmails: [email],
+    viewerSubscription: owned ? 'SUBSCRIBED' : 'UNSUBSCRIBED',
+    visibility: meta.private === true ? 'PRIVATE' : 'PUBLIC',
+    repositoryTopics: { nodes: topics.map((name) => ({ topic: { name } })) },
+    primaryLanguage: language === null ? null : { name: language },
+    languages: { edges: language === null ? [] : [{ size: 0, node: { name: language } }] },
+    issueTemplates: [],
+    pullRequestTemplates: [],
+    labels: { nodes: [] },
+    milestones: { nodes: [] },
+    latestRelease: async () => {
+      const rows = await ctx.db.githubRelease.findMany({ where, orderBy: { seq: 'desc' } })
+      const row = rows.find((release) => !release.draft && !release.prerelease)
+      if (row === undefined) return null
+      return {
+        name: row.name,
+        tagName: row.tagName,
+        url: `https://github.com/${repo.fullName}/releases/tag/${row.tagName}`,
+        publishedAt: row.createdAt,
+      }
+    },
+    assignableUsers: { nodes: [user] },
+    mentionableUsers: { nodes: [user] },
+    projects: () => {
+      throw new Error(
+        'Projects (classic) is being deprecated in favor of the new Projects experience, ' +
+          'see: https://github.blog/changelog/2024-05-23-sunset-notice-projects-classic/.',
+      )
+    },
+    projectsV2: { nodes: [] },
+  }
+}
+
+/** The value a GraphQL `RepositoryOrder` field sorts one repository by. */
+function orderKey(repo: RepoRow, field: string): string | number {
+  const meta = metaOf(repo)
+  const date = (key: string): string =>
+    typeof meta[key] === 'string' ? (meta[key] as string) : REPO_DATE
+  if (field === 'NAME') return repo.name
+  if (field === 'STARGAZERS') {
+    return typeof meta.stargazers_count === 'number' ? meta.stargazers_count : 0
+  }
+  if (field === 'CREATED_AT') return date('created_at')
+  if (field === 'UPDATED_AT') return date('updated_at')
+  return date('pushed_at')
+}
+
+interface RepositoriesArgs {
+  first: number
+  after?: string | null
+  privacy?: string | null
+  isFork?: boolean | null
+  orderBy?: { field: string; direction: string } | null
+}
+
+/**
+ * The repositories a GraphQL `RepositoryOwner` lists: the owner's own, narrowed
+ * by `privacy` and `isFork`, in the `orderBy` asked for, a page at a time.
+ * Repositories the order ties are listed by name, so a page is the same page
+ * on every request.
+ */
+export async function ownedRepositories(
+  ctx: { db: C; tenant: string },
+  login: string,
+): Promise<Record<string, unknown>> {
+  const owned = (await allRepos(ctx.db, ctx.tenant)).filter((row) => row.owner === login)
+  return {
+    login,
+    repositories: async ({ first, after, privacy, isFork, orderBy }: RepositoriesArgs) => {
+      const rows = owned
+        .filter((row) => {
+          const meta = metaOf(row)
+          if (privacy === 'PUBLIC' && meta.private === true) return false
+          if (privacy === 'PRIVATE' && meta.private !== true) return false
+          return isFork === null || isFork === undefined || (meta.fork === true) === isFork
+        })
+        .sort((a, b) => {
+          const field = orderBy?.field ?? 'NAME'
+          const [x, y] = [orderKey(a, field), orderKey(b, field)]
+          const order = x < y ? -1 : x > y ? 1 : 0
+          if (order !== 0) return orderBy?.direction === 'DESC' ? -order : order
+          return a.fullName < b.fullName ? -1 : a.fullName > b.fullName ? 1 : 0
+        })
+      const start = after ? Number(Buffer.from(after, 'base64').toString()) : 0
+      const page = rows.slice(start, start + first)
+      const end = start + page.length
+      return {
+        nodes: page.map((row) => repositoryNode(ctx, row)),
+        totalCount: rows.length,
+        pageInfo: {
+          hasNextPage: end < rows.length,
+          endCursor: page.length > 0 ? Buffer.from(String(end)).toString('base64') : null,
+        },
+      }
+    },
   }
 }
 
@@ -181,10 +384,13 @@ export function repoRoutes(): KitRoute<C>[] {
           const asked = ctx.query.get('sha') ?? ''
           const branch = (await branchFor(ctx.db, ctx.tenant, repo, asked)) ?? repo.defaultBranch
           const list = await commitList(ctx.db, ctx.tenant, repo, branch)
+          if (list.length === 0) return fail(409, 'Git Repository is empty.')
           return { status: 200, body: list.map(commitJson) }
         }),
       ),
     ),
+    // Tag refs are not modeled; releases alone do not create git tags here.
+    route<C>('GET', `${p}/repos/:owner/:repo/tags`, authed(withRepo((ctx) => pagedReply(ctx, [])))),
   ])
 }
 
@@ -342,7 +548,11 @@ const forkRepo: Handler = authed(
         owner: DEFAULT_LOGIN,
         name,
         defaultBranch: source.defaultBranch,
-        metaJson: source.metaJson,
+        metaJson: JSON.stringify({
+          ...metaOf(source),
+          fork: true,
+          parent_seq: source.seq,
+        }),
         seq: await nextRepoSeq(ctx.db, ctx.tenant),
       },
     })) as RepoRow

@@ -12,7 +12,9 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { activeCacheManager } from '../../cache/context.ts'
 import { isEacces, isEnoent } from '../../utils/errors.ts'
+import { isEntryError } from '../../commands/errors.ts'
 import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { FindOptions } from '../../vfs/base.ts'
@@ -34,6 +36,7 @@ import { FileType, PathSpec, type FileStat } from '../../types.ts'
 import type { LinkView } from '../../ops/types.ts'
 import { lstripSlash, rstripSlash, stripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { DIR_SIZE } from '../../utils/stat_view.ts'
 
 export interface WalkFindDeps {
   readdir: (spec: PathSpec, index?: IndexCacheStore) => Promise<string[]>
@@ -48,6 +51,13 @@ export interface WalkFindDeps {
   // continues; one that does not is not left with a silent gap in its
   // listing, the refusal propagates.
   unreadable?: string[]
+  // Where an entry the walk could not stat is recorded, with its error, in
+  // walk order: GNU's find names it and carries on, and the entry stays in
+  // the walk unclassified, a leaf, as a missing one already does, that
+  // fails every test only its stat could answer. It is never statted
+  // again. A caller that does not collect them gets the failure
+  // propagated instead.
+  unstatted?: Map<string, unknown>
 }
 
 interface WalkEntry {
@@ -77,12 +87,19 @@ async function statEntry(
     resolved: false,
     vfsPath: mountKey(path, prefix),
   })
+  if (deps.unstatted?.has(path) === true) return null
   try {
-    return await deps.stat(spec, index)
+    const row = await deps.stat(spec, index)
+    const size = row.size === null ? await activeCacheManager()?.cachedSize(spec) : null
+    return size == null ? row : row.with({ size })
   } catch (err) {
-    // Only missing entries resolve to null; API errors (rate limit, auth) propagate.
+    // Missing entries resolve to null. Any other failure does too when the
+    // caller collects it; otherwise it (a rate limit, an auth failure)
+    // propagates.
     if (isEnoent(err)) return null
-    throw err
+    if (deps.unstatted === undefined || !isEntryError(err)) throw err
+    deps.unstatted.set(path, err)
+    return null
   }
 }
 
@@ -109,7 +126,7 @@ async function isEmptyEntry(
     }
   }
   const st = await statEntry(deps, path, prefix, index)
-  return st !== null && (st.size ?? 0) === 0
+  return st !== null && st.type === FileType.FILE && st.size === 0
 }
 
 async function walk(
@@ -229,8 +246,7 @@ export async function walkFind(
       if (st === null) continue
     }
     if (needSize) {
-      // Directories count as size 0 for -size: GNU compares the inode size (e.g. 4096 on ext4); see CLAUDE.md Rules.
-      const size = entry.file ? (st?.size ?? 0) : 0
+      const size = entry.file ? (st?.size ?? 0) : DIR_SIZE
       if (options.minSize != null && size < options.minSize) continue
       if (options.maxSize != null && size > options.maxSize) continue
     }
@@ -308,7 +324,7 @@ async function searchMatches<A>(
       isEmpty = !allItems.some((other) => other !== item && other.startsWith(childPrefix))
     } else {
       itemStat = await deps.stat(accessor, spec, index)
-      isEmpty = (itemStat.size ?? 0) === 0
+      isEmpty = itemStat.type === FileType.FILE && itemStat.size === 0
     }
   }
   const entry: FindEntry = {
@@ -319,13 +335,12 @@ async function searchMatches<A>(
     isEmpty,
   }
   if (!keep(entry, tree, options.minDepth)) return false
-  // Directories count as size 0 for -size (deliberate GNU divergence).
   if (options.minSize != null || options.maxSize != null) {
-    let size = 0
+    let size = DIR_SIZE
     if (kind === 'f') {
       itemStat ??= await deps.stat(accessor, spec, index)
-      // Sizeless rendered files count as size 0, same as dirs and the FUSE
-      // view (CLAUDE.md find -size rules); never drop them.
+      // Sizeless rendered files count as size 0, as the FUSE view reports
+      // them before a first open; never drop them.
       size = itemStat.size ?? 0
     }
     if (options.minSize != null && size < options.minSize) return false

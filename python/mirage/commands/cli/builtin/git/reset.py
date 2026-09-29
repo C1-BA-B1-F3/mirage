@@ -19,9 +19,10 @@ from dulwich.objects import ObjectID
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.changes import head_entries, work_changes
+from mirage.commands.cli.builtin.git.discover import is_bare, require_work_tree
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    AmbiguousArgumentError, GitError, NoWorkspaceError, RevisionResetError,
-    UnknownSwitchError)
+    AmbiguousArgumentError, BareResetError, GitError, NoWorkspaceError,
+    RevisionResetError, UnknownSwitchError)
 from mirage.commands.cli.builtin.git.index import read_index, write_index
 from mirage.commands.cli.builtin.git.pathspec import matched, repo_relative
 from mirage.commands.cli.builtin.git.revparse import resolve_commit
@@ -111,6 +112,10 @@ async def reset(
         check_operands(texts, UnknownSwitchError, escaped(inv.argv),
                        switches(inv))
         repo, location = await opened(fl, doors)
+        named = fl.as_str("work_tree") is not None
+        if not named and await is_bare(dispatch, location):
+            raise BareResetError()
+        await require_work_tree(dispatch, stat_path, location, named)
         state = await read_index(dispatch, location.gitdir)
         tree = await asyncio.to_thread(head_entries, repo) or {}
         start = start_point(fl)
@@ -147,7 +152,7 @@ async def reset(
                                       state.entries, found)
     except GitError as exc:
         return fatal(exc)
-    if not unstaged:
+    if not unstaged or fl.as_bool("quiet"):
         return None, IOResult()
     lines = [UNSTAGED_HEADER]
     lines.extend(f"{letter}\t{path}"

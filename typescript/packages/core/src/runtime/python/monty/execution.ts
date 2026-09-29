@@ -15,6 +15,7 @@
 import { CommandTimeoutError } from '../../../commands/errors.ts'
 import { EvalError } from '../../errors.ts'
 import type { EvalResult, EvalValue, RunArgs, RunResult } from '../../types.ts'
+import type { PathSpec } from '../../../types.ts'
 import {
   loadMontyModule,
   type MontyModuleLike,
@@ -155,10 +156,11 @@ export class MontyExecution {
   async eval(
     code: string,
     vfs: MontyVFS | null,
-    opts: { inputs?: Record<string, EvalValue>; session?: string } = {},
+    opts: { inputs?: Record<string, EvalValue>; session?: string; cwd?: PathSpec } = {},
   ): Promise<EvalResult> {
     const pool = await this.ensurePool()
     const module = await this.loadModule()
+    const fresh = opts.session === undefined || !this.evalSessions.has(opts.session)
     let session: MontySessionLike
     if (opts.session !== undefined) {
       let existing = this.evalSessions.get(opts.session)
@@ -174,6 +176,7 @@ export class MontyExecution {
     const err: string[] = []
     const options: Record<string, unknown> = {
       inputs: { ...(opts.inputs ?? {}) },
+      cwd: fresh ? opts.cwd?.virtual : undefined,
       printCallback: (stream: 'stdout' | 'stderr', text: string) => {
         if (stream === 'stderr') err.push(text)
         else out.push(text)
@@ -295,6 +298,7 @@ export class MontyExecution {
       // argv[0] is the program's own name when the caller has one (a
       // CLI install's head word), else the interpreter's placeholder.
       inputs: { argv: [args.prog ?? DEFAULT_PROG, ...args.args], stdin: args.stdin },
+      cwd: args.cwd?.virtual,
       printCallback: (stream: 'stdout' | 'stderr', text: string) => {
         if (stream === 'stderr') err.push(text)
         else out.push(text)

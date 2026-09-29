@@ -12,18 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from dataclasses import replace
 from functools import partial
 
 from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.cp import cp as generic_cp
 from mirage.commands.builtin.generic.cp import parse_flags
+from mirage.commands.builtin.generic.crossmount.utils import transfer_links
 from mirage.commands.builtin.generic.find import parse_find_args, walk_find
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation,
-                                                          OperationFn,
-                                                          bound_op,
+                                                          Operation, bound_op,
                                                           overlaid_stat)
+from mirage.commands.builtin.utils.links import typed_link
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -32,6 +33,7 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import StatOverlay
 from mirage.types import NativeCopy, PathSpec, PrimitiveCopy
 from mirage.utils.key_prefix import rekey
+from mirage.vfs.types import OperationFn
 
 
 async def _walk_find(readdir: OperationFn,
@@ -94,10 +96,17 @@ async def cp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     paths = await ops.resolve_glob(accessor, paths, opts.index)
     dir_copy = partial(ops.dir_copy, accessor) if ops.dir_copy else None
     mkdir = partial(ops.mkdir, accessor) if ops.mkdir else None
+    if ops.copy is None and ops.write is None:
+        # Directory creation is not a usable copy step without a file
+        # transfer capability. Refuse it through the same guarded door
+        # before the command leaves an uncopyable destination tree.
+        mkdir = partial(
+            replace(ops, mkdir=None).require(Operation.MKDIR), accessor)
     strategy: NativeCopy | PrimitiveCopy
     guarded = path_rules_active() or any(
         hidden_paths_intersect(p.virtual) for p in paths)
-    if guarded and ops.write is not None and mkdir is not None:
+    primitive = ops.copy is None or (guarded and mkdir is not None)
+    if primitive and ops.write is not None:
         # A native copy moves a tree in one backend call and a native
         # find lists it, neither of which passes an entry through the
         # guard the way a read does; while a path rule scopes cp, or a
@@ -109,7 +118,8 @@ async def cp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         strategy = PrimitiveCopy(read_bytes=bound_op(ops.read_bytes, accessor,
                                                      opts.index),
                                  write=partial(_write, ops.write, accessor),
-                                 mkdir=mkdir,
+                                 mkdir=partial(ops.require(Operation.MKDIR),
+                                               accessor),
                                  readdir=bound_op(ops.readdir, accessor,
                                                   opts.index))
     else:
@@ -119,16 +129,18 @@ async def cp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                               dir_copy=dir_copy,
                               mkdir=mkdir)
     overlay = opts.ns.stat_overlay if opts.ns is not None else None
-    return await generic_cp(paths,
-                            strategy=strategy,
-                            stat=overlayable_stat(ops, accessor, opts.index,
-                                                  overlay),
-                            flags=parsed,
-                            readdir=bound_op(ops.readdir, accessor,
-                                             opts.index))
+    links = opts.ns.links if opts.ns is not None else None
+    cwd = opts.cwd.virtual if opts.cwd is not None else "/"
+    return await generic_cp(
+        paths,
+        strategy=strategy,
+        stat=overlayable_stat(ops, accessor, opts.index, overlay),
+        flags=parsed,
+        readdir=bound_op(ops.readdir, accessor, opts.index),
+        link_at=(partial(typed_link, links, cwd=cwd)
+                 if links is not None else None),
+        copies=(transfer_links(links, opts.dispatch, cwd)
+                if links is not None and opts.dispatch is not None else None))
 
 
-BUILDER = Builder('cp',
-                  cp,
-                  write=True,
-                  requirements=frozenset({Operation.COPY}))
+BUILDER = Builder('cp', cp, write=True)

@@ -12,20 +12,25 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
 import { DatabricksVolumeAccessor } from '@struktoai/mirage-core/accessor/databricks_volume'
 import { DATABRICKS_VOLUME_COMMANDS } from '@struktoai/mirage-core/commands/builtin/databricks_volume/index'
+
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
+
 import { DATABRICKS_VOLUME_OPS } from '@struktoai/mirage-core/ops/databricks_volume/index'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import { DATABRICKS_VOLUME_PROMPT } from '@struktoai/mirage-core/vfs/databricks_volume/prompt'
 import { VFSName } from '@struktoai/mirage-core/types'
+
 import {
   redactDatabricksVolumeConfig,
   type DatabricksVolumeConfig,
   type DatabricksVolumeConfigRedacted,
 } from './config.ts'
 import { loadDatabricksProfile } from './profile.ts'
+
 export interface DatabricksVolumeVFSState {
   type: string
   config: DatabricksVolumeConfigRedacted
@@ -56,10 +61,10 @@ export class DatabricksVolumeVFS extends BaseVFS {
   // Content-Length, both the exact byte count the download returns;
   // readdir backfills any lister-omitted size with one HEAD.
   override readonly sizesAlwaysKnown: boolean = true
-  override readonly indexTtl: number = 600
   override readonly prompt: string = DATABRICKS_VOLUME_PROMPT
   readonly config: DatabricksVolumeConfig
   override readonly accessor: DatabricksVolumeAccessor
+
   private constructor(config: DatabricksVolumeConfig, accessor: DatabricksVolumeAccessor) {
     super()
     this.config = config
@@ -71,6 +76,7 @@ export class DatabricksVolumeVFS extends BaseVFS {
     const accessor = new DatabricksVolumeAccessor(config, host, token)
     return new DatabricksVolumeVFS(config, accessor)
   }
+
   override commands(): readonly RegisteredCommand[] {
     return DATABRICKS_VOLUME_COMMANDS
   }
@@ -78,14 +84,11 @@ export class DatabricksVolumeVFS extends BaseVFS {
   override ops(): readonly RegisteredOp[] {
     return DATABRICKS_VOLUME_OPS
   }
+
   override getState(): Promise<DatabricksVolumeVFSState> {
     return Promise.resolve({
       type: this.name,
       config: redactDatabricksVolumeConfig(this.config),
     })
-  }
-
-  override loadState(_state: DatabricksVolumeVFSState): Promise<void> {
-    return Promise.resolve()
   }
 }

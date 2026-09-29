@@ -10,6 +10,7 @@ from mirage.core.sharepoint.resolve import (ResolvedPath, drive_entries,
                                             drive_loc, resolve, site_entries)
 from mirage.core.sharepoint.stat import stat
 from mirage.types import FileType, PathSpec
+from mirage.utils.stat_view import DIR_SIZE
 
 
 async def _dir_exists(accessor: SharePointAccessor, path: PathSpec) -> bool:
@@ -30,6 +31,7 @@ def _push_namespace_dir(
     maxdepth: int | None,
     mindepth: int | None,
     min_size: int | None,
+    max_size: int | None,
 ) -> None:
     if maxdepth is not None and depth > maxdepth:
         return
@@ -40,8 +42,9 @@ def _push_namespace_dir(
                       is_empty=is_empty)
     if not keep(entry, tree, mindepth):
         return
-    # Directories count as size 0 for -size (deliberate GNU divergence).
-    if min_size is not None and min_size > 0:
+    if min_size is not None and DIR_SIZE < min_size:
+        return
+    if max_size is not None and DIR_SIZE > max_size:
         return
     results.append(key)
 
@@ -77,7 +80,8 @@ async def _find_namespace(
         drives = await drive_entries(accessor, site_id) if want_drives else []
         if at_root:
             _push_namespace_dir(results, "/" + site_key, site_name, 1,
-                                not drives, tree, maxdepth, mindepth, min_size)
+                                not drives, tree, maxdepth, mindepth, min_size,
+                                max_size)
         else:
             start_empty = not drives
         for drive_name, drive_id in drives:
@@ -91,7 +95,7 @@ async def _find_namespace(
                         if empty else None)
             _push_namespace_dir(results, "/" + drive_key, drive_name,
                                 offset + 1, is_empty, tree, maxdepth, mindepth,
-                                min_size)
+                                min_size, max_size)
             if maxdepth is not None and maxdepth <= offset + 1:
                 continue
             results.extend(await find_items(accessor.config,

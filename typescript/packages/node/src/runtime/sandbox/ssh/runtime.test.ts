@@ -17,7 +17,8 @@ import { tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { buildRuntime } from '@struktoai/mirage-core/runtime/table'
 import { describe, expect, it } from 'vitest'
-import { SSHRuntime, type Ssh2Sdk } from './runtime.ts'
+import { SSHRuntime } from './runtime.ts'
+import type { Ssh2Sdk } from './sdk.ts'
 
 const DEC = new TextDecoder()
 const ENC = new TextEncoder()

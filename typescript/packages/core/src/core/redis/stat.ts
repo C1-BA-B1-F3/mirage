@@ -15,7 +15,7 @@
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { FileStat, FileType } from '../../types.ts'
 import type { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
+import { lookupError } from './dest.ts'
 import { contentTypeForPath } from '../../utils/filetype.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { basename, norm } from './utils.ts'
@@ -70,5 +70,5 @@ export async function stat(
       atime: attrs.atime ?? null,
     })
   }
-  throw enoent(path)
+  throw await lookupError(store, path, p)
 }

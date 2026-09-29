@@ -412,7 +412,7 @@
       "command": "type linear",
       "expect": {
         "exit": 0,
-        "stdout": "linear is a mirage CLI\n",
+        "stdout": "linear is /usr/bin/linear\n",
         "stderr": ""
       }
     },
@@ -425,7 +425,7 @@
       "command": "type -t linear",
       "expect": {
         "exit": 0,
-        "stdout": "cli\n",
+        "stdout": "file\n",
         "stderr": ""
       }
     },
@@ -438,7 +438,7 @@
       "command": "which linear",
       "expect": {
         "exit": 0,
-        "stdout": "linear\n",
+        "stdout": "/usr/bin/linear\n",
         "stderr": ""
       }
     },
@@ -490,7 +490,7 @@
       "command": "linear() { echo shadowed; }; type -a linear",
       "expect": {
         "exit": 0,
-        "stdout": "linear is a function\nlinear is a mirage CLI\n",
+        "stdout": "linear is a function\nlinear is /usr/bin/linear\n",
         "stderr": ""
       }
     },

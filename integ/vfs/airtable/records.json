@@ -1,0 +1,186 @@
+{
+  "cases": [
+    {
+      "id": "at_records_count_spans_pages",
+      "seq": 720100,
+      "targets": [
+        "airtable"
+      ],
+      "command": "wc -l < /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "10\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_records_ids_in_order",
+      "seq": 720101,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -r .record_id /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "recFeat0000000001\nrecFeat0000000002\nrecFeat0000000003\nrecFeat0000000004\nrecFeat0000000005\nrecFeat0000000006\nrecFeat0000000007\nrecFeat0000000008\nrecFeat0000000009\nrecFeat0000000010\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_record_shape",
+      "seq": 720102,
+      "targets": [
+        "airtable"
+      ],
+      "command": "head -n 1 /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl | jq -c 'keys'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"created_time\",\"fields\",\"record_id\"]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_empty_cells_omitted",
+      "seq": 720103,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -r 'select(.fields.Shipped == null) | .fields.Name' /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "CSV export\nSSO login\nOffline mode\nAudit log\nRate limiter\nMobile app\nAPI docs refresh\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_links_are_record_ids",
+      "seq": 720104,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -c '[.fields.Name, .fields.Release]' /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"Full-text search\",[\"recRel00000000001\"]]\n[\"CSV export\",[\"recRel00000000002\"]]\n[\"Dark mode\",[\"recRel00000000001\"]]\n[\"SSO login\",[\"recRel00000000003\"]]\n[\"Offline mode\",null]\n[\"Audit log\",[\"recRel00000000002\"]]\n[\"Onboarding tour\",[\"recRel00000000001\"]]\n[\"Rate limiter\",[\"recRel00000000002\"]]\n[\"Mobile app\",null]\n[\"API docs refresh\",[\"recRel00000000003\"]]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_attachment_fields",
+      "seq": 720105,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -r '.fields.Mockups // [] | .[] | .filename + \" \" + .type' /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "search-wireframe.png image/png\ndark-mode.pdf application/pdf\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_lookup_and_formula",
+      "seq": 720106,
+      "targets": [
+        "airtable"
+      ],
+      "command": "head -n 3 /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl | jq -c '[.fields.Ticket, .fields[\"Release date\"]]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"FT-1\",[\"2026-06-01\"]]\n[\"FT-2\",[\"2026-07-15\"]]\n[\"FT-3\",[\"2026-06-01\"]]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_rollup_and_count",
+      "seq": 720107,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -c '[.fields.Name, .fields[\"Feature count\"], .fields[\"Total priority\"]]' /airtable/bases/Product_Roadmap__appRoadmapBase001/Releases__tblReleases000002/records.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"v1.0\",3,10]\n[\"v1.1\",3,12]\n[\"v2.0\",2,6]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_unicode_names_and_cells",
+      "seq": 720108,
+      "targets": [
+        "airtable"
+      ],
+      "command": "grep -c 'Café' /airtable/bases/Ops_Finance__appOpsFinance0002/Q3_Budget__tblQ3Budget000004/records.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_currency_and_percent",
+      "seq": 720109,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -c '[.fields.Item, .fields.Amount, .fields.Share]' /airtable/bases/Ops_Finance__appOpsFinance0002/Q3_Budget__tblQ3Budget000004/records.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "[\"Cloud hosting\",12500.5,0.42]\n[\"Contractors\",8000,0.27]\n[\"Conferences\",2250.75,0.075]\n[\"Café ☕ & snacks\",310.2,0.235]\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_head_pushes_down",
+      "seq": 720110,
+      "targets": [
+        "airtable"
+      ],
+      "command": "head -n 2 /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl | jq -r .fields.Name",
+      "expect": {
+        "exit": 0,
+        "stdout": "Full-text search\nCSV export\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_view_filters_and_sorts",
+      "seq": 720111,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -r '.fields.Name + \" \" + (.fields.Priority | tostring)' /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/Done__viwFeatDone000002.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "Full-text search 5\nRate limiter 5\nOnboarding tour 3\nDark mode 2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_view_name_with_slash",
+      "seq": 720112,
+      "targets": [
+        "airtable"
+      ],
+      "command": "wc -l < /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/By_owner_priority__viwFeatByOwner003.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "10\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_grep_over_records",
+      "seq": 720113,
+      "targets": [
+        "airtable"
+      ],
+      "command": "grep -l 'Dark mode' /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl /airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl",
+      "expect": {
+        "exit": 2,
+        "stdout": "/airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl\n",
+        "stderr": "grep: /airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl: File too large\n"
+      }
+    }
+  ]
+}

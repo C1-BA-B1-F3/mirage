@@ -77,7 +77,8 @@ export function registeredSpec(name: string, spec: CommandSpec): CommandSpec {
  * Whether `spec` is the builtin `name`'s own grammar.
  *
  * The measured per-program rules (NO_LONG_OPTIONS,
- * SOLE_ARGUMENT_LONG_OPTIONS) describe one real program, so a mount that
+ * SOLE_ARGUMENT_LONG_OPTIONS, DIGIT_OPTIONS, LONG_SYNONYMS) describe one real
+ * program, so a mount that
  * registers its own command under a builtin's name must not inherit them:
  * nothing refuses that registration, and `expr` is the sharp case, where the
  * rule turns a declared `--mode=x` into an operand its handler then never

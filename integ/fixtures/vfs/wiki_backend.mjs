@@ -18,6 +18,7 @@ import {
   FileType,
   streamFromBytes,
 } from '@struktoai/mirage-core'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 const PAGES = { 'notes.md': 'agents just speak bash\n' }
 const FEED = { 'status.md': 'All systems go.\n' }
@@ -32,12 +33,12 @@ class PageAccessor extends Accessor {
 }
 
 function key(path) {
-  return path.vfsPath.replace(/^\/+|\/+$/g, '')
+  return stripSlash(path.vfsPath)
 }
 
 function readdir(accessor, path) {
   if (key(path) !== '') throw enotdir(path)
-  const parent = path.virtual.replace(/\/+$/, '')
+  const parent = rstripSlash(path.virtual)
   return Promise.resolve(
     Object.keys(accessor.pages)
       .sort()
@@ -54,7 +55,7 @@ function readBytes(accessor, path) {
 
 function stat(accessor, path) {
   const name = key(path)
-  const trimmed = path.virtual.replace(/\/+$/, '')
+  const trimmed = rstripSlash(path.virtual)
   const base = trimmed.slice(trimmed.lastIndexOf('/') + 1) || '/'
   if (name === '') {
     return Promise.resolve(new FileStat({ name: base, size: null, type: FileType.DIRECTORY }))

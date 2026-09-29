@@ -20,7 +20,8 @@ import { enoent } from '@struktoai/mirage-core/utils/errors'
 import { contentTypeForPath } from '@struktoai/mirage-core/utils/filetype'
 import { mountPrefixOf } from '@struktoai/mirage-core/utils/key_prefix'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
-import { dirStatEntry, keyOf, lookup } from './lookup.ts'
+import { dirStatEntry, keyOf, lookupRetrying, pointLookup, refusalsDenied } from './lookup.ts'
+import { stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /**
  * Render one tree row as a FileStat.
@@ -50,7 +51,7 @@ function statOf(entry: IndexEntry): FileStat {
     // git is content-addressed, so the object id is the strongest fingerprint
     // any backend here has: identical bytes carry an identical oid, and a
     // rewrite that changed nothing correctly reports nothing.
-    fingerprint: entry.id,
+    fingerprint: entry.id || null,
     extra: { ...entry.extra },
   })
 }
@@ -61,10 +62,17 @@ export async function stat(
   index?: IndexCacheStore,
 ): Promise<FileStat> {
   const prefix = mountPrefixOf(pathSpec.virtual, pathSpec.vfsPath)
-  const rel = pathSpec.mountPath.replace(/^\/+|\/+$/g, '')
+  const rel = stripSlash(pathSpec.mountPath)
   if (rel === '') return new FileStat({ name: '/', type: FileType.DIRECTORY })
   const key = keyOf(prefix, rel)
-  const found = await lookup(accessor, index, prefix, key)
+  // A probe through a throwaway index asks for this one path; everything else
+  // answers from the mount's listing, loading it if need be.
+  const found = await refusalsDenied(
+    pathSpec,
+    async () =>
+      (await pointLookup(accessor, index, prefix, rel)) ??
+      (await lookupRetrying(accessor, index, prefix, key)),
+  )
   if (found.entry !== null) return statOf(found.entry)
   // A directory the tree implies but has no row of its own for still exists,
   // which is what a listing at the key proves.

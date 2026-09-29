@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import logging
 import posixpath
 from fnmatch import fnmatch
 
@@ -29,7 +30,8 @@ from mirage.core.hf_hub.cache import (blob_path, cache_root, etag_of,
                                       snapshot_dir, snapshot_path)
 from mirage.core.hf_hub.client import HfHubError, hub_bytes, resolve_url
 from mirage.core.hf_hub.config import HfConfig
-from mirage.core.hf_hub.constants import GLOB_CHARS, MAX_DOWNLOAD_WORKERS
+from mirage.core.hf_hub.constants import (ABSENT_STATUSES, GLOB_CHARS,
+                                          MAX_DOWNLOAD_WORKERS)
 from mirage.core.hf_hub.repo import (Absence, classify_absence, head_commit,
                                      revision_url)
 from mirage.core.hf_hub.tree import fetch_tree
@@ -38,6 +40,8 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
 from mirage.utils.errors import MISS_ERRORS
+
+logger = logging.getLogger(__name__)
 
 
 def selected(tree: dict[str, TreeEntry], names: list[str], include: list[str],
@@ -295,11 +299,12 @@ def refuse_variadic(names: list[str], flag: str, patterns: list[str]) -> None:
 async def refuse_absent(accessor: HfHubAccessor, names: list[str]) -> None:
     """Report why nothing was selected, in the Hub's own terms.
 
-    ``fetch_tree`` renders an unreadable repository as an empty listing,
-    which is right for a mount and wrong here: three different failures
-    (no such repository, no such revision, no such file) would all read
-    as "no files matched". So the Hub is asked which one it was, and the
-    wording follows huggingface_hub's own errors.
+    ``download_cmd`` folds a tree walk the Hub refused (401/403/404) into
+    an empty listing itself, and an empty listing says nothing about why:
+    three different failures (no such repository, no such revision, no
+    such file) would all read as "no files matched". So the Hub is asked
+    which one it was, and the wording follows huggingface_hub's own
+    errors.
 
     Args:
         accessor (HfHubAccessor): the Hub handle for the repository.
@@ -360,7 +365,16 @@ async def download_cmd(
         refuse_variadic(names, "--exclude", exclude)
     async with hub_for(inv, repo_id, repo_type_of(fl),
                        fl.as_str("revision")) as accessor:
-        tree = await fetch_tree(accessor)
+        try:
+            tree = await fetch_tree(accessor)
+        except HfHubError as exc:
+            # A refused walk names the same three absences an empty one
+            # does; refuse_absent asks the Hub which it was, in upstream's
+            # own words. Anything else is a real failure and propagates.
+            if exc.status not in ABSENT_STATUSES:
+                raise
+            logger.debug("hf download tree refused: %s", exc)
+            tree = {}
         paths = selected(tree, names, include, exclude)
         if not paths:
             await refuse_absent(accessor, names)

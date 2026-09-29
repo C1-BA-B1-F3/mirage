@@ -27,8 +27,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def store():
-    s = RedisIndexCacheStore(ttl=60, url=REDIS_URL, key_prefix="test:")
+async def store(redis_prefix):
+    s = RedisIndexCacheStore(ttl=60, url=REDIS_URL, key_prefix=redis_prefix)
     await s.clear()
     yield s
     await s.clear()
@@ -201,9 +201,13 @@ async def test_clear(store, entry):
 
 
 @pytest.mark.asyncio
-async def test_key_prefix_isolation():
-    s1 = RedisIndexCacheStore(ttl=60, url=REDIS_URL, key_prefix="ns1:")
-    s2 = RedisIndexCacheStore(ttl=60, url=REDIS_URL, key_prefix="ns2:")
+async def test_key_prefix_isolation(redis_prefix):
+    s1 = RedisIndexCacheStore(ttl=60,
+                              url=REDIS_URL,
+                              key_prefix=f"{redis_prefix}ns1:")
+    s2 = RedisIndexCacheStore(ttl=60,
+                              url=REDIS_URL,
+                              key_prefix=f"{redis_prefix}ns2:")
     await s1.clear()
     await s2.clear()
     await s1.put("/shared", IndexEntry(id="a", name="a", resource_type="file"))

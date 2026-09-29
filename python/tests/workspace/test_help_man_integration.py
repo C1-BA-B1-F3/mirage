@@ -165,9 +165,10 @@ def _cli_ws():
 
 def test_installed_cli_is_discoverable_from_the_shell():
     ws = _cli_ws()
-    assert _out(_exec(ws, "type linear")) == "linear is a mirage CLI\n"
-    assert _out(_exec(ws, "type -t linear")) == "cli\n"
-    assert _out(_exec(ws, "which linear")) == "linear\n"
+    assert _out(_exec(ws, "type linear")) == "linear is /usr/bin/linear\n"
+    assert _out(_exec(ws, "type -t linear")) == "file\n"
+    assert _out(_exec(ws, "which linear")) == "/usr/bin/linear\n"
+    assert "command linear" in _out(_exec(ws, "cat /usr/bin/linear"))
     assert "Usage: linear" in _out(_exec(ws, "man linear"))
     assert "# clis" in _out(_exec(ws, "man"))
 
@@ -184,7 +185,7 @@ def test_man_lists_only_the_cli_verbs_the_profile_can_reach():
     assert "team" not in page
     # The head word still routes, because one line of the tree runs.
     assert _out(_run(ws.shell("which linear",
-                              session_id="narrow"))) == "linear\n"
+                              session_id="narrow"))) == "/usr/bin/linear\n"
     # A verb the list does not reach has no page.
     io = _run(ws.shell("man linear team", session_id="narrow"))
     assert io.exit_code == 1
@@ -203,7 +204,7 @@ def test_which_reports_a_missing_name_through_the_status_only():
 def test_a_shell_function_shadows_a_cli_and_type_a_shows_both():
     ws = _cli_ws()
     assert _out(_exec(ws, "linear() { echo shadowed; }; type -a linear")) == (
-        "linear is a function\nlinear is a mirage CLI\n")
+        "linear is a function\nlinear is /usr/bin/linear\n")
 
 
 def test_workspace_file_prompt_mentions_help_and_man():

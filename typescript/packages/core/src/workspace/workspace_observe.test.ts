@@ -106,14 +106,14 @@ describe('Workspace observer wiring', () => {
     await ws.close()
   })
 
-  it('does not mount the observer store (only root, /data, /dev, /.bash_history)', async () => {
+  it('does not mount the observer store (only root, /data, /dev, /.bash_history, /usr/bin)', async () => {
     const ws = buildWorkspace()
     await ws.shell('echo hi > /data/f.txt')
     const result = await ws.shell('ls /.sessions')
     expect(result.exitCode).not.toBe(0)
     const prefixes = new Set(ws.registry.allMounts().map((m) => m.prefix))
     // No `/` was mounted, so the workspace adds an empty root anchor at `/`.
-    expect(prefixes).toEqual(new Set(['/', '/data/', '/dev/', '/.bash_history/']))
+    expect(prefixes).toEqual(new Set(['/', '/data/', '/dev/', '/.bash_history/', '/usr/bin/']))
     await ws.close()
   })
 

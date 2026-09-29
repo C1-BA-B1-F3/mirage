@@ -19,7 +19,8 @@ from mirage.commands.builtin.utils.identity import (Identity, group_name,
                                                     owner_name)
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.dates import iso_timestamp
-from mirage.utils.stat_view import CHAR_MODE, DIR_MODE, FILE_MODE, LINK_MODE
+from mirage.utils.stat_view import (CHAR_MODE, DIR_MODE, FILE_MODE, LINK_MODE,
+                                    content_size)
 
 _PRINTF_ESCAPES = {
     "n": "\n",
@@ -201,7 +202,7 @@ def expand_printf(fmt: str,
             rel = _relative_part(row, search)
             out.append("0" if not rel else str(rel.count("/") + 1))
         elif code == "s":
-            out.append(str((st.size if st is not None else 0) or 0))
+            out.append(str(content_size(st) if st is not None else 0))
         elif code == "y":
             out.append("U" if st is None else kind)
         elif code == "Y":

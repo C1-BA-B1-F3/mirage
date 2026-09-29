@@ -16,12 +16,15 @@ import asyncio
 
 import aiohttp
 import pytest
+import pytest_asyncio
+from aiohttp import web
 from aioresponses import aioresponses
 from yarl import URL
 
 from mirage.core.api.client import (NO_RETRY, RetryPolicy, SessionPool,
-                                    _body_delay, api_request, header_delay,
-                                    resolve_session, status_error)
+                                    _body_delay, api_request, floored_delay,
+                                    header_delay, resolve_session,
+                                    status_error)
 from mirage.utils.ranges import ByteWindow
 
 TARGET = "https://api.test/v1/thing"
@@ -433,3 +436,95 @@ async def test_a_pool_rides_api_request_and_stays_open():
     assert second == {"n": 2}
     assert not pool.get().closed
     await pool.close()
+
+
+@pytest.mark.asyncio
+async def test_a_vetoed_retryable_status_maps_through_the_hook_at_once():
+    retry = RetryPolicy(statuses=frozenset({429}),
+                        max_retries=2,
+                        retryable=lambda status, body: "QUOTA" not in body)
+    with aioresponses() as m:
+        m.get(TARGET, status=429, body='{"error": {"type": "QUOTA"}}')
+        with pytest.raises(_Boom) as exc:
+            await api_request("GET", TARGET, error_of=_error_of, retry=retry)
+    assert exc.value.status == 429
+    assert '"QUOTA"' in exc.value.body
+
+
+@pytest.mark.asyncio
+async def test_an_unvetoed_status_still_retries(monkeypatch):
+    waits: list[float] = []
+
+    async def _no_sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", _no_sleep)
+    retry = RetryPolicy(statuses=frozenset({429}),
+                        max_retries=1,
+                        retryable=lambda status, body: "QUOTA" not in body,
+                        min_delays={429: 30.0})
+    with aioresponses() as m:
+        m.get(TARGET, status=429, body='{"error": {"type": "SLOW_DOWN"}}')
+        m.get(TARGET, payload={"ok": 4})
+        result = await api_request("GET",
+                                   TARGET,
+                                   error_of=_error_of,
+                                   retry=retry)
+    assert result == {"ok": 4}
+    # the penalty window, not the 1s exponential first step
+    assert waits == [30.0]
+
+
+def test_floored_delay_raises_to_the_status_floor_under_the_cap():
+    retry = RetryPolicy(statuses=frozenset({429, 503}),
+                        max_backoff=20.0,
+                        min_delays={429: 30.0})
+    assert floored_delay(1.0, 429, retry) == 20.0
+    assert floored_delay(1.0, 503, retry) == 1.0
+    wide = RetryPolicy(statuses=frozenset({429}), min_delays={429: 5.0})
+    assert floored_delay(1.0, 429, wide) == 5.0
+    assert floored_delay(8.0, 429, wide) == 8.0
+
+
+async def _first_hop(_request: web.Request) -> web.Response:
+    raise web.HTTPFound("/final", headers={"ETag": '"first-hop"'})
+
+
+async def _final_hop(request: web.Request) -> web.Response:
+    # Ignores Range and answers 200 with the whole body, which a server may
+    # legally do; the window has to trim it client side.
+    return web.Response(body=b"0123456789",
+                        headers={
+                            "ETag": '"final-hop"',
+                            "X-Mixed-Case": "kept"
+                        })
+
+
+@pytest_asyncio.fixture()
+async def redirecting_url():
+    app = web.Application()
+    app.router.add_get("/start", _first_hop)
+    app.router.add_get("/final", _final_hop)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = site._server.sockets[0].getsockname()[1]
+    yield f"http://127.0.0.1:{port}"
+    await runner.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_bytes_response_returns_the_window_and_the_final_headers(
+        redirecting_url):
+    response = await api_request("GET",
+                                 redirecting_url + "/start",
+                                 error_of=_error_of,
+                                 read="bytes_response",
+                                 window=ByteWindow(2, 3))
+    assert response.data == b"234"
+    assert response.status == 200
+    # The redirect's first hop carries a different ETag; a caller reading
+    # a content token needs the one that came with the bytes.
+    assert response.headers["etag"] == '"final-hop"'
+    assert response.headers["x-mixed-case"] == "kept"

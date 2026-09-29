@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class NotionConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     api_key: SecretStr
     base_url: str = "https://api.notion.com/v1"
     # None means the generation the client is written against. A CLI

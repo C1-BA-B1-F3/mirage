@@ -231,8 +231,7 @@ def make_readdir(
         entries = _drop_hidden(listed)
         stem = virtual_key.rstrip("/")
         if partial:
-            for name, entry in entries:
-                await index.put(f"{stem}/{name}", entry)
+            await index.set_partial_dir(virtual_key, entries)
         else:
             await index.set_dir(virtual_key, entries)
         for rel, child_entries in seeds.items():

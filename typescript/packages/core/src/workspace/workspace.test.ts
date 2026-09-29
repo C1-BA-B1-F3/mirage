@@ -690,7 +690,7 @@ describe('Workspace.unmount', () => {
         await expect(ws.vfs.stat('/')).resolves.toMatchObject({ type: FileType.DIRECTORY })
         const result = await ws.shell('ls /')
         expect(result.exitCode).toBe(0)
-        expect(result.stdoutText).toBe('dev\n')
+        expect(result.stdoutText).toBe('dev\nusr\n')
         expect(result.stderrText).toBe('')
       } finally {
         await ws.close()
@@ -937,12 +937,13 @@ describe('ls injects child mounts as virtual subdirectories', () => {
 
   // The mount table alone is not enough evidence: namespaceNames synthesizes a
   // directory for a link's ancestors too, and there is no descendant mount
-  // here at all.
+  // here at all. ln refuses a link under an absent directory, so the link is
+  // seeded the way a node table restored from an older snapshot holds one.
   it('du on a directory implied only by a link below it does not report absence', async () => {
     const ws = await makeWs({ '/': new RAMVFS() })
     await ws.shell('mkdir -p /real')
     await ws.shell('echo hi > /real/f.txt')
-    await ws.shell('ln -s /real/f.txt /ghost/deep/lnk')
+    await ws.namespace.symlink('/ghost/deep/lnk', '/real/f.txt', 0)
     const result = await ws.shell('du /ghost')
     expect(result.stderrText).toBe('')
     expect(result.exitCode).toBe(0)

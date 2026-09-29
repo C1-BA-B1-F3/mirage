@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { ByteSource } from '../../../../../io/types.ts'
 import type { PathSpec } from '../../../../../types.ts'
 import { diffGeneric } from '../../diff.ts'
 import type { CrossResult, DispatchFn } from '../types.ts'
@@ -24,9 +25,10 @@ export async function runDiff(
   scopes: PathSpec[],
   flagKwargs: Record<string, FlagValue>,
   dispatch: DispatchFn,
+  stdin: ByteSource | null = null,
 ): Promise<CrossResult> {
   const flat = flatten(scopes)
-  const opts = crossOpts(flagKwargs)
+  const opts = { ...crossOpts(flagKwargs), stdin }
   const stream = streamOp(dispatch)
   const [out, io] = await diffGeneric(flat, opts, stream, readdirOp(dispatch), statOp(dispatch))
   return [out, io]

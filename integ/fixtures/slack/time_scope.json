@@ -1,0 +1,208 @@
+{
+  "users": [
+    {
+      "id": "U7",
+      "name": "priya",
+      "realName": "Priya Nair",
+      "email": "priya@kestrel.example.com"
+    },
+    {
+      "id": "U8",
+      "name": "marcus",
+      "realName": "Marcus Webb",
+      "email": "marcus@kestrel.example.com"
+    },
+    {
+      "id": "U1",
+      "name": "alice",
+      "realName": "Alice Anderson",
+      "email": "alice@kestrel.example.com"
+    },
+    {
+      "id": "U2",
+      "name": "bob",
+      "realName": "Bob Brown",
+      "email": "bob@kestrel.example.com"
+    },
+    {
+      "id": "U3",
+      "name": "carol",
+      "realName": "Carol Clark",
+      "email": "carol@kestrel.example.com"
+    },
+    {
+      "id": "U4",
+      "name": "dave",
+      "realName": "Dave Davis",
+      "email": "dave@kestrel.example.com"
+    },
+    {
+      "id": "U11",
+      "name": "henry",
+      "realName": "Henry Ho",
+      "email": "henry@kestrel.example.com"
+    },
+    {
+      "id": "U13",
+      "name": "jack",
+      "realName": "Jack Jones",
+      "email": "jack@kestrel.example.com"
+    },
+    {
+      "id": "U14",
+      "name": "kara",
+      "realName": "Kara King",
+      "email": "kara@kestrel.example.com"
+    },
+    {
+      "id": "U16",
+      "name": "mia",
+      "realName": "Mia Moore",
+      "email": "mia@kestrel.example.com"
+    },
+    {
+      "id": "U17",
+      "name": "noah",
+      "realName": "Noah Nguyen",
+      "email": "noah@kestrel.example.com"
+    },
+    {
+      "id": "U6",
+      "name": "erin",
+      "realName": "Erin Evans",
+      "email": "erin@kestrel.example.com",
+      "deleted": true
+    },
+    {
+      "id": "U9",
+      "name": "frank",
+      "realName": "Frank Foster",
+      "email": "frank@kestrel.example.com",
+      "deleted": true
+    },
+    {
+      "id": "U10",
+      "name": "grace",
+      "realName": "Grace Green",
+      "email": "grace@kestrel.example.com",
+      "deleted": true
+    },
+    {
+      "id": "U12",
+      "name": "iris",
+      "realName": "Iris Ito",
+      "email": "iris@kestrel.example.com",
+      "deleted": true
+    },
+    {
+      "id": "U15",
+      "name": "liam",
+      "realName": "Liam Lee",
+      "email": "liam@kestrel.example.com",
+      "deleted": true
+    },
+    {
+      "id": "U5",
+      "name": "buildbot",
+      "realName": "Build Bot",
+      "email": "buildbot@kestrel.example.com",
+      "isBot": true
+    }
+  ],
+  "channels": [
+    {
+      "id": "C1",
+      "name": "general",
+      "kind": "channel",
+      "created": 1762128000,
+      "purpose": "Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. \u2b50",
+      "membersJson": [
+        "U1",
+        "U2",
+        "U3",
+        "U4",
+        "U6",
+        "U7",
+        "U8",
+        "U9",
+        "U10",
+        "U11",
+        "U12",
+        "U13",
+        "U14",
+        "U15",
+        "U16",
+        "U17"
+      ]
+    }
+  ],
+  "dms": [],
+  "messages": [
+    {
+      "channelId": "C1",
+      "ts": "1780307999.999000",
+      "userId": "U1",
+      "text": "scope_before"
+    },
+    {
+      "channelId": "C1",
+      "ts": "1780308000.000000",
+      "userId": "U1",
+      "text": "scope_start"
+    },
+    {
+      "channelId": "C1",
+      "ts": "1780358399.999000",
+      "userId": "U1",
+      "text": "scope_last"
+    },
+    {
+      "channelId": "C1",
+      "ts": "1780358400.000000",
+      "userId": "U1",
+      "text": "scope_end"
+    }
+  ],
+  "files": [
+    {
+      "id": "FT0",
+      "name": "scope_before.txt",
+      "title": "scope_before",
+      "mimetype": "text/plain",
+      "filetype": "txt",
+      "content": "scope_before\n",
+      "channelId": "C1",
+      "messageTs": "1780307999.999000"
+    },
+    {
+      "id": "FT1",
+      "name": "scope_start.txt",
+      "title": "scope_start",
+      "mimetype": "text/plain",
+      "filetype": "txt",
+      "content": "scope_start\n",
+      "channelId": "C1",
+      "messageTs": "1780308000.000000"
+    },
+    {
+      "id": "FT2",
+      "name": "scope_last.txt",
+      "title": "scope_last",
+      "mimetype": "text/plain",
+      "filetype": "txt",
+      "content": "scope_last\n",
+      "channelId": "C1",
+      "messageTs": "1780358399.999000"
+    },
+    {
+      "id": "FT3",
+      "name": "scope_end.txt",
+      "title": "scope_end",
+      "mimetype": "text/plain",
+      "filetype": "txt",
+      "content": "scope_end\n",
+      "channelId": "C1",
+      "messageTs": "1780358400.000000"
+    }
+  ]
+}

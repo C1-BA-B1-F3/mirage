@@ -16,13 +16,12 @@ export {
   type Builder,
   type BuilderFn,
   type CommandIO,
-  type DuOps,
-  type ResolveGlobOp,
   makeResolveGlob,
   overlaidStat,
   rangeOf,
   resolveGlobOf,
 } from './adapter.ts'
+export { type DuOps, type ResolveGlobOp } from '../../../vfs/types.ts'
 export { type MakeGenericCommandsOptions, makeGenericCommands } from './factory.ts'
 export {
   defaultProvision,

@@ -12,13 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from functools import partial
-
-from mirage.commands.builtin.generic_bind import CommandIO
-from mirage.commands.builtin.utils.wrap import stream_from_bytes
+from mirage.core.hierarchy.search import make_search_op
 from mirage.core.postgres.read import read as _read
 from mirage.core.postgres.readdir import readdir as _readdir
+from mirage.core.postgres.scope import detect_scope
+from mirage.core.postgres.search import SEARCHERS
 from mirage.core.postgres.stat import stat as _stat
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import ReadOps, SearchOps
 
 # Postgres rows are read through the generic factory (find walks readdir,
 # classifying via stat); grep and rg push down to SQL queries, and head,
@@ -27,13 +28,14 @@ from mirage.core.postgres.stat import stat as _stat
 # relation (kept bespoke). Postgres is read-only, so the generic byte-mutation
 # commands are intentionally absent (no write op wired). There is no native
 # streaming read, so the stream op is synthesized from the whole-row read.
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_stream=partial(stream_from_bytes, _read),
-    stat=_stat,
-    is_mounted=lambda a: True,
-    local=False,
-)
+IO = VFSAdapter(search=SearchOps(
+    search=make_search_op(detect_scope, SEARCHERS, _stat),
+    meta={"grep": {
+        "mode": "literal",
+        "stream": False
+    }}),
+                read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                is_mounted=lambda a: True,
+                local=False).to_command_io()
 
 resolve_glob = IO.resolve_glob

@@ -54,3 +54,19 @@ model BoxItem {
 
   @@id([tenant, id])
 }
+
+// The user event stream behind GET /2.0/events. `seq` is the stream_position:
+// a read returns the rows after it, and `now` answers with the newest seq. The
+// source is rendered when the event is recorded, path_collection included,
+// because the vendor's event carries the item as it was when it happened: a
+// moved item at its new place, a trashed one in the Trash. Neither says where
+// the item was, which is exactly what a client has to remember for itself.
+model BoxEvent {
+  tenant    String
+  seq       Int
+  eventType String
+  source    String
+  createdAt String
+
+  @@id([tenant, seq])
+}

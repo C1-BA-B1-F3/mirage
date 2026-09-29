@@ -145,3 +145,25 @@ describe('langfuse read dataset items', () => {
     expect(DEC.decode(bytes)).toBe('')
   })
 })
+
+// Mirrors python's test_read_refuses_another_sessions_trace:
+// sessions/<id>/<trace>.json names a trace of that session; the trace id
+// alone would fetch any session's trace.
+describe('langfuse read of a session trace', () => {
+  it("refuses another session's trace and serves its own", async () => {
+    const transport = new RecordingTransport({
+      '/api/public/traces/t1': { id: 't1', sessionId: 's2' },
+    })
+    await expect(
+      read(accessor(transport), spec('/sessions/s1/t1.json'), new RAMIndexCacheStore()),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+    const own = await read(
+      accessor(transport),
+      spec('/sessions/s2/t1.json'),
+      new RAMIndexCacheStore(),
+    )
+    expect((JSON.parse(new TextDecoder().decode(own)) as { sessionId: string }).sessionId).toBe(
+      's2',
+    )
+  })
+})

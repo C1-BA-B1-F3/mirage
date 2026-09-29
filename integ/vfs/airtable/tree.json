@@ -1,0 +1,160 @@
+{
+  "cases": [
+    {
+      "id": "at_root_ls",
+      "seq": 720000,
+      "targets": [
+        "airtable"
+      ],
+      "command": "ls /airtable",
+      "expect": {
+        "exit": 0,
+        "stdout": "bases\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_bases_ls",
+      "seq": 720001,
+      "targets": [
+        "airtable"
+      ],
+      "command": "ls /airtable/bases",
+      "expect": {
+        "exit": 0,
+        "stdout": "Archive__appArchive0000003\nOps_Finance__appOpsFinance0002\nProduct_Roadmap__appRoadmapBase001\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_scoped_bases_ls",
+      "seq": 720002,
+      "targets": [
+        "airtable"
+      ],
+      "command": "ls /roadmap/bases",
+      "expect": {
+        "exit": 0,
+        "stdout": "Product_Roadmap__appRoadmapBase001\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_base_ls",
+      "seq": 720003,
+      "targets": [
+        "airtable"
+      ],
+      "command": "ls /airtable/bases/Product_Roadmap__appRoadmapBase001",
+      "expect": {
+        "exit": 0,
+        "stdout": "Backlog__tblBacklog0000003\nFeatures__tblFeatures000001\nReleases__tblReleases000002\nbase.json\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_base_json",
+      "seq": 720004,
+      "targets": [
+        "airtable"
+      ],
+      "command": "cat /airtable/bases/Product_Roadmap__appRoadmapBase001/base.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\n  \"base_id\": \"appRoadmapBase001\",\n  \"base_name\": \"Product Roadmap\",\n  \"permission_level\": \"create\",\n  \"tables\": [\n    {\n      \"table_id\": \"tblFeatures000001\",\n      \"table_name\": \"Features\",\n      \"primary_field_id\": \"fldFeatName000001\"\n    },\n    {\n      \"table_id\": \"tblReleases000002\",\n      \"table_name\": \"Releases\",\n      \"primary_field_id\": \"fldRelName0000001\"\n    },\n    {\n      \"table_id\": \"tblBacklog0000003\",\n      \"table_name\": \"Backlog\",\n      \"primary_field_id\": \"fldBackName000001\"\n    }\n  ]\n}",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_table_ls",
+      "seq": 720005,
+      "targets": [
+        "airtable"
+      ],
+      "command": "ls /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001",
+      "expect": {
+        "exit": 0,
+        "stdout": "records.jsonl\ntable.json\nviews\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_views_ls",
+      "seq": 720006,
+      "targets": [
+        "airtable"
+      ],
+      "command": "ls /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views",
+      "expect": {
+        "exit": 0,
+        "stdout": "By_owner_priority__viwFeatByOwner003.jsonl\nDone__viwFeatDone000002.jsonl\nGrid_view__viwFeatGrid000001.jsonl\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_tree_ops_base",
+      "seq": 720007,
+      "targets": [
+        "airtable"
+      ],
+      "command": "tree /airtable/bases/Ops_Finance__appOpsFinance0002",
+      "expect": {
+        "exit": 0,
+        "stdout": "/airtable/bases/Ops_Finance__appOpsFinance0002\n|-- Q3_Budget__tblQ3Budget000004\n|   |-- records.jsonl\n|   |-- table.json\n|   `-- views\n|       `-- Grid_view__viwBudgetGrid0001.jsonl\n`-- base.json\n\n3 directories, 4 files\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_table_json_fields",
+      "seq": 720008,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -r '.fields[] | .field_name + \"\\t\" + .type' /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/table.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "Name\tsingleLineText\nNotes\tmultilineText\nStatus\tsingleSelect\nTags\tmultipleSelects\nPriority\tnumber\nShipped\tcheckbox\nDue\tdate\nKickoff\tdateTime\nOwner\tsingleCollaborator\nRelease\tmultipleRecordLinks\nMockups\tmultipleAttachments\nTicket\tformula\nCreated\tcreatedTime\nNumber\tautoNumber\nRelease date\tmultipleLookupValues\nLast modified\tlastModifiedTime\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_table_json_views",
+      "seq": 720009,
+      "targets": [
+        "airtable"
+      ],
+      "command": "jq -c '.views[]' /airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/table.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"view_id\":\"viwFeatGrid000001\",\"view_name\":\"Grid view\",\"type\":\"grid\"}\n{\"view_id\":\"viwFeatDone000002\",\"view_name\":\"Done\",\"type\":\"grid\"}\n{\"view_id\":\"viwFeatByOwner003\",\"view_name\":\"By owner / priority\",\"type\":\"kanban\"}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_find_jsonl",
+      "seq": 720010,
+      "targets": [
+        "airtable"
+      ],
+      "command": "find /airtable -name '*.jsonl'",
+      "expect": {
+        "exit": 0,
+        "stdout": "/airtable/bases/Archive__appArchive0000003/Old_Projects__tblOldProjects005/records.jsonl\n/airtable/bases/Archive__appArchive0000003/Old_Projects__tblOldProjects005/views/Grid_view__viwOldGrid0000001.jsonl\n/airtable/bases/Ops_Finance__appOpsFinance0002/Q3_Budget__tblQ3Budget000004/records.jsonl\n/airtable/bases/Ops_Finance__appOpsFinance0002/Q3_Budget__tblQ3Budget000004/views/Grid_view__viwBudgetGrid0001.jsonl\n/airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/records.jsonl\n/airtable/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/views/Grid_view__viwBackGrid000001.jsonl\n/airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/records.jsonl\n/airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/By_owner_priority__viwFeatByOwner003.jsonl\n/airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/Done__viwFeatDone000002.jsonl\n/airtable/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views/Grid_view__viwFeatGrid000001.jsonl\n/airtable/bases/Product_Roadmap__appRoadmapBase001/Releases__tblReleases000002/records.jsonl\n/airtable/bases/Product_Roadmap__appRoadmapBase001/Releases__tblReleases000002/views/Grid_view__viwRelGrid0000001.jsonl\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "at_find_dirs_scoped",
+      "seq": 720011,
+      "targets": [
+        "airtable"
+      ],
+      "command": "find /roadmap -type d",
+      "expect": {
+        "exit": 0,
+        "stdout": "/roadmap\n/roadmap/bases\n/roadmap/bases/Product_Roadmap__appRoadmapBase001\n/roadmap/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003\n/roadmap/bases/Product_Roadmap__appRoadmapBase001/Backlog__tblBacklog0000003/views\n/roadmap/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001\n/roadmap/bases/Product_Roadmap__appRoadmapBase001/Features__tblFeatures000001/views\n/roadmap/bases/Product_Roadmap__appRoadmapBase001/Releases__tblReleases000002\n/roadmap/bases/Product_Roadmap__appRoadmapBase001/Releases__tblReleases000002/views\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

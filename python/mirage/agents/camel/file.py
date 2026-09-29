@@ -140,7 +140,7 @@ class MirageFileToolkit(FileToolkit):
         mirage_path = self._to_mirage_path(file_path)
         try:
             data = self._read_mirage_bytes(mirage_path)
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, NotADirectoryError) as exc:
             return f"Failed to read file: {mirage_path} ({exc})"
         suffix = Path(mirage_path).suffix or ".txt"
         local = Path(
@@ -184,7 +184,7 @@ class MirageFileToolkit(FileToolkit):
         try:
             data = self._read_mirage_bytes(mirage_path).decode(
                 self.default_encoding)
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError):
             return f"Error: File {mirage_path} does not exist"
         if old_content not in data:
             return f"Error: old_content not found in {mirage_path}"

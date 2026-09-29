@@ -21,7 +21,7 @@
 //     -p 9000:9000 -p 9001:9001 \
 //     -e MINIO_ROOT_USER=minioadmin \
 //     -e MINIO_ROOT_PASSWORD=minioadmin \
-//     quay.io/minio/minio server /data --console-address ':9001'
+//     cgr.dev/chainguard/minio server /data --console-address ':9001'
 //
 // The example exercises the full S3VFS surface: writes (tee, cp, mv,
 // rm, mkdir), reads (cat, head, grep, wc), find, and the du/rmR helpers.

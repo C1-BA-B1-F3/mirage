@@ -17,6 +17,7 @@ import { IndexEntry } from '../../cache/index/config.ts'
 import { makeReaddir } from '../hierarchy/readdir.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import {
+  getBoard,
   listBoardLabels,
   listBoardLists,
   listBoardMembers,
@@ -53,7 +54,10 @@ function extraSize(entry: IndexEntry): number | null {
   return typeof value === 'number' ? value : null
 }
 
-async function filteredWorkspaces(accessor: TrelloAccessor): Promise<Record<string, unknown>[]> {
+/** The workspaces the mount shows: the member's, narrowed to `workspaceId` when it is set. */
+export async function filteredWorkspaces(
+  accessor: TrelloAccessor,
+): Promise<Record<string, unknown>[]> {
   let workspaces = await listWorkspaces(accessor.transport)
   if (accessor.workspaceId !== null && accessor.workspaceId !== '') {
     workspaces = workspaces.filter((w) => pickString(w, 'id') === accessor.workspaceId)
@@ -61,7 +65,8 @@ async function filteredWorkspaces(accessor: TrelloAccessor): Promise<Record<stri
   return workspaces
 }
 
-async function filteredBoards(
+/** A workspace's open boards the mount shows, narrowed to `boardIds` when it is set. */
+export async function filteredBoards(
   accessor: TrelloAccessor,
   workspaceId: string,
 ): Promise<Record<string, unknown>[]> {
@@ -71,6 +76,33 @@ async function filteredBoards(
     boards = boards.filter((b) => allowed.has(pickString(b, 'id')))
   }
   return boards
+}
+
+/** Whether `workspaceId` or `boardIds` narrows the mount. */
+export function scopeIsNarrowed(accessor: TrelloAccessor): boolean {
+  const byWorkspace = accessor.workspaceId !== null && accessor.workspaceId !== ''
+  const byBoard = accessor.boardIds !== null && accessor.boardIds.length > 0
+  return byWorkspace || byBoard
+}
+
+/**
+ * Whether the mount's scope admits a board addressed by id.
+ *
+ * The two knobs that narrow the listing narrow an id too: a board
+ * `boardIds` leaves out, or one outside `workspaceId`, is not this
+ * mount's to read or write. Unnarrowed, every id is admitted without a
+ * call; `workspaceId` costs one board fetch. Mirrors python's
+ * `board_in_scope`.
+ */
+export async function boardInScope(accessor: TrelloAccessor, boardId: string): Promise<boolean> {
+  if (!scopeIsNarrowed(accessor)) return true
+  if (boardId === '') return false
+  if (accessor.boardIds !== null && accessor.boardIds.length > 0) {
+    if (!accessor.boardIds.includes(boardId)) return false
+  }
+  if (accessor.workspaceId === null || accessor.workspaceId === '') return true
+  const board = await getBoard(accessor.transport, boardId)
+  return pickString(board, 'idOrganization') === accessor.workspaceId
 }
 
 async function listWorkspacesDir(

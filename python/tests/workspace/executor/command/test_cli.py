@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from mirage.commands.cli.types import CLIInvocation, CLISpec
 from mirage.commands.errors import CommandTimeoutError
 from mirage.commands.spec.parser import parse_command
-from mirage.commands.spec.types import CommandSpec, Operand, Option
+from mirage.commands.spec.types import CommandSpec, Operand, Option, UsageStyle
 from mirage.io import IOResult
 from mirage.io.types import materialize
 from mirage.policy import Action, Deny, Policy
@@ -806,3 +806,95 @@ def test_a_service_reaching_root_drops_mount_caches():
     assert drops_mount_caches(make_install().spec)
     assert drops_mount_caches(script_install().spec)
     assert not drops_mount_caches(STASH)
+
+
+@pytest.mark.asyncio
+async def test_git_usage_style_does_not_change_custom_cli_option_grammar():
+    spec = CLISpec(name="custom",
+                   config_model=TokenConfig,
+                   usage_style=UsageStyle.GIT,
+                   subcommands=(CLISpec(name="branch",
+                                        fn=send,
+                                        options=(Option(long="--topic"), )), ))
+    install = CLIInstall(name="custom",
+                         spec=spec,
+                         config=TokenConfig(token="tok"))
+    stdout, io, _ = await handle_cli(install, ["custom", "branch", "--top"],
+                                     SessionState("t"))
+    assert io.exit_code == 0
+    assert await materialize(stdout) == b"sent[tok]\n"
+
+
+@pytest.mark.asyncio
+async def test_profile_and_workspace_override_a_cli_deadline():
+    spec = CLISpec(name="prog",
+                   fn=slow_send,
+                   limit=Limit(timeout_seconds=0.01))
+    with Workspace({"/ram": RAMVFS()},
+                   command_limits={"prog": Limit(timeout_seconds=1)},
+                   profiles={
+                       "short": {
+                           "command_limits": {
+                               "prog": {
+                                   "timeout_seconds": 0.01
+                               }
+                           }
+                       }
+                   }) as ws:
+        ws.register_cli("prog", spec)
+        ws.create_session("short", profile="short")
+        assert (await ws.shell("prog")).exit_code == 0
+        assert (await ws.shell("prog", session_id="short")).exit_code == 124
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fails", [False, True])
+async def test_invocation_shell_is_revoked_after_handler_settles(fails):
+    saved = []
+    calls = []
+
+    async def evaluate(line):
+        calls.append(line)
+        return IOResult()
+
+    async def probe(inv):
+        saved.append(inv.shell)
+        await inv.shell("echo allowed")
+        if fails:
+            raise RuntimeError("handler failed")
+        return None, IOResult()
+
+    spec = CLISpec(name="probe", fn=probe)
+    await handle_cli(CLIInstall(name="probe", spec=spec, config=None),
+                     ["probe"],
+                     SessionState(session_id="s"),
+                     context=CLIContext(shell=evaluate))
+    with pytest.raises(RuntimeError, match="no longer active"):
+        await saved[0]("echo late")
+    assert calls == ["echo allowed"]
+
+
+@pytest.mark.asyncio
+async def test_invocation_shell_is_revoked_after_cancellation():
+    entered = asyncio.Event()
+    saved = []
+
+    async def evaluate(line):
+        raise AssertionError("cancelled callback must not run a line")
+
+    async def probe(inv):
+        saved.append(inv.shell)
+        entered.set()
+        await asyncio.Event().wait()
+
+    spec = CLISpec(name="probe", fn=probe)
+    task = asyncio.create_task(
+        handle_cli(CLIInstall(name="probe", spec=spec, config=None), ["probe"],
+                   SessionState(session_id="s"),
+                   context=CLIContext(shell=evaluate)))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    with pytest.raises(RuntimeError, match="no longer active"):
+        await saved[0]("echo late")

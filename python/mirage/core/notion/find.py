@@ -15,34 +15,12 @@
 from mirage.accessor.notion import NotionAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.cache.index.ram import RAMIndexCacheStore
-from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
-                                               keep, start_basename,
-                                               tree_has_empty)
+from mirage.commands.builtin.find_eval import FindArgs, PredNode
+from mirage.commands.builtin.generic.find import walk_find
 from mirage.core.notion.readdir import readdir
 from mirage.core.notion.stat import stat
-from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.dates import matches_mtime
-from mirage.utils.key_prefix import mount_key, mount_prefix_of
-
-
-async def _collect(
-    accessor: NotionAccessor,
-    path: PathSpec,
-    index: IndexCacheStore,
-    out: list[tuple[str, FileStat]],
-) -> None:
-    file_stat = await stat(accessor, path, index)
-    out.append((path.virtual, file_stat))
-    if file_stat.type != FileType.DIRECTORY:
-        return
-    for entry in await readdir(accessor, path, index):
-        child = PathSpec(virtual=entry,
-                         directory=entry,
-                         resolved=False,
-                         vfs_path=mount_key(
-                             entry, mount_prefix_of(path.virtual,
-                                                    path.vfs_path)))
-        await _collect(accessor, child, index, out)
+from mirage.types import FileStat, PathSpec
+from mirage.utils.key_prefix import mount_prefix_of
 
 
 async def find(
@@ -65,63 +43,32 @@ async def find(
     *,
     index: IndexCacheStore = NULL_INDEX,
 ) -> list[str]:
-    if index is NULL_INDEX:
-        # The walk stats every entry it just listed, and stat resolves
-        # entries through the index; with no cache at all the resolution
-        # would re-list every parent and still find nothing, so a
-        # walk-local cache stands in.
-        index = RAMIndexCacheStore()
-    start_name = start_basename(path)
-    base = path.mount_path
-    base = "/" + base.strip("/") if base.strip("/") else "/"
-    base_depth = 0 if base == "/" else base.count("/")
-    collected: list[tuple[str, FileStat]] = []
-    await _collect(accessor, path, index, collected)
-    results: list[str] = []
-    tree = tree if tree is not None else build_tree(name=name,
-                                                    iname=iname,
-                                                    path_pattern=path_pattern,
-                                                    type=type,
-                                                    name_exclude=name_exclude,
-                                                    or_names=or_names,
-                                                    empty=empty)
-    for entry_path, file_stat in collected:
-        rel = entry_path
-        if mount_prefix_of(path.virtual, path.vfs_path) and rel.startswith(
-                mount_prefix_of(path.virtual, path.vfs_path)):
-            rel = rel[len(mount_prefix_of(path.virtual, path.vfs_path)
-                          ):] or "/"
-        rel = "/" + rel.strip("/") if rel.strip("/") else "/"
-        is_dir = file_stat.type == FileType.DIRECTORY
-        entry_name = start_name if rel == base else rel.rsplit("/", 1)[-1]
-        depth = 0 if rel == base else rel.count("/") - base_depth
-        if maxdepth is not None and depth > maxdepth:
-            continue
-        is_empty = None
-        if tree_has_empty(tree):
-            if is_dir:
-                child_prefix = entry_path.rstrip("/") + "/"
-                is_empty = not any(
-                    other != entry_path and other.startswith(child_prefix)
-                    for other, _ in collected)
-            else:
-                is_empty = (file_stat.size or 0) == 0
-        entry = FindEntry(key=rel,
-                          name=entry_name,
-                          kind="d" if is_dir else "f",
-                          depth=depth,
-                          is_empty=is_empty)
-        if not keep(entry, tree, mindepth):
-            continue
-        if min_size is not None or max_size is not None:
-            # Directories count as size 0 for -size (deliberate GNU
-            # divergence).
-            size = 0 if is_dir else (file_stat.size or 0)
-            if min_size is not None and size < min_size:
-                continue
-            if max_size is not None and size > max_size:
-                continue
-        if not matches_mtime(file_stat.modified, mtime_min, mtime_max):
-            continue
-        results.append(rel)
-    return sorted(results)
+    walk_index = RAMIndexCacheStore() if index is NULL_INDEX else index
+
+    async def read_dir(spec: PathSpec, _: IndexCacheStore | None) -> list[str]:
+        return await readdir(accessor, spec, walk_index)
+
+    async def stat_entry(spec: PathSpec,
+                         _: IndexCacheStore | None) -> FileStat:
+        return await stat(accessor, spec, walk_index)
+
+    paths = await walk_find(path,
+                            readdir=read_dir,
+                            stat=stat_entry,
+                            index=walk_index,
+                            args=FindArgs(name=name,
+                                          type=type,
+                                          min_size=min_size,
+                                          max_size=max_size,
+                                          maxdepth=maxdepth,
+                                          name_exclude=name_exclude,
+                                          or_names=or_names,
+                                          mtime_min=mtime_min,
+                                          mtime_max=mtime_max,
+                                          iname=iname,
+                                          path_pattern=path_pattern,
+                                          mindepth=mindepth,
+                                          empty=empty,
+                                          tree=tree))
+    prefix = mount_prefix_of(path.virtual, path.vfs_path)
+    return [p.removeprefix(prefix) or "/" for p in paths]

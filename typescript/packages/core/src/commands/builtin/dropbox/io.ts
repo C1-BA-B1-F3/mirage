@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { DropboxAccessor } from '../../../accessor/dropbox.ts'
 import { copy as dropboxCopy } from '../../../core/dropbox/copy.ts'
 import { create as dropboxCreate } from '../../../core/dropbox/create.ts'
@@ -28,29 +30,24 @@ import { unlink as dropboxUnlink } from '../../../core/dropbox/unlink.ts'
 import { write as dropboxWrite } from '../../../core/dropbox/write.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 
-export const DROPBOX_IO: CommandIO<DropboxAccessor> = {
-  readdir: dropboxReaddir,
-  readBytes: dropboxRead,
-  readRange: rangeOf(dropboxRead),
-  readStream: dropboxStream,
-  stat: dropboxStat,
+export const DROPBOX_IO: CommandIO<DropboxAccessor> = new VFSAdapter<DropboxAccessor>({
+  read: { readdir: dropboxReaddir, readBytes: dropboxRead, stat: dropboxStat },
+  native: {
+    readRange: rangeOf(dropboxRead),
+    readStream: dropboxStream,
+    du: { size: dropboxDu, entries: dropboxDuAll },
+    exists: dropboxExists,
+  },
+  writes: {
+    write: dropboxWrite,
+    mkdir: (accessor, path, parents) => dropboxMkdir(accessor, path, parents),
+    unlink: dropboxUnlink,
+    rmdir: dropboxRmdir,
+    rmR: dropboxRmR,
+    rename: dropboxRename,
+    copy: dropboxCopy,
+    create: dropboxCreate,
+  },
   isMounted: () => true,
   local: false,
-  du: { size: dropboxDu, entries: dropboxDuAll },
-  write: dropboxWrite,
-  exists: dropboxExists,
-  mkdir: (accessor, path, parents) => dropboxMkdir(accessor, path, parents),
-  unlink: dropboxUnlink,
-  rmdir: dropboxRmdir,
-  rmR: dropboxRmR,
-  rename: dropboxRename,
-  // No dirCopy: cp -r must MERGE into an existing destination dir, so
-  // the builder plans file-by-file copies (copy_v2 on a whole folder
-  // rejects an existing destination).
-  copy: dropboxCopy,
-  create: dropboxCreate,
-  // No `find` slot on purpose, matching python — see the note in the Box
-  // table. Dropbox does have a recursive list_folder, so a real pushdown
-  // is possible here later; the op this replaced was not one, it was the
-  // builders' own walk minus the index, the stat overlay and the links.
-}
+}).toCommandIO()

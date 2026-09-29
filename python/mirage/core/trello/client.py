@@ -140,6 +140,15 @@ async def list_board_lists(config: TrelloConfig,
     return result if isinstance(result, list) else []
 
 
+async def get_list(config: TrelloConfig,
+                   list_id: str,
+                   session: SessionArg = None) -> dict[str, Any]:
+    result = await _get(config, f"/lists/{list_id}", session=session)
+    if not isinstance(result, dict):
+        raise TrelloAPIError(f"unexpected response for list {list_id}")
+    return result
+
+
 async def list_board_members(
         config: TrelloConfig,
         board_id: str,

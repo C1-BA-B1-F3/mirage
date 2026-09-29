@@ -12,23 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from functools import partial
+
 from mirage.accessor.langfuse import LangfuseAccessor
-from mirage.commands.builtin.generic_bind.search import make_search
-from mirage.commands.builtin.grep_pushdown import pushdown_operand
-from mirage.commands.builtin.langfuse.grep import SEARCHERS
+from mirage.commands.builtin.generic_bind.search import run_search
 from mirage.commands.builtin.langfuse.io import IO
 from mirage.commands.config import CommandOpts
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
-from mirage.core.langfuse.scope import detect_scope
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
-_search = make_search("rg",
-                      detect_scope,
-                      SEARCHERS,
-                      IO,
-                      qualify=pushdown_operand)
+_search = partial(run_search, IO, "rg")
 
 
 @command("rg", vfs="langfuse", spec=SPECS["rg"])

@@ -12,12 +12,19 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { enotsup } from '@struktoai/mirage-core/utils/errors'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
 import { read } from './read.ts'
 import { writeBytes } from './write.ts'
 
-export async function truncate(accessor: SSHAccessor, p: PathSpec, length: number): Promise<void> {
+export async function truncate(
+  accessor: SSHAccessor,
+  p: PathSpec,
+  length: number,
+  noCreate = false,
+): Promise<void> {
+  if (noCreate) throw enotsup('ssh', 'truncate --no-create', p)
   let data: Uint8Array
   try {
     data = await read(accessor, p)

@@ -16,8 +16,9 @@ import functools
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic.cp import walk
+from mirage.commands.builtin.generic.rm_cmd import rm_without_operands
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
-                                                          Operation)
+                                                          Operation, bound_op)
 from mirage.commands.builtin.utils.output import format_optional_records
 from mirage.commands.builtin.utils.slash_links import (is_slashed_link,
                                                        rm_link_refusal)
@@ -38,7 +39,9 @@ async def rm(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     f = fl.as_bool("f")
     v = fl.as_bool("v")
     d = fl.as_bool("d")
-    if not ops.is_mounted(accessor) or not paths:
+    if not paths:
+        return rm_without_operands(f)
+    if not ops.is_mounted(accessor):
         raise ValueError("rm: missing operand")
     paths = await ops.resolve_glob(accessor, paths, opts.index)
     recursive = fl.as_bool("r") or fl.as_bool("R")
@@ -56,47 +59,39 @@ async def rm(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                 errors.append(refusal)
             continue
         try:
-            s = await ops.stat(accessor, p)
-        except NotADirectoryError:
-            # The operand carried a trailing slash and named something
-            # that is not a directory (a plain file, `rm reg/`).
-            if f:
+            s = await ops.stat(accessor, p, index=opts.index)
+        except FS_ERRORS as exc:
+            # ENOTDIR is a component that is a plain file: the operand
+            # sits under one, or carried a trailing slash that named one
+            # (`rm reg/`). -f ignores it and ENOENT alone, as GNU's
+            # `ignorable_missing` does; any other failure is reported,
+            # -f or not. GNU rm reports the operand and keeps removing
+            # the rest.
+            if f and isinstance(exc, (FileNotFoundError, NotADirectoryError)):
                 continue
-            errors.append(f"rm: cannot remove '{p.raw_path}': "
-                          "Not a directory")
-            continue
-        except FileNotFoundError:
-            if f:
-                continue
-            # GNU rm reports the operand and keeps removing the rest.
-            errors.append(f"rm: cannot remove '{p.raw_path}': "
-                          "No such file or directory")
+            errors.append(
+                f"rm: cannot remove '{p.raw_path}': {fs_strerror(exc)}")
             continue
         entry_lines: list[str] = []
         try:
             if s.type == FileType.DIRECTORY:
                 if recursive:
-                    if ops.rm_r is None:
-                        raise NotImplementedError(
-                            "rm: recursive remove not supported on this "
-                            "backend")
                     if v:
                         readdir = functools.partial(ops.readdir,
                                                     accessor,
                                                     index=opts.index)
                         entry_lines = removal_lines(await walk(
-                            readdir, functools.partial(ops.stat, accessor), p))
-                    await ops.rm_r(accessor, p)
+                            readdir, bound_op(ops.stat, accessor, opts.index),
+                            p))
+                    await ops.require(Operation.RM_R)(accessor, p)
                 elif d:
-                    if ops.rmdir is None:
-                        raise NotImplementedError(
-                            "rm: directory remove not supported on this "
-                            "backend")
                     if await ops.readdir(accessor, p, index=opts.index):
                         errors.append(f"rm: cannot remove '{p.raw_path}': "
                                       "Directory not empty")
                         continue
-                    await ops.rmdir(accessor, p, index=opts.index)
+                    await ops.require(Operation.RMDIR)(accessor,
+                                                       p,
+                                                       index=opts.index)
                     entry_lines = [f"removed directory '{p.virtual}'"]
                 else:
                     errors.append(
@@ -123,7 +118,4 @@ async def rm(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                             exit_code=1 if errors else 0)
 
 
-BUILDER = Builder('rm',
-                  rm,
-                  write=True,
-                  requirements=frozenset({Operation.UNLINK}))
+BUILDER = Builder('rm', rm, write=True)

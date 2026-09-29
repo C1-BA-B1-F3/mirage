@@ -297,6 +297,11 @@ export interface LimitInit {
   onExceed?: OnExceed
 }
 
+function minBound(values: (number | null)[]): number | null {
+  const bounds = values.filter((v): v is number => v !== null)
+  return bounds.length > 0 ? Math.min(...bounds) : null
+}
+
 function minPositive(values: (number | null)[]): number | null {
   const positives = values.filter((v): v is number => v !== null && v > 0)
   return positives.length > 0 ? Math.min(...positives) : null
@@ -368,8 +373,8 @@ type LimitAggrField = Exclude<keyof Limit, 'kind'>
  * compile error, where the old inline literal would have silently dropped it.
  */
 const LIMIT_AGGR: { [K in LimitAggrField]: (present: readonly Limit[]) => Limit[K] } = {
-  maxBytes: (present) => minPositive(present.map((s) => s.maxBytes)),
-  maxLines: (present) => minPositive(present.map((s) => s.maxLines)),
+  maxBytes: (present) => minBound(present.map((s) => s.maxBytes)),
+  maxLines: (present) => minBound(present.map((s) => s.maxLines)),
   timeoutSeconds: (present) => minPositive(present.map((s) => s.timeoutSeconds)),
   onExceed: (present) =>
     present.some((s) => s.onExceed === OnExceed.ERROR) ? OnExceed.ERROR : OnExceed.TRUNCATE,
@@ -380,7 +385,7 @@ const LIMIT_AGGR: { [K in LimitAggrField]: (present: readonly Limit[]) => Limit[
  *
  * Rides the IO envelope from the dispatch site to the workspace
  * boundary; merge keeps the rightmost producer, so this names the
- * command whose stream the caller actually sees. Post-layer policies
+ * last command that ran; it does not describe every byte of a list. Post-layer policies
  * (output caps today; budgets and attribution later) read it as
  * context. Facts only: no policy reads a decision off the envelope;
  * the one a chain hands down is written beside it as
@@ -436,6 +441,7 @@ export const VFSName = Object.freeze({
   SHAREPOINT: 'sharepoint',
   DROPBOX: 'dropbox',
   BOX: 'box',
+  AIRTABLE: 'airtable',
   SLACK: 'slack',
   DISCORD: 'discord',
   GMAIL: 'gmail',
@@ -476,6 +482,7 @@ export const VFSName = Object.freeze({
   SCALEWAY: 'scaleway',
   QINGSTOR: 'qingstor',
   HISTORY: 'history',
+  BIN: 'bin',
 } as const)
 
 export type VFSName = (typeof VFSName)[keyof typeof VFSName]
@@ -501,6 +508,20 @@ export type LsSortBy = 'name' | 'time' | 'size' | 'version' | 'extension' | 'wid
 /** Which timestamp `ls` shows and sorts by: `-u`/`--time=atime`,
  * `-c`/`--time=ctime`, `--time=birth`, else the modification time. */
 export type LsTimeKind = 'mtime' | 'atime' | 'ctime' | 'birth'
+
+// The mark `ls` appends to a name, `--indicator-style`'s words: `-p` is
+// `slash`, `--file-type` is `file-type` and `-F` is `classify`.
+export type LsIndicator = 'none' | 'slash' | 'file-type' | 'classify'
+
+// Which symlinks `cp` follows: every one (`-L`), only the command line's
+// (`-H`), or none, copying each link as a link (`-P`, `-d`, `-a`, and a
+// recursive copy's default).
+export type CopyDeref = 'always' | 'command_line' | 'never'
+
+// Which command-line symlinks `ls` resolves before it lists them: every one
+// (`-L`, `-H`), only one leading to a directory (the default), or none (`-d`,
+// a long format, `-F`).
+export type LsLinkMode = 'all' | 'directory' | 'none'
 
 export const FileType = Object.freeze({
   DIRECTORY: 'directory',
@@ -784,6 +805,22 @@ export type StatFn<Args extends unknown[] = [path: PathSpec, index?: IndexCacheS
   ...args: Args
 ) => Promise<FileStat>
 
+/**
+ * What proving a running command's `.` and `..` reads.
+ *
+ * The command tier reaches its backend past the dispatcher's door, so
+ * `Mount.executeCmd` binds the door's facts for it: `stat` is the door's
+ * stat (throwing when nothing is there) and `follow` the namespace's link
+ * resolution, null while it holds none. The kernel walk (`followPaths`)
+ * rewrites an operand to its link's target before the handler runs;
+ * `follow` is how that operand is still known for the one its dotted
+ * spelling names. Mirrors Python's WalkProbe.
+ */
+export interface WalkProbe {
+  readonly stat: StatFn
+  readonly follow: ((path: string) => string) | null
+}
+
 export interface NativeCopy {
   copy: CopyFn
   find: FindFn
@@ -819,6 +856,11 @@ export interface PrimitiveMove {
 
 export type MoveStrategy = NativeMove | PrimitiveMove
 
+// What the kernel walk answers for a path it cannot resolve at all: the
+// empty name (POSIX never resolves a null pathname) or a symlink loop.
+// Mirrors Python's WalkErrno.
+export type WalkErrno = 'ENOENT' | 'ELOOP'
+
 export interface PathSpecInit {
   virtual: string
   directory: string
@@ -826,6 +868,8 @@ export interface PathSpecInit {
   pattern?: string | null
   resolved?: boolean
   rawPath?: string
+  dotted?: string | null
+  walkError?: WalkErrno | null
 }
 
 export class PathSpec {
@@ -837,6 +881,15 @@ export class PathSpec {
   // The word's spelling: as typed for relative words, the absolute path
   // for everything else (defaults to `virtual`).
   readonly rawPath: string
+  // Absolute spelling before dot normalization; excluded from identity.
+  readonly dotted: string | null
+  // What the kernel walk already answered for an operand it cannot
+  // resolve at all, known before the command runs: ENOENT for the empty
+  // name, whose `virtual` reads as the working directory, and ELOOP for
+  // one a symlink loop stands in, which `followPaths` leaves unrewritten.
+  // Every op that reaches it refuses (`walkRefusal`), so each command
+  // words the refusal as its own. Mirrors Python's PathSpec.walk_error.
+  readonly walkError: WalkErrno | null
 
   constructor(init: PathSpecInit) {
     this.virtual = init.virtual
@@ -845,6 +898,8 @@ export class PathSpec {
     this.pattern = init.pattern ?? null
     this.resolved = init.resolved ?? true
     this.rawPath = init.rawPath ?? init.virtual
+    this.dotted = init.dotted ?? null
+    this.walkError = init.walkError ?? null
     Object.freeze(this)
   }
 

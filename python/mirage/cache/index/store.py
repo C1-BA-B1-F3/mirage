@@ -56,6 +56,28 @@ class IndexCacheStore:
     async def entries(self) -> dict[str, IndexEntry]:
         raise NotImplementedError
 
+    async def set_partial_dir(
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None = None,
+    ) -> None:
+        """Cache observed children without claiming a complete directory.
+
+        Stores supporting partial freshness return these keys under
+        ``ListResult.partial_entries`` until expiry or invalidation. The
+        default preserves the conservative put-only behavior for custom
+        stores: their next lookup refreshes the parent.
+
+        Args:
+            vfs_path (str): the listed directory's virtual path.
+            entries (list[tuple[str, IndexEntry]]): observed children.
+            expired_at (datetime | None): optional freshness deadline.
+        """
+        await self.invalidate_dir(vfs_path)
+        for name, entry in entries:
+            await self.put(f"{vfs_path.rstrip('/')}/{name}", entry)
+
     async def invalidate_dir(self, vfs_path: str) -> None:
         raise NotImplementedError
 

@@ -17,11 +17,13 @@ import type { Dmmf, Fake } from '../kit/typescript/index.ts'
 import { config, type C } from './config.ts'
 import { fileBytes } from './reads.ts'
 import { slackRoutes } from './routes.ts'
+import { requestToken } from './wire.ts'
 
 // `dms` are Channel rows too: a DM is a channel with no name and a dmUserId,
 // which is why the fixture cannot just call them channels.
 export const slackFake: Fake<C> = {
   config,
+  requestToken,
   client: PrismaClient,
   dmmf: Prisma.dmmf as unknown as Dmmf,
   seedRoots: { dms: 'Channel', files: 'SlackFile' },

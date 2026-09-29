@@ -49,12 +49,40 @@ async def check_dest_parents(store: RedisStore, dst_spec: PathSpec,
         NotADirectoryError: A parent component is a plain file.
         FileNotFoundError: A parent component does not exist.
     """
-    for ancestor in ancestors(d):
+    broken = await _broken_parent(store, dst_spec, d)
+    if broken is not None:
+        raise broken
+
+
+async def lookup_error(store: RedisStore, spec: PathSpec, key: str) -> OSError:
+    """The error a lookup of a key the store does not hold answers with.
+
+    ``open(2)`` and ``stat(2)`` resolve a path one component at a time and
+    stop at the first that is not a directory, so a plain file above the
+    key is ENOTDIR (``cat a.txt/x`` is "Not a directory") and a missing
+    component, or a key that is simply absent, is ENOENT. It is the walk
+    :func:`check_dest_parents` makes for a destination, so a read, a stat
+    and a write of one path agree on its errno; it runs on a miss only,
+    so a hit still costs one round trip.
+
+    Args:
+        store (RedisStore): The backing store.
+        spec (PathSpec): The operand, reported in the error.
+        key (str): The normalized key that was looked up.
+    """
+    broken = await _broken_parent(store, spec, key)
+    return broken if broken is not None else enoent(spec)
+
+
+async def _broken_parent(store: RedisStore, spec: PathSpec,
+                         key: str) -> OSError | None:
+    for ancestor in ancestors(key):
         if await store.has_dir(ancestor):
             continue
         if await store.has_file(ancestor):
-            raise enotdir(dst_spec)
-        raise enoent(dst_spec)
+            return enotdir(spec)
+        return enoent(spec)
+    return None
 
 
 async def check_write_target(store: RedisStore, spec: PathSpec,

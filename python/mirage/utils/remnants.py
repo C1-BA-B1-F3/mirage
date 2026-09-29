@@ -133,7 +133,7 @@ async def remove_remnants(channel: RemnantChannel, allowed: Allowed,
     """
     try:
         entries = await channel.readdir(spec)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return
     for entry in entries:
         name = entry_name(str(entry))
@@ -142,16 +142,16 @@ async def remove_remnants(channel: RemnantChannel, allowed: Allowed,
             raise VisibleRemnant(child.virtual)
         try:
             row = await channel.stat(child)
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError):
             continue
         if isinstance(row, FileStat) and row.type is FileType.DIRECTORY:
             await remove_remnants(channel, allowed, child)
         else:
             try:
                 await channel.unlink(child)
-            except FileNotFoundError:
+            except (FileNotFoundError, NotADirectoryError):
                 continue
     try:
         await channel.rmdir(spec)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return

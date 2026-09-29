@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { IOResult, materialize, type ByteSource } from '../../../../../io/types.ts'
+import type { FlagValue } from '../../../../spec/types.ts'
 import { PathSpec } from '../../../../../types.ts'
 import { mountKey } from '../../../../../utils/key_prefix.ts'
 import { Cmd, type CrossResult, type RunSingle } from '../types.ts'
@@ -34,7 +35,7 @@ function scope(path: string): PathSpec {
 interface Call {
   cmd: string
   paths: string[]
-  flags: Record<string, string | boolean | number | string[]>
+  flags: Record<string, FlagValue>
 }
 
 function fakeRunSingle(outputs: Record<string, string>): { fn: RunSingle; calls: Call[] } {
@@ -56,36 +57,77 @@ async function text(body: ByteSource | null): Promise<string> {
   return DEC.decode(await materialize(body))
 }
 
-describe('runFanout wc', () => {
-  it('forces --total=never on the native runs', async () => {
-    const { fn, calls } = fakeRunSingle({
-      '/a/x': '1 1 1 /a/x\n',
-      '/b/y': '2 2 2 /b/y\n',
-    })
-    await runFanout(Cmd.WC, [scope('/a/x'), scope('/b/y')], [], {}, fn)
-    expect(calls.map((c) => c.flags.total)).toEqual(['never', 'never'])
+describe('runFanout rg labels and -q', () => {
+  it('labels every rg run unless -I is the last word on it', async () => {
+    const runs = async (flags: Record<string, boolean>): Promise<Call[]> => {
+      const { fn, calls } = fakeRunSingle({ '/a/x': '', '/b/y': '' })
+      await runFanout(Cmd.RG, [scope('/a/x'), scope('/b/y')], ['pat'], flags, fn)
+      return calls
+    }
+    expect((await runs({})).every((c) => c.flags.with_filename === true)).toBe(true)
+    expect((await runs({ no_filename: true })).every((c) => !('with_filename' in c.flags))).toBe(
+      true,
+    )
+    // -H and -I are last-wins in ripgrep, so a -H after -I labels again.
+    const again = await runs({ no_filename: true, with_filename: true })
+    expect(again.every((c) => c.flags.with_filename === true)).toBe(true)
   })
 
-  it('rejects an invalid --total before running any operand', async () => {
-    // The forced override would otherwise hide the bad value from every
-    // native run, leaving exit 0 and no diagnostic.
+  it.each([
+    [Cmd.GREP, { q: true }],
+    [Cmd.RG, { quiet: true }],
+  ])('stops %s -q at its first match', async (cmd, flags) => {
+    // grep -q and rg -q exit at the first match, so the operands after it
+    // are never read (GNU grep 3.11, ripgrep 14.1.1: `rg -q x a /nope` says
+    // nothing about /nope).
     const { fn, calls } = fakeRunSingle({ '/a/x': '', '/b/y': '' })
-    const [body, io] = await runFanout(
-      Cmd.WC,
-      [scope('/a/x'), scope('/b/y')],
-      [],
-      { total: 'bogus' },
+    const [, io] = await runFanout(cmd, [scope('/a/x'), scope('/b/y')], ['pat'], flags, fn)
+    expect(calls.map((c) => c.paths)).toEqual([['/a/x']])
+    expect(io.exitCode).toBe(0)
+  })
+})
+
+// GNU grep 3.11 and ripgrep 14.1.1 put `--` between one file's context and the
+// next file's, so runs on different mounts join the same way; a run that
+// printed nothing adds no separator.
+describe('runFanout grep and rg context', () => {
+  it.each([
+    [Cmd.GREP, { A: '1' }],
+    [Cmd.RG, { after_context: '1' }],
+  ])('separates %s context runs', async (cmd, flags) => {
+    const { fn } = fakeRunSingle({
+      '/a/x': '/a/x:hit\n/a/x-next\n',
+      '/c/w': '',
+      '/b/y': '/b/y:hit\n/b/y-next\n',
+    })
+    const [out] = await runFanout(
+      cmd,
+      [scope('/a/x'), scope('/c/w'), scope('/b/y')],
+      ['hit'],
+      flags,
       fn,
     )
-    expect(await text(body)).toBe('')
-    expect(io.exitCode).toBe(1)
-    // GNU's whole ARGMATCH refusal, candidate list and hint included
-    // (measured: `wc --total=bogus f`, coreutils 9.4, exit 1).
-    expect(await text(io.stderr)).toBe(
-      "wc: invalid argument 'bogus' for '--total'\n" +
-        "Valid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\n" +
-        "Try 'wc --help' for more information.\n",
-    )
-    expect(calls).toEqual([])
+    expect(await text(out)).toBe('/a/x:hit\n/a/x-next\n--\n/b/y:hit\n/b/y-next\n')
+  })
+
+  it.each([
+    [{ after_context: '1', context_separator: '@@' }, '/a/x:hit\n@@\n/b/y:hit\n'],
+    [{ after_context: '1', no_context_separator: true }, '/a/x:hit\n/b/y:hit\n'],
+    [{ heading: true }, '/a/x:hit\n\n/b/y:hit\n'],
+  ])('joins rg runs with its own separator: %j', async (flags, joined) => {
+    // ripgrep 14.1.1 sets files apart with its --context-separator (none
+    // under --no-context-separator), and --heading groups with a blank line.
+    const { fn } = fakeRunSingle({ '/a/x': '/a/x:hit\n', '/b/y': '/b/y:hit\n' })
+    const [out] = await runFanout(Cmd.RG, [scope('/a/x'), scope('/b/y')], ['hit'], flags, fn)
+    expect(await text(out)).toBe(joined)
+  })
+
+  it.each([
+    [Cmd.GREP, { A: '1', c: true }],
+    [Cmd.RG, { after_context: '1', count: true }],
+  ])('joins %s counts without a separator', async (cmd, flags) => {
+    const { fn } = fakeRunSingle({ '/a/x': '/a/x:1\n', '/b/y': '/b/y:1\n' })
+    const [out] = await runFanout(cmd, [scope('/a/x'), scope('/b/y')], ['hit'], flags, fn)
+    expect(await text(out)).toBe('/a/x:1\n/b/y:1\n')
   })
 })

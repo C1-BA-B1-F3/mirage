@@ -83,6 +83,7 @@ describe('SSHVFS — getState / loadState', () => {
   it('loadState is a no-op', async () => {
     const res = makeVfs(state)
     const result = await res.getState()
-    await expect(res.loadState(result)).resolves.toBeUndefined()
+    await res.loadState(result)
+    expect(await res.getState()).toEqual(result)
   })
 })

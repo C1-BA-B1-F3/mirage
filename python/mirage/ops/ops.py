@@ -445,7 +445,7 @@ class Ops:
         """
         try:
             await self.stat(path, session_id=session_id)
-        except (FileNotFoundError, NoMountError):
+        except (FileNotFoundError, NotADirectoryError, NoMountError):
             return False
         return True
 
@@ -461,7 +461,7 @@ class Ops:
         """
         try:
             st = await self.stat(path, session_id=session_id)
-        except (FileNotFoundError, NoMountError):
+        except (FileNotFoundError, NotADirectoryError, NoMountError):
             return False
         return st.type == FileType.DIRECTORY
 
@@ -477,7 +477,7 @@ class Ops:
         """
         try:
             st = await self.stat(path, session_id=session_id)
-        except (FileNotFoundError, NoMountError):
+        except (FileNotFoundError, NotADirectoryError, NoMountError):
             return False
         return st.type != FileType.DIRECTORY
 
@@ -582,6 +582,10 @@ class Ops:
                 directory, another link, a mount root). symlink(2) never
                 overwrites, and the door is the layer that can see both
                 planes to tell.
+            FileNotFoundError: the directory ``path`` would sit in is
+                absent.
+            NotADirectoryError: a non-directory stands where that
+                directory, or one above it, should be.
         """
         await self._call("symlink", path, session_id, target=target)
 

@@ -6,7 +6,7 @@
       "targets": [
         "mongodb"
       ],
-      "command": "ln -s /mongodb/mirage_integ/database.json /mongodb/meta_link",
+      "command": "ln -s /mongodb/mirage_integ/database.json /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "",
@@ -19,7 +19,7 @@
       "targets": [
         "mongodb"
       ],
-      "command": "readlink /mongodb/meta_link",
+      "command": "readlink /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "/mongodb/mirage_integ/database.json\n",
@@ -32,10 +32,10 @@
       "targets": [
         "mongodb"
       ],
-      "command": "cat /mongodb/meta_link",
+      "command": "cat /meta_link",
       "expect": {
         "exit": 0,
-        "stdout": "{\"database\": \"mirage_integ\", \"collections\": [{\"name\": \"authors\", \"document_count\": 3}, {\"name\": \"books\", \"document_count\": 5}, {\"name\": \"system.views\", \"document_count\": 1}], \"views\": [{\"name\": \"recent_books\"}]}\n",
+        "stdout": "{\"database\": \"mirage_integ\", \"collections\": [{\"name\": \"authors\"}, {\"name\": \"books\"}, {\"name\": \"system.views\"}], \"views\": [{\"name\": \"recent_books\"}]}\n",
         "stderr": ""
       }
     },
@@ -45,7 +45,7 @@
       "targets": [
         "mongodb"
       ],
-      "command": "ls -F /mongodb | grep meta_link",
+      "command": "ls -F / | grep meta_link",
       "expect": {
         "exit": 0,
         "stdout": "meta_link@\n",
@@ -58,7 +58,7 @@
       "targets": [
         "mongodb"
       ],
-      "command": "rm /mongodb/meta_link && ls /mongodb",
+      "command": "rm /meta_link && ls /mongodb",
       "expect": {
         "exit": 0,
         "stdout": "mirage_integ\n",

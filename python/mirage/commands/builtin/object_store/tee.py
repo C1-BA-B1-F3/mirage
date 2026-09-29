@@ -39,9 +39,8 @@ def make_tee(vfs: str, io: CommandIO) -> Callable[..., Any]:
 
     async def tee(accessor: Accessor, paths: list[PathSpec], texts: list[str],
                   opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
-        if not paths:
-            raise ValueError("tee: missing operand")
-        paths = await resolve_glob(accessor, paths, opts.index)
+        paths = await resolve_glob(accessor, paths,
+                                   opts.index) if paths else []
         # The wrapper is wiring only: every flag semantic, the write to
         # each operand and the append fallback live in the generic.
         return await generic_tee(paths,
@@ -56,5 +55,6 @@ def make_tee(vfs: str, io: CommandIO) -> Callable[..., Any]:
     wrapped: Callable[..., Any] = command("tee",
                                           vfs=vfs,
                                           spec=SPECS["tee"],
-                                          write=True)(tee)
+                                          write=True,
+                                          path_guarded=True)(tee)
     return wrapped

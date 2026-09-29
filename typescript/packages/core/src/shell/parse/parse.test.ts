@@ -14,8 +14,9 @@
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { Language, Parser } from 'web-tree-sitter'
 import { getParts, getRedirects, getText } from '../helpers.ts'
-import { createShellParser, type ShellParser, stripLineContinuation } from './index.ts'
+import { createShellParser, type ShellParser, joinContinuations } from './index.ts'
 import { NodeType as NT, type TSNodeLike } from '../types.ts'
 
 const require = createRequire(import.meta.url)
@@ -23,9 +24,12 @@ const engineWasm = readFileSync(require.resolve('web-tree-sitter/web-tree-sitter
 const grammarWasm = readFileSync(require.resolve('tree-sitter-bash/tree-sitter-bash.wasm'))
 
 let parser: ShellParser
+let rawParser: Parser
 
 beforeAll(async () => {
   parser = await createShellParser({ engineWasm, grammarWasm })
+  rawParser = new Parser()
+  rawParser.setLanguage(await Language.load(grammarWasm))
 })
 
 describe('createShellParser', () => {
@@ -184,6 +188,9 @@ describe('$ reparse: later unbraced var cut off from its name', () => {
     ['echo hi > /w/$a/$b/$c', '/w/$a/${b}/$c'],
     ['echo hi > ${a}.$b.json', '${a}.${b}.json'],
     ['echo hi > /w/$c/$1.json', '/w/$c/${1}.json'],
+    ['echo hi > /w/$c/$12.json', '/w/$c/${1}2.json'],
+    ['echo hi > /é💡/$c/$123abc.json', '/é💡/$c/${1}23abc.json'],
+    ['echo hi > /w/$c/$_id9.json', '/w/$c/${_id9}.json'],
   ])('keeps the redirect target of %j one word', (command, target) => {
     const statement = parser.parse(command).children[0] as TSNodeLike
     expect(statement.type).toBe('redirected_statement')
@@ -215,7 +222,7 @@ describe('$ reparse: later unbraced var cut off from its name', () => {
   })
 })
 
-describe('stripLineContinuation', () => {
+describe('joinContinuations', () => {
   it.each([
     // An odd-length trailing run ends in a live continuation.
     ['echo a\\', 'echo a'],
@@ -223,10 +230,36 @@ describe('stripLineContinuation', () => {
     ['echo \\', 'echo '],
     // An even-length run is all escaped backslashes, so nothing goes.
     ['echo a\\\\', 'echo a\\\\'],
+    ['echo a\\\\\\\\', 'echo a\\\\\\\\'],
     ['echo a', 'echo a'],
     ['echo a\\ b', 'echo a\\ b'],
+    // Mid-line, the pair goes wherever the reader sees it.
+    ['echo a\\\nb', 'echo ab'],
+    ['echo "a\\\nb"', 'echo "ab"'],
+    ['echo $\\\n{x} $((1\\\n+2))', 'echo ${x} $((1+2))'],
+    ['ec\\\nho a', 'echo a'],
+    ['echo a\\\\\nb', 'echo a\\\\\nb'],
+    ['echo a\\\\\\\nb', 'echo a\\\\b'],
+    // Single-quoted and ANSI-C text and comments keep theirs.
+    ["echo 'a\\\nb'", "echo 'a\\\nb'"],
+    ["echo $'a\\\nb'", "echo $'a\\\nb'"],
+    ['echo a # c \\\necho b', 'echo a # c \\\necho b'],
+    ['echo "$(echo \'u\\\nv\')"', 'echo "$(echo \'u\\\nv\')"'],
+    ['echo "it\'s a\\\nb"', 'echo "it\'s ab"'],
   ])('%j -> %j', (command, expected) => {
-    expect(stripLineContinuation(command)).toBe(expected)
+    expect(joinContinuations(rawParser, command)).toBe(expected)
+  })
+
+  it('keeps a quoted heredoc body whole', () => {
+    const root = parser.parse("cat <<'E' | \\\ntr a b\na\\\nb\nE")
+    expect(root.text).toBe('cat <"a\\\\\nb\n" | tr a b\n')
+    expect(root.sourceText).toBe("cat <<'E' | \\\ntr a b\na\\\nb\nE")
+  })
+
+  it('joins an unquoted heredoc body', () => {
+    expect(parser.parse('cat <<E | \\\ntr a b\na\\\nb $x\nE').text).toBe(
+      'cat <"ab $x\n" | tr a b\n',
+    )
   })
 })
 

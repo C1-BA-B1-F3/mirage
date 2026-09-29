@@ -12,17 +12,15 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { IOResult } from '../../../../io/types.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { expand } from '../../../../core/github/placeholder.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
-import type { GitHubResponse } from '../../../../core/github/client.ts'
+import { GitHubApiError, type GitHubResponse } from '../../../../core/github/client.ts'
 import { jqEval } from '../../../../core/jq/index.ts'
-import { materialize } from '../../../../io/types.ts'
-import { PathSpec } from '../../../../types.ts'
-import { resolvePath } from '../../../../utils/path.ts'
-import { ghTransport, jsonOut, textOut } from './accessor.ts'
+import { ghTransport, readCliFile, textOut } from './accessor.ts'
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 const EMPTY_ARRAY = Symbol('empty-array')
@@ -117,38 +115,10 @@ function setField(fields: Record<string, unknown>, key: string, value: unknown):
   put(fields, keyParts(key), value)
 }
 
-async function stdinBytes(inv: CLIInvocation): Promise<Uint8Array> {
-  if (inv.stdin === null) throw new Error('standard input is required')
-  return materialize(inv.stdin)
-}
-
-function isDashInput(inv: CLIInvocation, long: string): boolean {
-  return inv.argv.some(
-    (word, index) => word === `${long}=-` || (word === long && inv.argv[index + 1] === '-'),
-  )
-}
-
-async function readFile(inv: CLIInvocation, path: string): Promise<Uint8Array> {
-  if (path === '-') return stdinBytes(inv)
-  const dispatch = inv.doors?.dispatch
-  if (dispatch === undefined) throw new Error(`read ${path}: a workspace is required`)
-  const cwd = inv.env.PWD ?? '/'
-  const virtual = resolvePath(path, cwd)
-  try {
-    const [data] = await dispatch('read', PathSpec.fromStrPath(virtual))
-    return data instanceof Uint8Array ? data : new Uint8Array(data as ArrayBuffer)
-  } catch (err) {
-    if (err instanceof Error && err.name === 'FileNotFoundError') {
-      throw new Error(`read ${path}: No such file or directory`)
-    }
-    throw err
-  }
-}
-
 async function fieldValue(inv: CLIInvocation, value: string): Promise<Json> {
   const expanded = expand(value, inv.config as GhConfig)
   if (expanded.startsWith('@')) {
-    return new TextDecoder().decode(await readFile(inv, expanded.slice(1)))
+    return new TextDecoder().decode(await readCliFile(inv, expanded.slice(1), '--field'))
   }
   return typed(expanded)
 }
@@ -177,11 +147,11 @@ function requestHeaders(fl: FlagView): Record<string, string> {
 }
 
 async function inputBody(inv: CLIInvocation, fl: FlagView): Promise<Json | undefined> {
-  const raw = fl.asStr('input')
+  const raw = fl.raw('input')
   if (raw === undefined) return undefined
-  const path = raw === '-' || isDashInput(inv, '--input') ? '-' : raw
+  const path = fl.asPaths('input')[0]?.rawPath ?? fl.asStr('input') ?? ''
   try {
-    return JSON.parse(new TextDecoder().decode(await readFile(inv, path))) as Json
+    return JSON.parse(new TextDecoder().decode(await readCliFile(inv, raw, '--input'))) as Json
   } catch (err) {
     if (err instanceof SyntaxError) throw new Error(`invalid JSON in ${path}: ${err.message}`)
     throw err
@@ -252,26 +222,41 @@ export async function api(inv: CLIInvocation): Promise<CommandFnResult> {
   let first = true
   while (current !== undefined) {
     const headers = requestHeaders(fl)
-    const response: GitHubResponse =
-      transport.requestWithResponse === undefined
-        ? {
-            data: await transport.request(
+    let response: GitHubResponse
+    try {
+      response =
+        transport.requestWithResponse === undefined
+          ? {
+              data: await transport.request(
+                upper,
+                current,
+                body,
+                first ? params : undefined,
+                Object.keys(headers).length === 0 ? undefined : headers,
+              ),
+              status: 200,
+              headers: {},
+            }
+          : await transport.requestWithResponse(
               upper,
               current,
               body,
               first ? params : undefined,
               Object.keys(headers).length === 0 ? undefined : headers,
-            ),
-            status: 200,
-            headers: {},
-          }
-        : await transport.requestWithResponse(
-            upper,
-            current,
-            body,
-            first ? params : undefined,
-            Object.keys(headers).length === 0 ? undefined : headers,
-          )
+            )
+    } catch (error) {
+      if (!(error instanceof GitHubApiError)) throw error
+      return failed(
+        pages,
+        fl,
+        error.body,
+        serverError(error.data, error.status) || `HTTP ${String(error.status)}`,
+      )
+    }
+    if (endpoint === 'graphql') {
+      const diagnostic = serverError(response.data, response.status)
+      if (diagnostic !== '') return failed(pages, fl, JSON.stringify(response.data), diagnostic)
+    }
     pages.push(response.data)
     first = false
     current = fl.asBool('paginate')
@@ -279,24 +264,74 @@ export async function api(inv: CLIInvocation): Promise<CommandFnResult> {
       : undefined
   }
 
-  if (fl.asBool('silent')) return textOut('')
+  return textOut(await renderPages(pages, fl))
+}
+
+/**
+ * What gh reports from a JSON error body, empty when it names nothing.
+ *
+ * gh's `parseErrorResponse`: a string `errors` is the failure, with
+ * `message` in parentheses; otherwise `message` is, with the status;
+ * otherwise the messages of an `errors` array, one per line.
+ */
+function serverError(data: unknown, status: number): string {
+  if (!isRecord(data)) return ''
+  const message = typeof data.message === 'string' ? data.message : ''
+  const errors = data.errors
+  if (typeof errors === 'string' && errors !== '') {
+    return message !== '' ? `${errors} (${message})` : errors
+  }
+  if (message !== '') return `${message} (HTTP ${String(status)})`
+  if (!Array.isArray(errors)) return ''
+  const lines: string[] = []
+  for (const entry of errors) {
+    if (typeof entry === 'string') lines.push(entry)
+    else if (isRecord(entry)) lines.push(typeof entry.message === 'string' ? entry.message : '')
+  }
+  return lines.join('\n')
+}
+
+async function failed(
+  pages: unknown[],
+  fl: FlagView,
+  body: string,
+  diagnostic: string,
+): Promise<CommandFnResult> {
+  return [
+    new TextEncoder().encode(await renderPages(pages, fl, body)),
+    new IOResult({ exitCode: 1, stderr: new TextEncoder().encode(`gh: ${diagnostic}\n`) }),
+  ]
+}
+
+function jsonPage(value: unknown): string {
+  return value === null ? '' : `${JSON.stringify(value, null, 2)}\n`
+}
+
+/**
+ * Render the completed pages, then a failing response's body.
+ *
+ * gh copies the failing body out verbatim, past `--jq`. Under `--slurp`
+ * that body is still the array's last element, even an empty one or one
+ * that is not JSON, which is gh's own output.
+ */
+async function renderPages(pages: unknown[], fl: FlagView, failure?: string): Promise<string> {
+  if (fl.asBool('silent')) return ''
   const slurp = fl.asBool('slurp')
+  if (slurp && failure !== undefined) {
+    return `[${[...pages.map((page) => JSON.stringify(page)), failure].join(',')}]`
+  }
   const program = fl.asStr('jq')
+  let rendered: string
   if (program !== undefined && program !== '') {
-    const inputs = slurp ? [pages] : pages
     const output: string[] = []
-    for (const item of inputs) {
+    for (const item of slurp ? [pages] : pages) {
       for (const value of await jqEval(item, program)) output.push(`${jqLine(value)}\n`)
     }
-    return textOut(output.join(''))
+    rendered = output.join('')
+  } else if (slurp) {
+    rendered = jsonPage(pages)
+  } else {
+    rendered = pages.map((page) => (typeof page === 'string' ? page : jsonPage(page))).join('')
   }
-  if (slurp) return jsonOut(pages)
-  if (pages.length === 1) {
-    return typeof pages[0] === 'string' ? textOut(pages[0]) : jsonOut(pages[0])
-  }
-  return textOut(
-    pages
-      .map((page) => (typeof page === 'string' ? page : `${JSON.stringify(page, null, 2)}\n`))
-      .join(''),
-  )
+  return rendered + (failure ?? '')
 }

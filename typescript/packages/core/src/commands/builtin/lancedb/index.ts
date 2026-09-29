@@ -19,11 +19,7 @@ import { makeGenericCommands } from '../generic_bind/index.ts'
 import { LANCEDB_IO } from './io.ts'
 import { LANCEDB_SEARCH } from './search.ts'
 
-const LANCEDB_OVERRIDES = new Set(['search'])
-
 export const LANCEDB_COMMANDS: readonly RegisteredCommand[] = [
-  ...makeGenericCommands<LanceDBAccessor>(VFSName.LANCEDB, LANCEDB_IO, {
-    overrides: LANCEDB_OVERRIDES,
-  }),
+  ...makeGenericCommands<LanceDBAccessor>(VFSName.LANCEDB, LANCEDB_IO),
   ...LANCEDB_SEARCH,
 ]

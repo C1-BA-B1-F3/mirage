@@ -309,7 +309,7 @@
       "command": "stat /ghost",
       "expect": {
         "exit": 0,
-        "stdout": "name=ghost size=None modified=None type=directory\n",
+        "stdout": "name=ghost size=4096 modified=None type=directory\n",
         "stderr": ""
       }
     },
@@ -361,7 +361,7 @@
       "command": "stat /data/inner",
       "expect": {
         "exit": 0,
-        "stdout": "name=inner size=None modified=None type=directory\n",
+        "stdout": "name=inner size=4096 modified=None type=directory\n",
         "stderr": ""
       }
     },
@@ -374,7 +374,7 @@
       "command": "stat /ghost/deep",
       "expect": {
         "exit": 0,
-        "stdout": "name=deep size=None modified=None type=directory\n",
+        "stdout": "name=deep size=4096 modified=None type=directory\n",
         "stderr": ""
       }
     },
@@ -513,7 +513,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "rg: /ghost: No such file or directory\n"
+        "stderr": "rg: /ghost: IO error for operation on /ghost: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -543,7 +543,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /ghost: No such file or directory\n"
+        "stderr": "stat: cannot statx '/ghost': No such file or directory\n"
       }
     },
     {
@@ -584,7 +584,7 @@
       "command": "wc -l /ghost",
       "expect": {
         "exit": 1,
-        "stdout": "",
+        "stdout": "0 /ghost\n",
         "stderr": "wc: /ghost: Is a directory\n"
       }
     },
@@ -598,7 +598,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "head: /ghost: Is a directory\n"
+        "stderr": "head: error reading '/ghost': Is a directory\n"
       }
     },
     {
@@ -611,7 +611,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "tail: /ghost: Is a directory\n"
+        "stderr": "tail: error reading '/ghost': Is a directory\n"
       }
     },
     {
@@ -695,7 +695,7 @@
       "command": "ls /",
       "expect": {
         "exit": 0,
-        "stdout": "data\ndev\n",
+        "stdout": "data\ndev\nusr\n",
         "stderr": ""
       }
     },
@@ -709,7 +709,7 @@
       "command": "ls /",
       "expect": {
         "exit": 0,
-        "stdout": "data\ndev\nghost\n",
+        "stdout": "data\ndev\nghost\nusr\n",
         "stderr": ""
       }
     },
@@ -737,7 +737,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sort: /ghost: Is a directory\n"
+        "stderr": "sort: read failed: /ghost: Is a directory\n"
       }
     },
     {
@@ -776,7 +776,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "awk: /ghost: Is a directory\n"
+        "stderr": "awk: cannot open \"/ghost\" (Is a directory)\n"
       }
     },
     {
@@ -789,7 +789,7 @@
       "expect": {
         "exit": 4,
         "stdout": "",
-        "stderr": "sed: /ghost: Is a directory\n"
+        "stderr": "sed: read error on /ghost: Is a directory\n"
       }
     },
     {
@@ -815,7 +815,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "uniq: /ghost: Is a directory\n"
+        "stderr": "uniq: error reading '/ghost': Is a directory\n"
       }
     },
     {
@@ -841,7 +841,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "gzip: /ghost: Is a directory\n"
+        "stderr": "gzip: /ghost is a directory -- ignored\n"
       }
     },
     {
@@ -850,11 +850,11 @@
       "targets": [
         "ram-nested"
       ],
-      "command": "zgrep x /ghost",
+      "command": "zgrep x /ghost; echo rc=$?; zgrep -c x /ghost; echo rc=$?; zgrep -L x /ghost; echo rc=$?",
       "expect": {
-        "exit": 1,
-        "stdout": "",
-        "stderr": "zgrep: /ghost: Is a directory\n"
+        "exit": 0,
+        "stdout": "rc=1\n0\nrc=1\n/ghost\nrc=1\n",
+        "stderr": ""
       }
     },
     {
@@ -883,7 +883,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sort: /ghost: No such file or directory\n"
+        "stderr": "sort: cannot read: /ghost: No such file or directory\n"
       }
     },
     {
@@ -911,7 +911,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sed: /ghost: No such file or directory\n"
+        "stderr": "sed: can't read /ghost: No such file or directory\n"
       }
     },
     {
@@ -990,6 +990,71 @@
         "exit": 0,
         "stdout": "/ghost\n",
         "stderr": ""
+      }
+    },
+    {
+      "id": "nest_rg_sort_spans_mounts",
+      "seq": 950081,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "rg --sort path -e top -e deep /data; rg --sortr path -e top -e deep /data",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/inner/leaf.txt:deep\n/data/top.txt:top\n/data/top.txt:top\n/data/inner/leaf.txt:deep\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nest_rg_depth_stays_relative_to_operand",
+      "seq": 950082,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "rg -d1 -e top -e deep /data; rg -d1 ghost /ghost; echo rc=$?; rg -d2 ghost /ghost",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/top.txt:top\nrc=1\n/ghost/deep/g.txt:ghost\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nest_rg_time_sort_spans_mounts",
+      "seq": 950083,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "touch -t 202001010000 /data/top.txt; touch -t 202101010000 /data/inner/leaf.txt; rg --sort modified -e top -e deep /data; rg --sortr modified -e top -e deep /data",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/top.txt:top\n/data/inner/leaf.txt:deep\n/data/inner/leaf.txt:deep\n/data/top.txt:top\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "nest_find_empty_operand_0",
+      "seq": 950005,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "cd /data && find '' /data",
+      "expect": {
+        "exit": 1,
+        "stdout": "/data\n/data/inner\n/data/inner/leaf.txt\n/data/top.txt\n",
+        "stderr": "find: '': No such file or directory\n"
+      }
+    },
+    {
+      "id": "nest_find_empty_operand_1",
+      "seq": 950005,
+      "targets": [
+        "ram-nested"
+      ],
+      "command": "cd /data && find /data ''",
+      "expect": {
+        "exit": 1,
+        "stdout": "/data\n/data/inner\n/data/inner/leaf.txt\n/data/top.txt\n",
+        "stderr": "find: '': No such file or directory\n"
       }
     }
   ]

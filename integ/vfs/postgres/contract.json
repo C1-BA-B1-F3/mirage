@@ -1,0 +1,420 @@
+{
+  "cases": [
+    {
+      "id": "postgres_head_cap_2",
+      "seq": 611000,
+      "targets": [
+        "postgres"
+      ],
+      "command": "set -o pipefail; head -n 2 /pg-limited/public/tables/books/rows.jsonl | jq -r .id",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "postgres_head_cap_3",
+      "seq": 611001,
+      "targets": [
+        "postgres"
+      ],
+      "command": "set -o pipefail; head -n 3 /pg-limited/public/tables/books/rows.jsonl | jq -r .id",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n2\n3\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "postgres_head_cap_4",
+      "seq": 611002,
+      "targets": [
+        "postgres"
+      ],
+      "command": "set -o pipefail; head -n 4 /pg-limited/public/tables/books/rows.jsonl | jq -r .id",
+      "expect": {
+        "exit": 1,
+        "stdout": "1\n2\n3\n",
+        "stderr": "head: /pg-limited/public/tables/books/rows.jsonl: stopped at 3 rows (max_read_rows); the output is incomplete\n"
+      }
+    },
+    {
+      "id": "postgres_tail_cap_2",
+      "seq": 611003,
+      "targets": [
+        "postgres"
+      ],
+      "command": "set -o pipefail; tail -n 2 /pg-limited/public/tables/books/rows.jsonl | jq -r .id",
+      "expect": {
+        "exit": 0,
+        "stdout": "4\n5\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "postgres_tail_cap_3",
+      "seq": 611004,
+      "targets": [
+        "postgres"
+      ],
+      "command": "set -o pipefail; tail -n 3 /pg-limited/public/tables/books/rows.jsonl | jq -r .id",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n4\n5\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "postgres_tail_cap_4",
+      "seq": 611005,
+      "targets": [
+        "postgres"
+      ],
+      "command": "set -o pipefail; tail -n 4 /pg-limited/public/tables/books/rows.jsonl | jq -r .id",
+      "expect": {
+        "exit": 1,
+        "stdout": "3\n4\n5\n",
+        "stderr": "tail: /pg-limited/public/tables/books/rows.jsonl: stopped at 3 rows (max_read_rows); the output is incomplete\n"
+      }
+    },
+    {
+      "id": "postgres_wc_full_count_over_cap",
+      "seq": 611006,
+      "targets": [
+        "postgres"
+      ],
+      "command": "wc -l /pg-limited/public/tables/books/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "5 /pg-limited/public/tables/books/rows.jsonl\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "postgres_redirect_keeps_cap_status",
+      "seq": 611007,
+      "targets": [
+        "postgres"
+      ],
+      "command": "mkdir -p /tmp; tail -n 4 /pg-limited/public/tables/books/rows.jsonl > /tmp/capped; echo $?; cat /tmp/capped | jq -r .id",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n3\n4\n5\n",
+        "stderr": "tail: /pg-limited/public/tables/books/rows.jsonl: stopped at 3 rows (max_read_rows); the output is incomplete\n"
+      }
+    },
+    {
+      "id": "postgres_scope_cat",
+      "seq": 611008,
+      "targets": [
+        "postgres"
+      ],
+      "command": "cat /pg-contract/public/tables/books/rows.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /pg-contract/public/tables/books/rows.jsonl: No such file or directory\n"
+      }
+    },
+    {
+      "id": "postgres_scope_head",
+      "seq": 611009,
+      "targets": [
+        "postgres"
+      ],
+      "command": "head -n 1 /pg-contract/public/tables/books/rows.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "head: cannot open '/pg-contract/public/tables/books/rows.jsonl' for reading: No such file or directory\n"
+      }
+    },
+    {
+      "id": "postgres_scope_tail",
+      "seq": 611010,
+      "targets": [
+        "postgres"
+      ],
+      "command": "tail -n 1 /pg-contract/public/tables/books/rows.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "tail: cannot open '/pg-contract/public/tables/books/rows.jsonl' for reading: No such file or directory\n"
+      }
+    },
+    {
+      "id": "postgres_scope_wc",
+      "seq": 611011,
+      "targets": [
+        "postgres"
+      ],
+      "command": "wc -l /pg-contract/public/tables/books/rows.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "wc: /pg-contract/public/tables/books/rows.jsonl: No such file or directory\n"
+      }
+    },
+    {
+      "id": "postgres_scope_grep",
+      "seq": 611012,
+      "targets": [
+        "postgres"
+      ],
+      "command": "grep alpha /pg-contract/public/tables/books/rows.jsonl",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: /pg-contract/public/tables/books/rows.jsonl: No such file or directory\n"
+      }
+    },
+    {
+      "id": "pg_search_contract_right",
+      "seq": 611113,
+      "targets": [
+        "postgres"
+      ],
+      "command": "grep right /pg-contract/contract/tables/probes/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "contract/tables/probes/rows.jsonl:{\"id\":2,\"body\":\"left right\",\"active\":false}\ncontract/tables/probes/rows.jsonl:{\"id\":3,\"body\":\"left right\",\"active\":true}\ncontract/tables/probes/rows.jsonl:{\"id\":4,\"body\":\"leftright\",\"active\":false}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "pg_search_contract_5",
+      "seq": 611114,
+      "targets": [
+        "postgres"
+      ],
+      "command": "grep 5 /pg-contract/contract/tables/probes/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "contract/tables/probes/rows.jsonl:{\"id\":5,\"body\":null,\"active\":true}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "pg_search_contract_true",
+      "seq": 611115,
+      "targets": [
+        "postgres"
+      ],
+      "command": "grep true /pg-contract/contract/tables/probes/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "contract/tables/probes/rows.jsonl:{\"id\":1,\"body\":\"Ada\\ttab\",\"active\":true}\ncontract/tables/probes/rows.jsonl:{\"id\":3,\"body\":\"left right\",\"active\":true}\ncontract/tables/probes/rows.jsonl:{\"id\":5,\"body\":null,\"active\":true}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "pg_search_contract_null",
+      "seq": 611116,
+      "targets": [
+        "postgres"
+      ],
+      "command": "grep null /pg-contract/contract/tables/probes/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "contract/tables/probes/rows.jsonl:{\"id\":5,\"body\":null,\"active\":true}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "pg_search_contract_body",
+      "seq": 611117,
+      "targets": [
+        "postgres"
+      ],
+      "command": "grep body /pg-contract/contract/tables/probes/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "contract/tables/probes/rows.jsonl:{\"id\":1,\"body\":\"Ada\\ttab\",\"active\":true}\ncontract/tables/probes/rows.jsonl:{\"id\":2,\"body\":\"left right\",\"active\":false}\ncontract/tables/probes/rows.jsonl:{\"id\":3,\"body\":\"left right\",\"active\":true}\ncontract/tables/probes/rows.jsonl:{\"id\":4,\"body\":\"leftright\",\"active\":false}\ncontract/tables/probes/rows.jsonl:{\"id\":5,\"body\":null,\"active\":true}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "pg_search_contract_tab",
+      "seq": 611118,
+      "targets": [
+        "postgres"
+      ],
+      "command": "grep tab /pg-contract/contract/tables/probes/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "contract/tables/probes/rows.jsonl:{\"id\":1,\"body\":\"Ada\\ttab\",\"active\":true}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "postgres_scope_redirect",
+      "seq": 611200,
+      "targets": [
+        "postgres"
+      ],
+      "command": "cat < /pg-contract/public/tables/books/rows.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "/pg-contract/public/tables/books/rows.jsonl: No such file or directory\n"
+      }
+    },
+    {
+      "id": "postgres_whole_read_refuses_cap",
+      "seq": 611201,
+      "targets": [
+        "postgres"
+      ],
+      "command": "cat /pg-limited/public/tables/books/rows.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /pg-limited/public/tables/books/rows.jsonl: File too large\n"
+      }
+    },
+    {
+      "id": "postgres_whole_read_refusal_wc_goes_on",
+      "seq": 611202,
+      "targets": [
+        "postgres"
+      ],
+      "command": "wc /pg-limited/public/tables/books/rows.jsonl /pg-limited/public/tables/authors/rows.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": " 3  3 97 /pg-limited/public/tables/authors/rows.jsonl\n 3  3 97 total\n",
+        "stderr": "wc: /pg-limited/public/tables/books/rows.jsonl: File too large\n"
+      }
+    },
+    {
+      "id": "postgres_whole_read_refusal_cat_goes_on",
+      "seq": 611203,
+      "targets": [
+        "postgres"
+      ],
+      "command": "cat /pg-limited/public/tables/books/rows.jsonl /pg-limited/public/tables/authors/rows.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "{\"id\":1,\"name\":\"ada\",\"books\":2}\n{\"id\":2,\"name\":\"ben\",\"books\":2}\n{\"id\":3,\"name\":\"cara\",\"books\":1}\n",
+        "stderr": "cat: /pg-limited/public/tables/books/rows.jsonl: File too large\n"
+      }
+    },
+    {
+      "id": "postgres_whole_read_refusal_grep_goes_on",
+      "seq": 611204,
+      "targets": [
+        "postgres"
+      ],
+      "command": "grep -c Dune /pg-limited/public/tables/books/rows.jsonl /pg-limited/public/tables/authors/rows.jsonl",
+      "expect": {
+        "exit": 2,
+        "stdout": "/pg-limited/public/tables/authors/rows.jsonl:0\n",
+        "stderr": "grep: /pg-limited/public/tables/books/rows.jsonl: File too large\n"
+      }
+    },
+    {
+      "id": "postgres_whole_read_refusal_grep_pushdown",
+      "seq": 611205,
+      "targets": [
+        "postgres"
+      ],
+      "command": "grep -F Dune /pg-limited/public/tables/books/rows.jsonl",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: /pg-limited/public/tables/books/rows.jsonl: File too large\n"
+      }
+    },
+    {
+      "id": "postgres_whole_read_refusal_rg_pushdown",
+      "seq": 611206,
+      "targets": [
+        "postgres"
+      ],
+      "command": "rg -F Dune /pg-limited/public/tables/books/rows.jsonl",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "rg: /pg-limited/public/tables/books/rows.jsonl: File too large\n"
+      }
+    },
+    {
+      "id": "postgres_whole_read_refusal_is_not_empty",
+      "seq": 611207,
+      "targets": [
+        "postgres"
+      ],
+      "command": "test -s /pg-limited/public/tables/books/rows.jsonl && echo nonempty",
+      "expect": {
+        "exit": 0,
+        "stdout": "nonempty\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "postgres_byte_budget_wide_cat",
+      "seq": 611300,
+      "targets": [
+        "postgres"
+      ],
+      "command": "cat /pg-bytes/byte_budget/tables/wide/rows.jsonl",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /pg-bytes/byte_budget/tables/wide/rows.jsonl: File too large\n"
+      }
+    },
+    {
+      "id": "postgres_byte_budget_empty",
+      "seq": 611301,
+      "targets": [
+        "postgres"
+      ],
+      "command": "cat /pg-bytes/byte_budget/tables/empty/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "postgres_byte_budget_null_marker",
+      "seq": 611302,
+      "targets": [
+        "postgres"
+      ],
+      "command": "cat /pg-bytes/byte_budget/tables/exact/rows.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"__mirage_bytes\":null}\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "postgres_byte_budget_wide_grep",
+      "seq": 611303,
+      "targets": [
+        "postgres"
+      ],
+      "command": "grep -F é /pg-bytes/byte_budget/tables/wide/rows.jsonl",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: /pg-bytes/byte_budget/tables/wide/rows.jsonl: File too large\n"
+      }
+    },
+    {
+      "id": "postgres_byte_budget_wide_rg",
+      "seq": 611304,
+      "targets": [
+        "postgres"
+      ],
+      "command": "rg -F é /pg-bytes/byte_budget/tables/wide/rows.jsonl",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "rg: /pg-bytes/byte_budget/tables/wide/rows.jsonl: File too large\n"
+      }
+    }
+  ]
+}

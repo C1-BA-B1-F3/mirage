@@ -110,6 +110,44 @@
       "flags": [
         "g"
       ]
+    },
+    {
+      "id": "sort_g_and_n_are_incompatible",
+      "seq": 1299069,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sort -n -g",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-gn' are incompatible\n"
+      },
+      "flags": [
+        "g",
+        "n"
+      ]
     }
   ]
 }

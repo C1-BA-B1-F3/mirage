@@ -13,10 +13,13 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
+import { SharedInput } from './async_line_iterator.ts'
 import { CachableAsyncIterator } from './cachable_iterator.ts'
 import {
+  SharedStdin,
   asyncChain,
   closeQuietly,
+  discardStreams,
   drain,
   exitOnEmpty,
   mergeStdoutStderr,
@@ -142,12 +145,37 @@ describe('closeQuietly', () => {
   it('is a no-op on bytes', async () => {
     await closeQuietly(encode('x'))
   })
+
+  it('leaves a shared input to a discard', async () => {
+    let closed = false
+    async function* gen(): AsyncGenerator<Uint8Array, void, void> {
+      try {
+        await Promise.resolve()
+        yield encode('a\n')
+        yield encode('b\n')
+        yield encode('c\n')
+      } finally {
+        closed = true
+      }
+    }
+    const shared = new SharedInput(gen())
+    const text = async (): Promise<string | null> => {
+      const line = await shared.lines.readline()
+      return line === null ? null : new TextDecoder().decode(line)
+    }
+    expect(await text()).toBe('a')
+    await closeQuietly(shared)
+    expect(await text()).toBe('b')
+    await discardStreams(shared)
+    expect(closed).toBe(true)
+    expect(await text()).toBeNull()
+  })
 })
 
 describe('asyncChain', () => {
   it('chains multiple streams/bytes/null into one', async () => {
     const out = await collect(
-      asyncChain(encode('a'), fromChunks([encode('b'), encode('c')]), null, encode('d')),
+      asyncChain([encode('a'), fromChunks([encode('b'), encode('c')]), null, encode('d')]),
     )
     expect(out).toBe('abcd')
   })
@@ -171,4 +199,27 @@ describe('quietMatch', () => {
     await collect(quietMatch(fromChunks([]), io))
     expect(io.exitCode).toBe(1)
   })
+})
+
+it('shares a lazy cursor across early exit and concurrent readers', async () => {
+  const pulls: string[] = []
+  async function* source() {
+    for (const chunk of ['', 'abc', '', 'def']) {
+      await Promise.resolve()
+      pulls.push(chunk)
+      yield new TextEncoder().encode(chunk)
+    }
+  }
+  const shared = new SharedStdin(source())
+  expect(pulls).toEqual([])
+  for await (const byte of shared) {
+    expect(new TextDecoder().decode(byte)).toBe('a')
+    break
+  }
+  const other = shared[Symbol.asyncIterator]()
+  const bytes = await Promise.all(Array.from({ length: 5 }, () => other.next()))
+  expect(bytes.map((step) => new TextDecoder().decode(step.value)).join('')).toBe('bcdef')
+  expect((await other.next()).done).toBe(true)
+  expect((await shared[Symbol.asyncIterator]().next()).done).toBe(true)
+  expect(pulls).toEqual(['', 'abc', '', 'def'])
 })

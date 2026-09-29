@@ -16,15 +16,25 @@ from functools import partial
 
 import pytest
 
-from mirage.commands.builtin.rg_scan import _rg_matches_filter, rg_full
-from mirage.commands.builtin.utils.wrap import (call_read_bytes, call_readdir,
-                                                call_stat, to_pathspec)
+from mirage.commands.builtin.generic.rg import parse_flags
+from mirage.commands.builtin.generic.rg import rg as generic_rg
+from mirage.commands.builtin.generic.rg import walk_filter
+from mirage.commands.builtin.rg_scan import (WalkFilter, loop_error_line,
+                                             on_other_mount, open_error_line,
+                                             os_error_text, walk_candidates,
+                                             walk_error_line)
+from mirage.commands.builtin.utils.wrap import to_pathspec
+from mirage.commands.config import CommandOpts
+from mirage.commands.spec import SPECS
+from mirage.commands.spec.flag_view import FlagView
 from mirage.core.ram.mkdir import mkdir
 from mirage.core.ram.read import read
 from mirage.core.ram.readdir import readdir
 from mirage.core.ram.stat import stat
 from mirage.core.ram.write import write_bytes as _async_write_bytes
+from mirage.io.stream import materialize
 from mirage.io.types import IOResult
+from mirage.types import FileStat, FileType, PathSpec
 
 
 async def _write(backend, path, content):
@@ -37,63 +47,115 @@ async def _mkdir(backend, path):
     await mkdir(accessor, to_pathspec(path), parents=True)
 
 
-def _bind(backend):
-    accessor = backend.accessor
-    return (
-        partial(call_readdir, partial(readdir, accessor)),
-        partial(call_stat, partial(stat, accessor)),
-        partial(call_read_bytes, partial(read, accessor)),
-    )
+# The keywords the scan used to take, as the rg dests they stand for.
+_DESTS = {
+    "ignore_case": "ignore_case",
+    "invert": "invert_match",
+    "count_only": "count",
+    "files_only": "files_with_matches",
+    "fixed_string": "fixed_strings",
+    "only_matching": "only_matching",
+    "max_count": "max_count",
+    "whole_word": "word_regexp",
+    "context_before": "before_context",
+    "context_after": "after_context",
+    "hidden": "hidden",
+    "byte_offsets": "byte_offset",
+    "files_without_match": "files_without_match",
+}
 
 
 async def rg(backend, path, pattern, **kwargs):
-    rd, st, rb = _bind(backend)
-    return await rg_full(
-        rd,
-        st,
-        rb,
-        path,
-        pattern,
-        ignore_case=kwargs.get("ignore_case", False),
-        invert=kwargs.get("invert", False),
-        line_numbers=kwargs.get("line_numbers", True),
-        count_only=kwargs.get("count_only", False),
-        files_only=kwargs.get("files_only", False),
-        fixed_string=kwargs.get("fixed_string", False),
-        only_matching=kwargs.get("only_matching", False),
-        max_count=kwargs.get("max_count", None),
-        whole_word=kwargs.get("whole_word", False),
-        context_before=kwargs.get("context_before", 0),
-        context_after=kwargs.get("context_after", 0),
-        file_type=kwargs.get("file_type", None),
-        glob_pattern=kwargs.get("glob_pattern", None),
-        hidden=kwargs.get("hidden", False),
-        warnings=kwargs.get("warnings", None),
-        byte_offsets=kwargs.get("byte_offsets", False),
-        io=kwargs.get("io"),
-        files_without_match=kwargs.get("files_without_match", False),
-    )
+    """Run the generic rg over one operand on the RAM backend and answer
+    with its printed lines, the way the scan these tests were written for
+    answered.
+
+    A line number prints unless ``line_numbers=False``; ``warnings``
+    receives stderr's lines and ``io`` the exit status.
+    """
+    flags: dict = {}
+    if kwargs.get("line_numbers", True):
+        flags["line_number"] = True
+    # In the order the call gave them, which is line order to a
+    # last-wins option.
+    for key, value in kwargs.items():
+        dest = _DESTS.get(key)
+        if dest is None or value is None or value is False:
+            continue
+        flags[dest] = str(value) if isinstance(
+            value, int) and not isinstance(value, bool) else value
+    if kwargs.get("file_type") is not None:
+        flags["type"] = [kwargs["file_type"]]
+    if kwargs.get("glob_pattern") is not None:
+        flags["glob"] = [kwargs["glob_pattern"]]
+    accessor = backend.accessor
+    out, io = await generic_rg([to_pathspec(path)], [pattern],
+                               CommandOpts(flags=flags),
+                               readdir=partial(readdir, accessor),
+                               stat=partial(stat, accessor),
+                               read_bytes=partial(read, accessor),
+                               read_stream=None)
+    data = await materialize(out) if out is not None else b""
+    if kwargs.get("warnings") is not None and io.stderr:
+        stderr = await materialize(io.stderr)
+        kwargs["warnings"].extend(stderr.decode().splitlines())
+    if kwargs.get("io") is not None:
+        kwargs["io"].exit_code = io.exit_code
+    text = data.decode(errors="surrogateescape")
+    # Split on the terminator alone, as rg does: a \r or \v stays.
+    return text.split("\n")[:-1] if text else []
 
 
-class TestRgMatchesFilter:
+def _walk(**flags) -> WalkFilter:
+    return walk_filter(parse_flags(FlagView(flags, spec=SPECS["rg"])))
+
+
+class TestWalkFilter:
 
     def test_hidden_excluded(self):
-        assert not _rg_matches_filter(".hidden", None, None, False)
+        assert not _walk().admits_file(".hidden", ".hidden", None)
 
     def test_hidden_included(self):
-        assert _rg_matches_filter(".hidden", None, None, True)
+        assert _walk(hidden=True).admits_file(".hidden", ".hidden", None)
 
     def test_file_type_match(self):
-        assert _rg_matches_filter("file.py", "py", None, False)
+        assert _walk(type=["py"]).admits_file("file.py", "file.py", None)
 
     def test_file_type_no_match(self):
-        assert not _rg_matches_filter("file.txt", "py", None, False)
+        assert not _walk(type=["py"]).admits_file("file.txt", "file.txt", None)
 
     def test_glob_match(self):
-        assert _rg_matches_filter("file.py", None, "*.py", False)
+        assert _walk(glob=["*.py"]).admits_file("file.py", "file.py", None)
 
     def test_glob_no_match(self):
-        assert not _rg_matches_filter("file.txt", None, "*.py", False)
+        assert not _walk(glob=["*.py"]).admits_file("file.txt", "file.txt",
+                                                    None)
+
+    def test_a_type_or_glob_keeps_a_hidden_file(self):
+        # ripgrep 14.1.1: `rg -t txt` and `rg -g '*.txt'` search
+        # .hid.txt, since a whitelist decides before the hidden filter.
+        assert _walk(type=["txt"]).admits_file(".hid.txt", ".hid.txt", None)
+        assert _walk(glob=["*.txt"]).admits_file(".hid.txt", ".hid.txt", None)
+
+    def test_a_negated_glob_outranks_a_type(self):
+        walk = _walk(type=["py"], glob=["!b.py"])
+        assert not walk.admits_file("b.py", "b.py", None)
+        assert walk.admits_file("a.py", "a.py", None)
+
+    def test_max_filesize_drops_a_larger_file(self):
+        walk = _walk(max_filesize="10")
+        small = FileStat(name="a", size=10, type=FileType.FILE)
+        big = FileStat(name="b", size=11, type=FileType.FILE)
+        assert walk.admits_file("a", "a", small)
+        assert not walk.admits_file("b", "b", big)
+
+    def test_a_binary_extension_is_walked_only_on_request(self):
+        assert not _walk().admits_file("m.gguf", "m.gguf", None)
+        assert _walk(text=True).admits_file("m.gguf", "m.gguf", None)
+        assert _walk(binary=True).admits_file("m.gguf", "m.gguf", None)
+        assert _walk(unrestricted=3).admits_file("m.gguf", "m.gguf", None)
+        assert not _walk(text=True, no_text=True).admits_file(
+            "m.gguf", "m.gguf", None)
 
 
 class TestBasicMatching:
@@ -303,9 +365,10 @@ class TestFileType:
 
     @pytest.mark.anyio
     async def test_file_type_single_file(self, backend):
+        # A named file is searched whatever --type says (ripgrep 14.1.1).
         await _write(backend, "/tmp/a.txt", "hello")
         result = await rg(backend, "/tmp/a.txt", "hello", file_type="py")
-        assert result == []
+        assert result == ["1:hello"]
 
 
 class TestGlobPattern:
@@ -393,12 +456,17 @@ class TestWarnings:
 
     @pytest.mark.anyio
     async def test_warnings_on_missing_file(self, backend):
+        # The path named the way the operand was typed.
         warnings = []
         result = await rg(backend,
                           "/tmp/nonexistent.txt",
                           "foo",
                           warnings=warnings)
         assert result == []
+        assert warnings == [
+            "rg: /tmp/nonexistent.txt: IO error for operation on "
+            "/tmp/nonexistent.txt: No such file or directory (os error 2)"
+        ]
 
     @pytest.mark.anyio
     async def test_warnings_none_does_not_error(self, backend):
@@ -413,16 +481,19 @@ class TestWarnings:
         warnings = []
         result = await rg(backend, "/tmp/nodir", "foo", warnings=warnings)
         assert result == []
+        assert warnings == [
+            "rg: /tmp/nodir: IO error for operation on /tmp/nodir: "
+            "No such file or directory (os error 2)"
+        ]
 
 
 class TestOnlyMatchingDirectoryWalk:
-    """GNU's -o rule holds on the directory branch, not just single files.
+    """ripgrep's -o rule holds on the directory branch, not just one file.
 
-    Every non-empty match prints on its own line and an empty match
-    prints nothing at all, while the line still counts as selected. The
-    directory branch words only the per-file label differently (-I drops
-    it), so it had drifted to printing just the first match and, for an
-    empty match, a label with nothing after it.
+    Every match prints on its own line, an empty one included, found the
+    way Rust's regex iterates (an empty match where the last one ended is
+    skipped), and -c counts the matches (ripgrep 14.1.1). The directory
+    branch words only the per-file label differently (-I drops it).
     """
 
     @pytest.mark.anyio
@@ -448,7 +519,7 @@ class TestOnlyMatchingDirectoryWalk:
         assert result == ["/tmp/d/x.txt:1:1", "/tmp/d/x.txt:1:2"]
 
     @pytest.mark.anyio
-    async def test_empty_match_prints_no_bare_label(self, backend):
+    async def test_empty_matches_print_under_the_label(self, backend):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/y.txt", "ab\n")
         result = await rg(backend,
@@ -456,10 +527,11 @@ class TestOnlyMatchingDirectoryWalk:
                           "[0-9]*",
                           only_matching=True,
                           line_numbers=False)
-        assert result == []
+        assert result == ["/tmp/d/y.txt:"] * 3
 
     @pytest.mark.anyio
-    async def test_empty_matches_dropped_around_a_real_one(self, backend):
+    async def test_an_empty_match_right_after_a_match_is_skipped(
+            self, backend):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/z.txt", "1a22b\n")
         result = await rg(backend,
@@ -467,10 +539,10 @@ class TestOnlyMatchingDirectoryWalk:
                           "[0-9]*",
                           only_matching=True,
                           line_numbers=False)
-        assert result == ["/tmp/d/z.txt:1", "/tmp/d/z.txt:22"]
+        assert result == ["/tmp/d/z.txt:1", "/tmp/d/z.txt:22", "/tmp/d/z.txt:"]
 
     @pytest.mark.anyio
-    async def test_count_still_counts_the_selected_line(self, backend):
+    async def test_count_counts_every_match(self, backend):
         await _mkdir(backend, "/tmp/d")
         await _write(backend, "/tmp/d/y.txt", "ab\n")
         result = await rg(backend,
@@ -478,7 +550,7 @@ class TestOnlyMatchingDirectoryWalk:
                           "[0-9]*",
                           only_matching=True,
                           count_only=True)
-        assert result == ["/tmp/d/y.txt:1"]
+        assert result == ["/tmp/d/y.txt:3"]
 
 
 class TestRgByteOffsets:
@@ -550,12 +622,10 @@ class TestRgByteOffsets:
 
 
 class TestRgFullReportsSelection:
-    """Selection cannot be read off the printed lines under -o.
+    """The status rides ``io``, not the printed lines.
 
-    A directory whose only matches are zero-width prints nothing and GNU
-    still exits 0; ``rg_full`` returns only the printed lines, so the
-    status rides the same ``io`` channel ``grep_lines`` and
-    ``grep_stream`` already take.
+    The ``rg`` helper returns only the printed lines, so the status rides
+    ``io``; a zero-width match selects its line and prints an empty piece.
     """
 
     @pytest.mark.anyio
@@ -569,7 +639,7 @@ class TestRgFullReportsSelection:
                           only_matching=True,
                           line_numbers=False,
                           io=io)
-        assert (result, io.exit_code) == ([], 0)
+        assert (result, io.exit_code) == (["/tmp/d/y.txt:"] * 3, 0)
 
     @pytest.mark.anyio
     async def test_directory_with_no_match_leaves_the_status_alone(
@@ -596,7 +666,7 @@ class TestRgFullReportsSelection:
                           only_matching=True,
                           line_numbers=False,
                           io=io)
-        assert (result, io.exit_code) == ([], 0)
+        assert (result, io.exit_code) == ([""] * 3, 0)
 
 
 async def _write_bytes(backend, path, content):
@@ -693,16 +763,16 @@ class TestRgMaxCountZeroSelectsNothing:
         assert result == []
 
 
-class TestRgOnlyMatchingWithInvertPrintsNothing:
-    """`-o -v` prints nothing: an unselected pattern has no match to print.
+class TestRgOnlyMatchingWithInvertPrintsLinesWhole:
+    """`rg -o -v` prints each selected line whole: it holds no match.
 
-    GNU grep 3.11 over `abc\\ndef\\n` answers zero bytes and exit 0 for
-    `grep -ov abc`, and `1` for `grep -ovc`. ripgrep prints the whole line,
-    and GNU is the reference this family already follows for -o.
+    ripgrep 14.1.1 over `abc\\ndef\\n` answers `def` for `rg -ov abc` and
+    `0` for `rg -ovc abc`, counting matches, where GNU grep prints nothing
+    and counts the line. rg follows ripgrep.
     """
 
     @pytest.mark.anyio
-    async def test_single_file_prints_nothing(self, backend):
+    async def test_single_file_prints_the_line_whole(self, backend):
         await _write(backend, "/tmp/ov.txt", "abc\ndef\n")
         io = IOResult(exit_code=1)
         result = await rg(backend,
@@ -711,10 +781,10 @@ class TestRgOnlyMatchingWithInvertPrintsNothing:
                           only_matching=True,
                           invert=True,
                           io=io)
-        assert (result, io.exit_code) == ([], 0)
+        assert (result, io.exit_code) == (["2:def"], 0)
 
     @pytest.mark.anyio
-    async def test_single_file_still_counts_the_selected_line(self, backend):
+    async def test_single_file_counts_no_matches(self, backend):
         await _write(backend, "/tmp/ov.txt", "abc\ndef\n")
         result = await rg(backend,
                           "/tmp/ov.txt",
@@ -722,10 +792,10 @@ class TestRgOnlyMatchingWithInvertPrintsNothing:
                           only_matching=True,
                           invert=True,
                           count_only=True)
-        assert result == ["1"]
+        assert result == ["0"]
 
     @pytest.mark.anyio
-    async def test_a_walk_prints_nothing(self, backend):
+    async def test_a_walk_prints_the_line_whole(self, backend):
         await _mkdir(backend, "/tmp/ovd")
         await _write(backend, "/tmp/ovd/x.txt", "abc\ndef\n")
         result = await rg(backend,
@@ -733,7 +803,7 @@ class TestRgOnlyMatchingWithInvertPrintsNothing:
                           "abc",
                           only_matching=True,
                           invert=True)
-        assert result == []
+        assert result == ["/tmp/ovd/x.txt:2:def"]
 
 
 class TestRgOffsetsOverSmuggledBytes:
@@ -867,13 +937,20 @@ class TestFilesWithoutMatch:
         assert result == ["/tmp/sub/b.txt"]
 
     @pytest.mark.anyio
-    async def test_count_outranks_it(self, backend):
+    async def test_the_later_of_it_and_count_wins(self, backend):
+        # ripgrep 14.1.1: `--files-without-match -c` prints counts and
+        # `-c --files-without-match` lists the matchless files.
         await _write(backend, "/tmp/a.txt", "foo\nfoo")
         assert await rg(backend,
                         "/tmp/a.txt",
                         "foo",
+                        files_without_match=True,
+                        count_only=True) == ["2"]
+        assert await rg(backend,
+                        "/tmp/a.txt",
+                        "foo",
                         count_only=True,
-                        files_without_match=True) == ["2"]
+                        files_without_match=True) == []
 
     @pytest.mark.anyio
     async def test_m0_lists_nothing(self, backend):
@@ -883,3 +960,163 @@ class TestFilesWithoutMatch:
                         "foo",
                         max_count=0,
                         files_without_match=True) == []
+
+
+class TestWalkContext:
+    """A walk prints context the way ripgrep 14.1.1 does.
+
+    Every line leads with its file's name, `name:` on a match and
+    `name-` on context, and `--` sits between one file's context and the
+    next file's.
+    """
+
+    @pytest.mark.anyio
+    async def test_labels_every_line_and_separates_files(self, backend):
+        await _mkdir(backend, "/tmp/w")
+        await _write(backend, "/tmp/w/a.txt", "x\nhit\ny\n")
+        await _write(backend, "/tmp/w/b.txt", "hit\nz\n")
+        assert await rg(backend, "/tmp/w", "hit", context_after=1) == [
+            "/tmp/w/a.txt:2:hit", "/tmp/w/a.txt-3-y", "--",
+            "/tmp/w/b.txt:1:hit", "/tmp/w/b.txt-2-z"
+        ]
+
+    @pytest.mark.anyio
+    async def test_a_file_with_nothing_printed_adds_no_separator(
+            self, backend):
+        await _mkdir(backend, "/tmp/w")
+        await _write(backend, "/tmp/w/a.txt", "hit\n")
+        await _write(backend, "/tmp/w/b.txt", "miss\n")
+        await _write(backend, "/tmp/w/c.txt", "hit\n")
+        assert await rg(backend, "/tmp/w", "hit", context_after=1) == [
+            "/tmp/w/a.txt:1:hit", "--", "/tmp/w/c.txt:1:hit"
+        ]
+
+    @pytest.mark.anyio
+    async def test_counts_take_no_separator(self, backend):
+        await _mkdir(backend, "/tmp/w")
+        await _write(backend, "/tmp/w/a.txt", "hit\n")
+        await _write(backend, "/tmp/w/b.txt", "hit\n")
+        assert await rg(backend,
+                        "/tmp/w",
+                        "hit",
+                        context_after=1,
+                        count_only=True) == [
+                            "/tmp/w/a.txt:1", "/tmp/w/b.txt:1"
+                        ]
+
+
+def _scope(virtual: str = "/data") -> PathSpec:
+    return PathSpec(vfs_path="", virtual=virtual, directory=virtual)
+
+
+def _candidate(virtual: str) -> PathSpec:
+    return PathSpec(vfs_path=virtual.removeprefix("/data/"),
+                    virtual=virtual,
+                    directory="",
+                    resolved=True)
+
+
+class TestWalkCandidates:
+    """Narrowed candidates pass the filters the walk they replace applies."""
+
+    def test_drops_dotfiles_below_the_scope(self):
+        kept = walk_candidates([
+            _candidate("/data/.env"),
+            _candidate("/data/.git/config"),
+            _candidate("/data/a.txt")
+        ], [_scope()], _walk(), "/")
+        assert [p.virtual for p in kept] == ["/data/a.txt"]
+
+    def test_hidden_flag_keeps_dotfiles(self):
+        paths = [_candidate("/data/.env"), _candidate("/data/a.txt")]
+        assert walk_candidates(paths, [_scope()], _walk(hidden=True),
+                               "/") == paths
+
+    def test_ignores_dots_in_the_scope_itself(self):
+        kept = walk_candidates([_candidate("/data/.cfg/a.txt")],
+                               [_scope("/data/.cfg")], _walk(), "/")
+        assert [p.virtual for p in kept] == ["/data/.cfg/a.txt"]
+
+    def test_applies_type_and_glob_to_the_file(self):
+        paths = [_candidate("/data/a.py"), _candidate("/data/b.md")]
+        by_type = walk_candidates(paths, [_scope()], _walk(type=["py"]), "/")
+        by_glob = walk_candidates(paths, [_scope()], _walk(glob=["*.md"]), "/")
+        assert [p.virtual for p in by_type] == ["/data/a.py"]
+        assert [p.virtual for p in by_glob] == ["/data/b.md"]
+
+    def test_a_directory_the_walk_would_skip_hides_its_files(self):
+        paths = [_candidate("/data/sub/a.py"), _candidate("/data/b.py")]
+        kept = walk_candidates(paths, [_scope()], _walk(glob=["!sub/"]), "/")
+        assert [p.virtual for p in kept] == ["/data/b.py"]
+
+    def test_max_depth_counts_below_the_scope(self):
+        paths = [_candidate("/data/a.py"), _candidate("/data/sub/b.py")]
+        kept = walk_candidates(paths, [_scope()], _walk(max_depth="1"), "/")
+        assert [p.virtual for p in kept] == ["/data/a.py"]
+
+
+class TestNamedOperandsAreNeverFiltered:
+    """ripgrep 14.1.1 searches a file named on the line whatever --type,
+    --glob or a leading dot say (`rg --type rust b in` prints `b`)."""
+
+    @pytest.mark.anyio
+    @pytest.mark.parametrize("kwargs", [{"glob_pattern": "*.rs"}, {}])
+    async def test_a_named_file_is_searched(self, backend, kwargs):
+        await _write(backend, "/tmp/.in", "b\n")
+        assert await rg(backend, "/tmp/.in", "b", **kwargs) == ["1:b"]
+
+    @pytest.mark.anyio
+    async def test_a_walked_file_is_still_filtered(self, backend):
+        # The type keeps .hid.rs whatever its leading dot says (ripgrep
+        # 14.1.1's `rg -t txt` searches .hid.txt), and drops `in`.
+        await _mkdir(backend, "/tmp/w")
+        await _write(backend, "/tmp/w/in", "b\n")
+        await _write(backend, "/tmp/w/.hid.rs", "b\n")
+        assert await rg(backend, "/tmp/w", "b",
+                        file_type="rust") == ["/tmp/w/.hid.rs:1:b"]
+
+
+def test_walk_candidates_prunes_below_the_longest_matching_scope():
+    scopes = [_scope(), _scope("/data/.cfg")]
+    kept = walk_candidates(
+        [_candidate("/data/.cfg/a.txt"),
+         _candidate("/data/.cfg/.secret")], scopes, _walk(), "/")
+    assert [p.virtual for p in kept] == ["/data/.cfg/a.txt"]
+
+
+def test_os_error_text_numbers_what_the_vocabulary_names():
+    # Rust's io::Error display: the strerror, then Linux's errno. A failure
+    # the vocabulary cannot number keeps its own words.
+    assert os_error_text(
+        FileNotFoundError("x")) == "No such file or directory (os error 2)"
+    assert os_error_text(
+        RuntimeError("Server disconnected")) == ("Server disconnected")
+
+
+def test_walker_and_searcher_lines_take_ripgreps_two_shapes():
+    # ripgrep 14.1.1: the walker names the path twice, the searcher once.
+    assert walk_error_line("nope", FileNotFoundError("nope")) == (
+        "rg: nope: IO error for operation on nope: "
+        "No such file or directory (os error 2)")
+    assert open_error_line("locked", PermissionError("locked")) == (
+        "rg: locked: Permission denied (os error 13)")
+
+
+def test_a_loop_line_names_the_link_then_the_ancestor_it_leads_to():
+    # ripgrep 14.1.1's ignore crate, for a link -L follows back up the walk.
+    assert loop_error_line("s/sub/up", "s") == (
+        "rg: File system loop found: s/sub/up points to an ancestor s")
+
+
+@pytest.mark.parametrize("path, crosses", [
+    ("/data/s", False),
+    ("/data/m", True),
+    ("/ro/sub", True),
+])
+def test_one_file_system_keeps_the_walk_on_the_operands_mount(
+        path: str, crosses: bool):
+    # A directory crosses by being a mount root, a link by leading onto
+    # another mount: both are a different mount root than the operand's.
+    roots = {"/data/m": "/data/m/", "/ro/sub": "/ro/"}
+    assert on_other_mount(lambda p: roots.get(p, "/data/"), "/data/",
+                          path) is crosses

@@ -37,6 +37,528 @@
         "k",
         "t"
       ]
+    },
+    {
+      "id": "sort_k_h_is_an_ordering_letter",
+      "seq": 1299060,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '2K\\n1M\\n10\\n' | sort -k1h",
+      "expect": {
+        "exit": 0,
+        "stdout": "10\n2K\n1M\n",
+        "stderr": ""
+      },
+      "flags": [
+        "k"
+      ]
+    },
+    {
+      "id": "sort_k_stray_character_is_refused",
+      "seq": 1299061,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sort -k1x",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: stray character in field spec: invalid field specification '1x'\n"
+      },
+      "flags": [
+        "k"
+      ]
+    },
+    {
+      "id": "sort_k_zero_char_offset_is_refused",
+      "seq": 1299062,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sort -k1.0",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: character offset is zero: invalid field specification '1.0'\n"
+      },
+      "flags": [
+        "k"
+      ]
+    },
+    {
+      "id": "sort_k_missing_end_field_is_refused",
+      "seq": 1299063,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sort -k1,",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: invalid number after ',': invalid count at start of ''\n"
+      },
+      "flags": [
+        "k"
+      ]
+    },
+    {
+      "id": "sort_k_takes_a_plus_sign",
+      "seq": 1299064,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'b 2\\na 1\\n' | sort -k+2",
+      "expect": {
+        "exit": 0,
+        "stdout": "a 1\nb 2\n",
+        "stderr": ""
+      },
+      "flags": [
+        "k"
+      ]
+    },
+    {
+      "id": "sort_k_mixed_orderings_are_incompatible",
+      "seq": 1299065,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sort -k1n,1g",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-gn' are incompatible\n"
+      },
+      "flags": [
+        "k"
+      ]
+    },
+    {
+      "id": "sort_k_stray_character_outranks_incompatible",
+      "seq": 1299066,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sort -k1nMx",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: stray character in field spec: invalid field specification '1nMx'\n"
+      },
+      "flags": [
+        "k"
+      ]
+    },
+    {
+      "id": "sort_k_inherits_incompatible_globals",
+      "seq": 1299067,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\n' | sort -n -g -k1,1",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: options '-gn' are incompatible\n"
+      },
+      "flags": [
+        "k",
+        "n",
+        "g"
+      ]
+    },
+    {
+      "id": "sort_k_own_letters_leave_the_globals_unchecked",
+      "seq": 1299068,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '10\\n9\\n' | sort -n -g -k1,1n",
+      "expect": {
+        "exit": 0,
+        "stdout": "9\n10\n",
+        "stderr": ""
+      },
+      "flags": [
+        "k",
+        "n",
+        "g"
+      ]
+    },
+    {
+      "id": "sort_decimal_key_ascending",
+      "seq": 1302004,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x,4.89\\ny,4.98\\nz,4.5\\n' | sort -t, -k2,2n",
+      "expect": {
+        "exit": 0,
+        "stdout": "z,4.5\nx,4.89\ny,4.98\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_decimal_key_reverse",
+      "seq": 1302005,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x,4.89\\ny,4.98\\nz,4.5\\n' | sort -t, -k2,2nr",
+      "expect": {
+        "exit": 0,
+        "stdout": "y,4.98\nx,4.89\nz,4.5\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_decimal_global_reverse",
+      "seq": 1302006,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x,4.89\\ny,4.98\\nz,4.5\\n' | sort -t, -n -r -k2,2",
+      "expect": {
+        "exit": 0,
+        "stdout": "y,4.98\nx,4.89\nz,4.5\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_decimal_blank_fields",
+      "seq": 1302007,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x 4.89\\ny 4.98\\nz 4.5\\n' | sort -k2,2nr",
+      "expect": {
+        "exit": 0,
+        "stdout": "y 4.98\nx 4.89\nz 4.5\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_decimal_secondary_key",
+      "seq": 1302008,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'z,1.2,3\\na,1.20,2\\nb,-1.25,9\\nc,-1.5,8\\n' | sort -t, -k2,2n -k3,3n",
+      "expect": {
+        "exit": 0,
+        "stdout": "c,-1.5,8\nb,-1.25,9\na,1.20,2\nz,1.2,3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
     }
   ]
 }

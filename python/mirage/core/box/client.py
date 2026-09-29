@@ -212,6 +212,18 @@ async def box_get(
     return data
 
 
+async def box_options(tm: BoxTokenManager, url: str) -> dict[str, Any]:
+    data: dict[str, Any] = await api_request("OPTIONS",
+                                             url,
+                                             error_of=partial(_error_of,
+                                                              label="OPTIONS",
+                                                              url=url),
+                                             headers=await
+                                             box_auth_headers(tm),
+                                             session=tm.pool)
+    return data
+
+
 async def box_get_bytes(
     tm: BoxTokenManager,
     url: str,

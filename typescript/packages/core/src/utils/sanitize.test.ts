@@ -59,6 +59,24 @@ describe('sanitizeName', () => {
   it('preserves unicode letters like python \\w', () => {
     expect(sanitizeName('日本語 docs')).toBe('日本語_docs')
   })
+
+  // Every hierarchy classifier treats a dot-led segment as hidden, so a label
+  // that rendered one was dropped from its listing and refused as a path; an
+  // empty one rendered `__<id>`, which no `label__id` slot decodes.
+  it('is never dot-led or empty', () => {
+    const cases: [string, string][] = [
+      ['.plan', 'plan'],
+      ['..', 'unknown'],
+      ['.', 'unknown'],
+      ['_.env', 'env'],
+      [' .x', 'x'],
+      ['..x..', 'x..'],
+      ['!!!', 'unknown'],
+      ['🚀🚀', 'unknown'],
+      ['a.b.', 'a.b.'],
+    ]
+    for (const [raw, name] of cases) expect(sanitizeName(raw), raw).toBe(name)
+  })
 })
 
 describe('pathSafeName', () => {
@@ -82,6 +100,18 @@ describe('sanitizeLabel', () => {
   it('collapses runs and trims the edges', () => {
     expect(sanitizeLabel('Hello   //  World', { fallback: 'X', maxLen: 100 })).toBe('Hello_World')
     expect(sanitizeLabel('__edge__', { fallback: 'X', maxLen: 100 })).toBe('edge')
+  })
+
+  it('is never dot-led or empty', () => {
+    const cases: [string, string][] = [
+      ['.plan', 'plan'],
+      ['...', 'No_Subject'],
+      ['!!!', 'No_Subject'],
+      ['_.x', 'x'],
+    ]
+    for (const [raw, label] of cases) {
+      expect(sanitizeLabel(raw, { fallback: 'No_Subject', maxLen: 80 }), raw).toBe(label)
+    }
   })
 
   it('uses the fallback for a blank label', () => {

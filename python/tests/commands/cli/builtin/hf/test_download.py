@@ -59,6 +59,45 @@ def test_exclude_drops_matches():
 
 
 @pytest.mark.asyncio
+@patch("mirage.commands.cli.builtin.hf.download.fetch_tree")
+@pytest.mark.parametrize("refusal", [
+    HfHubError("nope", 401),
+    HfHubError("nope", 403),
+    HfHubError("nope", 404, "RepoNotFound"),
+    HfHubError("nope", 404, "RevisionNotFound"),
+])
+async def test_download_still_names_the_absence_when_the_tree_refuses(
+        mock_tree, doors, refusal):
+    # The tree walk raises for a repo it cannot see; download reads that as
+    # nothing listed, so the message upstream prints is unchanged.
+    record, _, _, _ = doors
+    mock_tree.side_effect = refusal
+    with patch("mirage.commands.cli.builtin.hf.download.classify_absence",
+               AsyncMock(return_value=Absence.REPO)):
+        with pytest.raises(HfHubError, match="Repository Not Found"):
+            await download_cmd(
+                inv(texts=("acme/widget", ),
+                    flags={"local_dir": "/work/out"},
+                    doors=record))
+
+
+@pytest.mark.asyncio
+@patch("mirage.commands.cli.builtin.hf.download.fetch_tree")
+async def test_download_lets_a_server_failure_through(mock_tree, doors):
+    record, _, _, _ = doors
+    mock_tree.side_effect = HfHubError("boom", 500)
+    classify = AsyncMock(return_value=Absence.REPO)
+    with patch("mirage.commands.cli.builtin.hf.download.classify_absence",
+               classify):
+        with pytest.raises(HfHubError, match="boom"):
+            await download_cmd(
+                inv(texts=("acme/widget", ),
+                    flags={"local_dir": "/work/out"},
+                    doors=record))
+    classify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @patch("mirage.commands.cli.builtin.hf.download.hub_bytes")
 @patch("mirage.commands.cli.builtin.hf.download.fetch_tree")
 async def test_download_writes_through_the_workspace_door(
@@ -141,10 +180,9 @@ async def test_download_refuses_when_nothing_matched(mock_tree, doors):
 @pytest.mark.asyncio
 @patch("mirage.commands.cli.builtin.hf.download.fetch_tree")
 async def test_download_tells_the_three_absences_apart(mock_tree, doors):
-    """fetch_tree folds 401/403/404 into an empty listing so a mount can
-    render an unreadable repository as an empty directory. Three
-    different failures would otherwise all read as "no files matched",
-    so the CLI asks the Hub which one it was."""
+    """download folds a refused tree walk (401/403/404) into an empty
+    listing itself. Three different failures would then all read as "no
+    files matched", so the CLI asks the Hub which one it was."""
     record, _, _, _ = doors
     mock_tree.return_value = {}
     cases = [(Absence.REPO, (), "Repository Not Found"),

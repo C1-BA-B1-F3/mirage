@@ -12,14 +12,16 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '../base.ts'
 import { HistoryAccessor } from '../../accessor/history.ts'
+
 import { HISTORY_COMMANDS } from '../../commands/builtin/history/index.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
 import type { Observer } from '../../observe/observer.ts'
 import { HISTORY_OPS } from '../../ops/history/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
+
 import { VFSName } from '../../types.ts'
-import { BaseVFS } from '../base.ts'
 
 export const HISTORY_PREFIX = '/.bash_history'
 
@@ -28,6 +30,7 @@ export const HISTORY_PREFIX = '/.bash_history'
  * views from the workspace's hidden recorder on every read; holds no
  * storage of its own.
  */
+
 export class HistoryViewVFS extends BaseVFS {
   override readonly name = VFSName.HISTORY
   override readonly cachesReads = false
@@ -40,6 +43,7 @@ export class HistoryViewVFS extends BaseVFS {
     super()
     this.accessor = new HistoryAccessor(observer)
   }
+
   override ops(): readonly RegisteredOp[] {
     return HISTORY_OPS
   }

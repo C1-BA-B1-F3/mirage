@@ -54,13 +54,20 @@ const GNU_READ_EXIT: Record<string, [number, number]> = {
   "awk '{print}' {p}": [2, 2],
   'jq . {p}': [2, 2],
   'grep x {p}': [2, 2],
-  'cmp {p} {p}': [2, 2],
+  // One file named twice is equal unread, so the second operand is another
+  // file.
+  'cmp {p} /ram/dir/inner.txt': [2, 2],
   'sed -n p {p}': [4, 2],
   'gzip -c {p}': [2, 1],
   'gunzip -c {p}': [2, 1],
   'zcat {p}': [2, 1],
   'zgrep x {p}': [1, 2],
 }
+
+// zgrep runs gzip with -q, which keeps a directory's warning to itself, so
+// GNU and mirage both exit 1 there without a word (see the python twin's
+// SILENT_IN_GNU; mirage's jq still reports its directory).
+const SILENT_HERE: ReadonlySet<string> = new Set(['zgrep x {p}'])
 
 async function makeWs(): Promise<Workspace> {
   const parser = await getTestParser()
@@ -90,11 +97,28 @@ describe('a read that fails answers like GNU', () => {
       expect(io.exitCode).toBe(missExit)
     })
 
-    it(`${template}: directory says Is a directory`, async () => {
+    const says = SILENT_HERE.has(template) ? 'is silent like GNU' : 'says Is a directory'
+    it(`${template}: directory ${says}`, async () => {
       const ws = await makeWs()
       const io = await ws.shell(template.replaceAll('{p}', '/ram/dir'))
       const stderr = io.stderrText
-      expect(stderr).toContain('/ram/dir: Is a directory')
+      if (SILENT_HERE.has(template)) {
+        expect(stderr).toBe('')
+        return
+      }
+      // FAILURE_WORDING's commands say the step in GNU's words where that
+      // still names the operand (head/tail/uniq `error reading 'dir'`,
+      // tac/tsort `dir: read error`, sed `read error on dir`); the rest say
+      // the house `<cmd>: <path>: Is a directory`, awk mawk's `cannot open
+      // "dir" (Is a directory)` and the gzip family gzip's own `dir is a
+      // directory -- ignored` (see the python twin).
+      expect(
+        stderr.includes('/ram/dir: Is a directory') ||
+          stderr.includes('/ram/dir: read error: Is a directory') ||
+          stderr.includes("error reading '/ram/dir': Is a directory") ||
+          stderr.includes('cannot open "/ram/dir" (Is a directory)') ||
+          stderr.includes('gzip: /ram/dir is a directory -- ignored'),
+      ).toBe(true)
       expect(stderr).not.toContain('No such file')
     })
   }
@@ -107,29 +131,44 @@ describe('a read that fails answers like GNU', () => {
 // operands after the directory). sort emits nothing on any failure
 // because it needs all input before it can sort.
 const GNU_MULTI: [string, number, string, string][] = [
-  ['sed -n p /ram/nope /ram/ok.txt', 2, 'a\nb\n', 'sed: /ram/nope: No such file or directory\n'],
-  ['sed -n p /ram/dir /ram/ok.txt', 4, '', 'sed: /ram/dir: Is a directory\n'],
-  ['sed -n p /ram/ok.txt /ram/dir /ram/ok2.txt', 4, 'a\nb\n', 'sed: /ram/dir: Is a directory\n'],
+  [
+    'sed -n p /ram/nope /ram/ok.txt',
+    2,
+    'a\nb\n',
+    "sed: can't read /ram/nope: No such file or directory\n",
+  ],
+  ['sed -n p /ram/dir /ram/ok.txt', 4, '', 'sed: read error on /ram/dir: Is a directory\n'],
+  [
+    'sed -n p /ram/ok.txt /ram/dir /ram/ok2.txt',
+    4,
+    'a\nb\n',
+    'sed: read error on /ram/dir: Is a directory\n',
+  ],
   [
     'sed -n p /ram/ok.txt /ram/nope /ram/ok2.txt',
     2,
     'a\nb\nc\nd\n',
-    'sed: /ram/nope: No such file or directory\n',
+    "sed: can't read /ram/nope: No such file or directory\n",
   ],
-  ['sed -n p /ram/dir /ram/dir', 4, '', 'sed: /ram/dir: Is a directory\n'],
+  ['sed -n p /ram/dir /ram/dir', 4, '', 'sed: read error on /ram/dir: Is a directory\n'],
   [
     'sed -n p /ram/nope /ram/dir',
     4,
     '',
-    'sed: /ram/nope: No such file or directory\nsed: /ram/dir: Is a directory\n',
+    "sed: can't read /ram/nope: No such file or directory\nsed: read error on /ram/dir: Is a directory\n",
   ],
-  ['sort /ram/ok.txt /ram/dir /ram/ok2.txt', 2, '', 'sort: /ram/dir: Is a directory\n'],
+  [
+    'sort /ram/ok.txt /ram/dir /ram/ok2.txt',
+    2,
+    '',
+    'sort: read failed: /ram/dir: Is a directory\n',
+  ],
   ['cat /ram/ok.txt /ram/dir /ram/ok2.txt', 1, 'a\nb\nc\nd\n', 'cat: /ram/dir: Is a directory\n'],
   [
     'zcat /ram/dir /ram/nope',
     1,
     '',
-    'zcat: /ram/dir: Is a directory\nzcat: /ram/nope: No such file or directory\n',
+    'gzip: /ram/dir is a directory -- ignored\ngzip: /ram/nope.gz: No such file or directory\n',
   ],
   // gzip's error outranks its warning in EITHER order, so the reversed line
   // is 1 too: `progerror` assigns ERROR outright while `WARN` assigns only
@@ -138,13 +177,13 @@ const GNU_MULTI: [string, number, string, string][] = [
     'zcat /ram/nope /ram/dir',
     1,
     '',
-    'zcat: /ram/nope: No such file or directory\nzcat: /ram/dir: Is a directory\n',
+    'gzip: /ram/nope.gz: No such file or directory\ngzip: /ram/dir is a directory -- ignored\n',
   ],
   [
     'zcat /ram/dir /ram/dir',
     2,
     '',
-    'zcat: /ram/dir: Is a directory\nzcat: /ram/dir: Is a directory\n',
+    'gzip: /ram/dir is a directory -- ignored\ngzip: /ram/dir is a directory -- ignored\n',
   ],
 ]
 

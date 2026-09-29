@@ -28,7 +28,12 @@ import * as clientMod from './client.ts'
 import { write } from './write.ts'
 
 class FakeManager {
+  readThrough(_path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {
+    return fetch()
+  }
+
   writes: string[] = []
+  ancestors: string[] = []
 
   invalidateAfterWrite(path: PathSpec): Promise<void> {
     this.writes.push(path.mountPath)
@@ -36,6 +41,11 @@ class FakeManager {
   }
 
   invalidateAfterUnlink(_path: PathSpec): Promise<void> {
+    return Promise.resolve()
+  }
+
+  invalidateAncestors(path: PathSpec): Promise<void> {
+    this.ancestors.push(path.virtual)
     return Promise.resolve()
   }
 
@@ -94,7 +104,8 @@ describe('s3 core write', () => {
     const { manager, keys } = await runWrite('/a/b/c.txt')
     expect(keys).toEqual(['a/b/c.txt'])
     // The put materializes `a` and `a/b` too, so their listings are stale.
-    expect(manager.writes).toEqual(['/a/b/c.txt', '/a/b', '/a'])
+    expect(manager.writes).toEqual(['/a/b/c.txt'])
+    expect(manager.ancestors).toEqual(['/mnt/a/b/c.txt'])
   })
 
   it('invalidates only itself at the mount root', async () => {

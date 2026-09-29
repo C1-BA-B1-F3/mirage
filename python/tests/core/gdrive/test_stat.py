@@ -252,3 +252,44 @@ async def test_stat_revalidates_orphan_from_incomplete_root(
             assert cached is None
     finally:
         await index.clear()
+
+
+STAMP = "2026-04-01T00:00:00.000Z"
+
+
+@pytest.mark.parametrize("extra,expected", [
+    ({
+        "md5_checksum": "abc",
+        "head_revision_id": "r3"
+    }, "abc"),
+    ({
+        "head_revision_id": "r3"
+    }, "r3"),
+    ({}, None),
+],
+                         ids=["md5", "head-revision", "neither"])
+@pytest.mark.asyncio
+async def test_stat_stamps_a_file_with_content_by_its_tokens(
+        accessor, index, extra, expected):
+    await index.set_dir("/", [("report.pdf",
+                               IndexEntry(id="file123",
+                                          name="report",
+                                          resource_type="gdrive/file",
+                                          remote_time=STAMP,
+                                          vfs_name="report.pdf",
+                                          extra=extra))])
+    result = await stat(accessor, PathSpec.from_str_path("/report.pdf"), index)
+    assert result.fingerprint == expected
+
+
+@pytest.mark.asyncio
+async def test_stat_stamps_a_doc_by_its_modified_time(accessor, index):
+    await index.set_dir("/", [("doc.gdoc.json",
+                               IndexEntry(id="doc123",
+                                          name="doc",
+                                          resource_type="gdrive/gdoc",
+                                          remote_time=STAMP,
+                                          vfs_name="doc.gdoc.json"))])
+    result = await stat(accessor, PathSpec.from_str_path("/doc.gdoc.json"),
+                        index)
+    assert result.fingerprint == STAMP

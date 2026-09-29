@@ -89,6 +89,21 @@ SHELL_NAMES = frozenset(str(b) for b in ShellBuiltin) | UNSUPPORTED_BUILTINS
 # (findutils 4.10 on debian:stable-slim, where `kill` is bash's alone
 # since procps is absent), while `echo`, `sh`, `xargs` or `python3` are
 # programs there as well as builtins here.
+# bash 5.2's own builtins (`compgen -b` on debian:stable-slim). `type`
+# calls one of these a shell builtin and `command -v` prints it bare,
+# even where a program of the same name is on PATH too (echo, test,
+# pwd); any other word mirage runs is a program, reported by its path.
+BASH_BUILTINS = frozenset({
+    ".", ":", "[", "alias", "bg", "bind", "break", "builtin", "caller", "cd",
+    "command", "compgen", "complete", "compopt", "continue", "declare", "dirs",
+    "disown", "echo", "enable", "eval", "exec", "exit", "export", "false",
+    "fc", "fg", "getopts", "hash", "help", "history", "jobs", "kill", "let",
+    "local", "logout", "mapfile", "popd", "printf", "pushd", "pwd", "read",
+    "readarray", "readonly", "return", "set", "shift", "shopt", "source",
+    "suspend", "test", "times", "trap", "true", "type", "typeset", "ulimit",
+    "umask", "unalias", "unset", "wait"
+})
+
 SHELL_ONLY_BUILTINS = frozenset({
     ".", ":", "alias", "bg", "break", "cd", "command", "compgen", "complete",
     "continue", "declare", "disown", "eval", "exec", "exit", "export", "fg",

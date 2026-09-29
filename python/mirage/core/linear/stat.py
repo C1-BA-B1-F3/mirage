@@ -23,7 +23,7 @@ stat = make_stat(
     entry_stats={
         "team": entry_stat("team_id", FileType.DIRECTORY),
         "team_json": entry_stat("team_id", ContentType.JSON),
-        "member": entry_stat("user_id", ContentType.JSON),
+        "member": entry_stat("member_id", ContentType.JSON),
         "issue": entry_stat("issue_id", FileType.DIRECTORY),
         "issue_json": entry_stat("issue_id", ContentType.JSON),
         "comments_jsonl": entry_stat("issue_id", ContentType.TEXT),

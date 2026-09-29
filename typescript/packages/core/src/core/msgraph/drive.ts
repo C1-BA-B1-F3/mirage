@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { enotsup } from '../../utils/errors.ts'
 import { invalidateAfterWrite } from '../../cache/context.ts'
 import { IndexEntry, ResourceType } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
@@ -45,6 +46,7 @@ import {
   uploadChunk,
 } from './client.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { DIR_SIZE } from '../../utils/stat_view.ts'
 
 const SIMPLE_UPLOAD_MAX = 4 * 1024 * 1024
 const UPLOAD_CHUNK = 10 * 327680
@@ -339,12 +341,22 @@ function currentVersionId(versions: Record<string, unknown>[]): string | null {
   return current === null ? null : asString(current.id)
 }
 
+// The item's cTag, current version and download URL, in one GET. Callers
+// fetch this before the bytes and download from the URL it returns. Graph can
+// change the item between the two requests, and in this order a change can
+// only pair an older token with newer bytes, which the next freshness probe
+// sees as stale; the other order would label old bytes with the new token and
+// serve them as fresh. `versions` also expands the version history for the
+// current revision, which only a snapshot needs; without it the revision is
+// null. Every shell line records, so only reads outside one (FUSE, a runtime's
+// guest, the ops facade) skip it.
 async function captureItemMetadata(
   config: MsGraphConfigResolved,
   loc: DriveLoc,
+  versions: boolean,
 ): Promise<[string | null, string | null, string | null]> {
-  const item = await graphGet(config, loc.item(), { $expand: 'versions' })
-  const versions = Array.isArray(item.versions)
+  const item = await graphGet(config, loc.item(), versions ? { $expand: 'versions' } : undefined)
+  const history = Array.isArray(item.versions)
     ? item.versions.filter(
         (value): value is Record<string, unknown> =>
           value !== null && typeof value === 'object' && !Array.isArray(value),
@@ -352,7 +364,7 @@ async function captureItemMetadata(
     : []
   return [
     asString(item.cTag),
-    currentVersionId(versions),
+    currentVersionId(history),
     asString(item['@microsoft.graph.downloadUrl']),
   ]
 }
@@ -361,7 +373,6 @@ export async function readItem(
   config: MsGraphConfigResolved,
   loc: DriveLoc,
   virtual: string,
-  label: string,
   backend: string,
   offset = 0,
   size: number | null = null,
@@ -379,17 +390,19 @@ export async function readItem(
         loc.item(`/versions/${encodeURIComponent(pinned)}/content`),
         window,
       )
-    } else if (recordingActive()) {
+    } else {
       let downloadUrl: string | null
-      ;[fingerprint, revision, downloadUrl] = await captureItemMetadata(config, loc)
+      ;[fingerprint, revision, downloadUrl] = await captureItemMetadata(
+        config,
+        loc,
+        recordingActive(),
+      )
       data =
         downloadUrl === null
           ? await graphGetBytes(config, loc.item('/content'), window)
           : await graphGetBytes(config, downloadUrl, window, false)
-    } else {
-      data = await graphGetBytes(config, loc.item('/content'), window)
     }
-    record('read', label, backend, data.length, timer, { fingerprint, revision })
+    record('read', virtual, backend, data.length, timer, { fingerprint, revision })
     return data
   } catch (error) {
     if (error instanceof GraphError && error.status === 404) throw enoent(virtual)
@@ -401,11 +414,10 @@ export async function* streamItem(
   config: MsGraphConfigResolved,
   loc: DriveLoc,
   virtual: string,
-  label: string,
   backend: string,
 ): AsyncIterable<Uint8Array> {
   const pinned = revisionFor(virtual)
-  const rec = recordStream('read', label, backend)
+  const rec = recordStream('read', virtual, backend)
   let url = loc.item('/content')
   let auth = true
   try {
@@ -414,7 +426,7 @@ export async function* streamItem(
       if (rec !== null) rec.revision = pinned
     } else if (rec !== null) {
       let downloadUrl: string | null
-      ;[rec.fingerprint, rec.revision, downloadUrl] = await captureItemMetadata(config, loc)
+      ;[rec.fingerprint, rec.revision, downloadUrl] = await captureItemMetadata(config, loc, true)
       if (downloadUrl !== null) {
         url = downloadUrl
         auth = false
@@ -514,7 +526,7 @@ export async function findItems(
       isEmpty: options.empty === true ? (folder ? folderChildCount(item) === 0 : size === 0) : null,
     }
     if (!keep(entry, tree, options.minDepth)) continue
-    const effective = folder ? 0 : size
+    const effective = folder ? DIR_SIZE : size
     if (options.minSize != null && effective < options.minSize) continue
     if (options.maxSize != null && effective > options.maxSize) continue
     results.push(entry.key)
@@ -650,7 +662,7 @@ export async function statItem(
         content: entry.resourceType === ResourceType.FOLDER ? null : contentTypeForPath(entry.name),
         size: entry.size,
         modified: entry.remoteTime || null,
-        fingerprint: asString(entry.extra.ctag),
+        fingerprint: entry.resourceType === ResourceType.FOLDER ? null : asString(entry.extra.ctag),
         extra: entry.extra,
       })
     }
@@ -688,8 +700,9 @@ export function makeExists<A>(
 export function makeTruncate<A>(
   read: (accessor: A, path: PathSpec) => Promise<Uint8Array>,
   write: (accessor: A, path: PathSpec, data: Uint8Array) => Promise<void>,
-): (accessor: A, path: PathSpec, length: number) => Promise<void> {
-  return async (accessor, path, length) => {
+): (accessor: A, path: PathSpec, length: number, noCreate?: boolean) => Promise<void> {
+  return async (accessor, path, length, noCreate = false) => {
+    if (noCreate) throw enotsup('msgraph', 'truncate --no-create', path)
     let data: Uint8Array
     try {
       data = await read(accessor, path)

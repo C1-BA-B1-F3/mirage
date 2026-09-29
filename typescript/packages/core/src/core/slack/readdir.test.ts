@@ -376,7 +376,7 @@ describe('readdir channel/<id> (history dates)', () => {
       ok: true,
       messages: [
         {
-          ts: '1775000000.000100',
+          ts: '1775779200.000100',
           files: [
             {
               id: 'F1',
@@ -401,5 +401,69 @@ describe('readdir channel/<id> (history dates)', () => {
     ])
     const lookup = await idx.get('/mnt/slack/channels/general__C1/2026-04-10/files/report__F1.pdf')
     expect(lookup.entry?.size).toBe(12)
+  })
+})
+
+describe('readdir of an end-scoped conversation without a creation time', () => {
+  const latest = Date.UTC(2026, 5, 20) / 1000
+  const first = Date.UTC(2026, 4, 30, 12) / 1000
+  const end = Date.UTC(2026, 5, 2) / 1000
+
+  async function dmWithoutCreated(): Promise<RAMIndexCacheStore> {
+    const idx = new RAMIndexCacheStore()
+    await idx.setDir('/mnt/slack/dms', [
+      [
+        'alice__D1',
+        new IndexEntry({ id: 'D1', name: 'alice', resourceType: 'slack/dm', vfsName: 'alice__D1' }),
+      ],
+    ])
+    return idx
+  }
+
+  function history(): FakeTransport {
+    return new FakeTransport((endpoint, params) => {
+      if (endpoint !== 'conversations.history') return { ok: true }
+      if (params?.limit === '1') return { ok: true, messages: [{ ts: latest.toFixed(6) }] }
+      return {
+        ok: true,
+        messages: [{ ts: (first + 3600).toFixed(6) }, { ts: first.toFixed(6) }],
+        response_metadata: { next_cursor: '' },
+      }
+    })
+  }
+
+  it('takes a glob span as its first day instead of scanning history', async () => {
+    const t = history()
+    const out = await readdir(
+      new SlackAccessor(t, { endTime: '2026-06-02T00:00:00Z' }),
+      new PathSpec({
+        virtual: '/mnt/slack/dms/alice__D1/2026-05-*',
+        directory: '/mnt/slack/dms/alice__D1/',
+        vfsPath: mountKey('/mnt/slack/dms/alice__D1/2026-05-*', '/mnt/slack'),
+        pattern: '2026-05-*',
+      }),
+      await dmWithoutCreated(),
+    )
+    expect(t.calls.filter((c) => c.params?.limit === '200')).toEqual([])
+    expect(out).toHaveLength(31)
+    expect(out[0]).toBe('/mnt/slack/dms/alice__D1/2026-05-31')
+    expect(out[30]).toBe('/mnt/slack/dms/alice__D1/2026-05-01')
+  })
+
+  it('pages only the history before the end for a bare listing', async () => {
+    const t = history()
+    const out = await readdir(
+      new SlackAccessor(t, { endTime: '2026-06-02T00:00:00Z' }),
+      spec('/mnt/slack/dms/alice__D1', '/mnt/slack'),
+      await dmWithoutCreated(),
+    )
+    expect(t.calls.filter((c) => c.params?.limit === '200').map((c) => c.params)).toEqual([
+      { channel: 'D1', limit: '200', latest: end.toFixed(6) },
+    ])
+    expect(out).toEqual([
+      '/mnt/slack/dms/alice__D1/2026-06-01',
+      '/mnt/slack/dms/alice__D1/2026-05-31',
+      '/mnt/slack/dms/alice__D1/2026-05-30',
+    ])
   })
 })

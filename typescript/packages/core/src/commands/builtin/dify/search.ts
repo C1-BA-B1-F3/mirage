@@ -12,33 +12,21 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mountPrefixOf } from '../../../utils/key_prefix.ts'
+import { searchResources } from '../../../vfs/search.ts'
+
 import type { DifyAccessor } from '../../../accessor/dify.ts'
-import { searchSegments } from '../../../core/dify/search.ts'
-import { resolveGlobOf } from '../generic_bind/index.ts'
+
 import { DIFY_IO } from './io.ts'
 import { IOResult } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import { VFSName } from '../../../types.ts'
-import { rstripSlash } from '../../../utils/slash.ts'
+
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { defaultPaths } from '../utils/operands.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
-const resolveGlob = resolveGlobOf(DIFY_IO)
-
 const ENC = new TextEncoder()
-
-function isMountRoot(path: PathSpec): boolean {
-  let root =
-    mountPrefixOf(path.virtual, path.vfsPath) !== ''
-      ? rstripSlash(mountPrefixOf(path.virtual, path.vfsPath))
-      : '/'
-  root = root !== '' ? root : '/'
-  const value = rstripSlash(path.virtual) !== '' ? rstripSlash(path.virtual) : '/'
-  return value === '/' || value === root
-}
 
 async function searchCommand(
   accessor: DifyAccessor,
@@ -50,26 +38,23 @@ async function searchCommand(
   if (query === undefined || query === '') {
     return [null, new IOResult({ exitCode: 2, stderr: ENC.encode('search: query is required\n') })]
   }
-  const index = opts.index ?? undefined
-  const targetPaths = defaultPaths(paths, opts.cwd, opts.mountPrefix ?? '')
-  const mountPrefix =
-    (targetPaths[0] === undefined
-      ? undefined
-      : mountPrefixOf(targetPaths[0].virtual, targetPaths[0].vfsPath)) ?? ''
-  const resolvedPaths = targetPaths.some(isMountRoot)
-    ? []
-    : await resolveGlob(accessor, targetPaths, index)
   const fl = new FlagView(opts.flags, specOf('search'))
-  const method = fl.asStr('method') ?? 'semantic'
-  const topK = fl.asInt('top_k') ?? 10
-  const threshold = fl.asFloat('threshold') ?? 0
+  const targets = defaultPaths(paths, opts.cwd, opts.mountPrefix ?? '')
   try {
-    const out = await searchSegments(accessor, query, resolvedPaths, index, {
-      method,
-      topK,
-      threshold,
-      mountPrefix,
-    })
+    const out = await searchResources(
+      DIFY_IO.search,
+      accessor,
+      targets,
+      {
+        query,
+        options: {
+          top_k: fl.asInt('top_k') ?? 10,
+          method: fl.asStr('method') ?? 'semantic',
+          threshold: fl.asFloat('threshold') ?? 0,
+        },
+      },
+      opts.index ?? undefined,
+    )
     return [out, new IOResult()]
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

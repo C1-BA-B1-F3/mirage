@@ -82,3 +82,7 @@ class ReturnSignal(Exception):
     def __init__(self, exit_code: int = 0, stderr: bytes = b"") -> None:
         self.exit_code = exit_code
         self.stderr = stderr
+
+
+class PipeClosed(Exception):
+    pass

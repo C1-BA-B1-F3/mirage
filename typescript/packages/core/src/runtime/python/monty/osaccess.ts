@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { mergeEntries } from './list.ts'
+import { MAX_URANDOM_BYTES } from './constants.ts'
 import { parseMode } from '../../handles/mode.ts'
 import type { MontyBindingBits } from './binding.ts'
 import { guestError } from './errors.ts'
@@ -37,6 +38,24 @@ function textLength(data: unknown): number {
 function payloadBytes(data: unknown): Uint8Array {
   if (data instanceof Uint8Array) return data
   return new TextEncoder().encode(typeof data === 'string' ? data : '')
+}
+
+/** Match Python OSAccess's per-call entropy cap before allocating host memory. */
+function urandom(value: unknown): Uint8Array {
+  const size = Number(value)
+  if (size > MAX_URANDOM_BYTES) {
+    throw Object.assign(
+      new Error(`os.urandom() size exceeds max_urandom_bytes (${String(MAX_URANDOM_BYTES)})`),
+      { name: 'MemoryError' },
+    )
+  }
+  if (!Number.isSafeInteger(size) || size < 0) throw new TypeError('invalid os.urandom size')
+  const bytes = new Uint8Array(size)
+  // Web Crypto accepts at most 64 KiB per call, including in Node.
+  for (let offset = 0; offset < size; offset += 65_536) {
+    globalThis.crypto.getRandomValues(bytes.subarray(offset, Math.min(offset + 65_536, size)))
+  }
+  return bytes
 }
 
 function concatBytes(head: Uint8Array, tail: Uint8Array): Uint8Array {
@@ -176,6 +195,7 @@ export class MirageOSAccess {
     // for any program that stamps its output.
     if (name === 'datetime.now') return dateTimeMarker(timeZoneArg(args[0]))
     if (name === 'date.today') return dateMarker()
+    if (name === 'os.urandom') return urandom(args[0])
     // Everything below serves a path; the doors above need none.
     const path = pathArg(args[0])
     if (path === null) return this.notHandled
@@ -265,8 +285,6 @@ export class MirageOSAccess {
           .then((st) => (st !== null ? true : vfs.readdirOrNull(path).then((e) => e !== null)))
       // A row the mount does not have is not an absence yet: the
       // path may be a guest scratch file, and only the tree knows.
-      // `Path.iterdir` strings arriving as guest str (python:
-      // PosixPath) remains an upstream gap; the wire has no Path.
       case 'Path.stat':
         return vfs
           .stat(path)

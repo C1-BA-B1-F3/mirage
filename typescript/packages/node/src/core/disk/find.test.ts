@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { DiskAccessor } from '../../accessor/disk.ts'
@@ -62,5 +62,25 @@ describe('core/disk/find', () => {
 
   it('returns empty for missing root', async () => {
     expect(await find(accessor, spec('/missing'))).toEqual([])
+  })
+
+  it('counts a directory holding only host symlinks as empty', async () => {
+    await mkdir(join(root, 'bin'))
+    await symlink('/nowhere/python3', join(root, 'bin', 'python'))
+    expect(await find(accessor, spec('/bin'), { empty: true })).toEqual(['/bin'])
+    expect(await find(accessor, spec('/'), { empty: true, type: 'd' })).toEqual(['/bin'])
+  })
+
+  it('skips host symlinks and finds nothing through one', async () => {
+    await symlink('sub', join(root, 'sub64'))
+    await symlink('a.json', join(root, 'alias.json'))
+    expect(await find(accessor, spec('/'))).toEqual([
+      '/',
+      '/a.json',
+      '/b.txt',
+      '/sub',
+      '/sub/c.json',
+    ])
+    expect(await find(accessor, spec('/sub64'))).toEqual([])
   })
 })

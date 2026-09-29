@@ -1,5 +1,5 @@
 import { odGeneric, parseCount } from '../../generic/od.ts'
-import { resolveSource } from '../../utils/stream.ts'
+import { resolveSource, stdinStream } from '../../utils/stream.ts'
 import { specOf } from '../../../spec/builtins.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
@@ -18,10 +18,9 @@ export const OD_BUILDER: Builder = {
     const resolved = paths.length > 0 ? await resolveGlobOf(ops)(accessor, paths, index) : []
     // od defines multiple FILE operands as one concatenated input, so skip
     // and limit offsets apply across the whole run, not per file.
+    const read = stdinStream((p) => ops.readStream(accessor, p, index), opts.stdin)
     const source =
-      resolved.length === 0
-        ? resolveSource(opts.stdin)
-        : concatSources(resolved.map((p) => ops.readStream(accessor, p, index)))
+      resolved.length === 0 ? resolveSource(opts.stdin) : concatSources(resolved.map(read))
     const fl = new FlagView(opts.flags, specOf('od'))
     // asStr, not a truthiness test: an explicitly empty value is an
     // invalid argument to GNU, not an absent flag.
@@ -32,7 +31,7 @@ export const OD_BUILDER: Builder = {
       fl.asStr('address_radix') ?? 'o',
       skipValue !== undefined ? parseCount(skipValue, '-j') : 0,
       limitValue !== undefined ? parseCount(limitValue, '-N') : null,
-      fl.asList('format'),
+      fl.occurrences('format', 'c').map(([name, value]) => (name === 'c' ? 'c' : String(value))),
     )
   },
 }

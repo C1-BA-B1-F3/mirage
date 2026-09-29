@@ -12,9 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import os
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from dataclasses import dataclass
+from functools import partial
 
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
@@ -25,23 +25,30 @@ from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import RANDOM
 from mirage.shell.errors import ArithError, ExitSignal
 from mirage.shell.escapes import decode_ansi_c
-from mirage.shell.helpers import get_text
-from mirage.shell.types import ArithWrite, ElementOps
+from mirage.shell.helpers import get_text, source_parts
+from mirage.shell.parameter import scan_parameter
+from mirage.shell.types import ArithWrite
 from mirage.shell.types import NodeType as NT
 from mirage.shell.types import TSNodeLike
 from mirage.utils.fnmatch import fnmatch
-from mirage.utils.glob_walk import escape_glob
+from mirage.utils.glob_walk import escape_glob, mark_globs
+from mirage.utils.path import expand_tilde
+from mirage.workspace.expand.constants import OPERAND_DQUOTE_ESCAPES
+from mirage.workspace.expand.fields import (chunks_text, ifs_joiner,
+                                            splat_chunks, value_piece)
+from mirage.workspace.expand.substring import substring_operands
+from mirage.workspace.expand.types import Chunk, Piece
 from mirage.workspace.session import (SessionState, ensure_var_visible,
                                       visible_arrays, visible_env)
 from mirage.workspace.session.elements import assign_element
 from mirage.workspace.session.errors import ReadonlyVariableError
 from mirage.workspace.session.shell_dirs import home_dir
 from mirage.workspace.session.state import (RandomReader, nameref_target,
-                                            next_random, random_reader,
-                                            session_elements, subscript_index,
-                                            visible_assocs)
+                                            next_random, positional_params,
+                                            random_reader, session_elements,
+                                            subscript_index, visible_assocs)
 
-ExpandChild = Callable[[TSNodeLike], Awaitable[str]]
+ExpandChild = Callable[[TSNodeLike, bool], Awaitable[list[Chunk]]]
 
 _PARAM_OPS = frozenset({
     ":-", "-", ":+", "+", ":?", "?", ":=", "=", "#", "##", "%", "%%", "/",
@@ -57,11 +64,6 @@ _CASE_OPS = frozenset({"^", "^^", ",", ",,"})
 # Ops whose first operand is a glob pattern that must keep its literal
 # spelling (no unescaping) while still expanding nested $-expansions.
 _PATTERN_OPS = _REPLACE_OPS | _STRIP_OPS | _CASE_OPS
-
-# Ops on a "${a[@]...}" splat that act per element, so a quoted splat
-# still splits into one word per element; every other op acts on the
-# space-joined value and stays a single word.
-_MULTIWORD_AT_OPS = frozenset({":"}) | _STRIP_OPS | _REPLACE_OPS | _CASE_OPS
 
 _LITERAL_ARG_TYPES = frozenset({NT.WORD, NT.NUMBER, "regex"})
 
@@ -234,36 +236,28 @@ def _lookup_var(var: str,
     """
     env = visible_env(session)
     last_exit_code = session.last_exit_code
-    positional = getattr(session, "positional_args", None)
+    positional = positional_params(session, call_stack)
     nounset = strict and bool(session.shell_options.get("nounset"))
     if var in ("@", "*"):
-        if call_stack and call_stack.get_all_positional():
-            return " ".join(call_stack.get_all_positional())
-        if positional:
-            return " ".join(positional)
-        return ""
+        # Read where nothing splits: `$@` joins on a space and `$*` on
+        # the first character of IFS, as `v=$*` stores them.
+        joiner = " " if var == "@" else ifs_joiner(
+            ifs_value(session, call_stack))
+        return joiner.join(positional)
     if var == "#":
-        if call_stack and call_stack.get_all_positional():
-            return str(call_stack.get_positional_count())
-        if positional:
-            return str(len(positional))
-        return "0"
+        return str(len(positional))
     if var == "?":
         return str(last_exit_code)
     if var == "$":
-        return str(os.getpid())
+        return str(session.shell_pid or session.process_id or 0)
     if var == "!":
-        # Deliberate divergence from bash: jobs are identified by job
-        # table id, not OS pid, so $! yields the id `wait`/`kill` accept.
         last_job = session.last_bg_job_id
         return str(last_job) if last_job is not None else ""
     if var.isdigit():
         idx = int(var)
         if idx == 0:
             return session.argv0
-        if call_stack and call_stack.get_positional(idx):
-            return call_stack.get_positional(idx)
-        if positional and 0 < idx <= len(positional):
+        if idx <= len(positional):
             return positional[idx - 1]
         if nounset:
             raise _unbound(var)
@@ -296,6 +290,49 @@ def _lookup_var(var: str,
     return env[var]
 
 
+def ifs_value(session: SessionState,
+              call_stack: CallStack | None) -> str | None:
+    """The IFS in scope, a function's ``local IFS`` first.
+
+    Args:
+        session (SessionState): shell session.
+        call_stack (CallStack | None): function-call scope, if any.
+
+    Returns:
+        str | None: the value, None when IFS is unset, which splits the
+        way the default does.
+    """
+    if call_stack:
+        local = call_stack.get_local("IFS")
+        if local is not None:
+            return local
+    return visible_env(session).get("IFS")
+
+
+def parameter_chunks(name: str, session: SessionState,
+                     call_stack: CallStack | None,
+                     quoted: bool) -> list[Chunk]:
+    """One ``$name`` reference as pieces of the word it stands in.
+
+    ``$@`` is one field per positional parameter, quoted or not, and so
+    is an unquoted ``$*``; inside double quotes ``$*`` is the parameters
+    joined on the first character of IFS.
+
+    Args:
+        name (str): the parameter's name.
+        session (SessionState): shell session.
+        call_stack (CallStack | None): function-call scope, if any.
+        quoted (bool): whether the reference sits inside double quotes.
+    """
+    if name not in ("@", "*"):
+        return [value_piece(_lookup_var(name, session, call_stack), quoted)]
+    params = positional_params(session, call_stack)
+    joiner = " " if name == "@" else ifs_joiner(ifs_value(session, call_stack))
+    if name == "*" and quoted:
+        return [value_piece(joiner.join(params), True)]
+    return splat_chunks(params, joiner, quoted)
+
+
 @dataclass(frozen=True, slots=True)
 class _BraceParse:
     """Structural pieces of one ``${...}`` expansion.
@@ -312,7 +349,7 @@ class _BraceParse:
     length_op: bool
     indirect_op: bool
     op: str | None
-    groups: tuple[tuple[TSNodeLike, ...], ...]
+    groups: tuple[tuple[str | TSNodeLike, ...], ...]
     subscript_nodes: tuple[TSNodeLike, ...] = ()
 
 
@@ -331,9 +368,13 @@ def _parse_braces(node: TSNodeLike) -> _BraceParse:
     length_op = False
     indirect_op = False
     op = None
-    groups: list[list[TSNodeLike]] = []
+    groups: list[list[str | TSNodeLike]] = []
     seen_var = False
-    for c in node.children:
+    for c in source_parts(node):
+        if isinstance(c, str):
+            if op is not None:
+                groups[-1].append(c)
+            continue
         if c.type == "${" or c.type == "}":
             continue
         if c.type == "#" and not seen_var:
@@ -373,6 +414,10 @@ def _parse_braces(node: TSNodeLike) -> _BraceParse:
             continue
         if op is not None:
             groups[-1].append(c)
+    if length_op and var_name is None:
+        # A `#` naming nothing after it is the parameter itself: `${#}`
+        # is the count and `${!#}` the last positional parameter.
+        var_name, length_op = "#", False
     return _BraceParse(var_name=var_name,
                        subscript=subscript,
                        length_op=length_op,
@@ -402,35 +447,6 @@ def _escaped_find(text: str, start: int, quote: str) -> int:
     return -1
 
 
-def _ref_end(text: str, start: int) -> tuple[str, int] | None:
-    """A ``$name``/``${name}`` reference starting after the ``$``.
-
-    Args:
-        text (str): the token being scanned.
-        start (int): index of the character after ``$``.
-
-    Returns:
-        The name and the index past the reference, or None when the
-        ``$`` starts no reference and stays literal.
-    """
-    n = len(text)
-    j = start
-    braced = j < n and text[j] == "{"
-    if braced:
-        j += 1
-    k = j
-    while k < n and (text[k].isalnum() or text[k] == "_"):
-        k += 1
-    name = text[j:k]
-    if not name:
-        return None
-    if braced:
-        if k >= n or text[k] != "}":
-            return None
-        k += 1
-    return name, k
-
-
 def _dquoted_pattern(inner: str, session: SessionState,
                      call_stack: CallStack | None) -> str:
     """A double-quoted pattern segment: everything in it is literal.
@@ -450,7 +466,7 @@ def _dquoted_pattern(inner: str, session: SessionState,
             i += 2
             continue
         if ch == "$" and i + 1 < n:
-            ref = _ref_end(inner, i + 1)
+            ref = scan_parameter(inner, i)
             if ref is not None:
                 name, nxt = ref
                 out.append(escape_glob(_lookup_var(name, session, call_stack)))
@@ -510,7 +526,7 @@ def _pattern_text(text: str, session: SessionState,
                     out.append(escape_glob(decode_ansi_c(text[i + 2:end])))
                     i = end + 1
                     continue
-            ref = _ref_end(text, i + 1)
+            ref = scan_parameter(text, i)
             if ref is not None:
                 name, nxt = ref
                 out.append(_lookup_var(name, session, call_stack))
@@ -521,42 +537,216 @@ def _pattern_text(text: str, session: SessionState,
     return "".join(out)
 
 
-async def _expand_operand(node: TSNodeLike, expand_child: ExpandChild,
-                          pattern_mode: bool, session: SessionState,
-                          call_stack: CallStack | None) -> str:
+async def _child_text(expand_child: ExpandChild, node: TSNodeLike) -> str:
+    """A nested node's text where nothing splits, glob marks removed.
+
+    Args:
+        expand_child (ExpandChild): nested-node expander.
+        node (TSNodeLike): the node to expand.
+    """
+    return chunks_text(await expand_child(node, False))
+
+
+async def _pattern_operand(node: TSNodeLike, expand_child: ExpandChild,
+                           session: SessionState,
+                           call_stack: CallStack | None) -> str:
     if node.type == NT.CONCATENATION:
-        return await _expand_group(tuple(node.children), expand_child,
-                                   pattern_mode, session, call_stack)
-    if pattern_mode and node.type in _QUOTED_ARG_TYPES:
+        return await _pattern_group(tuple(source_parts(node)), expand_child,
+                                    session, call_stack)
+    if node.type in _QUOTED_ARG_TYPES:
         # Quoted pattern text matches literally, the same rule case
         # patterns follow: the value, inner expansions included, is
         # escaped so its glob characters match themselves.
-        return escape_glob(await expand_child(node))
-    if pattern_mode and node.type in _LITERAL_ARG_TYPES:
+        return escape_glob(await _child_text(expand_child, node))
+    if node.type in _LITERAL_ARG_TYPES:
         return _pattern_text(get_text(node), session, call_stack)
-    return await expand_child(node)
+    return await _child_text(expand_child, node)
 
 
-async def _expand_group(nodes: tuple[TSNodeLike,
-                                     ...], expand_child: ExpandChild,
-                        pattern_mode: bool, session: SessionState,
-                        call_stack: CallStack | None) -> str:
-    """Expand adjacent operand nodes, preserving inter-node whitespace.
+async def _pattern_group(parts: tuple[str | TSNodeLike, ...],
+                         expand_child: ExpandChild, session: SessionState,
+                         call_stack: CallStack | None) -> str:
+    """Expand one pattern operand, the source text between its nodes included.
 
-    ``${x:?custom msg}`` carries its message as sibling nodes whose gap
-    (the space) exists only in the source bytes; stitch gaps back from
-    byte offsets so multi-word operands round-trip.
+    That text is only ever the scanner's extras: blanks, a line
+    continuation, which vanishes, and an escaped blank, which is the
+    blank as in an unquoted word.
+
+    Args:
+        parts (tuple[str | TSNodeLike, ...]): the operand's source parts.
+        expand_child (ExpandChild): nested-node expander.
+        session (SessionState): shell session for name resolution.
+        call_stack (CallStack | None): function-call scope, if any.
     """
     pieces: list[str] = []
-    prev = None
-    for c in nodes:
-        if prev is not None and c.start_byte > prev.end_byte:
-            gap = c.start_byte - prev.end_byte
-            pieces.append(" " * gap)
-        pieces.append(await _expand_operand(c, expand_child, pattern_mode,
-                                            session, call_stack))
-        prev = c
+    for part in parts:
+        if isinstance(part, str):
+            pieces.append(part.replace("\\\n", "").replace("\\", ""))
+        else:
+            pieces.append(await _pattern_operand(part, expand_child, session,
+                                                 call_stack))
     return "".join(pieces)
+
+
+def _operand_literal(text: str, quoted: bool, session: SessionState,
+                     call_stack: CallStack | None,
+                     home: str | None) -> list[Chunk]:
+    """Literal operand text as pieces; the rules are ``_word_chunks``'.
+
+    Args:
+        text (str): the literal text as typed.
+        quoted (bool): whether the expansion sits inside double quotes.
+        session (SessionState): shell session for name resolution.
+        call_stack (CallStack | None): function-call scope, if any.
+        home (str | None): what a leading ``~`` names, None where no
+            tilde prefix can stand.
+    """
+    if not quoted and home is not None and not any(c in text for c in "\\$"):
+        tilde = expand_tilde(text, home)
+        if tilde != text:
+            return [Piece(tilde)]
+    out: list[Chunk] = []
+    run: list[str] = []
+
+    def flush() -> None:
+        if run:
+            literal = "".join(run)
+            out.append(value_piece(literal, quoted))
+            run.clear()
+
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text):
+            escaped = text[index + 1]
+            index += 2
+            if escaped == "\n":
+                continue
+            if not quoted:
+                flush()
+                out.append(Piece(mark_globs(escaped)))
+            elif escaped in OPERAND_DQUOTE_ESCAPES:
+                run.append(escaped)
+            else:
+                run.append(char + escaped)
+            continue
+        ref = scan_parameter(text, index) if char == "$" else None
+        if ref is not None:
+            flush()
+            out.extend(parameter_chunks(ref[0], session, call_stack, quoted))
+            index = ref[1]
+            continue
+        run.append(char)
+        index += 1
+    flush()
+    return out
+
+
+def _flat_parts(
+        parts: tuple[str | TSNodeLike, ...]) -> Iterator[str | TSNodeLike]:
+    """An operand word's source parts, concatenations opened up.
+
+    Args:
+        parts (tuple[str | TSNodeLike, ...]): the word's source parts.
+    """
+    for part in parts:
+        if not isinstance(part, str) and part.type == NT.CONCATENATION:
+            yield from _flat_parts(tuple(source_parts(part)))
+        else:
+            yield part
+
+
+def _unescape_all(text: str) -> str:
+    """Text whose every backslash quotes the character after it.
+
+    Args:
+        text (str): the text as typed.
+    """
+    out: list[str] = []
+    index = 0
+    while index < len(text):
+        if text[index] == "\\" and index + 1 < len(text):
+            if text[index + 1] != "\n":
+                out.append(text[index + 1])
+            index += 2
+            continue
+        out.append(text[index])
+        index += 1
+    return "".join(out)
+
+
+async def _nested_string(node: TSNodeLike,
+                         expand_child: ExpandChild) -> list[Chunk]:
+    """A double-quoted string inside the word of a quoted expansion.
+
+    bash reads the inner pair as leaving the outer quotes, so a
+    backslash there quotes any character, as in an unquoted word
+    (``"${u:-"a\\ b"}"`` is ``a b``); the text is quoted all the same, a
+    single quote and a glob character literal and nothing splitting.
+
+    Args:
+        node (TSNodeLike): the nested string node.
+        expand_child (ExpandChild): nested-node expander.
+    """
+    out: list[Chunk] = [Piece("")]
+    for part in source_parts(node):
+        if isinstance(part, str) or part.type == NT.STRING_CONTENT:
+            text = part if isinstance(part, str) else get_text(part)
+        elif part.type == NT.DQUOTE:
+            text = get_text(part)[:-1]
+        else:
+            out.extend(await expand_child(part, True))
+            continue
+        out.append(Piece(mark_globs(_unescape_all(text))))
+    return out
+
+
+async def _word_chunks(parts: tuple[str | TSNodeLike,
+                                    ...], expand_child: ExpandChild,
+                       quoted: bool, session: SessionState,
+                       call_stack: CallStack | None) -> list[Chunk]:
+    """Expand an operator's word to pieces of the word it stands in.
+
+    Inside double quotes the word follows double-quote rules: a
+    backslash escapes only ``$ ` " \\ }`` and a newline, a single-quoted
+    string is literal text, quotes and all, and nothing splits.
+    Unquoted, an escaped character and a quoted string are quoted text,
+    which never splits, while the word's literal text and its
+    expansions split the way the expansion's value would. The literal
+    text runs between nodes are read whole, source text between nodes
+    included, since the grammar can split one escape across two of
+    them (``\\\\`` arrives as a gap and a word); ``$*``, ``$#`` and the
+    other special parameters arrive as literal text too, which the
+    grammar leaves unlexed inside an operand.
+
+    Args:
+        parts (tuple[str | TSNodeLike, ...]): the word's source parts.
+        expand_child (ExpandChild): nested-node expander.
+        quoted (bool): whether the expansion sits inside double quotes.
+        session (SessionState): shell session for name resolution.
+        call_stack (CallStack | None): function-call scope, if any.
+    """
+    home = home_dir(session)
+    out: list[Chunk] = []
+    literal: list[str] = []
+    for part in _flat_parts(parts):
+        if isinstance(part, str) or part.type in _LITERAL_ARG_TYPES:
+            literal.append(part if isinstance(part, str) else get_text(part))
+            continue
+        out.extend(
+            _operand_literal("".join(literal), quoted, session, call_stack,
+                             None if out else home))
+        literal.clear()
+        if quoted and part.type == NT.RAW_STRING:
+            out.append(Piece(mark_globs(get_text(part))))
+        elif quoted and part.type == NT.STRING:
+            out.extend(await _nested_string(part, expand_child))
+        else:
+            out.extend(await expand_child(part, quoted))
+    out.extend(
+        _operand_literal("".join(literal), quoted, session, call_stack,
+                         None if out else home))
+    return out
 
 
 def _glob_strip(value: str, pattern: str, greedy: bool, prefix: bool) -> str:
@@ -639,137 +829,81 @@ def _case_mod(op: str, val: str, pattern: str) -> str:
     return "".join(chars)
 
 
-class _PendingEnv(Mapping[str, str]):
-    """The visible env with an expansion's pending scalar writes laid over.
-
-    A view, not a merged dict: the visible env is itself a view whose
-    ``__getitem__`` refuses a name it cannot serve (a name reference to
-    an array), so spreading it into a dict raised where the evaluator's
-    own ``get`` merely skips the name.
-
-    Args:
-        pending (Mapping[str, str]): the writes made so far.
-        base (Mapping[str, str]): the session's visible env.
-    """
-
-    __slots__ = ("_pending", "_base")
-
-    def __init__(self, pending: Mapping[str, str], base: Mapping[str,
-                                                                 str]) -> None:
-        self._pending = pending
-        self._base = base
-
-    def __getitem__(self, name: str) -> str:
-        value = self._pending.get(name)
-        return value if value is not None else self._base[name]
-
-    def __iter__(self) -> Iterator[str]:
-        seen = set(self._pending)
-        yield from self._pending
-        for name in self._base:
-            if name not in seen:
-                yield name
-
-    def __len__(self) -> int:
-        return len(set(self._pending) | set(self._base))
-
-
 class _ArithOperand:
-    """The arithmetic operands of one expansion, evaluated in one record.
-
-    A substring offset, a length and a slice bound are arithmetic
-    (``${v:1+1}``, ``${a[@]:i:n}``), so each may assign and seed. bash
-    binds an assignment as it makes it, so the second operand sees the
-    first's (``${v:x=1:y=x+1}`` leaves y at 2) and draws from a
-    ``RANDOM`` the first seeded; the writes themselves land through the
-    door once the word has expanded (``land_arith_writes``), so a
-    refusal never leaves the word half-applied. Element references
-    resolve through the session, so an operand may name one
-    (``${v:a[0]}``).
+    """Evaluate and apply one substring bound before expanding the next.
 
     Args:
-        session (SessionState): the session the operands read.
+        session (SessionState): the session the bound reads and writes.
+        view (SessionView | None): the gated door for arithmetic writes.
     """
 
-    __slots__ = ("session", "reader", "writes", "ref", "_pending",
-                 "_pending_elems")
-
-    def __init__(self, session: SessionState) -> None:
+    def __init__(self,
+                 session: SessionState,
+                 view: SessionView | None = None) -> None:
         self.session = session
-        self.reader = random_reader(session)
-        self.writes: list[ArithWrite] = []
-        # The reference the operands belong to (`v`, `a[@]`), which
-        # bash names ahead of a failing operand.
+        self.view = view
         self.ref = ""
-        self._pending: dict[str, str] = {}
-        self._pending_elems: dict[tuple[str, str], str] = {}
 
-    def _elements(self) -> ElementOps:
-        """The session's element callbacks, the pending element writes
-        laid over their reads, so ``${v:(a[0]=2):(a[0])}`` reads the 2
-        the first operand assigned."""
-        inner = session_elements(self.session, self.reader)
-        pending = self._pending_elems
-
-        def read(name: str,
-                 key: str,
-                 _inner: ElementOps = inner) -> str | None:
-            value = pending.get((name, key))
-            return value if value is not None else _inner.read(name, key)
-
-        return ElementOps(resolve=inner.resolve,
-                          read=read,
-                          is_assoc=inner.is_assoc)
-
-    def value(self, text: str) -> int:
-        """The operand's value.
-
-        An operand that does not evaluate ends the line, as bash's does
-        (``${v:1/0}`` is ``v: 1/0: division by 0``), once what it
-        assigned before failing is recorded for the door.
+    async def value(self, text: str) -> int:
+        """Evaluate a bound and land its writes, including before failure.
 
         Args:
-            text (str): the raw operand text.
-
-        Raises:
-            ExitSignal: the operand does not evaluate.
+            text (str): the expanded arithmetic expression.
         """
-        try:
-            return int(text.strip())
-        except ValueError:
-            pass
-        env = _PendingEnv(self._pending, visible_env(self.session))
+        reader = random_reader(self.session)
         try:
             result = evaluate_arith(text,
-                                    env,
-                                    elements=self._elements(),
-                                    read_var=self.reader.read,
-                                    wrote_var=self.reader.wrote)
+                                    visible_env(self.session),
+                                    elements=session_elements(
+                                        self.session, reader),
+                                    read_var=reader.read,
+                                    wrote_var=reader.wrote)
         except ArithError as exc:
-            self._record(exc.writes)
+            await land_arith_writes(self.session, self.view, exc.writes,
+                                    reader)
             raise ExitSignal(1,
                              stderr=(f"bash: {self.ref}: {text.strip()}: "
                                      f"{exc}\n").encode(),
                              contained_code=1) from exc
-        self._record(result.writes)
+        await land_arith_writes(self.session, self.view, result.writes, reader)
         return result.value
 
-    def _record(self, writes: tuple[ArithWrite, ...]) -> None:
-        self.writes.extend(writes)
-        for write in writes:
-            if write.key is None:
-                self._pending[write.name] = write.value
-            else:
-                self._pending_elems[(write.name, write.key)] = write.value
+
+async def _slice_bounds(
+        node: TSNodeLike,
+        expand_child: ExpandChild,
+        operand: _ArithOperand,
+        extent: int,
+        allow_end: bool = False) -> tuple[int, int | None] | None:
+    """Expand and evaluate bounds left to right, stopping at an invalid offset.
+
+    Args:
+        node (TSNodeLike): substring expansion.
+        expand_child (ExpandChild): nested word evaluator.
+        operand (_ArithOperand): arithmetic evaluator and session write door.
+        extent (int): scalar length or array index extent.
+        allow_end (bool): scalar slices may start exactly at the end.
+    """
+    values: list[int] = []
+    async for text in substring_operands(node,
+                                         partial(_child_text, expand_child)):
+        value = await operand.value(text)
+        if not values:
+            if value < 0:
+                value += extent
+            if value < 0 or value > extent or (value == extent
+                                               and not allow_end):
+                return None
+        values.append(value)
+    return values[0], values[1] if len(values) > 1 else None
 
 
-def _substring(val: str, groups: list[str], operand: _ArithOperand) -> str:
-    if not groups:
-        return val
-    offset = operand.value(groups[0])
-    length = operand.value(groups[1]) if len(groups) > 1 else None
-    if offset < 0:
-        offset = max(0, len(val) + offset)
+async def _substring(val: str, node: TSNodeLike, expand_child: ExpandChild,
+                     operand: _ArithOperand) -> str:
+    bounds = await _slice_bounds(node, expand_child, operand, len(val), True)
+    if bounds is None:
+        return ""
+    offset, length = bounds
     if length is None:
         return val[offset:]
     if length < 0:
@@ -785,9 +919,46 @@ _LAZY_OPS = frozenset({"?", ":?", "=", ":=", ":-", "-", ":+", "+"})
 
 
 async def _operator_word(p: _BraceParse, expand_child: ExpandChild,
-                         session: SessionState,
-                         call_stack: CallStack | None) -> str:
+                         quoted: bool, session: SessionState,
+                         call_stack: CallStack | None) -> list[Chunk]:
     """The word of a conditional operator, expanded now that it is needed.
+
+    Args:
+        p (_BraceParse): the parsed expansion.
+        expand_child (ExpandChild): nested-node expander.
+        quoted (bool): whether the expansion sits inside double quotes.
+        session (SessionState): shell session.
+        call_stack (CallStack | None): function-call scope, if any.
+    """
+    if not p.groups:
+        return []
+    return await _word_chunks(p.groups[0], expand_child, quoted, session,
+                              call_stack)
+
+
+def _word_result(chunks: list[Chunk], quoted: bool) -> list[Chunk]:
+    """An operator's word standing in for a splat.
+
+    A quoted splat that selects its word yields that word even when it
+    is empty: ``"${e[@]:-}"`` is one empty word where ``"${e[@]}"`` is
+    none.
+
+    Args:
+        chunks (list[Chunk]): the word's pieces.
+        quoted (bool): whether the expansion sits inside double quotes.
+    """
+    return [Piece(""), *chunks] if quoted else chunks
+
+
+async def _unset_error(p: _BraceParse, expand_child: ExpandChild,
+                       session: SessionState,
+                       call_stack: CallStack | None) -> ExitSignal:
+    """The death of a line whose ``${v:?word}`` found v unset or null.
+
+    The word is the message, read with unquoted rules even inside double
+    quotes, as bash reads it. GNU: fatal at top level with status 127; a
+    containing subshell/pipeline segment reports 1. A subscripted
+    reference is named whole: `bash: m[zz]: nope`.
 
     Args:
         p (_BraceParse): the parsed expansion.
@@ -795,10 +966,16 @@ async def _operator_word(p: _BraceParse, expand_child: ExpandChild,
         session (SessionState): shell session.
         call_stack (CallStack | None): function-call scope, if any.
     """
-    if not p.groups:
-        return ""
-    return await _expand_group(p.groups[0], expand_child, False, session,
-                               call_stack)
+    message = chunks_text(await _operator_word(p, expand_child, False, session,
+                                               call_stack))
+    if not message:
+        message = ("parameter not set"
+                   if p.op == "?" else "parameter null or not set")
+    ref = (p.var_name
+           if p.subscript is None else f"{p.var_name}[{p.subscript}]")
+    return ExitSignal(127,
+                      stderr=f"bash: {ref}: {message}\n".encode(),
+                      contained_code=1)
 
 
 async def _expand_subscript_key(p: _BraceParse,
@@ -817,12 +994,11 @@ async def _expand_subscript_key(p: _BraceParse,
     nodes = p.subscript_nodes
     if not nodes or all(n.type in _SUBSCRIPT_LITERAL_TYPES for n in nodes):
         return p.subscript or ""
-    parts = [await expand_child(n) for n in nodes]
+    parts = [await _child_text(expand_child, n) for n in nodes]
     return "".join(parts)
 
 
-def _value_op(op: str, val: str, groups: list[str],
-              operand: _ArithOperand) -> str:
+def _value_op(op: str, val: str, groups: list[str]) -> str:
     if op in _STRIP_OPS:
         pattern = groups[0] if groups else ""
         return _glob_strip(val, pattern, op in ("##", "%%"), op in ("#", "##"))
@@ -833,8 +1009,6 @@ def _value_op(op: str, val: str, groups: list[str],
         return _glob_replace(val, pattern, replacement, op == "//", anchor)
     if op in _CASE_OPS:
         return _case_mod(op, val, groups[0] if groups else "")
-    if op == ":":
-        return _substring(val, groups, operand)
     return val
 
 
@@ -842,13 +1016,13 @@ async def expand_braces(node: TSNodeLike,
                         session: SessionState,
                         call_stack: CallStack | None,
                         expand_child: ExpandChild,
-                        view: SessionView | None = None) -> str:
-    """Expand ${VAR}, ${VAR<op>...}, ${a[i]}, ${#a[@]}, etc.
+                        view: SessionView | None = None,
+                        quoted: bool = False) -> list[Chunk]:
+    """Expand ${VAR}, ${VAR<op>...}, ${a[i]}, ${#a[@]}, etc. to pieces.
 
     An offset, length or slice bound is arithmetic and may assign
-    (``${v:x=1:y=2}``) or seed (``${v:RANDOM%10:1}``); those land
-    through the door once the word has expanded, then the ``RANDOM``
-    reader settles, so the line ends where bash's does.
+    (``${v:x=1:y=2}``) or seed (``${v:RANDOM%10:1}``); each bound lands
+    through the door before the next bound expands.
 
     Args:
         node (TSNodeLike): the ``expansion`` tree-sitter node.
@@ -858,36 +1032,19 @@ async def expand_braces(node: TSNodeLike,
             (dependency-injected to avoid a cycle with ``expand_node``).
         view (SessionView | None): the gated door the expansion's
             writes land through; None outside a workspace.
+        quoted (bool): whether the expansion sits inside double quotes,
+            which decides the rules an operator's word follows and the
+            shape a ``$*``-style splat takes.
     """
-    operand = _ArithOperand(session)
-    try:
-        value = await _expand_braces(node, session, call_stack, expand_child,
-                                     view, operand)
-    except ExitSignal:
-        # bash bound what an operand assigned before the one that
-        # failed; they land before the line dies.
-        await land_arith_writes(session, view, tuple(operand.writes),
-                                operand.reader)
-        raise
-    await land_arith_writes(session, view, tuple(operand.writes),
-                            operand.reader)
-    return value
+    return await _expand_braces(node, session, call_stack, expand_child, view,
+                                _ArithOperand(session, view), quoted)
 
 
 async def _expand_braces(node: TSNodeLike, session: SessionState,
                          call_stack: CallStack | None,
                          expand_child: ExpandChild, view: SessionView | None,
-                         operand: _ArithOperand) -> str:
+                         operand: _ArithOperand, quoted: bool) -> list[Chunk]:
     p = _parse_braces(node)
-    if any(c.type == "}" and c.is_missing for c in node.children):
-        # tree-sitter-bash cannot parse a $-spelled substring offset
-        # (${v:$o}, ${v:$o:n}): it truncates the expansion with a
-        # zero-width `}` and reparses the tail as stray siblings. bash
-        # accepts the form, so emitting the mis-parse would corrupt the
-        # value silently; fail loudly instead. Spell it ${v:o} or
-        # ${v:$((o))}.
-        msg = f"bash: ${{{p.var_name or ''}}}: bad substitution\n"
-        raise ExitSignal(2, stderr=msg.encode(), contained_code=2)
     env = visible_env(session)
     arrays = visible_arrays(session)
     assocs = visible_assocs(session)
@@ -897,85 +1054,60 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
     # A conditional operator's word expands only if the parameter's
     # state selects it, as bash's does: `${RANDOM:-$RANDOM}` draws once
     # and `${x:-$(cmd)}` runs cmd only when x is unset. Every other
-    # operator's words are needed whatever the value, and expand here.
+    # operator's words are needed whatever the value, and expand here:
+    # the pattern as a pattern, the replacement with unquoted rules even
+    # inside double quotes, as bash reads it.
     groups: list[str] = []
-    if p.op not in _LAZY_OPS:
+    if p.op != ":" and p.op not in _LAZY_OPS:
         for gi, group in enumerate(p.groups):
-            pattern_mode = gi == 0 and p.op in _PATTERN_OPS
-            groups.append(await
-                          _expand_group(group, expand_child, pattern_mode,
-                                        session, call_stack))
+            if gi == 0 and p.op in _PATTERN_OPS:
+                groups.append(await _pattern_group(group, expand_child,
+                                                   session, call_stack))
+            else:
+                groups.append(
+                    chunks_text(await _word_chunks(group, expand_child, False,
+                                                   session, call_stack)))
+
+    splat = _splat_source(p, session, call_stack, env, arrays, assocs)
+    if splat is not None:
+        return await _expand_splat(p, splat[0], splat[1], node, expand_child,
+                                   operand, session, call_stack, quoted,
+                                   groups)
 
     val = ""
     var_in_env = False
     # The subscript as `:=` would write it: the key itself for an
     # associative name, the resolved index for an indexed one, None
-    # for `[@]`/`[*]` and a negative index past the front, which bash
-    # refuses to assign through.
+    # for a negative index past the front, which bash refuses to assign
+    # through.
     write_key: str | None = None
     amap = assocs.get(p.var_name) if p.var_name is not None else None
     if p.subscript is not None and p.var_name is not None and amap is not None:
-        if p.subscript in ("@", "*"):
-            # Sorted-key order everywhere an associative array is
-            # walked: bash iterates its hash table, whose order is
-            # unpredictable, and a deterministic answer beats
-            # reproducing noise.
-            values = [amap[k] for k in sorted(amap)]
-            if p.indirect_op:
-                return " ".join(sorted(amap))
-            if p.length_op:
-                return str(len(values))
-            if p.op == ":":
-                return " ".join(_slice_array(list(values), groups, operand))
-            if p.op in _STRIP_OPS | _REPLACE_OPS | _CASE_OPS:
-                return " ".join(
-                    _value_op(p.op, el, groups, operand) for el in values)
-            val = " ".join(values)
-            var_in_env = bool(amap)
-        else:
-            # A key, not an expression: `${m[1+1]}` reads the key
-            # "1+1", never element 2. An empty key reads as unset
-            # (GNU warns "bad array subscript" on stderr and expands
-            # empty; expansion has no warning channel, so the empty
-            # answer stands alone).
-            key = await _expand_subscript_key(p, expand_child)
-            val = amap.get(key, "")
-            var_in_env = key in amap
-            write_key = key
+        # A key, not an expression: `${m[1+1]}` reads the key
+        # "1+1", never element 2. An empty key reads as unset
+        # (GNU warns "bad array subscript" on stderr and expands
+        # empty; expansion has no warning channel, so the empty
+        # answer stands alone).
+        key = await _expand_subscript_key(p, expand_child)
+        val = amap.get(key, "")
+        var_in_env = key in amap
+        write_key = key
     elif p.subscript is not None and p.var_name is not None:
         arr = arrays.get(p.var_name)
         if arr is None:
             # A scalar is element 0 of a one-element array, even when
             # empty: ${#x[@]} is 1 for x="" but 0 for an unset name.
             arr = [env[p.var_name]] if p.var_name in env else []
-        var_in_env = p.var_name in arrays or p.var_name in env
-        if p.subscript in ("@", "*"):
-            # ${a[@]} and friends see only the assigned elements: a hole
-            # left by `unset a[i]` (or skipped by a[9]=v) neither expands
-            # nor counts, though it keeps the later indices in place.
-            values = array_values(arr)
-            if p.indirect_op:
-                return " ".join(str(i) for i in array_indices(arr))
-            if p.length_op:
-                return str(len(values))
-            if p.op == ":":
-                sliced = _slice_array(arr, groups, operand)
-                return " ".join(sliced)
-            if p.op in _STRIP_OPS | _REPLACE_OPS | _CASE_OPS:
-                return " ".join(
-                    _value_op(p.op, el, groups, operand) for el in values)
-            val = " ".join(values)
-        else:
-            # Expanded first (`${a[$k]}` resolves $k, `${a[i+1]}` stays
-            # arithmetic), then evaluated as an index.
-            sub_text = await _expand_subscript_key(p, expand_child)
-            idx = await _expansion_index(session, view, sub_text)
-            if idx < 0:
-                idx += array_extent(arr)
-            val = array_get(arr, idx)
-            var_in_env = array_has(arr, idx)
-            if idx >= 0:
-                write_key = str(idx)
+        # Expanded first (`${a[$k]}` resolves $k, `${a[i+1]}` stays
+        # arithmetic), then evaluated as an index.
+        sub_text = await _expand_subscript_key(p, expand_child)
+        idx = await _expansion_index(session, view, sub_text)
+        if idx < 0:
+            idx += array_extent(arr)
+        val = array_get(arr, idx)
+        var_in_env = array_has(arr, idx)
+        if idx >= 0:
+            write_key = str(idx)
     elif p.var_name:
         if call_stack:
             local_val = call_stack.get_local(p.var_name)
@@ -1014,45 +1146,31 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
         # indirection through the value.
         target = (nameref_target(session, p.var_name)
                   if p.var_name is not None else None)
-        if target is not None:
-            return target
-        return _lookup_var(val, session, call_stack) if val else ""
+        if target is None:
+            target = _lookup_var(val, session, call_stack) if val else ""
+        return [value_piece(target, quoted)]
     if p.length_op:
-        return str(len(val))
+        return [value_piece(str(len(val)), quoted)]
     if p.op is None:
-        return val
+        return [value_piece(val, quoted)]
     if p.op in ("?", ":?"):
         triggered = (not var_in_env) if p.op == "?" else (not val)
         if not triggered:
-            return val
-        message = await _operator_word(p, expand_child, session, call_stack)
-        if not message:
-            message = ("parameter not set"
-                       if p.op == "?" else "parameter null or not set")
-        # GNU: fatal at top level with status 127; a containing
-        # subshell/pipeline segment reports 1. A subscripted reference
-        # is named whole: `bash: m[zz]: nope`.
-        ref = (p.var_name
-               if p.subscript is None else f"{p.var_name}[{p.subscript}]")
-        raise ExitSignal(127,
-                         stderr=f"bash: {ref}: {message}\n".encode(),
-                         contained_code=1)
+            return [value_piece(val, quoted)]
+        raise await _unset_error(p, expand_child, session, call_stack)
     if p.op in ("=", ":="):
         triggered = (not var_in_env) if p.op == "=" else (not val)
         if not triggered:
-            return val
-        default = await _operator_word(p, expand_child, session, call_stack)
+            return [value_piece(val, quoted)]
+        default = chunks_text(await _operator_word(p, expand_child, quoted,
+                                                   session, call_stack))
         if p.var_name is not None and p.subscript is not None:
             # The default lands on the element the reference named,
             # never on element 0: `${m[k]:=v}` writes key k and
-            # `${a[3]:=v}` writes index 3, as bash does. `[@]`, `[*]`
-            # and an index before the front are refused in bash's
-            # words.
+            # `${a[3]:=v}` writes index 3, as bash does. An index
+            # before the front is refused in bash's words.
             if write_key is None:
-                raise ExitSignal(1,
-                                 stderr=(f"bash: {p.var_name}[{p.subscript}]"
-                                         ": bad array subscript\n").encode(),
-                                 contained_code=1)
+                raise _bad_subscript(p)
             await expansion_write(session, view, p.var_name, write_key,
                                   default)
         elif p.var_name is not None:
@@ -1061,40 +1179,157 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
                 call_stack.set_local(p.var_name, default)
             else:
                 await expansion_write(session, view, p.var_name, None, default)
-        return default
-    if p.op == ":-":
-        if val:
-            return val
-        return await _operator_word(p, expand_child, session, call_stack)
-    if p.op == "-":
-        if var_in_env:
-            return val
-        return await _operator_word(p, expand_child, session, call_stack)
-    if p.op == ":+":
-        if not val:
-            return ""
-        return await _operator_word(p, expand_child, session, call_stack)
-    if p.op == "+":
-        if not var_in_env:
-            return ""
-        return await _operator_word(p, expand_child, session, call_stack)
-    return _value_op(p.op, val, groups, operand)
+        return [value_piece(default, quoted)]
+    if p.op in (":-", "-"):
+        if val if p.op == ":-" else var_in_env:
+            return [value_piece(val, quoted)]
+        return await _operator_word(p, expand_child, quoted, session,
+                                    call_stack)
+    if p.op in (":+", "+"):
+        if not (val if p.op == ":+" else var_in_env):
+            return []
+        return await _operator_word(p, expand_child, quoted, session,
+                                    call_stack)
+    if p.op == ":":
+        return [
+            value_piece(await _substring(val, node, expand_child, operand),
+                        quoted)
+        ]
+    return [value_piece(_value_op(p.op, val, groups), quoted)]
 
 
-def _slice_array(arr: ShellArray, groups: list[str],
-                 operand: _ArithOperand) -> list[str]:
-    """Resolve ``${a[@]:offset:length}`` against a shell array.
+def _bad_subscript(p: _BraceParse) -> ExitSignal:
+    """The refusal of a ``:=`` that names no single element.
 
     Args:
-        arr (ShellArray): the array being sliced.
-        groups (list[str]): the raw offset and length words.
-        operand (_ArithOperand): the expansion's arithmetic record.
+        p (_BraceParse): the parsed expansion.
     """
-    if not groups:
-        return array_values(arr)
-    offset = operand.value(groups[0])
-    length = operand.value(groups[1]) if len(groups) > 1 else None
-    return array_slice(arr, offset, length)
+    return ExitSignal(1,
+                      stderr=(f"bash: {p.var_name}[{p.subscript}]"
+                              ": bad array subscript\n").encode(),
+                      contained_code=1)
+
+
+def _splat_source(
+    p: _BraceParse, session: SessionState, call_stack: CallStack | None,
+    env: Mapping[str, str], arrays: Mapping[str, ShellArray],
+    assocs: Mapping[str, dict[str,
+                              str]]) -> tuple[ShellArray, list[str]] | None:
+    """The elements a ``$@``/``$*``-style splat walks, and their keys.
+
+    The positional parameters for ``${@...}`` and ``${*...}``, which a
+    slice numbers from 1 so that index 0 is the shell's own name
+    (``"${@:0}"`` yields it ahead of $1; pinned on bash 5.2.37, macOS
+    bash 3.2 drops it). Every element of an array for ``${a[@]...}``
+    and ``${a[*]...}``, holes left by ``unset a[i]`` included so a slice
+    keeps its indices; an associative array walks its keys sorted,
+    since bash's hash order is unpredictable and a deterministic answer
+    beats reproducing noise. A scalar is element 0 of a one-element
+    array. None for any other expansion.
+
+    Args:
+        p (_BraceParse): the parsed expansion.
+        session (SessionState): shell session.
+        call_stack (CallStack | None): function-call scope, if any.
+        env (Mapping[str, str]): the visible scalars.
+        arrays (Mapping[str, ShellArray]): the visible indexed arrays.
+        assocs (Mapping[str, dict[str, str]]): the visible associative
+            arrays.
+    """
+    if p.subscript is None:
+        if p.var_name not in ("@", "*"):
+            return None
+        params = positional_params(session, call_stack)
+        keys = [str(i) for i in range(1, len(params) + 1)]
+        if p.op == ":":
+            return [session.argv0, *params], keys
+        return list(params), keys
+    if p.var_name is None or p.subscript not in ("@", "*"):
+        return None
+    amap = assocs.get(p.var_name)
+    if amap is not None:
+        keys = sorted(amap)
+        return [amap[k] for k in keys], keys
+    arr = arrays.get(p.var_name)
+    if arr is None:
+        arr = [env[p.var_name]] if p.var_name in env else []
+    return arr, [str(i) for i in array_indices(arr)]
+
+
+async def _expand_splat(p: _BraceParse, arr: ShellArray, keys: list[str],
+                        node: TSNodeLike, expand_child: ExpandChild,
+                        operand: _ArithOperand, session: SessionState,
+                        call_stack: CallStack | None, quoted: bool,
+                        groups: list[str]) -> list[Chunk]:
+    """Expand a splat: one field per element, whatever the operator.
+
+    ``@`` keeps its elements apart inside double quotes too, and a
+    quoted ``*`` joins them on IFS's first character. A slice, the
+    per-element strip, replace and case operators and ``${!a[@]}``'s
+    keys all stay a splat; ``${#a[@]}`` is the count. A conditional
+    operator tests the elements as one: set when there is any, null
+    when they join to nothing, a space joining ``@``'s as IFS joins
+    ``*``'s, so ``("" "")`` is null for ``*`` alone under ``IFS=``.
+    Unselected, ``:+`` yields no field over no elements and one empty
+    field over empty ones, as bash does.
+
+    Args:
+        p (_BraceParse): the parsed expansion.
+        arr (ShellArray): the elements, holes included.
+        keys (list[str]): the elements' keys, in order.
+        node (TSNodeLike): the expansion node, for slice bounds.
+        expand_child (ExpandChild): nested-node expander.
+        operand (_ArithOperand): arithmetic evaluator for slice bounds.
+        session (SessionState): shell session.
+        call_stack (CallStack | None): function-call scope, if any.
+        quoted (bool): whether the expansion sits inside double quotes.
+        groups (list[str]): the operator's expanded operands.
+    """
+    star = (p.subscript if p.subscript is not None else p.var_name) == "*"
+    joiner = ifs_joiner(ifs_value(session, call_stack)) if star else " "
+    values = array_values(arr)
+    if p.length_op:
+        return [value_piece(str(len(values)), quoted)]
+    items = values
+    if p.indirect_op:
+        items = keys
+    elif p.op == ":":
+        items = await _slice_array(arr, node, expand_child, operand)
+    elif p.op in _STRIP_OPS | _REPLACE_OPS | _CASE_OPS:
+        items = [_value_op(p.op, el, groups) for el in values]
+    elif p.op in _UNSET_GUARD_OPS:
+        triggered = (not values if p.op in ("-", "+", "=",
+                                            "?") else not joiner.join(values))
+        if p.op in ("+", ":+"):
+            if triggered:
+                return splat_chunks([""], joiner, quoted) if values else []
+            return _word_result(
+                await _operator_word(p, expand_child, quoted, session,
+                                     call_stack), quoted)
+        if triggered and p.op in ("-", ":-"):
+            return _word_result(
+                await _operator_word(p, expand_child, quoted, session,
+                                     call_stack), quoted)
+        if triggered and p.op in ("?", ":?"):
+            raise await _unset_error(p, expand_child, session, call_stack)
+        if triggered and p.subscript is not None:
+            raise _bad_subscript(p)
+        if triggered:
+            raise ExitSignal(1,
+                             stderr=(f"bash: ${p.var_name}: cannot assign in "
+                                     "this way\n").encode(),
+                             contained_code=1)
+    if star and quoted:
+        return [value_piece(joiner.join(items), True)]
+    return splat_chunks(items, joiner, quoted)
+
+
+async def _slice_array(arr: ShellArray, node: TSNodeLike,
+                       expand_child: ExpandChild,
+                       operand: _ArithOperand) -> list[str]:
+    bounds = await _slice_bounds(node, expand_child, operand,
+                                 array_extent(arr))
+    return [] if bounds is None else array_slice(arr, *bounds)
 
 
 def _is_at_splat(p: _BraceParse) -> bool:
@@ -1113,124 +1348,20 @@ def _is_at_splat(p: _BraceParse) -> bool:
     return p.subscript is None and p.var_name == "@"
 
 
-def _positional_args(session: SessionState,
-                     call_stack: CallStack | None) -> list[str]:
-    """The positional parameters in scope, function args winning.
+def is_at_splat(node: TSNodeLike) -> bool:
+    """Whether an expansion is a ``$@``-style splat.
+
+    Inside double quotes such a splat yields one field per element and
+    no field at all when there is none: ``"$@"`` with no parameters is
+    no word, where ``"$*"`` is one empty word. ``${#a[@]}`` is a count,
+    so it is one word like any other.
 
     Args:
-        session (SessionState): shell session state.
-        call_stack (CallStack | None): function-call scope, if any.
-    """
-    if call_stack and call_stack.get_all_positional():
-        return call_stack.get_all_positional()
-    return getattr(session, "positional_args", None) or []
-
-
-def is_multiword_at(node: TSNodeLike) -> bool:
-    """Report whether a "${a[@]...}" splat word-splits when quoted.
-
-    True for the ``@``-subscript forms bash keeps as one word per
-    element: plain ``${a[@]}``, slice ``${a[@]:o:l}``, per-element
-    strip/replace/case ops, and ``${!a[@]}`` indices. False for
-    single-word forms (``${a[*]}``, ``${#a[@]}``, non-``@`` subscript,
-    or a default/alternate op that acts on the joined value).
-
-    Args:
-        node (TSNodeLike): the ``expansion`` node.
+        node (TSNodeLike): a child of a double-quoted string.
     """
     if node.type == NT.SIMPLE_EXPANSION:
-        # Bare "$@" is the positional splat. It word-splits exactly like
-        # "${a[@]}" and stitches onto surrounding literals the same way,
-        # so it takes the same path rather than a rule of its own.
         return get_text(node).strip() == "$@"
     if node.type != NT.EXPANSION:
         return False
     p = _parse_braces(node)
-    if not _is_at_splat(p) or p.length_op:
-        return False
-    if p.indirect_op or p.op is None:
-        return True
-    return p.op in _MULTIWORD_AT_OPS
-
-
-async def expand_array_at(node: TSNodeLike,
-                          session: SessionState,
-                          call_stack: CallStack | None,
-                          expand_child: ExpandChild,
-                          view: SessionView | None = None) -> list[str]:
-    """Resolve a multi-word "${a[@]...}" splat to its word list.
-
-    Only call when ``is_multiword_at`` is True; the caller word-splits
-    (or stitches prefix/suffix onto) the returned words, matching bash's
-    quoted-splat semantics. A slice bound is arithmetic and may assign
-    (``${a[@]:x=1:y=x+1}``); those land through the door once the
-    words are known, as ``expand_braces`` lands its own.
-
-    Args:
-        node (TSNodeLike): the ``expansion`` node.
-        session (SessionState): shell session (arrays, env).
-        call_stack (CallStack | None): function-call scope, if any.
-        expand_child (ExpandChild): nested-node expander for op operands.
-        view (SessionView | None): the gated door the slice's writes
-            land through; None outside a workspace.
-    """
-    operand = _ArithOperand(session)
-    try:
-        words = await _expand_array_at(node, session, call_stack, expand_child,
-                                       operand)
-    except ExitSignal:
-        await land_arith_writes(session, view, tuple(operand.writes),
-                                operand.reader)
-        raise
-    await land_arith_writes(session, view, tuple(operand.writes),
-                            operand.reader)
-    return words
-
-
-async def _expand_array_at(node: TSNodeLike, session: SessionState,
-                           call_stack: CallStack | None,
-                           expand_child: ExpandChild,
-                           operand: _ArithOperand) -> list[str]:
-    if node.type == NT.SIMPLE_EXPANSION:
-        return _positional_args(session, call_stack)
-    p = _parse_braces(node)
-    arr: list[str | None] | None
-    if p.subscript is None and p.var_name == "@":
-        # "${@}" splats the positional parameters; every op below then
-        # applies per element, which is what bash does for "${@/x/y}".
-        # A slice is the exception: bash numbers the parameters from 1
-        # there, so index 0 is the shell's own name and "${@:0}" yields
-        # it ahead of $1. Pinned on bash 5.2.37; macOS bash 3.2 drops
-        # it, so probe this one in docker, not locally.
-        params: list[str | None] = [*_positional_args(session, call_stack)]
-        arr = [session.argv0, *params] if p.op == ":" else params
-    else:
-        arrays = visible_arrays(session)
-        arr = arrays.get(p.var_name) if p.var_name else None
-        amap = (visible_assocs(session).get(p.var_name)
-                if p.var_name and arr is None else None)
-        if amap is not None:
-            if p.indirect_op:
-                # Sorted keys, the same deterministic order every other
-                # walk of an associative array answers in.
-                return sorted(amap)
-            arr = [amap[k] for k in sorted(amap)]
-    operand.ref = (p.var_name or "") + (f"[{p.subscript}]"
-                                        if p.subscript is not None else "")
-    env = visible_env(session)
-    if arr is None:
-        name = p.var_name or ""
-        arr = [env[name]] if name in env else []
-    if p.indirect_op:
-        return [str(i) for i in array_indices(arr)]
-    values = array_values(arr)
-    if p.op is None:
-        return values
-    groups: list[str] = []
-    for gi, group in enumerate(p.groups):
-        pattern_mode = gi == 0 and p.op in _PATTERN_OPS
-        groups.append(await _expand_group(group, expand_child, pattern_mode,
-                                          session, call_stack))
-    if p.op == ":":
-        return _slice_array(arr, groups, operand)
-    return [_value_op(p.op, el, groups, operand) for el in values]
+    return _is_at_splat(p) and not p.length_op

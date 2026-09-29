@@ -20,12 +20,14 @@ import { authedRoute, fail, param, route, withRepo } from './http.ts'
 import { repoRoutes } from './repos.ts'
 import { contentRoutes } from './contents.ts'
 import { gitRoutes } from './git.ts'
+import { graphqlRoutes } from './graphql.ts'
 import { issueRoutes } from './issues.ts'
 import { pullRoutes } from './pulls.ts'
 import { releaseRoutes } from './releases.ts'
 import { actionRoutes } from './actions.ts'
 import { compareRoutes } from './compare.ts'
 import { searchRoutes } from './search.ts'
+import { stripSlash } from '../kit/typescript/index.ts'
 
 // A client reading one file fetches it from the raw host rather than the API,
 // and decides text from binary by the Content-Type it gets back, so serving
@@ -40,7 +42,7 @@ async function rawContent(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   const branch = await branchFor(ctx.db, ctx.tenant, repo, param(ctx, 'ref'))
   if (branch === null) return fail(404, 'Not Found')
   const files = await treeOfBranch(ctx.db, ctx.tenant, repo, branch)
-  const data = files.get(param(ctx, 'path').replace(/^\/+|\/+$/g, ''))
+  const data = files.get(stripSlash(param(ctx, 'path')))
   if (data === undefined) return fail(404, 'Not Found')
   const type = looksTextual(data) ? 'text/plain' : 'application/octet-stream'
   return { status: 200, body: data, headers: { 'Content-Type': type } }
@@ -52,6 +54,7 @@ async function rawContent(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
 export function githubRoutes(): KitRoute<C>[] {
   return [
     ...repoRoutes(),
+    ...graphqlRoutes(),
     // Before contentRoutes, and that is load-bearing. The kit router takes the
     // first registered match, not the most specific one, and contents claims
     // `commits/*ref` for a commit whose ref may itself contain a slash. That

@@ -15,16 +15,53 @@
 from functools import partial
 
 from mirage.accessor.postgres import PostgresAccessor
+from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.commands.builtin.generic.head import head_generic, parse_flags
 from mirage.commands.builtin.generic_bind.adapter import (bound_op,
                                                           resolve_or_empty)
 from mirage.commands.builtin.postgres.io import IO
+from mirage.commands.builtin.utils.limit import note_after, row_cap_notice
 from mirage.commands.config import CommandOpts
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.core.postgres.read import read as postgres_read
+from mirage.core.postgres.scope import detect_scope
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
+
+
+async def _head_rows(accessor: PostgresAccessor,
+                     path: PathSpec,
+                     index: IndexCacheStore = NULL_INDEX,
+                     *,
+                     n: int,
+                     notices: list[bytes]) -> bytes:
+    """Read the first ``n`` rows of a relation with the count pushed down.
+
+    ``max_read_rows`` is the most rows one read may return, so a count
+    past it fetches one row more than the ceiling: when that row exists
+    the output stops at the ceiling and a notice says so, rather than
+    the ceiling (``default_row_limit`` it was, too) standing in for the
+    count with exit 0. A relation shorter than the ceiling prints whole,
+    which is what GNU's head prints for any count past the file's end.
+
+    Args:
+        accessor (PostgresAccessor): backend handle.
+        path (PathSpec): the operand.
+        index (IndexCacheStore): index cache.
+        n (int): the line count asked for, positive.
+        notices (list[bytes]): where a stopped read records its notice.
+    """
+    cap = accessor.config.max_read_rows
+    if n <= cap or detect_scope(path).kind != "entity_rows":
+        return await postgres_read(accessor, path, index, limit=n)
+    data = await postgres_read(accessor, path, index, limit=cap + 1)
+    lines = data.split(b"\n")
+    if len(lines) - 1 <= cap:
+        return data
+    notices.append(
+        row_cap_notice("head", path.raw_path, cap, "rows", "max_read_rows"))
+    return b"\n".join(lines[:cap]) + b"\n"
 
 
 @command("head", vfs="postgres", spec=SPECS["head"])
@@ -39,10 +76,13 @@ async def head(accessor: PostgresAccessor, paths: list[PathSpec],
     # relation; non-row scopes ignore the limit kwarg.
     n_eff = parsed.lines if parsed.lines is not None else 10
     read_fn = postgres_read
+    notices: list[bytes] = []
     if parsed.bytes_ is None and n_eff > 0 and not parsed.zero_terminated:
-        read_fn = partial(postgres_read,
-                          limit=min(n_eff, accessor.config.default_row_limit))
+        read_fn = partial(_head_rows, n=n_eff, notices=notices)
     resolved = await resolve_or_empty(IO, accessor, paths, opts.index)
-    return await head_generic(resolved, list(texts), opts,
-                              bound_op(IO.stat, accessor, opts.index),
-                              bound_op(read_fn, accessor, opts.index))
+    out, io = await head_generic(resolved, list(texts), opts,
+                                 bound_op(IO.stat, accessor, opts.index),
+                                 bound_op(read_fn, accessor, opts.index))
+    if out is None:
+        return out, io
+    return note_after(out, io, notices), io

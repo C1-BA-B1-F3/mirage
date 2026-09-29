@@ -147,6 +147,210 @@
       "flags": [
         "E"
       ]
+    },
+    {
+      "id": "sed_ere_stacked_optional",
+      "seq": 568389,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo aaa | sed -E 's/a+?/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "X\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_ere_stacked_optional_single",
+      "seq": 568390,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo aaa | sed -E 's/a??/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "Xaa\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_ere_stacked_interval",
+      "seq": 568391,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo aaa | sed -E 's/a{1,2}?/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "Xa\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_ere_stacked_backtracks",
+      "seq": 568392,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo aaa | sed -E 's/a++a/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "X\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_ere_stacked_group",
+      "seq": 568393,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo ababx | sed -E 's/(ab)+?/X/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "Xx\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_ere_empty_match_after_match",
+      "seq": 568408,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "echo abbb | sed -E 's/b*/X/g'; echo abbb | sed -E 's/b*/X/2'; echo abbb | sed -E 's/b*/X/3'",
+      "expect": {
+        "exit": 0,
+        "stdout": "XaX\naX\nabbb\n",
+        "stderr": ""
+      }
     }
   ]
 }

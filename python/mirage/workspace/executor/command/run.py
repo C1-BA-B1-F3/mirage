@@ -33,7 +33,8 @@ from mirage.types import FileStat, PathSpec
 from mirage.utils.errors import format_fs_error
 from mirage.workspace.executor.builtins.links import (link_target_stat,
                                                       path_exists,
-                                                      path_readdir, path_stat)
+                                                      path_readdir, path_stat,
+                                                      resolve_link)
 from mirage.workspace.executor.command.flags import parse_flags
 from mirage.workspace.mount import (MountCommandUnsupported, MountEntry,
                                     MountRegistry)
@@ -178,7 +179,7 @@ def link_view(namespace: Namespace | None,
     return LinkView(stat_at=namespace.link_stat_at,
                     children=namespace.link_stats_under,
                     subtree=namespace.link_stats_below,
-                    resolve=namespace.follow,
+                    resolve=functools.partial(resolve_link, namespace),
                     exists=functools.partial(path_exists, dispatch),
                     target_stat=functools.partial(link_target_stat, namespace,
                                                   dispatch))
@@ -336,18 +337,19 @@ def namespace_stat_overlay(namespace: Namespace, virtual: str,
 
 
 async def run_on_mount(
-    registry: MountRegistry,
-    session: SessionState,
-    dispatch: DispatchFn,
-    namespace: Namespace | None,
-    cmd_name: str,
-    paths: list[PathSpec],
-    texts: list[str],
-    flag_kwargs: dict[str, FlagValue],
-    stdin: ByteSource | None = None,
-    resolve_hint: PathSpec | None = None,
-    mount: MountEntry | None = None,
-    routing_decision: RouteDecision | None = None,
+        registry: MountRegistry,
+        session: SessionState,
+        dispatch: DispatchFn,
+        namespace: Namespace | None,
+        cmd_name: str,
+        paths: list[PathSpec],
+        texts: list[str],
+        flag_kwargs: dict[str, FlagValue],
+        stdin: ByteSource | None = None,
+        resolve_hint: PathSpec | None = None,
+        mount: MountEntry | None = None,
+        routing_decision: RouteDecision | None = None,
+        argv: tuple[str, ...] = (),
 ) -> tuple[ByteSource | None, IOResult]:
     """Run one already-parsed command on the mount that owns its paths.
 
@@ -373,6 +375,8 @@ async def run_on_mount(
             is empty (a stream command running in stdin mode).
         mount: Pre-resolved mount; skips resolution and session mode
             checks, which the caller already performed.
+        argv (tuple[str, ...]): The words after the command name, as the
+            line spelled them; empty for a run split out of a line.
     """
     if mount is None:
         resolve_paths = paths or ([resolve_hint] if resolve_hint else [])
@@ -417,12 +421,17 @@ async def run_on_mount(
             texts,
             flag_kwargs,
             ExecContext(
+                limit_override=(session.command_limits.get(cmd_name)
+                                or mount.command_limits.get(cmd_name)
+                                or registry.command_limits.get(cmd_name)),
                 stdin=stdin,
                 cwd=session.cwd,
                 dispatch=dispatch,
                 session_id=session.session_id,
                 env=env_snapshot(session),
                 session_view=session_view(session, registry.policies),
+                processes=registry.process_view(session)
+                if registry.process_view is not None else None,
                 exec_allowed=registry.is_exec_allowed(),
                 exec_path_allowed=registry.exec_allowed_at,
                 runtime=line_runtime,
@@ -430,6 +439,7 @@ async def run_on_mount(
                 ns=ns,
                 stat_path=stat_path,
                 readdir_path=readdir_path,
+                argv=argv,
             ),
         )
     except UsageError as exc:

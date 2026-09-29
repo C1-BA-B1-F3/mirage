@@ -17,6 +17,7 @@ import asyncio
 from mirage.accessor.disk import DiskAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.disk.du.walk import size_sync
+from mirage.core.disk.errors import disk_errors
 from mirage.types import PathSpec
 
 
@@ -29,5 +30,5 @@ async def size(accessor: DiskAccessor,
         accessor (DiskAccessor): disk accessor.
         path_spec (PathSpec): target path.
     """
-    return await asyncio.to_thread(size_sync, accessor.root,
-                                   path_spec.mount_path)
+    with disk_errors(path_spec.virtual):
+        return await asyncio.to_thread(size_sync, accessor.root, path_spec)

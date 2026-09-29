@@ -12,12 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Callable
 from typing import Any
 
 from mirage.accessor.mem0 import Mem0Accessor
 from mirage.commands.builtin.mem0 import COMMANDS
-from mirage.commands.builtin.mem0.io import IO
 from mirage.commands.config import RegisteredCommand
 from mirage.commands.registry import registered_commands
 from mirage.ops.mem0 import OPS as MEM0_OPS
@@ -26,13 +24,6 @@ from mirage.types import VFSName
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.mem0.config import Mem0Config
 from mirage.vfs.mem0.prompt import PROMPT
-
-_MEM0_OPS: dict[str, Callable[..., Any]] = {
-    "read_bytes": IO.read_bytes,
-    "read_stream": IO.read_stream,
-    "readdir": IO.readdir,
-    "stat": IO.stat,
-}
 
 
 class Mem0VFS(BaseVFS):
@@ -59,6 +50,3 @@ class Mem0VFS(BaseVFS):
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)
-
-    def load_state(self, state: dict[str, Any]) -> None:
-        pass

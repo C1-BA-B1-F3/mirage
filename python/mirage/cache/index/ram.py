@@ -31,6 +31,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         self._entries: dict[str, IndexEntry] = {}
         self._children: dict[str, list[str]] = {}
         self._expiry: dict[str, datetime] = {}
+        self._partial: set[str] = set()
 
     def seed(self, entries: dict[str, IndexEntry],
              children: dict[str, list[str]], expires_at: datetime) -> None:
@@ -45,6 +46,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
             for path, keys in children.items()
         })
         self._expiry.update({path: expires_at for path in children})
+        self._partial.difference_update(children)
 
     async def entries(self) -> dict[str, IndexEntry]:
         return dict(self._entries)
@@ -71,6 +73,8 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         if datetime.now(timezone.utc) >= exp:
             return ListResult(status=LookupStatus.EXPIRED)
         children = self._children.get(vfs_path)
+        if vfs_path in self._partial:
+            return ListResult(partial_entries=children or [])
         return ListResult(entries=children or [])
 
     async def set_dir(
@@ -78,6 +82,24 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         vfs_path: str,
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
+    ) -> None:
+        await self._set_dir(vfs_path, entries, expired_at, partial=False)
+
+    async def set_partial_dir(
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None = None,
+    ) -> None:
+        await self._set_dir(vfs_path, entries, expired_at, partial=True)
+
+    async def _set_dir(
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None,
+        *,
+        partial: bool,
     ) -> None:
         async with self._lock_for(vfs_path):
             now = datetime.now(timezone.utc)
@@ -93,12 +115,17 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
                 child_keys.append(full_path)
             self._children[vfs_path] = child_keys
             self._expiry[vfs_path] = exp
+            if partial:
+                self._partial.add(vfs_path)
+            else:
+                self._partial.discard(vfs_path)
 
     async def invalidate_dir(self, vfs_path: str) -> None:
         for child in self._children.get(vfs_path, []):
             self._entries.pop(child, None)
         self._expiry.pop(vfs_path, None)
         self._children.pop(vfs_path, None)
+        self._partial.discard(vfs_path)
 
     async def invalidate_prefix(self, vfs_path: str) -> None:
         for entry_key in [k for k in self._entries if under_path(k, vfs_path)]:
@@ -107,6 +134,7 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
             self._children.pop(dir_key, None)
         for exp_key in [k for k in self._expiry if under_path(k, vfs_path)]:
             self._expiry.pop(exp_key, None)
+            self._partial.discard(exp_key)
 
     async def invalidate(self) -> None:
         past = datetime.now(timezone.utc) - timedelta(seconds=1)
@@ -117,4 +145,5 @@ class RAMIndexCacheStore(IndexCacheStore, KeyLockMixin):
         self._entries.clear()
         self._children.clear()
         self._expiry.clear()
+        self._partial.clear()
         self._clear_locks()

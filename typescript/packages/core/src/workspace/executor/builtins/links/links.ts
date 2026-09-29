@@ -17,14 +17,16 @@ import { FlagView, SPECS, parseCommand } from '../../../../commands/spec/index.t
 import { parseToKwargs } from '../../../../commands/spec/parser.ts'
 import type { FileStat } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
-import { blamedPath, fsStrerror, isEacces, isEnoent, isErofs } from '../../../../utils/errors.ts'
-import { CycleError, gnuBasename } from '../../../../utils/path.ts'
+import { ELOOP_STRERROR, fsStrerror, isEnoent } from '../../../../utils/errors.ts'
+import { CycleError, gnuBasename, posixNormpath } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
-import { fail, ok, readOnlyError, splitFlags } from '../shared.ts'
-import { dispatchStat, statOrNull } from './probe.ts'
+import { fail, splitFlags } from '../shared.ts'
+import { dispatchStat } from '../../../../commands/builtin/utils/paths.ts'
+import { statOrNull } from './probe.ts'
 import type { Result } from '../types.ts'
+import type { FlagValue } from '../../../../commands/spec/types.ts'
 
 export function posixRelative(target: string, startDir: string): string {
   const t = target.split('/').filter(Boolean)
@@ -44,14 +46,13 @@ export function linkFlags(args: (string | PathSpec)[], known: string): Set<strin
 // lstat-style command: `stat dlink/f2` reports f2 because dlink was
 // resolved on the way to it, while `stat dlink` reports the link. A
 // no-follow command therefore still needs its operand's prefix
-// resolved. Throws CycleError on ELOOP.
+// resolved. The walk is the namespace's (`Namespace.followParent`, which
+// the op door runs for every surface); the operand comes back without a
+// trailing slash, which the slash-keeping commands read off `rawPath`
+// instead. Throws CycleError on ELOOP.
 function followParent(namespace: Namespace, virtual: string): string {
   const trimmed = rstripSlash(virtual)
-  const cut = trimmed.lastIndexOf('/')
-  const name = trimmed.slice(cut + 1)
-  if (name === '') return virtual
-  const resolved = namespace.follow(trimmed.slice(0, cut) || '/')
-  return `${rstripSlash(resolved)}/${name}`
+  return trimmed === '' ? virtual : namespace.followParent(trimmed)
 }
 
 // Rewrite path operands through the symlink table (open(2) semantics).
@@ -64,7 +65,10 @@ function followParent(namespace: Namespace, virtual: string): string {
 // wants: it strips the slash before it stats.
 // A rewritten spec keeps the user-typed form in `rawPath` so error messages
 // still name the operand as typed; the mount re-stamps `vfsPath` at
-// dispatch. Throws CycleError (carrying the typed operand) on ELOOP.
+// dispatch. A path a link loop stands in resolves to nothing, so it stays
+// as typed with `walkError` set, and the op that reaches it answers ELOOP:
+// GNU reports the one operand in the command's own words and goes on to
+// the next.
 export function followPaths(
   namespace: Namespace,
   items: (string | PathSpec)[],
@@ -78,13 +82,31 @@ export function followPaths(
       continue
     }
     const last = followLast || (slashFollows && item.rawPath.endsWith('/'))
-    let virtual: string
+    let followed: string
     try {
-      virtual = last ? namespace.follow(item.virtual) : followParent(namespace, item.virtual)
+      followed = last ? namespace.follow(item.virtual) : followParent(namespace, item.virtual)
     } catch (err) {
-      if (err instanceof CycleError) throw new CycleError(item.rawPath)
-      throw err
+      if (!(err instanceof CycleError)) throw err
+      out.push(
+        new PathSpec({
+          virtual: item.virtual,
+          directory: item.directory,
+          vfsPath: item.vfsPath,
+          pattern: item.pattern,
+          resolved: item.resolved,
+          rawPath: item.rawPath,
+          dotted: item.dotted,
+          walkError: 'ELOOP',
+        }),
+      )
+      continue
     }
+    // A relative target climbs from the link's own directory, which is a real
+    // one, so its `..` collapses the way resolveLink collapses it; left in,
+    // the path no longer matched the word that spelled it and the operand lost
+    // its typed name (`wc -c sub/al` printed `/data/sub/../a`).
+    let virtual = posixNormpath(followed)
+    if (followed.endsWith('/') && virtual !== '/') virtual += '/'
     if (virtual === item.virtual) {
       out.push(item)
       continue
@@ -97,6 +119,8 @@ export function followPaths(
         pattern: item.pattern,
         resolved: item.resolved,
         rawPath: item.rawPath,
+        dotted: item.dotted,
+        walkError: item.walkError,
       }),
     )
   }
@@ -145,10 +169,8 @@ export function acceptsLine(
 // absent (a hidden link answers ENOENT, the no-name-leak rule).
 //
 // The refusal is voiced the way the same refusal on a backend file is
-// voiced, so one grant does not describe itself two ways: a mount-mode
-// refusal renders readOnlyError (naming the mount, deduplicated because
-// two operands on one mount are one fact), everything else renders GNU's
-// per-operand line.
+// voiced, so one grant does not describe itself two ways: GNU's
+// per-operand line, a read-only region's EROFS included.
 //
 // An operand typed with a trailing slash is deliberately kept: the slash
 // asked for a directory, and GNU refuses rather than removing the link
@@ -187,16 +209,6 @@ export async function stripLinkOperands(
         const suffix = fsStrerror(err)
         if (suffix === null) throw err
         if (isEnoent(err) && force) continue
-        if (isErofs(err)) {
-          // The mount voice, because the mount is what refused: a
-          // backend file on this operand's turf is answered by
-          // Mount.executeCmd with this exact line, and one grant must
-          // not describe itself two ways depending on whether the name
-          // it stopped was a link.
-          const line = readOnlyError(name, namespace, item)
-          if (!errors.includes(line)) errors.push(line)
-          continue
-        }
         errors.push(`${name}: cannot ${verb} '${item.rawPath}': ${suffix}\n`)
       }
       continue
@@ -221,7 +233,13 @@ async function slashedLinkRefusal(
   dst: PathSpec,
   dstStat: FileStat | null,
 ): Promise<Result> {
-  const followed = namespace.follow(src.virtual)
+  let followed: string
+  try {
+    followed = namespace.follow(src.virtual)
+  } catch (err) {
+    if (!(err instanceof CycleError)) throw err
+    return fail('mv', `mv: cannot stat '${src.rawPath}': ${ELOOP_STRERROR}\n`)
+  }
   const target = await statOrNull(dispatch, PathSpec.fromStrPath(followed))
   if (target === null) {
     return fail('mv', `mv: cannot stat '${src.rawPath}': No such file or directory\n`)
@@ -242,28 +260,46 @@ async function slashedLinkRefusal(
   return fail('mv', `mv: cannot move '${src.rawPath}' to '${landing}': Not a directory\n`)
 }
 
+/**
+ * Resolve each command-line link that leads to a directory: GNU ls's default
+ * (ls.c's DEREF_COMMAND_LINE_SYMLINK_TO_DIR, coreutils 9.7). `ls dlink` lists
+ * the directory, while `ls flink` and a dangling `ls dang` report the link
+ * itself, and so does a loop, whose stat fails where GNU then lstats it.
+ * Where a link leads takes a stat through the door to know, since the target
+ * may live on any mount, so this runs after `followPaths` has resolved every
+ * operand's prefix. Mirrors Python's follow_directory_links.
+ */
+export async function followDirectoryLinks(
+  namespace: Namespace,
+  dispatch: DispatchFn,
+  items: readonly (string | PathSpec)[],
+): Promise<(string | PathSpec)[]> {
+  const out: (string | PathSpec)[] = []
+  for (const item of items) {
+    if (!(item instanceof PathSpec) || item.walkError !== null || !namespace.isLink(item.virtual)) {
+      out.push(item)
+      continue
+    }
+    const followed = followPaths(namespace, [item])[0]
+    const target =
+      followed instanceof PathSpec && followed.walkError === null
+        ? await statOrNull(dispatch, followed)
+        : null
+    out.push(
+      target !== null && target.type === FileType.DIRECTORY && followed !== undefined
+        ? followed
+        : item,
+    )
+  }
+  return out
+}
+
 export interface PreparedMv {
   items: (string | PathSpec)[]
-  postUnlink: string | null
-  postRename: [string, string] | null
   early: Result | null
 }
 
-// Adjust a two-operand `mv` for node-meta operands. A link source renames
-// the link entry itself. A destination that is (a link to) a directory
-// receives the move inside it (rename(2) preceded by mv's dst stat); any
-// other destination is replaced, so its node entry, link or overlay attrs
-// alike, drops once the backend move succeeds. A plain source hands back the
-// pair to re-anchor once the backend move succeeds, so whatever the node table
-// holds at it and below it travels with the bytes.
-//
-// The pair is where this can be done at all: a single-mount `mv` renames
-// through the backend op bound to the accessor rather than through the
-// dispatcher, so the re-anchoring the dispatcher does for every other caller
-// has to be repeated here. Only a two-operand line qualifies, because a
-// path-shaped word is classified into a PathSpec whether it filled an operand
-// slot or a flag's value, and nothing here can tell `mv a b dst` from
-// `mv -t dst a b`.
+/** Resolve the destination directory without transferring any source. */
 export async function prepareMv(
   namespace: Namespace,
   dispatch: DispatchFn,
@@ -272,40 +308,123 @@ export async function prepareMv(
   cwd: string,
 ): Promise<PreparedMv> {
   const paths = items.filter((p): p is PathSpec => p instanceof PathSpec)
+  const spec = SPECS.mv
+  if (spec === undefined) return { items, early: null }
+  const fl = new FlagView(parseToKwargs(parseCommand(spec, [...args], cwd, 'mv')), spec)
+  const target = fl.raw('target_directory')
+  if (target !== undefined || paths.length > 2) {
+    return prepareMany(namespace, items, paths, target)
+  }
   const src = paths[0]
   const dst = paths[1]
   if (paths.length !== 2 || src === undefined || dst === undefined) {
-    return { items, postUnlink: null, postRename: null, early: null }
+    return { items, early: null }
   }
-  // `-t` makes every positional a source and the flag's value the destination,
-  // which is the many-source shape above; `-T` names the destination outright,
-  // so no basename is appended to it. Both are read off the parsed line rather
-  // than guessed from the parts, since a path-shaped flag value is classified
-  // into a PathSpec there exactly as an operand is.
-  const spec = SPECS.mv
-  if (spec === undefined) return { items, postUnlink: null, postRename: null, early: null }
-  const fl = new FlagView(parseToKwargs(parseCommand(spec, [...args], cwd, 'mv')), spec)
-  if (fl.raw('target_directory') !== undefined) {
-    return { items, postUnlink: null, postRename: null, early: null }
+  return preparePair(namespace, dispatch, items, src, dst, fl)
+}
+
+/** Re-anchor completed renames, including backups, in execution order. */
+export async function settleMoves(
+  namespace: Namespace,
+  moves: readonly (readonly [string, string])[],
+): Promise<void> {
+  for (const [src, landing] of moves) {
+    await namespace.unlink(landing)
+    await namespace.purgeUnder(landing)
+    await namespace.rename(src, landing)
+    await namespace.renameUnder(src, landing)
+  }
+}
+
+function landingKey(path: string): string {
+  return rstripSlash(path) || '/'
+}
+
+/**
+ * An `mv` of sources into one destination directory: `mv a b dst` and
+ * `mv -t dst a ...`. GNU stats the destination through its link before
+ * anything moves: a link to a directory takes the sources, a link to anything
+ * else is not a directory, a dangling one is missing and a loop is ELOOP, each
+ * worded by the generic mv from the destination handed to it here (coreutils
+ * 9.7). Every source then lands at the directory plus its basename: a link
+ * source through the namespace, which no backend mv can see, and every other
+ * one with its node entries re-anchored once the backend confirms the move.
+ * Mirrors Python's _prepare_many.
+ */
+function prepareMany(
+  namespace: Namespace,
+  items: (string | PathSpec)[],
+  paths: readonly PathSpec[],
+  target: FlagValue | undefined,
+): PreparedMv {
+  let dst: PathSpec | undefined
+  if (target !== undefined) {
+    const spelled =
+      target instanceof PathSpec ? target.virtual : typeof target === 'string' ? target : null
+    dst =
+      spelled === null
+        ? undefined
+        : paths.find((p) => landingKey(p.virtual) === landingKey(spelled))
+  } else {
+    dst = paths[paths.length - 1]
+  }
+  if (dst?.walkError !== null) {
+    return { items, early: null }
+  }
+  const followed = followPaths(namespace, [dst])[0]
+  if (!(followed instanceof PathSpec)) return { items, early: null }
+  const rewritten = items.map((item) => (item === dst ? followed : item))
+  return { items: rewritten, early: null }
+}
+
+// A two-operand `mv`: one source and the destination it replaces or lands
+// inside. Mirrors Python's _prepare_pair.
+async function preparePair(
+  namespace: Namespace,
+  dispatch: DispatchFn,
+  items: (string | PathSpec)[],
+  src: PathSpec,
+  dst: PathSpec,
+  fl: FlagView,
+): Promise<PreparedMv> {
+  if (src.walkError !== null || dst.walkError !== null) {
+    // The walk refused the operand, so there is no entry to move or land
+    // on; the generic mv reports it through its own stat, which cannot see
+    // a link source. A link is a non-directory, and GNU stats an empty
+    // destination as a directory (see mvGeneric).
+    if (dst.rawPath === '' && src.walkError === null && namespace.isLink(src.virtual)) {
+      const early = fail(
+        'mv',
+        `mv: cannot overwrite directory '' with non-directory '${src.rawPath}'\n`,
+      )
+      return { items, early }
+    }
+    if (dst.walkError === 'ELOOP' && src.walkError === null && namespace.isLink(src.virtual)) {
+      const early = fail('mv', `mv: cannot stat '${dst.rawPath}': ${ELOOP_STRERROR}\n`)
+      return { items, early }
+    }
+    return { items, early: null }
   }
 
   // Where the move lands: inside a directory destination (followed, so
   // node-meta keys line up with the followed paths stat merges on), else
-  // the destination itself, replaced like rename(2).
-  const followed = namespace.follow(dst.virtual)
-  const stat = await statOrNull(dispatch, PathSpec.fromStrPath(followed))
+  // the destination itself, replaced like rename(2). A destination a link
+  // loop stands in stats ELOOP, which mv reads as not a directory: the
+  // rename replaces the link itself (GNU 9.7).
+  let followed: string | null
+  try {
+    followed = namespace.follow(dst.virtual)
+  } catch (err) {
+    if (!(err instanceof CycleError)) throw err
+    followed = null
+  }
+  const stat = followed === null ? null : await statOrNull(dispatch, PathSpec.fromStrPath(followed))
   const intoDir =
     !fl.asBool('no_target_directory') && stat !== null && stat.type === FileType.DIRECTORY
-  let targetDst = dst.virtual
-  if (intoDir) {
-    const name = src.virtual.slice(src.virtual.lastIndexOf('/') + 1)
-    targetDst = rstripSlash(followed) + '/' + name
-  }
-
   if (namespace.isLink(src.virtual)) {
     if (src.rawPath.endsWith('/')) {
       const early = await slashedLinkRefusal(namespace, dispatch, src, dst, stat)
-      return { items, postUnlink: null, postRename: null, early }
+      return { items, early }
     }
     if (!intoDir && dst.rawPath.endsWith('/')) {
       // rename(2) never follows the source, so a link is not a directory
@@ -322,42 +441,13 @@ export async function prepareMv(
               'mv',
               `mv: cannot move '${src.rawPath}' to '${dst.rawPath}': ${strerror ?? 'Not a directory'}\n`,
             )
-      return { items, postUnlink: null, postRename: null, early }
+      return { items, early }
     }
-    // The move is a node-table rename, which the door answers: a link
-    // has no backend entry for the generic mv to move. Reaching the
-    // table directly from here would skip the admission gates every
-    // other mv passes, so the dispatch is the point.
-    try {
-      await dispatch('rename', src, [PathSpec.fromStrPath(targetDst)])
-    } catch (err) {
-      const suffix = fsStrerror(err)
-      if (suffix === null || (!isEacces(err) && !isErofs(err))) throw err
-      // Voiced as the same refusal on a backend file is: the mount
-      // voice when the source's own turf is what refused (the case
-      // Mount.executeCmd answers, since the command runs on the source
-      // mount), GNU's per-operand line when it was the destination --
-      // which is what a cross-mount `mv f /ro/f` already answers for a
-      // regular file. A policy deny is always per operand.
-      const blame = isErofs(err) ? (blamedPath(err) ?? src.virtual) : ''
-      const early: Result = fail(
-        'mv',
-        blame === src.virtual
-          ? readOnlyError('mv', namespace, src)
-          : `mv: cannot move '${src.rawPath}' to '${dst.rawPath}': ${suffix}\n`,
-      )
-      return { items, postUnlink: null, postRename: null, early }
-    }
-    const early: Result = ok('mv')
-    return { items, postUnlink: null, postRename: null, early }
   }
 
-  // Unconditional: a directory source carries a whole subtree of node entries
-  // that no exact-path lookup at the source can see, and a symlink below it is
-  // destroyed rather than merely forgotten when they are left behind. Both
-  // halves are no-ops when the table holds nothing there.
-  const postRename: [string, string] = [src.virtual, targetDst]
-
-  const rewritten = intoDir && namespace.isLink(dst.virtual) ? followPaths(namespace, items) : items
-  return { items: rewritten, postUnlink: targetDst, postRename, early: null }
+  const rewritten =
+    intoDir && namespace.isLink(dst.virtual)
+      ? items.map((item) => (item === dst ? (followPaths(namespace, [dst])[0] ?? dst) : item))
+      : items
+  return { items: rewritten, early: null }
 }

@@ -394,3 +394,30 @@ async def test_fetch_all_relationships_empty_schemas(mock_conn):
     result = await client.fetch_all_relationships(mock_conn, [])
     assert result == []
     mock_conn.fetch.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size, expected", [(0, []), (101, None),
+                                            (100, [{
+                                                "__mirage_bytes": None
+                                            }])])
+async def test_bounded_rows_preserves_null_rows_and_marker_columns(
+        mock_conn, size, expected):
+    mock_conn.fetch.side_effect = [
+        [{
+            "column_name": "__mirage_bytes",
+            "data_type": "text",
+            "is_nullable": "YES"
+        }],
+        [{
+            "__mirage_bytes": None,
+            "__mirage_bytes_": size
+        }],
+    ]
+    result = await client.fetch_bounded_rows(mock_conn,
+                                             "public",
+                                             "users",
+                                             limit=11,
+                                             max_bytes=100)
+    assert result == expected
+    assert mock_conn.fetch.call_args.args[1:] == (11, 100)

@@ -227,9 +227,9 @@ async def test_invalid_pretty_name_is_refused_like_git(git_ws):
 
 @pytest.mark.asyncio
 async def test_real_but_unsupported_preset_says_unsupported(git_ws):
-    result = await git_ws.shell("git -C /repo log --pretty=raw")
+    result = await git_ws.shell("git -C /repo log --pretty=email")
     assert result.exit_code == 128
-    assert b"unsupported --pretty format: raw" in result.stderr
+    assert b"unsupported --pretty format: email" in result.stderr
 
 
 @pytest.mark.asyncio

@@ -73,14 +73,12 @@ sources, and every route that has no typed verb) goes through the
       database.json
       <data-source-name>__<data-source-id>/
         data_source.json
-        <row-page-title>__<page-id>/
-          page.json
-          ...
+        rows.jsonl
 ```
 
 Since the `2025-09-03` API generation a database is a container of **data
 sources**, and both the column schema and the rows live on the data
-source, so a row page sits one level deeper than the page tree.
+source: `data_source.json` and `rows.jsonl`.
 `database.json` is the container's identity plus the `data_sources` stubs
 that name the directories beneath it, and carries **no** `properties`.
 The shape is identical to the Python connector:
@@ -101,10 +99,15 @@ The shape is identical to the Python connector:
 }
 ```
 
-`data_source.json` holds the typed column schema under `properties`; `ls`
-the data source directory to enumerate row pages.
+`data_source.json` holds the typed column schema under `properties`, and
+`rows.jsonl` holds every row, one JSON object per line: the row's
+`page.json` without the body, plus `path`, where that `page.json` is below
+the data source directory. The rows are one file rather than a directory
+each, because a query answers a hundred rows' cells in one call while
+every row directory costs calls of its own to enter.
 
 A database row is itself a page: its `page.json` reports `parent_type` of
 `data_source_id`, and its cell values ride in the same file under
-`properties`. For full `page.json` field details and supported edits see
-the [Python Notion docs](/python/vfs/notion).
+`properties`. Row directories are not listed; open one by the `path` on
+its line. For full `rows.jsonl` and `page.json` field details and
+supported edits see the [Python Notion docs](/python/vfs/notion).

@@ -430,15 +430,15 @@
       }
     },
     {
-      "id": "ntn_created_row_in_mount_listing",
+      "id": "ntn_created_row_in_mount_rows",
       "seq": 566033,
       "targets": [
         "cli-ntn"
       ],
-      "command": "ls /notion/databases/Tasks__eeee1111-2222-3333-4444-555566667777/Tasks__d5000000-2222-3333-4444-555566667777/",
+      "command": "jq -r \".title\" /notion/databases/Tasks__eeee1111-2222-3333-4444-555566667777/Tasks__d5000000-2222-3333-4444-555566667777/rows.jsonl",
       "expect": {
         "exit": 0,
-        "stdout": "Row_page__a0000000-0000-4000-8000-000000000002\nShip_beta__ffff2222-3333-4444-5555-666677778888\nWrite_spec__ffff1111-2222-3333-4444-555566667777\ndata_source.json\n",
+        "stdout": "Write spec\nShip beta\nRow page\n",
         "stderr": ""
       }
     },

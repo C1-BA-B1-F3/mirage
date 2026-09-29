@@ -473,7 +473,8 @@ class ConsumerPoller:
         """The fingerprint the kept checkpoint holds for ``virtual``.
 
         The checkpoint is ``ListingDeltaHook``'s own snapshot, a
-        ``{virtual: fingerprint}`` JSON map, so this reads the exact
+        ``{virtual: fingerprint}`` JSON map, or a native hook's (Dropbox,
+        Box) that nests the same map under ``s``, so this reads the exact
         value the next delta will compare against rather than a
         re-derived one. That is what makes it worth exposing: a pull
         case that is told no path changed has one comparison to
@@ -492,7 +493,9 @@ class ConsumerPoller:
         """
         if self._checkpoint is None:
             return None
-        snapshot: dict[str, str] = json.loads(self._checkpoint)
+        data = json.loads(self._checkpoint)
+        snapshot: dict[str, str] = (data["s"] if isinstance(
+            data.get("s"), dict) else data)
         return snapshot.get(virtual)
 
 

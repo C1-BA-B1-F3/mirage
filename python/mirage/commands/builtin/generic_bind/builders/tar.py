@@ -20,7 +20,9 @@ from mirage.commands.builtin.generic.crossmount.utils import \
 from mirage.commands.builtin.generic.tar import tar_generic
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           Operation, bound_op)
-from mirage.commands.builtin.generic_bind.archive_io import is_dir_of, walk_of
+from mirage.commands.builtin.generic_bind.archive_io import (is_dir_of,
+                                                             relay_is_dir_of,
+                                                             walk_of)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -35,7 +37,7 @@ async def tar(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         raise ValueError("tar: missing operand")
     resolved = await ops.resolve_glob(accessor, paths, opts.index)
     fl = FlagView(opts.flags, spec=SPECS["tar"])
-    if opts.dispatch is not None and not fl.as_bool("c"):
+    if opts.dispatch is not None and not fl.as_bool("create"):
         # -t reads and -x writes wherever cwd or -C says, which needs
         # not be this mount, so both run on dispatch-relayed doors and
         # each path routes to the mount that owns it. Only -c stays on
@@ -49,18 +51,19 @@ async def tar(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                  prim["mkdir"],
                                  prim["stat"],
                                  walk_of(ops, accessor, opts.index),
-                                 is_dir_of(ops, accessor, opts.index),
+                                 relay_is_dir_of(opts.dispatch),
                                  relay=True)
+    # Archive output follows links even when the member scan preserves them.
+    archive_write = (transfer_primitives(opts.dispatch)["write"]
+                     if opts.dispatch is not None else partial(
+                         ops.require(Operation.WRITE), accessor))
     return await tar_generic(resolved, list(texts), opts,
                              bound_op(ops.read_bytes, accessor, opts.index),
-                             partial(ops.require(Operation.WRITE), accessor),
+                             archive_write,
                              partial(ops.require(Operation.MKDIR), accessor),
                              bound_op(ops.stat, accessor, opts.index),
                              walk_of(ops, accessor, opts.index),
                              is_dir_of(ops, accessor, opts.index))
 
 
-BUILDER = Builder('tar',
-                  tar,
-                  write=True,
-                  requirements=frozenset({Operation.WRITE, Operation.MKDIR}))
+BUILDER = Builder('tar', tar, write=True)

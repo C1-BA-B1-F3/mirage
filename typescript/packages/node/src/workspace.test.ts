@@ -64,18 +64,19 @@ describe('@struktoai/mirage-node Workspace', () => {
     await ws.close()
   })
 
-  it.each([['-maxdepth abc'], ['-mindepth xx'], ["-size ''"], ['-size abc'], ['-mtime abc']])(
-    'find %s exits 1 with a clean stderr instead of crashing',
-    async (expr) => {
-      const ws = new Workspace({ '/': new RAMVFS() }, { mode: MountMode.WRITE })
-      const res = await ws.shell(`find / ${expr}`)
-      expect(res.exitCode).toBe(1)
-      const stderr = new TextDecoder().decode(res.stderr)
-      expect(stderr.startsWith('find: invalid argument ')).toBe(true)
-      expect(stderr.endsWith('\n')).toBe(true)
-      await ws.close()
-    },
-  )
+  it.each([
+    ['-maxdepth abc', "find: invalid argument 'abc' to '-maxdepth'"],
+    ['-mindepth xx', "find: invalid argument 'xx' to '-mindepth'"],
+    ["-size ''", 'find: invalid null argument to -size'],
+    ['-size abc', "find: Invalid argument `abc' to -size"],
+    ['-mtime abc', "find: invalid argument 'abc' to '-mtime'"],
+  ])('find %s exits 1 with a clean stderr instead of crashing', async (expr, message) => {
+    const ws = new Workspace({ '/': new RAMVFS() }, { mode: MountMode.WRITE })
+    const res = await ws.shell(`find / ${expr}`)
+    expect(res.exitCode).toBe(1)
+    expect(new TextDecoder().decode(res.stderr)).toBe(`${message}\n`)
+    await ws.close()
+  })
 
   it.each([
     ["echo a '' b", 'a  b\n'],

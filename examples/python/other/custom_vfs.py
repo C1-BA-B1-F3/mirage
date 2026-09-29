@@ -16,16 +16,15 @@ import asyncio
 import hashlib
 import tempfile
 from copy import deepcopy
-from functools import partial
 from pathlib import Path
 
-from mirage import (NULL_INDEX, Accessor, BaseVFS, CommandIO, CommandSpec,
-                    ContentType, FileStat, FileType, IndexCacheStore, IOResult,
-                    MountMode, PathSpec, Workspace, command, register_vfs,
-                    stream_from_bytes)
+from mirage import (NULL_INDEX, Accessor, BaseVFS, CommandSpec, ContentType,
+                    FileStat, FileType, IndexCacheStore, IOResult, MountMode,
+                    PathSpec, ReadOps, VFSAdapter, Workspace, WriteOps,
+                    command, register_vfs)
 
 # A whole custom backend in one script: four async core functions over
-# your data source, one CommandIO table, one BaseVFS. Every
+# your data source, a read adapter with optional writes, one BaseVFS. Every
 # generic command (ls, cat, grep, find, head, wc, ...) works for free,
 # and so does versioning, in the shape the content calls for: the wiki's
 # pages are the VFS's own, so they ride its state and a snapshot
@@ -44,8 +43,9 @@ PAGES = {
 
 class WikiAccessor(Accessor):
 
-    def __init__(self, pages: dict) -> None:
+    def __init__(self, pages: dict, known_sizes: bool = True) -> None:
         self.pages = pages
+        self.known_sizes = known_sizes
 
 
 def _node(pages: dict, key: str):
@@ -96,7 +96,7 @@ async def stat(
     # The fingerprint is the content's own hash: the stable identity a
     # snapshot records for every read and a load checks for drift.
     return FileStat(name=name,
-                    size=len(data),
+                    size=len(data) if accessor.known_sizes else None,
                     type=FileType.FILE,
                     content=ContentType.TEXT,
                     fingerprint=hashlib.sha256(data).hexdigest()[:16])
@@ -112,9 +112,29 @@ async def write(accessor: WikiAccessor, path: PathSpec, data: bytes) -> None:
     node[name] = data.decode()
 
 
+async def mkdir(accessor: WikiAccessor,
+                path: PathSpec,
+                parents: bool = False) -> None:
+    parts = [p for p in path.vfs_path.split("/") if p]
+    node = accessor.pages
+    for i, part in enumerate(parts):
+        leaf = i == len(parts) - 1
+        if part not in node:
+            if not leaf and not parents:
+                raise FileNotFoundError(path.virtual)
+            node[part] = {}
+        elif leaf and (not parents or not isinstance(node[part], dict)):
+            raise FileExistsError(path.virtual)
+        node = node[part]
+        if not isinstance(node, dict):
+            raise NotADirectoryError(path.virtual)
+    if not parts and not parents:
+        raise FileExistsError(path.virtual)
+
+
 # Optional: a bespoke domain verb, registered alongside the generics.
 @command("wiki_titles", vfs="wiki", spec=CommandSpec())
-async def wiki_titles(accessor, *texts: str, **flags: object):
+async def wiki_titles(accessor, paths, texts, opts):
     titles = [
         line[2:] for page in ("guides/quickstart.md", "guides/deploy.md")
         for line in _node(accessor.pages, page).splitlines()
@@ -123,15 +143,10 @@ async def wiki_titles(accessor, *texts: str, **flags: object):
     return ("\n".join(titles) + "\n").encode(), IOResult()
 
 
-def make_io() -> CommandIO:
-    return CommandIO(
-        readdir=readdir,
-        read_bytes=read_bytes,
-        read_stream=partial(stream_from_bytes, read_bytes),
-        stat=stat,
-        write=write,
-        is_mounted=lambda a: True,
-        local=False,
+def make_io(*, writable: bool = True) -> VFSAdapter:
+    return VFSAdapter(
+        read=ReadOps(readdir=readdir, read_bytes=read_bytes, stat=stat),
+        writes=WriteOps(write=write, mkdir=mkdir) if writable else WriteOps(),
     )
 
 
@@ -177,8 +192,8 @@ class FeedVFS(BaseVFS):
 
     def __init__(self) -> None:
         super().__init__(name="feed",
-                         accessor=WikiAccessor(FEED),
-                         io=make_io(),
+                         accessor=WikiAccessor(FEED, known_sizes=False),
+                         io=make_io(writable=False),
                          prompt="A status feed rendered as markdown.",
                          supports_snapshot=True)
 
@@ -195,11 +210,13 @@ async def main():
     # Registered up front: the name is what a snapshot rebuilds the
     # mount through, the same way workspace YAML names it.
     register_vfs("wiki", WikiVFS)
-    ws = Workspace({
-        "/wiki/": WikiVFS(),
-        "/feed/": FeedVFS()
-    },
-                   mode=MountMode.WRITE)
+    ws = Workspace(
+        {
+            "/wiki/": WikiVFS(),
+            "/nested/wiki/": (WikiVFS(), MountMode.READ),
+            "/feed/": FeedVFS()
+        },
+        mode=MountMode.WRITE)
 
     for line in (
             "ls /wiki/guides",
@@ -210,6 +227,26 @@ async def main():
             "wiki_titles",
             "cat /wiki/missing.md",
             "cat /feed/status.md",
+            "cat /wiki/guides/*.md",
+            "cat /nested/wiki/notes.md",
+            "echo changed > /nested/wiki/notes.md",
+            "cat /nested/wiki/notes.md",
+            "wc -c /feed/status.md",
+            "rm /feed/status.md",
+            "gzip -c /feed/status.md | gunzip",
+            "mkdir /wiki/new/child",
+            "test ! -e /wiki/new && echo no-partial-parent",
+            "mkdir -p /wiki/new/child",
+            "mkdir /wiki/new/child",
+            "mkdir -p /wiki/new/child",
+            "mkdir -p /wiki/notes.md/child",
+            "mkdir /wiki/guides/empty",
+            "cp -r /wiki/guides /wiki/copied",
+            "ls /wiki/copied",
+            "cat /wiki/copied/quickstart.md",
+            "rm -r /wiki/copied /wiki/notes.md",
+            "rm -d /wiki/copied/empty /wiki/notes.md",
+            "cp -r /nested/wiki/guides /nested/wiki/copied",
     ):
         await show(ws, line)
 

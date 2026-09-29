@@ -1,0 +1,146 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import pytest
+
+from mirage.commands.builtin.generic.crossmount.relay.wc import (parse_row,
+                                                                 run_wc)
+from mirage.commands.builtin.generic.wc import WCCounts
+from mirage.io.types import IOResult, materialize
+from mirage.types import FileStat, FileType, PathSpec
+from mirage.utils.errors import enoent
+
+# What each operand's own mount answers for `wc -l`, and what stat says.
+ROWS = {
+    "/a/dir": (b"0 /a/dir\n", b"wc: /a/dir: Is a directory\n"),
+    "/b/name with spaces": (b"1 /b/name with spaces\n", None),
+    "/b/x": (b"1 /b/x\n", None),
+    "/pg/rows": (b"5 /pg/rows\n", None),
+    "/pg2/rows": (b"3 /pg2/rows\n", None),
+    "/a/n\nq": (b"2 /a/n\nq\n", None),
+    "/gone": (b"4 /gone\n", None),
+}
+SIZES = {"/b/name with spaces": 6, "/b/x": 120, "/pg/rows": None, "/a/n\nq": 4}
+
+
+class Mounts:
+
+    def __init__(self) -> None:
+        self.runs: list[tuple[str, list[str], dict]] = []
+        self.ops: list[str] = []
+
+    async def run_single(self, name, paths, texts, flags, stdin=None):
+        self.runs.append((name, [p.virtual for p in paths], flags))
+        out, err = ROWS[paths[0].virtual]
+        return out, IOResult(exit_code=1 if err else 0, stderr=err)
+
+    async def dispatch(self, op, path, **kwargs):
+        self.ops.append(op)
+        if path.virtual == "/gone":
+            raise enoent(path)
+        kind = (FileType.DIRECTORY
+                if path.virtual == "/a/dir" else FileType.FILE)
+        return FileStat(name=path.virtual,
+                        type=kind,
+                        size=SIZES.get(path.virtual)), IOResult()
+
+
+def specs(*paths: str) -> list[PathSpec]:
+    return [PathSpec.from_str_path(p) for p in paths]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,expected", [
+    ({
+        "lines": True
+    }, b"      0 /a/dir\n      1 /b/name with spaces\n      1 total\n"),
+    ({
+        "lines": True,
+        "total": "only"
+    }, b"1\n"),
+    ({
+        "lines": True,
+        "total": "never"
+    }, b"      0 /a/dir\n      1 /b/name with spaces\n"),
+])
+async def test_each_mount_counts_its_operand(flags, expected):
+    mounts = Mounts()
+    body, io = await run_wc(specs("/a/dir", "/b/name with spaces"), flags,
+                            mounts.dispatch, mounts.run_single)
+    assert await materialize(body) == expected
+    assert mounts.runs == [
+        ("wc", ["/a/dir"], {
+            **flags, "total": "never"
+        }),
+        ("wc", ["/b/name with spaces"], {
+            **flags, "total": "never"
+        }),
+    ]
+    assert "read" not in mounts.ops
+    assert io.exit_code == 1
+    assert io.stderr == b"wc: /a/dir: Is a directory\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("paths,expected", [
+    (("/pg/rows", "/pg2/rows"), b"5 /pg/rows\n3 /pg2/rows\n8 total\n"),
+    (("/pg/rows", "/b/x"), b"  5 /pg/rows\n  1 /b/x\n  6 total\n"),
+])
+async def test_an_unsized_file_pads_to_its_count(paths, expected):
+    mounts = Mounts()
+    body, io = await run_wc(specs(*paths), {"lines": True}, mounts.dispatch,
+                            mounts.run_single)
+    assert await materialize(body) == expected
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_a_name_holding_a_newline_is_one_quoted_row():
+    # One operand's run is one row, whatever its name holds; the report
+    # quotes that name as GNU wc does, so no row spans two lines.
+    mounts = Mounts()
+    body, _ = await run_wc(specs("/a/n\nq", "/b/x"), {"lines": True},
+                           mounts.dispatch, mounts.run_single)
+    assert await materialize(body) == (b"  2 '/a/n'$'\\n''q'\n"
+                                       b"  1 /b/x\n  3 total\n")
+
+
+@pytest.mark.asyncio
+async def test_a_file_gone_before_sizing_keeps_every_count():
+    mounts = Mounts()
+    body, io = await run_wc(specs("/gone", "/b/x"), {"lines": True},
+                            mounts.dispatch, mounts.run_single)
+    assert await materialize(body) == b"  4 /gone\n  1 /b/x\n  5 total\n"
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_invalid_total_fails_before_any_mount_runs():
+    mounts = Mounts()
+    _, io = await run_wc(specs("/a/x", "/b/x"), {"total": "bogus"},
+                         mounts.dispatch, mounts.run_single)
+    assert io.exit_code == 1
+    assert b"invalid argument 'bogus'" in io.stderr
+    assert mounts.runs == []
+    assert mounts.ops == []
+
+
+@pytest.mark.parametrize("line,columns,expected", [
+    ("5   x", ["lines"], (WCCounts(lines=5), "  x")),
+    ("  5  57 447 /m/d", ["lines", "words", "bytes_"],
+     (WCCounts(lines=5, words=57, bytes_=447), "/m/d")),
+    ("      8", ["lines"], (WCCounts(lines=8), None)),
+])
+def test_parse_row_keeps_the_label_whole(line, columns, expected):
+    assert parse_row(line, columns) == expected

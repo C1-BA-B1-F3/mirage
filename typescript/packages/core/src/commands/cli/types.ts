@@ -12,7 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { ByteSource } from '../../io/types.ts'
+import type { ProcessView } from '../../process/types.ts'
+import type { ByteSource, IOResult } from '../../io/types.ts'
 import type { Limit, PathSpec } from '../../types.ts'
 import type { NamespaceView, SessionView, StatPath } from '../../ops/types.ts'
 import type { ScriptSource } from '../../runtime/routing/types.ts'
@@ -21,7 +22,13 @@ import type { DispatchFn } from '../../runtime/types.ts'
 import { compileSpec } from '../spec/compile.ts'
 import type { ZodObject, ZodRawShape } from 'zod'
 
-import { CommandSpec, type CommandSpecInit, type FlagValue, UsageStyle } from '../spec/types.ts'
+import {
+  CommandSpec,
+  type CommandSpecInit,
+  type FlagValue,
+  type ParsedFlagValue,
+  UsageStyle,
+} from '../spec/types.ts'
 
 /**
  * One door per state plane, for the CLI verb that needs one.
@@ -71,6 +78,7 @@ export interface CLIDoors {
    * CLI may read it without breaking the tier rule.
    */
   sessionView?: SessionView
+  processes?: ProcessView
 }
 
 /**
@@ -116,6 +124,13 @@ export interface CLIInvocation<ConfigT = unknown> {
    * executor built the record.
    */
   spec?: CLISpec
+  /**
+   * Evaluate a nested line in this invocation's exact session. Host callbacks
+   * use this instead of Workspace.shell for portable re-entry, including after
+   * awaits and inside forks. Valid only until the handler settles or aborts;
+   * await each call before returning. Absent outside a workspace.
+   */
+  shell?: (command: string) => Promise<IOResult>
 }
 
 /**
@@ -305,7 +320,7 @@ function checkCollisions(
   }
 }
 
-export type WalkFlagBag = Record<string, FlagValue>
+export type WalkFlagBag = Record<string, ParsedFlagValue>
 
 export interface WalkResultInit {
   leaf?: CLISpec | null

@@ -4,6 +4,7 @@
       "id": "find_arg_mindepth",
       "seq": 320001,
       "targets": [
+        "argerr-airtable",
         "argerr-databricks",
         "argerr-discord",
         "argerr-email",
@@ -31,6 +32,7 @@
       "id": "find_arg_mindepth_trailing",
       "seq": 320005,
       "targets": [
+        "argerr-airtable",
         "argerr-databricks",
         "argerr-discord",
         "argerr-email",

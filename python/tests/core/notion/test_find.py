@@ -121,3 +121,17 @@ async def test_find_honors_mtime_window():
         mtime_max=datetime(2026, 7, 16, tzinfo=timezone.utc).timestamp(),
     )
     assert out == ["/db/page1.md"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("depth, calls", [(0, []), (1, ["/db"])])
+async def test_depth_limit_bounds_backend_requests(monkeypatch, depth, calls):
+    seen = []
+
+    async def tracked(accessor, path, index):
+        seen.append(path.virtual)
+        return await _fake_readdir(accessor, path, index)
+
+    monkeypatch.setattr(find_mod, "readdir", tracked)
+    await find_mod.find(None, PathSpec.from_str_path("/db"), maxdepth=depth)
+    assert seen == calls

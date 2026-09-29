@@ -47,8 +47,8 @@ const trello = new TrelloVFS({
 | --- | --- | --- |
 | `apiKey` | required | Trello API key. Redacted in snapshots. |
 | `apiToken` | required | Trello API token. Redacted in snapshots. |
-| `workspaceId` | none | Restrict to a single workspace. |
-| `boardIds` | none | Optional allowlist of board IDs. |
+| `workspaceId` | none | Restrict to a single workspace. The `trello` commands refuse an id outside it. |
+| `boardIds` | none | Optional allowlist of board IDs. The `trello` commands refuse an id outside it. |
 | `baseUrl` | `https://api.trello.com/1` | Override for Enterprise instances. |
 
 ## Mount mode

@@ -6,11 +6,16 @@ from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.core.dify.client import dify_post
 from mirage.core.dify.path import resolve_path
 from mirage.core.dify.read import segment_text
+from mirage.core.dify.readdir import readdir
 from mirage.core.dify.tree import normalize_slug
 from mirage.core.dify.walk import walk
 from mirage.types import PathSpec
+from mirage.utils.glob_walk import make_resolve_glob
 from mirage.utils.key_prefix import mount_prefix_of, rekey
 from mirage.utils.score import format_score
+from mirage.vfs.search import (float_option, int_option, text_option,
+                               validate_options)
+from mirage.vfs.types import SearchQuery
 
 logger = logging.getLogger(__name__)
 
@@ -231,3 +236,35 @@ def document_path(
     if name is None:
         return None
     return str(name)
+
+
+async def search_many(accessor: DifyAccessor,
+                      paths: list[PathSpec],
+                      query: SearchQuery,
+                      index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    validate_options(query, {'top_k', 'method', 'threshold'})
+    top_k = int_option(query, "top_k", 10)
+    if not paths:
+        raise ValueError("search: at least one scope is required")
+    prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
+    method = text_option(query, "method", "semantic")
+    threshold = float_option(query, "threshold", 0.0)
+    targets = [] if any(not p.vfs_path.strip("/")
+                        for p in paths) else await make_resolve_glob(readdir)(
+                            accessor, paths, index)
+    output = await search_segments(accessor,
+                                   query.query,
+                                   targets,
+                                   index,
+                                   top_k=top_k,
+                                   mount_prefix=prefix,
+                                   method=method,
+                                   threshold=threshold)
+    return output.decode().removesuffix("\n").split("\n") if output else []
+
+
+async def search_resource(accessor: DifyAccessor,
+                          path: PathSpec,
+                          query: SearchQuery,
+                          index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    return await search_many(accessor, [path], query, index)

@@ -13,11 +13,13 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from functools import partial
+from unittest.mock import AsyncMock
 
 import pytest
 
 from mirage.cache.context import push_cache_manager
 from mirage.cache.file.ram import RAMFileCacheStore
+from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.cache.manager import CacheManager
 from mirage.cache.read_through import (cache_aware_read_bytes,
                                        cache_aware_read_stream)
@@ -176,3 +178,61 @@ async def test_stdin_wrapper_preserves_file_cache_context():
     assert await _drain(reader(PathSpec.from_str_path("-"))) == b"pipe"
     assert await _drain(reader(PathSpec.from_str_path("-"))) == b""
     assert backend.stream_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_complete_read_populates_cache_and_rendered_size():
+    backend = _CountingBackend('雪\n'.encode())
+    manager = CacheManager(RAMFileCacheStore(), None, '/s3/', True)
+    prev = push_cache_manager(manager)
+    try:
+        reader = cache_aware_read_bytes(backend.read_bytes)
+    finally:
+        push_cache_manager(prev)
+    assert await reader(None, _spec()) == backend.data
+    assert await reader(None, _spec()) == backend.data
+    assert await manager.cached_size(_spec()) == len(backend.data)
+    assert backend.bytes_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_inflight_read_cannot_repopulate_after_mutation():
+    manager = CacheManager(RAMFileCacheStore(), RAMIndexCacheStore(), '/s3/',
+                           True)
+
+    async def fetch():
+        await manager.invalidate_after_write(_spec())
+        return b'old'
+
+    assert await manager.read_through(_spec(), fetch) == b'old'
+    assert await manager.cached_bytes(_spec()) is None
+
+
+@pytest.mark.asyncio
+async def test_inflight_read_cannot_repopulate_retired_mount():
+    live = True
+    manager = CacheManager(RAMFileCacheStore(),
+                           None,
+                           '/s3/',
+                           True,
+                           owns_path=lambda _: live)
+
+    async def fetch():
+        nonlocal live
+        live = False
+        return b'old'
+
+    assert await manager.read_through(_spec(), fetch) == b'old'
+    live = True
+    assert await manager.cached_bytes(_spec()) is None
+
+
+@pytest.mark.asyncio
+async def test_failed_read_never_populates_cache():
+    manager = CacheManager(RAMFileCacheStore(), None, '/s3/', True)
+
+    fetch = AsyncMock(side_effect=OSError('failed read'))
+
+    with pytest.raises(OSError, match='failed read'):
+        await manager.read_through(_spec(), fetch)
+    assert await manager.cached_bytes(_spec()) is None

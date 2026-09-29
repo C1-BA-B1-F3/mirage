@@ -19,6 +19,7 @@ import {
   type SearchEntry,
 } from './search/index.ts'
 import { isNotFound, rawPathOf } from './util.ts'
+import { DIR_SIZE } from '@struktoai/mirage-core/utils/stat_view'
 
 interface FindScope {
   baseKey: string
@@ -150,7 +151,7 @@ function matches(candidate: Candidate, scope: FindScope, criteria: FindCriteria)
   }
   if (!keep(entry, criteria.predicate, criteria.minDepth)) return false
   if (constrained(criteria.size)) {
-    const size = candidate.kind === 'd' ? 0 : (candidate.size ?? 0)
+    const size = candidate.kind === 'd' ? DIR_SIZE : (candidate.size ?? 0)
     if (!contains(criteria.size, size)) return false
   }
   if (constrained(criteria.modified)) {
@@ -242,9 +243,7 @@ async function collectScanCandidates(
 }
 
 function emptyState(candidate: Candidate, nonemptyDirectories: Set<string>): boolean {
-  return candidate.kind === 'd'
-    ? !nonemptyDirectories.has(candidate.key)
-    : (candidate.size ?? 0) === 0
+  return candidate.kind === 'd' ? !nonemptyDirectories.has(candidate.key) : candidate.size === 0
 }
 
 async function hydrateScanCandidate(

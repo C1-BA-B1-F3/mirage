@@ -12,6 +12,10 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { SearchQuery } from '../../vfs/types.ts'
+import { validateOptions, intOption, floatOption, textOption } from '../../vfs/search.ts'
+import type { IndexCacheStore } from '../../cache/index/store.ts'
+import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import type { LanceDBAccessor } from '../../accessor/lancedb.ts'
 import type { LanceRow } from './_driver.ts'
 import type { LanceDBConfigResolved } from '../../vfs/lancedb/config.ts'
@@ -99,4 +103,31 @@ export async function searchRowsOutput(
   }
   if (blocks.length === 0) return new Uint8Array()
   return ENC.encode(blocks.join('\n') + '\n')
+}
+
+export async function searchMany(
+  accessor: LanceDBAccessor,
+  paths: PathSpec[],
+  query: SearchQuery,
+  _index?: IndexCacheStore,
+): Promise<string[]> {
+  validateOptions(query, ['top_k', 'threshold', 'method'])
+  const topK = intOption(query, 'top_k', accessor.config.searchLimit)
+  const first = paths[0]
+  if (first === undefined) throw new Error('search: at least one scope is required')
+  const prefix = mountPrefixOf(first.virtual, first.vfsPath)
+  const method = textOption(query, 'method', 'semantic')
+  const threshold = floatOption(query, 'threshold', 0)
+  if (method !== 'semantic') throw new Error("search: only the 'semantic' method is supported")
+  const output = await searchRowsOutput(accessor, query.query, paths, topK, threshold, prefix)
+  return output.length === 0 ? [] : new TextDecoder().decode(output).replace(/\n$/, '').split('\n')
+}
+
+export function searchResource(
+  accessor: LanceDBAccessor,
+  path: PathSpec,
+  query: SearchQuery,
+  index?: IndexCacheStore,
+): Promise<string[]> {
+  return searchMany(accessor, [path], query, index)
 }

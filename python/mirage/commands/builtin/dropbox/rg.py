@@ -12,19 +12,19 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Mapping
-from dataclasses import replace
-
 from mirage.accessor.dropbox import DropboxAccessor
 from mirage.commands.builtin.dropbox.pushdown import narrow_scope
+from mirage.commands.builtin.generic.rg import (filters_files, labelled,
+                                                needs_every_file, parse_flags)
 from mirage.commands.builtin.generic.rg import rg as generic_rg
+from mirage.commands.builtin.generic.rg import walk_filter
 from mirage.commands.builtin.generic_bind.adapter import bound_op
 from mirage.commands.builtin.grep_pattern import pattern_arg
+from mirage.commands.builtin.rg_scan import walk_candidates
 from mirage.commands.config import CommandOpts
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.commands.spec.types import FlagValue
 from mirage.core.dropbox.read import read as _read
 from mirage.core.dropbox.read import stream as _stream
 from mirage.core.dropbox.readdir import readdir as _readdir
@@ -33,79 +33,41 @@ from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
 
-def _keep_visible(
-    narrowed: list[PathSpec],
-    scopes: list[PathSpec],
-    hidden: bool,
-) -> list[PathSpec]:
-    """Reproduce rg's dotfile pruning for search-narrowed candidates.
-
-    The generic rg walk skips hidden files and never descends into hidden
-    directories, but explicit file operands bypass that pruning, so
-    narrowed candidates are filtered on every path segment below their
-    (longest-matching) scope.
-
-    Args:
-        narrowed (list[PathSpec]): search-narrowed candidate files.
-        scopes (list[PathSpec]): the original scope operands.
-        hidden (bool): True if --hidden is set (no pruning).
-    """
-    if hidden:
-        return narrowed
-    kept: list[PathSpec] = []
-    for p in narrowed:
-        rel = p.virtual
-        best = -1
-        for scope in scopes:
-            base = scope.virtual.rstrip("/")
-            if len(base) > best and (p.virtual == base
-                                     or p.virtual.startswith(base + "/")):
-                rel = p.virtual[len(base):]
-                best = len(base)
-        if any(seg.startswith(".") for seg in rel.split("/") if seg):
-            continue
-        kept.append(p)
-    return kept
-
-
 @command("rg", vfs="dropbox", spec=SPECS["rg"])
 async def rg(accessor: DropboxAccessor, paths: list[PathSpec],
              texts: list[str],
              opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(opts.flags, spec=SPECS["rg"])
-    pattern_str = pattern_arg(texts, fl)
+    pattern_str = pattern_arg(texts, fl, "regexp")
 
-    run_flags: Mapping[str, FlagValue] = opts.flags
+    run_opts = opts
     if paths:
-        # -v needs the walk (a narrowed superset hides fully non-matching
-        # files whose every line matches inverted); --type/--glob keep the
-        # walk so their file filtering stays in one place.
+        f = parse_flags(fl)
+        # -v and the rest of needs_every_file need the walk (a narrowed
+        # superset hides the files they answer for); -g/-t keep the walk
+        # so their file filtering stays in one place.
         narrowed, used_search = await narrow_scope(
             accessor,
             opts.index,
             paths,
             pattern_str,
-            fixed_string=fl.as_bool("F"),
+            fixed_string=f.fixed_string,
             recursive=True,
-            whole_word=fl.as_bool("w"),
-            exact_file_set=(fl.as_bool("v") or fl.as_str("type") is not None
-                            or fl.as_str("glob") is not None),
+            whole_word=f.whole_word,
+            exact_file_set=needs_every_file(fl, f) or filters_files(f),
         )
         if used_search:
-            narrowed = _keep_visible(narrowed, paths, fl.as_bool("hidden"))
+            narrowed = walk_candidates(narrowed, paths, walk_filter(f),
+                                       opts.cwd.virtual)
             if not narrowed:
                 return b"", IOResult(exit_code=1)
-            # ripgrep labels every file a walk finds; narrowed candidates
-            # arrive as explicit operands, so force the label flag —
-            # unless -I suppresses labels.
-            if not fl.as_bool("args_I"):
-                run_flags = {**opts.flags, "H": True}
+            run_opts = labelled(opts)
         paths = narrowed
 
     return await generic_rg(
         paths,
         texts,
-        replace(opts, flags=run_flags),
+        run_opts,
         readdir=bound_op(_readdir, accessor, opts.index),
         stat=bound_op(_stat, accessor, opts.index),
         read_bytes=bound_op(_read, accessor, opts.index),

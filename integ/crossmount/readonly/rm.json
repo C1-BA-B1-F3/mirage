@@ -1,0 +1,35 @@
+{
+  "cases": [
+    {
+      "id": "xro_rm_f_without_operands_is_silent",
+      "seq": 1231045,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cd /ro && rm -f; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "f"
+      ]
+    },
+    {
+      "id": "xro_rm_without_operands_is_a_usage_error",
+      "seq": 1231046,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cd /ro && rm",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "rm: missing operand\nTry 'rm --help' for more information.\n"
+      }
+    }
+  ]
+}

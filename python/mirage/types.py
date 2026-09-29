@@ -13,14 +13,14 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, StrEnum
 from typing import (TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Protocol,
                     TypeAlias)
 
-from pydantic import (BaseModel, ConfigDict, Field, NonNegativeInt,
-                      model_validator)
+from pydantic import (BaseModel, ConfigDict, Field, NonNegativeFloat,
+                      NonNegativeInt, model_validator)
 
 if TYPE_CHECKING:
     import aiohttp
@@ -75,6 +75,33 @@ class LsTimeKind(str, Enum):
     ATIME = "atime"
     CTIME = "ctime"
     BIRTH = "birth"
+
+
+class LsIndicator(str, Enum):
+    """The mark `ls` appends to a name, `--indicator-style`'s words: `-p`
+    is `slash`, `--file-type` is `file-type` and `-F` is `classify`."""
+    NONE = "none"
+    SLASH = "slash"
+    FILE_TYPE = "file-type"
+    CLASSIFY = "classify"
+
+
+class CopyDeref(str, Enum):
+    """Which symlinks `cp` follows: every one (`-L`), only the command
+    line's (`-H`), or none, copying each link as a link (`-P`, `-d`,
+    `-a`, and a recursive copy's default)."""
+    ALWAYS = "always"
+    COMMAND_LINE = "command_line"
+    NEVER = "never"
+
+
+class LsLinkMode(str, Enum):
+    """Which command-line symlinks `ls` resolves before it lists them:
+    every one (`-L`, `-H`), only one leading to a directory (the
+    default), or none (`-d`, a long format, `-F`)."""
+    ALL = "all"
+    DIRECTORY = "directory"
+    NONE = "none"
 
 
 class FileType(str, Enum):
@@ -187,6 +214,26 @@ MoveFn: TypeAlias = Callable[..., Awaitable[None]]
 FindFn: TypeAlias = Callable[..., Awaitable[list[str]]]
 ReaddirFn: TypeAlias = Callable[..., Awaitable[list[str]]]
 StatFn: TypeAlias = Callable[..., Awaitable["FileStat"]]
+
+
+@dataclass(frozen=True, slots=True)
+class WalkProbe:
+    """What proving a running command's ``.`` and ``..`` reads.
+
+    The command tier reaches its backend past the dispatcher's door, so
+    ``Mount.execute_cmd`` binds the door's facts for it. The kernel walk
+    (``follow_paths``) rewrites an operand to its link's target before
+    the handler runs; ``follow`` is how that operand is still known for
+    the one its dotted spelling names.
+
+    Args:
+        stat (StatFn): the door's stat, raising when nothing is there.
+        follow (Callable[[str], str] | None): resolve a path through the
+            namespace's links (open(2) semantics), None while it holds
+            none.
+    """
+    stat: StatFn
+    follow: Callable[[str], str] | None = None
 
 
 class CapacityState(StrEnum):
@@ -537,6 +584,11 @@ def _prefer_error(values: Iterable["OnExceed"]) -> "OnExceed":
                                   for v in values) else OnExceed.TRUNCATE)
 
 
+def _min_bound(values: Iterable[int | None]) -> int | None:
+    bounds = [v for v in values if v is not None]
+    return min(bounds) if bounds else None
+
+
 class Limit(BaseModel):
     """A bound on a result: the policy layer's limit arm and the shape
     every cap config parses into.
@@ -548,9 +600,13 @@ class Limit(BaseModel):
 
     kind: ClassVar[str] = "limit"
 
-    max_bytes: Annotated[NonNegativeInt | None, Aggr(_min_positive)] = None
-    max_lines: Annotated[NonNegativeInt | None, Aggr(_min_positive)] = None
-    timeout_seconds: Annotated[float | None, Aggr(_min_positive)] = None
+    model_config = ConfigDict(extra="forbid")
+
+    max_bytes: Annotated[NonNegativeInt | None, Aggr(_min_bound)] = None
+    max_lines: Annotated[NonNegativeInt | None, Aggr(_min_bound)] = None
+    timeout_seconds: Annotated[NonNegativeFloat | None,
+                               Field(allow_inf_nan=False),
+                               Aggr(_min_positive)] = None
     on_exceed: Annotated[OnExceed, Aggr(_prefer_error)] = OnExceed.TRUNCATE
 
     @classmethod
@@ -572,8 +628,8 @@ class Limit(BaseModel):
         if not present:
             return None
         kwargs: dict[str, Any] = {}
-        for name, field in cls.model_fields.items():
-            rule = next((m for m in field.metadata if isinstance(m, Aggr)),
+        for name, info in cls.model_fields.items():
+            rule = next((m for m in info.metadata if isinstance(m, Aggr)),
                         None)
             values = [getattr(s, name) for s in present]
             kwargs[name] = rule.reduce(
@@ -587,7 +643,7 @@ class Producer:
 
     Rides the IO envelope from the dispatch site to the workspace
     boundary; merge keeps the rightmost producer, so this names the
-    command whose stream the caller actually sees. Post-layer policies
+    last command that ran, not every byte of a list. Post-layer policies
     (output caps today; budgets and attribution later) read it as
     context. Facts only: no policy reads a decision off the
     envelope; the one a chain hands down is written beside it as
@@ -607,6 +663,10 @@ class Producer:
 
 
 RefusalKind = Literal["deny", "pending", "failed"]
+
+# What the kernel walk answers for a path it cannot resolve at all: the
+# empty name (POSIX never resolves a null pathname) or a symlink loop.
+WalkErrno = Literal["ENOENT", "ELOOP"]
 RefusalScope = Literal["command", "operand"]
 
 
@@ -695,6 +755,7 @@ class VFSName(str, Enum):
     QDRANT = "qdrant"
     SHAREPOINT = "sharepoint"
     BOX = "box"
+    AIRTABLE = "airtable"
 
 
 @dataclass(frozen=True, init=False)
@@ -705,6 +766,16 @@ class PathSpec:
     raw_path: str
     pattern: str | None = None
     resolved: bool = True
+    # Absolute spelling before dot normalization; excluded from identity.
+    dotted: str | None = field(default=None, compare=False)
+    # What the kernel walk already answered for an operand it cannot
+    # resolve at all, known before the command runs: ENOENT for the
+    # empty name, whose `virtual` reads as the working directory, and
+    # ELOOP for one a symlink loop stands in, which `follow_paths`
+    # leaves unrewritten. Every op that reaches it refuses
+    # (`walk_refusal`), so each command words the refusal as its own.
+    # Out of equality, like `dotted`.
+    walk_error: WalkErrno | None = field(default=None, compare=False)
 
     def __init__(
         self,
@@ -714,6 +785,8 @@ class PathSpec:
         pattern: str | None = None,
         resolved: bool = True,
         raw_path: str | None = None,
+        dotted: str | None = None,
+        walk_error: WalkErrno | None = None,
     ) -> None:
         """Create a path whose stored spelling is always concrete.
 
@@ -725,6 +798,10 @@ class PathSpec:
             resolved (bool): Whether glob resolution is complete.
             raw_path (str | None): Spelling supplied by the user; defaults
                 to ``virtual`` only at the construction boundary.
+            dotted (str | None): The absolute spelling a dot walk proves,
+                from ``dotted_spelling``.
+            walk_error (WalkErrno | None): The walk's verdict on an
+                operand it cannot resolve, None when it can.
         """
         object.__setattr__(self, "virtual", virtual)
         object.__setattr__(self, "directory", directory)
@@ -733,6 +810,8 @@ class PathSpec:
         object.__setattr__(self, "resolved", resolved)
         object.__setattr__(self, "raw_path",
                            virtual if raw_path is None else raw_path)
+        object.__setattr__(self, "dotted", dotted)
+        object.__setattr__(self, "walk_error", walk_error)
 
     @property
     def mount_path(self) -> str:

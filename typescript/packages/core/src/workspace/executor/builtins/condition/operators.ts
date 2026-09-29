@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { materialize } from '../../../../io/types.ts'
 import { ArithError, ExitSignal } from '../../../../shell/errors.ts'
 import type { ByteSource } from '../../../../io/types.ts'
@@ -19,12 +20,14 @@ import type { FileStat } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
 import { CycleError, resolvePath, resolveSymlinks } from '../../../../utils/path.ts'
 import { isoTimestamp } from '../../../../utils/dates.ts'
+import { isEfbig } from '../../../../utils/errors.ts'
 import { resolvePathStat } from '../links/index.ts'
 import { toScope, scopePath } from '../scope.ts'
 import { elementIsSet } from '../../../session/elements.ts'
 import { FILE_PAIR_BINARY, FILE_UNARY, INT_COMPARATORS, UNSUPPORTED_UNARY } from './constants.ts'
 import { CondError } from './types.ts'
 import type { CondContext } from './types.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 /** Resolve a file operand to an addressable scope. */
 function operandScope(ctx: CondContext, val: string | PathSpec): PathSpec {
@@ -44,6 +47,10 @@ async function pathKind(
   ctx: CondContext,
   val: string | PathSpec,
 ): Promise<['dir' | 'file' | 'char' | null, FileStat | null]> {
+  // A path whose `.` and `..` do not resolve names nothing, which is what
+  // every file test reads as false.
+  const walk = typedSpec(val, ctx.session.cwd)
+  if ((await dotRefusal(dispatchStat(ctx.dispatch), walk)) !== null) return [null, null]
   let scope: PathSpec
   try {
     scope = operandScope(ctx, val)
@@ -99,7 +106,15 @@ export async function applyUnary(
       // API backends (dropbox, gdrive, box) stat freshly written empty
       // files as size-unknown; only a read can answer, and the
       // prefetch TTL cache keeps repeat tests cheap.
-      const [data] = await ctx.dispatch('read', operandScope(ctx, val))
+      let data: unknown
+      try {
+        data = (await ctx.dispatch('read', operandScope(ctx, val)))[0]
+      } catch (err) {
+        // a file its mount refuses to render whole (an airtable table past
+        // maxReadRecords) is certainly not empty
+        if (isEfbig(err)) return true
+        throw err
+      }
       return (await materialize(data as ByteSource | null)).length > 0
     }
     if (op === '-r' || op === '-w') {
@@ -175,8 +190,7 @@ export async function applyFilePair(
   if (op === '-ef') {
     if (lstat === null || rstat === null) return false
     return (
-      operandScope(ctx, left).virtual.replace(/\/+$/, '') ===
-      operandScope(ctx, right).virtual.replace(/\/+$/, '')
+      rstripSlash(operandScope(ctx, left).virtual) === rstripSlash(operandScope(ctx, right).virtual)
     )
   }
   if (op === '-ot') [lstat, rstat] = [rstat, lstat]

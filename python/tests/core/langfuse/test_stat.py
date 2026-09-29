@@ -15,12 +15,13 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from langfuse.api.core.api_error import ApiError
 
 from mirage.accessor.langfuse import LangfuseAccessor
 from mirage.cache.index import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.langfuse.stat import stat
-from mirage.core.render.json import jsonl_bytes
+from mirage.core.render.json import json_bytes, jsonl_bytes
 from mirage.types import ContentType, FileType, PathSpec
 from mirage.vfs.langfuse.config import LangfuseConfig
 
@@ -150,15 +151,20 @@ async def test_stat_dataset_runs_dir(accessor, index):
 
 @pytest.mark.asyncio
 async def test_stat_unlisted_trace_raises(accessor, index):
-    # A recognizable path shape is not evidence the trace exists: an id absent
-    # from the parent listing must be ENOENT, not a confident stat.
+    # A recognizable path shape is not evidence the trace exists: an id
+    # absent from the parent listing is asked of the API (the listing is
+    # bounded), and the API's 404 is ENOENT, not a confident stat.
     await seed_dir(index, "/traces", ["present.json"])
-    with pytest.raises(FileNotFoundError):
-        await stat(
-            accessor,
-            PathSpec(vfs_path="traces/absent.json",
-                     virtual="/traces/absent.json",
-                     directory="/traces/absent.json"), index)
+    with patch("mirage.core.langfuse.read.fetch_trace",
+               new_callable=AsyncMock,
+               side_effect=ApiError(status_code=404, body={"message":
+                                                           "nope"})):
+        with pytest.raises(FileNotFoundError):
+            await stat(
+                accessor,
+                PathSpec(vfs_path="traces/absent.json",
+                         virtual="/traces/absent.json",
+                         directory="/traces/absent.json"), index)
 
 
 @pytest.mark.asyncio
@@ -170,3 +176,60 @@ async def test_stat_unlisted_prompt_version_raises(accessor, index):
             PathSpec(vfs_path="prompts/summarize/9.json",
                      virtual="/prompts/summarize/9.json",
                      directory="/prompts/summarize/9.json"), index)
+
+
+def _trace_path(virtual: str) -> PathSpec:
+    return PathSpec(vfs_path=virtual.lstrip("/"),
+                    virtual=virtual,
+                    directory=virtual)
+
+
+@pytest.mark.asyncio
+async def test_stat_finds_a_trace_the_bounded_listing_left_out(index):
+    """read fetches a trace by id whatever the listing holds, so stat
+    must too: the listing is one page of default_trace_limit traces."""
+    config = LangfuseConfig(public_key="pk-test",
+                            secret_key="sk-test",
+                            default_trace_limit=1)
+    with patch("mirage.accessor.langfuse.Langfuse"):
+        accessor = LangfuseAccessor(config=config)
+    trace = {"id": "t_old", "name": "chat"}
+    with patch("mirage.core.langfuse.readdir.fetch_traces",
+               new_callable=AsyncMock,
+               return_value=[{"id": "t_new"}]), \
+            patch("mirage.core.langfuse.read.fetch_trace",
+                  new_callable=AsyncMock,
+                  return_value=trace) as fetch:
+        listed = await stat(accessor, _trace_path("/traces/t_new.json"), index)
+        fetch.assert_not_awaited()
+        older = await stat(accessor, _trace_path("/traces/t_old.json"), index)
+    assert listed.type == FileType.FILE and listed.size is None
+    assert older.type == FileType.FILE
+    assert older.content == ContentType.JSON
+    assert older.size == len(json_bytes(trace))
+
+
+@pytest.mark.asyncio
+async def test_stat_of_a_trace_the_api_does_not_have_is_enoent(
+        accessor, index):
+    with patch("mirage.core.langfuse.readdir.fetch_traces",
+               new_callable=AsyncMock,
+               return_value=[]), \
+            patch("mirage.core.langfuse.read.fetch_trace",
+                  new_callable=AsyncMock,
+                  side_effect=ApiError(status_code=404,
+                                       body={"message": "nope"})):
+        with pytest.raises(FileNotFoundError):
+            await stat(accessor, _trace_path("/traces/gone.json"), index)
+
+
+@pytest.mark.asyncio
+async def test_stat_refuses_another_sessions_trace(accessor, index):
+    with patch("mirage.core.langfuse.readdir.fetch_traces",
+               new_callable=AsyncMock,
+               return_value=[]), \
+            patch("mirage.core.langfuse.read.fetch_trace",
+                  new_callable=AsyncMock,
+                  return_value={"id": "t1", "sessionId": "s2"}):
+        with pytest.raises(FileNotFoundError):
+            await stat(accessor, _trace_path("/sessions/s1/t1.json"), index)

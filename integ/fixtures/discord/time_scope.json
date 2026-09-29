@@ -1,0 +1,124 @@
+{
+  "bot_user": {
+    "id": "900000000000000001",
+    "username": "mirage-bot"
+  },
+  "guilds": [
+    {
+      "id": "100000000000000001",
+      "name": "Mirage HQ",
+      "channels": [
+        {
+          "id": "200000000000000001",
+          "name": "general",
+          "type": 0,
+          "topic": "company wide",
+          "position": 0
+        }
+      ],
+      "members": [
+        {
+          "user": {
+            "id": "300000000000000001",
+            "username": "alice",
+            "global_name": "Alice",
+            "bot": false
+          },
+          "nick": "al",
+          "roles": [
+            "400000000000000001"
+          ],
+          "joined_at": "2026-01-01T00:00:00.000000+00:00",
+          "deaf": false,
+          "mute": false
+        },
+        {
+          "user": {
+            "id": "300000000000000002",
+            "username": "bob",
+            "global_name": "Bob",
+            "bot": false
+          },
+          "nick": null,
+          "roles": [],
+          "joined_at": "2026-01-02T00:00:00.000000+00:00",
+          "deaf": false,
+          "mute": false
+        },
+        {
+          "user": {
+            "id": "900000000000000001",
+            "username": "mirage-bot",
+            "global_name": null,
+            "bot": true
+          },
+          "nick": null,
+          "roles": [],
+          "joined_at": "2026-01-03T00:00:00.000000+00:00",
+          "deaf": false,
+          "mute": false
+        }
+      ],
+      "messages": {
+        "200000000000000001": [
+          {
+            "id": "1510946006626205696",
+            "author": "300000000000000001",
+            "content": "scope_before",
+            "timestamp": "2026-06-01T09:59:59.999Z",
+            "attachments": [
+              {
+                "id": "500000000000000011",
+                "filename": "scope_before.txt",
+                "content_type": "text/plain",
+                "body": "scope_before\n"
+              }
+            ]
+          },
+          {
+            "id": "1510946006630400000",
+            "author": "300000000000000001",
+            "content": "scope_start",
+            "timestamp": "2026-06-01T10:00:00Z",
+            "attachments": [
+              {
+                "id": "500000000000000012",
+                "filename": "scope_start.txt",
+                "content_type": "text/plain",
+                "body": "scope_start\n"
+              }
+            ]
+          },
+          {
+            "id": "1511157399547805696",
+            "author": "300000000000000001",
+            "content": "scope_last",
+            "timestamp": "2026-06-01T23:59:59.999Z",
+            "attachments": [
+              {
+                "id": "500000000000000013",
+                "filename": "scope_last.txt",
+                "content_type": "text/plain",
+                "body": "scope_last\n"
+              }
+            ]
+          },
+          {
+            "id": "1511157399552000000",
+            "author": "300000000000000001",
+            "content": "scope_end",
+            "timestamp": "2026-06-02T00:00:00Z",
+            "attachments": [
+              {
+                "id": "500000000000000014",
+                "filename": "scope_end.txt",
+                "content_type": "text/plain",
+                "body": "scope_end\n"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -15,10 +15,8 @@
 from mirage.accessor.box import BoxAccessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.box.io import resolve_glob
-from mirage.commands.builtin.constants import BINARY_EXTENSIONS
-from mirage.commands.builtin.grep_pushdown import (is_literal_pattern,
-                                                   search_query)
-from mirage.commands.resolve import get_extension
+from mirage.commands.builtin.grep_pushdown import (text_candidates,
+                                                   whole_word_literal)
 from mirage.core.box.search import narrow_paths
 from mirage.core.box.stat import stat as box_stat
 from mirage.types import FileType, PathSpec
@@ -64,27 +62,18 @@ async def narrow_scope(
     """Resolve grep/rg scope paths, narrowing via Box content search.
 
     Push-down needs every gate to hold: the mount opted in via
-    ``content_search``, the scan is recursive, a single-line literal can be
-    pushed down (regex patterns narrow on an extracted required literal and
-    stay exact because the caller still scans the regex locally), the output
-    mode tolerates a narrowed-superset file set (``exact_file_set`` covers
-    flags like -v that must see every file), and every scope operand is a
-    directory. There is no scope-size gate: one search call plus targeted
-    downloads beats a readdir-walk-plus-download-everything scan at every
-    scope size. An empty search result still falls back to the full scan
-    because Box's search index lags recent writes.
+    ``content_search``, the scan is recursive, a whole-word literal can be
+    pushed down (``whole_word_literal``, which is what makes a word-based
+    search complete), the output mode tolerates a narrowed-superset file set
+    (``exact_file_set`` covers flags like -v that must see every file), and
+    every scope operand is a directory. There is no scope-size gate: one
+    search call plus targeted downloads beats a
+    readdir-walk-plus-download-everything scan at every scope size. An empty
+    search result still falls back to the full scan because Box's search
+    index lags recent writes.
 
     Binary-extension candidates are dropped from the narrowed set because the
     recursive walk it replaces skips them.
-
-    Push-down also requires ``-w``. Box search matches whole
-    words while grep matches substrings, so for a bare literal the
-    search result is a strict subset of the grep matches and a file
-    containing the literal only inside a longer word would be silently
-    dropped. Under ``-w`` both sides agree, and disagreement can only
-    over-fetch, which the local scan filters. A regex narrowed on an
-    extracted literal is excluded even under ``-w``, since the searched
-    term is then only part of the match.
 
     Args:
         accessor (BoxAccessor): backend handle.
@@ -102,21 +91,12 @@ async def narrow_scope(
             narrowed the set. A narrowed set may be empty (every candidate was
             binary); callers must not treat that as a stdin run.
     """
-    query = (search_query(pattern, fixed_string)
-             if pattern is not None and "\n" not in pattern else None)
-    literal = (pattern is not None
-               and is_literal_pattern(pattern, fixed_string))
-    use_search = (query is not None and whole_word and literal and recursive
-                  and not exact_file_set and accessor.config.content_search
-                  and await _all_directories(accessor, index, paths))
-    if use_search:
-        assert query is not None
+    query = whole_word_literal(pattern, fixed_string, whole_word)
+    if (query is not None and recursive and not exact_file_set
+            and accessor.config.content_search
+            and await _all_directories(accessor, index, paths)):
         narrowed = await narrow_paths(accessor, query, paths)
         if narrowed:
-            kept = [
-                p for p in narrowed
-                if get_extension(p.virtual) not in BINARY_EXTENSIONS
-            ]
-            return kept, True
+            return text_candidates(narrowed), True
     resolved = await resolve_glob(accessor, paths, index)
     return resolved, False

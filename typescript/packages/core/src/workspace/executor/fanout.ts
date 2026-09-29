@@ -30,14 +30,28 @@ import {
   type PredNode,
 } from '../../commands/builtin/find_eval.ts'
 import { parseFindExpression, type FindExpr } from '../../commands/builtin/find_parse.ts'
-import { FindParseError } from '../../commands/errors.ts'
+import { FindParseError, UsageError } from '../../commands/errors.ts'
 import type { FlagValue } from '../../commands/spec/types.ts'
-import type { RunSingle } from '../../commands/builtin/generic/crossmount/types.ts'
+import type { Cmd, DispatchFn, RunSingle } from '../../commands/builtin/generic/crossmount/types.ts'
+import {
+  crossOpts,
+  flatten,
+  readdirOp,
+  statOp,
+  streamOp,
+  runSeparator,
+} from '../../commands/builtin/generic/crossmount/utils.ts'
 import type { NamespaceView, StatPath } from '../../ops/types.ts'
 import { inMtimeWindow } from '../../utils/dates.ts'
 import { modifiedTs } from '../../core/generic/find.ts'
+import { combinedExit } from '../../commands/builtin/generic/crossmount/fanout/exit.ts'
+import { runFanout } from '../../commands/builtin/generic/crossmount/fanout/fanout.ts'
 import { mergeDuBlocks } from '../../commands/builtin/generic/crossmount/fanout/du.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { filenameMode } from '../../commands/builtin/generic/grep.ts'
+import { labelFlags, rgGeneric, walksDescendantMounts } from '../../commands/builtin/generic/rg.ts'
+import { FlagView, flagOccurrences } from '../../commands/spec/flag_view.ts'
+import { specOf } from '../../commands/spec/builtins.ts'
 
 type Result = [ByteSource | null, IOResult, ExecutionNode]
 
@@ -125,19 +139,16 @@ export function shouldFanOut(
   flagKwargs: Record<string, FlagValue>,
   registry: MountRegistry,
 ): boolean {
-  if (paths.length === 0 || paths[0] === undefined) return false
-  // Gated on the raw registry, not the session view: with every
-  // descendant ungranted, single-mount dispatch would serve the parent
-  // backend's keys shadowed under a hidden mount's prefix, and only the
-  // fan-out's shadow filter drops those. Execution still runs the
-  // allowed descendants only.
-  if (registry.descendantMounts(paths[0].virtual).length === 0) return false
+  // Use the raw mount table: hidden descendants still shadow backend keys.
+  // A refused operand names nothing; every valid operand may own a subtree.
+  if (!paths.some((p) => p.walkError === null && registry.descendantMounts(p.virtual).length > 0))
+    return false
   if (TRAVERSAL_CMDS.has(cmdName)) return true
   if (cmdName === 'grep') {
     return flagKwargs.r === true || flagKwargs.R === true || flagKwargs.recursive === true
   }
-  // ripgrep recurses directories by default; no flag to check.
-  if (cmdName === 'rg') return true
+  // ripgrep recurses directories by default.
+  if (cmdName === 'rg') return walksDescendantMounts(flagKwargs)
   if (cmdName === 'ls') {
     return flagKwargs.recursive === true
   }
@@ -153,8 +164,8 @@ function adjustDepthFlags(
   const mountDepth = pathSegments(mountPrefix).length
   const delta = mountDepth - parentDepth
   const out: Record<string, FlagValue> = { ...flagKwargs }
-  const first = (v: string | boolean | number | string[]): string | boolean | number =>
-    Array.isArray(v) ? (v[0] ?? '') : v
+  flagOccurrences(out).push(...flagOccurrences(flagKwargs))
+  const first = (v: FlagValue): FlagValue => (Array.isArray(v) ? (v[0] ?? '') : v)
   if ('maxdepth' in out) {
     const orig = Number(first(out.maxdepth))
     if (!Number.isNaN(orig)) {
@@ -396,8 +407,103 @@ export async function fanOutTraversal(
   ns?: NamespaceView,
   statPath: StatPath | null = null,
   signal?: AbortSignal,
+  dispatch?: DispatchFn,
 ): Promise<Result> {
   signal?.throwIfAborted()
+  if (
+    cmdName === 'rg' &&
+    dispatch !== undefined &&
+    ['max_depth', 'sort', 'sortr', 'sort_files'].some(
+      (name) => new FlagView(flagKwargs, specOf('rg')).raw(name) !== undefined,
+    )
+  ) {
+    let stdout: ByteSource | null = null
+    let io = new IOResult()
+    try {
+      const result = await rgGeneric(
+        flatten([...paths]),
+        [...texts],
+        {
+          ...crossOpts(flagKwargs),
+          cwd,
+          stdin,
+          ...(signal !== undefined ? { signal } : {}),
+          ...(ns === undefined ? {} : { ns }),
+          dispatch,
+        },
+        statOp(dispatch),
+        readdirOp(dispatch),
+        streamOp(dispatch),
+      )
+      if (result !== null) {
+        io = result[1]
+        stdout = await materialize(result[0])
+      }
+    } catch (err) {
+      if (!(err instanceof UsageError)) throw err
+      io = new IOResult({
+        exitCode: err.exitCode,
+        stderr: new TextEncoder().encode(`${err.message}\n`),
+      })
+    }
+    io.producer = {
+      command: cmdName,
+      prefixes: [primaryMount, ...allowedDescendants(registry, paths[0]?.virtual ?? cwd)].map(
+        (m) => m.prefix,
+      ),
+      declared: null,
+    }
+    return [
+      stdout,
+      io,
+      new ExecutionNode({
+        command: cmdStr,
+        exitCode: io.exitCode,
+        stderr: await materialize(io.stderr),
+      }),
+    ]
+  }
+  if (paths.length > 1) {
+    const runSingle: RunSingle = (name, operands, words, flags, options) =>
+      primaryMount.executeCmd(name, operands, words, flags, {
+        stdin: options?.stdin ?? null,
+        cwd,
+        ...(signal === undefined ? {} : { signal }),
+        ...(ns === undefined ? {} : { ns }),
+        ...(statPath === null ? {} : { statPath }),
+        ...(dispatch === undefined ? {} : { dispatch }),
+      })
+    const runOperand = runWithFanout(runSingle, registry, cwd, ns, statPath, signal, dispatch)
+    const [stdout, io] = await runFanout(
+      cmdName as Cmd,
+      [...paths],
+      [...texts],
+      flagKwargs,
+      runOperand,
+      stdin,
+    )
+    io.producer = {
+      command: cmdName,
+      prefixes: [
+        ...new Set([
+          primaryMount.prefix,
+          ...paths
+            .filter((p) => p.walkError === null)
+            .flatMap((p) => allowedDescendants(registry, p.virtual).map((m) => m.prefix)),
+        ]),
+      ],
+      declared: null,
+    }
+    return [
+      stdout,
+      io,
+      new ExecutionNode({
+        command: cmdStr,
+        exitCode: io.exitCode,
+        stderr: await materialize(io.stderr),
+      }),
+    ]
+  }
   const targetPath = paths[0]?.virtual ?? cwd
   let descendants = allowedDescendants(registry, targetPath)
   if (cmdName === 'ls') descendants = await lsBlockMounts(descendants, statPath)
@@ -446,8 +552,8 @@ export async function fanOutTraversal(
   let findMatches: PathSpec[][] = []
   let findMatchesComplete = true
   let mergedIo = new IOResult()
-  let finalExit = 0
-  let successSeen = false
+  const exitCodes: number[] = []
+  const errored: boolean[] = []
 
   const mountsToRun: MountEntry[] = [primaryMount, ...descendants]
   for (const mount of mountsToRun) {
@@ -475,16 +581,22 @@ export async function fanOutTraversal(
             ]
           : [...paths]
       subFlags = { ...flags }
+      flagOccurrences(subFlags).push(...flagOccurrences(flags))
       subTexts = [...texts]
     } else {
       const mountRoot = rstripSlash(mount.prefix) || '/'
       const adjusted = adjustDepthFlags(flags, targetPath, mount.prefix)
       if (adjusted === null || prunedAway(mountRoot, tree)) continue
       subFlags = adjusted
+      // A tree search labels every hit; a descendant mount whose root is a
+      // single file would otherwise drop the filename (grep/rg label only
+      // multi-file or -H runs).
       if (cmdName === 'rg') {
-        // A tree search labels every hit; a descendant mount whose root
-        // is a single file would otherwise drop the filename (rg labels
-        // only multi-file or -H runs).
+        subFlags = labelFlags(subFlags)
+      } else if (
+        cmdName === 'grep' &&
+        filenameMode(new FlagView(subFlags, specOf('grep'))) === null
+      ) {
         subFlags = { ...subFlags, H: true }
       }
       subTexts = adjustDepthTexts(texts, targetPath, mount.prefix)
@@ -511,13 +623,29 @@ export async function fanOutTraversal(
     // ancestor) has no backend listing, so without them the primary run
     // reports the operand missing.
     signal?.throwIfAborted()
-    const [stdout0, io] = await mount.executeCmd(cmdName, subPaths, subTexts, subFlags, {
-      stdin,
-      cwd,
-      ...(signal === undefined ? {} : { signal }),
-      ...(ns === undefined ? {} : { ns }),
-      ...(statPath !== null ? { statPath } : {}),
-    })
+    let ran: Awaited<ReturnType<typeof mount.executeCmd>>
+    try {
+      ran = await mount.executeCmd(cmdName, subPaths, subTexts, subFlags, {
+        stdin,
+        cwd,
+        ...(signal === undefined ? {} : { signal }),
+        ...(ns === undefined ? {} : { ns }),
+        ...(statPath !== null ? { statPath } : {}),
+        ...(dispatch === undefined ? {} : { dispatch }),
+      })
+    } catch (err) {
+      // A usage error belongs to the line, not to one mount: the
+      // single-mount path reports it once as the command's result (#452),
+      // and so does the walk, rather than aborting the line.
+      if (!(err instanceof UsageError)) throw err
+      const usage = new TextEncoder().encode(`${err.message}\n`)
+      return [
+        null,
+        new IOResult({ exitCode: err.exitCode, stderr: usage }),
+        new ExecutionNode({ command: cmdStr, stderr: usage, exitCode: err.exitCode }),
+      ]
+    }
+    const [stdout0, io] = ran
     let stdout: ByteSource | null = stdout0
     if (mount !== primaryMount && io.exitCode === 127) {
       // A descendant that does not serve this command contributes
@@ -526,6 +654,7 @@ export async function fanOutTraversal(
       continue
     }
     if (cmdName === 'find' && io.matchedRuns !== null) {
+      await materialize(stdout)
       if (mount === primaryMount) {
         // One run per operand, minus the rows a descendant mount
         // answers for.
@@ -558,11 +687,8 @@ export async function fanOutTraversal(
         allStdout.push(data)
       }
     }
-    if (io.exitCode === 0) {
-      successSeen = true
-    } else if (finalExit === 0) {
-      finalExit = io.exitCode
-    }
+    exitCodes.push(io.exitCode)
+    errored.push(io.exitCode !== 0 && io.stderr !== null)
     mergedIo = await mergedIo.merge(io)
   }
   signal?.throwIfAborted()
@@ -584,7 +710,10 @@ export async function fanOutTraversal(
     }
   }
 
-  const finalIoExit = successSeen ? 0 : finalExit
+  const quiet =
+    (cmdName === 'grep' && new FlagView(flagKwargs, specOf('grep')).asBool('q')) ||
+    (cmdName === 'rg' && new FlagView(flagKwargs, specOf('rg')).asBool('quiet'))
+  const finalIoExit = combinedExit(cmdName as Cmd, exitCodes, errored, quiet)
   let combined: ByteSource | null = null
   if (duMerge && allStdout.length > 0) {
     combined = mergeDuBlocks(allStdout, targetPath, paths[0]?.rawPath ?? targetPath, {
@@ -605,9 +734,10 @@ export async function fanOutTraversal(
       return s
     })
     // `ls -R` separates directory groups with a blank line, and a
-    // per-mount block is one more group; every other format is a plain
+    // per-mount block is one more group; grep and rg put `--` between one
+    // file's context and the next file's; every other format is a plain
     // line stream.
-    const sep = cmdName === 'ls' ? '\n\n' : '\n'
+    const sep = cmdName === 'ls' ? '\n\n' : '\n' + runSeparator(cmdName, flagKwargs)
     combined = new TextEncoder().encode(parts.filter((s) => s !== '').join(sep) + '\n')
   }
 
@@ -648,6 +778,7 @@ export function runWithFanout(
   ns: NamespaceView | undefined,
   statPath: StatPath | null = null,
   signal?: AbortSignal,
+  dispatch?: DispatchFn,
 ): RunSingle {
   return async (cmdName, paths, texts, flagKwargs, opts) => {
     const stdin = opts?.stdin ?? null
@@ -676,6 +807,7 @@ export function runWithFanout(
       ns,
       statPath,
       signal,
+      dispatch,
     )
     return [stdout, io]
   }

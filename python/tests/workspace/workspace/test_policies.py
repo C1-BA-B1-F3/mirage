@@ -503,7 +503,8 @@ async def test_pre_ops_holds_walks_and_lazy_readers():
 
         lazy = await ws.shell("head -c 3 /data/secret.txt")
         assert lazy.exit_code != 0
-        assert b"head: /data/secret.txt: Permission denied" in lazy.stderr
+        assert (b"head: cannot open '/data/secret.txt' for reading: "
+                b"Permission denied") in lazy.stderr
         fine = await ws.shell("head -c 3 /data/ok.txt")
         assert fine.exit_code == 0
         assert fine.stdout == b"has"

@@ -19,7 +19,7 @@ from mirage.core.object_store.driver import (A, C, MkdirFn, ObjectMeta,
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils import key_prefix as kp
-from mirage.utils.errors import enoent
+from mirage.utils.errors import enoent, enotsup
 
 
 async def _put(driver: ObjectStoreDriver[A, C], conn: C, key: str, data: bytes,
@@ -71,7 +71,7 @@ def make_write_bytes(driver: ObjectStoreDriver[A, C]) -> WriteFn[A]:
         async with driver.connect(accessor) as conn:
             meta = await _put(driver, conn, key, data, path_spec)
         record("write",
-               path,
+               path_spec.virtual,
                driver.vfs,
                len(data),
                timer,
@@ -98,7 +98,7 @@ def make_create(driver: ObjectStoreDriver[A, C]) -> PathFn[A]:
         async with driver.connect(accessor) as conn:
             meta = await _put(driver, conn, key, b"", path_spec)
         record("create",
-               path,
+               path_spec.virtual,
                driver.vfs,
                0,
                timer,
@@ -117,7 +117,12 @@ def make_truncate(driver: ObjectStoreDriver[A, C]) -> TruncateFn[A]:
         driver (ObjectStoreDriver): the store's native surface.
     """
 
-    async def truncate(accessor: A, path_spec: PathSpec, length: int) -> None:
+    async def truncate(accessor: A,
+                       path_spec: PathSpec,
+                       length: int,
+                       no_create: bool = False) -> None:
+        if no_create:
+            raise enotsup(driver.vfs, "truncate --no-create", path_spec)
         path = path_spec.mount_path
         key = kp.apply(driver.key_prefix_of(accessor), path)
         timer = start_op()
@@ -128,7 +133,7 @@ def make_truncate(driver: ObjectStoreDriver[A, C]) -> TruncateFn[A]:
             result = data[:length].ljust(length, b"\0")
             meta = await _put(driver, conn, key, result, path_spec)
         record("truncate",
-               path,
+               path_spec.virtual,
                driver.vfs,
                0,
                timer,

@@ -34,7 +34,7 @@ export const TRELLO_PROMPT = `{prefix}
 
   Read commands (nested names, mirror the trello CLI; every command emits
   normalized JSON to stdout so you can pipe to jq):
-    trello board list                       # all boards
+    trello board list                       # the boards the mount lists
     trello board show <board-id>
     trello board members <board-id>
     trello list list <board-id>             # lists on a board
@@ -43,12 +43,15 @@ export const TRELLO_PROMPT = `{prefix}
     trello card show <card-id>
     trello card comments <card-id>`
 
-export const TRELLO_WRITE_PROMPT = `  Write commands:
-    trello card create <list-path> "name" "description"
-    trello card update <card-path> [--name ...] [--desc ...]
-    trello card move <card-path> --list_id <list-id>
-    trello card assign <card-path> --member_id <member-id>
-    trello card label <card-path> --label_id <label-id>
-    trello card unlabel <card-path> --label_id <label-id>
-    trello card comment <card-path> "comment"
-    trello card comment-update --comment_id <comment-id> "comment"`
+export const TRELLO_WRITE_PROMPT = `  Write commands (nested names; ids are flags, and --desc / --text also
+  read a file via --desc_file / --text_file, or stdin):
+    trello card create --list_id <list-id> --name <name> [--desc <text>]
+    trello card update --card_id <card-id> [--name <name>] [--desc <text>]
+                       [--due <date>] [--closed true|false]
+    trello card move --card_id <card-id> --list_id <list-id>
+    trello card assign --card_id <card-id> --member_id <member-id>
+    trello card label --card_id <card-id> --label_id <label-id>
+    trello card unlabel --card_id <card-id> --label_id <label-id>
+    trello card comment --card_id <card-id> --text <text>
+    trello card comment-update --card_id <card-id> --comment_id <id>
+                               --text <text>`

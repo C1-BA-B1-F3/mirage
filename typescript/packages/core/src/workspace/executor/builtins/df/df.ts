@@ -13,16 +13,27 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { humanScaled, humanSize } from '../../../../commands/builtin/utils/formatting.ts'
-import { CapacityState, FileStat, PathSpec } from '../../../../types.ts'
-import type { CapacityResult } from '../../../../types.ts'
-import { isMissingPath } from '../../../../utils/errors.ts'
-import { resolvePath } from '../../../../utils/path.ts'
+import { CapacityState } from '../../../../types.ts'
+import type { CapacityResult, PathSpec } from '../../../../types.ts'
+import {
+  dispatchStat,
+  nearestAncestor,
+  typedSpec,
+} from '../../../../commands/builtin/utils/paths.ts'
+import {
+  enoent,
+  enotdir,
+  fsErrorLine,
+  isDotWalkError,
+  isMissingPath,
+  walkRefusal,
+} from '../../../../utils/errors.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { MountEntry } from '../../../mount/mount.ts'
 import type { MountRegistry } from '../../../mount/registry.ts'
 import type { SessionState } from '../../../session/session.ts'
-import { fail, ok, operandText, splitValueFlags } from '../shared.ts'
+import { fail, ok, operandText, result, splitValueFlags } from '../shared.ts'
 import { BLOCK_SUFFIX, SI_UNITS } from './constants.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import type { Result } from '../types.ts'
@@ -76,16 +87,24 @@ function lastFormat(args: (string | PathSpec)[]): string | null {
   return last
 }
 
-// Whether a path resolves to an existing entry; GNU df errors on a missing
-// FILE operand, so a deeper path is statted before its mount is accepted.
-async function pathExists(dispatch: DispatchFn, spec: PathSpec): Promise<boolean> {
+// What stat-ing one FILE operand answers, null when it is there. GNU df
+// stats each FILE to find its filesystem and names the one it cannot reach
+// with the errno it got, so a plain file in the chain is ENOTDIR, told apart
+// from an absent name by walking the chain on a miss, since a store answers
+// both with ENOENT. Mirrors Python's _operand_error.
+async function operandError(dispatch: DispatchFn, spec: PathSpec): Promise<Error | null> {
+  const stat = dispatchStat(dispatch)
   try {
-    const [stat] = await dispatch('stat', spec)
-    return stat instanceof FileStat
+    await stat(spec)
   } catch (err) {
-    if (isMissingPath(err)) return false
-    throw err
+    const code = (err as { code?: string }).code
+    if (code === 'ENOTDIR') return err as Error
+    if (!isMissingPath(err)) throw err
+    if (isDotWalkError(err)) return err
+    const [, parentIsDir] = await nearestAncestor(stat, spec)
+    return parentIsDir ? (err as Error) : enotdir(spec)
   }
+  return null
 }
 
 // Human-readable size in powers of 1000 (df -H). Same rounding as -h;
@@ -148,22 +167,31 @@ function pctCell(cap: CapacityResult, inodes: boolean): string {
 
 // Resolve df operands to the mounts to report, deduped and ordered. No
 // operand (or the workspace root `/`) reports every mount; a path operand
-// reports the mount containing it. Null when an operand maps to no mount.
+// reports the mount containing it. GNU df maps each FILE to its filesystem;
+// one it cannot reach is reported in its own words and the rest still print,
+// exit 1. Mirrors Python's _target_mounts.
 async function targetMounts(
   registry: MountRegistry,
   dispatch: DispatchFn,
   session: SessionState,
   operands: (string | PathSpec)[],
-): Promise<MountEntry[] | { missing: string }> {
+): Promise<[MountEntry[], string[]]> {
   // Python is `sorted(registry.mounts(), key=lambda m: m.prefix)`.
   const ordered = [...registry.allMounts()].sort((a, b) => compareCodePoints(a.prefix, b.prefix))
-  if (operands.length === 0) return ordered
+  if (operands.length === 0) return [ordered, []]
   const seen = new Set<string>()
   const out: MountEntry[] = []
+  const errors: string[] = []
   for (const op of operands) {
-    const virtual = op instanceof PathSpec ? op.virtual : resolvePath(op, session.cwd)
-    const label = op instanceof PathSpec ? op.rawPath : op
-    const spec = op instanceof PathSpec ? op : PathSpec.fromStrPath(virtual)
+    const spec = typedSpec(op, session.cwd)
+    if (spec.walkError !== null) {
+      // The empty name reads as the working directory in `virtual`, which
+      // may well be a mount root, and a link loop reaches no filesystem
+      // at all.
+      errors.push(fsErrorLine('df', spec, walkRefusal(spec)))
+      continue
+    }
+    const virtual = spec.virtual
     if (virtual === '' || virtual === '/') {
       for (const m of ordered) {
         if (!seen.has(m.prefix)) {
@@ -175,20 +203,25 @@ async function targetMounts(
     }
     const mount = registry.tryMountFor(virtual)
     if (mount === null) {
-      return { missing: label }
+      errors.push(fsErrorLine('df', spec, enoent(spec)))
+      continue
     }
     // The mount root is the filesystem itself (always present); a deeper
-    // path must exist, matching GNU df's per-FILE check.
+    // path must be reachable before its mount is accepted.
     const root = rstripSlash(mount.prefix) || '/'
-    if (rstripSlash(virtual) !== root && !(await pathExists(dispatch, spec))) {
-      return { missing: label }
+    if (rstripSlash(virtual) !== root || spec.dotted !== null) {
+      const failure = await operandError(dispatch, spec)
+      if (failure !== null) {
+        errors.push(fsErrorLine('df', spec, failure))
+        continue
+      }
     }
     if (!seen.has(mount.prefix)) {
       seen.add(mount.prefix)
       out.push(mount)
     }
   }
-  return out
+  return [out, errors]
 }
 
 // GNU df column layout: Filesystem left-justified (min width 14), Type (when
@@ -252,10 +285,7 @@ export async function handleDf(
   const inodes = flags.has('i')
   const showType = flags.has('T')
 
-  const mounts = await targetMounts(registry, dispatch, session, operands)
-  if (!Array.isArray(mounts)) {
-    return fail('df', `df: ${mounts.missing}: No such file or directory\n`, 1)
-  }
+  const [mounts, errors] = await targetMounts(registry, dispatch, session, operands)
 
   let numHeaders: string[]
   let pctHeader: string
@@ -285,5 +315,9 @@ export async function handleDf(
     data.push(cells)
   }
 
-  return ok('df', ENC.encode(renderTable(header, data, showType)))
+  const table = data.length > 0 ? ENC.encode(renderTable(header, data, showType)) : null
+  if (errors.length > 0) {
+    return result('df', { out: table, exitCode: 1, stderr: errors.join('') })
+  }
+  return ok('df', table)
 }

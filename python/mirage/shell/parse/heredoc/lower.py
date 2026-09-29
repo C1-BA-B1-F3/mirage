@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from bisect import bisect_left
 from dataclasses import replace
 
 from mirage.shell.parse.heredoc.constants import (BACKSLASH, BACKTICK, DOLLAR,
@@ -117,4 +118,45 @@ def rebase_source(source: HeredocSource, repaired: bytes) -> HeredocSource:
                    source=repaired,
                    offsets=tuple(offsets),
                    documents=tuple((starts[start], doc)
+                                   for start, doc in source.documents))
+
+
+def drop_bytes(data: bytes, dropped: list[int]) -> bytes:
+    """``data`` without the bytes at the ``dropped`` offsets.
+
+    Args:
+        data (bytes): the source.
+        dropped (list[int]): ascending offsets to delete.
+    """
+    if not dropped:
+        return data
+    out = bytearray()
+    cursor = 0
+    for offset in dropped:
+        out.extend(data[cursor:offset])
+        cursor = offset + 1
+    out.extend(data[cursor:])
+    return bytes(out)
+
+
+def drop_source_bytes(source: HeredocSource,
+                      dropped: list[int]) -> HeredocSource:
+    """Delete lowered bytes and keep every location pointing where it did.
+
+    Each surviving byte keeps its original location, and each document
+    anchor moves back by the bytes deleted ahead of it.
+
+    Args:
+        source (HeredocSource): lowered source record.
+        dropped (list[int]): ascending offsets into ``source.source``.
+    """
+    if not dropped:
+        return source
+    gone = set(dropped)
+    offsets = tuple(at for index, at in enumerate(source.offsets[:-1])
+                    if index not in gone) + (source.offsets[-1], )
+    return replace(source,
+                   source=drop_bytes(source.source, dropped),
+                   offsets=offsets,
+                   documents=tuple((start - bisect_left(dropped, start), doc)
                                    for start, doc in source.documents))

@@ -29,6 +29,7 @@ import * as readModule from '../../../core/postgres/read.ts'
 import * as statModule from '../../../core/postgres/stat.ts'
 import { resolvePostgresConfig } from '../../../vfs/postgres/config.ts'
 import { materialize } from '../../../io/types.ts'
+import { efbig } from '../../../utils/errors.ts'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
 import { POSTGRES_COMMANDS } from './index.ts'
 
@@ -48,8 +49,8 @@ function makeAccessor(): PostgresAccessor {
   return new PostgresAccessor(new StubDriver(), cfg)
 }
 
-async function* failingStream(message: string): AsyncIterable<Uint8Array> {
-  yield await Promise.reject(new Error(message))
+async function* failingStream(path: string): AsyncIterable<Uint8Array> {
+  yield await Promise.reject(efbig(path))
 }
 
 describe('postgres cat size-guard surfacing', () => {
@@ -59,14 +60,12 @@ describe('postgres cat size-guard surfacing', () => {
   })
 
   it('surfaces the size-guard error when the row read throws', async () => {
-    const message =
-      'public/tables/users/rows.jsonl too large to read entirely: ' +
-      '~50000 rows / ~5000000 bytes (thresholds: 10000 rows / 1000000 bytes); ' +
-      'use head, tail, wc, grep, or pass limit/offset'
     vi.mocked(statModule.stat).mockResolvedValue(
       new FileStat({ name: 'rows.jsonl', type: FileType.FILE }),
     )
-    vi.mocked(readModule.readStream).mockImplementation(() => failingStream(message))
+    vi.mocked(readModule.readStream).mockImplementation(() =>
+      failingStream('/pg/public/tables/users/rows.jsonl'),
+    )
 
     const cmd = POSTGRES_CAT[0]
     if (cmd === undefined) throw new Error('cat not registered')
@@ -86,6 +85,6 @@ describe('postgres cat size-guard surfacing', () => {
     expect(result).not.toBeNull()
     if (result === null) return
     const [out] = result
-    await expect(materialize(out)).rejects.toThrow('too large to read entirely')
+    await expect(materialize(out)).rejects.toMatchObject({ code: 'EFBIG' })
   })
 })

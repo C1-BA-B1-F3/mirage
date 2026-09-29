@@ -109,7 +109,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sort: /data/rfdir: Is a directory\n"
+        "stderr": "sort: read failed: /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -123,7 +123,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sort: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "sort: cannot read: /data/rfnope.txt: No such file or directory\n"
       }
     },
     {
@@ -137,7 +137,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "awk: /data/rfdir: Is a directory\n"
+        "stderr": "awk: cannot open \"/data/rfdir\" (Is a directory)\n"
       }
     },
     {
@@ -151,7 +151,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "awk: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "awk: cannot open \"/data/rfnope.txt\" (No such file or directory)\n"
       }
     },
     {
@@ -165,7 +165,7 @@
       "expect": {
         "exit": 4,
         "stdout": "",
-        "stderr": "sed: /data/rfdir: Is a directory\n"
+        "stderr": "sed: read error on /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -179,7 +179,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sed: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "sed: can't read /data/rfnope.txt: No such file or directory\n"
       }
     },
     {
@@ -221,7 +221,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "uniq: /data/rfdir: Is a directory\n"
+        "stderr": "uniq: error reading '/data/rfdir': Is a directory\n"
       }
     },
     {
@@ -277,7 +277,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "tsort: /data/rfdir: Is a directory\n"
+        "stderr": "tsort: /data/rfdir: read error: Is a directory\n"
       }
     },
     {
@@ -347,7 +347,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "split: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "split: cannot open '/data/rfnope.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -375,7 +375,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "csplit: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "csplit: cannot open '/data/rfnope.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -529,7 +529,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "gzip: /data/rfdir: Is a directory\n"
+        "stderr": "gzip: /data/rfdir is a directory -- ignored\n"
       }
     },
     {
@@ -557,7 +557,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "gunzip: /data/rfdir: Is a directory\n"
+        "stderr": "gzip: /data/rfdir is a directory -- ignored\n"
       }
     },
     {
@@ -571,7 +571,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "gunzip: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "gzip: /data/rfnope.txt.gz: No such file or directory\n"
       }
     },
     {
@@ -585,7 +585,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "zcat: /data/rfdir: Is a directory\n"
+        "stderr": "gzip: /data/rfdir is a directory -- ignored\n"
       }
     },
     {
@@ -599,7 +599,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "zcat: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "gzip: /data/rfnope.txt.gz: No such file or directory\n"
       }
     },
     {
@@ -613,7 +613,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "zgrep: /data/rfdir: Is a directory\n"
+        "stderr": ""
       }
     },
     {
@@ -627,7 +627,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "zgrep: /data/rfnope.txt: No such file or directory\n"
+        "stderr": "gzip: /data/rfnope.txt.gz: No such file or directory\n"
       }
     },
     {
@@ -637,7 +637,7 @@
         "ram",
         "disk"
       ],
-      "command": "cmp /data/rfdir /data/rfdir",
+      "command": "cmp /data/rfdir /data/rfdir/inner.txt",
       "expect": {
         "exit": 2,
         "stdout": "",
@@ -696,7 +696,7 @@
       "command": "wc /data/rfdir",
       "expect": {
         "exit": 1,
-        "stdout": "",
+        "stdout": "      0       0       0 /data/rfdir\n",
         "stderr": "wc: /data/rfdir: Is a directory\n"
       }
     },
@@ -712,6 +712,62 @@
         "exit": 1,
         "stdout": "",
         "stderr": "wc: /data/rfnope.txt: No such file or directory\n"
+      }
+    },
+    {
+      "id": "readfail_tac_dir",
+      "seq": 963051,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "tac /data/rfdir",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "tac: /data/rfdir: read error: Is a directory\n"
+      }
+    },
+    {
+      "id": "readfail_tac_missing",
+      "seq": 963052,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "tac /data/rfnope.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "tac: failed to open '/data/rfnope.txt' for reading: No such file or directory\n"
+      }
+    },
+    {
+      "id": "readfail_stat_missing",
+      "seq": 963053,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "stat /data/rfnope.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "stat: cannot statx '/data/rfnope.txt': No such file or directory\n"
+      }
+    },
+    {
+      "id": "readfail_truncate_dir",
+      "seq": 963054,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "truncate -s 0 /data/rfdir",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "truncate: cannot open '/data/rfdir' for writing: Is a directory\n"
       }
     },
     {
@@ -739,7 +795,7 @@
       "expect": {
         "exit": 2,
         "stdout": "a\nb\n",
-        "stderr": "sed: /data/rfnope: No such file or directory\n"
+        "stderr": "sed: can't read /data/rfnope: No such file or directory\n"
       }
     },
     {
@@ -753,7 +809,7 @@
       "expect": {
         "exit": 4,
         "stdout": "",
-        "stderr": "sed: /data/rfdir: Is a directory\n"
+        "stderr": "sed: read error on /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -767,7 +823,7 @@
       "expect": {
         "exit": 4,
         "stdout": "a\nb\n",
-        "stderr": "sed: /data/rfdir: Is a directory\n"
+        "stderr": "sed: read error on /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -781,7 +837,7 @@
       "expect": {
         "exit": 2,
         "stdout": "a\nb\nc\nd\n",
-        "stderr": "sed: /data/rfnope: No such file or directory\n"
+        "stderr": "sed: can't read /data/rfnope: No such file or directory\n"
       }
     },
     {
@@ -795,7 +851,7 @@
       "expect": {
         "exit": 4,
         "stdout": "",
-        "stderr": "sed: /data/rfdir: Is a directory\n"
+        "stderr": "sed: read error on /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -809,7 +865,7 @@
       "expect": {
         "exit": 4,
         "stdout": "",
-        "stderr": "sed: /data/rfnope: No such file or directory\nsed: /data/rfdir: Is a directory\n"
+        "stderr": "sed: can't read /data/rfnope: No such file or directory\nsed: read error on /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -823,7 +879,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sort: /data/rfdir: Is a directory\n"
+        "stderr": "sort: read failed: /data/rfdir: Is a directory\n"
       }
     },
     {
@@ -851,7 +907,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "zcat: /data/rfdir: Is a directory\nzcat: /data/rfnope: No such file or directory\n"
+        "stderr": "gzip: /data/rfdir is a directory -- ignored\ngzip: /data/rfnope.gz: No such file or directory\n"
       }
     },
     {
@@ -865,7 +921,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "zcat: /data/rfnope: No such file or directory\nzcat: /data/rfdir: Is a directory\n"
+        "stderr": "gzip: /data/rfnope.gz: No such file or directory\ngzip: /data/rfdir is a directory -- ignored\n"
       }
     },
     {
@@ -879,7 +935,147 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "zcat: /data/rfdir: Is a directory\nzcat: /data/rfdir: Is a directory\n"
+        "stderr": "gzip: /data/rfdir is a directory -- ignored\ngzip: /data/rfdir is a directory -- ignored\n"
+      }
+    },
+    {
+      "id": "readfail_tac_continues_past_a_directory",
+      "seq": 963072,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "tac /data/rfok.txt /data/rfdir /data/rfok2.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "b\na\nd\nc\n",
+        "stderr": "tac: /data/rfdir: read error: Is a directory\n"
+      }
+    },
+    {
+      "id": "readfail_sort_missing_outranks_a_dir",
+      "seq": 1299050,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "sort /data/rfdir /data/rfnope.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: cannot read: /data/rfnope.txt: No such file or directory\n"
+      }
+    },
+    {
+      "id": "readfail_sort_check_missing_is_open_failed",
+      "seq": 1299051,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "sort -c /data/rfnope.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: open failed: /data/rfnope.txt: No such file or directory\n"
+      }
+    },
+    {
+      "id": "readfail_sort_output_dir_is_open_failed",
+      "seq": 1299052,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "sort -o /data/rfdir /data/rfok.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: open failed: /data/rfdir: Is a directory\n"
+      }
+    },
+    {
+      "id": "readfail_sort_output_missing_parent_is_open_failed",
+      "seq": 1299053,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "sort -o /data/rfnodir/out.txt /data/rfok.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: open failed: /data/rfnodir/out.txt: No such file or directory\n"
+      }
+    },
+    {
+      "id": "readfail_cmp_s_still_reports_a_directory_it_cannot_read",
+      "seq": 1301040,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cmp -s /data/sub /data/a.txt",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "cmp: /data/sub: Is a directory\n"
+      }
+    },
+    {
+      "id": "readfail_cmp_s_open_failure_outranks_a_directory",
+      "seq": 1301041,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cmp -s /data/sub /data/nope1301; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "readfail_cmp_names_a_failed_open_before_a_directory",
+      "seq": 1301042,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cmp /data/sub /data/nope1301",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "cmp: /data/nope1301: No such file or directory\n"
+      }
+    },
+    {
+      "id": "readfail_cmp_one_directory_named_twice_is_equal",
+      "seq": 1301043,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cmp /data/sub /data/sub; echo rc=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "readfail_gunzip_retried_name_is_a_directory",
+      "seq": 1301044,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(cd /data && gunzip -c sub1301; echo rc=$?; mkdir sub1301.gz && gunzip -c sub1301; echo rc=$?; rmdir sub1301.gz)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nrc=2\n",
+        "stderr": "gzip: sub1301.gz: No such file or directory\ngzip: sub1301.gz is a directory -- ignored\n"
       }
     }
   ]

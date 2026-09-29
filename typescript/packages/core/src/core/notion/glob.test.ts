@@ -120,6 +120,11 @@ describe('resolveNotionGlob', () => {
 
   it('matches subtree segments by glob pattern', async () => {
     const transport = new FakeTransport()
+    transport.enqueue('API-post-search', {
+      results: [topPage(PARENT_ID, 'Top1')],
+      has_more: false,
+      next_cursor: null,
+    })
     transport.enqueue('API-retrieve-block-children', {
       results: [
         { id: SUB1_ID, type: 'child_page', child_page: { title: 'SubA' } },

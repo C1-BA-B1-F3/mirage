@@ -14,10 +14,9 @@
 
 import { invalidateAfterWrite } from '../../cache/context.ts'
 import type { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { norm, nowIso } from './utils.ts'
-import { checkDestParents } from './dest.ts'
+import { checkDestParents, lookupError } from './dest.ts'
 
 export async function copy(accessor: RedisAccessor, src: PathSpec, dst: PathSpec): Promise<void> {
   const s = norm(src.mountPath)
@@ -25,7 +24,7 @@ export async function copy(accessor: RedisAccessor, src: PathSpec, dst: PathSpec
   const store = accessor.store
   await checkDestParents(store, dst, d)
   const data = await store.getFile(s)
-  if (data === null) throw enoent(src)
+  if (data === null) throw await lookupError(store, src, s)
   await store.setFile(d, data)
   await store.setModified(d, nowIso())
   await invalidateAfterWrite(dst)

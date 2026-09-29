@@ -12,24 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pathlib import Path
-
 import aiofiles.os
 
 from mirage.accessor.disk import DiskAccessor
 from mirage.cache.context import invalidate_after_unlink
+from mirage.core.disk.errors import disk_errors
+from mirage.core.disk.utils import resolve_inside
 from mirage.types import PathSpec
 
 
-def _resolve(root: Path, path: str) -> Path:
-    relative = path.lstrip("/")
-    resolved = (root / relative).resolve()
-    resolved.relative_to(root)
-    return resolved
-
-
 async def unlink(accessor: DiskAccessor, path_spec: PathSpec) -> None:
-    path = path_spec.mount_path
-    p = _resolve(accessor.root, path)
-    await aiofiles.os.remove(p)
+    p = await resolve_inside(accessor.root, path_spec)
+    with disk_errors(path_spec.virtual):
+        await aiofiles.os.remove(p)
     await invalidate_after_unlink(path_spec)

@@ -219,11 +219,11 @@ async def test_an_unverifiable_probe_drops_the_entry(caplog, failure):
         mount.execute_op = failing
         await ws.cache.set("/data/f.txt", b"v1", fingerprint="fp1")
         rec = Reconciler(ws.cache, ws.namespace)
-        with caplog.at_level(logging.DEBUG,
+        with caplog.at_level(logging.WARNING,
                              logger="mirage.workspace.reconcile"):
             assert await rec.may_serve_cached(mount, "/data/f.txt") is False
         assert not await ws.cache.exists("/data/f.txt")
-        # DEBUG collects every logger, so filter to ours before counting.
+        # The capture collects every logger, so filter to ours first.
         ours = [
             r for r in caplog.records if r.name == "mirage.workspace.reconcile"
         ]

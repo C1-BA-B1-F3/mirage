@@ -48,3 +48,17 @@ async def test_stream_with_glob_scope(tmp_path):
     async for chunk in read_stream(accessor, scope, index):
         chunks.append(chunk)
     assert b"".join(chunks) == b"abc"
+
+
+# A path under a plain file is ENOTDIR on the real filesystem, and the
+# error names the virtual path, never the host one the mount resolves to.
+@pytest.mark.asyncio
+async def test_read_stream_under_a_plain_file_is_not_a_directory(tmp_path):
+    (tmp_path / "a.txt").write_text("a")
+    spec = PathSpec(vfs_path="a.txt/x",
+                    virtual="/a.txt/x",
+                    directory="/a.txt/")
+    with pytest.raises(NotADirectoryError) as exc:
+        [c async for c in read_stream(DiskAccessor(tmp_path), spec)]
+    assert exc.value.filename == "/a.txt/x"
+    assert str(tmp_path) not in str(exc.value)

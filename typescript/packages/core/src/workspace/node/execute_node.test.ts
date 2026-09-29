@@ -140,8 +140,9 @@ describe('executeNode dispatcher', () => {
     }
     const session = new SessionState({ sessionId: 't' })
     await executeNode(buildDeps(reg), node, session)
-    // Only the seeded $PWD, so the assignment really did nothing.
-    expect(Object.keys(session.env)).toEqual(['PWD'])
+    // Only the seeded $PWD, $PATH and $IFS, so the assignment really did
+    // nothing.
+    expect(Object.keys(session.env)).toEqual(['PWD', 'PATH', 'IFS'])
   })
 
   it('NEGATED_COMMAND flips a zero exit into one', async () => {
@@ -444,7 +445,7 @@ describe('specWordKinds — numericShorthand', () => {
   })
 
   it('treats -3 as a flag value, not a path (head/tail GNU shorthand)', () => {
-    expect(specWordKinds(headSpec, ['-3', '/ram/file'])).toEqual([null, 'path'])
+    expect(specWordKinds(headSpec, ['-3', '/ram/file'])).toEqual(['str', 'path'])
   })
 
   it('falls back to treating -3 as a positional when spec lacks numericShorthand', () => {

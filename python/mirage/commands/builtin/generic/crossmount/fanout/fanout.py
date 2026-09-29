@@ -15,17 +15,16 @@
 from mirage.commands.builtin.generic.crossmount.fanout.du import du_total
 from mirage.commands.builtin.generic.crossmount.fanout.exit import \
     combined_exit
-from mirage.commands.builtin.generic.crossmount.fanout.wc import combine_wc
 from mirage.commands.builtin.generic.crossmount.types import (Cmd, CrossResult,
                                                               RunSingle)
 from mirage.commands.builtin.generic.crossmount.utils import (
-    merge_operand_ios, run_operands)
-from mirage.commands.builtin.generic.wc import parse_flags as parse_wc_flags
+    merge_operand_ios, run_operands, run_separator)
+from mirage.commands.builtin.generic.rg import label_flags
 from mirage.commands.spec import SPECS
-from mirage.commands.spec.flag_view import FlagView
+from mirage.commands.spec.flag_view import FlagBag, FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.stream import materialize
-from mirage.io.types import ByteSource, IOResult
+from mirage.io.types import ByteSource
 from mirage.types import PathSpec
 
 
@@ -41,7 +40,7 @@ async def run_fanout(cmd_name: str,
     mount (globs expand inside that native run), and the outputs combine
     in operand order. Filename-keyed commands stay correct because every
     native run is forced to name its files (grep ``-H``, head/tail ``-v``);
-    wc and ``du -c`` re-total across runs.
+    ``du -c`` re-totals across runs.
 
     Args:
         cmd_name (str): One of the FANOUT_COMMANDS (or ``sed -i``).
@@ -52,16 +51,15 @@ async def run_fanout(cmd_name: str,
         run_single (RunSingle): Executor-injected single-mount runner.
         stdin (ByteSource | None): Original stdin, re-fed per operand (tee).
     """
-    flags = dict(flag_kwargs)
+    flags: dict[str, FlagValue] = FlagBag(flag_kwargs)
     stdin_bytes: bytes | None = None
     if cmd_name == Cmd.TEE:
         stdin_bytes = await materialize(stdin) if stdin is not None else b""
     if cmd_name == Cmd.GREP and not FlagView(
             flags, spec=SPECS[Cmd.GREP]).as_bool("h"):
         flags["H"] = True
-    if cmd_name == Cmd.RG and not FlagView(
-            flags, spec=SPECS[Cmd.RG]).as_bool("args_I"):
-        flags["H"] = True
+    if cmd_name == Cmd.RG:
+        flags = label_flags(flags)
     # head pairs -q/--quiet and -v/--verbose (canonical dests), tail
     # declares them short-only.
     quiet_key = "quiet" if cmd_name == Cmd.HEAD else "q"
@@ -69,41 +67,30 @@ async def run_fanout(cmd_name: str,
     if cmd_name in (Cmd.HEAD, Cmd.TAIL) and not FlagView(
             flags, spec=SPECS[cmd_name]).as_bool(quiet_key):
         flags[verbose_key] = True
-    # Both re-totalling combines below need raw per-file rows from every
-    # run: wc must not see a per-run total row it would have to guess at,
-    # and du must not sum sizes that were already rounded for -h.
-    if cmd_name == Cmd.WC:
-        # The override would mask an invalid --total from every native run,
-        # so the user's value is diagnosed here first, as one mount would.
-        try:
-            parse_wc_flags(flag_kwargs)
-        except ValueError as exc:
-            return None, IOResult(exit_code=1,
-                                  stderr=(str(exc) + "\n").encode())
-        flags["total"] = "never"
     du_c = cmd_name == Cmd.DU and FlagView(flag_kwargs,
                                            spec=SPECS[Cmd.DU]).as_bool("c")
     du_human = du_c and FlagView(flag_kwargs, spec=SPECS[Cmd.DU]).as_bool("h")
     if du_human:
         flags["h"] = False
 
+    quiet = (cmd_name == Cmd.GREP
+             and FlagView(flags, spec=SPECS[Cmd.GREP]).as_bool("q")) or (
+                 cmd_name == Cmd.RG
+                 and FlagView(flags, spec=SPECS[Cmd.RG]).as_bool("quiet"))
     results = await run_operands(run_single,
                                  cmd_name,
                                  scopes,
                                  list(text_args),
                                  flags,
-                                 stdin_bytes=stdin_bytes)
+                                 stdin_bytes=stdin_bytes,
+                                 stop_at_success=quiet)
     errored = [
         r.io.exit_code != 0 and r.io.stderr is not None for r in results
     ]
-    quiet = cmd_name == Cmd.GREP and FlagView(
-        flags, spec=SPECS[Cmd.GREP]).as_bool("q")
     exit_code = combined_exit(cmd_name, [r.io.exit_code for r in results],
                               errored, quiet)
 
-    if cmd_name == Cmd.WC:
-        body = combine_wc(results, flag_kwargs)
-    elif du_c:
+    if du_c:
         body = du_total(results, du_human)
     elif cmd_name == Cmd.TEE:
         body = stdin_bytes or b""
@@ -113,7 +100,11 @@ async def run_fanout(cmd_name: str,
         # separates its own file blocks.
         body = b"\n".join(r.data for r in results if r.data)
     else:
-        body = b"".join(r.data for r in results)
+        # grep and ripgrep set one file's context off from the next file's
+        # (and ripgrep one --heading group from the next), as one native
+        # run separates its own files.
+        body = run_separator(cmd_name,
+                             flags).join(r.data for r in results if r.data)
 
     io = await merge_operand_ios(results, exit_code)
     return body, io

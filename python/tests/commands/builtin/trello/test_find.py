@@ -20,6 +20,7 @@ from mirage.accessor.trello import TrelloAccessor
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.commands.builtin.trello import COMMANDS
 from mirage.commands.config import CommandOpts
+from mirage.io.types import materialize
 from mirage.types import PathSpec
 from mirage.vfs.trello.config import TrelloConfig
 
@@ -51,7 +52,7 @@ async def _run(paths, *texts: str, **flags) -> list[str]:
         stdout, _io = await find(
             accessor, paths, list(texts),
             CommandOpts(index=RAMIndexCacheStore(), flags={**flags}))
-    data = stdout if isinstance(stdout, bytes) else b""
+        data = await materialize(stdout)
     return data.decode().splitlines()
 
 

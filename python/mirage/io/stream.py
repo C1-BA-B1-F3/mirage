@@ -12,13 +12,53 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 
 from mirage.io import CachableAsyncIterator, IOResult
+from mirage.io.async_line_iterator import SharedInput
 from mirage.io.types import ByteSource, materialize
+from mirage.utils.stream import ensure_stream
 
 logger = logging.getLogger(__name__)
+
+
+class SharedStdin:
+    """One lazy byte cursor shared by commands inheriting an input descriptor.
+
+    Reads are serialized, including source pulls, so concurrent consumers
+    neither replay bytes nor advance the source simultaneously. A consumer
+    stopping early leaves the cursor open for the next one. Byte-sized pulls
+    preserve the unread suffix when a command such as ``head -c 1`` exits.
+
+    Args:
+        source (ByteSource): the inherited input, still unread.
+    """
+
+    def __init__(self, source: ByteSource) -> None:
+        self._chunks: AsyncIterator[bytes] | None = ensure_stream(source)
+        self._buffer = b""
+        self._pos = 0
+        self._lock = asyncio.Lock()
+
+    def __aiter__(self) -> "SharedStdin":
+        return self
+
+    async def __anext__(self) -> bytes:
+        async with self._lock:
+            while self._pos >= len(self._buffer):
+                if self._chunks is None:
+                    raise StopAsyncIteration
+                try:
+                    self._buffer = await anext(self._chunks)
+                except StopAsyncIteration:
+                    self._chunks = None
+                    raise
+                self._pos = 0
+            chunk = self._buffer[self._pos:self._pos + 1]
+            self._pos += 1
+            return chunk
 
 
 async def merge_stdout_stderr(
@@ -109,7 +149,7 @@ async def close_quietly(stream: ByteSource | None) -> None:
 async def discard_streams(*streams: ByteSource | None) -> None:
     """Discard failed reads without changing normal early-close behavior."""
     for stream in streams:
-        if isinstance(stream, CachableAsyncIterator):
+        if isinstance(stream, (CachableAsyncIterator, SharedInput)):
             await stream.discard()
         else:
             await close_quietly(stream)
@@ -120,7 +160,8 @@ async def discard_io(io: IOResult) -> None:
                           io.stderr)
 
 
-async def async_chain(*streams: ByteSource | None, ) -> AsyncIterator[bytes]:
+async def async_chain(
+        streams: Iterable[ByteSource | None]) -> AsyncIterator[bytes]:
     for stream in streams:
         if stream is None:
             continue

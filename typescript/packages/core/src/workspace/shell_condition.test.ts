@@ -16,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { IOResult } from '../io/types.ts'
 import type { FileStat } from '../types.ts'
 import { ContentType, FileType } from '../types.ts'
+import { efbig } from '../utils/errors.ts'
 import { handleTest } from './executor/builtins/condition/index.ts'
 import type { DispatchFn } from './executor/cross_mount.ts'
 import type { Namespace } from './mount/namespace/namespace.ts'
@@ -219,9 +220,10 @@ function prefixStoreDispatch(listing: string[]): DispatchFn {
 
 /**
  * Mimics an API backend (dropbox/gdrive/box) whose stat reports
- * size-unknown for a regular file.
+ * size-unknown for a regular file; `content` is what read returns, or
+ * throws.
  */
-function unknownSizeDispatch(content: Uint8Array): DispatchFn {
+function unknownSizeDispatch(content: Uint8Array | Error): DispatchFn {
   const stat = {
     name: 'x',
     size: null,
@@ -231,7 +233,10 @@ function unknownSizeDispatch(content: Uint8Array): DispatchFn {
   } as unknown as FileStat
   const dispatch = (op: string) => {
     if (op === 'stat') return Promise.resolve([stat, new IOResult({})])
-    if (op === 'read') return Promise.resolve([content, new IOResult({})])
+    if (op === 'read') {
+      if (content instanceof Error) return Promise.reject(content)
+      return Promise.resolve([content, new IOResult({})])
+    }
     return Promise.reject(new Error(`unexpected op ${op}`))
   }
   return dispatch as unknown as DispatchFn
@@ -261,6 +266,11 @@ describe('cloud-backend stat/readdir shapes', () => {
     expect(await stubExit(unknownSizeDispatch(new Uint8Array([120])), ['-s', '/data/zt.txt'])).toBe(
       0,
     )
+  })
+
+  it('-s is true for a file too large to render', async () => {
+    const dispatch = unknownSizeDispatch(efbig('/data/zbig.jsonl'))
+    expect(await stubExit(dispatch, ['-s', '/data/zbig.jsonl'])).toBe(0)
   })
 
   it('-e/-f answer from stat alone without reading', async () => {

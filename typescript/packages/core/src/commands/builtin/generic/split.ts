@@ -14,7 +14,10 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { stripSlash } from '../../../utils/slash.ts'
+import { fsStrerror, isFsError } from '../../../utils/errors.ts'
+import { mountKey } from '../../../utils/key_prefix.ts'
+import { resolvePath } from '../../../utils/path.ts'
+import { rstripSlash } from '../../../utils/slash.ts'
 import { AsyncLineIterator } from '../../../io/async_line_iterator.ts'
 import { IOResult } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
@@ -378,24 +381,6 @@ function suffixNamer(
   }
 }
 
-function makePathSpec(virtual: string): PathSpec {
-  return new PathSpec({
-    virtual,
-    directory: virtual,
-    vfsPath: stripSlash(virtual),
-    resolved: true,
-  })
-}
-
-function outputPath(
-  prefix: string,
-  suffix: (index: number) => string,
-  index: number,
-  additional: string,
-): string {
-  return prefix + suffix(index) + additional
-}
-
 function joinLines(lines: readonly Uint8Array[]): Uint8Array {
   let total = 0
   for (const l of lines) total += l.byteLength + 1
@@ -446,15 +431,38 @@ function joinRecords(records: readonly Uint8Array[], separator: number): Uint8Ar
   return out
 }
 
+// Where a PREFIX operand's pieces go, as the string they extend. The prefix
+// is glued to each suffix, not walked: an empty one, or one ending in a
+// slash, names the directory whose files are the bare suffixes (GNU's
+// `split f ''` writes `aa` to the cwd, and `split f out/` writes `out/aa`).
+// `virtual` says neither, having normalized the slash away and read the
+// empty name as the directory itself, so the separator is put back.
+// Mirrors Python's _prefix_virtual.
+function prefixVirtualOf(prefix: PathSpec): string {
+  if (prefix.rawPath === '' || prefix.rawPath.endsWith('/')) {
+    return `${rstripSlash(prefix.virtual)}/`
+  }
+  return prefix.virtual
+}
+
 export async function splitGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
+  relay = false,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('split'))
   if (paths.length > 2) throw extraOperandError(CommandName.SPLIT, paths[2]?.rawPath ?? '')
-  const prefixPath = paths.length >= 2 && paths[1] !== undefined ? paths[1].mountPath : 'x'
+  // An output is the prefix operand, or `x` in the working directory, plus
+  // its suffix, wherever the input lives: GNU writes `xaa` to the cwd, names
+  // it as it formed it (`split: xaa`, `split: /ro/preaa`), and stops at the
+  // first one it cannot create. Mirrors split.py.
+  const prefixOperand = paths.length >= 2 ? paths[1] : undefined
+  const prefixVirtual =
+    prefixOperand !== undefined ? prefixVirtualOf(prefixOperand) : resolvePath('x', opts.cwd)
+  const typedPrefix = prefixOperand?.rawPath ?? 'x'
+  const mountPrefix = opts.mountPrefix ?? ''
   const linesValue = fl.asStr('lines')
   const bytesValue = fl.asStr('bytes')
   const numberValue = fl.asStr('number')
@@ -496,8 +504,10 @@ export async function splitGeneric(
   )
 
   let source: AsyncIterable<Uint8Array>
+  // `-` is stdin. /dev/stdin would run split on the /dev mount, which is
+  // where its pieces would land, so it stays a path.
   const first = paths[0]
-  if (first !== undefined) {
+  if (first !== undefined && first.rawPath !== '-') {
     source = stream(first)
   } else {
     source = resolveSource(opts.stdin)
@@ -505,6 +515,20 @@ export async function splitGeneric(
 
   const writes: Record<string, Uint8Array> = {}
   let fileIdx = 0
+  const emit = async (name: string, data: Uint8Array): Promise<void> => {
+    const virtual = prefixVirtual + name
+    const spec = PathSpec.fromStrPath(virtual, mountKey(virtual, mountPrefix))
+    try {
+      await write(spec, data)
+    } catch (err) {
+      if (!isFsError(err)) throw err
+      throw new UsageError(`split: ${typedPrefix + name}: ${String(fsStrerror(err))}`, 1)
+    }
+    // Relay writes land on whichever mount owns each path and invalidate
+    // through the dispatcher; keying them here would have the runner prefix
+    // them onto this mount.
+    if (!relay) writes[spec.mountPath] = data
+  }
 
   if (chunks !== null) {
     const gathered: Uint8Array[] = []
@@ -518,10 +542,9 @@ export async function splitGeneric(
     // for `-n N` however short the input is.
     let i = 0
     for (const part of chunkParts(all, chunks, separator)) {
-      const outPath = outputPath(prefixPath, suffixFn, i, additionalSuffix)
+      const name = suffixFn(i) + additionalSuffix
       i += 1
-      await write(makePathSpec(outPath), part)
-      writes[outPath] = part
+      await emit(name, part)
     }
   } else if (byteLimit > 0) {
     let buf = new Uint8Array(0)
@@ -531,18 +554,16 @@ export async function splitGeneric(
       merged.set(c, buf.byteLength)
       buf = merged
       while (buf.byteLength >= byteLimit) {
-        const outPath = outputPath(prefixPath, suffixFn, fileIdx, additionalSuffix)
+        const name = suffixFn(fileIdx) + additionalSuffix
         const data = buf.slice(0, byteLimit)
-        await write(makePathSpec(outPath), data)
-        writes[outPath] = data
+        await emit(name, data)
         buf = buf.slice(byteLimit)
         fileIdx += 1
       }
     }
     if (buf.byteLength > 0) {
-      const outPath = outputPath(prefixPath, suffixFn, fileIdx, additionalSuffix)
-      await write(makePathSpec(outPath), buf)
-      writes[outPath] = buf
+      const name = suffixFn(fileIdx) + additionalSuffix
+      await emit(name, buf)
     }
   } else {
     const lineBuf: Uint8Array[] = []
@@ -551,19 +572,17 @@ export async function splitGeneric(
     for await (const line of iter) {
       lineBuf.push(line)
       if (lineBuf.length >= linesPerFile) {
-        const outPath = outputPath(prefixPath, suffixFn, fileIdx, additionalSuffix)
+        const name = suffixFn(fileIdx) + additionalSuffix
         const data = joinRecords(lineBuf, separator)
-        await write(makePathSpec(outPath), data)
-        writes[outPath] = data
+        await emit(name, data)
         lineBuf.length = 0
         fileIdx += 1
       }
     }
     if (lineBuf.length > 0) {
-      const outPath = outputPath(prefixPath, suffixFn, fileIdx, additionalSuffix)
+      const name = suffixFn(fileIdx) + additionalSuffix
       const data = joinRecords(lineBuf, separator)
-      await write(makePathSpec(outPath), data)
-      writes[outPath] = data
+      await emit(name, data)
     }
   }
   return [null, new IOResult({ writes })]

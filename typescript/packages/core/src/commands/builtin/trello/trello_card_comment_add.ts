@@ -22,6 +22,7 @@ import { command, type CommandFnResult, type CommandOpts } from '../../config.ts
 import { CommandSpec, Option } from '../../spec/types.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { resolveTextInput } from './_input.ts'
+import { requireCard } from './_scope.ts'
 
 const ENC = new TextEncoder()
 
@@ -54,6 +55,7 @@ async function trelloCardCommentAddCommand(
   // A card write is addressed by id, not path, so only the mount-wide
   // grant can admit it (a write-granting carve-out names no card).
   requireMountWritable(opts.mountPrefix ?? '')
+  await requireCard(accessor, cardId)
   const comment = await commentCreate(accessor.transport, cardId, text)
   return [ENC.encode(JSON.stringify(normalizeComment(comment, cardId))), new IOResult()]
 }

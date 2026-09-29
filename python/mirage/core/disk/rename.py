@@ -12,30 +12,21 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pathlib import Path
-
 import aiofiles.os
 
 from mirage.accessor.disk import DiskAccessor
 from mirage.cache.context import invalidate_subtree
+from mirage.core.disk.utils import resolve_inside
 from mirage.types import PathSpec
-
-
-def _resolve(root: Path, path: str) -> Path:
-    relative = path.lstrip("/")
-    resolved = (root / relative).resolve()
-    resolved.relative_to(root)
-    return resolved
 
 
 async def rename(accessor: DiskAccessor, src_spec: PathSpec,
                  dst_spec: PathSpec) -> None:
-    src = src_spec.mount_path
-    dst = dst_spec.mount_path
     root = accessor.root
     await invalidate_subtree(src_spec)
     # Both sides are subtree evictions: a rename destroys the destination's
     # previous identity and relocates everything under the source, so a
     # listing or body cached below either name is now stale.
     await invalidate_subtree(dst_spec)
-    await aiofiles.os.rename(_resolve(root, src), _resolve(root, dst))
+    await aiofiles.os.rename(await resolve_inside(root, src_spec), await
+                             resolve_inside(root, dst_spec))

@@ -10,6 +10,7 @@ from mirage.core.onedrive.rename import rename
 from mirage.core.onedrive.rm import rm_r
 from mirage.core.onedrive.rmdir import rmdir
 from mirage.core.onedrive.unlink import unlink
+from mirage.observe.context import RecordingScope
 from mirage.types import PathSpec
 
 # The emptiness probe is one bounded page, not a full listing walk, so the
@@ -52,6 +53,24 @@ async def test_create_puts_empty_content():
         m.put(_BASE + "/root:/a.txt:/content", callback=_cb)
         await create(_accessor(), PathSpec.from_str_path("/a.txt"))
     assert captured["body"] in (b"", None)
+
+
+@pytest.mark.asyncio
+async def test_create_records_the_virtual_path():
+    # A key named like its mount: neither m/k.txt nor /m/k.txt is virtual.
+    spec = PathSpec(virtual="/m/m/k.txt",
+                    directory="/m/m/",
+                    vfs_path="m/k.txt")
+    scope = RecordingScope()
+    try:
+        with aioresponses() as m:
+            m.put(_BASE + "/root:/m/k.txt:/content",
+                  status=201,
+                  payload={"id": "X"})
+            await create(_accessor(), spec)
+    finally:
+        scope.close()
+    assert [r.path for r in scope.records] == ["/m/m/k.txt"]
 
 
 @pytest.mark.asyncio

@@ -108,7 +108,7 @@ describe('find', () => {
     vfs.store.files.set('/tmp/small.txt', ENC.encode('hi'))
     vfs.store.files.set('/tmp/big.txt', ENC.encode('a'.repeat(100)))
     const r = await runFind(vfs, [PathSpec.fromStrPath('/tmp')], { size: '+50c' })
-    expect(r.lines).toEqual(['/tmp/big.txt'])
+    expect(r.lines).toEqual(['/tmp', '/tmp/big.txt'])
   })
 
   it('-size -N filters by max size', async () => {
@@ -117,7 +117,7 @@ describe('find', () => {
     vfs.store.files.set('/tmp/small.txt', ENC.encode('hi'))
     vfs.store.files.set('/tmp/big.txt', ENC.encode('a'.repeat(100)))
     const r = await runFind(vfs, [PathSpec.fromStrPath('/tmp')], { size: '-50c' })
-    expect(r.lines).toEqual(['/tmp', '/tmp/small.txt'])
+    expect(r.lines).toEqual(['/tmp/small.txt'])
   })
 
   it('-maxdepth limits recursion', async () => {

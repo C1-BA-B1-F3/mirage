@@ -25,8 +25,8 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def store():
-    s = RedisIndexCacheStore(ttl=60, url=REDIS_URL, key_prefix="test:order:")
+async def store(redis_prefix):
+    s = RedisIndexCacheStore(ttl=60, url=REDIS_URL, key_prefix=redis_prefix)
     await s.clear()
     yield s
     await s.clear()

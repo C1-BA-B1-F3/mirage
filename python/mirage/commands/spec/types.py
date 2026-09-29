@@ -75,6 +75,7 @@ class CommandName(StrEnum):
     SPLIT = "split"
     TR = "tr"
     TSORT = "tsort"
+    UNAME = "uname"
     UNIQ = "uniq"
     XXD = "xxd"
 
@@ -92,9 +93,9 @@ ValueType = Literal["bool", "str", "int", "float", "path"]
 # value is still text, or the bool/int a flag's own shape implies.
 ParsedFlagValue: TypeAlias = str | bool | int | list[str]
 # What a command receives. The executor rewrites PATH-typed values into
-# PathSpec on the way through (``mount.execute_cmd``), which is the one
-# member the TypeScript twin does not carry -- its bag keeps resolved
-# virtual-path strings instead. A command takes the bag as
+# PathSpec on the way through (``mount.execute_cmd``), the PathSpec of
+# the word that spelled it, so an error line can name the path as typed.
+# Mirrors the TypeScript FlagValue. A command takes the bag as
 # ``**flags: FlagValue`` and reads it through FlagView, never by
 # unpacking these members. The mixed list is the ``pair`` shape: a pair
 # option accumulates (name, value) flattened, so a PATH-typed pair like

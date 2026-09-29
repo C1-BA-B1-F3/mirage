@@ -28,7 +28,7 @@ export async function create(accessor: RAMAccessor, path: PathSpec): Promise<voi
   checkDestParents(accessor, path, p)
   accessor.store.files.set(p, new Uint8Array())
   accessor.store.modified.set(p, nowIso())
-  record('create', p, VFSName.RAM, 0, timer)
+  record('create', path.virtual, VFSName.RAM, 0, timer)
   await invalidateAfterWrite(path)
   return Promise.resolve()
 }

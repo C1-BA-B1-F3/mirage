@@ -36,6 +36,18 @@ that use file operations, such as PIL and NumPy. These operations reach
 the same workspace mounts used by shell commands. Symlinks and metadata
 overlays come from the workspace namespace.
 
+Shell commands and direct `run()` or `eval()` calls inherit the current
+workspace directory. An explicit `RunArgs.cwd` overrides it for one run.
+Each console session starts there on its first feed and retains its own
+`os.chdir()` changes, including changes made before an exception. Other
+consoles and one-shot evaluations remain isolated. The Mirage session and
+host process directories are unchanged.
+
+If a console's saved directory has been removed or renamed, the next
+feed reports the filesystem error without executing its code. The console
+then resets its cwd to `/`, retaining its variables so the following feed
+can choose a new directory.
+
 `os.getxattr`, `os.listxattr`, `os.setxattr` and `os.removexattr` reach
 the attributes the shell's `getfattr` and `setfattr` see. They need the
 worker; the fallback below answers them with `OSError` (`ENOTSUP`).
@@ -100,37 +112,60 @@ pnpm add @pydantic/monty
 Without it, selecting monty makes `python3` exit with code 127 and an
 install hint.
 
+### Working directory
+
+Monty commands start in the Mirage shell's current directory. Relative
+`open()` and `pathlib` paths reach the workspace dispatcher as absolute
+virtual paths, so `cd /data; python3 -c "print(open('a.txt').read())"`
+reads `/data/a.txt` through the same mount and policy checks as `cat`.
+The script operand is judged like `cat`'s file too: a rule protecting
+`/data/job.py` refuses `python3 job.py` from `/data`.
+`os.getcwd()` and `Path.cwd()` report that virtual directory. Monty 1.0.0's
+JavaScript binding cannot return the native named-tuple stat result that
+`os.chdir()` requires, so changing directories inside the guest raises a
+`RuntimeError` on this host. Use shell `cd` before a command or an explicit
+`RunArgs.cwd` instead; neither changes the host process directory.
+
+A console evaluation session inherits the workspace cwd on its first
+feed and keeps it across later feeds, even if the shell changes directory.
+A new session or one-shot evaluation starts from the current workspace cwd.
+
 ### Differences from CPython
 
-The pinned Monty 0.0.23 lacks `dir()`, `json.load()` and `json.dump()`.
+The pinned Monty 1.0.0 lacks `dir()`, `json.load()` and `json.dump()`.
 Use `hasattr(value, 'name')` to check a specific attribute, `json.loads(f.read())` to read JSON, and
 `f.write(json.dumps(value))` to write it. Mirage does not automatically
 switch interpreters when an API is missing. The shared
 `integ/runtime/monty.json` suite records these gaps and the working forms
 so a dependency update can revisit them.
 
-- The importable stdlib is `asyncio`, `base64`, `binascii`, `collections`, `dataclasses`,
+- The importable stdlib is `asyncio`, `base64`, `binascii`, `collections`, `copy`, `dataclasses`,
   `datetime`, `functools`, `itertools`, `json`, `math`, `os`, `pathlib`,
-  `re`, `sys`, `typing` and `unicodedata`, and each is
+  `random`, `re`, `sys`, `time`, `typing` and `unicodedata`, and each is
   itself partial (`json` has `loads`/`dumps` but no `load`/`dump`).
 - The parser refuses class inheritance and metaclasses, the
   `classmethod`/`staticmethod`/`property` method decorators, and `yield`.
   Plain classes, function decorators, `with`, f-strings and
   comprehensions all work.
-- Introspection builtins are absent: `dir`, `vars`, `globals`, `locals`,
-  `help`, `callable`, `issubclass`, `super`, `eval`, `exec` and
+- Introspection builtins are absent: `dir`, `vars`, `globals`,
+  `help`, `callable`, `issubclass`, `super` and
   `compile`. There is no `__dict__` on any object, so none of them can
   be written by hand either.
 - Command-line arguments are the `argv` global; `sys.argv` does not exist.
 - No `sys.stdin` and no third-party imports.
 - `os.environ` reflects the session env only.
+- `os.urandom()` returns cryptographic random bytes, capped at 1 MiB per
+  call on both hosts. Larger requests raise `MemoryError`.
+- `Path.iterdir()` yields native `Path` objects on both hosts, including
+  relative paths whose entries can be read directly.
 - `os` has no extended-attribute calls (`os.getxattr` and its siblings);
   run `getfattr` or `setfattr` in the shell instead.
 - `os.stat()` and `Path.stat()` answer with every attribute CPython's
   `stat_result` carries, but not its sequence half: `st[6]`, `len(st)`
   and iterating it raise `TypeError` here and work on the Python host,
-  because the JS wire has no namedtuple shape to send one in. Read the
-  fields by name (`st.st_size`, `st.st_mode`).
+  because the JS input encoder cannot construct a native namedtuple.
+  This also prevents guest `os.chdir()` from validating a destination.
+  Read the fields by name (`st.st_size`, `st.st_mode`).
 
 ## Selecting in YAML
 
@@ -207,3 +242,50 @@ a busy `while True` loop. The watchdog needs `SharedArrayBuffer`
 (always present in Node; in a browser only on cross-origin isolated
 pages) — without it, a busy pyodide loop blocks the event loop until
 it finishes, so prefer monty for untrusted code there.
+
+## Managed child commands
+
+Pyodide's shared-memory worker supports an admitted subprocess bridge:
+
+```python
+import subprocess
+
+result = subprocess.run(["printf", "%s", "hello"],
+                        capture_output=True, text=True, check=True)
+print(result.stdout)
+```
+
+Mirage supplies `subprocess.Popen`; Python's standard `run`, `call`,
+`check_call` and `check_output` use that implementation. `Popen` supports live
+pipes, `poll`, `wait`, `communicate`, termination, timeout retries, text mode,
+`stderr=STDOUT`, and `shell=True` through the workspace's `sh`. `sys.executable`
+points to `/usr/bin/python3`, and `shutil.which` queries the profile's program
+view. Functions and shell-only builtins are not executables.
+
+Only the worker waits synchronously; Mirage's host event loop stays asynchronous.
+Guest environment variables are inherited unless `env` supplies a replacement.
+Writes flush across the filesystem bridge before process operations, and guest
+file caches invalidate after them. A timed-out `wait` or `communicate` leaves the
+child alive; `run` kills and joins it. Unfinished children are cancelled and joined
+when the guest invocation exits.
+
+This is a virtual process interface. Native descriptors, PTYs, process groups,
+user switching, `preexec_fn`, and `asyncio.create_subprocess_exec` are not supplied.
+Stdin inheritance hands off buffered unread input; concurrent descriptor sharing
+and kernel file offsets are not emulated. Termination signals request immediate
+managed cancellation; guest signal handlers are not invoked. Some runtime
+providers buffer output until completion. The bridge requires shared-memory
+workers. Unsupported options fail explicitly.
+
+Monty keeps its normal unsupported `subprocess` import; no custom guest helper
+is injected.
+
+Host applications use the same admitted argv door:
+
+```typescript
+const child = ws.spawn({ argv: ['cat'] })
+const result = await child.communicate(new TextEncoder().encode('hello\n'))
+```
+
+See [managed execution](/home/architecture#managed-execution) for process views,
+lifetimes and provider limits.

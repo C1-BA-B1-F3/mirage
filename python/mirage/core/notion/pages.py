@@ -15,8 +15,9 @@
 from typing import Any
 
 from mirage.core.api.client import SessionArg
-from mirage.core.notion.client import (notion_get, notion_patch, notion_post,
-                                       paginate_list, paginate_post)
+from mirage.core.notion.client import (complete_page, notion_get, notion_patch,
+                                       notion_post, paginate_list,
+                                       paginate_post)
 from mirage.core.notion.config import NotionConfig
 
 
@@ -116,11 +117,16 @@ async def query_data_source_page(config: NotionConfig,
 
     Returns:
         dict: the raw list response.
+
+    Raises:
+        NotionAPIError: when Notion marks the page incomplete, so a
+            truncated result never prints as a successful query.
     """
-    return await notion_post(config,
+    page = await notion_post(config,
                              f"/data_sources/{data_source_id}/query",
                              body,
                              session=session)
+    return complete_page(page)
 
 
 async def get_page(config: NotionConfig,

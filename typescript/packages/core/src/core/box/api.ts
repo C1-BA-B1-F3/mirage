@@ -18,6 +18,7 @@ import {
   boxGet,
   boxGetBytes,
   boxGetStream,
+  boxOptions,
   boxPostJson,
   boxPutJson,
   boxUploadMultipart,
@@ -66,6 +67,7 @@ const SEARCH_PAGE = 200
 // Box search serves at most 10,000 matches across all pages; a result set
 // that reaches the ceiling may be incomplete and must not narrow a scan.
 const MAX_SEARCH_MATCHES = 10_000
+const EVENTS_PAGE = 500
 
 interface BoxPathCollectionEntry {
   type: 'folder'
@@ -101,6 +103,97 @@ export async function listFolderItems(
     }
   }
   return out
+}
+
+/** One user event from `GET /events`; `source` is the item it is about. */
+export interface BoxEvent {
+  type?: string
+  event_id?: string
+  event_type?: string
+  created_at?: string
+  source?: unknown
+}
+
+interface EventsResponse {
+  chunk_size?: number
+  next_stream_position?: string | number | null
+  entries?: BoxEvent[]
+}
+
+/** A `realtime_server` entry from `OPTIONS /events`. */
+export interface BoxRealtimeServer {
+  type: 'realtime_server'
+  url: string
+  ttl?: string | number
+  max_retries?: string | number
+  retry_timeout?: number
+}
+
+function nextPosition(data: EventsResponse): string | null {
+  const value = data.next_stream_position
+  return value === undefined || value === null || value === '' ? null : String(value)
+}
+
+/** The current head of the user's event stream. */
+export async function eventsNow(tm: BoxTokenManager, streamType: string): Promise<string> {
+  const data = (await boxGet(tm, `${tm.apiBase}/events`, {
+    stream_type: streamType,
+    stream_position: 'now',
+  })) as EventsResponse
+  const position = nextPosition(data)
+  if (position === null) throw new Error('Box GET /events returned no next_stream_position')
+  return position
+}
+
+/**
+ * Every user event after `streamPosition`, and the new position.
+ *
+ * Box may answer with fewer events than `limit` while more remain, so only an
+ * empty page ends the read. A page of events that does not move the position
+ * on is refused: reading it again would return the same page for as long as
+ * the server keeps answering that way.
+ */
+export async function eventsSince(
+  tm: BoxTokenManager,
+  streamPosition: string,
+  streamType: string,
+  opts: { limit?: number } = {},
+): Promise<{ entries: BoxEvent[]; position: string }> {
+  const limit = opts.limit ?? EVENTS_PAGE
+  const out: BoxEvent[] = []
+  let position = streamPosition
+  for (;;) {
+    const data = (await boxGet(tm, `${tm.apiBase}/events`, {
+      stream_type: streamType,
+      stream_position: position,
+      limit,
+    })) as EventsResponse
+    const entries = data.entries ?? []
+    const advanced = nextPosition(data)
+    if (entries.length === 0) return { entries: out, position: advanced ?? position }
+    if (advanced === null || advanced === position) {
+      throw new Error('Box GET /events returned events but did not advance next_stream_position')
+    }
+    out.push(...entries)
+    position = advanced
+  }
+}
+
+/**
+ * The long-poll server for the user's event stream.
+ *
+ * `OPTIONS /events` hands back a `realtime_server` entry; a GET on its `url`
+ * with `&stream_position=<position>` blocks until Box answers `new_change`
+ * (read the events) or `reconnect` (ask for a new server). The loop is the
+ * caller's.
+ */
+export async function realtimeServer(tm: BoxTokenManager): Promise<BoxRealtimeServer> {
+  const data = (await boxOptions(tm, `${tm.apiBase}/events`)) as {
+    entries?: BoxRealtimeServer[]
+  }
+  const server = data.entries?.[0]
+  if (server === undefined) throw new Error('Box OPTIONS /events returned no realtime server')
+  return server
 }
 
 export async function getFolderInfo(tm: BoxTokenManager, folderId: string): Promise<BoxItem> {

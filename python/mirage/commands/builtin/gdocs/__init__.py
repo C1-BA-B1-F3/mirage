@@ -15,6 +15,8 @@
 from mirage.commands.builtin.gdocs.io import IO as _IO
 from mirage.commands.builtin.gdocs.rm import rm
 from mirage.commands.builtin.generic_bind import make_generic_commands
+from mirage.commands.builtin.generic_bind.provision import \
+    with_default_provisions
 
 # Docs verbs and API passthroughs live in the gws CLI
 # (mirage.commands.cli.builtin.gws), installed by name; the mount only
@@ -23,6 +25,7 @@ COMMANDS = [
     *make_generic_commands(
         "gdocs",
         _IO,
+        overrides={"rm"},
     ),
-    rm,
+    *with_default_provisions([rm], _IO.stat, _IO.resolve_glob, _IO.readdir),
 ]

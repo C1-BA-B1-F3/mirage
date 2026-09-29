@@ -21,6 +21,9 @@ import {
 } from '@struktoai/mirage-core/vfs/secrets'
 import type { ConfigOf, RedactedConfig } from '@struktoai/mirage-core/vfs/secrets'
 
+// Stricter than core's DropboxConfig on purpose: a server is a confidential
+// client and python requires the secret too, while the browser refreshes as a
+// PKCE public client that has none. The class in core takes either.
 export interface DropboxConfig {
   clientId: string
   clientSecret: string

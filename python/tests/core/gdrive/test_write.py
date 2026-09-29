@@ -15,6 +15,7 @@
 import pytest
 
 from mirage.core.gdrive.write import write_bytes
+from mirage.observe.context import RecordingScope
 from mirage.types import PathSpec
 
 DOC_MIME = "application/vnd.google-apps.document"
@@ -61,3 +62,19 @@ async def test_write_to_native_raises(fake_drive, gdrive_accessor):
     fake_drive.add("Report", mime=DOC_MIME)
     with pytest.raises(PermissionError):
         await write_bytes(gdrive_accessor, spec("/Report.gdoc.json"), b"x")
+
+
+@pytest.mark.asyncio
+async def test_write_records_the_virtual_path(fake_drive, gdrive_accessor):
+    # A folder named like its mount: neither m/k.txt nor /m/k.txt is virtual.
+    fake_drive.folder("m")
+    spec = PathSpec(virtual="/m/m/k.txt",
+                    directory="/m/m/",
+                    vfs_path="m/k.txt")
+    scope = RecordingScope()
+    try:
+        await write_bytes(gdrive_accessor, spec, b"hello")
+    finally:
+        scope.close()
+    assert fake_drive.find("k.txt")["content"] == b"hello"
+    assert [r.path for r in scope.records] == ["/m/m/k.txt"]

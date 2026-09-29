@@ -19,6 +19,7 @@ import pytest
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.commands.builtin.gmail import COMMANDS
 from mirage.commands.config import CommandOpts
+from mirage.io.types import materialize
 from mirage.types import PathSpec
 
 LABELS = [{"id": "INBOX", "type": "system"}]
@@ -80,7 +81,7 @@ async def _run(paths, *texts: str, **flags) -> list[str]:
         stdout, _io = await find(
             AsyncMock(), paths, list(texts),
             CommandOpts(index=RAMIndexCacheStore(), flags={**flags}))
-    data = stdout if isinstance(stdout, bytes) else b""
+        data = await materialize(stdout)
     return data.decode().splitlines()
 
 

@@ -29,15 +29,18 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def cache():
+async def cache(redis_prefix):
     c = RedisFileCacheStore(
         cache_limit="1MB",
         url=REDIS_URL,
-        key_prefix="test:cache:",
+        key_prefix=redis_prefix,
     )
     await c.clear()
     yield c
     await c.clear()
+    # The cache's clear() drops cached data, not the keys its VFS store
+    # wrote (the root directory set), and the prefix is this test's own.
+    await c.accessor.store.clear()
     await c.close()
 
 
@@ -169,18 +172,18 @@ async def test_cache_limit(cache):
 
 
 @pytest.mark.asyncio
-async def test_key_prefix_isolation():
-    c1 = RedisFileCacheStore(url=REDIS_URL, key_prefix="test:cache:ns1:")
-    c2 = RedisFileCacheStore(url=REDIS_URL, key_prefix="test:cache:ns2:")
+async def test_key_prefix_isolation(redis_prefix):
+    c1 = RedisFileCacheStore(url=REDIS_URL, key_prefix=f"{redis_prefix}ns1:")
+    c2 = RedisFileCacheStore(url=REDIS_URL, key_prefix=f"{redis_prefix}ns2:")
     await c1.clear()
     await c2.clear()
     await c1.set("/shared", b"from-c1")
     assert await c2.get("/shared") is None
     assert await c1.get("/shared") == b"from-c1"
-    await c1.clear()
-    await c2.clear()
-    await c1.close()
-    await c2.close()
+    for c in (c1, c2):
+        await c.clear()
+        await c.accessor.store.clear()
+        await c.close()
 
 
 @pytest.mark.asyncio

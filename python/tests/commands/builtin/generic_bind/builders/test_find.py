@@ -17,6 +17,7 @@ import pytest
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
 from mirage.commands.builtin.generic_bind.builders.find import find
 from mirage.commands.config import CommandOpts
+from mirage.io.types import materialize
 from mirage.types import FileStat, FileType, PathSpec
 
 TREE = {
@@ -70,7 +71,7 @@ def _root() -> PathSpec:
 
 async def _lines(ops: CommandIO) -> list[str]:
     stdout, _io = await find(ops, None, [_root()], [], CommandOpts())
-    data = stdout if isinstance(stdout, bytes) else b""
+    data = await materialize(stdout)
     return data.decode().splitlines()
 
 
@@ -101,7 +102,7 @@ async def test_walk_honors_multiple_start_points():
                  vfs_path="notes.txt"),
     ]
     stdout, _io = await find(ops, None, roots, [], CommandOpts())
-    data = stdout if isinstance(stdout, bytes) else b""
+    data = await materialize(stdout)
     lines = data.decode().splitlines()
     # GNU find walks every start point in operand order
     assert "/mnt/table1/rows.jsonl" in lines
@@ -135,7 +136,7 @@ async def test_native_find_honors_multiple_start_points():
                  vfs_path="notes.txt"),
     ]
     stdout, _io = await find(ops, None, roots, [], CommandOpts())
-    data = stdout if isinstance(stdout, bytes) else b""
+    data = await materialize(stdout)
     lines = data.decode().splitlines()
     # The native-op path walks every start point too, in operand order;
     # it used to drop everything after paths[0].

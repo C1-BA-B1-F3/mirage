@@ -46,5 +46,5 @@ async def write_bytes(accessor: GDriveAccessor, path: PathSpec,
         parent_id, _ = await resolve_parent(accessor, path)
         await upload_file(token_manager, posixpath.basename(key), parent_id,
                           data)
-    record("write", key, "gdrive", len(data), timer)
+    record("write", virtual, "gdrive", len(data), timer)
     await invalidate_after_write(path)

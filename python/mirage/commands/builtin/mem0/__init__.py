@@ -17,6 +17,6 @@ from mirage.commands.builtin.mem0.io import IO as _IO
 from mirage.commands.builtin.mem0.search import search
 
 COMMANDS = [
-    *make_generic_commands("mem0", _IO, overrides={"search"}),
+    *make_generic_commands("mem0", _IO),
     search,
 ]

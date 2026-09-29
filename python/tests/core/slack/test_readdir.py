@@ -21,6 +21,7 @@ from mirage.accessor.slack import SlackAccessor
 from mirage.cache.index import IndexEntry, RAMIndexCacheStore
 from mirage.core.slack.config import SlackConfig
 from mirage.core.slack.readdir import _date_range, readdir
+from mirage.core.time_range import TimeRange
 from mirage.types import PathSpec
 
 
@@ -371,3 +372,73 @@ async def test_readdir_skips_unreadable_file_payloads(accessor, index):
         "/channels/general__C001/2026-04-10/files/report__F1.pdf")
     assert lookup.entry is not None
     assert lookup.entry.size == 12
+
+
+async def _dm_without_created(index) -> SlackAccessor:
+    await index.set_dir("/dms", [
+        (
+            "alice__D001",
+            IndexEntry(
+                id="D001",
+                name="alice",
+                resource_type="slack/dm",
+                vfs_name="alice__D001",
+            ),
+        ),
+    ])
+    return SlackAccessor(SlackConfig(token="xoxb-test-token"),
+                         TimeRange.from_strings(None, "2026-06-02T00:00:00Z"))
+
+
+@pytest.mark.asyncio
+async def test_end_scoped_glob_listing_skips_the_history_scan(index):
+    accessor = await _dm_without_created(index)
+    latest = datetime(2026, 6, 20, tzinfo=timezone.utc).timestamp()
+    with (
+            patch("mirage.core.slack.readdir._latest_message_ts",
+                  new_callable=AsyncMock,
+                  return_value=latest),
+            patch("mirage.core.slack.readdir.cursor_pages") as pages,
+    ):
+        result = await readdir(accessor,
+                               PathSpec(virtual="/dms/alice__D001/2026-05-*",
+                                        directory="/dms/alice__D001/",
+                                        vfs_path="dms/alice__D001/2026-05-*",
+                                        pattern="2026-05-*"),
+                               index=index)
+    pages.assert_not_called()
+    assert len(result) == 31
+    assert result[0] == "/dms/alice__D001/2026-05-31"
+    assert result[-1] == "/dms/alice__D001/2026-05-01"
+
+
+@pytest.mark.asyncio
+async def test_end_scoped_bare_listing_pages_only_history_before_the_end(
+        index):
+    accessor = await _dm_without_created(index)
+    latest = datetime(2026, 6, 20, tzinfo=timezone.utc).timestamp()
+    first = datetime(2026, 5, 30, 12, tzinfo=timezone.utc).timestamp()
+    end = datetime(2026, 6, 2, tzinfo=timezone.utc).timestamp()
+    asked = []
+
+    async def pages(config, endpoint, params, items_key, session=None):
+        asked.append(params)
+        yield [{"ts": f"{first + 3600:.6f}"}, {"ts": f"{first:.6f}"}]
+
+    with (
+            patch("mirage.core.slack.readdir._latest_message_ts",
+                  new_callable=AsyncMock,
+                  return_value=latest),
+            patch("mirage.core.slack.readdir.cursor_pages", new=pages),
+    ):
+        result = await readdir(accessor,
+                               PathSpec(vfs_path="dms/alice__D001",
+                                        virtual="/dms/alice__D001",
+                                        directory="/dms/alice__D001"),
+                               index=index)
+    assert asked == [{"channel": "D001", "limit": 200, "latest": f"{end:.6f}"}]
+    assert result == [
+        "/dms/alice__D001/2026-06-01",
+        "/dms/alice__D001/2026-05-31",
+        "/dms/alice__D001/2026-05-30",
+    ]

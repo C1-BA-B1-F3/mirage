@@ -90,21 +90,24 @@ def test_wc_all_missing_zero_total():
 def test_head_good_then_missing_keeps_banner():
     out, err, code = _run(_make_ws(), "head -n 1 /a/f.txt /a/missing.txt")
     assert out == "==> /a/f.txt <==\naaa\n"
-    assert err == "head: /a/missing.txt: No such file or directory\n"
+    assert err == ("head: cannot open '/a/missing.txt' for reading: "
+                   "No such file or directory\n")
     assert code == 1
 
 
 def test_head_missing_first_no_leading_blank():
     out, err, code = _run(_make_ws(), "head -n 1 /a/missing.txt /a/f.txt")
     assert out == "==> /a/f.txt <==\naaa\n"
-    assert err == "head: /a/missing.txt: No such file or directory\n"
+    assert err == ("head: cannot open '/a/missing.txt' for reading: "
+                   "No such file or directory\n")
     assert code == 1
 
 
 def test_tail_good_then_missing_keeps_banner():
     out, err, code = _run(_make_ws(), "tail -n 1 /a/f.txt /a/missing.txt")
     assert out == "==> /a/f.txt <==\naaa\n"
-    assert err == "tail: /a/missing.txt: No such file or directory\n"
+    assert err == ("tail: cannot open '/a/missing.txt' for reading: "
+                   "No such file or directory\n")
     assert code == 1
 
 
@@ -135,14 +138,16 @@ def test_cross_wc_good_then_missing_keeps_total():
 def test_cross_head_good_then_missing_keeps_banner():
     out, err, code = _run(_make_ws(), "head -n 1 /a/f.txt /b/missing.txt")
     assert out == "==> /a/f.txt <==\naaa\n"
-    assert err == "head: /b/missing.txt: No such file or directory\n"
+    assert err == ("head: cannot open '/b/missing.txt' for reading: "
+                   "No such file or directory\n")
     assert code == 1
 
 
 def test_cross_tail_good_then_missing_keeps_banner():
     out, err, code = _run(_make_ws(), "tail -n 1 /a/f.txt /b/missing.txt")
     assert out == "==> /a/f.txt <==\naaa\n"
-    assert err == "tail: /b/missing.txt: No such file or directory\n"
+    assert err == ("tail: cannot open '/b/missing.txt' for reading: "
+                   "No such file or directory\n")
     assert code == 1
 
 
@@ -227,7 +232,8 @@ def test_sha256sum_good_then_missing():
 def test_tac_good_then_missing():
     out, err, code = _run(_make_numbered_ws(), "tac /a/f.txt /a/missing.txt")
     assert out == "2\n1\n"
-    assert err == "tac: /a/missing.txt: No such file or directory\n"
+    assert err == ("tac: failed to open '/a/missing.txt' for reading: "
+                   "No such file or directory\n")
     assert code == 1
 
 
@@ -272,7 +278,8 @@ def test_fold_good_then_missing():
 def test_fmt_good_then_missing():
     out, err, code = _run(_make_numbered_ws(), "fmt /a/f.txt /a/missing.txt")
     assert out == "1 2\n"
-    assert err == "fmt: /a/missing.txt: No such file or directory\n"
+    assert err == ("fmt: cannot open '/a/missing.txt' for reading: "
+                   "No such file or directory\n")
     assert code == 1
 
 
@@ -289,17 +296,19 @@ def test_zcat_good_then_missing():
     _run(ws, "printf 'z\\n' > /a/z1.txt && gzip /a/z1.txt")
     out, err, code = _run(ws, "zcat /a/z1.txt.gz /a/missing.gz")
     assert out == "z\n"
-    assert err == "zcat: /a/missing.gz: No such file or directory\n"
+    assert err == "gzip: /a/missing.gz: No such file or directory\n"
     assert code == 1
 
 
 def test_sort_still_aborts_on_missing():
     # GNU sort needs all input before emitting anything, so no partial
-    # output; it reports the operand and exits 2 (coreutils 9.7), which
-    # is sort's code for any failed read, not just a directory.
+    # output; it reports the operand in its own `cannot read:` words and
+    # exits 2 (coreutils 9.7), which is sort's code for any failed read,
+    # not just a directory.
     out, err, code = _run(_make_numbered_ws(), "sort /a/f.txt /a/missing.txt")
     assert out == ""
-    assert err == "sort: /a/missing.txt: No such file or directory\n"
+    assert err == ("sort: cannot read: /a/missing.txt: "
+                   "No such file or directory\n")
     assert code == 2
 
 
@@ -335,7 +344,8 @@ def test_cross_md5_good_then_missing():
 def test_stat_good_then_missing_keeps_row():
     out, err, code = _run(_make_ws(), "stat /a/f.txt /a/missing.txt")
     assert "name=f.txt" in out
-    assert err == "stat: /a/missing.txt: No such file or directory\n"
+    assert err == ("stat: cannot statx '/a/missing.txt': "
+                   "No such file or directory\n")
     assert code == 1
 
 
@@ -345,7 +355,7 @@ def test_sed_good_then_missing_keeps_output():
     out, err, code = _run(_make_numbered_ws(),
                           "sed s/1/X/ /a/f.txt /a/missing.txt")
     assert out == "X\n2\n"
-    assert err == "sed: /a/missing.txt: No such file or directory\n"
+    assert err == "sed: can't read /a/missing.txt: No such file or directory\n"
     assert code == 2
 
 
@@ -357,7 +367,7 @@ def test_cross_sed_good_then_missing_keeps_output():
     out, err, code = _run(_make_cross_numbered_ws(),
                           "sed s/1/X/ /a/f.txt /b/missing.txt")
     assert out == "X\n2\n"
-    assert err == "sed: /b/missing.txt: No such file or directory\n"
+    assert err == "sed: can't read /b/missing.txt: No such file or directory\n"
     assert code == 2
 
 
@@ -365,5 +375,6 @@ def test_cross_sort_aborts_like_single_mount():
     out, err, code = _run(_make_cross_numbered_ws(),
                           "sort /a/f.txt /b/missing.txt")
     assert out == ""
-    assert err == "sort: /b/missing.txt: No such file or directory\n"
+    assert err == ("sort: cannot read: /b/missing.txt: "
+                   "No such file or directory\n")
     assert code == 2

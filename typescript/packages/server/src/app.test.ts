@@ -15,9 +15,12 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import ssh2 from 'ssh2'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from './app.ts'
 import { DaemonConfigError } from './daemon_config.ts'
+import type { SSHConfig } from './ssh/config.ts'
+import { mintKeyPair } from './ssh/keys.ts'
 
 describe('buildApp pid file wiring', () => {
   afterEach(() => {
@@ -60,3 +63,95 @@ describe('buildApp config validation', () => {
     await app.close()
   })
 })
+
+describe('buildApp ssh door', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.doUnmock('ssh2')
+  })
+
+  function sshConfigIn(dir: string, publicKey: string): SSHConfig {
+    writeFileSync(join(dir, 'authorized_keys'), `${publicKey}\n`)
+    return {
+      port: 0,
+      host: '127.0.0.1',
+      hostKeyFile: join(dir, 'host_key'),
+      authorizedKeysFile: join(dir, 'authorized_keys'),
+    }
+  }
+
+  it('stays shut by default', async () => {
+    vi.stubEnv('MIRAGE_HOME', mkdtempSync(join(tmpdir(), 'mir-app-')))
+    vi.stubEnv('MIRAGE_SSH_PORT', '')
+    const app = buildApp()
+    await app.ready()
+    expect(app.ssh.config).toBeNull()
+    expect(app.ssh.listener).toBeNull()
+    await app.close()
+  })
+
+  it('serves a workspace made over HTTP, and closes with the app', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mir-app-'))
+    const pair = mintKeyPair(ssh2.utils)
+    const app = buildApp({
+      pidFile: join(dir, 'daemon.pid'),
+      sshConfig: sshConfigIn(dir, pair.public),
+    })
+    await app.ready()
+    const port = app.ssh.listener?.port ?? 0
+    const created = await app.inject({
+      method: 'POST',
+      url: '/v1/workspaces',
+      payload: { config: { mounts: { '/': { vfs: 'ram', mode: 'WRITE' } } } },
+    })
+    const wid = created.json<{ id: string }>().id
+    const out = await sshExec(port, wid, pair.private, 'echo over-ssh > /f && cat /f')
+    const viaHttp = await app.inject({
+      method: 'POST',
+      url: `/v1/workspaces/${wid}/execute`,
+      payload: { command: 'cat /f' },
+    })
+    expect(out).toBe('over-ssh\n')
+    expect(viaHttp.json<{ stdout: string }>().stdout).toBe('over-ssh\n')
+    await app.close()
+    await expect(sshExec(port, wid, pair.private, 'true')).rejects.toThrow()
+  })
+
+  it('fails the start when ssh2 is missing', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mir-app-'))
+    vi.doMock('ssh2', () => {
+      throw new Error("Cannot find package 'ssh2'")
+    })
+    const app = buildApp({ pidFile: join(dir, 'daemon.pid'), sshConfig: sshConfigIn(dir, 'x') })
+    await expect(app.ready()).rejects.toThrow(/needs ssh2/)
+  })
+})
+
+function sshExec(
+  port: number,
+  username: string,
+  privateKey: string,
+  command: string,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const client = new ssh2.Client()
+    client.on('error', reject)
+    client.on('ready', () => {
+      client.exec(command, (err, stream) => {
+        if (err !== undefined) {
+          reject(err)
+          return
+        }
+        let out = ''
+        stream.on('data', (d: Buffer) => {
+          out += d.toString()
+        })
+        stream.on('close', () => {
+          client.end()
+          resolve(out)
+        })
+      })
+    })
+    client.connect({ host: '127.0.0.1', port, username, privateKey })
+  })
+}

@@ -51,6 +51,9 @@ def latest_fingerprint(records: list[OpRecord] | None, path: str,
     which is what a fabricated one produced anyway on every backend whose
     token is not an md5 of the content.
 
+    For reads only the newest read of the path counts: when it carries no
+    token, neither does the entry, whatever an earlier read stamped.
+
     ``ops`` is the direction the caller took, never both. One line's
     records span every statement and pipeline segment (``IOResult.merge``
     unions them), so a path read and written on the same line carries a
@@ -71,6 +74,13 @@ def latest_fingerprint(records: list[OpRecord] | None, path: str,
     if records is None:
         return None
     for rec in reversed(records):
+        if (rec.op in READ_FINGERPRINT_OPS and rec.op in ops
+                and rec.path == path and not rec.fingerprint):
+            # The newest read is the one whose bytes are stored, and the
+            # backend did not vouch for them: an older read's token would
+            # label bytes it never described, which a later revert to that
+            # token serves as fresh.
+            return None
         if rec.op in ops and rec.path == path and rec.fingerprint:
             if rec.op in WRITE_FINGERPRINT_OPS and rec.bytes != nbytes:
                 # Direction is not identity: a line can hold several ops

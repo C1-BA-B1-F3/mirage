@@ -32,6 +32,234 @@
       "flags": [
         "i"
       ]
+    },
+    {
+      "id": "zgrep_i_case_folding_is_ascii",
+      "seq": 500530,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf '\\342\\204\\252\\n' | gzip > /data/zgi1.gz; zgrep -i k /data/zgi1.gz",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "i"
+      ]
+    },
+    {
+      "id": "zgrep_i_case_folding_is_ascii_long_s",
+      "seq": 500531,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf '\\305\\277\\n' | gzip > /data/zgi2.gz; zgrep -i s /data/zgi2.gz",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "i"
+      ]
+    },
+    {
+      "id": "zgrep_ci_counts_ascii_folds_only",
+      "seq": 500532,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf '\\342\\204\\252\\n\\305\\277\\nk\\n' | gzip > /data/zgi3.gz; zgrep -ci k /data/zgi3.gz",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "i"
+      ]
+    },
+    {
+      "id": "zgrep_io_prints_ascii_folds_only",
+      "seq": 500533,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf '\\342\\204\\252\\n\\305\\277\\nk\\n' | gzip > /data/zgi4.gz; zgrep -io k /data/zgi4.gz",
+      "expect": {
+        "exit": 0,
+        "stdout": "k\n",
+        "stderr": ""
+      },
+      "flags": [
+        "i",
+        "o"
+      ]
+    },
+    {
+      "id": "zgrep_il_lists_ascii_folds_only",
+      "seq": 500534,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf '\\342\\204\\252\\n\\305\\277\\nk\\n' | gzip > /data/zgi5.gz; zgrep -il s /data/zgi5.gz",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      },
+      "flags": [
+        "i",
+        "l"
+      ]
+    },
+    {
+      "id": "zgrep_casefold_accent",
+      "seq": 1326022,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'ÉLAN\\nélan\\n' | gzip > /data/casefold.gz; zgrep -i é /data/casefold.gz",
+      "expect": {
+        "exit": 0,
+        "stdout": "élan\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "zgrep_casefold_only_matching",
+      "seq": 1326023,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'ÉAb éAB\\n' | gzip > /data/casefold.gz; zgrep -oib 'éab' /data/casefold.gz",
+      "expect": {
+        "exit": 0,
+        "stdout": "5:éAB\n",
+        "stderr": ""
+      }
     }
   ]
 }

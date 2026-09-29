@@ -19,12 +19,16 @@ from typing import Any
 
 import aiohttp
 
-from mirage.core.api.client import SessionArg, api_request
+from mirage.core.api.client import RetryPolicy, SessionArg, api_request
 from mirage.core.api.paginate import cursor_items
 from mirage.core.notion.config import NotionConfig
 from mirage.core.notion.constants import API_VERSION, MAX_PAGE_SIZE
 from mirage.types import JsonValue
 from mirage.vfs.secrets import reveal_secret
+
+_RATE_LIMIT_RETRY = RetryPolicy(statuses=frozenset({429, 529}),
+                                max_retries=3,
+                                max_backoff=float("inf"))
 
 
 class NotionAPIError(RuntimeError):
@@ -82,6 +86,7 @@ async def notion_get(config: NotionConfig,
     data: dict[str, Any] = await api_request("GET",
                                              f"{config.base_url}{path}",
                                              error_of=_error_of,
+                                             retry=_RATE_LIMIT_RETRY,
                                              headers=notion_headers(
                                                  config, extra_headers),
                                              params=params,
@@ -102,6 +107,7 @@ async def notion_post(config: NotionConfig,
         "POST",
         f"{config.base_url}{path}",
         error_of=_error_of,
+        retry=_RATE_LIMIT_RETRY,
         headers=notion_headers(config, extra_headers),
         params=params,
         json_body=body if body is not None else {},
@@ -119,6 +125,7 @@ async def notion_patch(config: NotionConfig,
         "PATCH",
         f"{config.base_url}{path}",
         error_of=_error_of,
+        retry=_RATE_LIMIT_RETRY,
         headers=notion_headers(config, extra_headers),
         params=params,
         json_body=body if body is not None else {},
@@ -136,6 +143,7 @@ async def notion_put(config: NotionConfig,
         "PUT",
         f"{config.base_url}{path}",
         error_of=_error_of,
+        retry=_RATE_LIMIT_RETRY,
         headers=notion_headers(config, extra_headers),
         params=params,
         json_body=body if body is not None else {},
@@ -155,6 +163,7 @@ async def notion_delete(config: NotionConfig,
     data: dict[str, Any] = await api_request("DELETE",
                                              f"{config.base_url}{path}",
                                              error_of=_error_of,
+                                             retry=_RATE_LIMIT_RETRY,
                                              headers=notion_headers(
                                                  config, extra_headers),
                                              params=params,
@@ -186,6 +195,25 @@ async def paginate_list(
         partial(_list_page, config, path, merged, session=session))
 
 
+def complete_page(page: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a list response Notion marked incomplete.
+
+    Args:
+        page (dict[str, Any]): one list response.
+
+    Returns:
+        dict[str, Any]: the same response, when it is complete.
+
+    Raises:
+        NotionAPIError: when ``request_status`` says the rows stop short.
+    """
+    status = page.get("request_status")
+    if isinstance(status, dict) and status.get("type") == "incomplete":
+        reason = status.get("incomplete_reason", "unknown")
+        raise NotionAPIError(f"Notion query incomplete: {reason}", code=reason)
+    return page
+
+
 async def _post_page(config: NotionConfig,
                      path: str,
                      body: dict[str, Any],
@@ -194,7 +222,10 @@ async def _post_page(config: NotionConfig,
     merged = dict(body)
     if cursor is not None:
         merged["start_cursor"] = cursor
-    return await notion_post(config, path, merged, session=session)
+    return complete_page(await notion_post(config,
+                                           path,
+                                           merged,
+                                           session=session))
 
 
 async def paginate_post(

@@ -133,20 +133,26 @@ async def explore_databases(ws: Workspace) -> None:
     await run(ws, f"cat {source_base}/data_source.json", limit=1500)
     await run(ws, f'jq ".properties | keys" {source_base}/data_source.json')
 
-    row = await pick_child(ws, source_base, "data_source.json")
-    if not row:
-        print("Data source has no row pages\n")
-        return
-    row_base = f"{source_base}/{row}"
-    print(f"--- row page: {row} ---\n")
-    await run(ws, f"ls {row_base}/")
-    await run(ws, f"stat {row_base}/page.json")
-    await run(ws, f"cat {row_base}/page.json", limit=1200)
-    await run(ws, f'jq ".parent_type" {row_base}/page.json')
-    await run(ws, f'jq ".parent_id" {row_base}/page.json')
-    # A row's cells ride in the file, as Notion's own property objects,
+    await run(ws, f"head -n 2 {source_base}/rows.jsonl", limit=1200)
+    await run(ws, f"wc -l {source_base}/rows.jsonl")
+    await run(ws, f'jq -r ".title" {source_base}/rows.jsonl')
+    # A row's cells ride on its line, as Notion's own property objects,
     # answering to the schema in the data_source.json above.
-    await run(ws, f'jq ".properties | keys" {row_base}/page.json')
+    await run(ws,
+              f'head -n 1 {source_base}/rows.jsonl | jq ".properties | keys"')
+
+    row = (await
+           run(ws,
+               f'head -n 1 {source_base}/rows.jsonl | jq -r ".path"')).strip()
+    if not row:
+        print("Data source has no rows\n")
+        return
+    row_json = f"{source_base}/{row}"
+    print(f"--- row page: {row} ---\n")
+    await run(ws, f"stat {row_json}")
+    await run(ws, f"cat {row_json}", limit=1200)
+    await run(ws, f'jq ".parent_type" {row_json}')
+    await run(ws, f'jq ".markdown" {row_json}')
 
 
 async def explore_cross_cutting(ws: Workspace) -> None:

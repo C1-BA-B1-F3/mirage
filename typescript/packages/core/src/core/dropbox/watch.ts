@@ -13,20 +13,13 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { DropboxAccessor } from '../../accessor/dropbox.ts'
-import {
-  Delta,
-  FileChangeKind,
-  FileEvent,
-  FileMetadata,
-  type PathSpec,
-  type WalkEntry,
-} from '../../types.ts'
+import { Delta, type PathSpec, type WalkEntry } from '../../types.ts'
 import { mountPrefixOf } from '../../utils/key_prefix.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import type { DeltaHook } from '../../watch/base.ts'
 import { DIR_FINGERPRINT } from '../../watch/constants.ts'
-import { ListingDeltaHook, specFor } from '../../watch/delta.ts'
+import { diffSnapshots, ListingDeltaHook } from '../../watch/delta.ts'
 import { statFingerprint } from '../../watch/fingerprint.ts'
 import { DropboxApiError } from './client.ts'
 import {
@@ -159,50 +152,6 @@ function decode(checkpoint: string | null): {
     return { cursor: data.c, snapshot: data.s as Record<string, string>, native: true }
   }
   return { cursor: null, snapshot: data as Record<string, string>, native: false }
-}
-
-function eventOf(
-  root: PathSpec,
-  virtual: string,
-  kind: FileChangeKind,
-  entry: WalkEntry | undefined,
-  observed: Date,
-): FileEvent {
-  const metadata =
-    entry !== undefined && !entry.isDir && kind !== FileChangeKind.DELETE
-      ? new FileMetadata({
-          fingerprint: entry.fingerprint,
-          size: entry.size ?? null,
-          modified: entry.modified ?? null,
-        })
-      : null
-  return new FileEvent({ kind, path: specFor(root, virtual), timestamp: observed, metadata })
-}
-
-function diffSnapshots(
-  root: PathSpec,
-  previous: Record<string, string>,
-  current: Record<string, string>,
-  entries: Map<string, WalkEntry>,
-  observed: Date,
-): FileEvent[] {
-  const keys = [...new Set([...Object.keys(current), ...Object.keys(previous)])].sort(
-    compareCodePoints,
-  )
-  const changes: FileEvent[] = []
-  for (const virtual of keys) {
-    const old = previous[virtual]
-    const next = current[virtual]
-    if (old === next) continue
-    const kind =
-      old === undefined && next !== undefined
-        ? FileChangeKind.CREATE
-        : next === undefined
-          ? FileChangeKind.DELETE
-          : FileChangeKind.UPDATE
-    changes.push(eventOf(root, virtual, kind, entries.get(virtual), observed))
-  }
-  return changes
 }
 
 function dropPrefix(snapshot: Record<string, string>, virtual: string): Record<string, string> {

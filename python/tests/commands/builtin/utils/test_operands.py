@@ -67,7 +67,7 @@ async def test_split_readable_reports_stat_typed_dir_as_eisdir():
     good, err = await split_readable([PathSpec.from_str_path("/sub")],
                                      _stat_over({}, dirs={"/sub"}), "head")
     assert good == []
-    assert err == b"head: /sub: Is a directory\n"
+    assert err == b"head: error reading '/sub': Is a directory\n"
 
 
 @pytest.mark.asyncio

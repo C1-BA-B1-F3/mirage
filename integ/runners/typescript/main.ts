@@ -28,11 +28,12 @@ import {
   loadServices,
   loadTargets,
   missingEnv,
+  mountReadOf,
   parseAllowSkip,
   bindMount,
   ruleReasons,
   runCase,
-  runScenario,
+  runConsistencyCase,
   seedFixture,
   seedMountRoot,
 } from './harness.ts'
@@ -291,28 +292,25 @@ export async function runTarget(
     // would otherwise run the bounded scenario and report it green, which
     // is the silent downgrade this suite exists to catch.
     const spec: ReadSpec = resolveReadSpec(c.read, c.ttl)
-    const opened = await openConsistency(target, spec)
-    if (opened === null) {
-      // Loud on purpose: an adapter that cannot build a shadow workspace used
-      // to drop every scenario case for its target without a word.
-      process.stderr.write(
-        `skip [${target.id}] ${c.id}: ${target.mounts[0].vfs} adapter has no shadow workspace\n`,
-      )
-      continue
-    }
-    try {
-      // Same rule as the ordinary path: a target's declared environment reaches
-      // every workspace a case can run against, or a consistency scenario would
-      // silently run under a different one.
-      opened.ws.env = { ...opened.ws.env, ...(target.env ?? {}) }
-      const { exitCode, out } = await runScenario(opened.ws, opened.mutate, c.scenario)
-      if (emit !== null) {
-        emit.push({ target: target.id, id: c.id, exit: exitCode, stdout: out, stderr: '' })
-      } else if (report !== null) {
-        report.record(target.id, c.id, compare(c, exitCode, out, '', 0))
-      }
-    } finally {
-      await opened.cleanup()
+    const run = await runConsistencyCase(
+      () => openConsistency(target, spec, mountReadOf(c)),
+      c,
+      target,
+    )
+    // Loud on purpose, and a failure: an adapter that cannot build a shadow
+    // workspace used to drop every scenario case for its target without a
+    // word, and after that to skip them with one line and exit 0.
+    if (run.stderr !== '') process.stderr.write(run.stderr)
+    if (emit !== null) {
+      emit.push({
+        target: target.id,
+        id: c.id,
+        exit: run.exitCode,
+        stdout: run.out,
+        stderr: run.stderr,
+      })
+    } else if (report !== null) {
+      report.record(target.id, c.id, compare(c, run.exitCode, run.out, run.stderr, 0))
     }
   }
 }
@@ -345,6 +343,7 @@ async function main(): Promise<void> {
   // broken job, which is the whole point of --strict.
   const allowed = parseAllowSkip(services, allowSkip)
   const envSkipped: string[] = []
+  const unadapted: string[] = []
   const eligible: Target[] = []
   for (const id of ids) {
     const target = manifest.get(id)
@@ -355,6 +354,7 @@ async function main(): Promise<void> {
     }
     if (!(target.mounts[0].vfs in ADAPTERS)) {
       process.stderr.write(`skip [${id}]: no typescript adapter\n`)
+      unadapted.push(id)
       continue
     }
     const missing = missingEnv(services, target, 'typescript')
@@ -396,6 +396,17 @@ async function main(): Promise<void> {
     process.stderr.write(
       `strict: ${String(envSkipped.length)} target(s) skipped for missing env: ` +
         `${envSkipped.join('; ')}\n`,
+    )
+    process.exit(2)
+  }
+
+  // A target that lists a typescript host but has no adapter here skips the
+  // same quiet way, and --allow-skip does not excuse it: the manifest says it
+  // runs. Mirrors python's run_verdict.
+  if (strict && unadapted.length) {
+    process.stderr.write(
+      `strict: ${String(unadapted.length)} target(s) list typescript but have no ` +
+        `typescript adapter: ${unadapted.join(', ')}\n`,
     )
     process.exit(2)
   }

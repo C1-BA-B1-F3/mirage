@@ -15,6 +15,7 @@ from mirage.core.nextcloud.search import (Bounds, FilesSearchQuery,
                                           SearchEntry, search_files,
                                           supports_query)
 from mirage.types import FindType, PathSpec
+from mirage.utils.stat_view import DIR_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +179,7 @@ def _matches(candidate: _Candidate, scope: _FindScope,
     if not keep(entry, criteria.predicate, criteria.min_depth):
         return False
     if criteria.size.constrained:
-        size = 0 if candidate.is_directory else (candidate.size or 0)
+        size = DIR_SIZE if candidate.is_directory else (candidate.size or 0)
         if not criteria.size.contains(size):
             return False
     if criteria.modified.constrained:
@@ -269,7 +270,7 @@ def _empty_state(candidate: _Candidate,
                  nonempty_directories: set[str]) -> bool:
     if candidate.is_directory:
         return candidate.key not in nonempty_directories
-    return (candidate.size or 0) == 0
+    return candidate.size == 0
 
 
 async def _hydrate_scan_candidate(

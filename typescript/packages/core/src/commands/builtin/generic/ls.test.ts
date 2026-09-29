@@ -13,10 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { mountKey } from '../../../utils/key_prefix.ts'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ContentType, FileStat, FileType, LINK_TARGET_KEY, PathSpec } from '../../../types.ts'
 import type { LinkView, MountView } from '../../../ops/types.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
+import { DIR_SIZE } from '../../../utils/stat_view.ts'
 import type { CommandOpts } from '../../config.ts'
 import {
   LS_FAILURE,
@@ -24,13 +25,17 @@ import {
   LS_OK,
   exitStatusFor,
   filevercmp,
+  indicatorFlag,
   lsGeneric,
   parseFlags,
   sortStats,
+  typeIndicator,
 } from './ls.ts'
-import { UsageError } from '../../errors.ts'
+import { CommandTimeoutError, UsageError } from '../../errors.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { SPECS, parseCommand } from '../../spec/index.ts'
+import { parseToKwargs } from '../../spec/parser.ts'
 import { type FlagValue } from '../../spec/types.ts'
 
 const DEC = new TextDecoder()
@@ -365,10 +370,10 @@ describe('lsGeneric exit codes', () => {
   })
 
   it('exits 1 when an entry below the operand cannot be stat', async () => {
-    const [code, out] = await status(['/half'])
+    const [code, out] = await status(['/half'], { args_l: true })
     expect(code).toBe(LS_MINOR_PROBLEM)
-    // The unreadable entry is skipped, not fatal: the listing still renders.
-    expect(out).not.toContain('locked.txt')
+    // Not fatal, and not dropped: the entry keeps GNU's row of `?`.
+    expect(out).toContain('? locked.txt')
   })
 
   it('exits 1 when -R cannot open a subdirectory, keeping parent output', async () => {
@@ -637,35 +642,88 @@ describe('structure-only directories', () => {
 })
 
 describe('honest per-entry errors', () => {
-  function enoent(p: string): Error {
+  function stamped(p: string, code: string): Error {
     const e = new Error(p) as Error & { code: string }
-    e.code = 'ENOENT'
+    e.code = code
     return e
   }
 
   function statFailingEntries(err: Error) {
-    return (p: PathSpec): Promise<FileStat> => (key(p) === '/' ? stat(p) : Promise.reject(err))
+    return (p: PathSpec): Promise<FileStat> =>
+      key(p) === '/apple.txt' ? Promise.reject(err) : stat(p)
   }
 
-  it('warns per entry and ratchets the exit code on a stamped fs error', async () => {
-    const result = await lsGeneric(
-      [spec('/')],
-      opts({}),
-      readdir,
-      statFailingEntries(enoent('/apple.txt')),
+  async function run(flags: Record<string, boolean>, err: Error) {
+    const result = await lsGeneric([spec('/')], opts(flags), readdir, statFailingEntries(err))
+    return {
+      code: result?.[1].exitCode,
+      stdout: DEC.decode(result?.[0] as Uint8Array),
+      stderr: DEC.decode((result?.[1].stderr ?? new Uint8Array()) as Uint8Array),
+    }
+  }
+
+  // GNU (coreutils 9.7, EIO injected on one entry with strace) lists every
+  // name, and only a listing that stats the entry (-l, -F, -t, -i ...)
+  // reports it, whatever the errno, and exits 1.
+  it('lists a name whose stat failed without a word when nothing needs the stat', async () => {
+    const host = (['debug', 'log', 'info', 'warn', 'error'] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation(() => undefined),
     )
-    expect(result?.[1].exitCode).toBe(LS_MINOR_PROBLEM)
-    const stderr = DEC.decode(result?.[1].stderr as Uint8Array)
-    expect(stderr).toContain("ls: cannot access '/apple.txt': No such file or directory")
+    try {
+      for (const err of [stamped('/apple.txt', 'ENOENT'), new Error('socket hang up')]) {
+        const { code, stdout, stderr } = await run({}, err)
+        expect(code).toBe(LS_OK)
+        expect(stdout).toBe('Banana.txt\nCHERRY.txt\napple.txt\n')
+        expect(stderr).toBe('')
+      }
+      for (const spy of host) expect(spy).not.toHaveBeenCalled()
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 
-  it('propagates an unstamped backend error instead of laundering it', async () => {
-    // An error with no POSIX code (auth failure, transport prose) must not
-    // become a GNU-shaped 'cannot access' line.
+  it('keeps a ? row and reports the entry when the listing needs its stat', async () => {
+    const { code, stdout, stderr } = await run({ args_l: true }, stamped('/apple.txt', 'ENOENT'))
+    expect(code).toBe(LS_MINOR_PROBLEM)
+    expect(stdout.split('\n')[3]).toBe('?????????? ? ? ? ?            ? apple.txt')
+    expect(stderr).toBe("ls: cannot access '/apple.txt': No such file or directory\n")
+  })
+
+  it('reports an unstamped backend error in its own words, not a GNU phrase', async () => {
     const raw = new Error('S3 GET apple.txt failed: 403 Forbidden')
-    await expect(
-      lsGeneric([spec('/')], opts({}), readdir, statFailingEntries(raw)),
-    ).rejects.toThrow('403 Forbidden')
+    const { code, stdout, stderr } = await run({ classify: true }, raw)
+    expect(code).toBe(LS_MINOR_PROBLEM)
+    expect(stdout).toBe('Banana.txt\nCHERRY.txt\napple.txt\n')
+    expect(stderr).toBe("ls: cannot access '/apple.txt': S3 GET apple.txt failed: 403 Forbidden\n")
+  })
+
+  it('words a stamped EIO the way GNU does', async () => {
+    const { stderr } = await run({ args_l: true }, stamped('/apple.txt', 'EIO'))
+    expect(stderr).toBe("ls: cannot access '/apple.txt': Input/output error\n")
+  })
+
+  // GNU (coreutils 9.7, both entries' stat denied) zeroes a failed stat, so
+  // -S sorts the rows as size 0 even where readdir marked a directory.
+  it('-S counts an unstattable directory as size 0', async () => {
+    const marking = (p: PathSpec): Promise<string[]> =>
+      Promise.resolve(key(p) === '/' ? ['/afile', '/zdir/'] : [])
+    const denying = (p: PathSpec): Promise<FileStat> =>
+      key(p) === '/' ? stat(p) : Promise.reject(stamped(key(p), 'EACCES'))
+    const result = await lsGeneric([spec('/')], opts({ S: true }), marking, denying)
+    expect(result?.[1].exitCode).toBe(LS_MINOR_PROBLEM)
+    expect(DEC.decode(result?.[0] as Uint8Array)).toBe('afile\nzdir\n')
+  })
+
+  it('still ends the command on a timeout or an abort', async () => {
+    await expect(run({}, new CommandTimeoutError('stat', 5))).rejects.toThrow('timed out')
+    await expect(run({}, new DOMException('execute aborted', 'AbortError'))).rejects.toThrow(
+      'execute aborted',
+    )
+  })
+
+  it("still propagates the operand's own unstamped failure", async () => {
+    const failing = (): Promise<string[]> => Promise.reject(new Error('socket hang up'))
+    await expect(lsGeneric([spec('/')], opts({}), failing, stat)).rejects.toThrow('socket hang up')
   })
 
   it('-d propagates an unstamped stat error', async () => {
@@ -792,6 +850,19 @@ describe('lsGeneric sort orders', () => {
     expect(names(sortStats(wide, 'width', false))).toEqual(['a', 'é', 'aa', 'e\u0301x', '界'])
   })
 
+  it('sortStats: -S counts a directory as DIR_SIZE bytes', () => {
+    const rows = [
+      new FileStat({ name: 'small.txt', type: FileType.FILE, size: 3 }),
+      new FileStat({ name: 'sub', type: FileType.DIRECTORY }),
+      new FileStat({ name: 'big.txt', type: FileType.FILE, size: DIR_SIZE + 1 }),
+    ]
+    expect(sortStats(rows, 'size', false).map((s) => s.name)).toEqual([
+      'big.txt',
+      'sub',
+      'small.txt',
+    ])
+  })
+
   it('filevercmp orders bytes past the letters', () => {
     // Pinned on coreutils 9.7 under LC_ALL=C: `_ { é ÿ Ā €` and
     // `a- a{ aé`, since gnulib classifies bytes, not code points.
@@ -830,7 +901,7 @@ describe('lsGeneric columns and time styles', () => {
   it('-g -o drop the owner and group, -i and -Z lead with ?', async () => {
     expect(
       await line({ g: true, o: true, inode: true, context: true, time_style: 'long-iso' }),
-    ).toBe('? -rw-r--r-- 1 ? 42 2025-01-15 10:30 a.txt\n')
+    ).toBe('total ?\n? -rw-r--r-- 1 ? 42 2025-01-15 10:30 a.txt\n')
     expect(await line({ inode: true, context: true })).toBe('? ? a.txt\n')
   })
 
@@ -842,16 +913,16 @@ describe('lsGeneric columns and time styles', () => {
     ['+%Y\n%H:%M', '2025'],
   ])('--time-style=%s spells an old time as GNU does', async (style, expected) => {
     expect(await line({ g: true, o: true, time_style: style })).toBe(
-      `-rw-r--r-- 1 42 ${expected} a.txt\n`,
+      `total ?\n-rw-r--r-- 1 42 ${expected} a.txt\n`,
     )
   })
 
   it('--block-size scales and rounds up', async () => {
     expect(await line({ g: true, o: true, block_size: 'K', time_style: '+x' })).toBe(
-      '-rw-r--r-- 1 1K x a.txt\n',
+      'total ?\n-rw-r--r-- 1 1K x a.txt\n',
     )
     expect(await line({ g: true, o: true, block_size: '4', time_style: '+x' })).toBe(
-      '-rw-r--r-- 1 11 x a.txt\n',
+      'total ?\n-rw-r--r-- 1 11 x a.txt\n',
     )
   })
 
@@ -1131,5 +1202,121 @@ describe('ls --block-size refusals are worded as GNU words them', () => {
     expect(caught).toBeInstanceOf(UsageError)
     expect((caught as UsageError).message).toBe(message)
     expect((caught as UsageError).exitCode).toBe(2)
+  })
+})
+
+describe('dot entries respect mount boundaries', () => {
+  for (const prefix of ['', '/data', '/nested/data']) {
+    for (const subdir of [false, true]) {
+      it.each([false, true])(
+        `prefix=${prefix} subdir=${String(subdir)} namespace=%s`,
+        async (namespace) => {
+          const root = prefix || '/'
+          const directory = subdir ? `${prefix}/sub` : root
+          const tree = new Map([
+            [root, new FileStat({ name: 'root', type: FileType.DIRECTORY, mode: 0o751 })],
+            [`${prefix}/sub`, new FileStat({ name: 'sub', type: FileType.DIRECTORY, mode: 0o750 })],
+          ])
+          const backendStat = vi.fn((path: PathSpec): Promise<FileStat> => {
+            const row = tree.get(path.virtual)
+            if (row === undefined) throw new Error(`out-of-mount stat: ${path.virtual}`)
+            expect(path.vfsPath).toBe(mountKey(path.virtual, prefix))
+            return Promise.resolve(row)
+          })
+          const read = (path: PathSpec): Promise<string[]> =>
+            Promise.resolve(path.virtual === root ? [`${prefix}/sub`] : [])
+          const statPath = vi.fn(
+            (path: string): Promise<FileStat> =>
+              Promise.resolve(
+                tree.get(path) ??
+                  new FileStat({
+                    name: 'parent',
+                    type: FileType.DIRECTORY,
+                    mode: 0o700,
+                  }),
+              ),
+          )
+          const options = opts({ all: true, args_l: true })
+          if (namespace) options.statPath = statPath
+          const result = await lsGeneric(
+            [new PathSpec({ virtual: directory, directory, vfsPath: subdir ? 'sub' : '' })],
+            options,
+            read,
+            backendStat,
+          )
+          expect(result?.[1].exitCode).toBe(0)
+          expect(result?.[1].stderr).toBeNull()
+          const output = DEC.decode(result?.[0] as Uint8Array)
+          const dotMode = subdir ? 'drwxr-x---' : 'drwxr-x--x'
+          const parentMode =
+            subdir || !prefix ? 'drwxr-x--x' : namespace ? 'drwx------' : 'drwxr-xr-x'
+          expect(output).toContain(`${dotMode} 1 - - 4096 - .\n`)
+          expect(output).toContain(`${parentMode} 1 - - 4096 - ..\n`)
+          if (namespace) {
+            const parent = subdir ? root : root.slice(0, root.lastIndexOf('/')) || '/'
+            expect(statPath.mock.calls.slice(-2)).toEqual([[directory], [parent]])
+          } else {
+            expect(backendStat).toHaveBeenCalled()
+          }
+        },
+      )
+    }
+  }
+})
+
+function lsView(...argv: string[]): FlagView {
+  const spec = SPECS.ls
+  if (spec === undefined) throw new Error('no ls spec')
+  return new FlagView(parseToKwargs(parseCommand(spec, argv, '/', 'ls')), spec)
+}
+
+describe('indicatorFlag', () => {
+  // coreutils 9.7: -F, --classify[=WHEN], -p, --file-type and
+  // --indicator-style all set the one style, so the last one wins; a
+  // --classify that is not always has no terminal to be auto on. Mirrors
+  // test_ls.py.
+  it.each([
+    [[], 'none'],
+    [['-F'], 'classify'],
+    [['--classify=always'], 'classify'],
+    [['--classify=never'], 'none'],
+    [['--classify=auto'], 'none'],
+    [['-p'], 'slash'],
+    [['--file-type'], 'file-type'],
+    [['--indicator-style=classify'], 'classify'],
+    [['-F', '-p'], 'slash'],
+    [['-p', '-F'], 'classify'],
+    [['--file-type', '--indicator-style=none'], 'none'],
+  ] as const)('reads %j as %s', (argv, style) => {
+    expect(indicatorFlag(lsView(...argv))).toBe(style)
+  })
+
+  // GNU checks each value while it reads the options, so a bad one before a
+  // good one is still refused.
+  it.each([['--indicator-style=bogus'], ['--classify=bogus'], ['--indicator-style=bogus', '-F']])(
+    'refuses %s',
+    (...argv) => {
+      expect(() => indicatorFlag(lsView(...argv))).toThrow(/^ls: invalid argument 'bogus' for/)
+    },
+  )
+})
+
+describe('typeIndicator', () => {
+  // ls.c get_type_indicator: slash marks only directories, and only classify
+  // marks an executable. Mirrors test_ls.py.
+  it.each([
+    [FileType.DIRECTORY, null, ['', '/', '/', '/']],
+    [FileType.SYMLINK, null, ['', '', '@', '@']],
+    [FileType.FIFO, null, ['', '', '|', '|']],
+    [FileType.FILE, 0o755, ['', '', '', '*']],
+    [FileType.FILE, 0o644, ['', '', '', '']],
+  ] as const)('marks %s (mode %s) by style', (type, mode, marks) => {
+    const entry = new FileStat({ name: 'x', type, mode })
+    const styles = ['none', 'slash', 'file-type', 'classify'] as const
+    expect(styles.map((s) => typeIndicator(entry, s))).toEqual(marks)
+  })
+
+  it('marks nothing it could not stat', () => {
+    expect(typeIndicator(null, 'classify')).toBe('')
   })
 })

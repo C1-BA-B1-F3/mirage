@@ -67,7 +67,9 @@ async def test_tsort_cycle_detection():
 async def test_tsort_odd_tokens():
     rb, _, _, _, _ = _make_backend({"deps": b"a b c\n"})
     out, io = await tsort([_spec("deps")], read_bytes=rb)
-    assert b"odd number" in out
+    assert out is None
+    assert io.stderr == (
+        b"tsort: deps: input contains an odd number of tokens\n")
     assert io.exit_code == 1
 
 
@@ -253,7 +255,7 @@ async def test_diff_too_few_paths():
     async def rd(path):
         return []
 
-    with pytest.raises(ValueError, match="two paths"):
+    with pytest.raises(ValueError, match="^diff: missing operand after "):
         await diff([_spec("a")],
                    read_bytes=rb,
                    readdir_fn=rd,

@@ -1,0 +1,261 @@
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
+
+import asyncio
+import threading
+from collections.abc import AsyncIterator, Callable, Coroutine
+from typing import Any
+
+import asyncssh
+import pytest
+
+from mirage.server.ssh import stream
+from mirage.server.ssh.stream import (ChannelInput, ChannelOutput, LoopStdin,
+                                      Mark, decode, deliver, encode,
+                                      loop_sender)
+
+Step = str | BaseException
+
+
+class FakeStdin:
+    """Replays reads the way asyncssh's server stdin answers them.
+
+    A string is data, ``""`` is the line editor's soft EOF, an exception
+    is raised from the read, and running off the end is the channel's
+    own EOF.
+    """
+
+    def __init__(self, steps: list[Step]) -> None:
+        self._steps = list(steps)
+        self.reads = 0
+        self._eof = False
+
+    async def read(self, n: int) -> str:
+        self.reads += 1
+        await asyncio.sleep(0)
+        if not self._steps:
+            self._eof = True
+            return ""
+        step = self._steps.pop(0)
+        if isinstance(step, BaseException):
+            raise step
+        return step
+
+    def at_eof(self) -> bool:
+        return self._eof
+
+
+class FakeWriter:
+
+    def __init__(self) -> None:
+        self.data: list[str] = []
+
+    def write(self, text: str) -> None:
+        self.data.append(text)
+
+    async def drain(self) -> None:
+        await asyncio.sleep(0)
+
+
+class FakeProcess:
+
+    def __init__(self, steps: list[Step]) -> None:
+        self.stdin = FakeStdin(steps)
+        self.stdout = FakeWriter()
+        self.stderr = FakeWriter()
+        self.channel = None
+
+
+async def _started(steps: list[Step]) -> ChannelInput:
+    source = ChannelInput(FakeProcess(steps))
+    source.start()
+    return source
+
+
+def test_every_byte_survives_the_text_round_trip():
+    data = bytes(range(256))
+    assert encode(decode(data)) == data
+
+
+@pytest.mark.asyncio
+async def test_readline_splits_chunks_into_lines():
+    source = await _started(["ec", "ho a\npw", "d\n"])
+    assert await source.readline() == b"echo a\n"
+    assert await source.readline() == b"pwd\n"
+    assert await source.readline() is Mark.EOF
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_a_final_unterminated_line_is_still_a_line():
+    source = await _started(["exit 3"])
+    assert await source.readline() == b"exit 3"
+    assert await source.readline() is Mark.EOF
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_soft_eof_ends_one_reader_and_input_continues():
+    source = await _started(["line\n", "", "more\n"])
+    assert await source.readline() == b"line\n"
+    assert await source.readline() is Mark.EOF
+    assert await source.readline() == b"more\n"
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_read_hands_a_line_its_stdin_and_stops_at_soft_eof():
+    source = await _started(["cat\n", "a\n", "b\n", "", "next\n"])
+    assert await source.readline() == b"cat\n"
+    assert await source.read() == b"a\n"
+    assert await source.read() == b"b\n"
+    assert await source.read() == b""
+    assert await source.readline() == b"next\n"
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_at_the_prompt_is_queued_in_band():
+    source = await _started(["half", asyncssh.BreakReceived(0), "ls\n"])
+    assert await source.readline() == b"half"
+    assert await source.readline() is Mark.INTERRUPT
+    assert await source.readline() == b"ls\n"
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_interrupt_goes_to_the_running_line_handler():
+    hits = []
+    source = ChannelInput(
+        FakeProcess([asyncssh.SignalReceived("INT"), "after\n"]))
+    source.on_interrupt(lambda: hits.append(1))
+    source.start()
+    assert await source.readline() == b"after\n"
+    assert hits == [1]
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_terminal_resize_is_not_input():
+    source = await _started(
+        [asyncssh.TerminalSizeChanged(80, 24, 0, 0), "ok\n"])
+    assert await source.readline() == b"ok\n"
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_a_lost_channel_ends_input_for_good():
+    source = await _started(["x\n", asyncssh.ConnectionLost("gone")])
+    assert await source.readline() == b"x\n"
+    assert await source.readline() is Mark.EOF
+    assert await source.read() == b""
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_pump_stops_reading_once_the_buffer_is_full(monkeypatch):
+    monkeypatch.setattr(stream, "MAX_BUFFERED", 4)
+    process = FakeProcess(["aaaa", "bbbb", "cccc"])
+    source = ChannelInput(process)
+    source.start()
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert process.stdin.reads == 1
+    assert await source.read() == b"aaaa"
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert process.stdin.reads == 2
+    await source.close()
+
+
+@pytest.mark.asyncio
+async def test_output_folds_stderr_into_stdout_on_a_terminal():
+    plain, tty = FakeProcess([]), FakeProcess([])
+    await ChannelOutput(plain, tty=False).write(b"err", stderr=True)
+    await ChannelOutput(tty, tty=True).write(b"err", stderr=True)
+    assert (plain.stdout.data, plain.stderr.data) == ([], ["err"])
+    assert (tty.stdout.data, tty.stderr.data) == (["err"], [])
+
+
+async def _two_chunks() -> AsyncIterator[bytes]:
+    yield b"one"
+    yield b""
+    yield b"two"
+
+
+@pytest.mark.asyncio
+async def test_deliver_streams_stdout_then_stderr():
+    sent: list[tuple[bytes, bool]] = []
+
+    async def send(data: bytes, is_stderr: bool) -> None:
+        sent.append((data, is_stderr))
+
+    await deliver(_two_chunks(), b"warn", send)
+    assert sent == [(b"one", False), (b"two", False), (b"warn", True)]
+
+
+def _run_other_loop(
+    coro_factory: Callable[[], Coroutine[Any, Any,
+                                         list[bytes]]]) -> list[bytes]:
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    try:
+        return asyncio.run_coroutine_threadsafe(coro_factory(),
+                                                loop).result(timeout=5)
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join()
+        loop.close()
+
+
+@pytest.mark.asyncio
+async def test_loop_stdin_and_sender_cross_to_the_channel_loop():
+    process = FakeProcess(["piped\n", "more"])
+    source = ChannelInput(process)
+    source.start()
+    home = asyncio.get_running_loop()
+    output = ChannelOutput(process, tty=False)
+
+    async def on_workspace_loop() -> list[bytes]:
+        got = [chunk async for chunk in LoopStdin(source, home)]
+        await loop_sender(output, home)(b"done", False)
+        return got
+
+    got = await asyncio.to_thread(_run_other_loop, on_workspace_loop)
+    assert got == [b"piped\n", b"more"]
+    assert process.stdout.data == ["done"]
+    await source.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tail", ["x", "x\n", "xx\nignored\n"])
+async def test_readline_bounds_accumulated_input(monkeypatch, tail):
+    monkeypatch.setattr(stream, "MAX_LINE", 4)
+    source = await _started(["aa", "aa", tail])
+    try:
+        assert await source.readline() is Mark.LIMIT
+    finally:
+        await source.close()
+
+
+@pytest.mark.asyncio
+async def test_readline_accepts_limit_and_resets_for_next_line(monkeypatch):
+    monkeypatch.setattr(stream, "MAX_LINE", 4)
+    source = await _started(["aaaa\nbbbb\n"])
+    try:
+        assert await source.readline() == b"aaaa\n"
+        assert await source.readline() == b"bbbb\n"
+    finally:
+        await source.close()

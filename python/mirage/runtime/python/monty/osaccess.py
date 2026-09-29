@@ -23,7 +23,8 @@ from mirage.runtime.handles import parse_mode
 from mirage.runtime.python.monty.binding import (MemoryFile, MontyFileHandle,
                                                  OSAccess, path_from_arg)
 from mirage.runtime.python.monty.constants import (EXDEV_MESSAGE,
-                                                   FILE_EXISTS_MESSAGE)
+                                                   FILE_EXISTS_MESSAGE,
+                                                   MAX_URANDOM_BYTES)
 from mirage.runtime.python.monty.list import merge_entries
 from mirage.runtime.python.monty.stat import stat_result
 from mirage.runtime.python.monty.vfs import MontyVFS
@@ -43,7 +44,7 @@ class MirageOSAccess(OSAccess):
     are then flushed back through `MontyVFS`. Runs on Monty's worker
     thread, so every op hops to the workspace loop inside the core.
 
-    The binding only accepts sync callbacks (pydantic/monty#560), so the
+    This bridge uses synchronous callbacks, so the
     core's hop parks the tokio worker for the whole I/O wait. That caps
     concurrent I/O-waiting runs at Monty's worker pool size, which is
     the core count by default; TOKIO_WORKER_THREADS raises it, and
@@ -64,7 +65,9 @@ class MirageOSAccess(OSAccess):
                  dispatch: DispatchFn | None,
                  environ: dict[str, str],
                  resolver: MountResolver | None = None) -> None:
-        super().__init__([], environ=dict(environ))
+        super().__init__([],
+                         environ=dict(environ),
+                         max_urandom_bytes=MAX_URANDOM_BYTES)
         core = (RuntimeVFS(dispatch, loop, resolver)
                 if dispatch is not None else None)
         self._vfs = MontyVFS(core)

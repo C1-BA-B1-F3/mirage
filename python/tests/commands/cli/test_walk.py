@@ -523,3 +523,48 @@ def test_supplied_env_names_double_dash_keeps_descendants_readable():
     # ... while one with no reader below the group stays claimed.
     assert supplied_env_names(_env_tree(),
                               ["--token", "x", "--"]) == {"ROOT_T"}
+
+
+def test_option_shaped_alias_uses_the_declared_leaf():
+    leaf = CLISpec(name="version", aliases=("--version", "-v"), fn=_verb)
+    spec = CLISpec(name="tool",
+                   options=(Option(short="-C", type="path", default="."), ),
+                   subcommands=(leaf, ))
+    result = walk("tool", spec, ["--version"], cwd="/work")
+    assert result.leaf is leaf
+    assert result.path == ("version", )
+    assert result.group_flags["-C"] == "/work"
+    assert result.argv == ()
+    # A real option keeps its meaning even if a child also declares that alias.
+    spec = replace(spec, options=(Option(short="-v"), ))
+    result = walk("tool", spec, ["-v", "version"])
+    assert result.leaf is leaf
+    assert result.group_flags["-v"] is True
+
+
+def test_option_shaped_alias_is_an_operand_after_double_dash():
+    leaf = CLISpec(name="version", aliases=("--version", "-v"), fn=_verb)
+    spec = CLISpec(name="tool", subcommands=(leaf, ))
+    for word in ("--version", "-v"):
+        result = walk("tool", spec, ["--", word])
+        assert result.leaf is None
+        assert result.exit_code == 1
+        assert result.output == (f"tool: '{word}' is not a tool command. "
+                                 "See 'tool --help'.\n").encode()
+    assert walk("tool", spec, ["--", "version"]).leaf is leaf
+
+
+def test_git_root_refuses_double_dash_like_an_unknown_option():
+    leaf = CLISpec(name="status", fn=_verb)
+    inner = CLISpec(name="remote", subcommands=(leaf, ))
+    spec = CLISpec(name="git",
+                   usage_style=UsageStyle.GIT,
+                   subcommands=(leaf, inner))
+    for argv in (["--", "status"], ["--"]):
+        result = walk("git", spec, argv)
+        assert result.leaf is None
+        assert result.exit_code == 129
+        assert result.output.startswith(b"unknown option: --\n")
+    assert walk("git", spec, ["remote", "--", "status"]).leaf is leaf
+    assert walk("git", replace(spec, usage_style=UsageStyle.ARGPARSE),
+                ["--", "status"]).leaf is leaf

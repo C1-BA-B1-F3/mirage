@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from mirage.policy.errors import PolicyError
 from mirage.policy.types import (AdmissionRules, CommandRule, HideReason,
                                  ProfileScript)
+from mirage.process.config import ProcessPermissions
 from mirage.types import (HiddenPaths, MountMode, ShowEntry, ShownPaths,
                           weaker_mode)
 from mirage.utils.hidden import classify_paths, classify_shows, classify_vars
@@ -228,11 +229,19 @@ def with_inline(base: SessionProfile | None,
         return base
     refuse_allow(inline.commands)
     refuse_show(inline)
+    if inline.command_limits is not None:
+        raise PolicyError(
+            "command_limits belong on the profile, not inline permissions")
     if inline.policy is not None:
         raise PolicyError("inline permissions may add ask and deny rules, "
                           "not a policy; state one on the profile")
+    processes = (base.processes
+                 if base is not None else None) or ProcessPermissions()
+    if inline.processes is not None:
+        processes = processes.restrict(inline.processes)
     if base is None:
-        return inline
+        return inline if inline.processes is None else inline.model_copy(
+            update={"processes": processes})
     hide_paths = _union_hide(base.paths, inline.paths)
     hide_vars = _union_hide(base.vars, inline.vars)
     env = None
@@ -261,6 +270,8 @@ def with_inline(base: SessionProfile | None,
               (base.vars is not None or inline.vars is not None) else None),
         commands=_add_commands(base.commands, inline.commands),
         policy=base.policy,
+        command_limits=base.command_limits,
+        processes=processes,
     )
 
 
@@ -470,6 +481,7 @@ def compile_profile(effective: SessionProfile | None,
     commands = compile_commands(effective)
     check_rules(commands)
     return CompiledProfile(
+        processes=effective.processes or ProcessPermissions(),
         mount_modes=_modes(effective),
         hidden_paths=_hidden(effective),
         hidden_vars=classify_vars(
@@ -478,6 +490,7 @@ def compile_profile(effective: SessionProfile | None,
         cwd=effective.cwd,
         commands=commands,
         script=compile_script(effective, name),
+        command_limits=effective.command_limits,
         shown_paths=_shown(effective),
         hide_reasons=_hide_reasons(effective),
         profile=name or None,
@@ -507,6 +520,8 @@ def narrow(session: SessionState, compiled: CompiledProfile) -> None:
     session.commands = compiled.commands
     session.script = compiled.script
     session.profile = compiled.profile
+    session.command_limits = dict(compiled.command_limits or {})
+    session.processes = compiled.processes
 
 
 def apply_profile(session: SessionState, compiled: CompiledProfile) -> None:

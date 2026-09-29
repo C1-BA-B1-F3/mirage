@@ -1,0 +1,242 @@
+{
+  "cases": [
+    {
+      "id": "uname_bare_is_kernel_name",
+      "seq": 991429,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "uname; uname -s; uname --kernel-name",
+      "expect": {
+        "exit": 0,
+        "stdout": "Linux\nLinux\nLinux\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "uname_all",
+      "seq": 991430,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "uname -a; uname --all",
+      "expect": {
+        "exit": 0,
+        "stdout": "Linux mirage mirage #1 Mirage x86_64 GNU/Linux\nLinux mirage mirage #1 Mirage x86_64 GNU/Linux\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "uname_every_field_named",
+      "seq": 991431,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "uname -snrvmpio",
+      "expect": {
+        "exit": 0,
+        "stdout": "Linux mirage mirage #1 Mirage x86_64 unknown unknown GNU/Linux\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "uname_fields_print_in_fixed_order",
+      "seq": 991432,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "uname -ms; uname -o -n",
+      "expect": {
+        "exit": 0,
+        "stdout": "Linux x86_64\nmirage GNU/Linux\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "uname_all_omits_unknown_processor",
+      "seq": 991433,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "uname -a -p; uname -p; uname -i",
+      "expect": {
+        "exit": 0,
+        "stdout": "Linux mirage mirage #1 Mirage x86_64 GNU/Linux\nunknown\nunknown\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "uname_extra_operand",
+      "seq": 991434,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "uname -s x",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "uname: extra operand 'x'\nTry 'uname --help' for more information.\n"
+      }
+    },
+    {
+      "id": "uname_invalid_option",
+      "seq": 991435,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "uname -z",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "uname: invalid option -- 'z'\nTry 'uname --help' for more information.\n"
+      }
+    }
+  ]
+}

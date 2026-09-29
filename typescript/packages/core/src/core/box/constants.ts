@@ -15,3 +15,23 @@
 export const BOX_TOKEN_URL = 'https://api.box.com/oauth2/token'
 export const BOX_API_BASE = 'https://api.box.com/2.0'
 export const TOKEN_BUFFER_SECONDS = 300
+
+// The user event stream the watch hooks read: `changes` is the one Box
+// documents as carrying file tree changes, without the downloads and
+// previews `all` adds.
+export const EVENT_STREAM = 'changes'
+// Box keeps user events for between two weeks and two months, and a position
+// older than that is not refused, it just replays what is left. A checkpoint
+// this old relists instead of trusting the replay.
+export const EVENT_REPLAY_DAYS = 14
+// Events that put an item at the path its `source` names.
+export const PLACE_EVENTS: ReadonlySet<string> = new Set([
+  'ITEM_CREATE',
+  'ITEM_UPLOAD',
+  'ITEM_COPY',
+  'ITEM_MOVE',
+  'ITEM_RENAME',
+  'ITEM_UNDELETE_VIA_TRASH',
+  'ITEM_MAKE_CURRENT_VERSION',
+])
+export const TRASH_EVENTS: ReadonlySet<string> = new Set(['ITEM_TRASH'])

@@ -14,8 +14,9 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { stripSlash } from '../../../utils/slash.ts'
+import { fsStrerror, isFsError } from '../../../utils/errors.ts'
 import { mountKey } from '../../../utils/key_prefix.ts'
+import { resolvePath } from '../../../utils/path.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
@@ -77,40 +78,24 @@ function formatSuffix(index: number, digits: number, format: string | null): str
   })
 }
 
-function makePathSpec(virtual: string): PathSpec {
-  return new PathSpec({
-    virtual,
-    directory: virtual,
-    vfsPath: stripSlash(virtual),
-    resolved: true,
-  })
-}
-
-async function writePart(
-  write: (p: PathSpec, data: Uint8Array) => Promise<void>,
-  filename: string,
-  data: Uint8Array,
-  writes: Record<string, Uint8Array>,
-): Promise<void> {
-  await write(makePathSpec(filename), data)
-  writes[filename] = data
-}
-
 export async function csplitGeneric(
   paths: PathSpec[],
   texts: string[],
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
+  relay = false,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('csplit'))
-  const prefixValue = fl.asStr('prefix')
-  const rawPrefix = typeof prefixValue === 'string' ? prefixValue : 'xx'
-  const prefix = new PathSpec({
-    virtual: rawPrefix,
-    directory: rawPrefix,
-    vfsPath: mountKey(rawPrefix, opts.mountPrefix ?? ''),
-  }).mountPath
+  // An output is the -f prefix, or `xx` in the working directory, plus its
+  // suffix, wherever the input lives: GNU writes `xx00` to the cwd, names it
+  // as it formed it (`csplit: xx00`), and stops at the first one it cannot
+  // create, -k or not. Mirrors csplit.py.
+  const prefixSpec = fl.asPaths('prefix')[0]
+  const prefixWord = fl.asStr('prefix') ?? 'xx'
+  const prefixVirtual = prefixSpec?.virtual ?? resolvePath(prefixWord, opts.cwd)
+  const typedPrefix = prefixSpec?.rawPath ?? prefixWord
+  const mountPrefix = opts.mountPrefix ?? ''
   const digitsValue = fl.asStr('digits')
   const suffixValue = fl.asStr('suffix_format')
   const digits = typeof digitsValue === 'string' ? Number.parseInt(digitsValue, 10) : 2
@@ -120,9 +105,10 @@ export async function csplitGeneric(
   const suppressMatched = fl.asBool('suppress_matched')
   const elideEmpty = fl.asBool('elide_empty_files')
   let raw: Uint8Array
-  if (paths.length > 0) {
-    const first = paths[0]
-    if (first === undefined) return [null, new IOResult()]
+  // `-` is stdin. /dev/stdin would run csplit on the /dev mount, which is
+  // where its pieces would land, so it stays a path.
+  const first = paths[0]
+  if (first !== undefined && first.rawPath !== '-') {
     raw = await materialize(stream(first))
   } else {
     const stdinData = await readStdinAsync(opts.stdin)
@@ -133,22 +119,32 @@ export async function csplitGeneric(
   const parts = splitByPatterns(lines, texts, suppressMatched)
   const writes: Record<string, Uint8Array> = {}
   const sizes: string[] = []
+  let stderr: Uint8Array | null = null
   try {
     for (let idx = 0; idx < parts.length; idx++) {
       const part = parts[idx] ?? []
       if (elideEmpty && part.length === 0) continue
-      const filename = prefix + formatSuffix(idx, digits, suffixFormat)
+      const name = formatSuffix(idx, digits, suffixFormat)
+      const virtual = prefixVirtual + name
+      const spec = PathSpec.fromStrPath(virtual, mountKey(virtual, mountPrefix))
       const data = part.length > 0 ? ENC.encode(part.join('\n') + '\n') : new Uint8Array(0)
-      await writePart(write, filename, data, writes)
+      try {
+        await write(spec, data)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        stderr = ENC.encode(`csplit: ${typedPrefix + name}: ${String(fsStrerror(err))}\n`)
+        break
+      }
+      // Relay writes land on whichever mount owns each path and invalidate
+      // through the dispatcher; keying them here would have the runner
+      // prefix them onto this mount.
+      if (!relay) writes[spec.mountPath] = data
       sizes.push(String(data.byteLength))
     }
   } catch (err) {
-    if (!keep) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(`csplit: ${msg}\n`) })]
-    }
+    if (!keep) throw err
   }
   const output = quiet || sizes.length === 0 ? '' : sizes.join('\n') + '\n'
   const result: ByteSource = ENC.encode(output)
-  return [result, new IOResult({ writes })]
+  return [result, new IOResult({ writes, ...(stderr !== null ? { stderr, exitCode: 1 } : {}) })]
 }

@@ -15,11 +15,9 @@
 import { createAsyncContext } from '../utils/async_context.ts'
 import type { ContextCall } from '../utils/async_context.ts'
 import { OpRecord } from './record.ts'
-import { rstripSlash } from '../utils/slash.ts'
 
 interface RecordingState {
   records: OpRecord[]
-  mountPrefix: string
   mountId: string | null
 }
 
@@ -41,34 +39,34 @@ export function captureRecordingContext(): ContextCall[] {
   return [storage.capture(), revisionsStorage.capture()]
 }
 
+export function activeRecords(): readonly OpRecord[] | undefined {
+  return storage.getStore()?.records
+}
+
 export async function runWithRecording<T>(fn: () => Promise<T>): Promise<[T, OpRecord[]]> {
-  const state: RecordingState = { records: [], mountPrefix: '', mountId: null }
+  const state: RecordingState = { records: [], mountId: null }
   const value = await storage.run(state, fn)
   return [value, state.records]
 }
 
 /**
- * Run `fn` with `prefix` as the mount prefix records are named against.
+ * Run `fn` with `mountId` as the mount its records belong to.
  *
  * Derives a state for this async branch and shares only the records array,
  * so two mounts consumed concurrently (`cat /s3/a & cat /db/b`) cannot see
- * or clobber each other's prefix. Mirrors python's `push_mount_prefix`,
+ * or clobber each other's mount. Mirrors python's `push_mount_context`,
  * whose `Recorder` is frozen and re-set per task for the same reason.
+ * An undefined `mountId` inherits the enclosing frame's.
  *
  * Inert (runs `fn` unchanged) when no recording context is active.
  */
-export function runWithMountPrefix<T>(
-  prefix: string,
-  fn: () => Promise<T>,
-  mountId?: string | null,
-): Promise<T> {
+export function runWithMountContext<T>(fn: () => Promise<T>, mountId?: string | null): Promise<T> {
   const state = storage.getStore()
   if (state === undefined) return fn()
   return Promise.resolve(
     storage.run(
       {
         records: state.records,
-        mountPrefix: prefix,
         mountId: mountId === undefined ? state.mountId : mountId,
       },
       fn,
@@ -77,21 +75,20 @@ export function runWithMountPrefix<T>(
 }
 
 /**
- * Wrap a stream so `prefix` is the active mount prefix during each pull from
- * the underlying source. A command may return a stream that defers its
- * backend read to the first chunk request, by which point the mount's own
- * scope has already exited, so without this the record lands with no prefix.
- * Mirrors python's `with_mount_prefix`.
+ * Wrap a stream so `mountId` is the active mount during each pull from the
+ * underlying source. A command may return a stream that defers its backend
+ * read to the first chunk request, by which point the mount's own scope has
+ * already exited, so without this the record lands under whatever frame
+ * drains it. Mirrors python's `with_mount_context`.
  */
-export async function* withMountPrefix(
-  prefix: string,
+export async function* withMountContext(
   it: AsyncIterable<Uint8Array>,
   mountId?: string | null,
 ): AsyncGenerator<Uint8Array> {
   const iter = it[Symbol.asyncIterator]()
   try {
     for (;;) {
-      const step = await runWithMountPrefix(prefix, () => iter.next(), mountId)
+      const step = await runWithMountContext(() => iter.next(), mountId)
       if (step.done === true) return
       yield step.value
     }
@@ -147,8 +144,7 @@ export function startOp(): OpTimer {
  * The one place an op's duration and wall-clock stamp are read, shared
  * by the recorder sink ({@link record}) and by the `Ops` facade's own
  * ledger, so the two cannot disagree about what a duration measures.
- * `path` is stored as given: a caller that needs mount prefixing
- * applies it first.
+ * `path` is stored as given.
  */
 export function finishRecord(
   op: string,
@@ -172,6 +168,11 @@ export function finishRecord(
   })
 }
 
+/**
+ * Append a finished record to the active recording, if any.
+ *
+ * `path`: the full virtual path.
+ */
 export function record(
   op: string,
   path: string,
@@ -182,11 +183,14 @@ export function record(
 ): void {
   const state = storage.getStore()
   if (state === undefined) return
-  state.records.push(
-    finishRecord(op, applyPrefix(state.mountPrefix, path), source, nbytes, timer, options),
-  )
+  state.records.push(finishRecord(op, path, source, nbytes, timer, options))
 }
 
+/**
+ * Append a streaming record whose bytes are filled in as it drains.
+ *
+ * `path`: the full virtual path.
+ */
 export function recordStream(
   op: string,
   path: string,
@@ -197,7 +201,7 @@ export function recordStream(
   if (state === undefined) return null
   const rec = new OpRecord({
     op,
-    path: applyPrefix(state.mountPrefix, path),
+    path,
     source,
     bytes: 0,
     timestamp: Date.now(),
@@ -245,15 +249,4 @@ export function revisionFor(path: string): string | null {
     if (pin !== undefined) return pin
   }
   return null
-}
-
-// Backends name the mount-relative path ('/report.json') and a few name the
-// virtual one already ('/s3/report.json'), so tell them apart before
-// prefixing. The test has to be for a path boundary, not a bare startsWith:
-// a mount at /s3 holding s3-report.txt would otherwise look already-prefixed
-// and record as '/s3-report.txt'. Mirrors python's _virtual.
-function applyPrefix(prefix: string, path: string): string {
-  const root = rstripSlash(prefix)
-  if (root === '' || path === root || path.startsWith(`${root}/`)) return path
-  return root + path
 }

@@ -13,7 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import importlib.metadata
+import inspect
 import logging
+from collections.abc import Mapping
 from typing import Any, NamedTuple
 
 from pydantic import ValidationError
@@ -25,6 +27,14 @@ from mirage.vfs.loader import load_backend_class
 logger = logging.getLogger(__name__)
 
 ENTRY_POINT_GROUP = "mirage.vfs"
+
+# pydantic's code for a key no field takes, which is what a typed
+# config reports through `error_summary`; a kwargs-built VFS reports
+# its unknown keys under the same code so the two read alike.
+EXTRA_FORBIDDEN = "extra_forbidden"
+
+_NAMED_PARAMETERS = (inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                     inspect.Parameter.KEYWORD_ONLY)
 
 
 class VFSEntry(NamedTuple):
@@ -129,6 +139,9 @@ REGISTRY: dict[str, VFSEntry] = {
     VFSEntry("mirage.vfs.gmail:GmailVFS", "mirage.vfs.gmail:GmailConfig"),
     "trello":
     VFSEntry("mirage.vfs.trello:TrelloVFS", "mirage.vfs.trello:TrelloConfig"),
+    "airtable":
+    VFSEntry("mirage.vfs.airtable:AirtableVFS",
+             "mirage.vfs.airtable:AirtableConfig"),
     "mongodb":
     VFSEntry("mirage.vfs.mongodb:MongoDBVFS",
              "mirage.vfs.mongodb:MongoDBConfig"),
@@ -299,6 +312,33 @@ def _vfs_defect(built: BaseVFS) -> str | None:
     return None
 
 
+def _unknown_kwargs(vfs_cls: type, config: Mapping[str, Any]) -> list[str]:
+    """The config keys a kwargs-built VFS's constructor does not take.
+
+    A VFS with no typed config (``ram``, ``disk``, ``redis``, or a
+    class registered without one) is handed its mapping as constructor
+    keywords, so a key its ``__init__`` does not name surfaced as
+    Python's own ``TypeError``, worded nothing like the refusal a typed
+    config gives. Naming them first lets every mount config refuse an
+    unknown key the same way. A constructor that takes ``**kwargs``
+    accepts anything by its own declaration and is left to judge its
+    keys itself, the way a config model with ``extra="allow"`` is.
+
+    Args:
+        vfs_cls (type): the VFS class the mapping will construct.
+        config (Mapping[str, Any]): the mount's config mapping.
+
+    Returns:
+        list[str]: the keys no named parameter takes, in the order the
+            mapping holds them.
+    """
+    params = inspect.signature(vfs_cls).parameters.values()
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params):
+        return []
+    named = {p.name for p in params if p.kind in _NAMED_PARAMETERS}
+    return [key for key in config if key not in named]
+
+
 def build_vfs(name: str, config: dict[str, Any] | None = None) -> BaseVFS:
     """Construct a VFS instance by its registry name.
 
@@ -355,6 +395,11 @@ def build_vfs(name: str, config: dict[str, Any] | None = None) -> BaseVFS:
         config_ref = getattr(vfs_cls, "CONFIG_CLS", None)
     try:
         if config_ref is None:
+            unknown = _unknown_kwargs(vfs_cls, cfg_dict)
+            if unknown:
+                raise ValueError(f"{name}: " +
+                                 "; ".join(f"{key}: {EXTRA_FORBIDDEN}"
+                                           for key in unknown))
             built = vfs_cls(**cfg_dict)
         else:
             config_cls = resolve_class(config_ref)

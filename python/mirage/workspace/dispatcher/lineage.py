@@ -12,11 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import errno
-
-from mirage.context.session_context import effective_path_mode
+from mirage.context.session_context import require_paths_writable
 from mirage.types import MountMode, PathSpec
-from mirage.utils.errors import ReadOnlyError
 from mirage.workspace.mount.mount import MountEntry
 
 # The prefix governing a path no mount owns. Inside a workspace there
@@ -49,7 +46,7 @@ def turf_of(mount: MountEntry | None) -> str:
 
 
 def require_turf_writable(mount: MountEntry | None, path: PathSpec) -> None:
-    """Refuse a node-table write the session's grant does not cover.
+    """Refuse a mutation outside the mount mode or session's grant.
 
     A symlink create, a link unlink or rename endpoint, and the
     no-mount attr overlay all mutate namespace state at a path, and a
@@ -59,21 +56,8 @@ def require_turf_writable(mount: MountEntry | None, path: PathSpec) -> None:
     ``ReadOnlyError`` with EROFS stamped and the operand as
     ``filename``.
 
-    **The gate is the session's grant, not the mount's own mode**, and
-    the ceiling passed to ``effective_path_mode`` is WRITE for exactly
-    that reason. The two planes say different things with one word.
-    ``mode: read`` on a mount is overwhelmingly a statement about a
-    *backend* that cannot write -- notion, github, mem0, postgres,
-    mongodb, every vector store -- and symlinks are namespace state, so
-    a link above such a mount needs no write capability from it and is
-    pinned working on four of them (``integ/vfs/<svc>/sym.json``).
-    A session grant is a statement about what this *session* may do,
-    which covers both planes, so it is the one that binds here. The
-    consequence to know: sessionless, a deliberately read-mode mount
-    still takes a link. Separating "this backend cannot write" from
-    "this deployment forbids names here" needs a second field on the
-    mount table, which does not exist and is not worth inventing for
-    it; a deployment wanting that today states it in ``pre_ops``.
+    Mount mode is an authorization ceiling for both backend and namespace
+    writes. Backend capabilities are resolved only after admission.
 
     Args:
         mount (MountEntry | None): the mount owning the path
@@ -81,9 +65,8 @@ def require_turf_writable(mount: MountEntry | None, path: PathSpec) -> None:
         path (PathSpec): the path being written.
 
     Raises:
-        ReadOnlyError: the session's mode at ``path`` is read-only.
+        ReadOnlyError: the mount or session's mode is read-only.
     """
-    granted = effective_path_mode(path.virtual, turf_of(mount),
-                                  MountMode.WRITE)
-    if granted == MountMode.READ:
-        raise ReadOnlyError(errno.EROFS, "Read-only file system", path.virtual)
+    require_paths_writable(
+        [path], turf_of(mount),
+        mount.mode if mount is not None else MountMode.WRITE)

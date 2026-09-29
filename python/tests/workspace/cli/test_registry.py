@@ -15,6 +15,8 @@
 import pytest
 from pydantic import BaseModel
 
+from mirage.commands.cli.builtin.discord import DISCORD
+from mirage.commands.cli.builtin.slack import SLACK
 from mirage.commands.cli.types import CLISpec
 from mirage.io import IOResult
 from mirage.workspace.cli.registry import CLIRegistry
@@ -139,3 +141,15 @@ def test_uninstall_removes_and_unknown_raises():
     assert reg.get("prog") is None
     with pytest.raises(KeyError, match="not installed"):
         reg.uninstall("prog")
+
+
+@pytest.mark.parametrize("name,spec", [("slack", SLACK), ("discord", DISCORD)])
+def test_account_clis_refuse_a_mount_time_scope(name, spec):
+    with pytest.raises(ValueError,
+                       match="unknown config keys: end_time, start_time"):
+        CLIRegistry().install(
+            name, spec, {
+                "token": "x",
+                "start_time": "2026-06-01T00:00:00Z",
+                "end_time": "2026-06-02T00:00:00Z"
+            })

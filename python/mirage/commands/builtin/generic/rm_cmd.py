@@ -19,12 +19,30 @@ from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic_bind.adapter import with_write_guards
 from mirage.commands.builtin.utils.output import format_optional_records
 from mirage.commands.config import CommandOpts
+from mirage.commands.errors import UsageError
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS, fs_strerror
+
+
+def rm_without_operands(force: bool) -> tuple[ByteSource | None, IOResult]:
+    """rm's answer to a line with no operand, in GNU's words: nothing at
+    all under ``-f``, and a missing-operand usage error otherwise
+    (coreutils 9.7).
+
+    Args:
+        force (bool): ``-f``, under which a missing operand is no error.
+
+    Raises:
+        UsageError: without ``-f``.
+    """
+    if force:
+        return None, IOResult()
+    raise UsageError(
+        "rm: missing operand\nTry 'rm --help' for more information.", 1)
 
 
 def make_rm(
@@ -50,18 +68,18 @@ def make_rm(
     """
     unlink = with_write_guards(unlink)
 
-    @command("rm", vfs=vfs, spec=SPECS["rm"], write=True)
+    @command("rm", vfs=vfs, spec=SPECS["rm"], write=True, path_guarded=True)
     async def rm(
         accessor: Accessor,
         paths: list[PathSpec],
         texts: list[str],
         opts: CommandOpts,
     ) -> tuple[ByteSource | None, IOResult]:
-        if not paths:
-            raise ValueError("rm: missing operand")
         fl = FlagView(opts.flags, spec=SPECS["rm"])
         f = fl.as_bool("f")
         v = fl.as_bool("v")
+        if not paths:
+            return rm_without_operands(f)
         paths = await glob_fn(accessor, paths, opts.index)
         verbose_parts: list[str] = []
         errors: list[str] = []
@@ -70,16 +88,17 @@ def make_rm(
             try:
                 await unlink(accessor, p, opts.index)
             except FS_ERRORS as exc:
-                if f and isinstance(exc, FileNotFoundError):
+                if f and isinstance(exc,
+                                    (FileNotFoundError, NotADirectoryError)):
                     continue
                 # GNU rm reports the operand and keeps removing the rest.
                 errors.append(
-                    f"rm: cannot remove '{p.virtual}': {fs_strerror(exc)}")
+                    f"rm: cannot remove '{p.raw_path}': {fs_strerror(exc)}")
                 continue
             except ValueError:
                 if f:
                     continue
-                errors.append(f"rm: cannot remove '{p.virtual}': "
+                errors.append(f"rm: cannot remove '{p.raw_path}': "
                               "No such file or directory")
                 continue
             removed[p.mount_path] = b""

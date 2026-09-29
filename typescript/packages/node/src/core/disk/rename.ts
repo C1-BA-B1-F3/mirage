@@ -17,11 +17,11 @@ import { rename as fsRename } from 'node:fs/promises'
 import { invalidateSubtree } from '@struktoai/mirage-core/cache/context'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { enoent } from '@struktoai/mirage-core/utils/errors'
-import { resolveSafe } from './utils.ts'
+import { resolveInside } from './utils.ts'
 
 export async function rename(accessor: DiskAccessor, src: PathSpec, dst: PathSpec): Promise<void> {
-  const s = resolveSafe(accessor.root, src.mountPath)
-  const d = resolveSafe(accessor.root, dst.mountPath)
+  const s = await resolveInside(accessor.root, src)
+  const d = await resolveInside(accessor.root, dst)
   try {
     await fsRename(s, d)
   } catch (err) {

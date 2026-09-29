@@ -10,12 +10,24 @@ from mirage.workspace.session.session import SessionState
 
 @pytest.mark.asyncio
 async def test_source_without_a_filename_is_a_usage_error():
+    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
+                   mode=MountMode.WRITE)
+    r = await ws.shell("source")
+    assert r.exit_code == 2
+    assert b"filename argument required" in r.stderr
+
+
+@pytest.mark.asyncio
+async def test_source_of_the_empty_name_is_a_missing_file():
+    # bash opens the empty name and fails ENOENT, where no argument at all
+    # is the usage error.
     out, io, node = await handle_source(None, None, "",
                                         SessionState(session_id="s1"))
     assert out is None
-    assert io.exit_code == 2
-    assert b"filename argument required" in (await materialize(io.stderr))
-    assert node.command == "source"
+    assert io.exit_code == 1
+    assert (await
+            materialize(io.stderr)) == b"source: : No such file or directory\n"
+    assert node.command == "source "
 
 
 @pytest.mark.asyncio

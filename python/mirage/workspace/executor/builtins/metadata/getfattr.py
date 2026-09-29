@@ -84,7 +84,7 @@ async def _walk(dispatch: DispatchFn, path: PathSpec, shown: str,
         stat, _ = await dispatch("stat", path, nofollow=True)
         if stat.type == FileType.SYMLINK and deref:
             stat, _ = await dispatch("stat", path)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return entries
     if stat.type != FileType.DIRECTORY:
         return entries

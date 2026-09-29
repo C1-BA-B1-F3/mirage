@@ -1,0 +1,292 @@
+{
+  "cases": [
+    {
+      "id": "rg_skips_a_link_its_walk_meets",
+      "seq": 1311045,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(ln -s ../a.txt /data/disptree/al1311 && rg -l --sort path . /data/disptree; rc=$?; rm /data/disptree/al1311; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/disptree/d/y.txt\n/data/disptree/x.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "rg_L_searches_a_file_link_under_its_own_name",
+      "seq": 1311046,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(ln -s ../a.txt /data/disptree/al1311 && rg -L --sort path hello /data/disptree; rc=$?; rm /data/disptree/al1311; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/disptree/al1311:hello\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "rg_follow_is_L_and_no_follow_its_negation",
+      "seq": 1311047,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(ln -s ../a.txt /data/disptree/al1311 && rg --follow -l --sort path . /data/disptree; rg -L --no-follow -l --sort path . /data/disptree; rc=$?; rm /data/disptree/al1311; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/disptree/al1311\n/data/disptree/d/y.txt\n/data/disptree/x.txt\n/data/disptree/d/y.txt\n/data/disptree/x.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "rg_L_descends_a_directory_link",
+      "seq": 1311048,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(ln -s d /data/disptree/dl1311 && rg -L --files --sort path /data/disptree; rc=$?; rm /data/disptree/dl1311; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/disptree/d/y.txt\n/data/disptree/dl1311/y.txt\n/data/disptree/x.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "rg_L_reports_a_dangling_link",
+      "seq": 1311049,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(ln -s nowhere /data/disptree/dang1311 && rg -L -l --sort path . /data/disptree; echo rc=$?; rg -L -l -g '*.md' . /data/disptree; rc=$?; rm /data/disptree/dang1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "/data/disptree/d/y.txt\n/data/disptree/x.txt\nrc=2\n",
+        "stderr": "rg: /data/disptree/dang1311: IO error for operation on /data/disptree/dang1311: No such file or directory (os error 2)\nrg: /data/disptree/dang1311: IO error for operation on /data/disptree/dang1311: No such file or directory (os error 2)\n"
+      }
+    },
+    {
+      "id": "rg_L_reports_a_link_loop",
+      "seq": 1311050,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(ln -s lp21311 /data/disptree/lp11311 && ln -s lp11311 /data/disptree/lp21311 && rg -L --files --sort path /data/disptree; rc=$?; rm /data/disptree/lp11311 /data/disptree/lp21311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "/data/disptree/d/y.txt\n/data/disptree/x.txt\n",
+        "stderr": "rg: /data/disptree/lp11311: IO error for operation on /data/disptree/lp11311: Too many levels of symbolic links (os error 40)\nrg: /data/disptree/lp21311: IO error for operation on /data/disptree/lp21311: Too many levels of symbolic links (os error 40)\n"
+      }
+    },
+    {
+      "id": "rg_L_reports_a_link_back_to_an_ancestor",
+      "seq": 1311051,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(ln -s .. /data/disptree/d/up1311 && rg -L --files --sort path /data/disptree; rc=$?; rm /data/disptree/d/up1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "/data/disptree/d/y.txt\n/data/disptree/x.txt\n",
+        "stderr": "rg: File system loop found: /data/disptree/d/up1311 points to an ancestor /data/disptree\n"
+      }
+    },
+    {
+      "id": "rg_L_names_the_walkers_paths_under_the_implicit_cwd",
+      "seq": 1311052,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data/disptree && ln -s nowhere dang1311 && rg -L --files --sort path; rc=$?; rm dang1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "d/y.txt\nx.txt\n",
+        "stderr": "rg: ./dang1311: IO error for operation on ./dang1311: No such file or directory (os error 2)\n"
+      }
+    },
+    {
+      "id": "rg_follows_a_command_line_link_either_way",
+      "seq": 1311053,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(ln -s disptree /data/dtl1311 && rg -l --sort path . /data/dtl1311; rc=$?; rm /data/dtl1311; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/dtl1311/d/y.txt\n/data/dtl1311/x.txt\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

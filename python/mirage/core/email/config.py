@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class EmailConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     imap_host: str
     imap_port: int = 993
     smtp_host: str

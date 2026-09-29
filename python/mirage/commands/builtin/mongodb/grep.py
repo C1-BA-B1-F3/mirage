@@ -12,15 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from functools import partial
+
 from mirage.accessor.mongodb import MongoDBAccessor
-from mirage.commands.builtin.generic_bind.search import make_search
-from mirage.commands.builtin.grep_pushdown import pushdown_operand
+from mirage.commands.builtin.generic_bind.search import run_search
 from mirage.commands.builtin.mongodb.io import IO
 from mirage.commands.config import CommandOpts
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
-from mirage.core.mongodb.scope import detect_scope
-from mirage.core.mongodb.search import SEARCHERS
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -28,13 +27,7 @@ from mirage.types import PathSpec
 # pushdown_operand defers shaping flags and multi-operand lines to the
 # generic scan, which streams documents rather than reading whole
 # collections.
-_search = make_search("grep",
-                      detect_scope,
-                      SEARCHERS,
-                      IO,
-                      qualify=pushdown_operand,
-                      guard=True,
-                      stream=True)
+_search = partial(run_search, IO, "grep")
 
 
 @command("grep", vfs="mongodb", spec=SPECS["grep"])

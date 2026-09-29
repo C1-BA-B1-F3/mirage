@@ -40,8 +40,10 @@ export function specForCommand(
 // Delegates to parseCommand so flag syntax (clusters, --flag=value,
 // multiple flags, providedBy) classifies identically to dispatch. Kinds
 // are positional, not value sets, so the same word can be TEXT in one slot
-// and PATH in another (`grep '*.txt' *.txt`). Null marks a flag token,
-// whose own classification the default handles.
+// and PATH in another (`grep '*.txt' *.txt`). A flag token is TEXT even
+// when it carries a path (`sort -o/data/s1.txt`): the parser resolves the
+// value, and the shape heuristic would read the whole word as a path
+// under the cwd.
 //
 // parseCommand classifies ignoreTokens as TEXT itself, so there is
 // nothing to override here. A by-value override used to re-null them,

@@ -29,3 +29,13 @@ async def test_check_order_unsorted_input_exits_nonzero():
     stderr = await materialize(io.stderr)
     assert io.exit_code == 1
     assert stderr == b"comm: file 1 is not in sorted order\n"
+
+
+@pytest.mark.asyncio
+async def test_a_dash_operand_reads_stdin():
+    dash = PathSpec(virtual="/-", directory="/", vfs_path="-", raw_path="-")
+    stdout, io = await comm([dash, PathSpec.from_str_path("/right.txt")],
+                            read_bytes=_read_comm_file,
+                            stdin=b"apple\nzebra\n")
+    assert io.exit_code == 0
+    assert await materialize(stdout) == b"apple\n\tb\n\tc\nzebra\n"

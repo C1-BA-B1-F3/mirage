@@ -12,25 +12,11 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { byteChar, encodeText } from '../../shell/bytes.ts'
+import { compilePosixRegex } from '../../utils/posix.ts'
+import { encodeText } from '../../shell/bytes.ts'
 import { byteOffset } from '../../shell/helpers.ts'
 
-const DEC_REPLACE = new TextDecoder('utf-8', { ignoreBOM: true })
-
-// Whether these bytes are valid UTF-8 on their own. `grep_binary.ts` exports
-// its own `validUtf8`, which asks the same question of a rendered output chunk
-// for the binary-file notice; this one is only the inner step of `decodeLine`,
-// and keeping it here is what stops the conversion module importing back into
-// the scanner that uses it.
-function isUtf8(data: Uint8Array): boolean {
-  try {
-    new TextDecoder('utf-8', { fatal: true }).decode(data)
-    return true
-  } catch (error) {
-    if (!(error instanceof TypeError)) throw error
-    return false
-  }
-}
+const DEC_FATAL = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 
 /**
  * The input's bytes as text a byte offset can be counted back out of.
@@ -45,22 +31,65 @@ function isUtf8(data: Uint8Array): boolean {
  * `grep_offsets.py`.
  */
 export function decodeLine(raw: Uint8Array): string {
-  if (isUtf8(raw)) return DEC_REPLACE.decode(raw)
-  let text = ''
+  try {
+    return DEC_FATAL.decode(raw)
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error
+  }
+  const parts: string[] = []
+  const units = new Uint16Array(Math.min(raw.length, 8192))
+  let used = 0
   for (let i = 0; i < raw.length; ) {
-    const byte = raw[i]
-    if (byte === undefined) break
-    const width = byte < 0x80 ? 1 : byte < 0xe0 ? 2 : byte < 0xf0 ? 3 : 4
-    const part = raw.subarray(i, i + width)
-    if (part.length === width && isUtf8(part)) {
-      text += DEC_REPLACE.decode(part)
-      i += width
+    const byte = raw[i] ?? 0
+    const second = raw[i + 1] ?? 0
+    const third = raw[i + 2] ?? 0
+    const fourth = raw[i + 3] ?? 0
+    let code = byte < 0x80 ? byte : 0xdc00 + byte
+    let width = 1
+    // Reject overlong encodings, surrogate code points and values above
+    // U+10FFFF. An invalid sequence escapes only its first byte, just as
+    // Python's surrogateescape does, then retries at the following byte.
+    if (byte >= 0xc2 && byte <= 0xdf && second >= 0x80 && second <= 0xbf) {
+      code = ((byte & 0x1f) << 6) | (second & 0x3f)
+      width = 2
+    } else if (
+      byte >= 0xe0 &&
+      byte <= 0xef &&
+      second >= (byte === 0xe0 ? 0xa0 : 0x80) &&
+      second <= (byte === 0xed ? 0x9f : 0xbf) &&
+      third >= 0x80 &&
+      third <= 0xbf
+    ) {
+      code = ((byte & 0x0f) << 12) | ((second & 0x3f) << 6) | (third & 0x3f)
+      width = 3
+    } else if (
+      byte >= 0xf0 &&
+      byte <= 0xf4 &&
+      second >= (byte === 0xf0 ? 0x90 : 0x80) &&
+      second <= (byte === 0xf4 ? 0x8f : 0xbf) &&
+      third >= 0x80 &&
+      third <= 0xbf &&
+      fourth >= 0x80 &&
+      fourth <= 0xbf
+    ) {
+      code = ((byte & 7) << 18) | ((second & 0x3f) << 12) | ((third & 0x3f) << 6) | (fourth & 0x3f)
+      width = 4
+    }
+    if (code > 0xffff) {
+      code -= 0x10000
+      units[used++] = 0xd800 + (code >> 10)
+      units[used++] = 0xdc00 + (code & 0x3ff)
     } else {
-      text += byteChar(byte)
-      i += 1
+      units[used++] = code
+    }
+    i += width
+    if (used >= units.length - 1) {
+      parts.push(String.fromCharCode(...units.subarray(0, used)))
+      used = 0
     }
   }
-  return text
+  if (used > 0) parts.push(String.fromCharCode(...units.subarray(0, used)))
+  return parts.join('')
 }
 
 /** Text back to the bytes `decodeLine` read it from. */
@@ -96,6 +125,48 @@ export function lineOffsets(lines: readonly string[]): number[] {
  */
 export function matchOffset(lineStart: number, line: string, index: number): number {
   return lineStart + byteOffset(line, index)
+}
+
+/**
+ * Every match of a pattern in a line, found as ripgrep finds them.
+ *
+ * ripgrep iterates matches the way Rust's regex crate does: after an empty
+ * match the search resumes one character on, and an empty match where the
+ * previous match ended is skipped, so `b*` on `abc` is three matches. Returns
+ * each match's code-unit index and text. Mirrors Python's rust_matches.
+ */
+export function rustMatches(pat: RegExp, line: string): [number, string][] {
+  const re = compilePosixRegex(pat.source, `${pat.flags.replace(/[gy]/g, '')}g`)
+  const matches: [number, string][] = []
+  let pos = 0
+  let lastEnd = -1
+  while (pos <= line.length) {
+    re.lastIndex = pos
+    const m = re.exec(line)
+    if (m === null) break
+    const end = m.index + m[0].length
+    if (m[0] === '') {
+      // One character on, which a surrogate pair is too.
+      pos = end + ((line.codePointAt(end) ?? 0) > 0xffff ? 2 : 1)
+      if (end === lastEnd) continue
+    } else {
+      pos = end
+    }
+    lastEnd = end
+    matches.push([m.index, m[0]])
+  }
+  return matches
+}
+
+/**
+ * What ripgrep's -o prints for one line, one piece per output line: each
+ * match, empty ones included (`rustMatches`), or the whole line when nothing
+ * in it matches, which is how ripgrep prints an inverted selection and a
+ * context line under -o (14.1.1). Mirrors Python's rg_pieces.
+ */
+export function rgPieces(pat: RegExp, line: string): [number, string][] {
+  const matches = rustMatches(pat, line)
+  return matches.length > 0 ? matches : [[0, line]]
 }
 
 /** Incremental byte offsets for monotonically increasing match indices on one line. */

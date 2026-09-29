@@ -36,6 +36,13 @@ async def entity_guard(accessor: PostgresAccessor, match: ScopeMatch,
     kind = match.slots["kind"]
     pool = await accessor.pool()
     async with pool.acquire() as conn:
+        # An entity guard answers for its schema too: it replaces the
+        # listing chain wherever it runs, so a table under a schema the
+        # mount's `schemas` leaves out would otherwise read, stat and
+        # list as if the mount could see it.
+        if schema not in await client.list_schemas(conn,
+                                                   accessor.config.schemas):
+            raise enoent(virtual)
         if kind == "tables":
             names = await client.list_tables(conn, schema)
         else:
@@ -44,6 +51,29 @@ async def entity_guard(accessor: PostgresAccessor, match: ScopeMatch,
             names = sorted(set(views) | set(mviews))
     if match.slots["entity"] not in names:
         raise enoent(virtual)
+
+
+async def entity_exists(accessor: PostgresAccessor, match: ScopeMatch,
+                        virtual: str) -> bool:
+    """Whether ``entity_guard`` admits the entity a match names.
+
+    For the bespoke fast paths (``tail -n`` and ``wc -l`` on
+    ``rows.jsonl``), which query the relation by the names in the path:
+    they take the fast path only for an entity the mount can see, and
+    otherwise hand the operand to the generic, which stats it through
+    the same guard and reports it the way GNU names a missing file.
+
+    Args:
+        accessor (PostgresAccessor): backend handle.
+        match (ScopeMatch): a match whose slots hold ``schema``, ``kind``
+            and ``entity``.
+        virtual (str): the operand's virtual path.
+    """
+    try:
+        await entity_guard(accessor, match, virtual)
+    except FileNotFoundError:
+        return False
+    return True
 
 
 async def _list_root(accessor: PostgresAccessor,

@@ -201,6 +201,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
               entries: keys,
               expires_at: seed.expiresAt,
               generation: `${generation}:${directories.get(path) ?? ''}`,
+              partial: false,
             }
             pipe.set(this.childrenKey(path), JSON.stringify(listing))
           }
@@ -257,13 +258,30 @@ export class RedisIndexCacheStore extends IndexCacheStore {
       Date.now() / 1000 >= listing.expires_at
     )
       return { status: LookupStatus.EXPIRED }
-    return { entries: listing.entries }
+    return listing.partial ? { partialEntries: listing.entries } : { entries: listing.entries }
   }
 
   async setDir(
     vfsPath: string,
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
+  ): Promise<void> {
+    await this.storeDir(vfsPath, entries, expiredAt, false)
+  }
+
+  override async setPartialDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+  ): Promise<void> {
+    await this.storeDir(vfsPath, entries, expiredAt, true)
+  }
+
+  private async storeDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt: Date | null | undefined,
+    partial: boolean,
   ): Promise<void> {
     await this.flushSeed()
     const c = await this.client()
@@ -284,6 +302,7 @@ export class RedisIndexCacheStore extends IndexCacheStore {
       entries: childKeys,
       generation: `${generation}:${directory}`,
       expires_at: (expiredAt?.getTime() ?? now.getTime() + this.ttl * 1000) / 1000,
+      partial,
     }
     pipe.set(this.childrenKey(vfsPath), JSON.stringify(listing))
     await pipe.exec()

@@ -16,9 +16,11 @@ import dataclasses
 from collections.abc import Sequence
 
 from mirage.commands.builtin.find_parse import find_expr_tail
+from mirage.commands.builtin.generic.program import FILE_KEYS
 from mirage.commands.cli.walk import walk
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
-from mirage.io.types import ByteSource
+from mirage.commands.spec.flag_view import FlagView
+from mirage.io.types import ByteSource, DeviceInput
 from mirage.types import PathSpec
 from mirage.workspace.expand.classify.path import classify_bare_path
 from mirage.workspace.mount import MountRegistry
@@ -29,7 +31,8 @@ from mirage.workspace.mount import MountRegistry
 # grep -r and bare rg print bare relative names (empty raw). Two gates:
 # grep only defaults under -r/-R (and ignores stdin, GNU's rule); rg
 # yields to an attached stdin, even an empty one (its readable-stdin
-# rule). All pinned on debian:stable-slim / ripgrep 14.
+# rule), unless `-f -` reads it for patterns or --files lists. All pinned on
+# debian:stable-slim / ripgrep 14.
 CWD_DEFAULT_RAW = {
     "grep": "",
     "rg": "",
@@ -59,7 +62,10 @@ def default_cwd_operand(parts: list[str | PathSpec], cmd_name: str,
     spec = SPECS.get(cmd_name)
     if spec is None:
         return None
-    argv = [p.virtual if isinstance(p, PathSpec) else p for p in parts[1:]]
+    # A typed `-` goes back to the parser as itself, as it does from
+    # `parse_flags`, so `rg -f -` reads as stdin rather than a file `/-`.
+    argv = [("-" if p.raw_path == "-" else p.virtual) if isinstance(
+        p, PathSpec) else p for p in parts[1:]]
     if cmd_name == "find":
         # Only the words before the expression can be start points: an
         # `-exec` command word or a `-newer` reference is the parser's.
@@ -67,12 +73,24 @@ def default_cwd_operand(parts: list[str | PathSpec], cmd_name: str,
     parsed = parse_command(spec, argv, cwd, cmd_name)
     if parsed.paths():
         return None
+    if cmd_name == "rg" and FlagView(parse_to_kwargs(parsed),
+                                     spec=spec).as_bool("type_list"):
+        # --type-list reads no path, so there is no cwd to walk.
+        return None
     if cmd_name == "grep":
         kwargs = parse_to_kwargs(parsed)
         if kwargs.get("r") is not True and kwargs.get("R") is not True:
             return None
-    elif cmd_name == "rg" and stdin is not None:
-        return None
+    elif (cmd_name == "rg" and stdin is not None
+          and not isinstance(stdin, DeviceInput)):
+        fl = FlagView(parse_to_kwargs(parsed), spec=spec)
+        # `-f -` reads the attached stdin for patterns first, and --files
+        # lists rather than searches, and either leaves ripgrep nothing to
+        # do with stdin but walk the cwd instead. A stdin that is no file,
+        # FIFO or socket (`< /dev/null`) is not searched either
+        # (grep_cli::is_readable_stdin, ripgrep 14.1.1).
+        if "-" not in fl.as_list("file") and not fl.as_bool("files"):
+            return None
     operand = classify_bare_path(".", registry, cwd)
     if not isinstance(operand, PathSpec):
         return None
@@ -85,9 +103,16 @@ def path_flag_scopes(cmd_name: str, argv: list[str],
     if spec is None:
         return []
     parsed = parse_command(spec, argv, cwd, cmd_name)
+    key = FILE_KEYS.get(cmd_name)
+    program = parse_to_kwargs(parsed).get(key) if key is not None else None
+    program_paths = program if isinstance(program, list) else [program]
+    flag_paths = list(parsed.path_flag_values)
+    for value in program_paths:
+        if isinstance(value, str) and value in flag_paths:
+            flag_paths.remove(value)
     return [
         PathSpec(virtual=value, directory=value, vfs_path="", raw_path=value)
-        for value in parsed.path_flag_values
+        for value in flag_paths
     ]
 
 

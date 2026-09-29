@@ -47,6 +47,21 @@ class CommandTimeoutError(Exception):
         self.seconds = seconds
 
 
+def is_entry_error(exc: Exception) -> bool:
+    """Whether a listing reports this failure against one entry and walks on.
+
+    GNU's ls and find carry on from any failed stat below an operand,
+    whatever the errno, so a dropped connection or a 5xx on a mount
+    whose stat is a request costs that entry alone. Only what ends the
+    whole command still ends it: the line's timeout here, and its
+    cancellation, which is no Exception at all. Mirrors TS isEntryError.
+
+    Args:
+        exc (Exception): what the entry's stat raised.
+    """
+    return not isinstance(exc, CommandTimeoutError)
+
+
 class LimitExceededError(Exception):
     """A hard cap refused output the producer had already made.
 

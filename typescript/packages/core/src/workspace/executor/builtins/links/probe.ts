@@ -12,24 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { FileStat, FileType, PathSpec, type StatFn } from '../../../../types.ts'
-import { enoent, isMissError } from '../../../../utils/errors.ts'
-import { gnuBasename } from '../../../../utils/path.ts'
+import { FileStat, FileType, PathSpec } from '../../../../types.ts'
+import { ELOOP_STRERROR, isEnotdir, isMissError } from '../../../../utils/errors.ts'
+import { gnuBasename, posixNormpath } from '../../../../utils/path.ts'
 import { rstripSlash } from '../../../../utils/slash.ts'
 import type { StatOverlay } from '../../../../ops/types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
-
-// Stat via dispatch in the shape the generics' probes take: destKind and
-// its kin are written against a backend stat that raises on a miss, so a
-// dispatcher answer of nothing becomes ENOENT.
-export function dispatchStat(dispatch: DispatchFn): StatFn {
-  return async (path: PathSpec) => {
-    const [stat] = await dispatch('stat', path)
-    if (!(stat instanceof FileStat)) throw enoent(path)
-    return stat
-  }
-}
 
 export async function statOrNull(dispatch: DispatchFn, path: PathSpec): Promise<FileStat | null> {
   // A missing destination is an expected mv case (plain rename), not an
@@ -56,6 +45,10 @@ export async function statOrNull(dispatch: DispatchFn, path: PathSpec): Promise<
 // That holds only while a backend's readdir refuses a path it cannot prove:
 // postgres answered tables/views under any first segment, and every absent
 // schema read as a directory here.
+//
+// A link loop in the path is absence too: the walk reaches nothing there,
+// which is the question this answers, and a diagnostic that has to name
+// the errno asks missStrerror.
 export async function resolvePathStat(
   dispatch: DispatchFn,
   path: PathSpec,
@@ -65,7 +58,7 @@ export async function resolvePathStat(
     const [s] = await dispatch('stat', path)
     stat = s as FileStat | null
   } catch (exc) {
-    if (!isMissError(exc)) throw exc
+    if (!isMissError(exc) && !isEloop(exc)) throw exc
   }
   if (stat !== null) return stat
   let entries: unknown
@@ -73,7 +66,7 @@ export async function resolvePathStat(
     const [raw] = await dispatch('readdir', path)
     entries = raw
   } catch (exc) {
-    if (!isMissError(exc)) throw exc
+    if (!isMissError(exc) && !isEloop(exc)) throw exc
     return null
   }
   if (!Array.isArray(entries) || entries.length === 0) return null
@@ -100,6 +93,28 @@ export async function pathStat(
   const stat = await resolvePathStat(dispatch, spec)
   if (stat === null) return null
   return overlay !== null ? overlay(virtual, stat) : stat
+}
+
+// The strerror GNU names for a path pathStat found nothing at. pathStat
+// answers null for both ways a lookup fails, since an existence probe treats
+// them alike, while a diagnostic names the one the stat met: ENOTDIR for a
+// path under a plain file, ELOOP for one a link loop stands in, ENOENT for
+// the rest. Asked only after a miss, so its round trip is on the failure
+// path. Mirrors miss_strerror in probe.py.
+export async function missStrerror(dispatch: DispatchFn, virtual: string): Promise<string> {
+  try {
+    await dispatch('stat', PathSpec.fromStrPath(virtual))
+  } catch (err) {
+    if (isEnotdir(err)) return 'Not a directory'
+    if (isMissError(err)) return 'No such file or directory'
+    if (isEloop(err)) return ELOOP_STRERROR
+    throw err
+  }
+  return 'No such file or directory'
+}
+
+function isEloop(err: unknown): boolean {
+  return (err as { code?: string }).code === 'ELOOP'
 }
 
 // List one virtual path through the workspace, as virtual paths.
@@ -132,6 +147,18 @@ export async function pathExists(dispatch: DispatchFn, virtual: string): Promise
 // be namespace state (touch results, observed writes). Python gets the
 // overlay from the ops dispatcher itself; here it is applied on the way
 // out, against the resolved path rather than the link's.
+/**
+ * Where a path really points, as the door can address it: the namespace's
+ * walk, with a relative target's walk up from the link's own directory
+ * (`../a.txt`) collapsed, which the door does not do for a path it is handed
+ * whole. The link's directory is a real one, since the table keys every link
+ * by its resolved parent, so the `..` it names is that directory's parent.
+ * Throws CycleError when the chain loops. Mirrors Python's resolve_link.
+ */
+export function resolveLink(namespace: Namespace, virtual: string): string {
+  return posixNormpath(namespace.follow(virtual))
+}
+
 export async function linkTargetStat(
   namespace: Namespace,
   dispatch: DispatchFn,
@@ -140,7 +167,7 @@ export async function linkTargetStat(
 ): Promise<FileStat | null> {
   let target: string
   try {
-    target = namespace.follow(virtual)
+    target = resolveLink(namespace, virtual)
   } catch {
     // A loop (ELOOP) is one of the two ways a link legitimately has no
     // target; statOrNull maps the other (missing). Every other backend

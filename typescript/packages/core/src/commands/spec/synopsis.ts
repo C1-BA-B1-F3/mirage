@@ -80,6 +80,7 @@ export const SYNOPSES: Readonly<Record<string, string>> = {
   tr: 'tr [OPTION]... STRING1 [STRING2]',
   truncate: 'truncate OPTION... FILE...',
   tsort: 'tsort [OPTION] [FILE]',
+  uname: 'uname [OPTION]...',
   unexpand: 'unexpand [OPTION]... [FILE]...',
   uniq: 'uniq [OPTION]... [INPUT [OUTPUT]]',
   unlink: 'unlink FILE',

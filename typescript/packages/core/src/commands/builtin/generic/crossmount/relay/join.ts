@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { IOResult } from '../../../../../io/types.ts'
+import { IOResult, type ByteSource } from '../../../../../io/types.ts'
 import type { PathSpec } from '../../../../../types.ts'
 import { joinGeneric } from '../../join.ts'
 import type { CrossResult, DispatchFn } from '../types.ts'
@@ -25,7 +25,12 @@ export async function runJoin(
   scopes: PathSpec[],
   flagKwargs: Record<string, FlagValue>,
   dispatch: DispatchFn,
+  stdin: ByteSource | null = null,
 ): Promise<CrossResult> {
-  const result = await joinGeneric(flatten(scopes), crossOpts(flagKwargs), streamOp(dispatch))
+  const result = await joinGeneric(
+    flatten(scopes),
+    { ...crossOpts(flagKwargs), stdin },
+    streamOp(dispatch),
+  )
   return result ?? [null, new IOResult()]
 }

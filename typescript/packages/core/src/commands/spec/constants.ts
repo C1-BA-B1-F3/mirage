@@ -38,6 +38,15 @@ export const VERSION_OPTION = new Option({
 // every operand name: the brackets are the renderer's.
 export const ARG_PLACEHOLDER = 'ARG'
 
+// CPython and node read the script from stdin for a lone `-`, including
+// after `--`. Explicit `./-` still names a file (CPython 3.12, node 22).
+export const STDIN_SCRIPT_COMMANDS: ReadonlySet<string> = new Set([
+  'python',
+  'python3',
+  'js',
+  'node',
+])
+
 const AMBIGUOUS_NAMES: Readonly<Record<string, string>> = Object.freeze({
   l: 'args_l',
   O: 'args_O',
@@ -117,6 +126,213 @@ export const SOLE_ARGUMENT_LONG_OPTIONS: ReadonlySet<string> = new Set(['expr'])
 // `version_etc` or `usage` and exits INSIDE the loop.
 export const STANDARD_AFTER_SCAN: ReadonlySet<string> = new Set(['grep', 'rg'])
 
+// The programs whose getopt string lists the ten digits as options, the
+// obsolete `-NUM` count spelled one letter at a time: the digits of one word
+// build a number and a later word replaces it, wherever they sit in a
+// cluster. Measured on coreutils 9.7: `split -d10` is `-d` and ten lines, as
+// are `-10d` and `-dx10`, and `split -12 -5` is five. head and tail list the
+// digits too but refuse one past the first word, so they keep only the
+// whole-word `-NUM` that numericShorthand reads.
+export const DIGIT_OPTIONS: ReadonlySet<string> = new Set(['split'])
+
+// The long spellings that are one option under two names, keyed by
+// "<program> <synonym>" to the spelling it duplicates: glibc's several
+// long_options entries sharing one `val`, so a prefix of both resolves rather
+// than being ambiguous. Every other pair of declared longs is two options,
+// and a prefix of both is ambiguous, which is what getopt_long answers for
+// `ls --re` and `uname --k`. Measured on coreutils 9.7 and grep 3.11:
+// `grep --col` is --color and `date --u` is --utc. Python keys the same table
+// by (program, synonym) pairs.
+export const LONG_SYNONYMS: ReadonlyMap<string, string> = new Map([
+  ['grep --colour', '--color'],
+  ['date --universal', '--utc'],
+  ['rg --passthrough', '--passthru'],
+])
+
+// The whole long-option table of a program whose getopt_long resolves an
+// abbreviation against more options than mirage declares for it, so a partial
+// spec cannot say whether a prefix is ambiguous: `tar --fil` is `--file` or
+// `--files-from`, the second one mirage never declared. Each group is one
+// option, its primary spelling first and its aliases after it (argp's
+// OPTION_ALIAS entries, which share the primary's key and so never make a
+// prefix of both ambiguous), in the order getopt_long reads the table, which
+// is the order it lists possibilities in. A prefix names an option this table
+// resolves; one mirage does not declare stays unrecognized.
+//
+// GNU tar 1.35: argp hands getopt_long tar.c's options, then names.c's, then
+// argp's own --help, --usage, --program-name and --HANG, then --version.
+// Mirrors Python's TAR_LONG_OPTIONS.
+export const TAR_LONG_OPTIONS: readonly (readonly string[])[] = [
+  ['--list'],
+  ['--extract', '--get'],
+  ['--create'],
+  ['--diff', '--compare'],
+  ['--append'],
+  ['--update'],
+  ['--catenate', '--concatenate'],
+  ['--delete'],
+  ['--test-label'],
+  ['--sparse'],
+  ['--hole-detection'],
+  ['--sparse-version'],
+  ['--incremental'],
+  ['--listed-incremental'],
+  ['--level'],
+  ['--ignore-failed-read'],
+  ['--occurrence'],
+  ['--seek'],
+  ['--no-seek'],
+  ['--no-check-device'],
+  ['--check-device'],
+  ['--verify'],
+  ['--remove-files'],
+  ['--keep-old-files'],
+  ['--skip-old-files'],
+  ['--keep-newer-files'],
+  ['--overwrite'],
+  ['--unlink-first'],
+  ['--recursive-unlink'],
+  ['--no-overwrite-dir'],
+  ['--overwrite-dir'],
+  ['--keep-directory-symlink'],
+  ['--one-top-level'],
+  ['--to-stdout'],
+  ['--to-command'],
+  ['--ignore-command-error'],
+  ['--no-ignore-command-error'],
+  ['--owner'],
+  ['--group'],
+  ['--owner-map'],
+  ['--group-map'],
+  ['--mtime'],
+  ['--clamp-mtime'],
+  ['--mode'],
+  ['--atime-preserve'],
+  ['--touch'],
+  ['--same-owner'],
+  ['--no-same-owner'],
+  ['--numeric-owner'],
+  ['--preserve-permissions', '--same-permissions'],
+  ['--no-same-permissions'],
+  ['--preserve-order', '--same-order'],
+  ['--delay-directory-restore'],
+  ['--no-delay-directory-restore'],
+  ['--sort'],
+  ['--xattrs'],
+  ['--no-xattrs'],
+  ['--xattrs-include'],
+  ['--xattrs-exclude'],
+  ['--selinux'],
+  ['--no-selinux'],
+  ['--acls'],
+  ['--no-acls'],
+  ['--file'],
+  ['--force-local'],
+  ['--rmt-command'],
+  ['--rsh-command'],
+  ['--multi-volume'],
+  ['--tape-length'],
+  ['--info-script', '--new-volume-script'],
+  ['--volno-file'],
+  ['--blocking-factor'],
+  ['--record-size'],
+  ['--ignore-zeros'],
+  ['--read-full-records'],
+  ['--format'],
+  ['--old-archive', '--portability'],
+  ['--posix'],
+  ['--pax-option'],
+  ['--label'],
+  ['--auto-compress'],
+  ['--no-auto-compress'],
+  ['--use-compress-program'],
+  ['--bzip2'],
+  ['--gzip', '--gunzip', '--ungzip'],
+  ['--compress', '--uncompress'],
+  ['--lzip'],
+  ['--lzma'],
+  ['--lzop'],
+  ['--xz'],
+  ['--zstd'],
+  ['--one-file-system'],
+  ['--absolute-names'],
+  ['--dereference'],
+  ['--hard-dereference'],
+  ['--starting-file'],
+  ['--newer', '--after-date'],
+  ['--newer-mtime'],
+  ['--backup'],
+  ['--suffix'],
+  ['--strip-components'],
+  ['--transform', '--xform'],
+  ['--checkpoint'],
+  ['--checkpoint-action'],
+  ['--check-links'],
+  ['--totals'],
+  ['--utc'],
+  ['--full-time'],
+  ['--index-file'],
+  ['--block-number'],
+  ['--show-defaults'],
+  ['--show-snapshot-field-ranges'],
+  ['--show-omitted-dirs'],
+  ['--show-transformed-names', '--show-stored-names'],
+  ['--quoting-style'],
+  ['--quote-chars'],
+  ['--no-quote-chars'],
+  ['--interactive', '--confirmation'],
+  ['--verbose'],
+  ['--warning'],
+  ['--restrict'],
+  ['--add-file'],
+  ['--directory'],
+  ['--files-from'],
+  ['--null'],
+  ['--no-null'],
+  ['--unquote'],
+  ['--no-unquote'],
+  ['--verbatim-files-from'],
+  ['--no-verbatim-files-from'],
+  ['--exclude'],
+  ['--exclude-from'],
+  ['--exclude-caches'],
+  ['--exclude-caches-under'],
+  ['--exclude-caches-all'],
+  ['--exclude-tag'],
+  ['--exclude-ignore'],
+  ['--exclude-ignore-recursive'],
+  ['--exclude-tag-under'],
+  ['--exclude-tag-all'],
+  ['--exclude-vcs'],
+  ['--exclude-vcs-ignores'],
+  ['--exclude-backups'],
+  ['--recursion'],
+  ['--no-recursion'],
+  ['--anchored'],
+  ['--no-anchored'],
+  ['--ignore-case'],
+  ['--no-ignore-case'],
+  ['--wildcards'],
+  ['--no-wildcards'],
+  ['--wildcards-match-slash'],
+  ['--no-wildcards-match-slash'],
+  ['--help'],
+  ['--usage'],
+  ['--program-name'],
+  ['--HANG'],
+  ['--version'],
+]
+export const LONG_OPTION_TABLES: Readonly<Record<string, readonly (readonly string[])[]>> = {
+  tar: TAR_LONG_OPTIONS,
+}
+
+// The programs whose short value options drop one `=` from an attached value,
+// the way lexopt (ripgrep's parser), clap and argparse read `-x=VALUE`. GNU
+// getopt keeps it (`head -n=5` is refused as `=5`), which is every other
+// builtin. Measured on ripgrep 14.1.1: `rg -g=*.py`, `rg -m=1`, `rg -A=1` and
+// `rg -e=hello` read `*.py`, `1`, `1` and `hello`.
+export const EQUALS_SHORT_VALUES: ReadonlySet<string> = new Set(['rg'])
+
 // The one program whose standard options outrank every option refusal,
 // wherever the word sits. zgrep is a shell script that reads the line in its
 // own loop before it ever builds a grep command, and that loop answers both
@@ -138,13 +354,14 @@ export const STANDARD_BEFORE_SCAN: ReadonlySet<string> = new Set(['zgrep'])
 // `--backup`, `ls --sort`, `ls --time`, `sort --check`, `cp --update`,
 // `tail --follow`, `wc --total`, `uniq`, `cut` -- call `argmatch` from the
 // command with their own candidate list, and never reach the parser's
-// `Option.choices` at all. These three are the whole of what does. Measured
-// on coreutils 9.7: `tee --output-error=exit-n` resolves to `exit-nopipe`
-// while `=w` and `=e` are ambiguous, `numfmt --to=s` resolves to `si` and
-// `--to=ie` is ambiguous between `iec` and `iec-i`.
+// `Option.choices` at all. The entries below are the whole of what does.
+// Measured on coreutils 9.7: `tee --output-error=exit-n` resolves to
+// `exit-nopipe` while `=w` and `=e` are ambiguous, `numfmt --to=s` resolves
+// to `si` and `--to=ie` is ambiguous between `iec` and `iec-i`, `date -Is`
+// resolves to `seconds` and `date --rfc-3339=` is ambiguous.
 //
 // Written as "<command> <canonical long spelling>" because that is how the
-// measurement reads, but it NAMES the three builtin `Option` objects rather
+// measurement reads, but it NAMES the builtin `Option` objects rather
 // than keying on the two strings: the parser resolves each entry once and
 // then asks whether the option declaring a set IS one of them. A name is not
 // identity, and a mount may register its own `tee` (commands/registry.ts)
@@ -160,6 +377,8 @@ export const ARGMATCH_CHOICE_OPTIONS: ReadonlySet<string> = new Set([
   'tee --output-error',
   'numfmt --to',
   'numfmt --from',
+  'date --iso-8601',
+  'date --rfc-3339',
 ])
 
 // Value shape accepted by an int-typed option: optional sign plus digits,
@@ -172,7 +391,13 @@ export const FLOAT_VALUE = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
 // (plus ripgrep and jq upstream docs). Everything else exits 1.
 // Commands whose `Try '--help'` hint line is prefixed with the command
 // name (GNU diffutils style: `diff: Try 'diff --help' ...`).
-export const USAGE_HINT_PREFIX: ReadonlySet<string> = new Set(['diff', 'cmp'])
+export const USAGE_HINT_PREFIX: ReadonlySet<string> = new Set(['diff', 'cmp', 'patch'])
+
+// Commands that read their operands in line order (getopt's
+// RETURN_IN_ORDER), so the argv[argc - 1] a missing-operand line names is
+// the line's last word, not its last operand: `join a.txt -t ,` is missing
+// an operand after ',' (coreutils 9.7). Mirrors Python's ARGV_IN_ORDER.
+export const ARGV_IN_ORDER: ReadonlySet<string> = new Set(['join'])
 
 // An old-style cluster letter left without its argument exits 2, not
 // USAGE_EXIT's 64: tar reads the cluster itself and raises its own fatal
@@ -202,7 +427,9 @@ export const USAGE_EXIT: Readonly<Record<string, number>> = Object.freeze({
   awk: 2,
   jq: 2,
   curl: 2,
+  patch: 2,
   tar: 64,
+  timeout: 125,
   python: 2,
   python3: 2,
 })
@@ -231,19 +458,18 @@ export const READ_FAIL_EXIT: Readonly<Record<string, number>> = Object.freeze({
   unzip: 9,
 })
 
-// The four commands whose code DOES depend on the errno, so the table
-// above cannot express them on its own. sed opens the directory
-// successfully and fails on the read, which is its own class (4), while a
-// missing file fails at open (2). The gzip family reports a directory as
-// a warning (2) and a missing file as an error (1). zgrep inverts that,
-// because its exit code is grep's: a directory it cannot decompress
-// yields no match (1) where a missing file is grep's own error (2).
+// The commands whose code DOES depend on the errno, so the table above
+// cannot express them on its own. sed opens the directory successfully and
+// fails on the read, which is its own class (4), while a missing file fails at
+// open (2). The gzip family reports a directory as a warning (2) and a missing
+// file as an error (1). zgrep opens its operands itself, as `gzip -cdfq`
+// does, and a pattern file it cannot read is exit 2 however it failed.
+// Mirrors Python's READ_FAIL_EXIT_ISDIR.
 export const READ_FAIL_EXIT_ISDIR: Readonly<Record<string, number>> = Object.freeze({
   sed: 4,
   gzip: 2,
   gunzip: 2,
   zcat: 2,
-  zgrep: 1,
 })
 
 // The interpreter commands answer option errors in CPython's words, not

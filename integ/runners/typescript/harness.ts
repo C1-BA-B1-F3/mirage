@@ -19,6 +19,9 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Outcome, Scope } from '@struktoai/mirage-core/policy/index'
 import type { SessionProfile } from '@struktoai/mirage-core/policy/profile'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
+import { resolveReadSpec } from '@struktoai/mirage-core/workspace/mount/read_policy'
+import type { ReadSpec } from '@struktoai/mirage-node'
 
 // integ/runtime holds the runtime suite (its own schema and runners,
 // integ/runtime/run.{py,ts} + cli.sh), not battery cases; keep it out.
@@ -31,7 +34,9 @@ export interface Mount {
   vfs: string
   backend: string
   mode?: string
+  config?: Record<string, unknown>
   fixture?: string
+  host_fixture?: string
   // Mount this prefix over an already-built mount's storage instead of
   // allocating fresh storage, so cp/mv can be exercised against two
   // prefixes that address the same bytes.
@@ -49,6 +54,8 @@ export interface Mount {
   volume?: string
   prefix?: string
   root?: string
+  // The bases an airtable mount is scoped to (AirtableConfig.base_ids).
+  base_ids?: string[]
   drive?: string
 }
 
@@ -171,6 +178,7 @@ export interface Case {
   // takes a bound.
   read?: 'fresh' | 'bounded'
   ttl?: number
+  mount_read?: Record<string, 'fresh' | 'bounded'>
   session?: string
   // The host's answer to every approval waiting on the workspace, given
   // before the command runs: `allow_once`, `allow_session` or `deny`.
@@ -187,7 +195,9 @@ export interface Case {
   _source?: string
 }
 
-export type ScenarioStep = { mutate: { path: string; content: string } } | { command: string }
+export type ScenarioStep =
+  | { mutate: { path: string; content: string } | { command: string } }
+  | { command: string }
 
 export interface ProvisionInfo {
   networkRead: number | string
@@ -221,7 +231,7 @@ export interface HarnessStat {
 }
 
 export interface ExecWorkspace {
-  execute(cmd: string, opts?: { stdin?: Uint8Array; sessionId?: string }): Promise<ExecResult>
+  shell(cmd: string, opts?: { stdin?: Uint8Array; sessionId?: string }): Promise<ExecResult>
   dispatch(
     opName: string,
     path: string,
@@ -278,9 +288,11 @@ export function loadTargets(root: string): Map<string, Target> {
  * The service -> per-host required env vars table.
  *
  * An empty list means the host needs nothing because its adapter starts an
- * in-process fake; the two hosts differ here (python self-hosts s3, ssh, hf,
- * box, databricks, discord, linear and dify, typescript does not), so the
- * asymmetry is spelled out per host rather than inferred.
+ * in-process fake (or the backend needs no service). The two hosts differ per
+ * service (python starts s3 and ssh itself where typescript reads an
+ * endpoint; typescript needs nothing for quickjs where python reads
+ * MIRAGE_QUICKJS_HOME), so each host's list is spelled out in targets.json
+ * rather than inferred.
  */
 export function loadServices(root: string): Map<string, ServiceEnv> {
   const data = JSON.parse(readFileSync(join(root, 'targets.json'), 'utf8')) as {
@@ -368,10 +380,12 @@ export function loadCases(root: string): Case[] {
     }
     for (const file of files) {
       const rel = relative(root, file)
-      const data = JSON.parse(readFileSync(file, 'utf8')) as { cases: Case[] }
+      const data = JSON.parse(readFileSync(file, 'utf8')) as {
+        targets?: string[]
+        cases: (Omit<Case, 'targets'> & { targets?: string[] })[]
+      }
       for (const c of data.cases) {
-        c._source = rel
-        cases.push(c)
+        cases.push({ targets: data.targets ?? [], ...c, _source: rel })
       }
     }
   }
@@ -386,7 +400,8 @@ export function loadCases(root: string): Case[] {
  * A duplicate id collides in the parity runner, which keys rows by
  * (target, id), so one of the pair is dropped from the py/ts diff without a
  * word. A target id that matches no manifest entry means the case never runs
- * anywhere, which reads as "passing" everywhere.
+ * anywhere, which reads as "passing" everywhere. A `mount_read` without a
+ * `read` is routed as an ordinary case, where the override is never applied.
  */
 export function validateCases(root: string, cases: Case[]): void {
   const known = new Set(loadTargets(root).keys())
@@ -394,6 +409,16 @@ export function validateCases(root: string, cases: Case[]): void {
   const duplicates: string[] = []
   const unknown: string[] = []
   for (const c of cases) {
+    if (
+      !Array.isArray(c.targets) ||
+      c.targets.length === 0 ||
+      c.targets.some((t) => typeof t !== 'string')
+    ) {
+      throw new Error(`case ${c.id}: targets must be a nonempty string list`)
+    }
+    if (c.mount_read !== undefined && c.read === undefined) {
+      throw new Error(`case ${c.id}: mount_read needs read, the policy every other mount inherits`)
+    }
     const first = seen.get(c.id)
     if (first !== undefined) duplicates.push(`${c.id} (${first} and ${c._source ?? '?'})`)
     else seen.set(c.id, c._source ?? '?')
@@ -405,6 +430,20 @@ export function validateCases(root: string, cases: Case[]): void {
   if (unknown.length) {
     throw new Error(`cases naming an unknown target: ${unknown.join('; ')}`)
   }
+}
+
+/**
+ * The per-mount policies a scenario case overrides its default with. Each
+ * named prefix runs under its own policy and every other mount inherits
+ * `read`, the only way a case can put two policies on one line; `ttl`
+ * bounds each.
+ */
+export function mountReadOf(c: Pick<Case, 'mount_read' | 'ttl'>): Record<string, ReadSpec> {
+  const out: Record<string, ReadSpec> = {}
+  for (const [prefix, policy] of Object.entries(c.mount_read ?? {})) {
+    out[prefix] = resolveReadSpec(policy, c.ttl)
+  }
+  return out
 }
 
 export function walkFiles(base: string): string[] {
@@ -455,7 +494,7 @@ export async function seedFixture(
 async function seedFrom(ws: ExecWorkspace, base: string, mountPath: string): Promise<void> {
   for (const file of walkFiles(base)) {
     const rel = relative(base, file).split(sep).join('/')
-    const dest = `${mountPath.replace(/\/+$/, '')}/${rel}`
+    const dest = `${rstripSlash(mountPath)}/${rel}`
     const parent = dest.slice(0, dest.lastIndexOf('/'))
     await ws.shell(`mkdir -p ${parent}`)
     await ws.shell(`tee ${dest} > /dev/null`, { stdin: new Uint8Array(readFileSync(file)) })
@@ -470,7 +509,7 @@ export async function seedMountRoot(ws: ExecWorkspace, mountPath: string): Promi
   // marker file rides the same workspace plumbing fixture seeding uses:
   // the upload auto-creates the folder chain and the delete leaves the
   // folders behind, so the mount lists as empty like every other target.
-  const marker = `${mountPath.replace(/\/+$/, '')}/.seed`
+  const marker = `${rstripSlash(mountPath)}/.seed`
   await ws.shell(`tee ${marker} > /dev/null`, { stdin: ENC.encode('seed\n') })
   await ws.shell(`rm ${marker}`)
 }
@@ -478,20 +517,81 @@ export async function seedMountRoot(ws: ExecWorkspace, mountPath: string): Promi
 export async function runScenario(
   ws: ExecWorkspace,
   mutate: (path: string, content: Uint8Array) => Promise<void>,
+  mutateLine: (command: string) => Promise<void>,
   steps: ScenarioStep[],
-): Promise<{ exitCode: number; out: string }> {
+): Promise<{ exitCode: number; out: string; err: string }> {
   const outputs: string[] = []
+  const errors: string[] = []
   let exitCode = 0
   for (const step of steps) {
     if ('mutate' in step) {
-      await mutate(step.mutate.path, ENC.encode(step.mutate.content))
+      const spec = step.mutate
+      if ('command' in spec) await mutateLine(spec.command)
+      else await mutate(spec.path, ENC.encode(spec.content))
       continue
     }
     const result = await ws.shell(step.command)
     outputs.push(DEC.decode(result.stdout))
+    errors.push(DEC.decode(result.stderr))
     exitCode = result.exitCode
   }
-  return { exitCode, out: outputs.join('') }
+  return { exitCode, out: outputs.join(''), err: errors.join('') }
+}
+
+/** The two workspaces a consistency scenario runs across, and their teardown. */
+export interface ScenarioOpen {
+  ws: ExecWorkspace
+  mutate: (path: string, content: Uint8Array) => Promise<void>
+  mutateLine: (command: string) => Promise<void>
+  cleanup: () => Promise<void>
+}
+
+// Not an exit any case expects, so a scenario that never ran compares unequal
+// to every golden instead of matching one by accident.
+const NO_SHADOW_EXIT = 125
+
+/**
+ * Run one consistency scenario, or record why it could not run.
+ *
+ * A target a case names but whose adapter cannot build the shadow workspace is
+ * a broken target, not an optional one, so it comes back as a failed result the
+ * caller records like any other rather than a skip it prints and moves past.
+ * Python's runner has no skip arm at all; this keeps the two hosts alike.
+ *
+ * Args:
+ *   opener: builds the read workspace plus its shadow, or null when the
+ *     adapter cannot.
+ *   c: the case being run.
+ *   target: the target it runs against.
+ */
+export async function runConsistencyCase(
+  opener: () => Promise<ScenarioOpen | null>,
+  c: Case,
+  target: Target,
+): Promise<{ exitCode: number; out: string; stderr: string }> {
+  const opened = await opener()
+  if (opened === null) {
+    return {
+      exitCode: NO_SHADOW_EXIT,
+      out: '',
+      stderr: `[${target.id}] ${c.id}: ${target.mounts[0]?.vfs ?? 'unknown'} adapter has no shadow workspace\n`,
+    }
+  }
+  try {
+    // Same rule as the ordinary path: a target's declared environment reaches
+    // every workspace a case can run against, or a consistency scenario would
+    // silently run under a different one.
+    opened.ws.env = { ...opened.ws.env, ...(target.env ?? {}) }
+    const { exitCode, out, err } = await runScenario(
+      opened.ws,
+      opened.mutate,
+      opened.mutateLine,
+      c.scenario ?? [],
+    )
+    return { exitCode, out, stderr: err }
+  } finally {
+    await opened.cleanup()
+  }
 }
 
 function checkField(st: HarnessStat, name: string): string {
@@ -557,7 +657,7 @@ function provisionLine(r: ProvisionInfo): string {
 // base URL, which is only known once the server has bound a port.
 export function bindMount(c: Case, mountPath: string): Case {
   const tokens: ReadonlyArray<readonly [string, string]> = [
-    ['{mount}', mountPath.replace(/\/+$/, '')],
+    ['{mount}', rstripSlash(mountPath)],
     ['{http}', process.env.HTTP_ENDPOINT ?? ''],
   ]
   const subst = (text: string): string =>
@@ -764,7 +864,7 @@ export async function runCase(
     // and charging that to the dry run would fail every ask case.
     recorded = ws.decisions.pending().length - before
   }
-  const result = await ws.shell(c.command, { sessionId: c.session })
+  const result = await ws.shell(c.command, c.session === undefined ? {} : { sessionId: c.session })
   const elapsed = (performance.now() - start) / 1000
   const out = DEC.decode(result.stdout)
   const err = DEC.decode(result.stderr)

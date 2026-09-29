@@ -15,7 +15,7 @@
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import Any
+from typing import Any, TypeVar
 
 from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore
@@ -30,6 +30,8 @@ from mirage.core.jq import is_jsonl_path, is_streamable_jsonl_expr
 from mirage.provision.types import Precision, ProvisionResult
 from mirage.types import FileType, PathSpec
 from mirage.utils.key_prefix import rekey
+
+CommandT = TypeVar("CommandT", bound=Callable[..., Any])
 
 logger = logging.getLogger(__name__)
 
@@ -646,10 +648,10 @@ def default_provision(
 
 
 def with_default_provisions(
-        commands: list[Callable[..., Any]],
+        commands: list[CommandT],
         stat: Callable[..., Any],
         resolve_glob: Callable[..., Any] | None = None,
-        readdir: Callable[..., Any] | None = None) -> list[Callable[..., Any]]:
+        readdir: Callable[..., Any] | None = None) -> list[CommandT]:
     """Back-fill the family provision catalog onto hand-written commands.
 
     Hand-written command modules would otherwise each name a provision

@@ -22,6 +22,7 @@ import { DISCORD } from '../../commands/cli/builtin/discord/index.ts'
 import { GIT } from '../../commands/cli/builtin/git/index.ts'
 import { GWS } from '../../commands/cli/builtin/gws/index.ts'
 import { LINEAR } from '../../commands/cli/builtin/linear/index.ts'
+import { AIRTABLE } from '../../commands/cli/builtin/airtable/index.ts'
 import { NTN } from '../../commands/cli/builtin/ntn/index.ts'
 import { SLACK } from '../../commands/cli/builtin/slack/index.ts'
 import { CLIRegistry } from './registry.ts'
@@ -223,6 +224,7 @@ const BUILTIN_CLIS: readonly (readonly [string, CLISpec])[] = [
   ['discord', DISCORD],
   ['ntn', NTN],
   ['linear', LINEAR],
+  ['airtable', AIRTABLE],
   ['git', GIT],
 ]
 
@@ -254,6 +256,23 @@ describe('builtin CLI configs install from the python spelling', () => {
       }
       const install = new CLIRegistry().install(name, spec, config)
       expect(Object.keys(install.config as Record<string, unknown>).sort()).toEqual(fields.sort())
+    })
+  }
+})
+
+describe('account CLIs take no mount time scope', () => {
+  for (const [name, spec] of [
+    ['slack', SLACK],
+    ['discord', DISCORD],
+  ] as const) {
+    it(`${name} refuses start_time and end_time`, () => {
+      expect(() =>
+        new CLIRegistry().install(name, spec, {
+          token: 'x',
+          start_time: '2026-06-01T00:00:00Z',
+          end_time: '2026-06-02T00:00:00Z',
+        }),
+      ).toThrow(`CLI '${name}': unknown config keys: end_time, start_time`)
     })
   }
 })

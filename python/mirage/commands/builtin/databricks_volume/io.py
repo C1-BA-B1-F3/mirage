@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.builtin.generic_bind import CommandIO
 from mirage.core.databricks_volume.copy import copy as _copy
 from mirage.core.databricks_volume.create import create as _create
 from mirage.core.databricks_volume.exists import exists as _exists
@@ -26,27 +25,26 @@ from mirage.core.databricks_volume.stat import stat as _stat
 from mirage.core.databricks_volume.stream import read_stream as _read_stream
 from mirage.core.databricks_volume.unlink import unlink as _unlink
 from mirage.core.databricks_volume.write import write_bytes as _write
+from mirage.vfs.adapter import VFSAdapter, append_from_read
+from mirage.vfs.types import NativeReadOps, ReadOps, WriteOps
 
 # Databricks Volume files are read and written through the generic factory;
 # head keeps a wrapper because -c fetches only the first N bytes via a single
 # range request instead of streaming the whole file.
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_range=_read,
-    read_stream=_read_stream,
-    stat=_stat,
-    is_mounted=lambda a: True,
-    local=False,
-    write=_write,
-    exists=_exists,
-    mkdir=_mkdir,
-    unlink=_unlink,
-    rmdir=_rmdir,
-    rm_r=_rm_r,
-    rename=_rename,
-    copy=_copy,
-    create=_create,
-)
+IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                native=NativeReadOps(read_range=_read,
+                                     read_stream=_read_stream,
+                                     exists=_exists),
+                writes=WriteOps(write=_write,
+                                append=append_from_read(_read, _write),
+                                mkdir=_mkdir,
+                                unlink=_unlink,
+                                rmdir=_rmdir,
+                                rm_r=_rm_r,
+                                rename=_rename,
+                                copy=_copy,
+                                create=_create),
+                is_mounted=lambda a: True,
+                local=False).to_command_io()
 
 resolve_glob = IO.resolve_glob

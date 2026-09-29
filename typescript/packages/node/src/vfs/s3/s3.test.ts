@@ -228,11 +228,11 @@ describe('S3VFS (mocked integration)', () => {
       expect(txts.sort()).toEqual(['/find/a.txt', '/find/c.txt'])
     })
 
-    it('find with minSize skips small files and directories (size 0)', async () => {
+    it('find with minSize skips small files and keeps directories (DIR_SIZE)', async () => {
       await ops(vfs).write(mkPath('/sz/small'), ENC.encode('x'))
       await ops(vfs).write(mkPath('/sz/big'), ENC.encode('x'.repeat(100)))
       const results = await findCore(vfs.accessor, mkPath('/sz/'), { minSize: 10 })
-      expect(results).toEqual(['/sz/big'])
+      expect(results).toEqual(['/sz', '/sz/big'])
     })
   })
 })

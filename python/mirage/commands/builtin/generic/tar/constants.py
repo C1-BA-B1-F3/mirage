@@ -19,7 +19,38 @@ READ_MODES: dict[CompressionSuffix, ReadMode] = {
 # usage.old_option_error gives (mirage's tar serves no --usage).
 USAGE_HINT = "Try 'tar --help' for more information."
 EMPTY_ARCHIVE = "tar: Cowardly refusing to create an empty archive"
+# argp's mode refusals: a second main operation where the first one is
+# already set, and a line that never names one. The double space is
+# GNU's.
+MODE_CONFLICT = ("tar: You may not specify more than one '-Acdtrux', "
+                 "'--delete' or  '--test-label' option")
+NO_MODE = ("tar: You must specify one of the '-Acdtrux', '--delete' or "
+           "'--test-label' options")
+MULTIPLE_ARCHIVES = "tar: Multiple archive files require '-M' option"
+# A --strip-components value that is no count, named first.
+STRIP_COUNT = "tar: {}: Invalid number of elements"
+# GNU normalizes an empty operand to `.` before it stats it, says so, and
+# then still names the operand as typed when the stat fails (tar 1.35).
+EMPTY_MEMBER = "tar: Substituting `.' for empty member name"
 FATAL_TRAILER = "tar: Error is not recoverable: exiting now"
+# What GNU adds when the archive opened but its first read failed (a
+# directory given to -f).
+TAPE_START = "tar: At beginning of tape, quitting now"
+# What tar adds when its gzip -d child fails, after gzip's own lines.
+CHILD_STATUS = "tar: Child returned status {}"
+# With a compressor, the archive is opened by tar's child, which names
+# itself so on every line it prints (tar 1.35).
+CHILD_NAME = "tar (child)"
+# What the compressor the child already spawned says when the child dies
+# before feeding it, which happens for every open failure but a missing
+# name (gzip 1.13, xz 5.4). bzip2's complaint is a paragraph of recovery
+# advice that mirage does not reproduce.
+EMPTY_PIPE = {
+    ":gz": ("", "gzip: stdin: unexpected end of file"),
+    ":xz": ("xz: (stdin): File format not recognized", ),
+}
+INVALID_ARCHIVE = ("tar: This does not look like a tar archive",
+                   "tar: Skipping to next header")
 ERROR_TRAILER = "tar: Exiting with failure status due to previous errors"
 SELF_DUMP = "archive cannot contain itself; not dumped"
 # The exit GNU gives an operand it could not read, and a -C it could not

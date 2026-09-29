@@ -47,7 +47,8 @@ def test_rename_moves_a_file(accessor):
         _rename_for(store)(accessor, spec("/a/src.txt"), spec("/b/dst.txt")))
     assert store.objects == {"b/dst.txt": b"hi"}
     assert manager.subtrees == ["/b/dst.txt", "/a/src.txt"]
-    assert manager.writes == ["/b", "/a"]
+    assert manager.writes == []
+    assert manager.ancestors == ["/mnt/b/dst.txt", "/mnt/a/src.txt"]
 
 
 def test_rename_falls_back_to_the_prefix_walk(accessor):
@@ -105,8 +106,8 @@ def test_rename_records_a_retraction_for_both_paths(accessor):
     assert _recorded(
         make_rename(make_driver(store),
                     _exists)(accessor, spec("/a.txt"),
-                             spec("/b.txt"))) == [("rename", "/a.txt"),
-                                                  ("rename", "/b.txt")]
+                             spec("/b.txt"))) == [("rename", "/mnt/a.txt"),
+                                                  ("rename", "/mnt/b.txt")]
 
 
 def test_self_rename_records_nothing(accessor):
@@ -144,8 +145,8 @@ def test_rename_records_both_retractions_when_the_prefix_walk_fails(accessor):
     driver = replace(make_driver(store), move_prefix=_boom)
     assert _recorded_failure(
         make_rename(driver, _exists)(accessor, spec("/d"), spec("/e")),
-        RuntimeError, "boom") == [("rename_prefix", "/d"),
-                                  ("rename_prefix", "/e")]
+        RuntimeError, "boom") == [("rename_prefix", "/mnt/d"),
+                                  ("rename_prefix", "/mnt/e")]
 
 
 def test_rename_evicts_both_subtrees_when_the_prefix_walk_raises(accessor):

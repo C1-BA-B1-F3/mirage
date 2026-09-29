@@ -15,11 +15,13 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from mirage.cache.file.io import mutation_lock
+from mirage.cache.file.io import latest_fingerprint, mutation_lock
 from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index.store import IndexCacheStore
 from mirage.cache.index.view import IndexView
-from mirage.types import PathSpec
+from mirage.observe.context import active_recorder
+from mirage.observe.record import READ_FINGERPRINT_OPS
+from mirage.types import DEFAULT_READ_TTL, PathSpec
 from mirage.utils.key_prefix import mount_key
 
 
@@ -48,15 +50,15 @@ class CacheManager:
     pipeline runs instead of after the whole command tree.
     """
 
-    def __init__(
-        self,
-        file_cache: FileCacheMixin | None,
-        index: IndexCacheStore,
-        prefix: str,
-        caches_reads: bool,
-        owns_path: Callable[[str], bool] = lambda _: True,
-        may_serve_cached: Callable[[str], Awaitable[bool]] = _always_serve
-    ) -> None:
+    def __init__(self,
+                 file_cache: FileCacheMixin | None,
+                 index: IndexCacheStore,
+                 prefix: str,
+                 caches_reads: bool,
+                 owns_path: Callable[[str], bool] = lambda _: True,
+                 may_serve_cached: Callable[[str],
+                                            Awaitable[bool]] = _always_serve,
+                 read_ttl: int = DEFAULT_READ_TTL) -> None:
         """Args:
             file_cache (FileCacheMixin | None): Workspace file cache
                 store; entries are keyed by mount-absolute path.
@@ -73,6 +75,7 @@ class CacheManager:
                 dispatcher and ``mirage.cache.context`` documents that
                 dependency as one-way. Answers whether a warm entry may
                 still be served; the default trusts the cache.
+            read_ttl (int): lifetime of complete backend renders.
         """
         self._file_cache = file_cache
         self._index = index
@@ -80,6 +83,8 @@ class CacheManager:
         self._caches_reads = caches_reads
         self._owns_path = owns_path
         self._may_serve_cached = may_serve_cached
+        self._read_ttl = read_ttl
+        self._read_generation = 0
 
     @asynccontextmanager
     async def mutation(self) -> AsyncIterator[None]:
@@ -187,6 +192,38 @@ class CacheManager:
         cached = await cache.get(key)
         return cached if self._owns_path(key) else None
 
+    async def read_through(self, path: PathSpec,
+                           fetch: Callable[[], Awaitable[bytes]]) -> bytes:
+        """Cache a complete backend read before a consumer transforms it.
+
+        Args:
+            path (PathSpec): file being read.
+            fetch (Callable): cold whole-file reader.
+        """
+        cached = await self.cached_bytes(path)
+        if cached is not None:
+            return cached
+        generation = self._read_generation
+        recorder = active_recorder()
+        start = len(recorder.sink) if recorder is not None else 0
+        data = await fetch()
+        key = self._cache_key(path)
+        cache = self._readable_cache(key)
+        if cache is not None:
+            async with mutation_lock(cache):
+                if self._owns_path(
+                        key) and generation == self._read_generation:
+                    records = recorder.sink[
+                        start:] if recorder is not None else None
+                    fingerprint = latest_fingerprint(records, key,
+                                                     READ_FINGERPRINT_OPS,
+                                                     len(data))
+                    await cache.set(key,
+                                    data,
+                                    fingerprint=fingerprint,
+                                    ttl=self._read_ttl)
+        return data
+
     async def cached_size(self, path: PathSpec) -> int | None:
         """Return the cached render's byte length, without revalidating.
 
@@ -213,6 +250,7 @@ class CacheManager:
             path (PathSpec): Path that was written; only ``virtual`` is
                 read.
         """
+        self._read_generation += 1
         key = self._cache_key(path)
         if self._caches_reads and self._file_cache is not None:
             await self._file_cache.remove(key)
@@ -225,6 +263,7 @@ class CacheManager:
             path (PathSpec): Path that was removed; only ``virtual`` is
                 read.
         """
+        self._read_generation += 1
         key = self._cache_key(path)
         if self._caches_reads and self._file_cache is not None:
             await self._file_cache.remove(key)
@@ -247,6 +286,7 @@ class CacheManager:
             path (PathSpec): Root of the stale subtree; only ``virtual``
                 is read.
         """
+        self._read_generation += 1
         key = self._cache_key(path)
         if self._caches_reads and self._file_cache is not None:
             await self._file_cache.remove(key)
@@ -287,6 +327,7 @@ class CacheManager:
         beneath it, since keys are compared by prefix. That costs a
         refetch, which is the safe direction to be wrong in.
         """
+        self._read_generation += 1
         if not self._caches_reads or self._file_cache is None:
             return
         await self._file_cache.evict_prefix(self._prefix + "/")

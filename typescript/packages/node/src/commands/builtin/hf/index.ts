@@ -14,15 +14,10 @@
 
 import { makeGenericCommands } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
-import { HF_VFS_NAMES, type HfAccessor } from '../../../accessor/hf.ts'
+import { VFSName } from '@struktoai/mirage-core/types'
+import type { HfBucketsAccessor } from '../../../accessor/hf.ts'
 import { HF_IO } from './io.ts'
 
-const HF_OVERRIDES = new Set(['cp', 'mv'])
-
 export const HF_COMMANDS: readonly RegisteredCommand[] = [
-  ...HF_VFS_NAMES.flatMap((vfs) =>
-    makeGenericCommands<HfAccessor>(vfs, HF_IO, {
-      overrides: HF_OVERRIDES,
-    }),
-  ),
+  ...makeGenericCommands<HfBucketsAccessor>(VFSName.HF_BUCKETS, HF_IO),
 ]

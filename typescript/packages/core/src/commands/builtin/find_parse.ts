@@ -23,6 +23,7 @@ import {
   type PredNode,
 } from './find_eval.ts'
 import {
+  C_SPACE,
   EXEC_BATCH_END,
   EXEC_END,
   EXEC_PLACEHOLDER,
@@ -33,6 +34,7 @@ import {
   FIND_ROW_ACTIONS,
   FIND_VALID_TYPES,
   FIND_VALUE_PREDICATES,
+  UINTMAX,
 } from './constants.ts'
 import type { ExecAction, FindAction } from './types.ts'
 
@@ -255,21 +257,30 @@ function strictInt(value: string): number {
   return /^[+-]?[0-9]+$/.test(trimmed) ? Number.parseInt(trimmed, 10) : Number.NaN
 }
 
-// GNU rounds the file size up to whole units before comparing, and
-// +N / -N are strict: +N keeps ceil(size/unit) > N, -N keeps
-// ceil(size/unit) < N, N alone keeps ceil(size/unit) === N. Expressed
-// as inclusive byte bounds: +N -> [N*unit + 1, inf), -N ->
-// [0, (N-1)*unit], N -> [(N-1)*unit + 1, N*unit].
+// The last character names the unit (b, c, w, k, M, G); a bare number
+// counts 512-byte blocks, like b. GNU rounds the file size up to whole
+// units before comparing, and +N / -N are strict: +N keeps
+// ceil(size/unit) > N, -N keeps ceil(size/unit) < N, N alone keeps
+// ceil(size/unit) === N. Expressed as inclusive byte bounds: +N ->
+// [N*unit + 1, inf), -N -> [0, (N-1)*unit], N -> [(N-1)*unit + 1, N*unit].
+// N past UINTMAX is invalid in any unit, as GNU's get_num refuses it.
 export function parseSize(spec: string): [number | null, number | null] {
-  const suffixes: Record<string, number> = { c: 1, k: 1024, M: 1024 ** 2, G: 1024 ** 3 }
-  const raw = spec.startsWith('+') || spec.startsWith('-') ? spec.slice(1) : spec
-  const last = raw[raw.length - 1] ?? ''
-  const mult = suffixes[last] ?? 1
-  const n = strictInt(raw.replace(/[ckMG]+$/, ''))
-  if (Number.isNaN(n)) throw new FindParseError(`find: invalid argument '${spec}' to '-size'`)
-  if (spec.startsWith('+')) return [n * mult + 1, null]
-  if (spec.startsWith('-')) return [null, (n - 1) * mult]
-  return [(n - 1) * mult + 1, n * mult]
+  const units: Record<string, number> = { b: 512, c: 1, w: 2, k: 1024, M: 1024 ** 2, G: 1024 ** 3 }
+  if (spec === '') throw new FindParseError('find: invalid null argument to -size')
+  const last = spec[spec.length - 1] ?? ''
+  const bare = /[0-9]/.test(last)
+  const unit = bare ? units.b : units[last]
+  if (unit === undefined) throw new FindParseError(`find: invalid -size type \`${last}'`)
+  const body = bare ? spec : spec.slice(0, -1)
+  const sign = body.startsWith('+') || body.startsWith('-') ? body.slice(0, 1) : ''
+  const number = body.slice(sign.length)
+  if (!new RegExp(`^${C_SPACE}\\+?[0-9]+$`).test(number) || BigInt(number) > UINTMAX) {
+    throw new FindParseError(`find: Invalid argument \`${spec}' to -size`)
+  }
+  const n = Number.parseInt(number, 10)
+  if (sign === '+') return [n * unit + 1, null]
+  if (sign === '-') return [null, (n - 1) * unit]
+  return [(n - 1) * unit + 1, n * unit]
 }
 
 export function parseMtime(spec: string): [number | null, number | null] {

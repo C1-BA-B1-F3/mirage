@@ -15,6 +15,8 @@
 import pytest
 
 from mirage.io import IOResult
+from mirage.io.cachable_iterator import CachableAsyncIterator
+from mirage.io.stream import async_chain
 from mirage.io.types import materialize
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -33,10 +35,42 @@ class FakeNode:
 
 
 @pytest.mark.asyncio
+async def test_cache_read_remains_drainable_after_early_pipeline_exit():
+    closed = False
+
+    async def source():
+        nonlocal closed
+        try:
+            yield b"first"
+            yield b"rest"
+        finally:
+            closed = True
+
+    stream = CachableAsyncIterator(source())
+
+    async def execute_node(nd, _session, stdin, _call_stack=None, **kwargs):
+        if nd.text == "cat":
+            return (async_chain([stream]),
+                    IOResult(reads={"/remote": stream},
+                             cache=["/remote"]), ExecutionNode(command="cat"))
+        await anext(stdin)
+        return b"first", IOResult(), ExecutionNode(command="head")
+
+    session = SessionState(session_id="test")
+    session.shell_options["pipefail"] = True
+    _, io, _ = await handle_pipe(
+        execute_node, [FakeNode("cat"), FakeNode("head")], [], session)
+    assert io.exit_code == 0
+    assert not closed
+    assert await stream.drain() == b"firstrest"
+    assert closed
+
+
+@pytest.mark.asyncio
 async def test_handle_pipe_passes_empty_stdin_when_left_returns_none():
     calls: list[dict] = []
 
-    async def execute_node(nd, _session, stdin, _call_stack=None):
+    async def execute_node(nd, _session, stdin, _call_stack=None, **kwargs):
         stdin_was_none = stdin is None
         materialized = await materialize(stdin)
         calls.append({
@@ -66,7 +100,7 @@ async def test_handle_pipe_passes_empty_stdin_when_left_returns_none():
 async def test_handle_pipe_threads_stdout_to_next_stdin():
     seen: list[bytes] = []
 
-    async def execute_node(nd, _session, stdin, _call_stack=None):
+    async def execute_node(nd, _session, stdin, _call_stack=None, **kwargs):
         seen.append(await materialize(stdin))
         return (f"{nd.text}-out".encode(), IOResult(exit_code=0),
                 ExecutionNode(command=nd.text, exit_code=0))
@@ -88,7 +122,7 @@ async def test_handle_subshell_seeds_last_exit_code_between_children():
     session.last_exit_code = 0
     seen: list[int] = []
 
-    async def execute_node(nd, sess, _stdin, _call_stack=None):
+    async def execute_node(nd, sess, _stdin, _call_stack=None, **kwargs):
         seen.append(sess.last_exit_code)
         code = 7 if nd.text == "a" else 0
         return (b"", IOResult(exit_code=code),
@@ -110,7 +144,7 @@ async def test_each_segment_sees_the_status_the_pipeline_started_with():
     session.last_exit_code = 1
     seen: list[int] = []
 
-    async def execute_node(nd, sess, _stdin, _call_stack=None):
+    async def execute_node(nd, sess, _stdin, _call_stack=None, **kwargs):
         seen.append(sess.last_exit_code)
         # An inner statement of a compound segment lands its own status.
         sess.last_exit_code = 0

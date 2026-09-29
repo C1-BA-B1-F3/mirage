@@ -71,7 +71,7 @@ describe('IndexDirectory JSON', () => {
       IndexDirectorySchema.parse(
         JSON.parse('{"entries":["/a/b"],"expires_at":4102444800.5,"generation":"g:d"}'),
       ),
-    ).toEqual({ entries: ['/a/b'], expires_at: 4102444800.5, generation: 'g:d' })
+    ).toEqual({ entries: ['/a/b'], expires_at: 4102444800.5, generation: 'g:d', partial: false })
   })
 
   it('refuses a listing missing its generation', () => {

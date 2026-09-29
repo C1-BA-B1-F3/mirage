@@ -167,7 +167,7 @@ def test_parse_pretty_refuses_an_unknown_name_like_git():
 
 def test_parse_pretty_names_real_presets_it_lacks():
     with pytest.raises(UnsupportedPrettyError, match="unsupported"):
-        git_format.parse_pretty("raw")
+        git_format.parse_pretty("email")
 
 
 def test_needs_decorations_scans_for_d_placeholders():

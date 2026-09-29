@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { FileType } from '../../../types.ts'
+import { FileType, PathSpec } from '../../../types.ts'
 
 export const MONTHS = [
   'Jan',
@@ -35,6 +35,13 @@ export const EPOCH_LS_TIME = 'Jan  1 00:00'
 export const DEFAULT_BACKUP_SUFFIX = '~'
 
 export const CHAR_DEVICE_MAX_BYTES = 8 << 20
+
+// GNU's name for stdin: head and tail's `==> name <==` header, and the
+// checksum list a `*sum -c` diagnostic names.
+export const STDIN_HEADER_NAME = 'standard input'
+
+// The operand a command reads stdin through when the line names none.
+export const STDIN_OPERAND = new PathSpec({ virtual: '-', directory: '-', vfsPath: '-' })
 
 export const TYPE_CHARS: Partial<Record<FileType, string>> = {
   [FileType.DIRECTORY]: 'd',

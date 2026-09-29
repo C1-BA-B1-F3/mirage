@@ -14,11 +14,15 @@
 
 import type { DiskAccessor } from '../../../accessor/disk.ts'
 import type { PathSpec } from '@struktoai/mirage-core/types'
-import { resolveSafe } from '../utils.ts'
+import { diskError } from '../errors.ts'
+import { resolveInside } from '../utils.ts'
 import { walkSizes } from './walk.ts'
 
 export async function size(accessor: DiskAccessor, p: PathSpec): Promise<number> {
-  const virtual = p.mountPath
-  const full = resolveSafe(accessor.root, virtual)
-  return walkSizes(full)
+  try {
+    const full = await resolveInside(accessor.root, p)
+    return await walkSizes(full)
+  } catch (error) {
+    throw diskError(error, p)
+  }
 }

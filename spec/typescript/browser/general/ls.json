@@ -1,6 +1,18 @@
 {
   "_meta": {
     "by_vfs": {
+      "airtable": {
+        "filetypes": [],
+        "has_aggregate": false,
+        "has_provision": true,
+        "has_write": false
+      },
+      "bin": {
+        "filetypes": [],
+        "has_aggregate": false,
+        "has_provision": true,
+        "has_write": false
+      },
       "box": {
         "filetypes": [],
         "has_aggregate": false,
@@ -199,6 +211,8 @@
     "has_provision": true,
     "has_write": false,
     "vfs_names": [
+      "airtable",
+      "bin",
       "box",
       "chroma",
       "databricks_volume",
@@ -315,11 +329,34 @@
     {
       "long": "--classify",
       "short": "-F",
+      "short_value": false,
+      "type": "str",
+      "value_optional": true
+    },
+    {
+      "short": "-p",
       "type": "bool"
+    },
+    {
+      "long": "--file-type",
+      "type": "bool"
+    },
+    {
+      "long": "--indicator-style",
+      "type": "str"
     },
     {
       "long": "--dereference",
       "short": "-L",
+      "type": "bool"
+    },
+    {
+      "long": "--dereference-command-line",
+      "short": "-H",
+      "type": "bool"
+    },
+    {
+      "long": "--dereference-command-line-symlink-to-dir",
       "type": "bool"
     },
     {
@@ -341,9 +378,9 @@
       "type": "bool"
     },
     {
-      "long": "--context",
-      "short": "-Z",
-      "type": "bool"
+      "long": "--color",
+      "type": "str",
+      "value_optional": true
     },
     {
       "long": "--group-directories-first",
@@ -359,9 +396,9 @@
       "value_optional": true
     },
     {
-      "long": "--color",
-      "type": "str",
-      "value_optional": true
+      "long": "--context",
+      "short": "-Z",
+      "type": "bool"
     }
   ],
   "rest": {

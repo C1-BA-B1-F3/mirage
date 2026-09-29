@@ -62,7 +62,7 @@ async def read_bytes(accessor: GridFSAccessor,
         await out.close()
     revision = str(file_id)
     record("read",
-           path,
+           virtual,
            "gridfs",
            len(data),
            timer,

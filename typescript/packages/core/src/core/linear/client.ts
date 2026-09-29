@@ -143,19 +143,26 @@ const TEAM_MEMBERS_QUERY = `query TeamMembers($teamId: String!, $first: Int!, $a
   }
 }`
 
+// The one selection an issue renders from. issue.json's size rides the team
+// listing (sizesAlwaysKnown) while a read fetches the issue alone, so the two
+// queries must select the same fields or the listed size disagrees with the
+// bytes a read delivers; both are built from this. Mirrors python's
+// ISSUE_FIELDS.
+const ISSUE_FIELDS = `
+id identifier title description priority url createdAt updatedAt
+team { id key name }
+state { id name }
+project { id name }
+cycle { id name number }
+assignee { id name email }
+creator { id name email }
+labels { nodes { id name } }
+`
+
 const TEAM_ISSUES_QUERY = `query TeamIssues($teamId: String!, $first: Int!, $after: String) {
   team(id: $teamId) {
     issues(first: $first, after: $after) {
-      nodes {
-        id identifier title description priority url createdAt updatedAt
-        team { id key name }
-        state { id name }
-        project { id name }
-        cycle { id name number }
-        assignee { id name email }
-        creator { id name email }
-        labels { nodes { id name } }
-      }
+      nodes {${ISSUE_FIELDS}}
       pageInfo { hasNextPage endCursor }
     }
   }
@@ -202,16 +209,7 @@ const TEAM_DOCUMENTS_QUERY = `query TeamDocuments($teamId: String!, $first: Int!
 }`
 
 const ISSUE_QUERY = `query Issue($issueId: String!) {
-  issue(id: $issueId) {
-    id identifier title description priority url createdAt updatedAt
-    team { id key name }
-    state { id name }
-    project { id name }
-    cycle { id name number }
-    assignee { id name email }
-    creator { id name email }
-    labels { nodes { id name } }
-  }
+  issue(id: $issueId) {${ISSUE_FIELDS}}
 }`
 
 const ISSUE_COMMENTS_QUERY = `query IssueComments($issueId: String!, $first: Int!, $after: String) {

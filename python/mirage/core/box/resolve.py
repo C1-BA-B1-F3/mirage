@@ -28,14 +28,14 @@ def root_id(accessor: BoxAccessor) -> str:
     return accessor.config.root_folder_id or ROOT_FOLDER_ID
 
 
-async def resolve_item(accessor: BoxAccessor,
-                       parts: list[str]) -> dict[str, Any] | None:
-    """Walk folder listings to resolve a mount-relative path to its item.
+async def resolve_chain(accessor: BoxAccessor,
+                        parts: list[str]) -> list[dict[str, Any]]:
+    """Walk folder listings to resolve each component of a path.
 
-    Box has no path-addressing endpoint, so writes resolve ids by listing
-    each level from the mount root. Returns the Box item dict for the full
-    path, or None if any component is missing (or a non-final component is
-    not a folder).
+    Box has no path-addressing endpoint, so ids are resolved by listing
+    each level from the mount root. Returns the Box item for every
+    component that resolved, in order; a missing component, or one below
+    a non-folder, ends the chain early.
 
     Args:
         accessor (BoxAccessor): Box accessor.
@@ -43,18 +43,34 @@ async def resolve_item(accessor: BoxAccessor,
     """
     tm = accessor.token_manager
     cur_id = root_id(accessor)
-    cur: dict[str, Any] | None = None
-    for i, name in enumerate(parts):
+    chain: list[dict[str, Any]] = []
+    for name in parts:
+        if chain and chain[-1].get("type") != "folder":
+            break
         children = await list_folder_items(tm, cur_id)
         match = next((c for c in children if c["name"] == name), None)
         if match is None:
-            return None
-        cur = match
-        if i < len(parts) - 1:
-            if match.get("type") != "folder":
-                return None
-            cur_id = match["id"]
-    return cur
+            break
+        chain.append(match)
+        cur_id = match["id"]
+    return chain
+
+
+async def resolve_item(accessor: BoxAccessor,
+                       parts: list[str]) -> dict[str, Any] | None:
+    """Resolve a mount-relative path to its Box item.
+
+    Returns None if any component is missing, or a non-final component
+    is not a folder.
+
+    Args:
+        accessor (BoxAccessor): Box accessor.
+        parts (list[str]): mount-relative path components.
+    """
+    chain = await resolve_chain(accessor, parts)
+    if not parts or len(chain) < len(parts):
+        return None
+    return chain[-1]
 
 
 async def resolve_parent_id(accessor: BoxAccessor,
@@ -65,3 +81,30 @@ async def resolve_parent_id(accessor: BoxAccessor,
     if parent is None or parent.get("type") != "folder":
         return None
     return parent["id"]
+
+
+def mount_relative_key(item: dict[str, Any],
+                       root_folder_id: str) -> str | None:
+    """Mount-relative path of an item, from its ``path_collection``.
+
+    Box lists an item's ancestors from the account root down to its
+    immediate parent, excluding the item itself; everything up to and
+    including the mount root folder is trimmed. None when the mount root
+    is not among the ancestors, which is every item outside the mount.
+
+    Args:
+        item (dict[str, Any]): A Box item carrying ``path_collection``.
+        root_folder_id (str): Box id of the mount root folder.
+    """
+    entries = (item.get("path_collection") or {}).get("entries") or []
+    names: list[str] = []
+    collecting = False
+    for anc in entries:
+        if collecting:
+            names.append(anc.get("name", ""))
+        if anc.get("id") == root_folder_id:
+            collecting = True
+    if not collecting:
+        return None
+    names.append(item.get("name", ""))
+    return "/".join(n for n in names if n)

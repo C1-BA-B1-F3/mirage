@@ -22,7 +22,7 @@ import {
   type StatFn,
   type WalkEntry,
 } from '../types.ts'
-import { isEnoent } from '../utils/errors.ts'
+import { isEnoent, isEnotdir } from '../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../utils/key_prefix.ts'
 import { rstripSlash } from '../utils/slash.ts'
 import { statFingerprint } from './fingerprint.ts'
@@ -104,7 +104,7 @@ async function statAt(
     // Removed between the readdir and the stat; the next pull reports
     // the DELETE from the snapshot diff. Only absence is swallowed, an
     // API error still propagates.
-    if (isEnoent(error)) return null
+    if (isEnoent(error) || isEnotdir(error)) return null
     throw error
   }
 }
@@ -120,7 +120,7 @@ async function* descend(
   try {
     children = await readdir(spec, index)
   } catch (error) {
-    if (isEnoent(error)) return
+    if (isEnoent(error) || isEnotdir(error)) return
     throw error
   }
   for (const child of children) {

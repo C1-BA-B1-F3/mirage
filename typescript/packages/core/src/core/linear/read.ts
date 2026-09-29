@@ -41,6 +41,7 @@ import {
   type NormalizedProjectIssue,
 } from './normalize.ts'
 import { detectScope } from './scope.ts'
+import { stat } from './stat.ts'
 
 function pickString(record: Record<string, unknown>, key: string): string {
   const value = record[key]
@@ -157,12 +158,16 @@ async function readDocument(
   throw enoent(path.virtual)
 }
 
-export const read = makeRead<LinearAccessor>(detectScope, {
-  team_json: readTeamJson,
-  member: readMember,
-  issue_json: readIssueJson,
-  comments_jsonl: readComments,
-  project: readProject,
-  cycle: readCycle,
-  document: readDocument,
-})
+export const read = makeRead<LinearAccessor>(
+  detectScope,
+  {
+    team_json: readTeamJson,
+    member: readMember,
+    issue_json: readIssueJson,
+    comments_jsonl: readComments,
+    project: readProject,
+    cycle: readCycle,
+    document: readDocument,
+  },
+  { stat },
+)

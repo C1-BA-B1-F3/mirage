@@ -35,6 +35,7 @@ from mirage.runtime.wasm.abi import (EBADF, EEXIST, EINVAL, EIO, EISDIR,
                                      pack_filestat, pack_prestat, pack_u32,
                                      pack_u64, unpack_iovs)
 # yapf: enable
+from mirage.runtime.wasm.slab import install_slab_lock
 from mirage.runtime.wasm.vfs import WasmVFS
 from mirage.utils.dates import timestamp_iso
 
@@ -624,13 +625,15 @@ def install_wasi_fs(linker: "wasmtime.Linker", store: "wasmtime.Store",
 
     Every fd_*/path_* import routes to the WasiFs host functions;
     non-filesystem imports (args, env, clocks, random, poll, proc_exit)
-    keep the native define_wasi definitions.
+    keep the native define_wasi definitions. These are the only host
+    callbacks mirage creates, so the slab lock goes in first.
 
     Args:
         linker (wasmtime.Linker): linker that already ran define_wasi().
         store (wasmtime.Store): the run's store.
         wasi_fs (WasiFs): per-run host-function table.
     """
+    install_slab_lock()
     linker.allow_shadowing = True
     for name, (params, results) in _spec().items():
         method = getattr(wasi_fs, name)

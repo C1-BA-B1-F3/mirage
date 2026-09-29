@@ -13,7 +13,8 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { cursorItems } from './paginate.ts'
+import { PaginationStalledError } from './errors.ts'
+import { HAS_MORE_PAGES, cursorItems, hasMoreCursor, offsetCursor } from './paginate.ts'
 
 class Pager {
   readonly cursors: (string | null)[] = []
@@ -63,5 +64,34 @@ describe('cursorItems', () => {
     expect(
       await cursorItems(new Pager([{ results: { weird: 1 }, has_more: false }]).fetch),
     ).toEqual([])
+  })
+
+  it('an offset shape reads its own items and cursor', async () => {
+    const shape = { itemsKey: 'records', nextCursor: offsetCursor }
+    const pager = new Pager([{ records: [{ n: 1 }], offset: 'itr1/rec1' }, { records: [{ n: 2 }] }])
+    expect(await cursorItems(pager.fetch, undefined, shape)).toEqual([{ n: 1 }, { n: 2 }])
+    expect(pager.cursors).toEqual([null, 'itr1/rec1'])
+  })
+
+  it('a null offset ends the walk', async () => {
+    // Airtable's comment listing sends "offset": null on its last page.
+    const shape = { itemsKey: 'comments', nextCursor: offsetCursor }
+    const pager = new Pager([{ comments: [{ n: 1 }], offset: null }])
+    expect(await cursorItems(pager.fetch, undefined, shape)).toEqual([{ n: 1 }])
+  })
+
+  it('a repeated cursor fails instead of looping', async () => {
+    const pager = new Pager([
+      { results: [{ n: 1 }], has_more: true, next_cursor: 'c1' },
+      { results: [{ n: 2 }], has_more: true, next_cursor: 'c1' },
+    ])
+    await expect(cursorItems(pager.fetch)).rejects.toThrow(PaginationStalledError)
+  })
+
+  it("the default shape is notion's", () => {
+    expect(HAS_MORE_PAGES.itemsKey).toBe('results')
+    expect(hasMoreCursor({ has_more: true, next_cursor: 'c' })).toBe('c')
+    expect(hasMoreCursor({ has_more: false, next_cursor: 'c' })).toBeNull()
+    expect(offsetCursor({ offset: '' })).toBeNull()
   })
 })

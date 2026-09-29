@@ -1,7 +1,7 @@
 {
   "cases": [
     {
-      "id": "which_runnable_prints_the_name",
+      "id": "which_prints_the_programs_file",
       "seq": 915,
       "targets": [
         "ram"
@@ -9,7 +9,7 @@
       "command": "which cat",
       "expect": {
         "exit": 0,
-        "stdout": "cat\n",
+        "stdout": "/usr/bin/cat\n",
         "stderr": ""
       }
     },
@@ -48,7 +48,7 @@
       "command": "which cat nope-xyz",
       "expect": {
         "exit": 1,
-        "stdout": "cat\n",
+        "stdout": "/usr/bin/cat\n",
         "stderr": ""
       }
     },
@@ -89,6 +89,182 @@
         "exit": 2,
         "stdout": "",
         "stderr": "which: -z: invalid option\nwhich: usage: which [-as] name [name ...]\n"
+      }
+    },
+    {
+      "id": "which_prints_one_file_per_program",
+      "seq": 991500,
+      "targets": [
+        "ram"
+      ],
+      "note": "debianutils which on debian:stable-slim prints the file PATH finds; every program mirage runs has one under /usr/bin.",
+      "command": "which ls sort; echo \"rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "/usr/bin/ls\n/usr/bin/sort\nrc=0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "which_builtin_without_a_program_misses",
+      "seq": 991501,
+      "targets": [
+        "ram"
+      ],
+      "note": "GNU: cd is bash's alone, no file on PATH, so which prints nothing and exits 1.",
+      "command": "which cd; echo \"rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "which_a_searches_the_one_directory",
+      "seq": 991502,
+      "targets": [
+        "ram"
+      ],
+      "command": "which -a ls",
+      "expect": {
+        "exit": 0,
+        "stdout": "/usr/bin/ls\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "which_names_an_executable_file",
+      "seq": 991503,
+      "targets": [
+        "ram"
+      ],
+      "command": "[ -x \"$(which ls)\" ] && echo executable || echo \"not a file\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "executable\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "which_file_reads_as_the_script_that_runs_it",
+      "seq": 991504,
+      "targets": [
+        "ram"
+      ],
+      "command": "cat \"$(which ls)\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "#!/bin/sh\n# ls is built into mirage. Help: ls --help\ncommand ls \"$@\"\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "which_file_runs_the_program_by_path",
+      "seq": 991505,
+      "targets": [
+        "ram"
+      ],
+      "command": "/usr/bin/echo hi there",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi there\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "path_names_the_program_directory",
+      "seq": 991506,
+      "targets": [
+        "ram"
+      ],
+      "note": "bash 5.2 on debian:stable-slim, started with an empty environment, sets PATH without exporting it: printenv PATH exits 1 and declare -p shows --, so a child process keeps its own PATH.",
+      "command": "echo \"$PATH\"; printenv PATH || echo not exported; declare -p PATH",
+      "expect": {
+        "exit": 0,
+        "stdout": "/usr/bin\nnot exported\ndeclare -- PATH=\"/usr/bin\"\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "usr_bin_has_no_file_for_a_shell_only_builtin",
+      "seq": 991507,
+      "targets": [
+        "ram"
+      ],
+      "command": "ls /usr/bin/cd; echo \"rc=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\n",
+        "stderr": "ls: cannot access '/usr/bin/cd': No such file or directory\n"
+      }
+    },
+    {
+      "id": "usr_bin_file_of_a_builtin_names_no_help",
+      "seq": 991514,
+      "targets": [
+        "ram"
+      ],
+      "note": "The file names --help only where the program's spec answers it; bash's echo builtin prints --help back as text.",
+      "command": "cat /usr/bin/echo",
+      "expect": {
+        "exit": 0,
+        "stdout": "#!/bin/sh\n# echo is built into mirage.\ncommand echo \"$@\"\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "usr_bin_has_no_file_for_history",
+      "seq": 991515,
+      "targets": [
+        "ram"
+      ],
+      "note": "bash 5.2 on debian:stable-slim: history is a shell builtin with no program on PATH, so which misses it and type -a prints the builtin line alone.",
+      "command": "which history; echo \"rc=$?\"; type -a history",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nhistory is a shell builtin\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "usr_bin_refuses_writes_as_read_only",
+      "seq": 991516,
+      "targets": [
+        "ram"
+      ],
+      "note": "The refusals any read-only mount gives: the redirect as EROFS and chmod in mirage's read-only-mount wording, so the file stays 0755.",
+      "command": "echo x > /usr/bin/ls; chmod 644 /usr/bin/ls; ls -l /usr/bin/ls | cut -c1-10",
+      "expect": {
+        "exit": 0,
+        "stdout": "-rwxr-xr-x\n",
+        "stderr": "/usr/bin/ls: Read-only file system\nchmod: changing permissions of '/usr/bin/ls': Read-only file system\n"
+      }
+    },
+    {
+      "id": "usr_bin_metadata_counts_rendered_bytes",
+      "seq": 991517,
+      "targets": [
+        "ram"
+      ],
+      "note": "Virtual stubs have the same size contract as a regular script; stat and wc agree (GNU pinned on debian:stable-slim).",
+      "command": "stat -c %s /usr/bin/ls; wc -c < /usr/bin/ls; find /usr/bin/ls -size 0c",
+      "expect": {
+        "exit": 0,
+        "stdout": "69\n69\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "usr_bin_stubs_are_searchable_text",
+      "seq": 991518,
+      "targets": [
+        "ram"
+      ],
+      "command": "grep Help /usr/bin/ls; head -n 1 /usr/bin/ls; file /usr/bin/ls",
+      "expect": {
+        "exit": 0,
+        "stdout": "# ls is built into mirage. Help: ls --help\n#!/bin/sh\n/usr/bin/ls: text\n",
+        "stderr": ""
       }
     }
   ]

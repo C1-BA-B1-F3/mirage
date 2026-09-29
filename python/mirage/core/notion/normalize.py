@@ -14,22 +14,17 @@
 
 from typing import Any
 
-from mirage.core.notion.pathing import extract_title
+from mirage.core.notion.pathing import extract_title, page_dirname
 from mirage.core.notion.render import blocks_to_markdown
 from mirage.core.render.json import json_bytes
 
 
-def normalize_page(page: dict[str, Any],
-                   blocks: list[dict[str, Any]]) -> dict[str, Any]:
+def _page_fields(page: dict[str, Any]) -> dict[str, Any]:
     parent = page.get("parent", {})
     parent_type = parent.get("type", "")
     parent_id = parent.get(parent_type, "")
     if not isinstance(parent_id, str):
         parent_id = ""
-    content_blocks = [
-        b for b in blocks
-        if b.get("type") not in ("child_page", "child_database")
-    ]
     properties = page.get("properties", {})
     if not isinstance(properties, dict):
         properties = {}
@@ -50,8 +45,39 @@ def normalize_page(page: dict[str, Any],
         "created_by": page.get("created_by", {}).get("id", ""),
         "last_edited_by": page.get("last_edited_by", {}).get("id", ""),
         "properties": properties,
+    }
+
+
+def normalize_page(page: dict[str, Any],
+                   blocks: list[dict[str, Any]]) -> dict[str, Any]:
+    content_blocks = [
+        b for b in blocks
+        if b.get("type") not in ("child_page", "child_database")
+    ]
+    return {
+        **_page_fields(page),
         "markdown": blocks_to_markdown(content_blocks),
         "blocks": content_blocks,
+    }
+
+
+def normalize_row(page: dict[str, Any]) -> dict[str, Any]:
+    """One line of a data source's ``rows.jsonl``.
+
+    The row's ``page.json`` without the body, which a query does not
+    carry, and with the path of that ``page.json`` below the data source:
+    the rows are not listed as directories, so the line is where a row's
+    directory name is found.
+
+    Args:
+        page (dict[str, Any]): the row as a data source query returns it.
+    """
+    fields = _page_fields(page)
+    return {
+        "page_id": fields.pop("page_id"),
+        "title": fields.pop("title"),
+        "path": f"{page_dirname(page)}/page.json",
+        **fields,
     }
 
 

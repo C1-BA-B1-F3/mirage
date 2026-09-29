@@ -15,6 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { makeMockAccessor, spec } from '../../test-utils.ts'
 import { read } from './read.ts'
+import { mkdir } from './mkdir.ts'
 import { writeBytes } from './write.ts'
 
 let accessor: ReturnType<typeof makeMockAccessor>
@@ -47,5 +48,24 @@ describe('opfs/read', () => {
     expect((await read(accessor, spec('/s'), undefined, { offset: 99, size: 5 })).byteLength).toBe(
       0,
     )
+  })
+})
+
+// OPFS raises one TypeMismatchError for a plain file in the chain and for a
+// directory at the leaf, where open(2) answers ENOTDIR and EISDIR.
+describe('opfs/read tells a file in the chain from a directory leaf', () => {
+  it('is ENOTDIR under a plain file and EISDIR for a directory', async () => {
+    const accessor = makeMockAccessor()
+    await writeBytes(accessor, spec('/plain'), new TextEncoder().encode('p'))
+    await mkdir(accessor, spec('/d'))
+    const codeOf = async (p: string): Promise<unknown> =>
+      read(accessor, spec(p)).then(
+        () => null,
+        (e: unknown) => (e as { code?: string }).code,
+      )
+    expect(await codeOf('/plain/x')).toBe('ENOTDIR')
+    expect(await codeOf('/plain/x/y')).toBe('ENOTDIR')
+    expect(await codeOf('/d')).toBe('EISDIR')
+    expect(await codeOf('/nope/x')).toBe('ENOENT')
   })
 })

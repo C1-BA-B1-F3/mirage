@@ -54,5 +54,18 @@ def test_cwd_override_forks_without_touching_the_original():
 def test_env_override_layers_on_top_of_the_session_env():
     session = _session()
     forked = fork_for_call(session, None, {"B": "9", "C": "3"})
-    assert forked.env == {"A": "1", "B": "9", "C": "3", "PWD": "/home"}
-    assert session.env == {"A": "1", "B": "2", "PWD": "/home"}
+    assert forked.env == {
+        "A": "1",
+        "B": "9",
+        "C": "3",
+        "PWD": "/home",
+        "PATH": "/usr/bin",
+        "IFS": " \t\n"
+    }
+    assert session.env == {
+        "A": "1",
+        "B": "2",
+        "PWD": "/home",
+        "PATH": "/usr/bin",
+        "IFS": " \t\n"
+    }

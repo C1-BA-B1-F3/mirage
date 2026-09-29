@@ -148,3 +148,60 @@ async def test_notion_post_sends_an_empty_object_for_no_body():
         await notion_post(config, "/search")
         sent = m.requests[("POST", URL(f"{BASE}/search"))]
     assert sent[0].kwargs["json"] == {}
+
+
+@pytest.mark.asyncio
+async def test_truncated_query_is_not_successful_partial_listing():
+    pages = iter([
+        {
+            "results": [{
+                "id": "first"
+            }],
+            "has_more": True,
+            "next_cursor": "next"
+        },
+        {
+            "results": [{
+                "id": "last"
+            }],
+            "has_more": False,
+            "request_status": {
+                "type": "incomplete",
+                "incomplete_reason": "query_result_limit_reached"
+            }
+        },
+    ])
+
+    async def post(*args, **kwargs):
+        return next(pages)
+
+    with patch("mirage.core.notion.client.notion_post", new=post):
+        with pytest.raises(NotionAPIError, match="query_result_limit_reached"):
+            await paginate_post(NotionConfig(api_key="key"),
+                                "/data_sources/ds/query")
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_honors_retry_after_and_stops_after_three_retries():
+    from unittest.mock import AsyncMock
+    sleep = AsyncMock()
+    url = BASE + "/pages/p"
+    with aioresponses() as http, patch("mirage.core.api.client.asyncio.sleep",
+                                       sleep):
+        http.get(url,
+                 status=429,
+                 headers={"Retry-After": "2"},
+                 payload={"message": "slow"})
+        http.get(url, payload={"id": "p"})
+        assert await notion_get(NotionConfig(api_key="key"), "/pages/p") == {
+            "id": "p"
+        }
+        sleep.assert_awaited_once_with(2.0)
+    sleep.reset_mock()
+    with aioresponses() as http, patch("mirage.core.api.client.asyncio.sleep",
+                                       sleep):
+        http.get(url, status=429, repeat=True, payload={"message": "slow"})
+        with pytest.raises(NotionAPIError, match="slow"):
+            await notion_get(NotionConfig(api_key="key"), "/pages/p")
+        assert sleep.await_count == 3
+        assert len(http.requests[("GET", URL(url))]) == 4

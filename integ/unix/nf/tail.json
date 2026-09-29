@@ -31,7 +31,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "tail: /data/missing.txt: No such file or directory\n"
+        "stderr": "tail: cannot open '/data/missing.txt' for reading: No such file or directory\n"
       }
     }
   ]

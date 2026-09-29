@@ -1,15 +1,15 @@
-import zlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
-from mirage.commands.builtin.utils.stream import resolve_source
+from mirage.commands.builtin.constants import GZIP_SUFFIX
+from mirage.commands.builtin.generic.decompress import decompress_inputs
+from mirage.commands.builtin.utils.links import LinkDoor, link_door
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
-from mirage.types import PathSpec
-from mirage.utils.compress import gzip_decompress_stream
+from mirage.types import PathSpec, StatFn
 
 
 async def gunzip(
@@ -18,42 +18,29 @@ async def gunzip(
     read_bytes: Callable[..., Awaitable[bytes]],
     write_bytes: Callable[..., Awaitable[None]],
     unlink: Callable[..., Awaitable[None]],
+    stat: StatFn | None = None,
     stdin: ByteSource | None = None,
     keep: bool = False,
     force: bool = False,
     to_stdout: bool = False,
     test_only: bool = False,
+    quiet: bool = False,
+    suffix: str = GZIP_SUFFIX,
+    door: LinkDoor | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
-    if not paths:
-        source = resolve_source(stdin,
-                                "gunzip: (stdin): unexpected end of file")
-        return gzip_decompress_stream(source), IOResult()
-
-    if test_only:
-        for p in paths:
-            raw = await read_bytes(p)
-            zlib.decompress(raw, zlib.MAX_WBITS | 16)
-        return None, IOResult()
-
-    if to_stdout:
-        chunks: list[bytes] = []
-        for p in paths:
-            raw = await read_bytes(p)
-            chunks.append(zlib.decompress(raw, zlib.MAX_WBITS | 16))
-        return b"".join(chunks), IOResult()
-
-    writes: dict[str, ByteSource] = {}
-    for p in paths:
-        raw = await read_bytes(p)
-        stripped = p.mount_path
-        out_path = stripped.removesuffix(".gz") if stripped.endswith(
-            ".gz") else stripped + ".out"
-        out_data = zlib.decompress(raw, zlib.MAX_WBITS | 16)
-        await write_bytes(PathSpec.from_str_path(out_path), out_data)
-        writes[out_path] = out_data
-        if not keep:
-            await unlink(p)
-    return None, IOResult(writes=writes)
+    return await decompress_inputs(paths,
+                                   read=read_bytes,
+                                   write=write_bytes,
+                                   unlink=unlink,
+                                   stat=stat,
+                                   stdin=stdin,
+                                   keep=keep,
+                                   force=force,
+                                   quiet=quiet,
+                                   suffix=suffix,
+                                   to_stdout=to_stdout,
+                                   test_only=test_only,
+                                   door=door)
 
 
 __all__ = ["gunzip"]
@@ -65,15 +52,20 @@ class GunzipFlags:
     force: bool = False
     to_stdout: bool = False
     test_only: bool = False
+    quiet: bool = False
+    suffix: str = GZIP_SUFFIX
 
 
 def parse_flags(flags: Mapping[str, FlagValue]) -> GunzipFlags:
     fl = FlagView(flags, spec=SPECS["gunzip"])
+    suffix = fl.as_str("S")
     return GunzipFlags(
         keep=fl.as_bool("k"),
         force=fl.as_bool("f"),
         to_stdout=fl.as_bool("c"),
         test_only=fl.as_bool("t"),
+        quiet=fl.as_bool("q"),
+        suffix=GZIP_SUFFIX if suffix is None else suffix,
     )
 
 
@@ -84,14 +76,19 @@ async def gunzip_generic(
     read_bytes: Callable[..., Awaitable[bytes]],
     write_bytes: Callable[..., Awaitable[None]],
     unlink: Callable[..., Awaitable[None]],
+    stat: StatFn | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
     return await gunzip(paths,
                         read_bytes=read_bytes,
                         write_bytes=write_bytes,
                         unlink=unlink,
+                        stat=stat,
                         stdin=opts.stdin,
                         keep=parsed.keep,
                         force=parsed.force,
                         to_stdout=parsed.to_stdout,
-                        test_only=parsed.test_only)
+                        test_only=parsed.test_only,
+                        quiet=parsed.quiet,
+                        suffix=parsed.suffix,
+                        door=link_door(opts))

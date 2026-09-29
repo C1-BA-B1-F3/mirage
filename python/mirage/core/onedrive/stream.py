@@ -34,7 +34,6 @@ async def read_stream(
     async for chunk in stream_item(accessor.config,
                                    loc,
                                    virtual,
-                                   stripped,
                                    "onedrive",
                                    chunk_size,
                                    session=accessor.pool):

@@ -118,6 +118,15 @@
       "type": "bool"
     }
   ],
+  "positional": [
+    {
+      "provided_by": [
+        "-c",
+        "-m"
+      ],
+      "type": "path"
+    }
+  ],
   "rest": {
     "remainder": true,
     "type": "str"

@@ -24,7 +24,7 @@ import { specOf } from '../../spec/builtins.ts'
 import { prefixAggregate } from '../aggregators.ts'
 import { patternArg } from '../grep_pattern.ts'
 import { grepGeneric, labelled } from '../generic/grep.ts'
-import { narrowScope } from './pushdown.ts'
+import { narrowScope, scopeRefusal } from './pushdown.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 
 const ENC = new TextEncoder()
@@ -51,18 +51,27 @@ async function grepCommand(
       recursive,
       fl.asBool('w'),
       opts.index ?? undefined,
-      fl.asBool('v') || fl.asBool('c') || fl.asBool('text') || fl.asStr('binary_files') === 'text',
+      // A narrowing holds only files matching the searched literal: -v, -c
+      // and -L also print from the rest, and -f adds patterns code search
+      // never saw.
+      fl.asBool('v') ||
+        fl.asBool('c') ||
+        fl.asBool('files_without_match') ||
+        Boolean(fl.raw('file')) ||
+        fl.asBool('text') ||
+        fl.asStr('binary_files') === 'text',
     )
     if (narrowed.usedSearch) opts = labelled(opts)
     resolved = narrowed.resolved
+    if (narrowed.usedSearch && resolved.length === 0) {
+      return [new Uint8Array(), new IOResult({ exitCode: 1 })]
+    }
     if (narrowed.fileCount > SCOPE_ERROR) {
       return [
         null,
         new IOResult({
           exitCode: 1,
-          stderr: ENC.encode(
-            `grep: ${String(narrowed.fileCount)} files in scope, narrow the path, or use -w to enable code search\n`,
-          ),
+          stderr: ENC.encode(scopeRefusal('grep', narrowed.fileCount, fl.asBool('w'))),
         }),
       ]
     }

@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from typing import Protocol
 
@@ -35,7 +36,14 @@ class CacheInvalidator(Protocol):
     async def invalidate_subtree(self, path: PathSpec) -> None:
         ...
 
+    async def invalidate_ancestors(self, path: PathSpec) -> None:
+        ...
+
     async def cached_bytes(self, path: PathSpec) -> bytes | None:
+        ...
+
+    async def read_through(self, path: PathSpec,
+                           fetch: Callable[[], Awaitable[bytes]]) -> bytes:
         ...
 
     async def cached_size(self, path: PathSpec) -> int | None:
@@ -50,11 +58,11 @@ def push_cache_manager(
         manager: CacheInvalidator | None) -> CacheInvalidator | None:
     """Set the active cache manager for the current async context.
 
-    Mirrors ``observe.context.push_mount_prefix``: the mount entry point
-    pushes its manager before dispatching a command, core backend
-    mutators report through :func:`invalidate_after_write` /
-    :func:`invalidate_after_unlink`, and the caller restores the
-    previous value afterwards.
+    The mount entry point pushes its manager before dispatching a
+    command, core backend mutators report through
+    :func:`invalidate_after_write` / :func:`invalidate_after_unlink`, and
+    the caller restores the previous value afterwards by pushing the
+    manager this call returns.
 
     Args:
         manager (CacheInvalidator | None): Manager to activate, or None
@@ -132,9 +140,8 @@ async def invalidate_ancestors(path: PathSpec) -> None:
     each one.
 
     Args:
-        path (PathSpec): Mount-relative path that was mutated.
+        path (PathSpec): Mutated path, retaining its full virtual path.
     """
-    parent = path.mount_path.rsplit("/", 1)[0]
-    while parent:
-        await invalidate_after_write(PathSpec.from_str_path(parent))
-        parent = parent.rsplit("/", 1)[0]
+    manager = _active.get()
+    if manager is not None:
+        await manager.invalidate_ancestors(path)

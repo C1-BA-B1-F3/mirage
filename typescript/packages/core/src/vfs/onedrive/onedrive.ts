@@ -1,3 +1,4 @@
+import { BaseVFS } from '../base.ts'
 import {
   OneDriveAccessor,
   redactOneDriveConfig,
@@ -5,14 +6,15 @@ import {
   type OneDriveConfigRedacted,
 } from '../../accessor/onedrive.ts'
 import { ONEDRIVE_COMMANDS } from '../../commands/builtin/onedrive/index.ts'
+
 import { ONEDRIVE_OPS } from '../../ops/onedrive/index.ts'
 import type { RegisteredOp } from '../../ops/registry.ts'
 import { VFSName } from '../../types.ts'
 import type { RegisteredCommand } from '../../commands/config.ts'
-import { BaseVFS } from '../base.ts'
 import { ONEDRIVE_PROMPT } from './prompt.ts'
 import type { DeltaHook } from '../../watch/base.ts'
 import { buildDeltaHook } from '../../core/onedrive/watch.ts'
+
 export interface OneDriveVFSState {
   type: string
   config: OneDriveConfigRedacted
@@ -26,6 +28,9 @@ export class OneDriveVFS extends BaseVFS {
   // the aggregate storage number in extra.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly supportsSnapshot: boolean = true
+  // stat and every read that can fill the cache stamp the item's cTag, the
+  // read taking it before the bytes, so the gate compares like with like.
+  override readonly readRevalidatable: boolean = true
   override readonly indexTtl: number = 86_400
   override readonly prompt: string = ONEDRIVE_PROMPT
   override readonly accessor: OneDriveAccessor
@@ -36,6 +41,7 @@ export class OneDriveVFS extends BaseVFS {
     this.config = config
     this.accessor = new OneDriveAccessor(config)
   }
+
   override commands(): readonly RegisteredCommand[] {
     return ONEDRIVE_COMMANDS
   }
@@ -43,6 +49,7 @@ export class OneDriveVFS extends BaseVFS {
   override ops(): readonly RegisteredOp[] {
     return ONEDRIVE_OPS
   }
+
   override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
   }
@@ -50,9 +57,5 @@ export class OneDriveVFS extends BaseVFS {
   override getState(): OneDriveVFSState {
     const config: OneDriveConfigRedacted = redactOneDriveConfig(this.config)
     return { type: this.name, config }
-  }
-
-  override loadState(_state: OneDriveVFSState): Promise<void> {
-    return Promise.resolve()
   }
 }

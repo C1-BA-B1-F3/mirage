@@ -13,21 +13,22 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+from dataclasses import replace
 from functools import partial
 
 import pytest
 
 from mirage.cache.index import NULL_INDEX
 from mirage.commands.builtin.generic_bind.adapter import CommandIO
-from mirage.commands.builtin.generic_bind.search import make_search
-from mirage.commands.builtin.grep_pushdown import literal_pushdown_operand
+from mirage.commands.builtin.generic_bind.search import run_search
 from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.commands.config import CommandOpts
 from mirage.core.hierarchy.scope import ScopeMatch
-from mirage.core.hierarchy.search import SearchQuery
+from mirage.core.hierarchy.search import make_search_op
 from mirage.io.types import ByteSource
 from mirage.types import ContentType, FileStat, FileType, PathSpec
-from mirage.utils.errors import enoent
+from mirage.utils.errors import efbig, enoent
+from mirage.vfs.types import SearchOps, SearchQuery
 from tests.core.hierarchy.conftest import FakeAccessor, detect_scope, spec
 
 CONTENT = b"x ada\ny\n"
@@ -70,7 +71,7 @@ IO = CommandIO(readdir=_readdir_op,
 
 async def _room_searcher(accessor: FakeAccessor, match: ScopeMatch,
                          query: SearchQuery) -> list[str]:
-    return [f"rooms/{match.slots['room']}:{query.pattern}"]
+    return [f"rooms/{match.slots['room']}:{query.query}"]
 
 
 async def _empty_searcher(accessor: FakeAccessor, match: ScopeMatch,
@@ -87,11 +88,22 @@ async def _drain(source: ByteSource | None) -> bytes:
     return b"".join(chunks)
 
 
+def _search_command(searchers, io, *, guard=False, stream=False):
+    search = make_search_op(detect_scope, searchers,
+                            io.stat if guard else None)
+    return partial(
+        run_search,
+        replace(io,
+                search=SearchOps(
+                    search=search,
+                    meta={"grep": {
+                        "mode": "literal",
+                        "stream": stream
+                    }})), "grep")
+
+
 def test_matched_kind_answers_from_the_searcher():
-    search = make_search("grep",
-                         detect_scope, {"room": _room_searcher},
-                         IO,
-                         qualify=literal_pushdown_operand)
+    search = _search_command({'room': _room_searcher}, IO)
     out, result = asyncio.run(
         search(FakeAccessor(), [spec("/rooms/red")], ["ada"], CommandOpts()))
     assert result.exit_code == 0
@@ -99,10 +111,7 @@ def test_matched_kind_answers_from_the_searcher():
 
 
 def test_empty_answer_is_exit_1():
-    search = make_search("grep",
-                         detect_scope, {"room": _empty_searcher},
-                         IO,
-                         qualify=literal_pushdown_operand)
+    search = _search_command({'room': _empty_searcher}, IO)
     out, result = asyncio.run(
         search(FakeAccessor(), [spec("/rooms/red")], ["ada"], CommandOpts()))
     assert result.exit_code == 1
@@ -110,10 +119,7 @@ def test_empty_answer_is_exit_1():
 
 
 def test_unmatched_kind_takes_the_generic_scan():
-    search = make_search("grep",
-                         detect_scope, {"room": _room_searcher},
-                         IO,
-                         qualify=literal_pushdown_operand)
+    search = _search_command({'room': _room_searcher}, IO)
     out, result = asyncio.run(
         search(FakeAccessor(), [spec("/rooms/red/a.json")], ["ada"],
                CommandOpts()))
@@ -122,10 +128,7 @@ def test_unmatched_kind_takes_the_generic_scan():
 
 
 def test_shaping_flag_defers_to_the_generic_scan():
-    search = make_search("grep",
-                         detect_scope, {"room": _room_searcher},
-                         IO,
-                         qualify=literal_pushdown_operand)
+    search = _search_command({'room': _room_searcher}, IO)
     out, result = asyncio.run(
         search(FakeAccessor(), [spec("/rooms/red/a.json")], ["ada"],
                CommandOpts(flags={"v": True})))
@@ -142,11 +145,7 @@ def test_guard_probes_existence_before_searching():
                    stat=_absent_stat,
                    is_mounted=lambda a: True,
                    local=False)
-    search = make_search("grep",
-                         detect_scope, {"room": _room_searcher},
-                         io,
-                         qualify=literal_pushdown_operand,
-                         guard=True)
+    search = _search_command({'room': _room_searcher}, io, guard=True)
     with pytest.raises(FileNotFoundError):
         asyncio.run(
             search(FakeAccessor(), [spec("/rooms/red")], ["ada"],
@@ -168,11 +167,7 @@ def test_stream_first_pull_failure_falls_back_to_bytes():
                    stat=_stat_op,
                    is_mounted=lambda a: True,
                    local=False)
-    search = make_search("grep",
-                         detect_scope, {"room": _room_searcher},
-                         io,
-                         qualify=literal_pushdown_operand,
-                         stream=True)
+    search = _search_command({'room': _room_searcher}, io, stream=True)
     out, result = asyncio.run(
         search(FakeAccessor(), [spec("/rooms/red/a.json")], ["ada"],
                CommandOpts()))
@@ -194,16 +189,38 @@ def test_stream_failure_after_data_propagates():
                    stat=_stat_op,
                    is_mounted=lambda a: True,
                    local=False)
-    search = make_search("grep",
-                         detect_scope, {"room": _room_searcher},
-                         io,
-                         qualify=literal_pushdown_operand,
-                         stream=True)
+    search = _search_command({'room': _room_searcher}, io, stream=True)
     with pytest.raises(FileNotFoundError):
         out, _ = asyncio.run(
             search(FakeAccessor(), [spec("/rooms/red/a.json")], ["ada"],
                    CommandOpts()))
         asyncio.run(_drain(out))
+
+
+def test_refused_pushdown_falls_back_to_the_scan():
+    # A push-down past the mount's read cap cannot print its answer; the
+    # scan reads the operand, which refuses the same way, and reports it
+    # against the operand as typed, then moves on as grep does.
+    async def _refusing_searcher(accessor: FakeAccessor, match: ScopeMatch,
+                                 query: SearchQuery) -> list[str]:
+        raise efbig(f"rooms/{match.slots['room']}/{match.slots['note']}")
+
+    async def _refused_read(accessor: FakeAccessor,
+                            path: PathSpec,
+                            index=NULL_INDEX) -> bytes:
+        raise efbig(path)
+
+    io = replace(IO,
+                 read_bytes=_refused_read,
+                 read_stream=partial(stream_from_bytes, _refused_read))
+    search = _search_command({'note': _refusing_searcher}, io)
+    out, result = asyncio.run(
+        search(FakeAccessor(), [spec("/rooms/red/a.json")], ["ada"],
+               CommandOpts()))
+    assert asyncio.run(_drain(out)) == b""
+    assert result.exit_code == 2
+    assert asyncio.run(
+        result.stderr_str()) == ("grep: /h/rooms/red/a.json: File too large\n")
 
 
 def test_query_carries_the_honored_flags():
@@ -214,12 +231,40 @@ def test_query_carries_the_honored_flags():
         seen.append(query)
         return ["line"]
 
-    search = make_search("grep",
-                         detect_scope, {"room": recorder},
-                         IO,
-                         qualify=literal_pushdown_operand)
+    search = _search_command({'room': recorder}, IO)
     asyncio.run(
         search(FakeAccessor(), [spec("/rooms/red")], ["ada"],
                CommandOpts(flags={"i": True})))
-    assert seen[0].ignore_case
-    assert not seen[0].fixed_string
+    assert seen[0].options["grep"]["ignore_case"]
+    assert not seen[0].options["grep"]["fixed_string"]
+
+
+def test_stdin_operand_reads_the_pipe_not_the_backend():
+    # A `-` operand is the line's stdin, which no backend holds. Asked
+    # about it, a search that answers any operand said "no match" and
+    # the pipe was never read.
+    asked: list[str] = []
+
+    async def answer_everything(accessor: FakeAccessor,
+                                operand: PathSpec,
+                                query: SearchQuery,
+                                index=NULL_INDEX) -> list[str]:
+        asked.append(operand.raw_path)
+        return []
+
+    ops = SearchOps(search=answer_everything,
+                    meta={"grep": {
+                        "mode": "literal",
+                        "stream": False
+                    }})
+    dash = PathSpec(virtual="/h/-",
+                    directory="/h/",
+                    vfs_path="-",
+                    resolved=True,
+                    raw_path="-")
+    for name in ("grep", "rg"):
+        out, result = asyncio.run(
+            run_search(replace(IO, search=ops), name, FakeAccessor(), [dash],
+                       ["ada"], CommandOpts(stdin=b"x ada\n")))
+        assert (asyncio.run(_drain(out)), result.exit_code) == (b"x ada\n", 0)
+    assert asked == []

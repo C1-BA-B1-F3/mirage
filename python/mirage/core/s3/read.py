@@ -81,7 +81,7 @@ async def read_bytes(accessor: S3Accessor,
             data = await body.read()
         fingerprint, revision = _fp_rev_from_response(resp)
         record("read",
-               path,
+               virtual,
                "s3",
                len(data),
                timer,

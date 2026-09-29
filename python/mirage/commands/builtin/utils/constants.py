@@ -14,7 +14,7 @@
 
 import re
 
-from mirage.types import FileType
+from mirage.types import FileType, PathSpec
 
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
           "Nov", "Dec")
@@ -27,6 +27,13 @@ DEFAULT_BACKUP_SUFFIX = "~"
 # A terminal `cat` of an endless character device must be bounded before
 # workspace materialization. Regular files keep the ordinary line-only cap.
 CHAR_DEVICE_MAX_BYTES = 8 << 20
+
+# GNU's name for stdin: head and tail's ``==> name <==`` header, and the
+# checksum list a ``*sum -c`` diagnostic names.
+STDIN_HEADER_NAME = "standard input"
+
+# The operand a command reads stdin through when the line names none.
+STDIN_OPERAND = PathSpec(virtual="-", directory="-", vfs_path="-")
 
 TYPE_CHARS = {
     FileType.DIRECTORY: "d",

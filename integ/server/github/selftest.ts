@@ -12,20 +12,26 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { searchConformance } from './search_conformance.ts'
 import { spawn } from 'node:child_process'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import type { ChildProcessByStdio } from 'node:child_process'
 import { dirname, join, resolve } from 'node:path'
 import type { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { ANNOUNCE_RE } from '../kit/typescript/announce.ts'
 import type { JsonValue } from '../kit/typescript/types.ts'
+import { start } from '../kit/typescript/serve.ts'
+import { githubFake } from './fake.ts'
 
-// The routes the corpus does not reach, because the gh battery exercises the
-// porcelain and these three have no porcelain behind them. A client that BUILDS
-// history calls `POST /git/trees` then `POST /git/commits`, which is the path a
-// fixture uses to pin a commit's own author and date; a grader reads an issue's
-// comments back; and `search_repositories` is an MCP tool with no `gh`
-// equivalent, so nothing else here would notice it answering the wrong scope.
+// The routes the corpus does not reach, or cannot exercise fully, because the
+// gh battery drives the porcelain against a one-repository fixture. A client
+// that BUILDS history calls `POST /git/trees` then `POST /git/commits`, which is
+// the path a fixture uses to pin a commit's own author and date; a grader reads
+// an issue's comments back; repository search must preserve owner scope;
+// and code search's scope rules need files under several owners and a
+// mixed-case name, which the `cli` fixture does not hold.
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const INTEG = resolve(HERE, '..', '..')
@@ -101,6 +107,37 @@ function field(body: JsonValue, key: string): JsonValue {
     : null
 }
 
+// A refusal is pinned by its status and its message together, because the
+// vendor tells an empty repository from a missing ref by both.
+async function refusal(url: string): Promise<JsonValue> {
+  const r = await fetch(url, { headers: HEADERS })
+  return [r.status, field((await r.json()) as JsonValue, 'message')]
+}
+
+// Every ref spelling a client might ask an empty repository about: shown or
+// listed, branch or tag, one that would exist and one that never could, and
+// the bare listing with and without its slash.
+const REF_PATHS = [
+  'git/ref/heads/main',
+  'git/ref/heads/nope',
+  'git/ref/tags/v1',
+  'git/refs',
+  'git/refs/',
+  'git/refs/heads',
+  'git/refs/heads/main',
+  'git/refs/tags',
+]
+
+// Object reads an empty repository refuses the same way, measured against
+// GitHub (2026-09-27): the recursive and shallow tree of a ref, one directory
+// of it, and a blob, here the empty blob every git repository could name.
+const OBJECT_PATHS = [
+  'git/trees/main?recursive=1',
+  'git/trees/main',
+  'git/trees/main%3Adocs',
+  'git/blobs/e69de29bb2d1d6434b8b29ae775ad8c2e48c5391',
+]
+
 // One staged tree holding one file, which is what a commit needs to exist.
 async function stage(at: string, path: string, content: string): Promise<string> {
   const tree = await post(`${at}/repos/${REPO}/git/trees`, {
@@ -111,16 +148,394 @@ async function stage(at: string, path: string, content: string): Promise<string>
 
 const AUTHOR = { name: 'Dana Wu', email: 'dana@example.com', date: '2025-09-02T09:00:00+08:00' }
 
+async function metadataRepository(): Promise<void> {
+  const root = await mkdtemp(join(tmpdir(), 'mirage-empty-repo-'))
+  try {
+    await mkdir(join(root, 'github'))
+    await writeFile(
+      join(root, 'github', 'metadata.json'),
+      JSON.stringify({
+        repos: [
+          {
+            fullName: 'integ/metadata',
+            owner: 'integ',
+            name: 'metadata',
+            defaultBranch: 'main',
+          },
+        ],
+      }),
+    )
+    const home = await start(githubFake, 0, 'metadata', root)
+    try {
+      await home.runtime.reset({ tenants: [TENANT], fixture: 'metadata' })
+      for (const prefix of ['', '/api/v3']) {
+        const repo = `${home.endpoint}${prefix}/repos/integ/metadata`
+        const contents = await fetch(`${repo}/contents/`, { headers: HEADERS })
+        eq('metadata-only contents returns 404', contents.status, 404)
+        eq(
+          'metadata-only contents identifies an empty repository',
+          field((await contents.json()) as JsonValue, 'message'),
+          'This repository is empty.',
+        )
+        const commits = await fetch(`${repo}/commits`, { headers: HEADERS })
+        eq('metadata-only history returns 409', commits.status, 409)
+        eq(
+          'metadata-only history identifies an empty repository',
+          field((await commits.json()) as JsonValue, 'message'),
+          'Git Repository is empty.',
+        )
+        eq('metadata-only tags list is empty', await get(`${repo}/tags`), [])
+        for (const path of [...REF_PATHS, ...OBJECT_PATHS]) {
+          eq(`metadata-only ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
+            409,
+            'Git Repository is empty.',
+          ])
+        }
+        eq(
+          'metadata-only contents at an unknown ref is still empty',
+          await refusal(`${repo}/contents/?ref=nope`),
+          [404, 'This repository is empty.'],
+        )
+      }
+    } finally {
+      await home.close()
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+async function emptyRepository(at: string): Promise<void> {
+  const base = `${at}/_run/empty-repository`
+  await post(`${base}/reset`, { run: 'empty-repository', tenants: [TENANT], fixture: 'empty' })
+  for (const prefix of ['', '/api/v3']) {
+    const name = prefix === '' ? 'empty-public' : 'empty-enterprise'
+    const created = await post(`${base}${prefix}/user/repos`, { name })
+    eq('empty repository creation succeeds', created.status, 201)
+    const repo = `${base}${prefix}/repos/integ-user/${name}`
+    for (const path of ['contents', 'contents/']) {
+      const response = await fetch(`${repo}/${path}`, { headers: HEADERS })
+      eq('empty contents returns 404', response.status, 404)
+      eq(
+        'empty contents explains why',
+        field((await response.json()) as JsonValue, 'message'),
+        'This repository is empty.',
+      )
+    }
+    // Emptiness is answered before the ref is resolved, so a ref that names
+    // nothing is told the repository is empty, not that the ref is missing.
+    for (const path of ['contents/?ref=nope', 'contents?ref=nope', 'contents/first.txt?ref=nope']) {
+      eq(`empty ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
+        404,
+        'This repository is empty.',
+      ])
+    }
+    const commits = await fetch(`${repo}/commits`, { headers: HEADERS })
+    eq('empty history returns 409', commits.status, 409)
+    eq(
+      'empty history explains why',
+      field((await commits.json()) as JsonValue, 'message'),
+      'Git Repository is empty.',
+    )
+    // GitHub answers an empty repository before it resolves the ref, so a name
+    // or sha that matches nothing gets the same 409 as the default branch.
+    for (const ref of ['main', 'HEAD', 'nope', 'deadbeef'.repeat(5)]) {
+      const one = await fetch(`${repo}/commits/${ref}`, { headers: HEADERS })
+      eq(`empty commit ${ref} returns 409`, one.status, 409)
+      eq(
+        `empty commit ${ref} explains why`,
+        field((await one.json()) as JsonValue, 'message'),
+        'Git Repository is empty.',
+      )
+    }
+    const tags = await fetch(`${repo}/tags`, { headers: HEADERS })
+    eq('empty tags succeeds', tags.status, 200)
+    eq('empty tags lists nothing', (await tags.json()) as JsonValue, [])
+    // The fake lets a branch be cut from nothing here. It holds no commit, so
+    // the repository stays empty, and once another branch has history it is
+    // still no ref: every read of it below is refused.
+    const cut = await post(`${repo}/git/refs`, { ref: 'refs/heads/side', sha: '' })
+    eq('a branch cut from nothing is created', cut.status, 201)
+    eq('and leaves the repository empty', await refusal(`${repo}/contents/?ref=side`), [
+      404,
+      'This repository is empty.',
+    ])
+    for (const path of [...REF_PATHS, ...OBJECT_PATHS]) {
+      eq(`empty ${path} is refused as empty`, await refusal(`${repo}/${path}`), [
+        409,
+        'Git Repository is empty.',
+      ])
+    }
+    const written = await fetch(`${repo}/contents/first.txt`, {
+      method: 'PUT',
+      headers: HEADERS,
+      body: JSON.stringify({
+        message: 'First real commit',
+        content: Buffer.from('hello').toString('base64'),
+      }),
+    })
+    eq('first write succeeds', written.status, 201)
+    const body = (await written.json()) as JsonValue
+    const history = (await get(`${repo}/commits`)) as JsonValue[]
+    eq('first write has no invented ancestor', history.length, 1)
+    eq(
+      'history contains the written commit',
+      field(history[0] ?? null, 'sha'),
+      field(field(body, 'commit'), 'sha'),
+    )
+    // One write and the repository has a ref, so refs resolve again: the
+    // branch points at the commit the write made, and a ref, a commit or a
+    // contents ref that names nothing is refused as missing, not as empty.
+    const sha = field(field(body, 'commit'), 'sha')
+    eq('the written branch shows its ref', await get(`${repo}/git/ref/heads/main`), {
+      ref: 'refs/heads/main',
+      object: { sha, type: 'commit' },
+    })
+    for (const path of ['git/refs', 'git/refs/heads']) {
+      eq(`${path} lists the written branch`, await get(`${repo}/${path}`), [
+        { ref: 'refs/heads/main', object: { sha, type: 'commit' } },
+      ])
+    }
+    eq('an unknown ref is missing, not empty', await refusal(`${repo}/git/ref/heads/nope`), [
+      404,
+      'Not Found',
+    ])
+    for (const ref of ['nope', 'refs/heads/nope', 'deadbeef'.repeat(5)]) {
+      eq(`an unknown commit ${ref} is refused by name`, await refusal(`${repo}/commits/${ref}`), [
+        422,
+        `No commit found for SHA: ${ref}`,
+      ])
+    }
+    eq('contents at an unknown ref names it', await refusal(`${repo}/contents/?ref=nope`), [
+      404,
+      'No commit found for the ref nope',
+    ])
+    // The listings above already leave `side` out.
+    eq('an uncommitted branch has no contents', await refusal(`${repo}/contents/?ref=side`), [
+      404,
+      'No commit found for the ref side',
+    ])
+    eq('nor a ref', await refusal(`${repo}/git/ref/heads/side`), [404, 'Not Found'])
+    eq('nor a commit', await refusal(`${repo}/commits/side`), [
+      422,
+      'No commit found for SHA: side',
+    ])
+    const deleted = await fetch(`${repo}/contents/first.txt`, {
+      method: 'DELETE',
+      headers: HEADERS,
+      body: JSON.stringify({
+        message: 'Remove last file',
+        sha: field(field(body, 'content'), 'sha'),
+      }),
+    })
+    eq('last file deletion succeeds', deleted.status, 200)
+    eq(
+      'a committed empty tree still has history',
+      ((await get(`${repo}/commits`)) as JsonValue[]).length,
+      2,
+    )
+    eq('a committed empty tree lists successfully', await get(`${repo}/contents/`), [])
+    eq(
+      'a committed empty tree still shows its ref',
+      field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'),
+      field(field((await deleted.json()) as JsonValue, 'commit'), 'sha'),
+    )
+  }
+  for (const path of ['/graphql', '/api/graphql']) {
+    const response = await post(`${base}${path}`, { query: '{ viewer { login } }' })
+    eq('GraphQL endpoint succeeds', response.status, 200)
+    eq('GraphQL endpoint resolves viewer', field(response.body, 'data'), {
+      viewer: { login: 'integ-user' },
+    })
+    const anonymous = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '{ viewer { login } }' }),
+    })
+    eq('GraphQL requires authentication', anonymous.status, 401)
+  }
+}
+
+// A seeded branch has files and no commit, so its ref answers with a root
+// derived from those files. The first change on it, a write or a delete, names
+// that root as its parent, and history has to keep listing it under that
+// commit however the files change afterwards.
+async function seededHistory(at: string): Promise<void> {
+  for (const first of ['PUT', 'DELETE']) {
+    const run = `seeded-${first.toLowerCase()}`
+    const base = `${at}/_run/${run}`
+    await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+    const repo = `${base}/repos/${REPO}`
+    const root = String(field(field(await get(`${repo}/git/ref/heads/main`), 'object'), 'sha'))
+    eq('a seeded branch is not an empty repository', await refusal(`${repo}/commits/nope`), [
+      422,
+      'No commit found for SHA: nope',
+    ])
+    const path = first === 'PUT' ? 'first.txt' : 'README.md'
+    const change =
+      first === 'PUT'
+        ? { message: 'First change', content: Buffer.from('one').toString('base64') }
+        : { message: 'First change', sha: field(await get(`${repo}/contents/${path}`), 'sha') }
+    const changed = await fetch(`${repo}/contents/${path}`, {
+      method: first,
+      headers: HEADERS,
+      body: JSON.stringify(change),
+    })
+    eq(`a first ${first} on a seeded branch succeeds`, changed.status, first === 'PUT' ? 201 : 200)
+    const second = await fetch(`${repo}/contents/second.txt`, {
+      method: 'PUT',
+      headers: HEADERS,
+      body: JSON.stringify({
+        message: 'Second change',
+        content: Buffer.from('two').toString('base64'),
+      }),
+    })
+    eq('a second write on it succeeds', second.status, 201)
+    const history = (await get(`${repo}/commits`)) as JsonValue[]
+    eq(
+      'history lists both changes above one root',
+      history.map((c) => field(field(c, 'commit'), 'message')),
+      ['Second change', 'First change', 'Initial commit'],
+    )
+    eq(
+      'that root is where the ref pointed before the first change',
+      field(history[2] ?? null, 'sha'),
+      root,
+    )
+    const found = field(
+      await get(`${base}/search/commits?q=${encodeURIComponent(`repo:${REPO} first change`)}`),
+      'items',
+    ) as JsonValue[]
+    eq('the first change names that root as its parent', field(found[0] ?? null, 'parents'), [
+      { sha: root },
+    ])
+    const resolved = await fetch(`${repo}/git/commits/${root}`, { headers: HEADERS })
+    eq('that root still resolves as a commit', resolved.status, 200)
+    const compared = await fetch(`${repo}/compare/${root}...main`, { headers: HEADERS })
+    eq('a comparison from that root succeeds', compared.status, 200)
+    eq(
+      'and reports both changes',
+      ((field((await compared.json()) as JsonValue, 'files') ?? []) as JsonValue[]).map((f) =>
+        field(f, 'filename'),
+      ),
+      ['second.txt', path],
+    )
+  }
+}
+
+// Git keeps an object once it is written, so a blob sha an old listing named
+// still reads its own bytes after its path changes: overwritten or deleted,
+// whether the bytes came from the seed or from a commit. Measured against
+// GitHub (2026-09-27): a superseded blob answers 200 with its old bytes.
+async function supersededBlobs(at: string): Promise<void> {
+  const run = 'superseded-blobs'
+  const base = `${at}/_run/${run}`
+  await post(`${base}/reset`, { run, tenants: [TENANT], fixture: 'v1' })
+  const repo = `${base}/repos/${REPO}`
+  const send = async (method: string, body: JsonValue): Promise<JsonValue> => {
+    const r = await fetch(`${repo}/contents/README.md`, {
+      method,
+      headers: HEADERS,
+      body: JSON.stringify(body),
+    })
+    eq(`the ${method} of README.md succeeds`, r.status, 200)
+    return (await r.json()) as JsonValue
+  }
+  const blob = async (sha: JsonValue): Promise<JsonValue> => {
+    const r = await fetch(`${repo}/git/blobs/${String(sha)}`, { headers: HEADERS })
+    if (r.status !== 200) return r.status
+    return Buffer.from(String(field((await r.json()) as JsonValue, 'content')), 'base64').toString()
+  }
+  const seeded = await get(`${repo}/contents/README.md`)
+  const seededText = Buffer.from(String(field(seeded, 'content')), 'base64').toString()
+  const one = await send('PUT', {
+    message: 'Replace the seed',
+    content: Buffer.from('one').toString('base64'),
+    sha: field(seeded, 'sha'),
+  })
+  eq('a seeded blob a write replaced still reads', await blob(field(seeded, 'sha')), seededText)
+  const oneSha = field(field(one, 'content'), 'sha')
+  const two = await send('PUT', {
+    message: 'Replace the commit',
+    content: Buffer.from('two').toString('base64'),
+    sha: oneSha,
+  })
+  eq('a committed blob a write replaced still reads', await blob(oneSha), 'one')
+  const twoSha = field(field(two, 'content'), 'sha')
+  await send('DELETE', { message: 'Remove it', sha: twoSha })
+  eq('a deleted blob still reads', await blob(twoSha), 'two')
+  eq('a sha no tree ever held is not found', await blob('0'.repeat(40)), 404)
+}
+
 async function main(): Promise<void> {
   const fake = await launch()
   const at = fake.endpoint
   try {
+    await emptyRepository(at)
+    await seededHistory(at)
+    await supersededBlobs(at)
     const reset = await fetch(`${at}/reset`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ tenants: [TENANT], fixture: 'v1' }),
     })
     check('/reset seeds the fixture', reset.status === 200, String(reset.status))
+
+    // ---- `{ref}:{dir}` lists one directory, as GitHub's rev syntax does; the
+    // point lookup sends it percent-encoded as one segment, and python's
+    // client sends the colon raw
+    const shallow = async (segment: string): Promise<{ status: number; body: JsonValue }> => {
+      const r = await fetch(`${at}/repos/${REPO}/git/trees/${segment}`, { headers: HEADERS })
+      return { status: r.status, body: (await r.json()) as JsonValue }
+    }
+    // docs/vendored is a submodule: GitHub lists a gitlink in a tree, and the
+    // client is what drops it.
+    const names = (body: JsonValue): JsonValue[] =>
+      (field(body, 'tree') as JsonValue[]).map((row) => field(row, 'path'))
+    const docs = await shallow('main%3Adocs')
+    eq('an encoded ref:dir lists that directory', names(docs.body), [
+      'architecture.md',
+      'contributing.md',
+      'release.md',
+      'vendored',
+    ])
+    eq('a raw colon lists the same rows', names((await shallow('main:docs')).body), [
+      'architecture.md',
+      'contributing.md',
+      'release.md',
+      'vendored',
+    ])
+    eq(
+      'an encoded slash reaches a nested directory',
+      names((await shallow('main%3Asrc%2Fcache')).body).length,
+      9,
+    )
+    eq('a path through a file is 422', (await shallow('main%3AREADME.md')).status, 422)
+    eq('a missing directory is 404', (await shallow('main%3Anope')).status, 404)
+    eq('an unknown ref is 404', (await shallow('gone%3Adocs')).status, 404)
+    // A bare ref without recursive names only the root's own rows, uncut: the
+    // truncated repository's per-directory walk asks for its root this way.
+    const bareRoot = await get(`${at}/repos/integ/repo-trunc/git/trees/main`)
+    eq('a bare ref lists the root shallow and whole', field(bareRoot, 'truncated'), false)
+    check(
+      'a bare ref lists no nested path',
+      (field(bareRoot, 'tree') as JsonValue[]).every(
+        (row) => !String(field(row, 'path')).includes('/'),
+      ),
+    )
+    const whole = await get(`${at}/repos/${REPO}/git/trees/main?recursive=1`)
+    const wholeRow = (field(whole, 'tree') as JsonValue[]).find(
+      (row) => field(row, 'path') === 'docs/release.md',
+    )
+    const pointRow = (field(docs.body, 'tree') as JsonValue[]).find(
+      (row) => field(row, 'path') === 'release.md',
+    )
+    eq(
+      "a listed row carries the recursive tree row's sha",
+      field(pointRow ?? null, 'sha'),
+      field(wholeRow ?? null, 'sha'),
+    )
+    check('vanilla gh search matches Mirage', (await searchConformance(at)) > 0)
 
     // ---- an author the caller states is the author the fake keeps
     const t1 = await stage(at, 'tasks/one.md', '# one\n')
@@ -856,13 +1271,7 @@ async function main(): Promise<void> {
     })
     check('and not what the branch gained afterwards', later.status === 404, String(later.status))
 
-    // ---- listing an issue's comments, which no mirage client asks for
-    // `gh issue comment` posts one and there is no verb that lists them, so
-    // the battery cannot reach this and the endpoint would ship untested.
-    // What does ask is everything on the other side of the fake: a grader
-    // checking that the reply it wanted is the reply that landed reads
-    // `comments[-1]`, which is only "what was said last" if the order is the
-    // vendor's -- oldest first.
+    // REST and GraphQL return comments oldest first.
     const opened = await post(`${at}/repos/${REPO}/issues`, {
       title: 'License info. needed',
       body: 'Could you provide license info.?',
@@ -900,6 +1309,7 @@ async function main(): Promise<void> {
     }
 
     eq('`user:` lists that account and no other', await found('user:integ'), [
+      'integ/data-v1',
       'integ/repo-cli',
       'integ/repo-trunc',
       'integ/repo-v1',
@@ -925,6 +1335,327 @@ async function main(): Promise<void> {
       'integ/repo-v1',
     ])
 
+    // ---- code search answers a query that names no repository, over every
+    // repository the tenant holds, because an authenticated caller of the live
+    // API is answered over all of GitHub rather than refused. The scope rules
+    // below were measured against api.github.com on 2026-09-24. This block sits
+    // after `found('repo')`, which `Repo-Mixed` would otherwise join, and before
+    // the reset that reseeds.
+    const codeSearch = async (
+      q: string | null,
+      prefix = '',
+    ): Promise<{ status: number; body: JsonValue; items: string[] }> => {
+      const query = q === null ? '' : `?q=${encodeURIComponent(q)}`
+      const r = await fetch(`${at}${prefix}/search/code${query}`, { headers: HEADERS })
+      const body = (await r.json()) as JsonValue
+      const rows = field(body, 'items')
+      // Keyed by the item's own `repository`, so an item filed under the wrong
+      // repository reads as a different hit.
+      const items = Array.isArray(rows)
+        ? rows.map(
+            (i) =>
+              `${String(field(field(i, 'repository'), 'full_name'))}/${String(field(i, 'path'))}`,
+          )
+        : []
+      return { status: r.status, body, items }
+    }
+    const hits = async (q: string): Promise<JsonValue> => {
+      const r = await codeSearch(q)
+      return r.status === 200 ? r.items : `HTTP ${String(r.status)}`
+    }
+    const MARK = 'quokkaseed'
+
+    eq(
+      'an unscoped query is answered, not refused',
+      await codeSearch(MARK).then((r) => [r.status, r.body]),
+      [200, { total_count: 0, incomplete_results: false, items: [] }],
+    )
+
+    const mixed = await post(`${at}/orgs/${OTHER}/repos`, { name: 'Repo-Mixed' })
+    check('a mixed-case repo is created', mixed.status === 201, String(mixed.status))
+    const CASED_OWNER = 'Integ-Case'
+    const cased = await post(`${at}/orgs/${CASED_OWNER}/repos`, { name: 'zz-repo' })
+    check('a repo is created under a mixed-case owner', cased.status === 201, String(cased.status))
+    const write = async (repo: string, path: string, text: string): Promise<JsonValue> => {
+      const r = await fetch(`${at}/repos/${repo}/contents/${path}`, {
+        method: 'PUT',
+        headers: HEADERS,
+        body: JSON.stringify({
+          message: `add ${path}`,
+          content: Buffer.from(text).toString('base64'),
+        }),
+      })
+      check(`a file is written to ${repo}`, r.status === 201, String(r.status))
+      return field(field((await r.json()) as JsonValue, 'content'), 'sha')
+    }
+    // Three owners, one of them mixed-case, a mixed-case name, and `alpha` in
+    // only two files. The repositories created last sort first by full name,
+    // and `Integ-Case/zz-repo` sorts first by full name but last by name, so
+    // creation order, name order and full-name order all read differently.
+    await write(`${CASED_OWNER}/zz-repo`, 'docs/cased.md', `${MARK}\n`)
+    const mixedSha = await write(`${OTHER}/Repo-Mixed`, 'notes/mixed.md', `${MARK}\n`)
+    await write(`${OTHER}/repo-archived`, 'notes/shared.md', `${MARK} alpha\n`)
+    await write('integ/repo-cli', 'notes/shared.md', `${MARK} alpha\n`)
+    await write('integ/repo-v1', 'docs/shared.md', `${MARK}\n`)
+    const MIXED = `${OTHER}/Repo-Mixed/notes/mixed.md`
+    const ARCHIVED = `${OTHER}/repo-archived/notes/shared.md`
+    const CLI = 'integ/repo-cli/notes/shared.md'
+    const V1 = 'integ/repo-v1/docs/shared.md'
+    const CASED = `${CASED_OWNER}/zz-repo/docs/cased.md`
+    const ALL = [CASED, MIXED, ARCHIVED, CLI, V1]
+
+    const everything = await codeSearch(MARK)
+    eq('unscoped, every repository is searched, in full-name order', everything.items, ALL)
+    eq('and the count is every hit', field(everything.body, 'total_count'), 5)
+    const hitRows = field(everything.body, 'items')
+    const repoOf = (row: JsonValue | undefined): JsonValue => {
+      const repo = field(row ?? null, 'repository')
+      return { name: field(repo, 'name'), full_name: field(repo, 'full_name') }
+    }
+    eq(
+      'each hit names its own repository (first)',
+      repoOf(Array.isArray(hitRows) ? hitRows[0] : undefined),
+      {
+        name: 'zz-repo',
+        full_name: `${CASED_OWNER}/zz-repo`,
+      },
+    )
+    eq(
+      'each hit names its own repository (last)',
+      repoOf(Array.isArray(hitRows) ? hitRows.at(-1) : undefined),
+      {
+        name: 'repo-v1',
+        full_name: 'integ/repo-v1',
+      },
+    )
+    for (const prefix of ['', '/api/v3']) {
+      const r = await codeSearch('"Mixture-of-Depths"', prefix)
+      eq(
+        `a query matching nothing is a 200 with nothing (${prefix || '/'})`,
+        [r.status, r.body],
+        [200, { total_count: 0, incomplete_results: false, items: [] }],
+      )
+    }
+
+    // `user:` and `org:` narrow and OR together; an owner compares
+    // case-insensitively on both sides, as `searchRepos` does.
+    eq('`user:` narrows code search to that owner', await hits(`user:integ ${MARK}`), [CLI, V1])
+    eq('`org:` narrows the same way', await hits(`org:${OTHER} ${MARK}`), [MIXED, ARCHIVED])
+    eq('an owner value compares case-insensitively', await hits(`user:INTEG-Archive ${MARK}`), [
+      MIXED,
+      ARCHIVED,
+    ])
+    eq('and so does the owner it is compared with', await hits(`org:integ-case ${MARK}`), [CASED])
+    eq('an owner holding nothing is empty, not everything', await hits(`user:nobody ${MARK}`), [])
+    eq('two owners OR together', await hits(`user:nobody org:${OTHER} ${MARK}`), [MIXED, ARCHIVED])
+
+    // Several `repo:` OR together; with an owner as well, the two groups AND.
+    eq(
+      'several `repo:` OR together',
+      await hits(`repo:integ/repo-cli repo:${OTHER}/repo-archived ${MARK}`),
+      [ARCHIVED, CLI],
+    )
+    const twice = await codeSearch(`repo:integ/repo-cli repo:integ/repo-cli ${MARK}`)
+    eq(
+      'a repo named twice is searched once',
+      [twice.items, field(twice.body, 'total_count')],
+      [[CLI], 1],
+    )
+    eq('`repo:` and `user:` intersect', await hits(`repo:integ/repo-cli user:integ ${MARK}`), [CLI])
+    eq(
+      '`repo:` and `org:` intersect',
+      await hits(`repo:integ/repo-cli repo:${OTHER}/repo-archived org:integ ${MARK}`),
+      [CLI],
+    )
+    // Live refuses a disjoint intersection with a query-parse 422; an empty
+    // answer is the looser equivalent and carries no engine artefact.
+    eq(
+      'a disjoint intersection is empty',
+      await hits(`repo:integ/repo-cli user:${OTHER} ${MARK}`),
+      [],
+    )
+    eq(
+      'a missing repo among several is skipped',
+      await hits(`repo:integ/repo-cli repo:integ/no-such ${MARK}`),
+      [CLI],
+    )
+    eq('a query naming only a missing repo is empty', await hits(`repo:integ/no-such ${MARK}`), [])
+    eq(
+      'an owner does not widen a missing repository',
+      await hits(`repo:integ/no-such user:integ ${MARK}`),
+      [],
+    )
+    eq('a `repo:` value is taken verbatim', await hits(`repo:${OTHER}/Repo-Mixed ${MARK}`), [MIXED])
+
+    // Qualifier names are exact and case-sensitive, as live reads them;
+    // anything else is a term, split by the tokenizer.
+    eq('a word holding `::` stays terms', await hits(`${MARK}::alpha`), [ARCHIVED, CLI])
+    eq(
+      'an uppercase qualifier name is a term',
+      await hits(`repo:integ/repo-v1 REPO:integ/repo-cli ${MARK}`),
+      [],
+    )
+    eq('a negated qualifier is a term', await hits(`-repo:integ/repo-cli ${MARK}`), [])
+    // Content and metadata filters are dropped rather than matched as words,
+    // which only ever widens; live narrows by them.
+    for (const name of ['language', 'extension', 'filename', 'in', 'size', 'fork']) {
+      eq(`\`${name}:\` is dropped`, await hits(`repo:integ/repo-cli ${name}:x ${MARK}`), [CLI])
+    }
+    eq('and dropping one does not scope', await hits(`language:x ${MARK}`), ALL)
+    // Live refuses an empty qualifier value with a query-parse 422.
+    eq('an empty `user:` is dropped', await hits(`user: ${MARK}`), ALL)
+    eq('an empty `repo:` is dropped', await hits(`repo: ${MARK}`), ALL)
+    // Live lists every file in scope; the fake matches files by terms only.
+    eq('a query of only a scope is empty', await hits('user:integ'), [])
+    eq('a query of only a dropped filter is empty', await hits('language:python'), [])
+
+    eq('`path:` narrows each repository', await hits(`path:notes ${MARK}`), [MIXED, ARCHIVED, CLI])
+    eq('a term compares case-insensitively', await hits(`repo:integ/repo-cli QuokkaSeed`), [CLI])
+    eq(
+      'a `path:` value is taken verbatim',
+      await hits(`repo:integ/repo-cli path:Notes ${MARK}`),
+      [],
+    )
+    const one = await codeSearch(`repo:${OTHER}/Repo-Mixed ${MARK}`)
+    const blobs = field(one.body, 'items')
+    eq(
+      'a hit carries the blob it names',
+      Array.isArray(blobs)
+        ? blobs.map((row) => ({
+            name: field(row, 'name'),
+            path: field(row, 'path'),
+            sha: field(row, 'sha'),
+            score: field(row, 'score'),
+            repository: repoOf(row),
+          }))
+        : blobs,
+      [
+        {
+          name: 'mixed.md',
+          path: 'notes/mixed.md',
+          sha: mixedSha,
+          score: 1,
+          repository: { name: 'Repo-Mixed', full_name: `${OTHER}/Repo-Mixed` },
+        },
+      ],
+    )
+    for (const prefix of ['', '/api/v3']) {
+      for (const q of ['', '  ', null]) {
+        const r = await codeSearch(q, prefix)
+        eq(
+          `an empty query is refused (${JSON.stringify(q)}, ${prefix || '/'})`,
+          [r.status, field(r.body, 'message')],
+          [422, 'Validation Failed'],
+        )
+      }
+    }
+
+    const commentsReset = await fetch(`${at}/reset`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tenants: [TENANT], fixture: 'comments' }),
+    })
+    check('comment metadata fixture is seeded', commentsReset.status === 200)
+    const query = `query($cursor: String) {
+      repository(owner: "integ", name: "repo-comments") {
+        issueOrPullRequest(number: 1) { ... on Issue {
+          comments(first: 1, after: $cursor) {
+            nodes { body author { login } authorAssociation includesCreatedEdit
+              isMinimized minimizedReason viewerDidAuthor reactionGroups { content users { totalCount } } }
+            pageInfo { hasNextPage endCursor }
+          }
+        } }
+      }
+    }`
+    const graph = async (cursor: JsonValue): Promise<JsonValue> => {
+      const response = await post(`${at}/graphql`, { query, variables: { cursor } })
+      eq('GraphQL response has no errors', field(response.body, 'errors'), null)
+      return field(
+        field(field(field(response.body, 'data'), 'repository'), 'issueOrPullRequest'),
+        'comments',
+      )
+    }
+    const firstPage = await graph(null)
+    const nodes = field(firstPage, 'nodes') as JsonValue[]
+    eq('first GraphQL page respects its limit', nodes.length, 1)
+    eq('GraphQL preserves nullable author and comment metadata', nodes[0] ?? null, {
+      body: 'comment 1',
+      author: null,
+      authorAssociation: 'CONTRIBUTOR',
+      includesCreatedEdit: true,
+      isMinimized: true,
+      minimizedReason: 'OUTDATED',
+      viewerDidAuthor: false,
+      reactionGroups: [
+        { content: 'THUMBS_UP', users: { totalCount: 2 } },
+        { content: 'LAUGH', users: { totalCount: 0 } },
+      ],
+    })
+    eq('first page has a continuation', field(field(firstPage, 'pageInfo'), 'hasNextPage'), true)
+    const lastPage = await graph(field(field(firstPage, 'pageInfo'), 'endCursor'))
+    eq(
+      'cursor advances to the last comment',
+      (field(lastPage, 'nodes') as JsonValue[]).map((row) => field(row, 'body')),
+      ['comment 2'],
+    )
+    eq('last page terminates pagination', field(field(lastPage, 'pageInfo'), 'hasNextPage'), false)
+
+    // ---- GraphQL repository lists honour orderBy and filters, and a fork's
+    // parent is found by identity, so renaming the source keeps it
+    const v1Seed = await fetch(`${at}/reset`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tenants: [TENANT], fixture: 'v1' }),
+    })
+    check('the v1 fixture is seeded again', v1Seed.status === 200)
+    const repositoryNames = async (login: string, args: string): Promise<JsonValue[]> => {
+      const r = await post(`${at}/graphql`, {
+        query: `{ repositoryOwner(login: "${login}") { repositories(first: 10${args}) { nodes { name } } } }`,
+      })
+      eq(`repositories(${args}) has no errors`, field(r.body, 'errors'), null)
+      const page = field(field(field(r.body, 'data'), 'repositoryOwner'), 'repositories')
+      return (field(page, 'nodes') as JsonValue[]).map((node) => field(node, 'name'))
+    }
+    eq(
+      'repositories order by name ascending',
+      await repositoryNames('integ', ', orderBy: { field: NAME, direction: ASC }'),
+      ['data-v1', 'repo-cli', 'repo-trunc', 'repo-v1'],
+    )
+    eq(
+      'repositories order by name descending',
+      await repositoryNames('integ', ', orderBy: { field: NAME, direction: DESC }'),
+      ['repo-v1', 'repo-trunc', 'repo-cli', 'data-v1'],
+    )
+    eq(
+      'repositories a push order ties are listed by name',
+      await repositoryNames('integ', ', orderBy: { field: PUSHED_AT, direction: DESC }'),
+      ['data-v1', 'repo-cli', 'repo-trunc', 'repo-v1'],
+    )
+    const forked = await post(`${at}/repos/integ/repo-v1/forks`, { name: 'v1-fork' })
+    check('the fork is created', forked.status < 300, String(forked.status))
+    const renamed = await fetch(`${at}/repos/integ/repo-v1`, {
+      method: 'PATCH',
+      headers: HEADERS,
+      body: JSON.stringify({ name: 'repo-v1-moved' }),
+    })
+    check('the source is renamed', renamed.status === 200, String(renamed.status))
+    const parent = await post(`${at}/graphql`, {
+      query:
+        '{ repository(owner: "integ-user", name: "v1-fork") { isFork parent { name owner { login } } } }',
+    })
+    eq('a fork names its parent under the name it carries now', field(parent.body, 'data'), {
+      repository: { isFork: true, parent: { name: 'repo-v1-moved', owner: { login: 'integ' } } },
+    })
+    eq(
+      'isFork narrows a repository list to forks',
+      await repositoryNames('integ-user', ', isFork: true'),
+      ['v1-fork'],
+    )
+    eq(
+      'isFork: false leaves the forks out',
+      await repositoryNames('integ-user', ', isFork: false'),
+      [],
+    )
     process.stdout.write(`github selftest: ${String(checks)} checks passed\n`)
   } finally {
     fake.child.kill('SIGTERM')
@@ -932,3 +1663,4 @@ async function main(): Promise<void> {
 }
 
 await main()
+await metadataRepository()

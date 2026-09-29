@@ -12,29 +12,22 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from functools import partial
-
-from mirage.commands.builtin.generic_bind import CommandIO
-from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.core.slack.constants import DU_MAX_ENTRIES
 from mirage.core.slack.read import read as _read
 from mirage.core.slack.read import read_range as _read_range
 from mirage.core.slack.readdir import readdir as _readdir
 from mirage.core.slack.stat import stat as _stat
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import NativeReadOps, ReadOps
 
 # Messages are read through the generic factory (find walks readdir,
 # classifying via stat); grep/rg are bespoke (search-API push-down) and
 # writes go through the slack_* commands, so the generic byte-mutation
 # commands are absent.
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_range=_read_range,
-    read_stream=partial(stream_from_bytes, _read),
-    stat=_stat,
-    is_mounted=lambda a: True,
-    local=False,
-    max_du_entries=DU_MAX_ENTRIES,
-)
+IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                native=NativeReadOps(read_range=_read_range),
+                is_mounted=lambda a: True,
+                local=False,
+                max_du_entries=DU_MAX_ENTRIES).to_command_io()
 
 resolve_glob = IO.resolve_glob

@@ -34,5 +34,5 @@ async def append_bytes(accessor: RAMAccessor, path_spec: PathSpec,
     else:
         store.files[p] = data
     store.modified[p] = now_iso()
-    record("append", path, "ram", len(data), timer)
+    record("append", path_spec.virtual, "ram", len(data), timer)
     await invalidate_after_write(path_spec)

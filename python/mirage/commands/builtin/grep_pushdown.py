@@ -14,13 +14,18 @@
 
 import re
 from collections.abc import Mapping, Sequence
+from typing import Literal, cast
 
-from mirage.commands.builtin.constants import PatternType
+from mirage.commands.builtin.constants import BINARY_EXTENSIONS, PatternType
 from mirage.commands.builtin.grep_pattern import bre_source
+from mirage.commands.builtin.types import GrepSearchMeta, GrepSearchOptions
 from mirage.commands.builtin.utils.paths import has_unresolved_glob
+from mirage.commands.builtin.utils.stream import is_stdin
+from mirage.commands.resolve import get_extension
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.types import PathSpec
+from mirage.vfs.types import SearchOps, SearchQuery
 
 
 def classify_pattern(
@@ -173,6 +178,54 @@ def is_literal_pattern(pattern: str, fixed_string: bool) -> bool:
                                        and "." not in pattern)
 
 
+def whole_word_literal(pattern: str | None, fixed_string: bool,
+                       whole_word: bool) -> str | None:
+    """The term a whole-word search index may narrow a scan on, or None.
+
+    A word-based index (GitHub code search, Dropbox and Box file search)
+    matches whole words while grep matches substrings, so for a bare
+    literal its answer is a strict subset of the grep matches: a file
+    holding the literal only inside a longer word (``quokka`` in
+    ``quokkabuild``) never comes back and would be silently dropped from
+    the scan. Under ``-w`` both sides mean the same thing, and any
+    tokenizer disagreement can only over-fetch, which the local scan
+    filters. A regex narrowed on an extracted literal stays excluded even
+    under ``-w`` (``is_literal_pattern``), and a newline-joined pattern
+    list is a set of alternatives no one literal is required by.
+
+    Args:
+        pattern (str | None): the search pattern, or None for -f-only runs.
+        fixed_string (bool): True if -F is set.
+        whole_word (bool): True if -w is set.
+
+    Returns:
+        str | None: the pattern itself when the index is asked for exactly
+            it, or None when no narrowing is complete.
+    """
+    if pattern is None or not whole_word or "\n" in pattern:
+        return None
+    return pattern if is_literal_pattern(pattern, fixed_string) else None
+
+
+def text_candidates(paths: list[PathSpec]) -> list[PathSpec]:
+    """Drop the candidates a recursive walk would never have read.
+
+    A narrowing stands in for the walk it replaces, and that walk skips
+    binary extensions, so a candidate with one is dropped rather than
+    downloaded. The result may be empty, which a caller must not hand to
+    grep as its operand list: no operands means standard input.
+
+    Args:
+        paths (list[PathSpec]): search-narrowed candidate files.
+
+    Returns:
+        list[PathSpec]: the candidates in order, without binary extensions.
+    """
+    return [
+        p for p in paths if get_extension(p.virtual) not in BINARY_EXTENSIONS
+    ]
+
+
 def search_query(pattern: str,
                  fixed_string: bool,
                  basic: bool = False) -> str | None:
@@ -210,12 +263,28 @@ def search_query(pattern: str,
     return extract_required_literal(bre_source(pattern) if basic else pattern)
 
 
+# grep's dests, then rg's, which spells each flag by its long name; a
+# spec-less view reads both, and neither command sets the other's.
 _PUSHDOWN_SHAPING_BOOL = ("v", "n", "byte_offset", "c", "args_l",
                           "files_without_match", "w", "o", "q", "H", "h",
-                          "args_I", "text")
+                          "args_I", "text", "invert_match", "line_number",
+                          "count", "files_with_matches", "word_regexp",
+                          "only_matching", "quiet", "with_filename",
+                          "no_filename", "line_regexp", "column", "vimgrep",
+                          "trim", "null", "count_matches", "include_zero",
+                          "files", "type_list", "heading", "passthru",
+                          "passthrough", "binary", "sort_files", "follow")
 _PUSHDOWN_SHAPING_INT = ("m", "A", "B", "C")
-_PUSHDOWN_FILTER_STR = ("type", "glob", "binary_files")
-_PUSHDOWN_FILTER_LIST = ("include", "exclude", "exclude_dir")
+# rg's valued options defer on presence alone: a value the generic would
+# refuse in ripgrep's words is not the push-down's to parse.
+_PUSHDOWN_SHAPING_VALUE = ("max_count", "after_context", "before_context",
+                           "context", "max_columns", "replace",
+                           "field_match_separator", "max_depth",
+                           "max_filesize", "sort", "sortr")
+_PUSHDOWN_FILTER_STR = ("binary_files", )
+# -f adds patterns the pushed-down one never carried.
+_PUSHDOWN_FILTER_LIST = ("include", "exclude", "exclude_dir", "file", "glob",
+                         "iglob", "type", "type_not")
 
 
 def has_search_shaping_flags(
@@ -226,11 +295,13 @@ def has_search_shaping_flags(
 
     A search push-down prints each matching record as one whole line, so it
     cannot honor -v/-n/-b/-c/-l/-w/-o/-m/-A/-B/-C/-q/-H/-h, rg's -I (no
-    filename),
-    nor rg's file-filtering --glob/--type; when any is present the wrapper must
-    defer to the generic scan, which applies exact semantics. Reads through a
-    spec-less FlagView so the shared key set works for both the grep and rg
-    specs (rg simply never sets the grep-only keys).
+    filename), -x, -r, --column and the rest of its output options, nor
+    the file filters (--include/--exclude, rg's -g/-t/-T/-d), the patterns
+    -f adds, or rg's -L, which walks links no backend can see; when any is
+    present the wrapper must defer to the generic scan, which applies exact
+    semantics. Reads through a spec-less FlagView so the shared key set
+    works for both the grep and rg specs (each simply never sets the
+    other's keys).
 
     ``honored`` names the flags this particular push-down implements itself,
     so their presence is not a reason to defer. Two shapes need it. A provider
@@ -250,6 +321,10 @@ def has_search_shaping_flags(
         return True
     if any(
             fl.as_int(k) is not None for k in _PUSHDOWN_SHAPING_INT
+            if k not in honored):
+        return True
+    if any(
+            fl.raw(k) is not None for k in _PUSHDOWN_SHAPING_VALUE
             if k not in honored):
         return True
     if any(fl.as_list(k) for k in _PUSHDOWN_FILTER_LIST if k not in honored):
@@ -277,7 +352,8 @@ def search_pushdown_ok(flags: Mapping[str, FlagValue] | None,
     if "\n" in pattern:
         return False
     fl = FlagView(flags)
-    return (is_literal_pattern(pattern, fl.as_bool("F"))
+    fixed = fl.as_bool("F") or fl.as_bool("fixed_strings")
+    return (is_literal_pattern(pattern, fixed)
             and not has_search_shaping_flags(flags))
 
 
@@ -295,15 +371,20 @@ def lone_operand(paths: list[PathSpec]) -> PathSpec | None:
     therefore takes the generic scan, which searches each operand in turn
     the way GNU does. A glob operand defers for the older reason: an
     unexpanded pattern segment would be read as a literal entity name.
+    A ``-`` operand defers because it is the line's stdin, which no
+    backend holds: asked about ``<mount>/-``, the search answered "no
+    match" and the pipe was never read.
 
     Args:
         paths (list[PathSpec]): operands as parsed.
 
     Returns:
         PathSpec | None: the sole concrete operand, or None when the line
-            named none, named several, or still carries a glob.
+            named none, named several, named stdin, or still carries a
+            glob.
     """
-    if len(paths) != 1 or has_unresolved_glob(paths):
+    if (len(paths) != 1 or has_unresolved_glob(paths)
+            or any(is_stdin(p) for p in paths)):
         return None
     return paths[0]
 
@@ -372,3 +453,44 @@ def text_search_results(lines: Sequence[str]) -> bool:
     """
     return all("\0" not in line and not any(0xd800 <= ord(c) <= 0xdfff
                                             for c in line) for line in lines)
+
+
+def grep_search_meta(search: SearchOps | None) -> GrepSearchMeta | None:
+    """Read grep's opt-in metadata without interpreting other namespaces.
+
+    Args:
+        search (SearchOps | None): the resource's optional search capability.
+    """
+    if search is None or "grep" not in search.meta:
+        return None
+    meta = search.meta["grep"]
+    if not isinstance(meta, dict) or set(meta) - {"mode", "stream"}:
+        raise ValueError(
+            "search.meta.grep must contain mode and optional stream")
+    mode = meta.get("mode")
+    stream = meta.get("stream", False)
+    if mode not in ("literal", "regex") or not isinstance(stream, bool):
+        raise ValueError(
+            "search.meta.grep requires mode=literal|regex and boolean stream")
+    return GrepSearchMeta(mode=cast(Literal["literal", "regex"], mode),
+                          stream=stream)
+
+
+def grep_search_options(query: SearchQuery) -> GrepSearchOptions:
+    """Parse grep's options; a plain resource query is literal text.
+
+    Args:
+        query (SearchQuery): resource query with optional grep namespace.
+    """
+    options = query.options.get("grep", {})
+    allowed = {"ignore_case", "fixed_string", "whole_word", "basic"}
+    if not isinstance(options, dict) or set(options) - allowed:
+        raise ValueError("search.options.grep contains unknown options")
+    if any(not isinstance(value, bool) for value in options.values()):
+        raise ValueError("search.options.grep values must be boolean")
+    return GrepSearchOptions(
+        ignore_case=options.get("ignore_case", False) is True,
+        fixed_string=options.get("fixed_string", True) is True,
+        whole_word=options.get("whole_word", False) is True,
+        basic=options.get("basic", False) is True,
+    )

@@ -62,14 +62,16 @@ describe('command option handling', () => {
 })
 
 describe('handleCommandBuiltin -v/-V', () => {
-  it('-v prints the name with no fake path', async () => {
+  it('-v prints a program file and a builtin bare', async () => {
+    // bash 5.2: the file PATH finds, and the bare name for one of bash's
+    // builtins, echo included though it has a file too.
     const [out, io] = await handleCommandBuiltin(
       vi.fn(),
-      ['-v', 'cat'],
+      ['-v', 'cat', 'cd', 'echo'],
       makeSession(),
       makeRegistry(),
     )
-    expect(await body(out)).toBe('cat\n')
+    expect(await body(out)).toBe('/usr/bin/cat\ncd\necho\n')
     expect(io.exitCode).toBe(0)
   })
 
@@ -103,7 +105,7 @@ describe('handleCommandBuiltin -v/-V', () => {
       makeSession(),
       makeRegistry(),
     )
-    expect(await body(out)).toBe('ls\ncat\n')
+    expect(await body(out)).toBe('/usr/bin/ls\n/usr/bin/cat\n')
     expect(io.exitCode).toBe(0)
   })
 
@@ -174,14 +176,14 @@ describe('handleCommandBuiltin -v/-V', () => {
       makeSession(),
       makeRegistry(),
     )
-    expect(await body(vOut)).toBe('cat\n')
+    expect(await body(vOut)).toBe('/usr/bin/cat\n')
     const [bigVOut] = await handleCommandBuiltin(
       vi.fn(),
       ['-vV', 'cat'],
       makeSession(),
       makeRegistry(),
     )
-    expect(await body(bigVOut)).toBe('cat is a shell builtin\n')
+    expect(await body(bigVOut)).toBe('cat is /usr/bin/cat\n')
   })
 })
 

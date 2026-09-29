@@ -25,6 +25,7 @@ import {
   startBasename,
 } from '../../commands/builtin/find_eval.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { DIR_SIZE } from '../../utils/stat_view.ts'
 
 export interface FindOptions {
   name?: string | null
@@ -107,9 +108,8 @@ export function find(
       isEmpty = emptyOf(key, kind)
     }
     if (!keep({ key, name: basename, kind, depth, isEmpty }, tree, options.minDepth)) continue
-    // Directories count as size 0 for -size (deliberate GNU divergence).
     if (options.minSize != null || options.maxSize != null) {
-      let size = 0
+      let size = DIR_SIZE
       if (kind === 'f') {
         const data = accessor.store.files.get(key)
         if (data === undefined) continue

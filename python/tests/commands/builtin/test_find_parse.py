@@ -111,6 +111,66 @@ def test_size_rounds_up_to_unit():
     assert (expr.min_size, expr.max_size) == (1025, None)
 
 
+def test_size_bare_number_counts_512_byte_blocks():
+    # GNU: a bare -size N is N 512-byte blocks, so -2 keeps a 4-byte
+    # file and 1 keeps 1..512 bytes.
+    expr = parse_find_expression(["-size", "-2"])
+    assert (expr.min_size, expr.max_size) == (None, 512)
+    expr = parse_find_expression(["-size", "1"])
+    assert (expr.min_size, expr.max_size) == (1, 512)
+    expr = parse_find_expression(["-size", "+1"])
+    assert (expr.min_size, expr.max_size) == (513, None)
+    expr = parse_find_expression(["-size", "0"])
+    assert (expr.min_size, expr.max_size) == (-511, 0)
+
+
+@pytest.mark.parametrize("spec,bounds", [
+    ("2b", (513, 1024)),
+    ("-2b", (None, 512)),
+    ("2w", (3, 4)),
+    ("-3w", (None, 4)),
+    ("+1w", (3, None)),
+    ("++1", (513, None)),
+    ("-+1", (None, 0)),
+])
+def test_size_block_and_word_units(spec, bounds):
+    expr = parse_find_expression(["-size", spec])
+    assert (expr.min_size, expr.max_size) == bounds
+
+
+@pytest.mark.parametrize("unit,factor", [("c", 1), ("", 512), ("G", 1024**3)])
+def test_size_takes_uintmax_in_any_unit(unit, factor):
+    # GNU bounds the number alone: 18446744073709551615G is valid.
+    expr = parse_find_expression(["-size", f"{2**64 - 1}{unit}"])
+    assert expr.max_size == (2**64 - 1) * factor
+
+
+@pytest.mark.parametrize("spec,message", [
+    ("", "find: invalid null argument to -size"),
+    ("+", "find: invalid -size type `+'"),
+    ("5x", "find: invalid -size type `x'"),
+    ("5K", "find: invalid -size type `K'"),
+    ("5 ", "find: invalid -size type ` '"),
+    ("k", "find: Invalid argument `k' to -size"),
+    ("5kk", "find: Invalid argument `5kk' to -size"),
+    ("1.5", "find: Invalid argument `1.5' to -size"),
+    ("+-1", "find: Invalid argument `+-1' to -size"),
+    ("12ab", "find: Invalid argument `12ab' to -size"),
+    ("18446744073709551616c",
+     "find: Invalid argument `18446744073709551616c' to -size"),
+    ("18446744073709551616G",
+     "find: Invalid argument `18446744073709551616G' to -size"),
+    ("+18446744073709551616",
+     "find: Invalid argument `+18446744073709551616' to -size"),
+    (" 18446744073709551616",
+     "find: Invalid argument ` 18446744073709551616' to -size"),
+])
+def test_size_refusals_use_gnu_wording(spec, message):
+    with pytest.raises(FindParseError) as exc:
+        parse_find_expression(["-size", spec])
+    assert str(exc.value) == message
+
+
 def test_empty_expression_is_true():
     assert parse_find_expression([]).tree == TrueNode()
 

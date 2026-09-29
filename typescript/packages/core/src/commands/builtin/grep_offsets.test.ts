@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   decodeLine,
   encodeLine,
@@ -20,6 +20,8 @@ import {
   matchOffset,
   MatchOffsets,
   prefixOf,
+  rgPieces,
+  rustMatches,
 } from './grep_offsets.ts'
 
 describe('lineOffsets', () => {
@@ -111,4 +113,123 @@ it('advances through Unicode and escaped bytes without recounting prefixes', () 
 it('keeps surrogate pairs intact between non-Unicode regex matches', () => {
   const offsets = new MatchOffsets(0, '𐂀😀x')
   expect([0, 1, 2, 3, 4].map((index) => offsets.at(index))).toEqual([0, 3, 4, 7, 8])
+})
+
+it.each([
+  [[0xef, 0xbb, 0xbf, 0x61], '\ufeffa'],
+  [[0xc0, 0xaf, 0xc1, 0xbf], '\udcc0\udcaf\udcc1\udcbf'],
+  [[0xe0, 0x80, 0x80, 0xed, 0xa0, 0x80], '\udce0\udc80\udc80\udced\udca0\udc80'],
+  [[0xf0, 0x80, 0x80, 0x80], '\udcf0\udc80\udc80\udc80'],
+  [[0xf4, 0x90, 0x80, 0x80, 0xf5, 0xff], '\udcf4\udc90\udc80\udc80\udcf5\udcff'],
+  [[0xc2, 0x41, 0xe1, 0x80, 0x42, 0xf0, 0x90, 0x80], '\udcc2A\udce1\udc80B\udcf0\udc90\udc80'],
+  [
+    [
+      0xef, 0xbb, 0xbf, 0xff, 0xc2, 0x80, 0xe0, 0xa0, 0x80, 0xed, 0x9f, 0xbf, 0xf0, 0x90, 0x82,
+      0x80, 0xf4, 0x8f, 0xbf, 0xbf,
+    ],
+    '\ufeff\udcff\u0080\u0800\ud7ff𐂀\u{10ffff}',
+  ],
+] as const)('decodes UTF-8 boundaries without replacing bytes: %j', (bytes, expected) => {
+  const raw = new Uint8Array(bytes)
+  expect(decodeLine(raw)).toBe(expected)
+  expect(encodeLine(decodeLine(raw))).toEqual(raw)
+})
+
+it('decodes a large malformed line with bounded native decoder calls', () => {
+  const expected = ('x'.repeat(8190) + '𐂀\udcffé').repeat(4)
+  const raw = encodeLine(expected)
+  const decode = vi.spyOn(TextDecoder.prototype, 'decode')
+  try {
+    expect(decodeLine(raw)).toBe(expected)
+    expect(decode.mock.calls.length).toBeLessThanOrEqual(2)
+  } finally {
+    decode.mockRestore()
+  }
+})
+
+describe('rustMatches', () => {
+  it('resumes one character after an empty match', () => {
+    // `rg -o 'x*'` over `abc` prints four empty lines on ripgrep 14.1.1.
+    expect(rustMatches(/x*/, 'abc')).toEqual([
+      [0, ''],
+      [1, ''],
+      [2, ''],
+      [3, ''],
+    ])
+  })
+
+  it('skips an empty match where a match ended', () => {
+    // `rg -o 'b*'` over `abc` is an empty line, `b`, an empty line.
+    expect(rustMatches(/b*/, 'abc')).toEqual([
+      [0, ''],
+      [1, 'b'],
+      [3, ''],
+    ])
+  })
+
+  it('skips it after every non-empty match', () => {
+    // `rg -o '[0-9]*'` over `1a22b` prints `1`, `22` and an empty line.
+    expect(rustMatches(/[0-9]*/, '1a22b')).toEqual([
+      [0, '1'],
+      [2, '22'],
+      [5, ''],
+    ])
+  })
+
+  it('takes the first alternative that matches', () => {
+    // `rg -o 'o|'` over `foo` is an empty line, `o`, `o`.
+    expect(rustMatches(/o|/, 'foo')).toEqual([
+      [0, ''],
+      [1, 'o'],
+      [2, 'o'],
+    ])
+  })
+
+  it('sees the text before where it resumes', () => {
+    // `rg -o '\b'` over `ab` is two empty lines: no boundary inside `ab`.
+    expect(rustMatches(/\b/, 'ab')).toEqual([
+      [0, ''],
+      [2, ''],
+    ])
+  })
+
+  it('anchors only at the line start', () => {
+    // `rg -o '^'` over `ab` is one empty line.
+    expect(rustMatches(/^/, 'ab')).toEqual([[0, '']])
+  })
+
+  it('steps over a surrogate pair as one character', () => {
+    expect(rustMatches(/x*/, 'é😀')).toEqual([
+      [0, ''],
+      [1, ''],
+      [3, ''],
+    ])
+  })
+
+  it('ignores the global and sticky state of the pattern it is given', () => {
+    const pat = /a/gy
+    pat.lastIndex = 2
+    expect(rustMatches(pat, 'aba')).toEqual([
+      [0, 'a'],
+      [2, 'a'],
+    ])
+  })
+
+  it('is empty for no match', () => {
+    expect(rustMatches(/y/, 'x')).toEqual([])
+  })
+})
+
+describe('rgPieces', () => {
+  it('is the matches when there are any', () => {
+    expect(rgPieces(/[0-9]/, 'a1b2c')).toEqual([
+      [1, '1'],
+      [3, '2'],
+    ])
+  })
+
+  it('prints a line without a match whole', () => {
+    // `rg -ov y` over `x` prints `x`, as a context line under -o prints.
+    expect(rgPieces(/y/, 'x')).toEqual([[0, 'x']])
+  })
 })

@@ -21,7 +21,7 @@ from typing import Any, Callable, ClassVar
 
 from mirage.runtime.config import HomeConfig, RuntimeConfig
 from mirage.runtime.python.base import PythonRuntime
-from mirage.runtime.python.bootstrap import bootstrap
+from mirage.runtime.python.execution import prepare_source
 from mirage.runtime.python.flags import init_argv
 from mirage.runtime.types import RunArgs, RunResult, RuntimeReach, ScriptSource
 
@@ -79,10 +79,10 @@ class LocalRuntime(PythonRuntime):
         # right (sys.flags included) where an in-process engine cannot.
         return await self._run([
             *init_argv(args.flags), "-c",
-            bootstrap(args.code,
-                      args.prog,
-                      script_cli=args.script_cli,
-                      stdin=args.stdin), *args.args
+            prepare_source(args.code,
+                           args.prog,
+                           script_cli=args.script_cli,
+                           stdin=args.stdin), *args.args
         ], args.env, args.stdin)
 
     async def _run(self,

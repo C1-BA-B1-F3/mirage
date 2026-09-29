@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 from mirage.commands.builtin.utils.operands import (materialized_read,
                                                     merge_split_errors,
                                                     split_readable)
-from mirage.commands.builtin.utils.stream import read_stdin_async
+from mirage.commands.builtin.utils.stream import (read_stdin_async, stdin_stat,
+                                                  stdin_stream)
 from mirage.commands.config import CommandOpts
 from mirage.commands.quote import quote_text
 from mirage.commands.spec import SPECS
@@ -371,11 +372,11 @@ async def expand(
 ) -> tuple[ByteSource | None, IOResult]:
     stops = tabs if tabs is not None else TabStops()
     if paths:
-        all_text: list[str] = []
-        for p in paths:
-            data = (await read_bytes(p)).decode(errors="replace")
-            all_text.append(apply_expand(data, stops, initial_only))
-        return "".join(all_text).encode(), IOResult()
+        # GNU reads its operands as one stream, so a line a file leaves
+        # unfinished continues into the next one, column and all.
+        texts = [(await read_bytes(p)).decode(errors="replace") for p in paths]
+        return apply_expand("".join(texts), stops,
+                            initial_only).encode(), IOResult()
 
     raw = await read_stdin_async(stdin)
     if raw is None:
@@ -401,6 +402,8 @@ async def expand_generic(
         stream (PolymorphicReadFn): Bound reader called as
             ``stream(path)``.
     """
+    stat = stdin_stat(stat)
+    stream = stdin_stream(stream, opts.stdin)
     try:
         parsed = parse_flags(opts.flags)
     except ValueError as exc:

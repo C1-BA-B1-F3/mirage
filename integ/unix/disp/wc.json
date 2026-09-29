@@ -64,7 +64,7 @@
       "command": "(cd /data && wc -l a.txt b.txt)",
       "expect": {
         "exit": 0,
-        "stdout": "5 a.txt\n3 b.txt\n8 total\n",
+        "stdout": " 5 a.txt\n 3 b.txt\n 8 total\n",
         "stderr": ""
       }
     },

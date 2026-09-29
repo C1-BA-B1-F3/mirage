@@ -36,6 +36,77 @@
       "flags": [
         "bogus"
       ]
+    },
+    {
+      "id": "cat_cache_is_an_unknown_flag",
+      "seq": 1231002,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cat --cache /data/a.txt 2>&1; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "cat: unrecognized option '--cache'\nTry 'cat --help' for more information.\ncode=1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "cache"
+      ]
+    },
+    {
+      "id": "cat_cache_after_end_of_options_is_a_file",
+      "seq": 1231003,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && cat -- --cache",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: --cache: No such file or directory\n"
+      }
     }
   ]
 }

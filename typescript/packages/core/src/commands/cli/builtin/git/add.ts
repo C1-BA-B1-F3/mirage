@@ -15,7 +15,7 @@
 import git from 'isomorphic-git'
 
 import { IOResult } from '../../../../io/types.ts'
-import type { StatPath } from '../../../../ops/types.ts'
+import type { LinkView, StatPath } from '../../../../ops/types.ts'
 import { FileType, type FileStat } from '../../../../types.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
@@ -36,10 +36,12 @@ import { entryBytes, under } from './io.ts'
 import { matched, repoRelative } from './pathspec.ts'
 import { opened, repoArgs, type Repo } from './repo.ts'
 import { EXECUTABLE, OWNER_EXECUTE, REGULAR, SYMLINK } from './constants.ts'
-import type { RepoLocation, WorkTree } from './types.ts'
+import type { Dispatch, IndexEntry, IndexState, RepoLocation, WorkTree } from './types.ts'
 import { checkOperands, escaped, fatal, startPoint, switches } from './util.ts'
-import { scan, UNTRACKED_ALL } from './worktree.ts'
+import { scan, UNTRACKED_ALL, UNTRACKED_NO } from './worktree.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
+
+const ENC = new TextEncoder()
 
 /** The parsed shape of a `git add` invocation. */
 interface AddFlags {
@@ -49,11 +51,18 @@ interface AddFlags {
   readonly update: boolean
   /** `-f`, stage a path an ignore rule covers. */
   readonly force: boolean
+  /** `-v`, name each path as it is staged. */
+  readonly verbose: boolean
 }
 
 /** Read the raw add flag kwargs into a frozen struct. */
 function parseFlags(fl: FlagView): AddFlags {
-  return { every: fl.asBool('all'), update: fl.asBool('update'), force: fl.asBool('force') }
+  return {
+    every: fl.asBool('all'),
+    update: fl.asBool('update'),
+    force: fl.asBool('force'),
+    verbose: fl.asBool('verbose'),
+  }
 }
 
 /** The mode git would record for a working-tree file. */
@@ -166,6 +175,73 @@ async function resolve(
 }
 
 /**
+ * Hash the staged paths into blobs, leaving the index to the caller.
+ *
+ * Returns the entries to write and what `-v` prints, in git's order: first the
+ * paths the index already held whose content or mode changed, a removal among
+ * them, then the new paths, each group sorted. A path restaged unchanged is not
+ * named (pinned against git 2.50).
+ */
+export async function stageChanges(
+  repo: Repo,
+  dispatch: Dispatch,
+  entries: ReadonlyMap<string, IndexEntry>,
+  found: WorkTree,
+  stage: ReadonlySet<string>,
+  remove: ReadonlySet<string>,
+): Promise<[Map<string, StagedEntry>, string[]]> {
+  const staged = new Map<string, StagedEntry>()
+  const changed: [string, string][] = []
+  const added: string[] = []
+  for (const path of [...stage].sort(compareCodePoints)) {
+    const info = found.files.get(path)
+    if (info === undefined) continue
+    const data = await entryBytes(dispatch, under(repo.location.worktree, path), info)
+    const oid = await git.writeBlob({ ...repoArgs(repo), blob: data })
+    const entry = stagedEntry(oid, info, data.length)
+    const before = entries.get(path)
+    if (before === undefined) added.push(path)
+    else if (before.oid !== entry.oid || before.mode !== entry.mode) changed.push([path, 'add'])
+    staged.set(path, entry)
+  }
+  for (const path of remove) changed.push([path, 'remove'])
+  changed.sort((a, b) => compareCodePoints(a[0], b[0]))
+  return [
+    staged,
+    [
+      ...changed.map(([path, verb]) => `${verb} '${path}'`),
+      ...added.map((path) => `add '${path}'`),
+    ],
+  ]
+}
+
+/**
+ * Restage every path the index holds from the working tree.
+ *
+ * What `add -u` does with no pathspec and `commit -a` does first: a modified
+ * file is hashed again, a deleted one leaves the index, and an untracked one
+ * stays untracked. `state` is updated to match; the caller writes the returned
+ * entries and removals with `updateIndex` once it means to keep them.
+ */
+export async function stageTracked(
+  repo: Repo,
+  dispatch: Dispatch,
+  statPath: StatPath,
+  state: IndexState,
+  links: LinkView | null,
+): Promise<[Map<string, StagedEntry>, Set<string>]> {
+  const tracked = new Set(state.entries.keys())
+  const found = await scan(dispatch, statPath, repo.location, tracked, UNTRACKED_NO, links)
+  const present = new Set(found.files.keys())
+  const kept = new Set([...tracked].filter((path) => present.has(path)))
+  const removed = new Set([...tracked].filter((path) => !present.has(path)))
+  const [staged] = await stageChanges(repo, dispatch, state.entries, found, kept, removed)
+  for (const path of removed) state.entries.delete(path)
+  for (const [path, entry] of staged) state.entries.set(path, { path, ...entry, stage: 0 })
+  return [staged, removed]
+}
+
+/**
  * Stage working-tree content into the index.
  *
  * Every path is hashed and written as a loose object, then recorded in the
@@ -190,7 +266,7 @@ export async function add(inv: CLIInvocation): Promise<CommandFnResult> {
     checkOperands(texts, UnknownSwitchError, escaped(inv.argv), switches(inv))
     const parsed = parseFlags(fl)
     if (texts.length === 0 && !parsed.every && !parsed.update) throw new NothingSpecifiedError()
-    const repo: Repo = await opened(fl, doors)
+    const repo: Repo = await opened(fl, doors, true)
     const state = await readIndex(repo, dispatch)
     const tracked = new Set(state.entries.keys())
     const found = await scan(
@@ -201,7 +277,7 @@ export async function add(inv: CLIInvocation): Promise<CommandFnResult> {
       UNTRACKED_ALL,
       doors.ns?.links ?? null,
     )
-    const ignores = await loadIgnores(dispatch, repo.location.gitdir, repo.location.worktree)
+    const ignores = await loadIgnores(dispatch, repo.location.commondir, repo.location.worktree)
     const present = new Set(found.files.keys())
     let stage: Set<string>
     let remove: Set<string>
@@ -227,18 +303,12 @@ export async function add(inv: CLIInvocation): Promise<CommandFnResult> {
         parsed.force,
       )
     }
-    const staged = new Map<string, StagedEntry>()
-    for (const path of [...stage].sort(compareCodePoints)) {
-      const info = found.files.get(path)
-      if (info === undefined) continue
-      const data = await entryBytes(dispatch, under(repo.location.worktree, path), info)
-      const oid = await git.writeBlob({ ...repoArgs(repo), blob: data })
-      staged.set(path, stagedEntry(oid, info, data.length))
-    }
+    const [staged, lines] = await stageChanges(repo, dispatch, state.entries, found, stage, remove)
     await updateIndex(repo, staged, remove)
+    if (!parsed.verbose || lines.length === 0) return [null, new IOResult()]
+    return [ENC.encode(lines.map((line) => `${line}\n`).join('')), new IOResult()]
   } catch (err) {
     if (err instanceof GitError) return fatal(err)
     throw err
   }
-  return [null, new IOResult()]
 }

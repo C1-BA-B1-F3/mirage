@@ -64,6 +64,7 @@ model Message {
   userId        String
   text          String
   type          String  @default("message")
+  subtype       String?
   threadTs      String?
   reactionsJson String?
   seq           Int

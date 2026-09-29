@@ -16,8 +16,8 @@ import type { Accessor } from '../../accessor/base.ts'
 import type { IndexEntry } from '../../cache/index/config.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { entryOrWarm } from '../../cache/index/warm.ts'
-import { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
+import { PathSpec, type StatFn } from '../../types.ts'
+import { enoent, isEnoent } from '../../utils/errors.ts'
 import { mountKey, mountPrefixOf } from '../../utils/key_prefix.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
 
@@ -30,6 +30,19 @@ export type ReaddirFn<A extends Accessor> = (
 function basenameOf(entry: string): string {
   const trimmed = rstripSlash(entry)
   return trimmed.slice(trimmed.lastIndexOf('/') + 1)
+}
+
+/** The PathSpec of the directory holding `path`, on the same mount. */
+export function parentSpec(path: PathSpec): PathSpec {
+  const prefix = mountPrefixOf(path.virtual, path.vfsPath)
+  const virtual = rstripSlash(path.virtual)
+  const parentVirtual = virtual.slice(0, virtual.lastIndexOf('/')) || '/'
+  return new PathSpec({
+    virtual: parentVirtual,
+    directory: parentVirtual,
+    resolved: false,
+    vfsPath: mountKey(parentVirtual, prefix),
+  })
 }
 
 /**
@@ -46,21 +59,36 @@ export async function assertListed<A extends Accessor>(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<void> {
-  const prefix = mountPrefixOf(path.virtual, path.vfsPath)
-  const virtual = rstripSlash(path.virtual)
-  const parentVirtual = virtual.slice(0, virtual.lastIndexOf('/')) || '/'
-  const entries = await readdir(
-    accessor,
-    new PathSpec({
-      virtual: parentVirtual,
-      directory: parentVirtual,
-      resolved: false,
-      vfsPath: mountKey(parentVirtual, prefix),
-    }),
-    index,
-  )
+  const entries = await readdir(accessor, parentSpec(path), index)
   const names = new Set(entries.map(basenameOf))
   if (!names.has(basenameOf(path.vfsPath))) throw enoent(path)
+}
+
+/**
+ * Throw ENOENT for `path` unless its parent directory exists.
+ *
+ * The parent is proven the way the backend's own stat proves it (a guard,
+ * the listing chain, or construction for a fixed directory), so a container
+ * its listing refuses reads as absent to everything inside it. That is where
+ * a mount's id filters live: a board outside `boardIds` or a schema outside
+ * `schemas` is simply not listed, and a reader that went straight to the id
+ * in the path served it anyway. Mirrors `assert_parent` in
+ * `mirage/core/hierarchy/probe.py`.
+ */
+export async function assertParent<A extends Accessor>(
+  stat: StatFn<[accessor: A, path: PathSpec, index?: IndexCacheStore]>,
+  accessor: A,
+  path: PathSpec,
+  index?: IndexCacheStore,
+): Promise<void> {
+  try {
+    await stat(accessor, parentSpec(path), index)
+  } catch (err) {
+    // Named as the file the caller asked for, the way GNU reports
+    // `cat missing/f` against the operand rather than its directory.
+    if (isEnoent(err)) throw enoent(path)
+    throw err
+  }
 }
 
 /** Return the size the parent listing recorded for this path. */

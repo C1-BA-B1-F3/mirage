@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { runLifecycleTests } from './runs.ts'
 import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -26,6 +27,8 @@ import { Prisma } from '../../../generated/selftest/index.js'
 import { clearTenants, deleteOrder, untenanted } from '../typescript/clear.ts'
 import type { Dmmf } from '../typescript/seed.ts'
 import { unroutedLine } from '../typescript/unrouted.ts'
+import { rstripSlash, stripSlash } from '../typescript/slash.ts'
+import * as core from '@struktoai/mirage-core/utils/slash'
 import type { JsonValue } from '../typescript/types.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -869,8 +872,8 @@ async function main(): Promise<void> {
       // runs() reads.
       const mid = await call(lazy, '/_kit/health')
       check(
-        'health lists no internal build while one is running',
-        (mid.json as { runs: string[] }).runs.every((r) => !r.startsWith('_')),
+        'health counts no internal build while one is running',
+        (mid.json as { runs: number }).runs === 1,
         JSON.stringify(mid.json),
       )
       const raced = await call(lazy, '/boards', { runInPath: 'z1', tenant: 'slow' })
@@ -1021,6 +1024,26 @@ async function main(): Promise<void> {
       hooked.child.kill('SIGTERM')
     }
 
+    // The fakes keep their own copy so they never import the product they
+    // stand in front of; this pins the copy to core's helpers.
+    process.stdout.write('\n23. the slash helpers match core\n')
+    const samples = [
+      '',
+      '/',
+      '//',
+      '///',
+      'a',
+      '/a',
+      'a/',
+      '/a/',
+      '//a//',
+      'a/b/c',
+      '/a/b/c/',
+      'a//b',
+    ]
+    eq('stripSlash matches core', samples.map(stripSlash), samples.map(core.stripSlash))
+    eq('rstripSlash matches core', samples.map(rstripSlash), samples.map(core.rstripSlash))
+
     process.stdout.write(`\nselftest: ${String(checks)} checks passed\n`)
   } finally {
     fake.child.kill('SIGTERM')
@@ -1028,3 +1051,4 @@ async function main(): Promise<void> {
 }
 
 await main()
+await runLifecycleTests()

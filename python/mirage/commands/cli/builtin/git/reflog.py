@@ -64,19 +64,22 @@ async def append(dispatch: DispatchFn, gitdir: str, path: str,
     await write_file(dispatch, target, (existing or b"") + line)
 
 
-async def record(dispatch: DispatchFn, gitdir: str, ref: str | None,
-                 before: bytes | None, after: bytes, who: bytes, when: int,
-                 message: str) -> None:
+async def record(dispatch: DispatchFn, gitdir: str, commondir: str,
+                 ref: str | None, before: bytes | None, after: bytes,
+                 who: bytes, when: int, message: str) -> None:
     """Record one move of HEAD, and of the branch it is on.
 
     git writes both logs on every update: ``logs/HEAD`` always, and the
     branch's own log when HEAD is attached to one. Both carry the same
-    line.
+    line. HEAD's log belongs to the checkout and a branch's to the
+    repository, so a linked worktree splits them the way git does.
 
     Args:
         dispatch (DispatchFn): workspace op dispatcher.
         gitdir (str): absolute virtual path of this checkout's git
-            directory, which owns the logs.
+            directory, which owns HEAD's log.
+        commondir (str): absolute virtual path of the shared git
+            directory, which owns the branches' logs.
         ref (str | None): the branch ref that also moved, None when
             HEAD is detached.
         before (bytes | None): the id HEAD held, None when it held none.
@@ -88,4 +91,4 @@ async def record(dispatch: DispatchFn, gitdir: str, ref: str | None,
     line = entry(before or ZERO, after, who, when, message)
     await append(dispatch, gitdir, HEAD_LOG, line)
     if ref is not None:
-        await append(dispatch, gitdir, posixpath.join(LOGS_DIR, ref), line)
+        await append(dispatch, commondir, posixpath.join(LOGS_DIR, ref), line)

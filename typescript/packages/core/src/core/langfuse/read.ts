@@ -28,14 +28,33 @@ import {
 } from './client.ts'
 import { detectScope } from './scope.ts'
 
+/**
+ * The trace a trace path names, or ENOENT.
+ *
+ * A trace is addressed by its id whatever the listing holds: the listing
+ * stops at `defaultTraceLimit` and `defaultFromTimestamp`, and an older
+ * trace is still the project's. Under `sessions/<id>/` the trace must be
+ * that session's, so a path cannot name another session's trace. Mirrors
+ * python's `fetch_trace_file`.
+ */
+export async function fetchTraceFile(
+  accessor: LangfuseAccessor,
+  match: ScopeMatch,
+  path: PathSpec,
+): Promise<Record<string, unknown>> {
+  const data = await fetchOrEnoent(fetchTrace(accessor.transport, match.slots.trace_id ?? ''), path)
+  const sessionId = match.slots.session_id
+  if (sessionId !== undefined && data.sessionId !== sessionId) throw enoent(path)
+  return data
+}
+
 async function readTrace(
   accessor: LangfuseAccessor,
   match: ScopeMatch,
   path: PathSpec,
   _index?: IndexCacheStore,
 ): Promise<Uint8Array> {
-  const data = await fetchOrEnoent(fetchTrace(accessor.transport, match.slots.trace_id ?? ''), path)
-  return jsonBytes(data)
+  return jsonBytes(await fetchTraceFile(accessor, match, path))
 }
 
 async function readPromptVersion(

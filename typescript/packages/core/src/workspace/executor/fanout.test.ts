@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { IOResult, materialize } from '../../io/types.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
 import { FileStat, FileType, MountMode, PathSpec } from '../../types.ts'
@@ -22,7 +22,7 @@ import { SessionState } from '../session/session.ts'
 import type { ExecuteNodeFn } from './jobs.ts'
 import type { DispatchFn } from './cross_mount.ts'
 import { handleCommand } from './command.ts'
-import { filterUnderPrefixes } from './fanout.ts'
+import { fanOutTraversal, filterUnderPrefixes } from './fanout.ts'
 import { basename } from '../../core/ram/utils.ts'
 import { OpsRegistry } from '../../ops/registry.ts'
 import { getTestParser, stdoutStr } from '../fixtures/workspace_fixture.ts'
@@ -284,22 +284,29 @@ describe('find actions on structural rows', () => {
   })
 
   it('-delete skips structural rows and exits 0', async () => {
-    const reg = nestedGhostRegistry()
-    const s = new SessionState({ sessionId: 'test', cwd: '/' })
-    const [, io] = await handleCommand(
-      NEVER_EXECUTE,
-      STAT_ONLY_DISPATCH,
-      reg,
-      ['find', '/', '-delete'],
-      s,
+    const parser = await getTestParser()
+    const root = new RAMVFS()
+    root.store.files.set('/top.txt', new TextEncoder().encode('hello\n'))
+    const deep = new RAMVFS()
+    deep.store.files.set('/leaf.txt', new TextEncoder().encode('deep\n'))
+    const ws = new Workspace(
+      { '/': root, '/ghost/very/deep': deep },
+      {
+        mode: MountMode.WRITE,
+        shellParser: parser,
+      },
     )
-    expect(io.exitCode).toBe(0)
-    expect(new TextDecoder().decode(await materialize(io.stderr))).toBe('')
-    const [after] = await handleCommand(NEVER_EXECUTE, STAT_ONLY_DISPATCH, reg, ['find', '/'], s)
-    const text = after === null ? '' : new TextDecoder().decode(await materialize(after))
-    expect(text).toContain('/ghost/very/deep')
-    expect(text).not.toContain('/top.txt')
-    expect(text).not.toContain('leaf.txt')
+    try {
+      const io = await ws.shell("find / -not -path '/usr*' -delete")
+      expect(io.exitCode).toBe(0)
+      expect(io.stderrText).toBe('')
+      const after = await ws.shell('find /')
+      expect(after.stdoutText).toContain('/ghost/very/deep')
+      expect(after.stdoutText).not.toContain('/top.txt')
+      expect(after.stdoutText).not.toContain('leaf.txt')
+    } finally {
+      await ws.close()
+    }
   })
 })
 
@@ -633,7 +640,7 @@ describe('ls -R across a mount boundary', () => {
       '/ghost/very/deep': ram({ '/leaf.txt': 'deep\n' }),
     }
     expect(await runLine(mounts, 'ls -R /')).toMatch(
-      /^\/:\ndev\nghost\ntop\.txt\n\n\/ghost:\nvery\n\n\/ghost\/very:\ndeep\n/,
+      /^\/:\ndev\nghost\ntop\.txt\nusr\n\n\/ghost:\nvery\n\n\/ghost\/very:\ndeep\n/,
     )
   })
 
@@ -645,9 +652,13 @@ describe('ls -R across a mount boundary', () => {
   // so the same name arrived twice in two wrong shapes.
   it('renders a file mount as one row and no group', async () => {
     const mounts = { '/': ram({ '/top.txt': 'T\n' }) }
-    expect(await runLine(mounts, 'ls -aRF /')).toBe(
-      '/:\n.bash_history\ndev/\ntop.txt\n\n/dev:\nnull\nzero\n',
-    )
+    const out = await runLine(mounts, 'ls -aRF /')
+    expect(
+      out.startsWith(
+        '/:\n./\n../\n.bash_history\ndev/\ntop.txt\nusr/\n\n/usr:\n./\n../\nbin/\n\n/dev:\n./\n../\nnull\nzero\n\n',
+      ),
+    ).toBe(true)
+    expect(out.split('.bash_history').length).toBe(2)
   })
 
   // A mount root is listed but not descended, so the shadowed group is
@@ -729,4 +740,191 @@ describe('traversal cancellation', () => {
       }
     }
   })
+})
+
+// A walk into a nested mount sets each file's context off with `--`, as one run
+// does: ripgrep 14.1.1 and GNU grep 3.11 both separate one file's context from
+// the next file's.
+describe('fanOutTraversal context across a nested mount', () => {
+  async function runLine(cmd: string): Promise<string> {
+    const parser = await getTestParser()
+    const parent = new RAMVFS()
+    parent.store.files.set('/top.txt', new TextEncoder().encode('x\nhit\ny\n'))
+    parent.store.dirs.add('/inner')
+    const child = new RAMVFS()
+    child.store.files.set('/real.txt', new TextEncoder().encode('hit\nz\n'))
+    const registry = new OpsRegistry()
+    registry.registerVfs(parent)
+    registry.registerVfs(child)
+    const ws = new Workspace(
+      { '/base': parent, '/base/inner': child },
+      { mode: MountMode.WRITE, ops: registry, shellParser: parser },
+    )
+    try {
+      return stdoutStr(await ws.shell(cmd))
+    } finally {
+      await ws.close()
+    }
+  }
+
+  it.each([['rg -A1 hit /base'], ['grep -r -A1 hit /base']])('separates %s', async (line) => {
+    expect(await runLine(line)).toBe(
+      '/base/top.txt:hit\n/base/top.txt-y\n--\n/base/inner/real.txt:hit\n/base/inner/real.txt-z\n',
+    )
+  })
+  it.each([
+    ['--sort path -l', '/base/inner/real.txt\n/base/top.txt\n'],
+    ['--sortr path -l', '/base/top.txt\n/base/inner/real.txt\n'],
+    ['--sort path -I', 'hit\nhit\n'],
+    ['-d 1 -l', '/base/top.txt\n'],
+    ['-d 2 --sort path -l', '/base/inner/real.txt\n/base/top.txt\n'],
+    ['--sort path --heading', '/base/inner/real.txt\nhit\n\n/base/top.txt\nhit\n'],
+    [
+      '--sort path -A1',
+      '/base/inner/real.txt:hit\n/base/inner/real.txt-z\n--\n/base/top.txt:hit\n/base/top.txt-y\n',
+    ],
+    ["--type-add 'foo:*.txt' --type-clear foo --type-add 'foo:*.py' -t foo -l", ''],
+    ['-t txt -T txt -t txt --sort path -l', '/base/inner/real.txt\n/base/top.txt\n'],
+    ['-t txt -T txt -t txt -l', '/base/top.txt\n/base/inner/real.txt\n'],
+  ])('applies rg %s across the whole tree', async (options, expected) => {
+    expect(await runLine(`rg ${options} hit /base`)).toBe(expected)
+  })
+})
+
+it.each(["'' /base", "/base ''", 'loop/child /base', '/base loop/child'])(
+  'walks nested mounts with refused operands: %s',
+  async (operands) => {
+    const ws = new Workspace(
+      { '/base': new RAMVFS(), '/base/inner': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    try {
+      await ws.shell(
+        "printf 'x\\nhit\\ny\\n' > /base/top.txt; printf 'hit\\nz\\n' > /base/inner/real.txt; cd /base; ln -s loop loop",
+      )
+      for (const [command, expected, exitCode] of [
+        ['find', '/base\n/base/inner\n/base/inner/real.txt\n/base/loop\n/base/top.txt\n', 1],
+        ['du -s', '18\t/base\n', 1],
+        ['grep -rl hit', '/base/top.txt\n/base/inner/real.txt\n', 2],
+        ['rg -l hit', '/base/top.txt\n/base/inner/real.txt\n', 2],
+      ] as const) {
+        const io = await ws.shell(`cd /base; ${command} ${operands}`)
+        expect(stdoutStr(io)).toBe(expected)
+        expect(io.exitCode).toBe(exitCode)
+        expect(new TextDecoder().decode(io.stderr)).not.toBe('')
+      }
+    } finally {
+      await ws.close()
+    }
+  },
+)
+
+it.each([
+  ['find', 1],
+  ['du', 1],
+  ['grep', 2],
+  ['rg', 2],
+] as const)('keeps a failed mount status for %s', async (command, code) => {
+  const reg = new MountRegistry({ '/': new RAMVFS(), '/data': new RAMVFS() }, MountMode.WRITE)
+  const primary = reg.tryMountFor('/')
+  const child = reg.tryMountFor('/data')
+  if (primary === null || child === null) throw new Error('missing test mount')
+  vi.spyOn(primary, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  vi.spyOn(child, 'executeCmd').mockResolvedValue([
+    null,
+    new IOResult({ exitCode: code, stderr: new TextEncoder().encode('backend failed\n') }),
+  ])
+  // The reserved /dev mount is placed with its command table too, so it
+  // answers as one more mount that succeeds with nothing to report.
+  for (const m of reg.allMounts()) {
+    if (m !== primary && m !== child)
+      vi.spyOn(m, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  }
+  const [, io] = await fanOutTraversal(
+    command,
+    [PathSpec.fromStrPath('/')],
+    [],
+    {},
+    reg,
+    primary,
+    '/',
+    command,
+    null,
+    undefined,
+  )
+  expect(io.exitCode).toBe(code)
+  expect(new TextDecoder().decode(await materialize(io.stderr))).toBe('backend failed\n')
+})
+
+it('keeps every producing mount when the last operand is refused', async () => {
+  const reg = new MountRegistry({ '/': new RAMVFS(), '/data': new RAMVFS() }, MountMode.WRITE)
+  wireRegistry(reg)
+  const primary = reg.tryMountFor('/')
+  const child = reg.tryMountFor('/data')
+  if (primary === null || child === null) throw new Error('missing test mount')
+  vi.spyOn(primary, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  vi.spyOn(child, 'executeCmd').mockResolvedValue([null, new IOResult()])
+  const refused = new PathSpec({
+    virtual: '/',
+    directory: '/',
+    vfsPath: '',
+    rawPath: '',
+    walkError: 'ENOENT',
+  })
+  const [, io] = await fanOutTraversal(
+    'find',
+    [PathSpec.fromStrPath('/'), refused],
+    [],
+    {},
+    reg,
+    primary,
+    '/',
+    'find',
+    null,
+    undefined,
+  )
+  expect(io.producer?.prefixes).toEqual(expect.arrayContaining(['/', '/data/']))
+})
+
+// /data holding a.txt and s, whose f sits beside a link to ../a.txt and one to
+// nowhere, over a descendant mount /data/m holding g.
+async function linkedTree(): Promise<Workspace> {
+  const ws = new Workspace(
+    { '/data/': new RAMVFS(), '/data/m/': new RAMVFS() },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  await ws.shell(
+    "mkdir /data/s && printf o > /data/s/f && printf 'hello\\n' > /data/a.txt && " +
+      'printf o > /data/m/g && cd /data && ln -s ../a.txt s/al && ln -s nowhere s/dang',
+  )
+  return ws
+}
+
+const DANGLING =
+  'rg: /data/s/dang: IO error for operation on /data/s/dang: No such file or directory (os error 2)\n'
+
+// Both fan-outs hand the walk the namespace and the door: the unified walk
+// --sort takes skipped every link as ripgrep does only once it could tell
+// one, and a per-mount run follows them under -L.
+it.each([
+  ['rg --sort path o /data', '/data/a.txt:hello\n/data/m/g:o\n/data/s/f:o\n', '', 0],
+  [
+    'rg -L --sort path o /data',
+    '/data/a.txt:hello\n/data/m/g:o\n/data/s/al:hello\n/data/s/f:o\n',
+    DANGLING,
+    2,
+  ],
+  ['rg -L o /data', '/data/a.txt:hello\n/data/s/f:o\n/data/s/al:hello\n/data/m/g:o\n', DANGLING, 2],
+])('follows links across mounts only under -L: %s', async (line, stdout, stderr, code) => {
+  const ws = await linkedTree()
+  try {
+    const io = await ws.shell(line)
+    expect([stdoutStr(io), new TextDecoder().decode(io.stderr), io.exitCode]).toEqual([
+      stdout,
+      stderr,
+      code,
+    ])
+  } finally {
+    await ws.close()
+  }
 })

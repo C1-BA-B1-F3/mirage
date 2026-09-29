@@ -67,8 +67,3 @@ class S3VFS(BaseVFS):
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)
-
-    def load_state(self, state: dict[str, Any]) -> None:
-        # No-op: S3VFS holds no local content. Reconstruction
-        # happens via the mounts= override at load time.
-        pass

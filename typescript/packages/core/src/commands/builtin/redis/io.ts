@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
 import type { RedisAccessor } from '../../../accessor/redis.ts'
 import { appendBytes as redisAppend } from '../../../core/redis/append.ts'
@@ -34,27 +36,29 @@ import { truncate as redisTruncate } from '../../../core/redis/truncate.ts'
 import { unlink as redisUnlink } from '../../../core/redis/unlink.ts'
 import { writeBytes as redisWrite } from '../../../core/redis/write.ts'
 
-export const REDIS_IO: CommandIO<RedisAccessor> = {
-  readdir: redisReaddir,
-  readBytes: redisRead,
-  readRange: rangeOf(redisRead),
-  readStream: redisStream,
-  stat: redisStat,
+export const REDIS_IO: CommandIO<RedisAccessor> = new VFSAdapter<RedisAccessor>({
+  read: { readdir: redisReaddir, readBytes: redisRead, stat: redisStat },
+  native: {
+    readRange: rangeOf(redisRead),
+    readStream: redisStream,
+    exists: redisExists,
+    find: redisFind,
+    du: { size: redisDu, entries: redisDuEntries },
+  },
+  writes: {
+    write: redisWrite,
+    mkdir: redisMkdir,
+    unlink: redisUnlink,
+    rmdir: redisRmdir,
+    rmR: redisRmR,
+    rename: redisRename,
+    copy: redisCopy,
+    create: redisCreate,
+    truncate: redisTruncate,
+    append: redisAppend,
+    setAttrs: redisSetAttrs,
+  },
   isMounted: () => true,
   local: true,
   maxGlobMatches: SCOPE_ERROR,
-  write: redisWrite,
-  exists: redisExists,
-  mkdir: redisMkdir,
-  unlink: redisUnlink,
-  rmdir: redisRmdir,
-  rmR: redisRmR,
-  rename: redisRename,
-  copy: redisCopy,
-  create: redisCreate,
-  truncate: redisTruncate,
-  append: redisAppend,
-  setAttrs: redisSetAttrs,
-  find: redisFind,
-  du: { size: redisDu, entries: redisDuEntries },
-}
+}).toCommandIO()

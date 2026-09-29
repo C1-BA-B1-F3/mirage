@@ -16,10 +16,17 @@ import { IOResult, materialize } from '../../../io/types.ts'
 import type { LinkView, MountView, StatPath } from '../../../ops/types.ts'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
 import { mountKey } from '../../../utils/key_prefix.ts'
-import { eisdir, fsErrorLine, isEisdir, isFsError, isMissError } from '../../../utils/errors.ts'
+import {
+  eisdir,
+  fsErrorLine,
+  isDotWalkError,
+  isEisdir,
+  isFsError,
+  isMissError,
+} from '../../../utils/errors.ts'
 import { readFailExitCode } from '../../spec/usage.ts'
 import { resolvePath } from '../../../utils/path.ts'
-import { stripSlash } from '../../../utils/slash.ts'
+import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
 
 const ENC = new TextEncoder()
 
@@ -31,7 +38,7 @@ type Stat = (p: PathSpec) => Promise<FileStat>
 // which takes a PathSpec because its one caller outside this module has
 // one; here both callers hold the virtual string.
 function operandName(virtual: string): string {
-  const trimmed = virtual.replace(/\/+$/, '')
+  const trimmed = rstripSlash(virtual)
   const cut = trimmed.lastIndexOf('/')
   return trimmed.slice(cut + 1) || '/'
 }
@@ -67,7 +74,9 @@ export async function operandStat(
   try {
     row = await stat(path)
   } catch (e) {
-    if (!isFsError(e)) throw e
+    // An operand that did not resolve is answered by no namespace
+    // structure under the path it simplifies to.
+    if (!isFsError(e) || isDotWalkError(e)) throw e
     if (
       mounts?.visibleDescendants(path.virtual).length === 0 &&
       (links?.subtree(path.virtual).length ?? 0) === 0

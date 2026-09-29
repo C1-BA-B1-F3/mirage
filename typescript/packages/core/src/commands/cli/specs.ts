@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { CLISpec } from './types.ts'
+import { AIRTABLE } from './builtin/airtable/index.ts'
 import { DISCORD } from './builtin/discord/index.ts'
 import { GH } from './builtin/gh/index.ts'
 import { GIT } from './builtin/git/index.ts'
@@ -30,7 +31,7 @@ import { compareCodePoints } from '../../utils/sort.ts'
 // packages add theirs through registerCliSpec from their entry point,
 // and user programs do the same before the workspace loads.
 const CLI_SPECS = new Map<string, CLISpec>(
-  [DISCORD, GH, GIT, GWS, LINEAR, NTN, SLACK].map((spec) => [spec.name, spec]),
+  [AIRTABLE, DISCORD, GH, GIT, GWS, LINEAR, NTN, SLACK].map((spec) => [spec.name, spec]),
 )
 
 /** Make a CLISpec resolvable by name from YAML; its root name is the key. */

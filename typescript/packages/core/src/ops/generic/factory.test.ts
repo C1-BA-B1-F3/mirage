@@ -15,7 +15,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { Accessor } from '../../accessor/base.ts'
-import { PathSpec } from '../../types.ts'
+import { FileStat, FileType, PathSpec } from '../../types.ts'
 import { makeGenericOps, type OpsTable } from './factory.ts'
 
 const PATH = PathSpec.fromStrPath('/x/a.txt', 'a.txt')
@@ -202,6 +202,28 @@ describe('makeGenericOps', () => {
     expect(write).not.toHaveBeenCalled()
   })
 
+  it('answers an empty emulated append with a stat instead of a rewrite', async () => {
+    const write = vi.fn()
+    const stat = vi
+      .fn()
+      .mockResolvedValueOnce(new FileStat({ name: 'a.txt', type: FileType.FILE }))
+      .mockRejectedValueOnce(Object.assign(new Error('missing'), { code: 'ENOENT' }))
+      .mockResolvedValueOnce(new FileStat({ name: 'a.txt', type: FileType.DIRECTORY }))
+    const table = makeTable({ write, stat })
+    const op = appendOp(table)
+    const index = {} as never
+    await op.fn(ACCESSOR, PATH, [new Uint8Array()], { index })
+    expect(stat).toHaveBeenCalledWith(ACCESSOR, PATH, index)
+    expect(write).not.toHaveBeenCalled()
+    await op.fn(ACCESSOR, PATH, [new Uint8Array()], {})
+    expect(write).toHaveBeenCalledWith(ACCESSOR, PATH, new Uint8Array())
+    await expect(op.fn(ACCESSOR, PATH, [new Uint8Array()], {})).rejects.toMatchObject({
+      code: 'EISDIR',
+    })
+    expect(table.readBytes).not.toHaveBeenCalled()
+    expect(write).toHaveBeenCalledTimes(1)
+  })
+
   it('prefers native append and honors overrides over emulation', async () => {
     const table = makeTable({ write: vi.fn(), append: vi.fn() })
     const op = appendOp(table)
@@ -333,4 +355,16 @@ describe('the read op and byte ranges', () => {
     expect(native).not.toHaveBeenCalled()
     expect(table.readBytes).not.toHaveBeenCalled()
   })
+})
+
+it('emulated truncate refuses no-create before reading or writing', async () => {
+  const readBytes = vi.fn()
+  const write = vi.fn()
+  const ops = makeGenericOps('x', makeTable({ readBytes, write }), { emulateTruncate: true })
+  const truncate = ops.find((op) => op.name === 'truncate')
+  await expect(truncate?.fn(ACCESSOR, PATH, [2], { no_create: true })).rejects.toMatchObject({
+    code: 'ENOTSUP',
+  })
+  expect(readBytes).not.toHaveBeenCalled()
+  expect(write).not.toHaveBeenCalled()
 })

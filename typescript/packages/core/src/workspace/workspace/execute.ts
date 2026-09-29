@@ -12,6 +12,10 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { PathSpec } from '../../types.ts'
+import { literalTree } from '../../shell/literal.ts'
+import { FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
+import type { ProcessHandle } from '../../process/handle.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import { runWithRecording } from '../../observe/context.ts'
@@ -19,6 +23,7 @@ import type { Observer } from '../../observe/observer.ts'
 import type { OpRecord } from '../../observe/record.ts'
 import { Channel } from '../../shell/console/types.ts'
 import type { JobConsole } from '../../shell/console/job_console.ts'
+import { asyncContextIsolatesTasks } from '../../utils/async_context.ts'
 import { getCurrentSessionFor, runWithSession } from '../../context/session_context.ts'
 import type { JobTable } from '../../shell/job_table/index.ts'
 import {
@@ -27,7 +32,7 @@ import {
   type ShellParser,
 } from '../../shell/parse/index.ts'
 import type { ProvisionResult } from '../../provision/types.ts'
-import { errorVirtualPath, gnuStrerror } from '../../utils/errors.ts'
+import { formatFsError, isFsError } from '../../utils/errors.ts'
 import {
   hasAborted,
   lineStatusWriter,
@@ -193,10 +198,11 @@ export async function executeLine(
   env: ExecuteEnv,
   command: string,
   options: ExecuteOptions,
+  argv?: readonly string[],
 ): Promise<ExecuteResult | ProvisionResult> {
   const frame: LineFrame = { session: null, statusBefore: null, writer: newStatusWriter() }
   try {
-    let result = await runLine(env, command, options, frame)
+    let result = await runLine(env, command, options, frame, argv)
     // A provision run answers with a plan, not output, so it has nothing
     // to stream. The drain is the last await of the line, and a stalled
     // store would hold `shell` open past an abort; it joins under the
@@ -248,6 +254,7 @@ async function runLine(
   command: string,
   options: ExecuteOptions,
   frame: LineFrame,
+  argv?: readonly string[],
 ): Promise<ExecuteResult | ProvisionResult> {
   if (options.signal?.aborted === true) {
     throw makeAbortError(options.signal)
@@ -257,11 +264,14 @@ async function runLine(
   await abortable(preflight(env), options.signal)
   const stdin = options.stdin ?? null
   const parser = await abortable(env.parser(), options.signal)
-  const root = parser.parse(command)
+  const root = argv === undefined ? parser.parse(command) : literalTree(argv)
   // tree-sitter accepts an unclosed backtick as a complete command, so
   // the region is scanned separately.
   const offending =
-    findSyntaxError(root, (source) => parser.parse(source)) ?? findUnterminatedBacktick(root.text)
+    argv === undefined
+      ? (findSyntaxError(root, (source) => parser.parse(source)) ??
+        findUnterminatedBacktick(root.text))
+      : null
   if (offending !== null) {
     // The gate runs before the provision branch, mirroring Python: a
     // provision run of unparseable input reports the syntax error
@@ -284,21 +294,60 @@ async function runLine(
     )
   }
   const rootNode = root as unknown as TSNodeLike
-  // A re-entrant execute (the evaluator's $(), eval, source, xargs, or
-  // an embedder callback fired mid-line) continues in the live ambient
-  // session unless it names a different one. An id cannot say that: it
-  // names a registered session, never the ephemeral per-call fork the
-  // outer line actually runs in, and re-resolving through the manager
-  // is how a nested line used to escape the fork and its confinement.
-  // Only this workspace's own binding counts: a session carries one
-  // workspace's cwd, env and mount grants, so a callback reaching a
-  // second workspace must resolve that workspace's session instead.
-  const ambient = getCurrentSessionFor(env.sessions)
+  // Evaluator calls carry their exact session, including ephemeral forks.
+  // Ambient re-entry is safe only with task-local storage: the browser
+  // fallback's newest frame may belong to an unrelated shell call.
+  const ambient = asyncContextIsolatesTasks ? getCurrentSessionFor(env.sessions) : null
   const targetSession =
-    ambient !== null && (options.sessionId === undefined || options.sessionId === ambient.sessionId)
+    options.session ??
+    (ambient !== null &&
+    (options.sessionId === undefined || options.sessionId === ambient.sessionId)
       ? ambient
-      : env.sessions.get(options.sessionId ?? env.sessions.defaultId)
+      : env.sessions.get(options.sessionId ?? env.sessions.defaultId))
   frame.session = targetSession
+  if (targetSession.processId === null) {
+    const abort = new AbortController()
+    const combined =
+      options.signal === undefined ? abort.signal : AbortSignal.any([options.signal, abort.signal])
+    let result: ExecuteResult | ProvisionResult | undefined
+    let process: ProcessHandle
+    try {
+      process = env.jobTable.processes.start({
+        sessionId: targetSession.sessionId,
+        limit: targetSession.processes.max,
+        command,
+        cwd: PathSpec.fromStrPath(options.cwd ?? targetSession.cwd),
+        cancel: () => {
+          abort.abort()
+        },
+        run: async () => {
+          result = await runWithSession(
+            targetSession,
+            () => runLine(env, command, { ...options, signal: combined }, frame, argv),
+            env.sessions,
+          )
+          return result instanceof ExecuteResult ? result.exitCode : 0
+        },
+      })
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 'EAGAIN') throw error
+      recordStatus(targetSession, FORK_FAILED_STATUS)
+      return new ExecuteResult(
+        new Uint8Array(),
+        new TextEncoder().encode(FORK_FAILED),
+        FORK_FAILED_STATUS,
+      )
+    }
+    targetSession.processId = process.info.pid
+    targetSession.shellPid ??= process.info.pid
+    try {
+      await process.task
+      if (result === undefined) throw new Error('process completed without a result')
+      return result
+    } finally {
+      targetSession.processId = null
+    }
+  }
   frame.statusBefore = snapshotStatus(targetSession)
   let routingDecision: RouteDecision | null
   try {
@@ -333,6 +382,7 @@ async function runLine(
     const innerOpts: ExecuteOptions & { provision?: false } = {
       record: false,
       sessionId: opts.sessionId,
+      session: opts.session ?? effectiveSession,
     }
     // A builtin that bounds its inner line (`timeout`) hands a signal
     // of its own, merged with the line's so either can end the run.
@@ -466,11 +516,6 @@ async function runParsedLine(
   // with record:false: no new recording scope, so their ops land in the
   // caller's recorder, and no command entry is logged for them.
   const isLine = options.record !== false
-  if (isLine) {
-    // Each typed line reads stdin fresh; a buffer left behind by a
-    // previous line's read/select would otherwise serve EOF forever.
-    effectiveSession.stdinBuffer = null
-  }
   // The session's kill channel folded in, as the dispatcher folds it
   // for the tree: a question put to a host has to answer to both, and
   // both admission passes below can put one.
@@ -611,6 +656,7 @@ async function runParsedLine(
           env.registry.policies,
           () => env.invalidateAllAfterRemote(),
           killed,
+          env.registry.commandLimits,
         ),
         killed,
       )
@@ -775,14 +821,11 @@ async function runParsedLine(
       // pull); surface that as a failed command, not a crash. The command
       // name is the first token of the pipeline's failing stage; for a bare
       // command it is simply the command.
-      const strerror = gnuStrerror((err as { code?: string }).code)
       const cmdName = commandName(command) || command
       io.exitCode = 1
-      io.stderr = new TextEncoder().encode(
-        strerror !== null
-          ? `${cmdName}: ${errorVirtualPath(err)}: ${strerror}\n`
-          : `${err instanceof Error ? err.message : String(err)}\n`,
-      )
+      io.stderr = isFsError(err)
+        ? formatFsError(cmdName, err)
+        : new TextEncoder().encode(`${err instanceof Error ? err.message : String(err)}\n`)
       recordStatus(targetSession, 1)
       stdoutBytes = new Uint8Array()
     }

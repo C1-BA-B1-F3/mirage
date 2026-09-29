@@ -20,6 +20,7 @@ import type { RegisteredCommand } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { requireOp } from '../generic_bind/adapter.ts'
+import { makeDirectory } from '../generic_bind/builders/mkdir.ts'
 import { resolveGlobOf, type CommandIO } from '../generic_bind/index.ts'
 import { mkdirLinkRefusal } from '../utils/slash_links.ts'
 
@@ -55,7 +56,11 @@ export function makeMkdir<A extends Accessor>(vfs: string, io: CommandIO<A>): Re
         if (collision.message !== null) errors.push(collision.message)
         continue
       }
-      await mkdirImpl(accessor, path, parents)
+      const failed = await makeDirectory(mkdirImpl, accessor, path, parents, links)
+      if (failed !== null) {
+        errors.push(failed)
+        continue
+      }
       writes[path.mountPath] = new Uint8Array()
       if (verbose) lines.push(`mkdir: created directory '${path.virtual}'`)
     }
@@ -77,5 +82,6 @@ export function makeMkdir<A extends Accessor>(vfs: string, io: CommandIO<A>): Re
     spec: specOf('mkdir'),
     fn: mkdirCommand,
     write: true,
+    pathGuarded: true,
   })
 }

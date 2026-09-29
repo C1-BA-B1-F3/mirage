@@ -38,5 +38,5 @@ async def append_bytes(
     else:
         await store.set_file(p, data)
     await store.set_modified(p, now_iso())
-    record("append", path, "redis", len(data), timer)
+    record("append", path_spec.virtual, "redis", len(data), timer)
     await invalidate_after_write(path_spec)

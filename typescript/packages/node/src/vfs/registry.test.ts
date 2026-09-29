@@ -16,7 +16,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { normalizeOneDriveConfig } from '@struktoai/mirage-core/accessor/onedrive'
 import { tokenUrl } from '@struktoai/mirage-core/core/google/client'
 import type { TokenManager } from '@struktoai/mirage-core/core/google/client'
@@ -24,7 +24,8 @@ import { normalizeMem0Config } from '@struktoai/mirage-core/vfs/mem0/config'
 import { Mem0VFS } from '@struktoai/mirage-core/vfs/mem0/mem0'
 import { OneDriveVFS } from '@struktoai/mirage-core/vfs/onedrive/onedrive'
 import { vfsStateRequiresOverride } from '@struktoai/mirage-core/vfs/secrets'
-import { VFSName } from '@struktoai/mirage-core/types'
+import { MountMode, VFSName } from '@struktoai/mirage-core/types'
+import { Workspace } from '../workspace.ts'
 import { normalizeS3Config } from './s3/config.ts'
 import { buildVfs, knownVfsNames, register } from './registry.ts'
 
@@ -107,10 +108,108 @@ describe('node VFS registry', () => {
     )
   })
 
+  // A key no field takes used to be stripped, so a typo'd `team_idz` built a
+  // linear mount that exposed every team. It is refused under the spelling
+  // the block wrote, which is the one python's `extra="forbid"` names.
+  it('refuses an unknown config key under the spelling it was written in', async () => {
+    await expect(buildVfs('linear', { api_key: 'k', team_idz: ['x'] })).rejects.toThrow(
+      /^linear: team_idz: unrecognized_keys$/,
+    )
+    await expect(buildVfs('s3', { bucket: 'b', one: 1, two: 2 })).rejects.toThrow(
+      /^s3: one: unrecognized_keys; two: unrecognized_keys$/,
+    )
+    // A strict schema refuses in parse too, but after the renames: it would
+    // name `pageSizee`.
+    await expect(buildVfs('wandb', { entities: ['lab'], page_sizee: 1 })).rejects.toThrow(
+      /^wandb: page_sizee: unrecognized_keys$/,
+    )
+  })
+
+  it('knows a key under the name its rename writes it to', async () => {
+    const vfs = await buildVfs('s3', {
+      bucket: 'b',
+      endpoint_url: 'http://127.0.0.1:1',
+      aws_profile: 'p',
+      timeout: 3,
+    })
+    expect(vfs.name).toBe('s3')
+    await expect(
+      buildVfs('s3', { bucket: 'b', endpoint_urll: 'http://127.0.0.1:1' }),
+    ).rejects.toThrow(/^s3: endpoint_urll: unrecognized_keys$/)
+  })
+
+  // These three take their options without a schema, and python builds them
+  // from constructor keywords, which refuse a key their class does not take.
+  it('refuses an unknown key on the backends with no schema', async () => {
+    await expect(buildVfs('ram', { root: '/tmp' })).rejects.toThrow(
+      /^ram: root: unrecognized_keys$/,
+    )
+    await expect(buildVfs('disk', { root: '/tmp', roots: '/x' })).rejects.toThrow(
+      /^disk: roots: unrecognized_keys$/,
+    )
+    await expect(buildVfs('redis', { keyprefix: 'a' })).rejects.toThrow(
+      /^redis: keyprefix: unrecognized_keys$/,
+    )
+  })
+
   it('serves a pre-minted Google access token without the refresh grant', async () => {
     const vfs = await buildVfs('gdrive', { access_token: 'sa-token' })
     const { accessor } = vfs as unknown as { accessor: { tokenManager: TokenManager } }
     expect(await accessor.tokenManager.getToken()).toBe('sa-token')
+  })
+
+  // Node's copy of GitHubVFS was the only one without a prompt, so the file
+  // prompt skipped every node GitHub mount while the browser and python
+  // described theirs.
+  it('describes a github mount in the agent file prompt', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: string | URL | Request) => {
+        const url = input instanceof Request ? input.url : String(input)
+        const body = url.includes('/git/trees/')
+          ? { tree: [], truncated: false }
+          : { default_branch: 'main' }
+        return Promise.resolve(
+          new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } }),
+        )
+      }),
+    )
+    try {
+      const vfs = await buildVfs('github', {
+        token: 't',
+        owner: 'o',
+        repo: 'r',
+        base_url: 'http://127.0.0.1:1',
+      })
+      const ws = new Workspace({ '/gh': vfs })
+      try {
+        expect(ws.filePrompt).toContain('/gh\n  Mirrors the GitHub repository file tree.')
+      } finally {
+        await ws.close()
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  // EMAIL_WRITE_PROMPT was exported but never attached to EmailVFS, so a
+  // writable mailbox said nothing about sending. Its wording also named
+  // `himalaya message send --to`, a verb that takes a raw RFC 5322 message
+  // and refuses those flags; python's `message compose ... --send` is the
+  // line the CLI accepts.
+  it('tells a writable email mount how to send', async () => {
+    const vfs = await buildVfs('email', {
+      imap_host: 'h',
+      smtp_host: 'h',
+      username: 'me@example.com',
+      password: 'p',
+    })
+    const ws = new Workspace({ '/mail': vfs }, { mode: MountMode.WRITE })
+    try {
+      expect(ws.filePrompt).toContain('himalaya message compose --to')
+    } finally {
+      await ws.close()
+    }
   })
 
   // The python wire spelling of every field reaches the VFS and the
@@ -352,24 +451,27 @@ describe('hf VFS in registry', () => {
 describe('VFSName coverage', () => {
   // Names that are deliberately not buildable from the node registry.
   const BROWSER_ONLY = new Set(['opfs'])
-  // `history` is an internal view mount, never named in user config.
-  const INTERNAL = new Set(['history'])
-  // Config-mountable in python but not yet wired into a TypeScript registry.
-  // Listing them keeps the gap visible instead of hiding it behind a count.
-  const PYTHON_ONLY = new Set(['chroma', 'dify', 'lancedb', 'qdrant'])
+  // `history` and `bin` are internal view mounts, never named in user config.
+  const INTERNAL = new Set(['history', 'bin'])
 
   it('every VFS name is buildable or explicitly exempt', () => {
     // This is the guard a hardcoded entry count cannot give: adding a backend
     // to VFSName without a registry factory fails here, naming it.
     const known = new Set(BUILTIN_VFS_NAMES)
     const unreachable = Object.values(VFSName).filter(
-      (name) =>
-        !known.has(name) &&
-        !BROWSER_ONLY.has(name) &&
-        !INTERNAL.has(name) &&
-        !PYTHON_ONLY.has(name),
+      (name) => !known.has(name) && !BROWSER_ONLY.has(name) && !INTERNAL.has(name),
     )
     expect(unreachable).toEqual([])
+  })
+
+  // The other half of the exemption: a name that is exempt yet buildable
+  // hides nothing and says something false. chroma, dify, lancedb and
+  // qdrant sat in a "not yet wired" set long after their factories landed,
+  // and the filter above cannot notice, since it only ever subtracts.
+  it('exempts only names the registry cannot build', () => {
+    const known = new Set(BUILTIN_VFS_NAMES)
+    const exempt = [...BROWSER_ONLY, ...INTERNAL]
+    expect(exempt.filter((name) => known.has(name))).toEqual([])
   })
 
   it('every built-in registry factory has a VFSName', () => {

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { SharedInput } from '../../../../io/async_line_iterator.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
@@ -74,24 +75,6 @@ function execFailure(line: Uint8Array | null, out: Uint8Array | null = null): Re
  * terminal's stderr, as bash does. Stdin is always the read end, so a
  * stream bound to it (`exec 1>&0`) has nowhere to write.
  */
-/**
- * The bytes a read through a read-open stream yields: the file an
- * `OPEN_FOR_READING` identity names, from its start, since mirage keeps
- * no offset on a descriptor (bash's second read through the same end
- * would be at EOF). A file gone since `exec` opened it reads empty, where
- * bash's still-open end would keep the old bytes.
- */
-export async function readOpenSource(dispatch: DispatchFn, identity: string): Promise<Uint8Array> {
-  const scope = toScope(identity.slice(OPEN_FOR_READING.length))
-  try {
-    const [data] = await dispatch('read', scope)
-    return await materialize(data as ByteSource)
-  } catch (err) {
-    if (!isFsError(err)) throw err
-    return new Uint8Array()
-  }
-}
-
 function identity(session: SessionState, fd: number): [string, boolean] {
   // fd 0 is its own read end unless an `exec` rebound it: closed, or a
   // writing stream's identity (`exec 0<&1`), which a later dup from fd 0
@@ -101,16 +84,38 @@ function identity(session: SessionState, fd: number): [string, boolean] {
   return [session.execStdout ?? TO_STDOUT, session.execStdoutAppend]
 }
 
+/** A new descriptor on the read end a descriptor holds, as a dup makes
+ * one: it shares the offset, so a read through either moves both. Null
+ * when the descriptor holds no file's read end. */
+function readEnd(session: SessionState, fd: number): SharedInput | null {
+  const held =
+    fd === FD_STDIN
+      ? session.execStdin
+      : fd === FD_STDERR
+        ? session.execStderrInput
+        : session.execStdoutInput
+  return held?.dup() ?? null
+}
+
 /** Point a writing stream at an identity. A stream on its own terminal
  * end is stored as null, the undiverted state every reader of
- * `execStdout`/`execStderr` already knows. */
-function bind(session: SessionState, fd: number, id: string, append: boolean): void {
+ * `execStdout`/`execStderr` already knows. `input` is the file's read
+ * end, for an `OPEN_FOR_READING` identity. */
+function bind(
+  session: SessionState,
+  fd: number,
+  id: string,
+  append: boolean,
+  input: SharedInput | null = null,
+): void {
   if (fd === FD_STDERR) {
     session.execStderr = id === TO_STDERR ? null : id
     session.execStderrAppend = append
+    session.execStderrInput = input
   } else {
     session.execStdout = id === TO_STDOUT ? null : id
     session.execStdoutAppend = append
+    session.execStdoutInput = input
   }
 }
 
@@ -142,8 +147,10 @@ function bindingsOf(session: SessionState): StreamBindings {
   return {
     execStdout: session.execStdout,
     execStdoutAppend: session.execStdoutAppend,
+    execStdoutInput: session.execStdoutInput,
     execStderr: session.execStderr,
     execStderrAppend: session.execStderrAppend,
+    execStderrInput: session.execStderrInput,
     execStdin: session.execStdin,
     execStdinUnreadable: session.execStdinUnreadable,
     execStdinIdentity: session.execStdinIdentity,
@@ -221,11 +228,10 @@ async function install(
         // A closed stdin, or a writing stream dup'd onto it (`0<&1`), has
         // nothing to read: the next reader gets EBADF, as bash's does,
         // until `exec < file` binds a file again. A dup of stdin onto
-        // itself keeps the file an earlier `exec <f` bound, and so does a
-        // dup from a descriptor that itself holds stdin's read end (`exec
-        // 1<&0; exec 0<&1`), which bash reads from as before. Not
-        // modelled: a stdin rebound between the two dups, which bash's fd
-        // 1 would still hold the old end of.
+        // itself keeps the file an earlier `exec <f` bound, and a dup from
+        // a descriptor that holds a read end (`exec 1<&0; exec 0<&1`)
+        // takes that end, offset and all, whatever fd 0 was bound to in
+        // between.
         if (r.target === FD_CLOSE) {
           session.execStdin = null
           session.execStdinUnreadable = true
@@ -238,13 +244,11 @@ async function install(
         const source = identity(session, r.target)[0]
         if (source === CLOSED) return badDescriptorLine(r.target)
         if (source === TO_STDIN) {
+          session.execStdin = null
           session.execStdinUnreadable = false
           session.execStdinIdentity = null
         } else if (source.startsWith(OPEN_FOR_READING)) {
-          // The descriptor holds a file's read end (`exec 1<f`): fd 0
-          // takes the same end, read from the file's start, and a later
-          // dup from fd 0 copies it on.
-          session.execStdin = await readOpenSource(dispatch, source)
+          session.execStdin = readEnd(session, r.target)
           session.execStdinUnreadable = false
           session.execStdinIdentity = source
         } else {
@@ -261,7 +265,7 @@ async function install(
         // A dup from a closed descriptor is refused, as bash's `exec 0<&-;
         // exec 1<&0` is with `0: Bad file descriptor`.
         if (id === CLOSED) return badDescriptorLine(r.target)
-        bind(session, r.fd, id, append)
+        bind(session, r.fd, id, append, readEnd(session, r.target))
       }
       continue
     }
@@ -279,13 +283,20 @@ async function install(
         // it fails as one to stdin's end does (`echo: write error: Bad
         // file descriptor`), a dup onto fd 0 (`exec 0<&1`) reads the
         // file, and so does a transient `<&1`.
-        bind(session, r.fd, OPEN_FOR_READING + scope.virtual, false)
+        bind(
+          session,
+          r.fd,
+          OPEN_FOR_READING + scope.virtual,
+          false,
+          new SharedInput(await materialize(data as ByteSource)),
+        )
         continue
       }
       // fd 0 holds the file's read end, and says so: a dup from it (`exec
       // 1<&0`) keeps the file even after `exec 0<&-`, as bash's copied
-      // descriptor does.
-      session.execStdin = await materialize(data as ByteSource)
+      // descriptor does. Each open is a descriptor of its own, so a
+      // reopen reads from the start.
+      session.execStdin = new SharedInput(await materialize(data as ByteSource))
       session.execStdinUnreadable = false
       session.execStdinIdentity = OPEN_FOR_READING + scope.virtual
       continue
@@ -312,9 +323,11 @@ async function install(
       if (stream === 'stderr') {
         session.execStderr = path
         session.execStderrAppend = r.append
+        session.execStderrInput = null
       } else {
         session.execStdout = path
         session.execStdoutAppend = r.append
+        session.execStdoutInput = null
       }
     }
   }
@@ -335,15 +348,7 @@ async function openTarget(
   scope: PathSpec,
   append: boolean,
 ): Promise<boolean> {
-  if (append) {
-    try {
-      await dispatch('stat', scope)
-      return false
-    } catch (err) {
-      if (!isFsError(err)) throw err
-    }
-  }
-  await createFile(dispatch, session, scope, new Uint8Array(0))
+  await createFile(dispatch, session, scope, new Uint8Array(), append)
   return true
 }
 
@@ -444,18 +449,8 @@ async function appendTo(
 ): Promise<void> {
   if (target === CLOSED) return
   const scope = toScope(target)
-  let existing: Uint8Array = new Uint8Array(0)
   try {
-    const [prior] = await dispatch('read', scope)
-    existing = await materialize(prior as ByteSource)
-  } catch (err) {
-    if (!isFsError(err)) throw err
-  }
-  const combined: Uint8Array<ArrayBuffer> = new Uint8Array(existing.byteLength + data.byteLength)
-  combined.set(existing, 0)
-  combined.set(data, existing.byteLength)
-  try {
-    await dispatch('write', scope, [combined])
+    await dispatch('append', scope, [data])
     session.execOpened.add(target)
   } catch (err) {
     if (!isFsError(err)) throw err

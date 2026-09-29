@@ -133,6 +133,31 @@ describe('backend fingerprint threading', () => {
     expect(await cache.isFresh('/s3/f.txt', 'etag-multipart-2')).toBe(true)
   })
 
+  it('leaves bytes from an unvouched later read untokened', async () => {
+    // One line read the path twice and the backend vouched only for the first:
+    // the bytes stored are the second read's, so the first read's token would
+    // label bytes it never described.
+    const cache = new RAMFileCacheStore()
+    const io = new IOResult({ reads: { '/m/f.txt': ENC.encode('new') }, cache: ['/m/f.txt'] })
+    await applyIo(cache, io, undefined, [
+      readRecord('/m/f.txt', 'token-a'),
+      readRecord('/m/f.txt', null),
+    ])
+    expect(await cache.exists('/m/f.txt')).toBe(true)
+    expect(await cache.isFresh('/m/f.txt', 'token-a')).toBe(false)
+  })
+
+  it('keeps an older write token past a tokenless write', async () => {
+    // The write direction is unchanged.
+    const cache = new RAMFileCacheStore()
+    const io = new IOResult({ writes: { '/m/f.txt': ENC.encode('new') }, cache: ['/m/f.txt'] })
+    await applyIo(cache, io, undefined, [
+      opRecord('write', '/m/f.txt', 'put-a', 3),
+      opRecord('write', '/m/f.txt', null, 3),
+    ])
+    expect(await cache.isFresh('/m/f.txt', 'put-a')).toBe(true)
+  })
+
   it('uses the record fingerprint for an exhausted stream', async () => {
     const cache = new RAMFileCacheStore()
     const stream = makeStream('hello')

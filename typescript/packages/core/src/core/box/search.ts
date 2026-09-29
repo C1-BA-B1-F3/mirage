@@ -17,7 +17,7 @@ import type { BoxAccessor } from '../../accessor/box.ts'
 import { PathSpec } from '../../types.ts'
 import { respellRaw } from '../../utils/path.ts'
 import { searchContent, type BoxSearchItem } from './api.ts'
-import { pathParts, resolveItem } from './resolve.ts'
+import { mountRelativeKey, pathParts, resolveItem } from './resolve.ts'
 
 function compareComponents(a: string, b: string): number {
   const ca = a.split('/')
@@ -30,23 +30,6 @@ function compareComponents(a: string, b: string): number {
     if (x > y) return 1
   }
   return ca.length - cb.length
-}
-
-// Reconstruct the mount-relative key from the item's ancestor chain by
-// trimming everything up to and including the mount root folder. Box's
-// path_collection lists ancestors from the account root down to the immediate
-// parent (excluding the item itself).
-function mountRelativeKey(item: BoxSearchItem, rootFolderId: string): string | null {
-  const entries = item.path_collection?.entries ?? []
-  const names: string[] = []
-  let collecting = false
-  for (const anc of entries) {
-    if (collecting) names.push(anc.name)
-    if (anc.id === rootFolderId) collecting = true
-  }
-  if (!collecting) return null
-  names.push(item.name)
-  return names.filter((n) => n !== '').join('/')
 }
 
 /**

@@ -17,6 +17,7 @@ import { countDocuments } from '../../../core/mongodb/client.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
 import { MONGODB_IO } from './io.ts'
 import { streamAny } from '../../../core/mongodb/read.ts'
+import { documentsExist } from '../../../core/mongodb/readdir.ts'
 import { detectScope } from '../../../core/mongodb/scope.ts'
 import { type ByteSource, IOResult } from '../../../io/types.ts'
 import { type PathSpec, VFSName } from '../../../types.ts'
@@ -41,6 +42,16 @@ function documentsScope(p: PathSpec): { database: string; name: string } | null 
   return null
 }
 
+// The count answers 0 for a collection that does not exist, and for one the
+// mount's `databases` leaves out, so the fast path runs only when every
+// operand is one the mount can see; the generic reports the rest.
+async function allExist(accessor: MongoDBAccessor, paths: readonly PathSpec[]): Promise<boolean> {
+  for (const p of paths) {
+    if (!(await documentsExist(accessor, detectScope(p), p.virtual))) return false
+  }
+  return true
+}
+
 async function wcCommand(
   accessor: MongoDBAccessor,
   paths: PathSpec[],
@@ -58,7 +69,12 @@ async function wcCommand(
   // bytes too, which needs the content).
   const countOnly =
     parsed.lines && !parsed.words && !parsed.bytes && !parsed.chars && !parsed.maxLineLength
-  if (countOnly && resolved.length > 0 && resolved.every((p) => documentsScope(p) !== null)) {
+  if (
+    countOnly &&
+    resolved.length > 0 &&
+    resolved.every((p) => documentsScope(p) !== null) &&
+    (await allExist(accessor, resolved))
+  ) {
     const rows: WcRow[] = []
     let total = 0
     for (const p of resolved) {

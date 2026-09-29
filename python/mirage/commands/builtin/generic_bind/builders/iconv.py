@@ -33,7 +33,4 @@ async def iconv(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                partial(ops.require(Operation.WRITE), accessor))
 
 
-BUILDER = Builder('iconv',
-                  iconv,
-                  write=True,
-                  requirements=frozenset({Operation.WRITE}))
+BUILDER = Builder('iconv', iconv, write=True)

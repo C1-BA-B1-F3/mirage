@@ -72,6 +72,25 @@ export function argsOf(ctx: Ctx<C>): URLSearchParams {
   return out
 }
 
+export function requestToken(
+  headers: Record<string, string | string[] | undefined>,
+  url: URL,
+  body: Buffer,
+): string | undefined {
+  const auth = headers.authorization
+  const header = Array.isArray(auth) ? auth[0] : auth
+  if (header?.startsWith('Bearer ')) return header.slice(7)
+  const type = headers['content-type']
+  const contentType = Array.isArray(type) ? type[0] : type
+  return (
+    url.searchParams.get('token') ??
+    (contentType?.startsWith('application/x-www-form-urlencoded')
+      ? new URLSearchParams(body.toString('utf8')).get('token')
+      : undefined) ??
+    undefined
+  )
+}
+
 // Slack answers 200 for a refused call and puts the failure in the body, so
 // `ok: false` is a normal reply here and never an HTTP error.
 export function fail(error: string): { status: number; body: JsonValue } {
@@ -137,6 +156,7 @@ export function fileMeta(f: FileRow, origin: string): JsonValue {
 export function messageJson(
   m: {
     type: string
+    subtype?: string | null
     userId: string
     text: string
     ts: string
@@ -147,6 +167,7 @@ export function messageJson(
   origin: string,
 ): JsonValue {
   const base: Record<string, JsonValue> = { type: m.type, user: m.userId, text: m.text, ts: m.ts }
+  if (m.subtype) base.subtype = m.subtype
   if (m.threadTs !== null && m.threadTs !== '') base.thread_ts = m.threadTs
   const rs = reactionsOf(m.reactionsJson)
   if (rs.length > 0) {

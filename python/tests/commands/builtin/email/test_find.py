@@ -63,9 +63,10 @@ async def test_path_pattern_is_honored():
 
 
 @pytest.mark.asyncio
-async def test_size_is_honored_dirs_count_as_zero():
-    lines = await _run([_spec("/")], maxdepth="1", size="+0c")
-    assert lines == []
+async def test_size_counts_a_directory_as_dir_size():
+    dirs = await _run([_spec("/")], maxdepth="1")
+    assert await _run([_spec("/")], maxdepth="1", size="+0c") == dirs
+    assert await _run([_spec("/")], maxdepth="1", size="-1k") == []
 
 
 ATTACHMENT_HEADERS = [{

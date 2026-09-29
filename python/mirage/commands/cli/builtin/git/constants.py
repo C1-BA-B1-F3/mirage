@@ -12,6 +12,8 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from string import ascii_letters
+
 from dulwich.refs import Ref
 
 # The modes git records in a tree. It reads only the owner execute bit
@@ -37,6 +39,12 @@ PERMISSION_BITS = 0o777
 # dulwich takes for it.
 HEAD = "HEAD"
 HEAD_REF = Ref(b"HEAD")
+
+# git's default funcname: the nearest earlier line that starts with a
+# letter, "_" or "$" names a hunk, trimmed of the only four bytes git's
+# own ctype calls blank.
+FUNCNAME_START = frozenset(ascii_letters + "_$")
+GIT_SPACE = b" \t\n\r"
 
 # The directory (or, in a linked worktree, the file) a checkout keeps
 # its repository under.

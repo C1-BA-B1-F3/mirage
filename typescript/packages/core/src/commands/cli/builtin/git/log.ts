@@ -18,6 +18,14 @@ import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { GitError } from './errors.ts'
 import {
+  joinOutput,
+  commitOutput,
+  parseDiffFlags,
+  renamesEnabled,
+  separatorLine,
+  type DiffFlags,
+} from './diff_output.ts'
+import {
   FULL_SHA,
   needsDecorations,
   oneline,
@@ -26,10 +34,20 @@ import {
   type CommitFacts,
   type Decorations,
 } from './format.ts'
-import { decorations, parseFlags, refCommits, select, type LogFlags } from './history.ts'
-import { commitFacts, opened, type Repo } from './repo.ts'
-import { resolveCommit } from './revparse.ts'
-import { checkOperands, escaped, fatal, revisionArg } from './util.ts'
+import { CommitGraph } from './graph.ts'
+import {
+  decorations,
+  parseFlags,
+  refCommits,
+  select,
+  walked,
+  type LogFlags,
+  type Walk,
+} from './history.ts'
+import { configBool, opened, type Repo } from './repo.ts'
+import { splitRevisions } from './revparse.ts'
+import { checkOperands, escaped, fatal } from './util.ts'
+import { HEAD } from './constants.ts'
 import { encodeText } from '../../../../shell/bytes.ts'
 
 /**
@@ -52,12 +70,14 @@ function rendered(
   const fmt = flags.pretty
   if (fmt.kind === 'oneline') {
     const length = flags.abbrevCommit ? width : FULL_SHA
-    const lines = commits.map((commit) => oneline(commit, length))
+    const lines = commits.map((commit) =>
+      flags.decorate ? renderTemplate('%h%d %s', commit, length, decor) : oneline(commit, length),
+    )
     return lines.length > 0 ? `${lines.join('\n')}\n` : ''
   }
   if (fmt.kind === 'format' || fmt.kind === 'tformat') {
     const entries = commits.map((commit) =>
-      renderTemplate(fmt.template ?? '', commit, width, decor),
+      renderTemplate(fmt.template ?? '', commit, width, decor, flags.date),
     )
     if (fmt.kind === 'tformat') {
       if (fmt.template === null || fmt.template === '') return ''
@@ -68,20 +88,112 @@ function rendered(
   const lines: string[] = []
   commits.forEach((commit, index) => {
     if (index > 0) lines.push('')
-    lines.push(...presetBlock(commit, fmt.kind, width))
+    const block = presetBlock(commit, fmt.kind, width, flags.date)
+    if (flags.decorate && block[0]?.startsWith('commit '))
+      block[0] += renderTemplate('%d', commit, width, decor)
+    lines.push(...block)
   })
   return lines.length > 0 ? `${lines.join('\n')}\n` : ''
 }
 
-/** The starting points a log walks: the revision, plus every ref for --all. */
+/**
+ * The text a `--graph` log prints: git's show_log, commit by commit.
+ *
+ * Every walked commit moves the graph on, printed or not, so a commit the
+ * pickaxe passed by leaves a `...` row. A printed commit gets the graph's lines
+ * up to its own, then its header, then its text with the next graph line in
+ * front of each further line, then whatever lines the graph still owes. The
+ * formats that separate entries (medium and its kin, `format:`) put the
+ * separator behind a padding line, so the graph never shows a gap; the ones
+ * that terminate entries (oneline, `tformat:`) do the same after each entry.
+ * A padding line is skipped wherever the text before it ended without a
+ * newline, since it would then land on that text's own line.
+ *
+ * With a diff each block (one per parent under `-m`) is an entry of its own,
+ * each naming its parent, and every diff line sits behind a padding line,
+ * the one between the message and the diff included. That line is `---` when
+ * both a diffstat and a patch follow, and is left out for oneline, except
+ * before a combined diff, which git prints from its own path.
+ *
+ * @param repo the opened repository
+ * @param walk the walked commits and the ones an edge may lead to
+ * @param flags the parsed invocation
+ * @param decor ref labels per commit, when the format prints any
+ * @param diff the diff flags, null when no diff was asked for
+ */
+async function graphed(
+  repo: Repo,
+  walk: Walk,
+  flags: LogFlags,
+  decor: Decorations | null,
+  diff: DiffFlags | null,
+): Promise<string> {
+  const width = repo.abbrev
+  const graph = new CommitGraph((oid) => walk.interesting.has(oid), flags.firstParent)
+  const fmt = flags.pretty
+  const user = fmt.kind === 'format' || fmt.kind === 'tformat'
+  const terminated = fmt.kind === 'oneline' || fmt.kind === 'tformat'
+  const empty = user && (fmt.template ?? '') === ''
+  const length = fmt.kind === 'oneline' && !flags.abbrevCommit ? FULL_SHA : width
+  let out = ''
+  let shownOne = false
+  let missingNewline = false
+  for (const { commit, shown } of walk.steps) {
+    graph.update(commit)
+    if (!shown) continue
+    const bodies = diff === null ? [] : await commitOutput(repo, commit, diff)
+    const blocks = bodies.length === 0 ? [''] : bodies
+    blocks.forEach((body, index) => {
+      if (shownOne && !terminated) {
+        if (!missingNewline) out += graph.paddingLine()
+        out += '\n'
+      }
+      shownOne = true
+      out += graph.showCommit()
+      const parent = commit.parents[index]
+      const from =
+        bodies.length > 1 && !user && parent !== undefined
+          ? ` (from ${parent.slice(0, fmt.kind === 'oneline' ? length : FULL_SHA)})`
+          : ''
+      const labels = flags.decorate ? renderTemplate('%d', commit, width, decor) : ''
+      let text: string
+      if (fmt.kind === 'oneline') {
+        out += `${renderTemplate('%h', commit, length, decor)}${from}${labels} `
+        text = renderTemplate('%s', commit, length, decor)
+      } else if (user) {
+        text = renderTemplate(fmt.template ?? '', commit, width, decor, flags.date)
+      } else {
+        const [head = '', ...rest] = presetBlock(commit, fmt.kind, width, flags.date)
+        out += `${head}${from}${labels}\n${graph.nextLine()[0]}`
+        text = rest.map((line) => `${line}\n`).join('')
+      }
+      missingNewline = !text.endsWith('\n')
+      out += graph.showMessage(text)
+      if (terminated && !empty) {
+        if (!missingNewline) out += graph.paddingLine()
+        out += '\n'
+      }
+      if (body === '' || diff === null) return
+      const separator = empty ? null : separatorLine(commit, fmt.kind, diff)
+      if (separator !== null) out += `${graph.paddingLine()}${separator}\n`
+      for (const line of body.split('\n').slice(0, -1)) out += `${graph.paddingLine()}${line}\n`
+    })
+  }
+  return out
+}
+
+/**
+ * The commits a log walks from and the commits it hides: the revisions and
+ * ranges given, HEAD when there are none, plus every ref for --all.
+ */
 async function startingPoints(
   repo: Repo,
-  revision: string,
+  revisions: readonly string[],
   flags: LogFlags,
-): Promise<CommitFacts[]> {
-  const starts = [await commitFacts(repo, await resolveCommit(repo, revision))]
+): Promise<[CommitFacts[], CommitFacts[]]> {
+  const [starts, hidden] = await splitRevisions(repo, revisions.length ? revisions : [HEAD])
   if (flags.allRefs) starts.push(...(await refCommits(repo)))
-  return starts
+  return [starts, hidden]
 }
 
 /** Show commit logs. */
@@ -93,10 +205,45 @@ export async function log(inv: CLIInvocation): Promise<CommandFnResult> {
     checkOperands(texts, undefined, escaped(inv.argv))
     const parsed = parseFlags(fl)
     const repo = await opened(fl, doors)
-    const starts = await startingPoints(repo, revisionArg(texts), parsed)
-    const commits = await select(repo, starts, parsed)
-    const decor = needsDecorations(parsed.pretty) ? await decorations(repo) : null
-    const out = rendered(commits, parsed, repo.abbrev, decor)
+    const [starts, hidden] = await startingPoints(repo, texts, parsed)
+    const decor =
+      parsed.decorate || needsDecorations(parsed.pretty) ? await decorations(repo) : null
+    let diffFlags = parseDiffFlags(fl, false)
+    const diffing =
+      diffFlags.patch ||
+      diffFlags.stat ||
+      diffFlags.nameOnly ||
+      diffFlags.nameStatus ||
+      diffFlags.numstat ||
+      diffFlags.shortstat ||
+      diffFlags.summary ||
+      diffFlags.raw
+    if (diffing) {
+      diffFlags = parseDiffFlags(
+        fl,
+        false,
+        'off',
+        true,
+        await renamesEnabled(repo),
+        await configBool(repo, 'core.quotepath', true),
+      )
+    }
+    if (parsed.graph) {
+      const walk = await walked(repo, starts, parsed, hidden)
+      const out = await graphed(repo, walk, parsed, decor, diffing ? diffFlags : null)
+      return [out === '' ? null : encodeText(out), new IOResult()]
+    }
+    const commits = await select(repo, starts, parsed, hidden)
+    let out: string
+    if (diffing) {
+      const blocks: string[] = []
+      for (const commit of commits) {
+        const head = rendered([commit], parsed, repo.abbrev, decor)
+        const bodies = await commitOutput(repo, commit, diffFlags)
+        blocks.push(joinOutput(commit, head, bodies, parsed.pretty.kind, repo.abbrev, diffFlags))
+      }
+      out = blocks.join(['tformat', 'oneline'].includes(parsed.pretty.kind) ? '' : '\n')
+    } else out = rendered(commits, parsed, repo.abbrev, decor)
     if (out === '') return [null, new IOResult()]
     return [encodeText(out), new IOResult()]
   } catch (err) {

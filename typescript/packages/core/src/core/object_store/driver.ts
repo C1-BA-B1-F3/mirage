@@ -54,6 +54,7 @@ export type TruncateFn<A extends Accessor> = (
   accessor: A,
   path: PathSpec,
   length: number,
+  noCreate?: boolean,
 ) => Promise<void>
 
 export type DuEntriesFn<A extends Accessor> = (
@@ -120,12 +121,11 @@ export interface ObjectMeta {
 export interface FindHints {
   name: string | null
   iname: string | null
-  type: string | null
   minSize: number | null
   maxSize: number | null
   /**
-   * False when a complex predicate tree is present; only the prefix
-   * condition may be used then.
+   * A `-type f` find with no complex predicate tree; only the prefix
+   * condition may be used otherwise.
    */
   pushdown: boolean
 }

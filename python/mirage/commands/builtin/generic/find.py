@@ -1,25 +1,31 @@
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from functools import partial
 
+from mirage.cache.context import active_cache_manager
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin import find_eval
 from mirage.commands.builtin.find_parse import (parse_depth,
                                                 parse_find_expression,
                                                 parse_mtime, parse_size)
 from mirage.commands.builtin.find_printf import printf_kind
-from mirage.commands.builtin.utils.output import format_records
+from mirage.commands.builtin.utils.paths import (dot_refusal, link_follow,
+                                                 stat_or_enoent)
 from mirage.commands.config import CommandOpts
+from mirage.commands.errors import is_entry_error
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.context import path_allowed
+from mirage.errors.classify import failure_text
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView, StatPath
 from mirage.types import FileStat, FileType, FindType, PathSpec
 from mirage.utils.dates import iso_timestamp, matches_mtime
+from mirage.utils.errors import MISS_ERRORS, fs_strerror, walk_refusal
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
-from mirage.utils.path import respell_raw
+from mirage.utils.path import respell_one, respell_raw
+from mirage.utils.stat_view import DIR_SIZE
 
 
 def parse_find_args(
@@ -102,7 +108,7 @@ async def apply_mtime_filter(
     for r in results:
         try:
             s = await stat(_row_spec(r, mount_prefix))
-        except (FileNotFoundError, ValueError):
+        except (FileNotFoundError, NotADirectoryError, ValueError):
             continue
         # `matches_mtime` is the same helper the rest of this file already
         # uses. Parsing inline instead stamped UTC over an offset the
@@ -129,7 +135,7 @@ async def _row_mtime(
     try:
         return _modified_ts((await stat(_row_spec(row,
                                                   mount_prefix))).modified)
-    except (FileNotFoundError, ValueError):
+    except (FileNotFoundError, NotADirectoryError, ValueError):
         return None
 
 
@@ -169,8 +175,7 @@ def missing_start_line(search_path: PathSpec,
         search_path (PathSpec): the start point, as the operand named it.
         detail (str): the strerror to report.
     """
-    label = search_path.raw_path or search_path.virtual
-    return f"find: '{label}': {detail}"
+    return f"find: '{search_path.raw_path}': {detail}"
 
 
 def is_link(links: LinkView | None, search: PathSpec) -> bool:
@@ -198,9 +203,10 @@ class StartPoint:
     missing: bool = False
     stat: FileStat | None = None
     # The strerror the diagnostic carries when `missing` is set. A start
-    # point that is simply absent keeps GNU's default wording; one typed
-    # with a trailing slash that resolved to a non-directory reports
-    # ENOTDIR instead (`find flink/` -> "Not a directory").
+    # point that is simply absent keeps GNU's default wording; one under a
+    # plain file, or typed with a trailing slash that resolved to a
+    # non-directory, reports ENOTDIR instead (`find flink/` -> "Not a
+    # directory").
     detail: str = "No such file or directory"
 
 
@@ -212,12 +218,40 @@ NOT_DIR_START = StartPoint(walk=False,
                            detail="Not a directory")
 
 
+async def _missing_start(
+        search: PathSpec,
+        stat: Callable[[PathSpec], Awaitable[FileStat]] | None) -> StartPoint:
+    """The start point ``stat_path`` found nothing at, with GNU's errno.
+
+    ``stat_path`` answers None for both ways a lookup fails, because every
+    other caller of it treats them alike, while GNU names the one its stat
+    met. So the mount's own stat is asked which, on the failure path only:
+    a start point under a plain file is ENOTDIR.
+
+    Args:
+        search (PathSpec): the start point, as the operand named it.
+        stat (Callable | None): the mount's stat, None when the caller has
+            none to offer.
+    """
+    if stat is None:
+        return MISSING_START
+    try:
+        await stat(search)
+    except NotADirectoryError:
+        return NOT_DIR_START
+    except MISS_ERRORS:
+        return MISSING_START
+    return MISSING_START
+
+
 async def resolve_start(
     search: PathSpec,
     args: find_eval.FindArgs,
     stat_path: StatPath | None,
     *,
     is_link: bool = False,
+    stat: Callable[[PathSpec], Awaitable[FileStat]] | None = None,
+    follow: Callable[[str], str] | None = None,
 ) -> StartPoint:
     """Decide what one start point contributes, before any walk.
 
@@ -242,12 +276,43 @@ async def resolve_start(
         stat_path (StatPath | None): dispatcher-backed stat, None when the
             command runs outside a workspace (the walk then decides).
         is_link (bool): whether the start point is itself a namespace link.
+        stat (Callable | None): the mount's stat, asked only to name the
+            errno of a start point ``stat_path`` found nothing at.
+        follow (Callable[[str], str] | None): the namespace's link
+            resolution, which the start point may already have been
+            taken through.
     """
-    if stat_path is None or is_link:
+    if search.walk_error is not None:
+        # The walk refused the start point before find ran (the empty
+        # name, a link loop), and every probe below goes by the path it
+        # simplifies to.
+        return StartPoint(walk=False,
+                          results=[],
+                          missing=True,
+                          detail=fs_strerror(walk_refusal(search))
+                          or "No such file or directory")
+    if stat_path is None:
+        return WALK_START
+    # A start point's own `.` and `..` resolve first, link or not: the
+    # lookup below asks about the path they simplify to.
+    refusal = await dot_refusal(partial(stat_or_enoent, stat_path), search,
+                                follow)
+    if refusal is not None:
+        return StartPoint(walk=False,
+                          results=[],
+                          missing=True,
+                          detail=fs_strerror(refusal)
+                          or "No such file or directory")
+    if is_link:
         return WALK_START
     start = await stat_path(search.virtual)
     if start is None:
-        return MISSING_START
+        return await _missing_start(search, stat)
+    manager = active_cache_manager()
+    if start.size is None and manager is not None:
+        cached_size = await manager.cached_size(search)
+        if cached_size is not None:
+            start = start.model_copy(update={"size": cached_size})
     if start.type == FileType.DIRECTORY:
         return StartPoint(walk=True, results=[], stat=start)
     # POSIX reads `x/` as `x/.`, so an operand typed with a trailing
@@ -306,8 +371,7 @@ def start_point_results(
     if args.empty:
         # GNU -empty matches only a size-0 regular file here; a device
         # start point is never empty-eligible.
-        empty = (start.size
-                 or 0) == 0 if start.type is FileType.FILE else False
+        empty = start.size == 0 if start.type is FileType.FILE else False
     find_eval.emit_start_path(results,
                               search_path.mount_path,
                               find_eval.start_basename(search_path),
@@ -429,30 +493,85 @@ async def find(
     # exits 1; the rows already found still print. One run per start
     # point, empty for one that matched nothing or is missing: the action
     # layer reads a row's start point off its run (-printf's %P and %d).
-    results: list[str] = []
     matched_runs: list[list[PathSpec]] = []
-    missing: list[str] = []
-    for search_path in searches:
-        rows, detail = await _find_root(search_path,
-                                        args,
-                                        find_core=find_core,
-                                        stat_path=stat_path,
+    io = IOResult(matched_runs=matched_runs)
+
+    async def stream() -> AsyncIterator[bytes]:
+        missing: list[str] = []
+        for search_path in searches:
+            first = await early_root(search_path, args, stat_path, stat, links)
+            for row in first:
+                yield (row + "\n").encode()
+            rows, detail = await _find_root(search_path,
+                                            args,
+                                            find_core=find_core,
+                                            stat_path=stat_path,
+                                            stat=stat,
+                                            dir_empty=dir_empty,
+                                            links=links,
+                                            follow=follow)
+            if rows is None:
+                missing.append(missing_start_line(search_path, detail))
+                matched_runs.append([])
+                continue
+            for row in rows:
+                if row not in first:
+                    yield (row + "\n").encode()
+            matched_runs.append(
+                [_matched_path(row, search_path) for row in rows])
+        if missing:
+            io.stderr = ("\n".join(missing) + "\n").encode()
+            io.exit_code = 1
+
+    return stream(), io
+
+
+async def early_root(
+    search: PathSpec,
+    args: find_eval.FindArgs,
+    stat_path: StatPath | None,
+    stat: Callable[[PathSpec], Awaitable[FileStat]] | None,
+    links: LinkView | None,
+) -> list[str]:
+    """Emit an independently known start point before asking for descendants.
+
+    Native find ops can batch their descendants; they must not delay the
+    directory row that the dispatcher already knows. A closing pipe can
+    consequently stop here without starting a remote traversal.
+
+    Args:
+        search (PathSpec): the start point, as the operand named it.
+        args (FindArgs): parsed find expression, shared across operands.
+        stat_path (StatPath | None): dispatcher-backed stat probe.
+        stat (Callable | None): overlay-aware stat for the mtime filter.
+        links (LinkView | None): the namespace's symlink facts.
+
+    Returns:
+        list[str]: the start point's own row, or nothing when it cannot
+            be answered before the walk.
+    """
+    if args.empty or (stat is None and (args.mtime_min is not None
+                                        or args.mtime_max is not None)):
+        return []
+    start = await resolve_start(search,
+                                args,
+                                stat_path,
+                                is_link=is_link(links, search),
+                                follow=link_follow(links))
+    if start.stat is None or not path_allowed(search.virtual):
+        return []
+    prefix = mount_prefix_of(search.virtual, search.vfs_path)
+    tree = find_eval.bind_tree(find_eval.args_to_tree(args), prefix,
+                               search.virtual, search.raw_path)
+    rows = root_dir_results(search, args, tree, is_empty=None)
+    if stat is not None:
+        rows = await apply_mtime_filter(rows,
+                                        mtime_min=args.mtime_min,
+                                        mtime_max=args.mtime_max,
                                         stat=stat,
-                                        dir_empty=dir_empty,
-                                        links=links,
-                                        follow=follow)
-        if rows is None:
-            missing.append(missing_start_line(search_path, detail))
-            matched_runs.append([])
-            continue
-        results.extend(rows)
-        matched_runs.append([_matched_path(row, search_path) for row in rows])
-    if missing:
-        return format_records(results), IOResult(matched_runs=matched_runs,
-                                                 stderr=("\n".join(missing) +
-                                                         "\n").encode(),
-                                                 exit_code=1)
-    return format_records(results), IOResult(matched_runs=matched_runs)
+                                        mount_prefix=prefix)
+    return respell_raw(apply_mount_prefix(rows, prefix), search.virtual,
+                       search.raw_path)
 
 
 async def _find_root(
@@ -522,7 +641,9 @@ async def _find_root(
     start = await resolve_start(search_path,
                                 args,
                                 stat_path,
-                                is_link=root_is_link)
+                                is_link=root_is_link,
+                                stat=stat,
+                                follow=link_follow(links))
     if start.missing:
         return None, start.detail
     if not start.walk and not root_is_link:
@@ -612,16 +733,30 @@ async def _stat_entry(
     path: str,
     prefix: str,
     index: IndexCacheStore | None,
+    unstatted: dict[str, Exception] | None = None,
 ) -> FileStat | None:
+    if unstatted is not None and path in unstatted:
+        return None
     spec = PathSpec(virtual=path,
                     directory=path,
                     resolved=False,
                     vfs_path=mount_key(path, prefix))
     try:
-        return await stat(spec, index)
-    except FileNotFoundError:
-        # Only missing entries resolve to None; API errors (rate limit, auth)
-        # propagate.
+        row = await stat(spec, index)
+        manager = active_cache_manager()
+        if row.size is None and manager is not None:
+            size = await manager.cached_size(spec)
+            if size is not None:
+                row = row.model_copy(update={"size": size})
+        return row
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except Exception as exc:
+        # Any other failure resolves to None too when the caller collects
+        # it; otherwise it (a rate limit, an auth failure) propagates.
+        if unstatted is None or not is_entry_error(exc):
+            raise
+        unstatted[path] = exc
         return None
 
 
@@ -634,6 +769,7 @@ async def _is_empty_entry(
     prefix: str,
     index: IndexCacheStore | None,
     links: LinkView | None = None,
+    unstatted: dict[str, Exception] | None = None,
 ) -> bool:
     if is_dir:
         if find_eval.has_link_children(links, path):
@@ -644,10 +780,10 @@ async def _is_empty_entry(
                         vfs_path=mount_key(path, prefix))
         try:
             return len(await readdir(spec, index)) == 0
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError):
             return False
-    st = await _stat_entry(stat, path, prefix, index)
-    return st is not None and (st.size or 0) == 0
+    st = await _stat_entry(stat, path, prefix, index, unstatted)
+    return st is not None and st.type is FileType.FILE and st.size == 0
 
 
 async def _walk_collect(
@@ -660,12 +796,13 @@ async def _walk_collect(
     depth: int,
     acc: list[tuple[str, str]],
     unreadable: list[str] | None = None,
+    unstatted: dict[str, Exception] | None = None,
 ) -> None:
     if maxdepth is not None and depth > maxdepth:
         return
     try:
         children = await readdir(spec, index)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         # Only vanished dirs are skipped; API errors (rate limit, auth)
         # propagate.
         return
@@ -691,7 +828,7 @@ async def _walk_collect(
             kind = "d"
         else:
             trimmed = child
-            st = await _stat_entry(stat, trimmed, prefix, index)
+            st = await _stat_entry(stat, trimmed, prefix, index, unstatted)
             is_dir = st is not None and st.type == FileType.DIRECTORY
             kind = printf_kind(st)
         acc.append((trimmed, kind))
@@ -701,7 +838,7 @@ async def _walk_collect(
                                   resolved=False,
                                   vfs_path=mount_key(trimmed, prefix))
             await _walk_collect(readdir, stat, child_spec, index, maxdepth,
-                                depth + 1, acc, unreadable)
+                                depth + 1, acc, unreadable, unstatted)
 
 
 async def link_results(
@@ -804,7 +941,30 @@ async def walk_find(
     links: LinkView | None = None,
     follow: bool = False,
     unreadable: list[str] | None = None,
+    unstatted: dict[str, Exception] | None = None,
 ) -> list[str]:
+    """Walk readdir/stat under one start point and match every entry.
+
+    A directory the guarded readdir refuses lands in ``unreadable``. An
+    entry whose stat fails lands in ``unstatted`` with its error, in
+    walk order: GNU's find names it and carries on, and the entry stays
+    in the walk unclassified, a leaf, as a missing one already does,
+    that fails every test only its stat could answer. It is never
+    statted again. A caller that passes neither gets the failure
+    propagated instead.
+
+    Args:
+        search_path (PathSpec): the start point.
+        readdir (Callable): bound readdir, ``readdir(p, index)``.
+        stat (Callable): bound stat, ``stat(p, index)``.
+        index (IndexCacheStore | None): listing cache.
+        args (find_eval.FindArgs): parsed find expression.
+        links (LinkView | None): the namespace's symlink facts.
+        follow (bool): ``-L``.
+        unreadable (list[str] | None): collects refused directories.
+        unstatted (dict[str, Exception] | None): collects entries whose
+            stat failed.
+    """
     collected: list[tuple[str, str]] = []
     prefix = mount_prefix_of(search_path.virtual, search_path.vfs_path)
     search_key = search_path.mount_path.strip("/")
@@ -819,7 +979,7 @@ async def walk_find(
     # (Box answers ENOTDIR) or a wasted round trip everywhere else.
     if root_stat is None or root_stat.type == FileType.DIRECTORY:
         await _walk_collect(readdir, stat, search_path, index, args.maxdepth,
-                            1, collected, unreadable)
+                            1, collected, unreadable, unstatted)
     tree = find_eval.bind_tree(find_eval.args_to_tree(args), prefix,
                                search_path.virtual, search_path.raw_path)
     need_empty = find_eval.tree_has_empty(tree)
@@ -842,14 +1002,14 @@ async def walk_find(
         is_empty = None
         if need_empty:
             is_empty = await _is_empty_entry(readdir, stat, p, is_dir, prefix,
-                                             index, links)
+                                             index, links, unstatted)
         # With a time test in the tree the stat comes first, so the entry
         # answers the test itself and a -prune after it fires only where
         # GNU's would; the stat that -size alone needs waits for the rows
         # the tree kept.
         st = None
         if need_mtime:
-            st = await _stat_entry(stat, p, prefix, index)
+            st = await _stat_entry(stat, p, prefix, index, unstatted)
             if st is None:
                 continue
             learned[key] = _modified_ts(st.modified)
@@ -862,13 +1022,13 @@ async def walk_find(
         if not find_eval.keep(entry, tree, args.mindepth):
             continue
         if need_size and not is_dir and st is None:
-            st = await _stat_entry(stat, p, prefix, index)
+            st = await _stat_entry(stat, p, prefix, index, unstatted)
             if st is None:
                 continue
         if need_size:
-            # Directories count as size 0 for -size: GNU compares the inode
-            # size (e.g. 4096 on ext4); see CLAUDE.md Rules.
-            size = 0 if is_dir else ((st.size if st is not None else 0) or 0)
+            size = DIR_SIZE
+            if not is_dir:
+                size = (st.size if st is not None else 0) or 0
             if args.min_size is not None and size < args.min_size:
                 continue
             if args.max_size is not None and size > args.max_size:
@@ -1003,45 +1163,58 @@ async def find_walk_generic(
                            path=parsed.path,
                            mindepth=parsed.mindepth,
                            empty=parsed.empty)
-    results: list[str] = []
     matched_runs: list[list[PathSpec]] = []
-    missing: list[str] = []
-    for search in searches:
-        # Same start-point rule as the native-op path, so what `find` does
-        # with a file or a missing operand does not depend on whether the
-        # mounted backend ships a find op.
-        start = await resolve_start(search,
-                                    args,
-                                    stat_path,
-                                    is_link=is_link(links, search))
-        if start.missing:
-            missing.append(missing_start_line(search, start.detail))
-            matched_runs.append([])
-            continue
-        if not start.walk:
-            rows = start.results
-        else:
-            unreadable: list[str] = []
-            walked = await walk_find(search,
-                                     readdir=readdir,
-                                     stat=stat,
-                                     index=opts.index,
-                                     args=args,
-                                     links=links,
-                                     follow=parsed.follow,
-                                     unreadable=unreadable)
-            rows = respell_raw(walked, search.virtual, search.raw_path)
-            # GNU names a directory it may not open in the walk's own
-            # order, lists the directory itself, and exits 1 like a
-            # start point it could not read.
-            missing.extend(f"find: '{shown}': Permission denied"
-                           for shown in respell_raw(unreadable, search.virtual,
-                                                    search.raw_path))
-        results.extend(rows)
-        matched_runs.append([_matched_path(row, search) for row in rows])
-    if missing:
-        return format_records(results), IOResult(matched_runs=matched_runs,
-                                                 stderr=("\n".join(missing) +
-                                                         "\n").encode(),
-                                                 exit_code=1)
-    return format_records(results), IOResult(matched_runs=matched_runs)
+    io = IOResult(matched_runs=matched_runs)
+
+    async def stream() -> AsyncIterator[bytes]:
+        missing: list[str] = []
+        for search in searches:
+            first = await early_root(search, args, stat_path, None, links)
+            for row in first:
+                yield (row + "\n").encode()
+            # Same start-point rule as the native-op path, so what `find` does
+            # with a file or a missing operand does not depend on whether the
+            # mounted backend ships a find op.
+            start = await resolve_start(search,
+                                        args,
+                                        stat_path,
+                                        is_link=is_link(links, search),
+                                        follow=link_follow(links))
+            if start.missing:
+                missing.append(missing_start_line(search, start.detail))
+                matched_runs.append([])
+                continue
+            if not start.walk:
+                rows = start.results
+            else:
+                unreadable: list[str] = []
+                unstatted: dict[str, Exception] = {}
+                walked = await walk_find(search,
+                                         readdir=readdir,
+                                         stat=stat,
+                                         index=opts.index,
+                                         args=args,
+                                         links=links,
+                                         follow=parsed.follow,
+                                         unreadable=unreadable,
+                                         unstatted=unstatted)
+                rows = respell_raw(walked, search.virtual, search.raw_path)
+                # GNU names a directory it may not open in the walk's own
+                # order, lists the directory itself, and exits 1 like a
+                # start point it could not read.
+                missing.extend(
+                    f"find: '{shown}': Permission denied"
+                    for shown in respell_raw(unreadable, search.virtual,
+                                             search.raw_path))
+                for path, exc in unstatted.items():
+                    shown = respell_one(path, search.virtual, search.raw_path)
+                    missing.append(f"find: '{shown}': {failure_text(exc)}")
+            for row in rows:
+                if row not in first:
+                    yield (row + "\n").encode()
+            matched_runs.append([_matched_path(row, search) for row in rows])
+        if missing:
+            io.stderr = ("\n".join(missing) + "\n").encode()
+            io.exit_code = 1
+
+    return stream(), io

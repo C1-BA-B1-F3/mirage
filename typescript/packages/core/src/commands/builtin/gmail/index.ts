@@ -15,7 +15,9 @@
 import type { GmailAccessor } from '../../../accessor/gmail.ts'
 import { VFSName } from '../../../types.ts'
 import type { ProvisionFn, RegisteredCommand } from '../../config.ts'
+import { resolveGlobOf } from '../generic_bind/adapter.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
+import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { GMAIL_GREP } from './grep.ts'
 import { GMAIL_IO } from './io.ts'
 import { metadataProvision } from './_provision.ts'
@@ -33,6 +35,10 @@ export const GMAIL_COMMANDS: readonly RegisteredCommand[] = [
       ls: metadataProvision as ProvisionFn,
     },
   }),
-  ...GMAIL_GREP,
-  ...GMAIL_RG,
+  ...withDefaultProvisions(
+    [...GMAIL_GREP, ...GMAIL_RG],
+    GMAIL_IO.stat,
+    resolveGlobOf(GMAIL_IO),
+    GMAIL_IO.readdir,
+  ),
 ]

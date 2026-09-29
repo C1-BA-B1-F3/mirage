@@ -23,7 +23,7 @@ from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
                                 LookupStatus)
 from mirage.cache.index.lock import index_lock
 from mirage.core.hf_hub.client import (HfHubError, api_url, hub_get_response,
-                                       rev_segment)
+                                       hub_post, rev_segment)
 from mirage.core.hf_hub.constants import (MAX_TREE_PAGES, TREE_PAGE_SIZE,
                                           TREE_PAGE_SIZE_EXPANDED)
 from mirage.core.hf_hub.tree_entry import TreeEntry
@@ -36,11 +36,12 @@ log = logging.getLogger(__name__)
 # cannot backtrack quadratically.
 _NEXT_LINK = re.compile(r'<([^>]{1,4096})>\s*;\s*rel="next"')
 
-# A repository the mount cannot see reads as an empty tree rather than as
-# an error: 404 is a revision or subtree that does not exist, and the Hub
-# answers 401 rather than 404 for a repo an anonymous caller may not know
-# about, so both mean "nothing to list here" to a mount.
-_ABSENT_STATUSES = frozenset({401, 403, 404})
+# The one refusal that means "nothing to list": the mount's key_prefix names
+# no folder. Every other refusal (401 for a bad token or an unknown repo, 403
+# for a gated one, 404 for a missing repo or revision) is an error, because
+# this listing is seeded as the mount's whole index and an empty one would
+# read every file as deleted.
+_MISSING_SUBTREE = "EntryNotFound"
 
 
 def parse_entry(item: dict[str, Any]) -> TreeEntry:
@@ -122,6 +123,67 @@ def tree_url(accessor: HfHubAccessor) -> str:
                    suffix)
 
 
+def paths_info_url(accessor: HfHubAccessor) -> str:
+    """The paths-info endpoint for the mount's revision.
+
+    Unlike the tree endpoint the key prefix does not ride the route: the
+    segment after ``paths-info`` is the whole revision, so the prefix goes
+    into each requested path instead.
+
+    Args:
+        accessor (HfHubAccessor): the mount's accessor.
+
+    Returns:
+        str: the absolute URL.
+    """
+    return api_url(accessor.endpoint, accessor.repo_type, accessor.repo_id,
+                   f"/paths-info/{rev_segment(accessor.revision)}")
+
+
+async def fetch_path(accessor: HfHubAccessor,
+                     rel: str) -> dict[str, TreeEntry]:
+    """The listing row for one mount-relative path, in one request.
+
+    The row is folded by ``collect``, the same as a tree page, so it keys
+    and carries the same oid a whole-tree walk would. Only a row naming
+    exactly the asked path counts: an answer about some other path is not
+    an answer about this one, and must not read as its absence.
+
+    Args:
+        accessor (HfHubAccessor): the mount's accessor.
+        rel (str): the path as the mount sees it.
+
+    Returns:
+        dict[str, TreeEntry]: the row keyed by ``rel``, or empty when the
+        path does not exist.
+
+    Raises:
+        HfHubError: the Hub refused, or answered rows for another path.
+    """
+    asked = accessor.repo_path(rel)
+    rows = await hub_post(accessor.token,
+                          paths_info_url(accessor), {
+                              "paths": [asked],
+                              "expand": accessor.expand_commits is True
+                          },
+                          session=accessor.pool)
+    if not isinstance(rows, list):
+        # Only an empty list says the path is missing; an answer of any
+        # other shape is one the client cannot read, not an absence.
+        raise HfHubError(f"paths-info answered no list for {asked}", 0,
+                         "InvalidResponse")
+    matching = [
+        row for row in rows
+        if isinstance(row, dict) and row.get("path") == asked
+    ]
+    if rows and not matching:
+        raise HfHubError(f"paths-info answered no row for {asked}", 0,
+                         "PathMismatch")
+    into: dict[str, TreeEntry] = {}
+    collect(matching, accessor.key_prefix, into)
+    return into
+
+
 def collect(rows: Any, prefix: str, into: dict[str, TreeEntry]) -> None:
     """Fold one page of tree rows into the mount's listing.
 
@@ -193,7 +255,8 @@ async def walk_pages(
         the walk reached the end.
 
     Raises:
-        HfHubError: the Hub refused for a reason that is not absence.
+        HfHubError: the Hub refused for any reason but a missing subtree
+            on the first page, including a repo the token cannot see.
     """
     for _ in range(limit):
         try:
@@ -202,7 +265,12 @@ async def walk_pages(
                                               params,
                                               session=accessor.pool)
         except HfHubError as exc:
-            if exc.status in _ABSENT_STATUSES:
+            # Only a request carrying first-page params can learn that the
+            # subtree is missing; a cursor page failing means the listing
+            # broke part way, and keeping what came before would pass a
+            # partial tree off as the whole one.
+            if (params is not None and exc.status == 404
+                    and exc.error_code == _MISSING_SUBTREE):
                 log.debug("hf tree %s answered %s: %s", url, exc.status, exc)
                 return ""
             raise
@@ -243,7 +311,8 @@ async def fetch_tree(accessor: HfHubAccessor) -> dict[str, TreeEntry]:
         mount's key_prefix, with the prefix stripped.
 
     Raises:
-        HfHubError: the Hub refused for a reason that is not absence.
+        HfHubError: the Hub refused for any reason but a missing subtree
+            on the first page, or the listing ran past the page ceiling.
     """
     url = tree_url(accessor)
     expand = accessor.expand_commits
@@ -385,6 +454,7 @@ async def refill_index(
     accessor.tree = tree
     accessor.tree_loaded = True
     accessor.rows_cache = None
+    accessor.refills += 1
     # Refilling replaces the snapshot; merging would retain deleted paths.
     await index.invalidate_prefix(prefix.rstrip("/") or "/")
     seed_index(accessor, index, prefix)

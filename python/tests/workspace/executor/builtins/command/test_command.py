@@ -66,10 +66,13 @@ async def test_a_flag_after_the_target_belongs_to_the_target():
 
 
 @pytest.mark.asyncio
-async def test_v_prints_name_no_fake_path():
-    out, io, _ = await handle_command_builtin(FakeShell(), ["-v", "cat"],
+async def test_v_prints_a_programs_file_and_a_builtin_bare():
+    # bash 5.2: the file PATH finds, and the bare name for one of bash's
+    # builtins, echo included though it has a file too.
+    out, io, _ = await handle_command_builtin(FakeShell(),
+                                              ["-v", "cat", "cd", "echo"],
                                               make_session(), make_registry())
-    assert await materialize(out) == b"cat\n"
+    assert await materialize(out) == b"/usr/bin/cat\ncd\necho\n"
     assert io.exit_code == 0
 
 
@@ -87,7 +90,7 @@ async def test_v_multi_name_any_found_rc0():
     out, io, _ = await handle_command_builtin(FakeShell(),
                                               ["-v", "ls", "nope_xyz", "cat"],
                                               make_session(), make_registry())
-    assert await materialize(out) == b"ls\ncat\n"
+    assert await materialize(out) == b"/usr/bin/ls\n/usr/bin/cat\n"
     assert io.exit_code == 0
 
 

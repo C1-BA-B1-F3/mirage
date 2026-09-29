@@ -15,9 +15,10 @@
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
-import type { PathSpec } from '../../../types.ts'
+import { PathSpec, type StatFn } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { isMissingPath } from '../../../utils/errors.ts'
+import { enoent, enotdir, fsErrorLine, isMissingPath, walkRefusal } from '../../../utils/errors.ts'
+import { absentDestStrerror, dotRefusal, linkFollow, statOrEnoent } from '../utils/paths.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 
 const ENC = new TextEncoder()
@@ -43,6 +44,38 @@ async function pathExists(stat: (p: PathSpec) => Promise<unknown>, p: PathSpec):
   }
 }
 
+// Why one operand does not resolve under the requested mode. GNU's three
+// modes ask for different amounts of the path: -m for nothing, the default
+// for every component but the last, -e for all of it. A `.` or `..`
+// resolves against the directory in front of it, so outside -m the dots
+// walk first. Mirrors Python's _unresolved.
+async function unresolved(
+  p: PathSpec,
+  stat: (p: PathSpec) => Promise<unknown>,
+  walk: StatFn | null,
+  follow: ((path: string) => string) | null,
+  mustExist: boolean,
+  allowMissing: boolean,
+): Promise<Error | null> {
+  // The walk refused the operand before realpath ran. The empty name is
+  // refused in every mode, -m included, and a link loop outside -m only:
+  // -m leaves the loop unresolved and prints the path as spelled
+  // (coreutils 9.7).
+  if (p.walkError === 'ENOENT' || (p.walkError !== null && !allowMissing)) return walkRefusal(p)
+  if (allowMissing) return null
+  if (walk !== null) {
+    const refusal = await dotRefusal(walk, p, follow)
+    if (refusal !== null) return refusal
+  }
+  if (mustExist) return (await pathExists(stat, p)) ? null : enoent(p)
+  if (walk === null) return null
+  const why = await absentDestStrerror(walk, PathSpec.fromStrPath(p.virtual))
+  if (why === null) return null
+  return why === 'Not a directory' ? enotdir(p) : enoent(p)
+}
+
+// Print each operand's canonical path, GNU `realpath`. An operand that does
+// not resolve is reported and the rest still print, exit 1 (coreutils 9.7).
 export async function realpathGeneric(
   paths: PathSpec[],
   texts: string[],
@@ -50,18 +83,25 @@ export async function realpathGeneric(
   stat: (p: PathSpec) => Promise<unknown>,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('realpath'))
-  const requireExists = fl.asBool('e')
+  const mustExist = fl.asBool('e')
+  const allowMissing = fl.asBool('m')
+  const walk = opts.statPath !== undefined ? statOrEnoent(opts.statPath) : null
+  const follow = linkFollow(opts.ns?.links)
   const lines: string[] = []
+  const errors: string[] = []
   if (paths.length > 0) {
     for (const p of paths) {
-      if (requireExists && !(await pathExists(stat, p))) {
-        throw new Error(`realpath: '${p.virtual}': No such file or directory`)
+      const failure = await unresolved(p, stat, walk, follow, mustExist, allowMissing)
+      if (failure !== null) {
+        errors.push(fsErrorLine('realpath', p, failure))
+        continue
       }
       lines.push(normalize(p.virtual, opts.cwd))
     }
   } else {
     for (const t of texts) lines.push(normalize(t, opts.cwd))
   }
-  const out: ByteSource = ENC.encode(lines.join('\n') + '\n')
-  return [out, new IOResult()]
+  const out: ByteSource | null = lines.length > 0 ? ENC.encode(lines.join('\n') + '\n') : null
+  const stderr = errors.length > 0 ? ENC.encode(errors.join('')) : null
+  return [out, new IOResult({ stderr, exitCode: errors.length > 0 ? 1 : 0 })]
 }

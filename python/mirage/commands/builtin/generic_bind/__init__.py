@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.builtin.generic_bind.adapter import CommandIO, DuOps
+from mirage.commands.builtin.generic_bind.adapter import CommandIO
 from mirage.commands.builtin.generic_bind.factory import (
     make_generic_commands, with_read_cache, with_stat_cache)
 from mirage.commands.builtin.generic_bind.provision import (
@@ -21,6 +21,7 @@ from mirage.commands.builtin.generic_bind.provision import (
     make_sed_provision, make_transform_provision, metadata_provision,
     pure_provision, write_metadata_provision)
 from mirage.utils.glob_walk import make_resolve_glob
+from mirage.vfs.types import DuOps
 
 __all__ = [
     "CommandIO",

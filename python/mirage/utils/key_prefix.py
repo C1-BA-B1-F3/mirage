@@ -210,3 +210,21 @@ def mounted_path(root: PathSpec, mount_path: str) -> PathSpec:
     prefix = mount_prefix_of(root.virtual, root.vfs_path)
     virtual = prefix + mount_path if prefix else mount_path
     return PathSpec.from_str_path(virtual, mount_path.strip("/"))
+
+
+def mount_spec(mount_prefix: str, mount_path: str) -> PathSpec:
+    """A PathSpec for a mount-local key on the mount at ``mount_prefix``.
+
+    For a handler that names an output only by its key (split's ``xaa``):
+    the executing mount's prefix gives it the virtual path the user sees,
+    whether or not an operand is there to read a prefix from. Mirrors TS
+    ``mountSpec``.
+
+    Args:
+        mount_prefix (str): The mount prefix (e.g. ``/data``), "" for the
+            root mount.
+        mount_path (str): The mount-local key, with or without its
+            leading slash.
+    """
+    key = mount_path.strip("/")
+    return PathSpec.from_str_path(f"{mount_prefix.rstrip('/')}/{key}", key)

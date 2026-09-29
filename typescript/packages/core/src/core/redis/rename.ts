@@ -19,7 +19,7 @@ import { rstripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { norm, nowIso } from './utils.ts'
-import { checkDestParents } from './dest.ts'
+import { checkDestParents, lookupError } from './dest.ts'
 
 // Re-key every descendant of a renamed directory. A synthetic-directory
 // store keeps subdirectories as members of their own set, so moving only
@@ -92,5 +92,5 @@ export async function rename(accessor: RedisAccessor, src: PathSpec, dst: PathSp
     await invalidateSubtree(d)
     return
   }
-  throw enoent(src)
+  throw await lookupError(store, src, s)
 }

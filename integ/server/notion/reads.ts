@@ -124,7 +124,9 @@ export async function retrieveUser(ctx: Ctx<C>): Promise<Reply> {
 // (`?filter_properties=a&filter_properties=b`), which is how the API documents
 // it and how @notionhq/notion-mcp-server sends an array.
 function propertyRefs(ctx: Ctx<C>): string[] {
-  return ctx.query.getAll('filter_properties')
+  return [...ctx.query]
+    .filter(([key]) => key === 'filter_properties' || key === 'filter_properties[]')
+    .map(([, value]) => value)
 }
 
 async function queryRows(ctx: Ctx<C>, databaseId: string, body: Json): Promise<Reply> {

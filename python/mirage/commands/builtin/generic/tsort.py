@@ -1,7 +1,7 @@
 from collections import deque
 from collections.abc import Awaitable, Callable
 
-from mirage.commands.builtin.utils.stream import read_stdin_async
+from mirage.commands.builtin.utils.stream import read_stdin_async, stdin_bytes
 from mirage.commands.spec.types import CommandName
 from mirage.commands.spec.usage import extra_operand_error
 from mirage.io.types import ByteSource, IOResult
@@ -47,14 +47,16 @@ async def tsort(
         raise extra_operand_error(CommandName.TSORT, paths[1].raw_path
                                   or paths[1].virtual)
     if paths:
-        raw = await read_bytes(paths[0])
+        raw = await stdin_bytes(read_bytes, stdin)(paths[0])
     else:
         stdin_raw = await read_stdin_async(stdin)
         raw = stdin_raw if stdin_raw is not None else b""
     text = raw.decode(errors="replace")
     tokens = text.split()
     if len(tokens) % 2 != 0:
-        return b"tsort: odd number of tokens\n", IOResult(exit_code=1)
+        name = paths[0].raw_path or paths[0].virtual if paths else "-"
+        msg = f"tsort: {name}: input contains an odd number of tokens\n"
+        return None, IOResult(exit_code=1, stderr=msg.encode())
     pairs: list[tuple[str, str]] = []
     for idx in range(0, len(tokens), 2):
         pairs.append((tokens[idx], tokens[idx + 1]))

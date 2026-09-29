@@ -47,6 +47,10 @@ describe('io key prefix convention', () => {
   it.each([
     ['tee /data/t.txt > /dev/null', 'x\ny\n'],
     ['csplit -f /data/cs_ /data/seed.txt 2', null],
+    ['csplit /data/seed.txt 2', null],
+    ['split -l 1 /data/seed.txt', null],
+    ['cd /data && split -l 1', 'x\ny\n'],
+    ['cd /data && csplit', 'x\ny\n'],
     ['cp /data/seed.txt /data/copy.txt', null],
     ['grep x /data/seed.txt > /data/red.txt', null],
     ['cat /data/seed.txt >> /data/app.txt', null],
@@ -88,6 +92,18 @@ describe('io key prefix convention', () => {
     const part = await ws.shell('cat /data/cs_00')
     expect(part.exitCode).toBe(0)
     expect(new TextDecoder().decode(part.stdout)).toBe('x\n')
+    await ws.close()
+  })
+
+  it('csplit from stdin writes its part inside the mount', async () => {
+    const ws = new Workspace({ '/data': new RAMVFS() }, { mode: MountMode.WRITE })
+    const result = await ws.shell('cd /data && csplit', {
+      stdin: new TextEncoder().encode('x\ny\n'),
+    })
+    expect(result.exitCode, new TextDecoder().decode(result.stderr)).toBe(0)
+    const part = await ws.shell('cat /data/xx00')
+    expect(part.exitCode).toBe(0)
+    expect(new TextDecoder().decode(part.stdout)).toBe('x\ny\n')
     await ws.close()
   })
 })

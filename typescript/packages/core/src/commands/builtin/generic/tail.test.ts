@@ -271,7 +271,7 @@ describe('tail -f', () => {
       fs.readRange,
     )) as [AsyncIterable<Uint8Array>, IOResult]
     expect(DEC.decode(io.stderr as Uint8Array)).toBe(
-      'tail: /d/dir: Is a directory\ntail: /d/dir: cannot follow end of this type of file\n',
+      "tail: error reading '/d/dir': Is a directory\ntail: /d/dir: cannot follow end of this type of file\n",
     )
     const grower = (async () => {
       await sleep(60)
@@ -383,7 +383,7 @@ describe('tail -f', () => {
     expect(io.exitCode).toBe(1)
     expect(
       DEC.decode(io.stderr as Uint8Array).endsWith(
-        `tail: /d/dir: Is a directory\ntail: /d/dir: cannot follow end of this type of file${suffix}\ntail: no files remaining\n`,
+        `tail: error reading '/d/dir': Is a directory\ntail: /d/dir: cannot follow end of this type of file${suffix}\ntail: no files remaining\n`,
       ),
     ).toBe(true)
   })
@@ -587,7 +587,7 @@ describe('tail -f', () => {
       expect(io.exitCode).toBe(1)
       expect(DEC.decode(io.stderr as Uint8Array)).toBe(
         ('f' in flags ? 'tail: warning: --retry only effective for the initial open\n' : '') +
-          "tail: /d/f: No such file or directory\ntail: '/d/f' has appeared;  following new file\n",
+          "tail: cannot open '/d/f' for reading: No such file or directory\ntail: '/d/f' has appeared;  following new file\n",
       )
     },
   )
@@ -612,7 +612,7 @@ describe('tail -f', () => {
     expect(text).toBe('')
     expect(io.exitCode).toBe(1)
     expect(DEC.decode(io.stderr as Uint8Array)).toBe(
-      'tail: /d/f: No such file or directory\ntail: no files remaining\n',
+      "tail: cannot open '/d/f' for reading: No such file or directory\ntail: no files remaining\n",
     )
   })
 

@@ -54,17 +54,17 @@ def test_sets_are_disjoint():
 
 
 def test_strategy_for_stream_commands():
-    for name in ("cat", "nl", "sort", "cut", "rev"):
+    for name in ("cat", "nl", "cut", "awk"):
         assert strategy_for(name, {}) is Strategy.STREAM
 
 
 def test_strategy_for_fanout_commands():
-    for name in ("grep", "wc", "sha256sum", "rm", "tee"):
+    for name in ("grep", "sha256sum", "rm", "tee", "rev"):
         assert strategy_for(name, {}) is Strategy.FANOUT
 
 
 def test_strategy_for_relay_commands():
-    for name in ("cp", "mv", "diff", "cmp"):
+    for name in ("cp", "mv", "diff", "cmp", "sort", "wc"):
         assert strategy_for(name, {}) is Strategy.RELAY
 
 

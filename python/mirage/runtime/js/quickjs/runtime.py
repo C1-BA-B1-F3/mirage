@@ -23,6 +23,7 @@ from typing import Any, Callable, ClassVar
 from mirage.runtime.config import HomeConfig, RuntimeConfig
 from mirage.runtime.errors import EvalError
 from mirage.runtime.js.base import JsRuntime
+from mirage.runtime.js.quickjs.execution import cwd_preamble
 from mirage.runtime.mixin import EvaluatorMixin
 from mirage.runtime.types import (EvalResult, EvalValue, FilesystemOperation,
                                   RunArgs, RunResult, RuntimeContext,
@@ -148,7 +149,17 @@ class QuickJsRuntime(JsRuntime, EvaluatorMixin):
         # starts scriptArgs after it, and the -e branch still wins over
         # any filename (quickjs-ng v0.15.1 qjs.c).
         named = [args.prog] if args.prog else []
-        argv += ["-e", args.code, "--", *named, *args.args]
+        cwd = args.cwd or (context.cwd if context is not None else None)
+        source = args.code
+        if cwd is not None and cwd.virtual != "/":
+            # Evaluate scripts separately so their directive prologue still
+            # controls strict mode. Modules are already strict.
+            if args.flags.get("module") and source.startswith("#!"):
+                source = "//" + source[2:]
+            if not args.flags.get("module"):
+                source = f"std.evalScript({json.dumps(source)});"
+            source = cwd_preamble(cwd) + source
+        argv += ["-e", source, "--", *named, *args.args]
         dispatch = context.dispatch if context is not None else None
         resolver = context.resolver if context is not None else None
         core = (RuntimeVFS(dispatch, asyncio.get_running_loop(), resolver)

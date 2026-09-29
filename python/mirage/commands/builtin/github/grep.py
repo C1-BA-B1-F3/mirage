@@ -17,7 +17,7 @@ from mirage.commands.builtin.aggregators import prefix_aggregate
 from mirage.commands.builtin.generic.grep import grep as generic_grep
 from mirage.commands.builtin.generic.grep import labelled
 from mirage.commands.builtin.generic_bind.adapter import bound_op
-from mirage.commands.builtin.github.pushdown import narrow_scope
+from mirage.commands.builtin.github.pushdown import narrow_scope, scope_refusal
 from mirage.commands.builtin.grep_pattern import pattern_arg
 from mirage.commands.config import CommandOpts
 from mirage.commands.registry import command
@@ -108,15 +108,19 @@ async def grep(accessor: GitHubAccessor, paths: list[PathSpec],
             fixed_string=fl.as_bool("F"),
             recursive=recursive,
             whole_word=fl.as_bool("w"),
+            # A narrowing holds only files matching the searched literal:
+            # -v, -c and -L also print from the rest, and -f adds patterns
+            # code search never saw.
             exact_file_set=fl.as_bool("v") or fl.as_bool("c")
+            or fl.as_bool("files_without_match") or bool(fl.raw("file"))
             or fl.as_bool("text") or fl.as_str("binary_files") == "text",
         )
+        if used_search and not resolved:
+            return b"", IOResult(exit_code=1)
         if file_count > SCOPE_ERROR:
-            # Push-down needs -w (see narrow_scope); without it a scope
-            # this large has no complete narrowing strategy, so say so
-            # rather than scanning thousands of blobs.
-            msg = (f"grep: {file_count} files in scope, "
-                   "narrow the path, or use -w to enable code search\n")
+            # A scope this large with no trusted narrowing is refused rather
+            # than scanned blob by blob.
+            msg = scope_refusal("grep", file_count, fl.as_bool("w"))
             return b"", IOResult(exit_code=1, stderr=msg.encode())
 
     if used_search:

@@ -14,7 +14,8 @@
 
 import { invalidateAfterUnlink } from '../../cache/context.ts'
 import type { PathSpec } from '../../types.ts'
-import { enoent, enotempty } from '../../utils/errors.ts'
+import { enotempty } from '../../utils/errors.ts'
+import { lookupError } from './dest.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { norm } from './utils.ts'
@@ -33,7 +34,7 @@ import { norm } from './utils.ts'
 export async function rmdir(accessor: RedisAccessor, path: PathSpec): Promise<void> {
   const p = norm(path.mountPath)
   const store = accessor.store
-  if (!(await store.hasDir(p))) throw enoent(path)
+  if (!(await store.hasDir(p))) throw await lookupError(store, path, p)
   const prefix = `${rstripSlash(p)}/`
   const files = await store.listFiles()
   const dirs = await store.listDirs()

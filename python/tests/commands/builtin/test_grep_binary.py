@@ -1,17 +1,18 @@
 import asyncio
 import re
 from collections.abc import AsyncIterator
+from unittest.mock import patch
 
 import pytest
 
 from mirage.commands.builtin import grep_offsets
 from mirage.commands.builtin.generic.grep import parse_flags
 from mirage.commands.builtin.grep_binary import PROBE_BLOCK_BYTES, grep_input
-from mirage.commands.builtin.grep_scan import grep_stream
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.parser import parse_command, parse_to_kwargs
+from mirage.io.async_line_iterator import AsyncLineIterator
 from mirage.io.types import IOResult, materialize
 
 
@@ -661,8 +662,7 @@ async def test_only_matching_encodes_at_most_one_prefix_pass(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scanner", ["binary", "stream"])
-async def test_cancellation_during_single_line_matches(monkeypatch, scanner):
+async def test_cancellation_during_single_line_matches(monkeypatch):
     data = b"needle " * 100000 + b"\n"
     closed = False
     calls = 0
@@ -690,14 +690,287 @@ async def test_cancellation_during_single_line_matches(monkeypatch, scanner):
             "o": True,
             "byte_offset": True
         }, spec=SPECS["grep"]), False)
-    scanned = (grep_input(source(), re.compile("needle"), flags, "large.json",
-                          False, IOResult())
-               if scanner == "binary" else grep_stream(source(),
-                                                       re.compile("needle"),
-                                                       only_matching=True,
-                                                       byte_offsets=True))
+    scanned = grep_input(source(), re.compile("needle"), flags, "large.json",
+                         False, IOResult())
     with pytest.raises(asyncio.CancelledError):
         async for _ in scanned:
             pass
     assert closed
     assert calls < 100000
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,pattern,stdout,code", [
+    ({
+        "c": True
+    }, "needle", b"0\n", 1),
+    ({
+        "c": True,
+        "v": True
+    }, "needle", b"100003\n", 0),
+    ({
+        "c": True
+    }, "^$", b"100003\n", 0),
+    ({
+        "c": True,
+        "m": 17000
+    }, "^$", b"17000\n", 0),
+    ({
+        "c": True,
+        "B": 2,
+        "A": 2
+    }, "^$", b"100003\n", 0),
+    ({
+        "files_without_match": True
+    }, "needle", b"binary.so\n", 1),
+    ({}, "needle", b"", 1),
+])
+async def test_batch_nul_runs_preserves_selection(flags, pattern, stdout, code,
+                                                  monkeypatch):
+    data = b"\0" * 100003
+    reads = 0
+    readline = AsyncLineIterator.readline
+
+    async def counted_readline(self):
+        nonlocal reads
+        reads += 1
+        return await readline(self)
+
+    monkeypatch.setattr(AsyncLineIterator, "readline", counted_readline)
+
+    async def source():
+        yield data
+
+    f = parse_flags(FlagView(flags, spec=SPECS["grep"]), False)
+    io = IOResult()
+    out = await materialize(
+        grep_input(source(), re.compile(pattern), f, "binary.so", False, io))
+    assert (out, io.exit_code) == (stdout, code)
+    assert not io.stderr
+    assert reads < 20
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags", [{}, {"B": 2}, {"o": True}])
+async def test_offsets_and_context_after_empty_lines(flags):
+    data = b"\n" * 17003 + "é needle\n".encode()
+
+    async def source():
+        yield data
+
+    f = parse_flags(
+        FlagView({
+            **flags, "n": True,
+            "byte_offset": True
+        }, spec=SPECS["grep"]), False)
+    io = IOResult()
+    out = await materialize(
+        grep_input(source(), re.compile("needle"), f, "text", False, io))
+    expected = ("17004:17006:needle\n" if "o" in flags else
+                ("17002-17001-\n17003-17002-\n" if "B" in flags else "") +
+                "17004:17003:é needle\n")
+    assert out == expected.encode()
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("record",
+                         [b"abcdefg\n", b"abcdefg\0", b"\xffabcdef\n"])
+@pytest.mark.parametrize("pattern", [
+    "needle", "needle|qqzzyy", "nee.le", r"\bneedle\b",
+    "(?:needle)|(?:qqzzyy)", "(?:needle|other)+", "needle[0-9]+"
+])
+@pytest.mark.parametrize("flags", [re.ASCII, re.ASCII | re.I])
+async def test_reject_short_records_by_buffer(record, pattern, flags,
+                                              monkeypatch):
+    data = record * 40000
+    reads = 0
+    readline = AsyncLineIterator.readline
+
+    async def counted_readline(self):
+        nonlocal reads
+        reads += 1
+        return await readline(self)
+
+    monkeypatch.setattr(AsyncLineIterator, "readline", counted_readline)
+
+    async def source():
+        yield data
+
+    f = parse_flags(FlagView({"c": True}, spec=SPECS["grep"]), False)
+    io = IOResult()
+    out = await materialize(
+        grep_input(source(), re.compile(pattern, flags), f, "f", False, io))
+    assert (out, io.exit_code, io.stderr) == (b"0\n", 1, None)
+    assert reads < 50
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("size,pattern,folds", [
+    (7, "needle", 0),
+    (16384, "needle", re.I),
+    (PROBE_BLOCK_BYTES, "needle", 0),
+    (7, "needle|qqzzyy", re.I),
+    (16384, "NEEDLE", re.I),
+    (PROBE_BLOCK_BYTES, "nee.le", 0),
+    (7, r"\bneedle\b", re.I),
+    (16384, r"(?<!\w)needle(?!\w)", 0),
+])
+@pytest.mark.parametrize("flags", [
+    {},
+    {
+        "c": True
+    },
+    {
+        "q": True
+    },
+    {
+        "args_l": True
+    },
+    {
+        "files_without_match": True
+    },
+    {
+        "m": 1
+    },
+    {
+        "c": True,
+        "m": 1
+    },
+    {
+        "n": True,
+        "byte_offset": True
+    },
+    {
+        "n": True,
+        "byte_offset": True,
+        "o": True
+    },
+    {
+        "c": True,
+        "v": True
+    },
+    {
+        "B": 2,
+        "A": 1,
+        "n": True,
+        "byte_offset": True
+    },
+])
+async def test_literal_prefilter_preserves_unfiltered_results(
+        size, pattern, folds, flags):
+    data = (b"abcdefg\n" * 2100 + b"\xff\0\n" + "é needle 😀\n".encode() +
+            b"abcdefg\n" * 2100 + b"needle needle")
+    for mode in ["binary", "text", "without-match"]:
+
+        async def source():
+            for at in range(0, len(data), size):
+                yield data[at:at + size]
+
+        f = parse_flags(
+            FlagView({
+                "binary_files": mode,
+                **flags
+            }, spec=SPECS["grep"]), False)
+        fast = IOResult()
+        slow = IOResult()
+        pat = re.compile(pattern, re.ASCII | folds)
+        with patch.object(AsyncLineIterator,
+                          "skip_nonmatching_lines",
+                          return_value=(0, 0)):
+            expected = await materialize(
+                grep_input(source(), pat, f, "f", True, slow))
+        actual = await materialize(
+            grep_input(source(), pat, f, "f", True, fast))
+        assert (actual, fast.stderr, fast.exit_code) == (expected, slow.stderr,
+                                                         slow.exit_code)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pattern,flags", [
+    (r"a\.b", 0),
+    (r"a\+b", 0),
+    (r"a\\b", 0),
+    ("a b", 0),
+    ("a.b", 0),
+    ("a.*b", 0),
+    ("(?:a|other)b?", 0),
+    ("a{0,2}b", 0),
+    ("(?:a|)b", 0),
+    ("(?:a|b)?", 0),
+    ("a(bc)?", 0),
+    ("s", re.IGNORECASE),
+    ("i", re.IGNORECASE),
+    (r"\bother\b", re.IGNORECASE),
+    ("(?=other)", 0),
+    (r"(a)\1", 0),
+    (r"\x61", 0),
+    (r"a[\]x]b", 0),
+    ("a[^x]+b", 0),
+    ("^a", 0),
+    ("b$", 0),
+    ("[ab]", 0),
+    ("a|b", 0),
+    (r"\w", 0),
+    ("(?:)", 0),
+    ("k", re.IGNORECASE),
+    ("é", 0),
+    ("a b", re.VERBOSE),
+    ("needle|other", re.I),
+    ("nee.le", 0),
+    (r"\bneedle\b", 0),
+    ("needleX?", 0),
+    ("s|k|i", re.ASCII | re.I),
+    ("needle|other", re.ASCII | re.I),
+    (r"(?<!\w)needle(?!\w)", re.ASCII | re.I),
+    ("(?P<name>need)le", 0),
+])
+async def test_prefilter_preserves_regex_and_unicode(pattern, flags):
+    data = ("other\n" * 3000 +
+            "a.b\na+b\na\\b\na b\nab\né\nK\nk\nſ\nS\nİ\nı\nI\n"
+            "NEEDLE\nneedleX\nneedle").encode()
+
+    async def source():
+        yield data
+
+    f = parse_flags(
+        FlagView({
+            "n": True,
+            "byte_offset": True
+        }, spec=SPECS["grep"]), False)
+    fast = IOResult()
+    slow = IOResult()
+    with patch.object(AsyncLineIterator,
+                      "skip_nonmatching_lines",
+                      return_value=(0, 0)):
+        expected = await materialize(
+            grep_input(source(), re.compile(pattern, flags), f, "f", False,
+                       slow))
+    actual = await materialize(
+        grep_input(source(), re.compile(pattern, flags), f, "f", False, fast))
+    assert (actual, fast.stderr, fast.exit_code) == (expected, slow.stderr,
+                                                     slow.exit_code)
+
+
+@pytest.mark.asyncio
+async def test_cancellation_while_skipping_nonmatching_buffers():
+    data = b"abcdefg\n" * 8192
+    task = asyncio.current_task()
+    assert task is not None
+    closed = False
+
+    async def source():
+        nonlocal closed
+        try:
+            asyncio.get_running_loop().call_later(0, task.cancel)
+            while True:
+                yield data
+        finally:
+            closed = True
+
+    f = parse_flags(FlagView({"c": True}, spec=SPECS["grep"]), False)
+    with pytest.raises(asyncio.CancelledError):
+        await materialize(
+            grep_input(source(), re.compile("needle"), f, "f", False,
+                       IOResult()))
+    assert closed

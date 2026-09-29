@@ -12,8 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { Dirent } from 'node:fs'
+import { lstat, realpath, readdir } from 'node:fs/promises'
 import path from 'node:path'
+import type { PathSpec } from '@struktoai/mirage-core/types'
+import { enoent } from '@struktoai/mirage-core/utils/errors'
 import { lstripSlash } from '@struktoai/mirage-core/utils/slash'
+import { diskError } from './errors.ts'
 
 export { gnuBasename as basename, norm, parent } from '@struktoai/mirage-core/utils/path'
 
@@ -21,8 +26,82 @@ export function resolveSafe(root: string, virtual: string): string {
   const relative = lstripSlash(virtual)
   const resolved = path.resolve(root, relative)
   const rootResolved = path.resolve(root)
-  if (resolved !== rootResolved && !resolved.startsWith(rootResolved + path.sep)) {
+  if (
+    resolved !== rootResolved &&
+    !resolved.startsWith(rootResolved.endsWith(path.sep) ? rootResolved : rootResolved + path.sep)
+  ) {
     throw new Error(`path escapes root: ${virtual}`)
   }
   return resolved
+}
+
+// Null when realpath fails. That happens alike for a missing component, a
+// dangling link and a loop, so resolveInside's walk, which tells them apart,
+// is what answers.
+async function realOrNull(p: string): Promise<string | null> {
+  try {
+    return await realpath(p)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The host path for a mount path, refused as absent when a component below
+ * the root is a symlink. A VFS never stores a symlink, so a host link is not
+ * an entry of the mount: following it would let a path the root admits
+ * spelled-wise read or write wherever the link points on the host, and
+ * `readdir` leaves it out so every walk agrees. Components past the first
+ * absent one are left to the op, which answers its own ENOENT or creates.
+ * Mirrors Python's resolve_inside.
+ *
+ * It answers for the tree as it stands when called. The mount's own writers
+ * cannot make a host link (`ln -s` lands in the namespace), but another host
+ * process that swaps a directory for a link between this check and the op
+ * is beyond it: closing that race needs every op to walk by file descriptor
+ * with O_NOFOLLOW (openat2's RESOLVE_BENEATH), which node:fs cannot express.
+ *
+ * @param root - the mount root on the host.
+ * @param spec - the operand, the path any refusal names.
+ * @param virtual - the mount-relative path, when not `spec.mountPath`.
+ */
+export async function resolveInside(
+  root: string,
+  spec: PathSpec,
+  virtual: string = spec.mountPath,
+): Promise<string> {
+  const full = resolveSafe(root, virtual)
+  const base = path.resolve(root)
+  if (full === base) return full
+  // A realpath or two instead of an lstat per component: a path that is its
+  // own real location crosses no link at all, and one whose real location is
+  // the root's plus the same relative path crosses none below the root.
+  // Anything else (a link, a missing component, a case the filesystem folds)
+  // is decided by the walk below, which reports its own errors.
+  const real = await realOrNull(full)
+  if (real === full) return full
+  const realBase = await realOrNull(base)
+  if (realBase !== null && real === path.join(realBase, path.relative(base, full))) return full
+  let at = base
+  for (const part of path.relative(at, full).split(path.sep)) {
+    if (part === '') break
+    at = path.join(at, part)
+    let info
+    try {
+      info = await lstat(at)
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return full
+      throw diskError(err, spec)
+    }
+    if (info.isSymbolicLink()) throw enoent(spec)
+  }
+  return full
+}
+
+/** List visible entries without following host symlinks. All disk walks use this policy. */
+export async function readEntries(directory: string): Promise<Dirent[]> {
+  return (await readdir(directory, { withFileTypes: true })).filter(
+    (entry) => !entry.isSymbolicLink(),
+  )
 }

@@ -155,7 +155,9 @@ interface RecordedRequest {
   body: string | null
 }
 
-function makeHttpTransport(responses: { status: number; payload: unknown }[]): {
+function makeHttpTransport(
+  responses: { status: number; payload: unknown; headers?: Record<string, string> }[],
+): {
   transport: HttpNotionTransport
   requests: RecordedRequest[]
 } {
@@ -171,7 +173,7 @@ function makeHttpTransport(responses: { status: number; payload: unknown }[]): {
     return Promise.resolve(
       new Response(JSON.stringify(next.payload), {
         status: next.status,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...next.headers },
       }),
     )
   }
@@ -246,4 +248,31 @@ describe('HttpNotionTransport', () => {
     const { transport } = makeHttpTransport([])
     await expect(transport.callTool('API-unknown', {})).rejects.toThrow(/unsupported Notion tool/)
   })
+})
+
+it('honors Retry-After and bounds repeated rate limits', async () => {
+  vi.useFakeTimers()
+  try {
+    const { transport, requests } = makeHttpTransport([
+      { status: 429, headers: { 'Retry-After': '2' }, payload: { message: 'slow' } },
+      { status: 200, payload: { id: 'p' } },
+    ])
+    const response = transport.callTool('API-retrieve-a-page', { page_id: 'p' })
+    await vi.advanceTimersByTimeAsync(1999)
+    expect(requests).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(await response).toEqual({ id: 'p' })
+    expect(requests).toHaveLength(2)
+    const limited = makeHttpTransport(
+      Array.from({ length: 4 }, () => ({ status: 429, payload: { message: 'slow' } })),
+    )
+    const refused = expect(
+      limited.transport.callTool('API-retrieve-a-page', { page_id: 'p' }),
+    ).rejects.toThrow('slow')
+    await vi.runAllTimersAsync()
+    await refused
+    expect(limited.requests).toHaveLength(4)
+  } finally {
+    vi.useRealTimers()
+  }
 })

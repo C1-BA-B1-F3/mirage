@@ -2169,6 +2169,441 @@
         "stdout": " f0 90 82 80 ff\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "printf_unicode_surrogate_half_is_utf8_shaped",
+      "seq": 991170,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf '\\uD800' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " ed a0 80\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_unicode_escape_past_unicode_is_utf8_shaped",
+      "seq": 991171,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf '\\U00110000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " f4 90 80 80\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_unicode_escape_past_0x7fffffff_writes_nothing",
+      "seq": 991172,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf 'x\\UFFFFFFFFy' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 78 79\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_unicode_low_surrogate_is_not_a_raw_byte",
+      "seq": 991173,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf '\\uDC80\\xff' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " ed b2 80 ff\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_b_conversion_writes_unicode_escapes_the_same_way",
+      "seq": 991174,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf '%b|%b' '\\uD800' '\\U00110000' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " ed a0 80 7c f4 90 80 80\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "printf_program_warns_about_excess_arguments",
+      "seq": 1310101,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "env printf 'x\\n' a b",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": "printf: warning: ignoring excess arguments, starting with 'a'\n"
+      }
+    },
+    {
+      "id": "printf_program_quotes_the_excess_argument",
+      "seq": 1310102,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "env printf 'x\\n' \"it's\" 'a b'",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": "printf: warning: ignoring excess arguments, starting with 'it\\'s'\n"
+      }
+    },
+    {
+      "id": "printf_under_xargs_is_the_program",
+      "seq": 1310103,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "echo a b | xargs printf '%%s\\n'; ( g() { printf -v r ok; echo \"[$r]\"; }; echo a | xargs g )",
+      "expect": {
+        "exit": 0,
+        "stdout": "%s\n[ok]\n",
+        "stderr": "printf: warning: ignoring excess arguments, starting with 'a'\n"
+      },
+      "note": "GNU xargs execs printf, so it is coreutils' and warns. GNU xargs cannot run a shell function (`xargs: g: No such file or directory`, 127); mirage runs one, and its body is shell code, so `printf -v` there is the builtin and assigns. In a subshell so the battery's shared session keeps no `g`."
+    },
+    {
+      "id": "printf_under_timeout_is_the_program",
+      "seq": 1310104,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "timeout 5 printf 'x\\n' a",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": "printf: warning: ignoring excess arguments, starting with 'a'\n"
+      }
+    },
+    {
+      "id": "printf_under_find_exec_is_the_program",
+      "seq": 1310105,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "find /data -maxdepth 0 -exec printf 'x\\n' {} \\;",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": "printf: warning: ignoring excess arguments, starting with '/data'\n"
+      }
+    },
+    {
+      "id": "printf_program_takes_a_leading_double_dash",
+      "seq": 1310106,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "env printf -- 'x\\n' a",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": "printf: warning: ignoring excess arguments, starting with 'a'\n"
+      }
+    },
+    {
+      "id": "printf_program_needs_a_format",
+      "seq": 1310107,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "env printf; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=1\n",
+        "stderr": "printf: missing operand\nTry 'printf --help' for more information.\n"
+      }
+    },
+    {
+      "id": "printf_program_has_no_v_option",
+      "seq": 1310108,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "env printf -v v 'x\\n'",
+      "expect": {
+        "exit": 0,
+        "stdout": "-v",
+        "stderr": "printf: warning: ignoring excess arguments, starting with 'v'\n"
+      }
+    },
+    {
+      "id": "printf_builtin_drops_excess_arguments_silently",
+      "seq": 1310109,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf 'x\\n' a b; command printf 'y\\n' c",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\ny\n",
+        "stderr": ""
+      }
     }
   ]
 }

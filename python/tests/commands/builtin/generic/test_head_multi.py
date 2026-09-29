@@ -14,7 +14,8 @@
 
 import pytest
 
-from mirage.commands.builtin.generic.head import head_multi
+from mirage.commands.builtin.generic.head import head_generic, head_multi
+from mirage.commands.config import CommandOpts
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
 
@@ -74,3 +75,43 @@ async def test_head_multi_stream_reader():
     out = await _collect(
         head_multi(_paths("/a", "/b"), read=read, n=5, show_headers=True))
     assert out == b"==> /a <==\na1\na2\n\n==> /b <==\nb1\n"
+
+
+def _stdin(raw: str) -> PathSpec:
+    virtual = "/dev/stdin" if raw == "/dev/stdin" else "/-"
+    return PathSpec(vfs_path=virtual.strip("/"),
+                    virtual=virtual,
+                    directory="/",
+                    resolved=True,
+                    raw_path=raw)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw, header", [
+    ("-", b"==> standard input <==\n"),
+    ("/dev/stdin", b"==> /dev/stdin <==\n"),
+])
+async def test_head_multi_names_stdin_the_way_gnu_does(raw, header):
+    # GNU head 9.7 heads `-` "standard input", no parentheses, and
+    # /dev/stdin as the path it is.
+
+    async def read(p):
+        return b"b\n"
+
+    out = await _collect(
+        head_multi([_stdin(raw)], read=read, n=1, show_headers=True))
+    assert out == header + b"b\n"
+
+
+@pytest.mark.asyncio
+async def test_head_v_heads_a_stdin_nobody_named():
+    # `printf 'b\n' | head -v` prints `==> standard input <==` first.
+
+    async def unused(p):
+        raise AssertionError(f"no operand to reach: {p}")
+
+    out, io = await head_generic([], [],
+                                 CommandOpts(flags={"verbose": True},
+                                             stdin=b"b\n"), unused, unused)
+    assert (await
+            _collect(out), io.exit_code) == (b"==> standard input <==\nb\n", 0)

@@ -12,7 +12,7 @@
   },
   "exit": 0,
   "lines": [
-    "Mounts: /.bash_history/, /dev/, /ram/, /",
+    "Mounts: /.bash_history/, /usr/bin/, /dev/, /ram/, /",
     "",
     "--- 1. RAM read+write via Python open() ---",
     "read: world",

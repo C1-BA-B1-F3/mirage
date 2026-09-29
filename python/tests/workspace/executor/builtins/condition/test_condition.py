@@ -19,6 +19,7 @@ import pytest
 from mirage import RAMVFS, MountMode, Workspace
 from mirage.io import IOResult
 from mirage.types import ContentType, FileStat, FileType, PathSpec
+from mirage.utils.errors import efbig
 from mirage.workspace.executor.builtins.condition import CondContext, eval_flat
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.session import SessionState
@@ -68,10 +69,10 @@ class _UnknownSizeDispatch:
     size-unknown for a regular file.
 
     Args:
-        content (bytes): what read returns.
+        content (bytes | OSError): what read returns, or raises.
     """
 
-    def __init__(self, content: bytes) -> None:
+    def __init__(self, content: bytes | OSError) -> None:
         self.content = content
 
     async def __call__(self, op: str, scope: PathSpec,
@@ -83,6 +84,8 @@ class _UnknownSizeDispatch:
                             content=ContentType.TEXT)
             return stat, IOResult()
         if op == "read":
+            if isinstance(self.content, OSError):
+                raise self.content
             return self.content, IOResult()
         raise AssertionError(op)
 
@@ -215,6 +218,12 @@ async def test_s_unknown_size_reads_content():
     assert await eval_flat(empty, ["-s", "/data/zte.txt"]) is False
     full = _stub_ctx(_UnknownSizeDispatch(b"x"))
     assert await eval_flat(full, ["-s", "/data/zt.txt"]) is True
+
+
+@pytest.mark.asyncio
+async def test_s_a_file_too_large_to_render_is_nonempty():
+    ctx = _stub_ctx(_UnknownSizeDispatch(efbig("/data/zbig.jsonl")))
+    assert await eval_flat(ctx, ["-s", "/data/zbig.jsonl"]) is True
 
 
 @pytest.mark.asyncio

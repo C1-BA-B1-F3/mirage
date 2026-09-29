@@ -193,6 +193,27 @@ describe('Workspace.copy', () => {
     await ws.close()
     await cp.close()
   })
+
+  it('keeps profiles and the default profile', async () => {
+    const ws = new Workspace(
+      { '/data': new RAMVFS() },
+      {
+        mode: MountMode.WRITE,
+        shellParser: parser,
+        profiles: { ro: { commands: { deny: [{ reason: 'read-only', commands: ['rm'] }] } } },
+        profile: 'ro',
+      },
+    )
+    const cp = await ws.copy()
+    try {
+      expect((await cp.shell('touch /data/a; rm /data/a')).exitCode).toBe(126)
+      cp.createSession('named', { profile: 'ro' })
+      expect((await cp.shell('rm /data/a', { sessionId: 'named' })).exitCode).toBe(126)
+    } finally {
+      await cp.close()
+      await ws.close()
+    }
+  })
 })
 
 // Port of tests/workspace/test_snapshot.py::test_ram_round_trip_filenames_with_spaces.
@@ -276,7 +297,7 @@ describe('Workspace.fromState — sessions and finished jobs', () => {
     const state = await toStateDict(ws)
     const workerSnap = state.sessions.find((s) => s.session_id === 'worker')
     expect(workerSnap?.cwd).toBe('/data')
-    expect(workerSnap?.env).toEqual({ ROLE: 'bg', PWD: '/data' })
+    expect(workerSnap?.env).toEqual({ ROLE: 'bg', PWD: '/data', PATH: '/usr/bin', IFS: ' \t\n' })
     expect(state.jobs.length).toBe(1)
     expect(state.jobs[0]?.command).toBe('sleep 0')
     expect(state.jobs[0]?.status).toBe('completed')
@@ -291,7 +312,7 @@ describe('Workspace.fromState — sessions and finished jobs', () => {
     expect(def.env.FOO).toBe('bar')
     const w2 = ws2.sessionManager.get('worker')
     expect(w2.cwd).toBe('/data')
-    expect(w2.env).toEqual({ ROLE: 'bg', PWD: '/data' })
+    expect(w2.env).toEqual({ ROLE: 'bg', PWD: '/data', PATH: '/usr/bin', IFS: ' \t\n' })
     const jobs2 = ws2.jobTable.listJobs('worker')
     expect(jobs2.length).toBe(1)
     expect(jobs2[0]?.command).toBe('sleep 0')
@@ -565,7 +586,21 @@ describe('savedVfsBuild', () => {
     expect(restoresAsFreshRAM(saved('ram', null))).toBe(true)
     expect(restoresAsFreshRAM(saved('disk', null))).toBe(true)
     expect(new RAMVFS().cachesReads).toBe(false)
-    for (const revalidatable of ['s3', 'gridfs']) {
+    for (const revalidatable of [
+      's3',
+      'gridfs',
+      'hf_models',
+      'hf_datasets',
+      'hf_spaces',
+      'onedrive',
+      'sharepoint',
+      'hf_buckets',
+      'github',
+      'gdrive',
+      'gdocs',
+      'gsheets',
+      'gslides',
+    ]) {
       expect(restoresAsFreshRAM(saved(revalidatable, null))).toBe(false)
     }
   })

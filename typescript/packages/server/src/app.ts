@@ -35,6 +35,8 @@ import {
   stateRootPath,
   versionRootPath,
 } from './paths.ts'
+import { resolveSSHConfig, type SSHConfig } from './ssh/config.ts'
+import type { SSHDoor } from './ssh/types.ts'
 import { LocalBackend } from './version/backend.ts'
 
 export interface BuildAppOptions {
@@ -46,6 +48,13 @@ export interface BuildAppOptions {
   snapshotRoot?: string
   stateRoot?: string
   pidFile?: string
+  /**
+   * The SSH door, opened when the app is ready and closed with it.
+   * Undefined resolves it from the `MIRAGE_SSH_*` env vars and the
+   * `ssh_*` config keys; it stays shut unless a port is set, and null
+   * keeps it shut regardless.
+   */
+  sshConfig?: SSHConfig | null
 }
 
 export type MirageApp = ReturnType<typeof buildApp>
@@ -100,8 +109,24 @@ export function buildApp(options: BuildAppOptions = {}) {
   registerAsksRoutes(app, { registry })
   registerExecuteRoutes(app, { registry, jobs })
   registerJobsRoutes(app, { jobs })
+  const ssh: SSHDoor = {
+    config: options.sshConfig !== undefined ? options.sshConfig : resolveSSHConfig(),
+    listener: null,
+  }
+  const sshConfig = ssh.config
+  if (sshConfig !== null) {
+    // A configured door that cannot open (the port is taken, ssh2 is
+    // missing) fails the start rather than leaving the daemon up without
+    // the door its config asked for. Loaded on demand so a daemon with no
+    // SSH never loads ssh2 or the node barrel the SFTP side needs.
+    app.addHook('onReady', async () => {
+      const { startSSHServer } = await import('./ssh/server.ts')
+      ssh.listener = await startSSHServer(registry, sshConfig)
+    })
+  }
   app.addHook('onClose', async () => {
+    if (ssh.listener !== null) await ssh.listener.close()
     await registry.closeAll()
   })
-  return Object.assign(app, { registry, jobs, versionBackend, pidFile })
+  return Object.assign(app, { registry, jobs, versionBackend, pidFile, ssh })
 }

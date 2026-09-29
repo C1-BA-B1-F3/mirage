@@ -17,11 +17,16 @@ from mirage.server.registry import WorkspaceEntry
 from mirage.server.schemas import (MountSummary, SessionSummary,
                                    WorkspaceBrief, WorkspaceDetail,
                                    WorkspaceInternals)
+from mirage.shell.constants import BIN_PREFIX
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.history import HISTORY_PREFIX
 from mirage.workspace.snapshot.utils import norm_mount_prefix
 
-_AUTO_PREFIXES = {"/dev/", norm_mount_prefix(HISTORY_PREFIX)}
+_AUTO_PREFIXES = {
+    "/dev/",
+    norm_mount_prefix(HISTORY_PREFIX),
+    norm_mount_prefix(BIN_PREFIX)
+}
 _DESCRIPTION_MAX = 120
 
 

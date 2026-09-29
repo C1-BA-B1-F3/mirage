@@ -20,8 +20,10 @@ import { eisdir, enoent } from '@struktoai/mirage-core/utils/errors'
 import { mountPrefixOf } from '@struktoai/mirage-core/utils/key_prefix'
 import type { ByteWindow } from '@struktoai/mirage-core/utils/ranges'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
-import { hubBytes, resolveUrl } from './client.ts'
-import { isDir, keyOf, lookup } from './lookup.ts'
+import { etagValue, hubBytesTagged, resolveUrl } from './client.ts'
+import { REFUSED_STATUSES } from './constants.ts'
+import { isDir, keyOf, lookupRetrying, refusalsDenied } from './lookup.ts'
+import { stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 export interface HfHubReadOptions {
   offset?: number
@@ -42,12 +44,33 @@ export async function resolveEntry(
 ): Promise<IndexEntry> {
   const virtual = pathSpec.virtual
   const prefix = mountPrefixOf(pathSpec.virtual, pathSpec.vfsPath)
-  const rel = pathSpec.mountPath.replace(/^\/+|\/+$/g, '')
+  const rel = stripSlash(pathSpec.mountPath)
   if (rel === '') throw eisdir(virtual)
-  const found = await lookup(accessor, index, prefix, keyOf(prefix, rel))
+  const found = await refusalsDenied(pathSpec, () =>
+    lookupRetrying(accessor, index, prefix, keyOf(prefix, rel)),
+  )
   if (isDir(found)) throw eisdir(virtual)
   if (found.entry === null) throw enoent(virtual)
   return found.entry
+}
+
+/**
+ * The row's oid, if the response's ETag shows the bytes are that row's.
+ *
+ * The listing can be older than the download: the tree lives until a verdict
+ * clears it, while resolve always serves the revision's current bytes.
+ * Stamping the listing's oid on newer bytes would let a later revert to that
+ * oid pass them off as fresh, so the oid is stamped only when the ETag names
+ * one of the row's own ids (the oid for a plain file, the xet hash for a Xet
+ * one), and otherwise nothing is.
+ */
+export function rowToken(entry: IndexEntry, etag: string): string | null {
+  const ids = new Set<string>()
+  for (const id of [entry.id, entry.extra.lfs_oid, entry.extra.xet_hash]) {
+    if (typeof id === 'string' && id !== '') ids.add(id)
+  }
+  if (!ids.has(etagValue(etag))) return null
+  return entry.id || null
 }
 
 export async function read(
@@ -56,7 +79,7 @@ export async function read(
   index?: IndexCacheStore,
   options: HfHubReadOptions = {},
 ): Promise<Uint8Array> {
-  await resolveEntry(accessor, path, index)
+  const entry = await resolveEntry(accessor, path, index)
   const raw = path.mountPath
   const url = resolveUrl(
     accessor.endpoint,
@@ -72,7 +95,13 @@ export async function read(
     ? { offset: options.offset ?? 0, size: options.size ?? null }
     : undefined
   const timer = startOp()
-  const data = await hubBytes(accessor.token, url, window)
-  record('read', raw, accessor.vfsName, data.length, timer)
+  const [data, etag] = await refusalsDenied(
+    path,
+    () => hubBytesTagged(accessor.token, url, window, accessor.timeoutMs),
+    REFUSED_STATUSES,
+  )
+  record('read', path.virtual, accessor.vfsName, data.length, timer, {
+    fingerprint: rowToken(entry, etag),
+  })
   return data
 }

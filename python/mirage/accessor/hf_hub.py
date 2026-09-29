@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr, field_validator
 
 from mirage.accessor.base import SessionAccessor
 from mirage.cache.index import IndexEntry
+from mirage.core.hf_hub.client import stall_timeout
 from mirage.core.hf_hub.constants import DEFAULT_REVISION
 from mirage.core.hf_hub.tree_entry import TreeEntry
 from mirage.utils import key_prefix as kp
@@ -32,7 +33,7 @@ class HfRepoConfig(BaseModel):
     value the VFS disagrees with.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     repo_id: str
     token: SecretStr | None = None
@@ -114,7 +115,7 @@ class HfHubAccessor(SessionAccessor):
                 the mount's tree and commit code instead of growing a
                 second Hub client.
         """
-        super().__init__()
+        super().__init__(timeout=stall_timeout(config.timeout))
         self.config = config
         self._repo_type = repo_type or self.REPO_TYPE
         # Guards the lazy hydration so concurrent first reads make one
@@ -136,6 +137,7 @@ class HfHubAccessor(SessionAccessor):
         # `tree` clears it.
         self.rows_cache: tuple[str, dict[str, IndexEntry],
                                dict[str, list[str]]] | None = None
+        self.refills: int = 0
 
     @property
     def repo_type(self) -> str:

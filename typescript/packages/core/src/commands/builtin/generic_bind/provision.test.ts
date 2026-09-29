@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { existsSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { CommandSpec } from '../../spec/types.ts'
 import { RegisteredCommand } from '../../config.ts'
@@ -140,6 +142,34 @@ describe('defaultProvision families', () => {
     expect(defaultProvision('rm', stat)).toBe(writeMetadataProvision)
     expect(defaultProvision('mv', stat)).toBeNull()
     expect(defaultProvision('tee', stat)).toBeNull()
+  })
+})
+
+// A backend that shadows a generic builder with its own command drops the
+// builder's provision unless it wraps the command in withDefaultProvisions,
+// and a command with no provision plans as UNKNOWN. Mirrors python's
+// test_every_backend_command_the_catalog_prices_carries_a_provision; node's
+// backends are held by the twin in node/src/commands/builtin.
+describe('backend commands keep their catalog provision', () => {
+  it('every command the catalog prices carries a provision', async () => {
+    const builtinDir = join(import.meta.dirname, '..')
+    const offenders: string[] = []
+    let lists = 0
+    for (const entry of readdirSync(builtinDir).sort()) {
+      const index = join(builtinDir, entry, 'index.ts')
+      if (!existsSync(index)) continue
+      const mod = (await import(index)) as Record<string, unknown>
+      for (const [name, value] of Object.entries(mod)) {
+        if (!name.endsWith('_COMMANDS') || !Array.isArray(value)) continue
+        lists += 1
+        for (const c of value as RegisteredCommand[]) {
+          if (c.filetype !== null || c.provisionFn !== null) continue
+          if (defaultProvision(c.name, stat) !== null) offenders.push(`${entry}: ${c.name}`)
+        }
+      }
+    }
+    expect(lists).toBeGreaterThan(20)
+    expect(offenders).toEqual([])
   })
 })
 

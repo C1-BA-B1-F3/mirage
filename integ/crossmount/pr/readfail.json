@@ -25,7 +25,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sort: /data2/xrf_nope.txt: No such file or directory\n"
+        "stderr": "sort: cannot read: /data2/xrf_nope.txt: No such file or directory\n"
       }
     },
     {
@@ -39,7 +39,7 @@
       "expect": {
         "exit": 2,
         "stdout": "b\na\n",
-        "stderr": "sed: /data2/xrf_nope.txt: No such file or directory\n"
+        "stderr": "sed: can't read /data2/xrf_nope.txt: No such file or directory\n"
       }
     },
     {
@@ -95,7 +95,7 @@
       "expect": {
         "exit": 4,
         "stdout": "b\na\n",
-        "stderr": "sed: /data2/xrf_dir: Is a directory\n"
+        "stderr": "sed: read error on /data2/xrf_dir: Is a directory\n"
       }
     },
     {
@@ -109,7 +109,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sort: /data2/xrf_dir: Is a directory\n"
+        "stderr": "sort: read failed: /data2/xrf_dir: Is a directory\n"
       }
     },
     {
@@ -151,7 +151,7 @@
       "expect": {
         "exit": 4,
         "stdout": "b\na\n",
-        "stderr": "sed: '/data2/No such file or directory': Is a directory\n"
+        "stderr": "sed: read error on /data2/No such file or directory: Is a directory\n"
       }
     }
   ]

@@ -19,21 +19,25 @@ import type { JsonObj } from '../wire/json.ts'
 import { googleError, isReply } from '../wire/reply.ts'
 import { holds } from './conditional.ts'
 import { BASIC_FILTER, CELL_DATA, CELL_FORMAT, canonical, ordered } from './fields.ts'
-import { cellData, shownAt, tabGrid } from './grid.ts'
+import { FormulaEvaluator } from './formula.ts'
+import { evaluatedCell, tabGrid } from './grid.ts'
 import { boundsOf, gridOf, invalid, rangeOn, rectOf, storedRange } from './request.ts'
 import type { At, Rect } from './request.ts'
 
 // The rows a basic filter hides: the data rows of its range (its first row
 // is the header) where a column's criteria hide what the cell shows or a
 // condition fails. Worked out from the data whenever asked, not stored.
-export function filterHidden(tab: SheetTab): Set<number> {
+export function filterHidden(tab: SheetTab, evaluator: FormulaEvaluator): Set<number> {
   const hidden = new Set<number>()
   if (tab.basicFilter === null) return hidden
   const b = boundsOf(asObj(tab.basicFilter.range), tabGrid(tab))
   const specs = asObjArr(tab.basicFilter.filterSpecs)
   for (let row = b.top + 1; row < b.bottom; row += 1) {
     const at = (spec: JsonObj): boolean =>
-      hides(asObj(spec.filterCriteria), tab, row, asNum(spec.columnIndex) ?? 0)
+      hides(
+        asObj(spec.filterCriteria),
+        evaluatedCell(tab, row, asNum(spec.columnIndex) ?? 0, evaluator),
+      )
     if (specs.some(at)) hidden.add(row)
   }
   return hidden
@@ -41,10 +45,10 @@ export function filterHidden(tab: SheetTab): Set<number> {
 
 // A hidden value hides a cell showing it in any case, as it does on the
 // live API.
-function hides(criteria: JsonObj, tab: SheetTab, row: number, col: number): boolean {
-  const shown = shownAt(tab, row, col).toLowerCase()
+function hides(criteria: JsonObj, value: JsonObj): boolean {
+  const shown = String(value.formattedValue ?? '').toLowerCase()
   if ((asStrArr(criteria.hiddenValues) ?? []).some((v) => v.toLowerCase() === shown)) return true
-  return isObj(criteria.condition) && !holds(criteria.condition, tab, row, col)
+  return isObj(criteria.condition) && !holds(criteria.condition, value)
 }
 
 function userHidden(tab: SheetTab): number[] {
@@ -82,7 +86,12 @@ export function setBasicFilter(sheet: Spreadsheet, body: JsonObj, at: At): JsonO
   }
   filter.range = storedRange(asObj(filter.range))
   rect.tab.basicFilter = ordered(filter, BASIC_FILTER)
-  sortRows({ ...rect, top: rect.top + 1 }, sortSpecs, new Set(userHidden(rect.tab)))
+  sortRows(
+    { ...rect, top: rect.top + 1 },
+    sortSpecs,
+    new Set(userHidden(rect.tab)),
+    new FormulaEvaluator(sheet.tabs),
+  )
   return {}
 }
 
@@ -107,7 +116,13 @@ export function sortRange(sheet: Spreadsheet, body: JsonObj, at: At): JsonObj | 
     return col < rect.left || col >= rect.right
   })
   if (outside) return googleError(500, 'Internal error encountered.', 'INTERNAL')
-  sortRows(rect, specs, new Set([...userHidden(rect.tab), ...filterHidden(rect.tab)]))
+  const evaluator = new FormulaEvaluator(sheet.tabs)
+  sortRows(
+    rect,
+    specs,
+    new Set([...userHidden(rect.tab), ...filterHidden(rect.tab, evaluator)]),
+    evaluator,
+  )
   return {}
 }
 
@@ -120,12 +135,17 @@ function unordered(specs: readonly JsonObj[], at: At): Reply | null {
 // the rest filling the places left. A row takes its values and formats
 // inside the range along, but not its borders, which stay with the place,
 // as they do on the live API.
-function sortRows(rect: Rect, specs: readonly JsonObj[], fixed: ReadonlySet<number>): void {
+function sortRows(
+  rect: Rect,
+  specs: readonly JsonObj[],
+  fixed: ReadonlySet<number>,
+  evaluator: FormulaEvaluator,
+): void {
   if (specs.length === 0) return
   const { tab, top, bottom, left, right } = rect
   const places: number[] = []
   for (let row = top; row < bottom; row += 1) if (!fixed.has(row)) places.push(row)
-  const order = [...places].sort((a, b) => compareRows(tab, a, b, specs))
+  const order = [...places].sort((a, b) => compareRows(tab, a, b, specs, evaluator))
   const cells = new Map(tab.cells)
   const props = new Map(tab.props)
   places.forEach((to, i) => {
@@ -164,11 +184,17 @@ interface SortKey {
   str: string
 }
 
-function compareRows(tab: SheetTab, a: number, b: number, specs: readonly JsonObj[]): number {
+function compareRows(
+  tab: SheetTab,
+  a: number,
+  b: number,
+  specs: readonly JsonObj[],
+  evaluator: FormulaEvaluator,
+): number {
   for (const spec of specs) {
     const col = asNum(spec.dimensionIndex) ?? 0
-    const ka = sortKey(tab, a, col)
-    const kb = sortKey(tab, b, col)
+    const ka = sortKey(tab, a, col, evaluator)
+    const kb = sortKey(tab, b, col, evaluator)
     if (ka === null || kb === null) {
       if (ka === kb) continue
       return ka === null ? 1 : -1
@@ -180,8 +206,13 @@ function compareRows(tab: SheetTab, a: number, b: number, specs: readonly JsonOb
   return 0
 }
 
-function sortKey(tab: SheetTab, row: number, col: number): SortKey | null {
-  const value = asObj(cellData(tab.cells.get(`${String(row)},${String(col)}`) ?? '').effectiveValue)
+function sortKey(
+  tab: SheetTab,
+  row: number,
+  col: number,
+  evaluator: FormulaEvaluator,
+): SortKey | null {
+  const value = asObj(evaluatedCell(tab, row, col, evaluator).effectiveValue)
   if (typeof value.numberValue === 'number') return { rank: 0, num: value.numberValue, str: '' }
   if (typeof value.stringValue === 'string') {
     return { rank: 1, num: 0, str: value.stringValue.toLowerCase() }

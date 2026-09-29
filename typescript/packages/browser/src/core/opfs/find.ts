@@ -21,6 +21,7 @@ import {
 import type { PredNode } from '@struktoai/mirage-core/commands/builtin/find_eval'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
+import { DIR_SIZE } from '@struktoai/mirage-core/utils/stat_view'
 import type { OPFSAccessor } from '../../accessor/opfs.ts'
 import { isNotFound, iterEntries, norm, resolveDirHandle } from './utils.ts'
 
@@ -98,11 +99,9 @@ async function walk(
       accept = false
     }
 
-    // Directories count as size 0 for -size (deliberate GNU divergence).
     if (accept && kind !== 'f' && (opts.minSize != null || opts.maxSize != null)) {
-      // Directories contribute size 0 to -size (#318).
-      if (opts.minSize != null && opts.minSize > 0) accept = false
-      if (opts.maxSize != null && opts.maxSize < 0) accept = false
+      if (opts.minSize != null && DIR_SIZE < opts.minSize) accept = false
+      if (opts.maxSize != null && DIR_SIZE > opts.maxSize) accept = false
     }
     if (
       accept &&

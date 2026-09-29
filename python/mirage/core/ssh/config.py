@@ -2,7 +2,7 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class SSHConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     host: str
     hostname: str | None = None

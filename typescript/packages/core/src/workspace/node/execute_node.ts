@@ -12,14 +12,25 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { PathSpec } from '../../types.ts'
+import { runWithSession } from '../../context/session_context.ts'
+import { isProgramInvocation, runAsProgram } from '../../context/session_context.ts'
+import type { ProcessHandle } from '../../process/handle.ts'
+import type { ProcessSupervisor } from '../../process/supervisor.ts'
 import type { Runtime } from '../../runtime/base.ts'
 import type { RouteDecision } from '../../runtime/routing/index.ts'
+import { share } from '../../io/async_line_iterator.ts'
 import { asyncChain } from '../../io/stream.ts'
 import { type ByteSource, IOResult } from '../../io/types.ts'
 import { makeAbortError, mergeSignals } from '../abort.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
-import { assignmentStatus, finishStatement, recordStatus } from '../executor/statement.ts'
+import {
+  assignmentStatus,
+  fd0Binding,
+  finishStatement,
+  recordStatus,
+} from '../executor/statement.ts'
 import {
   getCaseItems,
   getCaseWord,
@@ -30,7 +41,7 @@ import {
   getIfBranches,
   getListParts,
   getNegatedCommand,
-  getPipelineCommands,
+  getPipelineStages,
   getRedirects,
   takeContinuation,
   getText,
@@ -39,8 +50,8 @@ import {
   getWhileParts,
 } from '../../shell/helpers.ts'
 import { JobTable } from '../../shell/job_table/index.ts'
-import { ERREXIT_EXEMPT_TYPES } from '../../shell/constants.ts'
-import { NodeType as NT, Redirect, RedirectKind } from '../../shell/types.ts'
+import { ERREXIT_EXEMPT_TYPES, FORK_FAILED, FORK_FAILED_STATUS } from '../../shell/constants.ts'
+import { NodeType as NT, type PipelineStages, Redirect, RedirectKind } from '../../shell/types.ts'
 import { NodeKind, nodeKind, pipelineTransparent } from '../../shell/node_kind.ts'
 import { expandRedirects } from '../expand/redirects.ts'
 import { type ExecuteFn, expandArith, expandNode } from '../expand/node.ts'
@@ -211,6 +222,14 @@ async function evalCforExpr(
   return Number(value)
 }
 
+/**
+ * Recurse wrapper for a re-associated trailing redirect: the list's right
+ * operand runs under the hoisted redirects, bound by the same rule in turn
+ * (`runRedirected`), so a pipeline there hands them to its last command
+ * and a nested list to its own right operand; targets expand only at that
+ * point (after the left side ran, so cwd changes apply). Every other node
+ * recurses normally.
+ */
 async function recurseReassociated(
   recurse: Recurse,
   dispatch: DispatchFn,
@@ -218,36 +237,190 @@ async function recurseReassociated(
   registry: MountRegistry,
   redirects: readonly Redirect[],
   right: TSNodeLike,
+  signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
   node: TSNodeLike,
   session: SessionState,
   stdin: ByteSource | null,
   callStack: CallStack | null,
+  opts?: ExecuteNodeOpts,
 ): Promise<Result> {
-  if (node !== right) return recurse(node, session, stdin, callStack)
-  const [expanded, pipeNode] = await expandRedirects(
-    redirects,
-    session,
-    executeFn,
-    registry,
-    callStack,
-    sessionView(session, registry.policies),
-  )
-  let [stdout, io, execNode] = await handleRedirect(
+  if (node !== right) return recurse(node, session, stdin, callStack, opts)
+  return runRedirected(
     recurse,
     dispatch,
+    executeFn,
+    registry,
     right,
-    expanded,
+    [...redirects],
+    signal,
+    processes,
     session,
     stdin,
     callStack,
   )
-  if (pipeNode !== null && stdout !== null) {
-    const [stdout2, io2, execNode2] = await recurse(pipeNode, session, stdout, callStack)
-    stdout = stdout2
-    io = await io.merge(io2)
-    execNode = execNode2
+}
+
+/**
+ * Recurse wrapper for a list the parse pulled into a pipeline's first
+ * stage: the list's right operand, where the pipeline starts, runs the
+ * pipeline; every other node recurses normally.
+ */
+async function recurseLifted(
+  recurse: Recurse,
+  dispatch: DispatchFn,
+  executeFn: ExecuteFn,
+  registry: MountRegistry,
+  stages: PipelineStages,
+  right: TSNodeLike,
+  signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
+  node: TSNodeLike,
+  session: SessionState,
+  stdin: ByteSource | null,
+  callStack: CallStack | null,
+  opts?: ExecuteNodeOpts,
+): Promise<Result> {
+  if (node !== right) return recurse(node, session, stdin, callStack, opts)
+  return runPipeline(
+    recurse,
+    dispatch,
+    executeFn,
+    registry,
+    stages,
+    session,
+    stdin,
+    callStack,
+    signal,
+    processes,
+  )
+}
+
+/**
+ * Recurse wrapper for one pipeline stage. A stage the parse hoisted
+ * redirects off runs under them, with the `2>&1` of a `|&` after it
+ * applied last, as bash applies it after the command's own redirections;
+ * a stage holding its own redirects gets that `2>&1` from
+ * `recursePipeStderr`.
+ */
+async function recurseStage(
+  recurse: Recurse,
+  dispatch: DispatchFn,
+  executeFn: ExecuteFn,
+  registry: MountRegistry,
+  stages: PipelineStages,
+  targets: readonly TSNodeLike[],
+  signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
+  node: TSNodeLike,
+  session: SessionState,
+  stdin: ByteSource | null,
+  callStack: CallStack | null,
+  opts?: ExecuteNodeOpts,
+): Promise<Result> {
+  const index = stages.commands.indexOf(node)
+  const hoisted = index < 0 ? [] : (stages.redirects[index] ?? [])
+  if (hoisted.length === 0) {
+    return recursePipeStderr(
+      recurse,
+      dispatch,
+      executeFn,
+      registry,
+      targets,
+      node,
+      session,
+      stdin,
+      callStack,
+      opts,
+    )
   }
-  return [stdout, io, execNode]
+  const bound = [...hoisted]
+  if (targets.includes(node)) {
+    bound.push(new Redirect({ fd: 2, target: 1, kind: RedirectKind.STDERR_TO_STDOUT }))
+  }
+  return runRedirected(
+    recurse,
+    dispatch,
+    executeFn,
+    registry,
+    node,
+    bound,
+    signal,
+    processes,
+    session,
+    stdin,
+    callStack,
+  )
+}
+
+/**
+ * Run a pipeline as bash reads it (`getPipelineStages`). A list the parse
+ * pulled into the first stage runs as the list it is, its right operand
+ * standing for the pipeline, so the pipeline runs only when the list's
+ * operator says it does and its status is the list's. A leading `!`
+ * negates the whole pipeline's status.
+ */
+async function runPipeline(
+  recurse: Recurse,
+  dispatch: DispatchFn,
+  executeFn: ExecuteFn,
+  registry: MountRegistry,
+  stages: PipelineStages,
+  session: SessionState,
+  stdin: ByteSource | null,
+  callStack: CallStack | null,
+  signal?: AbortSignal,
+  processes?: ProcessSupervisor,
+): Promise<Result> {
+  if (stages.lead !== null) {
+    const [left, op, right] = stages.lead
+    const wrapped = recurseLifted.bind(
+      null,
+      recurse,
+      dispatch,
+      executeFn,
+      registry,
+      { ...stages, lead: null },
+      right,
+      signal,
+      processes,
+    )
+    return handleConnection(wrapped, left, op, right, session, stdin, callStack)
+  }
+  const targets = stages.commands.filter((_, i) => stages.stderrFlags[i] === true)
+  const pipeRecurse = recurseStage.bind(
+    null,
+    recurse,
+    dispatch,
+    executeFn,
+    registry,
+    stages,
+    targets,
+    signal,
+    processes,
+  )
+  const [stdout, io, execNode] = await handlePipe(
+    pipeRecurse,
+    stages.commands,
+    stages.stderrFlags,
+    session,
+    stdin,
+    callStack,
+    signal,
+    processes,
+  )
+  if (!stages.negated) return [stdout, io, execNode]
+  const flipped = new IOResult({
+    exitCode: io.exitCode !== 0 ? 0 : 1,
+    stderr: io.stderr,
+    reads: io.reads,
+    writes: io.writes,
+    cache: io.cache,
+    refusal: io.refusal,
+  })
+  execNode.exitCode = flipped.exitCode
+  session.errexitImmune = true
+  return [stdout, flipped, execNode]
 }
 
 type RunLeft = (
@@ -256,9 +429,43 @@ type RunLeft = (
   callStack: CallStack | null,
 ) => Promise<Result>
 
+/** What `!` makes of the statement it wraps once that has run. */
+async function negated(
+  rawStdout: ByteSource | null,
+  io: IOResult,
+  execNode: ExecutionNode,
+  session: SessionState,
+  inner: TSNodeLike,
+): Promise<Result> {
+  // Lazy exit codes (exitOnEmpty in grep) must be final before
+  // inverting, or `! grep miss f` negates the provisional 0.
+  const stdout = await applyBarrier(rawStdout, io, BarrierPolicy.VALUE)
+  // bash reports the negated pipeline's own statuses in PIPESTATUS
+  // (`! false` leaves `1`), so what `!` wraps is closed as a statement
+  // of its own before `$?` inverts.
+  recordStatus(session, io.exitCode, pipelineTransparent(inner))
+  const flipped = new IOResult({
+    exitCode: io.exitCode !== 0 ? 0 : 1,
+    stderr: io.stderr,
+    reads: io.reads,
+    writes: io.writes,
+    cache: io.cache,
+    refusal: io.refusal,
+  })
+  execNode.exitCode = flipped.exitCode
+  session.errexitImmune = true
+  return [stdout, flipped, execNode]
+}
+
 /**
  * Run a redirected statement: the command under its redirects, then the
  * pipeline a heredoc's operator line fed it into.
+ *
+ * The parse hoists a trailing redirect over whatever precedes it, so the
+ * redirects are bound where bash binds them first: past a list to its
+ * right operand, past a pipeline to its last stage, and inside a `!` to
+ * the command it negates, recursively, until they reach the command they
+ * follow.
  */
 async function runRedirected(
   recurse: Recurse,
@@ -267,6 +474,8 @@ async function runRedirected(
   registry: MountRegistry,
   command: TSNodeLike | null,
   redirects: Redirect[],
+  signal: AbortSignal | undefined,
+  processes: ProcessSupervisor | undefined,
   session: SessionState,
   stdin: ByteSource | null,
   callStack: CallStack | null,
@@ -276,8 +485,10 @@ async function runRedirected(
     // list; bash binds it to the last command:
     //   redirected(list(L, op, R), r) == list(L, op, redirected(R, r))
     // Re-associate and defer target expansion until R runs, so
-    // `cd /x && echo hi > f` writes under /x. Compound and subshell
-    // bodies keep the whole-body redirect (bash group semantics).
+    // `cd /x && echo hi > f` writes under /x. R is bound by this same
+    // rule, so `a && b | c < f` reaches `c`, not the pipeline. Compound
+    // and subshell bodies keep the whole-body redirect (bash group
+    // semantics).
     const [left, op, right] = getListParts(command)
     const wrapped = recurseReassociated.bind(
       null,
@@ -287,23 +498,44 @@ async function runRedirected(
       registry,
       redirects,
       right,
+      signal,
+      processes,
     )
     return handleConnection(wrapped, left, op, right, session, stdin, callStack)
   }
   if (command !== null && command.type === NT.PIPELINE) {
-    const [commands, stderrFlags] = getPipelineCommands(command)
-    const right = commands[commands.length - 1]
-    if (right === undefined) throw new Error('redirected pipeline: missing command')
-    const wrapped = recurseReassociated.bind(
-      null,
+    return runPipeline(
       recurse,
       dispatch,
       executeFn,
       registry,
-      redirects,
-      right,
+      getPipelineStages(command, redirects),
+      session,
+      stdin,
+      callStack,
+      signal,
+      processes,
     )
-    return handlePipe(wrapped, commands, stderrFlags, session, stdin, callStack)
+  }
+  if (command !== null && command.type === NT.NEGATED_COMMAND) {
+    // `! cmd < f` parses as redirected(negated(cmd), < f), but the
+    // redirect is the command's: bash negates what `cmd < f` returns, a
+    // redirect that failed to open included.
+    const inner = getNegatedCommand(command)
+    const [stdout, io, execNode] = await runRedirected(
+      recurse,
+      dispatch,
+      executeFn,
+      registry,
+      inner,
+      redirects,
+      signal,
+      processes,
+      session,
+      stdin,
+      callStack,
+    )
+    return negated(stdout, io, execNode, session, inner)
   }
   const [expandedRedirects, pipeNode] = await expandRedirects(
     redirects,
@@ -390,9 +622,10 @@ async function recursePipeStderr(
   session: SessionState,
   stdin: ByteSource | null,
   callStack: CallStack | null,
+  opts?: ExecuteNodeOpts,
 ): Promise<Result> {
   if (!targets.includes(node) || nodeKind(node) !== NodeKind.REDIRECT) {
-    return recurse(node, session, stdin, callStack)
+    return recurse(node, session, stdin, callStack, opts)
   }
   const [command, redirects] = getRedirects(node)
   redirects.push(new Redirect({ fd: 2, target: 1, kind: RedirectKind.STDERR_TO_STDOUT }))
@@ -556,8 +789,16 @@ async function executeNodeBody(
           opts?: ExecuteNodeOpts,
         ): Promise<Result> => executeNode(withOpts(deps, opts), n, s, i, cs)
 
-  const { dispatch, registry, jobTable, executeFn, agentId } = deps
+  const { dispatch, registry, jobTable, agentId } = deps
+  // Capture the walker's session before any await; a concurrent line's
+  // ambient frame cannot identify this node's nested evaluations.
+  const executeFn: ExecuteFn = (cmd, opts) => deps.executeFn(cmd, { session, ...opts })
   const kind = nodeKind(node)
+
+  // The statements a construct runs all read one descriptor, as bash's
+  // do: `read` takes its line and the command after it gets the rest, in
+  // a group, a loop, a list, a subshell or a nested shell alike.
+  if (STREAMING_KINDS.has(kind)) stdin = share(stdin)
 
   // `set -n` reads without executing, and it stops *everything* after
   // it, at every depth: GNU answers `if true; then set -n; echo BAD; fi`
@@ -637,40 +878,22 @@ async function executeNodeBody(
   }
 
   if (kind === NodeKind.PIPELINE) {
-    const [pipeCommands, stderrFlags] = getPipelineCommands(node)
-    let commands = pipeCommands
-    // `! a | b` parses as pipeline(negated_command(a), b) but bash
-    // negates the WHOLE pipeline's exit status.
-    const first = commands[0]
-    const negated = first?.type === NT.NEGATED_COMMAND
-    if (negated) {
-      commands = [getNegatedCommand(first), ...commands.slice(1)]
-    }
-    let pipeRecurse = recurse
-    if (stderrFlags.some(Boolean)) {
-      const targets = commands.filter((_, i) => stderrFlags[i] === true)
-      pipeRecurse = recursePipeStderr.bind(null, recurse, dispatch, executeFn, registry, targets)
-    }
-    const [stdout, io, execNode] = await handlePipe(
-      pipeRecurse,
-      commands,
-      stderrFlags,
+    // `! a | b` parses as pipeline(negated_command(a), b), and a redirect
+    // followed by `|` closes over everything to its left, so the stages
+    // are read the way bash reads them rather than as the parse nested
+    // them (see getPipelineStages).
+    return runPipeline(
+      recurse,
+      dispatch,
+      executeFn,
+      registry,
+      getPipelineStages(node),
       session,
       stdin,
       callStack,
+      deps.signal,
+      jobTable.processes,
     )
-    if (!negated) return [stdout, io, execNode]
-    const flipped = new IOResult({
-      exitCode: io.exitCode !== 0 ? 0 : 1,
-      stderr: io.stderr,
-      reads: io.reads,
-      writes: io.writes,
-      cache: io.cache,
-      refusal: io.refusal,
-    })
-    execNode.exitCode = flipped.exitCode
-    session.errexitImmune = true
-    return [stdout, flipped, execNode]
   }
 
   if (kind === NodeKind.LIST) {
@@ -693,6 +916,8 @@ async function executeNodeBody(
       registry,
       command,
       redirects,
+      deps.signal,
+      jobTable.processes,
     )
     if (continuation.length === 0) return runLeft(session, stdin, callStack)
     return runContinuation(recurse, runLeft, node, continuation, session, stdin, callStack)
@@ -702,8 +927,14 @@ async function executeNodeBody(
     // A subshell is its own shell: background jobs started inside live
     // in a private job table (`$!`/`wait`/`kill` in the body see them;
     // the parent's table never does), mirroring bash's forked process.
-    const subTable = new JobTable()
-    const subDeps: ExecuteNodeDeps = { ...deps, jobTable: subTable }
+    const subTable = new JobTable(null, jobTable.processes)
+    const abort = new AbortController()
+    const subDeps: ExecuteNodeDeps = {
+      ...deps,
+      jobTable: subTable,
+      signal:
+        deps.signal === undefined ? abort.signal : AbortSignal.any([deps.signal, abort.signal]),
+    }
     // The opts parameter is load-bearing, not decoration: a job started
     // inside the subshell body hands `handleBackground` its own console
     // and abort signal through it. Dropping it (a 4-parameter closure
@@ -717,18 +948,49 @@ async function executeNodeBody(
       cs: CallStack | null,
       opts?: ExecuteNodeOpts,
     ): Promise<Result> => executeNode(withOpts(subDeps, opts), n, s, inp, cs)
-    return handleSubshell(
-      subRecurse,
-      node.children,
-      session,
-      stdin,
-      callStack,
-      subTable,
-      agentId,
-      dispatch,
-      deps.handed ?? null,
-      registry.decisions,
-    )
+    const childSession = session.fork()
+    const asProgram = isProgramInvocation(session)
+    let result: Result | undefined
+    let process: ProcessHandle
+    try {
+      process = subTable.processes.start({
+        sessionId: session.sessionId,
+        command: node.text,
+        cwd: PathSpec.fromStrPath(session.cwd),
+        parentPid: session.processId,
+        cancel: () => {
+          abort.abort()
+        },
+        limit: session.processes.max,
+        run: async () => {
+          const body = () =>
+            handleSubshell(
+              subRecurse,
+              node.children,
+              childSession,
+              stdin,
+              callStack,
+              subTable,
+              agentId,
+              dispatch,
+              deps.handed ?? null,
+              registry.decisions,
+            )
+          result = await runWithSession(childSession, () =>
+            asProgram ? runAsProgram(childSession, body) : body(),
+          )
+          return result[1].exitCode
+        },
+      })
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'EAGAIN')
+        throw new ExitSignal(FORK_FAILED_STATUS, new TextEncoder().encode(FORK_FAILED))
+      throw error
+    }
+    childSession.processId = process.info.pid
+    await process.task
+    if (result === undefined) throw new Error('subshell completed without a result')
+    return result
   }
 
   if (kind === NodeKind.COMPOUND && node.children[0]?.type === NT.ARITH_OPEN) {
@@ -827,6 +1089,7 @@ async function executeNodeBody(
     const allStdout: ByteSource[] = []
     let mergedIo = new IOResult()
     let lastExec = new ExecutionNode({ command: '{}', exitCode: 0 })
+    const bound = fd0Binding(session)
     for (const child of node.namedChildren) {
       if (child.type === NT.COMMENT) continue
       const [rawStdout, io, execNode] = await runStatement(
@@ -834,6 +1097,7 @@ async function executeNodeBody(
         child,
         session,
         stdin,
+        bound,
         callStack,
         jobTable,
         agentId,
@@ -858,7 +1122,7 @@ async function executeNodeBody(
     if (allStdout.length === 1 && allStdout[0] !== undefined) {
       return [allStdout[0], mergedIo, lastExec]
     }
-    const combined = allStdout.length > 0 ? asyncChain(...allStdout) : null
+    const combined = allStdout.length > 0 ? asyncChain(allStdout) : null
     return [combined, mergedIo, lastExec]
   }
 
@@ -1083,25 +1347,8 @@ async function executeNodeBody(
 
   if (kind === NodeKind.NEGATED) {
     const inner = getNegatedCommand(node)
-    const [rawStdout, io, execNode] = await stream(inner, session, stdin, callStack)
-    // Lazy exit codes (exitOnEmpty in grep) must be final before
-    // inverting, or `! grep miss f` negates the provisional 0.
-    const stdout = await applyBarrier(rawStdout, io, BarrierPolicy.VALUE)
-    // bash reports the negated pipeline's own statuses in PIPESTATUS
-    // (`! false` leaves `1`), so what `!` wraps is closed as a statement
-    // of its own before `$?` inverts.
-    recordStatus(session, io.exitCode, pipelineTransparent(inner))
-    const flipped = new IOResult({
-      exitCode: io.exitCode !== 0 ? 0 : 1,
-      stderr: io.stderr,
-      reads: io.reads,
-      writes: io.writes,
-      cache: io.cache,
-      refusal: io.refusal,
-    })
-    execNode.exitCode = flipped.exitCode
-    session.errexitImmune = true
-    return [stdout, flipped, execNode]
+    const [stdout, io, execNode] = await stream(inner, session, stdin, callStack)
+    return negated(stdout, io, execNode, session, inner)
   }
 
   if (kind === NodeKind.VAR_ASSIGN) {

@@ -75,3 +75,70 @@ export async function commentIssue(
   await getIssue(transport, ref, number)
   return transport.request('POST', path(ref, `/${String(number)}/comments`), { body })
 }
+
+const COMMENTS_QUERY = `query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    issueOrPullRequest(number: $number) {
+      ... on Issue {
+        comments(first: 100, after: $cursor) {
+          nodes { ...CommentFields }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+      ... on PullRequest {
+        comments(first: 100, after: $cursor) {
+          nodes { ...CommentFields }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }
+}
+fragment CommentFields on IssueComment {
+  id
+  author { login }
+  authorAssociation
+  body
+  createdAt
+  includesCreatedEdit
+  isMinimized
+  minimizedReason
+  reactionGroups { content users { totalCount } }
+  url
+  viewerDidAuthor
+}`
+
+export async function issueComments(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  number: number,
+): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = []
+  let cursor: string | null = null
+  for (;;) {
+    const response = (await transport.request('POST', '/graphql', {
+      query: COMMENTS_QUERY,
+      variables: { owner: ref.owner, repo: ref.repo, number, cursor },
+    })) as {
+      errors?: { message: string }[]
+      data?: {
+        repository: {
+          issueOrPullRequest: {
+            comments: {
+              nodes: Record<string, unknown>[]
+              pageInfo: { hasNextPage: boolean; endCursor: string | null }
+            }
+          } | null
+        } | null
+      }
+    }
+    if (response.errors?.length) throw new Error(response.errors.map((e) => e.message).join('; '))
+    const comments = response.data?.repository?.issueOrPullRequest?.comments
+    if (!comments) throw new Error('Could not resolve comments for this issue or pull request')
+    rows.push(...comments.nodes)
+    if (!comments.pageInfo.hasNextPage) return rows
+    const next = comments.pageInfo.endCursor
+    if (!next || next === cursor) throw new Error('GitHub returned a non-advancing comments cursor')
+    cursor = next
+  }
+}

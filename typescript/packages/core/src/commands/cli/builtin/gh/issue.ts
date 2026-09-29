@@ -21,6 +21,7 @@ import {
   editIssue,
   getIssue,
   listIssues,
+  issueComments,
 } from '../../../../core/github/issue.ts'
 import {
   bodyValue,
@@ -108,7 +109,12 @@ export async function viewCmd(inv: CLIInvocation): Promise<CommandFnResult> {
   const fl = new FlagView(inv.flags)
   const [ref, number] = target(inv, fl)
   const row = issue(await getIssue(ghTransport(inv.config), ref, number))
-  return typedOut(row, fl, viewText(row), ISSUE_FIELDS)
+  const comments = await commentsFor(inv, fl, ref, number)
+  if (comments !== null) row.comments = comments
+  return typedOut(row, fl, fl.asBool('comments') ? commentsText(comments ?? []) : viewText(row), [
+    ...ISSUE_FIELDS,
+    'comments',
+  ])
 }
 
 export async function createCmd(inv: CLIInvocation): Promise<CommandFnResult> {
@@ -191,4 +197,32 @@ export async function commentCmd(inv: CLIInvocation): Promise<CommandFnResult> {
   const [ref, number] = target(inv, fl)
   const comment = issue(await commentIssue(ghTransport(inv.config), ref, number, body ?? ''))
   return textOut(`${textValue(comment.url)}\n`)
+}
+
+export async function commentsFor(
+  inv: CLIInvocation,
+  fl: FlagView,
+  ref: { owner: string; repo: string },
+  number: number,
+): Promise<Record<string, unknown>[] | null> {
+  if (!fl.asBool('comments') && !(fl.asStr('json') ?? '').split(',').includes('comments'))
+    return null
+  const rows = await issueComments(ghTransport(inv.config), ref, number)
+  return rows.map((row) => ({
+    ...row,
+    author: row.author ?? { login: '' },
+    minimizedReason: row.minimizedReason ?? '',
+    reactionGroups: (row.reactionGroups as { users: { totalCount: number } }[]).filter(
+      (group) => group.users.totalCount > 0,
+    ),
+  }))
+}
+
+export function commentsText(rows: Record<string, unknown>[]): string {
+  return rows
+    .map(
+      (row) =>
+        `author:\t${textValue((row.author as { login: string } | null)?.login)}\nassociation:\t${textValue(row.authorAssociation).toLowerCase()}\nedited:\t${String(row.includesCreatedEdit)}\nstatus:\t${row.isMinimized ? textValue(row.minimizedReason).toLowerCase() : 'none'}\n--\n${textValue(row.body)}\n--\n`,
+    )
+    .join('')
 }

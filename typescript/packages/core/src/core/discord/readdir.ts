@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { guardDay } from '../time_range.ts'
 import type { DiscordAccessor } from '../../accessor/discord.ts'
 import { IndexEntry } from '../../cache/index/config.ts'
 import { epochToIso } from '../../utils/dates.ts'
@@ -164,14 +165,17 @@ async function listMembersDir(
 }
 
 function listChannelDays(
-  _accessor: DiscordAccessor,
+  accessor: DiscordAccessor,
   match: ScopeMatch,
   own: IndexEntry,
 ): Promise<Listed> {
   const lastMsgId = own.remoteTime
   const endDate = lastMsgId !== '' ? snowflakeToDate(lastMsgId) : todayUtc()
   const span = globSpan(match.pattern)
-  const entries = dateRangeDescending(endDate, 30, span).map(
+  const dates = accessor.timeRange.bounded
+    ? accessor.timeRange.listingDays(snowflakeToDate(own.id), endDate, span)
+    : dateRangeDescending(endDate, 30, span)
+  const entries = dates.map(
     (d) => [d, DiscordIndexEntry.history(own.id, d)] as [string, IndexEntry],
   )
   return Promise.resolve({ entries, seeds: {}, partial: span !== null })
@@ -292,6 +296,7 @@ export const readdir = makeReaddir<DiscordAccessor>(detectScope, {
     files: listFiles,
   },
   parentEntryListers: { day: listDay },
+  guards: { day: guardDay, files: guardDay },
   patternKinds: { channel: hasGlobSpan },
   leafError: 'enotdir',
 })

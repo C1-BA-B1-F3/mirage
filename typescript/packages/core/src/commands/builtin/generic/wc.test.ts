@@ -13,7 +13,11 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 import { describe, expect, it } from 'vitest'
 
-import { parseFlags } from './wc.ts'
+import { materialize } from '../../../io/types.ts'
+import { PathSpec } from '../../../types.ts'
+import { eisdir } from '../../../utils/errors.ts'
+import type { CommandOpts } from '../../config.ts'
+import { formatWcLines, numberWidth, parseFlags, wcGeneric } from './wc.ts'
 
 // GNU's ARGMATCH refusal names the refused word through gnulib's quote(),
 // so a byte outside 0x20-0x7e comes back escaped rather than interpolated
@@ -80,5 +84,67 @@ describe('wc --total refusal carries GNU candidate block', () => {
   it('still defaults an absent --total to auto', () => {
     const parsed = parseFlags({})
     expect(typeof parsed === 'string' ? parsed : parsed.total).toBe('auto')
+  })
+})
+
+describe('formatWcLines', () => {
+  it('quotes only a name holding a newline', () => {
+    // coreutils 9.7 wc.c: `strchr (file, '\n') ? quotef (file) : file`.
+    expect(formatWcLines([{ values: [2], label: '/a/n\nq' }])).toEqual(["2 '/a/n'$'\\n''q'"])
+    expect(formatWcLines([{ values: [2], label: '/a/b c' }])).toEqual(['2 /a/b c'])
+  })
+})
+
+describe('numberWidth', () => {
+  // coreutils 9.7: one operand with one count is unpadded; otherwise the
+  // regular files' total size, at least 7 beside a stream or directory.
+  it.each([
+    [[24], 1, 1, 1],
+    [[24], 1, 3, 2],
+    [[24, 6], 2, 1, 2],
+    [[0, 0], 2, 3, 1],
+    [[null], 1, 3, 7],
+    [[null], 1, 1, 1],
+    [[null, 24], 2, 1, 7],
+    [[123456789], 2, 1, 9],
+  ] as const)('sizes %j over %i operands and %i counts as %i', (sizes, operands, counts, width) => {
+    expect(numberWidth(sizes, operands, counts)).toBe(width)
+  })
+})
+
+describe('wcGeneric widths', () => {
+  const files: Record<string, string> = { '/a.txt': 'hello\nworld\nfoo\nbar\nbaz\n' }
+  const stream = (p: PathSpec): AsyncIterable<Uint8Array> =>
+    (async function* gen() {
+      await Promise.resolve()
+      if (p.virtual === '/sub') throw eisdir('/sub')
+      yield new TextEncoder().encode(files[p.virtual] ?? '')
+    })()
+  const run = async (
+    paths: string[],
+    flags: Record<string, boolean> = {},
+  ): Promise<[string, string]> => {
+    const opts = { flags, stdin: null } as unknown as CommandOpts
+    const result = await wcGeneric(
+      paths.map((p) => PathSpec.fromStrPath(p)),
+      [],
+      opts,
+      stream,
+    )
+    if (result === null) throw new Error('wc returned nothing')
+    const [out, io] = result
+    const dec = new TextDecoder()
+    return [dec.decode(await materialize(out)), dec.decode(await materialize(io.stderr))]
+  }
+
+  it('sizes the columns by the files', async () => {
+    expect(await run(['/a.txt'], { lines: true, words: true })).toEqual([' 5  5 /a.txt\n', ''])
+  })
+
+  it('prints zeros for a directory and pads to seven', async () => {
+    expect(await run(['/sub', '/a.txt'], { lines: true })).toEqual([
+      '      0 /sub\n      5 /a.txt\n      5 total\n',
+      'wc: /sub: Is a directory\n',
+    ])
   })
 })

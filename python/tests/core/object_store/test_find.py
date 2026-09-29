@@ -54,8 +54,10 @@ def test_find_narrowed_query_still_emits_the_start_path(accessor):
     assert out == ["/data/a.txt"]
 
 
-def test_find_size_gate_counts_directories_as_zero(accessor):
+def test_find_size_gate_counts_a_directory_as_dir_size(accessor):
     store = FakeStore({"data/a/big.txt": b"123456"})
     find = make_find(make_driver(store))
     out = asyncio.run(find(accessor, spec("/data"), min_size=1))
+    assert out == ["/data", "/data/a", "/data/a/big.txt"]
+    out = asyncio.run(find(accessor, spec("/data"), max_size=100))
     assert out == ["/data/a/big.txt"]

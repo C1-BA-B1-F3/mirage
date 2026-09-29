@@ -18,6 +18,15 @@ import { chunks } from './cooperative.ts'
 
 export type ByteSource = Uint8Array | AsyncIterable<Uint8Array>
 
+/**
+ * Standard input redirected from a character device (`< /dev/null`). It reads
+ * as the bytes it holds, like any other stdin, and tells a command that asks
+ * whether a file, FIFO or socket is attached that none is: ripgrep asks before
+ * it searches stdin rather than the working directory
+ * (grep_cli::is_readable_stdin). Mirrors Python's DeviceInput.
+ */
+export class DeviceInput extends Uint8Array {}
+
 export async function materialize(source: ByteSource | null | undefined): Promise<Uint8Array> {
   if (source === null || source === undefined) return new Uint8Array()
   if (source instanceof Uint8Array) return source
@@ -68,6 +77,8 @@ export interface IOResultInit {
   exitCode?: number
   reads?: Record<string, ByteSource>
   writes?: Record<string, ByteSource>
+  /** Completed backend moves, in order, for namespace metadata settlement. */
+  renames?: [string, string][]
   cache?: string[]
   producer?: Producer | null
   matchedRuns?: PathSpec[][] | null
@@ -85,13 +96,15 @@ export class IOResult {
   private _exitCode: number
   reads: Record<string, ByteSource>
   writes: Record<string, ByteSource>
+  renames: [string, string][]
   cache: string[]
   // Provenance of this result (which command, spanning which
-  // mounts); merge keeps the rightmost producer, mirroring whose
-  // stream the shell shows. The workspace boundary hands it to the
+  // mounts); merge keeps the last command for attribution, not
+  // ownership of every byte in a combined result. The workspace boundary hands it to the
   // policy layer as context. Facts ride the envelope as policy
   // input; the decision a chain hands down rides beside them as
   // `refusal`, written after the last hook has spoken.
+  outputFinalized = false
   producer: Producer | null
   // Why the line did not run, when a policy or an unanswered ask
   // refused it; null on every ordinary run. stderr stays in bash's
@@ -108,6 +121,7 @@ export class IOResult {
     this.reads = init.reads ?? {}
     this.writes = init.writes ?? {}
     this.cache = init.cache ?? []
+    this.renames = init.renames ?? []
     this.producer = init.producer ?? null
     this.refusal = init.refusal ?? null
     this.streamSource = null
@@ -167,9 +181,11 @@ export class IOResult {
       reads: { ...this.reads, ...other.reads },
       writes: { ...this.writes, ...other.writes },
       cache: [...this.cache, ...other.cache],
+      renames: [...this.renames, ...other.renames],
       producer: other.producer,
       refusal: other.refusal ?? this.refusal,
     })
+    result.outputFinalized = other.outputFinalized
     result.streamSource = other
     return result
   }

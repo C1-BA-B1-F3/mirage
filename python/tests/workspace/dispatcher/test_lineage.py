@@ -31,14 +31,10 @@ def test_turf_of_an_unowned_path_is_the_root():
     assert turf_of(None) == BARE_PREFIX == "/"
 
 
-def test_a_read_mount_still_takes_a_link():
-    # A read-only MOUNT is a statement about a backend that cannot
-    # write, and a symlink is namespace state that needs no write
-    # capability from it -- which is why a link is pinned working above
-    # postgres, mongodb, chroma and qdrant, all mounted read. Only a
-    # session grant binds this plane.
+def test_mount_mode_governs_namespace_writes():
     require_turf_writable(_entry("/data/", MountMode.WRITE), _path("/data/lk"))
-    require_turf_writable(_entry("/ro/", MountMode.READ), _path("/ro/lk"))
+    with pytest.raises(ReadOnlyError):
+        require_turf_writable(_entry("/ro/", MountMode.READ), _path("/ro/lk"))
 
 
 def test_bare_turf_is_writable_without_a_session():

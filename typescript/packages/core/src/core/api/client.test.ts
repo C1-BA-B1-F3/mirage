@@ -13,7 +13,14 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
-import { NO_RETRY, apiRequest, bodyDelay, headerDelay, type RetryPolicy } from './client.ts'
+import {
+  NO_RETRY,
+  apiRequest,
+  bodyDelay,
+  flooredDelay,
+  headerDelay,
+  type RetryPolicy,
+} from './client.ts'
 
 const TARGET = 'https://api.test/v1/thing'
 
@@ -295,5 +302,85 @@ describe('retry delays', () => {
     // the 1s fallback bows to a ceiling below it
     const tight: RetryPolicy = { ...NO_RETRY, statuses: new Set([429]), maxBackoff: 0.5 }
     expect(await bodyDelay(new Response('not json'), tight)).toBe(0.5)
+  })
+
+  it('a vetoed retryable status maps through the hook at once', async () => {
+    const retry: RetryPolicy = {
+      ...NO_RETRY,
+      statuses: new Set([429]),
+      maxRetries: 2,
+      retryable: (_status, text) => !text.includes('QUOTA'),
+    }
+    const fakeFetch = vi.fn<typeof fetch>(() =>
+      Promise.resolve(jsonResponse({ error: { type: 'QUOTA' } }, 429)),
+    )
+    const failure = apiRequest('GET', TARGET, { errorOf, fetchFn: fakeFetch, retry })
+    await expect(failure).rejects.toMatchObject({ status: 429 })
+    expect(fakeFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('an unvetoed status waits out its floor before retrying', async () => {
+    vi.useFakeTimers()
+    try {
+      const retry: RetryPolicy = {
+        ...NO_RETRY,
+        statuses: new Set([429]),
+        maxRetries: 1,
+        retryable: (_status, text) => !text.includes('QUOTA'),
+        minDelays: { 429: 30 },
+      }
+      const fakeFetch = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(jsonResponse({ error: { type: 'SLOW_DOWN' } }, 429))
+        .mockResolvedValueOnce(jsonResponse({ ok: 4 }))
+      const pending = apiRequest('GET', TARGET, { errorOf, fetchFn: fakeFetch, retry })
+      await vi.advanceTimersByTimeAsync(29_000)
+      expect(fakeFetch).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(await pending).toEqual({ ok: 4 })
+      expect(fakeFetch).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('flooredDelay raises to the status floor under the cap', () => {
+    const retry: RetryPolicy = {
+      ...NO_RETRY,
+      statuses: new Set([429, 503]),
+      maxBackoff: 20,
+      minDelays: { 429: 30 },
+    }
+    expect(flooredDelay(1, 429, retry)).toBe(20)
+    expect(flooredDelay(1, 503, retry)).toBe(1)
+    const wide: RetryPolicy = { ...NO_RETRY, statuses: new Set([429]), minDelays: { 429: 5 } }
+    expect(flooredDelay(1, 429, wide)).toBe(5)
+    expect(flooredDelay(8, 429, wide)).toBe(8)
+  })
+})
+
+describe('bytes_response read', () => {
+  it('returns the window and the lower-cased headers of the response the bytes came in', async () => {
+    // fetch follows a redirect and hands back only the final hop, whose ETag
+    // is the one that describes these bytes. The server ignores Range here,
+    // which it may legally do, so the window has to trim client side.
+    const response = new Response(new TextEncoder().encode('0123456789'), {
+      status: 200,
+      headers: { ETag: '"final-hop"', 'X-Mixed-Case': 'kept' },
+    })
+    const drain = vi.spyOn(response, 'arrayBuffer')
+    const fakeFetch: typeof fetch = () => Promise.resolve(response)
+    const out = (await apiRequest('GET', TARGET, {
+      errorOf,
+      fetchFn: fakeFetch,
+      read: 'bytes_response',
+      window: { offset: 2, size: 3 },
+    })) as { data: Uint8Array; status: number; headers: Record<string, string> }
+    expect(out.data).toEqual(new TextEncoder().encode('234'))
+    expect(out.status).toBe(200)
+    expect(out.headers.etag).toBe('"final-hop"')
+    expect(out.headers['x-mixed-case']).toBe('kept')
+    // Read once, as bytes; a text read would have mangled binary content.
+    expect(drain).toHaveBeenCalledTimes(1)
   })
 })

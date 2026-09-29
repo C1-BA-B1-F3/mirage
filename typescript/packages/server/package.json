@@ -69,6 +69,14 @@
       "types": "./dist/auth/storage.d.ts",
       "import": "./dist/auth/storage.js"
     },
+    "./ssh/constants": {
+      "types": "./dist/ssh/constants.d.ts",
+      "import": "./dist/ssh/constants.js"
+    },
+    "./ssh/config": {
+      "types": "./dist/ssh/config.d.ts",
+      "import": "./dist/ssh/config.js"
+    },
     "./package.json": "./package.json",
     "./bin/daemon": "./dist/bin/daemon.js"
   },
@@ -93,8 +101,18 @@
     "jose": "^6.2.3",
     "rate-limiter-flexible": "^11.2.0"
   },
+  "peerDependencies": {
+    "ssh2": "^1.16.0"
+  },
+  "peerDependenciesMeta": {
+    "ssh2": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/ssh2": "^1.15.0",
+    "ssh2": "^1.16.0",
     "tsup": "^8.5.0",
     "typescript": "^6.0.0",
     "vitest": "^4.1.11"

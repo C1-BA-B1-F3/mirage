@@ -1,0 +1,35 @@
+{
+  "cases": [
+    {
+      "id": "xro_gzip_filters_stdin",
+      "seq": 1231010,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cd /ro && printf 'x\\n' | gzip | gunzip",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xro_gzip_c_filters_stdin",
+      "seq": 1231011,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cd /ro && printf 'x\\n' | gzip -c | gunzip -c",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    }
+  ]
+}

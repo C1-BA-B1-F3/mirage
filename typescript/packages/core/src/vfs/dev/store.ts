@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { liveSessions } from '../../context/session_context.ts'
+import { enoent, eacces } from '../../utils/errors.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import type { RAMAttrs } from '../ram/store.ts'
 
@@ -28,6 +30,52 @@ function strip(key: string): string {
 // rm-then-redirect recreation as a regular file.
 export class DevFiles extends Map<string, Uint8Array> {
   private readonly tombstones = new Set<string>()
+  private readonly inputs = new Map<
+    string,
+    { owner: string; allocation: number; data: Uint8Array }
+  >()
+  private nextAllocation = 0
+
+  private owner(): string | null {
+    const sessions = liveSessions()
+    const owner = sessions[0]?.sessionId
+    // The browser fallback cannot distinguish overlapping sessions: fail closed.
+    return owner !== undefined && sessions.every((session) => session.sessionId === owner)
+      ? owner
+      : null
+  }
+
+  visibleInputs(): Map<string, Uint8Array> {
+    const owner = this.owner()
+    return new Map(
+      [...this.inputs]
+        .filter(([, row]) => owner !== null && row.owner === owner)
+        .map(([key, row]) => [key, row.data]),
+    )
+  }
+
+  allocateInput(): readonly [string, number] {
+    const owner = this.owner()
+    if (owner === null) throw eacces('/dev/fd')
+    let fd = 63
+    while (this.inputs.has(`/fd/${String(fd)}`)) fd -= 1
+    const key = `/fd/${String(fd)}`
+    const allocation = this.nextAllocation++
+    this.inputs.set(key, { owner, allocation, data: new Uint8Array() })
+    return [`/dev${key}`, allocation]
+  }
+
+  setInput(path: string, allocation: number, data: Uint8Array): void {
+    const row = this.inputs.get(path.slice(4))
+    if (row?.allocation !== allocation) throw enoent(path)
+    this.set(path.slice(4), data)
+  }
+
+  releaseInput(path: string, allocation: number): boolean {
+    const row = this.inputs.get(path.slice(4))
+    if (row?.allocation !== allocation) return false
+    return this.inputs.delete(path.slice(4))
+  }
 
   private syntheticActive(name: string): boolean {
     return DEV_NAMES.has(name) && !this.tombstones.has(name) && !super.has('/' + name)
@@ -45,10 +93,12 @@ export class DevFiles extends Map<string, Uint8Array> {
   }
 
   override has(key: string): boolean {
+    if (key.startsWith('/fd/')) return this.visibleInputs().has(key)
     return super.has(key) || this.syntheticActive(strip(key))
   }
 
   override get(key: string): Uint8Array | undefined {
+    if (key.startsWith('/fd/')) return this.visibleInputs().get(key)
     if (super.has(key)) return super.get(key)
     const name = strip(key)
     if (this.syntheticActive(name)) return this.syntheticBytes(name)
@@ -56,6 +106,12 @@ export class DevFiles extends Map<string, Uint8Array> {
   }
 
   override set(key: string, value: Uint8Array): this {
+    if (key === '/fd' || key.startsWith('/fd/')) {
+      const row = this.inputs.get(key)
+      if (row === undefined || !this.visibleInputs().has(key)) throw enoent(`/dev${key}`)
+      this.inputs.set(key, { ...row, data: value })
+      return this
+    }
     const name = strip(key)
     if (this.syntheticActive(name)) return this
     super.set(key, value)
@@ -64,6 +120,10 @@ export class DevFiles extends Map<string, Uint8Array> {
   }
 
   override delete(key: string): boolean {
+    if (key.startsWith('/fd/')) {
+      if (!this.visibleInputs().has(key)) return false
+      return this.inputs.delete(key)
+    }
     const name = strip(key)
     if (super.has(key)) {
       super.delete(key)
@@ -86,7 +146,7 @@ export class DevFiles extends Map<string, Uint8Array> {
     for (const name of ['null', 'zero']) {
       if (this.syntheticActive(name)) synthetic += 1
     }
-    return synthetic + super.size
+    return synthetic + super.size + this.visibleInputs().size
   }
 
   override *keys(): MapIterator<string> {
@@ -102,6 +162,7 @@ export class DevFiles extends Map<string, Uint8Array> {
       if (this.syntheticActive(name)) yield ['/' + name, this.syntheticBytes(name)]
     }
     yield* super.entries()
+    yield* this.visibleInputs()
   }
 
   override [Symbol.iterator](): MapIterator<[string, Uint8Array]> {
@@ -118,9 +179,35 @@ export class DevFiles extends Map<string, Uint8Array> {
   }
 }
 
+class DevDirs extends Set<string> {
+  constructor(private readonly files: DevFiles) {
+    super()
+    super.add('/')
+  }
+
+  override has(key: string): boolean {
+    return key === '/fd' ? this.files.visibleInputs().size > 0 : super.has(key)
+  }
+
+  override *[Symbol.iterator](): SetIterator<string> {
+    yield* super[Symbol.iterator]()
+    if (this.has('/fd')) yield '/fd'
+  }
+
+  override add(key: string): this {
+    if (key === '/fd' || key.startsWith('/fd/')) throw eacces(`/dev${key}`)
+    return super.add(key)
+  }
+
+  override delete(key: string): boolean {
+    if (key === '/fd' || key.startsWith('/fd/')) throw eacces(`/dev${key}`)
+    return super.delete(key)
+  }
+}
+
 export class DevStore {
-  readonly files: Map<string, Uint8Array> = new DevFiles()
-  readonly dirs = new Set<string>(['/'])
+  readonly files = new DevFiles()
+  readonly dirs = new DevDirs(this.files)
   readonly modified = new Map<string, string>()
   readonly attrs = new Map<string, RAMAttrs>()
 }

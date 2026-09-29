@@ -1,0 +1,346 @@
+{
+  "cases": [
+    {
+      "id": "date_set_clock_is_refused",
+      "seq": 991436,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u 010100002024",
+      "expect": {
+        "exit": 1,
+        "stdout": "Mon Jan  1 00:00:00 UTC 2024\n",
+        "stderr": "date: cannot set date: Operation not permitted\n"
+      }
+    },
+    {
+      "id": "date_set_clock_renders_the_format",
+      "seq": 991437,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u -I 0229000024",
+      "expect": {
+        "exit": 1,
+        "stdout": "2024-02-29\n",
+        "stderr": "date: cannot set date: Operation not permitted\n"
+      }
+    },
+    {
+      "id": "date_set_two_digit_year_and_seconds",
+      "seq": 991438,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u 0101000069.30",
+      "expect": {
+        "exit": 1,
+        "stdout": "Wed Jan  1 00:00:30 UTC 1969\n",
+        "stderr": "date: cannot set date: Operation not permitted\n"
+      }
+    },
+    {
+      "id": "date_set_leap_second",
+      "seq": 991439,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u 1231235924.60",
+      "expect": {
+        "exit": 1,
+        "stdout": "Wed Jan  1 00:00:00 UTC 2025\n",
+        "stderr": "date: cannot set date: Operation not permitted\n"
+      }
+    },
+    {
+      "id": "date_set_word_is_invalid",
+      "seq": 991440,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -I seconds",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: invalid date 'seconds'\n"
+      }
+    },
+    {
+      "id": "date_set_out_of_range_is_invalid",
+      "seq": 991441,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date 0229000025; date 01010000.3; date 01012500",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: invalid date '0229000025'\ndate: invalid date '01010000.3'\ndate: invalid date '01012500'\n"
+      }
+    },
+    {
+      "id": "date_set_skipped_wall_clock_is_invalid",
+      "seq": 991442,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "TZ=Europe/Berlin date 033002302025",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: invalid date '033002302025'\n"
+      }
+    },
+    {
+      "id": "date_operand_beside_date_option",
+      "seq": 991443,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -d '2024-03-05T07:08:09Z' x",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: the argument 'x' lacks a leading '+';\nwhen using an option to specify date(s), any non-option\nargument must be a format string beginning with '+'\nTry 'date --help' for more information.\n"
+      }
+    },
+    {
+      "id": "date_set_then_format_is_extra",
+      "seq": 991444,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date 010100002024 +%F",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: extra operand '+%F'\nTry 'date --help' for more information.\n"
+      }
+    },
+    {
+      "id": "date_set_last_second_datetime_holds",
+      "seq": 991462,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u 123123599999.59",
+      "expect": {
+        "exit": 1,
+        "stdout": "Fri Dec 31 23:59:59 UTC 9999\n",
+        "stderr": "date: cannot set date: Operation not permitted\n"
+      }
+    },
+    {
+      "id": "date_set_leap_second_into_year_10000_is_invalid",
+      "seq": 991463,
+      "note": "Deliberate divergence: GNU 9.7 prints Sat Jan  1 00:00:00 UTC 10000 and refuses the setting. mirage holds the years Python's datetime holds, 1 through 9999, on both hosts.",
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "date -u 123123599999.60",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "date: invalid date '123123599999.60'\n"
+      }
+    }
+  ]
+}

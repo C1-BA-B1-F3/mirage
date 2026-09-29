@@ -13,7 +13,12 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 import { describe, expect, it } from 'vitest'
 
+import type { IOResult } from '../../../io/types.ts'
+import { MountMode, type PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
+import { RAMVFS } from '../../../vfs/ram/ram.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
 import { UsageError } from '../../errors.ts'
 import { chunkAt, chunkParts, parseChunksValue, splitGeneric } from './split.ts'
 
@@ -489,5 +494,66 @@ describe('split quotes the suffix start value', () => {
     await expect(runSplit({ hex_suffixes: value, lines: '1' })).rejects.toThrow(
       new UsageError(`split: '${escaped}': invalid start value for hexadecimal suffix${TRY}`, 1),
     )
+  })
+})
+
+// No operand to read a prefix from: `x` in the working directory names the
+// outputs (GNU), and the writes keys stay mount-relative like every other
+// command's, so the executor can prefix them. Mirrors test_split.py.
+describe('split names stdin outputs in the working directory', () => {
+  it.each([
+    ['/data', ['/data/xaa', '/data/xab']],
+    ['/data/sub', ['/data/sub/xaa', '/data/sub/xab']],
+  ])('addresses each output under %s', async (cwd, named) => {
+    const specs: PathSpec[] = []
+    const opts = {
+      stdin: ENC.encode('a\nb\n'),
+      flags: { lines: '1' },
+      filetypeFns: null,
+      cwd,
+      mountPrefix: '/data',
+    } as CommandOpts
+    const result = await splitGeneric(
+      [],
+      opts,
+      () => {
+        throw new Error('paths are empty; the source is stdin')
+      },
+      (p) => {
+        specs.push(p)
+        return Promise.resolve()
+      },
+    )
+    expect(specs.map((p) => p.virtual)).toEqual(named)
+    const [, io] = result as [unknown, IOResult]
+    expect(Object.keys(io.writes)).toEqual(named.map((n) => n.slice('/data'.length)))
+  })
+})
+
+async function shell(
+  line: string,
+  stdin: Uint8Array | null = null,
+  seed: Record<string, string> = {},
+): Promise<[string, string, number]> {
+  const ws = new Workspace(
+    { '/data/': new RAMVFS() },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  try {
+    for (const [path, body] of Object.entries(seed)) {
+      await ws.shell(`tee ${path} > /dev/null`, { stdin: new TextEncoder().encode(body) })
+    }
+    const io = await ws.shell(line, { stdin })
+    const dec = new TextDecoder()
+    return [dec.decode(io.stdout), dec.decode(io.stderr), io.exitCode]
+  } finally {
+    await ws.close()
+  }
+}
+
+describe('split with stdin', () => {
+  it('reads a dash input from stdin', async () => {
+    const r = await shell('cd /data && split -l 1 - sp_ && cat sp_aa sp_ab', ENC.encode('a\nb\n'))
+    expect(r).toEqual(['a\nb\n', '', 0])
   })
 })

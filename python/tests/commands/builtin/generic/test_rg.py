@@ -1,10 +1,20 @@
+import asyncio
+import errno
+import os
+
 import pytest
 
-from mirage.commands.builtin.generic.rg import parse_flags, rg
+from mirage.commands.builtin import rg_search
+from mirage.commands.builtin.generic.rg import labelled, parse_flags, rg
+from mirage.commands.builtin.rg_search import RgFlags
 from mirage.commands.config import CommandOpts
+from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.types import ContentType, FileStat, FileType, PathSpec
+from mirage.types import (ContentType, FileStat, FileType, MountMode, PathSpec,
+                          WalkErrno)
 from mirage.utils.key_prefix import mount_key
+from mirage.vfs.ram import RAMVFS
+from mirage.workspace import Workspace
 
 
 def _spec(path: str) -> PathSpec:
@@ -106,7 +116,7 @@ async def test_rg_count_stdin_uses_match_count():
     output, io = await rg(
         [],
         ["foo"],
-        CommandOpts(flags={"c": True}),
+        CommandOpts(flags={"count": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -123,7 +133,7 @@ async def test_rg_count_stdin_zero_exits_1_without_output():
     output, io = await rg(
         [],
         ["foo"],
-        CommandOpts(flags={"c": True}),
+        CommandOpts(flags={"count": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -202,7 +212,7 @@ async def test_rg_count_dir_skips_zero_count_files():
     output, io = await rg(
         [_spec("/dir")],
         ["foo"],
-        CommandOpts(flags={"c": True}),
+        CommandOpts(flags={"count": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -223,7 +233,7 @@ async def test_rg_files_only_on_dir():
     output, _ = await rg(
         [_spec("/dir")],
         ["apple"],
-        CommandOpts(flags={"args_l": True}),
+        CommandOpts(flags={"files_with_matches": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -243,7 +253,7 @@ async def test_rg_hidden_excluded_by_default():
     output, _ = await rg(
         [_spec("/dir")],
         ["apple"],
-        CommandOpts(flags={"args_l": True}),
+        CommandOpts(flags={"files_with_matches": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -264,7 +274,7 @@ async def test_rg_hidden_included_with_flag():
         [_spec("/dir")],
         ["apple"],
         CommandOpts(flags={
-            "args_l": True,
+            "files_with_matches": True,
             "hidden": True
         }),
         readdir=readdir,
@@ -287,8 +297,8 @@ async def test_rg_file_type_filter():
         [_spec("/dir")],
         ["apple"],
         CommandOpts(flags={
-            "args_l": True,
-            "type": "py"
+            "files_with_matches": True,
+            "type": ["py"]
         }),
         readdir=readdir,
         stat=stat,
@@ -310,8 +320,8 @@ async def test_rg_glob_filter():
         [_spec("/dir")],
         ["apple"],
         CommandOpts(flags={
-            "args_l": True,
-            "glob": "*.log"
+            "files_with_matches": True,
+            "glob": ["*.log"]
         }),
         readdir=readdir,
         stat=stat,
@@ -401,7 +411,7 @@ async def test_rg_files_only_mount_prefix_not_doubled():
     output, _ = await rg(
         [p],
         ["apple"],
-        CommandOpts(flags={"args_l": True}),
+        CommandOpts(flags={"files_with_matches": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -441,7 +451,7 @@ async def test_rg_files_only_multiple_files():
     output, _ = await rg(
         [_spec("/t1.txt"), _spec("/t2.txt")],
         ["apple"],
-        CommandOpts(flags={"args_l": True}),
+        CommandOpts(flags={"files_with_matches": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -452,22 +462,38 @@ async def test_rg_files_only_multiple_files():
     assert "/t2.txt" in decoded
 
 
-def test_parse_flags_c_overrides_a_and_b():
-    f = parse_flags(FlagView({
-        "A": "2",
-        "B": "1",
-        "C": "4"
-    }),
-                    never_match=False)
-    assert f.context_after == 4
-    assert f.context_before == 4
-    f = parse_flags(FlagView({"A": "2"}), never_match=False)
-    assert f.context_after == 2
-    assert f.context_before == 0
+def _parsed(flags: dict) -> RgFlags:
+    return parse_flags(FlagView(flags, spec=SPECS["rg"]))
+
+
+def test_parse_flags_a_and_b_outrank_c():
+    # ripgrep 14.1.1: -A and -B, even at 0, beat -C for their own side,
+    # in either order (`rg -C 2 -A 0 x` prints two lines before, none
+    # after).
+    f = _parsed({"after_context": "2", "before_context": "1", "context": "4"})
+    assert (f.context_before, f.context_after) == (1, 2)
+    f = _parsed({"context": "2", "after_context": "0"})
+    assert (f.context_before, f.context_after) == (2, 0)
+    f = _parsed({"after_context": "2"})
+    assert (f.context_before, f.context_after) == (0, 2)
+
+
+def test_parse_flags_passthru_and_context_are_last_wins():
+    # --passthru drops the context options before it; one after it
+    # starts afresh (ripgrep 14.1.1: `-A 1 --passthru -B 1` is -B 1).
+    assert _parsed({"context": "1", "passthru": True}).passthru
+    f = _parsed({"passthru": True, "context": "1"})
+    assert (f.passthru, f.context_before, f.context_after) == (False, 1, 1)
+    f = _parsed({
+        "after_context": "1",
+        "passthru": True,
+        "before_context": "1"
+    })
+    assert (f.passthru, f.context_before, f.context_after) == (False, 1, 0)
 
 
 def test_parse_flags_struct_rejects_typos():
-    f = parse_flags(FlagView({"hidden": True}), never_match=False)
+    f = _parsed({"hidden": True})
     assert f.hidden is True
     with pytest.raises(AttributeError):
         _ = f.hiden
@@ -479,7 +505,7 @@ async def test_rg_with_filename_labels_single_file():
     output, _ = await rg(
         [_spec("/a.txt")],
         ["ap"],
-        CommandOpts(flags={"H": True}),
+        CommandOpts(flags={"with_filename": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -495,8 +521,8 @@ async def test_rg_with_filename_labels_single_file_count():
         [_spec("/a.txt")],
         ["ap"],
         CommandOpts(flags={
-            "H": True,
-            "c": True
+            "with_filename": True,
+            "count": True
         }),
         readdir=readdir,
         stat=stat,
@@ -515,7 +541,7 @@ async def test_rg_no_filename_suppresses_multi_file_labels():
     output, _ = await rg(
         [_spec("/a.txt"), _spec("/b.txt")],
         ["ap"],
-        CommandOpts(flags={"args_I": True}),
+        CommandOpts(flags={"no_filename": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -534,7 +560,7 @@ async def test_rg_context_after_single_file():
     output, io = await rg(
         [_spec("/app.log")],
         ["warning"],
-        CommandOpts(flags={"A": "1"}),
+        CommandOpts(flags={"after_context": "1"}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -551,7 +577,7 @@ async def test_rg_context_c_merges_adjacent_groups():
     output, _ = await rg(
         [_spec("/app.log")],
         ["error"],
-        CommandOpts(flags={"C": "1"}),
+        CommandOpts(flags={"context": "1"}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -569,8 +595,8 @@ async def test_rg_context_line_numbers_use_dash_separator():
         [_spec("/app.log")],
         ["warning"],
         CommandOpts(flags={
-            "n": True,
-            "A": "1"
+            "line_number": True,
+            "after_context": "1"
         }),
         readdir=readdir,
         stat=stat,
@@ -588,8 +614,8 @@ async def test_rg_context_respects_max_count():
         [_spec("/app.log")],
         ["error"],
         CommandOpts(flags={
-            "m": "1",
-            "C": "1"
+            "max_count": "1",
+            "context": "1"
         }),
         readdir=readdir,
         stat=stat,
@@ -606,7 +632,7 @@ async def test_rg_context_separates_distant_groups():
     output, _ = await rg(
         [_spec("/f.txt")],
         ["hit"],
-        CommandOpts(flags={"A": "1"}),
+        CommandOpts(flags={"after_context": "1"}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -617,21 +643,22 @@ async def test_rg_context_separates_distant_groups():
 
 
 @pytest.mark.asyncio
-async def test_rg_dir_search_ignores_context():
-    # Deliberate divergence: directory search skips context lines,
-    # mirroring grep's -H divergence.
+async def test_rg_dir_search_prints_labelled_context():
+    # ripgrep 14.1.1 prints context in a walk too, each line led by its
+    # file's name: `name:` on a match, `name-` on context.
     readdir, stat, rb, rs = _make_backend({"/dir/app.log": LOG})
     output, _ = await rg(
         [_spec("/dir")],
         ["warning"],
-        CommandOpts(flags={"A": "1"}),
+        CommandOpts(flags={"after_context": "1"}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
         read_stream=rs,
     )
     decoded = (await _drain_async(output)).decode()
-    assert decoded == "/dir/app.log:warning: low memory\n"
+    assert decoded == ("/dir/app.log:warning: low memory\n"
+                       "/dir/app.log-info: all good\n")
 
 
 @pytest.mark.asyncio
@@ -643,7 +670,7 @@ async def test_rg_no_filename_dir_walk():
     output, _ = await rg(
         [_spec("/dir")],
         ["alpha"],
-        CommandOpts(flags={"args_I": True}),
+        CommandOpts(flags={"no_filename": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -667,7 +694,86 @@ async def test_rg_multi_file_missing_operand_reports_and_continues():
     )
     decoded = (await _drain_async(output)).decode()
     assert decoded == "/a.txt:hello\n/a.txt:world\n"
-    assert io.stderr == b"rg: /nope.txt: No such file or directory\n"
+    assert io.stderr == (
+        b"rg: /nope.txt: IO error for operation on /nope.txt: "
+        b"No such file or directory (os error 2)\n")
+    assert io.exit_code == 2
+
+
+def _walk_refused(virtual: str, raw: str, verdict: WalkErrno) -> PathSpec:
+    return PathSpec(vfs_path=virtual.strip("/"),
+                    virtual=virtual,
+                    directory=virtual,
+                    resolved=True,
+                    raw_path=raw,
+                    walk_error=verdict)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operand, message", [
+    (("/", "", "ENOENT"), b"rg: : IO error for operation on : "
+     b"No such file or directory (os error 2)\n"),
+    (("/lp1", "lp1", "ELOOP"), b"rg: lp1: IO error for operation on lp1: "
+     b"Too many levels of symbolic links (os error 40)\n"),
+])
+async def test_rg_refuses_an_operand_the_walk_refused(operand, message):
+    # ripgrep 14.1.1: `rg o ''` and `rg o lp1` (a loop) refuse the operand
+    # by name with exit 2. The empty name's `virtual` is the cwd it joined
+    # onto, which must not be walked.
+    readdir, stat, rb, rs = _make_backend({"/a.txt": b"hello\n"})
+    for paths, want in (([_walk_refused(*operand)], b""),
+                        ([_spec("/a.txt"),
+                          _walk_refused(*operand)], b"/a.txt:hello\n")):
+        output, io = await rg(paths, ["o"],
+                              CommandOpts(),
+                              readdir=readdir,
+                              stat=stat,
+                              read_bytes=rb,
+                              read_stream=rs)
+        assert await _drain_async(output) == want
+        assert io.stderr == message
+        assert io.exit_code == 2
+
+
+@pytest.mark.asyncio
+async def test_rg_lone_operand_it_may_not_read_is_the_searchers_refusal():
+    # ripgrep 14.1.1 opens a lone file operand after the stat said it is
+    # one, so a file it may not read is `rg: locked.txt: Permission denied
+    # (os error 13)`, exit 2, not the shared handler's exit 1.
+    readdir, stat, rb, _ = _make_backend({"/locked.txt": b"hit\n"})
+
+    async def denied(path):
+        raise PermissionError("/locked.txt")
+        yield b""
+
+    output, io = await rg([_typed("/locked.txt", "locked.txt")], ["hit"],
+                          CommandOpts(),
+                          readdir=readdir,
+                          stat=stat,
+                          read_bytes=rb,
+                          read_stream=denied)
+    assert await _drain_async(output) == b""
+    assert io.stderr == b"rg: locked.txt: Permission denied (os error 13)\n"
+    assert io.exit_code == 2
+
+
+@pytest.mark.asyncio
+async def test_rg_typed_empty_operand_is_not_the_implicit_cwd():
+    # A bare `rg PAT` searches a synthetic cwd operand spelled '' too, so
+    # only the walk's verdict tells a typed '' apart. A line that named
+    # paths earns no "No files were searched" notice (ripgrep 14.1.1:
+    # `cd /data && rg o '' ''`).
+    readdir, stat, rb, rs = _make_backend({"/a.txt": b"hello\n"})
+    empty = _walk_refused("/", "", "ENOENT")
+    output, io = await rg([empty, empty], ["o"],
+                          CommandOpts(),
+                          readdir=readdir,
+                          stat=stat,
+                          read_bytes=rb,
+                          read_stream=rs)
+    assert await _drain_async(output) == b""
+    assert io.stderr == (b"rg: : IO error for operation on : "
+                         b"No such file or directory (os error 2)\n") * 2
     assert io.exit_code == 2
 
 
@@ -690,7 +796,7 @@ async def test_rg_not_a_directory_operand_keeps_the_others():
     output, io = await rg(
         [_spec("/a.txt/x"), _spec("/real")],
         ["foo"],
-        CommandOpts(flags={"args_l": True}),
+        CommandOpts(flags={"files_with_matches": True}),
         readdir=readdir_enotdir,
         stat=stat,
         read_bytes=rb,
@@ -705,14 +811,14 @@ async def test_rg_not_a_directory_operand_keeps_the_others():
 @pytest.mark.parametrize("flags,prefix", [
     ({}, ""),
     ({
-        "H": True
+        "with_filename": True
     }, "/binary.txt:"),
     ({
-        "args_I": True
+        "no_filename": True
     }, ""),
     ({
-        "H": True,
-        "args_I": True
+        "with_filename": True,
+        "no_filename": True
     }, ""),
 ])
 async def test_rg_filename_flags_preserve_nul_matches(flags, prefix):
@@ -739,7 +845,7 @@ async def test_rg_no_filename_preserves_multi_file_nul_matches():
     output, io = await rg(
         [_spec("/a.txt"), _spec("/b.txt")],
         ["needle"],
-        CommandOpts(flags={"args_I": True}),
+        CommandOpts(flags={"no_filename": True}),
         readdir=readdir,
         stat=stat,
         read_bytes=rb,
@@ -801,7 +907,7 @@ async def test_rg_files_without_match_stdin_m0_lists_nothing():
             ["hello"],
             CommandOpts(flags={
                 "files_without_match": True,
-                "m": "0"
+                "max_count": "0"
             }),
             readdir=readdir,
             stat=stat,
@@ -816,21 +922,538 @@ async def test_rg_files_without_match_stdin_m0_lists_nothing():
 def test_rg_output_mode_is_the_last_of_c_l_and_files_without_match():
     # ripgrep 14.1.1: `-c --files-without-match` lists the matchless
     # files, `--files-without-match -c` prints counts, `-l -c` counts.
-    later = parse_flags(FlagView({
-        "c": True,
-        "files_without_match": True
-    }),
-                        never_match=False)
+    later = _parsed({"count": True, "files_without_match": True})
     assert (later.count_only, later.files_without_match) == (False, True)
-    earlier = parse_flags(FlagView({
-        "files_without_match": True,
-        "c": True
-    }),
-                          never_match=False)
+    earlier = _parsed({"files_without_match": True, "count": True})
     assert (earlier.count_only, earlier.files_without_match) == (True, False)
-    counted = parse_flags(FlagView({
-        "args_l": True,
-        "c": True
-    }),
-                          never_match=False)
+    counted = _parsed({"files_with_matches": True, "count": True})
     assert (counted.files_only, counted.count_only) == (False, True)
+
+
+def _stdin_operand(raw: str = "-") -> PathSpec:
+    # How the classifier hands a typed `-` over: resolved under the cwd,
+    # spelled as typed.
+    virtual = "/dev/stdin" if raw == "/dev/stdin" else "/-"
+    return PathSpec(vfs_path=virtual.strip("/"),
+                    virtual=virtual,
+                    directory="/",
+                    resolved=True,
+                    raw_path=raw)
+
+
+async def _run(paths: list[PathSpec],
+               texts: list[str],
+               flags: dict,
+               stdin,
+               files: dict[str, bytes] | None = None):
+    readdir, stat, rb, rs = _make_backend(files or {})
+    output, io = await rg(paths,
+                          texts,
+                          CommandOpts(flags=flags),
+                          readdir=readdir,
+                          stat=stat,
+                          read_bytes=rb,
+                          read_stream=rs,
+                          stdin=stdin)
+    return await _drain_async(output), io
+
+
+@pytest.mark.asyncio
+async def test_rg_dash_operand_reads_stdin():
+    # ripgrep 14.1.1: `printf 'b\n' | rg b -` prints `b`, exit 0. The
+    # backend holds no `/-`, so reading one would fail the line.
+    out, io = await _run([_stdin_operand()], ["b"], {}, b"b\n")
+    assert (out, io.exit_code) == (b"b\n", 0)
+
+
+@pytest.mark.asyncio
+async def test_rg_dash_beside_a_file_is_named_stdin():
+    files = {"/a.txt": b"hello\nworld\n"}
+    out, io = await _run([_stdin_operand(), _spec("/a.txt")], ["world"], {},
+                         b"world\n", files)
+    assert (out, io.exit_code) == (b"<stdin>:world\n/a.txt:world\n", 0)
+    out, io = await _run([_stdin_operand(), _spec("/a.txt")], ["world"],
+                         {"count": True}, b"world\n", files)
+    assert (out, io.exit_code) == (b"<stdin>:1\n/a.txt:1\n", 0)
+
+
+@pytest.mark.asyncio
+async def test_rg_dash_twice_reads_stdin_once():
+    # Both operands read one cursor: the second finds it drained.
+    out, io = await _run([_stdin_operand(), _stdin_operand()], ["b"], {},
+                         b"b\n")
+    assert (out, io.exit_code) == (b"<stdin>:b\n", 0)
+    out, io = await _run([_stdin_operand(), _stdin_operand()], ["z"],
+                         {"files_without_match": True}, b"b\n")
+    assert (out, io.exit_code) == (b"<stdin>\n<stdin>\n", 0)
+
+
+@pytest.mark.asyncio
+async def test_rg_dash_listing_names_stdin():
+    out, io = await _run([_stdin_operand()], ["b"],
+                         {"files_with_matches": True}, b"b\n")
+    assert (out, io.exit_code) == (b"<stdin>\n", 0)
+    out, io = await _run([_stdin_operand()], ["z"],
+                         {"files_with_matches": True}, b"b\n")
+    assert (out, io.exit_code) == (b"", 1)
+    out, io = await _run([_stdin_operand()], ["z"],
+                         {"files_without_match": True}, b"b\n")
+    assert (out, io.exit_code) == (b"<stdin>\n", 0)
+    out, io = await _run([_stdin_operand()], ["b"],
+                         {"files_without_match": True}, b"b\n")
+    assert (out, io.exit_code) == (b"", 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags", [{
+    "files_with_matches": True
+}, {
+    "files_without_match": True
+}])
+async def test_rg_dash_listing_stops_at_the_first_match(flags):
+    # The listing is settled by the first selected line, so an endless
+    # stdin is never read past it.
+    out, io = await _run([_stdin_operand()], ["hello"], flags,
+                         _endless_after_first_match())
+    expected = (b"<stdin>\n", 0) if "files_with_matches" in flags else (b"", 1)
+    assert (out, io.exit_code) == expected
+
+
+@pytest.mark.asyncio
+async def test_rg_dash_is_never_filtered_by_type_or_glob():
+    # ripgrep searches an explicit operand whatever --type or --glob say,
+    # and stdin is always explicit.
+    for flags in ({"type": ["py"]}, {"glob": ["*.rs"]}):
+        out, io = await _run([_stdin_operand()], ["b"], flags, b"b\n")
+        assert (out, io.exit_code) == (b"b\n", 0)
+
+
+@pytest.mark.asyncio
+async def test_rg_dash_prints_context():
+    out, io = await _run([_stdin_operand()], ["b"], {"context": "1"},
+                         b"a\nb\nc\n")
+    assert (out, io.exit_code) == (b"a\nb\nc\n", 0)
+
+
+@pytest.mark.asyncio
+async def test_rg_dev_stdin_reads_stdin_under_its_own_name():
+    # ripgrep opens /dev/stdin as the path it is, so a label names it.
+    files = {"/a.txt": b"world\n"}
+    out, io = await _run([_stdin_operand("/dev/stdin"),
+                          _spec("/a.txt")], ["world"], {}, b"world\n", files)
+    assert (out, io.exit_code) == (b"/dev/stdin:world\n/a.txt:world\n", 0)
+
+
+async def _pipe_that_goes_on(first: bytes):
+    yield first
+    raise AssertionError("read past the answer")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags, paths, want", [
+    ({
+        "max_count": "1",
+        "context": "1"
+    }, [None], b"a\nb\nc\n"),
+    ({
+        "max_count": "1",
+        "type": ["py"]
+    }, [None], b"b\n"),
+    ({
+        "max_count": "1"
+    }, [None, "/a.txt"], b"<stdin>:b\n"),
+])
+async def test_rg_dash_stops_reading_at_max_count(flags, paths, want):
+    # -m is answered once its last selected line (and that line's
+    # trailing context) is out, so a pipe that goes on is never waited
+    # on: in the full-scan branch (context, --type) and beside a file.
+    operands = [_stdin_operand() if p is None else _spec(p) for p in paths]
+    out, io = await _run(operands, ["b"], flags,
+                         _pipe_that_goes_on(b"a\nb\nc\n"),
+                         {"/a.txt": b"hello\nworld\n"})
+    assert (out, io.exit_code) == (want, 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags, data, want", [
+    ({
+        "files_with_matches": True
+    }, b"b\n", (b"<stdin>\n", 0)),
+    ({
+        "with_filename": True
+    }, b"b\n", (b"<stdin>:b\n", 0)),
+    ({
+        "with_filename": True,
+        "count": True
+    }, b"b\n", (b"<stdin>:1\n", 0)),
+    ({
+        "context": "1"
+    }, b"a\nb\nc\n", (b"a\nb\nc\n", 0)),
+    ({
+        "type": ["rust"]
+    }, b"b\n", (b"b\n", 0)),
+    ({
+        "files_with_matches": True,
+        "max_count": "0"
+    }, b"b\n", (b"", 1)),
+])
+async def test_rg_no_operand_searches_stdin_as_an_implicit_dash(
+        flags, data, want):
+    # ripgrep 14.1.1 searches a piped stdin as an implicit `-` when the
+    # line names no path, so every flag answers as it does for a typed
+    # one: `printf 'b\n' | rg -l b` prints `<stdin>`.
+    out, io = await _run([], ["b"], flags, data)
+    assert (out, io.exit_code) == want
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags, want", [
+    ({
+        "files_with_matches": True
+    }, b"<stdin>\n"),
+    ({
+        "max_count": "1",
+        "context": "1"
+    }, b"a\nb\nc\n"),
+    ({
+        "max_count": "1",
+        "with_filename": True
+    }, b"<stdin>:b\n"),
+])
+async def test_rg_no_operand_stops_reading_at_the_answer(flags, want):
+    out, io = await _run([], ["b"], flags, _pipe_that_goes_on(b"a\nb\nc\n"))
+    assert (out, io.exit_code) == (want, 0)
+
+
+@pytest.mark.asyncio
+async def test_rg_no_operand_cancellation_closes_stdin(monkeypatch):
+    # The implicit operand is stdin's sole reader, so a search cancelled
+    # mid-line closes the input rather than leaving it half read.
+    closed = False
+    calls = 0
+    task = asyncio.current_task()
+    original = rg_search.ByteCursor.at
+
+    def measured(self, index):
+        nonlocal calls
+        if calls == 0:
+            asyncio.get_running_loop().call_later(0, task.cancel)
+        calls += 1
+        return original(self, index)
+
+    async def source():
+        nonlocal closed
+        try:
+            yield b"needle " * 100000 + b"\n"
+            raise AssertionError("read beyond the matching line")
+        finally:
+            closed = True
+
+    monkeypatch.setattr(rg_search.ByteCursor, "at", measured)
+    with pytest.raises(asyncio.CancelledError):
+        await _run([], ["needle"], {
+            "only_matching": True,
+            "byte_offset": True
+        }, source())
+    assert closed
+    assert calls < 100000
+
+
+A_TXT = b"hello\nworld\nfoo\nbar\nbaz\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags, paths, want", [
+    ({
+        "after_context": "1"
+    }, ["/a.txt", "/a.txt"
+        ], b"/a.txt:world\n/a.txt-foo\n--\n/a.txt:world\n/a.txt-foo\n"),
+    ({
+        "with_filename": True,
+        "line_number": True,
+        "context": "1"
+    }, ["/a.txt"], b"/a.txt-1-hello\n/a.txt:2:world\n/a.txt-3-foo\n"),
+    ({
+        "no_filename": True,
+        "after_context": "1"
+    }, ["/a.txt", "/a.txt"], b"world\nfoo\n--\nworld\nfoo\n"),
+])
+async def test_rg_labelled_search_prints_context(flags, paths, want):
+    # ripgrep 14.1.1 leads a context line with `name-` and a match with
+    # `name:`, and puts `--` between one file's context and the next
+    # file's, labelled or not.
+    out, io = await _run([_spec(p) for p in paths], ["world"], flags, None,
+                         {"/a.txt": A_TXT})
+    assert (out, io.exit_code) == (want, 0)
+
+
+@pytest.mark.asyncio
+async def test_rg_labelled_stdin_prints_context_beside_a_file():
+    # `printf 'a\nb\nc\n' | rg -C1 b - a.txt` on ripgrep 14.1.1.
+    out, io = await _run([_stdin_operand(), _spec("/a.txt")], ["b"],
+                         {"context": "1"}, b"a\nb\nc\n", {"/a.txt": A_TXT})
+    assert (out, io.exit_code) == (b"<stdin>-a\n<stdin>:b\n<stdin>-c\n--\n"
+                                   b"/a.txt-foo\n/a.txt:bar\n/a.txt:baz\n", 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags, want", [
+    ({}, b"/sub/nested.txt:content\n"),
+    ({
+        "count": True
+    }, b"/sub/nested.txt:1\n"),
+])
+async def test_rg_walks_a_directory_named_after_a_file(flags, want):
+    # `rg content a.txt sub` on ripgrep 14.1.1. Only the first operand was
+    # probed, so a later directory was read as a file and reported.
+    files = {"/a.txt": A_TXT, "/sub/nested.txt": b"nested\ncontent\n"}
+    out, io = await _run([_spec("/a.txt"), _spec("/sub")], ["content"], flags,
+                         None, files)
+    assert (out, io.exit_code) == (want, 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("paths, stdin", [
+    (["/a.txt"], None),
+    ([], A_TXT),
+])
+async def test_rg_m_prints_a_selected_trailing_line_as_selected(paths, stdin):
+    # `rg -n -m1 -A1 o a.txt` prints `2:world` on ripgrep 14.1.1, where
+    # GNU grep prints `2-world`: past -m, a trailing line that would be
+    # selected still prints as selected.
+    out, io = await _run([_spec(p) for p in paths], ["o"], {
+        "line_number": True,
+        "max_count": "1",
+        "after_context": "1"
+    }, stdin, {"/a.txt": A_TXT})
+    assert (out, io.exit_code) == (b"1:hello\n2:world\n", 0)
+
+
+OCTX = b"/octx/x.txt-1-a\n/octx/x.txt:2:b\n/octx/x.txt-3-c\n"
+O_FILES = {
+    "/ov/x.txt": b"x\ny\nzz\n",
+    "/oc/x.txt": b"b1\nb22\n",
+    "/ovc/abc.txt": b"abc\n",
+    "/ovc/def.txt": b"def\n",
+    "/octx/x.txt": b"a\nb\nc\n",
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("paths, stdin, want", [
+    ([], b"x\ny\nzz\n", b"1:x\n3:zz\n"),
+    (["/ov/x.txt"], None, b"1:x\n3:zz\n"),
+    (["/ov"], None, b"/ov/x.txt:1:x\n/ov/x.txt:3:zz\n"),
+])
+async def test_rg_o_v_prints_the_unmatched_lines_whole(paths, stdin, want):
+    # `rg -v -o -n y` over x\ny\nzz\n on ripgrep 14.1.1, where GNU grep
+    # prints nothing: a selected line with no match prints whole.
+    out, io = await _run([_spec(p) for p in paths], ["y"], {
+        "only_matching": True,
+        "invert_match": True,
+        "line_number": True
+    }, stdin, O_FILES)
+    assert (out, io.exit_code) == (want, 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("paths, stdin, want", [
+    ([], b"b1\nb22\n", b"3\n"),
+    (["/oc/x.txt"], None, b"3\n"),
+    (["/oc/x.txt", "/oc/x.txt"], None, b"/oc/x.txt:3\n/oc/x.txt:3\n"),
+    (["/oc"], None, b"/oc/x.txt:3\n"),
+])
+async def test_rg_o_c_counts_matches_not_lines(paths, stdin, want):
+    # `rg -o -c '[0-9]'` over b1\nb22\n is 3 on ripgrep 14.1.1.
+    out, io = await _run([_spec(p) for p in paths], ["[0-9]"], {
+        "only_matching": True,
+        "count": True
+    }, stdin, O_FILES)
+    assert (out, io.exit_code) == (want, 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("paths, stdin, want, code", [
+    ([], b"abc\ndef\n", b"0\n", 0),
+    ([], b"abc\n", b"", 1),
+    (["/ovc/abc.txt", "/ovc/def.txt"], None, b"/ovc/def.txt:0\n", 0),
+    (["/ovc"], None, b"/ovc/def.txt:0\n", 0),
+])
+async def test_rg_o_v_c_lists_an_input_that_selected_with_no_match(
+        paths, stdin, want, code):
+    # ripgrep 14.1.1 counts the matches an inverted selection holds, none,
+    # and still lists every input that selected a line.
+    out, io = await _run([_spec(p) for p in paths], ["abc"], {
+        "only_matching": True,
+        "invert_match": True,
+        "count": True
+    }, stdin, O_FILES)
+    assert (out, io.exit_code) == (want, code)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("paths, stdin, want", [
+    ([], b"a\nb\nc\n", b"1-a\n2:b\n3-c\n"),
+    (["/octx"], None, OCTX),
+    (["/octx/x.txt", "/octx/x.txt"], None, OCTX + b"--\n" + OCTX),
+])
+async def test_rg_o_prints_context_lines_whole(paths, stdin, want):
+    # `rg -o -n -C1 b` on ripgrep 14.1.1; GNU grep -o prints no context.
+    out, io = await _run([_spec(p) for p in paths], ["b"], {
+        "only_matching": True,
+        "line_number": True,
+        "context": "1"
+    }, stdin, O_FILES)
+    assert (out, io.exit_code) == (want, 0)
+
+
+def _typed(virtual: str, raw: str) -> PathSpec:
+    return PathSpec(vfs_path=virtual.strip("/"),
+                    virtual=virtual,
+                    directory=virtual,
+                    resolved=True,
+                    raw_path=raw)
+
+
+async def _run_locked(paths: list[PathSpec], flags: dict):
+    files = {"/d/sub/locked.txt": b"hit\n", "/d/sub/ok.txt": b"hit\n"}
+    readdir, stat, rb, rs = _make_backend(files)
+
+    async def read_bytes(path):
+        virtual = path.virtual if isinstance(path, PathSpec) else path
+        if virtual == "/d/sub/locked.txt":
+            raise PermissionError(errno.EACCES, os.strerror(errno.EACCES),
+                                  virtual)
+        return await rb(path)
+
+    output, io = await rg(paths, ["hit"],
+                          CommandOpts(flags=flags),
+                          readdir=readdir,
+                          stat=stat,
+                          read_bytes=read_bytes,
+                          read_stream=rs)
+    return await _drain_async(output), await _drain_async(io.stderr), io
+
+
+TYPE_TXT = {"type": ["txt"]}
+LISTING = {"files_with_matches": True}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("paths, flags, want", [
+    ([("/d/sub", "sub"), ("/d/nope", "nope")], {}, b"sub/ok.txt:hit\n"),
+    ([("/d/nope", "nope")], TYPE_TXT, b""),
+    ([("/d/nope", "nope"), ("/d/sub", "sub")], LISTING, b"sub/ok.txt\n"),
+])
+async def test_rg_walk_names_a_missing_operand_as_typed(paths, flags, want):
+    # ripgrep 14.1.1: `cd /data && rg hit sub nope` reports `nope`, spelled
+    # as the line spelled it, the way it prints `sub/ok.txt:hit`.
+    out, err, io = await _run_locked([_typed(v, r) for v, r in paths], flags)
+    assert out == want
+    assert (b"rg: nope: IO error for operation on nope: "
+            b"No such file or directory (os error 2)\n" in err)
+    assert io.exit_code == 2
+
+
+@pytest.mark.asyncio
+async def test_rg_walk_names_a_file_it_could_not_read_as_typed():
+    out, err, io = await _run_locked([_typed("/d/sub", "sub")], {})
+    assert out == b"sub/ok.txt:hit\n"
+    assert err == b"rg: sub/locked.txt: Permission denied (os error 13)\n"
+    assert io.exit_code == 2
+
+
+def test_labelled_asks_for_the_filename_a_walk_would_have_printed():
+    assert labelled(CommandOpts(flags={})).flags == {"with_filename": True}
+
+
+def test_labelled_lets_dash_upper_i_win():
+    opts = CommandOpts(flags={"no_filename": True})
+    assert labelled(opts) is opts
+
+
+async def _walked(line: str) -> tuple[str, str, int]:
+    """Run ``line`` in /data, where s holds f, t holds g and a.txt says
+    hello and world, beside a read-only /ro holding f, as ripgrep 14.1.1
+    was pinned."""
+    ro = RAMVFS()
+    ro._store.files["/f"] = b"ro\n"
+    ws = Workspace(
+        {
+            "/data": (RAMVFS(), MountMode.WRITE),
+            "/ro": (ro, MountMode.READ),
+        },
+        mode=MountMode.WRITE)
+    await ws.shell("cd /data && mkdir s t && printf 'hello\\nworld\\n' > a.txt"
+                   " && printf o > s/f && printf o > t/g")
+    r = await ws.shell(f"cd /data && {line}")
+    return ((await r.materialize_stdout()).decode(),
+            (await r.materialize_stderr()).decode(), r.exit_code)
+
+
+AL = "ln -s ../a.txt s/al && "
+DANG = "rg: {0}: IO error for operation on {0}: No such file or directory " \
+    "(os error 2)\n"
+LOOP = "rg: {0}: IO error for operation on {0}: Too many levels of " \
+    "symbolic links (os error 40)\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, stdout, stderr, code", [
+    (AL + "rg --sort path o s", "s/f:o\n", "", 0),
+    (AL + "rg -L --sort path o s", "s/al:hello\ns/al:world\ns/f:o\n", "", 0),
+    (AL + "rg --follow --sort path o s", "s/al:hello\ns/al:world\ns/f:o\n", "",
+     0),
+    (AL + "rg -L --no-follow --sort path o s", "s/f:o\n", "", 0),
+    (AL + "rg --no-follow -L --sort path o s",
+     "s/al:hello\ns/al:world\ns/f:o\n", "", 0),
+    (AL + "rg -L --files --sort path s", "s/al\ns/f\n", "", 0),
+    ("ln -s ../t s/tl && rg -L --sort path o s", "s/f:o\ns/tl/g:o\n", "", 0),
+    ("ln -s ../t s/tl && rg --sort path o s", "s/f:o\n", "", 0),
+    ("ln -s /ro s/rol && rg -L --sort path ro s", "s/rol/f:ro\n", "", 0),
+    ("ln -s /ro s/rol && rg -L --one-file-system --files --sort path s",
+     "s/f\n", "", 0),
+    ("ln -s /ro/f s/rf && rg -L --one-file-system --files --sort path s",
+     "s/f\ns/rf\n", "", 0),
+])
+async def test_rg_follows_a_walked_link_only_under_dash_upper_l(
+        line: str, stdout: str, stderr: str, code: int):
+    # A link the walk meets is skipped unless -L (the last of it and
+    # --no-follow) says to follow it; one to a directory is descended under
+    # the link's own name, onto any mount, unless --one-file-system keeps
+    # the walk on the operand's.
+    assert await _walked(line) == (stdout, stderr, code)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, stdout, stderr", [
+    ("ln -s nowhere s/dang && rg -L o s", "s/f:o\n", DANG.format("s/dang")),
+    ("ln -s nowhere s/.dang && rg -L -g '*.txt' o s", "",
+     DANG.format("s/.dang")),
+    ("ln -s lp2 s/lp1 && ln -s lp1 s/lp2 && rg -L --sort path o s", "s/f:o\n",
+     LOOP.format("s/lp1") + LOOP.format("s/lp2")),
+    ("mkdir s/sub && ln -s .. s/sub/up && rg -L --sort path o s", "s/f:o\n",
+     "rg: File system loop found: s/sub/up points to an ancestor s\n"),
+    ("ln -s . s/.self && rg -L o s", "s/f:o\n",
+     "rg: File system loop found: s/.self points to an ancestor s\n"),
+    ("ln -s ../t s/tl && ln -s ../s t/sl && rg -L --sort path o s",
+     "s/f:o\ns/tl/g:o\n",
+     "rg: File system loop found: s/tl/sl points to an ancestor s\n"),
+    ("ln -s nowhere s/dang && cd s && rg -L o", "f:o\n",
+     DANG.format("./dang")),
+    ("mkdir s/sub && ln -s .. s/sub/up && cd s && rg -L --files", "f\n",
+     "rg: File system loop found: ./sub/up points to an ancestor ./\n"),
+])
+async def test_rg_reports_a_link_it_cannot_follow_before_any_filter(
+        line: str, stdout: str, stderr: str):
+    # The ignore crate follows a link before a filter sees its name, so a
+    # dangling, looping or ancestor link is reported even hidden or
+    # glob-excluded, each named as the walker spells it: `./x` under the
+    # implicit cwd, whose matches print bare (ripgrep 14.1.1).
+    assert await _walked(line) == (stdout, stderr, 2)
+
+
+@pytest.mark.asyncio
+async def test_rg_dash_q_keeps_status_0_past_a_dangling_link():
+    assert await _walked("ln -s nowhere s/dang && rg -L -q --sort path o s"
+                         ) == ("", DANG.format("s/dang"), 0)

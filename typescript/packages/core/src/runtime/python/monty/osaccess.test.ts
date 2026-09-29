@@ -20,6 +20,7 @@ import { MirageOSAccess } from './index.ts'
 import type { GuestStat } from './stat.ts'
 import { MontyVFS } from './vfs.ts'
 import { PrefixResolver } from '../../resolver.ts'
+import { MAX_URANDOM_BYTES } from './constants.ts'
 
 const NOT_HANDLED = Symbol('NOT_HANDLED')
 
@@ -154,6 +155,48 @@ describe('MirageOSAccess environment', () => {
     // FileNotFoundError — the JS binding has no tree of its own, so
     // declining raised PermissionError where python raised this.
     expect(() => access.handle('Path.read_text', ['/tmp/x'])).toThrow('No such file or directory')
+  })
+})
+
+describe('MirageOSAccess entropy', () => {
+  it('fills large requests in Web Crypto chunks and supports empty requests', () => {
+    const access = new MirageOSAccess(BITS, {}, null)
+    const random = vi.spyOn(globalThis.crypto, 'getRandomValues').mockImplementation((array) => {
+      if (!(array instanceof Uint8Array)) throw new TypeError('expected bytes')
+      expect(array.length).toBeLessThanOrEqual(65_536)
+      array.fill(42)
+      return array
+    })
+    try {
+      expect(access.handle('os.urandom', [0])).toEqual(new Uint8Array())
+      expect(random).not.toHaveBeenCalled()
+      const bytes = access.handle('os.urandom', [65_537]) as Uint8Array
+      expect(bytes.length).toBe(65_537)
+      expect(bytes.every((byte) => byte === 42)).toBe(true)
+      expect(random).toHaveBeenCalledTimes(2)
+      const maximum = access.handle('os.urandom', [MAX_URANDOM_BYTES]) as Uint8Array
+      expect(maximum.length).toBe(MAX_URANDOM_BYTES)
+      expect(maximum.every((byte) => byte === 42)).toBe(true)
+      expect(random).toHaveBeenCalledTimes(18)
+    } finally {
+      random.mockRestore()
+    }
+  })
+
+  it('rejects requests above the Python cap before requesting entropy', () => {
+    const access = new MirageOSAccess(BITS, {}, null)
+    const random = vi.spyOn(globalThis.crypto, 'getRandomValues')
+    try {
+      expect(() => access.handle('os.urandom', [MAX_URANDOM_BYTES + 1])).toThrow(
+        expect.objectContaining({
+          name: 'MemoryError',
+          message: 'os.urandom() size exceeds max_urandom_bytes (1048576)',
+        }),
+      )
+      expect(random).not.toHaveBeenCalled()
+    } finally {
+      random.mockRestore()
+    }
   })
 })
 

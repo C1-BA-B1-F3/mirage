@@ -20,10 +20,11 @@ export type ReadOperation = 'read' | 'stat' | 'readdir' | 'readlink'
 export interface VfsRequest {
   kind: 'vfs'
   buffer: SharedArrayBuffer
-  op: ReadOperation | 'dispatch' | 'flush'
+  op: ReadOperation | 'dispatch' | 'flush' | 'process'
   path: string
   args?: Parameters<BridgeDispatchFn>
   mutations?: MirageMutation[]
+  payload?: string
 }
 export interface ExecuteRequest {
   kind: 'execute'
@@ -32,6 +33,7 @@ export interface ExecuteRequest {
   prefixes: string[]
   args?: Omit<RunArgs, 'cwd' | 'signal'> & { cwd?: string }
   code?: string
+  cwd?: string
   inputs?: Record<string, EvalValue>
   session?: string
   interruptBuffer?: SharedArrayBuffer
@@ -44,6 +46,6 @@ export type WorkerMessage = VfsRequest | WorkerResult | { kind: 'ready' }
 export interface WorkerPort {
   post(message: unknown): void
   onMessage(receive: (message: WorkerMessage) => void): void
-  onError(receive: (error: Error) => void): void
+  onError(receive: (error: unknown) => void): void
   terminate(): void
 }

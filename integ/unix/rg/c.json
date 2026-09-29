@@ -27,10 +27,122 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "rg -c hello /data/mixed.txt",
+      "command": "rg -c hello /data/mixed.txt; rg --count-matches o /data/mixed.txt; rg -c --include-zero zzz /data/mixed.txt; echo rc=$?; rg --count-matches -c o /data/mixed.txt",
       "expect": {
         "exit": 0,
-        "stdout": "1\n",
+        "stdout": "1\n4\n0\nrc=1\n3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "rg_prefilter_folded_count",
+      "seq": 1287008,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "seq 1 20000 > /data/prefilter.txt; printf 'NEEDLE\\nneedle\\nother\\nneedleX\\n' >> /data/prefilter.txt; rg -ci needle /data/prefilter.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "i"
+      ]
+    },
+    {
+      "id": "rg_prefilter_count_matches",
+      "seq": 1287009,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "seq 1 20000 > /data/prefilter.txt; printf 'NEEDLE\\nneedle\\nother\\nneedleX\\n' >> /data/prefilter.txt; rg --count-matches 'needle|other' /data/prefilter.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "count_matches"
+      ]
+    },
+    {
+      "id": "rg_prefilter_regex_count",
+      "seq": 1287013,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "seq 1 20000 > /data/prefilter.txt; printf 'NEEDLE\\nneedle\\nother\\nneedleX\\n' >> /data/prefilter.txt; rg -c 'nee.le' /data/prefilter.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
         "stderr": ""
       },
       "flags": [

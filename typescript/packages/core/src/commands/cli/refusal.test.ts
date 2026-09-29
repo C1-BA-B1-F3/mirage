@@ -22,6 +22,7 @@ import {
   leafRefusal,
 } from './refusal.js'
 import { CommandSpec, Operand, Option, UsageStyle } from '../spec/types.js'
+import type { ParsedCommand } from '../../workspace/executor/command/types.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
@@ -42,21 +43,45 @@ describe('gitUnknownOption', () => {
   })
 })
 
+function refused(
+  invalid: string[] = [],
+): Pick<ParsedCommand, 'invalidOptions' | 'ambiguousOptions' | 'optionErrorKinds'> {
+  return {
+    invalidOptions: invalid,
+    ambiguousOptions: [],
+    optionErrorKinds: invalid.length > 0 ? ['invalid'] : [],
+  }
+}
+
 describe('leafRefusal', () => {
+  // parse-options names the last two options an abbreviation matched, each
+  // with the `no-` it was matched under, and exits 129.
+  it('words an ambiguous abbreviation the way git does', () => {
+    const [msg, code] = leafRefusal(UsageStyle.GIT, ARGPARSE_MESSAGE, {
+      invalidOptions: [],
+      ambiguousOptions: [['--no-m=x', ['--no-merged', '--no-move']]],
+      optionErrorKinds: ['ambiguous'],
+    })
+    expect(DEC.decode(msg)).toBe(
+      'error: ambiguous option: no-m=x (could be --no-merged or --no-move)\n',
+    )
+    expect(code).toBe(129)
+  })
+
   it('exits 129 under the git style', () => {
-    const [, code] = leafRefusal(UsageStyle.GIT, ARGPARSE_MESSAGE, ['--nosuch'])
+    const [, code] = leafRefusal(UsageStyle.GIT, ARGPARSE_MESSAGE, refused(['--nosuch']))
     expect(code).toBe(129)
   })
 
   it('replaces the argparse wording under the git style', () => {
-    const [msg] = leafRefusal(UsageStyle.GIT, ARGPARSE_MESSAGE, ['--nosuch'])
+    const [msg] = leafRefusal(UsageStyle.GIT, ARGPARSE_MESSAGE, refused(['--nosuch']))
     expect(DEC.decode(msg)).toBe("error: unknown option `nosuch'\n")
   })
 
   it('leaves the default style exactly as it was', () => {
     // Every other installed CLI has to keep argparse's shape and its exit 2:
     // an installed name is not a GNU tool with a pinned exit.
-    const [msg, code] = leafRefusal(UsageStyle.ARGPARSE, ARGPARSE_MESSAGE, ['--nosuch'])
+    const [msg, code] = leafRefusal(UsageStyle.ARGPARSE, ARGPARSE_MESSAGE, refused(['--nosuch']))
     expect(msg).toBe(ARGPARSE_MESSAGE)
     expect(code).toBe(ARGPARSE_EXIT)
   })
@@ -64,7 +89,7 @@ describe('leafRefusal', () => {
   it('keeps the argparse wording for errors git shares', () => {
     // A missing value on a flag git does declare is not the unknown option
     // case, so only the exit code moves.
-    const [msg, code] = leafRefusal(UsageStyle.GIT, ARGPARSE_MESSAGE, [])
+    const [msg, code] = leafRefusal(UsageStyle.GIT, ARGPARSE_MESSAGE, refused())
     expect(msg).toBe(ARGPARSE_MESSAGE)
     expect(code).toBe(129)
   })
@@ -133,7 +158,7 @@ describe('clap refusals', () => {
   })
 
   it('exits 2 like argparse but for its own reason', () => {
-    const [msg, code] = leafRefusal(UsageStyle.CLAP, ARGPARSE_MESSAGE, [])
+    const [msg, code] = leafRefusal(UsageStyle.CLAP, ARGPARSE_MESSAGE, refused())
     expect(msg).toBe(ARGPARSE_MESSAGE)
     expect(code).toBe(2)
   })

@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+import { BIN_PREFIX } from '@struktoai/mirage-core/shell/constants'
 import { HISTORY_PREFIX } from '@struktoai/mirage-core/vfs/history/history'
 import { normMountPrefix } from '@struktoai/mirage-core/workspace/snapshot/utils'
 import type { Workspace } from '@struktoai/mirage-core/workspace/workspace/workspace'
@@ -25,7 +26,11 @@ import type {
   WorkspaceInternals,
 } from './schemas.ts'
 
-const AUTO_PREFIXES = new Set(['/dev/', normMountPrefix(HISTORY_PREFIX)])
+const AUTO_PREFIXES = new Set([
+  '/dev/',
+  normMountPrefix(HISTORY_PREFIX),
+  normMountPrefix(BIN_PREFIX),
+])
 const DESCRIPTION_MAX = 120
 
 function isAutoPrefix(prefix: string): boolean {

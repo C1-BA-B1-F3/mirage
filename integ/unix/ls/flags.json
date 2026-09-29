@@ -1793,6 +1793,44 @@
       "flags": [
         "hyperlink"
       ]
+    },
+    {
+      "id": "ls_directory_size_is_4096",
+      "seq": 991524,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/lsdsz/sub && printf abcd > /data/lsdsz/sub/f && printf '%05000d' 0 > /data/lsdsz/big && printf abc > /data/lsdsz/small && ls -ld /data /data/lsdsz /data/lsdsz/sub | awk '{print $5, $NF}' && ls -lS /data/lsdsz | awk 'NF>2{print $5, $NF}' && ls -ldh /data/lsdsz | awk '{print $5}' && find /data/lsdsz -ls | awk '{print $7, $NF}' | sort -k2; rm -rf /data/lsdsz",
+      "expect": {
+        "exit": 0,
+        "stdout": "4096 /data\n4096 /data/lsdsz\n4096 /data/lsdsz/sub\n5000 big\n4096 sub\n3 small\n4.0K\n4096 /data/lsdsz\n5000 /data/lsdsz/big\n3 /data/lsdsz/small\n4096 /data/lsdsz/sub\n4 /data/lsdsz/sub/f\n",
+        "stderr": ""
+      },
+      "flags": [
+        "l",
+        "d"
+      ]
     }
   ]
 }

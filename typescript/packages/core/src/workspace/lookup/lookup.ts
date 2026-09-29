@@ -12,14 +12,24 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { Runtime } from '../../runtime/base.ts'
 import { EXTERNAL_COMMANDS } from '../../runtime/constants.ts'
+import { LanguageRuntime } from '../../runtime/language.ts'
 import { isLineExecutor, isProcessExecutor } from '../../runtime/mixin.ts'
 import type { RouteDecision } from '../../runtime/routing/types.ts'
 import { headVisible, nodeVisible } from '../../policy/match/allow.ts'
 import type { MountRegistry } from '../mount/registry.ts'
 import type { SessionState } from '../session/session.ts'
-import { INTERPRETER_NAMES, NAMESPACE_COMMANDS, SHELL_NAMES } from './constants.ts'
+import {
+  INTERPRETER_NAMES,
+  KEYWORDS,
+  NAMESPACE_COMMANDS,
+  SHELL_NAMES,
+  SHELL_ONLY_BUILTINS,
+} from './constants.ts'
 import { Consumer } from './types.ts'
+import { shellQuote } from '../../utils/quote.ts'
+import { compareCodePoints } from '../../utils/sort.ts'
 
 /**
  * What the session's allow list says about a tool word. A profile without a
@@ -90,6 +100,11 @@ export function runtimeRefused(
   )
 }
 
+/** The runtime that captures a name by name, not through the fallback. */
+function runtimeFor(name: string, registry: MountRegistry): Runtime | undefined {
+  return registry.runtimeEntries.find((entry) => entry.captures.includes(name))
+}
+
 /**
  * Yield every layer holding the name, most-preferred first.
  *
@@ -110,7 +125,7 @@ function* layers(
 ): Generator<Consumer> {
   const installed = listed(name, session)
   let found = false
-  const declared = registry.runtimeEntries.find((entry) => entry.captures.includes(name))
+  const declared = runtimeFor(name, registry)
   const bound =
     routing !== undefined && Object.hasOwn(routing.bindings, name)
       ? routing.bindings[name]
@@ -215,4 +230,112 @@ export function lookupAll(
   registry: MountRegistry,
 ): Consumer[] {
   return [...layers(name, session, registry)]
+}
+
+/**
+ * The layer a name runs from as a program, null when it is none.
+ *
+ * A program is what a real system ships as a file on PATH, so it has one
+ * under `/usr/bin` here: every mount, namespace and CLI command, every
+ * name a runtime captures by name, and each builtin a real system also
+ * finds on disk (echo, test, xargs). The shell's own words (cd, export,
+ * history: `SHELL_ONLY_BUILTINS`), reserved words, functions and aliases
+ * have no file, and a shell word keeps none when a mount registers the
+ * same name, since the builtin is what runs. Nor does a name only the
+ * external fallback capture takes: it takes any word, so like bash's
+ * `command_not_found_handle` it runs a name without making it a program.
+ * An interpreter (python3, node) is a program only where a language
+ * runtime is bound to it: without one it answers 127, as it does on a
+ * system that never installed it. A function shadowing a program leaves
+ * the file in place, as it does on PATH.
+ */
+export function program(
+  name: string,
+  session: SessionState,
+  registry: MountRegistry,
+): Consumer | null {
+  if (name.includes('/') || KEYWORDS.has(name)) return null
+  for (const consumer of layers(name, session, registry)) {
+    if (consumer === Consumer.FUNCTION) continue
+    if (consumer === Consumer.SESSION && SHELL_ONLY_BUILTINS.has(name)) return null
+    if (
+      consumer === Consumer.SESSION &&
+      INTERPRETER_NAMES.has(name) &&
+      !(runtimeFor(name, registry) instanceof LanguageRuntime)
+    )
+      return null
+    if (consumer === Consumer.EXTERNAL && runtimeFor(name, registry) === undefined) return null
+    return consumer
+  }
+  return null
+}
+
+/**
+ * Whether a builtin that execs its operand (xargs, timeout) finds it.
+ *
+ * GNU execs the name, so a shell word with no file on PATH (cd, export) is
+ * missing there, as is a name nothing provides. A function runs too, where it
+ * is what the name runs (a shell word shadows one): mirage runs the line in
+ * the shell, which is how these reach it. A path is left to the run, which
+ * reports on it.
+ */
+export function execs(name: string, session: SessionState, registry: MountRegistry): boolean {
+  return (
+    name.includes('/') ||
+    program(name, session, registry) !== null ||
+    lookup(name, session, registry) === Consumer.FUNCTION
+  )
+}
+
+/**
+ * What a program's `/usr/bin` file says about it, null when the name is no
+ * program.
+ *
+ * One line: what runs the name, and `--help` where the program's spec
+ * answers it, which a mount command's and a CLI's do; a builtin's answer
+ * varies (`ln --help` and `echo --help` print no help), so a builtin's
+ * line names none.
+ */
+export function programNote(
+  name: string,
+  session: SessionState,
+  registry: MountRegistry,
+): string | null {
+  const consumer = program(name, session, registry)
+  if (consumer === null) return null
+  const runtime = runtimeFor(name, registry)
+  if (runtime !== undefined && (consumer === Consumer.EXTERNAL || INTERPRETER_NAMES.has(name))) {
+    return `${name} runs on the workspace's ${runtime.name} runtime.`
+  }
+  const helpLine = ` Help: ${shellQuote(name)} --help`
+  if (consumer === Consumer.CLI) {
+    return `${name} is a CLI registered with this workspace.${helpLine}`
+  }
+  const spec =
+    consumer === Consumer.MOUNT ? (registry.mountForCommand(name)?.specFor(name) ?? null) : null
+  if (spec?.options.some((option) => option.long === '--help') === true) {
+    return `${name} is built into mirage.${helpLine}`
+  }
+  return `${name} is built into mirage.`
+}
+
+/**
+ * Every program name the session can run, sorted: the `/usr/bin` listing.
+ *
+ * The names are gathered from each layer that can hold a program and
+ * kept only where `program` says the name runs as one, so the listing and
+ * a lookup never disagree. A name only the external fallback capture
+ * would take cannot be listed, since that capture takes any word.
+ */
+export function programs(session: SessionState, registry: MountRegistry): string[] {
+  const names = new Set<string>([...SHELL_NAMES, ...NAMESPACE_COMMANDS, ...registry.clis.names()])
+  for (const entry of registry.runtimeEntries) {
+    for (const capture of entry.captures) if (capture !== EXTERNAL_COMMANDS) names.add(capture)
+  }
+  for (const mount of registry.allMounts()) {
+    for (const cmd of mount.allCommands()) names.add(cmd.name.split(' ')[0] ?? cmd.name)
+  }
+  return [...names]
+    .filter((name) => program(name, session, registry) !== null)
+    .sort(compareCodePoints)
 }

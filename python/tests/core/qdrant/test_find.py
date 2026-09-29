@@ -16,6 +16,7 @@ import pytest
 
 from mirage.commands.builtin.qdrant import COMMANDS
 from mirage.commands.config import CommandOpts
+from mirage.io.types import materialize
 from mirage.types import PathSpec
 
 
@@ -37,7 +38,7 @@ async def _run(accessor, paths, *texts: str, **flags) -> list[str]:
     find = _find_command()
     stdout, _io = await find(accessor, paths, list(texts),
                              CommandOpts(index=None, flags={**flags}))
-    data = stdout if isinstance(stdout, bytes) else b""
+    data = await materialize(stdout)
     return data.decode().splitlines()
 
 

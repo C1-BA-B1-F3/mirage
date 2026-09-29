@@ -152,7 +152,7 @@ async def test_command_tiers_key_on_the_installed_name():
         assert b"h2: command not found" in err
         io = await ws.shell("type -t h1; type -t h2", session_id="s")
         out = await materialize(io.stdout) if io.stdout else b""
-        assert (io.exit_code, out) == (1, b"cli\n")
+        assert (io.exit_code, out) == (1, b"file\n")
         io = await ws.shell("h1 message send -t x hi", session_id="s")
         out = await materialize(io.stdout) if io.stdout else b""
         assert (io.exit_code, out) == (0, b"sent[one] to=x: hi\n")

@@ -1,0 +1,22 @@
+{
+  "cases": [
+    {
+      "id": "xro_iconv_filters_stdin",
+      "seq": 1231012,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cd /ro && printf 'caf\\351\\n' | iconv -f latin1 -t utf-8",
+      "expect": {
+        "exit": 0,
+        "stdout": "café\n",
+        "stderr": ""
+      },
+      "flags": [
+        "f",
+        "t"
+      ]
+    }
+  ]
+}

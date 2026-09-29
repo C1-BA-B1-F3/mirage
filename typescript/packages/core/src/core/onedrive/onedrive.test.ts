@@ -4,7 +4,7 @@ import { OneDriveAccessor } from '../../accessor/onedrive.ts'
 import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { runWithRecording } from '../../observe/context.ts'
 import { PathSpec } from '../../types.ts'
-import { find, read, readdir, stat, write } from './index.ts'
+import { create, find, read, readdir, stat, stream, write } from './index.ts'
 
 function requestUrl(input: URL | RequestInfo): string {
   if (typeof input === 'string') return input
@@ -243,5 +243,190 @@ describe('OneDrive filesystem operations', () => {
     await expect(readdir(accessor, path, new RAMIndexCacheStore())).rejects.toMatchObject({
       code: 'ENOENT',
     })
+  })
+})
+
+// A key named like its mount: neither `m/k.txt` nor `/m/k.txt` is virtual.
+describe('OneDrive record paths', () => {
+  const spec = new PathSpec({ virtual: '/m/m/k.txt', vfsPath: 'm/k.txt', directory: '/m/m/' })
+
+  function versionedFetch(): ReturnType<typeof vi.fn> {
+    return vi.fn((input: URL | RequestInfo) => {
+      const url = requestUrl(input)
+      if (url === 'https://download.test/file') {
+        return Promise.resolve(new Response(new Uint8Array([1, 2, 3]), { status: 200 }))
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            cTag: 'ctag-1',
+            versions: [{ id: 'v1', lastModifiedDateTime: '2026-01-01T00:00:00Z' }],
+            '@microsoft.graph.downloadUrl': 'https://download.test/file',
+          }),
+          { status: 200 },
+        ),
+      )
+    })
+  }
+
+  it('write records the virtual path', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'i' }))))
+    const accessor = new OneDriveAccessor({ accessToken: 'token' })
+    const [, records] = await runWithRecording(() =>
+      write(accessor, spec, new TextEncoder().encode('hello')),
+    )
+    expect(records.map((r) => r.op)).toEqual(['write'])
+    expect(records.map((r) => r.path)).toEqual(['/m/m/k.txt'])
+  })
+
+  it('create records the virtual path', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 'i' }))))
+    const accessor = new OneDriveAccessor({ accessToken: 'token' })
+    const [, records] = await runWithRecording(() => create(accessor, spec))
+    expect(records.map((r) => r.op)).toEqual(['write'])
+    expect(records.map((r) => r.path)).toEqual(['/m/m/k.txt'])
+  })
+
+  // msgraph readItem, through its public caller.
+  it('read records the virtual path', async () => {
+    vi.stubGlobal('fetch', versionedFetch())
+    const accessor = new OneDriveAccessor({ accessToken: 'token' })
+    const [data, records] = await runWithRecording(() => read(accessor, spec))
+    expect([...data]).toEqual([1, 2, 3])
+    expect(records.map((r) => r.path)).toEqual(['/m/m/k.txt'])
+  })
+
+  // msgraph streamItem, through its public caller.
+  it('stream records the virtual path', async () => {
+    vi.stubGlobal('fetch', versionedFetch())
+    const accessor = new OneDriveAccessor({ accessToken: 'token' })
+    const [bytes, records] = await runWithRecording(async () => {
+      const out: number[] = []
+      for await (const chunk of stream(accessor, spec)) out.push(...chunk)
+      return out
+    })
+    expect(bytes).toEqual([1, 2, 3])
+    expect(records.map((r) => r.path)).toEqual(['/m/m/k.txt'])
+  })
+})
+
+const ITEM = 'https://graph.microsoft.com/v1.0/me/drive/root:/a.bin'
+const DOWNLOAD = 'https://download.test/a.bin'
+
+// Routes by URL without its query and logs each call's URL, Authorization and
+// Range; an unrouted URL throws, so a request the read should not make fails.
+function routed(routes: Record<string, () => Response>) {
+  const calls: [string, string | undefined, string | undefined][] = []
+  const fetchMock = vi.fn((input: URL | RequestInfo, init?: RequestInit) => {
+    const url = requestUrl(input)
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    calls.push([url.split('?')[0] ?? url, headers.Authorization, headers.Range])
+    const route = routes[url.split('?')[0] ?? url]
+    if (route === undefined) throw new Error(`unrouted ${url}`)
+    return Promise.resolve(route())
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return calls
+}
+
+function itemJson(download: string | null = DOWNLOAD): Response {
+  return new Response(
+    JSON.stringify({
+      id: 'item',
+      cTag: 'ctag-1',
+      eTag: 'etag-1',
+      ...(download === null ? {} : { '@microsoft.graph.downloadUrl': download }),
+    }),
+    { status: 200 },
+  )
+}
+
+describe('an unrecorded OneDrive read', () => {
+  const path = PathSpec.fromStrPath('/od/a.bin', 'a.bin')
+
+  it('fetches the item, then its download URL without the bearer token', async () => {
+    const calls = routed({
+      [ITEM]: () => itemJson(),
+      [DOWNLOAD]: () => new Response(new Uint8Array([1, 2, 3]), { status: 200 }),
+    })
+    const data = await read(new OneDriveAccessor({ accessToken: 'token' }), path)
+    expect([...data]).toEqual([1, 2, 3])
+    // The token comes first, so a write between the two requests can only
+    // make the cached bytes look stale.
+    expect(calls.map(([url, auth]) => [url, auth])).toEqual([
+      [ITEM, 'Bearer token'],
+      [DOWNLOAD, undefined],
+    ])
+  })
+
+  it('falls back to /content when Graph omits the download URL', async () => {
+    const calls = routed({
+      [ITEM]: () => itemJson(null),
+      [`${ITEM}:/content`]: () => new Response(new Uint8Array([4, 5]), { status: 200 }),
+    })
+    const data = await read(new OneDriveAccessor({ accessToken: 'token' }), path)
+    expect([...data]).toEqual([4, 5])
+    expect(calls.map(([url, auth]) => [url, auth])).toEqual([
+      [ITEM, 'Bearer token'],
+      [`${ITEM}:/content`, 'Bearer token'],
+    ])
+  })
+
+  it('reports ENOENT with the virtual path when the item is missing', async () => {
+    routed({
+      [ITEM]: () =>
+        new Response(JSON.stringify({ error: { code: 'itemNotFound', message: 'no' } }), {
+          status: 404,
+        }),
+    })
+    const error: unknown = await read(new OneDriveAccessor({ accessToken: 'token' }), path).catch(
+      (e: unknown) => e,
+    )
+    expect(error).toMatchObject({ code: 'ENOENT' })
+    expect((error as Error).message).toContain('/od/a.bin')
+  })
+
+  it('sends a window to the download URL and slices a 200 answer locally', async () => {
+    const calls = routed({
+      [ITEM]: () => itemJson(),
+      [DOWNLOAD]: () => new Response(new TextEncoder().encode('hello'), { status: 200 }),
+    })
+    const data = await read(new OneDriveAccessor({ accessToken: 'token' }), path, undefined, {
+      offset: 2,
+      size: 3,
+    })
+    expect(new TextDecoder().decode(data)).toBe('llo')
+    expect(calls[1]).toEqual([DOWNLOAD, undefined, 'bytes=2-4'])
+  })
+})
+
+describe('a OneDrive folder served from the index', () => {
+  it('carries no fingerprint, as a network stat of a folder does not', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            value: [
+              {
+                id: 'dir',
+                name: 'Docs',
+                cTag: 'ctag-dir',
+                eTag: 'etag-dir',
+                lastModifiedDateTime: '2026-01-01T00:00:00Z',
+                folder: { childCount: 1 },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+    const accessor = new OneDriveAccessor({ accessToken: 'token' })
+    const index = new RAMIndexCacheStore()
+    await readdir(accessor, PathSpec.fromStrPath('/od', ''), index)
+    const docs = await stat(accessor, PathSpec.fromStrPath('/od/Docs', 'Docs'), index)
+    expect(docs.type).toBe('directory')
+    expect(docs.fingerprint).toBeNull()
   })
 })

@@ -12,15 +12,20 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
 import type { RegisteredOp } from '@struktoai/mirage-core/ops/registry'
-import { BaseVFS } from '@struktoai/mirage-core/vfs/base'
+
 import type { VFSStateBase } from '@struktoai/mirage-core/vfs/base'
+
 import type { DeltaHook } from '@struktoai/mirage-core/watch/index'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { HF_HUB_COMMANDS } from '../../commands/builtin/hf_hub/index.ts'
+
 import { buildDeltaHook } from '../../core/hf_hub/watch.ts'
 import { HF_HUB_OPS } from '../../ops/hf_hub/index.ts'
+
 /**
  * The shared body of the three Hub *repository* VFS.
  *
@@ -34,6 +39,7 @@ import { HF_HUB_OPS } from '../../ops/hf_hub/index.ts'
  * body, the way its four hf VFS always have. The asymmetry is recorded
  * in spec/layout_exceptions.json.
  */
+
 export abstract class HfHubVFS extends BaseVFS {
   abstract override readonly prompt: string
   abstract override readonly accessor: HfHubAccessor
@@ -47,10 +53,12 @@ export abstract class HfHubVFS extends BaseVFS {
   // be short.
   override readonly sizesAlwaysKnown: boolean = true
   override readonly supportsSnapshot: boolean = true
+  override readonly readRevalidatable: boolean = true
   // The index is not a cache in front of a listing, it IS the listing: one
   // recursive fetch seeds it whole. A long TTL therefore spares the Hub a
   // full re-walk rather than risking a stale row.
   override readonly indexTtl: number = 86_400
+
   override commands(): readonly RegisteredCommand[] {
     return HF_HUB_COMMANDS
   }
@@ -58,10 +66,8 @@ export abstract class HfHubVFS extends BaseVFS {
   override ops(): readonly RegisteredOp[] {
     return HF_HUB_OPS
   }
+
   override deltaHook(): DeltaHook {
     return buildDeltaHook(this.accessor)
-  }
-  override loadState(_state: unknown): Promise<void> {
-    return Promise.resolve()
   }
 }

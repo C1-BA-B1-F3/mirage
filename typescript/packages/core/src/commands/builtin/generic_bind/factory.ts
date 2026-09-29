@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { streamFromBytes } from '../utils/wrap.ts'
 import { guardInput } from '../utils/limit.ts'
 import type { Accessor } from '../../../accessor/base.ts'
 import { activeCacheManager } from '../../../cache/context.ts'
@@ -24,16 +25,16 @@ import { type CommandFn, type ProvisionFn, type RegisteredCommand, command } fro
 import { specOf } from '../../spec/builtins.ts'
 import {
   type CommandIO,
-  type StatOp,
   resolveGlobOf,
-  supports,
   withAbortGuard,
   withDirGuard,
   withPathGuards,
   withPolicyGuard,
 } from './adapter.ts'
+import { type StatOp } from '../../../vfs/types.ts'
 import { BUILDERS } from './builders/index.ts'
 import { defaultProvision } from './provision.ts'
+import { compareCodePoints } from '../../../utils/sort.ts'
 
 function cachedStat<A extends Accessor>(stat: StatOp<A>): StatOp<A> {
   return async (accessor: A, path: PathSpec, index?: IndexCacheStore) => {
@@ -141,11 +142,14 @@ export function withSlashGuard<A extends Accessor>(ops: CommandIO<A>): CommandIO
 }
 
 function withReadCache<A extends Accessor>(ops: CommandIO<A>): CommandIO<A> {
+  const readBytes = cacheAwareReadBytes(ops.readBytes)
   return {
     ...ops,
     stat: cachedStat(ops.stat),
-    readStream: cacheAwareReadStream(ops.readStream),
-    readBytes: cacheAwareReadBytes(ops.readBytes),
+    readStream: ops.streamsBytes
+      ? (a, p, i) => streamFromBytes(readBytes, a, p, i)
+      : cacheAwareReadStream(ops.readStream),
+    readBytes,
   }
 }
 
@@ -196,6 +200,18 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
   const skip = options.overrides ?? new Set<string>()
   const provOver = options.provisionOverrides ?? {}
   const opsOver = options.opsOverrides ?? {}
+  // A name no builder has does nothing at all, so a misspelled override left
+  // the generic registered beside the bespoke one, and an override for a
+  // command the table never had (mem0's `search`) read as if it displaced
+  // something. Refused at registration, which is import time. Mirrors
+  // `make_generic_commands` in `generic_bind/factory.py`.
+  const known = new Set(BUILDERS.map((b) => b.name))
+  const unknown = [...new Set([...skip, ...Object.keys(provOver), ...Object.keys(opsOver)])]
+    .filter((name) => !known.has(name))
+    .sort(compareCodePoints)
+  if (unknown.length > 0) {
+    throw new Error(`makeGenericCommands('${vfs}'): no generic builder named ${unknown.join(', ')}`)
+  }
   const commands: RegisteredCommand[] = []
   for (const b of BUILDERS) {
     if (skip.has(b.name)) continue
@@ -206,10 +222,6 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
     // call time. The raw adapter stays untouched for the ops tables,
     // whose door does its own enforcement.
     const baseOps = withPathGuards(raw)
-    // A backend missing an op a command cannot run without (cp/mv/tee/
-    // gunzip/...) doesn't get the command registered, rather than getting
-    // one that crashes when invoked.
-    if (!supports(baseOps, b.requirements ?? [])) continue
     const finish = b.read === true ? readWraps : b.write === true ? writeWraps : statWraps
     // A nested mount's keys live in another VFS and no VFS
     // stores a symlink, so a glob resolved by one backend's readdir
@@ -240,7 +252,12 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
       const guarded = withAbortGuard(
         withDirGuard(
           withPolicyGuard(
-            finish(withPathGuards(stampNamespace(raw, opts.ns?.childMounts, opts.ns?.links))),
+            finish(
+              withPathGuards(
+                stampNamespace(raw, opts.ns?.childMounts, opts.ns?.links),
+                opts.mountPrefix,
+              ),
+            ),
             opts.mountPrefix,
           ),
         ),
@@ -276,6 +293,7 @@ export function makeGenericCommands<A extends Accessor = Accessor>(
         provision,
         aggregate,
         write: b.write === true,
+        pathGuarded: true,
       }),
     )
   }

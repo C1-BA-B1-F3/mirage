@@ -1,0 +1,43 @@
+{
+  "repos": [
+    {
+      "fullName": "integ/repo-comments",
+      "owner": "integ",
+      "name": "repo-comments",
+      "defaultBranch": "main",
+      "sourceDir": "github/repo-v1"
+    }
+  ],
+  "issues": [
+    {
+      "repo": "integ/repo-comments",
+      "number": 1,
+      "title": "Comments",
+      "user": "integ-user",
+      "createdAt": "2025-11-03T00:00:00Z",
+      "updatedAt": "2025-11-03T00:00:00Z",
+      "seq": 1
+    }
+  ],
+  "comments": [
+    {
+      "repo": "integ/repo-comments",
+      "issueNumber": 1,
+      "id": 1,
+      "body": "comment 1",
+      "user": "integ-user",
+      "createdAt": "2025-11-03T00:00:00Z",
+      "seq": 1,
+      "metaJson": "{\"author\": null, \"authorAssociation\": \"CONTRIBUTOR\", \"includesCreatedEdit\": true, \"isMinimized\": true, \"minimizedReason\": \"OUTDATED\", \"viewerDidAuthor\": false, \"reactionGroups\": [{\"content\": \"THUMBS_UP\", \"users\": {\"totalCount\": 2}}, {\"content\": \"LAUGH\", \"users\": {\"totalCount\": 0}}]}"
+    },
+    {
+      "repo": "integ/repo-comments",
+      "issueNumber": 1,
+      "id": 2,
+      "body": "comment 2",
+      "user": "integ-user",
+      "createdAt": "2025-11-03T00:00:00Z",
+      "seq": 2
+    }
+  ]
+}

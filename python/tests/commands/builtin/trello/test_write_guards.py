@@ -121,3 +121,40 @@ async def test_a_read_mount_refuses_an_id_addressed_write(
             await cmd(_ACCESSOR, [], [], CommandOpts(flags=flags))
     finally:
         reset_mount_gate(token)
+
+
+_SCOPED = TrelloAccessor(
+    TrelloConfig(api_key="k",
+                 api_token="t",
+                 board_ids=["b_in"],
+                 base_url="http://127.0.0.1:9"))
+
+
+async def _on_board_out(config, ident, session=None):
+    return {"id": ident, "idBoard": "b_out"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cmd,flags", CASES)
+async def test_a_card_write_refuses_an_id_outside_the_scope(
+        cmd: CommandFn, flags: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every card write refuses a card or list on a board the mount's
+    ``board_ids`` / ``workspace_id`` leave out, before the write.
+
+    The write is addressed by id, so without the check a mount narrowed
+    to one board writes to any board the token can reach. The base_url
+    is unroutable: a write that got past the check would fail with a
+    connection error, not the refusal.
+    """
+    monkeypatch.setattr("mirage.commands.builtin.trello._scope.get_card",
+                        _on_board_out)
+    monkeypatch.setattr("mirage.commands.builtin.trello._scope.get_list",
+                        _on_board_out)
+    token = set_mount_gate("/trello", MountMode.WRITE)
+    try:
+        with pytest.raises(ValueError,
+                           match=" is outside this mount's scope$"):
+            await cmd(_SCOPED, [], [], CommandOpts(flags=flags))
+    finally:
+        reset_mount_gate(token)

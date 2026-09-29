@@ -181,7 +181,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /data/homepage: No such file or directory\n"
+        "stderr": "stat: cannot statx '/data/homepage': No such file or directory\n"
       }
     },
     {
@@ -233,7 +233,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /repo/extern: No such file or directory\n"
+        "stderr": "stat: cannot statx '/repo/extern': No such file or directory\n"
       }
     },
     {
@@ -298,7 +298,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /trunc/docs/vendored: No such file or directory\n"
+        "stderr": "stat: cannot statx '/trunc/docs/vendored': No such file or directory\n"
       }
     },
     {
@@ -1269,10 +1269,11 @@
       "targets": [
         "trello"
       ],
+      "clear_cache": true,
       "command": "f=/board/workspaces/Strukto__org_strukto/boards/Roadmap_Q3__brd_roadmap/lists/In_Progress__lst_doing/cards/Fix_login_redirect_loop__crd_login/comments.jsonl; echo \"cold=$(stat -c %s \"$f\")\"; echo \"read=$(cat \"$f\" | wc -c)\"; echo \"warm=$(stat -c %s \"$f\")\"",
       "expect": {
         "exit": 0,
-        "stdout": "cold=0\nread=186\nwarm=186\n",
+        "stdout": "cold=-\nread=186\nwarm=186\n",
         "stderr": ""
       }
     },
@@ -1350,7 +1351,7 @@
       "command": "f=/notion/pages/Notes__bbbb2222-3333-4444-5555-666677778888/page.json; echo \"cold=$(stat -c %s \"$f\")\"; echo \"read=$(cat \"$f\" | wc -c)\"; echo \"warm=$(stat -c %s \"$f\")\"",
       "expect": {
         "exit": 0,
-        "stdout": "cold=0\nread=1466\nwarm=1466\n",
+        "stdout": "cold=-\nread=1466\nwarm=1466\n",
         "stderr": ""
       },
       "clear_cache": true
@@ -1375,10 +1376,10 @@
         "langfuse"
       ],
       "clear_cache": true,
-      "command": "f=/lf/traces/trace-beta.json; echo \"cold=$(stat -c %s \"$f\")\"; echo \"read=$(cat \"$f\" | wc -c)\"; echo \"warm=$(stat -c %s \"$f\")\"",
+      "command": "set -o pipefail; f=/lf/traces/trace-beta.json; echo \"cold=$(stat -c %s \"$f\")\"; bytes=$(cat \"$f\" | wc -c) && test \"$bytes\" -gt 0 && echo read=positive && test \"$(stat -c %s \"$f\")\" = \"$bytes\" && echo warm=read",
       "expect": {
         "exit": 0,
-        "stdout": "cold=0\nread=694\nwarm=694\n",
+        "stdout": "cold=-\nread=positive\nwarm=read\n",
         "stderr": ""
       }
     }

@@ -23,6 +23,7 @@ import type { PredNode } from '../../commands/builtin/find_eval.ts'
 import type { PathSpec } from '../../types.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { DIR_SIZE } from '../../utils/stat_view.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { norm } from './utils.ts'
 
@@ -101,8 +102,7 @@ export async function find(
     }
     if (!keep({ key, name: basename, kind, depth, isEmpty }, tree, options.minDepth)) continue
     if (options.minSize != null || options.maxSize != null) {
-      // Directories count as size 0 for -size (deliberate GNU divergence).
-      const size = kind === 'f' ? await store.fileLen(key) : 0
+      const size = kind === 'f' ? await store.fileLen(key) : DIR_SIZE
       if (options.minSize != null && size < options.minSize) continue
       if (options.maxSize != null && size > options.maxSize) continue
     }

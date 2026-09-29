@@ -31,6 +31,52 @@ export function specFor(root: PathSpec, virtual: string): PathSpec {
   return PathSpec.fromStrPath(virtual, stripSlash(virtual.slice(cut)))
 }
 
+/**
+ * Classify two `{virtual: fingerprint}` snapshots as changes.
+ *
+ * A key only in `current` is a CREATE, one only in `previous` a DELETE, and a
+ * changed fingerprint an UPDATE. A file change that is not a DELETE carries
+ * the metadata of its row in `entries`, when there is one.
+ *
+ * Mirrors Python `diff_snapshots` (`watch/delta.py`).
+ */
+export function diffSnapshots(
+  root: PathSpec,
+  previous: Record<string, string>,
+  current: Record<string, string>,
+  entries: ReadonlyMap<string, WalkEntry>,
+  observed: Date,
+): FileEvent[] {
+  const keys = [...new Set([...Object.keys(current), ...Object.keys(previous)])].sort(
+    compareCodePoints,
+  )
+  const changes: FileEvent[] = []
+  for (const virtual of keys) {
+    const old = previous[virtual]
+    const next = current[virtual]
+    if (old === next) continue
+    const kind =
+      old === undefined
+        ? FileChangeKind.CREATE
+        : next === undefined
+          ? FileChangeKind.DELETE
+          : FileChangeKind.UPDATE
+    const entry = entries.get(virtual)
+    const metadata =
+      entry !== undefined && !entry.isDir && kind !== FileChangeKind.DELETE
+        ? new FileMetadata({
+            fingerprint: entry.fingerprint,
+            size: entry.size ?? null,
+            modified: entry.modified ?? null,
+          })
+        : null
+    changes.push(
+      new FileEvent({ kind, path: specFor(root, virtual), timestamp: observed, metadata }),
+    )
+  }
+  return changes
+}
+
 export class ListingDeltaHook implements DeltaHook {
   private readonly walk: WalkFn
 
@@ -48,41 +94,9 @@ export class ListingDeltaHook implements DeltaHook {
     const serialized = JSON.stringify(snapshot, Object.keys(snapshot).sort(compareCodePoints))
     if (checkpoint === null) return new Delta({ changes: [], checkpoint: serialized })
     const previous = JSON.parse(checkpoint) as Record<string, string>
-    const observed = new Date()
-    const changes: FileEvent[] = []
-    const paths = [...new Set([...Object.keys(snapshot), ...Object.keys(previous)])].sort(
-      compareCodePoints,
-    )
-    for (const virtual of paths) {
-      const oldFingerprint = previous[virtual]
-      const newFingerprint = snapshot[virtual]
-      if (oldFingerprint === newFingerprint) continue
-      let kind: FileChangeKind
-      if (oldFingerprint === undefined && newFingerprint !== undefined) {
-        kind = FileChangeKind.CREATE
-      } else if (newFingerprint === undefined) {
-        kind = FileChangeKind.DELETE
-      } else {
-        kind = FileChangeKind.UPDATE
-      }
-      const current = entries.get(virtual)
-      const metadata =
-        current !== undefined && !current.isDir
-          ? new FileMetadata({
-              fingerprint: current.fingerprint,
-              size: current.size ?? null,
-              modified: current.modified ?? null,
-            })
-          : null
-      changes.push(
-        new FileEvent({
-          kind,
-          path: specFor(root, virtual),
-          timestamp: observed,
-          metadata,
-        }),
-      )
-    }
-    return new Delta({ changes, checkpoint: serialized })
+    return new Delta({
+      changes: diffSnapshots(root, previous, snapshot, entries, new Date()),
+      checkpoint: serialized,
+    })
   }
 }

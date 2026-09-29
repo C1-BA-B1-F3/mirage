@@ -40,6 +40,6 @@ export async function appendBytes(
     await store.setFile(p, data)
   }
   await store.setModified(p, nowIso())
-  record('append', p, VFSName.REDIS, data.byteLength, timer)
+  record('append', path.virtual, VFSName.REDIS, data.byteLength, timer)
   await invalidateAfterWrite(p)
 }

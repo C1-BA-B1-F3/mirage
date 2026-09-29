@@ -18,10 +18,13 @@ import { Scope, Slot, makeDetectScope } from '../hierarchy/scope.ts'
 
 // A page tree nests arbitrarily, so the page level is one VARIADIC slot:
 // `pages/a__1/b__2` is a page at any depth, and the slots hold the DEEPEST
-// page's label and id, which is the one the path addresses. Under
-// `databases/` the same run starts below the data source, because a row
-// page is an ordinary page whose parent is the data source.
+// page's label and id, which is the one the path addresses. A database row
+// is a page too, but one level of its own: the data source lists its rows as
+// `rows.jsonl` rather than as directories, so a row is reached by its path
+// alone and proves itself (`row` and `row_json`), while the pages under a
+// row are listed by the row as any child page is.
 const PAGE = new Slot('page', RAW, 'page_id', true)
+const ROW = new Slot('row', RAW, 'row_id')
 const DB: readonly (string | Slot)[] = ['databases', new Slot('database', RAW, 'database_id')]
 const DS: readonly (string | Slot)[] = [...DB, new Slot('data_source', RAW, 'data_source_id')]
 
@@ -52,14 +55,27 @@ export const SCOPES: readonly Scope[] = [
     leaf: true,
     filetype: ContentType.JSON,
   }),
+  new Scope({
+    kind: 'rows_jsonl',
+    segments: [...DS, 'rows.jsonl'],
+    leaf: true,
+    filetype: ContentType.TEXT,
+  }),
   new Scope({ kind: 'data_source', segments: DS }),
   new Scope({
-    kind: 'page_json',
-    segments: [...DS, PAGE, 'page.json'],
+    kind: 'row_json',
+    segments: [...DS, ROW, 'page.json'],
     leaf: true,
     filetype: ContentType.JSON,
   }),
-  new Scope({ kind: 'page', segments: [...DS, PAGE] }),
+  new Scope({ kind: 'row', segments: [...DS, ROW] }),
+  new Scope({
+    kind: 'page_json',
+    segments: [...DS, ROW, PAGE, 'page.json'],
+    leaf: true,
+    filetype: ContentType.JSON,
+  }),
+  new Scope({ kind: 'page', segments: [...DS, ROW, PAGE] }),
 ]
 
 export const detectScope = makeDetectScope(SCOPES)

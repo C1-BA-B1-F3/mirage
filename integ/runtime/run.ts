@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { parseCommandLimits } from '@struktoai/mirage-core/policy/builtin/output_cap'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -56,6 +57,10 @@ import {
   type ProcessExecutor,
 } from '@struktoai/mirage-core'
 import type { RuntimeLanguage } from '@struktoai/mirage-core/runtime/types'
+import type { RAMAccessor } from '@struktoai/mirage-core/accessor/ram'
+import type { RegisteredCommand } from '@struktoai/mirage-core/commands/config'
+import { makeGenericCommands } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
+import { RAM_IO } from '@struktoai/mirage-core/commands/builtin/ram/io'
 
 const HOST = 'typescript'
 const SUITE_DIR = dirname(fileURLToPath(import.meta.url))
@@ -116,6 +121,8 @@ interface CliSpecJson {
 }
 
 interface World {
+  session_id?: string
+  command_limits?: unknown
   register_runtimes?: Record<string, string>
   runtimes?: (string | Record<string, unknown>)[]
   route_policy?: string
@@ -423,7 +430,10 @@ async function ensureMongo(): Promise<void> {
  *
  * The shape of one broken record behind a REST collection: the listing
  * names it, and every question about it errors with whatever the
- * upstream said, which is no filesystem code at all.
+ * upstream said, which is no filesystem code at all. The stat its
+ * commands ask fails too, so ls and find meet the record where a remote
+ * mount's commands do, and with no native find op, as such a mount has
+ * none, find walks.
  */
 class FailingRAMVFS extends RAMVFS {
   private readonly failing: ReadonlySet<string>
@@ -439,6 +449,19 @@ class FailingRAMVFS extends RAMVFS {
       .map((op) =>
         op.name === 'stat' || op.name === 'read' ? { ...op, fn: this.guard(op.fn) } : op,
       )
+  }
+
+  commands(): readonly RegisteredCommand[] {
+    const { find: _find, ...io } = RAM_IO
+    return makeGenericCommands<RAMAccessor>('ram', {
+      ...io,
+      stat: (accessor, path, index) => {
+        if (this.failing.has(path.vfsPath.split('/').filter(Boolean).join('/'))) {
+          return Promise.reject(new Error('upstream 502 Bad Gateway'))
+        }
+        return RAM_IO.stat(accessor, path, index)
+      },
+    })
   }
 
   private guard(fn: RegisteredOp['fn']): RegisteredOp['fn'] {
@@ -526,7 +549,11 @@ async function buildWorkspace(world: World, runId: string): Promise<Workspace> {
       seeds.push([prefix, name, content])
     }
   }
-  const options: Record<string, unknown> = { mode: MountMode.EXEC }
+  const options: Record<string, unknown> = {
+    mode: MountMode.EXEC,
+    commandLimits: parseCommandLimits(world.command_limits),
+  }
+  if (world.session_id !== undefined) options.sessionId = world.session_id
   if (world.runtimes !== undefined) options.runtimes = world.runtimes.map(buildEntry)
   if (world.route_policy !== undefined) options.routePolicy = new ScriptSource(world.route_policy)
   if (world.policies !== undefined) options.policies = world.policies.map(buildPolicy)

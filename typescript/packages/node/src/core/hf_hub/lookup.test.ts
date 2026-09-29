@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { PathSpec } from '@struktoai/mirage-core/types'
-import { IndexEntry } from '@struktoai/mirage-core/cache/index/config'
+import { IndexEntry, LookupStatus } from '@struktoai/mirage-core/cache/index/config'
 import { RAMIndexCacheStore } from '@struktoai/mirage-core/cache/index/ram'
 import { RedisIndexCacheStore } from '@struktoai/mirage-core/cache/index/redis'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -21,14 +21,16 @@ import { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import * as client from './client.ts'
 import { exists as pathExists } from './exists.ts'
 import { dirStatEntry, keyOf, lookup, probeDir, probeFile } from './lookup.ts'
-import { read } from './read.ts'
+import { read, resolveEntry } from './read.ts'
 import { readdir } from './readdir.ts'
 import { stat } from './stat.ts'
+import * as tree from './tree.ts'
 import { parseEntry, seedIndex } from './tree.ts'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 
 function ps(path: string, prefix = ''): PathSpec {
-  const rel = path.replace(/^\/+|\/+$/g, '')
-  const stem = prefix.replace(/\/+$/, '')
+  const rel = stripSlash(path)
+  const stem = rstripSlash(prefix)
   const virtual =
     stem === '' ? (rel === '' ? '/' : `/${rel}`) : rel === '' ? stem : `${stem}/${rel}`
   const parent = virtual.slice(0, virtual.lastIndexOf('/')) || '/'
@@ -170,7 +172,7 @@ describe('read', () => {
   })
 
   it('never reaches the network for a path the listing knows is absent', async () => {
-    const spy = vi.spyOn(client, 'hubBytes')
+    const spy = vi.spyOn(client, 'hubBytesTagged')
     expect(await codeOf(() => read(loaded(), ps('nope')))).toBe('ENOENT')
     expect(spy).not.toHaveBeenCalled()
   })
@@ -182,7 +184,9 @@ describe('read', () => {
   })
 
   it('fetches the resolve url', async () => {
-    const spy = vi.spyOn(client, 'hubBytes').mockResolvedValue(new TextEncoder().encode('hello'))
+    const spy = vi
+      .spyOn(client, 'hubBytesTagged')
+      .mockResolvedValue([new TextEncoder().encode('hello'), ''])
     const data = await read(loaded(), ps('a.txt'))
     expect(new TextDecoder().decode(data)).toBe('hello')
     expect(spy.mock.calls[0]?.[1]).toBe('https://huggingface.co/acme/widget/resolve/main/a.txt')
@@ -190,7 +194,7 @@ describe('read', () => {
   })
 
   it('passes a byte window', async () => {
-    const spy = vi.spyOn(client, 'hubBytes').mockResolvedValue(new Uint8Array(2))
+    const spy = vi.spyOn(client, 'hubBytesTagged').mockResolvedValue([new Uint8Array(2), ''])
     await read(loaded(), ps('a.txt'), undefined, { offset: 0, size: 2 })
     expect(spy.mock.calls[0]?.[2]).toEqual({ offset: 0, size: 2 })
   })
@@ -240,8 +244,8 @@ for (const backend of ['ram', 'redis']) {
                 headers: {},
               })
               const bytes = vi
-                .spyOn(client, 'hubBytes')
-                .mockResolvedValue(new TextEncoder().encode('new bytes'))
+                .spyOn(client, 'hubBytesTagged')
+                .mockResolvedValue([new TextEncoder().encode('new bytes'), ''])
               try {
                 await seedIndex(accessor, index, '/m')
                 await index.setDir('/other', [
@@ -392,3 +396,287 @@ for (const backend of ['ram', 'redis']) {
     },
   )
 }
+
+// An LFS row whose git oid, LFS sha and xet hash all differ: the stat's token
+// has to be the oid, the same kind a tree row carries.
+const LFS_ROW = {
+  type: 'file',
+  oid: 'O',
+  size: 7,
+  path: 'a.txt',
+  lfs: { oid: 'L' },
+  xetHash: 'X',
+}
+
+function page(rows: unknown[]) {
+  return { data: rows, status: 200, headers: {} }
+}
+
+describe('stat on an index that holds no tree', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    // No test here may reach the real Hub: a walk nobody expected answers an
+    // empty tree, which the assertions then catch.
+    vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
+  })
+
+  it('asks for one path once the tree has loaded', async () => {
+    // A throwaway index (what reconcile passes) over a mount that has already
+    // loaded its tree: one paths-info call, no tree walk.
+    const post = vi.spyOn(client, 'hubPost').mockResolvedValue([LFS_ROW])
+    const walk = vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
+    const result = await stat(loaded(), ps('a.txt'), new RAMIndexCacheStore())
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(walk).not.toHaveBeenCalled()
+    expect(post.mock.calls[0]?.[2]).toEqual({ paths: ['a.txt'], expand: false })
+    expect([result.size, result.fingerprint]).toEqual([7, 'O'])
+  })
+
+  it('writes nothing', async () => {
+    const accessor = loaded()
+    const before = accessor.tree
+    const snapshot = structuredClone([...before])
+    const index = new RAMIndexCacheStore()
+    vi.spyOn(client, 'hubPost').mockResolvedValue([LFS_ROW])
+    await stat(accessor, ps('a.txt'), index)
+    // No-index readers (localRows) and the watch walk read accessor.tree
+    // directly; a one-path answer that reseated or edited it would shrink the
+    // listing they see to one file.
+    expect(accessor.tree).toBe(before)
+    expect([...accessor.tree]).toEqual(snapshot)
+    expect(accessor.treeLoaded).toBe(true)
+    expect(accessor.rowsCache).toBeNull()
+    expect((await index.listDir('/')).status).toBe(LookupStatus.NOT_FOUND)
+  })
+
+  it('walks and seeds on a mount that never loaded its tree', async () => {
+    const accessor = new HfHubAccessor({ repoId: 'acme/widget' } as never)
+    const index = new RAMIndexCacheStore()
+    const post = vi.spyOn(client, 'hubPost').mockResolvedValue([])
+    const walk = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockResolvedValue(page([{ type: 'file', oid: 'oid-a', size: 7, path: 'a.txt' }]))
+    const result = await stat(accessor, ps('a.txt'), index)
+    expect(post).not.toHaveBeenCalled()
+    expect(walk).toHaveBeenCalledTimes(1)
+    expect(result.fingerprint).toBe('oid-a')
+    expect((await index.listDir('/')).status).not.toBe(LookupStatus.NOT_FOUND)
+  })
+
+  it('answers a live index without a request', async () => {
+    const accessor = loaded()
+    const index = new RAMIndexCacheStore()
+    await seedIndex(accessor, index, '')
+    const post = vi.spyOn(client, 'hubPost').mockResolvedValue([])
+    const walk = vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
+    expect((await stat(accessor, ps('a.txt'), index)).fingerprint).toBe('oid-a')
+    expect(post).not.toHaveBeenCalled()
+    expect(walk).not.toHaveBeenCalled()
+  })
+
+  it('refills an expired index rather than asking one path', async () => {
+    const accessor = loaded()
+    const index = new RAMIndexCacheStore()
+    await seedIndex(accessor, index, '')
+    await index.invalidate()
+    const post = vi.spyOn(client, 'hubPost').mockResolvedValue([])
+    const walk = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockResolvedValue(page([{ type: 'file', oid: 'oid-a', size: 7, path: 'a.txt' }]))
+    await stat(accessor, ps('a.txt'), index)
+    expect(post).not.toHaveBeenCalled()
+    expect(walk).toHaveBeenCalledTimes(1)
+  })
+
+  it('answers from the loaded tree with no index', async () => {
+    const post = vi.spyOn(client, 'hubPost').mockResolvedValue([])
+    expect((await stat(loaded(), ps('a.txt'))).fingerprint).toBe('oid-a')
+    expect(post).not.toHaveBeenCalled()
+  })
+
+  it('reports a missing path as ENOENT without a walk', async () => {
+    const accessor = loaded()
+    const snapshot = structuredClone([...accessor.tree])
+    const post = vi.spyOn(client, 'hubPost').mockResolvedValue([])
+    const walk = vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
+    expect(await codeOf(() => stat(accessor, ps('nope'), new RAMIndexCacheStore()))).toBe('ENOENT')
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(walk).not.toHaveBeenCalled()
+    expect([...accessor.tree]).toEqual(snapshot)
+  })
+
+  it('reports a directory', async () => {
+    const post = vi
+      .spyOn(client, 'hubPost')
+      .mockResolvedValue([{ type: 'directory', oid: 'tree-d', size: 0, path: 'd' }])
+    const walk = vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
+    const result = await stat(loaded(), ps('d'), new RAMIndexCacheStore())
+    expect(result.type).toBe('directory')
+    expect(post).toHaveBeenCalledTimes(1)
+    expect(walk).not.toHaveBeenCalled()
+  })
+
+  it.each([null, {}, { error: 'unavailable' }, ''])(
+    'does not treat a malformed response %j as absence',
+    async (answer) => {
+      vi.spyOn(client, 'hubPost').mockResolvedValue(answer)
+      await expect(stat(loaded(), ps('a.txt'), new RAMIndexCacheStore())).rejects.toThrow(
+        client.HfHubError,
+      )
+    },
+  )
+
+  it('refuses rows for another path', async () => {
+    // An answer about some other path is not an answer about this one; it
+    // must not read as absence, which reconcile would turn into a delete.
+    vi.spyOn(client, 'hubPost').mockResolvedValue([
+      { type: 'file', oid: 'x', size: 1, path: 'A.TXT' },
+    ])
+    await expect(stat(loaded(), ps('a.txt'), new RAMIndexCacheStore())).rejects.toBeInstanceOf(
+      client.HfHubError,
+    )
+  })
+
+  it.each([
+    [401, ''],
+    [403, ''],
+    [404, 'RepoNotFound'],
+    [404, 'RevisionNotFound'],
+  ])('reports a refused %i %s as permission denied', async (status, code) => {
+    // Not absence (which reconcile turns into a delete) and not a raw Hub error
+    // (which a recursive walk cannot step past).
+    vi.spyOn(client, 'hubPost').mockRejectedValue(new client.HfHubError('nope', status, code))
+    const walk = vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
+    expect(await codeOf(() => stat(loaded(), ps('a.txt'), new RAMIndexCacheStore()))).toBe('EACCES')
+    expect(walk).not.toHaveBeenCalled()
+  })
+
+  it('keeps a server failure a hub error', async () => {
+    vi.spyOn(client, 'hubPost').mockRejectedValue(new client.HfHubError('boom', 500))
+    vi.spyOn(client, 'hubGetResponse').mockResolvedValue(page([]))
+    const err = await stat(loaded(), ps('a.txt'), new RAMIndexCacheStore()).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(client.HfHubError)
+    expect(String(err)).toContain('boom')
+  })
+
+  it('reports a refused tree walk as permission denied', async () => {
+    vi.spyOn(client, 'hubGetResponse').mockRejectedValue(new client.HfHubError('nope', 401))
+    const accessor = new HfHubAccessor({ repoId: 'acme/widget' } as never)
+    expect(await codeOf(() => stat(accessor, ps('a.txt'), new RAMIndexCacheStore()))).toBe('EACCES')
+  })
+
+  it('carries no token for an empty oid', async () => {
+    const accessor = loaded()
+    accessor.tree.set('e.txt', parseEntry({ type: 'file', oid: '', size: 1, path: 'e.txt' }))
+    expect((await stat(accessor, ps('e.txt'))).fingerprint).toBeNull()
+  })
+})
+
+/** An index a concurrent probe clears between the refill and the read. */
+class ClearedMidLookup extends RAMIndexCacheStore {
+  gets = 0
+  cleared = false
+
+  override async get(key: string) {
+    this.gets += 1
+    if (!this.cleared) {
+      this.cleared = true
+      await this.clear()
+    }
+    return super.get(key)
+  }
+}
+
+describe('a lookup the index is cleared under', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('retries at the read door', async () => {
+    const accessor = new HfHubAccessor({ repoId: 'acme/widget' } as never)
+    const walk = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockResolvedValue(page([{ type: 'file', oid: 'oid-a', size: 7, path: 'a.txt' }]))
+    const entry = await resolveEntry(accessor, ps('a.txt'), new ClearedMidLookup())
+    // Without the retry the cleared store answers "no such file", and through
+    // a dispatcher door that drops the file's overlay for good.
+    expect(entry.size).toBe(7)
+    expect(walk).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries at the stat door', async () => {
+    const accessor = loaded()
+    const index = new ClearedMidLookup()
+    await seedIndex(accessor, index, '')
+    const walk = vi
+      .spyOn(client, 'hubGetResponse')
+      .mockResolvedValue(page([{ type: 'file', oid: 'oid-a', size: 7, path: 'a.txt' }]))
+    // The root is live when stat starts, so the one-path route stands aside
+    // and the clear lands inside the ordinary lookup.
+    expect((await stat(accessor, ps('a.txt'), index)).size).toBe(7)
+    expect(walk).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks once for a genuine miss on a live index', async () => {
+    const accessor = loaded()
+    const index = new ClearedMidLookup()
+    index.cleared = true
+    await seedIndex(accessor, index, '')
+    expect(await codeOf(() => stat(accessor, ps('nope'), index))).toBe('ENOENT')
+    expect(index.gets).toBe(1)
+  })
+
+  it('does not retry a miss with no index', async () => {
+    // No index answers NOT_FOUND to every listing, so a retry keyed on that
+    // alone would ask twice for every miss.
+    const rows = vi.spyOn(tree, 'localRows')
+    expect(await codeOf(() => resolveEntry(loaded(), ps('nope'), undefined))).toBe('ENOENT')
+    expect(rows).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * An index cleared and then reseeded by another op between this lookup's read
+ * and its root check, so the root alone reads live.
+ */
+class ClearedAndReseeded extends RAMIndexCacheStore {
+  raced = false
+
+  constructor(private readonly accessor: HfHubAccessor) {
+    super()
+  }
+
+  override async get(key: string) {
+    if (this.raced) return super.get(key)
+    this.raced = true
+    await this.clear()
+    const missed = await super.get(key)
+    await tree.refillIndex(this.accessor, this, '')
+    return missed
+  }
+}
+
+describe('a lookup a reseed hides the clear from', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('retries at the read door', async () => {
+    const accessor = new HfHubAccessor({ repoId: 'acme/widget' } as never)
+    vi.spyOn(client, 'hubGetResponse').mockResolvedValue(
+      page([{ type: 'file', oid: 'oid-a', size: 7, path: 'a.txt' }]),
+    )
+    const entry = await resolveEntry(accessor, ps('a.txt'), new ClearedAndReseeded(accessor))
+    expect(entry.size).toBe(7)
+  })
+})
+
+describe('exists on a refusal', () => {
+  it('lets the refusal through', async () => {
+    // "Cannot see the repo" is not "the file is absent".
+    vi.spyOn(client, 'hubGetResponse').mockRejectedValue(new client.HfHubError('expired', 401))
+    const accessor = new HfHubAccessor({ repoId: 'acme/widget' } as never)
+    expect(await codeOf(() => pathExists(accessor, ps('a.txt')))).toBe('EACCES')
+    vi.restoreAllMocks()
+  })
+})

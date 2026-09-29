@@ -14,20 +14,32 @@
 
 /* eslint-disable @typescript-eslint/require-await */
 import { describe, expect, it } from 'vitest'
+import { MountMode } from '../types.ts'
+import { RAMVFS } from '../vfs/ram/ram.ts'
+import { Workspace } from '../workspace/workspace/workspace.ts'
 import {
   record,
   recordStream,
   revisionFor,
   runWithRecording,
+  runWithMountContext,
   runWithRevisions,
-  runWithMountPrefix,
   startOp,
-  withMountPrefix,
+  withMountContext,
 } from './context.ts'
 
-describe('runWithRecording / record / runWithMountPrefix', () => {
+describe('runWithRecording / record / runWithMountContext', () => {
   it('record outside recording scope is a no-op', () => {
     record('read', '/a.txt', 's3', 100, startOp())
+  })
+
+  it('runWithMountContext outside recording scope runs fn and records nothing', async () => {
+    const value = await runWithMountContext(async () => {
+      record('read', '/a.txt', 's3', 1, startOp())
+      return 7
+    }, 'm1')
+    expect(value).toBe(7)
+    expect(recordStream('read', '/a.txt', 's3')).toBeNull()
   })
 
   it('captures a single record within scope', async () => {
@@ -57,86 +69,72 @@ describe('runWithRecording / record / runWithMountPrefix', () => {
     expect(records[1]?.source).toBe('ram')
   })
 
-  it('prepends virtual prefix when path lacks it', async () => {
+  it('runWithMountContext carries mountId; undefined inherits, null clears', async () => {
     const [, records] = await runWithRecording(() =>
-      runWithMountPrefix('/s3', async () => {
-        record('read', '/data/file.json', 's3', 100, startOp())
-      }),
+      runWithMountContext(async () => {
+        record('read', '/s3/a.txt', 's3', 1, startOp())
+        await runWithMountContext(async () => {
+          record('read', '/s3/b.txt', 's3', 1, startOp())
+        }, undefined)
+        await runWithMountContext(async () => {
+          record('read', '/s3/c.txt', 's3', 1, startOp())
+        }, null)
+        await runWithMountContext(async () => {
+          record('read', '/db/d.txt', 'postgres', 1, startOp())
+        }, 'db-id')
+        record('read', '/s3/e.txt', 's3', 1, startOp())
+      }, 's3-id'),
     )
-    expect(records[0]?.path).toBe('/s3/data/file.json')
+    expect(records.map((r) => [r.path, r.mountId])).toEqual([
+      ['/s3/a.txt', 's3-id'],
+      ['/s3/b.txt', 's3-id'],
+      ['/s3/c.txt', null],
+      ['/db/d.txt', 'db-id'],
+      ['/s3/e.txt', 's3-id'],
+    ])
   })
 
-  it('leaves path unchanged when prefix is empty', async () => {
-    const [, records] = await runWithRecording(async () => {
-      record('read', '/data/file.json', 's3', 100, startOp())
-    })
-    expect(records[0]?.path).toBe('/data/file.json')
-  })
-
-  it('does not double-apply prefix when path already has it', async () => {
-    const [, records] = await runWithRecording(() =>
-      runWithMountPrefix('/s3', async () => {
-        record('read', '/s3/data/file.json', 's3', 100, startOp())
-      }),
-    )
-    expect(records[0]?.path).toBe('/s3/data/file.json')
-  })
-
-  // A bare startsWith test would read this as already-prefixed and record
-  // '/s3-report.txt', dropping the mount.
-  it('prefixes a filename that merely shares the prefix leading text', async () => {
-    const [, records] = await runWithRecording(() =>
-      runWithMountPrefix('/s3', async () => {
-        record('read', '/s3-report.txt', 's3', 1, startOp())
-      }),
-    )
-    expect(records[0]?.path).toBe('/s3/s3-report.txt')
-  })
-
-  it('restores the enclosing prefix when a nested mount scope ends', async () => {
-    const [, records] = await runWithRecording(() =>
-      runWithMountPrefix('/s3', async () => {
-        await runWithMountPrefix('/db', async () => {
-          record('read', '/a.txt', 'postgres', 1, startOp())
-        })
-        record('read', '/b.txt', 's3', 1, startOp())
-      }),
-    )
-    expect(records.map((r) => r.path)).toEqual(['/db/a.txt', '/s3/b.txt'])
-  })
-
-  // Two mounts consumed concurrently must not see each other's prefix. The
+  // Two mounts consumed concurrently must not see each other's mountId. The
   // interleave is forced: each branch records only after the other has
-  // opened its own scope, which a prefix mutated on shared state would
+  // opened its own scope, which a mountId mutated on shared state would
   // already have overwritten.
-  it('keeps the prefix task-local across concurrent branches', async () => {
+  it('keeps mountId task-local across concurrent branches', async () => {
     const gate = { s3: false, db: false }
-    const branch = async (prefix: string, key: 's3' | 'db', other: 's3' | 'db', file: string) => {
-      await runWithMountPrefix(prefix, async () => {
+    const branch = async (key: 's3' | 'db', other: 's3' | 'db', file: string) => {
+      await runWithMountContext(async () => {
         gate[key] = true
         while (!gate[other]) await new Promise((r) => setTimeout(r, 0))
         record('read', file, key, 1, startOp())
-      })
+      }, `${key}-id`)
     }
     const [, records] = await runWithRecording(async () => {
-      await Promise.all([
-        branch('/s3', 's3', 'db', '/alpha.txt'),
-        branch('/db', 'db', 's3', '/beta.txt'),
-      ])
+      await Promise.all([branch('s3', 'db', '/s3/alpha.txt'), branch('db', 's3', '/db/beta.txt')])
     })
-    expect(new Set(records.map((r) => r.path))).toEqual(new Set(['/s3/alpha.txt', '/db/beta.txt']))
+    expect(new Set(records.map((r) => `${r.path}=${String(r.mountId)}`))).toEqual(
+      new Set(['/s3/alpha.txt=s3-id', '/db/beta.txt=db-id']),
+    )
   })
 
-  it('withMountPrefix carries the prefix into a stream consumed after the scope', async () => {
+  // The stream is built under `s3-id` and drained under a foreign `db-id`
+  // frame, after its own scope has exited; every step must still record
+  // against the mount that produced it.
+  it('withMountContext keeps mountId across iterator steps under a foreign frame', async () => {
     const lazy = async function* (): AsyncGenerator<Uint8Array> {
-      record('read', '/a.txt', 's3', 3, startOp())
-      yield new Uint8Array([1, 2, 3])
+      record('read', '/s3/a.txt', 's3', 1, startOp())
+      yield new Uint8Array([1])
+      record('read', '/s3/a.txt', 's3', 1, startOp())
+      yield new Uint8Array([2])
     }
     const [, records] = await runWithRecording(async () => {
-      const wrapped = await runWithMountPrefix('/s3', async () => withMountPrefix('/s3', lazy()))
-      for await (const _chunk of wrapped) void _chunk
+      const wrapped = await runWithMountContext(
+        async () => withMountContext(lazy(), 's3-id'),
+        's3-id',
+      )
+      await runWithMountContext(async () => {
+        for await (const _chunk of wrapped) void _chunk
+      }, 'db-id')
     })
-    expect(records[0]?.path).toBe('/s3/a.txt')
+    expect(records.map((r) => r.mountId)).toEqual(['s3-id', 's3-id'])
   })
 })
 
@@ -214,5 +212,58 @@ describe('revisions context', () => {
     await runWithRevisions(new Map([['/s3/a', 'v1']]), async () => {
       expect(revisionFor('/s3/a')).toBe('v1')
     })
+  })
+})
+
+// The recorder stores a path as given. A read op registered on a RAM mount at
+// /m records one path outside the mount and one inside it; dispatched through
+// the workspace, neither may gain the mount's prefix.
+describe('recorder stores the path as given', () => {
+  it('record keeps both paths through a dispatched op', async () => {
+    const ws = new Workspace({ '/m': new RAMVFS() }, { mode: MountMode.WRITE })
+    let calls = 0
+    ws.opsRegistry.register({
+      name: 'read',
+      vfs: 'ram',
+      filetype: null,
+      write: false,
+      fn: async () => {
+        calls += 1
+        record('read', '/x/y', 'ram', 1, startOp())
+        record('read', '/m/k.txt', 'ram', 1, startOp())
+        return new Uint8Array([1])
+      },
+    })
+    try {
+      const [, records] = await runWithRecording(() => ws.dispatch('read', '/m/k.txt'))
+      expect(calls).toBe(1)
+      expect(records.map((r) => r.path)).toEqual(['/x/y', '/m/k.txt'])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('recordStream keeps both paths through a dispatched op', async () => {
+    const ws = new Workspace({ '/m': new RAMVFS() }, { mode: MountMode.WRITE })
+    let calls = 0
+    ws.opsRegistry.register({
+      name: 'read',
+      vfs: 'ram',
+      filetype: null,
+      write: false,
+      fn: async () => {
+        calls += 1
+        recordStream('read', '/x/y', 'ram')
+        recordStream('read', '/m/k.txt', 'ram')
+        return new Uint8Array([1])
+      },
+    })
+    try {
+      const [, records] = await runWithRecording(() => ws.dispatch('read', '/m/k.txt'))
+      expect(calls).toBe(1)
+      expect(records.map((r) => r.path)).toEqual(['/x/y', '/m/k.txt'])
+    } finally {
+      await ws.close()
+    }
   })
 })

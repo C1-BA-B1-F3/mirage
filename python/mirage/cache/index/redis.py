@@ -230,6 +230,8 @@ class RedisIndexCacheStore(IndexCacheStore):
                 or datetime.now(
                     timezone.utc).timestamp() >= listing.expires_at):
             return ListResult(status=LookupStatus.EXPIRED)
+        if listing.partial:
+            return ListResult(partial_entries=listing.entries)
         return ListResult(entries=listing.entries)
 
     async def set_dir(
@@ -237,6 +239,24 @@ class RedisIndexCacheStore(IndexCacheStore):
         vfs_path: str,
         entries: list[tuple[str, IndexEntry]],
         expired_at: datetime | None = None,
+    ) -> None:
+        await self._set_dir(vfs_path, entries, expired_at, partial=False)
+
+    async def set_partial_dir(
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None = None,
+    ) -> None:
+        await self._set_dir(vfs_path, entries, expired_at, partial=True)
+
+    async def _set_dir(
+        self,
+        vfs_path: str,
+        entries: list[tuple[str, IndexEntry]],
+        expired_at: datetime | None,
+        *,
+        partial: bool,
     ) -> None:
         await self._flush_seed()
         now = datetime.now(timezone.utc)
@@ -260,7 +280,8 @@ class RedisIndexCacheStore(IndexCacheStore):
         listing = IndexDirectory(
             entries=child_keys,
             expires_at=expiry.timestamp(),
-            generation=f"{generation}:{directory_generation}")
+            generation=f"{generation}:{directory_generation}",
+            partial=partial)
         pipe.set(self._children_key(vfs_path), listing.model_dump_json())
 
         await pipe.execute()

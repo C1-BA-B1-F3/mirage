@@ -21,12 +21,14 @@ from mirage.commands.builtin.generic.tail import tail_generic
 from mirage.commands.builtin.generic_bind.adapter import (bound_op,
                                                           resolve_or_empty)
 from mirage.commands.builtin.postgres.io import IO
+from mirage.commands.builtin.utils.limit import row_cap_notice
 from mirage.commands.builtin.utils.paths import has_unresolved_glob
 from mirage.commands.config import CommandOpts
 from mirage.commands.registry import command
 from mirage.commands.spec import SPECS
 from mirage.core.postgres import client
 from mirage.core.postgres.read import read as postgres_read
+from mirage.core.postgres.readdir import entity_exists
 from mirage.core.postgres.scope import detect_scope
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
@@ -50,19 +52,31 @@ async def tail(accessor: PostgresAccessor, paths: list[PathSpec],
         if (len(paths) == 1 and not has_unresolved_glob(paths)
                 and scope.kind == "entity_rows" and counts.byte_count is None
                 and counts.from_byte is None and counts.lines is not None
-                and not parsed.follow):
+                and not parsed.follow
+                and await entity_exists(accessor, scope, paths[0].virtual)):
             schema = scope.slots["schema"]
             entity = scope.slots["entity"]
-            limit = min(counts.lines, accessor.config.default_row_limit)
+            cap = accessor.config.max_read_rows
             pool = await accessor.pool()
             async with pool.acquire() as conn:
                 total = await client.count_rows(conn, schema, entity)
-                offset = max(0, total - limit)
+                # max_read_rows is the most rows one read may return; a
+                # suffix longer than that prints the ceiling and says so,
+                # where the ceiling (default_row_limit) used to stand in
+                # for the count with exit 0.
+                limit = min(counts.lines, total)
+                io = IOResult()
+                if limit > cap:
+                    limit = cap
+                    io = IOResult(exit_code=1,
+                                  stderr=row_cap_notice(
+                                      "tail", paths[0].raw_path, cap, "rows",
+                                      "max_read_rows"))
                 rows = await client.fetch_rows(conn,
                                                schema,
                                                entity,
                                                limit=limit,
-                                               offset=offset)
+                                               offset=total - limit)
             data = b""
             if rows:
                 data = ("\n".join(
@@ -72,7 +86,7 @@ async def tail(accessor: PostgresAccessor, paths: list[PathSpec],
                                 n=counts.lines,
                                 c=counts.byte_count,
                                 from_line=counts.from_line,
-                                from_byte=counts.from_byte), IOResult()
+                                from_byte=counts.from_byte), io
     resolved = await resolve_or_empty(IO, accessor, paths, opts.index)
     return await tail_generic(resolved, list(texts), opts,
                               bound_op(IO.stat, accessor, opts.index),

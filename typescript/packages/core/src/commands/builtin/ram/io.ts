@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { RAMAccessor } from '../../../accessor/ram.ts'
 import { appendBytes as ramAppend } from '../../../core/ram/append.ts'
 import { copy as ramCopy } from '../../../core/ram/copy.ts'
@@ -34,27 +36,29 @@ import { unlink as ramUnlink } from '../../../core/ram/unlink.ts'
 import { writeBytes as ramWrite } from '../../../core/ram/write.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const RAM_IO: CommandIO<RAMAccessor> = {
-  readdir: ramReaddir,
-  readBytes: devAwareRead,
-  readRange: devAwareReadRange,
-  readStream: devAwareStream,
-  stat: devAwareStat,
+export const RAM_IO: CommandIO<RAMAccessor> = new VFSAdapter<RAMAccessor>({
+  read: { readdir: ramReaddir, readBytes: devAwareRead, stat: devAwareStat },
+  native: {
+    readRange: devAwareReadRange,
+    readStream: devAwareStream,
+    exists: ramExists,
+    find: ramFind,
+    du: { size: ramDu, entries: ramDuAll },
+  },
+  writes: {
+    write: ramWrite,
+    mkdir: ramMkdir,
+    unlink: ramUnlink,
+    rmdir: ramRmdir,
+    rmR: ramRmR,
+    rename: ramRename,
+    copy: ramCopy,
+    create: ramCreate,
+    truncate: ramTruncate,
+    append: ramAppend,
+    setAttrs: ramSetAttrs,
+  },
   isMounted: () => true,
   local: true,
   maxGlobMatches: SCOPE_ERROR,
-  write: ramWrite,
-  exists: ramExists,
-  mkdir: ramMkdir,
-  unlink: ramUnlink,
-  rmdir: ramRmdir,
-  rmR: ramRmR,
-  rename: ramRename,
-  copy: ramCopy,
-  create: ramCreate,
-  truncate: ramTruncate,
-  append: ramAppend,
-  setAttrs: ramSetAttrs,
-  find: ramFind,
-  du: { size: ramDu, entries: ramDuAll },
-}
+}).toCommandIO()

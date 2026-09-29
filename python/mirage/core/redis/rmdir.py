@@ -15,6 +15,7 @@
 from mirage.accessor.redis import RedisAccessor
 from mirage.cache.context import invalidate_after_unlink
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.core.redis.dest import lookup_error
 from mirage.types import PathSpec
 from mirage.utils.errors import enotempty
 from mirage.utils.path import norm
@@ -27,7 +28,7 @@ async def rmdir(accessor: RedisAccessor,
     store = accessor.store
     p = norm(path)
     if not await store.has_dir(p):
-        raise FileNotFoundError(p)
+        raise await lookup_error(store, path_spec, p)
     prefix = p.rstrip("/") + "/"
     all_files = await store.list_files()
     all_dirs = await store.list_dirs()

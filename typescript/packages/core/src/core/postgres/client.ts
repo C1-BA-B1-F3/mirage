@@ -51,7 +51,7 @@ export function quoteIdent(ident: string): string {
   return `"${ident.replace(/"/g, '""')}"`
 }
 
-function qualified(schema: string, name: string): string {
+export function qualified(schema: string, name: string): string {
   return `${quoteIdent(schema)}.${quoteIdent(name)}`
 }
 
@@ -172,6 +172,51 @@ export async function fetchRows(
     [options.limit, options.offset],
   )
   return result.rows
+}
+
+/** Fetch native rows only when their database JSON fits the byte budget. */
+export async function fetchBoundedRows(
+  accessor: PostgresAccessor,
+  schema: string,
+  name: string,
+  options: { limit: number; maxBytes: number },
+): Promise<Record<string, unknown>[] | null> {
+  const columns = new Set((await fetchColumns(accessor, schema, name)).map((column) => column.name))
+  return fetchBoundedQuery(
+    accessor,
+    `SELECT * FROM ${qualified(schema, name)} LIMIT $1`,
+    [options.limit],
+    columns,
+    options.maxBytes,
+  )
+}
+
+/** Budget an internally generated, row-limited SELECT before transferring rows. */
+export async function fetchBoundedQuery(
+  accessor: PostgresAccessor,
+  query: string,
+  params: readonly unknown[],
+  columns: ReadonlySet<string>,
+  maxBytes: number,
+): Promise<Record<string, unknown>[] | null> {
+  let marker = '__mirage_bytes'
+  while (columns.has(marker)) marker += '_'
+  // Keep the gate and fetch in one statement/snapshot. The LEFT JOIN emits
+  // only a null row plus the size on overflow, never the oversized values.
+  const result = await accessor.store.query(
+    `WITH data AS MATERIALIZED (${query}), ` +
+      'budget AS (SELECT COALESCE(SUM(' +
+      'octet_length(row_to_json(data)::text) + 1), 0) AS bytes FROM data) ' +
+      `SELECT data.*, budget.bytes AS ${quoteIdent(marker)} ` +
+      `FROM budget LEFT JOIN data ON budget.bytes <= $${String(params.length + 1)}`,
+    [...params, maxBytes],
+  )
+  const size = Number(result.rows[0]?.[marker])
+  if (size > maxBytes) return null
+  if (size === 0) return []
+  return result.rows.map((row) =>
+    Object.fromEntries(Object.entries(row).filter(([key]) => key !== marker)),
+  )
 }
 
 export async function fetchColumns(

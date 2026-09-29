@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { RAMAccessor } from '../../../accessor/ram.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { read, readRange, stat, stream } from '../../../core/dev/index.ts'
@@ -43,30 +45,32 @@ async function* finiteStream(
   if (data.byteLength > 0) yield data
 }
 
-export const DEV_IO: CommandIO<RAMAccessor> = {
-  readdir: ramReaddir,
-  readBytes: read,
-  readRange,
-  readStream: finiteStream,
-  stat,
+export const DEV_IO: CommandIO<RAMAccessor> = new VFSAdapter<RAMAccessor>({
+  read: { readdir: ramReaddir, readBytes: read, stat },
+  native: {
+    readRange,
+    readStream: finiteStream,
+    exists: ramExists,
+    find: ramFind,
+    du: { size: ramDu, entries: ramDuAll },
+  },
+  writes: {
+    write: ramWrite,
+    mkdir: ramMkdir,
+    unlink: ramUnlink,
+    rmdir: ramRmdir,
+    rmR: ramRmR,
+    rename: ramRename,
+    copy: ramCopy,
+    create: ramCreate,
+    truncate: ramTruncate,
+    append: ramAppend,
+    setAttrs: ramSetAttrs,
+  },
   isMounted: () => true,
   local: true,
   maxGlobMatches: SCOPE_ERROR,
-  write: ramWrite,
-  exists: ramExists,
-  mkdir: ramMkdir,
-  unlink: ramUnlink,
-  rmdir: ramRmdir,
-  rmR: ramRmR,
-  rename: ramRename,
-  copy: ramCopy,
-  create: ramCreate,
-  truncate: ramTruncate,
-  append: ramAppend,
-  setAttrs: ramSetAttrs,
-  find: ramFind,
-  du: { size: ramDu, entries: ramDuAll },
-}
+}).toCommandIO()
 
 export const DEV_STREAMING: CommandIO<RAMAccessor> = {
   ...DEV_IO,

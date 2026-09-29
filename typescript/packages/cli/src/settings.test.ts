@@ -355,3 +355,24 @@ describe('resolvedConfig port', () => {
     }
   })
 })
+
+describe('resolvedConfig ssh door', () => {
+  it('reports the ssh keys with their defaults and env overrides', () => {
+    const home = mkdtempSync(join(tmpdir(), 'mir-settings-'))
+    try {
+      const resolved = resolvedConfig({ MIRAGE_HOME: home })
+      expect(resolved.ssh_port).toEqual(['', 'default'])
+      expect(resolved.ssh_host).toEqual(['127.0.0.1', 'default'])
+      expect(resolved.ssh_authorized_keys).toEqual([
+        join(home, 'ssh', 'authorized_keys'),
+        'default',
+      ])
+      expect(resolvedConfig({ MIRAGE_HOME: home, MIRAGE_SSH_PORT: '2222' }).ssh_port).toEqual([
+        '2222',
+        'env MIRAGE_SSH_PORT',
+      ])
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})

@@ -28,7 +28,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "sort: /data2/xpr_nope.txt: No such file or directory\n"
+        "stderr": "sort: cannot read: /data2/xpr_nope.txt: No such file or directory\n"
       }
     }
   ]

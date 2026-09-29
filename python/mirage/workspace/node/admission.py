@@ -35,7 +35,7 @@ from mirage.shell.types import NodeType as NT
 from mirage.shell.types import RedirectKind
 from mirage.types import PathSpec, Refusal
 from mirage.utils.hidden import is_glob
-from mirage.utils.path import CycleError, resolve_path
+from mirage.utils.path import resolve_path
 from mirage.workspace.abort import MirageAbortError
 from mirage.workspace.executor.builtins.links.links import follow_paths
 from mirage.workspace.executor.builtins.scope import _to_scope
@@ -49,10 +49,11 @@ from mirage.workspace.expand.classify.path import classify_bare_path
 from mirage.workspace.expand.spec_hints import (spec_for_command,
                                                 spec_word_bases,
                                                 spec_word_kinds)
-from mirage.workspace.lookup import (SHELL_NAMES, SLASH_KEEPS_LAST, WordPolicy,
-                                     follows_last_component, is_tool, listed,
-                                     lookup, reads_subtrees, walks_mounts,
-                                     word_policy)
+from mirage.workspace.lookup import (SHELL_NAMES, SLASH_KEEPS_LAST, Consumer,
+                                     WordPolicy, follows_last_component,
+                                     is_tool, listed, lookup, reads_subtrees,
+                                     walks_mounts, word_policy)
+from mirage.workspace.lookup.constants import INTERPRETER_NAMES
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.node.inner_lines import Word, inner_lines
@@ -63,8 +64,9 @@ from mirage.workspace.session import SessionState
 from mirage.workspace.session.shell_dirs import home_dir
 
 # The nodes a redirected statement may wrap whose last command is the
-# one the redirect binds to.
-REDIRECT_CHAIN = frozenset({NT.LIST, NT.PIPELINE})
+# one the redirect binds to. A `!` wraps one command, so it is its own
+# last one: `! cat < f` parses as redirected(negated(cat), < f).
+REDIRECT_CHAIN = frozenset({NT.LIST, NT.PIPELINE, NT.NEGATED_COMMAND})
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,14 +189,10 @@ def policy_scopes(
         # would never see it without this row.
         scopes.insert(0, _to_scope(resolve_path(name, cwd)))
     if namespace is not None and namespace.nodes and operands:
-        try:
-            followed = follow_paths(namespace,
-                                    list(operands),
-                                    follows_last_component(
-                                        name, [name, *args]),
-                                    slash_follows=name not in SLASH_KEEPS_LAST)
-        except CycleError:
-            followed = []
+        followed = follow_paths(namespace,
+                                list(operands),
+                                follows_last_component(name, [name, *args]),
+                                slash_follows=name not in SLASH_KEEPS_LAST)
         seen = {p.virtual for p in scopes}
         for item in followed:
             if isinstance(item, PathSpec) and item.virtual not in seen:
@@ -208,10 +206,7 @@ def policy_scopes(
     if redirects:
         targets: list[str | PathSpec] = list(redirects)
         if namespace is not None and namespace.nodes:
-            try:
-                followed = follow_paths(namespace, list(redirects), True)
-            except CycleError:
-                followed = []
+            followed = follow_paths(namespace, list(redirects), True)
             targets.extend(p for p in followed if isinstance(p, PathSpec))
         seen = {p.virtual for p in scopes}
         for item in targets:
@@ -446,6 +441,16 @@ def _word_hints(
     (tar's ``-C``) resolves later words against the wrong base, so a
     rule and the run would disagree about the paths the line names.
 
+    A mount command's spec is read, and so is a native capture's and an
+    interpreter's: ``python3 steal.py`` runs on the runtime's own disk
+    or a host process, where no op door follows the read, so the
+    script slot the spec declares is the one place a path rule can see
+    the file. The tree's gate reads a native capture the same way
+    (``expand_argv``), and an interpreter it runs itself for the script
+    slot alone, since its other words become the program's argv there;
+    here the hints reach no runtime word, since the line runs as typed,
+    so there is nothing to lose by reading them all.
+
     Args:
         line (list[str]): the literal words, name first.
         session (SessionState): the session running the line.
@@ -453,8 +458,10 @@ def _word_hints(
     """
     consumed = registry.match_command_prefix(line)
     joined = " ".join(line[:consumed])
-    if (joined in session.functions or word_policy(
-            lookup(joined, session, registry)) is not WordPolicy.MOUNT):
+    consumer = lookup(joined, session, registry)
+    if joined in session.functions or not (
+            word_policy(consumer) is WordPolicy.MOUNT
+            or consumer is Consumer.EXTERNAL or joined in INTERPRETER_NAMES):
         return None, None
     spec = spec_for_command(joined, registry, session.cwd)
     if not spec:
@@ -716,7 +723,7 @@ def statement_redirects(node: Any, home: str | None) -> tuple[Word, ...]:
     reading only its first child answered ``a`` and left ``b``, the
     command bash actually opens the file for, with no target at all.
     The walk climbs the last-command chain instead, which is bash's own
-    rule for a list and a pipeline. A compound (``{ }``, a loop, a
+    rule for a list, a pipeline and a ``!``. A compound (``{ }``, a loop, a
     subshell) redirects every command inside it, which is not a chain,
     so none is claimed here and the op door judges the write.
 

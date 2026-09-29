@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { runSearch } from '../search.ts'
+
 import { prefixAggregate } from '../../aggregators.ts'
 import { grepGeneric } from '../../generic/grep.ts'
 import { type Builder, resolveGlobOf } from '../adapter.ts'
@@ -21,6 +23,7 @@ export const GREP_BUILDER: Builder = {
   read: true,
   aggregate: prefixAggregate,
   fn: async (ops, accessor, paths, texts, opts) => {
+    if (ops.search !== undefined) return runSearch(ops, 'grep', accessor, paths, texts, opts)
     const idx = opts.index ?? undefined
     const resolved = paths.length > 0 ? await resolveGlobOf(ops)(accessor, paths, idx) : []
     return grepGeneric(

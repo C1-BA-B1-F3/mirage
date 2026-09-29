@@ -22,6 +22,7 @@ import { PERMISSION_BITS, SYMLINK_MODE } from './constants.ts'
 import { MountInWayError } from './errors.ts'
 import { basename } from './path.ts'
 import type { Dispatch } from './types.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 /** Read one virtual path through the workspace dispatcher. */
 export async function readFile(dispatch: Dispatch, path: string): Promise<Uint8Array> {
@@ -89,6 +90,9 @@ export async function restoreEntry(
   const linked = links !== null && links.statAt(path) !== null
   if (mode === SYMLINK_MODE) {
     await removeFile(dispatch, path)
+    // symlink(2) needs the directory above the entry, as the write below
+    // does, so a link alone in a new directory gets one too.
+    await ensureDir(dispatch, parent(path))
     await dispatch('symlink', PathSpec.fromStrPath(path), [], {
       target: new TextDecoder().decode(blob),
     })
@@ -229,7 +233,7 @@ export async function readNames(dispatch: Dispatch, path: string): Promise<strin
  */
 export async function ensureDir(dispatch: Dispatch, path: string): Promise<void> {
   const missing: string[] = []
-  let current = path.replace(/\/+$/, '')
+  let current = rstripSlash(path)
   while (current !== '' && current !== '/') {
     try {
       await dispatch('stat', PathSpec.fromStrPath(current))
@@ -504,7 +508,7 @@ export async function removeEmptyParents(
   stop: string,
   mounts: MountView | null,
 ): Promise<void> {
-  const root = stop.replace(/\/+$/, '') || '/'
+  const root = rstripSlash(stop) || '/'
   let current = parent(path)
   while (current !== root && current.startsWith(root)) {
     // A mount root is not a directory git made, and an empty one is still a

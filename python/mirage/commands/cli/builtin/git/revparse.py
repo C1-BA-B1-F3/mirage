@@ -19,7 +19,8 @@ from dulwich.refs import Ref
 from dulwich.repo import BaseRepo
 
 from mirage.commands.cli.builtin.git.constants import HEAD
-from mirage.commands.cli.builtin.git.errors import AmbiguousArgumentError
+from mirage.commands.cli.builtin.git.errors import (AmbiguousArgumentError,
+                                                    BadRevisionError)
 from mirage.commands.cli.builtin.git.refs import TAG_PREFIX
 from mirage.commands.cli.builtin.git.types import AncestryStep, PeelStep, RevOp
 
@@ -36,6 +37,14 @@ TAG = "tag"
 # Not a type any object reports: ``^{object}`` asks only that the name
 # resolve to something, and hands back whatever that is.
 OBJECT = "object"
+# ``A..B`` hides A and walks B; a third dot walks both and hides only
+# what they share. A leading caret hides one revision on its own.
+RANGE = ".."
+SYMMETRIC_DOT = "."
+NEGATION = "^"
+LEFT = 1
+RIGHT = 2
+STALE = 4
 
 
 def split_operators(revision: str) -> tuple[str, tuple[RevOp, ...]]:
@@ -176,6 +185,139 @@ def resolve_commit(repo: BaseRepo, revision: str) -> Commit:
     return commit
 
 
+def _range_ends(revision: str) -> tuple[str, str, bool] | None:
+    """The two ends of ``A..B`` or ``A...B``, or None for one revision.
+
+    Read the way git's handle_dotdot reads it: the first ``..`` splits
+    the operand, a dot right after it makes the range symmetric, and an
+    empty end is HEAD, so ``..side`` is ``HEAD..side``.
+
+    Args:
+        revision (str): the operand as the user spelled it.
+
+    Returns:
+        tuple[str, str, bool] | None: the left end, the right end and
+        whether the range is symmetric.
+    """
+    at = revision.find(RANGE)
+    if at < 0:
+        return None
+    right = revision[at + len(RANGE):]
+    symmetric = right.startswith(SYMMETRIC_DOT)
+    if symmetric:
+        right = right[len(SYMMETRIC_DOT):]
+    return revision[:at] or HEAD, right or HEAD, symmetric
+
+
+def range_commits(repo: BaseRepo,
+                  revision: str) -> tuple[Commit, Commit, bool] | None:
+    """Both ends of a range operand, or None when it names one revision.
+
+    A lone ``..`` is a path to git, and mirage limits nothing by path,
+    so it is no range here and fails as the revision it is not.
+
+    Args:
+        repo (BaseRepo): repository to resolve against.
+        revision (str): the operand as the user spelled it.
+
+    Returns:
+        tuple[Commit, Commit, bool] | None: the left end, the right end
+        and whether the range is symmetric.
+
+    Raises:
+        AmbiguousArgumentError: an end does not resolve; the message
+            names the whole operand, as git's does.
+    """
+    ends = None if revision == RANGE else _range_ends(revision)
+    if ends is None:
+        return None
+    try:
+        return (resolve_commit(repo,
+                               ends[0]), resolve_commit(repo,
+                                                        ends[1]), ends[2])
+    except AmbiguousArgumentError as exc:
+        raise AmbiguousArgumentError(revision) from exc
+
+
+def merge_bases(repo: BaseRepo, one: Commit, other: Commit) -> list[Commit]:
+    """The common ancestors of two commits that nothing shared descends from.
+
+    git's paint walk: each side paints what it reaches, newest first
+    and first queued on a tie, and a commit wearing both colours is a
+    base whose own ancestry goes stale. The walk ends once every queued
+    commit is stale, and the bases come out in the order git lists them
+    (pinned against ``git merge-base --all`` 2.50).
+
+    Args:
+        repo (BaseRepo): repository whose store holds the commits.
+        one (Commit): one side.
+        other (Commit): the other side.
+    """
+    paint = {one.id: LEFT}
+    paint[other.id] = paint.get(other.id, 0) | RIGHT
+    queue = [one] if one.id == other.id else [one, other]
+    bases: list[Commit] = []
+    while any(not paint[commit.id] & STALE for commit in queue):
+        queue.sort(key=lambda commit: -commit.commit_time)
+        commit = queue.pop(0)
+        flags = paint[commit.id]
+        if flags == LEFT | RIGHT:
+            bases.append(commit)
+            flags |= STALE
+            paint[commit.id] = flags
+        for parent_id in commit.parents:
+            if paint.get(parent_id, 0) & flags == flags:
+                continue
+            paint[parent_id] = paint.get(parent_id, 0) | flags
+            queue.append(_commit_at(repo, parent_id, parent_id.decode()))
+    return bases
+
+
+def split_revisions(
+        repo: BaseRepo,
+        revisions: tuple[str, ...]) -> tuple[list[Commit], list[Commit]]:
+    """The commits a walk starts from and the commits whose history it hides.
+
+    ``A..B`` walks B and hides A, ``A...B`` walks both and hides their
+    merge bases, and ``^A`` hides A. An end that does not resolve fails
+    naming the whole range, and a negation that does not resolve is
+    git's "bad revision", as is a negated range (pinned against git
+    2.50).
+
+    Args:
+        repo (BaseRepo): repository to resolve against.
+        revisions (tuple[str, ...]): the revision operands as spelled.
+
+    Returns:
+        tuple[list[Commit], list[Commit]]: the commits to walk from and
+        the commits to hide.
+    """
+    shown: list[Commit] = []
+    hidden: list[Commit] = []
+    for revision in revisions:
+        if revision.startswith(NEGATION):
+            name = revision[len(NEGATION):]
+            if not name or RANGE in name:
+                raise BadRevisionError(revision)
+            try:
+                hidden.append(resolve_commit(repo, name))
+            except AmbiguousArgumentError as exc:
+                raise BadRevisionError(revision) from exc
+            continue
+        ends = range_commits(repo, revision)
+        if ends is None:
+            shown.append(resolve_commit(repo, revision))
+            continue
+        left, right, symmetric = ends
+        if symmetric:
+            shown.extend((left, right))
+            hidden.extend(merge_bases(repo, left, right))
+        else:
+            shown.append(right)
+            hidden.append(left)
+    return shown, hidden
+
+
 def object_at(repo: BaseRepo, revision: str) -> ShaFile:
     """The object one id names, whatever its type.
 
@@ -303,7 +445,7 @@ def _at_path(repo: BaseRepo, rev: str, path: str, revision: str) -> ShaFile:
     return _object_by_id(repo, sha, revision)
 
 
-def _tag_object(repo: BaseRepo, stem: str) -> Tag | None:
+def tag_object(repo: BaseRepo, stem: str) -> Tag | None:
     """The tag object a name or id denotes, None when it names no tag.
 
     Read before the stem is resolved, and only for ``^{tag}``: every
@@ -396,7 +538,7 @@ def resolve_object(repo: BaseRepo, revision: str) -> ShaFile:
     # ``^{tag}`` and ``^{object}`` are the two spellings that have to
     # stop above it; every other operator unwraps the tag itself, which
     # is git's own rule and costs nothing here.
-    held = _tag_object(repo, base)
+    held = tag_object(repo, base)
     obj = held if held is not None else resolve_object(repo, base)
     for op in ops:
         if isinstance(op, PeelStep):

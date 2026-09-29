@@ -86,7 +86,7 @@ describe('core/ssh/find', () => {
     expect(await find(accessor, spec('/'), { maxDepth: 0, type: 'f' })).toEqual([])
   })
 
-  it('size filters apply to files only, directories pass', async () => {
+  it('size filters count a directory as DIR_SIZE bytes', async () => {
     const accessor = makeFakeAccessor({
       files: new Map([
         ['/one.txt', { data: new Uint8Array(1) }],
@@ -98,8 +98,13 @@ describe('core/ssh/find', () => {
         ['/sub', { size: 4096 }],
       ]),
     })
-    const out = await find(accessor, spec('/'), { maxSize: 5 })
-    expect(out).toEqual(['/', '/one.txt', '/sub'])
+    expect(await find(accessor, spec('/'), { maxSize: 5 })).toEqual(['/one.txt'])
+    expect(await find(accessor, spec('/'), { minSize: 5 })).toEqual([
+      '/',
+      '/big.txt',
+      '/sub',
+      '/sub/f.txt',
+    ])
   })
 
   it('does not emit the start directory under -type f', async () => {

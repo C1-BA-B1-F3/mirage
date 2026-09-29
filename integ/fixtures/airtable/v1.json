@@ -1,0 +1,716 @@
+{
+  "meta": {"pageCap": 4},
+  "users": [
+    {"id": "usrAdaPark0000001", "email": "ada@example.com", "name": "Ada Park"},
+    {"id": "usrBenOrtiz000002", "email": "ben@example.com", "name": "Ben Ortiz"},
+    {"id": "usrChenWei0000003", "email": "chen@example.com", "name": "Chen Wei"}
+  ],
+  "tokens": [
+    {"token": "patIntegFullAccess.fake", "userId": "usrAdaPark0000001"},
+    {
+      "token": "patIntegRoadmapOnly.fake",
+      "userId": "usrBenOrtiz000002",
+      "bases": ["appRoadmapBase001"]
+    }
+  ],
+  "bases": [
+    {
+      "id": "appRoadmapBase001",
+      "name": "Product Roadmap",
+      "permissionLevel": "create",
+      "tables": [
+        {
+          "id": "tblFeatures000001",
+          "name": "Features",
+          "description": "What we are building, one row per feature.",
+          "primaryFieldId": "fldFeatName000001",
+          "fields": [
+            {
+              "id": "fldFeatName000001",
+              "name": "Name",
+              "type": "singleLineText",
+              "description": "Short feature title"
+            },
+            {"id": "fldFeatNotes00002", "name": "Notes", "type": "multilineText"},
+            {
+              "id": "fldFeatStatus0003",
+              "name": "Status",
+              "type": "singleSelect",
+              "options": {
+                "choices": [
+                  {"id": "selStatusTodo0001", "name": "Todo", "color": "grayLight2"},
+                  {"id": "selStatusDoing002", "name": "In progress", "color": "blueLight2"},
+                  {"id": "selStatusDone0003", "name": "Done", "color": "greenLight2"}
+                ]
+              }
+            },
+            {
+              "id": "fldFeatTags000004",
+              "name": "Tags",
+              "type": "multipleSelects",
+              "options": {
+                "choices": [
+                  {"id": "selTagBackend0001", "name": "backend", "color": "cyanLight2"},
+                  {"id": "selTagFrontend002", "name": "frontend", "color": "purpleLight2"},
+                  {"id": "selTagInfra000003", "name": "infra", "color": "orangeLight2"},
+                  {"id": "selTagDocs0000004", "name": "docs", "color": "yellowLight2"}
+                ]
+              }
+            },
+            {
+              "id": "fldFeatPriority05",
+              "name": "Priority",
+              "type": "number",
+              "description": "5 is most urgent",
+              "options": {"precision": 0}
+            },
+            {
+              "id": "fldFeatShipped006",
+              "name": "Shipped",
+              "type": "checkbox",
+              "options": {"icon": "check", "color": "greenBright"}
+            },
+            {
+              "id": "fldFeatDue0000007",
+              "name": "Due",
+              "type": "date",
+              "options": {"dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}}
+            },
+            {
+              "id": "fldFeatKickoff008",
+              "name": "Kickoff",
+              "type": "dateTime",
+              "options": {
+                "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"},
+                "timeFormat": {"name": "24hour", "format": "HH:mm"},
+                "timeZone": "utc"
+              }
+            },
+            {"id": "fldFeatOwner00009", "name": "Owner", "type": "singleCollaborator"},
+            {
+              "id": "fldFeatRelease010",
+              "name": "Release",
+              "type": "multipleRecordLinks",
+              "options": {
+                "linkedTableId": "tblReleases000002",
+                "isReversed": false,
+                "prefersSingleRecordLink": true,
+                "inverseLinkFieldId": "fldRelFeatures003"
+              }
+            },
+            {
+              "id": "fldFeatMockups011",
+              "name": "Mockups",
+              "type": "multipleAttachments",
+              "options": {"isReversed": false}
+            },
+            {
+              "id": "fldFeatTicket0012",
+              "name": "Ticket",
+              "type": "formula",
+              "options": {
+                "formula": "\"FT-\" & {fldFeatNumber0014}",
+                "isValid": true,
+                "referencedFieldIds": ["fldFeatNumber0014"],
+                "result": {"type": "singleLineText"}
+              }
+            },
+            {
+              "id": "fldFeatCreated013",
+              "name": "Created",
+              "type": "createdTime",
+              "options": {
+                "result": {
+                  "type": "dateTime",
+                  "options": {
+                    "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"},
+                    "timeFormat": {"name": "24hour", "format": "HH:mm"},
+                    "timeZone": "utc"
+                  }
+                }
+              }
+            },
+            {"id": "fldFeatNumber0014", "name": "Number", "type": "autoNumber"},
+            {
+              "id": "fldFeatRelDate015",
+              "name": "Release date",
+              "type": "multipleLookupValues",
+              "options": {
+                "isValid": true,
+                "recordLinkFieldId": "fldFeatRelease010",
+                "fieldIdInLinkedTable": "fldRelDate0000002",
+                "result": {"type": "date", "options": {"dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}}}
+              }
+            },
+            {
+              "id": "fldFeatModified16",
+              "name": "Last modified",
+              "type": "lastModifiedTime",
+              "options": {
+                "isValid": true,
+                "referencedFieldIds": [],
+                "result": {
+                  "type": "dateTime",
+                  "options": {
+                    "dateFormat": {"name": "iso", "format": "YYYY-MM-DD"},
+                    "timeFormat": {"name": "24hour", "format": "HH:mm"},
+                    "timeZone": "utc"
+                  }
+                }
+              }
+            }
+          ],
+          "views": [
+            {"id": "viwFeatGrid000001", "name": "Grid view", "type": "grid"},
+            {
+              "id": "viwFeatDone000002",
+              "name": "Done",
+              "type": "grid",
+              "filter": "{Status} = 'Done'",
+              "sort": [{"field": "Priority", "direction": "desc"}],
+              "visibleFieldIds": [
+                "fldFeatName000001",
+                "fldFeatStatus0003",
+                "fldFeatPriority05",
+                "fldFeatShipped006",
+                "fldFeatOwner00009"
+              ]
+            },
+            {
+              "id": "viwFeatByOwner003",
+              "name": "By owner / priority",
+              "type": "kanban",
+              "sort": [{"field": "Owner", "direction": "asc"}, {"field": "Priority", "direction": "desc"}]
+            }
+          ],
+          "records": [
+            {
+              "id": "recFeat0000000001",
+              "createdTime": "2026-04-01T09:00:00.000Z",
+              "modifiedTime": "2026-06-15T16:45:00.000Z",
+              "fields": {
+                "Name": "Full-text search",
+                "Notes": "Index every mounted table.\nExpose it through grep.",
+                "Status": "Done",
+                "Tags": ["backend", "infra"],
+                "Priority": 5,
+                "Shipped": true,
+                "Due": "2026-06-15",
+                "Kickoff": "2026-05-04T09:30:00.000Z",
+                "Owner": {"id": "usrAdaPark0000001"},
+                "Release": ["recRel00000000001"],
+                "Mockups": [
+                  {
+                    "id": "attSearchWire0001",
+                    "url": "https://v5.airtableusercontent.invalid/v3/u/attSearchWire0001/search-wireframe.png",
+                    "filename": "search-wireframe.png",
+                    "size": 48213,
+                    "type": "image/png",
+                    "width": 1280,
+                    "height": 800,
+                    "thumbnails": {
+                      "small": {
+                        "url": "https://v5.airtableusercontent.invalid/v3/u/attSearchWire0001/thumb-small.png",
+                        "width": 58,
+                        "height": 36
+                      },
+                      "large": {
+                        "url": "https://v5.airtableusercontent.invalid/v3/u/attSearchWire0001/thumb-large.png",
+                        "width": 819,
+                        "height": 512
+                      },
+                      "full": {
+                        "url": "https://v5.airtableusercontent.invalid/v3/u/attSearchWire0001/thumb-full.png",
+                        "width": 1280,
+                        "height": 800
+                      }
+                    }
+                  }
+                ]
+              },
+              "comments": [
+                {
+                  "id": "comFeat01Note0001",
+                  "authorId": "usrAdaPark0000001",
+                  "text": "Prototype indexes the table cache.",
+                  "createdTime": "2026-06-10T10:00:00.000Z"
+                },
+                {
+                  "id": "comFeat01Note0002",
+                  "authorId": "usrBenOrtiz000002",
+                  "text": "Please add grep push-down too.",
+                  "createdTime": "2026-06-11T10:00:00.000Z"
+                },
+                {
+                  "id": "comFeat01Note0003",
+                  "authorId": "usrChenWei0000003",
+                  "text": "Benchmarks look good on 10k rows.",
+                  "createdTime": "2026-06-12T10:00:00.000Z"
+                },
+                {
+                  "id": "comFeat01Note0004",
+                  "authorId": "usrAdaPark0000001",
+                  "text": "Shipped behind a flag, @[usrBenOrtiz000002] can you verify?",
+                  "createdTime": "2026-06-13T10:00:00.000Z"
+                },
+                {
+                  "id": "comFeat01Note0005",
+                  "authorId": "usrBenOrtiz000002",
+                  "text": "Verified ✓",
+                  "createdTime": "2026-06-14T10:00:00.000Z",
+                  "lastUpdatedTime": "2026-06-14T11:30:00.000Z"
+                }
+              ]
+            },
+            {
+              "id": "recFeat0000000002",
+              "createdTime": "2026-04-02T09:00:00.000Z",
+              "fields": {
+                "Name": "CSV export",
+                "Notes": "Weekly export of the metrics board.",
+                "Status": "In progress",
+                "Tags": ["backend"],
+                "Priority": 3,
+                "Due": "2026-07-01",
+                "Kickoff": "2026-06-01T14:00:00.000Z",
+                "Owner": {"id": "usrBenOrtiz000002"},
+                "Release": ["recRel00000000002"]
+              }
+            },
+            {
+              "id": "recFeat0000000003",
+              "createdTime": "2026-04-03T09:00:00.000Z",
+              "fields": {
+                "Name": "Dark mode",
+                "Status": "Done",
+                "Tags": ["frontend"],
+                "Priority": 2,
+                "Shipped": true,
+                "Due": "2026-05-20",
+                "Owner": {"id": "usrChenWei0000003"},
+                "Release": ["recRel00000000001"],
+                "Mockups": [
+                  {
+                    "id": "attDarkModeSpec02",
+                    "url": "https://v5.airtableusercontent.invalid/v3/u/attDarkModeSpec02/dark-mode.pdf",
+                    "filename": "dark-mode.pdf",
+                    "size": 102400,
+                    "type": "application/pdf"
+                  }
+                ]
+              },
+              "comments": [
+                {
+                  "id": "comFeat03Note0001",
+                  "authorId": "usrChenWei0000003",
+                  "text": "Contrast needs another pass.",
+                  "createdTime": "2026-05-15T09:00:00.000Z"
+                },
+                {
+                  "id": "comFeat03Note0002",
+                  "authorId": "usrAdaPark0000001",
+                  "text": "Fixed in the last build.",
+                  "createdTime": "2026-05-18T09:00:00.000Z",
+                  "parentCommentId": "comFeat03Note0001"
+                }
+              ]
+            },
+            {
+              "id": "recFeat0000000004",
+              "createdTime": "2026-04-04T09:00:00.000Z",
+              "fields": {
+                "Name": "SSO login",
+                "Notes": "SAML first, OIDC later.",
+                "Status": "Todo",
+                "Tags": ["backend", "infra"],
+                "Priority": 4,
+                "Due": "2026-09-30",
+                "Owner": {"id": "usrAdaPark0000001"},
+                "Release": ["recRel00000000003"]
+              }
+            },
+            {
+              "id": "recFeat0000000005",
+              "createdTime": "2026-04-05T09:00:00.000Z",
+              "fields": {"Name": "Offline mode", "Status": "Todo", "Priority": 1}
+            },
+            {
+              "id": "recFeat0000000006",
+              "createdTime": "2026-04-06T09:00:00.000Z",
+              "fields": {
+                "Name": "Audit log",
+                "Notes": "Who changed what, and when.",
+                "Status": "In progress",
+                "Tags": ["backend"],
+                "Priority": 4,
+                "Kickoff": "2026-06-15T08:00:00.000Z",
+                "Owner": {"id": "usrBenOrtiz000002"},
+                "Release": ["recRel00000000002"]
+              }
+            },
+            {
+              "id": "recFeat0000000007",
+              "createdTime": "2026-04-07T09:00:00.000Z",
+              "fields": {
+                "Name": "Onboarding tour",
+                "Status": "Done",
+                "Tags": ["frontend", "docs"],
+                "Priority": 3,
+                "Shipped": true,
+                "Due": "2026-05-28",
+                "Owner": {"id": "usrChenWei0000003"},
+                "Release": ["recRel00000000001"]
+              }
+            },
+            {
+              "id": "recFeat0000000008",
+              "createdTime": "2026-04-08T09:00:00.000Z",
+              "fields": {
+                "Name": "Rate limiter",
+                "Notes": "Token bucket per base.",
+                "Status": "Done",
+                "Tags": ["infra"],
+                "Priority": 5,
+                "Shipped": false,
+                "Owner": {"id": "usrAdaPark0000001"},
+                "Release": ["recRel00000000002"]
+              }
+            },
+            {
+              "id": "recFeat0000000009",
+              "createdTime": "2026-04-09T09:00:00.000Z",
+              "fields": {"Name": "Mobile app", "Notes": "Parked until Q4.", "Tags": ["frontend"]}
+            },
+            {
+              "id": "recFeat0000000010",
+              "createdTime": "2026-04-10T09:00:00.000Z",
+              "fields": {
+                "Name": "API docs refresh",
+                "Notes": "Line one\nLine two\nLine three",
+                "Status": "Todo",
+                "Tags": ["docs"],
+                "Priority": 2,
+                "Owner": {"id": "usrBenOrtiz000002"},
+                "Release": ["recRel00000000003"]
+              }
+            }
+          ]
+        },
+        {
+          "id": "tblReleases000002",
+          "name": "Releases",
+          "primaryFieldId": "fldRelName0000001",
+          "fields": [
+            {"id": "fldRelName0000001", "name": "Name", "type": "singleLineText"},
+            {
+              "id": "fldRelDate0000002",
+              "name": "Date",
+              "type": "date",
+              "options": {"dateFormat": {"name": "iso", "format": "YYYY-MM-DD"}}
+            },
+            {
+              "id": "fldRelFeatures003",
+              "name": "Features",
+              "type": "multipleRecordLinks",
+              "options": {
+                "linkedTableId": "tblFeatures000001",
+                "isReversed": false,
+                "prefersSingleRecordLink": false,
+                "inverseLinkFieldId": "fldFeatRelease010"
+              }
+            },
+            {
+              "id": "fldRelFeatCount04",
+              "name": "Feature count",
+              "type": "count",
+              "options": {"isValid": true, "recordLinkFieldId": "fldRelFeatures003"}
+            },
+            {
+              "id": "fldRelTotalPrio05",
+              "name": "Total priority",
+              "type": "rollup",
+              "description": "SUM(values) of the linked features' Priority; static in the fake",
+              "options": {
+                "isValid": true,
+                "recordLinkFieldId": "fldRelFeatures003",
+                "fieldIdInLinkedTable": "fldFeatPriority05",
+                "referencedFieldIds": [],
+                "result": {"type": "number", "options": {"precision": 0}}
+              }
+            }
+          ],
+          "views": [{"id": "viwRelGrid0000001", "name": "Grid view", "type": "grid"}],
+          "records": [
+            {
+              "id": "recRel00000000001",
+              "createdTime": "2026-03-20T12:00:00.000Z",
+              "fields": {
+                "Name": "v1.0",
+                "Date": "2026-06-01",
+                "Features": ["recFeat0000000001", "recFeat0000000003", "recFeat0000000007"],
+                "Total priority": 10
+              }
+            },
+            {
+              "id": "recRel00000000002",
+              "createdTime": "2026-03-21T12:00:00.000Z",
+              "fields": {
+                "Name": "v1.1",
+                "Date": "2026-07-15",
+                "Features": ["recFeat0000000002", "recFeat0000000006", "recFeat0000000008"],
+                "Total priority": 12
+              }
+            },
+            {
+              "id": "recRel00000000003",
+              "createdTime": "2026-03-22T12:00:00.000Z",
+              "fields": {
+                "Name": "v2.0",
+                "Features": ["recFeat0000000004", "recFeat0000000010"],
+                "Total priority": 6
+              }
+            }
+          ]
+        },
+        {
+          "id": "tblBacklog0000003",
+          "name": "Backlog",
+          "primaryFieldId": "fldBackName000001",
+          "fields": [
+            {"id": "fldBackName000001", "name": "Name", "type": "singleLineText"},
+            {
+              "id": "fldBackPriority02",
+              "name": "Priority",
+              "type": "number",
+              "options": {"precision": 0}
+            }
+          ],
+          "views": [{"id": "viwBackGrid000001", "name": "Grid view", "type": "grid"}],
+          "records": [
+            {
+              "id": "recBack0000000001",
+              "createdTime": "2026-03-01T00:00:00.000Z",
+              "fields": {"Name": "Backlog item 01", "Priority": 4}
+            },
+            {
+              "id": "recBack0000000002",
+              "createdTime": "2026-03-01T01:00:00.000Z",
+              "fields": {"Name": "Backlog item 02", "Priority": 2}
+            },
+            {
+              "id": "recBack0000000003",
+              "createdTime": "2026-03-01T02:00:00.000Z",
+              "fields": {"Name": "Backlog item 03", "Priority": 5}
+            },
+            {
+              "id": "recBack0000000004",
+              "createdTime": "2026-03-01T03:00:00.000Z",
+              "fields": {"Name": "Backlog item 04", "Priority": 3}
+            },
+            {
+              "id": "recBack0000000005",
+              "createdTime": "2026-03-01T04:00:00.000Z",
+              "fields": {"Name": "Backlog item 05", "Priority": 1}
+            },
+            {
+              "id": "recBack0000000006",
+              "createdTime": "2026-03-01T05:00:00.000Z",
+              "fields": {"Name": "Backlog item 06", "Priority": 4}
+            },
+            {
+              "id": "recBack0000000007",
+              "createdTime": "2026-03-01T06:00:00.000Z",
+              "fields": {"Name": "Backlog item 07", "Priority": 2}
+            },
+            {
+              "id": "recBack0000000008",
+              "createdTime": "2026-03-01T07:00:00.000Z",
+              "fields": {"Name": "Backlog item 08", "Priority": 5}
+            },
+            {
+              "id": "recBack0000000009",
+              "createdTime": "2026-03-01T08:00:00.000Z",
+              "fields": {"Name": "Backlog item 09", "Priority": 3}
+            },
+            {
+              "id": "recBack0000000010",
+              "createdTime": "2026-03-01T09:00:00.000Z",
+              "fields": {"Name": "Backlog item 10", "Priority": 1}
+            },
+            {
+              "id": "recBack0000000011",
+              "createdTime": "2026-03-01T10:00:00.000Z",
+              "fields": {"Name": "Backlog item 11", "Priority": 4}
+            },
+            {
+              "id": "recBack0000000012",
+              "createdTime": "2026-03-01T11:00:00.000Z",
+              "fields": {"Name": "Backlog item 12", "Priority": 2}
+            },
+            {
+              "id": "recBack0000000013",
+              "createdTime": "2026-03-01T12:00:00.000Z",
+              "fields": {"Name": "Backlog item 13", "Priority": 5}
+            },
+            {
+              "id": "recBack0000000014",
+              "createdTime": "2026-03-01T13:00:00.000Z",
+              "fields": {"Name": "Backlog item 14", "Priority": 3}
+            },
+            {
+              "id": "recBack0000000015",
+              "createdTime": "2026-03-01T14:00:00.000Z",
+              "fields": {"Name": "Backlog item 15", "Priority": 1}
+            },
+            {
+              "id": "recBack0000000016",
+              "createdTime": "2026-03-01T15:00:00.000Z",
+              "fields": {"Name": "Backlog item 16", "Priority": 4}
+            },
+            {
+              "id": "recBack0000000017",
+              "createdTime": "2026-03-01T16:00:00.000Z",
+              "fields": {"Name": "Backlog item 17", "Priority": 2}
+            },
+            {
+              "id": "recBack0000000018",
+              "createdTime": "2026-03-01T17:00:00.000Z",
+              "fields": {"Name": "Backlog item 18", "Priority": 5}
+            },
+            {
+              "id": "recBack0000000019",
+              "createdTime": "2026-03-01T18:00:00.000Z",
+              "fields": {"Name": "Backlog item 19", "Priority": 3}
+            },
+            {
+              "id": "recBack0000000020",
+              "createdTime": "2026-03-01T19:00:00.000Z",
+              "fields": {"Name": "Backlog item 20", "Priority": 1}
+            },
+            {
+              "id": "recBack0000000021",
+              "createdTime": "2026-03-01T20:00:00.000Z",
+              "fields": {"Name": "Backlog item 21", "Priority": 4}
+            },
+            {
+              "id": "recBack0000000022",
+              "createdTime": "2026-03-01T21:00:00.000Z",
+              "fields": {"Name": "Backlog item 22", "Priority": 2}
+            },
+            {
+              "id": "recBack0000000023",
+              "createdTime": "2026-03-01T22:00:00.000Z",
+              "fields": {"Name": "Backlog item 23", "Priority": 5}
+            },
+            {
+              "id": "recBack0000000024",
+              "createdTime": "2026-03-01T23:00:00.000Z",
+              "fields": {"Name": "Backlog item 24", "Priority": 3}
+            },
+            {
+              "id": "recBack0000000025",
+              "createdTime": "2026-03-02T00:00:00.000Z",
+              "fields": {"Name": "Backlog item 25", "Priority": 1}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "appOpsFinance0002",
+      "name": "Ops / Finance ✓",
+      "permissionLevel": "edit",
+      "tables": [
+        {
+          "id": "tblQ3Budget000004",
+          "name": "Q3 / Budget",
+          "description": "Spend by line item for the third quarter.",
+          "primaryFieldId": "fldBudgetItem0001",
+          "fields": [
+            {"id": "fldBudgetItem0001", "name": "Item", "type": "singleLineText"},
+            {
+              "id": "fldBudgetAmount02",
+              "name": "Amount",
+              "type": "currency",
+              "options": {"precision": 2, "symbol": "$"}
+            },
+            {
+              "id": "fldBudgetShare003",
+              "name": "Share",
+              "type": "percent",
+              "options": {"precision": 1}
+            },
+            {
+              "id": "fldBudgetApprove4",
+              "name": "Approved",
+              "type": "checkbox",
+              "options": {"icon": "check", "color": "greenBright"}
+            }
+          ],
+          "views": [{"id": "viwBudgetGrid0001", "name": "Grid view", "type": "grid"}],
+          "records": [
+            {
+              "id": "recBudget00000001",
+              "createdTime": "2026-07-01T08:00:00.000Z",
+              "fields": {"Item": "Cloud hosting", "Amount": 12500.5, "Share": 0.42, "Approved": true}
+            },
+            {
+              "id": "recBudget00000002",
+              "createdTime": "2026-07-01T08:05:00.000Z",
+              "fields": {"Item": "Contractors", "Amount": 8000, "Share": 0.27}
+            },
+            {
+              "id": "recBudget00000003",
+              "createdTime": "2026-07-01T08:10:00.000Z",
+              "fields": {"Item": "Conferences", "Amount": 2250.75, "Share": 0.075, "Approved": true}
+            },
+            {
+              "id": "recBudget00000004",
+              "createdTime": "2026-07-01T08:15:00.000Z",
+              "fields": {"Item": "Café ☕ & snacks", "Amount": 310.2, "Share": 0.235}
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "appArchive0000003",
+      "name": "Archive",
+      "permissionLevel": "read",
+      "tables": [
+        {
+          "id": "tblOldProjects005",
+          "name": "Old Projects",
+          "primaryFieldId": "fldOldName0000001",
+          "fields": [
+            {"id": "fldOldName0000001", "name": "Name", "type": "singleLineText"},
+            {
+              "id": "fldOldYear0000002",
+              "name": "Year",
+              "type": "number",
+              "options": {"precision": 0}
+            }
+          ],
+          "views": [{"id": "viwOldGrid0000001", "name": "Grid view", "type": "grid"}],
+          "records": [
+            {
+              "id": "recOld00000000001",
+              "createdTime": "2019-05-01T10:00:00.000Z",
+              "fields": {"Name": "Prototype 2019", "Year": 2019}
+            },
+            {
+              "id": "recOld00000000002",
+              "createdTime": "2021-02-01T10:00:00.000Z",
+              "fields": {"Name": "Legacy importer", "Year": 2021}
+            },
+            {
+              "id": "recOld00000000003",
+              "createdTime": "2022-08-01T10:00:00.000Z",
+              "fields": {"Name": "Beta portal", "Year": 2022}
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

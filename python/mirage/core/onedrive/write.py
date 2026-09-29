@@ -37,5 +37,5 @@ async def write_bytes(accessor: OneDriveAccessor, path: PathSpec,
                                    session_url,
                                    data,
                                    session=accessor.pool)
-    record("write", stripped, "onedrive", len(data), timer)
+    record("write", path.virtual, "onedrive", len(data), timer)
     await invalidate_after_write(path)

@@ -16,8 +16,7 @@ import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { PathSpec } from '../../types.ts'
 import { norm, nowIso } from './utils.ts'
 import { rstripSlash } from '../../utils/slash.ts'
-import { enoent } from '../../utils/errors.ts'
-import { checkDestParents } from './dest.ts'
+import { checkDestParents, lookupError } from './dest.ts'
 import { invalidateSubtree } from '../../cache/context.ts'
 
 function moveAttrs(accessor: RAMAccessor, src: string, dst: string): void {
@@ -91,5 +90,5 @@ export async function rename(accessor: RAMAccessor, src: PathSpec, dst: PathSpec
     await invalidateSubtree(dst)
     return Promise.resolve()
   }
-  throw enoent(src)
+  throw lookupError(accessor, src, s)
 }

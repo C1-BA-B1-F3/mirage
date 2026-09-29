@@ -33,4 +33,17 @@ export class ContextScope {
   wrap<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
     return (...args) => this.call(() => fn(...args))
   }
+  async *stream<T>(source: AsyncIterable<T>): AsyncGenerator<T> {
+    const iterator = source[Symbol.asyncIterator]()
+    try {
+      for (;;) {
+        const next = await this.run(() => iterator.next())
+        if (next.done === true) return
+        yield next.value
+      }
+    } finally {
+      const finish = iterator.return?.bind(iterator)
+      if (finish !== undefined) await this.run(finish)
+    }
+  }
 }

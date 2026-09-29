@@ -177,11 +177,11 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "ln -s -t /data/lnf/nodir /data/lnf/a.txt",
+      "command": "ln -s -t /data/lnf/nodir /data/lnf/a.txt; ln -s /data/lnf/a.txt /data/lnf/nodir/y; ln -s /data/lnf/a.txt /data/lnf/nodir/deep/y; ln -sb /data/lnf/a.txt /data/lnf/nodir/y; ln /data/lnf/a.txt /data/lnf/nodir/h; ls /data/lnf/nodir",
       "expect": {
-        "exit": 1,
+        "exit": 2,
         "stdout": "",
-        "stderr": "ln: failed to access '/data/lnf/nodir': No such file or directory\n"
+        "stderr": "ln: failed to access '/data/lnf/nodir': No such file or directory\nln: failed to create symbolic link '/data/lnf/nodir/y': No such file or directory\nln: failed to create symbolic link '/data/lnf/nodir/deep/y': No such file or directory\nln: failed to create symbolic link '/data/lnf/nodir/y': No such file or directory\nln: failed to create hard link '/data/lnf/nodir/h' => '/data/lnf/a.txt': No such file or directory\nls: cannot access '/data/lnf/nodir': No such file or directory\n"
       },
       "flags": [
         "s",

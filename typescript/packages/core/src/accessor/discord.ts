@@ -13,12 +13,18 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { Accessor } from './base.ts'
+import { TimeRange } from '../core/time_range.ts'
 import type { BaseVFS } from '../vfs/base.ts'
 import type { DiscordTransport } from '../core/discord/client.ts'
 
 export class DiscordAccessor extends Accessor {
-  constructor(public readonly transport: DiscordTransport) {
+  readonly timeRange: TimeRange
+  constructor(
+    public readonly transport: DiscordTransport,
+    config: { startTime?: string | null; endTime?: string | null } = {},
+  ) {
     super()
+    this.timeRange = new TimeRange(config.startTime, config.endTime)
   }
 }
 

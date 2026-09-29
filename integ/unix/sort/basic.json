@@ -27,10 +27,10 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "sort /data/a.txt",
+      "command": "sort /data/a.txt; sort /data/no_nl.txt /data/one_byte.txt /data/b.txt",
       "expect": {
         "exit": 0,
-        "stdout": "bar\nbaz\nfoo\nhello\nworld\n",
+        "stdout": "bar\nbaz\nfoo\nhello\nworld\n1\n2\n3\nno trailing newline\nx\n",
         "stderr": ""
       }
     },
@@ -300,6 +300,74 @@
         "exit": 0,
         "stdout": "z\n�\n𝄞\n",
         "stderr": ""
+      }
+    },
+    {
+      "id": "sort_each_input_ends_its_last_line",
+      "seq": 1299040,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort /data/no_nl.txt /data/sorted_a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "apple\nbanana\ncherry\nno trailing newline\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sort_closed_stdin_is_stat_failed",
+      "seq": 1299041,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "sort <&-",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "sort: stat failed: -: Bad file descriptor\n"
       }
     }
   ]

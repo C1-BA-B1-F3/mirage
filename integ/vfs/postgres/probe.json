@@ -23,7 +23,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "/pg/public/tables/books/rows.jsonl: Operation not supported\n"
+        "stderr": "/pg/public/tables/books/rows.jsonl: Read-only file system\n"
       }
     },
     {
@@ -118,7 +118,7 @@
       "expect": {
         "exit": 1,
         "stdout": "==> /pg/public/tables/books/rows.jsonl <==\n{\"id\":1,\"title\":\"alpha\",\"author\":\"ada\",\"year\":2020,\"rating\":4.5}\n{\"id\":2,\"title\":\"beta\",\"author\":\"ben\",\"year\":2021,\"rating\":3.2}\n",
-        "stderr": "head: /pg/__nf_missing__.txt: No such file or directory\n"
+        "stderr": "head: cannot open '/pg/__nf_missing__.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -130,7 +130,7 @@
       "command": "wc -l /pg/public/tables/books/rows.jsonl /pg/__nf_missing__.txt",
       "expect": {
         "exit": 1,
-        "stdout": "5 /pg/public/tables/books/rows.jsonl\n5 total\n",
+        "stdout": "  5 /pg/public/tables/books/rows.jsonl\n  5 total\n",
         "stderr": "wc: /pg/__nf_missing__.txt: No such file or directory\n"
       }
     },
@@ -157,7 +157,7 @@
       "expect": {
         "exit": 1,
         "stdout": "==> /pg/public/tables/books/rows.jsonl <==\n{\"id\":4,\"title\":\"delta\",\"author\":\"ada\",\"year\":2023,\"rating\":4}\n{\"id\":5,\"title\":\"epsilon\",\"author\":\"ben\",\"year\":2024,\"rating\":2.5}\n",
-        "stderr": "tail: /pg/__nf_missing__.txt: No such file or directory\n"
+        "stderr": "tail: cannot open '/pg/__nf_missing__.txt' for reading: No such file or directory\n"
       }
     },
     {
@@ -261,7 +261,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "stat: /pg/nope: No such file or directory\n"
+        "stderr": "stat: cannot statx '/pg/nope': No such file or directory\n"
       }
     },
     {
@@ -301,6 +301,19 @@
         "exit": 1,
         "stdout": "",
         "stderr": "cat: /pg/public/tables/ghost/rows.jsonl: No such file or directory\n"
+      }
+    },
+    {
+      "id": "pg_unknown_size_is_not_empty",
+      "seq": 610113,
+      "targets": [
+        "postgres"
+      ],
+      "command": "find /pg/public/tables/books/rows.jsonl /pg/public/tables/books -name rows.jsonl -empty",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
       }
     }
   ]

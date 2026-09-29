@@ -31,6 +31,7 @@ export type { RedisIndexConfig } from './cache/index/config.ts'
 export { RedisIndexCacheStore } from './cache/index/redis.ts'
 export type { CommandIO } from './commands/builtin/generic_bind/index.ts'
 export { streamFromBytes } from './commands/builtin/utils/wrap.ts'
+export { AIRTABLE } from './commands/cli/builtin/airtable/index.ts'
 export { DISCORD } from './commands/cli/builtin/discord/index.ts'
 export { GH } from './commands/cli/builtin/gh/index.ts'
 export { GIT } from './commands/cli/builtin/git/index.ts'
@@ -62,6 +63,17 @@ export { ChromaVFS } from './vfs/chroma/chroma.ts'
 export { normalizeDatabricksVolumeConfig } from './vfs/databricks_volume/config.ts'
 export { DevVFS } from './vfs/dev/dev.ts'
 export { DifyVFS } from './vfs/dify/dify.ts'
+export { AirtableVFS } from './vfs/airtable/airtable.ts'
+export { checkReadContract, type ReadFixture } from './vfs/testing.ts'
+export { VFSAdapter } from './vfs/adapter.ts'
+export type {
+  NativeReadOps,
+  ReadOps,
+  WriteOps,
+  SearchOps,
+  SearchQuery,
+  DuOps,
+} from './vfs/types.ts'
 export { Mem0VFS } from './vfs/mem0/mem0.ts'
 export { OneDriveVFS } from './vfs/onedrive/onedrive.ts'
 export { QdrantVFS } from './vfs/qdrant/qdrant.ts'

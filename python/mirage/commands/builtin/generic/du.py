@@ -16,12 +16,13 @@ from mirage.context import (hidden_paths_intersect, path_allowed,
 from mirage.io.types import IOResult
 from mirage.ops.types import LinkView, MountView, StatPath
 from mirage.types import FileStat, PathSpec
+from mirage.utils.errors import ZERO_LENGTH_NAME, DotWalkError, fs_strerror
 from mirage.utils.key_prefix import mount_prefix_of
 from mirage.utils.path import respell_raw
+from mirage.vfs.types import DuEntries
 
 logger = logging.getLogger(__name__)
 
-DuEntries = tuple[list[tuple[str, int]], int]
 ComputeSize = Callable[[PathSpec], Awaitable[int]]
 ComputeEntries = Callable[[PathSpec], Awaitable[DuEntries]]
 
@@ -231,6 +232,11 @@ async def du_operands(
         try:
             await stat(path)
             stattable = True
+        except DotWalkError as exc:
+            # The operand did not resolve, so no channel asked about the
+            # path it simplifies to can find it there.
+            missing.append((path.raw_path, fs_strerror(exc) or ENOENT_TEXT))
+            continue
         except NotADirectoryError:
             # An operand typed with a trailing slash that did not name a
             # directory. Unreadable like a missing one, but GNU reports
@@ -725,7 +731,8 @@ async def du(
         lines.append(_line(sum(totals), flags.h, "total"))
 
     notes = [flags.warning] if flags.warning else []
-    notes.extend(f"du: cannot access '{raw}': {detail}"
+    notes.extend(f"du: {ZERO_LENGTH_NAME}" if raw ==
+                 "" else f"du: cannot access '{raw}': {detail}"
                  for raw, detail in missing)
     exit_code = 1 if missing else 0
     for virtual in (unreadable() if unreadable is not None else ()):

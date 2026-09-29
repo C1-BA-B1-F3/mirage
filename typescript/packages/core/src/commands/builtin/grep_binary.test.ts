@@ -1,6 +1,8 @@
+import { Buffer } from 'node:buffer'
 import { describe, expect, it, vi } from 'vitest'
 import { specOf } from '../spec/builtins.ts'
 import { FlagView } from '../spec/flag_view.ts'
+import { AsyncLineIterator } from '../../io/async_line_iterator.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import { parseFlags } from './generic/grep.ts'
 import { grepInput, PROBE_BLOCK_BYTES } from './grep_binary.ts'
@@ -571,5 +573,227 @@ it('allows timer cancellation while collecting matches from one line', async () 
   } finally {
     clearTimeout(timer)
     at.mockRestore()
+  }
+})
+
+it.each([
+  [{ c: true }, /needle/, '0\n', 1],
+  [{ c: true, v: true }, /needle/, '100003\n', 0],
+  [{ c: true }, /^$/, '100003\n', 0],
+  [{ c: true, m: 17000 }, /^$/, '17000\n', 0],
+  [{ c: true, B: 2, A: 2 }, /^$/, '100003\n', 0],
+  [{ files_without_match: true }, /needle/, 'binary.so\n', 1],
+  [{}, /needle/, '', 1],
+] as const)('batches NUL runs without changing selection: %j', async (flags, pat, stdout, code) => {
+  const data = new Uint8Array(100003)
+  async function* source(): AsyncIterable<Uint8Array> {
+    await Promise.resolve()
+    yield data
+  }
+  const f = parseFlags(new FlagView(flags, specOf('grep')))
+  const io = new IOResult()
+  const reads = vi.spyOn(AsyncLineIterator.prototype, 'readline')
+  try {
+    const out = await materialize(grepInput(source(), pat, f, 'binary.so', false, io))
+    expect(DEC.decode(out)).toBe(stdout)
+    expect(io.exitCode).toBe(code)
+    expect(io.stderr).toBeNull()
+    expect(reads.mock.calls.length).toBeLessThan(20)
+  } finally {
+    reads.mockRestore()
+  }
+})
+
+it.each([{}, { B: 2 }, { o: true }])(
+  'preserves offsets and context after empty lines: %j',
+  async (flags) => {
+    const data = ENC.encode('\n'.repeat(17003) + 'é needle\n')
+    async function* source(): AsyncIterable<Uint8Array> {
+      await Promise.resolve()
+      yield data
+    }
+    const f = parseFlags(new FlagView({ ...flags, n: true, byte_offset: true }, specOf('grep')))
+    const io = new IOResult()
+    const out = await materialize(grepInput(source(), /needle/, f, 'text', false, io))
+    const expected =
+      'o' in flags
+        ? '17004:17006:needle\n'
+        : ('B' in flags ? '17002-17001-\n17003-17002-\n' : '') + '17004:17003:é needle\n'
+    expect(DEC.decode(out)).toBe(expected)
+    expect(io.exitCode).toBe(0)
+  },
+)
+
+describe.each([
+  /needle/,
+  /needle/i,
+  /needle|qqzzyy/,
+  /nee.le/,
+  /\bneedle\b/,
+  /(?:needle)|(?:qqzzyy)/,
+  /(?:needle|other)+/,
+  /needle[0-9]+/,
+  /(?<!\w)needle(?!\w)/i,
+])('block search %s', (pat) => {
+  it.each(['abcdefg\n', 'abcdefg\0', '\xffabcdef\n'])(
+    'rejects short records by buffer without decoding each line: %j',
+    async (record) => {
+      const data = Buffer.from(record.repeat(40000), 'latin1')
+      const original = Buffer.from(data)
+      async function* source(): AsyncIterable<Uint8Array> {
+        await Promise.resolve()
+        yield data
+      }
+      const reads = vi.spyOn(AsyncLineIterator.prototype, 'readline')
+      try {
+        const f = parseFlags(new FlagView({ c: true }, specOf('grep')))
+        const io = new IOResult()
+        expect(DEC.decode(await materialize(grepInput(source(), pat, f, 'f', false, io)))).toBe(
+          '0\n',
+        )
+        expect(io.exitCode).toBe(1)
+        expect(io.stderr).toBeNull()
+        expect(reads.mock.calls.length).toBeLessThan(50)
+        expect(data).toEqual(original)
+      } finally {
+        reads.mockRestore()
+      }
+    },
+  )
+})
+
+describe.each([
+  [7, /needle/],
+  [16384, /needle/],
+  [PROBE_BLOCK_BYTES, /needle/],
+  [7, /needle|qqzzyy/],
+  [16384, /needle/i],
+  [PROBE_BLOCK_BYTES, /nee.le/],
+  [7, /\bneedle\b/],
+  [16384, /(?<!\w)needle(?!\w)/i],
+] as const)('prefilter at chunk size %i for %s', (size, pat) => {
+  it.each([
+    {},
+    { c: true },
+    { q: true },
+    { args_l: true },
+    { files_without_match: true },
+    { m: 1 },
+    { c: true, m: 1 },
+    { n: true, byte_offset: true },
+    { n: true, byte_offset: true, o: true },
+    { c: true, v: true },
+    { B: 2, A: 1, n: true, byte_offset: true },
+  ])('preserves the unfiltered scanner results for %j', async (flags) => {
+    const data = Buffer.concat([
+      Buffer.from('abcdefg\n'.repeat(2100)),
+      Buffer.from([0xff, 0, 10]),
+      Buffer.from('é needle 😀\n' + 'abcdefg\n'.repeat(2100) + 'needle needle'),
+    ])
+    for (const mode of ['binary', 'text', 'without-match']) {
+      async function* source(): AsyncIterable<Uint8Array> {
+        await Promise.resolve()
+        for (let at = 0; at < data.length; at += size) yield data.subarray(at, at + size)
+      }
+      const f = parseFlags(new FlagView({ binary_files: mode, ...flags }, specOf('grep')))
+      const fast = new IOResult()
+      const slow = new IOResult()
+      const skip = vi
+        .spyOn(AsyncLineIterator.prototype, 'skipNonmatchingLines')
+        .mockReturnValue([0, 0])
+      const expected = await materialize(grepInput(source(), pat, f, 'f', true, slow))
+      skip.mockRestore()
+      const actual = await materialize(grepInput(source(), pat, f, 'f', true, fast))
+      expect([actual, fast.stderr, fast.exitCode]).toEqual([expected, slow.stderr, slow.exitCode])
+    }
+  })
+})
+
+it.each([
+  /a\.b/,
+  /a\+b/,
+  /a\\b/,
+  /a b/,
+  /a.b/,
+  /a.*b/,
+  /(?:a|other)b?/,
+  /a{0,2}b/,
+  /(?:a|)b/,
+  /(?:a|b)?/,
+  /a(bc)?/,
+  /s/iu,
+  /k/iu,
+  /i/i,
+  /\bother\b/i,
+  /(?=other)/,
+  /(a)\1/,
+  /\x61/,
+  /a[\]x]b/,
+  /a[^x]+b/,
+  /^a/,
+  /b$/,
+  /[ab]/,
+  /a|b/,
+  /\w/,
+  /(?:)/,
+  /k/i,
+  /a/g,
+  /a/y,
+  /é/,
+  /needle|other/i,
+  /nee.le/,
+  /\bneedle\b/,
+  /needleX?/,
+  /s|k|i/i,
+  /needle|other/iu,
+  /(?<!\w)needle(?!\w)/i,
+  /(?<name>need)le/,
+])('does not mistake regex syntax or Unicode for an ASCII literal: %s', async (pat) => {
+  const data = ENC.encode(
+    'other\n'.repeat(3000) +
+      'a.b\na+b\na\\b\na b\nab\né\nK\nk\nſ\nS\nİ\nı\nI\nNEEDLE\nneedleX\nneedle',
+  )
+  async function* source(): AsyncIterable<Uint8Array> {
+    await Promise.resolve()
+    yield data
+  }
+  const f = parseFlags(new FlagView({ n: true, byte_offset: true }, specOf('grep')))
+  const fast = new IOResult()
+  const slow = new IOResult()
+  const skip = vi.spyOn(AsyncLineIterator.prototype, 'skipNonmatchingLines').mockReturnValue([0, 0])
+  const expected = await materialize(
+    grepInput(source(), new RegExp(pat.source, pat.flags), f, 'f', false, slow),
+  )
+  skip.mockRestore()
+  const actual = await materialize(grepInput(source(), pat, f, 'f', false, fast))
+  expect([actual, fast.stderr, fast.exitCode]).toEqual([expected, slow.stderr, slow.exitCode])
+})
+
+it('allows timer cancellation while skipping nonmatching buffers', async () => {
+  const controller = new AbortController()
+  const data = ENC.encode('abcdefg\n'.repeat(8192))
+  let closed = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  async function* source(): AsyncIterable<Uint8Array> {
+    await Promise.resolve()
+    try {
+      timer = setTimeout(() => {
+        controller.abort()
+      }, 0)
+      for (;;) yield data
+    } finally {
+      closed = true
+    }
+  }
+  try {
+    const f = parseFlags(new FlagView({ c: true }, specOf('grep')))
+    await expect(
+      materialize(
+        grepInput(source(), /needle/, f, 'f', false, new IOResult(), false, controller.signal),
+      ),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+    expect(closed).toBe(true)
+  } finally {
+    clearTimeout(timer)
   }
 })

@@ -18,12 +18,18 @@ import pytest
 
 pytest.importorskip("wasmtime")
 
+import wasmtime  # noqa: E402
+
+from mirage.runtime.types import VFSStat  # noqa: E402
+from mirage.runtime.wasm import host  # noqa: E402
+from mirage.runtime.wasm.runtime import epoch_engine  # noqa: E402
+from mirage.runtime.wasm.vfs import WasmVFS  # noqa: E402
+
 from mirage.runtime.wasm.abi import (  # noqa: E402  # isort: skip
     EINVAL, EIO, ENOENT, FST_ATIM, FST_ATIM_NOW, FST_MTIM, FST_MTIM_NOW,
     FT_CHR, FT_DIR, FT_REG, FT_SYMLINK)
 from mirage.runtime.wasm.host import (  # noqa: E402  # isort: skip
-    WasiFs, _call_guarded, _filetype, _spec, _stamp)
-from mirage.runtime.types import VFSStat  # noqa: E402
+    WasiFs, _call_guarded, _filetype, _spec, _stamp, install_wasi_fs)
 
 from mirage.utils.stat_view import (  # noqa: E402  # isort: skip
     CHAR_MODE, DIR_MODE, FILE_MODE, LINK_MODE)
@@ -108,3 +114,24 @@ def test_stamp_now_wins_over_the_argument():
 def test_stamp_reads_only_its_own_half_of_the_flags():
     assert _stamp(FST_ATIM, FST_MTIM, FST_MTIM_NOW, 1, 1.0) is None
     assert _stamp(FST_MTIM, FST_ATIM, FST_ATIM_NOW, 1, 1.0) is None
+
+
+def test_install_wasi_fs_locks_the_callback_slab_before_its_funcs(monkeypatch):
+    engine = epoch_engine()
+    linker = wasmtime.Linker(engine)
+    linker.define_wasi()
+    store = wasmtime.Store(engine)
+    order: list[str] = []
+    monkeypatch.setattr(host, "install_slab_lock",
+                        lambda: order.append("lock"))
+    real_func = host.Func
+
+    def counting_func(*args, **kwargs):
+        order.append("func")
+        return real_func(*args, **kwargs)
+
+    monkeypatch.setattr(host, "Func", counting_func)
+    install_wasi_fs(linker, store, WasiFs(WasmVFS(), b""))
+    assert order[0] == "lock"
+    assert order.count("lock") == 1
+    assert order.count("func") == len(_spec())

@@ -101,14 +101,17 @@ describe('formatLsLong', () => {
   })
 
   it('keeps the owner columns on a metadata-less row', () => {
-    // A synthetic directory with neither size nor mtime shows `-` for
-    // both rather than inventing size 0 and the epoch, and still names
-    // who the session is.
+    // A synthetic directory with neither size nor mtime shows DIR_SIZE
+    // and `-` for the time rather than inventing the epoch, and still
+    // names who the session is; a file with neither shows `-` for both.
     const stat = new FileStat({ name: 'dev', type: FileType.DIRECTORY })
-    expect(formatLsLong([stat])[0]).toBe('drwxr-xr-x 1 - - - - dev')
+    expect(formatLsLong([stat])[0]).toBe('drwxr-xr-x 1 - - 4096 - dev')
     expect(formatLsLong([stat], { identity: { user: null, profile: 'admin' } })[0]).toBe(
-      'drwxr-xr-x 1 - admin - - dev',
+      'drwxr-xr-x 1 - admin 4096 - dev',
     )
+    expect(formatLsLong([stat], { human: true })[0]).toBe('drwxr-xr-x 1 - - 4.0K - dev')
+    const page = new FileStat({ name: 'page', type: FileType.FILE })
+    expect(formatLsLong([page])[0]).toBe('-rw-r--r-- 1 - - - - page')
   })
 
   it('renders a device row with its numbers in the size column', () => {
@@ -178,7 +181,7 @@ describe('formatLsLong', () => {
       modified: null,
     })
     const [line] = formatLsLong([stat])
-    expect(line).toContain('Jan  1 00:00')
+    expect(line).toBe('-rw-r--r-- 1 - - 0 - x')
   })
 })
 

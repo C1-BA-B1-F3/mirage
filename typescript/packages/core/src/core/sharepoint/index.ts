@@ -53,6 +53,7 @@ import {
   writeItem,
 } from '../msgraph/drive.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { DIR_SIZE } from '../../utils/stat_view.ts'
 
 function directoryPath(path: PathSpec): PathSpec {
   return path.pattern !== null ? path.dir : path
@@ -107,7 +108,6 @@ export async function read(
     accessor.config,
     accessor.loc(resolved, path.vfsPath),
     path.virtual,
-    path.vfsPath,
     'sharepoint',
     options?.offset ?? 0,
     options?.size ?? null,
@@ -124,7 +124,6 @@ export async function* stream(
     accessor.config,
     accessor.loc(resolved, path.vfsPath),
     path.virtual,
-    path.vfsPath,
     'sharepoint',
   )
 }
@@ -223,7 +222,7 @@ export async function write(
   const resolved = await resolvedItem(accessor, path)
   const timer = startOp()
   await writeItem(accessor.config, accessor.loc(resolved, path.vfsPath), data)
-  record('write', path.vfsPath, 'sharepoint', data.length, timer)
+  record('write', path.virtual, 'sharepoint', data.length, timer)
   await invalidateAfterWrite(path)
 }
 
@@ -393,8 +392,8 @@ function pushNamespaceDir(
   if (options.maxDepth != null && depth > options.maxDepth) return
   const entry: FindEntry = { key, name, kind: 'd', depth, isEmpty }
   if (!keep(entry, tree, options.minDepth)) return
-  // Directories count as size 0 for -size (documented GNU divergence).
-  if (options.minSize != null && options.minSize > 0) return
+  if (options.minSize != null && DIR_SIZE < options.minSize) return
+  if (options.maxSize != null && DIR_SIZE > options.maxSize) return
   results.push(key)
 }
 

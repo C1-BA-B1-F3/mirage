@@ -30,7 +30,7 @@
       "command": "command -Vv cat",
       "expect": {
         "exit": 0,
-        "stdout": "cat\n",
+        "stdout": "/usr/bin/cat\n",
         "stderr": ""
       }
     },
@@ -64,7 +64,7 @@
       "command": "command -vV cat",
       "expect": {
         "exit": 0,
-        "stdout": "cat is a shell builtin\n",
+        "stdout": "cat is /usr/bin/cat\n",
         "stderr": ""
       }
     }

@@ -184,6 +184,7 @@ model GithubIssue {
 }
 
 model GithubComment {
+  metaJson    String @default("{}")
   pk          Int    @id @default(autoincrement())
   tenant      String
   repo        String
@@ -348,11 +349,15 @@ model GithubStagedEntry {
   treeSha String
   path    String
   data    Bytes
+  // The blob sha of `data`, so a blob no current tree holds is one indexed
+  // lookup rather than a hash of every snapshot the repository kept.
+  sha     String @default("")
   seq     Int
 
   tree GithubStagedTree @relation(fields: [tenant, treeSha], references: [tenant, sha])
 
   @@index([tenant, treeSha])
+  @@index([tenant, sha])
 }
 
 // Server-wide state that belongs to no repository. One row per tenant, so the

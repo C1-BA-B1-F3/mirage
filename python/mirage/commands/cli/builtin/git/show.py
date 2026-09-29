@@ -14,24 +14,25 @@
 
 import asyncio
 from dataclasses import dataclass
-from io import BytesIO
 
 from dulwich.objects import Commit
-from dulwich.patch import write_tree_diff
 from dulwich.repo import BaseRepo
 
+from mirage.commands.cli.builtin.git.diff_output import (DiffFlags,
+                                                         commit_output,
+                                                         join_output,
+                                                         parse_diff_flags,
+                                                         renames_enabled)
 from mirage.commands.cli.builtin.git.errors import GitError, NoWorkspaceError
-from mirage.commands.cli.builtin.git.format import (MEDIUM, Decorations,
-                                                    LogFormat,
+from mirage.commands.cli.builtin.git.format import (Decorations, LogFormat,
                                                     needs_decorations, oneline,
-                                                    parse_pretty, preset_block,
+                                                    preset_block,
                                                     render_template)
-from mirage.commands.cli.builtin.git.history import decorations, pretty_value
+from mirage.commands.cli.builtin.git.history import decorations, pretty_format
 from mirage.commands.cli.builtin.git.objects import abbrev_for
+from mirage.commands.cli.builtin.git.repo import config_bool
 from mirage.commands.cli.builtin.git.revparse import resolve_commit
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.summary import (diffstat, stat_table,
-                                                     tree_entries)
 from mirage.commands.cli.builtin.git.util import (  # yapf: disable
     check_operands, escaped, fatal, revision_arg)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
@@ -40,50 +41,33 @@ from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.shell.bytes import encode_text
 
-MERGE_PARENTS = 1
-
-# A merge prints no ordinary diff. git renders one against every parent
-# at once (`--cc`, the combined format with two prefix columns and
-# `@@@` ranges), which comes out empty whenever the merge result matches
-# a parent exactly, so the common merge shows only its header. Combined
-# diffs are not implemented, so a merge that resolved a conflict shows
-# its header and nothing else rather than a patch git would never print.
-
 
 @dataclass(frozen=True, slots=True)
 class ShowFlags:
-    """The parsed shape of a ``git show`` invocation.
-
-    ``--no-ext-diff`` is accepted but carries no field: there are no
-    external diff drivers here, so it changes nothing by construction.
-
-    Args:
-        stat (bool): ``--stat``, the diffstat table instead of a patch.
-        no_patch (bool): ``-s``/``--no-patch``, no diff section at all.
-            Wins over ``--stat`` and ``--name-only`` in either order,
-            which is what git 2.50 does.
-        name_only (bool): ``--name-only``, changed paths instead of a
-            patch. Wins over ``--stat``, pinned against git 2.50.
-        pretty (LogFormat): how the header renders.
-    """
-    stat: bool
-    no_patch: bool
-    name_only: bool
+    """The commit presentation and shared diff options."""
+    diff: DiffFlags
     pretty: LogFormat
+    date: str = "default"
 
 
-def parse_show_flags(fl: FlagView) -> ShowFlags:
+def parse_show_flags(fl: FlagView,
+                     default_renames: bool = True,
+                     quote_path_fully: bool = True) -> ShowFlags:
     """Read the raw show flag kwargs into a frozen struct.
 
     Args:
         fl (FlagView): spec-validated view over the raw flag kwargs.
+        default_renames (bool): ``diff.renames``.
+        quote_path_fully (bool): ``core.quotePath``.
     """
-    spelled = pretty_value(fl)
+    pretty = pretty_format(fl)
     return ShowFlags(
-        stat=fl.as_bool("stat"),
-        no_patch=fl.as_bool("no_patch"),
-        name_only=fl.as_bool("name_only"),
-        pretty=parse_pretty(spelled) if spelled is not None else MEDIUM,
+        diff=parse_diff_flags(fl,
+                              default_merge="dense-combined",
+                              default_renames=default_renames,
+                              quote_path_fully=quote_path_fully),
+        date=fl.as_str("date") or "default",
+        pretty=pretty,
     )
 
 
@@ -107,42 +91,13 @@ def _header(commit: Commit, flags: ShowFlags, width: int,
     if fmt.kind == "oneline":
         return f"{oneline(commit, width)}\n".encode()
     if fmt.kind in ("format", "tformat"):
-        rendered = render_template(fmt.template or "", commit, width, decor)
+        rendered = render_template(fmt.template or "", commit, width, decor,
+                                   flags.date)
         if fmt.kind == "tformat":
             return encode_text(f"{rendered}\n") if fmt.template else b""
         return encode_text(rendered)
-    return ("\n".join(preset_block(commit, fmt.kind, width)) + "\n").encode()
-
-
-def _diff_section(repo: BaseRepo, commit: Commit, flags: ShowFlags) -> bytes:
-    """The section under the header: patch, stat, names, or nothing.
-
-    Args:
-        repo (BaseRepo): repository to read.
-        commit (Commit): the commit being shown.
-        flags (ShowFlags): the parsed invocation.
-    """
-    if flags.no_patch:
-        return b""
-    store = repo.object_store
-    parent_tree = None
-    if commit.parents:
-        parent = store[commit.parents[0]]
-        assert isinstance(parent, Commit)
-        parent_tree = parent.tree
-    if flags.name_only or flags.stat:
-        before = tree_entries(store, parent_tree)
-        after = tree_entries(store, commit.tree)
-        if flags.name_only:
-            changed = sorted(path for path in set(before) | set(after)
-                             if before.get(path) != after.get(path))
-            return "".join(f"{path.decode('utf-8', errors='replace')}\n"
-                           for path in changed).encode()
-        lines = stat_table(diffstat(store, before, after))
-        return "".join(f"{line}\n" for line in lines).encode()
-    patch = BytesIO()
-    write_tree_diff(patch, store, parent_tree, commit.tree)
-    return patch.getvalue()
+    return ("\n".join(preset_block(commit, fmt.kind, width, flags.date)) +
+            "\n").encode()
 
 
 def _render(repo: BaseRepo, revision: str, flags: ShowFlags,
@@ -162,14 +117,10 @@ def _render(repo: BaseRepo, revision: str, flags: ShowFlags,
     commit = resolve_commit(repo, revision)
     decor = decorations(repo) if want_decor else None
     header = _header(commit, flags, abbrev_for(repo), decor)
-    if len(commit.parents) > MERGE_PARENTS:
-        return header
-    body = _diff_section(repo, commit, flags)
-    if not body:
-        return header
-    if not header:
-        return body
-    return header + b"\n" + body
+    bodies = commit_output(repo, commit, flags.diff)
+    return join_output(commit, header, bodies, flags.pretty.kind,
+                       abbrev_for(repo), flags.diff, flags.diff.summary
+                       and not flags.diff.no_patch)
 
 
 async def show(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
@@ -190,11 +141,43 @@ async def show(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         if dispatch is None:
             raise NoWorkspaceError()
         check_operands(texts, marked=escaped(inv.argv))
-        parsed = parse_show_flags(fl)
-        repo, _location = await opened(fl, doors)
+        repo, location = await opened(fl, doors)
+        parsed = parse_show_flags(
+            fl, await renames_enabled(dispatch, location), await
+            config_bool(dispatch, location, b"core", b"quotepath", True))
         rendered = await asyncio.to_thread(_render, repo, revision_arg(texts),
                                            parsed,
                                            needs_decorations(parsed.pretty))
     except GitError as exc:
         return fatal(exc)
     return yield_bytes(rendered), IOResult()
+
+
+def _diff_tree(repo: BaseRepo, revision: str, flags: DiffFlags,
+               no_commit_id: bool, recursive: bool) -> bytes:
+    commit = resolve_commit(repo, revision)
+    bodies = commit_output(repo, commit, flags, recursive, root=False)
+    return b"".join(
+        (b"" if no_commit_id else commit.id + b"\n") + body for body in bodies)
+
+
+async def diff_tree(
+        inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    fl = FlagView(inv.flags)
+    doors = inv.doors or CLIDoors()
+    try:
+        if doors.dispatch is None:
+            raise NoWorkspaceError()
+        repo, location = await opened(fl, doors)
+        fully = await config_bool(doors.dispatch, location, b"core",
+                                  b"quotepath", True)
+        out = await asyncio.to_thread(
+            _diff_tree, repo, inv.texts[0] if inv.texts else "HEAD",
+            parse_diff_flags(fl,
+                             default_patch=False,
+                             porcelain=False,
+                             quote_path_fully=fully),
+            fl.as_bool("no_commit_id"), fl.as_bool("r"))
+        return out, IOResult()
+    except GitError as exc:
+        return fatal(exc)

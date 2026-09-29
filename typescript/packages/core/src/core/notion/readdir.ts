@@ -28,12 +28,12 @@ import {
   getChildPages,
   getDataSource,
   getDatabase,
-  queryDataSource,
   searchDataSources,
   searchTopLevelPages,
 } from './pages.ts'
 import { formatSegment } from './pathing.ts'
 import { detectScope } from './scope.ts'
+import { guardRow } from './resolve.ts'
 
 function pickString(record: Record<string, unknown>, key: string): string {
   const value = record[key]
@@ -105,7 +105,7 @@ async function listPage(
   accessor: NotionAccessor,
   match: ScopeMatch,
 ): Promise<[string, IndexEntry][]> {
-  const pageId = match.slots.page_id ?? ''
+  const pageId = match.slots.page_id ?? match.slots.row_id ?? ''
   const refs = await getChildPages(accessor.transport, pageId)
   // page.json renders from getPage plus the *recursive* block tree while
   // this listing only holds one level of children, so sizing it here would
@@ -181,8 +181,11 @@ async function listDataSource(
 ): Promise<[string, IndexEntry][]> {
   const dataSourceId = match.slots.data_source_id ?? ''
   const dataSource = await getDataSource(accessor.transport, dataSourceId)
-  const rows = await queryDataSource(accessor.transport, dataSourceId)
-  const entries: [string, IndexEntry][] = [
+  // The rows are one file, not one directory each: a query answers a hundred
+  // rows' cells a call, while a row directory costs calls of its own to
+  // enter, so a walk over a table stays a walk over its pages of query
+  // results. rows.jsonl stays size-unknown until a read renders it.
+  return [
     [
       'data_source.json',
       new IndexEntry({
@@ -193,31 +196,29 @@ async function listDataSource(
         size: toJsonBytes(normalizeDataSource(dataSource)).byteLength,
       }),
     ],
-  ]
-  for (const row of rows) {
-    if (row.object !== 'page') continue
-    const segment = pageSegmentName(row)
-    entries.push([
-      segment,
+    [
+      'rows.jsonl',
       new IndexEntry({
-        id: pickString(row, 'id'),
-        name: segment,
-        resourceType: 'notion/page',
-        remoteTime: pickString(row, 'last_edited_time'),
-        vfsName: segment,
+        id: `${dataSourceId}:rows`,
+        name: 'rows.jsonl',
+        resourceType: 'file',
+        vfsName: 'rows.jsonl',
       }),
-    ])
-  }
-  return entries
+    ],
+  ]
 }
 
 export const readdir = makeReaddir<NotionAccessor>(detectScope, {
   listers: {
     pages: listPagesRoot,
     databases: listDatabasesRoot,
+  },
+  parentEntryListers: { row: listPage },
+  entryListers: {
     page: listPage,
     database: listDatabase,
     data_source: listDataSource,
   },
   staticRoot: ['pages', 'databases'],
+  guards: { row: guardRow, page: guardRow },
 })

@@ -11,18 +11,17 @@ A VFS maps an external system to Mirage's filesystem operations and shell comman
 
 ## Ship Your Own Backend
 
-Everything an out-of-tree backend needs is exported from the `mirage` package root, the same front door that hands out `Workspace` and the twin of what `@struktoai/mirage-core` gives a TypeScript backend; there is no separate SDK module. Write the core functions over your data source, put them on a `CommandIO`, and `BaseVFS` wires the full generic command set (`ls`, `cat`, `grep`, `find`, `head`, `wc`, ...) plus glob resolution:
+Everything an out-of-tree backend needs is exported from the `mirage` package root, the same front door that hands out `Workspace` and the twin of what `@struktoai/mirage-core` gives a TypeScript backend; there is no separate SDK module. Write the core functions over your data source, group the three required reads in a `VFSAdapter`, and `BaseVFS` wires the full generic command set (`ls`, `cat`, `grep`, `find`, `head`, `wc`, ...) plus glob resolution:
 
 ```python
-from functools import partial
+from pydantic import BaseModel, ConfigDict, SecretStr
 
-from pydantic import BaseModel, SecretStr
-
-from mirage import (Accessor, CommandIO, FileStat, BaseVFS,
-                    stream_from_bytes)
+from mirage import (Accessor, BaseVFS, FileStat, ReadOps, VFSAdapter)
 
 
 class JiraConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     site: str
     token: SecretStr
 
@@ -30,6 +29,9 @@ class JiraConfig(BaseModel):
 class JiraAccessor(Accessor):
     def __init__(self, config: JiraConfig) -> None:
         self.client = make_client(config)
+
+    async def close(self) -> None:
+        await self.client.close()
 
 
 async def readdir(accessor, path, index=None) -> list[str]: ...
@@ -44,25 +46,121 @@ class JiraVFS(BaseVFS):
         super().__init__(
             name="jira",
             accessor=JiraAccessor(config),
-            io=CommandIO(
+            io=VFSAdapter(read=ReadOps(
                 readdir=readdir,
                 read_bytes=read_bytes,
-                read_stream=partial(stream_from_bytes, read_bytes),
                 stat=stat,
-                is_mounted=lambda a: True,
-                local=False,
-            ),
+            )),
             prompt="Issues rendered as .json files.",
         )
+
 ```
 
 Mount it like any builtin: `Workspace({"/jira/": JiraVFS(cfg)})`. A class rather than a
 factory function, because that is what the registry and the config reference below both name;
 `examples/python/other/custom_vfs.py` is the same shape end to end.
 
-The escape hatches mirror what builtins use: optional `CommandIO` fields unlock more surface (`write` enables the byte-mutation family; `find` and `du` become native fast paths), `overrides=` suppresses a generic command you replace, and `commands=[...]` adds bespoke `@command` verbs.
+### Add capabilities as the resource grows
 
-VFS/FUSE ops are derived from the same table automatically (`make_generic_ops` under the hood): read/readdir/stat plus whatever mutations the table carries. Pass `ops=[...]` only for irregular handlers (they shadow same-named derived ops), or `auto_ops=False` to opt out.
+Only `readdir`, `read_bytes`, and `stat` are required. The adapter derives a
+stream from `read_bytes`, existence checks from `stat`, and defaults to a
+remote resource that is available. Range reads fall back to reading and slicing.
+A derived stream still fetches the entire file; use a native stream for large files.
+
+```python
+from mirage import NativeReadOps, ReadOps, VFSAdapter, WriteOps
+
+adapter = VFSAdapter(
+    read=ReadOps(readdir=readdir, read_bytes=read_bytes, stat=stat),
+    native=NativeReadOps(read_stream=read_stream, read_range=read_range),
+    writes=WriteOps(write=write, unlink=unlink),
+)
+```
+
+Each callback above is implemented by your backend. Leave out `native` and
+`writes` for a minimal read-only adapter. These groups are independent:
+
+| Group | Operations | Purpose |
+| --- | --- | --- |
+| `ReadOps` | `readdir`, `read_bytes`, `stat` | Required filesystem behavior. |
+| `NativeReadOps` | `read_stream`, `read_range`, `exists`, `find`, `du` | Optional equivalent fast paths. |
+| `WriteOps` | `write`, `append`, `create`, `mkdir`, `unlink`, `rmdir`, `rm_r`, `rename`, `copy`, `dir_copy`, `truncate`, `set_attrs` | Individually supported mutations. |
+
+A native range receives `(accessor, path, index, offset, size)`; `size=None`
+means through EOF. Use `FileStat.size=None` when rendered size is unknown.
+`du` supplies both size and entry enumeration. All operations enforce the same
+resource scope, including direct reads of known IDs. A partial listing cannot
+prove an omitted resource absent.
+
+Supplying a write callback does not enable deletion or rename. Every generic
+command is registered either way: `gzip -c` and `tar -t` run as readers, a line
+that needs a missing operation answers `Operation not supported` at that
+operation, and mount mode still controls whether a supported mutation may run. Set `local=True` only for host-local data;
+`is_mounted` can override the default availability check.
+
+`VFSAdapter.to_command_io()` assembles the single `CommandIO` used by commands
+and filesystem ops. Builtins compile `VFSAdapter` into this table; advanced integrations can also
+supply `CommandIO` directly. `overrides=` suppresses a generic command you replace, and
+`commands=[...]` adds bespoke `@command` verbs.
+
+VFS/FUSE ops are derived from the same table automatically (`make_generic_ops` under the hood): read/readdir/stat, a `glob` walk over `readdir`, plus whatever mutations the table carries. Pass `ops=[...]` only for irregular handlers (they shadow same-named derived ops), or `auto_ops=False` to opt out. A verb the op table does not carry is not served: the mount answers `Operation not supported` for it, so a backend can be partial.
+
+The driver never sees the mount it runs under. The index store, the registered tables and the `vfs:` reference it was built from all live on the mount, built when the driver is placed and shared with any alias of the same instance.
+
+### Native search and backend-specific core functions
+
+Builtin backends use the same `VFSAdapter` groups. Operation protocols live in
+`mirage.vfs.types`; `CommandIO` inherits those contracts and adds command context.
+Core functions that already accept the contract can be wired directly. Otherwise,
+write a small async wrapper that resolves `PathSpec`, calls the resource API, and
+normalizes the result. Inheriting a class does not adapt an incompatible signature.
+
+Search is a separate optional capability:
+
+```python
+from mirage import DuOps, SearchOps, SearchQuery
+
+async def search(accessor, path, query: SearchQuery, index=None) -> list[str] | None:
+    # Interpret query.query and validate the options your resource supports.
+    ...
+
+adapter = VFSAdapter(
+    read=ReadOps(readdir=readdir, read_bytes=read_bytes, stat=stat),
+    search=SearchOps(search=search),
+)
+```
+
+`SearchQuery(query="recent deployments", options={"limit": 20})` carries plain
+search text and backend-specific arguments. The options can hold filters, limits,
+or other JSON values. `SearchOps.meta` is optional static capability metadata.
+Neither regex support nor grep compatibility is required. Omitting `search`
+entirely also works: MIRAGE implements grep and rg by reading files.
+
+A resource search is not automatically used by grep or rg. To opt into that
+integration, declare `SearchOps(search=search, meta={"grep": {"mode": "literal"}})`
+or use `"mode": "regex"` when the backend honors regex semantics. Only this
+integration interprets the `grep` namespace. Each request puts case, fixed-string,
+whole-word, and basic-regex flags in `query.options["grep"]`, using snake_case
+keys in both languages. Other metadata and options belong to your resource.
+
+A search callback returns text records: `[]` means no matches and `None` declines
+the request. Errors propagate. Under the grep integration, records must be
+complete rendered output lines, including path prefixes. A new filesystem search
+accelerator must match scanning the rendered files. Existing backends retain
+their declared output semantics, including Langfuse's summary search. Never
+return a truncated result as a complete answer.
+
+MIRAGE scans for unsupported flags, multiple operands, declined requests, and
+visibility restrictions. Set `meta={"grep": {"mode": "regex", "stream": True}}`
+to use native streaming during fallback scans. The hierarchy kit's
+`make_search_op(detect_scope, SEARCHERS, stat)` can adapt scope-specific callbacks;
+PostgreSQL, MongoDB and Langfuse use it. Custom resources can implement `search`
+directly. Expose semantic or service-specific queries through a custom command
+that calls the same callback with its own options.
+
+Native traversal and size enumeration remain separate capabilities.
+`NativeReadOps(du=DuOps(size=size, entries=entries))` supplies both halves of the
+native size contract.
 
 To make the backend constructible by name (workspace YAML, snapshots, the daemon), register it:
 
@@ -97,57 +195,79 @@ Snapshots and versions rebuild a saved mount through the same door: the register
 
 ## Contribute a Builtin VFS
 
-Builtins live inside the Mirage repo with the four-layer layout below. Keep the core I/O layer independent from command parsing, and check whether the same VFS or behavior should also be added to TypeScript.
+Builtins live inside the Mirage repo: one backend is four layers with one name (accessor, core, ops, VFS) plus its commands, and every layer has a TypeScript twin. Change both languages in the same PR; where they disagree, the more correct side wins.
 
-Use a recent VFS such as Dify or Databricks Volume as the structural reference. Paths are always `PathSpec` values inside the VFS; do not pass filesystem paths as raw strings.
+Most of a backend is already written as a kit. Reach for one before writing a layer by hand:
+
+| Kit | Module | For |
+| --- | --- | --- |
+| API client | `mirage.core.api` (`api_request`, `cursor_items`, `TokenManager`, `RetryPolicy`) | every HTTP call: one status-to-error mapping (`error_of`), retry, pagination, OAuth refresh, and the mount's session pool |
+| Hierarchy | `mirage.core.hierarchy` (`Scope`, `Slot`, `make_detect_scope`, `make_readdir`, `make_stat`, `entry_stat`, `make_read`, `DirListing`, `SearchQuery`) | an API tree of `<label>__<id>` directories: one scope table classifies every path for readdir, stat, read and search |
+| Object store | `mirage.core.object_store` | a flat key space (S3-style buckets, GridFS) |
+| Render | `mirage.core.render` (`json_bytes`, `jsonl_bytes`) | records rendered as the bytes the tree's files hold |
+
+Two builtins are the references. Trello is the hierarchy kit end to end: a scope table, listers, id-addressed readers, and nested `trello <noun> <verb>` commands. Jaeger is the client shape to copy: its `_get(accessor, ...)` takes the accessor and passes `accessor.pool` itself, so no call can forget the pool. Paths are always `PathSpec` values inside the VFS; never pass a path as a raw string.
 
 ## File Structure
 
 ```text
 python/mirage/
-  vfs/<name>/
-    __init__.py
-    config.py
-    prompt.py
-    <name>.py
-  accessor/<name>.py
+  accessor/<name>.py         # the client handle; owns config and the session pool
   core/<name>/
-    read.py
-    readdir.py
-    stat.py
-  ops/<name>/
-    __init__.py          # OPS derived from the CommandIO table
+    client.py                # API calls, all through mirage.core.api
+    scope.py                 # SCOPES and detect_scope (hierarchy kit)
+    pathing.py               # <label>__<id> names (sanitize_name, make_id_name)
+    normalize.py             # the JSON a file renders
+    readdir.py stat.py read.py
+  ops/<name>/__init__.py     # OPS derived from the CommandIO table
   commands/builtin/<name>/
-    __init__.py
-    io.py                # the CommandIO table
-    <vfs-specific commands>.py
+    io.py                    # VFSAdapter compiled to the shared IO table
+    __init__.py              # COMMANDS
+    <bespoke commands>.py    # push-downs and verbs
+  vfs/<name>/
+    __init__.py config.py prompt.py <name>.py
 ```
 
-Add matching tests under `python/tests/` without creating `__init__.py` files in the test tree.
+Tests mirror `mirage/` one to one under `python/tests/`, with no `__init__.py` in the test tree. Patch a client call where the module under test imports it.
 
 ## 1. Config, Accessor, and Registry
 
-Define a typed Pydantic config and keep secrets in `SecretStr` fields.
+Define a typed Pydantic config that refuses unknown keys, and keep secrets in `SecretStr` fields. `build_vfs`, YAML and snapshots all construct through it, so a misspelled knob fails by name instead of being dropped:
 
 ```python
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class MyConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     token: SecretStr
+    board_ids: list[str] | None = None
 ```
 
-Create an `Accessor` that owns the client or transport. Add the VFS name to `VFSName`, export the config/VFS from `vfs/<name>/__init__.py`, and add a lazy `VFSEntry` to `mirage/vfs/registry.py`. The registry entry is required for YAML, snapshots, and the daemon to construct the VFS.
+Create an `Accessor` subclass for an SDK client. For the built-in HTTP kit, subclass `SessionAccessor` from `mirage.accessor.base` and call `super().__init__()`; it owns the `SessionPool` available as `pool`. Plain `Accessor` has only a no-op `close`, so it does not allocate a pool. `BaseVFS.close()` closes the accessor (the index store is the mount's, and the mount closes it); override the accessor's `close()` for an owned client, as above. If the VFS owns additional handles, release those in its `close()` and call `super().close()`. Shared clients need an explicit ownership decision: close them in the embedding program if several mounts use them.
+
+Add the VFS name to `VFSName`, export the config and VFS from `vfs/<name>/__init__.py`, and add a lazy `VFSEntry` to `mirage/vfs/registry.py`. The registry entry lets YAML, snapshots, and the daemon construct a builtin by name.
 
 Keep every import at module scope. If that creates a cycle, change the dependency direction instead of adding a function-local import.
 
 ## 2. Core VFS Operations
 
-Implement only the operations the backend supports. Read-only API-backed mounts usually start with:
+Implement only the operations the backend supports. A read-only API-backed mount usually starts with:
 
-- `readdir(accessor, path, index)` returning child names.
+- `readdir(accessor, path, index)` returning child paths.
 - `read_bytes(accessor, path, index)` returning bytes.
 - `stat(accessor, path, index)` returning `FileStat`.
+
+Every client call passes `session=accessor.pool` (or takes the accessor, as Jaeger's does); without it `api_request` opens a fresh session per request. `tests/commands/test_client_calls_pass_session.py` fails a call that omits it.
+
+A hierarchy backend writes its tree once, as `SCOPES` in `core/<name>/scope.py`, and builds the three operations from it: `make_readdir(detect_scope, listers=...)`, `make_stat(detect_scope, readdir, entry_stats=...)` and `make_read(detect_scope, readers, stat=stat)`. The kit holds these rules, and a new backend keeps them:
+
+- A reader that reaches the API by the ids in the path slots passes `stat=` so the kit proves the file's parent through the listing first. Without it, a path outside the configured scope (Trello's `workspace_id` and `board_ids`) reads while `ls` and `stat` say it does not exist.
+- A listing that is a filtered or truncated view (one page of a bounded query, a time window, a glob-scoped span) returns `DirListing(entries, partial=True)`. Cached as the whole directory, it would prove every entry it left out absent.
+- `entry_stat("<id_key>", ...)` names the id under the key its path slot declares.
+- `FileStat.size` is the rendered byte length or `None`, never a storage-side number. Set `sizes_always_known` only when every listed size is computed from the same payload a read renders.
+- Id-addressed commands honor the same scope knobs the listing does (Trello's `commands/builtin/trello/_scope.py`).
 
 Glob resolution is not a per-backend file: `make_generic_ops` derives a `glob` op from the table's `readdir`, capped by its `max_glob_matches`, and the mount expands patterns through it.
 
@@ -167,9 +287,11 @@ async def stat(
     ...
 ```
 
-Add write, append, create, unlink, rename, or directory operations only when the backend has matching semantics. I/O should remain async-native.
+Add write, append, create, unlink, rename, or directory operations only when the backend has matching semantics. I/O stays async-native.
 
 ## 3. Ops Layer
+
+Build `IO = VFSAdapter(read=ReadOps(...), native=NativeReadOps(...), writes=WriteOps(...)).to_command_io()` in `commands/builtin/<name>/io.py`, omitting groups the backend does not implement.
 
 Ops are derived, not hand-written. `ops/<name>/__init__.py` builds the whole VFS/FUSE op family from the same `CommandIO` table the commands use:
 
@@ -180,44 +302,24 @@ from mirage.ops.generic import make_generic_ops
 OPS = make_generic_ops("my_vfs", IO)
 ```
 
-`make_generic_ops` emits read/readdir/stat plus whatever mutations the table carries — a `CommandIO` slot updates commands and ops together, and ops whose table field is `None` are omitted. Knobs mirror backend semantics, e.g. `make_generic_ops("databricks_volume", IO, mkdir_parents=True)`.
+`make_generic_ops` emits read/readdir/stat and glob plus whatever mutations the table carries: a `CommandIO` slot updates commands and ops together, and ops whose table field is `None` are omitted. Knobs mirror backend semantics, e.g. `make_generic_ops("databricks_volume", IO, mkdir_parents=True)`.
 
-Write a dedicated op module only for an irregular handler with no generic equivalent (a native `grep` push-down, a semantic `search`), and append it to the derived list:
-
-```python
-from mirage.core.my_vfs.grep import grep_bytes
-from mirage.ops.registry import op
-from mirage.types import PathSpec
-
-
-@op("grep", vfs="my_vfs")
-async def grep(accessor, paths: list[PathSpec], pattern: str, *, index,
-               **kwargs) -> bytes:
-    return await grep_bytes(accessor, paths, pattern, index)
-
-
-OPS = [*make_generic_ops("my_vfs", IO), grep]
-```
-
-Mark a hand-written mutation op with `write=True` so `MountMode.READ` remains a real boundary (derived ops carry this from the table).
+Write a dedicated op module only for an irregular handler with no generic equivalent (such as a semantic `search`), and append it to the derived list. Mark a hand-written mutation op with `write=True` so `MountMode.READ` remains a real boundary (derived ops carry this from the table).
 
 ## 4. Commands
 
-Build standard commands with `CommandIO` and `make_generic_commands`; the generic command owns flag interpretation. Backend wrappers should only connect glob resolution and I/O functions.
+Build the standard set with `make_generic_commands("<name>", IO, overrides={...})`; the generic command owns flag interpretation, so a backend wrapper is wiring only. `overrides` names the builders a bespoke command replaces, and a name no builder has is refused.
 
-For a VFS-specific command:
-
-- Use the shared command spec.
-- Mark every mutation with `write=True` so `MountMode.READ` remains a real boundary.
-- Declare injected parameters such as `stdin`, `index`, and `prefix` explicitly.
-- Use `FlagView(flags, spec=...)` when the command itself must read a flag; never use `flags.get(...)`.
-- Add a provision estimator when a useful estimate is possible. Otherwise the planner reports `precision=unknown`.
+- A bespoke command (a search push-down, a find over the index) goes through `with_default_provisions(commands, IO.stat, IO.resolve_glob, IO.readdir)`, which keeps the cost estimate the replaced builder would have carried. A command the catalog prices but that has no provision plans as `precision=unknown`, and the gate in `tests/commands/builtin/generic_bind/test_provision.py` fails it.
+- Declare native text search in `VFSAdapter(search=SearchOps(...))`. The generic grep/rg builders consume it only when `search.meta["grep"]` opts in; semantic search does not opt in. The hierarchy kit supplies `make_search_op` for scope-based core functions; unsupported requests fall back to scanning. Existing wrappers may call `run_search(IO, name, ...)` when preserving a custom provision or registration.
+- A verb (`trello card create`) declares its own `CommandSpec` with every id as a flag, reads flags through `FlagView(opts.flags, spec=SPEC)` (never `flags.get(...)`), registers `write=True` for a mutation, and calls `require_mount_writable()` before the client. Specs declared inline are dumped to `spec/python/vfs_commands/` and compared with TypeScript's, and a prompt that teaches the verbs is pinned against their specs (`tests/vfs/trello/test_prompt.py`).
+- Handlers take `(accessor, paths, texts, opts)`. Read `stdin`, `index`, `prefix`, and namespace facts from `opts`; do not add injected parameters or a second handler convention.
 
 Export the final list as `COMMANDS` from `commands/builtin/<name>/__init__.py`.
 
 ## 5. VFS Class
 
-Import commands and ops at module scope, then register them in the constructor:
+Subclass `BaseVFS`, declare the facts as class attributes, and return the module tables from `ops()` and `commands()`. Core functions stay independent of the VFS class:
 
 ```python
 from mirage.accessor.my_vfs import MyAccessor
@@ -249,7 +351,7 @@ class MyVFS(BaseVFS):
 
 The mount registers both tables when the driver is placed; a driver never registers anything onto itself.
 
-Set `caches_reads=True` only for stable, read-mostly content. Implement `get_state()` with credentials redacted and close any network clients in `close()`.
+Set `caches_reads=True` only for stable, read-mostly content. Implement `get_state()` with credentials redacted (`self.config_state(self.config)`) and close any network clients in `close()`.
 
 ## 6. Snapshot Support
 
@@ -263,4 +365,66 @@ Setting the flag without recording fingerprints does not provide drift detection
 
 ## 7. Verification
 
-Add tests for config validation, path layout, every VFS op, command behavior, read-only enforcement, state redaction, and cleanup. For major features, add or update integration coverage under `integ/` and check Python/TypeScript parity before opening the PR.
+Exercise a custom backend at a nested prefix, with globs, unknown file sizes, a read-only mount, and a deliberately omitted mutation. Assert stdout, stderr, and exit status together. Use a small bounded page (three entries with five available) and request counters to check both cold and warm traversal costs. A partial `DirListing` caches positive membership until expiry; it never proves an omitted entry absent, and a subsequent directory read fetches a new page. Custom index stores may override `set_partial_dir`; the default conservatively refreshes on lookup.
+
+- Unit tests for config validation (an unknown key refused), path layout, every VFS op, command behavior, read-only enforcement, scope enforcement, state redaction, and cleanup.
+- Regenerate `spec/` with `scripts/gen_specs.py` and `typescript/scripts/gen-specs.ts`, then run `scripts/check_spec_parity.py` and `scripts/check_layout_parity.py --strict`.
+- An integration target in `integ/targets.json` with cases under `integ/vfs/<name>/`, run by both hosts' runners against the same goldens; a SaaS backend gets a fake under `integ/server/`. Any change in observable shell behavior adds a case.
+
+## Updating Existing Backends
+
+Mount configs now reject unknown fields. Remove PostgreSQL's `default_search_limit` and MongoDB's `default_doc_limit` and `default_search_limit`; the remaining read ceilings are `max_read_rows` and `max_doc_limit`. PostgreSQL `head`/`tail` and MongoDB `tail` report a clipped window through stderr and a nonzero status; consumers must check status before treating captured output as complete. PostgreSQL refuses whole reads over its thresholds. MongoDB streams and search no longer apply a silent result cap.
+
+The hierarchy name helpers sanitize empty and dot-leading labels to reachable names. Regenerate stored paths from the listing instead of retaining an old sanitized label; the provider id remains the stable identifier. Keep read and mutation scope checks on every entry point, including direct ids, rather than relying on what a previous listing exposed.
+
+PostgreSQL whole-file reads check a bounded result’s database JSON byte size before transferring rows, then check the rendered JSONL size. Database formatting can make the first check conservative; use an explicit row window when that guard refuses a read.
+
+
+### Check the adapter contract
+
+The read-contract helper accepts either an adapter or its compiled I/O table.
+Supply a small known file, its parent directory, an absent sibling, and the
+expected bytes. It checks listing, metadata, reads, streams, native ranges,
+existence, and missing-path errors without mutating the resource.
+
+```python
+from mirage import ReadFixture, check_read_contract
+
+await check_read_contract(adapter, accessor, ReadFixture(
+    file=file_path,
+    directory=parent_path,
+    missing=missing_path,
+    content=b"known fixture bytes",
+))
+```
+
+Use disposable fixtures to test supported writes and verify read-only mounts
+refuse mutations. Resource-specific tests should cover pagination, scope,
+authorization failures, and query options.
+
+Builtin VFS classes and a `BaseVFS` built from an adapter serve through the
+same two tables: commands, filesystem ops, and glob expansion all come from the
+backend's I/O table, and a driver carries no direct verb methods beside them.
+Backend classes keep configuration, client lifecycle, storage location, watch
+hooks, and snapshot behavior.
+
+### Batch resource search
+
+`SearchOps(search=search_one, search_many=search_many)` optionally accepts a
+batch callback with `(accessor, paths, query, index)`. Use it when ranking and
+`top_k` must apply once across several paths. The single-path callback remains
+required. `mirage.vfs.search.search_resources` uses the batch callback when
+provided and otherwise concatenates single-path results; a declined request
+raises an error rather than reporting no matches.
+
+Chroma, Dify, Qdrant, LanceDB, and Mem0 use this capability for their existing
+resource search commands. Their options remain backend-specific: for example,
+`top_k`, `threshold`, and `method`. These declarations do not opt into grep.
+
+### Start from a packaged example
+
+The `mirage-vfs-authoring` skill in the Mirage plugin includes self-contained
+Python and TypeScript starters and `scripts/new_adapter.py`. It creates an
+adapter file in your project, refuses to overwrite existing files, and includes
+the contract check plus a mounted shell smoke test. Replace its fixture client
+with your resource API, then expand capabilities as needed.

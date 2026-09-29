@@ -20,6 +20,7 @@ from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
 from mirage.core.gdrive.resolve import resolve_key
 from mirage.core.gdrive.tree import iter_tree
 from mirage.types import PathSpec
+from mirage.utils.stat_view import DIR_SIZE
 
 
 async def find(
@@ -95,9 +96,7 @@ async def find(
             if not keep(entry, tree, mindepth):
                 continue
             if min_size is not None or max_size is not None:
-                # Directories count as size 0 for -size (deliberate GNU
-                # divergence).
-                effective = 0 if is_dir else size
+                effective = DIR_SIZE if is_dir else size
                 if min_size is not None and effective < min_size:
                     continue
                 if max_size is not None and effective > max_size:

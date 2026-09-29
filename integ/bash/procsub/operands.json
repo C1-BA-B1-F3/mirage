@@ -1,0 +1,345 @@
+{
+  "cases": [
+    {
+      "id": "procsub_operands_path",
+      "seq": 501320,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "echo <(true)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/dev/fd/63\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_operands_diff",
+      "seq": 501321,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "diff <(echo a) <(echo b)",
+      "expect": {
+        "exit": 1,
+        "stdout": "1c1\n< a\n---\n> b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_operands_comm",
+      "seq": 501322,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "comm <(printf 'a\\nb\\n') <(printf 'b\\nc\\n')",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\n\t\tb\n\tc\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_operands_paste",
+      "seq": 501323,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "paste <(printf '1\\n2\\n') <(printf 'a\\nb\\n')",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\ta\n2\tb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_operands_wc",
+      "seq": 501324,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "wc -l <(printf 'x\\ny\\n') <(printf 'a\\nb\\n') | awk '{ print $1, $2 }'",
+      "expect": {
+        "exit": 0,
+        "stdout": "2 /dev/fd/63\n2 /dev/fd/62\n4 total\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_operands_stdin_distinct",
+      "seq": 501325,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf 'stdin\\n' | cat <(echo operand) -",
+      "expect": {
+        "exit": 0,
+        "stdout": "operand\nstdin\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_operands_empty",
+      "seq": 501326,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "cat <(true) <(echo hi)",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_operands_function",
+      "seq": 501327,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "read_sub() { cat \"$2\" \"$1\"; }; read_sub <(echo first) <(echo second)",
+      "expect": {
+        "exit": 0,
+        "stdout": "second\nfirst\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_operands_isolation",
+      "seq": 501328,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "ps=outer; cat <(ps=inner; echo \"$ps\"); echo \"$ps\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "inner\nouter\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_operands_cleanup",
+      "seq": 501329,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "ps=$(echo <(echo gone)); cat \"$ps\" 2>/dev/null; echo $?; echo <(true)",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n/dev/fd/63\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "procsub_operands_mixed",
+      "seq": 501330,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "s3-prefix",
+        "databricks-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder"
+      ],
+      "command": "printf 'a\\nb\\n' > /data/PSMIX; diff /data/PSMIX <(printf 'a\\nc\\n'); status=$?; rm /data/PSMIX; exit $status",
+      "expect": {
+        "exit": 1,
+        "stdout": "2c2\n< b\n---\n> c\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

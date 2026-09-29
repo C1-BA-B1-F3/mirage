@@ -24,6 +24,7 @@ from mirage.core.box.rename import rename
 from mirage.core.box.rmdir import rm_r, rmdir
 from mirage.core.box.unlink import unlink
 from mirage.core.box.write import write_bytes
+from mirage.observe.context import RecordingScope
 from mirage.types import PathSpec
 
 _TREE = {
@@ -336,3 +337,25 @@ async def test_copy_file(root_accessor):
                                 "200",
                                 "100",
                                 name="c.txt")
+
+
+@pytest.mark.asyncio
+async def test_write_records_the_virtual_path(root_accessor):
+    # A key named like its mount: neither m/k.txt nor /m/k.txt is virtual.
+    spec = PathSpec(virtual="/m/m/k.txt",
+                    directory="/m/m/",
+                    vfs_path="m/k.txt")
+    scope = RecordingScope()
+    try:
+        with patch("mirage.core.box.write.resolve_item",
+                   new_callable=AsyncMock, return_value=None), \
+             patch("mirage.core.box.write.resolve_parent_id",
+                   new_callable=AsyncMock, return_value="100"), \
+             patch("mirage.core.box.write.upload_new_file",
+                   new_callable=AsyncMock), \
+             patch("mirage.core.box.write.invalidate_after_write",
+                   new_callable=AsyncMock):
+            await write_bytes(root_accessor, spec, b"hello")
+    finally:
+        scope.close()
+    assert [r.path for r in scope.records] == ["/m/m/k.txt"]

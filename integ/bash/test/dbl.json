@@ -273,6 +273,40 @@
       }
     },
     {
+      "id": "dbl_regex_stacked",
+      "seq": 568394,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "[[ aaa =~ a+? ]] && echo m:${BASH_REMATCH[0]}; [[ aab =~ ^a++b$ ]]; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "m:aaa\n0\n",
+        "stderr": ""
+      }
+    },
+    {
       "id": "dbl_logic",
       "seq": 502633,
       "targets": [

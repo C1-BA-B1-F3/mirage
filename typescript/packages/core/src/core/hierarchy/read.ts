@@ -14,9 +14,10 @@
 
 import type { Accessor } from '../../accessor/base.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
-import type { PathSpec } from '../../types.ts'
+import type { PathSpec, StatFn } from '../../types.ts'
 import { eisdir, enoent } from '../../utils/errors.ts'
 import { sliceWindow } from '../../utils/ranges.ts'
+import { assertParent } from './probe.ts'
 import { ROOT, type DetectFn, type ScopeMatch } from './scope.ts'
 
 export type Reader<A extends Accessor> = (
@@ -39,27 +40,46 @@ export type WindowedReader<A extends Accessor> = (
   window: ReadWindow,
 ) => Promise<Uint8Array>
 
+export interface HierarchyReadOptions<A extends Accessor> {
+  /**
+   * Readers for kinds whose content is windowed at the source (postgres rows
+   * take a row limit/offset the backend pushes into the query); they receive
+   * the caller's window, which every plain reader ignores, matching a
+   * filesystem read that has no row notion.
+   */
+  windowed?: Readonly<Record<string, WindowedReader<A>>>
+  /**
+   * The backend's stat. Given, every read first proves the file's parent
+   * directory exists the way stat proves it (`assertParent`), so a container
+   * the listing refuses reads as absent exactly as `ls` and `stat` report it.
+   * A backend whose readers address the API by the ids in the path passes it:
+   * without it, `cat` of a board outside `boardIds` fetched that board by its
+   * id. The file itself stays the reader's to prove, since a bounded listing
+   * need not name every file that exists.
+   */
+  stat?: StatFn<[accessor: A, path: PathSpec, index?: IndexCacheStore]>
+}
+
 /**
  * Build a hierarchy read: classify, dispatch, refuse the rest.
  *
  * Readers own their fetches, guards and rendering; the kit owns the
  * classification and the ENOENT funnel for every non-file shape. `readers`
- * holds one reader per leaf kind. `windowed` holds readers for kinds whose
- * content is windowed at the source (postgres rows take a row limit/offset
- * the backend pushes into the query); they receive the caller's window,
- * which every plain reader ignores, matching a filesystem read that has no
- * row notion.
+ * holds one reader per leaf kind. Mirrors `make_read` in
+ * `mirage/core/hierarchy/read.py`.
  */
 export function makeRead<A extends Accessor>(
   detect: DetectFn,
   readers: Readonly<Record<string, Reader<A>>>,
-  windowed: Readonly<Record<string, WindowedReader<A>>> = {},
+  options: HierarchyReadOptions<A> = {},
 ): (
   accessor: A,
   path: PathSpec,
   index?: IndexCacheStore,
   window?: ReadWindow,
 ) => Promise<Uint8Array> {
+  const windowed = options.windowed ?? {}
+  const stat = options.stat
   return async function read(
     accessor: A,
     path: PathSpec,
@@ -68,8 +88,11 @@ export function makeRead<A extends Accessor>(
   ): Promise<Uint8Array> {
     const match = detect(path)
     const windowReader = windowed[match.kind]
-    if (windowReader !== undefined) return windowReader(accessor, match, path, index, window)
     const reader = readers[match.kind]
+    if (stat !== undefined && (windowReader !== undefined || reader !== undefined)) {
+      await assertParent(stat, accessor, path, index)
+    }
+    if (windowReader !== undefined) return windowReader(accessor, match, path, index, window)
     if (reader === undefined) {
       // A directory that exists by construction (the root, or a
       // probed=false scope) read as a file is EISDIR. Everything else is

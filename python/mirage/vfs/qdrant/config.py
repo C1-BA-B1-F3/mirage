@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class QdrantConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     url: str | None = None
     host: str = "localhost"
     port: int = 6333

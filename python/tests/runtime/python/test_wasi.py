@@ -22,6 +22,7 @@ from mirage import MountMode, Workspace
 from mirage.runtime.python import WasiRuntime
 from mirage.runtime.python.wasi import WASI_HOME_ENV
 from mirage.runtime.types import RunArgs
+from mirage.types import PathSpec
 from mirage.vfs.ram import RAMVFS
 
 
@@ -232,3 +233,32 @@ async def test_wasi_session_narrowing_reaches_the_guest():
 
 def test_reach_is_vfs():
     assert WasiRuntime.reach == "workspace"
+
+
+@live
+@pytest.mark.asyncio
+async def test_cwd_inherits_context_and_explicit_cwd_wins():
+    runtime = WasiRuntime()
+    ws = Workspace({"/data": RAMVFS()},
+                   mode=MountMode.EXEC,
+                   runtimes=[runtime, "workspace"])
+    try:
+        assert (
+            await
+            ws.shell("mkdir /data/sub; echo child > /data/sub/item; cd /data")
+        ).exit_code == 0
+        code = "import os; print(os.getcwd())"
+        assert (await runtime.run(RunArgs(code=code))).stdout == b"/data\n"
+        explicit = await runtime.run(
+            RunArgs(code="print(open('item').read(), end='')",
+                    cwd=PathSpec.from_str_path("/data/sub")))
+        assert explicit.stdout == b"child\n"
+        bad = await runtime.run(
+            RunArgs(code="print('must not run')",
+                    cwd=PathSpec.from_str_path("/missing")))
+        assert bad.exit_code == 1
+        assert bad.stdout == b""
+        assert b"FileNotFoundError" in bad.stderr
+        assert (await runtime.run(RunArgs(code=code))).stdout == b"/data\n"
+    finally:
+        await ws.close()

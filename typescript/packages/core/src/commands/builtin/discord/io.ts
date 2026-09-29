@@ -12,19 +12,19 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { DiscordAccessor } from '../../../accessor/discord.ts'
 import { read as discordRead, readRange as discordReadRange } from '../../../core/discord/read.ts'
 import { readdir as discordReaddir } from '../../../core/discord/readdir.ts'
 import { stat as discordStat } from '../../../core/discord/stat.ts'
 import { type CommandIO, rangeOf } from '../generic_bind/index.ts'
-import { streamFromBytes } from '../utils/wrap.ts'
 
-export const DISCORD_IO: CommandIO<DiscordAccessor> = {
-  readdir: discordReaddir,
-  readBytes: discordRead,
-  readRange: rangeOf(discordReadRange),
-  readStream: (a, p, i) => streamFromBytes(discordRead, a, p, i),
-  stat: discordStat,
+export const DISCORD_IO: CommandIO<DiscordAccessor> = new VFSAdapter<DiscordAccessor>({
+  read: { readdir: discordReaddir, readBytes: discordRead, stat: discordStat },
+  native: {
+    readRange: rangeOf(discordReadRange),
+  },
   isMounted: () => true,
   local: false,
-}
+}).toCommandIO()

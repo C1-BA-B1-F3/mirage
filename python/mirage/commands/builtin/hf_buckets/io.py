@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.builtin.generic_bind import CommandIO, DuOps
 from mirage.core.hf_buckets.create import create as _create
 from mirage.core.hf_buckets.du import entries as _du_entries
 from mirage.core.hf_buckets.du import size as _du_size
@@ -26,26 +25,25 @@ from mirage.core.hf_buckets.stat import stat as _stat
 from mirage.core.hf_buckets.stream import read_stream as _read_stream
 from mirage.core.hf_buckets.unlink import unlink as _unlink
 from mirage.core.hf_buckets.write import write_bytes as _write
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import DuOps, NativeReadOps, ReadOps, WriteOps
 
 # Hugging Face bucket files are read and written through the generic factory;
 # rather than the generic (list, total) tuple.
-# cp and mv are skipped because HF buckets have no server-side copy/rename op.
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_range=_read,
-    read_stream=_read_stream,
-    stat=_stat,
-    is_mounted=lambda a: True,
-    local=False,
-    write=_write,
-    exists=_exists,
-    mkdir=_mkdir,
-    unlink=_unlink,
-    rm_r=_rm_r,
-    create=_create,
-    find=_find,
-    du=DuOps(size=_du_size, entries=_du_entries),
-)
+# Copy falls back to reads and writes; there is no native copy/rename op.
+IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                native=NativeReadOps(read_range=_read,
+                                     read_stream=_read_stream,
+                                     exists=_exists,
+                                     find=_find,
+                                     du=DuOps(size=_du_size,
+                                              entries=_du_entries)),
+                writes=WriteOps(write=_write,
+                                mkdir=_mkdir,
+                                unlink=_unlink,
+                                rm_r=_rm_r,
+                                create=_create),
+                is_mounted=lambda a: True,
+                local=False).to_command_io()
 
 resolve_glob = IO.resolve_glob

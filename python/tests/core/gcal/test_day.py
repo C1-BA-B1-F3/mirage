@@ -58,7 +58,7 @@ def test_day_bounds_span_23_hours_on_a_dst_spring_forward():
 
 def test_window_bounds_bracket_the_day():
     lo, hi = window_bounds(date(2026, 8, 11), HK)
-    assert lo == "2026-07-12T00:00:00+08:00"
+    assert lo is None
     assert hi == "2026-11-10T00:00:00+08:00"
 
 

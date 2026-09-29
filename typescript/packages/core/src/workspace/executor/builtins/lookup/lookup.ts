@@ -17,7 +17,8 @@ import type { MountRegistry } from '../../../mount/registry.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
 import { lastOf, scanOptions } from '../getopt.ts'
-import { classifyAll, describe, locations } from './classify.ts'
+import { program } from '../../../lookup/lookup.ts'
+import { describe, locations, programFile } from './classify.ts'
 import { TYPE_OPTIONS, TYPE_USAGE, WHICH_OPTIONS, WHICH_USAGE } from './constants.ts'
 import { NameKind } from './types.ts'
 import type { BuiltinCall, Result } from '../types.ts'
@@ -36,12 +37,15 @@ function optionError(cmd: string, bad: string, usage: string): Result {
  * Run the `type` builtin (`type [-afptP] name [name ...]`).
  *
  * Resolution matches `command -V`, but the exit rule is `type`'s: 0 only
- * when every name resolves. `-t` prints the classification word,
- * `-p`/`-P` print a path (always empty here) and are one mutually
- * exclusive group with `-t`, `-a` prints one line per layer holding the
- * name (a shell function shadowing an installed CLI is the case that has
- * two), `-f` ignores the function table, and a missing name warns on
- * stderr unless a word-only mode (`-t`/`-p`) is active.
+ * when every name resolves. `-t` prints the classification word; `-p`
+ * prints the file of a name that resolves to one (none for a builtin,
+ * which still resolves) and `-P` searches PATH for one even past a
+ * builtin, a miss there being a miss; the three are one group, the last
+ * winning. `-a` prints one line per layer holding the name (a builtin
+ * that is also a program ends with its file's line), `-f` ignores the
+ * function table, and a missing name warns on stderr unless a word-only
+ * mode (`-t`/`-p`/`-P`) is active. Pinned against bash 5.2 on
+ * debian:stable-slim.
  */
 export function handleType(
   args: readonly string[],
@@ -51,14 +55,18 @@ export function handleType(
   const scan = scanOptions(args, TYPE_OPTIONS)
   if (scan.bad !== null) return optionError('type', scan.bad, TYPE_USAGE)
   const enc = new TextEncoder()
-  const last = lastOf(scan.letters, 'tpP')
-  const mode = last === null || last === 't' ? last : 'p'
+  const mode = lastOf(scan.letters, 'tpP')
   const allMode = scan.letters.includes('a')
   const hidden = scan.letters.includes('f') ? NameKind.FUNCTION : null
   const outLines: string[] = []
   const errLines: string[] = []
   let allFound = true
   for (const name of scan.operands) {
+    if (mode === 'P') {
+      if (program(name, session, registry) === null) allFound = false
+      else outLines.push(`${programFile(name)}\n`)
+      continue
+    }
     const kinds = locations(name, session, registry, allMode, hidden)
     if (kinds.length === 0) {
       allFound = false
@@ -66,8 +74,9 @@ export function handleType(
       continue
     }
     if (mode === 't') outLines.push(...kinds.map((kind) => `${kind}\n`))
-    else if (mode === null)
-      outLines.push(...kinds.map((kind) => `${describe(name, kind, session)}\n`))
+    else if (mode === 'p') {
+      for (const kind of kinds) if (kind === NameKind.FILE) outLines.push(`${programFile(name)}\n`)
+    } else outLines.push(...kinds.map((kind) => `${describe(name, kind, session)}\n`))
   }
   const out = outLines.length > 0 ? enc.encode(outLines.join('')) : null
   const err = enc.encode(errLines.join(''))
@@ -82,20 +91,17 @@ export function handleType(
 /**
  * Run the `which` builtin (`which [-as] name [name ...]`).
  *
- * Pinned against debianutils `which` (debian:stable-slim): a miss prints
- * nothing at all, the exit status is 0 only when every name resolves (1
- * with no operands), and `-s` reports through the status alone. Two
- * deliberate divergences, both forced by mirage having no PATH: the
- * printed word is the name rather than a path (as `command -v` already
- * does), and every runnable resolves, where GNU reports only files
- * (`which cd` misses there, since a builtin is not on the PATH; here
- * everything is in-process, so reporting nothing would make the command
- * useless). Keywords stay unresolvable, as they are not commands
- * anywhere. `-a` prints one line per layer, so a shadowed name prints
- * its name twice; `type -a` is the surface that names the layers. The
- * refusal for an unknown option is bash's shape, not the C tool's
- * `Illegal option`, because this is a builtin and the usage line cannot
- * honestly name `/usr/bin/which`.
+ * Pinned against debianutils `which` (debian:stable-slim): it prints the
+ * file PATH finds for each name, which is the program's under `/usr/bin`
+ * (the one PATH directory), a miss prints nothing at all, the exit status
+ * is 0 only when every name resolves (1 with no operands), and `-s`
+ * reports through the status alone. A builtin with no program (`cd`), a
+ * function, an alias and a reserved word are no file, so each is a miss;
+ * `-a` has one directory to search and so one line per name. `$PATH`
+ * itself is not read: mirage runs a program by its name whatever PATH
+ * holds, so `which` answers as dispatch does. The refusal for an unknown
+ * option is bash's shape, not the C tool's `Illegal option`, because this
+ * is a builtin.
  */
 export function handleWhich(
   args: readonly string[],
@@ -104,23 +110,15 @@ export function handleWhich(
 ): Result {
   const scan = scanOptions(args, WHICH_OPTIONS)
   if (scan.bad !== null) return optionError('which', scan.bad, WHICH_USAGE)
-  const allMode = scan.letters.includes('a')
   const silent = scan.letters.includes('s')
   const outLines: string[] = []
   let allFound = true
   for (const name of scan.operands) {
-    // `which` is a program, not the shell: it knows neither reserved
-    // words nor aliases, so both layers are dropped before the top is
-    // taken.
-    let kinds = classifyAll(name, session, registry).filter(
-      (kind) => kind !== NameKind.KEYWORD && kind !== NameKind.ALIAS,
-    )
-    if (!allMode) kinds = kinds.slice(0, 1)
-    if (kinds.length === 0) {
+    if (program(name, session, registry) === null) {
       allFound = false
       continue
     }
-    if (!silent) outLines.push(...Array.from({ length: kinds.length }, () => `${name}\n`))
+    if (!silent) outLines.push(`${programFile(name)}\n`)
   }
   const out = outLines.length > 0 ? new TextEncoder().encode(outLines.join('')) : null
   const code = scan.operands.length > 0 && allFound ? 0 : 1

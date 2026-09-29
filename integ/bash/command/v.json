@@ -171,7 +171,7 @@
       }
     },
     {
-      "id": "cmd_v_mount_name_only",
+      "id": "cmd_v_program_prints_its_file",
       "seq": 503005,
       "targets": [
         "ram",
@@ -200,7 +200,7 @@
       "command": "command -v cat",
       "expect": {
         "exit": 0,
-        "stdout": "cat\n",
+        "stdout": "/usr/bin/cat\n",
         "stderr": ""
       }
     },
@@ -337,6 +337,41 @@
       "expect": {
         "exit": 0,
         "stdout": "zqcmdfn\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "cmd_v_prints_a_programs_file_and_a_builtin_bare",
+      "seq": 991513,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "note": "bash 5.2: command -v prints the file PATH finds for a program and the bare name for one of bash's builtins, even echo, which has a file too.",
+      "command": "command -v ls cd echo env",
+      "expect": {
+        "exit": 0,
+        "stdout": "/usr/bin/ls\ncd\necho\n/usr/bin/env\n",
         "stderr": ""
       }
     }

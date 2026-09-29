@@ -207,8 +207,4 @@ export abstract class S3AliasVFS<TConfig, TRedacted extends S3ConfigRedacted> ex
       config: this.redactAlias(this.aliasConfig),
     })
   }
-
-  override loadState(_state: S3AliasVFSState<TRedacted>): Promise<void> {
-    return Promise.resolve()
-  }
 }

@@ -28,6 +28,10 @@ class SharePointVFS(BaseVFS):
     index_ttl: float = 86_400
     prompt: str = PROMPT
     supports_snapshot: bool = True
+    # stat and every read that can fill the cache stamp the item's cTag,
+    # the read taking it before the bytes, so the gate compares like with
+    # like.
+    read_revalidatable: bool = True
 
     def __init__(self, config: SharePointConfig) -> None:
         super().__init__()
@@ -45,6 +49,3 @@ class SharePointVFS(BaseVFS):
 
     def get_state(self) -> dict[str, Any]:
         return self.config_state(self.config)
-
-    def load_state(self, state: dict[str, Any]) -> None:
-        pass

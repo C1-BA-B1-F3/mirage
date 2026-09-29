@@ -119,9 +119,12 @@ def _exact_renames(adds: list[str], deletes: list[str], shas: dict[str, bytes],
     return pairs
 
 
-def _content_renames(store: BaseObjectStore, adds: list[str],
-                     deletes: list[str],
-                     shas: dict[str, bytes]) -> list[tuple[str, str]]:
+def _content_renames(
+        store: BaseObjectStore,
+        adds: list[str],
+        deletes: list[str],
+        shas: dict[str, bytes],
+        threshold: int = RENAME_THRESHOLD) -> list[tuple[str, str]]:
     """Pair the rest by how much content they still have in common.
 
     This is what makes a move that also edited the file read as one
@@ -148,7 +151,7 @@ def _content_renames(store: BaseObjectStore, adds: list[str],
         for new in adds:
             score = _similarity_score(source, store[ObjectID(shas[new])],
                                       cache)
-            if score >= RENAME_THRESHOLD:
+            if score >= threshold:
                 # Negative score so the strongest pair sorts first while
                 # paths still tie-break in ascending order, which is what
                 # makes two equally similar candidates resolve the same
@@ -167,9 +170,13 @@ def _content_renames(store: BaseObjectStore, adds: list[str],
     return pairs
 
 
-def _pair_renames(store: BaseObjectStore, staged: dict[str, str],
-                  shas: dict[str, bytes],
-                  kinds: dict[str, int]) -> dict[str, tuple[str, str | None]]:
+def pair_renames(
+        store: BaseObjectStore,
+        staged: dict[str, str],
+        shas: dict[str, bytes],
+        kinds: dict[str, int],
+        threshold: int = RENAME_THRESHOLD
+) -> dict[str, tuple[str, str | None]]:
     """Fold an add and a delete of the same file into one rename.
 
     Two passes, git's own order: identical content first, then what is
@@ -195,7 +202,8 @@ def _pair_renames(store: BaseObjectStore, staged: dict[str, str],
     scored = [[p for p in side if kinds[p] == S_IFREG]
               for side in ([p for p in adds if p not in matched_new],
                            [p for p in deletes if p not in matched_old])]
-    pairs.extend(_content_renames(store, scored[0], scored[1], shas))
+    pairs.extend(_content_renames(store, scored[0], scored[1], shas,
+                                  threshold))
     paired = {new: (RENAMED, old) for new, old in pairs}
     consumed = {old for _new, old in pairs}
     return {
@@ -241,7 +249,7 @@ def stage_changes(store: BaseObjectStore,
             staged[name] = DELETED
             shas[name] = sha
             kinds[name] = S_IFMT(mode)
-    return _pair_renames(store, staged, shas, kinds)
+    return pair_renames(store, staged, shas, kinds)
 
 
 def staged_state(

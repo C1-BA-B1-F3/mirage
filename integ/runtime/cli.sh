@@ -4,14 +4,15 @@
 # process, here built from a generated workspace yaml (`mirage
 # workspace create`) and executed with `mirage execute`. This is the
 # yaml -> daemon -> CLI construction path: entry captures, config
-# blocks, per-entry scripts (policy), the global route, per-mount
-# command_limits, and the per-line --runtime argument.
+# blocks, per-entry scripts (policy), the global route, workspace,
+# mount and profile command_limits, and the per-line --runtime argument.
 #
 # Cases whose steps need the SDK surface (add_runtime, rename, s3_put,
 # read_op, facade — the last calls ws.vfs directly) or a runner-local
 # test runtime (echobox, named as a string or a mapping, or registered
 # through world.register_runtimes), generated file catalogs, runner-local
-# code policies (world.policies), or non-ram mounts are skipped as sdk-only. Expect semantics: exit and
+# code policies (world.policies), or non-ram mounts are skipped as sdk-only,
+# as is a case that states why it must be in `sdk_only`. Expect semantics: exit and
 # stdout are exact, stderr is a containment check (the CLI owns its
 # stderr framing), and the SDK-side expectations (ops_contain,
 # ops_absent, value) are not checked because the op ledger has no CLI
@@ -54,7 +55,8 @@ requirement_met() {
 cli_expressible() {
   local case_json="$1"
   jq -e '
-    ((.world.mounts // {"/ram": {"vfs": "ram"}})
+    (has("sdk_only") | not)
+    and ((.world.mounts // {"/ram": {"vfs": "ram"}})
       | to_entries | all(.value.vfs == "ram"))
     and (((.world.mounts // {}) | to_entries) | all(.value.generated_files == null))
     and (((.world.mounts // {}) | to_entries) | all(.value.failing == null))
@@ -100,6 +102,9 @@ write_world_yaml() {
        mounts: ((.mounts // {"/ram": {"vfs": "ram"}})
          | map_values({vfs: .vfs}
              + (if .limits then {command_limits: .limits} else {} end)))}
+      + (if .command_limits then {command_limits: .command_limits} else {} end)
+      + (if .profiles then {profiles: .profiles} else {} end)
+      + (if .profile then {profile: .profile} else {} end)
       + (if .runtimes then {runtimes: .runtimes} else {} end)
       + (if .route_policy then {route_policy: .route_policy} else {} end)
       + (if .clis then {clis: .clis} else {} end)' \
@@ -108,7 +113,7 @@ write_world_yaml() {
 
 run_case() {
   local cli="$1" host="$2" suite="$3" case_json="$4" work="$5"
-  local case_id wsid world_json
+  local case_id wsid world_json session_id
   case_id="$suite/$(jq -r '.id' <<<"$case_json")"
   wsid="rt-$(jq -r '.id' <<<"$case_json" | tr '_' '-')"
   world_json=$(jq -c '.world // {}' <<<"$case_json")
@@ -136,6 +141,18 @@ run_case() {
     return 1
   fi
 
+  local execute_args=(execute -w "$wsid")
+  session_id=$(jq -r '.session_id // empty' <<<"$world_json")
+  if [ -n "$session_id" ]; then
+    if ! $cli session create "$wsid" --id "$session_id" \
+        >"$work/session.out" 2>&1 </dev/null; then
+      failures+=("$case_id: session create failed: $(head -c 300 "$work/session.out")")
+      $cli workspace delete "$wsid" >/dev/null 2>&1 </dev/null || true
+      return 1
+    fi
+    execute_args+=(--session "$session_id")
+  fi
+
   # Seed declared mount files through the shell (cat reads the piped
   # stdin, the redirect writes the mount). A nested seed name needs its
   # parent first: the redirect refuses a missing directory, and it
@@ -148,13 +165,13 @@ run_case() {
     case "$name" in
       */*)
         quoted_parent=$(jq -nr --arg path "$prefix/${name%/*}" '$path | @sh')
-        $cli execute -w "$wsid" -c "mkdir -p $quoted_parent" \
+        $cli "${execute_args[@]}" -c "mkdir -p $quoted_parent" \
           >/dev/null </dev/null || return 1
         ;;
     esac
     jq -j --arg p "$prefix" --arg n "$name" \
       '.world.mounts[$p].files[$n]' <<<"$case_json" \
-      | $cli execute -w "$wsid" -c "cat > $quoted_path" >/dev/null || return 1
+      | $cli "${execute_args[@]}" -c "cat > $quoted_path" >/dev/null || return 1
   done < <(jq -r '(.world.mounts // {}) | to_entries[]
                   | .key as $p | (.value.files // {}) | keys[]
                   | [$p, .] | @tsv' <<<"$case_json")
@@ -170,7 +187,7 @@ run_case() {
     fi
     runtime=$(jq -r '.runtime // empty' <<<"$step")
     expect=$(jq -c '.expect // {}' <<<"$step")
-    local args=(execute -w "$wsid" -c "$cmd")
+    local args=("${execute_args[@]}" -c "$cmd")
     [ -n "$runtime" ] && args+=(--runtime "$runtime")
     if jq -e 'has("stdin")' >/dev/null <<<"$step"; then
       jq -j '.stdin' <<<"$step" > "$work/stdin.bin"

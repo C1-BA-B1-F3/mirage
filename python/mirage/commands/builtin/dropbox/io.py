@@ -12,7 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.commands.builtin.generic_bind import CommandIO, DuOps
 from mirage.core.dropbox.copy import copy as _copy
 from mirage.core.dropbox.create import create as _create
 from mirage.core.dropbox.du import entries as _du_entries
@@ -28,33 +27,26 @@ from mirage.core.dropbox.rmdir import rmdir as _rmdir
 from mirage.core.dropbox.stat import stat as _stat
 from mirage.core.dropbox.unlink import unlink as _unlink
 from mirage.core.dropbox.write import write_bytes as _write
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import DuOps, NativeReadOps, ReadOps, WriteOps
 
 # copy_v2 copies folder subtrees server-side, so dir_copy is the same
 # call as copy.
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_range=_read,
-    read_stream=_stream,
-    stat=_stat,
-    is_mounted=lambda a: True,
-    local=False,
-    # Own the du walk instead of taking the builder's, which is capped at
-    # max_du_entries and reports a partial total past it. See the Box
-    # table; list_folder's recursive mode would make this a real pushdown.
-    du=DuOps(size=_du_size, entries=_du_entries),
-    write=_write,
-    exists=_exists,
-    mkdir=_mkdir,
-    unlink=_unlink,
-    rmdir=_rmdir,
-    rm_r=_rm_r,
-    rename=_rename,
-    # No dir_copy: cp -r must MERGE into an existing destination dir, so
-    # the builder plans file-by-file copies (copy_v2 on a whole folder
-    # rejects an existing destination).
-    copy=_copy,
-    create=_create,
-)
+IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                native=NativeReadOps(read_range=_read,
+                                     read_stream=_stream,
+                                     du=DuOps(size=_du_size,
+                                              entries=_du_entries),
+                                     exists=_exists),
+                writes=WriteOps(write=_write,
+                                mkdir=_mkdir,
+                                unlink=_unlink,
+                                rmdir=_rmdir,
+                                rm_r=_rm_r,
+                                rename=_rename,
+                                copy=_copy,
+                                create=_create),
+                is_mounted=lambda a: True,
+                local=False).to_command_io()
 
 resolve_glob = IO.resolve_glob

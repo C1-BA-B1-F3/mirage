@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter, appendFromRead } from '../../../vfs/adapter.ts'
+
 import type { S3Accessor } from '../../../accessor/s3.ts'
 import { SCOPE_ERROR } from '../../../core/s3/constants.ts'
 import { copy as s3Copy } from '../../../core/s3/copy.ts'
@@ -32,25 +34,28 @@ import { unlink as s3Unlink } from '../../../core/s3/unlink.ts'
 import { write as s3Write } from '../../../core/s3/write.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const S3_IO: CommandIO<S3Accessor> = {
-  readdir: s3Readdir,
-  readBytes: s3Read,
-  readRange: s3ReadRange,
-  readStream: s3Stream,
-  stat: s3Stat,
+export const S3_IO: CommandIO<S3Accessor> = new VFSAdapter<S3Accessor>({
+  read: { readdir: s3Readdir, readBytes: s3Read, stat: s3Stat },
+  native: {
+    readRange: s3ReadRange,
+    readStream: s3Stream,
+    exists: s3Exists,
+    find: s3Find,
+    du: { size: s3Du, entries: s3DuAll },
+  },
+  writes: {
+    append: appendFromRead(s3Read, s3Write),
+    write: s3Write,
+    mkdir: s3Mkdir,
+    unlink: s3Unlink,
+    rmdir: s3Rmdir,
+    rmR: s3RmR,
+    rename: s3Rename,
+    copy: s3Copy,
+    create: s3Create,
+    truncate: s3Truncate,
+  },
   isMounted: () => true,
   local: false,
   maxGlobMatches: SCOPE_ERROR,
-  write: s3Write,
-  exists: s3Exists,
-  mkdir: s3Mkdir,
-  unlink: s3Unlink,
-  rmdir: s3Rmdir,
-  rmR: s3RmR,
-  rename: s3Rename,
-  copy: s3Copy,
-  create: s3Create,
-  truncate: s3Truncate,
-  find: s3Find,
-  du: { size: s3Du, entries: s3DuAll },
-}
+}).toCommandIO()

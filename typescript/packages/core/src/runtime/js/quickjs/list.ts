@@ -21,9 +21,8 @@ import { compareCodePoints } from '../../../utils/sort.ts'
 export async function readdir(
   ctx: QuickJSAsyncContext,
   vfs: RuntimeVFS | null,
-  pathH: QuickJSHandle,
+  path: string,
 ): Promise<QuickJSHandle> {
-  const path = ctx.getString(pathH)
   const names: string[] = []
   let errno = 0
   if (!vfs?.mountOf(path)) {

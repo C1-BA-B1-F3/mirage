@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest'
 import { SPECS, specOf } from '../../../commands/spec/index.ts'
 import { PathSpec } from '../../../types.ts'
 import { CommandSpec, Operand, Option } from '../../../commands/spec/types.ts'
+import { FlagView } from '../../../commands/spec/flag_view.ts'
 import { optionError, parseFlags } from './flags.ts'
 
 function path(virtual: string): PathSpec {
@@ -262,7 +263,45 @@ describe("optionError — tar's old option style", () => {
     const parsed = parseFlags(['xzf', '/data/a.tgz'], specOf('tar'), 'tar', '/')
     const refusal = optionError('tar', parsed)
     expect(refusal).toBeNull()
-    expect(parsed.flagKwargs.x).toBe(true)
-    expect(parsed.flagKwargs.z).toBe(true)
+    expect(parsed.flagKwargs.extract).toBe(true)
+    expect(parsed.flagKwargs.gzip).toBe(true)
+  })
+})
+
+it('retains scalar, repeated and pair spellings without classified paths', () => {
+  const spec = new CommandSpec({
+    options: [
+      new Option({ short: '-o', long: '--output', type: 'path' }),
+      new Option({ short: '-I', long: '--include', type: 'path', multiple: true }),
+      new Option({ long: '--rawfile', type: 'path', pair: true }),
+    ],
+  })
+  const parsed = parseFlags(
+    ['-o', '-', '--output=./out', '-I./same', '--include', 'same', '--rawfile', 'body', './same'],
+    spec,
+    'reader',
+    '/data',
+  )
+  const fl = new FlagView(parsed.flagKwargs, spec)
+  expect(fl.asPaths('output').map((p) => [p.virtual, p.rawPath])).toEqual([['/data/out', './out']])
+  expect(fl.asPaths('include').map((p) => [p.virtual, p.rawPath])).toEqual([
+    ['/data/same', './same'],
+    ['/data/same', 'same'],
+  ])
+  expect(fl.asList('rawfile')[0]).toBe('body')
+  expect(fl.asPaths('rawfile').map((p) => [p.virtual, p.rawPath])).toEqual([
+    ['/data/same', './same'],
+  ])
+})
+
+describe('an empty attached path value', () => {
+  // `--file=` spells the empty name, which resolved to the cwd; its walk
+  // answers ENOENT as a typed '' operand's does (GNU tar 1.35: `tar: :
+  // Cannot open: No such file or directory`). Mirrors python's
+  // test_an_empty_attached_path_value_names_nothing.
+  it('names nothing', () => {
+    const parsed = parseFlags(['--file=', '-t'], SPECS.tar ?? null, 'tar', '/data')
+    const file = parsed.flagKwargs.file
+    expect(file instanceof PathSpec ? file.walkError : null).toBe('ENOENT')
   })
 })

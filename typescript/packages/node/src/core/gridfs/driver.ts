@@ -55,11 +55,11 @@ export function globRegex(pattern: string): string | null {
 }
 
 /**
- * Build the fs.files query, pushing -name/-iname/-type/-size server-side
- * when the translation is exact. Every condition is a superset of the GNU
- * semantics (directory markers always pass the size condition, unpushable
- * globs fall back to the prefix scan), so the client-side keep() pass
- * stays authoritative.
+ * Build the fs.files query, pushing -name/-iname/-size server-side when
+ * the translation is exact. A pushed query selects files only, since
+ * `pushdown` is set for a `-type f` find alone, and every condition is a
+ * superset of what GNU prints (an unpushable glob falls back to the prefix
+ * scan), so the client-side keep() pass stays authoritative.
  */
 export function buildQuery(
   pfx: string,
@@ -79,22 +79,16 @@ export function buildQuery(
       if (pat === undefined || pat === null) continue
       const rx = globRegex(pat)
       if (rx === null) continue
-      const regex: Record<string, unknown> = { $regex: `^${escaped}(.*/)?${rx}/?$` }
+      const regex: Record<string, unknown> = { $regex: `^${escaped}(.*/)?${rx}$` }
       if (flags !== '') regex.$options = flags
       conds.push({ filename: regex })
     }
-    if (options.type === 'f') {
-      conds.push({ filename: { $not: { $regex: '/$' } } })
-    } else if (options.type === 'd') {
-      conds.push({ filename: { $regex: '/$' } })
-    }
+    conds.push({ filename: { $not: { $regex: '/$' } } })
     if (options.minSize != null || options.maxSize != null) {
       const sizeCond: Record<string, number> = {}
       if (options.minSize != null) sizeCond.$gte = options.minSize
       if (options.maxSize != null) sizeCond.$lte = options.maxSize
-      // Directory markers ride through; the client-side dirs-count-as-0
-      // rule decides their fate.
-      conds.push({ $or: [{ length: sizeCond }, { filename: { $regex: '/$' } }] })
+      conds.push({ length: sizeCond })
     }
   }
   if (conds.length === 0) return {}

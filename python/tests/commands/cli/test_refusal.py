@@ -43,6 +43,19 @@ def _parsed(invalid: list[str]) -> ParsedCommand:
                          missing_required_options=[])
 
 
+# parse-options names the last two options an abbreviation matched, each
+# with the `no-` it was matched under, and exits 129 (git 2.50.1).
+def test_git_words_an_ambiguous_abbreviation_its_own_way():
+    parsed = _parsed([])._replace(ambiguous_options=[
+        ("--no-m=x", ("--no-merged", "--no-move"))
+    ],
+                                  option_error_kinds=["ambiguous"])
+    msg, code = leaf_refusal(UsageStyle.GIT, ARGPARSE_MESSAGE, parsed)
+    assert msg == (b"error: ambiguous option: no-m=x "
+                   b"(could be --no-merged or --no-move)\n")
+    assert code == 129
+
+
 # Pinned against git 2.50.1: `git status --nosuch` and `git status -Z`.
 def test_git_names_a_long_option_without_its_dashes():
     assert git_unknown_option(

@@ -90,8 +90,8 @@ def make_rename(driver: ObjectStoreDriver[A, C],
                     # False, where nothing moved at all. Order is free --
                     # both are pure retractions and deletions commute --
                     # but it stops being free if either carries a token.
-                    record(op, src, driver.vfs, 0, timer)
-                    record(op, dst, driver.vfs, 0, timer)
+                    record(op, src_spec.virtual, driver.vfs, 0, timer)
+                    record(op, dst_spec.virtual, driver.vfs, 0, timer)
                     # The eviction rides with the records, on the same
                     # condition, as in unlink. Subtrees, not single
                     # paths: move_prefix relocates every key under src,

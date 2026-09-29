@@ -10,6 +10,13 @@ operands, rest operand, ignored tokens) plus a `_meta` block recording which
 VFS register the command and whether any registration carries a
 provision, an aggregate, or the write flag.
 
+`vfs_commands` beside each `general` holds, in the same shape, every
+registered command the shared `SPECS` table does not declare: a backend verb
+such as `trello card create` carries its spec inline, so without this dump
+the parity check could not see a flag one language dropped. A file is named
+after the command with spaces as underscores (`trello_card_create.json`),
+and the directory is rewritten whole on every run.
+
 `_meta.by_vfs` keys those same facts by the registering VFS. The
 union flags cannot say *which* backend carries a provision, so dropping one
 backend's provision while another keeps it leaves every union unchanged. The

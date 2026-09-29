@@ -22,10 +22,12 @@ import { runJoin } from './join.ts'
 import { runLs } from './ls.ts'
 import { runMv } from './mv.ts'
 import { runPaste } from './paste.ts'
+import { runSort } from './sort.ts'
 import { runTar } from './tar.ts'
 import { runUnzip } from './unzip.ts'
+import { runWc } from './wc.ts'
 import { runZip } from './zip_cmd.ts'
-import { Cmd, type CrossResult, type DispatchFn } from '../types.ts'
+import { Cmd, type CrossResult, type DispatchFn, type RunSingle } from '../types.ts'
 import type { FlagValue } from '../../../../spec/types.ts'
 import type { NamespaceView, SessionView } from '../../../../../ops/types.ts'
 
@@ -39,6 +41,9 @@ export async function runRelay(
   textArgs: string[],
   flagKwargs: Record<string, FlagValue>,
   dispatch: DispatchFn,
+  // Single-mount runner: wc counts each operand with its own mount's wc,
+  // since a mount can count without reading; only its layout spans the line.
+  runSingle: RunSingle,
   // Maps an operand to its storage identity, for the transfer commands
   // that must tell a real move from one whose two prefixes address a
   // single store.
@@ -51,16 +56,21 @@ export async function runRelay(
   // profile (ls -l).
   sessionView?: SessionView,
   stdin: ByteSource | null = null,
+  // The session's working directory, which cp resolves a typed link source
+  // against.
+  cwd = '/',
 ): Promise<CrossResult> {
+  if (cmdName === Cmd.WC) return runWc(scopes, flagKwargs, dispatch, runSingle)
+  if (cmdName === Cmd.SORT) return runSort(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.LS) return runLs(scopes, flagKwargs, dispatch, ns, sessionView)
-  if (cmdName === Cmd.CP) return runCp(scopes, flagKwargs, dispatch, storageKey)
-  if (cmdName === Cmd.MV) return runMv(scopes, flagKwargs, dispatch, storageKey)
-  if (cmdName === Cmd.DIFF) return runDiff(scopes, flagKwargs, dispatch)
+  if (cmdName === Cmd.CP) return runCp(scopes, flagKwargs, dispatch, storageKey, ns, cwd)
+  if (cmdName === Cmd.MV) return runMv(scopes, flagKwargs, dispatch, storageKey, ns)
+  if (cmdName === Cmd.DIFF) return runDiff(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.PASTE) return runPaste(scopes, flagKwargs, dispatch, stdin)
-  if (cmdName === Cmd.COMM) return runComm(scopes, flagKwargs, dispatch)
-  if (cmdName === Cmd.JOIN) return runJoin(scopes, flagKwargs, dispatch)
+  if (cmdName === Cmd.COMM) return runComm(scopes, flagKwargs, dispatch, stdin)
+  if (cmdName === Cmd.JOIN) return runJoin(scopes, flagKwargs, dispatch, stdin)
   if (cmdName === Cmd.TAR) return runTar(scopes, textArgs, flagKwargs, dispatch, ns)
   if (cmdName === Cmd.UNZIP) return runUnzip(scopes, textArgs, flagKwargs, dispatch)
   if (cmdName === Cmd.ZIP) return runZip(scopes, flagKwargs, dispatch, ns)
-  return runCmp(scopes, flagKwargs, dispatch)
+  return runCmp(scopes, textArgs, flagKwargs, dispatch, stdin)
 }

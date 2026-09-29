@@ -129,6 +129,7 @@ def value_text(value: Any) -> str:
 def jsonl_bytes(rows: list[dict[str, Any]]) -> bytes:
     """Render rows as line-delimited JSON, one compact object per line.
 
+    Numbers use the shared ECMAScript spelling, including nested cells.
     An empty row list renders as empty bytes rather than a lone newline,
     so an empty .jsonl leaf sizes and reads as a zero-byte file.
 
@@ -137,7 +138,7 @@ def jsonl_bytes(rows: list[dict[str, Any]]) -> bytes:
     """
     if not rows:
         return b""
-    lines = [compact_json_text(row) for row in rows]
+    lines = [_compact_value_text(row) for row in rows]
     return ("\n".join(lines) + "\n").encode()
 
 

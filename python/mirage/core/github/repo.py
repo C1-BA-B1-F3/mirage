@@ -14,7 +14,7 @@
 
 import base64
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from mirage.accessor.github import GitHubAccessor
 from mirage.core.api.client import SessionArg
@@ -143,6 +143,109 @@ async def view_repo(config: GhConfig, ref: RepoRef) -> JsonValue:
                                 "GET",
                                 f"/repos/{ref.owner}/{ref.repo}",
                                 base_url=config.base_url)
+
+
+async def _graphql_data(config: GhConfig, query: str,
+                        variables: dict[str, JsonValue]) -> dict[str, Any]:
+    """Run one GraphQL query and return its data, refusing the way gh does.
+
+    gh names each error with the path of the field that raised it and
+    joins them: ``GraphQL: Could not resolve to a Repository with the
+    name 'o/r'. (repository)``.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        query (str): the GraphQL document.
+        variables (dict[str, JsonValue]): its variables.
+    """
+    response = await github_request(config.token,
+                                    "POST",
+                                    "/graphql", {
+                                        "query": query,
+                                        "variables": variables
+                                    },
+                                    base_url=config.base_url)
+    payload = cast(dict[str,
+                        Any], response) if isinstance(response, dict) else {}
+    errors = cast(list[dict[str, Any]], payload.get("errors") or [])
+    if errors:
+        messages: list[str] = []
+        for error in errors:
+            path = ".".join(str(part) for part in error.get("path") or [])
+            message = str(error.get("message") or "")
+            messages.append(f"{message} ({path})" if path else message)
+        raise ValueError(f"GraphQL: {', '.join(messages)}")
+    data = payload.get("data")
+    return data if isinstance(data, dict) else {}
+
+
+async def repository_fields(config: GhConfig, ref: RepoRef,
+                            selection: str) -> dict[str, Any]:
+    """The selected fields of one repository, over GraphQL, as gh reads
+    them for ``repo view --json``: one query naming only what was asked
+    for.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        selection (str): the GraphQL selection inside ``repository { }``.
+    """
+    data = await _graphql_data(
+        config, "query RepositoryInfo($owner: String!, $name: String!) {\n"
+        f"    repository(owner: $owner, name: $name) {{{selection}}}\n  }}", {
+            "owner": ref.owner,
+            "name": ref.repo
+        })
+    repository = data.get("repository")
+    return repository if isinstance(repository, dict) else {}
+
+
+async def list_repository_fields(config: GhConfig, owner: str | None,
+                                 limit: int,
+                                 selection: str) -> list[dict[str, Any]]:
+    """The selected fields of an owner's repositories, over GraphQL, as gh
+    reads them for ``repo list --json``: the owner's own, most recently
+    pushed first, a page of up to 100 at a time until ``limit``. No owner
+    means the viewer.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        owner (str | None): the user or organization, or the viewer.
+        limit (int): how many repositories at most.
+        selection (str): the GraphQL selection for each repository.
+    """
+    if owner is None:
+        head = ("query RepositoryList($perPage:Int!,$endCursor:String,"
+                "$privacy:RepositoryPrivacy,$fork:Boolean) {\n"
+                "    repositoryOwner: viewer {")
+    else:
+        head = ("query RepositoryList($perPage:Int!,$endCursor:String,"
+                "$privacy:RepositoryPrivacy,$fork:Boolean,$owner:String!) {\n"
+                "    repositoryOwner(login: $owner) {")
+    query = (f"{head}\n      login\n      repositories(first: $perPage, "
+             "after: $endCursor, privacy: $privacy, isFork: $fork, "
+             "ownerAffiliations: OWNER, orderBy: { field: PUSHED_AT, "
+             f"direction: DESC }}) {{\n        nodes{{{selection}}}\n"
+             "        totalCount\n        pageInfo{hasNextPage,endCursor}\n"
+             "      }\n    }\n  }")
+    rows: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while len(rows) < limit:
+        variables: dict[str, JsonValue] = {"perPage": min(limit, 100)}
+        if owner is not None:
+            variables["owner"] = owner
+        if cursor is not None:
+            variables["endCursor"] = cursor
+        data = await _graphql_data(config, query, variables)
+        owner_node = data.get("repositoryOwner") or {}
+        page = owner_node.get("repositories") or {}
+        rows.extend(page.get("nodes") or [])
+        info = page.get("pageInfo") or {}
+        following = info.get("endCursor")
+        if not info.get("hasNextPage") or following in (None, cursor):
+            break
+        cursor = following
+    return rows[:limit]
 
 
 async def read_readme(config: GhConfig, ref: RepoRef) -> str | None:

@@ -38,6 +38,7 @@ import {
   toJsonBytes,
 } from './normalize.ts'
 import { detectScope } from './scope.ts'
+import { stat } from './stat.ts'
 
 async function readWorkspaceJson(
   accessor: TrelloAccessor,
@@ -107,12 +108,16 @@ async function readComments(accessor: TrelloAccessor, match: ScopeMatch): Promis
   return jsonlBytesByCreatedAt(rows)
 }
 
-export const read = makeRead<TrelloAccessor>(detectScope, {
-  workspace_json: readWorkspaceJson,
-  board_json: readBoardJson,
-  member: readMember,
-  label: readLabel,
-  list_json: readListJson,
-  card_json: readCardJson,
-  comments_jsonl: readComments,
-})
+export const read = makeRead<TrelloAccessor>(
+  detectScope,
+  {
+    workspace_json: readWorkspaceJson,
+    board_json: readBoardJson,
+    member: readMember,
+    label: readLabel,
+    list_json: readListJson,
+    card_json: readCardJson,
+    comments_jsonl: readComments,
+  },
+  { stat },
+)

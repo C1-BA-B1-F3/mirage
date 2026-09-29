@@ -14,7 +14,9 @@
 
 from typing import Any
 
+from mirage.context import clear_program_invocation, reset_program_invocation
 from mirage.io import IOResult
+from mirage.io.async_line_iterator import share
 from mirage.io.stream import async_chain
 from mirage.io.types import ByteSource
 from mirage.policy.decisions import Decisions
@@ -27,7 +29,7 @@ from mirage.shell.variable import ShellVar
 from mirage.types import PathSpec, word_text
 from mirage.workspace.executor.command.types import ExecuteNodeFn
 from mirage.workspace.executor.jobs import run_statement
-from mirage.workspace.executor.statement import finish_statement
+from mirage.workspace.executor.statement import fd0_binding, finish_statement
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.state import restore_locals
 from mirage.workspace.types import ExecutionNode
@@ -68,6 +70,8 @@ async def run_shell_function(
         decisions (Decisions | None): ledger that holds those claims.
     """
     func_body = session.functions[cmd_name]
+    # The body's statements read the caller's stdin in turn.
+    stdin = share(stdin)
     cs = call_stack if call_stack is not None else CallStack()
     # Positional args carry the word as typed ($1 stays sub/a.txt).
     text_args = [word_text(p) for p in parts[1:]]
@@ -81,15 +85,19 @@ async def run_shell_function(
     outer_locals = session._local_vars
     session._local_vars = saved_locals
     session._local_frames.append(saved_locals)
+    # The body is shell code: the builtins it runs are the shell's,
+    # whatever `xargs` or `env` marked the line that called it.
+    marked = clear_program_invocation()
     try:
         all_stdout: list[Any] = []
         merged_io = IOResult()
         last_exec = ExecutionNode(command=cmd_name, exit_code=0)
+        bound = fd0_binding(session)
         for cmd in func_body:
             try:
                 stdout, io, last_exec = await run_statement(
-                    execute_node, cmd, session, stdin, cs, job_table, agent_id,
-                    handed, decisions)
+                    execute_node, cmd, session, stdin, bound, cs, job_table,
+                    agent_id, handed, decisions)
             except ReturnSignal as sig:
                 if sig.stderr:
                     merged_io = await merged_io.merge(
@@ -107,10 +115,11 @@ async def run_shell_function(
                     and not session.errexit_immune):
                 merged_io.exit_code = io.exit_code
                 break
-        combined = async_chain(*all_stdout) if all_stdout else None
+        combined = async_chain(all_stdout) if all_stdout else None
         last_exec.exit_code = merged_io.exit_code
         return combined, merged_io, last_exec
     finally:
+        reset_program_invocation(marked)
         cs.pop()
         restore_locals(session, saved_locals)
         session._local_frames.pop()

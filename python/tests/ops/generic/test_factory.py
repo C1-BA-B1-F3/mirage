@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import errno
 from unittest.mock import AsyncMock
 
 import pytest
@@ -21,7 +22,7 @@ from mirage.cache.index import NULL_INDEX
 from mirage.commands.builtin.generic_bind import CommandIO
 from mirage.ops.generic import make_generic_ops
 from mirage.ops.registry import OpsRegistry
-from mirage.types import PathSpec
+from mirage.types import FileStat, FileType, PathSpec
 
 
 class _S3Error(Exception):
@@ -148,6 +149,27 @@ async def test_emulated_append_does_not_overwrite_after_read_failure():
     with pytest.raises(PermissionError):
         await op.fn(NOOPAccessor(), PATH, b"new")
     table.write.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_emulated_empty_append_stats_instead_of_rewriting():
+    table = make_table(write=AsyncMock())
+    table.stat.side_effect = [
+        FileStat(name="a.txt", type=FileType.FILE),
+        FileNotFoundError(),
+        FileStat(name="a.txt", type=FileType.DIRECTORY),
+    ]
+    op = next(o for o in make_generic_ops("x", table) if o.name == "append")
+    acc = NOOPAccessor()
+    await op.fn(acc, PATH, b"", index=NULL_INDEX)
+    table.stat.assert_awaited_once_with(acc, PATH, NULL_INDEX)
+    table.write.assert_not_awaited()
+    await op.fn(acc, PATH, b"")
+    table.write.assert_awaited_once_with(acc, PATH, b"")
+    with pytest.raises(IsADirectoryError):
+        await op.fn(acc, PATH, b"")
+    table.read_bytes.assert_not_awaited()
+    assert table.write.await_count == 1
 
 
 @pytest.mark.asyncio
@@ -299,3 +321,17 @@ async def test_a_zero_length_read_asks_the_backend_nothing():
                                    size=0) == b""
     native.assert_not_awaited()
     table.read_bytes.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_emulated_truncate_refuses_no_create_before_io():
+    write = AsyncMock()
+    table = make_table(write=write)
+    read = table.read_bytes
+    ops = make_generic_ops("x", table, emulate_truncate=True)
+    truncate = next(o for o in ops if o.name == "truncate")
+    with pytest.raises(OSError) as error:
+        await truncate.fn(NOOPAccessor(), PATH, 2, no_create=True)
+    assert error.value.errno == errno.ENOTSUP
+    read.assert_not_called()
+    write.assert_not_called()

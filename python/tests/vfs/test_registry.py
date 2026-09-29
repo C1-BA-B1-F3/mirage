@@ -336,3 +336,82 @@ def test_a_refused_config_value_is_not_in_the_error():
     assert "port" in message
     # The chain would carry the value into any logged traceback.
     assert caught.value.__cause__ is None
+
+
+class FakeOpenKwargsVFS(BaseVFS):
+
+    name = "fake_open"
+
+    def __init__(self, **options: str) -> None:
+        super().__init__()
+        self.options = options
+
+
+def test_an_unknown_config_key_is_refused_by_name():
+    """A key no field takes used to be dropped without a word, so a
+    typo'd ``team_idz`` built a linear mount that exposed every team."""
+    with pytest.raises(ValueError) as caught:
+        build_vfs("linear", {"api_key": "k", "team_idz": ["x"]})
+    assert str(caught.value) == "linear: team_idz: extra_forbidden"
+
+
+def test_every_unknown_key_is_named_in_the_order_given():
+    with pytest.raises(ValueError) as caught:
+        build_vfs("s3", {"bucket": "b", "one": 1, "two": 2})
+    assert str(caught.value) == ("s3: one: extra_forbidden; "
+                                 "two: extra_forbidden")
+
+
+@pytest.mark.parametrize(("name", "config", "message"), [
+    ("ram", {
+        "root": "/tmp"
+    }, "ram: root: extra_forbidden"),
+    ("disk", {
+        "root": "/tmp",
+        "roots": "/x"
+    }, "disk: roots: extra_forbidden"),
+    ("redis", {
+        "keyprefix": "a"
+    }, "redis: keyprefix: extra_forbidden"),
+])
+def test_a_kwargs_vfs_refuses_an_unknown_key_in_the_same_words(
+        name, config, message):
+    # These three take constructor keywords rather than a typed config,
+    # so an unknown key used to surface as Python's own TypeError.
+    with pytest.raises(ValueError) as caught:
+        build_vfs(name, config)
+    assert str(caught.value) == message
+
+
+def test_a_constructor_taking_kwargs_judges_its_own_keys(clean_registry):
+    register_vfs("fake_open", FakeOpenKwargsVFS)
+    built = build_vfs("fake_open", {"anything": "x"})
+    assert built.options == {"anything": "x"}
+
+
+@pytest.mark.parametrize("key", ["schema", "schema_name"])
+def test_an_aliased_field_is_known_under_either_name(key):
+    built = build_vfs("databricks_volume", {
+        "catalog": "c",
+        key: "s",
+        "volume": "v",
+        "host": "https://h",
+        "token": "t"
+    })
+    assert built.config.schema_name == "s"
+
+
+def test_every_registry_config_forbids_extra_keys():
+    """pydantic's default ``extra="ignore"`` drops a key no field takes,
+    so one config class that leaves the setting off reopens the hole for
+    its backend alone. Every class the registry can build is checked,
+    subclasses included, because a subclass may set its own
+    ``model_config``."""
+    lax = []
+    for name, entry in REGISTRY.items():
+        if entry.config_path is None:
+            continue
+        cls = registry.resolve_class(entry.config_path)
+        if cls.model_config.get("extra") != "forbid":
+            lax.append(f"{name}: {cls.__name__}")
+    assert lax == []

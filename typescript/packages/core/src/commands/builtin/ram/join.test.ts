@@ -16,7 +16,9 @@ import { RAM_COMMANDS } from './index.ts'
 import { describe, expect, it } from 'vitest'
 import { materialize } from '../../../io/types.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
-import { PathSpec } from '../../../types.ts'
+import { MountMode, PathSpec } from '../../../types.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
 const RAM_JOIN = RAM_COMMANDS.filter((c) => c.name === 'join' && c.filetype == null)
 
 const ENC = new TextEncoder()
@@ -57,9 +59,48 @@ describe('join', () => {
     expect(r.out).toContain('2 Bob LA')
   })
 
-  it('returns exit 1 when fewer than 2 paths', async () => {
+  it("refuses fewer than 2 paths with GNU's usage error, exit 1", async () => {
     const vfs = new RAMVFS()
-    const r = await runJoin(vfs, [])
-    expect(r.exitCode).toBe(1)
+    const call = runJoin(vfs, [])
+    await expect(call).rejects.toThrow(
+      "join: missing operand\nTry 'join --help' for more information.",
+    )
+    await expect(call).rejects.toMatchObject({ exitCode: 1 })
+  })
+})
+
+async function shell(
+  line: string,
+  stdin: Uint8Array | null = null,
+  seed: Record<string, string> = {},
+): Promise<[string, string, number]> {
+  const ws = new Workspace(
+    { '/data/': new RAMVFS() },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  try {
+    for (const [path, body] of Object.entries(seed)) {
+      await ws.shell(`tee ${path} > /dev/null`, { stdin: new TextEncoder().encode(body) })
+    }
+    const io = await ws.shell(line, { stdin })
+    const dec = new TextDecoder()
+    return [dec.decode(io.stdout), dec.decode(io.stderr), io.exitCode]
+  } finally {
+    await ws.close()
+  }
+}
+
+describe('join with stdin', () => {
+  it('reads a dash operand across mounts', async () => {
+    // From / the dash sits on the root mount, so the line relays.
+    const r = await shell('join - /data/f.txt', ENC.encode('alice 1\nbob 2\n'), {
+      '/data/f.txt': 'alice 30\nbob 25\n',
+    })
+    expect(r).toEqual(['alice 1 30\nbob 2 25\n', '', 0])
+  })
+
+  it('refuses two dash operands', async () => {
+    const r = await shell('join - -', ENC.encode('a\n'))
+    expect(r).toEqual(['', 'join: both files cannot be standard input\n', 1])
   })
 })

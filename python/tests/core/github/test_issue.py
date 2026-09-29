@@ -16,7 +16,7 @@ import pytest
 
 from mirage.core.github.config import GhConfig
 from mirage.core.github.issue import (comment_issue, edit_issue, get_issue,
-                                      list_issues)
+                                      issue_comments, list_issues)
 from mirage.core.github.repo import RepoRef
 
 
@@ -69,3 +69,49 @@ async def test_direct_issue_verbs_reject_pull_request_numbers(
             await comment_issue(config, ref, 4, "no")
 
     assert calls == [("GET", "/repos/o/r/issues/4")]
+
+
+@pytest.mark.asyncio
+async def test_comments_follow_graphql_cursors(monkeypatch):
+    cursors = []
+
+    async def request(token, method, path, body, *, base_url):
+        cursor = body["variables"]["cursor"]
+        cursors.append(cursor)
+        assert (method, path) == ("POST", "/graphql")
+        return {
+            "data": {
+                "repository": {
+                    "issueOrPullRequest": {
+                        "comments": {
+                            "nodes": [{
+                                "body":
+                                "first" if cursor is None else "second"
+                            }],
+                            "pageInfo": {
+                                "hasNextPage": cursor is None,
+                                "endCursor": "next"
+                            },
+                        }
+                    }
+                }
+            }
+        }
+
+    monkeypatch.setitem(issue_comments.__globals__, "github_request", request)
+    rows = await issue_comments(GhConfig(token="t"), RepoRef("o", "r"), 1)
+    assert rows == [{"body": "first"}, {"body": "second"}]
+    assert cursors == [None, "next"]
+
+
+@pytest.mark.asyncio
+async def test_comments_report_graphql_errors(monkeypatch):
+    message = "Could not resolve repository"
+
+    async def request(*args, **kwargs):
+        assert args[1] == "POST"
+        return {"errors": [{"message": message}]}
+
+    monkeypatch.setitem(issue_comments.__globals__, "github_request", request)
+    with pytest.raises(ValueError, match="Could not resolve repository"):
+        await issue_comments(GhConfig(token="t"), RepoRef("o", "r"), 1)

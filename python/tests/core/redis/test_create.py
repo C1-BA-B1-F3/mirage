@@ -27,11 +27,11 @@ pytestmark = pytest.mark.skipif(not REDIS_URL, reason="REDIS_URL not set")
 
 
 @pytest_asyncio.fixture()
-async def mk_store():
+async def mk_store(redis_prefix):
     stores = []
 
     async def _make(prefix):
-        s = RedisStore(url=REDIS_URL, key_prefix=prefix)
+        s = RedisStore(url=REDIS_URL, key_prefix=redis_prefix + prefix)
         await s.clear()
         await s.add_dir("/")
         stores.append(s)

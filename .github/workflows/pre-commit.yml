@@ -146,6 +146,13 @@ jobs:
           ./python/.venv/bin/python scripts/gen_specs.py
           node --experimental-strip-types typescript/scripts/gen-specs.ts
           git diff --exit-code spec/
+          # git diff never reports an untracked file, so a newly
+          # registered command's spec would pass as no drift.
+          untracked=$(git status --porcelain --untracked-files=all spec/)
+          if [ -n "$untracked" ]; then
+            echo "$untracked"
+            exit 1
+          fi
 
       - name: Spec parity
         run: ./python/.venv/bin/python scripts/check_spec_parity.py

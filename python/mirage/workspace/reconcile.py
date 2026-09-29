@@ -79,7 +79,7 @@ class Reconciler:
             remote_stat = await mount.execute_op("stat",
                                                  path,
                                                  index=RAMIndexCacheStore())
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError):
             await self.on_missing(path)
             await mount.index.clear()
             return Verdict.GONE
@@ -117,7 +117,7 @@ class Reconciler:
         """
         try:
             return await self._probe(mount, path)
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError):
             raise
         except (TypeError, AttributeError, NameError):
             # A backend that cannot answer is one thing; a bug in the probe
@@ -137,7 +137,7 @@ class Reconciler:
         except Exception as exc:
             await self._cache.remove(path)
             await mount.index.clear()
-            logger.debug("probe failed for %s: %s", path, exc)
+            logger.warning("probe failed for %s: %s", path, exc)
             return Verdict.UNKNOWN
 
     async def may_serve_cached(self, mount: MountEntry, path: str) -> bool:
@@ -154,8 +154,8 @@ class Reconciler:
         ``supports_snapshot`` deliberately does not appear here. It used
         to short-circuit this function, dropping every cached copy on a
         resource that declares it False. That is a proxy for "the stat
-        carries no content token", and it is the wrong one: box, dropbox,
-        ssh and github all stamp a fingerprint without setting the flag,
+        carries no content token", and it is the wrong one: box, dropbox
+        and ssh all stamp a fingerprint without setting the flag,
         so the shortcut threw away entries this probe can verify. The
         backends that really cannot be checked are answered by
         ``_probe``'s own UNKNOWN arm, one stat later.
@@ -218,7 +218,7 @@ class Reconciler:
         except Exception as exc:
             await self._cache.remove(path)
             await mount.index.clear()
-            logger.debug("reconcile probe failed for %s: %s", path, exc)
+            logger.warning("reconcile probe failed for %s: %s", path, exc)
 
     async def on_op_missing(self, mount: MountEntry, op: str,
                             path: str) -> None:

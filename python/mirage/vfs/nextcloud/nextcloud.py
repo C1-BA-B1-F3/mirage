@@ -16,7 +16,7 @@ from mirage.watch.base import DeltaHook
 
 
 class NextcloudConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     url: str
     username: str | None = None
@@ -62,6 +62,3 @@ class NextcloudVFS(BaseVFS):
             "redacted_fields": redacted,
             "config": cfg,
         }
-
-    def load_state(self, state: dict[str, Any]) -> None:
-        pass

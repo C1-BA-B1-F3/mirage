@@ -14,7 +14,11 @@
 
 import { describe, expect, it } from 'vitest'
 import { materialize } from '../../../io/types.ts'
+import { OpsRegistry } from '../../../ops/registry.ts'
+import { MountMode } from '../../../types.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
 import { GENERAL_DATE } from './date.ts'
 
 const DEC = new TextDecoder()
@@ -42,33 +46,33 @@ async function runDate(
 describe('date', () => {
   it('-I returns ISO date', async () => {
     const fixed = '2026-04-21T12:00:00Z'
-    const out = await runDate([], { d: fixed, args_I: true })
+    const out = await runDate([], { date: fixed, iso_8601: true })
     expect(out).toBe('2026-04-21\n')
   })
 
   it('-d with custom format', async () => {
-    const out = await runDate(['+%Y-%m-%d'], { d: '2026-04-21T12:00:00Z', u: true })
+    const out = await runDate(['+%Y-%m-%d'], { date: '2026-04-21T12:00:00Z', utc: true })
     expect(out).toBe('2026-04-21\n')
   })
 
   it('+%H:%M:%S UTC', async () => {
-    const out = await runDate(['+%H:%M:%S'], { d: '2026-04-21T13:45:30Z', u: true })
+    const out = await runDate(['+%H:%M:%S'], { date: '2026-04-21T13:45:30Z', utc: true })
     expect(out).toBe('13:45:30\n')
   })
 
   it('default format roughly matches "Day Mon DD HH:MM:SS YYYY"', async () => {
-    const out = await runDate([], { d: '2026-04-21T12:00:00', u: true })
+    const out = await runDate([], { date: '2026-04-21T12:00:00', utc: true })
     // Tue Apr 21 12:00:00 UTC 2026
     expect(out).toMatch(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2} (UTC )?2026\n$/)
   })
 
   it('-R RFC5322 format', async () => {
-    const out = await runDate([], { d: '2026-04-21T12:00:00Z', u: true, R: true })
+    const out = await runDate([], { date: '2026-04-21T12:00:00Z', utc: true, rfc_email: true })
     expect(out).toBe('Tue, 21 Apr 2026 12:00:00 +0000\n')
   })
 
   it('+%s seconds since epoch', async () => {
-    const out = await runDate(['+%s'], { d: '2026-04-21T00:00:00Z', u: true })
+    const out = await runDate(['+%s'], { date: '2026-04-21T00:00:00Z', utc: true })
     // 2026-04-21T00:00:00Z = 1777305600
     expect(out.trim()).toBe(String(Math.floor(Date.UTC(2026, 3, 21) / 1000)))
   })
@@ -108,51 +112,53 @@ describe('date GNU format specifiers', () => {
   const AT = '2026-08-16T13:45:30Z'
 
   it('+%F renders the ISO date, not the literal', async () => {
-    expect(await runDate(['+%F %T'], { d: AT, u: true })).toBe('2026-08-16 13:45:30\n')
+    expect(await runDate(['+%F %T'], { date: AT, utc: true })).toBe('2026-08-16 13:45:30\n')
   })
 
   it('renders 12-hour, quarter, century, and padded-hour forms', async () => {
-    expect(await runDate(['+%r|%q|%C|%h|%k|%l|%P|%R'], { d: AT, u: true })).toBe(
+    expect(await runDate(['+%r|%q|%C|%h|%k|%l|%P|%R'], { date: AT, utc: true })).toBe(
       '01:45:30 PM|3|20|Aug|13| 1|pm|13:45\n',
     )
   })
 
   it('renders week numbers and the ISO week-based year', async () => {
-    expect(await runDate(['+%V|%U|%W|%G|%g'], { d: AT, u: true })).toBe('33|33|32|2026|26\n')
+    expect(await runDate(['+%V|%U|%W|%G|%g'], { date: AT, utc: true })).toBe('33|33|32|2026|26\n')
   })
 
   it('renders C-locale %c, %x, %X and the %n/%t escapes', async () => {
-    expect(await runDate(['+%c|%x|%X|%n|%t'], { d: AT, u: true })).toBe(
+    expect(await runDate(['+%c|%x|%X|%n|%t'], { date: AT, utc: true })).toBe(
       'Sun Aug 16 13:45:30 2026|08/16/26|13:45:30|\n|\t\n',
     )
   })
 
   it('passes an unknown directive through literally, as GNU does', async () => {
-    expect(await runDate(['+%v'], { d: AT, u: true })).toBe('%v\n')
+    expect(await runDate(['+%v'], { date: AT, utc: true })).toBe('%v\n')
   })
 })
 
 describe('date -d expressions', () => {
   it('handles a relative displacement from an ISO base', async () => {
-    const out = await runDate(['+%F %T'], { d: '2026-08-16 12:00:00 24 hours ago', u: true })
+    const out = await runDate(['+%F %T'], { date: '2026-08-16 12:00:00 24 hours ago', utc: true })
     expect(out).toBe('2026-08-15 12:00:00\n')
   })
 
   it('handles @epoch input', async () => {
-    expect(await runDate(['+%F %T'], { d: '@1755300000', u: true })).toBe('2025-08-15 23:20:00\n')
+    expect(await runDate(['+%F %T'], { date: '@1755300000', utc: true })).toBe(
+      '2025-08-15 23:20:00\n',
+    )
   })
 
   it('normalizes month overflow the way GNU does', async () => {
-    expect(await runDate(['+%F'], { d: '2026-01-31 1 month', u: true })).toBe('2026-03-03\n')
+    expect(await runDate(['+%F'], { date: '2026-01-31 1 month', utc: true })).toBe('2026-03-03\n')
   })
 
   it('produces a date, never NaN, for a bare relative expression', async () => {
-    const out = await runDate(['+%F'], { d: '24 hours ago', u: true })
+    const out = await runDate(['+%F'], { date: '24 hours ago', utc: true })
     expect(out).toMatch(/^\d{4}-\d{2}-\d{2}\n$/)
   })
 
   it('refuses an invalid date with GNU wording and exit 1', async () => {
-    const [out, stderr, code] = await runDateIo([], { d: 'not a date' })
+    const [out, stderr, code] = await runDateIo([], { date: 'not a date' })
     expect(out).toBe('')
     expect(stderr).toBe("date: invalid date 'not a date'\n")
     expect(code).toBe(1)
@@ -164,10 +170,10 @@ describe('date -d expressions', () => {
   // `LC_ALL=C TZ=UTC`. mirage used to answer `date: invalid date ''` and
   // exit 1. Mirrors test_date.py.
   it.each(['', '   '])('reads %j as today at midnight', async (d) => {
-    const [out, stderr, code] = await runDateIo(['+%H:%M:%S'], { d, u: true })
+    const [out, stderr, code] = await runDateIo(['+%H:%M:%S'], { date: d, utc: true })
     expect([out, stderr, code]).toEqual(['00:00:00\n', '', 0])
-    const day = await runDate(['+%Y-%m-%d'], { d, u: true })
-    expect(day).toBe(await runDate(['+%Y-%m-%d'], { u: true }))
+    const day = await runDate(['+%Y-%m-%d'], { date: d, utc: true })
+    expect(day).toBe(await runDate(['+%Y-%m-%d'], { utc: true }))
   })
 })
 
@@ -204,91 +210,106 @@ async function runDateEnv(
 // from `opts.env` alone: process.env.TZ is never read or written.
 describe('date honors the command environment TZ', () => {
   it.each([
-    [{ TZ: 'UTC' }, ['+%Y-%m-%d %H:%M:%S %z'], { d: '@0' }, '1970-01-01 00:00:00 +0000\n'],
+    [{ TZ: 'UTC' }, ['+%Y-%m-%d %H:%M:%S %z'], { date: '@0' }, '1970-01-01 00:00:00 +0000\n'],
     [
       { TZ: 'Asia/Hong_Kong' },
       ['+%Y-%m-%d %H:%M:%S %z'],
-      { d: '@0' },
+      { date: '@0' },
       '1970-01-01 08:00:00 +0800\n',
     ],
     [
       { TZ: 'Asia/Hong_Kong' },
       ['+%F %T %z %Z'],
-      { d: '@0', u: true },
+      { date: '@0', utc: true },
       '1970-01-01 00:00:00 +0000 UTC\n',
     ],
-    [{ TZ: 'Asia/Hong_Kong' }, ['+%F %T'], { d: '1970-01-01T20:00:00Z' }, '1970-01-02 04:00:00\n'],
     [
       { TZ: 'Asia/Hong_Kong' },
       ['+%F %T'],
-      { d: '1970-01-01T20:00:00Z 1 day' },
+      { date: '1970-01-01T20:00:00Z' },
+      '1970-01-02 04:00:00\n',
+    ],
+    [
+      { TZ: 'Asia/Hong_Kong' },
+      ['+%F %T'],
+      { date: '1970-01-01T20:00:00Z 1 day' },
       '1970-01-03 04:00:00\n',
     ],
-    [{ TZ: 'Asia/Hong_Kong' }, ['+%s'], { d: '1970-01-01 00:00:00' }, '-28800\n'],
-    [{ TZ: 'Asia/Hong_Kong' }, [], { d: '@0', R: true }, 'Thu, 01 Jan 1970 08:00:00 +0800\n'],
-    [{ TZ: 'Asia/Hong_Kong' }, [], { d: '1970-01-01T20:00:00Z', args_I: true }, '1970-01-02\n'],
+    [{ TZ: 'Asia/Hong_Kong' }, ['+%s'], { date: '1970-01-01 00:00:00' }, '-28800\n'],
+    [
+      { TZ: 'Asia/Hong_Kong' },
+      [],
+      { date: '@0', rfc_email: true },
+      'Thu, 01 Jan 1970 08:00:00 +0800\n',
+    ],
+    [
+      { TZ: 'Asia/Hong_Kong' },
+      [],
+      { date: '1970-01-01T20:00:00Z', iso_8601: true },
+      '1970-01-02\n',
+    ],
     [
       { TZ: 'America/Los_Angeles' },
       ['+%F %T %z'],
-      { d: '@1751328000' },
+      { date: '@1751328000' },
       '2025-06-30 17:00:00 -0700\n',
     ],
-    [{ TZ: 'Bogus/Zone' }, ['+%F %T %z %Z'], { d: '@0' }, '1970-01-01 00:00:00 +0000 Bogus\n'],
-    [{ TZ: ':Asia/Tokyo' }, ['+%T %z'], { d: '@0' }, '09:00:00 +0900\n'],
-    [{ TZ: 'UTC0' }, ['+%T %z %Z'], { d: '@0' }, '00:00:00 +0000 UTC\n'],
-    [{ TZ: '<+0530>-5:30' }, ['+%T %z %Z %:z'], { d: '@0' }, '05:30:00 +0530 +0530 +05:30\n'],
+    [{ TZ: 'Bogus/Zone' }, ['+%F %T %z %Z'], { date: '@0' }, '1970-01-01 00:00:00 +0000 Bogus\n'],
+    [{ TZ: ':Asia/Tokyo' }, ['+%T %z'], { date: '@0' }, '09:00:00 +0900\n'],
+    [{ TZ: 'UTC0' }, ['+%T %z %Z'], { date: '@0' }, '00:00:00 +0000 UTC\n'],
+    [{ TZ: '<+0530>-5:30' }, ['+%T %z %Z %:z'], { date: '@0' }, '05:30:00 +0530 +0530 +05:30\n'],
     [
       { TZ: 'CET-1CEST,M3.5.0,M10.5.0/3' },
       ['+%F %T %z %Z'],
-      { d: '@1751328000' },
+      { date: '@1751328000' },
       '2025-07-01 02:00:00 +0200 CEST\n',
     ],
     [
       { TZ: 'CET-1CEST,M3.5.0,M10.5.0/3' },
       ['+%s %Z'],
-      { d: '2025-10-26 02:30:00' },
+      { date: '2025-10-26 02:30:00' },
       '1761442200 CET\n',
     ],
     [
       { TZ: 'CET-1CEST,M3.5.0,M10.5.0/3' },
       ['+%F %T %Z'],
-      { d: '2025-03-29 12:00:00 1 day' },
+      { date: '2025-03-29 12:00:00 1 day' },
       '2025-03-30 12:00:00 CEST\n',
     ],
     [
       { TZ: 'CET-1CEST,M3.5.0,M10.5.0/3' },
       ['+%F %T %Z'],
-      { d: '2025-03-29 12:00:00 24 hours' },
+      { date: '2025-03-29 12:00:00 24 hours' },
       '2025-03-30 13:00:00 CEST\n',
     ],
-    [{ TZ: 'UTC' }, ['+%a %Z'], { d: '@0' }, 'Thu UTC\n'],
-    [{ TZ: 'UTC' }, [], { d: '@0' }, 'Thu Jan 01 00:00:00 UTC 1970\n'],
-    [{ TZ: '' }, ['+%F %T %z'], { d: '@0' }, '1970-01-01 00:00:00 +0000\n'],
+    [{ TZ: 'UTC' }, ['+%a %Z'], { date: '@0' }, 'Thu UTC\n'],
+    [{ TZ: 'UTC' }, [], { date: '@0' }, 'Thu Jan  1 00:00:00 UTC 1970\n'],
+    [{ TZ: '' }, ['+%F %T %z'], { date: '@0' }, '1970-01-01 00:00:00 +0000\n'],
     // A day shift landing in the hour CEST skips moves past the gap, and one
     // landing in the hour it repeats keeps the base's side (gnulib hands
     // mktime the base's tm_isdst).
     [
       { TZ: 'Europe/Berlin' },
       ['+%F %T %z %Z'],
-      { d: '2025-03-29 02:30:00 1 day' },
+      { date: '2025-03-29 02:30:00 1 day' },
       '2025-03-30 03:30:00 +0200 CEST\n',
     ],
     [
       { TZ: 'Europe/Berlin' },
       ['+%F %T %z %Z'],
-      { d: '2025-10-25 02:30:00 1 day' },
+      { date: '2025-10-25 02:30:00 1 day' },
       '2025-10-26 02:30:00 +0200 CEST\n',
     ],
     [
       { TZ: 'Europe/Berlin' },
       ['+%F %T %z %Z'],
-      { d: '2025-10-27 02:30:00 1 day ago' },
+      { date: '2025-10-27 02:30:00 1 day ago' },
       '2025-10-26 02:30:00 +0100 CET\n',
     ],
     // glibc keeps the names and offsets of a POSIX string whose rule it
     // refuses, and clamps an offset's minutes at 59.
-    [{ TZ: 'CET-1CEST,bogus' }, ['+%z %Z'], { d: '@1720000000' }, '+0200 CEST\n'],
-    [{ TZ: 'UTC5:99' }, ['+%T %z'], { d: '@0' }, '18:01:00 -0559\n'],
+    [{ TZ: 'CET-1CEST,bogus' }, ['+%z %Z'], { date: '@1720000000' }, '+0200 CEST\n'],
+    [{ TZ: 'UTC5:99' }, ['+%T %z'], { date: '@0' }, '18:01:00 -0559\n'],
   ])('%j %j %j', async (env, texts, flags, expected) => {
     expect(await runDateEnv(env, texts, flags)).toEqual([expected, '', 0])
   })
@@ -296,17 +317,17 @@ describe('date honors the command environment TZ', () => {
   it('refuses a wall clock the zone skips', async () => {
     // glibc's mktime finds no instant for 02:30 on the night CEST starts.
     expect(
-      await runDateEnv({ TZ: 'Europe/Berlin' }, ['+%s'], { d: '2025-03-30 02:30:00' }),
+      await runDateEnv({ TZ: 'Europe/Berlin' }, ['+%s'], { date: '2025-03-30 02:30:00' }),
     ).toEqual(['', "date: invalid date '2025-03-30 02:30:00'\n", 1])
   })
 
   it('reads each invocation its own zone with no process state between them', async () => {
     const before = process.env.TZ
     const results = await Promise.all([
-      runDateEnv({ TZ: 'Asia/Hong_Kong' }, ['+%H %z'], { d: '@0' }),
-      runDateEnv({ TZ: 'UTC' }, ['+%H %z'], { d: '@0' }),
-      runDateEnv({ TZ: 'Asia/Hong_Kong' }, ['+%H %z'], { d: '@0' }),
-      runDateEnv({}, ['+%H %z'], { d: '@0', u: true }),
+      runDateEnv({ TZ: 'Asia/Hong_Kong' }, ['+%H %z'], { date: '@0' }),
+      runDateEnv({ TZ: 'UTC' }, ['+%H %z'], { date: '@0' }),
+      runDateEnv({ TZ: 'Asia/Hong_Kong' }, ['+%H %z'], { date: '@0' }),
+      runDateEnv({}, ['+%H %z'], { date: '@0', utc: true }),
     ])
     expect(results.map((r) => r[0])).toEqual([
       '08 +0800\n',
@@ -323,20 +344,20 @@ describe('date honors the command environment TZ', () => {
 // spelled out where it does not, and a zone's own history applies.
 describe("date: %Z is tzdata's abbreviation", () => {
   it.each([
-    [{ TZ: 'Asia/Hong_Kong' }, ['+%Z'], { d: '@0' }, 'HKT\n'],
-    [{ TZ: 'Europe/London' }, ['+%Z'], { d: '@1751328000' }, 'BST\n'],
-    [{ TZ: 'Europe/London' }, ['+%Z'], { d: '@1735689600' }, 'GMT\n'],
-    [{ TZ: 'Australia/Sydney' }, ['+%Z'], { d: '@1751328000' }, 'AEST\n'],
-    [{ TZ: 'Australia/Sydney' }, ['+%Z'], { d: '@1735689600' }, 'AEDT\n'],
-    [{ TZ: 'Asia/Kolkata' }, ['+%Z %z'], { d: '@0' }, 'IST +0530\n'],
-    [{ TZ: 'Asia/Singapore' }, ['+%Z'], { d: '@0' }, '+0730\n'],
-    [{ TZ: 'Asia/Singapore' }, ['+%Z'], { d: '@1751328000' }, '+08\n'],
-    [{ TZ: 'America/Sao_Paulo' }, ['+%Z'], { d: '@0' }, '-03\n'],
-    [{ TZ: 'Etc/GMT+5' }, ['+%Z'], { d: '@0' }, '-05\n'],
-    [{ TZ: 'Europe/Moscow' }, ['+%Z %z'], { d: '@1340000000' }, 'MSK +0400\n'],
-    [{ TZ: 'Europe/Moscow' }, ['+%Z %z'], { d: '@1276848800' }, 'MSD +0400\n'],
-    [{ TZ: 'Europe/Istanbul' }, ['+%Z'], { d: '@1435752000' }, 'EEST\n'],
-    [{ TZ: 'Europe/Istanbul' }, ['+%Z'], { d: '@1498906800' }, '+03\n'],
+    [{ TZ: 'Asia/Hong_Kong' }, ['+%Z'], { date: '@0' }, 'HKT\n'],
+    [{ TZ: 'Europe/London' }, ['+%Z'], { date: '@1751328000' }, 'BST\n'],
+    [{ TZ: 'Europe/London' }, ['+%Z'], { date: '@1735689600' }, 'GMT\n'],
+    [{ TZ: 'Australia/Sydney' }, ['+%Z'], { date: '@1751328000' }, 'AEST\n'],
+    [{ TZ: 'Australia/Sydney' }, ['+%Z'], { date: '@1735689600' }, 'AEDT\n'],
+    [{ TZ: 'Asia/Kolkata' }, ['+%Z %z'], { date: '@0' }, 'IST +0530\n'],
+    [{ TZ: 'Asia/Singapore' }, ['+%Z'], { date: '@0' }, '+0730\n'],
+    [{ TZ: 'Asia/Singapore' }, ['+%Z'], { date: '@1751328000' }, '+08\n'],
+    [{ TZ: 'America/Sao_Paulo' }, ['+%Z'], { date: '@0' }, '-03\n'],
+    [{ TZ: 'Etc/GMT+5' }, ['+%Z'], { date: '@0' }, '-05\n'],
+    [{ TZ: 'Europe/Moscow' }, ['+%Z %z'], { date: '@1340000000' }, 'MSK +0400\n'],
+    [{ TZ: 'Europe/Moscow' }, ['+%Z %z'], { date: '@1276848800' }, 'MSD +0400\n'],
+    [{ TZ: 'Europe/Istanbul' }, ['+%Z'], { date: '@1435752000' }, 'EEST\n'],
+    [{ TZ: 'Europe/Istanbul' }, ['+%Z'], { date: '@1498906800' }, '+03\n'],
   ])('%j %j %j', async (env, texts, flags, expected) => {
     expect(await runDateEnv(env, texts, flags)).toEqual([expected, '', 0])
   })
@@ -346,8 +367,8 @@ it('renders the implicit host zone in explicit and default formats', async () =>
   const hostZone = new Intl.DateTimeFormat().resolvedOptions().timeZone
   for (const d of ['@1789430400', '@1767225600']) {
     for (const format of [[], ['+%Z %z']]) {
-      const implicit = await runDateEnv({}, format, { d })
-      expect(implicit).toEqual(await runDateEnv({ TZ: hostZone }, format, { d }))
+      const implicit = await runDateEnv({}, format, { date: d })
+      expect(implicit).toEqual(await runDateEnv({ TZ: hostZone }, format, { date: d }))
       expect(implicit[0].trim()).not.toBe('')
     }
   }
@@ -363,7 +384,7 @@ async function runDateStderr(d: string): Promise<[string, number]> {
   if (cmd === undefined) throw new Error('date not registered')
   const result = await cmd.fn((vfs as { accessor?: unknown }).accessor as never, [], [], {
     stdin: null,
-    flags: { d },
+    flags: { date: d },
     filetypeFns: null,
     cwd: '/',
   })
@@ -382,5 +403,122 @@ describe('date quotes the expression it refuses', () => {
     ['x\\', 'x\\\\'],
   ])('escapes %j in the invalid-date clause', async (value, escaped) => {
     expect(await runDateStderr(value)).toEqual([`date: invalid date '${escaped}'\n`, 1])
+  })
+})
+
+describe('date output formats through the shell', () => {
+  // GNU's output formats, one per option, measured on coreutils 9.7
+  // (debian:stable-slim): -I[FMT] takes its precision attached or after `=`
+  // and matches it by prefix, --rfc-3339=FMT takes the narrower set, and a
+  // line with no format option prints `%e`, a space-padded day. Mirrors
+  // test_date.py.
+  const AT = '2024-03-05T07:08:09.5Z'
+  const ISO_VALID =
+    "Valid arguments are:\n  - 'hours'\n  - 'minutes'\n  - 'date'\n  - 'seconds'\n  - 'ns'\n" +
+    "Try 'date --help' for more information.\n"
+  const MULTIPLE = 'date: multiple output formats specified\n'
+
+  async function makeWs(): Promise<Workspace> {
+    const parser = await getTestParser()
+    const ram = new RAMVFS()
+    const registry = new OpsRegistry()
+    registry.registerVfs(ram)
+    return new Workspace(
+      { '/ram': ram },
+      { mode: MountMode.WRITE, ops: registry, shellParser: parser },
+    )
+  }
+
+  it.each([
+    [`date -u -d ${AT} -I`, '2024-03-05\n'],
+    [`date -u -d ${AT} -Id`, '2024-03-05\n'],
+    [`date -u -d ${AT} -Ih`, '2024-03-05T07+00:00\n'],
+    [`date -u -d ${AT} -Im`, '2024-03-05T07:08+00:00\n'],
+    [`date -u -d ${AT} -Is`, '2024-03-05T07:08:09+00:00\n'],
+    [`date -u -d ${AT} -Ins`, '2024-03-05T07:08:09,500000000+00:00\n'],
+    [`date -u -d ${AT} -Isec`, '2024-03-05T07:08:09+00:00\n'],
+    [`date -u -d ${AT} -Iho`, '2024-03-05T07+00:00\n'],
+    [`date -d ${AT} -uIs`, '2024-03-05T07:08:09+00:00\n'],
+    [`date -u -d ${AT} --iso-8601`, '2024-03-05\n'],
+    [`date -u -d ${AT} --iso-8601=seconds`, '2024-03-05T07:08:09+00:00\n'],
+    [`date -u -d ${AT} --iso=m`, '2024-03-05T07:08+00:00\n'],
+    [`TZ=Asia/Kolkata date -d ${AT} -Is`, '2024-03-05T12:38:09+05:30\n'],
+    [`TZ=America/St_Johns date -d ${AT} -Im`, '2024-03-05T03:38-03:30\n'],
+    [`date -u -d ${AT} --rfc-3339=date`, '2024-03-05\n'],
+    [`date -u -d ${AT} --rfc-3339=seconds`, '2024-03-05 07:08:09+00:00\n'],
+    [`date -u -d ${AT} --rfc-3339=ns`, '2024-03-05 07:08:09.500000000+00:00\n'],
+    [`date --utc --date=${AT} --rfc-email`, 'Tue, 05 Mar 2024 07:08:09 +0000\n'],
+    [`date --universal -d ${AT} -I`, '2024-03-05\n'],
+    [`date -u -d ${AT}`, 'Tue Mar  5 07:08:09 UTC 2024\n'],
+  ])('%s', async (line, out) => {
+    const ws = await makeWs()
+    const io = await ws.shell(line)
+    await ws.close()
+    expect([io.stdoutText, io.stderrText, io.exitCode]).toEqual([out, '', 0])
+  })
+
+  it.each([
+    [`date -d ${AT} -Ix`, "date: invalid argument 'x' for '--iso-8601'\n" + ISO_VALID],
+    [`date -d ${AT} -Isu`, "date: invalid argument 'su' for '--iso-8601'\n" + ISO_VALID],
+    [`date -d ${AT} --iso-8601=`, "date: ambiguous argument '' for '--iso-8601'\n" + ISO_VALID],
+    [
+      `date -d ${AT} --rfc-3339=hours`,
+      "date: invalid argument 'hours' for '--rfc-3339'\n" +
+        "Valid arguments are:\n  - 'date'\n  - 'seconds'\n  - 'ns'\n" +
+        "Try 'date --help' for more information.\n",
+    ],
+    [
+      `date -d ${AT} --rfc-3339`,
+      "date: option '--rfc-3339' requires an argument\nTry 'date --help' for more information.\n",
+    ],
+    [`date -d ${AT} -I -R`, MULTIPLE],
+    [`date -d ${AT} --rfc-3339=s -Is`, MULTIPLE],
+    [`date -d ${AT} -Is +%Y`, MULTIPLE],
+    [`date -d ${AT} -I -R a b`, MULTIPLE],
+  ])('%s refuses', async (line, err) => {
+    const ws = await makeWs()
+    const io = await ws.shell(line)
+    await ws.close()
+    expect([io.stdoutText, io.stderrText, io.exitCode]).toEqual(['', err, 1])
+  })
+
+  // An operand without `+` sets the clock (coreutils 9.7, as a user without
+  // the privilege to): a readable one prints the date it names and exits 1
+  // with `cannot set date`, anything else is `invalid date`, and beside -d it
+  // is a usage error. Mirrors test_date.py.
+  const CANNOT_SET = 'date: cannot set date: Operation not permitted\n'
+  it.each([
+    ['date -u 010100002024', 'Mon Jan  1 00:00:00 UTC 2024\n', CANNOT_SET],
+    ['date -u -I 0229000024', '2024-02-29\n', CANNOT_SET],
+    ['date -u 1231235924.60', 'Wed Jan  1 00:00:00 UTC 2025\n', CANNOT_SET],
+    ['date -I seconds', '', "date: invalid date 'seconds'\n"],
+    ['date 0229000025', '', "date: invalid date '0229000025'\n"],
+    ['TZ=Europe/Berlin date 033002302025', '', "date: invalid date '033002302025'\n"],
+    [
+      `date -d ${AT} x`,
+      '',
+      "date: the argument 'x' lacks a leading '+';\n" +
+        'when using an option to specify date(s), any non-option\n' +
+        "argument must be a format string beginning with '+'\n" +
+        "Try 'date --help' for more information.\n",
+    ],
+    [
+      'date 010100002024 +%F',
+      '',
+      "date: extra operand '+%F'\nTry 'date --help' for more information.\n",
+    ],
+  ])('%s sets the clock', async (line, out, err) => {
+    const ws = await makeWs()
+    const io = await ws.shell(line)
+    await ws.close()
+    expect([io.stdoutText, io.stderrText, io.exitCode]).toEqual([out, err, 1])
+  })
+
+  it('renders now with the offset', async () => {
+    const ws = await makeWs()
+    const io = await ws.shell('date -u -Is')
+    await ws.close()
+    expect([io.stderrText, io.exitCode]).toEqual(['', 0])
+    expect(io.stdoutText).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+00:00\n$/)
   })
 })

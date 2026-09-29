@@ -92,6 +92,64 @@
       "flags": [
         "a"
       ]
+    },
+    {
+      "id": "tee_without_operands_copies_stdin",
+      "seq": 1231040,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && printf 'x\\n' | tee",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "tee_without_operands_on_empty_stdin",
+      "seq": 1231041,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "cd /data && tee < /dev/null; echo code=$?",
+      "expect": {
+        "exit": 0,
+        "stdout": "code=0\n",
+        "stderr": ""
+      }
     }
   ]
 }

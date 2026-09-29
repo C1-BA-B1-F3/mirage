@@ -16,7 +16,9 @@ import asyncio
 import logging
 from collections.abc import (AsyncIterator, Awaitable, Callable, Mapping,
                              Sequence)
+from dataclasses import replace
 from functools import partial
+from shlex import join as shell_join
 from types import TracebackType
 from typing import Any, Literal, overload
 
@@ -28,8 +30,10 @@ from mirage.commands.cli import CLISpec
 from mirage.commands.cli.specs import cli_spec_for
 from mirage.context import (get_current_session_for,
                             get_current_session_unless_foreign,
-                            reset_current_session, set_current_session)
+                            reset_current_session, reset_program_invocation,
+                            set_current_session, set_program_invocation)
 from mirage.io import IOResult
+from mirage.io.stream import materialize
 from mirage.io.types import ByteSource
 from mirage.observe.observer import Observer
 from mirage.observe.record import OpRecord
@@ -38,6 +42,10 @@ from mirage.ops import Ops
 from mirage.policy import (AskHandler, Decisions, Explanation, HandOff,
                            PermissionsPolicy, Policies, Policy, PolicyError,
                            ScriptPolicy, SessionProfile)
+from mirage.process.child import ChildProcess
+from mirage.process.stdio import ProcessInput, ProcessOutput
+from mirage.process.supervisor import ProcessSupervisor
+from mirage.process.types import ProcessView, SpawnRequest
 from mirage.provision import ProvisionResult
 from mirage.runtime.base import Runtime
 from mirage.runtime.binding import WorkspaceBinding, capture_binding
@@ -50,18 +58,25 @@ from mirage.secrets.registry import source_for
 from mirage.secrets.sources import resolve_sources
 from mirage.secrets.types import ResolvedSource
 from mirage.shell import parse
+from mirage.shell.console import Channel
+from mirage.shell.constants import BIN_PREFIX
 from mirage.shell.job_table import ConsoleFactory, JobTable
+from mirage.shell.literal import literal_tree
+from mirage.shell.variable import VarAttr
 from mirage.types import (CacheFacts, DriftPolicy, FileEvent, FileStat,
-                          JsonValue, MountBackend, MountMode, PathSpec,
+                          JsonValue, Limit, MountBackend, MountMode, PathSpec,
                           ReadSpec, parse_mount_mode)
 from mirage.utils.ids import new_session_id, new_workspace_id
 from mirage.vfs.base import BaseVFS
+from mirage.vfs.bin import BinViewVFS
 from mirage.vfs.history import HISTORY_PREFIX, HistoryViewVFS
 from mirage.workspace.abort import MirageAbortError, run_cancellable
 from mirage.workspace.cli import CLIInstall
 from mirage.workspace.dispatcher import Dispatcher
 from mirage.workspace.executor.statement import restore_status
 from mirage.workspace.file_prompt import build_file_prompt
+from mirage.workspace.lookup import lookup, program, program_note, programs
+from mirage.workspace.lookup.types import Consumer
 from mirage.workspace.mount import MountEntry, MountRegistry
 from mirage.workspace.mount.namespace import Namespace
 from mirage.workspace.mount.namespace.store import NamespaceStore
@@ -71,7 +86,7 @@ from mirage.workspace.session import SessionManager, SessionState, SessionStore
 from mirage.workspace.session.constants import DEFAULT_PROFILE
 from mirage.workspace.session.resolve import (apply_profile, compile_profile,
                                               resolve_profile, with_inline)
-from mirage.workspace.session.session import vars_from_entries
+from mirage.workspace.session.session import vars_from_entries, vars_from_env
 from mirage.workspace.session.state import env_snapshot, session_view
 from mirage.workspace.session.validate import check_cli_verbs
 from mirage.workspace.snapshot import (DriftQueue, apply_state_dict,
@@ -120,6 +135,7 @@ class Workspace:
         index: IndexConfig | None = None,
         mode: MountMode = MountMode.READ,
         read: ReadSpec | None = None,
+        command_limits: Mapping[str, Limit] | None = None,
         session_id: str | None = None,
         agent_id: str | None = None,
         workspace_id: str | None = None,
@@ -142,6 +158,8 @@ class Workspace:
         secrets: Mapping[str, SecretSource | Mapping[str, Any]] | None = None,
     ) -> None:
         self._registry = MountRegistry()
+        self._registry.process_view = self._process_view
+        self._registry.command_limits = dict(command_limits or {})
         # The permission profiles: one per name, and the one a session
         # gets when it names none. A profile is the whole document a
         # session runs under, so there is no workspace-wide block
@@ -181,7 +199,8 @@ class Workspace:
         # VFS overrides) stay open here; their origin closes them.
         self._shared_mounts: set[int] = set()
         self._drift = DriftQueue()
-        self.job_table = JobTable(console_factory)
+        self.processes = ProcessSupervisor()
+        self.job_table = JobTable(console_factory, self.processes)
         self._default_agent_id = agent_id
         # The env block, translated once: a literal entry becomes an
         # exported var, a managed one becomes a pointer the fill step
@@ -289,6 +308,14 @@ class Workspace:
         # cache reads, so its policy can only ever be bounded.
         self._registry.mount(HISTORY_PREFIX, HistoryViewVFS(self.observer),
                              MountMode.READ, ReadSpec())
+        # One file per program the session can run, where PATH finds it:
+        # the same lookup which, type and command -v answer from.
+        self._registry.mount(
+            BIN_PREFIX,
+            BinViewVFS(
+                lambda: programs(self._op_session(), self._registry), lambda
+                name: program_note(name, self._op_session(), self._registry)),
+            MountMode.READ, ReadSpec())
         # The facade delegates every op to the dispatcher, so FUSE and
         # programmatic ws.vfs walk the same pipeline as a shell command
         # and the policy gates fire exactly once, at that door. It runs
@@ -637,21 +664,28 @@ class Workspace:
         explicit root mount is forwarded like any other prefix, and a
         runtime that cannot serve it refuses on its own (pyodide does,
         because Emscripten already owns ``/``). What is withheld is the
-        history view, which is a shell surface rather than a place to
-        put files, and the synthetic root anchor, which nobody mounted:
-        the workspace adds it so arg-less commands and root listing
-        have somewhere to resolve, so announcing it as a mount would
-        make every runtime report a claim on a VFS the embedder
-        never asked for (TS ``sandboxVisibleMounts``).
+        history and program views, which are shell surfaces rather than
+        places to put files (a runtime has its own ``/usr/bin``), and the
+        synthetic root anchor, which nobody mounted: the workspace adds it
+        so arg-less commands and root listing have somewhere to resolve,
+        so announcing it as a mount would make every runtime report a
+        claim on a VFS the embedder never asked for (TS
+        ``sandboxVisibleMounts``).
         """
         prefixes: list[str] = []
         for entry in self._registry.mounts():
-            if entry.prefix in (HISTORY_PREFIX, HISTORY_PREFIX + "/"):
+            if entry.prefix in (HISTORY_PREFIX, HISTORY_PREFIX + "/",
+                                BIN_PREFIX + "/"):
                 continue
             if self._implicit_root and entry.prefix == "/":
                 continue
             prefixes.append(entry.prefix)
         return prefixes
+
+    def _op_session(self) -> SessionState:
+        """The session an op runs under: the bound one, else the default."""
+        return (get_current_session_for(self._session_mgr)
+                or self._session_mgr.get(self._session_mgr.default_id))
 
     def runtime_context(self, session_id: str | None = None) -> RuntimeContext:
         """Capture local workspace doors for an adapter, scoped to one session.
@@ -661,9 +695,8 @@ class Workspace:
         """
         from mirage.workspace.executor.command.run import namespace_view_of
 
-        session = (self._session_mgr.get(session_id) if session_id is not None
-                   else get_current_session_for(self._session_mgr)
-                   or self._session_mgr.get(self._session_mgr.default_id))
+        session = (self._session_mgr.get(session_id)
+                   if session_id is not None else self._op_session())
         token = set_current_session(session, self._session_mgr)
         try:
             return capture_binding(
@@ -671,10 +704,131 @@ class Workspace:
                 ns=namespace_view_of(self._registry, self._namespace,
                                      self.dispatch),
                 session_view=session_view(session, self.policies),
+                processes=self._process_view(session),
                 cwd=PathSpec.from_str_path(session.cwd),
                 env=env_snapshot(session))
         finally:
             reset_current_session(token)
+
+    def spawn(self,
+              request: SpawnRequest,
+              session_id: str | None = None) -> ChildProcess:
+        """Spawn literal argv through admission in an isolated session fork.
+
+        Args:
+            request (SpawnRequest): program, arguments and launch overrides.
+            session_id (str | None): host-selected session; defaults to
+                the active session.
+        """
+        session = self._session_mgr.get(
+            session_id) if session_id is not None else self._op_session()
+        return self._spawn_for_session(request, session)
+
+    def _process_view(self, session: SessionState) -> ProcessView:
+        parent_pid = session.process_id
+        view = self.processes.view(session.session_id,
+                                   lambda: session.processes)
+
+        def spawn(request: SpawnRequest) -> ChildProcess:
+            view.check_spawn()
+            return self._spawn_for_session(request,
+                                           session.fork(process_id=parent_pid))
+
+        return replace(view, spawn=spawn, depth=session.process_depth)
+
+    def _spawn_for_session(self, request: SpawnRequest,
+                           session: SessionState) -> ChildProcess:
+        if self._closing or self._closed:
+            raise RuntimeError("Workspace is closed")
+        if session.process_depth >= 16:
+            raise RuntimeError("process nesting limit (16) reached")
+        argv = tuple(request.argv)
+        literal_tree(argv)
+        head = argv[0]
+        name = head[len(BIN_PREFIX) + 1:] if head.startswith(BIN_PREFIX +
+                                                             "/") else head
+        if "/" not in name:
+            if (program(name, session, self._registry) is None and lookup(
+                    name, session, self._registry) != Consumer.EXTERNAL):
+                raise FileNotFoundError(2, "No such file or directory", head)
+            argv = (name, *argv[1:])
+        cwd = request.cwd or PathSpec.from_str_path(session.cwd)
+        inherited_env = {} if request.replace_env else env_snapshot(session)
+        child = session.fork(cwd=cwd.virtual,
+                             vars=vars_from_env(inherited_env),
+                             functions={},
+                             process_depth=session.process_depth + 1)
+        if "PWD" not in inherited_env:
+            child.vars["PWD"] = replace(child.vars["PWD"], attrs=frozenset())
+        child.aliases = {}
+        # The child's stdout is its handle's result, as a typed line's is
+        # the terminal, so the command limits bound what it hands back
+        # wherever the parent's own output goes.
+        child.terminal_output = True
+        input_stream, output = ProcessInput(), ProcessOutput(
+            request.merge_stderr)
+        env = dict(request.env) if request.env is not None else None
+        owner = self._session_mgr.get(session.session_id)
+        admission = self.processes.view(session.session_id,
+                                        lambda: owner.processes)
+
+        async def run() -> int:
+            await self.ensure_sessions_loaded()
+            if self._session_mgr.get(session.session_id) is not owner:
+                raise RuntimeError(
+                    "session changed during hydration; retry spawn after "
+                    "ensure_sessions_loaded")
+            admission.check_spawn()
+            token = set_current_session(child, self._session_mgr)
+            program_token = set_program_invocation(child)
+            try:
+                view = session_view(child, self.policies)
+                for name, value in (env or {}).items():
+                    await view.set(name, value)
+                    await view.mark(name, VarAttr.EXPORT, True)
+                result = await execute_line(self,
+                                            shell_join(argv),
+                                            child.session_id,
+                                            input_stream.stream(),
+                                            provision=False,
+                                            agent_id=None,
+                                            cwd=None,
+                                            env=None,
+                                            cancel=None,
+                                            record=True,
+                                            runtime=None,
+                                            routing_decision=None,
+                                            argv=argv,
+                                            sink=output)
+                if not isinstance(result, IOResult):
+                    raise RuntimeError("spawn returned a provision plan")
+                await output.emit(Channel.STDOUT, await
+                                  materialize(result.stdout))
+                await output.emit(Channel.STDERR, await
+                                  materialize(result.stderr))
+                return result.exit_code
+            finally:
+                reset_program_invocation(program_token)
+                reset_current_session(token)
+                input_stream.stop()
+                output.end()
+
+        process = self.processes.start(session_id=child.session_id,
+                                       command=shell_join(argv),
+                                       cwd=cwd,
+                                       run=run,
+                                       parent_pid=session.process_id,
+                                       limit=session.processes.max)
+        child.process_id = process.info.pid
+        child.shell_pid = process.info.pid
+
+        def cancel() -> None:
+            process.terminate()
+            self.processes.terminate_children(process.info.pid)
+            input_stream.stop()
+            output.stop()
+
+        return ChildProcess(process, input_stream, output, cancel)
 
     def add_runtime(self, runtime: Runtime | str) -> Runtime:
         """Append a runtime entry to the workspace's ordered set.
@@ -947,11 +1101,20 @@ class Workspace:
         # The declarations travel with the copy the way a live CLI
         # install does: an env pointer restores from state naming its
         # instance, and without the block the copy would answer the
-        # first read with "unknown secrets source".
-        return await type(self)._from_state(state,
-                                            mounts=mounts,
-                                            clis=reusable_clis(self),
-                                            secrets=self._declared_sources)
+        # first read with "unknown secrets source". Profiles and
+        # command limits are deployment config the state dict never
+        # carries; without them the copy runs every session unconfined.
+        # Policy instances and the route policy stay behind: a policy
+        # is a live host object whose state two workspaces must not
+        # share, and the route names runtimes the copy does not carry.
+        return await type(self)._from_state(
+            state,
+            mounts=mounts,
+            clis=reusable_clis(self),
+            secrets=self._declared_sources,
+            command_limits=self._registry.command_limits,
+            profiles=self._profiles,
+            profile=self._default_profile_name)
 
     @classmethod
     async def _from_state(
@@ -961,7 +1124,10 @@ class Workspace:
         mounts: dict[str, Any] | None = None,
         clis: CLIOverrides | None = None,
         secrets: Mapping[str, SecretSource | Mapping[str, Any]]
-        | None = None
+        | None = None,
+        command_limits: Mapping[str, Limit] | None = None,
+        profiles: Mapping[str, SessionProfile] | None = None,
+        profile: str | None = None,
     ) -> "Workspace":
         args = build_mount_args(state, mounts, clis)
         # No read= here: each restored Mount carries its own spec, and
@@ -970,7 +1136,10 @@ class Workspace:
                  session_id=args.default_session_id,
                  agent_id=args.default_agent_id,
                  clis=args.clis,
-                 secrets=secrets)
+                 secrets=secrets,
+                 command_limits=command_limits,
+                 profiles=profiles,
+                 profile=profile)
         if mounts:
             ws._shared_mounts = {id(r) for r in mounts.values()}
         await apply_state_dict(ws, state)
@@ -1167,7 +1336,9 @@ class Workspace:
             raise RuntimeError("Workspace is closed")
         if was_default:
             session_id = self.default_session_id
-        return await self._session_mgr.set_profile(session_id, compiled)
+        session = await self._session_mgr.set_profile(session_id, compiled)
+        self.processes.revoke_session(session_id)
+        return session
 
     def list_sessions(self) -> list[SessionState]:
         return self._session_mgr.list()

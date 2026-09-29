@@ -17,17 +17,11 @@ from pathlib import Path
 
 import aiofiles.os
 
+from mirage.core.disk.utils import resolve_inside
 from mirage.types import PathSpec
 from mirage.utils.errors import enotdir
 from mirage.utils.key_prefix import mounted_path
 from mirage.utils.path import ancestors
-
-
-def _resolve(root: Path, path: str) -> Path:
-    relative = path.lstrip("/")
-    resolved = (root / relative).resolve()
-    resolved.relative_to(root)
-    return resolved
 
 
 async def mkdir_component_error(root: Path, spec: PathSpec,
@@ -53,7 +47,8 @@ async def mkdir_component_error(root: Path, spec: PathSpec,
     """
     for component in ancestors(key):
         try:
-            st = await aiofiles.os.stat(_resolve(root, component))
+            st = await aiofiles.os.stat(await
+                                        resolve_inside(root, spec, component))
         except OSError:
             return None
         # Anything that is not a directory blocks traversal, not just a

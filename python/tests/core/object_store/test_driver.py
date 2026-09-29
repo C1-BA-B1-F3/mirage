@@ -39,7 +39,6 @@ def test_entry_defaults():
     assert meta.extra == {}
     assert FindHints(name=None,
                      iname=None,
-                     type=None,
                      min_size=None,
                      max_size=None,
                      pushdown=False).pushdown is False

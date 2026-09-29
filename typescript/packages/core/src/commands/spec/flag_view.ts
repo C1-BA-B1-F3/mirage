@@ -14,7 +14,21 @@
 
 import { flagKwargName } from './constants.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
-import type { CommandSpec, FlagValue } from './types.ts'
+import { PathSpec } from '../../types.ts'
+import type { CommandSpec, FlagValue, ParsedFlagValue } from './types.ts'
+
+// The tape records what the parser scanned, so its values are the parser's
+// own; a PATH value recovered as a PathSpec replaces the bag entry only.
+const occurrenceTapes = new WeakMap<Record<string, FlagValue>, [string, ParsedFlagValue][]>()
+
+export function flagOccurrences(flags: Record<string, FlagValue>): [string, ParsedFlagValue][] {
+  let tape = occurrenceTapes.get(flags)
+  if (tape === undefined) {
+    tape = []
+    occurrenceTapes.set(flags, tape)
+  }
+  return tape
+}
 
 /**
  * Collect the kwarg names a spec's options can produce.
@@ -82,6 +96,23 @@ export class FlagView {
     return Object.keys(this.flags).filter((k) => wanted.has(k))
   }
 
+  occurrences(...names: string[]): [string, ParsedFlagValue][] {
+    const wanted = new Set(names.map((name) => this.key(name)))
+    const result = flagOccurrences(this.flags).filter(
+      ([name]) => wanted.has(name) && name in this.flags,
+    )
+    const seen = new Set(result.map(([name]) => name))
+    for (const name of this.typedOrder(...names)) {
+      if (seen.has(name)) continue
+      const value = this.flags[name]
+      if (value === undefined) continue
+      for (const item of Array.isArray(value) ? value : [value]) {
+        result.push([name, item instanceof PathSpec ? item.virtual : item])
+      }
+    }
+    return result
+  }
+
   asBool(name: string): boolean {
     const value = this.flags[this.key(name)]
     if (typeof value === 'boolean') return value
@@ -123,15 +154,32 @@ export class FlagView {
     return Number.parseFloat(text.replaceAll('_', ''))
   }
 
+  // A PATH-typed value reads as its resolved virtual path here, which is
+  // what every reader of the string wants; `asPaths` hands over the PathSpec
+  // itself, for the typed spelling an error line names.
   asStr(name: string): string | undefined {
     const value = this.flags[this.key(name)]
+    if (value instanceof PathSpec) return value.virtual
     return typeof value === 'string' ? value : undefined
   }
 
   asList(name: string): string[] {
     const value = this.flags[this.key(name)]
-    if (Array.isArray(value)) return value.filter((v) => typeof v === 'string')
+    if (Array.isArray(value)) return value.map((v) => (v instanceof PathSpec ? v.virtual : v))
+    if (value instanceof PathSpec) return [value.virtual]
     if (typeof value === 'string') return [value]
+    return []
+  }
+
+  // Mirrors Python's `as_paths`: a line parsed for a cross-mount strategy
+  // keeps its resolved strings, so it answers empty there.
+  asPaths(name: string): PathSpec[] {
+    const value = this.flags[this.key(name)]
+    if (Array.isArray(value)) {
+      const items: readonly (string | PathSpec)[] = value
+      return items.filter((v): v is PathSpec => v instanceof PathSpec)
+    }
+    if (value instanceof PathSpec) return [value]
     return []
   }
 

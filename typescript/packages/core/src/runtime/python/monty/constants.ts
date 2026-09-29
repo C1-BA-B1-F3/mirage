@@ -17,6 +17,7 @@ export const MISSING_PACKAGE_HINT =
 
 // argv[0] when the caller named no program of its own.
 export const DEFAULT_PROG = 'main.py'
+export const MAX_URANDOM_BYTES = 1_048_576
 
 // One-shot eval is bounded like quickjs's: nothing above the runtime
 // can stop a hung guest, so the runtime owns its own interrupt.

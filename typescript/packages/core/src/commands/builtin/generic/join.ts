@@ -17,7 +17,8 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { extraOperandError } from '../../spec/usage.ts'
+import { extraOperandError, missingOperandError } from '../../spec/usage.ts'
+import { stdinStream } from '../utils/stream.ts'
 import { CommandName } from '../../spec/types.ts'
 
 const ENC = new TextEncoder()
@@ -158,16 +159,25 @@ function isSorted(
 export async function joinGeneric(
   paths: PathSpec[],
   opts: CommandOpts,
-  stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
+  read: (p: PathSpec) => AsyncIterable<Uint8Array>,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('join'))
   if (paths.length > 2) throw extraOperandError(CommandName.JOIN, paths[2]?.rawPath ?? '')
-  if (paths.length < 2) {
-    return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('join: requires two paths\n') })]
-  }
+  if (paths.length < 2)
+    throw missingOperandError(CommandName.JOIN, paths[0]?.rawPath ?? null, opts.argv ?? [])
   const p1 = paths[0]
   const p2 = paths[1]
   if (p1 === undefined || p2 === undefined) return [null, new IOResult()]
+  if (p1.rawPath === '-' && p2.rawPath === '-') {
+    return [
+      null,
+      new IOResult({
+        exitCode: 1,
+        stderr: ENC.encode('join: both files cannot be standard input\n'),
+      }),
+    ]
+  }
+  const stream = stdinStream(read, opts.stdin)
   const commonField = fl.asInt('j') ?? null
   const field1 = (commonField ?? fl.asInt('args_1') ?? 1) - 1
   const field2 = (commonField ?? fl.asInt('2') ?? 1) - 1

@@ -16,7 +16,14 @@ import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { API_VERSION, DEFAULT_API_BASE_URL } from './constants.ts'
-import { apiRequest } from '../api/client.ts'
+import { apiRequest, type RetryPolicy } from '../api/client.ts'
+
+const RATE_LIMIT_RETRY: RetryPolicy = {
+  statuses: new Set([429, 529]),
+  maxRetries: 3,
+  maxBackoff: Infinity,
+  delaySource: 'header',
+}
 
 const DEFAULT_SERVER_URL = 'https://mcp.notion.com/mcp'
 const CLIENT_NAME = 'mirage-notion'
@@ -270,6 +277,7 @@ export class HttpNotionTransport implements NotionTransport {
       params,
       ...(withBody ? { json: call.body ?? {} } : {}),
       errorOf: notionError,
+      retry: RATE_LIMIT_RETRY,
     })
     return (data ?? {}) as Record<string, unknown>
   }

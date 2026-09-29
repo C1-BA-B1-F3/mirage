@@ -123,7 +123,7 @@ export function dataSourceSegmentName(dataSource: Json): string {
   return formatSegment({ id: strOf(dataSource, 'id'), title: extractDataSourceTitle(dataSource) })
 }
 
-export interface NormalizedPage {
+interface PageFields {
   page_id: string
   title: string
   url: string
@@ -135,8 +135,15 @@ export interface NormalizedPage {
   created_by: string
   last_edited_by: string
   properties: Json
+}
+
+export interface NormalizedPage extends PageFields {
   markdown: string
   blocks: Json[]
+}
+
+export interface NormalizedRow extends PageFields {
+  path: string
 }
 
 export interface NormalizedDatabase {
@@ -167,15 +174,11 @@ export interface NormalizedDataSource {
 // Kept as Notion's own property objects for the same reason `blocks` is: the
 // schema they answer to is rendered one level up, in data_source.json's
 // `properties`.
-export function normalizePage(page: Json, blocks: readonly Json[]): NormalizedPage {
+function pageFields(page: Json): PageFields {
   const parent = asObject(page.parent)
   const parentType = strOf(parent, 'type')
   const rawParentId = parent[parentType]
   const parentId = typeof rawParentId === 'string' ? rawParentId : ''
-  const contentBlocks = (blocks as Json[]).filter((block) => {
-    const type = strOf(block, 'type')
-    return type !== 'child_page' && type !== 'child_database'
-  })
   return {
     page_id: strOf(page, 'id'),
     title: pageContentTitle(page),
@@ -188,9 +191,31 @@ export function normalizePage(page: Json, blocks: readonly Json[]): NormalizedPa
     created_by: strOf(asObject(page.created_by), 'id'),
     last_edited_by: strOf(asObject(page.last_edited_by), 'id'),
     properties: asObject(page.properties),
+  }
+}
+
+export function normalizePage(page: Json, blocks: readonly Json[]): NormalizedPage {
+  const contentBlocks = (blocks as Json[]).filter((block) => {
+    const type = strOf(block, 'type')
+    return type !== 'child_page' && type !== 'child_database'
+  })
+  return {
+    ...pageFields(page),
     markdown: blocksToMarkdown(contentBlocks),
     blocks: contentBlocks,
   }
+}
+
+/**
+ * One line of a data source's `rows.jsonl`: the row's `page.json` without
+ * the body, which a query does not carry, and with the path of that
+ * `page.json` below the data source. The rows are not listed as
+ * directories, so the line is where a row's directory name is found.
+ * Mirrors `normalize_row` in `mirage/core/notion/normalize.py`.
+ */
+export function normalizeRow(page: Json): NormalizedRow {
+  const { page_id, title, ...rest } = pageFields(page)
+  return { page_id, title, path: `${pageSegmentName(page)}/page.json`, ...rest }
 }
 
 export function normalizeDatabase(database: Json): NormalizedDatabase {

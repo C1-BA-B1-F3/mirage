@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { quoteText } from '../../../../commands/quote.ts'
+import { usageHint } from '../../../../commands/spec/usage.ts'
 import { isProgramInvocation } from '../../../../context/session_context.ts'
 import { yieldBytes } from '../../../../io/stream.ts'
 import { IOResult } from '../../../../io/types.ts'
@@ -114,7 +116,8 @@ async function assignPrintfTarget(
  * still reports the format's own errors first, then fails with status 1
  * and leaves the variable untouched. `-v` is the builtin's alone: run as a
  * program (`find -exec printf`, which execvp answers with coreutils
- * printf) the word is the format.
+ * printf) the word is the format, and a format that takes no argument
+ * warns about the ones it drops.
  */
 export async function handlePrintf(
   args: string[],
@@ -184,6 +187,17 @@ export async function handlePrintf(
         new ExecutionNode({ command: 'printf', exitCode: 2, stderr: err }),
       ]
     }
+  } else if (first === '--') {
+    // coreutils printf takes one leading `--` as the end of its options.
+    args = args.slice(1)
+  }
+  if (args.length === 0 && isProgramInvocation(session)) {
+    const err = new TextEncoder().encode(`printf: missing operand\n${usageHint('printf')}\n`)
+    return [
+      null,
+      new IOResult({ exitCode: 1, stderr: err }),
+      new ExecutionNode({ command: 'printf', exitCode: 1, stderr: err }),
+    ]
   }
   if (args.length === 0) {
     if (target !== null) {
@@ -196,8 +210,9 @@ export async function handlePrintf(
     }
     return [new Uint8Array(), new IOResult(), new ExecutionNode({ command: 'printf', exitCode: 0 })]
   }
-  const [output, errors] = runPrintf(args[0] ?? '', args.slice(1))
-  const errBytes = errors.length > 0 ? new TextEncoder().encode(errors.join('')) : null
+  const [output, messages, failed, excess] = runPrintf(args[0] ?? '', args.slice(1))
+  const errBytes = messages.length > 0 ? new TextEncoder().encode(messages.join('')) : null
+  const exitCode = failed ? 1 : 0
   if (target !== null && parsed !== null) {
     const base = parsed[1] ?? ''
     let status: 'ok' | 'denied' | 'readonly' | 'subscript'
@@ -207,7 +222,7 @@ export async function handlePrintf(
       if (err instanceof ArithError) {
         // The target carries `-i` and the formatted text does not
         // evaluate; bash voices the evaluator after the builtin name.
-        const bad = new TextEncoder().encode(errors.join('') + `bash: printf: ${err.message}\n`)
+        const bad = new TextEncoder().encode(messages.join('') + `bash: printf: ${err.message}\n`)
         return [
           null,
           new IOResult({ exitCode: 1, stderr: bad }),
@@ -215,7 +230,7 @@ export async function handlePrintf(
         ]
       }
       if (!(err instanceof PolicyDenied)) throw err
-      const denied = new TextEncoder().encode(errors.join('') + `bash: ${err.message}\n`)
+      const denied = new TextEncoder().encode(messages.join('') + `bash: ${err.message}\n`)
       return [
         null,
         new IOResult({ exitCode: 1, stderr: denied }),
@@ -229,14 +244,13 @@ export async function handlePrintf(
           : status === 'denied'
             ? `bash: ${base}: permission denied\n`
             : `bash: ${target}: bad array subscript\n`
-      const err = new TextEncoder().encode(errors.join('') + detail)
+      const err = new TextEncoder().encode(messages.join('') + detail)
       return [
         null,
         new IOResult({ exitCode: 1, stderr: err }),
         new ExecutionNode({ command: 'printf', exitCode: 1, stderr: err }),
       ]
     }
-    const exitCode = errors.length > 0 ? 1 : 0
     if (errBytes !== null) {
       return [
         null,
@@ -247,11 +261,20 @@ export async function handlePrintf(
     return [null, new IOResult({ exitCode }), new ExecutionNode({ command: 'printf', exitCode })]
   }
   const out = encodeText(output)
-  if (errBytes !== null) {
+  // coreutils printf names the first argument a format that takes none
+  // left over, where bash's builtin drops them silently; a warning, so the
+  // status stays the format's own.
+  const warning =
+    excess !== null && isProgramInvocation(session)
+      ? `printf: warning: ignoring excess arguments, starting with '${quoteText(excess)}'\n`
+      : ''
+  const text = messages.join('') + warning
+  if (text !== '') {
+    const stderr = new TextEncoder().encode(text)
     return [
       out,
-      new IOResult({ exitCode: 1, stderr: errBytes }),
-      new ExecutionNode({ command: 'printf', exitCode: 1, stderr: errBytes }),
+      new IOResult({ exitCode, stderr }),
+      new ExecutionNode({ command: 'printf', exitCode, stderr }),
     ]
   }
   return [out, new IOResult(), new ExecutionNode({ command: 'printf', exitCode: 0 })]

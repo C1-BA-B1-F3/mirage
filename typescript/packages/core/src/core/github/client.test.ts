@@ -13,7 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GitHubApiError, HttpGitHubTransport } from './client.ts'
+import {
+  fetchDirTree,
+  fetchDirTreePage,
+  fetchTree,
+  GitHubApiError,
+  type GitHubTransport,
+  HttpGitHubTransport,
+  searchCode,
+} from './client.ts'
 
 interface Seen {
   url: string
@@ -24,7 +32,10 @@ interface Seen {
 }
 
 const SEEN: Seen[] = []
-let REPLY: { status: number; body: string } = { status: 200, body: '{"ok":true}' }
+let REPLY: { status: number; body: string; reason?: string } = {
+  status: 200,
+  body: '{"ok":true}',
+}
 const REAL_FETCH = globalThis.fetch
 
 function transport(): HttpGitHubTransport {
@@ -46,6 +57,7 @@ beforeEach(() => {
     return Promise.resolve(
       new Response(REPLY.body === '' ? null : REPLY.body, {
         status: REPLY.status,
+        statusText: REPLY.reason ?? '',
         headers: { 'content-type': 'application/json', 'x-page': 'next' },
       }),
     )
@@ -161,5 +173,210 @@ describe('HttpGitHubTransport', () => {
       status: 404,
       message: 'Not Found',
     })
+  })
+})
+
+it.each([
+  'repo:theonion/fartscroll.js+created:2014-09-22',
+  'user:theonion',
+  'org%3Atheonion',
+  'repo:owner/repo+is:issue+label:bug',
+])('preserves search qualifiers in an endpoint query: %s', async (query) => {
+  await transport().get(`/search/issues?q=${query}`)
+  expect(new URL(SEEN[0]?.url ?? '').searchParams.get('q')).toBe(
+    new URLSearchParams(`q=${query}`).get('q'),
+  )
+})
+
+// Twin of the search_code tests in python/tests/core/github/test_search.py.
+describe('searchCode', () => {
+  type Item = Record<string, unknown>
+
+  function stub(
+    body: Record<string, unknown>,
+    seen: Record<string, string>[] = [],
+  ): GitHubTransport {
+    return {
+      get(_path: string, params?: Record<string, string>): Promise<unknown> {
+        seen.push(params ?? {})
+        return Promise.resolve(body)
+      },
+      request(): Promise<unknown> {
+        throw new Error('unexpected request')
+      },
+    }
+  }
+
+  function item(path: string, fullName: unknown): Item {
+    return { path, sha: path, repository: { full_name: fullName } }
+  }
+
+  function body(items: Item[], total?: unknown): Record<string, unknown> {
+    return { total_count: total ?? items.length, incomplete_results: false, items }
+  }
+
+  it('asks for the largest page', async () => {
+    // The default page is 30 rows, and a first page read as the whole
+    // answer silently narrows grep to 30 files.
+    const seen: Record<string, string>[] = []
+    await searchCode(stub(body([]), seen), 'acme', 'proj', 'needle')
+    expect(seen[0]?.per_page).toBe('100')
+  })
+
+  it('keeps only the mounted repository', async () => {
+    // The pattern is sent verbatim, so a qualifier inside it can rescope the
+    // search; a fork shares the repository name and a prefix is not a match.
+    const out = await searchCode(
+      stub(
+        body([
+          item('src/a.py', 'acme/proj'),
+          item('src/a.py', 'other/x'),
+          item('src/a.py', 'other/proj'),
+          item('src/a.py', 'acme/other'),
+          item('src/a.py', 'acme/proj-fork'),
+        ]),
+      ),
+      'acme',
+      'proj',
+      'needle',
+    )
+    expect(out.results).toEqual([{ path: 'src/a.py', sha: 'src/a.py' }])
+  })
+
+  it.each([
+    ['Acme/Proj', 'acme', 'proj'],
+    ['acme/proj', 'Acme', 'Proj'],
+  ])('compares %s with %s/%s case-insensitively', async (fullName, owner, repo) => {
+    const out = await searchCode(stub(body([item('src/a.py', fullName)])), owner, repo, 'needle')
+    expect(out.results.map((r) => r.path)).toEqual(['src/a.py'])
+  })
+
+  it.each<[string, Item]>([
+    ['no repository', { path: 'src/a.py', sha: 'x' }],
+    ['a null repository', { path: 'src/a.py', sha: 'x', repository: null }],
+    ['an empty repository', { path: 'src/a.py', sha: 'x', repository: {} }],
+    ['a null full_name', item('src/a.py', null)],
+    ['a numeric full_name', item('src/a.py', 123)],
+  ])('drops an item with %s, without throwing', async (_label, entry) => {
+    // Nothing vouches for such an item, and dropping it must not throw: a
+    // throw inside narrowPaths voids the whole narrowing.
+    const out = await searchCode(stub(body([entry])), 'acme', 'proj', 'needle')
+    expect(out.results).toEqual([])
+  })
+
+  it.each<[string, Record<string, unknown>, boolean]>([
+    ['a count equal to the rows', { total_count: 1, incomplete_results: false }, false],
+    ['a count below the rows', { total_count: 0, incomplete_results: false }, false],
+    ['a count above the rows', { total_count: 2, incomplete_results: false }, true],
+    ['incomplete results', { total_count: 1, incomplete_results: true }, true],
+    ['no count', { incomplete_results: false }, true],
+    ['a string count', { total_count: '1', incomplete_results: false }, true],
+    ['a boolean count', { total_count: true, incomplete_results: false }, true],
+    ['a fractional count', { total_count: 0.5, incomplete_results: false }, true],
+    ['no incomplete flag', { total_count: 1 }, true],
+  ])('reports %s as truncated=%s', async (_label, head, truncated) => {
+    // Only an answer that says it is complete, with a count no larger than
+    // the rows it carries, is the whole set; anything else is truncated.
+    const out = await searchCode(
+      stub({ ...head, items: [item('src/a.py', 'acme/proj')] }),
+      'acme',
+      'proj',
+      'needle',
+    )
+    expect(out.truncated).toBe(truncated)
+  })
+
+  it('reads null items as no rows', async () => {
+    const out = await searchCode(
+      stub({ total_count: 0, incomplete_results: false, items: null }),
+      'acme',
+      'proj',
+      'needle',
+    )
+    expect(out).toEqual({ results: [], truncated: false })
+  })
+
+  it('judges completeness before filtering', async () => {
+    // total_count counts every row the search matched, foreign ones too.
+    const out = await searchCode(
+      stub(body([item('src/a.py', 'acme/proj'), item('src/b.py', 'other/x')])),
+      'acme',
+      'proj',
+      'needle',
+    )
+    expect(out.results.map((r) => r.path)).toEqual(['src/a.py'])
+    expect(out.truncated).toBe(false)
+  })
+})
+
+describe('tree reference encoding', () => {
+  it.each(['feature/topic', 'release#1', 'literal%2Fref', 'feature/topic:docs/nested'])(
+    'preserves %s in recursive and directory requests',
+    async (ref) => {
+      REPLY = { status: 200, body: '{"tree":[],"truncated":false}' }
+      const client = transport()
+      await fetchTree(client, 'o', 'r', ref)
+      await fetchDirTreePage(client, 'o', 'r', ref)
+      await fetchDirTree(client, 'o', 'r', ref)
+      expect(SEEN.map(({ url }) => url)).toEqual([
+        `https://api.example.test/repos/o/r/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+        `https://api.example.test/repos/o/r/git/trees/${encodeURIComponent(ref)}`,
+        `https://api.example.test/repos/o/r/git/trees/${encodeURIComponent(ref)}`,
+      ])
+    },
+  )
+})
+
+describe('fetchDirTreePage', () => {
+  it('carries truncation and drops gitlinks', async () => {
+    const transport = {
+      get: () =>
+        Promise.resolve({
+          truncated: true,
+          tree: [
+            { path: 'a.py', type: 'blob', sha: 'a', size: 1 },
+            { path: 'vendor', type: 'commit', sha: 'c' },
+          ],
+        }),
+    } as unknown as GitHubTransport
+    const page = await fetchDirTreePage(transport, 'o', 'r', 'sha')
+    expect(page.truncated).toBe(true)
+    // A gitlink has no blob and no size; the page drops it like the tree.
+    expect(page.tree.map((item) => item.path)).toEqual(['a.py'])
+  })
+
+  it('refuses, through fetchDirTree, a directory GitHub cut short', async () => {
+    // The fallback walk caches what it gets as the whole directory; a name
+    // past GitHub's cut would read as absent, and a fresh probe as gone.
+    const reply = (truncated: boolean) =>
+      ({
+        get: () =>
+          Promise.resolve({ truncated, tree: [{ path: 'a.py', type: 'blob', sha: 'a', size: 1 }] }),
+      }) as unknown as GitHubTransport
+    expect(await fetchDirTree(reply(false), 'o', 'r', 'sha')).toHaveLength(1)
+    const err = await fetchDirTree(reply(true), 'o', 'r', 'sha').catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(GitHubApiError)
+    expect((err as GitHubApiError).message).toContain('truncated the tree listing')
+  })
+})
+
+it.each([
+  [
+    ' {"message":"Validation Failed", "errors":[{"message":"bad query"}]}\n',
+    { message: 'Validation Failed', errors: [{ message: 'bad query' }] },
+    'Validation Failed',
+  ],
+  ['upstream unavailable\n', 'upstream unavailable\n', 'Unprocessable Entity'],
+  ['', null, 'Unprocessable Entity'],
+])('preserves an error response body and request URL: %s', async (body, data, message) => {
+  REPLY = { status: 422, body, reason: 'Unprocessable Entity' }
+  await expect(
+    transport().request('GET', '/search/issues', undefined, { q: 'bad query' }),
+  ).rejects.toMatchObject({
+    status: 422,
+    message,
+    body,
+    data,
+    url: 'https://api.example.test/search/issues?q=bad+query',
   })
 })

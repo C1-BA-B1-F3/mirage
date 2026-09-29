@@ -195,3 +195,17 @@ def test_resolved_config_includes_port(monkeypatch, tmp_path):
     assert resolved["port"] == ("8765", "default")
     monkeypatch.setenv("MIRAGE_DAEMON_PORT", "9100")
     assert resolved_config()["port"] == ("9100", "env MIRAGE_DAEMON_PORT")
+
+
+def test_resolved_config_includes_the_ssh_door(monkeypatch, tmp_path):
+    monkeypatch.setenv(ENV_HOME, str(tmp_path))
+    for name in ("MIRAGE_SSH_PORT", "MIRAGE_SSH_HOST",
+                 "MIRAGE_SSH_HOST_KEY_FILE", "MIRAGE_SSH_AUTHORIZED_KEYS"):
+        monkeypatch.delenv(name, raising=False)
+    resolved = resolved_config()
+    assert resolved["ssh_port"] == ("", "default")
+    assert resolved["ssh_host"] == ("127.0.0.1", "default")
+    assert resolved["ssh_authorized_keys"] == (str(
+        tmp_path / "ssh" / "authorized_keys"), "default")
+    monkeypatch.setenv("MIRAGE_SSH_PORT", "2222")
+    assert resolved_config()["ssh_port"] == ("2222", "env MIRAGE_SSH_PORT")

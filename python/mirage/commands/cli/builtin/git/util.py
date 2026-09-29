@@ -12,9 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import re
+from collections.abc import Sequence
+
 from mirage.commands.cli.builtin.git.constants import HEAD
-from mirage.commands.cli.builtin.git.errors import (GitError,
-                                                    UnrecognizedArgumentError)
+from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
+    BadConfigValueError, GitError, UnrecognizedArgumentError)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.io.stream import yield_bytes
@@ -25,6 +28,14 @@ ROOT = "/"
 STDOUT = "stdout"
 # The end-of-options marker, which the parser consumes.
 MARKER = "--"
+TRUE_WORDS = (b"true", b"yes", b"on")
+FALSE_WORDS = (b"false", b"no", b"off", b"")
+# git_parse_signed: strtoimax in base 0 after C-locale space, then at most
+# one unit, and the product has to fit an int.
+INTEGER = re.compile(rb"[ \t\n\v\f\r]*([-+]?)"
+                     rb"(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)([kKmMgG]?)")
+UNIT_SHIFTS = {b"": 0, b"k": 10, b"m": 20, b"g": 30}
+INT_BITS = 31
 
 
 def links_of(doors: CLIDoors) -> LinkView | None:
@@ -215,3 +226,62 @@ def fatal(exc: GitError) -> tuple[ByteSource | None, IOResult]:
         return yield_bytes(data), IOResult(exit_code=exc.code)
     told = yield_bytes(exc.report.encode()) if exc.report else None
     return told, IOResult(exit_code=exc.code, stderr=data)
+
+
+def git_bool(values: Sequence[bytes], key: str, default: bool) -> bool:
+    """A config boolean read the way git's config callbacks read one.
+
+    Every occurrence is parsed and the last one wins, so a value git
+    cannot read fails even when a later line would have read fine. A
+    value is ``true``/``yes``/``on`` or ``false``/``no``/``off`` in any
+    case, empty for false, or an integer for whether it is nonzero
+    (pinned against git 2.54).
+
+    Args:
+        values (Sequence[bytes]): every value the variable takes, in file
+            order; a bare name arrives as ``b"true"``.
+        key (str): the variable, section and name lowercased.
+        default (bool): the answer when the variable is unset.
+
+    Raises:
+        BadConfigValueError: a value git cannot read as a boolean.
+    """
+    answer = default
+    for value in values:
+        word = value.lower()
+        if word in TRUE_WORDS:
+            answer = True
+        elif word in FALSE_WORDS:
+            answer = False
+        else:
+            number = _integer(value)
+            if number is None:
+                raise BadConfigValueError(value.decode(errors="replace"), key)
+            answer = number != 0
+    return answer
+
+
+def _integer(value: bytes) -> int | None:
+    """git_parse_int: the integer a config value spells, None for none.
+
+    Hex after ``0x`` and octal after a leading zero, then an optional
+    ``k``, ``m`` or ``g``; a product outside an int is no integer.
+
+    Args:
+        value (bytes): the value as the config file spells it.
+    """
+    match = INTEGER.fullmatch(value)
+    if match is None:
+        return None
+    sign, digits, unit = match.groups()
+    if digits[1:2] in (b"x", b"X"):
+        magnitude = int(digits[2:], 16)
+    else:
+        magnitude = int(digits, 8 if digits.startswith(b"0") else 10)
+    number = -magnitude if sign == b"-" else magnitude
+    shift = UNIT_SHIFTS[unit.lower()]
+    lowest = -(1 << INT_BITS) >> shift
+    highest = ((1 << INT_BITS) - 1) >> shift
+    if not lowest <= number <= highest:
+        return None
+    return number << shift

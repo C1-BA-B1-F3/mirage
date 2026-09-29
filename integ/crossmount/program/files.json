@@ -1,0 +1,620 @@
+{
+  "cases": [
+    {
+      "id": "program_file_grep_cross",
+      "seq": 1199000,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; grep -f /data2/opt1199/pattern /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_same",
+      "seq": 1199001,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; cp /data2/opt1199/pattern /data/opt1199/program; grep -f /data/opt1199/program /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_procsub",
+      "seq": 1199002,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; grep -f <(echo 'b') /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_dash",
+      "seq": 1199003,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo 'b' | grep -f - /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_dev_stdin",
+      "seq": 1199004,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo 'b' | grep -f /dev/stdin /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_relative",
+      "seq": 1199005,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; cd /data2/opt1199; grep -f pattern /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_sed_cross",
+      "seq": 1199006,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; sed -f /data2/opt1199/script /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_sed_same",
+      "seq": 1199007,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; cp /data2/opt1199/script /data/opt1199/program; sed -f /data/opt1199/program /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_sed_procsub",
+      "seq": 1199008,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; sed -f <(echo 's/a/x/') /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_sed_dash",
+      "seq": 1199009,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo 's/a/x/' | sed -f - /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_sed_dev_stdin",
+      "seq": 1199010,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo 's/a/x/' | sed -f /dev/stdin /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_sed_relative",
+      "seq": 1199011,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; cd /data2/opt1199; sed -f script /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_awk_cross",
+      "seq": 1199012,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; awk -f /data2/opt1199/awk /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "L:a\nL:b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_awk_same",
+      "seq": 1199013,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; cp /data2/opt1199/awk /data/opt1199/program; awk -f /data/opt1199/program /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "L:a\nL:b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_awk_procsub",
+      "seq": 1199014,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; awk -f <(echo '{print \"L:\" $0}') /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "L:a\nL:b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_awk_dash",
+      "seq": 1199015,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo '{print \"L:\" $0}' | awk -f - /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "L:a\nL:b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_awk_dev_stdin",
+      "seq": 1199016,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo '{print \"L:\" $0}' | awk -f /dev/stdin /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "L:a\nL:b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_awk_relative",
+      "seq": 1199017,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; cd /data2/opt1199; awk -f awk /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "L:a\nL:b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_jq_cross",
+      "seq": 1199018,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; jq -f /data2/opt1199/jq /data/opt1199/input.json; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_jq_same",
+      "seq": 1199019,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; cp /data2/opt1199/jq /data/opt1199/program; jq -f /data/opt1199/program /data/opt1199/input.json; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_jq_procsub",
+      "seq": 1199020,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; jq -f <(echo '.a') /data/opt1199/input.json; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_long",
+      "seq": 1199021,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; grep --file=/data2/opt1199/pattern /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_long_dash",
+      "seq": 1199022,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo b | grep --file=- /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_attached_dash",
+      "seq": 1199023,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo b | grep -f- /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_same_operand",
+      "seq": 1199024,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; grep -f /data2/opt1199/pattern /data2/opt1199/pattern; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_empty",
+      "seq": 1199025,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; printf '' > /data2/opt1199/empty; grep -f /data2/opt1199/empty /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_repeat",
+      "seq": 1199026,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo a > /data/opt1199/pattern; grep -f /data/opt1199/pattern --file=/data2/opt1199/pattern /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_stdin_once",
+      "seq": 1199027,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; printf \"b\\n\" | grep -f - -; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_sed_stdin_once",
+      "seq": 1199028,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo p | sed -f -; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_awk_stdin_begin",
+      "seq": 1199029,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo 'BEGIN {print 7}' | awk -f -; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "7\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_multi_input",
+      "seq": 1199030,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo b | grep -h -f - /data/opt1199/input /data2/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_sed_multi_input",
+      "seq": 1199031,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo s/b/B/ | sed -f - /data/opt1199/input /data2/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nB\nB\nc\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_awk_multi_input",
+      "seq": 1199032,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo '{print NR \":\" $0}' | awk -f - /data/opt1199/input /data2/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "1:a\n2:b\n3:b\n4:c\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_sed_inplace",
+      "seq": 1199033,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; echo s/a/x/ | sed -i -f - /data/opt1199/input; cat /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nb\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_grep_missing",
+      "seq": 1199034,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; grep -f /data2/opt1199/missing /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: /data2/opt1199/missing: No such file or directory\n"
+      }
+    },
+    {
+      "id": "program_file_sed_missing",
+      "seq": 1199035,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1199 /data2/opt1199; printf \"a\\nb\\n\" > /data/opt1199/input; printf \"b\\nc\\n\" > /data2/opt1199/input; echo '{\"a\":1}' > /data/opt1199/input.json; echo b > /data2/opt1199/pattern; echo s/a/x/ > /data2/opt1199/script; echo '{print \"L:\" $0}' > /data2/opt1199/awk; echo .a > /data2/opt1199/jq; sed -f /data2/opt1199/missing /data/opt1199/input; rc=$?; rm -rf /data/opt1199 /data2/opt1199; exit $rc)",
+      "expect": {
+        "exit": 4,
+        "stdout": "",
+        "stderr": "sed: couldn't open file /data2/opt1199/missing: No such file or directory\n"
+      }
+    },
+    {
+      "id": "program_file_zgrep_cross",
+      "seq": 1311018,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; zgrep -f /data2/opt1311/pattern /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "world\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_zgrep_missing",
+      "seq": 1311019,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; zgrep -f /data2/opt1311/missing /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "cat: /data2/opt1311/missing: No such file or directory\n"
+      }
+    },
+    {
+      "id": "program_file_zgrep_dir",
+      "seq": 1311020,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; zgrep -f /data2/opt1311 /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "cat: /data2/opt1311: Is a directory\n"
+      }
+    },
+    {
+      "id": "program_file_grep_dir",
+      "seq": 1311021,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; grep -f /data2/opt1311 /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: /data2/opt1311: Is a directory\n"
+      }
+    },
+    {
+      "id": "program_file_rg_dir",
+      "seq": 1311022,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; rg -f /data2/opt1311 /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "rg: /data2/opt1311:Is a directory (os error 21)\n"
+      }
+    },
+    {
+      "id": "program_file_sed_dir",
+      "seq": 1311023,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; sed -f /data2/opt1311 /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\nworld\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_awk_dir",
+      "seq": 1311024,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; awk -f /data2/opt1311 /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "awk: read error (Is a directory)\n"
+      }
+    },
+    {
+      "id": "program_file_jq_dir",
+      "seq": 1311025,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; jq --from-file /data2/opt1311 /data/opt1311/input.json; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Could not open /data2/opt1311: It's a directory\n"
+      }
+    }
+  ]
+}

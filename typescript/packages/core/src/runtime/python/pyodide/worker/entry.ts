@@ -12,13 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { WorkspaceBinding } from '../../../binding.ts'
+import { captureBinding, WorkspaceBinding } from '../../../binding.ts'
 import { PathSpec } from '../../../../types.ts'
 import { PrefixResolver } from '../../../resolver.ts'
 import type { BridgeDispatchFn } from '../../../types.ts'
 import type { VFSEntry, VFSStat } from '../../../vfs.ts'
 import { PyodideRuntime } from '../runtime.ts'
 import type { FlushFailure, SyncVFS } from '../vfs/types.ts'
+import { failureText } from './failure.ts'
 import { requestSync } from './transport.ts'
 import type { ExecuteRequest, VfsRequest, WorkerMessage } from './types.ts'
 
@@ -39,6 +40,7 @@ console.warn = (...messages: unknown[]) => {
   post({ kind: 'notice', message: messages.map(String).join(' ') })
 }
 const sync: SyncVFS = {
+  process: (payload) => call({ op: 'process', path: '', payload }) as string,
   read: (path) => call({ op: 'read', path }) as Uint8Array,
   stat: (path) => call({ op: 'stat', path }) as VFSStat,
   readdir: (path) => call({ op: 'readdir', path }) as VFSEntry[],
@@ -54,14 +56,20 @@ const dispatch: BridgeDispatchFn = (...args) =>
   Promise.resolve(call({ op: 'dispatch', path: args[1], args }))
 let runtime: PyodideRuntime | null = null
 let prefixes: string[] = []
+let cwd = PathSpec.fromStrPath('/')
 async function execute(request: ExecuteRequest): Promise<void> {
   try {
     prefixes = request.prefixes
+    cwd = PathSpec.fromStrPath(request.cwd ?? request.args?.cwd ?? '/')
     if (runtime === null) {
       interrupt =
         request.interruptBuffer === undefined ? undefined : new Int32Array(request.interruptBuffer)
       runtime = new PyodideRuntime({ config: request.config }, sync, request.interruptBuffer)
-      runtime.bind(new WorkspaceBinding(dispatch, new PrefixResolver(() => prefixes)))
+      runtime.bind(
+        new WorkspaceBinding(dispatch, new PrefixResolver(() => prefixes), (binding) =>
+          captureBinding(binding, { cwd }),
+        ),
+      )
     }
     const value =
       request.method === 'run' && request.args !== undefined
@@ -79,7 +87,7 @@ async function execute(request: ExecuteRequest): Promise<void> {
   } catch (error) {
     post({
       kind: 'error',
-      message: error instanceof Error ? error.message : String(error),
+      message: failureText(error),
       name: error instanceof Error ? error.name : 'Error',
       syntax: (error as { syntax?: boolean } | null)?.syntax ?? false,
       ...((error as { seconds?: number } | null)?.seconds !== undefined

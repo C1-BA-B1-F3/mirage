@@ -1,4 +1,5 @@
 import asyncio
+import errno
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from functools import partial
@@ -8,13 +9,17 @@ import pytest
 from mirage.commands.builtin.generic.ls import (LS_FAILURE, LS_MINOR_PROBLEM,
                                                 LS_OK, LsWarning,
                                                 exit_status_for, filevercmp,
-                                                format_simple, ls, parse_flags,
-                                                sort_stats, walk)
+                                                format_simple, indicator_flag,
+                                                ls, parse_flags, sort_stats,
+                                                type_indicator, walk)
 from mirage.commands.builtin.utils.formatting import BlockSize, LsColumns
-from mirage.commands.errors import UsageError
+from mirage.commands.errors import CommandTimeoutError, UsageError
+from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
+from mirage.commands.spec.flag_view import FlagView
 from mirage.ops.types import LinkView, MountView
 from mirage.types import (LINK_TARGET_KEY, ContentType, FileStat, FileType,
-                          LsSortBy, LsTimeKind, PathSpec)
+                          LsIndicator, LsSortBy, LsTimeKind, PathSpec)
+from mirage.utils.stat_view import DIR_SIZE
 
 
 def _spec(path: str) -> PathSpec:
@@ -90,7 +95,8 @@ def test_format_simple_default_lists_names():
 
 
 def test_format_simple_classify_marks_dirs_with_slash():
-    out = format_simple([_file("a.txt"), _dir("sub")], classify=True)
+    out = format_simple([_file("a.txt"), _dir("sub")],
+                        indicator=LsIndicator.CLASSIFY)
     assert out == ["a.txt", "sub/"]
 
 
@@ -167,6 +173,22 @@ async def test_walk_sort_by_size():
                      reverse=True)
     entries = res.entries
     assert [e.name for e in entries] == ["small.txt", "big.txt"]
+
+
+@pytest.mark.asyncio
+async def test_walk_sort_by_size_counts_a_directory_as_dir_size():
+    tree = {
+        "/dir": _dir("dir"),
+        "/dir/big.txt": _file("big.txt", DIR_SIZE + 1),
+        "/dir/small.txt": _file("small.txt", 3),
+        "/dir/sub": _dir("sub"),
+    }
+    readdir, stat = _make_fs_backend(tree)
+    res = await walk(_spec("/dir"),
+                     readdir=readdir,
+                     stat=stat,
+                     sort_by=LsSortBy.SIZE)
+    assert [e.name for e in res.entries] == ["big.txt", "sub", "small.txt"]
 
 
 @pytest.mark.asyncio
@@ -263,7 +285,7 @@ async def test_ls_classify_appends_slash_for_dirs():
     output, _ = await ls([_spec("/dir")],
                          readdir=readdir,
                          stat=stat,
-                         classify=True)
+                         indicator=LsIndicator.CLASSIFY)
     decoded = output.decode().splitlines()
     assert "sub/" in decoded
     assert "a.txt" in decoded
@@ -308,7 +330,7 @@ async def test_ls_missing_operand_under_list_dir_exits_2():
 @pytest.mark.asyncio
 async def test_ls_unstattable_entry_is_a_minor_problem():
     """An entry below the operand is not a command-line arg, so GNU keeps
-    listing its siblings and exits 1.
+    listing its siblings, keeps the entry's own row of ``?``, and exits 1.
     """
     tree = {
         "/dir": _dir("dir"),
@@ -318,10 +340,134 @@ async def test_ls_unstattable_entry_is_a_minor_problem():
     readdir, stat = _make_fs_backend(tree)
 
     denying_stat = partial(_stat_denying, stat=stat, blocked="/dir/locked.txt")
-    output, io = await ls([_spec("/dir")], readdir=readdir, stat=denying_stat)
+    output, io = await ls([_spec("/dir")],
+                          readdir=readdir,
+                          stat=denying_stat,
+                          long=True)
     assert io.exit_code == LS_MINOR_PROBLEM
-    assert output == b"a.txt\n"
+    assert output.decode().endswith("? locked.txt\n")
     assert b"locked.txt" in (io.stderr or b"")
+
+
+def _failing_entry(exc: Exception):
+    """A readdir/stat pair over /dir whose b.txt fails its stat.
+
+    Args:
+        exc (Exception): what b.txt's stat raises.
+    """
+    tree = {
+        "/dir": _dir("dir"),
+        "/dir/a.txt": _file("a.txt", 1, "2026-01-01T00:00:00Z"),
+        "/dir/b.txt": _file("b.txt", 1, "2026-01-01T00:00:00Z"),
+    }
+    readdir, stat = _make_fs_backend(tree)
+
+    async def failing_stat(p: PathSpec, index=None) -> FileStat:
+        if p.virtual == "/dir/b.txt":
+            raise exc
+        return await stat(p, index)
+
+    return readdir, failing_stat
+
+
+# GNU (coreutils 9.7, EIO injected on one entry with strace) lists every
+# name, and only a listing that stats the entry (-l, -F, -t, -i ...)
+# reports it, whatever the errno, and exits 1.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("exc", [
+    FileNotFoundError("/dir/b.txt"),
+    RuntimeError("upstream 502 Bad Gateway")
+])
+async def test_ls_plain_lists_an_unstattable_entry_without_a_word(exc):
+    readdir, stat = _failing_entry(exc)
+    output, io = await ls([_spec("/dir")], readdir=readdir, stat=stat)
+    assert io.exit_code == LS_OK
+    assert output == b"a.txt\nb.txt\n"
+    assert not io.stderr
+
+
+@pytest.mark.asyncio
+async def test_ls_long_keeps_a_question_row_for_an_unstattable_entry():
+    readdir, stat = _failing_entry(FileNotFoundError("/dir/b.txt"))
+    output, io = await ls([_spec("/dir")],
+                          readdir=readdir,
+                          stat=stat,
+                          long=True)
+    assert io.exit_code == LS_MINOR_PROBLEM
+    assert output.decode().splitlines()[2] == (
+        "?????????? ? ? ? ?            ? b.txt")
+    assert io.stderr == (
+        b"ls: cannot access '/dir/b.txt': No such file or directory\n")
+
+
+@pytest.mark.asyncio
+async def test_ls_reports_an_unstamped_backend_error_in_its_own_words():
+    readdir, stat = _failing_entry(
+        RuntimeError("S3 GET b.txt failed: 403 Forbidden"))
+    output, io = await ls([_spec("/dir")],
+                          readdir=readdir,
+                          stat=stat,
+                          indicator=LsIndicator.CLASSIFY)
+    assert io.exit_code == LS_MINOR_PROBLEM
+    assert output == b"a.txt\nb.txt\n"
+    assert io.stderr == (b"ls: cannot access '/dir/b.txt': "
+                         b"S3 GET b.txt failed: 403 Forbidden\n")
+
+
+@pytest.mark.asyncio
+async def test_ls_words_an_eio_the_way_gnu_does():
+    readdir, stat = _failing_entry(OSError(errno.EIO, "socket hang up"))
+    _, io = await ls([_spec("/dir")], readdir=readdir, stat=stat, long=True)
+    assert io.stderr == (
+        b"ls: cannot access '/dir/b.txt': Input/output error\n")
+
+
+# GNU (coreutils 9.7, both entries' stat denied) zeroes a failed stat, so
+# -S sorts the rows as size 0 even where readdir marked a directory.
+@pytest.mark.asyncio
+async def test_ls_size_sort_counts_an_unstattable_directory_as_zero():
+    tree = {
+        "/d": _dir("d"),
+        "/d/afile": _file("afile", 5000, "2026-01-01T00:00:00Z"),
+        "/d/zdir": _dir("zdir"),
+    }
+    readdir, stat = _make_fs_backend(tree)
+
+    async def marking_readdir(p: PathSpec, index=None) -> list[str]:
+        return [
+            f"{e}/" if tree[e].type == FileType.DIRECTORY else e
+            for e in await readdir(p, index)
+        ]
+
+    async def denying_stat(p: PathSpec, index=None) -> FileStat:
+        if p.virtual != "/d":
+            raise PermissionError(errno.EACCES, "Permission denied")
+        return await stat(p, index)
+
+    output, io = await ls([_spec("/d")],
+                          readdir=marking_readdir,
+                          stat=denying_stat,
+                          sort_by=LsSortBy.SIZE)
+    assert io.exit_code == LS_MINOR_PROBLEM
+    assert output == b"afile\nzdir\n"
+
+
+@pytest.mark.asyncio
+async def test_ls_still_ends_on_a_timeout():
+    readdir, stat = _failing_entry(CommandTimeoutError("stat", 5))
+    with pytest.raises(CommandTimeoutError):
+        await ls([_spec("/dir")], readdir=readdir, stat=stat)
+
+
+@pytest.mark.asyncio
+async def test_ls_still_propagates_the_operands_own_failure():
+    _, stat = _failing_entry(RuntimeError("socket hang up"))
+
+    async def readdir(p: PathSpec, _index=None) -> list[str]:
+        raise RuntimeError("socket hang up")
+
+    with pytest.raises(RuntimeError, match="socket hang up"):
+        await ls([_spec("/dir")], readdir=readdir, stat=stat)
 
 
 @pytest.mark.asyncio
@@ -671,12 +817,12 @@ async def test_ls_long_widths_are_per_directory_block():
                          long=True)
     lines = output.decode().splitlines()
     assert lines[0] == "/a:"
-    assert " 1000 " in lines[1]
-    assert lines[2] == ""
-    assert lines[3] == "/b:"
+    assert " 1000 " in lines[2]
+    assert lines[3] == ""
+    assert lines[4] == "/b:"
     # GNU sizes its columns per block, so /b is not padded to /a's width.
-    assert " 1 " in lines[4]
-    assert "    1 " not in lines[4]
+    assert " 1 " in lines[6]
+    assert "    1 " not in lines[6]
 
 
 @pytest.mark.asyncio
@@ -887,7 +1033,7 @@ async def test_a_child_mount_serving_one_file_is_not_a_directory_row():
                        readdir=readdir,
                        stat=stat,
                        recursive=True,
-                       classify=True,
+                       indicator=LsIndicator.CLASSIFY,
                        child_mounts=lambda d: ["hist"] if d == "/base" else [],
                        mounts=_mount_view("/base/hist"),
                        stat_path=stat_path)
@@ -904,7 +1050,7 @@ async def test_a_child_mount_row_falls_back_to_directory_with_no_dispatcher():
     out, io = await ls([PathSpec.from_str_path("/base")],
                        readdir=readdir,
                        stat=stat,
-                       classify=True,
+                       indicator=LsIndicator.CLASSIFY,
                        child_mounts=lambda d: ["hist"] if d == "/base" else [])
     assert io.exit_code == 0
     assert out.decode() == "hist/\n"
@@ -1094,6 +1240,7 @@ async def test_access_time_sorts_and_shows_under_u():
                                            time_kind=LsTimeKind.ATIME,
                                            time_style="long-iso"))
     assert output.decode().splitlines() == [
+        "total ?",
         "-rw-r--r-- 1 1 2025-02-01 00:00 new.txt",
         "-rw-r--r-- 1 1 2025-06-01 00:00 old.txt",
     ]
@@ -1116,7 +1263,8 @@ async def test_long_columns_drop_owner_and_group_and_lead_with_question_marks(
                                            inode=True,
                                            context=True,
                                            time_style="long-iso"))
-    assert output.decode() == "? -rw-r--r-- 1 ? 42 2025-01-15 10:30 a.txt\n"
+    assert output.decode(
+    ) == "total ?\n? -rw-r--r-- 1 ? 42 2025-01-15 10:30 a.txt\n"
     output, _ = await ls([_spec("/d")],
                          readdir=readdir,
                          stat=stat,
@@ -1145,7 +1293,7 @@ async def test_time_styles_spell_an_old_time_as_gnu_does(style, expected):
                          columns=LsColumns(owner=False,
                                            group=False,
                                            time_style=style))
-    assert output.decode() == f"-rw-r--r-- 1 42 {expected} a.txt\n"
+    assert output.decode() == f"total ?\n-rw-r--r-- 1 42 {expected} a.txt\n"
 
 
 @pytest.mark.asyncio
@@ -1476,3 +1624,132 @@ def test_block_size_refusals_are_worded_as_gnu_words_them(value, message):
         parse_flags({"block_size": value})
     assert str(exc.value) == message
     assert exc.value.exit_code == 2
+
+
+@pytest.mark.asyncio
+async def test_empty_long_listing_and_dot_entries_do_not_recurse():
+    readdir, stat = _make_fs_backend({"/": _dir("/"), "/empty": _dir("empty")})
+    output, io = await ls([_spec("/empty")],
+                          readdir=readdir,
+                          stat=stat,
+                          long=True)
+    assert output == b"total 0\n"
+    output, io = await ls([_spec("/empty")],
+                          readdir=readdir,
+                          stat=stat,
+                          show_dot_entries=True,
+                          recursive=True)
+    assert output == b"/empty:\n.\n..\n"
+    assert io.exit_code == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prefix", ["", "/data", "/nested/data"])
+@pytest.mark.parametrize("subdir", [False, True])
+@pytest.mark.parametrize("namespace", [False, True])
+async def test_dot_entries_respect_mount_boundary(prefix, subdir, namespace):
+    root = prefix or "/"
+    directory = f"{prefix}/sub" if subdir else root
+    tree = {
+        root: FileStat(name="root", type=FileType.DIRECTORY, mode=0o751),
+        f"{prefix}/sub": FileStat(name="sub",
+                                  type=FileType.DIRECTORY,
+                                  mode=0o750),
+    }
+    readdir, backend_stat = _make_fs_backend(tree)
+    calls = []
+    namespace_calls = []
+
+    async def stat(path, index=None):
+        calls.append((path.virtual, path.vfs_path))
+        assert path.virtual in tree
+        assert path.vfs_path == path.virtual[len(prefix):].strip("/")
+        return await backend_stat(path, index)
+
+    async def stat_path(path):
+        namespace_calls.append(path)
+        return tree.get(
+            path, FileStat(name="parent", type=FileType.DIRECTORY, mode=0o700))
+
+    output, io = await ls([
+        PathSpec(virtual=directory,
+                 directory=directory,
+                 vfs_path="sub" if subdir else "")
+    ],
+                          readdir=readdir,
+                          stat=stat,
+                          long=True,
+                          all_files=True,
+                          show_dot_entries=True,
+                          stat_path=stat_path if namespace else None)
+    assert io.exit_code == 0
+    assert not io.stderr
+    dot_mode = "drwxr-x---" if subdir else "drwxr-x--x"
+    parent_mode = ("drwxr-x--x" if subdir or not prefix else
+                   "drwx------" if namespace else "drwxr-xr-x")
+    assert f"{dot_mode} 1 - - 4096 - .\n" in output.decode()
+    assert f"{parent_mode} 1 - - 4096 - ..\n" in output.decode()
+    if namespace:
+        parent = prefix if subdir and prefix else (root.rsplit("/", 1)[0]
+                                                   or "/")
+        assert namespace_calls[-2:] == [directory, parent]
+    else:
+        assert calls
+
+
+def _ls_view(*argv: str) -> FlagView:
+    spec = SPECS["ls"]
+    return FlagView(parse_to_kwargs(parse_command(spec, list(argv), "/",
+                                                  "ls")),
+                    spec=spec)
+
+
+@pytest.mark.parametrize("argv,style", [
+    ([], LsIndicator.NONE),
+    (["-F"], LsIndicator.CLASSIFY),
+    (["--classify=always"], LsIndicator.CLASSIFY),
+    (["--classify=never"], LsIndicator.NONE),
+    (["--classify=auto"], LsIndicator.NONE),
+    (["-p"], LsIndicator.SLASH),
+    (["--file-type"], LsIndicator.FILE_TYPE),
+    (["--indicator-style=classify"], LsIndicator.CLASSIFY),
+    (["-F", "-p"], LsIndicator.SLASH),
+    (["-p", "-F"], LsIndicator.CLASSIFY),
+    (["--file-type", "--indicator-style=none"], LsIndicator.NONE),
+])
+def test_indicator_flag_takes_the_last_style(argv, style):
+    # coreutils 9.7: -F, --classify[=WHEN], -p, --file-type and
+    # --indicator-style all set the one style, so the last one wins; a
+    # --classify that is not always has no terminal to be auto on.
+    assert indicator_flag(_ls_view(*argv)) is style
+
+
+@pytest.mark.parametrize("argv",
+                         [["--indicator-style=bogus"], ["--classify=bogus"],
+                          ["--indicator-style=bogus", "-F"]])
+def test_indicator_flag_refuses_a_word_gnu_does_not_know(argv):
+    # GNU checks each value while it reads the options, so a bad one
+    # before a good one is still refused.
+    with pytest.raises(UsageError) as info:
+        indicator_flag(_ls_view(*argv))
+    assert str(info.value).startswith("ls: invalid argument 'bogus' for")
+
+
+@pytest.mark.parametrize("kind,mode,marks", [
+    (FileType.DIRECTORY, None, ("", "/", "/", "/")),
+    (FileType.SYMLINK, None, ("", "", "@", "@")),
+    (FileType.FIFO, None, ("", "", "|", "|")),
+    (FileType.FILE, 0o755, ("", "", "", "*")),
+    (FileType.FILE, 0o644, ("", "", "", "")),
+])
+def test_type_indicator_marks_by_style(kind, mode, marks):
+    # ls.c get_type_indicator: slash marks only directories, and only
+    # classify marks an executable.
+    entry = FileStat(name="x", type=kind, mode=mode)
+    styles = (LsIndicator.NONE, LsIndicator.SLASH, LsIndicator.FILE_TYPE,
+              LsIndicator.CLASSIFY)
+    assert tuple(type_indicator(entry, s) for s in styles) == marks
+
+
+def test_type_indicator_marks_nothing_it_could_not_stat():
+    assert type_indicator(None, LsIndicator.CLASSIFY) == ""

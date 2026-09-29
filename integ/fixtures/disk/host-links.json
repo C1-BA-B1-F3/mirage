@@ -1,0 +1,27 @@
+{
+  "files": {
+    "root/plain.txt": "inside\n",
+    "root/lib/a.txt": "alpha\n",
+    "outside/secret.txt": "outside\n"
+  },
+  "directories": ["root/empty", "root/only-links", "root/destination"],
+  "symlinks": {
+    "root/file-link": "plain.txt",
+    "root/dir-link": "lib",
+    "root/escape": "../outside/secret.txt",
+    "root/escape-dir": "../outside",
+    "root/dangling": "../missing",
+    "root/loop": "loop",
+    "root/only-links/link": "../../outside/secret.txt",
+    "root/destination/plain.txt": "../../outside/secret.txt"
+  },
+  "visible_files": ["lib/a.txt", "plain.txt"],
+  "hidden_paths": [
+    "/file-link",
+    "/dir-link/a.txt",
+    "/escape",
+    "/escape-dir/secret.txt",
+    "/dangling",
+    "/loop"
+  ]
+}

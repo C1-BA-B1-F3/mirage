@@ -22,7 +22,7 @@ import { Router } from './route.ts'
 import type { Ctx } from './route.ts'
 import { DEFAULT_FIXTURE, DEFAULT_FIXTURE_ROOT } from './fixture.ts'
 import { applyReset, defaultTenantsOf, parseResetBody, withPathRun } from './reset.ts'
-import { DEFAULT_RUN, RUN_PREFIX, resolveRun, resolveTenant, splitRunPath } from './tenant.ts'
+import { checkName, DEFAULT_RUN, RUN_PREFIX, resolveIdentity, splitRunPath } from './tenant.ts'
 import type { Headers } from './tenant.ts'
 import { unrouted } from './unrouted.ts'
 import type { JsonValue, Reply } from './types.ts'
@@ -47,8 +47,10 @@ export const KEEP_ALIVE_TIMEOUT_MS = 60_000
 export function makeRuntime<C extends MinimalClient>(
   fake: Fake<C>,
   fixtureRoot: string = DEFAULT_FIXTURE_ROOT,
+  fixture: string = DEFAULT_FIXTURE,
 ): Runtime<C> {
   const pool = makePool(fake)
+  const router = new Router<C>(fake.routes())
   const states = new Map<string, RunState>()
   const state = (run: string): RunState => {
     const live = states.get(run)
@@ -57,30 +59,36 @@ export function makeRuntime<C extends MinimalClient>(
     states.set(run, made)
     return made
   }
-  // The fixture a bare /reset replays. `--fixture` sets it at startup and a
-  // reset that names one replaces it, so a harness seeds once when the
-  // scenario changes and then resets freely within it. Defaulting every bare
-  // reset back to `v1` would put a server started on another fixture back on
-  // the wrong scenario the first time a host reset it.
-  let current = DEFAULT_FIXTURE
+  const fixtures = new Map<string, string>()
   return {
     fake,
     pool,
+    router,
     fixtureRoot,
     state,
-    reset: async (body: JsonValue) => {
-      const req = parseResetBody(body, defaultTenantsOf(fake), current)
-      // Remembered only once the reset SUCCEEDS. Recording it up front let a
-      // rejected reset poison the fixture every later bare reset replays: a
-      // 400 for an unknown name left `current` pointing at that name, so the
-      // next reset that named nothing failed too, and the fake was wedged by a
-      // request it had already refused.
-      const out = await applyReset(fake, pool, state, req, fixtureRoot)
-      current = req.fixture
-      return out
+    reset: (body: JsonValue) =>
+      router.enqueue(runOfReset(body), async () => {
+        const req = parseResetBody(
+          body,
+          defaultTenantsOf(fake),
+          fixtures.get(runOfReset(body)) ?? fixture,
+        )
+        const out = await applyReset(fake, pool, state, req, fixtureRoot)
+        fixtures.set(req.run, req.fixture)
+        return out
+      }),
+    drop: (run: string) => {
+      checkName('run', run)
+      return router.enqueue(run, async () => {
+        await pool.drop(run)
+        states.delete(run)
+        fixtures.delete(run)
+      })
     },
     dispose: async () => {
+      await router.drain()
       states.clear()
+      fixtures.clear()
       await pool.dispose()
     },
   }
@@ -160,7 +168,7 @@ async function answer<C extends MinimalClient>(
   headers: Headers,
   raw: Buffer,
 ): Promise<Reply> {
-  const { service, tenantKind, tenantFromBearer, tenantTokenPattern } = rt.fake.config
+  const { service, tenantKind } = rt.fake.config
   // Stripped FIRST, so every path below is the one the fake declares. A run
   // prefix is transport, not routing: `/_run/h1/v1/users/me` is the same route
   // as `/v1/users/me`, and health and /reset answer under it too, which is
@@ -188,7 +196,21 @@ async function answer<C extends MinimalClient>(
     throw err
   }
   if (path === HEALTH_PATH && (method === 'GET' || method === 'HEAD')) {
-    return { status: 200, body: { ok: true, service, runs: rt.pool.runs() } }
+    return { status: 200, body: { ok: true, service, runs: rt.pool.runs().length } }
+  }
+  if (path.startsWith('/_kit/runs/') && method === 'DELETE') {
+    try {
+      const name = splitRunPath(`/_run/${path.slice('/_kit/runs/'.length)}`)
+      if (name.path !== '/' || name.run === undefined) throw new TenantError('invalid run path')
+      if (pathRun !== undefined && pathRun !== name.run)
+        throw new TenantError('contradictory run path')
+      await rt.drop(name.run)
+      return { status: 204 }
+    } catch (err: unknown) {
+      if (err instanceof TenantError)
+        return { status: 400, body: { error: 'bad_run', message: err.message } }
+      throw err
+    }
   }
   if (path === RESET_PATH && method === 'POST') {
     try {
@@ -202,7 +224,7 @@ async function answer<C extends MinimalClient>(
       // under a prefix is a caller contradicting itself, and is refused rather
       // than silently resolved in favour of either.
       const body = withPathRun(parseResetRequest(raw), pathRun)
-      const done = await router.enqueue(runOfReset(body), () => rt.reset(body))
+      const done = await rt.reset(body)
       return { status: 200, body: JSON.parse(JSON.stringify(done)) as JsonValue }
     } catch (err: unknown) {
       // A body the kit will not interpret is the caller's mistake, so it is a
@@ -224,8 +246,15 @@ async function answer<C extends MinimalClient>(
   let run: string
   let tenant: string
   try {
-    run = resolveRun(headers, url, pathRun)
-    tenant = resolveTenant(headers, url, tenantKind, tenantFromBearer, tenantTokenPattern)
+    const identity = resolveIdentity(
+      rt.fake.config,
+      headers,
+      url,
+      pathRun,
+      rt.fake.requestToken?.(headers, url, raw),
+    )
+    run = identity.run
+    tenant = identity.tenant
   } catch (err: unknown) {
     // Same shape /reset already used, just reached from the request path. An
     // illegal `?_run=..%2Fx` or `?_tenant=bad name` reached the 500 envelope
@@ -238,58 +267,36 @@ async function answer<C extends MinimalClient>(
     }
     throw err
   }
-  // A tenant nobody seeded has no state to serve, and until now the fake found
-  // that out one layer down, where its own first query came back empty and it
-  // threw into the 500 envelope. 500 is the wrong answer twice over: it reads
-  // as a crashed fake to anything watching (a container healthcheck marks the
-  // service permanently unhealthy), and every real vendor here refuses an
-  // unknown credential with a 401. Refused CENTRALLY rather than in each fake
-  // because the condition is the kit's own: the kit is what resolved the name.
-  // Both ways of reaching an unseeded tenant land here, which is the point --
-  // a legal name that was never seeded, and the DEFAULT_TENANT that an illegal
-  // one falls back to, were two separate 500s with one cause.
-  // Everything below observes the run, so nothing below may start while a
-  // reset is still installing it. Router.run waits for this queue too, but too
-  // late: it runs AFTER the ctx is built, and building the ctx calls
-  // pool.client(run), which CREATES the run from the schema-only template. A
-  // read arriving during a reset's template build therefore installed an empty
-  // client, the reset's own clientFromSeeded then found that client already
-  // there and never copied the seeded file, and the run stayed empty while the
-  // reset reported 200. Probed on github: 0 rows where 357 were expected.
-  //
-  // Waiting here rather than only on the unknown-tenant path, because the
-  // failure does not need a tenant to be unknown and hit exactly the fakes
-  // that opt out of that refusal. This is not a new wait for a read, which
-  // already waited on this queue one step later.
-  await router.settled(run)
-  const runState = rt.state(run)
-  const refuse = rt.fake.unknownTenant
-  if (refuse !== undefined && tenantKind !== 'none' && !runState.isSeeded(tenant)) {
-    return refuse(tenant)
-  }
   const hit = router.match(method, path)
   if (hit === null) return unrouted(service, method, path)
-  const st = runState.of(tenant)
-  const ctx: Ctx<C> = {
-    params: hit.params,
-    query: url.searchParams,
-    body: raw,
-    run,
-    tenant,
-    runPrefix: pathRun === undefined ? '' : `/${RUN_PREFIX}/${pathRun}`,
-    db: rt.pool.client(run),
-    clock: st.clock,
-    minter: st.minter,
-    headers,
-    url,
-    json: () => parseBody(raw),
+  const work = (): Promise<Reply> | Reply => {
+    const runState = rt.state(run)
+    const refuse = rt.fake.unknownTenant
+    if (refuse !== undefined && tenantKind !== 'none' && !runState.isSeeded(tenant))
+      return refuse(tenant)
+    const st = runState.of(tenant)
+    const ctx: Ctx<C> = {
+      params: hit.params,
+      query: url.searchParams,
+      body: raw,
+      run,
+      tenant,
+      runPrefix: pathRun === undefined ? '' : `/${RUN_PREFIX}/${pathRun}`,
+      db: rt.pool.client(run),
+      clock: st.clock,
+      minter: st.minter,
+      headers,
+      url,
+      json: () => parseBody(raw),
+    }
+    return hit.spec.handler(ctx)
   }
-  return router.run(hit.spec, ctx)
+  return router.run(run, hit.spec.write, work)
 }
 
 export function createKitServer<C extends MinimalClient>(rt: Runtime<C>): Server {
   const { service, maxBodyBytes } = rt.fake.config
-  const router = new Router<C>(rt.fake.routes())
+  const router = rt.router
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const host = req.headers.host ?? '127.0.0.1'
     const url = new URL(req.url ?? '/', `http://${host}`)

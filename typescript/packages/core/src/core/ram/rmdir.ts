@@ -15,7 +15,8 @@
 import { invalidateAfterUnlink } from '../../cache/context.ts'
 import type { RAMAccessor } from '../../accessor/ram.ts'
 import type { PathSpec } from '../../types.ts'
-import { enoent, enotempty } from '../../utils/errors.ts'
+import { enotempty } from '../../utils/errors.ts'
+import { lookupError } from './dest.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 import { norm } from './utils.ts'
 
@@ -31,7 +32,7 @@ import { norm } from './utils.ts'
 export async function rmdir(accessor: RAMAccessor, path: PathSpec): Promise<void> {
   const p = norm(path.mountPath)
   const store = accessor.store
-  if (!store.dirs.has(p)) throw enoent(path)
+  if (!store.dirs.has(p)) throw lookupError(accessor, path, p)
   const prefix = `${rstripSlash(p)}/`
   const keys = [...store.files.keys(), ...store.dirs]
   if (keys.some((k) => k !== p && k.startsWith(prefix))) throw enotempty(path)

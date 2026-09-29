@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
-from mirage.commands.builtin.utils.stream import read_stdin_async
+from mirage.commands.builtin.utils.stream import read_stdin_async, stdin_bytes
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -23,7 +23,7 @@ async def iconv(
 ) -> tuple[ByteSource | None, IOResult]:
     err_mode = "ignore" if ignore_errors else "strict"
     if paths:
-        raw = await read_bytes(paths[0])
+        raw = await stdin_bytes(read_bytes, stdin)(paths[0])
     else:
         stdin_raw = await read_stdin_async(stdin)
         raw = stdin_raw if stdin_raw is not None else b""

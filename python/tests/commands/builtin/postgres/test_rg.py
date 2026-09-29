@@ -48,6 +48,8 @@ def accessor():
 def _guard_reads(monkeypatch):
     # The stat guard is captured by the search factory at import, so fake
     # what it reads at call time: the pool (above) and the client queries.
+    monkeypatch.setattr("mirage.core.postgres.client.list_schemas",
+                        AsyncMock(return_value=["public"]))
     monkeypatch.setattr("mirage.core.postgres.client.list_tables",
                         AsyncMock(return_value=["books"]))
     monkeypatch.setattr("mirage.core.postgres.client.fetch_columns",
@@ -78,7 +80,7 @@ async def test_rg_multi_pattern_skips_native_search(accessor):
     ), patch.dict(GENERICS, {"rg": fake_generic}):
         _, io = await rg(
             accessor, [_path()], [],
-            CommandOpts(index=NULL_INDEX, flags={'e': ['ada', 'ben']}))
+            CommandOpts(index=NULL_INDEX, flags={'regexp': ['ada', 'ben']}))
 
     assert io.exit_code == 0
     assert seen["generic"] == ["/public/tables/books/rows.jsonl"]

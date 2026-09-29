@@ -52,6 +52,8 @@ const ENC = new TextEncoder()
 // messages the line did not ask for is not a better failure than dropping an
 // operand. One operand or the generic scan.
 export const SEARCH_HONORED = ['w'] as const
+// rg spells the same flag by its long name.
+export const RG_SEARCH_HONORED = ['word_regexp'] as const
 export const SEARCH_MAX_RESULTS = 100
 
 async function* discordStream(
@@ -77,7 +79,7 @@ async function grepCommand(
   const operand = pushdownOperand(paths, opts.flags, pattern, SEARCH_HONORED)
   if (pattern !== null && operand !== null && fl.asBool('w')) {
     const match = detectScope(operand)
-    if (NATIVE_KINDS.has(match.kind)) {
+    if (!accessor.timeRange.bounded && NATIVE_KINDS.has(match.kind)) {
       const guildId = match.slots.guild_id ?? ''
       const channelId = match.slots.channel_id
       try {

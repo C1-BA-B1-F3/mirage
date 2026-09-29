@@ -14,7 +14,10 @@
 
 import pytest
 
-from mirage.io.async_line_iterator import AsyncLineIterator, char_width
+from mirage.io.async_line_iterator import (AsyncLineIterator, SharedInput,
+                                           char_width, line_buffer, share)
+from mirage.io.cooperative import chunks
+from mirage.io.types import DeviceInput, materialize
 
 
 async def _chunks(parts: list[bytes]):
@@ -138,3 +141,118 @@ async def test_read_chars_reports_a_short_read_at_eof():
     it = AsyncLineIterator(_chunks([b"ab"]))
     data, complete = await it.read_chars(5, None)
     assert (data, complete) == (b"ab", False)
+
+
+@pytest.mark.asyncio
+async def test_skip_only_buffered_empty_lines_with_limit():
+    reader = AsyncLineIterator(_chunks([b"\n\n\nx\n\n", b"\nend"]))
+    assert reader.skip_empty_lines() == 0
+    assert await reader.readline() == b""
+    assert reader.skip_empty_lines(0) == 0
+    assert reader.skip_empty_lines(1) == 1
+    assert reader.skip_empty_lines() == 1
+    assert await reader.readline() == b"x"
+    assert reader.skip_empty_lines() == 1
+    assert reader.skip_empty_lines() == 0
+    assert await reader.readline() == b""
+    assert await reader.readline() == b"end"
+    assert reader.skip_empty_lines() == 0
+    assert await reader.readline() is None
+
+
+@pytest.mark.asyncio
+async def test_skip_nonmatching_lines_retains_candidates_across_chunks():
+    chunks = [b"first\nskip\nskip\nneedle\nskip\nnee", b"dle\ntail"]
+
+    async def source():
+        for chunk in chunks:
+            yield chunk
+
+    lines = AsyncLineIterator(source())
+    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
+    assert await lines.readline() == b"first"
+    assert lines.skip_nonmatching_lines((b"needle", )) == (2, 10)
+    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
+    assert await lines.readline() == b"needle"
+    assert lines.skip_nonmatching_lines((b"needle", )) == (1, 5)
+    assert await lines.readline() == b"needle"
+    assert lines.skip_nonmatching_lines((b"needle", )) == (0, 0)
+    assert await lines.readline() == b"tail"
+    assert await lines.readline() is None
+
+
+@pytest.mark.asyncio
+async def test_skip_nonmatching_lines_interleaves_needles_under_folding():
+    lines = AsyncLineIterator(_chunks([b"x\nA1\nx\nx\nb2\nx\na3\nx\nB4\nx"]))
+    assert await lines.readline() == b"x"
+    seen = []
+    while True:
+        skipped = lines.skip_nonmatching_lines((b"a", b"b"), True)
+        line = await lines.readline()
+        if line is None:
+            break
+        seen.append((skipped, line))
+    assert seen == [((0, 0), b"A1"), ((2, 4), b"b2"), ((1, 2), b"a3"),
+                    ((1, 2), b"B4"), ((0, 0), b"x")]
+
+
+@pytest.mark.asyncio
+async def test_skip_nonmatching_lines_by_another_delimiter():
+    lines = AsyncLineIterator(_chunks([b"a\nb\0needle\nc\0d\0nee", b"dle\0"]))
+    assert await lines.read_until(b"\0") == (b"a\nb", True)
+    assert lines.skip_nonmatching_lines((b"needle", ), False, b"\0") == (0, 0)
+    assert await lines.read_until(b"\0") == (b"needle\nc", True)
+    assert lines.skip_nonmatching_lines((b"needle", ), False, b"\0") == (1, 2)
+    assert await lines.read_until(b"\0") == (b"needle", True)
+    assert lines.skip_nonmatching_lines((b"needle", ), False, b"\0") == (0, 0)
+    assert await lines.read_until(b"\0") == (b"", False)
+
+
+@pytest.mark.asyncio
+async def test_shared_input_hands_over_what_a_line_read_left():
+    shared = SharedInput(_chunks([b"a\nb\n", b"c\n"]))
+    assert await shared.lines.readline() == b"a"
+    assert await materialize(shared) == b"b\nc\n"
+    assert await shared.lines.readline() is None
+
+
+@pytest.mark.asyncio
+async def test_shared_input_reads_bytes():
+    shared = SharedInput(b"a\nb\n")
+    assert await shared.lines.readline() == b"a"
+    assert await materialize(shared) == b"b\n"
+
+
+@pytest.mark.asyncio
+async def test_a_dup_is_another_descriptor_on_the_same_offset():
+    shared = SharedInput(b"a\nb\nc\n")
+    copy = shared.dup()
+    assert copy is not shared
+    assert await shared.lines.readline() == b"a"
+    assert await copy.lines.readline() == b"b"
+    assert await materialize(shared) == b"c\n"
+
+
+@pytest.mark.asyncio
+async def test_a_reader_that_stops_early_leaves_the_rest():
+    shared = SharedInput(_chunks([b"a\n", b"b\n"]))
+    reader = chunks(shared)
+    assert await reader.__anext__() == b"a\n"
+    await reader.aclose()
+    assert await shared.lines.readline() == b"b"
+
+
+def test_share_wraps_once_and_leaves_dev_null_as_it_is():
+    shared = share(b"x")
+    assert isinstance(shared, SharedInput)
+    assert share(shared) is shared
+    device = DeviceInput()
+    assert share(device) is device
+    assert share(None) is None
+
+
+@pytest.mark.asyncio
+async def test_line_buffer_reads_a_shared_input_in_place():
+    shared = SharedInput(b"a\nb\n")
+    assert line_buffer(shared) is shared.lines
+    assert await line_buffer(b"a\nb\n").readline() == b"a"

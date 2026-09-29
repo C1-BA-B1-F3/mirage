@@ -629,7 +629,22 @@ def walk(head: str,
         options_ended = False
         while i < len(argv):
             token = argv[i]
+            alias = find_child(node, token) if (
+                not options_ended and token.startswith('-')
+                and token not in cs.dest and token != '--help') else None
+            if alias is not None and token in alias.aliases:
+                refused = _finish_node(name, node, cs, flags, cwd, style, env)
+                if refused is not None:
+                    return refused
+                node = alias
+                path = path + (alias.name, )
+                i += 1
+                descended = True
+                break
             if not options_ended and token == "--":
+                if style is UsageStyle.GIT and not path:
+                    return _usage_error(name, node, "unknown option: --",
+                                        style)
                 options_ended = True
                 i += 1
                 continue
@@ -740,7 +755,7 @@ def walk(head: str,
             # An alias resolves to its canonical node; the path records
             # the canonical name (argparse prog attribution: errors under
             # `gws co` render as `gws checkout`).
-            child = find_child(node, token)
+            child = None if token.startswith("-") else find_child(node, token)
             if child is None:
                 return _unknown_verb(head, name, token)
             node = child

@@ -41,7 +41,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "rm: read-only mount at /data/\n"
+        "stderr": "rm: cannot remove '/data/sess/a.txt': Read-only file system\n"
       }
     },
     {
@@ -237,7 +237,7 @@
         "ram",
         "disk"
       ],
-      "command": "ln -s /data/sess/a.txt /data/sess/al && ln -s /data2/sess/s.txt /data2/sess/sl",
+      "command": "mkdir -p /data/sess /data2/sess && ln -s /data/sess/a.txt /data/sess/al && ln -s /data2/sess/s.txt /data2/sess/sl",
       "expect": {
         "exit": 0,
         "stdout": "",
@@ -286,7 +286,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "rm: read-only mount at /data/\n"
+        "stderr": "rm: cannot remove '/data/sess/al': Read-only file system\n"
       }
     },
     {
@@ -301,7 +301,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "rm: read-only mount at /data/\n"
+        "stderr": "rm: cannot remove '/data/sess/al': Read-only file system\n"
       }
     },
     {
@@ -316,7 +316,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "unlink: read-only mount at /data/\n"
+        "stderr": "unlink: cannot unlink '/data/sess/al': Read-only file system\n"
       }
     },
     {
@@ -331,7 +331,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "ln: read-only mount at /data/\n"
+        "stderr": "ln: failed to create symbolic link '/data/sess/nl': Read-only file system\n"
       }
     },
     {
@@ -346,7 +346,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "mv: read-only mount at /data/\n"
+        "stderr": "mv: cannot move '/data/sess/al' to '/data/sess/moved': Read-only file system\n"
       }
     },
     {
@@ -387,7 +387,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "ln: read-only mount at /\n"
+        "stderr": "ln: failed to create symbolic link '/rootlk2': Read-only file system\n"
       }
     },
     {
@@ -401,7 +401,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "rm: read-only mount at /\n"
+        "stderr": "rm: cannot remove '/rootlk': Read-only file system\n"
       }
     },
     {
@@ -415,7 +415,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "mv: read-only mount at /\n"
+        "stderr": "mv: cannot move '/rootlk' to '/rootlk3': Read-only file system\n"
       }
     },
     {
@@ -446,18 +446,18 @@
       }
     },
     {
-      "id": "sess_read_mount_still_takes_a_link",
+      "id": "sess_read_mount_refuses_link_create",
       "seq": 920040,
       "targets": [
         "ram",
         "disk"
       ],
       "command": "ln -s /ro/y.txt /ro/rolink && readlink /ro/rolink",
-      "note": "A read-only MOUNT is a statement about a backend that cannot write, not a ban on names above it: symlinks are namespace state, so a link here needs no write capability from the VFS and the target need not exist. integ/vfs/<svc>/sym.json pins the same rule above postgres, mongodb, chroma and qdrant, all mounted read; those need containers, so /ro guards it on every host. What DOES gate this plane is a session grant -- see sess_read_grant_blocks_link_create.",
+      "note": "Mount mode gates namespace writes as well as backend writes.",
       "expect": {
-        "exit": 0,
-        "stdout": "/ro/y.txt\n",
-        "stderr": ""
+        "exit": 1,
+        "stdout": "",
+        "stderr": "ln: failed to create symbolic link '/ro/rolink': Read-only file system\n"
       }
     },
     {
@@ -468,7 +468,7 @@
         "disk"
       ],
       "command": "echo x > /ro/nope.txt",
-      "note": "The other half of the pair: one mount, two planes, opposite answers. A gate that refused the link above would have to refuse this too, and one that allows this would have to allow the link -- so the two cases together are what keep the planes told apart.",
+      "note": "The same read-only mount refuses content writes.",
       "expect": {
         "exit": 1,
         "stdout": "",
@@ -476,17 +476,105 @@
       }
     },
     {
-      "id": "sess_read_mount_link_removes_again",
+      "id": "sess_read_mount_refused_link_is_absent",
       "seq": 920042,
       "targets": [
         "ram",
         "disk"
       ],
-      "command": "rm /ro/rolink && readlink /ro/rolink || echo gone",
-      "note": "Removal is a node-table write on the same read-only mount, so it follows the create; it also leaves no residue for a later listing.",
+      "command": "readlink /ro/rolink || echo absent",
+      "note": "A refused namespace write leaves no link.",
       "expect": {
         "exit": 0,
-        "stdout": "gone\n",
+        "stdout": "absent\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sess_mutation_prep",
+      "seq": 920043,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/sess && echo original > /data/sess/guard.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sess_read_append",
+      "seq": 920044,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "echo x >> /data/sess/guard.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "/data/sess/guard.txt: Read-only file system\n"
+      },
+      "session": "reader"
+    },
+    {
+      "id": "sess_read_exec_append",
+      "seq": 920045,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "exec >> /data/sess/guard.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "/data/sess/guard.txt: Read-only file system\n"
+      },
+      "session": "reader"
+    },
+    {
+      "id": "sess_read_chmod",
+      "seq": 920046,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "chmod 600 /data/sess/guard.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "chmod: changing permissions of '/data/sess/guard.txt': Read-only file system\n"
+      },
+      "session": "reader"
+    },
+    {
+      "id": "sess_read_find_delete",
+      "seq": 920047,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "find /data/sess/guard.txt -delete",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "find: cannot delete '/data/sess/guard.txt': Read-only file system\n"
+      },
+      "session": "reader"
+    },
+    {
+      "id": "sess_read_mutations_leave_content",
+      "seq": 920048,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cat /data/sess/guard.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "original\n",
         "stderr": ""
       }
     }

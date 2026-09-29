@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { ProcessView } from '../../process/types.ts'
+import type { SessionState } from '../session/session.ts'
 import { isNoMount, noMount } from '../../utils/errors.ts'
 import { mountKey } from '../../utils/key_prefix.ts'
 import type { Runtime } from '../../runtime/base.ts'
@@ -20,7 +22,7 @@ import type { FileCache } from '../../cache/file/mixin.ts'
 import { CacheManager } from '../../cache/manager.ts'
 import { GENERAL_COMMANDS } from '../../commands/builtin/general/index.ts'
 import type { BaseVFS } from '../../vfs/base.ts'
-import { DevVFS } from '../../vfs/dev/dev.ts'
+import { DevIndex, DevVFS } from '../../vfs/dev/dev.ts'
 import { Decisions, MountRootPolicy, OutputCapPolicy, Policies } from '../../policy/index.ts'
 import {
   type Limit,
@@ -89,6 +91,7 @@ export interface RegistryPlacements {
 
 export class MountRegistry {
   private readonly indexConfig: IndexConfig | undefined
+  processView?: (session: SessionState) => ProcessView
   private readonly mountList: MountEntry[]
   readonly retiringMounts = new Map<BaseVFS, Promise<void>>()
   readonly retiredMounts = new WeakSet<BaseVFS>()
@@ -106,6 +109,7 @@ export class MountRegistry {
   // which the bindings map cannot answer: an entry behind another
   // capturer never binds a command.
   runtimeEntries: readonly Runtime[] = []
+  commandLimits: Readonly<Record<string, Limit>> = {}
   // Command admission policies. Policies itself is a bare mechanism;
   // the registry seeds the POSIX mount-root rule (mount-root semantics
   // are mount semantics) and the document's deny rules, then user
@@ -180,6 +184,7 @@ export class MountRegistry {
       m.vfs.cachesReads,
       (path) => !m.retiring && this.tryMountFor(path) === m,
       (key) => this.mayServeCached(m, key),
+      m.read.ttl,
     )
   }
 
@@ -204,10 +209,17 @@ export class MountRegistry {
     }
     this.defaultRead = defaultRead
     // Explicit at the construction site: /dev does not cache reads, so
-    // its policy can only ever be bounded.
+    // its policy can only ever be bounded, and it keeps no index, since a
+    // path-only index would publish one session's descriptors to another.
     list.push(
       MountRegistry.place(
-        { prefix: DEV_PREFIX, vfs: new DevVFS(), mode: MountMode.WRITE, read: DEFAULT_READ_SPEC },
+        {
+          prefix: DEV_PREFIX,
+          vfs: new DevVFS(),
+          mode: MountMode.WRITE,
+          read: DEFAULT_READ_SPEC,
+          index: new DevIndex(),
+        },
         list,
       ),
     )

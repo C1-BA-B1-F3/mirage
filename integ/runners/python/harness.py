@@ -86,9 +86,11 @@ def load_services(root: Path) -> dict:
     """The service -> per-host required env vars table.
 
     An empty list means the host needs nothing because its adapter starts
-    an in-process fake; the two hosts differ here (python self-hosts s3,
-    ssh, hf, box, databricks, discord, linear and dify, typescript does
-    not), so the asymmetry is spelled out per host rather than inferred.
+    an in-process fake (or the backend needs no service). The two hosts
+    differ per service (python starts s3 and ssh itself where typescript
+    reads an endpoint; typescript needs nothing for quickjs where python
+    reads MIRAGE_QUICKJS_HOME), so each host's list is spelled out in
+    targets.json rather than inferred.
 
     Args:
         root (Path): the integ directory.
@@ -188,6 +190,7 @@ def load_cases(root: Path) -> list[dict]:
     for path in discover_case_files(root):
         data = json.loads(path.read_text())
         for case in data["cases"]:
+            case = {"targets": data.get("targets", []), **case}
             case["_source"] = str(path.relative_to(root))
             cases.append(case)
     cases.sort(key=lambda c: c.get("seq", 1 << 30))
@@ -196,12 +199,14 @@ def load_cases(root: Path) -> list[dict]:
 
 
 def validate_cases(root: Path, cases: list[dict]) -> None:
-    """Fail loudly on the two ways a case silently stops being tested.
+    """Fail loudly on the ways a case silently stops being tested.
 
     A duplicate id collides in the parity runner, which keys rows by
     (target, id), so one of the pair is dropped from the py/ts diff
     without a word. A target id that matches no manifest entry means the
-    case never runs anywhere, which reads as "passing" everywhere.
+    case never runs anywhere, which reads as "passing" everywhere. A
+    `mount_read` without a `read` is routed as an ordinary case, where
+    the override is never applied.
 
     Args:
         root (Path): the integ directory.
@@ -212,6 +217,14 @@ def validate_cases(root: Path, cases: list[dict]) -> None:
     duplicates: list[str] = []
     unknown: list[str] = []
     for case in cases:
+        targets = case.get("targets")
+        if not isinstance(targets, list) or not targets or any(
+                not isinstance(target, str) for target in targets):
+            raise ValueError(
+                f"case {case['id']}: targets must be a nonempty string list")
+        if "mount_read" in case and "read" not in case:
+            raise ValueError(f"case {case['id']}: mount_read needs read, "
+                             "the policy every other mount inherits")
         first = seen.get(case["id"])
         if first is not None:
             duplicates.append(f"{case['id']} ({first} and {case['_source']})")
@@ -588,18 +601,24 @@ async def run_case(
     return result.exit_code, out, err, elapsed, check_out, notes
 
 
-async def run_scenario(read_ws, mutate, steps: list[dict]) -> tuple[int, str]:
+async def run_scenario(read_ws, mutate, mutate_line,
+                       steps: list[dict]) -> tuple[int, str, str]:
     outs: list[str] = []
+    errs: list[str] = []
     exit_code = 0
     for step in steps:
         if "mutate" in step:
             spec = step["mutate"]
-            await mutate(spec["path"], spec["content"].encode())
+            if "command" in spec:
+                await mutate_line(spec["command"])
+            else:
+                await mutate(spec["path"], spec["content"].encode())
             continue
         result = await read_ws.shell(step["command"])
         outs.append(await result.stdout_str())
+        errs.append(await result.stderr_str())
         exit_code = result.exit_code
-    return exit_code, "".join(outs)
+    return exit_code, "".join(outs), "".join(errs)
 
 
 def compare(case: dict,

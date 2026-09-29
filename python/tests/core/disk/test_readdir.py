@@ -182,3 +182,27 @@ async def test_readdir_error_reports_the_virtual_path(tmp_path):
             index)
     assert str(excinfo.value) == "/nope"
     assert str(tmp_path) not in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_leaves_a_host_symlink_out(tmp_path):
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib64").symlink_to("lib")
+    (tmp_path / "python").symlink_to("/nowhere/python3")
+    accessor = DiskAccessor(tmp_path)
+    result = await readdir(accessor,
+                           PathSpec(vfs_path="", virtual="/", directory="/"),
+                           RAMIndexCacheStore(ttl=0))
+    assert result == ["/lib"]
+
+
+@pytest.mark.asyncio
+async def test_refuses_a_directory_reached_through_a_host_symlink(tmp_path):
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib64").symlink_to("lib")
+    accessor = DiskAccessor(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        await readdir(
+            accessor,
+            PathSpec(vfs_path="lib64", virtual="/lib64", directory="/lib64"),
+            RAMIndexCacheStore(ttl=0))

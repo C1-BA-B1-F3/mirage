@@ -12,13 +12,15 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { PathSpec } from '../types.ts'
+import { activeRecords } from '../observe/context.ts'
+import { READ_FINGERPRINT_OPS } from '../observe/record.ts'
+import { DEFAULT_READ_TTL, PathSpec } from '../types.ts'
 import { mountKey } from '../utils/key_prefix.ts'
 import { rstripSlash } from '../utils/slash.ts'
 import type { FileCache } from './file/mixin.ts'
 import type { IndexCacheStore } from './index/store.ts'
 import { IndexView } from './index/view.ts'
-import { withCacheMutation } from './file/io.ts'
+import { withCacheMutation, latestFingerprint } from './file/io.ts'
 
 /**
  * Default read gate: trust the cache. A manager built outside a workspace
@@ -50,6 +52,8 @@ export class CacheManager {
   // Answers whether a warm entry may still be served.
   private readonly mayServeCached: (key: string) => Promise<boolean>
 
+  private readGeneration = 0
+
   constructor(
     fileCache: FileCache | null,
     index: IndexCacheStore | null,
@@ -57,6 +61,7 @@ export class CacheManager {
     cachesReads: boolean,
     ownsPath: (path: string) => boolean = () => true,
     mayServeCached: (key: string) => Promise<boolean> = alwaysServe,
+    private readonly readTtl: number = DEFAULT_READ_TTL,
   ) {
     this.fileCache = fileCache
     this.index = index
@@ -157,6 +162,32 @@ export class CacheManager {
     return this.ownsPath(key) ? cached : null
   }
 
+  /** Cache a complete backend read before a consumer transforms it. */
+  async readThrough(path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {
+    const cached = await this.cachedBytes(path)
+    if (cached !== null) return cached
+    const generation = this.readGeneration
+    const records = activeRecords()
+    const start = records?.length ?? 0
+    const data = await fetch()
+    const key = this.cacheKey(path)
+    const cache = this.readableCache(key)
+    if (cache !== null) {
+      await withCacheMutation(cache, async () => {
+        if (this.ownsPath(key) && generation === this.readGeneration) {
+          const fingerprint = latestFingerprint(
+            records?.slice(start),
+            key,
+            READ_FINGERPRINT_OPS,
+            data.byteLength,
+          )
+          await cache.set(key, data, { fingerprint, ttl: this.readTtl })
+        }
+      })
+    }
+    return data
+  }
+
   /**
    * Return the cached render's byte length, without revalidating.
    *
@@ -176,6 +207,7 @@ export class CacheManager {
 
   /** Invalidate caches after a write to `path`; only `virtual` is read. */
   async invalidateAfterWrite(path: string | PathSpec): Promise<void> {
+    this.readGeneration += 1
     const key = this.cacheKey(path)
     if (this.cachesReads && this.fileCache !== null) {
       await this.fileCache.remove(key)
@@ -185,6 +217,7 @@ export class CacheManager {
 
   /** Invalidate caches after a deletion of `path`; only `virtual` is read. */
   async invalidateAfterUnlink(path: string | PathSpec): Promise<void> {
+    this.readGeneration += 1
     const key = this.cacheKey(path)
     if (this.cachesReads && this.fileCache !== null) {
       await this.fileCache.remove(key)
@@ -207,6 +240,7 @@ export class CacheManager {
    * Mirrors Python `CacheManager.invalidate_subtree`.
    */
   async invalidateSubtree(path: string | PathSpec): Promise<void> {
+    this.readGeneration += 1
     const key = this.cacheKey(path)
     if (this.cachesReads && this.fileCache !== null) {
       await this.fileCache.remove(key)
@@ -250,6 +284,7 @@ export class CacheManager {
    * direction to be wrong in.
    */
   async dropPrefix(): Promise<void> {
+    this.readGeneration += 1
     if (!this.cachesReads || this.fileCache === null) return
     await this.fileCache.evictPrefix(this.prefix + '/')
   }

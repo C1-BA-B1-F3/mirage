@@ -12,13 +12,13 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { detectScope } from '../../../core/mongodb/scope.ts'
-import { SEARCHERS } from '../../../core/mongodb/search.ts'
+import type { MongoDBAccessor } from '../../../accessor/mongodb.ts'
+
 import { VFSName } from '../../../types.ts'
 import { command } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { makeSearch } from '../generic_bind/search.ts'
-import { pushdownOperand } from '../grep_pushdown.ts'
+import { runSearch } from '../generic_bind/search.ts'
+
 import { MONGODB_IO } from './io.ts'
 
 // The $regex push-down prints each matching document as a whole line;
@@ -29,9 +29,6 @@ export const MONGODB_GREP = command({
   name: 'grep',
   vfs: VFSName.MONGODB,
   spec: specOf('grep'),
-  fn: makeSearch('grep', detectScope, SEARCHERS, MONGODB_IO, {
-    qualify: pushdownOperand,
-    guard: true,
-    stream: true,
-  }),
+  fn: (accessor: MongoDBAccessor, paths, texts, opts) =>
+    runSearch<MongoDBAccessor>(MONGODB_IO, 'grep', accessor, paths, texts, opts),
 })

@@ -1,0 +1,82 @@
+{
+  "cases": [
+    {
+      "id": "tr_scope_listing",
+      "seq": 939000,
+      "targets": [
+        "trello-scoped"
+      ],
+      "command": "ls /scoped/workspaces/Strukto__org_strukto/boards",
+      "expect": {
+        "exit": 0,
+        "stdout": "Ops__brd_ops\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "tr_scope_read_denied",
+      "seq": 939001,
+      "targets": [
+        "trello-scoped"
+      ],
+      "command": "cat /scoped/workspaces/Strukto__org_strukto/boards/Roadmap_Q3__brd_roadmap/board.json",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "cat: /scoped/workspaces/Strukto__org_strukto/boards/Roadmap_Q3__brd_roadmap/board.json: No such file or directory\n"
+      }
+    },
+    {
+      "id": "tr_scope_show_denied",
+      "seq": 939002,
+      "targets": [
+        "trello-scoped"
+      ],
+      "command": "trello board show brd_roadmap",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "trello board show: board brd_roadmap is outside this mount's scope\n"
+      }
+    },
+    {
+      "id": "tr_scope_create_denied",
+      "seq": 939003,
+      "targets": [
+        "trello-scoped"
+      ],
+      "command": "trello card create --list_id lst_todo --name forbidden",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "trello card create: list lst_todo is outside this mount's scope\n"
+      }
+    },
+    {
+      "id": "tr_scope_update_denied",
+      "seq": 939004,
+      "targets": [
+        "trello-scoped"
+      ],
+      "command": "trello card update --card_id crd_search --name forbidden",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "trello card update: card crd_search is outside this mount's scope\n"
+      }
+    },
+    {
+      "id": "tr_scope_allowed_read",
+      "seq": 939005,
+      "targets": [
+        "trello-scoped"
+      ],
+      "command": "cat /scoped/workspaces/Strukto__org_strukto/boards/Ops__brd_ops/board.json | jq -r .board_id",
+      "expect": {
+        "exit": 0,
+        "stdout": "brd_ops\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

@@ -34,11 +34,16 @@ import {
 } from '../../../../core/hf_hub/cache.ts'
 import { HfHubError, hubBytes, resolveUrl } from '../../../../core/hf_hub/client.ts'
 import { Absence, classifyAbsence, headCommit, revisionUrl } from '../../../../core/hf_hub/repo.ts'
-import { GLOB_CHARS, MAX_DOWNLOAD_WORKERS } from '../../../../core/hf_hub/constants.ts'
+import {
+  ABSENT_STATUSES,
+  GLOB_CHARS,
+  MAX_DOWNLOAD_WORKERS,
+} from '../../../../core/hf_hub/constants.ts'
 import { fetchTree } from '../../../../core/hf_hub/tree.ts'
 import { isDirEntry, type TreeEntry } from '../../../../core/hf_hub/tree_entry.ts'
 import { hubFor, repoTypeOf, requireOperands, textOut } from './accessor.ts'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 /**
  * Which repo paths a download line asks for.
@@ -78,7 +83,7 @@ export function selected(
  */
 export async function ensureDir(dispatch: DispatchFn, path: string): Promise<void> {
   const missing: string[] = []
-  let current = path.replace(/\/+$/, '')
+  let current = rstripSlash(path)
   while (current !== '' && current !== '/') {
     try {
       await dispatch('stat', PathSpec.fromStrPath(current))
@@ -275,13 +280,29 @@ async function fetchAll(
 }
 
 /**
+ * The repo's listing, or an empty one when the Hub refused to show it.
+ *
+ * A refused walk names the same three absences an empty one does, and
+ * `refuseAbsent` asks the Hub which it was, in upstream's own words. Anything
+ * else is a real failure and propagates.
+ */
+async function listedOrEmpty(accessor: HfHubAccessor): Promise<Map<string, TreeEntry>> {
+  try {
+    return await fetchTree(accessor)
+  } catch (err) {
+    if (err instanceof HfHubError && ABSENT_STATUSES.has(err.status)) return new Map()
+    throw err
+  }
+}
+
+/**
  * Report why nothing was selected, in the Hub's own terms.
  *
- * `fetchTree` renders an unreadable repository as an empty listing, which is
- * right for a mount and wrong here: three different failures (no such
- * repository, no such revision, no such file) would all read as "no files
- * matched". So the Hub is asked which one it was, and the wording follows
- * huggingface_hub's own errors.
+ * `downloadCmd` folds a tree walk the Hub refused (401/403/404) into an empty
+ * listing itself, and an empty listing says nothing about why: three different
+ * failures (no such repository, no such revision, no such file) would all read
+ * as "no files matched". So the Hub is asked which one it was, and the wording
+ * follows huggingface_hub's own errors.
  */
 async function refuseAbsent(accessor: HfHubAccessor, names: readonly string[]): Promise<never> {
   const absence = await classifyAbsence(accessor)
@@ -348,7 +369,7 @@ export async function downloadCmd(inv: CLIInvocation): Promise<CommandFnResult> 
   if (include.length > 0) refuseVariadic(names, '--include', include)
   if (exclude.length > 0) refuseVariadic(names, '--exclude', exclude)
   const accessor = hubFor(inv, repoId ?? '', repoTypeOf(fl), fl.asStr('revision'))
-  const tree = await fetchTree(accessor)
+  const tree = await listedOrEmpty(accessor)
   const paths = selected(tree, names, include, exclude)
   if (paths.length === 0) await refuseAbsent(accessor, names)
   const workers = fl.asInt('max_workers') ?? MAX_DOWNLOAD_WORKERS
@@ -358,7 +379,7 @@ export async function downloadCmd(inv: CLIInvocation): Promise<CommandFnResult> 
     // A named local directory downloads straight into it, with no cache in
     // between; that is what upstream does too, which is why --force-download
     // only means anything in cache mode.
-    base = localDir.replace(/\/+$/, '')
+    base = rstripSlash(localDir)
     written = await fetchAll(dispatch, accessor, paths, base, workers)
   } else {
     ;[base, written] = await fetchIntoCache(
@@ -366,7 +387,7 @@ export async function downloadCmd(inv: CLIInvocation): Promise<CommandFnResult> 
       accessor,
       tree,
       paths,
-      (cacheDir ?? '').replace(/\/+$/, ''),
+      rstripSlash(cacheDir ?? ''),
       fl.asBool('force_download'),
       workers,
     )

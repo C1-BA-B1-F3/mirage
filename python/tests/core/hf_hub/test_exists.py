@@ -12,8 +12,11 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
+from mirage.core.hf_hub.client import HfHubError
 from mirage.core.hf_hub.exists import exists
 from tests.core.hf_hub.conftest import ps
 
@@ -27,3 +30,12 @@ async def test_exists_for_a_file_and_a_directory(loaded):
 @pytest.mark.asyncio
 async def test_exists_is_false_for_an_absence(loaded):
     assert await exists(loaded, ps("nope")) is False
+
+
+@pytest.mark.asyncio
+async def test_exists_lets_a_refusal_through(accessor):
+    # "Cannot see the repo" is not "the file is absent".
+    refused = AsyncMock(side_effect=HfHubError("expired", 401))
+    with patch("mirage.core.hf_hub.tree.fetch_tree", refused):
+        with pytest.raises(PermissionError):
+            await exists(accessor, ps("a.txt"))

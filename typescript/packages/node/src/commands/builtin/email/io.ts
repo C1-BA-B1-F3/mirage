@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '@struktoai/mirage-core/vfs/adapter'
+
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import type { CommandIO } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { PathSpec } from '@struktoai/mirage-core/types'
@@ -28,11 +30,9 @@ async function* emailReadStream(
   yield await emailRead(accessor, path, index)
 }
 
-export const EMAIL_IO: CommandIO<EmailAccessor> = {
-  readdir: emailReaddir,
-  readBytes: emailRead,
-  readStream: emailReadStream,
-  stat: emailStat,
+export const EMAIL_IO: CommandIO<EmailAccessor> = new VFSAdapter<EmailAccessor>({
+  read: { readdir: emailReaddir, readBytes: emailRead, stat: emailStat },
+  native: { readStream: emailReadStream },
   isMounted: () => true,
   local: false,
-}
+}).toCommandIO()

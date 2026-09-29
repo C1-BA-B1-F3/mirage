@@ -3,7 +3,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from mirage.utils.dates import iso_timestamp, parse_date_expr, timestamp_iso
+from mirage.utils.dates import (iso_timestamp, parse_date_expr,
+                                parse_posix_time, timestamp_iso)
 from mirage.utils.timezone import resolve_tz
 
 NOW = datetime(2026, 8, 16, 13, 45, 30)
@@ -145,3 +146,85 @@ def test_epoch_is_a_decimal_count_of_seconds(word, accepted):
     # findutils 4.10 (gnulib): float() would take `0x1`, `1e2`, `1.` and
     # `.5`, and GNU refuses every one of them.
     assert (parse_date_expr(word, tz=timezone.utc) is not None) is accepted
+
+
+_NOW = datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
+
+
+# gnulib's posixtime with date's syntax bits, measured on coreutils 9.7
+# (`date MMDDhhmm[[CC]YY][.ss]` as a user without the privilege to set
+# the clock). Mirrored in dates.test.ts.
+@pytest.mark.parametrize("text,expected", [
+    ("01010000", datetime(2026, 1, 1, tzinfo=timezone.utc)),
+    ("0101000024", datetime(2024, 1, 1, tzinfo=timezone.utc)),
+    ("0101000069", datetime(1969, 1, 1, tzinfo=timezone.utc)),
+    ("010100002024", datetime(2024, 1, 1, tzinfo=timezone.utc)),
+    ("01010000.30", datetime(2026, 1, 1, 0, 0, 30, tzinfo=timezone.utc)),
+    ("0229000024", datetime(2024, 2, 29, tzinfo=timezone.utc)),
+    ("1231235924.60", datetime(2025, 1, 1, tzinfo=timezone.utc)),
+])
+def test_posix_time_reads_a_clock_setting(text, expected):
+    assert parse_posix_time(text, tz=timezone.utc, now=_NOW) == expected
+
+
+@pytest.mark.parametrize("text", [
+    "x",
+    "0101",
+    "0101000",
+    "010100002",
+    "01010000.3",
+    "01010000.61",
+    "1301000024",
+    "01320000",
+    "01012500",
+    "0229000025",
+    "0101000０",
+])
+def test_posix_time_refuses_what_gnu_calls_invalid(text):
+    assert parse_posix_time(text, tz=timezone.utc, now=_NOW) is None
+
+
+# mirage holds what datetime holds, years 1-9999 in UTC and on the wall
+# clock, where GNU also shows year 0 and year 10000. Mirrored in
+# dates.test.ts.
+@pytest.mark.parametrize("text,zone", [
+    ("010100000000", "UTC"),
+    ("123123599999.60", "UTC"),
+    ("123123599999", "America/New_York"),
+    ("123118599999.60", "America/New_York"),
+    ("010100000001", "Asia/Tokyo"),
+    ("123123599999.60", "Asia/Tokyo"),
+])
+def test_posix_time_refuses_a_moment_datetime_cannot_hold(text, zone):
+    assert parse_posix_time(text, tz=ZoneInfo(zone)) is None
+
+
+def test_posix_time_reads_the_last_second_datetime_holds():
+    assert parse_posix_time("123123599999.59",
+                            tz=timezone.utc) == datetime(9999,
+                                                         12,
+                                                         31,
+                                                         23,
+                                                         59,
+                                                         59,
+                                                         tzinfo=timezone.utc)
+    assert parse_posix_time("123118599999.59",
+                            tz=NEW_YORK) == datetime(9999,
+                                                     12,
+                                                     31,
+                                                     18,
+                                                     59,
+                                                     59,
+                                                     tzinfo=NEW_YORK)
+
+
+def test_posix_time_refuses_a_wall_clock_the_zone_skips():
+    berlin = ZoneInfo("Europe/Berlin")
+    assert parse_posix_time("033002302025", tz=berlin) is None
+    assert parse_posix_time("033003302025",
+                            tz=berlin) == datetime(2025,
+                                                   3,
+                                                   30,
+                                                   3,
+                                                   30,
+                                                   tzinfo=berlin)

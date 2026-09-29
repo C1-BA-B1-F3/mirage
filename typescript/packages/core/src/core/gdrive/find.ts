@@ -19,6 +19,7 @@ import type { PathSpec } from '../../types.ts'
 import { isFolder, resolveKey } from './resolve.ts'
 import { iterTree } from './tree.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
+import { DIR_SIZE } from '../../utils/stat_view.ts'
 
 async function dirExists(accessor: GDriveAccessor, path: PathSpec): Promise<boolean> {
   if (path.vfsPath === '') return true
@@ -72,8 +73,7 @@ export async function find(
         continue
       }
       if (options.minSize != null || options.maxSize != null) {
-        // Directories count as size 0 for -size (deliberate GNU divergence).
-        const effective = isDir ? 0 : size
+        const effective = isDir ? DIR_SIZE : size
         if (options.minSize != null && effective < options.minSize) continue
         if (options.maxSize != null && effective > options.maxSize) continue
       }

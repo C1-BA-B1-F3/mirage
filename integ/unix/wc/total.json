@@ -30,7 +30,7 @@
       "command": "wc -l --total=auto /data/a.txt /data/b.txt",
       "expect": {
         "exit": 0,
-        "stdout": "5 /data/a.txt\n3 /data/b.txt\n8 total\n",
+        "stdout": " 5 /data/a.txt\n 3 /data/b.txt\n 8 total\n",
         "stderr": ""
       },
       "flags": [
@@ -144,7 +144,7 @@
       "command": "wc -l --total=never /data/a.txt /data/b.txt",
       "expect": {
         "exit": 0,
-        "stdout": "5 /data/a.txt\n3 /data/b.txt\n",
+        "stdout": " 5 /data/a.txt\n 3 /data/b.txt\n",
         "stderr": ""
       },
       "flags": [

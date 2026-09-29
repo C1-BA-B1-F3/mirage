@@ -1,0 +1,86 @@
+{
+  "users": [
+    {
+      "id": "U1",
+      "name": "ana",
+      "realName": "Ana",
+      "email": "ana@example.com"
+    }
+  ],
+  "channels": [
+    {
+      "id": "C1",
+      "name": "general",
+      "kind": "channel",
+      "created": 1762128000,
+      "membersJson": [
+        "U1"
+      ]
+    }
+  ],
+  "dms": [],
+  "messages": [
+    {
+      "channelId": "C1",
+      "ts": "1762186000.000001",
+      "userId": "U1",
+      "text": "searchable message",
+      "subtype": "channel_join"
+    },
+    {
+      "channelId": "C1",
+      "ts": "1762186001.000001",
+      "userId": "U1",
+      "text": "searchable message",
+      "subtype": "channel_leave"
+    },
+    {
+      "channelId": "C1",
+      "ts": "1762186002.000001",
+      "userId": "U1",
+      "text": "searchable message",
+      "subtype": "channel_convert_to_private"
+    },
+    {
+      "channelId": "C1",
+      "ts": "1762186003.000001",
+      "userId": "U1",
+      "text": "searchable message",
+      "threadTs": "1762186002.000001"
+    },
+    {
+      "channelId": "C1",
+      "ts": "1762186004.000001",
+      "userId": "U1",
+      "text": "searchable _message_ from <@U1>; snake_case and _unclosed"
+    },
+    {
+      "channelId": "C1",
+      "ts": "1762186005.000001",
+      "userId": "U1",
+      "text": ""
+    }
+  ],
+  "files": [
+    {
+      "id": "F1",
+      "channelId": "C1",
+      "messageTs": "1762186002.000001",
+      "name": "searchable.txt",
+      "title": "searchable file",
+      "mimetype": "text/plain",
+      "filetype": "text",
+      "content": "searchable data"
+    },
+    {
+      "id": "F2",
+      "channelId": "C1",
+      "messageTs": "1762186005.000001",
+      "name": "canvas",
+      "title": "Canvas",
+      "mimetype": "application/vnd.slack-docs",
+      "filetype": "quip",
+      "content": ""
+    }
+  ]
+}

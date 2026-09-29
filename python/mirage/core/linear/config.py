@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class LinearConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     api_key: SecretStr
     workspace: str | None = None
     team_ids: list[str] | None = None

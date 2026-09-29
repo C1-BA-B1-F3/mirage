@@ -39,13 +39,15 @@ def test_classify_keyword_before_route():
         assert classify(kw, session, registry) is NameKind.KEYWORD
 
 
-def test_classify_shell_builtin_and_mount_are_builtin():
+def test_classify_bash_builtins_are_builtins_and_programs_are_files():
     session = make_session()
     registry = make_registry()
     assert classify("cd", session, registry) is NameKind.BUILTIN
     assert classify("echo", session, registry) is NameKind.BUILTIN
-    assert classify("cat", session, registry) is NameKind.BUILTIN
-    assert classify("jq", session, registry) is NameKind.BUILTIN
+    assert classify("cat", session, registry) is NameKind.FILE
+    assert classify("jq", session, registry) is NameKind.FILE
+    # Not one of bash's builtins, so a program with a file (GNU xargs).
+    assert classify("xargs", session, registry) is NameKind.FILE
 
 
 def test_classify_function_and_not_found():
@@ -58,21 +60,30 @@ def test_classify_function_and_not_found():
 
 def test_classify_installed_cli():
     assert classify("linear", make_session(),
-                    make_registry(True)) is NameKind.CLI
+                    make_registry(True)) is NameKind.FILE
 
 
 def test_classify_all_reports_a_function_shadowing_a_cli():
     session = make_session()
     registry = make_registry(True)
-    assert classify_all("linear", session, registry) == [NameKind.CLI]
+    assert classify_all("linear", session, registry) == [NameKind.FILE]
     session.functions["linear"] = []
     assert classify_all("linear", session,
-                        registry) == [NameKind.FUNCTION, NameKind.CLI]
+                        registry) == [NameKind.FUNCTION, NameKind.FILE]
 
 
 def test_classify_all_dedupes_one_kind_held_by_two_layers():
     session = make_session()
-    registry = FakeRegistry({"cd"})
+    registry = FakeRegistry({"readlink"})
+    assert classify_all("readlink", session, registry) == [NameKind.FILE]
+
+
+def test_classify_all_ends_a_builtin_that_is_also_a_program_with_its_file():
+    # bash: `type -a echo` prints the builtin line, then /usr/bin/echo.
+    session = make_session()
+    registry = make_registry()
+    assert classify_all("echo", session,
+                        registry) == [NameKind.BUILTIN, NameKind.FILE]
     assert classify_all("cd", session, registry) == [NameKind.BUILTIN]
 
 
@@ -101,4 +112,4 @@ def test_describe_lines():
     assert describe("if", NameKind.KEYWORD) == "if is a shell keyword"
     assert describe("myfn", NameKind.FUNCTION) == "myfn is a function"
     assert describe("cat", NameKind.BUILTIN) == "cat is a shell builtin"
-    assert describe("linear", NameKind.CLI) == "linear is a mirage CLI"
+    assert describe("linear", NameKind.FILE) == "linear is /usr/bin/linear"

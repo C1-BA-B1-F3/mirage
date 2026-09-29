@@ -22,26 +22,28 @@ export async function truncate(
   accessor: OPFSAccessor,
   path: PathSpec,
   length: number,
+  noCreate = false,
 ): Promise<void> {
   const timer = startOp()
   const root = await accessor.root()
-  const virtual = path.mountPath
+  const key = path.mountPath
   let handle: FileSystemFileHandle
   let existing: Uint8Array
   try {
-    handle = await resolveFileHandle(root, virtual, { create: false })
+    handle = await resolveFileHandle(root, key, { create: false })
     const file = await handle.getFile()
     existing = new Uint8Array(await file.arrayBuffer())
   } catch (err) {
     if (isNotFound(err)) {
+      if (noCreate) return
       try {
-        handle = await resolveFileHandle(root, virtual, { create: true })
+        handle = await resolveFileHandle(root, key, { create: true })
       } catch (cerr) {
-        throw await openError(root, virtual, cerr, path)
+        throw await openError(root, key, cerr, path)
       }
       existing = new Uint8Array()
     } else {
-      throw await openError(root, virtual, err, path)
+      throw await openError(root, key, err, path)
     }
   }
   const out = new Uint8Array(length)
@@ -49,5 +51,5 @@ export async function truncate(
   const writable = await handle.createWritable()
   await writable.write(toWritableChunk(out))
   await writable.close()
-  record('truncate', virtual, VFSName.OPFS, 0, timer)
+  record('truncate', path.virtual, VFSName.OPFS, 0, timer)
 }

@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { Accessor } from '../../accessor/base.ts'
+import { IndexEntry } from '../../cache/index/config.ts'
 import { ContentType, PathSpec } from '../../types.ts'
 import { stripSlash } from '../../utils/slash.ts'
 import { JSON_NAME } from './codec.ts'
@@ -24,7 +25,9 @@ import {
   type Reader,
   type WindowedReader,
 } from './read.ts'
+import { makeReaddir, type Lister } from './readdir.ts'
 import { Slot, Scope, makeDetectScope } from './scope.ts'
+import { makeStat } from './stat.ts'
 
 const SCOPES: readonly Scope[] = [
   new Scope({ kind: 'rooms', segments: ['rooms'], probed: false }),
@@ -90,7 +93,7 @@ describe('hierarchy makeRead', () => {
           `${match.slots.note ?? ''}:${String(window.limit ?? null)}:${String(window.offset ?? null)}`,
         ),
       )
-    const read = makeRead<FakeAccessor>(detectScope, {}, { note: readWindowed })
+    const read = makeRead<FakeAccessor>(detectScope, {}, { windowed: { note: readWindowed } })
     let out = await read(new FakeAccessor(), spec('/rooms/red/a.json'), undefined, {
       limit: 5,
       offset: 2,
@@ -103,6 +106,50 @@ describe('hierarchy makeRead', () => {
   it('lets a plain reader ignore the window', async () => {
     const out = await READ(new FakeAccessor(), spec('/rooms/red/a.json'), undefined, { limit: 3 })
     expect(new TextDecoder().decode(out)).toBe('red:a')
+  })
+})
+
+const listRooms: Lister<FakeAccessor> = (accessor) => {
+  accessor.calls.push('rooms')
+  return Promise.resolve(
+    ['red', 'blue'].map((room): [string, IndexEntry] => [
+      room,
+      new IndexEntry({ id: room, name: room, resourceType: 'fake/room', vfsName: room }),
+    ]),
+  )
+}
+
+const PROVEN_READ = makeRead<FakeAccessor>(
+  detectScope,
+  { note: readNote },
+  {
+    stat: makeStat<FakeAccessor>(
+      detectScope,
+      makeReaddir<FakeAccessor>(detectScope, { listers: { rooms: listRooms } }),
+    ),
+  },
+)
+
+describe('hierarchy makeRead with a stat', () => {
+  it('proves the parent directory before the reader runs', async () => {
+    // "green" is not a room the listing names: the read is ENOENT for the file
+    // itself, and its reader never runs.
+    const accessor = new FakeAccessor()
+    await expect(PROVEN_READ(accessor, spec('/rooms/green/a.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+      virtualPath: '/h/rooms/green/a.json',
+    })
+    expect(accessor.calls).toEqual(['rooms'])
+    // The parent is proven; the file stays the reader's to prove.
+    const out = await PROVEN_READ(accessor, spec('/rooms/red/z.json'))
+    expect(new TextDecoder().decode(out)).toBe('red:z')
+  })
+
+  it('trusts the path when no stat is given', async () => {
+    const accessor = new FakeAccessor()
+    const out = await READ(accessor, spec('/rooms/green/a.json'))
+    expect(new TextDecoder().decode(out)).toBe('green:a')
+    expect(accessor.calls).toEqual([])
   })
 })
 

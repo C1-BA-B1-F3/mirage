@@ -21,6 +21,7 @@ import { VFSName, type PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { CommandSpec, Option } from '../../spec/types.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+import { requireCard } from './_scope.ts'
 
 const ENC = new TextEncoder()
 
@@ -45,6 +46,7 @@ async function trelloCardLabelRemoveCommand(
   // A card write is addressed by id, not path, so only the mount-wide
   // grant can admit it (a write-granting carve-out names no card).
   requireMountWritable(opts.mountPrefix ?? '')
+  await requireCard(accessor, cardId)
   const card = await cardRemoveLabel(accessor.transport, cardId, labelId)
   return [ENC.encode(JSON.stringify(normalizeCard(card))), new IOResult()]
 }

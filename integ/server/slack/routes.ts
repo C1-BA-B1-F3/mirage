@@ -28,7 +28,7 @@ import {
   usersInfo,
   usersList,
 } from './reads.ts'
-import { searchFiles, searchMessages } from './search.ts'
+import { searchAll, searchFiles, searchMessages } from './search.ts'
 import { pins, postMessage, reactionsAdd } from './writes.ts'
 
 // Slack's Web API is method-per-path under /api, so the routes are a flat
@@ -59,6 +59,8 @@ export function slackRoutes(): KitRoute<C>[] {
     route('POST', '/api/users.list', usersList),
     route('GET', '/api/users.info', usersInfo),
     route('POST', '/api/users.info', usersInfo),
+    route('GET', '/api/search.all', searchAll),
+    route('POST', '/api/search.all', searchAll),
     route('GET', '/api/search.messages', searchMessages),
     route('POST', '/api/search.messages', searchMessages),
     route('GET', '/api/search.files', searchFiles),

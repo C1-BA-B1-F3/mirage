@@ -25,13 +25,15 @@ from mirage.observe.log_entry import EVENT_CLEAR, EVENT_COMMAND, EVENT_DELETE
 from mirage.runtime.types import Language, ScriptSource
 from mirage.shell.console import (KILLED_OUTCOME, Channel, ConsoleChunk,
                                   JobConsole, RAMConsoleStore, exit_outcome)
+from mirage.shell.constants import BIN_PREFIX
 from mirage.shell.job_table import Job, JobStatus
 from mirage.shell.variable import ShellVar
 from mirage.types import JsonValue, MountMode, ReadSpec, VFSName
 from mirage.version import __version__
 from mirage.vfs.history import HISTORY_PREFIX
 from mirage.vfs.loader import SCRIPT_MODULE_NAME
-from mirage.vfs.registry import VFSEntry, resolve_class, resolve_entry
+from mirage.vfs.registry import (REGISTRY, VFSEntry, resolve_class,
+                                 resolve_entry)
 from mirage.vfs.secrets import (has_redacted_secret, redacted_config_dump,
                                 revealed_config_dump)
 from mirage.workspace.mount.namespace import NodeMeta
@@ -150,7 +152,11 @@ def cli_spec_from_entry(entry: dict[str, Any]) -> str | CLISpec:
 
 
 async def to_state_dict(ws) -> dict[str, Any]:
-    auto_prefixes = {"/dev/", norm_mount_prefix(HISTORY_PREFIX)}
+    auto_prefixes = {
+        "/dev/",
+        norm_mount_prefix(HISTORY_PREFIX),
+        norm_mount_prefix(BIN_PREFIX)
+    }
 
     mounted = ws._registry.mounts()
     for mount in mounted:
@@ -747,7 +753,11 @@ def reusable_mounts(mounts: list[Any], state: dict[str,
         mounts (list[Any]): the origin's mount entries.
         state (dict[str, Any]): the origin's state dict.
     """
-    auto = {"/dev/", norm_mount_prefix(HISTORY_PREFIX)}
+    auto = {
+        "/dev/",
+        norm_mount_prefix(HISTORY_PREFIX),
+        norm_mount_prefix(BIN_PREFIX)
+    }
     live = {m.prefix: m.vfs for m in mounts if m.prefix not in auto}
     return {
         m[MountKey.PREFIX]: live[m[MountKey.PREFIX]]
@@ -762,9 +772,10 @@ def _saved_entry(mount_state: dict[str, Any]) -> VFSEntry | None:
     The ``vfs_ref`` the registry built the mount from when one was
     recorded (a registered name, or a colon reference, which is how a
     mount declared as ``./wiki.py:WikiVFS`` comes back), else the
-    VFS's ``type``, the one locator a VFS constructed in code
-    leaves. The ref comes first because ``type`` is the class's ``name``
-    and a subclass inherits it: an alias registered over a builtin, or a
+    builtin entry whose class is the saved class, else the VFS's
+    ``type``, the last locator a VFS constructed in code leaves. The
+    ref comes first because ``type`` is the class's ``name`` and a
+    subclass inherits it: an alias registered over a builtin, or a
     script subclassing one, reports the builtin's type and rebuilt as
     the builtin while the type was consulted first. A recorded ref this
     process cannot resolve is not a reason to fall back to that guess;
@@ -777,8 +788,44 @@ def _saved_entry(mount_state: dict[str, Any]) -> VFSEntry | None:
     ref = mount_state.get(MountKey.VFS_REF)
     if ref:
         return resolve_entry(ref)
+    entry = _builtin_entry_for_class(mount_state[MountKey.VFS_CLASS])
+    if entry is not None:
+        return entry
     ptype = mount_state[MountKey.VFS_STATE].get(VFSStateKey.TYPE, "")
     return resolve_entry(ptype) if ptype else None
+
+
+def _builtin_entry_for_class(cls_path: str) -> VFSEntry | None:
+    """The builtin entry that builds exactly the saved class, or None.
+
+    A mount constructed in code records no ref, and its ``type`` is the
+    class's ``name``, which a subclass inherits: every S3-compatible
+    alias reports ``s3`` while saving its own provider-shaped config.
+    Rebuilding through the type's entry handed that config to
+    ``S3Config``, which dropped the alias's field names without a word
+    while configs ignored unknown keys, and refuses them now that they
+    do not. The saved class path names the class that was running, so
+    the entry whose class it is -- matched by identity, after narrowing
+    by class name so only that candidate is imported -- is the one to
+    rebuild through.
+
+    Args:
+        cls_path (str): the saved ``module.ClassName``.
+    """
+    mod_name, separator, cls_name = cls_path.rpartition(".")
+    if not separator:
+        return None
+    if mod_name == SCRIPT_MODULE_NAME:
+        return None
+    for entry in REGISTRY.values():
+        ref = entry.vfs_path
+        name = ref.__name__ if isinstance(ref, type) else ref.rsplit(":")[-1]
+        if name != cls_name:
+            continue
+        cls = resolve_class(ref)
+        if f"{cls.__module__}.{cls.__name__}" == cls_path:
+            return entry
+    return None
 
 
 def _saved_class(
@@ -797,8 +844,8 @@ def _saved_class(
     if entry is not None:
         return resolve_class(entry.vfs_path), entry
     cls_path = mount_state[MountKey.VFS_CLASS]
-    mod_name, cls_name = cls_path.rsplit(".", 1)
-    if mod_name == SCRIPT_MODULE_NAME:
+    mod_name, separator, cls_name = cls_path.rpartition(".")
+    if not separator or mod_name == SCRIPT_MODULE_NAME:
         return None, None
     try:
         module = importlib.import_module(mod_name)

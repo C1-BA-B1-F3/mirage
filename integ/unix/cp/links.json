@@ -1,0 +1,292 @@
+{
+  "cases": [
+    {
+      "id": "cp_r_copies_a_link_as_a_link",
+      "seq": 1301021,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/cpl1301 && mkdir /data/cpl1301/s && echo x > /data/cpl1301/s/f && ln -s f /data/cpl1301/s/lk && cp -r /data/cpl1301/s /data/cpl1301/t && readlink /data/cpl1301/t/lk && cat /data/cpl1301/t/lk; rc=$?; rm -r /data/cpl1301; exit $rc) && (mkdir -p /data/cptree/src /data/cptree/out/src; cd /data/cptree; echo old > /data/cptree/out/src/link; ln -s /data/cptree/missing /data/cptree/src/link; ln -s fresh /data/cptree/src/new; cp -rn /data/cptree/src /data/cptree/out; cat /data/cptree/out/src/link; readlink /data/cptree/out/src/new; cp -r --update=none-fail /data/cptree/src /data/cptree/out; echo skip=$?; cat /data/cptree/out/src/link; cp -rb /data/cptree/src /data/cptree/out; readlink /data/cptree/out/src/link; cat /data/cptree/out/src/link~; rm -r /data/cptree)",
+      "expect": {
+        "exit": 0,
+        "stdout": "f\nx\nold\nfresh\nskip=1\nold\n/data/cptree/missing\nold\n",
+        "stderr": "cp: not replacing '/data/cptree/out/src/link'\ncp: not replacing '/data/cptree/out/src/new'\n"
+      }
+    },
+    {
+      "id": "cp_rL_copies_what_a_link_points_at",
+      "seq": 1301022,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/cpl1302 && mkdir /data/cpl1302/s && echo x > /data/cpl1302/s/f && ln -s f /data/cpl1302/s/lk && cp -rL /data/cpl1302/s /data/cpl1302/t && cat /data/cpl1302/t/lk && readlink /data/cpl1302/t/lk; echo rc=$?; rc=$?; rm -r /data/cpl1302; exit $rc) && (mkdir -p /data/cpfollow/src /data/cpfollow/out/src; cd /data/cpfollow; echo new > /data/cpfollow/source; ln -s ../source /data/cpfollow/src/link; echo old > /data/cpfollow/out/src/link; cp -rLn /data/cpfollow/src /data/cpfollow/out; cat /data/cpfollow/out/src/link; cp -rL --update=none /data/cpfollow/src /data/cpfollow/out; cat /data/cpfollow/out/src/link; cp -rLb /data/cpfollow/src /data/cpfollow/out; cat /data/cpfollow/out/src/link /data/cpfollow/out/src/link~; rm -r /data/cpfollow)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nrc=1\nold\nold\nnew\nold\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "cp_P_copies_a_command_line_link_as_a_link",
+      "seq": 1301023,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/cpl1303 && echo x > /data/cpl1303/f && ln -s f /data/cpl1303/l && cp -P /data/cpl1303/l /data/cpl1303/c && readlink /data/cpl1303/c; rc=$?; rm -r /data/cpl1303; exit $rc) && (mkdir -p /data/cpreview; cd /data/cpreview; ln -s /data/cpreview/missing /data/cpreview/src; echo old > /data/cpreview/dst; cp -Pn /data/cpreview/src /data/cpreview/dst; cat /data/cpreview/dst; cp -P --update=none /data/cpreview/src /data/cpreview/dst; cat /data/cpreview/dst; cp -P --update=none-fail /data/cpreview/src /data/cpreview/dst; echo skip=$?; cat /data/cpreview/dst; cp -Pb /data/cpreview/src /data/cpreview/dst; readlink /data/cpreview/dst; cat /data/cpreview/dst~; ln -s second /data/cpreview/other; cp -P --backup=numbered /data/cpreview/other /data/cpreview/dst; readlink /data/cpreview/dst /data/cpreview/dst.~1~; echo newer > /data/cpreview/newer; touch -h -t 202001010000 /data/cpreview/src; touch -t 202101010000 /data/cpreview/newer; cp -Pu /data/cpreview/src /data/cpreview/newer; cat /data/cpreview/newer; touch -h -t 202201010000 /data/cpreview/src; cp -Pu /data/cpreview/src /data/cpreview/newer; readlink /data/cpreview/newer; rm -r /data/cpreview)",
+      "expect": {
+        "exit": 0,
+        "stdout": "f\nold\nold\nskip=1\nold\n/data/cpreview/missing\nold\nsecond\n/data/cpreview/missing\nnewer\n/data/cpreview/missing\n",
+        "stderr": "cp: not replacing '/data/cpreview/dst'\n"
+      }
+    },
+    {
+      "id": "cp_d_copies_a_command_line_link_as_a_link",
+      "seq": 1301024,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/cpl1304 && echo x > /data/cpl1304/f && ln -s f /data/cpl1304/l && cp -d /data/cpl1304/l /data/cpl1304/c && readlink /data/cpl1304/c; rc=$?; rm -r /data/cpl1304; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "f\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "cp_follows_a_command_line_link_by_default",
+      "seq": 1301025,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/cpl1305 && echo x > /data/cpl1305/f && ln -s f /data/cpl1305/l && cp /data/cpl1305/l /data/cpl1305/c && cat /data/cpl1305/c && readlink /data/cpl1305/c; echo rc=$?; rc=$?; rm -r /data/cpl1305; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "x\nrc=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "cp_rH_follows_only_the_command_line_link",
+      "seq": 1301026,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/cpl1306 && mkdir /data/cpl1306/s && echo x > /data/cpl1306/s/f && ln -s f /data/cpl1306/s/lk && ln -s s /data/cpl1306/sl && cp -rH /data/cpl1306/sl /data/cpl1306/t && readlink /data/cpl1306/t/lk && readlink /data/cpl1306/t; echo rc=$?; rc=$?; rm -r /data/cpl1306; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "f\nrc=1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "cp_r_copies_a_dangling_link",
+      "seq": 1301027,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/cpl1307 && mkdir /data/cpl1307/s && ln -s nowhere /data/cpl1307/s/dang && cp -r /data/cpl1307/s /data/cpl1307/t && readlink /data/cpl1307/t/dang; rc=$?; rm -r /data/cpl1307; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "nowhere\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "cp_rL_cannot_stat_a_dangling_link",
+      "seq": 1301028,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/cpl1308 && mkdir /data/cpl1308/s && echo x > /data/cpl1308/s/f && ln -s nowhere /data/cpl1308/s/dang && cp -rL /data/cpl1308/s /data/cpl1308/t; echo rc=$?; ls /data/cpl1308/t; rc=$?; rm -r /data/cpl1308; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nf\n",
+        "stderr": "cp: cannot stat '/data/cpl1308/s/dang': No such file or directory\n"
+      }
+    },
+    {
+      "id": "cp_P_replaces_a_link_at_the_destination",
+      "seq": 1301029,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/cpl1309 && echo x > /data/cpl1309/f && echo y > /data/cpl1309/g && ln -s f /data/cpl1309/l && ln -s g /data/cpl1309/m && cp -P /data/cpl1309/l /data/cpl1309/m && readlink /data/cpl1309/m && cat /data/cpl1309/g; rc=$?; rm -r /data/cpl1309; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "f\ny\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

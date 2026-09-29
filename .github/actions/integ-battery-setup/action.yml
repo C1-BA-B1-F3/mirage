@@ -15,6 +15,9 @@ inputs:
       Download prebuilt TypeScript dist outputs from this artifact instead of
       rebuilding them in the current job.
     default: ""
+  start-services:
+    description: Start the shared backend services used by the batteries.
+    default: "true"
 runs:
   using: composite
   steps:
@@ -70,6 +73,7 @@ runs:
       shell: bash
       run: pnpm --filter @struktoai/mirage-browser build
     - name: Start moto S3
+      if: ${{ inputs.start-services == 'true' }}
       shell: bash
       run: |
         nohup ./python/.venv/bin/moto_server -H 127.0.0.1 -p 5001 > /tmp/moto.log 2>&1 &
@@ -82,6 +86,7 @@ runs:
         echo "AWS_ACCESS_KEY_ID=testing" >> "$GITHUB_ENV"
         echo "AWS_SECRET_ACCESS_KEY=testing" >> "$GITHUB_ENV"
     - name: Start sftp server
+      if: ${{ inputs.start-services == 'true' }}
       shell: bash
       run: |
         nohup ./python/.venv/bin/python integ/server/ssh_server.py --port 2222 > /tmp/sshsrv.log 2>&1 &
@@ -95,6 +100,7 @@ runs:
     # Keep in sync with the observability job: 2.21 removed the v1 query
     # endpoints used by the accessor and jaeger_seed.py.
     - name: Start jaeger all-in-one and seed traces over OTLP
+      if: ${{ inputs.start-services == 'true' }}
       shell: bash
       run: |
         for i in $(seq 1 5); do
@@ -117,6 +123,7 @@ runs:
     # where eleven processes lost only one. server/launcher has its own
     # selftest for that reason.
     - name: Start the kit fakes
+      if: ${{ inputs.start-services == 'true' }}
       working-directory: integ
       shell: bash
       run: |

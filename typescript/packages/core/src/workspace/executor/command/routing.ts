@@ -13,10 +13,12 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { findExprTail } from '../../../commands/builtin/find_parse.ts'
+import { FILE_KEYS } from '../../../commands/builtin/generic/program.ts'
 import { walk } from '../../../commands/cli/walk.ts'
 import { SPECS } from '../../../commands/spec/index.ts'
+import { FlagView } from '../../../commands/spec/flag_view.ts'
 import { parseCommand, parseToKwargs } from '../../../commands/spec/parser.ts'
-import type { ByteSource } from '../../../io/types.ts'
+import { DeviceInput, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { type MountRegistry } from '../../mount/registry.ts'
 import { classifyBarePath } from '../../expand/classify/index.ts'
@@ -27,7 +29,8 @@ import { classifyBarePath } from '../../expand/classify/index.ts'
 // grep -r and bare rg print bare relative names (empty raw). Two gates:
 // grep only defaults under -r/-R (and ignores stdin, GNU's rule); rg
 // yields to an attached stdin, even an empty one (its readable-stdin
-// rule). All pinned on debian:stable-slim / ripgrep 14.
+// rule), unless `-f -` reads it for patterns or --files lists. All pinned
+// on debian:stable-slim / ripgrep 14.
 export const CWD_DEFAULT_RAW: Record<string, string> = {
   grep: '',
   rg: '',
@@ -50,7 +53,11 @@ export function defaultCwdOperand(
 ): PathSpec | null {
   const spec = SPECS[cmdName]
   if (spec === undefined) return null
-  let argv = parts.slice(1).map((p) => (typeof p === 'string' ? p : p.virtual))
+  // A typed `-` goes back to the parser as itself, as it does from
+  // parseFlags, so `rg -f -` reads as stdin rather than a file `/-`.
+  let argv = parts
+    .slice(1)
+    .map((p) => (typeof p === 'string' ? p : p.rawPath === '-' ? '-' : p.virtual))
   if (cmdName === 'find') {
     // Only the words before the expression can be start points: an
     // `-exec` command word or a `-newer` reference is the parser's.
@@ -58,11 +65,21 @@ export function defaultCwdOperand(
   }
   const parsed = parseCommand(spec, argv, cwd, cmdName)
   if (parsed.paths().length > 0) return null
+  // --type-list reads no path, so there is no cwd to walk.
+  if (cmdName === 'rg' && new FlagView(parseToKwargs(parsed), spec).asBool('type_list')) {
+    return null
+  }
   if (cmdName === 'grep') {
     const kwargs = parseToKwargs(parsed)
     if (kwargs.r !== true && kwargs.R !== true) return null
-  } else if (cmdName === 'rg' && stdin !== null) {
-    return null
+  } else if (cmdName === 'rg' && stdin !== null && !(stdin instanceof DeviceInput)) {
+    const fl = new FlagView(parseToKwargs(parsed), spec)
+    // `-f -` reads the attached stdin for patterns first, and --files lists
+    // rather than searches, and either leaves ripgrep nothing to do with
+    // stdin but walk the cwd instead. A stdin that is no file, FIFO or socket
+    // (`< /dev/null`) is not searched either (grep_cli::is_readable_stdin,
+    // ripgrep 14.1.1).
+    if (!fl.asList('file').includes('-') && !fl.asBool('files')) return null
   }
   const operand = classifyBarePath('.', registry, cwd)
   if (typeof operand === 'string') return null
@@ -79,7 +96,17 @@ export function defaultCwdOperand(
 export function pathFlagScopes(cmdName: string, argv: string[], cwd: string): PathSpec[] {
   const spec = SPECS[cmdName]
   if (spec === undefined) return []
-  return parseCommand(spec, argv, cwd, cmdName).pathFlagValues.map(
+  const parsed = parseCommand(spec, argv, cwd, cmdName)
+  const key = FILE_KEYS[cmdName]
+  const program = key === undefined ? undefined : parseToKwargs(parsed)[key]
+  const programPaths = Array.isArray(program) ? program : [program]
+  const flagPaths = [...parsed.pathFlagValues]
+  for (const value of programPaths) {
+    if (typeof value !== 'string') continue
+    const index = flagPaths.indexOf(value)
+    if (index >= 0) flagPaths.splice(index, 1)
+  }
+  return flagPaths.map(
     (value) =>
       new PathSpec({
         virtual: value,

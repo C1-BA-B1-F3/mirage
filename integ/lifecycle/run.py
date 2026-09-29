@@ -31,6 +31,7 @@ from mirage.errors import classify
 from mirage.policy import Policy
 from mirage.policy.types import (CommandContext, Deny, OpsContext,
                                  SessionContext)
+from mirage.process.types import SpawnRequest
 from mirage.runtime.types import ScriptSource
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
@@ -168,6 +169,13 @@ async def action(ws: Workspace, step: dict[str, Any],
     elif op == "stat":
         row = await ws.vfs.stat(step["path"])
         return {"type": row.type.value, "size": row.size}
+    elif op == "drain_processes":
+        await ws.processes.drain()
+    elif op == "spawn":
+        child = ws.spawn(SpawnRequest(tuple(step["argv"])),
+                         step.get("session"))
+        child.stdin.close()
+        return child.pid
     elif op == "exec":
         result = await ws.shell(step["command"],
                                 session_id=step.get("session"))

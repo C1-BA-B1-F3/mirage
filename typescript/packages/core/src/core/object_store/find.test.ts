@@ -57,10 +57,15 @@ describe('object_store find', () => {
     ])
   })
 
-  it('the size gate counts directories as zero', async () => {
+  it('the size gate counts a directory as DIR_SIZE bytes', async () => {
     const store = new FakeStore({ 'data/a/big.txt': '123456' })
     const find = makeFind(makeDriver(store))
     await expect(find(accessor, spec('/data'), { minSize: 1 })).resolves.toEqual([
+      '/data',
+      '/data/a',
+      '/data/a/big.txt',
+    ])
+    await expect(find(accessor, spec('/data'), { maxSize: 100 })).resolves.toEqual([
       '/data/a/big.txt',
     ])
   })

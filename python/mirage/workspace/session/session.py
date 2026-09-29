@@ -18,18 +18,19 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
-from mirage.io.async_line_iterator import AsyncLineIterator
-from mirage.io.types import ByteSource
+from mirage.io.async_line_iterator import SharedInput
 from mirage.policy.types import (AdmissionRules, Decision, HideReason,
                                  ProfileScript)
+from mirage.process.config import ProcessPermissions
 from mirage.secrets.config import EnvVar
 from mirage.shell.array import ShellArray
-from mirage.shell.constants import RANDOM, RANDOM_UNSET, SHELL_ARGV0
+from mirage.shell.constants import (BIN_PREFIX, IFS_DEFAULT, RANDOM,
+                                    RANDOM_UNSET, SHELL_ARGV0)
 from mirage.shell.types import FunctionBody
 from mirage.shell.variable import (ManagedRef, ShellVar, VarAttr,
                                    attrs_from_letters, stored_attrs,
                                    with_value)
-from mirage.types import (HiddenPaths, HiddenVars, MountMode, ShowEntry,
+from mirage.types import (HiddenPaths, HiddenVars, Limit, MountMode, ShowEntry,
                           ShownPaths)
 from mirage.workspace.abort import StatusWriter
 from mirage.workspace.session.constants import (CHILD_SHELL_FIELDS,
@@ -286,6 +287,12 @@ class SessionState:
     # unrestricted session. What an owner-rendering command prints as
     # the group. Stamped by the profile like script, so it persists.
     profile: str | None = None
+    command_limits: dict[str, Limit] = field(default_factory=dict)
+    terminal_output: bool = True
+    processes: ProcessPermissions = ProcessPermissions()
+    process_id: int | None = None
+    shell_pid: int | None = None
+    process_depth: int = 0
     # The host's standing answers to asked lines (design 3.9): session
     # state like functions and cwd, persisted, read and written through
     # the manager by id so a fork shares them, never another session's.
@@ -305,8 +312,6 @@ class SessionState:
     # Depth of nested `source`/`.` execution: `return` is legal and the
     # program loop absorbs its signal only while a file is being sourced.
     source_depth: int = field(default=0, repr=False)
-    _stdin_buffer: AsyncLineIterator | None = field(default=None, repr=False)
-    _stdin_source: ByteSource | None = field(default=None, repr=False)
     # Variables shadowed by `local` / `declare` in the running function;
     # a None value means the caller had no variable of that name. One
     # stack, not one per container: a local shadows the whole record, so
@@ -364,12 +369,20 @@ class SessionState:
     # `exec < file`. None is the terminal (the workspace's own output);
     # `""` is a closed descriptor (`exec >&-`), whose writes are
     # dropped. `_exec_opened` names the targets already truncated, so a
-    # later statement appends rather than re-truncating.
+    # later statement appends rather than re-truncating. `exec_stdin`
+    # is the one descriptor an `exec <` opened: every statement after
+    # it reads on from where the one before stopped, across lines and
+    # into a child shell, which shares it as bash's fork shares fd 0.
+    # `exec_stdout_input` and `exec_stderr_input` are the read end a
+    # stream holds after `exec 1<f` or `exec 1<&0`, which a dup shares
+    # the offset of.
     exec_stdout: str | None = None
     exec_stdout_append: bool = False
+    exec_stdout_input: SharedInput | None = None
     exec_stderr: str | None = None
     exec_stderr_append: bool = False
-    exec_stdin: bytes | None = None
+    exec_stderr_input: SharedInput | None = None
+    exec_stdin: SharedInput | None = None
     exec_stdin_unreadable: bool = False
     # What fd 0 holds when it is not its own read end: `CLOSED` after
     # `exec <&-`, a writing stream's identity after `exec 0<&1`, so a
@@ -463,6 +476,13 @@ class SessionState:
             data["commands"] = commands_to_dict(self.commands)
         if self.script is not None:
             data["script"] = script_to_dict(self.script)
+        if self.command_limits:
+            data["command_limits"] = {
+                name: limit.model_dump()
+                for name, limit in self.command_limits.items()
+            }
+        if self.processes != ProcessPermissions():
+            data["processes"] = self.processes.model_dump()
         if self.profile is not None:
             data["profile"] = self.profile
         if self.decisions:
@@ -505,10 +525,13 @@ class SessionState:
         commands = data.get("commands")
         script = data.get("script")
         decisions = data.get("decisions")
+        limits = data.get("command_limits")
+        processes = data.get("processes")
         if (modes is not None or paths is not None or shown is not None
                 or reasons is not None or vars_ is not None
                 or commands is not None or script is not None
-                or decisions is not None):
+                or decisions is not None or limits is not None
+                or processes is not None):
             data = dict(data)
         if modes is not None:
             data["mount_modes"] = {
@@ -538,6 +561,13 @@ class SessionState:
             data["script"] = script_from_dict(script)
         if decisions is not None:
             data["decisions"] = tuple(decision_from_dict(d) for d in decisions)
+        if limits is not None:
+            data["command_limits"] = {
+                name: Limit.model_validate(limit)
+                for name, limit in limits.items()
+            }
+        if processes is not None:
+            data["processes"] = ProcessPermissions.model_validate(processes)
         return cls(**data)
 
     @property
@@ -602,6 +632,15 @@ class SessionState:
         # process view is the exported set rather than every string.
         self.vars.setdefault("PWD",
                              ShellVar(self.cwd, frozenset({VarAttr.EXPORT})))
+        # bash starts with a PATH when the environment gives it none, and
+        # does not export it: `env` does not list it and a child process,
+        # such as a host interpreter, keeps its own. The one directory here
+        # is where every program's file is.
+        self.vars.setdefault("PATH", ShellVar(BIN_PREFIX, frozenset()))
+        # bash sets IFS at startup and never exports it, so a fresh shell
+        # reads `${#IFS}` as 3 and `OLDIFS=$IFS ... IFS=$OLDIFS` puts the
+        # default back rather than an empty IFS that splits nothing.
+        self.vars.setdefault("IFS", ShellVar(IFS_DEFAULT, frozenset()))
 
     def fork(self, **overrides: Any) -> "SessionState":
         """Return a copy of this session with overrides applied.
@@ -635,7 +674,10 @@ class SessionState:
                 **defaults["vars"], "PWD":
                 ShellVar(overrides["cwd"], frozenset({VarAttr.EXPORT}))
             }
-        return SessionState(**defaults)
+        forked = SessionState(**defaults)
+        if self._random_seed == RANDOM_UNSET:
+            forked._random_seed = RANDOM_UNSET
+        return forked
 
     def snapshot(self) -> dict[str, Any]:
         """Copy the state a child shell runs on top of.

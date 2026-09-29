@@ -21,7 +21,9 @@ DEFAULT_GRAPH_API = f"https://graph.microsoft.com/{GRAPH_VERSION}"
 
 
 class MsGraphConfig(BaseModel):
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True,
+                              arbitrary_types_allowed=True,
+                              extra="forbid")
 
     access_token: SecretStr | Callable[[], str | SecretStr]
     tenant_host: str | None = None

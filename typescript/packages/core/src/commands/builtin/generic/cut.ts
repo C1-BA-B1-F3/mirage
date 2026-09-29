@@ -102,7 +102,7 @@ export async function cutGeneric(
     const io = operandsIo(err, { cache: ok.map((operand) => operand.path.virtual) })
     if (ok.length === 0 && err !== '') return [null, io]
     const outputs = ok.map((operand) => cutStream(singleChunk(operand.data), parsed))
-    const out: ByteSource = asyncChain(...outputs)
+    const out: ByteSource = asyncChain(outputs)
     return [out, io]
   }
   let source: AsyncIterable<Uint8Array>

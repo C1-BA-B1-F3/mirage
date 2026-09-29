@@ -13,16 +13,31 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { DEFAULT_UMASK } from '../../../../context/session_context.ts'
+import { dispatchStat, dotRefusal, typedSpec } from '../../../../commands/builtin/utils/paths.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { FileStat, SetAttrFields } from '../../../../types.ts'
 import { FileType, PathSpec } from '../../../../types.ts'
-import { fsStrerror, isEnoent, isFsError, isMissingOp } from '../../../../utils/errors.ts'
-import { CycleError, resolvePath } from '../../../../utils/path.ts'
+import {
+  fsStrerror,
+  isEnoent,
+  isEnotdir,
+  isFsError,
+  isMissingOp,
+  walkRefusal,
+} from '../../../../utils/errors.ts'
+import { CycleError } from '../../../../utils/path.ts'
 import type { DispatchFn } from '../../../../runtime/types.ts'
 import type { Namespace } from '../../../mount/namespace/namespace.ts'
 import type { SessionState } from '../../../session/session.ts'
-import { expandOperands, fail, finish, readOnlyError, splitValueFlags } from '../shared.ts'
-import { isReadOnlyError, nowIso, parseTouchStamp, setattrLink, setattrVia } from './metadata.ts'
+import { expandOperands, fail, finish, splitValueFlags } from '../shared.ts'
+import {
+  isReadOnlyError,
+  nowIso,
+  permissionError,
+  parseTouchStamp,
+  setattrLink,
+  setattrVia,
+} from './metadata.ts'
 import type { Result } from '../types.ts'
 
 // touch: set access/modification times, creating missing files. GNU flags:
@@ -48,18 +63,18 @@ export async function handleTouch(
   }
   const refText = values.get('r')
   if (stamp === null && refText !== undefined) {
-    const ref = PathSpec.fromStrPath(resolvePath(refText, session.cwd))
+    // The spelling as typed, so the empty name is refused rather than read
+    // as the working directory.
+    const ref = typedSpec(refText, session.cwd)
     try {
       const [refStat] = await dispatch('stat', ref)
       stamp = (refStat as FileStat).modified
     } catch (err) {
-      if (isEnoent(err)) {
-        return fail(
-          'touch',
-          `touch: failed to get attributes of '${refText}': No such file or directory\n`,
-        )
-      }
-      throw err
+      if (!isFsError(err)) throw err
+      return fail(
+        'touch',
+        `touch: failed to get attributes of '${refText}': ${String(fsStrerror(err))}\n`,
+      )
     }
   }
   stamp ??= nowIso()
@@ -70,12 +85,30 @@ export async function handleTouch(
   const errors: string[] = []
   const writes: Record<string, Uint8Array> = {}
   for (const target of await expandOperands(namespace, operands)) {
+    if (flags.has('h') && namespace.isLink(target.virtual)) {
+      await setattrLink(dispatch, target, { mtime: stamp })
+      continue
+    }
+    if (target.walkError !== null) {
+      // Past -h, which acts on a looping link itself: the empty name,
+      // whose `virtual` is the working directory, and a link loop name
+      // nothing to touch. -c never opens the file, so it meets the walk
+      // when it sets the times, where ENOENT is the silent miss -c asks
+      // for.
+      if (flags.has('c') && target.walkError === 'ENOENT') continue
+      const action = flags.has('c') ? 'setting times of' : 'cannot touch'
+      errors.push(
+        `touch: ${action} '${target.rawPath}': ${String(fsStrerror(walkRefusal(target)))}\n`,
+      )
+      continue
+    }
     if (namespace.isMountRoot(target.virtual)) {
       errors.push(`touch: cannot touch '${target.rawPath}': Is a directory\n`)
       continue
     }
-    if (flags.has('h') && namespace.isLink(target.virtual)) {
-      await setattrLink(dispatch, target, { mtime: stamp })
+    const unwalked = await dotRefusal(dispatchStat(dispatch), target, (v) => namespace.follow(v))
+    if (unwalked !== null) {
+      errors.push(`touch: cannot touch '${target.rawPath}': ${String(fsStrerror(unwalked))}\n`)
       continue
     }
     let virtual: string
@@ -83,7 +116,8 @@ export async function handleTouch(
       virtual = namespace.follow(target.virtual)
     } catch (err) {
       if (err instanceof CycleError) {
-        errors.push(`touch: cannot touch '${target.rawPath}': Too many levels of symbolic links\n`)
+        const action = flags.has('c') ? 'setting times of' : 'cannot touch'
+        errors.push(`touch: ${action} '${target.rawPath}': Too many levels of symbolic links\n`)
         continue
       }
       throw err
@@ -111,6 +145,12 @@ export async function handleTouch(
       try {
         await dispatch('stat', resolved)
       } catch (err) {
+        // -c never opens the file, so GNU meets the bad parent when it sets
+        // the times, and says so in those words.
+        if (isEnotdir(err) && flags.has('c')) {
+          errors.push(`touch: setting times of '${target.rawPath}': Not a directory\n`)
+          continue
+        }
         if (!isEnoent(err)) throw err
         if (flags.has('c')) continue
         try {
@@ -140,15 +180,16 @@ export async function handleTouch(
       await setattrVia(dispatch, resolved, fields)
     } catch (err) {
       if (isReadOnlyError(err)) {
-        errors.push(readOnlyError('touch', namespace, resolved))
+        const action = flags.has('c') ? 'setting times of' : 'cannot touch'
+        errors.push(permissionError('touch', action, target, err))
         continue
       }
       // A destination whose parent chain is not all directories is one
       // failed operand, not an aborted command: GNU reports it and touches
       // the rest. Caught here rather than around the write because backends
-      // disagree about which call refuses first (ram answers stat with
-      // ENOENT and fails the write; a real filesystem answers stat itself
-      // with ENOTDIR).
+      // disagree about which call refuses first (an object store answers
+      // stat with ENOENT and fails the write; a filesystem or a keyed store
+      // answers stat itself with ENOTDIR).
       if (!isFsError(err)) throw err
       errors.push(`touch: cannot touch '${target.rawPath}': ${String(fsStrerror(err))}\n`)
     }

@@ -2,7 +2,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class ChromaConfig(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     host: str = "localhost"
     port: int = 8000

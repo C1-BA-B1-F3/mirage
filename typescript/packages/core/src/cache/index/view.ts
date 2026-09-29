@@ -68,12 +68,15 @@ export class IndexView extends IndexCacheStore {
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }
       const result = await this.store.listDir(path)
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }
-      return result.entries === undefined || result.entries === null
-        ? result
-        : {
-            ...result,
-            entries: result.entries.filter((key) => this.owns(key)),
-          }
+      return {
+        ...result,
+        ...(result.entries == null
+          ? {}
+          : { entries: result.entries.filter((key) => this.owns(key)) }),
+        ...(result.partialEntries == null
+          ? {}
+          : { partialEntries: result.partialEntries.filter((key) => this.owns(key)) }),
+      }
     })
   }
 
@@ -88,14 +91,29 @@ export class IndexView extends IndexCacheStore {
     entries: readonly [string, IndexEntry][],
     expiredAt?: Date | null,
   ): Promise<void> {
+    return this.storeDir(path, entries, expiredAt, false)
+  }
+
+  override setPartialDir(
+    path: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt?: Date | null,
+  ): Promise<void> {
+    return this.storeDir(path, entries, expiredAt, true)
+  }
+
+  private storeDir(
+    path: string,
+    entries: readonly [string, IndexEntry][],
+    expiredAt: Date | null | undefined,
+    partial: boolean,
+  ): Promise<void> {
     return withCacheMutation(this.cache, async () => {
       if (this.owns(path)) {
         const prefix = rstripSlash(path) + '/'
-        await this.store.setDir(
-          path,
-          entries.filter(([name]) => this.owns(prefix + name)),
-          expiredAt,
-        )
+        const owned = entries.filter(([name]) => this.owns(prefix + name))
+        if (partial) await this.store.setPartialDir(path, owned, expiredAt)
+        else await this.store.setDir(path, owned, expiredAt)
       }
     })
   }

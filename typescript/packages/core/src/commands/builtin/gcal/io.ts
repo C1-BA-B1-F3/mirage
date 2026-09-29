@@ -12,18 +12,16 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { GCalAccessor } from '../../../accessor/gcal.ts'
 import { read as gcalRead } from '../../../core/gcal/read.ts'
 import { readdir as gcalReaddir } from '../../../core/gcal/readdir.ts'
 import { stat as gcalStat } from '../../../core/gcal/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
-import { streamFromBytes } from '../utils/wrap.ts'
 
-export const GCAL_IO: CommandIO<GCalAccessor> = {
-  readdir: gcalReaddir,
-  readBytes: gcalRead,
-  readStream: (a, p, i) => streamFromBytes(gcalRead, a, p, i),
-  stat: gcalStat,
+export const GCAL_IO: CommandIO<GCalAccessor> = new VFSAdapter<GCalAccessor>({
+  read: { readdir: gcalReaddir, readBytes: gcalRead, stat: gcalStat },
   isMounted: () => true,
   local: false,
-}
+}).toCommandIO()

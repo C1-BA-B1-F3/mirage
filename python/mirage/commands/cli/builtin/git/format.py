@@ -30,8 +30,8 @@ MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
 
 # The presets this build renders, and the real git presets it refuses
 # by name rather than calling invalid.
-PRESET_KINDS = ("oneline", "short", "medium", "full", "fuller")
-UNSUPPORTED_PRESETS = ("raw", "email", "mboxrd", "reference")
+PRESET_KINDS = ("oneline", "short", "medium", "full", "fuller", "raw")
+UNSUPPORTED_PRESETS = ("email", "mboxrd", "reference")
 HEX_DIGITS = "0123456789abcdefABCDEF"
 
 Decorations = dict[bytes, list[str]]
@@ -136,7 +136,7 @@ def short(sha: bytes, length: int = SHORT_SHA) -> str:
     return sha.decode()[:length]
 
 
-def git_date(timestamp: int, offset: int) -> str:
+def git_date(timestamp: int, offset: int, mode: str = "default") -> str:
     """Render a commit time in git's default date format.
 
     ``Fri Jan 16 11:30:00 2026 +0000``: the day of the month is not
@@ -153,6 +153,18 @@ def git_date(timestamp: int, offset: int) -> str:
     moment = datetime.fromtimestamp(timestamp, tz)
     sign = "+" if offset >= 0 else "-"
     hours, minutes = divmod(abs(offset) // 60, 60)
+    zone = f"{sign}{hours:02d}{minutes:02d}"
+    if mode in ("iso", "iso8601"):
+        return f"{moment:%Y-%m-%d %H:%M:%S} {zone}"
+    if mode in ("iso-strict", "iso8601-strict"):
+        return f"{moment:%Y-%m-%dT%H:%M:%S}" + ("Z" if offset == 0 else
+                                                f"{zone[:3]}:{zone[3:]}")
+    if mode == "short":
+        return f"{moment:%Y-%m-%d}"
+    if mode == "unix":
+        return str(timestamp)
+    if mode == "raw":
+        return f"{timestamp} {zone}"
     return (f"{DAYS[moment.weekday()]} {MONTHS[moment.month - 1]} "
             f"{moment.day} {moment:%H:%M:%S} {moment.year} "
             f"{sign}{hours:02d}{minutes:02d}")
@@ -193,7 +205,9 @@ def message_block(commit: Commit) -> list[str]:
     return [f"{INDENT}{line}" for line in text.split("\n")]
 
 
-def entry(commit: Commit, length: int = SHORT_SHA) -> list[str]:
+def entry(commit: Commit,
+          length: int = SHORT_SHA,
+          date: str = "default") -> list[str]:
     """A full log entry: the header block and the indented message.
 
     A merge carries an extra ``Merge:`` line naming its parents in
@@ -210,7 +224,8 @@ def entry(commit: Commit, length: int = SHORT_SHA) -> list[str]:
                      f"{' '.join(short(p, length) for p in commit.parents)}")
     lines.extend([
         f"Author: {commit.author.decode('utf-8', errors='replace')}",
-        f"Date:   {git_date(commit.author_time, commit.author_timezone)}",
+        "Date:   " +
+        git_date(commit.author_time, commit.author_timezone, date),
         "",
         *message_block(commit),
     ])
@@ -238,7 +253,10 @@ def _subject_only_block(commit: Commit) -> list[str]:
     return [f"{INDENT}{subject(commit)}"]
 
 
-def preset_block(commit: Commit, kind: str, length: int) -> list[str]:
+def preset_block(commit: Commit,
+                 kind: str,
+                 length: int,
+                 date: str = "default") -> list[str]:
     """One commit as a block preset renders it (short/medium/full/fuller).
 
     Pinned against git 2.50: ``short`` is the id, author and indented
@@ -250,8 +268,18 @@ def preset_block(commit: Commit, kind: str, length: int) -> list[str]:
         kind (str): the preset name, already validated.
         length (int): how many hex digits of a parent id to print.
     """
+    if kind == "raw":
+        return [
+            f"commit {commit.id.decode()}", f"tree {commit.tree.decode()}",
+            *[f"parent {p.decode()}"
+              for p in commit.parents], f"author {commit.author.decode()} " +
+            git_date(commit.author_time, commit.author_timezone, 'raw'),
+            f"committer {commit.committer.decode()} " +
+            git_date(commit.commit_time, commit.commit_timezone, 'raw'), "",
+            *message_block(commit)
+        ]
     if kind == "medium":
-        return entry(commit, length)
+        return entry(commit, length, date)
     author = commit.author.decode("utf-8", errors="replace")
     committer = commit.committer.decode("utf-8", errors="replace")
     lines = [f"commit {commit.id.decode()}", *_merge_line(commit, length)]
@@ -268,9 +296,11 @@ def preset_block(commit: Commit, kind: str, length: int) -> list[str]:
         return lines
     lines.extend([
         f"Author:     {author}",
-        f"AuthorDate: {git_date(commit.author_time, commit.author_timezone)}",
+        "AuthorDate: " +
+        git_date(commit.author_time, commit.author_timezone, date),
         f"Commit:     {committer}",
-        f"CommitDate: {git_date(commit.commit_time, commit.commit_timezone)}",
+        "CommitDate: " +
+        git_date(commit.commit_time, commit.commit_timezone, date),
         "",
         *message_block(commit),
     ])
@@ -333,8 +363,11 @@ def decoration_names(decor: Decorations | None, commit: Commit) -> list[str]:
     return decor.get(commit.id, [])
 
 
-def render_template(template: str, commit: Commit, length: int,
-                    decor: Decorations | None) -> str:
+def render_template(template: str,
+                    commit: Commit,
+                    length: int,
+                    decor: Decorations | None,
+                    date: str = "default") -> str:
     """Expand a format:/tformat: template for one commit.
 
     The scan mirrors git's pretty.c behavior pinned in docker: an
@@ -367,7 +400,7 @@ def render_template(template: str, commit: Commit, length: int,
             i += 2
             continue
         if marker in ("a", "c") and i + 2 < len(template):
-            pair = _ident_placeholder(marker, template[i + 2], commit)
+            pair = _ident_placeholder(marker, template[i + 2], commit, date)
             if pair is not None:
                 out.append(pair)
                 i += 3
@@ -423,7 +456,8 @@ def _simple_placeholder(marker: str, commit: Commit, message: str, length: int,
     return None
 
 
-def _ident_placeholder(who: str, field: str, commit: Commit) -> str | None:
+def _ident_placeholder(who: str, field: str, commit: Commit,
+                       date: str) -> str | None:
     """An author/committer placeholder's value (%an, %cd, ...).
 
     %aN/%aE are the mailmap variants; no mailmap is ever loaded, so
@@ -442,7 +476,11 @@ def _ident_placeholder(who: str, field: str, commit: Commit) -> str | None:
     if field in ("e", "E"):
         return ident_email(ident)
     if field == "d":
-        return git_date(time, zone)
+        return git_date(time, zone, date)
+    if field == "i":
+        return git_date(time, zone, "iso")
+    if field == "I":
+        return git_date(time, zone, "iso-strict")
     if field == "t":
         return str(time)
     return None

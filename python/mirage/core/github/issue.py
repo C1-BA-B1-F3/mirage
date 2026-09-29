@@ -12,7 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from typing import Any
+from typing import Any, cast
 
 from mirage.core.github.client import github_request
 from mirage.core.github.config import GhConfig
@@ -75,3 +75,76 @@ async def comment_issue(config: GhConfig, ref: RepoRef, number: int,
                                 _path(ref, f"/{number}/comments"),
                                 {"body": body},
                                 base_url=config.base_url)
+
+
+COMMENTS_QUERY = """
+query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    issueOrPullRequest(number: $number) {
+      ... on Issue {
+        comments(first: 100, after: $cursor) {
+          nodes { ...CommentFields }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+      ... on PullRequest {
+        comments(first: 100, after: $cursor) {
+          nodes { ...CommentFields }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }
+}
+fragment CommentFields on IssueComment {
+  id
+  author { login }
+  authorAssociation
+  body
+  createdAt
+  includesCreatedEdit
+  isMinimized
+  minimizedReason
+  reactionGroups { content users { totalCount } }
+  url
+  viewerDidAuthor
+}
+"""
+
+
+async def issue_comments(config: GhConfig, ref: RepoRef,
+                         number: int) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    cursor: str | None = None
+    while True:
+        response = await github_request(config.token,
+                                        "POST",
+                                        "/graphql", {
+                                            "query": COMMENTS_QUERY,
+                                            "variables": {
+                                                "owner": ref.owner,
+                                                "repo": ref.repo,
+                                                "number": number,
+                                                "cursor": cursor
+                                            }
+                                        },
+                                        base_url=config.base_url)
+        if not isinstance(response, dict):
+            raise ValueError("Invalid GitHub comments response")
+        payload = cast(dict[str, Any], response)
+        if payload.get("errors"):
+            raise ValueError("; ".join(e["message"]
+                                       for e in payload["errors"]))
+        repo = (payload.get("data") or {}).get("repository") or {}
+        comments = (repo.get("issueOrPullRequest") or {}).get("comments")
+        if comments is None:
+            raise ValueError(
+                "Could not resolve comments for this issue or pull request")
+        rows.extend(comments["nodes"])
+        page = comments["pageInfo"]
+        if not page["hasNextPage"]:
+            return rows
+        next_cursor = page["endCursor"]
+        if not next_cursor or next_cursor == cursor:
+            raise ValueError("GitHub returned a non-advancing comments cursor")
+        cursor = next_cursor

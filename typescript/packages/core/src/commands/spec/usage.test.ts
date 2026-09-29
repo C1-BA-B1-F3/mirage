@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ambiguousOptionError,
   extraOperandError,
+  missingOperandError,
   invalidFloatError,
   invalidIntError,
   argmatchError,
@@ -295,17 +296,21 @@ describe('readFailExitCode', () => {
     expect(readFailExitCode('sort', fsErr('ENOENT'))).toBe(2)
     expect(readFailExitCode('sort', fsErr('EISDIR'))).toBe(2)
     expect(readFailExitCode('unzip', fsErr('ENOENT'))).toBe(9)
+    // A read the mount refuses to render whole (EFBIG) is a failed read too.
+    expect(readFailExitCode('rg', fsErr('EFBIG'))).toBe(2)
+    expect(readFailExitCode('cat', fsErr('EFBIG'))).toBe(1)
   })
 
-  it('splits by errno for the four commands that do', () => {
+  it('splits by errno for the commands that do', () => {
     // sed opens the directory and fails on the read (4) where a missing
     // file fails at open (2); the gzip family calls a directory a warning
-    // (2) and a missing file an error (1); zgrep inverts that.
+    // (2) and a missing file an error (1). zgrep opens its operands itself,
+    // so a failed read that reaches here is grep's trouble, 2 either way.
     expect(readFailExitCode('sed', fsErr('EISDIR'))).toBe(4)
     expect(readFailExitCode('sed', fsErr('ENOENT'))).toBe(2)
     expect(readFailExitCode('zcat', fsErr('EISDIR'))).toBe(2)
     expect(readFailExitCode('zcat', fsErr('ENOENT'))).toBe(1)
-    expect(readFailExitCode('zgrep', fsErr('EISDIR'))).toBe(1)
+    expect(readFailExitCode('zgrep', fsErr('EISDIR'))).toBe(2)
     expect(readFailExitCode('zgrep', fsErr('ENOENT'))).toBe(2)
   })
 
@@ -463,5 +468,30 @@ describe('unknownOptionError leaves the token unescaped', () => {
   ])('keeps %s’s token as typed', (cmd, token) => {
     const [msg] = unknownOptionError(cmd, token)
     expect(td.decode(msg).startsWith(`${cmd}: unrecognized option '${token}'\n`)).toBe(true)
+  })
+})
+
+describe('missingOperandError', () => {
+  // argv[argc - 1] once getopt permuted: the last operand, or join's literal
+  // last word, since it reads operands in order. With no operand coreutils
+  // says a bare `missing operand`, while diffutils names the line's last word
+  // and else the program itself (coreutils 9.7, diffutils 3.10). Mirrors
+  // python's test_missing_operand_error_matches_gnu.
+  const hint = (cmd: string, prefixed: boolean): string =>
+    `${prefixed ? `${cmd}: ` : ''}Try '${cmd} --help' for more information.`
+  it.each([
+    ['comm', null, [], 'comm: missing operand', false, 1],
+    ['comm', null, ['-1'], 'comm: missing operand', false, 1],
+    ['comm', 'a.txt', ['a.txt', '-1'], "comm: missing operand after 'a.txt'", false, 1],
+    ['join', 'a.txt', [], "join: missing operand after 'a.txt'", false, 1],
+    ['join', 'a.txt', ['a.txt', '-t', ','], "join: missing operand after ','", false, 1],
+    ['cmp', null, [], "cmp: missing operand after 'cmp'", true, 2],
+    ['cmp', null, ['-s'], "cmp: missing operand after '-s'", true, 2],
+    ['diff', 'a.txt', [], "diff: missing operand after 'a.txt'", true, 2],
+    ['diff', 'a.txt', ['a.txt', '-u'], "diff: missing operand after 'a.txt'", true, 2],
+    ['diff', null, ['-u'], "diff: missing operand after '-u'", true, 2],
+  ] as const)('matches GNU for %s %s %j', (cmd, last, argv, line, prefixed, code) => {
+    const err = missingOperandError(cmd, last, argv)
+    expect([err.message, err.exitCode]).toEqual([`${line}\n${hint(cmd, prefixed)}`, code])
   })
 })

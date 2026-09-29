@@ -68,7 +68,9 @@ GNU_READ_EXIT = {
     "awk '{{print}}' {p}": (2, 2),
     "jq . {p}": (2, 2),
     "grep x {p}": (2, 2),
-    "cmp {p} {p}": (2, 2),
+    # One file named twice is equal unread, so the second operand is
+    # another file.
+    "cmp {p} /ram/dir/inner.txt": (2, 2),
     "sed -n p {p}": (4, 2),
     "gzip -c {p}": (2, 1),
     "gunzip -c {p}": (2, 1),
@@ -76,20 +78,27 @@ GNU_READ_EXIT = {
     "zgrep x {p}": (1, 2),
 }
 
-# GNU's wording for a failed read is per-command and unreproducible as a
-# family: `base64: read error: Is a directory`, `sort: read failed: dir:
-# Is a directory`, `rev: fgetwc() failed: Is a directory`, `fmt: read
-# error` with no errno at all, `tac: read error: Invalid argument` with
-# the WRONG errno, `strings: Warning: 'dir' is a directory`, and `gzip:
-# dir is a directory -- ignored`. mirage normalizes all of it to
-# `<cmd>: <path>: Is a directory`, so the message test asserts the house
-# style and only the exit code above is GNU's.
+# GNU's wording for a failed read is per-command: `base64: read error:
+# Is a directory`, `sort: read failed: dir: Is a directory`, `rev:
+# fgetwc() failed: Is a directory`, `fmt: read error` with no errno at
+# all, `strings: Warning: 'dir' is a directory`, and `gzip: dir is a
+# directory -- ignored`, which the gzip family prints as GNU does. mirage
+# says the step in GNU's words only where that still names the operand
+# (``FAILURE_WORDING``: head, tail and uniq
+# say `error reading 'dir'`, tac and tsort `dir: read error`, sed `read
+# error on dir`; sort's steps come from `sort_die`, whose `read failed:
+# dir: Is a directory` still holds the house style) and keeps `<cmd>:
+# <path>: Is a directory` for the rest, so the message test asserts that
+# the operand and the errno are named and only the exit code above is
+# GNU's for every line.
 #
-# Two lines print nothing at all on a directory in GNU (`jq .` exits 2
-# silently, `zgrep x` exits 1 silently because gzip's warning is
-# swallowed by the pipe into grep). mirage reports them like the rest,
-# which is a deliberate divergence toward saying something.
+# Two lines print nothing at all on a directory in GNU: `jq .` exits 2
+# silently, and `zgrep x` exits 1 silently because zgrep runs gzip with
+# -q, which keeps the directory warning to itself. zgrep is silent here
+# too; jq reports it like the rest, which is a deliberate divergence
+# toward saying something.
 SILENT_IN_GNU = {"jq . {p}", "zgrep x {p}"}
+SILENT_HERE = {"zgrep x {p}"}
 
 
 # `diff` is absent on purpose. GNU diff DESCENDS into a directory
@@ -122,12 +131,24 @@ async def test_missing_read_exit_matches_gnu(template):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("template", sorted(GNU_READ_EXIT))
+@pytest.mark.parametrize("template", sorted(SILENT_HERE))
+async def test_directory_read_is_silent_like_gnu(template):
+    ws = await _ws()
+    result = await ws.shell(template.format(p="/ram/dir"))
+    assert (result.stderr or b"") == b""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("template", sorted(set(GNU_READ_EXIT) - SILENT_HERE))
 async def test_directory_read_says_is_a_directory(template):
     ws = await _ws()
     result = await ws.shell(template.format(p="/ram/dir"))
     stderr = (result.stderr or b"").decode()
-    assert "/ram/dir: Is a directory" in stderr
+    assert ("/ram/dir: Is a directory" in stderr
+            or "/ram/dir: read error: Is a directory" in stderr
+            or "error reading '/ram/dir': Is a directory" in stderr
+            or 'cannot open "/ram/dir" (Is a directory)' in stderr
+            or "gzip: /ram/dir is a directory -- ignored" in stderr)
     assert "No such file" not in stderr
 
 
@@ -140,32 +161,35 @@ async def test_directory_read_says_is_a_directory(template):
 # (command line, exit, stdout, stderr)
 GNU_SED_MULTI = [
     ("sed -n p /ram/nope /ram/ok.txt", 2, "a\nb\n",
-     "sed: /ram/nope: No such file or directory\n"),
+     "sed: can't read /ram/nope: No such file or directory\n"),
     ("sed -n p /ram/dir /ram/ok.txt", 4, "",
-     "sed: /ram/dir: Is a directory\n"),
+     "sed: read error on /ram/dir: Is a directory\n"),
     ("sed -n p /ram/ok.txt /ram/dir /ram/ok2.txt", 4, "a\nb\n",
-     "sed: /ram/dir: Is a directory\n"),
+     "sed: read error on /ram/dir: Is a directory\n"),
     ("sed -n p /ram/ok.txt /ram/nope /ram/ok2.txt", 2, "a\nb\nc\nd\n",
-     "sed: /ram/nope: No such file or directory\n"),
-    ("sed -n p /ram/dir /ram/dir", 4, "", "sed: /ram/dir: Is a directory\n"),
+     "sed: can't read /ram/nope: No such file or directory\n"),
+    ("sed -n p /ram/dir /ram/dir", 4, "",
+     "sed: read error on /ram/dir: Is a directory\n"),
     ("sed -n p /ram/nope /ram/dir", 4, "",
-     "sed: /ram/nope: No such file or directory\n"
-     "sed: /ram/dir: Is a directory\n"),
+     "sed: can't read /ram/nope: No such file or directory\n"
+     "sed: read error on /ram/dir: Is a directory\n"),
     ("sort /ram/ok.txt /ram/dir /ram/ok2.txt", 2, "",
-     "sort: /ram/dir: Is a directory\n"),
+     "sort: read failed: /ram/dir: Is a directory\n"),
     ("cat /ram/ok.txt /ram/dir /ram/ok2.txt", 1, "a\nb\nc\nd\n",
      "cat: /ram/dir: Is a directory\n"),
-    ("zcat /ram/dir /ram/nope", 1, "", "zcat: /ram/dir: Is a directory\n"
-     "zcat: /ram/nope: No such file or directory\n"),
+    ("zcat /ram/dir /ram/nope", 1, "",
+     "gzip: /ram/dir is a directory -- ignored\n"
+     "gzip: /ram/nope.gz: No such file or directory\n"),
     # gzip's error outranks its warning in EITHER order, so the reversed
     # line is 1 too: `progerror` assigns ERROR outright while `WARN`
     # assigns only when nothing has failed yet. Two warnings and no error
     # stay 2.
     ("zcat /ram/nope /ram/dir", 1, "",
-     "zcat: /ram/nope: No such file or directory\n"
-     "zcat: /ram/dir: Is a directory\n"),
-    ("zcat /ram/dir /ram/dir", 2, "", "zcat: /ram/dir: Is a directory\n"
-     "zcat: /ram/dir: Is a directory\n"),
+     "gzip: /ram/nope.gz: No such file or directory\n"
+     "gzip: /ram/dir is a directory -- ignored\n"),
+    ("zcat /ram/dir /ram/dir", 2, "",
+     "gzip: /ram/dir is a directory -- ignored\n"
+     "gzip: /ram/dir is a directory -- ignored\n"),
 ]
 
 

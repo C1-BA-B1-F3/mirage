@@ -1,3 +1,4 @@
+import { enotsup } from '@struktoai/mirage-core/utils/errors'
 import { invalidateAfterWrite } from '@struktoai/mirage-core/cache/context'
 import { record, startOp } from '@struktoai/mirage-core/observe/context'
 import { VFSName } from '@struktoai/mirage-core/types'
@@ -9,7 +10,9 @@ export async function truncate(
   accessor: NextcloudAccessor,
   path: PathSpec,
   length: number,
+  noCreate = false,
 ): Promise<void> {
+  if (noCreate) throw enotsup('nextcloud', 'truncate --no-create', path)
   const timer = startOp()
   const op = await accessor.operator()
   const key = nextcloudKey(path)

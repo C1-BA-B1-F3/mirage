@@ -80,3 +80,5 @@ export class ReturnSignal extends Error {
     this.stderr = stderr
   }
 }
+
+export class PipeClosed extends Error {}

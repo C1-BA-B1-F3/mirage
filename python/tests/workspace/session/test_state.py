@@ -20,8 +20,9 @@ from mirage.ops.types import SessionView
 from mirage.policy import Action, Deny, Policies, Policy, PolicyDenied
 from mirage.policy.types import SessionContext
 from mirage.shell.array import make_array
+from mirage.shell.call_stack import CallStack
 from mirage.shell.errors import ArithError
-from mirage.shell.variable import ManagedRef, ShellVar, VarAttr
+from mirage.shell.variable import ManagedRef, ShellVar, TempEnv, VarAttr
 from mirage.types import HiddenVars
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.errors import ReadonlyVariableError
@@ -29,7 +30,8 @@ from mirage.workspace.session.session import vars_from_env
 
 from mirage.workspace.session.state import (  # isort: skip
     element_index, env_snapshot, gate_rendering, gate_restored_vars,
-    next_random, seed_var, session_elements, session_view, set_attr, set_var,
+    in_call_env, next_random, outlive_call, positional_params, seed_var,
+    session_elements, session_view, set_attr, set_positional_params, set_var,
     strip_key_quotes, subscript_index, visible_env)
 
 
@@ -152,7 +154,7 @@ def test_env_snapshot_is_a_copy():
                            cwd="/",
                            vars=vars_from_env({"A": "1"}))
     snap = env_snapshot(session)
-    assert snap == session.env
+    assert snap == {"A": "1", "PWD": "/"}
     assert snap is not session.env
 
 
@@ -246,8 +248,8 @@ def test_visible_env_filters_reads_without_copying():
     assert env.get("SLACK_TOKEN") is None
     assert "AWS_SECRET_KEY" not in env
     assert env["PUBLIC"] == "1"
-    assert sorted(env) == ["PUBLIC", "PWD"]
-    assert len(env) == 2
+    assert sorted(env) == ["IFS", "PATH", "PUBLIC", "PWD"]
+    assert len(env) == 4
     with pytest.raises(KeyError):
         env["SLACK_TOKEN"]
     seed_var(session, "NEW", "2")
@@ -504,3 +506,59 @@ def test_gate_rendering_is_what_set_var_shows_a_hook():
     assert gate_rendering({"b": "2", "a": "1"}) == "1 2"
     assert gate_rendering(make_array(["p", "q"])) == "p q"
     assert gate_rendering(None) is None
+
+
+def test_positional_params_are_a_functions_own_even_when_empty():
+    session = SessionState(session_id="s", positional_args=["a", "b"])
+    stack = CallStack()
+    assert positional_params(session, stack) == ["a", "b"]
+    stack.push([])
+    assert positional_params(session, stack) == []
+    set_positional_params(session, stack, ["x"])
+    assert stack.get_all_positional() == ["x"]
+    assert session.positional_args == ["a", "b"]
+    stack.pop()
+    set_positional_params(session, stack, ["y"])
+    assert session.positional_args == ["y"]
+
+
+def _in_function(session: SessionState,
+                 temp: TempEnv) -> dict[str, ShellVar | None]:
+    locals_frame: dict[str, ShellVar | None] = {}
+    session._local_frames.extend([temp, locals_frame])
+    session._local_vars = locals_frame
+    return locals_frame
+
+
+@pytest.mark.asyncio
+async def test_unset_reveals_what_an_enclosing_scope_saved():
+    view, session = _view()
+    _in_function(session, TempEnv({"A": ShellVar("old")}))
+    seed_var(session, "A", "pre")
+    await view.unset("A")
+    assert session.env["A"] == "old"
+    assert "A" not in session._local_frames[0]
+
+
+@pytest.mark.asyncio
+async def test_unset_of_a_local_leaves_it_unset():
+    view, session = _view()
+    frame = _in_function(session, TempEnv())
+    frame["A"] = ShellVar("1")
+    seed_var(session, "A", "local")
+    await view.unset("A")
+    assert "A" not in session.env
+    assert frame["A"] == ShellVar("1")
+
+
+def test_outlive_call_keeps_a_temporary_environment_name():
+    session = SessionState(session_id="s")
+    temp = TempEnv({"A": None})
+    frame = _in_function(session, temp)
+    assert in_call_env(session, "A")
+    frame["B"] = None
+    outlive_call(session, "B")
+    assert frame == {"B": None}
+    outlive_call(session, "A")
+    assert temp == {}
+    assert not in_call_env(session, "A")

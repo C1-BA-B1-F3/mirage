@@ -12,17 +12,24 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { makeSearchOp } from '../../../core/hierarchy/search.ts'
+import { detectScope } from '../../../core/postgres/scope.ts'
+import { SEARCHERS } from '../../../core/postgres/search.ts'
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { PostgresAccessor } from '../../../accessor/postgres.ts'
 import { read as postgresRead, readStream as postgresStream } from '../../../core/postgres/read.ts'
 import { readdir as postgresReaddir } from '../../../core/postgres/readdir.ts'
 import { stat as postgresStat } from '../../../core/postgres/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const POSTGRES_IO: CommandIO<PostgresAccessor> = {
-  readdir: postgresReaddir,
-  readBytes: postgresRead,
-  readStream: postgresStream,
-  stat: postgresStat,
+export const POSTGRES_IO: CommandIO<PostgresAccessor> = new VFSAdapter<PostgresAccessor>({
+  search: {
+    search: makeSearchOp(detectScope, SEARCHERS, postgresStat),
+    meta: { grep: { mode: 'literal', stream: false } },
+  },
+  read: { readdir: postgresReaddir, readBytes: postgresRead, stat: postgresStat },
+  native: { readStream: postgresStream },
   isMounted: () => true,
   local: false,
-}
+}).toCommandIO()

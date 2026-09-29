@@ -52,3 +52,18 @@ def test_join_basic():
     out = _bytes(stdout).decode()
     assert "1 Alice NY" in out
     assert "2 Bob LA" in out
+
+
+def test_join_reads_a_dash_operand_across_mounts():
+    # From / the dash sits on the root mount, so the line relays.
+    ws, _ = _ws()
+    _run_raw(ws, "tee /data/f.txt", stdin=b"alice 30\nbob 25\n")
+    stdout, io = _run_raw(ws, "join - /data/f.txt", stdin=b"alice 1\nbob 2\n")
+    assert (_bytes(stdout), io.exit_code) == (b"alice 1 30\nbob 2 25\n", 0)
+
+
+def test_join_refuses_two_dash_operands():
+    ws, _ = _ws()
+    stdout, io = _run_raw(ws, "join - -", stdin=b"a\n")
+    assert io.exit_code == 1
+    assert _bytes(io.stderr) == b"join: both files cannot be standard input\n"

@@ -322,9 +322,34 @@
         "runtimes": [
           "quickjs",
           "workspace"
-        ]
+        ],
+        "mounts": {
+          "/ram": {
+            "vfs": "ram"
+          }
+        },
+        "profiles": {
+          "default": {
+            "commands": {
+              "deny": [
+                {
+                  "reason": "sealed",
+                  "paths": [
+                    "/ram/*"
+                  ]
+                }
+              ]
+            }
+          }
+        }
       },
       "steps": [
+        {
+          "command": "cd /ram",
+          "expect": {
+            "exit": 0
+          }
+        },
         {
           "command": "echo 'console.log(scriptArgs.join(\",\"))' | node - a b",
           "expect": {
@@ -344,6 +369,15 @@
           "expect": {
             "exit": 0,
             "stdout": "-m\n"
+          }
+        },
+        {
+          "command": "js -- - arg -e",
+          "stdin": "console.log(scriptArgs.join(\",\"))",
+          "expect": {
+            "exit": 0,
+            "stdout": "arg,-e\n",
+            "stderr": ""
           }
         }
       ]
@@ -718,6 +752,98 @@
           "expect": {
             "exit": 0,
             "stdout": "0 0.json,1.json,2.json,3.json\n10 null failed null\n"
+          }
+        }
+      ]
+    },
+    {
+      "id": "shell_cwd_and_relative_ops",
+      "world": {
+        "runtimes": [
+          "quickjs",
+          "workspace"
+        ],
+        "mounts": {
+          "/data": {
+            "vfs": "ram",
+            "files": {
+              "item": "hello\n",
+              "sub/child": "child\n",
+              "entry.mjs": "#!/usr/bin/env node\nconsole.log(os.getcwd()[0])\n"
+            }
+          }
+        }
+      },
+      "steps": [
+        {
+          "command": "cd /data",
+          "expect": {
+            "exit": 0,
+            "stdout": ""
+          }
+        },
+        {
+          "command": "js -e \"console.log(os.getcwd()[0]); const f=std.open('./item','r'); console.log(f.readAsString().trim()); f.close()\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data\nhello\n"
+          }
+        },
+        {
+          "command": "js -e \"console.log(os.chdir('sub')); console.log(os.getcwd()[0]); console.log(os.stat('child')[1]); const f=std.open('../out','w'); f.puts('written'); f.close(); console.log(os.rename('../out','renamed')); console.log(os.readdir('.')[0].sort().join(',')); console.log(os.remove('renamed')); console.log(os.mkdir('empty')); console.log(os.remove('empty'))\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "0\n/data/sub\n0\n0\nchild,renamed\n0\n0\n0\n"
+          }
+        },
+        {
+          "command": "js -e \"console.log(os.chdir('missing')); console.log(os.getcwd()[0]); console.log(os.chdir('item')); console.log(os.getcwd()[0])\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "-44\n/data\n-54\n/data\n"
+          }
+        },
+        {
+          "command": "PWD=/wrong js -e \"console.log(os.getcwd()[0]); os.chdir('sub'); throw new Error('expected')\"",
+          "expect": {
+            "exit": 1,
+            "stdout": "/data\n",
+            "stderr_contains": "expected"
+          }
+        },
+        {
+          "command": "js -e \"console.log(os.getcwd()[0])\"; pwd",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data\n/data\n"
+          }
+        },
+        {
+          "command": "js -e \"'use strict'; try { missingName = 1; } catch(e) { console.log(e.name) }\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "ReferenceError\n"
+          }
+        },
+        {
+          "command": "js -m -e \"console.log(os.getcwd()[0]); console.log(std.open('item','r').readAsString().trim())\"",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data\nhello\n"
+          }
+        },
+        {
+          "command": "node entry.mjs",
+          "expect": {
+            "exit": 0,
+            "stdout": "/data\n"
+          }
+        },
+        {
+          "command": "js -e \"const f=std.open('anchored','w'); os.chdir('sub'); f.puts('kept'); f.close()\"; cat /data/anchored",
+          "expect": {
+            "exit": 0,
+            "stdout": "kept"
           }
         }
       ]

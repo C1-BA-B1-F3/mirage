@@ -89,7 +89,7 @@
       "command": "type ls",
       "expect": {
         "exit": 0,
-        "stdout": "ls is a shell builtin\n",
+        "stdout": "ls is /usr/bin/ls\n",
         "stderr": ""
       }
     },

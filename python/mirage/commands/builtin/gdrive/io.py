@@ -12,10 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from functools import partial
-
-from mirage.commands.builtin.generic_bind import CommandIO, DuOps
-from mirage.commands.builtin.utils.wrap import stream_from_bytes
 from mirage.core.gdrive.copy import copy as _copy
 from mirage.core.gdrive.create import create as _create
 from mirage.core.gdrive.du import entries as _du_entries
@@ -32,33 +28,31 @@ from mirage.core.gdrive.stat import stat as _stat
 from mirage.core.gdrive.truncate import truncate as _truncate
 from mirage.core.gdrive.unlink import unlink as _unlink
 from mirage.core.gdrive.write import write_bytes as _write
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import DuOps, NativeReadOps, ReadOps, WriteOps
 
 # Raw bytes read and write via the generic factory; google-native files
 # (gdoc/gsheet/gslide) render as API-VFS JSON and are mutated through
 # the gws commands instead. gdrive's native read_stream is a coroutine
 # returning bytes-or-iterator (Workspace-aware), so the stream op is
 # synthesized from the whole-file read instead.
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_range=_read,
-    read_stream=partial(stream_from_bytes, _read),
-    stat=_stat,
-    is_mounted=lambda a: True,
-    local=False,
-    write=_write,
-    exists=_exists,
-    mkdir=_mkdir,
-    unlink=_unlink,
-    rmdir=_rmdir,
-    rm_r=_rm_r,
-    rename=_rename,
-    copy=_copy,
-    dir_copy=_copy,
-    create=_create,
-    truncate=_truncate,
-    find=_find,
-    du=DuOps(size=_du_size, entries=_du_entries),
-)
+IO = VFSAdapter(read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                native=NativeReadOps(read_range=_read,
+                                     exists=_exists,
+                                     find=_find,
+                                     du=DuOps(size=_du_size,
+                                              entries=_du_entries)),
+                writes=WriteOps(write=_write,
+                                mkdir=_mkdir,
+                                unlink=_unlink,
+                                rmdir=_rmdir,
+                                rm_r=_rm_r,
+                                rename=_rename,
+                                copy=_copy,
+                                dir_copy=_copy,
+                                create=_create,
+                                truncate=_truncate),
+                is_mounted=lambda a: True,
+                local=False).to_command_io()
 
 resolve_glob = IO.resolve_glob

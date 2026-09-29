@@ -28,7 +28,7 @@ import {
 import { eacces, enoent, erofsReadOnly } from '../utils/errors.ts'
 import { parent } from '../utils/path.ts'
 import type { Policies } from '../policy/policies.ts'
-import type { EntryGate, PathSpec } from '../types.ts'
+import type { EntryGate, PathSpec, WalkProbe } from '../types.ts'
 import { MOUNT_MODE_RANK, MountMode, weakerMode } from '../types.ts'
 
 /**
@@ -362,9 +362,10 @@ const mountGateStorage = createAsyncContext<readonly [string, MountMode]>()
  *
  * Bound by `Mount.executeCmd` around the handler, so the mode guard on
  * the command tier's I/O can resolve `effectivePathMode` for every path
- * a handler mutates: the write-command gate admits a command when any
- * shown subtree grants writes, and this binding is how each individual
- * write is then held to its own region's mode.
+ * a handler mutates: a path-guarded command is refused only at its
+ * writes, the write-command gate admits any other when a shown subtree
+ * grants writes, and this binding is how each individual write is then
+ * held to its own region's mode.
  */
 export function runWithMountGate<T>(
   prefix: string,
@@ -409,6 +410,49 @@ export function mountGateFor(virtual: string): readonly [string, MountMode] | nu
   return bestPrefix === null || bestMode === null ? null : [bestPrefix, bestMode]
 }
 
+const walkProbeStorage = createAsyncContext<readonly [string, WalkProbe]>()
+
+/**
+ * Bind what a command's dot walks read, for the duration of `fn`: the run
+ * of one command.
+ *
+ * Bound by `Mount.executeCmd` around the handler, beside the mount gate: the
+ * command tier reaches its backend without passing the dispatcher's door,
+ * so the walk guard on its I/O proves an operand's `.` and `..` with the
+ * door's stat and link follow through this binding. Mirrors Python's
+ * set_walk_probe.
+ */
+export function runWithWalkProbe<T>(
+  prefix: string,
+  probe: WalkProbe,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return Promise.resolve(walkProbeStorage.run([prefix, probe], fn))
+}
+
+/**
+ * The walk probe bound to the command serving `virtual`, null outside a
+ * mount's command (a generic invoked directly in a test).
+ *
+ * Selected by the path the way `mountGateFor` selects a gate, so on the
+ * fallback storage a concurrent command on another mount cannot lend its
+ * probe to this one. Mirrors Python's get_walk_probe.
+ */
+export function walkProbeFor(virtual: string): WalkProbe | null {
+  const v = normPrefix(virtual)
+  let bestLen = -1
+  let best: WalkProbe | null = null
+  for (const [rawPrefix, probe] of walkProbeStorage.liveStores()) {
+    const prefix = normPrefix(rawPrefix)
+    if (prefix !== '/' && v !== prefix && !v.startsWith(prefix + '/')) continue
+    if (prefix.length > bestLen) {
+      bestLen = prefix.length
+      best = probe
+    }
+  }
+  return best
+}
+
 const redirectStorage = createAsyncContext<[object, readonly PathSpec[]]>()
 
 /**
@@ -446,6 +490,7 @@ export function captureSessionContext(
     admissionStorage.capture(),
     opPoliciesStorage.capture(),
     mountGateStorage.capture(),
+    walkProbeStorage.capture(),
     redirectStorage.capture(),
     programStorage.capture(),
   ]
@@ -648,7 +693,7 @@ function readonlyBelowUnder(
   mountMode: MountMode,
 ): string | null {
   if (sess.shownPaths == null) return null
-  const v = '/' + virtual.replace(/^\/+|\/+$/g, '')
+  const v = '/' + stripSlash(virtual)
   for (const entry of sess.shownPaths.entries) {
     if (entry.mode == null) continue
     if (isGlob(entry.path)) {
@@ -657,7 +702,7 @@ function readonlyBelowUnder(
       }
       continue
     }
-    const anchor = '/' + entry.path.replace(/^\/+|\/+$/g, '')
+    const anchor = '/' + stripSlash(entry.path)
     const below = v === '/' ? anchor !== '/' : anchor.startsWith(v + '/')
     if (!below) continue
     if (pathModeUnder(sess, anchor, mountPrefix, mountMode) === MountMode.READ) {
@@ -677,6 +722,26 @@ export function readonlyBelow(
     if (blame !== null) return blame
   }
   return null
+}
+
+/** Apply the same mode ceiling to command, dispatcher and namespace writes. */
+export function requirePathsWritable(
+  paths: readonly PathSpec[],
+  mountPrefix: string,
+  mountMode: MountMode,
+  subtree = false,
+): void {
+  for (const path of paths) {
+    if (effectivePathMode(path.virtual, mountPrefix, mountMode) === MountMode.READ) {
+      throw erofsReadOnly(`mount ${mountPrefix} is read-only`, path)
+    }
+  }
+  if (subtree) {
+    for (const path of paths) {
+      const blame = readonlyBelow(path.virtual, mountPrefix, mountMode)
+      if (blame !== null) throw erofsReadOnly(`mount ${mountPrefix} is read-only`, blame)
+    }
+  }
 }
 
 /**

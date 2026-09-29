@@ -16,10 +16,13 @@ from collections.abc import Iterator, Sequence
 
 from mirage.policy.match import head_visible, node_visible
 from mirage.runtime.constants import EXTERNAL_COMMANDS
+from mirage.runtime.language import LanguageRuntime
 from mirage.runtime.mixin import LineExecutorMixin, ProcessExecutorMixin
 from mirage.runtime.routing.types import RouteDecision
-from mirage.workspace.lookup.constants import (INTERPRETER_NAMES,
-                                               NAMESPACE_COMMANDS, SHELL_NAMES)
+from mirage.utils.quote import shell_quote
+from mirage.workspace.lookup.constants import (INTERPRETER_NAMES, KEYWORDS,
+                                               NAMESPACE_COMMANDS, SHELL_NAMES,
+                                               SHELL_ONLY_BUILTINS)
 from mirage.workspace.lookup.types import Consumer
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.session import SessionState
@@ -226,3 +229,122 @@ def lookup_all(name: str, session: SessionState,
         registry (MountRegistry): mount registry (command registration).
     """
     return list(_layers(name, session, registry))
+
+
+def program(name: str, session: SessionState,
+            registry: MountRegistry) -> Consumer | None:
+    """The layer a name runs from as a program, None when it is none.
+
+    A program is what a real system ships as a file on PATH, so it has
+    one under ``/usr/bin`` here: every mount, namespace and CLI command,
+    every name a runtime captures by name, and each builtin a real
+    system also finds on disk (echo, test, xargs). The shell's own words
+    (cd, export, history: ``SHELL_ONLY_BUILTINS``), reserved words,
+    functions and aliases have no file, and a shell word keeps none
+    when a mount registers the same name, since the builtin is what
+    runs. Nor does a name only the external fallback capture takes: it
+    takes any word, so like bash's ``command_not_found_handle`` it runs
+    a name without making it a program. An interpreter (python3, node)
+    is a program only where a language runtime is bound to it: without
+    one it answers 127, as it does on a system that never installed it.
+    A function shadowing a program leaves the file in place, as it does
+    on PATH.
+
+    Args:
+        name (str): the command word.
+        session (SessionState): shell session (function table, allow
+            list).
+        registry (MountRegistry): mount registry (command registration).
+    """
+    if "/" in name or name in KEYWORDS:
+        return None
+    for consumer in _layers(name, session, registry):
+        if consumer is Consumer.FUNCTION:
+            continue
+        if consumer is Consumer.SESSION and name in SHELL_ONLY_BUILTINS:
+            return None
+        if (consumer is Consumer.SESSION
+                and name in INTERPRETER_NAMES and not isinstance(
+                    registry.runtime_bindings.get(name), LanguageRuntime)):
+            return None
+        if (consumer is Consumer.EXTERNAL
+                and name not in registry.runtime_bindings):
+            return None
+        return consumer
+    return None
+
+
+def execs(name: str, session: SessionState, registry: MountRegistry) -> bool:
+    """Whether a builtin that execs its operand (xargs, timeout) finds it.
+
+    GNU execs the name, so a shell word with no file on PATH (cd,
+    export) is missing there, as is a name nothing provides. A function
+    runs too, where it is what the name runs (a shell word shadows
+    one): mirage runs the line in the shell, which is how these reach
+    it. A path is left to the run, which reports on it.
+
+    Args:
+        name (str): the command word.
+        session (SessionState): the session it would run in.
+        registry (MountRegistry): mount registry (command registration).
+    """
+    return ("/" in name or program(name, session, registry) is not None
+            or lookup(name, session, registry) is Consumer.FUNCTION)
+
+
+def program_note(name: str, session: SessionState,
+                 registry: MountRegistry) -> str | None:
+    """What a program's ``/usr/bin`` file says about it, None when the
+    name is no program.
+
+    One line: what runs the name, and ``--help`` where the program's
+    spec answers it, which a mount command's and a CLI's do; a builtin's
+    answer varies (``ln --help`` and ``echo --help`` print no help), so
+    a builtin's line names none.
+
+    Args:
+        name (str): the command word.
+        session (SessionState): shell session (function table, allow
+            list).
+        registry (MountRegistry): mount registry (command registration,
+            runtimes).
+    """
+    consumer = program(name, session, registry)
+    if consumer is None:
+        return None
+    runtime = registry.runtime_bindings.get(name)
+    if runtime is not None and (consumer is Consumer.EXTERNAL
+                                or name in INTERPRETER_NAMES):
+        return f"{name} runs on the workspace's {runtime.name} runtime."
+    help_line = f" Help: {shell_quote(name)} --help"
+    if consumer is Consumer.CLI:
+        return f"{name} is a CLI registered with this workspace.{help_line}"
+    mount = (registry.mount_for_command(name)
+             if consumer is Consumer.MOUNT else None)
+    spec = mount.spec_for(name) if mount is not None else None
+    if spec is not None and any(o.long == "--help" for o in spec.options):
+        return f"{name} is built into mirage.{help_line}"
+    return f"{name} is built into mirage."
+
+
+def programs(session: SessionState, registry: MountRegistry) -> list[str]:
+    """Every program name the session can run, sorted: the ``/usr/bin``
+    listing.
+
+    The names are gathered from each layer that can hold a program and
+    kept only where ``program`` says the name runs as one, so the
+    listing and a lookup never disagree. A name only the external
+    fallback capture would take cannot be listed, since that capture
+    takes any word.
+
+    Args:
+        session (SessionState): shell session (function table, allow
+            list).
+        registry (MountRegistry): mount registry (command registration).
+    """
+    names = set(SHELL_NAMES) | NAMESPACE_COMMANDS | set(registry.clis.names())
+    names |= {n for n in registry.runtime_bindings if n != EXTERNAL_COMMANDS}
+    for mount in registry.mounts():
+        names |= {cmd.name.split()[0] for cmd in mount.all_commands()}
+    return sorted(n for n in names
+                  if program(n, session, registry) is not None)

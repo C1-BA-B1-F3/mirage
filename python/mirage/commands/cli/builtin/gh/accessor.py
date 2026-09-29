@@ -28,6 +28,7 @@ from mirage.core.jq import jq_eval
 from mirage.io.stream import materialize, yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue, PathSpec
+from mirage.utils.errors import fs_strerror
 
 
 def gh_repo(config: GhConfig, spec: str | None) -> RepoRef:
@@ -97,41 +98,25 @@ def csv_values(values: Iterable[str]) -> list[str]:
     ]
 
 
-def _dash_option(inv: CLIInvocation[GhConfig], options: tuple[str,
-                                                              ...]) -> bool:
-    return any(
-        word == f"{option}=-" or (len(option) == 2 and word == f"{option}-") or
-        (word == option and index + 1 < len(inv.argv) and inv.argv[index +
-                                                                   1] == "-")
-        for option in options for index, word in enumerate(inv.argv))
-
-
 async def read_cli_file(inv: CLIInvocation[GhConfig], raw: FlagValue,
-                        option: str, *aliases: str) -> bytes:
+                        option: str) -> bytes:
     """Read a path-valued CLI option from the VFS, or `-` from stdin."""
-    if isinstance(raw, PathSpec):
-        path = "-" if raw.raw_path == "-" or _dash_option(
-            inv, (option, *aliases)) else raw.virtual
-        spec = raw
-    elif isinstance(raw, str):
-        path = raw
-        cwd = inv.env.get("PWD", "/")
-        virtual = path if path.startswith("/") else posixpath.normpath(
-            posixpath.join(cwd, path))
-        spec = PathSpec.from_str_path(virtual)
-    else:
+    if not isinstance(raw, (str, PathSpec)):
         raise ValueError(f"{option} expects a file")
+    path = raw.raw_path if isinstance(raw, PathSpec) else raw
     if path == "-":
         if inv.stdin is None:
             raise ValueError(f"{option} needs standard input")
         return await materialize(inv.stdin)
+    spec = raw if isinstance(raw, PathSpec) else PathSpec.from_str_path(
+        posixpath.normpath(posixpath.join(inv.env.get("PWD", "/"), raw)))
     if inv.doors is None or inv.doors.dispatch is None:
         raise ValueError(f"{option} needs a workspace to read files from")
     try:
         data, _ = await inv.doors.dispatch("read", spec)
-    except FileNotFoundError:
-        raise ValueError(f"read {path}: No such file or directory") from None
-    return data if isinstance(data, bytes) else bytes(data)
+        return await materialize(data)
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise ValueError(f"read {path}: {fs_strerror(exc)}") from None
 
 
 async def body_value(inv: CLIInvocation[GhConfig],
@@ -149,8 +134,8 @@ async def body_value(inv: CLIInvocation[GhConfig],
     if inline is not None:
         return inline
     if source is not None:
-        return (await read_cli_file(inv, source, f"--{file.replace('_', '-')}",
-                                    "-F")).decode()
+        return (await read_cli_file(inv, source,
+                                    f"--{file.replace('_', '-')}")).decode()
     if required:
         raise ValueError(f"--{value.replace('_', '-')} or "
                          f"--{file.replace('_', '-')} is required")
@@ -187,29 +172,65 @@ def jq_line(value: Any) -> str:
 
 
 def _select(value: Any, fields: list[str]) -> Any:
+    """Each row cut to the fields asked for, keys in sorted order: gh
+    exports a Go map, which its JSON encoder always writes sorted.
+
+    Args:
+        value (Any): one row or a list of them.
+        fields (list[str]): the ``--json`` fields.
+    """
     rows = value if isinstance(value, list) else [value]
+    keys = sorted(set(fields))
     selected: list[dict[str, Any]] = []
     for row in rows:
         source = row if isinstance(row, dict) else {}
-        selected.append({field: source.get(field) for field in fields})
+        selected.append({field: source.get(field) for field in keys})
     return selected if isinstance(value, list) else selected[0]
+
+
+def json_fields(fl: FlagView, allowed: Iterable[str]) -> list[str] | None:
+    """The ``--json`` fields a line asked for, None without ``--json``.
+
+    Checked before any request, as gh checks them: a field gh does not
+    export is refused with gh's own message and every field it does,
+    sorted, exit 1.
+
+    Args:
+        fl (FlagView): the line's flags.
+        allowed (Iterable[str]): the fields the verb exports.
+    """
+    spelled = fl.as_str("json")
+    if spelled is None:
+        return None
+    fields = csv_values([spelled])
+    known = set(allowed)
+    listing = [f"  {field}" for field in sorted(known)]
+    if not fields:
+        raise UsageError(
+            "\n".join([
+                "Specify one or more comma-separated fields for `--json`:",
+                *listing
+            ]), 1)
+    unknown = [field for field in fields if field not in known]
+    if unknown:
+        raise UsageError(
+            "\n".join([
+                f"Unknown JSON field: {json.dumps(unknown[0])}",
+                "Available fields:", *listing
+            ]), 1)
+    return fields
 
 
 async def typed_out(
         value: Any, fl: FlagView, human: str,
         allowed: Iterable[str]) -> tuple[ByteSource | None, IOResult]:
     """Render a typed verb as stable projected JSON/jq or human text."""
-    json_fields = fl.as_str("json")
     program = fl.as_str("jq")
-    if json_fields is None:
+    fields = json_fields(fl, allowed)
+    if fields is None:
         if program:
             raise UsageError("--jq requires --json")
         return text_out(human)
-    fields = csv_values([json_fields])
-    known = set(allowed)
-    unknown = [field for field in fields if field not in known]
-    if unknown:
-        raise UsageError(f"unknown JSON field: {unknown[0]}")
     selected = _select(value, fields)
     if program:
         lines = "".join(f"{jq_line(item)}\n"

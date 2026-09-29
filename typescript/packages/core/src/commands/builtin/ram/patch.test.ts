@@ -100,12 +100,12 @@ it.each(['', '/data', '/nested/data'])(
         ['fix.diff', diff],
       ])
       const seen: string[] = []
-      const stream = async function* (path: PathSpec): AsyncIterable<Uint8Array> {
+      const read = (path: PathSpec): Promise<Uint8Array> => {
         expect(path.virtual).toBe(prefix + '/' + path.vfsPath)
         seen.push(path.vfsPath)
         const bytes = files.get(path.vfsPath)
         if (bytes === undefined) throw new Error('missing fixture')
-        yield Promise.resolve(bytes)
+        return Promise.resolve(bytes)
       }
       const write = (path: PathSpec, data: Uint8Array): Promise<void> => {
         expect(path.virtual).toBe(prefix + '/' + path.vfsPath)
@@ -113,8 +113,9 @@ it.each(['', '/data', '/nested/data'])(
         return Promise.resolve()
       }
       const input = PathSpec.fromStrPath(prefix + '/fix.diff', 'fix.diff')
+      const orig = PathSpec.fromStrPath(prefix + '/hello.txt', 'hello.txt')
       await patchGeneric(
-        source === 'operand' ? [input] : [],
+        source === 'operand' ? [orig, input] : [],
         {
           mountPrefix: prefix,
           filetypeFns: null,
@@ -122,7 +123,7 @@ it.each(['', '/data', '/nested/data'])(
           flags: { p: '1', ...(source === 'input' ? { i: input.virtual } : {}) },
           stdin: source === 'stdin' ? diff : null,
         },
-        stream,
+        read,
         write,
       )
       expect(seen).toContain('hello.txt')

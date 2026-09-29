@@ -13,128 +13,109 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { MongoDBAccessor } from '../../accessor/mongodb.ts'
-import type { Searcher } from '../hierarchy/search.ts'
-import { findDocuments, listCollections, listDatabases } from './client.ts'
-import { stringifyDoc } from './stream.ts'
-import { EntityKind, PRIMARY_KEY } from './types.ts'
-import { compareCodePoints } from '../../utils/sort.ts'
+import { PathSpec } from '../../types.ts'
+import type { ScopeMatch } from '../hierarchy/scope.ts'
+import { queryMatcher, type Searcher } from '../hierarchy/search.ts'
+import { buildCollectionSchemaJson, buildDatabaseJson } from './_schema_json.ts'
+import { listCollections, listDatabases } from './client.ts'
+import { entityKind } from './scope.ts'
+import { readStream, stringifyDoc } from './stream.ts'
+import { EntityKind, KIND_TO_DIR } from './types.ts'
 
-export interface CollectionMatches {
-  database: string
-  collection: string
-  docs: Record<string, unknown>[]
+// A directory's answer is grep -r's over the files under it, spelled relative
+// to the mount, in the order a walk visits them (sorted, so `collections/` <
+// `database.json` < `views/`, and within an entity `documents.jsonl` <
+// `schema.json`). Each file is rendered exactly as `cat` renders it and decided
+// by the matcher grep compiles, which is the only answer a schemaless
+// collection can prove: the server-side $regex this replaced saw only string
+// fields found in a 100-document sample, folded case whatever -i said, skipped
+// views and the metadata files, and stopped at `defaultSearchLimit` documents
+// per collection. Mirrors `mirage/core/mongodb/search.py`.
+
+const DEC = new TextDecoder()
+
+function matched(rel: string, text: string, matcher: RegExp): string[] {
+  const lines = text.split('\n')
+  if (lines[lines.length - 1] === '') lines.pop()
+  return lines.filter((line) => matcher.test(line)).map((line) => `${rel}:${line}`)
 }
 
-function collectStringPaths(value: unknown, prefix: string, out: Set<string>): void {
-  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      const sub = prefix === '' ? k : `${prefix}.${k}`
-      collectStringPaths(v, sub, out)
-    }
-    return
-  }
-  if (typeof value === 'string' && prefix !== '' && prefix !== PRIMARY_KEY) {
-    out.add(prefix)
-  }
-}
-
-async function sampledStringPaths(
+async function entityLines(
   accessor: MongoDBAccessor,
   database: string,
-  collection: string,
-  sampleSize = 100,
+  kind: EntityKind,
+  name: string,
+  matcher: RegExp,
 ): Promise<string[]> {
-  const paths = new Set<string>()
-  let n = 0
-  for await (const doc of accessor.driver.iterDocuments(database, collection, {
-    batchSize: sampleSize,
-  })) {
-    collectStringPaths(doc, '', paths)
-    n++
-    if (n >= sampleSize) break
-  }
-  return [...paths].sort(compareCodePoints)
-}
-
-export async function searchCollection(
-  accessor: MongoDBAccessor,
-  database: string,
-  collection: string,
-  pattern: string,
-  limit: number,
-): Promise<Record<string, unknown>[]> {
-  // Always $regex, never $text. A $text index matches whole words and stems
-  // them, while grep matches substrings, and these rows are returned as the
-  // grep output without a local re-scan: $text would both miss `foo` inside
-  // `foobar` and match stems the pattern never had. $regex takes the pattern
-  // as written.
-  const paths = await sampledStringPaths(accessor, database, collection)
-  if (paths.length === 0) return []
-  const orFilters = paths.map((f) => ({ [f]: { $regex: pattern, $options: 'i' } }))
-  return findDocuments(accessor, database, collection, { $or: orFilters }, { limit })
-}
-
-export async function searchDatabase(
-  accessor: MongoDBAccessor,
-  database: string,
-  pattern: string,
-  limit: number,
-): Promise<CollectionMatches[]> {
-  const collections = await listCollections(accessor, database, EntityKind.COLLECTION)
-  const tasks = collections.map((col) =>
-    searchCollection(accessor, database, col, pattern, limit).then((docs) => [col, docs] as const),
-  )
-  const settled = await Promise.all(tasks)
-  const out: CollectionMatches[] = []
-  for (const [col, docs] of settled) {
-    if (docs.length > 0) out.push({ database, collection: col, docs })
-  }
-  return out
-}
-
-export function formatGrepResults(results: readonly CollectionMatches[]): string[] {
+  const rel = `${database}/${KIND_TO_DIR[kind]}/${name}`
+  const docs = `${rel}/documents.jsonl`
   const lines: string[] = []
-  for (const { database, collection, docs } of results) {
-    const path = `${database}/collections/${collection}/documents.jsonl`
-    for (const doc of docs) {
-      lines.push(`${path}:${stringifyDoc(doc)}`)
+  const path = new PathSpec({ virtual: `/${docs}`, directory: `/${rel}`, vfsPath: docs })
+  for await (const chunk of readStream(accessor, path)) {
+    lines.push(...matched(docs, DEC.decode(chunk), matcher))
+  }
+  const schema = await buildCollectionSchemaJson(accessor, database, name)
+  lines.push(
+    ...matched(
+      `${rel}/schema.json`,
+      stringifyDoc(schema as unknown as Record<string, unknown>),
+      matcher,
+    ),
+  )
+  return lines
+}
+
+async function kindLines(
+  accessor: MongoDBAccessor,
+  database: string,
+  kind: EntityKind,
+  matcher: RegExp,
+): Promise<string[]> {
+  const lines: string[] = []
+  for (const name of await listCollections(accessor, database, kind)) {
+    for (const line of await entityLines(accessor, database, kind, name, matcher)) {
+      lines.push(line)
     }
   }
   return lines
 }
 
-const entitySearcher: Searcher<MongoDBAccessor> = async (accessor, match, query) => {
-  const database = match.slots.database ?? ''
-  const name = match.slots.name ?? ''
-  const docs = await searchCollection(
-    accessor,
-    database,
-    name,
-    query.pattern,
-    accessor.config.defaultSearchLimit,
+async function databaseLines(
+  accessor: MongoDBAccessor,
+  database: string,
+  matcher: RegExp,
+): Promise<string[]> {
+  const payload = stringifyDoc(
+    (await buildDatabaseJson(accessor, database)) as unknown as Record<string, unknown>,
   )
-  return formatGrepResults(docs.length > 0 ? [{ database, collection: name, docs }] : [])
+  return [
+    ...(await kindLines(accessor, database, EntityKind.COLLECTION, matcher)),
+    ...matched(`${database}/database.json`, payload, matcher),
+    ...(await kindLines(accessor, database, EntityKind.VIEW, matcher)),
+  ]
 }
 
-const databaseSearcher: Searcher<MongoDBAccessor> = async (accessor, match, query) => {
-  const results = await searchDatabase(
+const entitySearcher: Searcher<MongoDBAccessor> = (accessor, match: ScopeMatch, query) =>
+  entityLines(
     accessor,
     match.slots.database ?? '',
-    query.pattern,
-    accessor.config.defaultSearchLimit,
+    entityKind(match),
+    match.slots.name ?? '',
+    queryMatcher(query),
   )
-  return formatGrepResults(results)
-}
+
+const databaseSearcher: Searcher<MongoDBAccessor> = (accessor, match, query) =>
+  databaseLines(accessor, match.slots.database ?? '', queryMatcher(query))
 
 const rootSearcher: Searcher<MongoDBAccessor> = async (accessor, _match, query) => {
-  const dbs = await listDatabases(accessor)
-  const results: CollectionMatches[] = []
-  for (const db of dbs) {
-    results.push(
-      ...(await searchDatabase(accessor, db, query.pattern, accessor.config.defaultSearchLimit)),
-    )
+  const matcher = queryMatcher(query)
+  const lines: string[] = []
+  for (const database of await listDatabases(accessor)) {
+    for (const line of await databaseLines(accessor, database, matcher)) {
+      lines.push(line)
+    }
   }
-  return formatGrepResults(results)
+  return lines
 }
 
 export const SEARCHERS: Readonly<Record<string, Searcher<MongoDBAccessor>>> = {

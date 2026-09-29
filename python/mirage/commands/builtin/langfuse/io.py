@@ -12,26 +12,28 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from functools import partial
-
-from mirage.commands.builtin.generic_bind import CommandIO
-from mirage.commands.builtin.utils.wrap import stream_from_bytes
+from mirage.core.hierarchy.search import make_search_op
 from mirage.core.langfuse.read import read as _read
 from mirage.core.langfuse.readdir import readdir as _readdir
+from mirage.core.langfuse.scope import detect_scope
+from mirage.core.langfuse.search import SEARCHERS
 from mirage.core.langfuse.stat import stat as _stat
+from mirage.vfs.adapter import VFSAdapter
+from mirage.vfs.types import ReadOps, SearchOps
 
 # Langfuse traces/observations/sessions/prompts are read through the generic
 # factory (find walks readdir, classifying via stat); grep and rg keep
-# wrappers because grep matches structured fields (session id, prompt name)
-# and rg pushes down to the Langfuse search API. Langfuse is read-only, so the
+# wrappers that use the adapter's core searchers, which filter the list
+# endpoints client-side (trace summaries, session ids, prompt and dataset
+# names); there is no server-side search. Langfuse is read-only, so the
 # generic byte-mutation commands are intentionally absent (no write op wired).
-IO = CommandIO(
-    readdir=_readdir,
-    read_bytes=_read,
-    read_stream=partial(stream_from_bytes, _read),
-    stat=_stat,
-    is_mounted=lambda a: True,
-    local=False,
-)
+IO = VFSAdapter(search=SearchOps(search=make_search_op(detect_scope,
+                                                       SEARCHERS),
+                                 meta={"grep": {
+                                     "mode": "regex"
+                                 }}),
+                read=ReadOps(readdir=_readdir, read_bytes=_read, stat=_stat),
+                is_mounted=lambda a: True,
+                local=False).to_command_io()
 
 resolve_glob = IO.resolve_glob

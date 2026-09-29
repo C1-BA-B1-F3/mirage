@@ -28,9 +28,10 @@ from mirage.types import PathSpec
 async def unzip(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                 texts: list[str],
                 opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
-    if not ops.is_mounted(accessor) or not paths:
+    if not ops.is_mounted(accessor):
         raise ValueError("unzip: missing operand")
-    resolved = await ops.resolve_glob(accessor, paths, opts.index)
+    resolved = (await ops.resolve_glob(accessor, paths, opts.index)
+                if paths else [])
     if opts.dispatch is not None:
         # Extraction writes wherever cwd or -d says, which need not be
         # this mount, so the doors are dispatch-relayed and each path
@@ -50,7 +51,4 @@ async def unzip(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
                                partial(ops.require(Operation.MKDIR), accessor))
 
 
-BUILDER = Builder('unzip',
-                  unzip,
-                  write=True,
-                  requirements=frozenset({Operation.WRITE, Operation.MKDIR}))
+BUILDER = Builder('unzip', unzip, write=True)

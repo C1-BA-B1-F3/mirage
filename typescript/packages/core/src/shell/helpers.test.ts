@@ -36,6 +36,7 @@ import {
   getNegatedCommand,
   getParts,
   getPipelineCommands,
+  getPipelineStages,
   getProcessSubBody,
   getRedirects,
   takeContinuation,
@@ -45,6 +46,8 @@ import {
   getWhileParts,
   isBackgrounded,
   literalWord,
+  quotedParts,
+  sourceParts,
   splitEnvPrefix,
 } from './helpers.ts'
 import { NodeType as NT, type Redirect, RedirectKind } from './types.ts'
@@ -264,6 +267,67 @@ describe('getPipelineCommands', () => {
     const [cmds, flags] = getPipelineCommands(n)
     expect(cmds).toHaveLength(3)
     expect(flags).toEqual([false, true])
+  })
+})
+
+type StagesShape = [
+  string[],
+  boolean[],
+  string[][],
+  boolean,
+  [string, string | null, string] | null,
+]
+
+describe('getPipelineStages', () => {
+  async function shape(line: string, redirected: boolean): Promise<StagesShape> {
+    const parser = await getTestParser()
+    const first = parser.parse(line).children[0] as TSNodeLike
+    const [body, redirects] = redirected ? getRedirects(first) : [first, []]
+    if (body === null) throw new Error('no body')
+    const stages = getPipelineStages(body, redirects)
+    const lead = stages.lead
+    return [
+      stages.commands.map((c) => getText(c)),
+      [...stages.stderrFlags],
+      stages.redirects.map((rs) => rs.map((r) => String(r.target))),
+      stages.negated,
+      lead === null ? null : [getText(lead[0]), lead[1], getText(lead[2])],
+    ]
+  }
+
+  it.each<[string, boolean, StagesShape]>([
+    ['a | b', false, [['a', 'b'], [false], [[], []], false, null]],
+    ['! a | b', false, [['a', 'b'], [false], [[], []], true, null]],
+    // tree-sitter reads these as pipeline(redirected(<chain>, r), ...).
+    ['a | b < f | c', false, [['a', 'b', 'c'], [false, false], [[], ['f'], []], false, null]],
+    ['a | b < f |& c', false, [['a', 'b', 'c'], [false, true], [[], ['f'], []], false, null]],
+    ['! a < f | b', false, [['a', 'b'], [false], [['f'], []], true, null]],
+    ['a && b < f | c', false, [['b', 'c'], [false], [['f'], []], false, ['a', '&&', 'b']]],
+    [
+      'a && b | c < f | d',
+      false,
+      [['b', 'c', 'd'], [false, false], [[], ['f'], []], false, ['a', '&&', 'b | c']],
+    ],
+    ['a || ! b < f | c', false, [['b', 'c'], [false], [['f'], []], true, ['a', '||', '! b']]],
+    [
+      'a && b | c < f | d > g | e',
+      false,
+      [
+        ['b', 'c', 'd', 'e'],
+        [false, false, false],
+        [[], ['f'], ['g'], []],
+        false,
+        ['a', '&&', 'b | c'],
+      ],
+    ],
+    // A stage holding its own redirect runs as the node it is.
+    ['a < f | b', false, [['a < f', 'b'], [false], [[], []], false, null]],
+    ['{ a; } < f | b', false, [['{ a; } < f', 'b'], [false], [[], []], false, null]],
+    // Redirects hoisted over the whole pipeline bind to its last stage.
+    ['a | b > g', true, [['a', 'b'], [false], [[], ['g']], false, null]],
+    ['! a | b < f > g', true, [['a', 'b'], [false], [[], ['f', 'g']], true, null]],
+  ])('%s', async (line, redirected, expected) => {
+    expect(await shape(line, redirected)).toEqual(expected)
   })
 })
 
@@ -594,5 +658,61 @@ describe('byteOffset', () => {
     // the three bytes of U+FFFD.
     expect(byteOffset('a\udcffb', 2)).toBe(2)
     expect(byteOffset('a\udcffb', 3)).toBe(3)
+  })
+})
+
+describe('sourceParts', () => {
+  function spelled(parts: Iterable<string | TSNodeLike>): (string | [string, string])[] {
+    return [...parts].map((part) => (typeof part === 'string' ? part : [part.type, part.text]))
+  }
+
+  function argument(parser: ShellParser, line: string): TSNodeLike {
+    const node = parser.parse(line).children[0]?.children[1]
+    if (node === undefined) throw new Error('no argument')
+    return node
+  }
+
+  it.each<[string, (string | [string, string])[]]>([
+    [
+      'echo "😀界\n $x \t\n "',
+      ['', ['string_content', '😀界'], '\n', ['simple_expansion', ' $x'], ' \t\n', ' '],
+    ],
+    ['echo "a\\\n $x"', ['', ['string_content', 'a '], ['simple_expansion', '$x'], '']],
+  ])('keeps the text between the children of %j', async (line, parts) => {
+    // web-tree-sitter counts offsets in UTF-16 code units, so a surrogate
+    // pair before a gap must not shift the slice. The reader joins a line
+    // continuation before the grammar sees it.
+    expect(spelled(quotedParts(argument(await getTestParser(), line)))).toEqual(parts)
+  })
+
+  it.each<[string, (string | [string, string])[]]>([
+    [
+      'echo "${u:-\t$f}"',
+      [
+        ['${', '${'],
+        ['variable_name', 'u'],
+        [':-', ':-'],
+        '\t',
+        ['simple_expansion', '$f'],
+        ['}', '}'],
+      ],
+    ],
+    [
+      'echo "${f/x/\\ $f}"',
+      [
+        ['${', '${'],
+        ['variable_name', 'f'],
+        ['/', '/'],
+        ['regex', 'x'],
+        ['/', '/'],
+        '\\ ',
+        ['simple_expansion', '$f'],
+        ['}', '}'],
+      ],
+    ],
+  ])('yields the text no child of %j owns', async (line, parts) => {
+    const expansion = argument(await getTestParser(), line).children[1]
+    if (expansion === undefined) throw new Error('no expansion')
+    expect(spelled(sourceParts(expansion))).toEqual(parts)
   })
 })

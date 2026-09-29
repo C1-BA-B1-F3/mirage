@@ -19,6 +19,7 @@ import pytest
 from mirage.commands.builtin.discord.grep import grep
 from mirage.commands.builtin.discord.rg import rg
 from mirage.commands.config import CommandOpts
+from mirage.core.time_range import TimeRange
 from mirage.io.types import IOResult
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_key
@@ -33,6 +34,7 @@ def _path(path: str) -> PathSpec:
 @pytest.mark.asyncio
 async def test_grep_emits_token_hint_on_forbidden():
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     paths = [_path("/discord/myguild__G1/channels/general__C1")]
     with patch(
@@ -58,6 +60,7 @@ async def test_grep_emits_token_hint_on_forbidden():
 @pytest.mark.asyncio
 async def test_rg_emits_warning_on_rate_limit():
     accessor = AsyncMock()
+    accessor.time_range = TimeRange()
     accessor.config = AsyncMock()
     paths = [_path("/discord/myguild__G1/channels/general__C1")]
     with patch(
@@ -71,7 +74,7 @@ async def test_rg_emits_warning_on_rate_limit():
             new=AsyncMock(return_value=(b"", IOResult(exit_code=1))),
     ):
         _out, io = await rg(accessor, paths, ['hi'],
-                            CommandOpts(flags={'w': True}))
+                            CommandOpts(flags={'word_regexp': True}))
     stderr = (io.stderr or b"").decode()
     assert "push-down failed" in stderr
     # 429 doesn't trigger the perm hint; should still warn

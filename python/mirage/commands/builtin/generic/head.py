@@ -7,17 +7,20 @@ from typing import Any, Callable
 from mirage.cache.read_through import cache_aware_read
 from mirage.commands.builtin.tail_counts import (number_flag_error,
                                                  parse_byte_count)
-from mirage.commands.builtin.utils.constants import CHAR_DEVICE_MAX_BYTES
+from mirage.commands.builtin.utils.constants import (CHAR_DEVICE_MAX_BYTES,
+                                                     STDIN_HEADER_NAME)
 from mirage.commands.builtin.utils.limit import truncate_stream
 from mirage.commands.builtin.utils.operands import (normalized_read,
                                                     operands_io,
                                                     split_readable)
-from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
-                                                  stdin_stat, stdin_stream)
+from mirage.commands.builtin.utils.stream import (is_stdin, operand_label,
+                                                  resolve_source, stdin_stat,
+                                                  stdin_stream)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
+from mirage.io.stream import async_chain
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import FileType, Limit, PathSpec, PolymorphicReadFn, StatFn
 from mirage.utils.stream import ensure_stream
@@ -165,8 +168,7 @@ async def _head_multi(
 ) -> AsyncIterator[bytes]:
     for i, p in enumerate(paths):
         if show_headers:
-            label = "(standard input)" if is_stdin(p) else p.raw_path
-            header = f"==> {label} <==\n"
+            header = f"==> {operand_label(p, STDIN_HEADER_NAME)} <==\n"
             if i > 0:
                 header = "\n" + header
             yield header.encode()
@@ -242,7 +244,11 @@ async def head_generic(
                           show_headers=show_headers,
                           zero_terminated=parsed.zero_terminated), io
     source = resolve_source(opts.stdin, "head: missing operand")
-    return head(source,
+    body = head(source,
                 n=parsed.lines,
                 c=parsed.bytes_,
-                zero_terminated=parsed.zero_terminated), IOResult()
+                zero_terminated=parsed.zero_terminated)
+    if parsed.verbose and not parsed.quiet:
+        # -v heads a stdin nobody named with the name it gives `-`.
+        body = async_chain([f"==> {STDIN_HEADER_NAME} <==\n".encode(), body])
+    return body, IOResult()

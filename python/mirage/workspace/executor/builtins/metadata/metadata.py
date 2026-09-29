@@ -14,14 +14,25 @@
 
 import re
 from datetime import datetime, timezone
+from functools import partial
 
+from mirage.commands.builtin.utils.paths import dispatch_stat, dot_refusal
 from mirage.policy import PolicyDenied
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import format_fs_error
+from mirage.utils.errors import format_fs_error, fs_strerror, walk_refusal
 from mirage.utils.path import CycleError
-from mirage.workspace.executor.builtins.shared import read_only_error
 from mirage.workspace.mount.namespace import Namespace
+
+# GNU's phrase for a refused attribute write, per command
+# (`chmod: changing permissions of 'f': Read-only file system`); `touch`
+# reaches it only for `-h`, which never creates.
+ATTR_ACTIONS = {
+    "chmod": "changing permissions of",
+    "chown": "changing ownership of",
+    "chgrp": "changing group of",
+    "touch": "setting times of",
+}
 
 _TOUCH_STAMP_RE = re.compile(r"(\d{8}|\d{10}|\d{12})(\.\d{2})?")
 
@@ -121,24 +132,25 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def permission_error(cmd: str, namespace: Namespace, path: PathSpec,
+def permission_error(cmd: str, action: str, path: PathSpec,
                      exc: PermissionError) -> str:
     """Render a metadata-write PermissionError.
 
-    A mount-mode refusal keeps the mirage read-only wording; an
-    admission-policy deny at the op door renders GNU's
-    ``<cmd>: <path>: Permission denied`` instead of mislabeling the
-    mount as read-only.
+    A read-only region renders GNU's per-operand line, ``<cmd>: <action>
+    '<path>': Read-only file system``, the voice every other write
+    refusal uses; an admission-policy deny at the op door renders
+    ``<cmd>: <path>: Permission denied``.
 
     Args:
         cmd (str): command name.
-        namespace (Namespace): addressing authority (mount lookup).
-        path (PathSpec): the refused path.
+        action (str): GNU's phrase for the refused write (``cannot
+            touch``, ``changing permissions of``).
+        path (PathSpec): the refused path, as the line names it.
         exc (PermissionError): the raised refusal.
     """
-    if not isinstance(exc, PolicyDenied):
-        return read_only_error(cmd, namespace, path)
-    return format_fs_error(cmd, exc, [path]).decode()
+    if isinstance(exc, PolicyDenied):
+        return format_fs_error(cmd, exc, [path]).decode()
+    return f"{cmd}: {action} '{path.raw_path}': {fs_strerror(exc)}\n"
 
 
 async def setattr_via(
@@ -178,7 +190,6 @@ async def setattr_via(
 
 
 async def apply_link_attrs(
-    namespace: Namespace,
     dispatch: DispatchFn,
     cmd: str,
     path: PathSpec,
@@ -195,7 +206,6 @@ async def apply_link_attrs(
     door stores them in the overlay.
 
     Args:
-        namespace (Namespace): addressing authority (error rendering).
         dispatch (DispatchFn): op dispatcher.
         cmd (str): command name for the error message.
         path (PathSpec): the link's own path.
@@ -212,7 +222,7 @@ async def apply_link_attrs(
                        mtime=mtime,
                        nofollow=True)
     except PermissionError as exc:
-        errors.append(permission_error(cmd, namespace, path, exc))
+        errors.append(permission_error(cmd, ATTR_ACTIONS[cmd], path, exc))
 
 
 def follow_operand(
@@ -227,14 +237,15 @@ def follow_operand(
     Args:
         namespace (Namespace): addressing authority.
         cmd (str): command name for the error message.
-        action (str): GNU verb in the message ("access", "touch").
+        action (str): GNU's words for the step that failed ("cannot
+            access", "cannot touch", "setting times of").
         target (PathSpec): the operand as typed.
         errors (list[str]): per-operand error accumulator.
     """
     try:
         virtual = namespace.follow(target.virtual)
     except CycleError:
-        errors.append(f"{cmd}: cannot {action} '{target.raw_path}': "
+        errors.append(f"{cmd}: {action} '{target.raw_path}': "
                       f"Too many levels of symbolic links\n")
         return None
     return PathSpec.from_str_path(virtual)
@@ -256,20 +267,26 @@ async def resolve_operand(
         target (PathSpec): the operand as typed.
         errors (list[str]): per-operand error accumulator.
     """
-    resolved = follow_operand(namespace, cmd, "access", target, errors)
+    refusal = (walk_refusal(target)
+               if target.walk_error is not None else await dot_refusal(
+                   partial(dispatch_stat, dispatch), target, namespace.follow))
+    if refusal is not None:
+        errors.append(f"{cmd}: cannot access '{target.raw_path}': "
+                      f"{fs_strerror(refusal)}\n")
+        return None
+    resolved = follow_operand(namespace, cmd, "cannot access", target, errors)
     if resolved is None:
         return None
     try:
         stat, _ = await dispatch("stat", resolved)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError) as exc:
         errors.append(f"{cmd}: cannot access '{target.raw_path}': "
-                      f"No such file or directory\n")
+                      f"{fs_strerror(exc)}\n")
         return None
     return resolved, stat
 
 
 async def apply_attrs(
-    namespace: Namespace,
     dispatch: DispatchFn,
     cmd: str,
     resolved: PathSpec,
@@ -282,7 +299,6 @@ async def apply_attrs(
     """Setattr one operand, collecting the read-only refusal.
 
     Args:
-        namespace (Namespace): addressing authority.
         dispatch (DispatchFn): op dispatcher.
         cmd (str): command name for the error message.
         resolved (PathSpec): link-resolved target path.
@@ -294,7 +310,7 @@ async def apply_attrs(
     try:
         await setattr_via(dispatch, resolved, mode=mode, uid=uid, gid=gid)
     except PermissionError as exc:
-        errors.append(permission_error(cmd, namespace, resolved, exc))
+        errors.append(permission_error(cmd, ATTR_ACTIONS[cmd], resolved, exc))
 
 
 async def walk_stats(

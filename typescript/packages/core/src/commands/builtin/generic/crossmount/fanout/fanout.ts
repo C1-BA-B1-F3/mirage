@@ -12,15 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { IOResult, materialize, type ByteSource } from '../../../../../io/types.ts'
+import { materialize, type ByteSource } from '../../../../../io/types.ts'
 import type { PathSpec } from '../../../../../types.ts'
-import { parseFlags as parseWcFlags } from '../../wc.ts'
 import { combinedExit } from './exit.ts'
 import { duTotal } from './du.ts'
-import { combineWc } from './wc.ts'
 import { Cmd, type CrossResult, type OperandRun, type RunSingle } from '../types.ts'
-import { mergeOperandIos, runOperands } from '../utils.ts'
-import { FlagView } from '../../../../spec/flag_view.ts'
+import { mergeOperandIos, runOperands, runSeparator } from '../utils.ts'
+import { labelFlags } from '../../rg.ts'
+import { FlagView, flagOccurrences } from '../../../../spec/flag_view.ts'
 import { type FlagValue } from '../../../../spec/types.ts'
 import { specOf } from '../../../../spec/builtins.ts'
 
@@ -38,9 +37,9 @@ function concatRuns(results: OperandRun[]): Uint8Array {
   return out
 }
 
-function joinRunsWithBlankLine(results: OperandRun[]): Uint8Array {
+function joinRuns(results: OperandRun[], separator: string): Uint8Array {
   const parts = results.map((r) => r.data).filter((d) => d.byteLength > 0)
-  const sep = ENC.encode('\n')
+  const sep = ENC.encode(separator)
   const size =
     parts.reduce((n, d) => n + d.byteLength, 0) + sep.byteLength * Math.max(0, parts.length - 1)
   const out = new Uint8Array(size)
@@ -60,7 +59,7 @@ function joinRunsWithBlankLine(results: OperandRun[]): Uint8Array {
 // natively once per operand on the operand's owning mount (globs expand
 // inside that native run), and the outputs combine in operand order.
 // Filename-keyed commands stay correct because every native run is forced to
-// name its files (grep `-H`, head/tail `-v`); wc and `du -c` re-total across
+// name its files (grep `-H`, head/tail `-v`); `du -c` re-totals across
 // runs.
 export async function runFanout(
   cmdName: Cmd,
@@ -70,7 +69,8 @@ export async function runFanout(
   runSingle: RunSingle,
   stdin: ByteSource | null = null,
 ): Promise<CrossResult> {
-  const flags = { ...flagKwargs }
+  let flags = { ...flagKwargs }
+  flagOccurrences(flags).push(...flagOccurrences(flagKwargs))
   let stdinBytes: Uint8Array | null = null
   if (cmdName === Cmd.TEE) {
     stdinBytes = stdin !== null ? await materialize(stdin) : new Uint8Array()
@@ -78,9 +78,7 @@ export async function runFanout(
   if (cmdName === Cmd.GREP && !new FlagView(flags, specOf(Cmd.GREP)).asBool('h')) {
     flags.H = true
   }
-  if (cmdName === Cmd.RG && !new FlagView(flags, specOf(Cmd.RG)).asBool('args_I')) {
-    flags.H = true
-  }
+  if (cmdName === Cmd.RG) flags = labelFlags(flags)
   // head pairs -q/--quiet and -v/--verbose (canonical dests), tail declares
   // them short-only.
   const quietKey = cmdName === Cmd.HEAD ? 'quiet' : 'q'
@@ -91,27 +89,25 @@ export async function runFanout(
   ) {
     flags[verboseKey] = true
   }
-  // Both re-totalling combines below need raw per-file rows from every run:
-  // wc must not see a per-run total row it would have to guess at, and du
-  // must not sum sizes that were already rounded for -h.
-  if (cmdName === Cmd.WC) {
-    // The override would mask an invalid --total from every native run, so
-    // the user's value is diagnosed here first, as one mount would.
-    const checked = parseWcFlags(flagKwargs)
-    if (typeof checked === 'string') {
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(checked) })]
-    }
-    flags.total = 'never'
-  }
   const duC = cmdName === Cmd.DU && new FlagView(flagKwargs, specOf(Cmd.DU)).asBool('c')
   const duHuman = duC && new FlagView(flagKwargs, specOf(Cmd.DU)).asBool('h')
   if (duHuman) {
     flags.h = false
   }
 
-  const results = await runOperands(runSingle, cmdName, scopes, [...textArgs], flags, stdinBytes)
+  const quiet =
+    (cmdName === Cmd.GREP && new FlagView(flags, specOf(Cmd.GREP)).asBool('q')) ||
+    (cmdName === Cmd.RG && new FlagView(flags, specOf(Cmd.RG)).asBool('quiet'))
+  const results = await runOperands(
+    runSingle,
+    cmdName,
+    scopes,
+    [...textArgs],
+    flags,
+    stdinBytes,
+    quiet,
+  )
   const errored = results.map((r) => r.io.exitCode !== 0 && r.io.stderr !== null)
-  const quiet = cmdName === Cmd.GREP && new FlagView(flags, specOf(Cmd.GREP)).asBool('q')
   const exitCode = combinedExit(
     cmdName,
     results.map((r) => r.io.exitCode),
@@ -120,9 +116,7 @@ export async function runFanout(
   )
 
   let body: ByteSource | null
-  if (cmdName === Cmd.WC) {
-    body = combineWc(results, flagKwargs)
-  } else if (duC) {
+  if (duC) {
     body = duTotal(results, duHuman)
   } else if (cmdName === Cmd.TEE) {
     body = stdinBytes ?? new Uint8Array()
@@ -132,7 +126,12 @@ export async function runFanout(
   ) {
     // Blank line between per-operand blocks, like one native run separates
     // its own file blocks.
-    body = joinRunsWithBlankLine(results)
+    body = joinRuns(results, '\n')
+  } else if (runSeparator(cmdName, flags) !== '') {
+    // grep and ripgrep set one file's context off from the next file's (and
+    // ripgrep one --heading group from the next), as one native run
+    // separates its own files.
+    body = joinRuns(results, runSeparator(cmdName, flags))
   } else {
     body = concatRuns(results)
   }

@@ -29,12 +29,6 @@ INERT_CLOSE = "\x01"
 NUM_SEQ = re.compile(r"^(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?$")
 CHAR_SEQ = re.compile(r"^([A-Za-z])\.\.([A-Za-z])(?:\.\.(-?\d+))?$")
 
-# Unquoted expansions whose result splits into words on whitespace.
-SPLIT_TYPES = frozenset({
-    NT.SIMPLE_EXPANSION,
-    NT.EXPANSION,
-})
-
 # Node types that may carry a brace-expandable word.
 BRACE_WORD_TYPES = frozenset({
     NT.CONCATENATION,
@@ -98,3 +92,7 @@ ARITH_OPERATORS = frozenset({
 # Arithmetic delimiter tokens that mark the start/end of $((...)), $[...], and
 # the (( ... )) arithmetic command.
 ARITH_DELIMITERS = frozenset({"$((", "((", "))", "$[", "]"})
+
+# What a backslash escapes in the word of a ``${v:-word}`` inside double
+# quotes: the double-quote set plus the closing brace.
+OPERAND_DQUOTE_ESCAPES = frozenset('$`"\\}')

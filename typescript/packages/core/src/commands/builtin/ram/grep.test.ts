@@ -149,3 +149,50 @@ describe('grep', () => {
     expect(lines[1]).toContain('b.txt')
   })
 })
+
+// How the classifier hands over a typed stdin operand: `-` resolved under the
+// cwd, /dev/stdin as the path it is, each spelled as typed.
+function stdinOperand(raw: string): PathSpec {
+  const virtual = raw === '/dev/stdin' ? '/dev/stdin' : '/-'
+  return new PathSpec({
+    virtual,
+    directory: '/',
+    vfsPath: virtual.slice(1),
+    resolved: true,
+    rawPath: raw,
+  })
+}
+
+async function runOnStdin(
+  paths: PathSpec[],
+  texts: string[],
+  flags: Record<string, string | boolean | number | string[]>,
+): Promise<string> {
+  const cmd = RAM_GREP[0]
+  if (cmd === undefined) throw new Error('command not registered')
+  const result = await cmd.fn(new RAMVFS().accessor, paths, texts, {
+    stdin: ENC.encode('b\n'),
+    flags,
+    filetypeFns: null,
+    cwd: '/',
+  })
+  if (result === null) return ''
+  const [out] = result
+  if (out === null) return ''
+  return DEC.decode(
+    out instanceof Uint8Array ? out : await materialize(out as AsyncIterable<Uint8Array>),
+  )
+}
+
+// GNU grep 3.11 calls only `-` "(standard input)": /dev/stdin reads the same
+// bytes and is named as the path it is.
+describe('grep names only a dash stdin', () => {
+  it.each([
+    ['/dev/stdin', { H: true }, '/dev/stdin:b\n'],
+    ['/dev/stdin', { args_l: true }, '/dev/stdin\n'],
+    ['-', { H: true }, '(standard input):b\n'],
+    ['-', { args_l: true }, '(standard input)\n'],
+  ])('names %s under %j', async (raw, flags, want) => {
+    expect(await runOnStdin([stdinOperand(raw)], ['b'], flags)).toBe(want)
+  })
+})

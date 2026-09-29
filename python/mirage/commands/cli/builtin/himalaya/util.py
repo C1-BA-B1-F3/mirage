@@ -28,6 +28,7 @@ from mirage.core.email.config import EmailConfig
 from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
+from mirage.utils.errors import fs_strerror
 from mirage.utils.filetype import mime_type_for
 
 
@@ -71,9 +72,9 @@ async def load_attachments(doors: CLIDoors | None,
     for spec in paths:
         try:
             data, _ = await doors.dispatch("read", spec)
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError) as exc:
             raise ValueError(f"read attachment {spec.virtual}: "
-                             "No such file or directory") from None
+                             f"{fs_strerror(exc)}") from None
         filename = posixpath.basename(spec.virtual.rstrip("/")) or "attachment"
         attachments.append(
             Attachment(filename=filename,

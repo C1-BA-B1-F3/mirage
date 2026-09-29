@@ -15,34 +15,11 @@
 import type { Mem0Accessor } from '../../accessor/mem0.ts'
 import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
 import { makeRead } from '../hierarchy/read.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { jsonBytes } from '../render/json.ts'
-import { getMemory } from './client.ts'
+import { listedMemory } from './readdir.ts'
 import { detectScope } from './scope.ts'
-
-async function resolveMemory(
-  accessor: Mem0Accessor,
-  path: PathSpec,
-  index?: IndexCacheStore,
-): Promise<Record<string, unknown>> {
-  const match = detectScope(path)
-  if (match.kind !== 'memory') throw enoent(path)
-  if (index !== undefined) {
-    const lookup = await index.get(path.virtual)
-    const cached = lookup.entry?.extra.memory
-    if (
-      cached !== null &&
-      cached !== undefined &&
-      typeof cached === 'object' &&
-      !Array.isArray(cached)
-    ) {
-      return cached as Record<string, unknown>
-    }
-  }
-  return getMemory(accessor, match.slots.memory_id ?? '', path)
-}
 
 async function readMemory(
   accessor: Mem0Accessor,
@@ -50,7 +27,7 @@ async function readMemory(
   path: PathSpec,
   index?: IndexCacheStore,
 ): Promise<Uint8Array> {
-  return jsonBytes(await resolveMemory(accessor, path, index))
+  return jsonBytes(await listedMemory(accessor, path, index))
 }
 
 export const read = makeRead(detectScope, { memory: readMemory })
@@ -61,5 +38,5 @@ export async function* readStream(
   path: PathSpec,
   index?: IndexCacheStore,
 ): AsyncIterable<Uint8Array> {
-  yield jsonBytes(await resolveMemory(accessor, path, index))
+  yield jsonBytes(await listedMemory(accessor, path, index))
 }

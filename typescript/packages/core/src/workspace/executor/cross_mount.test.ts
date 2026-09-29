@@ -330,21 +330,23 @@ describe('handleCrossMount — stream/fanout via runSingle', () => {
     expect(calls.map((c) => c.cmd)).toEqual(['cat', 'cat'])
   })
 
-  it('sort runs once on the merged stream with a resolve hint', async () => {
-    const calls: Record<string, unknown>[] = []
-    const perOperand: Record<string, [string, number]> = {
-      '/ram/a': ['b\n', 0],
-      '/disk/b': ['a\n', 0],
-      '': ['a\nb\n', 0],
-    }
-    const rs = runSingleFrom(perOperand, calls)
+  it('sort relays independent inputs without native cat sub-runs', async () => {
+    const dispatch = vi.fn(
+      (op: string, path: PathSpec): Promise<[unknown, IOResult]> =>
+        Promise.resolve([
+          op === 'stat'
+            ? fileStat(path.virtual)
+            : new TextEncoder().encode(path.virtual === '/ram/a' ? 'b' : 'a'),
+          new IOResult(),
+        ]),
+    )
+    const native = vi.fn(runSingleNoop)
     const paths = [PathSpec.fromStrPath('/ram/a'), PathSpec.fromStrPath('/disk/b')]
-    const [, io] = await handleCrossMount('sort', paths, [], {}, noDispatch, rs, null, 'sort')
+    const [out, io] = await handleCrossMount('sort', paths, [], {}, dispatch, native, null, 'sort')
     expect(io.exitCode).toBe(0)
-    const final = calls.at(-1)
-    expect(final?.cmd).toBe('sort')
-    expect(final?.paths).toEqual([])
-    expect(final?.resolveHint).toBe('/ram/a')
+    expect(decode(await materialize(out))).toBe('a\nb\n')
+    expect(dispatch.mock.calls.map(([op]) => op)).toEqual(['stat', 'read', 'stat', 'read'])
+    expect(native).not.toHaveBeenCalled()
   })
 
   it('grep fans out per operand and forces -H', async () => {
@@ -379,12 +381,16 @@ describe('handleCrossMount — stream/fanout via runSingle', () => {
     const paths = [PathSpec.fromStrPath('/ram/a'), PathSpec.fromStrPath('/disk/b')]
     const [, io] = await handleCrossMount('rg', paths, ['ap'], {}, noDispatch, rs, null, 'rg')
     expect(io.exitCode).toBe(0)
-    expect(calls.every((c) => (c.flags as Record<string, unknown>).H === true)).toBe(true)
+    expect(calls.every((c) => (c.flags as Record<string, unknown>).with_filename === true)).toBe(
+      true,
+    )
 
     const calls2: Record<string, unknown>[] = []
     const rs2 = runSingleFrom({ '/ram/a': ['apple\n', 0], '/disk/b': ['apricot\n', 0] }, calls2)
-    await handleCrossMount('rg', paths, ['ap'], { args_I: true }, noDispatch, rs2, null, 'rg')
-    expect(calls2.every((c) => !('H' in (c.flags as Record<string, unknown>)))).toBe(true)
+    await handleCrossMount('rg', paths, ['ap'], { no_filename: true }, noDispatch, rs2, null, 'rg')
+    expect(calls2.every((c) => !('with_filename' in (c.flags as Record<string, unknown>)))).toBe(
+      true,
+    )
   })
 
   it('grep any-match wins over no-match in the merged exit code', async () => {
@@ -410,16 +416,27 @@ describe('handleCrossMount — stream/fanout via runSingle', () => {
     expect(decode(await materialize(io.stderr))).toBe('grep: /ram/a: No such file or directory\n')
   })
 
-  it('wc re-totals per-operand rows with one shared width', async () => {
+  it('wc counts each operand on its mount and sizes the columns by stat', async () => {
     const calls: Record<string, unknown>[] = []
     const rs = runSingleFrom(
       { '/ram/a': ['2 3 8 /ram/a\n', 0], '/disk/b': ['1 1 2 /disk/b\n', 0] },
       calls,
     )
+    const sizes: Record<string, number> = { '/ram/a': 8, '/disk/b': 2 }
+    const dispatch = vi.fn(
+      (op: string, path: PathSpec): Promise<[unknown, IOResult]> =>
+        Promise.resolve([
+          new FileStat({ name: path.virtual, size: sizes[path.virtual] ?? 0, type: FileType.FILE }),
+          new IOResult(),
+        ]),
+    )
     const paths = [PathSpec.fromStrPath('/ram/a'), PathSpec.fromStrPath('/disk/b')]
-    const [out] = await handleCrossMount('wc', paths, [], {}, noDispatch, rs, null, 'wc')
-    const text = decode(await materialize(out))
-    expect(text).toBe(' 2  3  8 /ram/a\n 1  1  2 /disk/b\n 3  4 10 total\n')
+    const [out] = await handleCrossMount('wc', paths, [], {}, dispatch, rs, null, 'wc')
+    expect(decode(await materialize(out))).toBe(
+      ' 2  3  8 /ram/a\n 1  1  2 /disk/b\n 3  4 10 total\n',
+    )
+    expect(calls.map((c) => c.flags)).toEqual([{ total: 'never' }, { total: 'never' }])
+    expect(dispatch.mock.calls.map(([op]) => op)).toEqual(['stat', 'stat'])
   })
 
   it('sha256sum concatenates per-operand lines and fails on any failure', async () => {

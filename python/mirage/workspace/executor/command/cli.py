@@ -14,14 +14,14 @@
 
 import inspect
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
 from mirage.commands.builtin.general.interpreter import run_output
 from mirage.commands.builtin.utils.limit import (maybe_with_timeout,
                                                  run_with_timeout)
-from mirage.commands.cli.constants import CLI_CONFIG_ENV
+from mirage.commands.cli.constants import CLI_CONFIG_ENV, GIT_LONG_OPTIONS
 from mirage.commands.cli.refusal import (CLAP_EXIT, clap_missing_operands,
                                          leaf_refusal)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation, CLISpec
@@ -29,6 +29,7 @@ from mirage.commands.cli.walk import owns_argv, walk
 from mirage.commands.errors import CommandTimeoutError, UsageError
 from mirage.commands.spec import flag_kwarg_name
 from mirage.commands.spec.constants import HELP_OPTION
+from mirage.commands.spec.flag_view import FlagBag
 from mirage.commands.spec.help import render_help
 from mirage.commands.spec.types import FlagValue, Operand, UsageStyle
 from mirage.io import IOResult
@@ -36,11 +37,12 @@ from mirage.io.stream import materialize
 from mirage.io.types import ByteSource, CommandOutput
 from mirage.ops.types import NamespaceView, SessionView, StatPath
 from mirage.policy import resolve_limit
+from mirage.process.types import ProcessView
 from mirage.runtime.base import Runtime
 from mirage.runtime.language import LanguageRuntime
 from mirage.runtime.routing import runtime_for_language
 from mirage.runtime.types import CodeExecution, DispatchFn, ScriptSource
-from mirage.types import PathSpec, Producer, word_text
+from mirage.types import Limit, PathSpec, Producer, word_text
 from mirage.workspace.cli.types import CLIInstall
 from mirage.workspace.executor.command.flags import option_error, parse_flags
 from mirage.workspace.executor.command.run import exec_node
@@ -196,6 +198,8 @@ class CLIContext:
     (workspace/executor/command/cli.ts).
 
     Args:
+        shell (Callable[[str], Awaitable[IOResult]] | None): the nested
+            evaluator bound to this invocation's session.
         entries (list[Runtime] | None): the workspace's ordered
             runtime world, which a script leaf selects its interpreter
             from; None (outside a workspace) refuses script installs.
@@ -211,11 +215,14 @@ class CLIContext:
             gated handle; ``inv.env`` stays the frozen process view.
     """
 
+    shell: Callable[[str], Awaitable[IOResult]] | None = None
+    command_limits: Mapping[str, Limit] | None = None
     entries: list[Runtime] | None = None
     dispatch: DispatchFn | None = None
     stat_path: StatPath | None = None
     ns: NamespaceView | None = None
     session_view: SessionView | None = None
+    processes: ProcessView | None = None
 
 
 def drops_mount_caches(spec: CLISpec) -> bool:
@@ -318,12 +325,18 @@ async def handle_cli(
     # The environment goes into the parse, not on top of it: an option
     # declaring one is coerced, choice-checked, path-resolved and
     # credited against required exactly as a typed value is.
+    # git resolves an abbreviated long option against the verb's own full
+    # table (parse-options), and its revision walkers take whole words
+    # only.
+    abbreviations = (GIT_LONG_OPTIONS.get(" ".join(result.path), ())
+                     if install.spec.name == "git" else None)
     parsed = parse_flags(list(result.argv),
                          parse_spec,
                          prog,
                          session.cwd,
                          env=env_snapshot(session),
-                         unknown_is_operand=True)
+                         unknown_is_operand=True,
+                         abbreviations=abbreviations)
     if mirage_help and parsed.flag_kwargs.get("help") is True:
         help_text = render_help(prog, parse_spec, style=style).encode()
         return help_text, IOResult(), ExecutionNode(command=cmd_str,
@@ -352,11 +365,13 @@ async def handle_cli(
     # Group flags merge into the one bag: ancestor/descendant collisions
     # are a build-time CLISpec error, so a group flag can never shadow a
     # leaf flag.
-    kw: dict[str, FlagValue] = {
+    kw: FlagBag[FlagValue] = FlagBag({
         flag_kwarg_name(spelling): value
         for spelling, value in result.group_flags.items()
-    }
+    })
     kw.update(parsed.flag_kwargs)
+    if isinstance(parsed.flag_kwargs, FlagBag):
+        kw.occurrences.extend(parsed.flag_kwargs.occurrences)
     if mirage_help:
         # Only the injected flag is dropped; a leaf that declared
         # --help itself is handed the value it asked for.
@@ -366,12 +381,22 @@ async def handle_cli(
     # CLIs never read it: an API client has no filesystem, while `git`
     # is nothing but one. None outside a workspace, so a verb that needs
     # a plane refuses there on its own.
-    opened = (dispatch, stat_path, ns, session_view)
+    opened = (dispatch, stat_path, ns, session_view, context.processes)
     doors = (CLIDoors(dispatch=dispatch,
                       stat_path=stat_path,
                       ns=ns,
-                      session_view=session_view) if any(
+                      session_view=session_view,
+                      processes=context.processes) if any(
                           door is not None for door in opened) else None)
+    active = True
+
+    async def shell(command: str) -> IOResult:
+        if not active:
+            raise RuntimeError("CLI shell is no longer active")
+        if context.shell is None:
+            raise RuntimeError("CLI shell is unavailable")
+        return await context.shell(command)
+
     inv = CLIInvocation(install.config,
                         argv=tuple(argv),
                         paths=tuple(parsed.paths),
@@ -380,11 +405,15 @@ async def handle_cli(
                         stdin=stdin,
                         env=env_snapshot(session),
                         doors=doors,
-                        spec=leaf)
+                        spec=leaf,
+                        shell=shell if context.shell is not None else None)
 
     # asyncio's timeout cancels the runtime task as well as the caller;
     # TypeScript forwards an explicit deadline and abort signal instead.
-    limit = resolve_limit(prog, command_default=leaf.limit)
+    limit = resolve_limit(prog,
+                          command_default=leaf.limit,
+                          workspace_limits=context.command_limits,
+                          profile_limits=session.command_limits)
     timeout = limit.timeout_seconds if limit is not None else None
     if leaf.script is not None:
         runtime, refused = _select_runtime(prog, leaf, entries or [])
@@ -444,6 +473,8 @@ async def handle_cli(
         return None, err_io, ExecutionNode(command=cmd_str,
                                            exit_code=1,
                                            stderr=err_stderr)
+    finally:
+        active = False
     if out is None:
         stdout, io = None, IOResult()
     else:

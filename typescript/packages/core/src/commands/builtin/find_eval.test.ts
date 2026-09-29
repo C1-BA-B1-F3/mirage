@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
+import { DIR_SIZE } from '../../utils/stat_view.ts'
 import {
   bindTree,
   buildTree,
@@ -650,30 +651,25 @@ describe('displayPath', () => {
 })
 
 describe('emitStartPath size on directories', () => {
-  it('directory start contributes size 0: +N excludes, -N keeps (#318)', () => {
-    const results: string[] = []
-    emitStartPath(results, '/data', 'data', {
-      kind: 'd',
-      isEmpty: null,
-      exists: true,
-      tree: { op: 'true' },
-      maxDepth: null,
-      minDepth: null,
-      minSize: 5,
-      maxSize: null,
-    })
-    expect(results).toEqual([])
-    emitStartPath(results, '/data', 'data', {
-      kind: 'd',
-      isEmpty: null,
-      exists: true,
-      tree: { op: 'true' },
-      maxDepth: null,
-      minDepth: null,
-      minSize: null,
-      maxSize: 5,
-    })
-    expect(results).toEqual(['/data'])
+  it('a directory start is DIR_SIZE bytes: +N below it keeps, -N below it drops', () => {
+    const emit = (minSize: number | null, maxSize: number | null): string[] => {
+      const results: string[] = []
+      emitStartPath(results, '/data', 'data', {
+        kind: 'd',
+        isEmpty: null,
+        exists: true,
+        tree: { op: 'true' },
+        maxDepth: null,
+        minDepth: null,
+        minSize,
+        maxSize,
+      })
+      return results
+    }
+    expect(emit(5, null)).toEqual(['/data'])
+    expect(emit(null, 5)).toEqual([])
+    expect(emit(DIR_SIZE, DIR_SIZE)).toEqual(['/data'])
+    expect(emit(DIR_SIZE + 1, null)).toEqual([])
   })
 })
 

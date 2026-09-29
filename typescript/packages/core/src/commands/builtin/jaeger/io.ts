@@ -12,18 +12,16 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { JaegerAccessor } from '../../../accessor/jaeger.ts'
 import { read as jaegerRead } from '../../../core/jaeger/read.ts'
 import { readdir as jaegerReaddir } from '../../../core/jaeger/readdir.ts'
 import { stat as jaegerStat } from '../../../core/jaeger/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
-import { streamFromBytes } from '../utils/wrap.ts'
 
-export const JAEGER_IO: CommandIO<JaegerAccessor> = {
-  readdir: jaegerReaddir,
-  readBytes: jaegerRead,
-  readStream: (a, p, i) => streamFromBytes(jaegerRead, a, p, i),
-  stat: jaegerStat,
+export const JAEGER_IO: CommandIO<JaegerAccessor> = new VFSAdapter<JaegerAccessor>({
+  read: { readdir: jaegerReaddir, readBytes: jaegerRead, stat: jaegerStat },
   isMounted: () => true,
   local: false,
-}
+}).toCommandIO()

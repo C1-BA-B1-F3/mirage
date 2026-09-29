@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import importlib
 import logging
 import os
 import signal
@@ -35,6 +36,10 @@ from mirage.server.paths import (mirage_home, pid_file_path,
 from mirage.server.registry import WorkspaceRegistry
 from mirage.server.routers import (asks, execute, health, jobs, sessions,
                                    versions, workspaces)
+from mirage.server.ssh.config import SSHConfig, resolve_ssh_config
+from mirage.server.ssh.constants import SERVER_MODULE
+from mirage.server.ssh.errors import SSHConfigError
+from mirage.server.ssh.types import SSHListener, StartSSH
 from mirage.server.version.backend import LocalBackend
 
 logger = logging.getLogger(__name__)
@@ -65,14 +70,51 @@ async def _watch_exit(exit_event: asyncio.Event) -> None:
     os.kill(os.getpid(), signal.SIGTERM)
 
 
+def _load_ssh_starter() -> StartSSH:
+    module_path, attr = SERVER_MODULE.split(":")
+    try:
+        module = importlib.import_module(module_path)
+    except ModuleNotFoundError as exc:
+        raise SSHConfigError(
+            "ssh_port is set but the SSH server needs asyncssh; install "
+            "the ssh extra (pip install 'mirage-ai[ssh]')") from exc
+    return getattr(module, attr)
+
+
+async def _start_ssh(app: FastAPI) -> SSHListener | None:
+    """Open the SSH door when one is configured.
+
+    A configured door that cannot open (the port is taken, asyncssh is
+    missing) fails the daemon's start rather than leaving it up without
+    the door its config asked for.
+
+    Args:
+        app (FastAPI): the daemon app.
+
+    Returns:
+        SSHListener | None: the running listener, or None when SSH is
+            off.
+    """
+    config: SSHConfig | None = app.state.ssh_config
+    if config is None:
+        return None
+    start = _load_ssh_starter()
+    return await start(app.state.registry, config)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    ssh = await _start_ssh(app)
+    app.state.ssh = ssh
     _write_pid_file(app.state.pid_file)
     exit_task = asyncio.create_task(_watch_exit(app.state.exit_event))
     try:
         yield
     finally:
         exit_task.cancel()
+        if ssh is not None:
+            ssh.close()
+            await ssh.wait_closed()
         await app.state.registry.close_all()
         _remove_pid_file(app.state.pid_file)
 
@@ -84,7 +126,8 @@ def build_app(idle_grace_seconds: float = 30.0,
               version_root: str | Path | None = None,
               snapshot_root: str | Path | None = None,
               state_root: str | Path | None = None,
-              pid_file: str | Path | None = None) -> FastAPI:
+              pid_file: str | Path | None = None,
+              ssh_config: SSHConfig | None = None) -> FastAPI:
     """Construct a daemon FastAPI app.
 
     The workspace registry is created eagerly so the app is usable
@@ -116,6 +159,10 @@ def build_app(idle_grace_seconds: float = 30.0,
         pid_file (str | Path | None): daemon pid file path. ``None``
             (default) uses ``$MIRAGE_HOME/daemon.pid`` (or
             ``~/.mirage/daemon.pid``).
+        ssh_config (SSHConfig | None): the SSH door, opened with the
+            app's lifespan. ``None`` (default) resolves it from the
+            ``MIRAGE_SSH_*`` env vars and the ``ssh_*`` config keys; it
+            stays shut unless a port is set.
 
     Returns:
         FastAPI: configured app with all routers mounted.
@@ -145,6 +192,9 @@ def build_app(idle_grace_seconds: float = 30.0,
     app.state.version_backend = LocalBackend(version_root_path(version_root))
     app.state.snapshot_root = snapshot_root_path(snapshot_root)
     app.state.state_root = state_root_path(state_root)
+    app.state.ssh_config = (ssh_config if ssh_config is not None else
+                            resolve_ssh_config())
+    app.state.ssh = None
     app.include_router(workspaces.router)
     app.include_router(versions.router)
     app.include_router(sessions.router)

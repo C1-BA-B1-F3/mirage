@@ -22,7 +22,7 @@ from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.ops.types import LinkView, MountView, StatPath
 from mirage.types import (FileStat, FileType, PathSpec, PolymorphicReadFn,
                           ReadBytesFn, StatFn)
-from mirage.utils.errors import FS_ERRORS, eisdir, fs_error_line
+from mirage.utils.errors import FS_ERRORS, DotWalkError, eisdir, fs_error_line
 from mirage.utils.stream import ensure_stream
 
 
@@ -80,6 +80,10 @@ async def operand_stat(
     """
     try:
         row = await stat_fn(path)
+    except DotWalkError:
+        # The operand did not resolve, so no namespace structure under
+        # the path it simplifies to can answer for it.
+        raise
     except FS_ERRORS:
         if (mounts is not None and not mounts.visible_descendants(path.virtual)
                 and (links is None or not links.subtree(path.virtual))):

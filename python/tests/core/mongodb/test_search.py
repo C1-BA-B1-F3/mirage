@@ -12,108 +12,120 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mirage.core.mongodb.search import search_collection, search_database
+from mirage.accessor.mongodb import MongoDBAccessor
+from mirage.core.hierarchy.scope import ScopeMatch
+from mirage.core.mongodb.scope import detect_scope
+from mirage.core.mongodb.search import SEARCHERS
+from mirage.vfs.mongodb.config import MongoDBConfig
+from mirage.vfs.types import SearchQuery
+
+DOCS = {
+    ("app", "books"): [
+        '{"_id": {"$oid": "65a1f0000000000000000001"}, "title": "Ada", '
+        '"year": 2020}',
+        '{"_id": {"$oid": "65a1f0000000000000000002"}, "title": "ada", '
+        '"year": 2021}',
+    ],
+    ("app", "recent"): ['{"_id": 3, "title": "Ada live", "year": 2022}'],
+}
 
 
-class _AsyncIter:
-
-    def __init__(self, items):
-        self._items = list(items)
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        if not self._items:
-            raise StopAsyncIteration
-        return self._items.pop(0)
+async def _fake_stream(accessor, path, index=None):
+    key = tuple(path.vfs_path.split("/")[i] for i in (0, 2))
+    for line in DOCS[key]:
+        yield (line + "\n").encode()
 
 
-def _agg_iter(items):
-    return _AsyncIter(items)
+async def _fake_collections(client, database, kind=None):
+    return ["books"] if kind.value == "collection" else ["recent"]
 
 
-def _build_search_client(sampled_docs, matched_docs):
-    col = MagicMock()
-    col.aggregate = AsyncMock(return_value=_agg_iter(sampled_docs))
-    cursor = MagicMock()
-    cursor.limit = MagicMock(return_value=cursor)
-    cursor.to_list = AsyncMock(return_value=matched_docs)
-    col.find = MagicMock(return_value=cursor)
-    db = MagicMock()
-    db.__getitem__.return_value = col
-    client = MagicMock()
-    client.__getitem__.return_value = db
-    return client, col
+@pytest.fixture
+def catalog():
+    with patch("mirage.core.mongodb.search.read_stream", new=_fake_stream), \
+            patch("mirage.core.mongodb.search.list_collections",
+                  new=_fake_collections), \
+            patch("mirage.core.mongodb.search.list_databases",
+                  new=AsyncMock(return_value=["app"])), \
+            patch("mirage.core.mongodb.search.build_collection_schema_json",
+                  new=AsyncMock(return_value={"fields": {"year": "int"}})), \
+            patch("mirage.core.mongodb.search.build_database_json",
+                  new=AsyncMock(return_value={"database": "app"})):
+        yield
+
+
+def _accessor() -> MongoDBAccessor:
+    return MongoDBAccessor(config=MongoDBConfig(
+        uri="mongodb://localhost:27017"))
+
+
+def _match(path: str) -> ScopeMatch:
+    return detect_scope(path)
+
+
+async def _search(path: str, pattern: str, **flags) -> list[str]:
+    match = _match(path)
+    return await SEARCHERS[match.kind](_accessor(), match,
+                                       SearchQuery(query=pattern,
+                                                   options={
+                                                       "grep": {
+                                                           "basic": True,
+                                                           "fixed_string":
+                                                           False,
+                                                           **flags
+                                                       }
+                                                   }))
 
 
 @pytest.mark.asyncio
-async def test_search_collection_unions_string_fields_across_sampled_docs():
-    sampled = [
-        {
-            "_id": 1,
-            "title": "Hello"
-        },
-        {
-            "_id": 2,
-            "body": "World"
-        },
-        {
-            "_id": 3,
-            "metadata": {
-                "tag": "x"
-            }
-        },
+async def test_a_number_matches_as_the_line_spells_it(catalog):
+    """The $regex ran only over string fields sampled from 100
+    documents, so a number (or an ObjectId, a date, a key) never
+    matched, while grep over documents.jsonl found it."""
+    lines = await _search("/app/collections/books", "2020")
+    assert lines == [
+        "app/collections/books/documents.jsonl:" + DOCS[("app", "books")][0]
     ]
-    matched = [{"_id": 2, "body": "World matches"}]
-    client, col = _build_search_client(sampled, matched)
-    out = await search_collection(client, "db1", "coll1", "World", limit=10)
-    assert out == matched
-    filter_arg = col.find.call_args[0][0]
-    or_fields = {list(clause.keys())[0] for clause in filter_arg["$or"]}
-    assert {"title", "body", "metadata.tag"}.issubset(or_fields)
 
 
 @pytest.mark.asyncio
-async def test_search_collection_uses_regex_even_with_text_index():
-    # $text matches whole words and stems them while grep matches substrings,
-    # and these rows are the grep output with no local re-scan, so the text
-    # index is never used.
-    client, col = _build_search_client([{"title": "hello"}], [{"_id": 1}])
-    await search_collection(client, "db1", "coll1", "query", limit=10)
-    sent = col.find.call_args[0][0]
-    assert "$text" not in sent
-    assert sent == {"$or": [{"title": {"$regex": "query", "$options": "i"}}]}
+async def test_case_is_folded_only_under_i(catalog):
+    # `$options: "i"` folded case whatever -i said.
+    sensitive = await _search("/app/collections/books", "Ada")
+    folded = await _search("/app/collections/books", "Ada", ignore_case=True)
+    assert len(sensitive) == 1
+    assert len(folded) == 2
 
 
 @pytest.mark.asyncio
-async def test_search_collection_no_string_fields_returns_no_results():
-    sampled = [{"_id": 1, "n": 42}, {"_id": 2, "n": 7}]
-    client, col = _build_search_client(sampled, [])
-    out = await search_collection(client, "db1", "coll1", "anything", limit=10)
-    assert out == []
-    assert col.find.call_args is None
+async def test_a_database_covers_views_and_its_metadata_files(catalog):
+    lines = await _search("/app", "year")
+    assert [line.split(":", 1)[0] for line in lines] == [
+        "app/collections/books/documents.jsonl",
+        "app/collections/books/documents.jsonl",
+        "app/collections/books/schema.json",
+        "app/views/recent/documents.jsonl",
+        "app/views/recent/schema.json",
+    ]
+    assert await _search("/app", '"database": "app"') == [
+        'app/database.json:{"database": "app"}'
+    ]
 
 
 @pytest.mark.asyncio
-async def test_search_database_runs_collections_concurrently():
-    barrier = asyncio.Barrier(3)
-
-    async def slow_search(client, database, col, pattern, limit):
-        await barrier.wait()
-        return [{"_id": col, "v": col}]
-
-    with patch("mirage.core.mongodb.search.list_collections",
-               new=AsyncMock(return_value=["a", "b", "c"])):
-        with patch("mirage.core.mongodb.search.search_collection",
-                   new=slow_search):
-            out = await asyncio.wait_for(
-                search_database(None, "db", "p", 10),
-                timeout=2.0,
-            )
-    assert {col for _, col, _ in out} == {"a", "b", "c"}
+async def test_there_is_no_result_cap():
+    # It stopped at `default_search_limit` documents per collection.
+    many = {
+        ("app", "books"): [f'{{"_id": {i}, "n": "x"}}' for i in range(150)]
+    }
+    search = "mirage.core.mongodb.search"
+    with patch.dict(DOCS, many), \
+            patch(f"{search}.read_stream", new=_fake_stream), \
+            patch(f"{search}.build_collection_schema_json",
+                  new=AsyncMock(return_value={})):
+        lines = await _search("/app/collections/books", '"x"')
+    assert len(lines) == 150

@@ -1,12 +1,14 @@
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from mirage.commands.builtin.utils.lines import split_lines
+from mirage.commands.builtin.utils.stream import stdin_bytes
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName, FlagValue
-from mirage.commands.spec.usage import extra_operand_error
+from mirage.commands.spec.usage import (extra_operand_error,
+                                        missing_operand_error)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -133,28 +135,36 @@ def _join_lines(
 
 
 async def join_cmd(
-    paths: list[PathSpec],
-    *,
-    read_bytes: Callable[..., Awaitable[bytes]],
-    field1: int = 0,
-    field2: int = 0,
-    separator: str | None = None,
-    also_unpairable: str | None = None,
-    only_unpairable: str | None = None,
-    empty_value: str | None = None,
-    output_format: str | None = None,
-    ignore_case: bool = False,
-    zero_terminated: bool = False,
-    check_order: bool = False,
-    header: bool = False,
+        paths: list[PathSpec],
+        *,
+        read_bytes: Callable[..., Awaitable[bytes]],
+        stdin: ByteSource | None = None,
+        field1: int = 0,
+        field2: int = 0,
+        separator: str | None = None,
+        also_unpairable: str | None = None,
+        only_unpairable: str | None = None,
+        empty_value: str | None = None,
+        output_format: str | None = None,
+        ignore_case: bool = False,
+        zero_terminated: bool = False,
+        check_order: bool = False,
+        header: bool = False,
+        argv: Sequence[str] = (),
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 2:
         raise extra_operand_error(CommandName.JOIN, paths[2].raw_path
                                   or paths[2].virtual)
     if len(paths) < 2:
-        raise ValueError("join: requires two paths")
-    data1 = (await read_bytes(paths[0])).decode(errors="replace")
-    data2 = (await read_bytes(paths[1])).decode(errors="replace")
+        raise missing_operand_error(
+            CommandName.JOIN,
+            paths[-1].raw_path or paths[-1].virtual if paths else None, argv)
+    if paths[0].raw_path == "-" and paths[1].raw_path == "-":
+        return None, IOResult(
+            exit_code=1, stderr=b"join: both files cannot be standard input\n")
+    read = stdin_bytes(read_bytes, stdin)
+    data1 = (await read(paths[0])).decode(errors="replace")
+    data2 = (await read(paths[1])).decode(errors="replace")
     lines1 = data1.rstrip("\0").split(
         "\0") if zero_terminated else split_lines(data1)
     lines2 = data2.rstrip("\0").split(
@@ -242,6 +252,7 @@ async def join_generic(
     parsed = parse_flags(opts.flags)
     return await join_cmd(paths,
                           read_bytes=read_bytes,
+                          stdin=opts.stdin,
                           field1=parsed.field1,
                           field2=parsed.field2,
                           separator=parsed.separator,
@@ -252,4 +263,5 @@ async def join_generic(
                           ignore_case=parsed.ignore_case,
                           zero_terminated=parsed.zero_terminated,
                           check_order=parsed.check_order,
-                          header=parsed.header)
+                          header=parsed.header,
+                          argv=opts.argv)

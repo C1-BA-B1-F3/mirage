@@ -17,6 +17,7 @@ from typing import Any
 
 from mirage.accessor.base import Accessor
 from mirage.commands.builtin.generic_bind.adapter import CommandIO, Operation
+from mirage.commands.builtin.generic_bind.builders.mkdir import make_directory
 from mirage.commands.builtin.utils.slash_links import mkdir_link_refusal
 from mirage.commands.config import CommandOpts
 from mirage.commands.registry import command
@@ -59,7 +60,11 @@ def make_mkdir(vfs: str, io: CommandIO) -> Callable[..., Any]:
                 if refusal is not None:
                     errors.append(refusal)
                 continue
-            await mkdir_impl(accessor, path, parents=parents)
+            failed = await make_directory(mkdir_impl, accessor, path, parents,
+                                          links)
+            if failed is not None:
+                errors.append(failed)
+                continue
             writes[path.mount_path] = b""
             if verbose:
                 lines.append(f"mkdir: created directory '{path.virtual}'")
@@ -72,5 +77,6 @@ def make_mkdir(vfs: str, io: CommandIO) -> Callable[..., Any]:
     wrapped: Callable[..., Any] = command("mkdir",
                                           vfs=vfs,
                                           spec=SPECS["mkdir"],
-                                          write=True)(mkdir)
+                                          write=True,
+                                          path_guarded=True)(mkdir)
     return wrapped

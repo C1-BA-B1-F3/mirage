@@ -14,23 +14,29 @@
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.context import invalidate_after_write
-from mirage.core.ram.dest import check_write_target
+from mirage.core.ram.dest import check_dest_parents, check_write_target
 from mirage.core.timeutil import now_iso
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils.path import norm
 
 
-async def truncate(accessor: RAMAccessor, path: PathSpec, length: int) -> None:
+async def truncate(accessor: RAMAccessor,
+                   path: PathSpec,
+                   length: int,
+                   no_create: bool = False) -> None:
     store = accessor.store
     timer = start_op()
     p = norm(path.mount_path)
+    check_dest_parents(store, path, p)
     check_write_target(store, path, p)
     if p in store.files:
         data = store.files[p]
     else:
+        if no_create:
+            return
         data = b""
     store.files[p] = data[:length].ljust(length, b"\0")
     store.modified[p] = now_iso()
-    record("truncate", path.mount_path, "ram", 0, timer)
+    record("truncate", path.virtual, "ram", 0, timer)
     await invalidate_after_write(path)

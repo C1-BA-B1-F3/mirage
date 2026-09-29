@@ -1,6 +1,10 @@
 import pytest
 
-from mirage.commands.builtin.generic.cat import cat
+from mirage.commands.builtin.generic.cat import cat, cat_generic
+from mirage.commands.config import CommandOpts
+from mirage.io.types import materialize
+from mirage.types import FileStat, FileType, PathSpec
+from mirage.utils.errors import efbig
 
 
 async def _drain(gen):
@@ -176,3 +180,29 @@ async def test_cat_show_nonprinting_caret_and_meta_notation():
     out = b"".join(
         [c async for c in cat(b"\x01\x7f\xff\n", show_nonprinting=True)])
     assert out == b"^A^?M-^?\n"
+
+
+@pytest.mark.asyncio
+async def test_cat_generic_reports_a_refused_read_and_goes_on():
+    """A table past its read cap stats fine and refuses the read; GNU cat
+    reports the operand and prints the next one."""
+    files = {"/a.txt": None, "/b.txt": b"b1\nb2\n"}
+
+    async def stat(p: PathSpec) -> FileStat:
+        return FileStat(name=p.virtual, type=FileType.FILE)
+
+    async def read(p: PathSpec):
+        if files[p.virtual] is None:
+            raise efbig(p)
+        yield files[p.virtual]
+
+    paths = [PathSpec.from_str_path(p) for p in files]
+    out, io = await cat_generic(paths, [],
+                                CommandOpts(),
+                                stat,
+                                read,
+                                local=False)
+    assert await materialize(out) == b"b1\nb2\n"
+    assert io.stderr == b"cat: /a.txt: File too large\n"
+    assert io.exit_code == 1
+    assert list(io.reads) == ["/b.txt"]

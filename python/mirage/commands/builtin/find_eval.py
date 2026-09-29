@@ -22,6 +22,7 @@ from mirage.types import FindType, PathSpec
 from mirage.utils.dates import in_mtime_window
 from mirage.utils.fnmatch import fnmatch
 from mirage.utils.path import respell_one
+from mirage.utils.stat_view import DIR_SIZE
 
 
 def start_basename(path: PathSpec) -> str:
@@ -592,11 +593,9 @@ def emit_start_path(
     start), ``-mindepth 0`` (start included), and ``-name``/``-iname``
     against the start's own basename all behave the same everywhere.
 
-    A directory start path contributes size ``0`` to ``-size``
-    filtering (mirage directories have no meaningful content size; a
-    documented divergence from GNU, which compares the inode size), so
-    ``-size +N`` excludes directory roots and ``-size -N`` keeps them
-    (#318). Backends whose start path can be a file
+    A directory start path contributes ``DIR_SIZE`` to ``-size``
+    filtering, the size ``ls -l`` shows for it and GNU compares on
+    ext4. Backends whose start path can be a file
     (ram/redis/chroma/dify/notion) pass the start's size so
     ``find <file> -size`` filters the start like GNU does; a file start
     with an unknown size (``None``) skips the filter.
@@ -627,14 +626,13 @@ def emit_start_path(
     if not keep(entry, tree, mindepth):
         return
     if min_size is not None or max_size is not None:
-        # Directories count as size 0 for -size: GNU compares the inode size
-        # (e.g. 4096 on ext4); see CLAUDE.md Rules.
-        effective = 0 if kind != "f" else size
-        if effective is not None:
-            if min_size is not None and effective < min_size:
-                return
-            if max_size is not None and effective > max_size:
-                return
+        # Unknown rendered sizes count as zero, like walked entries.
+        effective = (size
+                     or 0) if kind == "f" else DIR_SIZE if kind == "d" else 0
+        if min_size is not None and effective < min_size:
+            return
+        if max_size is not None and effective > max_size:
+            return
     results.append(start_key)
 
 

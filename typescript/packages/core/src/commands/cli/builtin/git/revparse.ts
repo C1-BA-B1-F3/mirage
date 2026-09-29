@@ -15,9 +15,10 @@
 import git from 'isomorphic-git'
 import { HEAD } from './constants.ts'
 
-import { AmbiguousArgumentError } from './errors.ts'
+import { AmbiguousArgumentError, BadRevisionError } from './errors.ts'
+import type { CommitFacts } from './format.ts'
 import { TAG_PREFIX } from './refs.ts'
-import { repoArgs, type Repo } from './repo.ts'
+import { commitFacts, repoArgs, type Repo } from './repo.ts'
 import type { AncestryStep, GitObject, RevOp } from './types.ts'
 
 const ANCESTOR = '~'
@@ -33,6 +34,14 @@ export const TAG = 'tag'
 // Not a type any object reports: `^{object}` asks only that the name resolve to
 // something, and hands back whatever that is.
 export const OBJECT = 'object'
+// `A..B` hides A and walks B; a third dot walks both and hides only what they
+// share. A leading caret hides one revision on its own.
+const RANGE = '..'
+const SYMMETRIC_DOT = '.'
+const NEGATION = '^'
+const LEFT = 1
+const RIGHT = 2
+const STALE = 4
 
 /**
  * Split a revision into its base and the operators applied to it.
@@ -301,7 +310,7 @@ async function atPath(repo: Repo, rev: string, path: string, revision: string): 
  * that is not a tag object reads as no tag: a lightweight tag names a commit
  * directly, which is why git refuses `^{tag}` on one.
  */
-async function tagObject(repo: Repo, stem: string): Promise<GitObject | null> {
+export async function tagObject(repo: Repo, stem: string): Promise<GitObject | null> {
   let oid: string
   try {
     oid = await git.resolveRef({ ...repoArgs(repo), ref: `${TAG_PREFIX}${stem}` })
@@ -350,6 +359,141 @@ async function tagAtId(repo: Repo, revision: string): Promise<GitObject | null> 
     return null
   }
   return type === TAG ? { oid, type } : null
+}
+
+/**
+ * The two ends of `A..B` or `A...B`, or null for one revision.
+ *
+ * Read the way git's handle_dotdot reads it: the first `..` splits the operand,
+ * a dot right after it makes the range symmetric, and an empty end is HEAD, so
+ * `..side` is `HEAD..side`.
+ */
+function rangeEnds(revision: string): [string, string, boolean] | null {
+  const at = revision.indexOf(RANGE)
+  if (at < 0) return null
+  let right = revision.slice(at + RANGE.length)
+  const symmetric = right.startsWith(SYMMETRIC_DOT)
+  if (symmetric) right = right.slice(SYMMETRIC_DOT.length)
+  return [revision.slice(0, at) || HEAD, right || HEAD, symmetric]
+}
+
+/**
+ * Both ends of a range operand, or null when it names one revision.
+ *
+ * A lone `..` is a path to git, and mirage limits nothing by path, so it is no
+ * range here and fails as the revision it is not. An end that does not resolve
+ * fails naming the whole operand, as git's message does.
+ *
+ * @param repo repository to resolve against
+ * @param revision the operand as the user spelled it
+ * @returns the left end, the right end and whether the range is symmetric
+ */
+export async function rangeCommits(
+  repo: Repo,
+  revision: string,
+): Promise<[CommitFacts, CommitFacts, boolean] | null> {
+  const ends = revision === RANGE ? null : rangeEnds(revision)
+  if (ends === null) return null
+  let left: string, right: string
+  try {
+    left = await resolveCommit(repo, ends[0])
+    right = await resolveCommit(repo, ends[1])
+  } catch (err) {
+    if (err instanceof AmbiguousArgumentError) throw new AmbiguousArgumentError(revision)
+    throw err
+  }
+  return [await commitFacts(repo, left), await commitFacts(repo, right), ends[2]]
+}
+
+/**
+ * The common ancestors of two commits that nothing shared descends from.
+ *
+ * git's paint walk: each side paints what it reaches, newest first and first
+ * queued on a tie, and a commit wearing both colours is a base whose own
+ * ancestry goes stale. The walk ends once every queued commit is stale, and the
+ * bases come out in the order git lists them (pinned against
+ * `git merge-base --all` 2.50).
+ *
+ * @param repo repository holding the commits
+ * @param one one side
+ * @param other the other side
+ */
+export async function mergeBases(
+  repo: Repo,
+  one: CommitFacts,
+  other: CommitFacts,
+): Promise<CommitFacts[]> {
+  const paint = new Map<string, number>([[one.oid, LEFT]])
+  paint.set(other.oid, (paint.get(other.oid) ?? 0) | RIGHT)
+  const queue = one.oid === other.oid ? [one] : [one, other]
+  const bases: CommitFacts[] = []
+  while (queue.some((commit) => !((paint.get(commit.oid) ?? 0) & STALE))) {
+    queue.sort((a, b) => b.committerTime - a.committerTime)
+    const commit = queue.shift()
+    if (commit === undefined) break
+    let flags = paint.get(commit.oid) ?? 0
+    if (flags === (LEFT | RIGHT)) {
+      bases.push(commit)
+      flags |= STALE
+      paint.set(commit.oid, flags)
+    }
+    for (const parent of commit.parents) {
+      const had = paint.get(parent) ?? 0
+      if ((had & flags) === flags) continue
+      paint.set(parent, had | flags)
+      queue.push(await commitFacts(repo, parent))
+    }
+  }
+  return bases
+}
+
+/**
+ * The commits a walk starts from and the commits whose history it hides.
+ *
+ * `A..B` walks B and hides A, `A...B` walks both and hides their merge bases,
+ * and `^A` hides A. An end that does not resolve fails naming the whole range,
+ * and a negation that does not resolve is git's "bad revision", as is a negated
+ * range (pinned against git 2.50).
+ *
+ * @param repo repository to resolve against
+ * @param revisions the revision operands as spelled
+ * @returns the commits to walk from and the commits to hide
+ */
+export async function splitRevisions(
+  repo: Repo,
+  revisions: readonly string[],
+): Promise<[CommitFacts[], CommitFacts[]]> {
+  const shown: CommitFacts[] = []
+  const hidden: CommitFacts[] = []
+  for (const revision of revisions) {
+    if (revision.startsWith(NEGATION)) {
+      const name = revision.slice(NEGATION.length)
+      if (!name || name.includes(RANGE)) throw new BadRevisionError(revision)
+      let oid: string
+      try {
+        oid = await resolveCommit(repo, name)
+      } catch (err) {
+        if (err instanceof AmbiguousArgumentError) throw new BadRevisionError(revision)
+        throw err
+      }
+      hidden.push(await commitFacts(repo, oid))
+      continue
+    }
+    const ends = await rangeCommits(repo, revision)
+    if (ends === null) {
+      shown.push(await commitFacts(repo, await resolveCommit(repo, revision)))
+      continue
+    }
+    const [left, right, symmetric] = ends
+    if (symmetric) {
+      shown.push(left, right)
+      hidden.push(...(await mergeBases(repo, left, right)))
+    } else {
+      shown.push(right)
+      hidden.push(left)
+    }
+  }
+  return [shown, hidden]
 }
 
 /**

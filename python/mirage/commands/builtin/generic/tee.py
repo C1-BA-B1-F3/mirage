@@ -162,12 +162,12 @@ async def tee(
     stdin: ByteSource | None = None,
     flags: Mapping[str, FlagValue] | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
-    if not paths:
-        raise ValueError("tee: missing operand")
     parsed = parse_flags(flags or {})
     raw = await read_stdin_async(stdin)
     if raw is None:
         raw = (" ".join(texts)).encode() if texts else b""
+    if not paths:
+        return raw, IOResult()
     return await write_output(paths, raw, parsed, read_stream, write_bytes,
                               append_bytes)
 

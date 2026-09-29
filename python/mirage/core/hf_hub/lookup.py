@@ -12,13 +12,23 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from mirage.accessor.hf_hub import HfHubAccessor
 from mirage.cache.index import (NULL_INDEX, IndexCacheStore, IndexEntry,
                                 LookupStatus)
 from mirage.cache.index.lock import index_lock
-from mirage.core.hf_hub.tree import ensure_live_index, local_rows, refill_index
+from mirage.core.hf_hub.client import HfHubError
+from mirage.core.hf_hub.constants import ABSENT_STATUSES
+from mirage.core.hf_hub.tree import (ensure_live_index, fetch_path, index_rows,
+                                     local_rows, refill_index)
+from mirage.types import PathSpec
+from mirage.utils.errors import eacces
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +101,105 @@ async def lookup(
                 result = await index.get(key)
                 listing = await index.list_dir(key)
         return Found(entry=result.entry, children=listing.entries)
+
+
+async def lookup_retrying(
+    accessor: HfHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+    key: str,
+) -> Found:
+    """``lookup``, asked once more if the index was cleared under it.
+
+    A reconcile verdict clears the mount index, and one landing between
+    the refill and the read leaves a miss that only says the store is
+    empty. Read as absence, that miss reaches ``on_op_missing`` through a
+    dispatcher door and drops the path's overlay for good. Two signs tell
+    that miss from a real one: the root listing is gone (a live index
+    always has one), or the accessor refilled an index while the lookup
+    ran, which is a clear followed by a concurrent reseed.
+
+    Args:
+        accessor (HfHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the mount's index, or NULL_INDEX.
+        prefix (str): the mount prefix the keys are built against.
+        key (str): the mount-absolute path to resolve.
+
+    Returns:
+        Found: the row and/or listing at that key.
+    """
+    refills = accessor.refills
+    found = await lookup(accessor, index, prefix, key)
+    if found.exists or index is NULL_INDEX:
+        return found
+    root = await index.list_dir(key_of(prefix, ""))
+    if (root.status is not LookupStatus.NOT_FOUND
+            and accessor.refills == refills):
+        return found
+    return await lookup(accessor, index, prefix, key)
+
+
+async def point_lookup(
+    accessor: HfHubAccessor,
+    index: IndexCacheStore,
+    prefix: str,
+    rel: str,
+) -> Found | None:
+    """Answer one path with one request, where a whole walk would be waste.
+
+    Taken only when the index holds no tree at all while the mount has
+    loaded one before: the throwaway store reconcile and the drift check
+    stat through, or a mount index a verdict just cleared. A mount that
+    never loaded its tree seeds it as it always has, and a live or expired
+    index keeps its own answer. Nothing is written back: one row is not a
+    listing, and seeding it would make every other path read as absent.
+
+    The row's id is the git oid a tree row carries. Its mtime can differ
+    from the tree's: paths-info expands commits only when the mount forces
+    it, while the tree's own default expands a repository small enough.
+
+    Args:
+        accessor (HfHubAccessor): the mount's accessor.
+        index (IndexCacheStore): the index the caller passed.
+        prefix (str): the mount prefix the keys are built against.
+        rel (str): the path as the mount sees it.
+
+    Returns:
+        Found | None: the answer, or None when the index should answer.
+    """
+    if index is NULL_INDEX or not accessor.tree_loaded:
+        return None
+    root = await index.list_dir(key_of(prefix, ""))
+    if root.status is not LookupStatus.NOT_FOUND:
+        return None
+    entries, _ = index_rows(await fetch_path(accessor, rel), prefix)
+    return Found(entry=entries.get(key_of(prefix, rel)))
+
+
+@contextmanager
+def refusals_denied(
+        path_spec: PathSpec,
+        statuses: frozenset[int] = ABSENT_STATUSES) -> Iterator[None]:
+    """Report a repository the Hub will not show as permission denied.
+
+    A 401, 403 or 404 for the repository or revision is the Hub declining
+    to show the listing, so the path answers the way a directory the caller
+    may not open does: every file tool already reports that and steps past
+    it, where a raw Hub error would stop a walk across other mounts. It is
+    never absence, which reconcile would turn into a delete.
+
+    Args:
+        path_spec (PathSpec): the path the operation was asked about.
+        statuses (frozenset[int]): the refusal statuses; a download narrows
+            them to REFUSED_STATUSES.
+    """
+    try:
+        yield
+    except HfHubError as exc:
+        if exc.status not in statuses:
+            raise
+        log.debug("hf %s refused: %s", path_spec.virtual, exc)
+        raise eacces(path_spec) from exc
 
 
 def key_of(prefix: str, local: str) -> str:

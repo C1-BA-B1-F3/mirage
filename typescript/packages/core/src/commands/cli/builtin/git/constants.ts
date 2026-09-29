@@ -40,6 +40,12 @@ export const GITLINK_MODE = '160000'
 // The symbolic ref every verb resolves first.
 export const HEAD = 'HEAD'
 
+// git's default funcname: the nearest earlier line that starts with a letter,
+// "_" or "$" names a hunk, trimmed of the only four bytes git's own ctype
+// calls blank.
+export const FUNCNAME_START = /^[A-Za-z_$]/
+export const GIT_SPACE: ReadonlySet<number> = new Set([0x20, 0x09, 0x0a, 0x0d])
+
 // The directory (or, in a linked worktree, the file) a checkout keeps its
 // repository under.
 export const GIT_DIR = '.git'

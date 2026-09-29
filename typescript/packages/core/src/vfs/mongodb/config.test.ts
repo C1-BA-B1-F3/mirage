@@ -20,8 +20,6 @@ describe('MongoDBConfig', () => {
     const r = resolveMongoDBConfig({ uri: 'mongodb://localhost' })
     expect(r.uri).toBe('mongodb://localhost')
     expect(r.databases).toBeNull()
-    expect(r.defaultDocLimit).toBe(1000)
-    expect(r.defaultSearchLimit).toBe(100)
     expect(r.maxDocLimit).toBe(5000)
   })
 
@@ -29,13 +27,9 @@ describe('MongoDBConfig', () => {
     const r = resolveMongoDBConfig({
       uri: 'mongodb://localhost',
       databases: ['app'],
-      defaultDocLimit: 50,
-      defaultSearchLimit: 7,
       maxDocLimit: 200,
     })
     expect(r.databases).toEqual(['app'])
-    expect(r.defaultDocLimit).toBe(50)
-    expect(r.defaultSearchLimit).toBe(7)
     expect(r.maxDocLimit).toBe(200)
   })
 })
@@ -44,14 +38,10 @@ describe('normalizeMongoDBConfig', () => {
   it('translates snake_case YAML keys to camelCase', () => {
     const out = normalizeMongoDBConfig({
       uri: 'mongodb://h',
-      default_doc_limit: 50,
-      default_search_limit: 5,
       max_doc_limit: 200,
     })
     expect(out).toEqual({
       uri: 'mongodb://h',
-      defaultDocLimit: 50,
-      defaultSearchLimit: 5,
       maxDocLimit: 200,
     })
   })

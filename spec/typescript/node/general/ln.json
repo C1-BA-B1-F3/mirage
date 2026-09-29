@@ -9,9 +9,9 @@
   },
   "options": [
     {
-      "long": "--symbolic",
-      "short": "-s",
-      "type": "bool"
+      "long": "--suffix",
+      "short": "-S",
+      "type": "str"
     },
     {
       "long": "--force",
@@ -60,9 +60,9 @@
       "value_optional": true
     },
     {
-      "long": "--suffix",
-      "short": "-S",
-      "type": "str"
+      "long": "--symbolic",
+      "short": "-s",
+      "type": "bool"
     },
     {
       "long": "--target-directory",

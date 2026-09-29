@@ -31,5 +31,5 @@ async def write_bytes(accessor: RAMAccessor, path_spec: PathSpec,
     check_write_target(store, path_spec, p)
     store.files[p] = data
     store.modified[p] = now_iso()
-    record("write", path, "ram", len(data), timer)
+    record("write", path_spec.virtual, "ram", len(data), timer)
     await invalidate_after_write(path_spec)

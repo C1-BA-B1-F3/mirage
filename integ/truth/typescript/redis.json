@@ -46,9 +46,9 @@
     "$ cat /data/missing.txt",
     "  exit=1  cat: /data/missing.txt: No such file or directory",
     "$ head /data/missing.txt",
-    "  exit=1  head: /data/missing.txt: No such file or directory",
+    "  exit=1  head: cannot open '/data/missing.txt' for reading: No such file or directory",
     "$ stat /data/missing.txt",
-    "  exit=1  stat: /data/missing.txt: No such file or directory",
+    "  exit=1  stat: cannot statx '/data/missing.txt': No such file or directory",
     "=== nl /data/reports/q1.csv ===",
     "     1\trevenue,100\\nexpense,80",
     "",
@@ -164,7 +164,7 @@
     {
       "volatile": "  saved → /var/folders/4d/s_lrmhbd7xb9jglnmy13sz_w0000gn/T/mirage-redis-snap-CCr2H1/snap.json (19968 bytes)"
     },
-    "  copy() mounts: [/.bash_history/, /data/, /dev/, /]",
+    "  copy() mounts: [/.bash_history/, /usr/bin/, /data/, /dev/, /]",
     "  copy() sees original's writes: hello world",
     "",
     "=== CLEANUP ===",

@@ -4,6 +4,7 @@
       "id": "find_arg_maxdepth",
       "seq": 320000,
       "targets": [
+        "argerr-airtable",
         "argerr-databricks",
         "argerr-discord",
         "argerr-email",
@@ -31,6 +32,7 @@
       "id": "find_arg_maxdepth_trailing",
       "seq": 320004,
       "targets": [
+        "argerr-airtable",
         "argerr-databricks",
         "argerr-discord",
         "argerr-email",

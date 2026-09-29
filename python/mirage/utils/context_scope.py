@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import copy_context
 from typing import ParamSpec, TypeVar
 
@@ -49,3 +49,39 @@ class ContextScope:
             return await self.run(lambda: fn(*args, **kwargs))
 
         return call
+
+    def stream(self, source: AsyncIterator[T]) -> AsyncIterator[T]:
+        """Replay the producer's admission context for each lazy step.
+
+        Args:
+            source (AsyncIterator[T]): the lazy output to step through.
+
+        Returns:
+            AsyncIterator[T]: the same items, each fetched in the context.
+        """
+        context = self._context.copy()
+
+        async def iterate() -> AsyncIterator[T]:
+            iterator = source.__aiter__()
+
+            async def advance() -> T:
+                return await iterator.__anext__()
+
+            try:
+                while True:
+                    try:
+                        value = await asyncio.create_task(advance(),
+                                                          context=context)
+                    except StopAsyncIteration:
+                        return
+                    yield value
+            finally:
+                close = getattr(iterator, "aclose", None)
+                if close is not None:
+
+                    async def finish() -> None:
+                        await close()
+
+                    await asyncio.create_task(finish(), context=context)
+
+        return iterate()

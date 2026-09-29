@@ -13,32 +13,31 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { DiskAccessor } from '../../../accessor/disk.ts'
-import { readdir, stat } from 'node:fs/promises'
+import { lstat, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { readEntries } from '../utils.ts'
+
+/** The checked start may be the mount-root alias; descendants never follow links. */
+async function* fileSizes(full: string, start = true): AsyncGenerator<[string, number]> {
+  let info
+  try {
+    info = await (start ? stat(full) : lstat(full))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    return
+  }
+  if (info.isFile()) {
+    yield [full, info.size]
+  } else if (info.isDirectory()) {
+    for (const entry of await readEntries(full)) {
+      yield* fileSizes(path.join(full, entry.name), false)
+    }
+  }
+}
 
 export async function walkSizes(full: string): Promise<number> {
   let total = 0
-  let st
-  try {
-    st = await stat(full)
-  } catch {
-    return 0
-  }
-  if (st.isFile()) return st.size
-  if (!st.isDirectory()) return 0
-  const entries = await readdir(full, { withFileTypes: true })
-  for (const e of entries) {
-    const child = path.join(full, e.name)
-    if (e.isDirectory()) total += await walkSizes(child)
-    else if (e.isFile()) {
-      try {
-        const cst = await stat(child)
-        total += cst.size
-      } catch {
-        // ignore
-      }
-    }
-  }
+  for await (const [, size] of fileSizes(full)) total += size
   return total
 }
 
@@ -48,33 +47,9 @@ export async function walkAll(
   entries: [string, number][],
 ): Promise<number> {
   let total = 0
-  let st
-  try {
-    st = await stat(full)
-  } catch {
-    return 0
-  }
-  if (st.isFile()) {
-    const rel = '/' + path.relative(accessor.root, full).split(path.sep).join('/')
-    entries.push([rel, st.size])
-    return st.size
-  }
-  if (!st.isDirectory()) return 0
-  const children = await readdir(full, { withFileTypes: true })
-  for (const e of children) {
-    const child = path.join(full, e.name)
-    if (e.isDirectory()) {
-      total += await walkAll(accessor, child, entries)
-    } else if (e.isFile()) {
-      try {
-        const cst = await stat(child)
-        const rel = '/' + path.relative(accessor.root, child).split(path.sep).join('/')
-        entries.push([rel, cst.size])
-        total += cst.size
-      } catch {
-        // ignore
-      }
-    }
+  for await (const [file, size] of fileSizes(full)) {
+    entries.push(['/' + path.relative(accessor.root, file).split(path.sep).join('/'), size])
+    total += size
   }
   return total
 }

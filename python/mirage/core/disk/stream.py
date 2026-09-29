@@ -13,21 +13,15 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import AsyncIterator
-from pathlib import Path
 
 import aiofiles
 
 from mirage.accessor.disk import DiskAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.core.disk.errors import disk_errors
+from mirage.core.disk.utils import resolve_inside
 from mirage.observe.context import record_stream
 from mirage.types import PathSpec
-
-
-def _resolve(root: Path, path: str) -> Path:
-    relative = path.lstrip("/")
-    resolved = (root / relative).resolve()
-    resolved.relative_to(root)
-    return resolved
 
 
 async def read_stream(accessor: DiskAccessor,
@@ -35,11 +29,10 @@ async def read_stream(accessor: DiskAccessor,
                       index: IndexCacheStore = NULL_INDEX,
                       chunk_size: int = 8192) -> AsyncIterator[bytes]:
     virtual = path_spec.virtual
-    path = path_spec.mount_path
     root = accessor.root
-    rec = record_stream("read", path, "disk")
-    p = _resolve(root, path)
-    try:
+    rec = record_stream("read", virtual, "disk")
+    p = await resolve_inside(root, path_spec)
+    with disk_errors(virtual):
         async with aiofiles.open(p, "rb") as f:
             while True:
                 chunk = await f.read(chunk_size)
@@ -48,5 +41,3 @@ async def read_stream(accessor: DiskAccessor,
                 if rec is not None:
                     rec.bytes += len(chunk)
                 yield chunk
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(virtual) from exc

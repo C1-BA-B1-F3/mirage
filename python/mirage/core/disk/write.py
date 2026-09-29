@@ -12,32 +12,23 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pathlib import Path
-
 import aiofiles
 
 from mirage.accessor.disk import DiskAccessor
 from mirage.cache.context import invalidate_after_write
 from mirage.core.disk.errors import disk_errors
+from mirage.core.disk.utils import resolve_inside
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 
 
-def _resolve(root: Path, path: str) -> Path:
-    relative = path.lstrip("/")
-    resolved = (root / relative).resolve()
-    resolved.relative_to(root)
-    return resolved
-
-
 async def write_bytes(accessor: DiskAccessor, path_spec: PathSpec,
                       data: bytes) -> None:
-    path = path_spec.mount_path
     root = accessor.root
     timer = start_op()
-    p = _resolve(root, path)
+    p = await resolve_inside(root, path_spec)
     with disk_errors(path_spec.virtual):
         async with aiofiles.open(p, "wb") as f:
             await f.write(data)
-    record("write", path, "disk", len(data), timer)
+    record("write", path_spec.virtual, "disk", len(data), timer)
     await invalidate_after_write(path_spec)

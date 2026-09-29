@@ -19,6 +19,7 @@ import {
   CHAR_MODE,
   contentSize,
   DIR_MODE,
+  DIR_SIZE,
   FILE_MODE,
   isDir,
   isLink,
@@ -83,9 +84,9 @@ describe('mtimeMs', () => {
 })
 
 describe('contentSize', () => {
-  it('is zero for a directory whatever the backend reports', () => {
-    const st = new FileStat({ name: 'd', type: FileType.DIRECTORY, size: 4096 })
-    expect(contentSize(st)).toBe(0)
+  it('is DIR_SIZE for a directory whatever the backend reports', () => {
+    const st = new FileStat({ name: 'd', type: FileType.DIRECTORY, size: 123456 })
+    expect(contentSize(st)).toBe(DIR_SIZE)
     expect(isDir(st)).toBe(true)
   })
 

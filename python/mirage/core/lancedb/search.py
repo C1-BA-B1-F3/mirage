@@ -15,11 +15,16 @@
 from typing import Any
 
 from mirage.accessor.lancedb import LanceDBAccessor
+from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.core.hierarchy.codec import PATH_SAFE
 from mirage.core.lancedb.query import search_rows
 from mirage.core.lancedb.render import render_card
 from mirage.types import PathSpec
+from mirage.utils.key_prefix import mount_prefix_of
 from mirage.vfs.lancedb.config import LanceDBConfig
+from mirage.vfs.search import (float_option, int_option, text_option,
+                               validate_options)
+from mirage.vfs.types import SearchQuery
 
 
 def _target_table(paths: list[PathSpec], config: LanceDBConfig) -> str | None:
@@ -82,3 +87,32 @@ async def search_rows_output(
     if not blocks:
         return b""
     return ("\n".join(blocks) + "\n").encode()
+
+
+async def search_many(accessor: LanceDBAccessor,
+                      paths: list[PathSpec],
+                      query: SearchQuery,
+                      index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    validate_options(query, {'top_k', 'method', 'threshold'})
+    top_k = int_option(query, "top_k", accessor.config.search_limit)
+    if not paths:
+        raise ValueError("search: at least one scope is required")
+    prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
+    method = text_option(query, "method", "semantic")
+    threshold = float_option(query, "threshold", 0.0)
+    if method != "semantic":
+        raise ValueError("search: only the 'semantic' method is supported")
+    output = await search_rows_output(accessor,
+                                      query.query,
+                                      paths,
+                                      top_k=top_k,
+                                      threshold=threshold,
+                                      mount_prefix=prefix)
+    return output.decode().removesuffix("\n").split("\n") if output else []
+
+
+async def search_resource(accessor: LanceDBAccessor,
+                          path: PathSpec,
+                          query: SearchQuery,
+                          index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    return await search_many(accessor, [path], query, index)

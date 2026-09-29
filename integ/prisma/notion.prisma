@@ -61,6 +61,7 @@ model NotionPage {
 
   @@id([tenant, id])
   @@index([tenant, parentId])
+  @@index([tenant, inTrash, lastEditedTime, position, id])
 }
 
 model NotionDatabase {
@@ -83,6 +84,7 @@ model NotionDatabase {
 
   @@id([tenant, id])
   @@index([tenant, parentId])
+  @@index([tenant, inTrash, lastEditedTime, position, id])
 }
 
 model NotionBlock {

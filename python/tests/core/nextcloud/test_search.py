@@ -12,6 +12,7 @@ from mirage.core.nextcloud.search.constants import SEARCH_PAGE_SIZE
 from mirage.core.nextcloud.search.query import glob_to_like, request_body
 from mirage.core.nextcloud.search.target import relative_path, search_target
 from mirage.types import FindType, PathSpec
+from mirage.utils.stat_view import DIR_SIZE
 from mirage.vfs.nextcloud import NextcloudConfig
 
 _DAV_NAMESPACE = "DAV:"
@@ -161,19 +162,27 @@ def test_query_rejects_unrepresentable_name_pattern(pattern):
     assert not supports_query(FilesSearchQuery(tree=Name(pattern)))
 
 
-def test_positive_size_query_excludes_directories():
+@pytest.mark.parametrize("size,keeps_directories", [
+    (Bounds(lower=10), True),
+    (Bounds(upper=100), False),
+    (Bounds(lower=DIR_SIZE + 1), False),
+    (Bounds(lower=DIR_SIZE, upper=DIR_SIZE), True),
+])
+def test_size_query_keeps_directories_when_dir_size_fits(
+        size, keeps_directories):
     target = search_target("https://cloud.example/remote.php/dav/files/alice/")
     assert target is not None
     body = ElementTree.fromstring(
         request_body(
             target,
             PathSpec.from_str_path("/Accounting"),
-            FilesSearchQuery(tree=TrueNode(), size=Bounds(lower=10)),
+            FilesSearchQuery(tree=TrueNode(), size=size),
             0,
         ))
     where = body.find(".//" + _qname(_DAV_NAMESPACE, "where"))
     assert where is not None
-    assert where.find("./" + _qname(_DAV_NAMESPACE, "or")) is None
+    kept = where.find("./" + _qname(_DAV_NAMESPACE, "or")) is not None
+    assert kept == keeps_directories
 
 
 @pytest.mark.asyncio

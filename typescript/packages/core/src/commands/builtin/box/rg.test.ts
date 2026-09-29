@@ -15,9 +15,13 @@
 // Mirror of python/tests/commands/builtin/box/test_rg_search.py.
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type * as RgModule from '../generic/rg.ts'
 
 vi.mock('./pushdown.ts', () => ({ narrowScope: vi.fn() }))
-vi.mock('../generic/rg.ts', () => ({ rgGeneric: vi.fn() }))
+vi.mock('../generic/rg.ts', async () => {
+  const actual = await vi.importActual<typeof RgModule>('../generic/rg.ts')
+  return { ...actual, rgGeneric: vi.fn() }
+})
 
 import { BoxAccessor } from '../../../accessor/box.ts'
 import type { BoxTokenManager } from '../../../core/box/client.ts'
@@ -26,7 +30,7 @@ import { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { rgGeneric } from '../generic/rg.ts'
 import { narrowScope } from './pushdown.ts'
-import { BOX_RG, keepVisible } from './rg.ts'
+import { BOX_RG } from './rg.ts'
 
 const STUB_TM = {} as BoxTokenManager
 const narrow = vi.mocked(narrowScope)
@@ -70,32 +74,6 @@ beforeEach(() => {
   generic.mockResolvedValue([new Uint8Array(), new IOResult()])
 })
 
-describe('keepVisible', () => {
-  it('drops dotfiles below the scope', () => {
-    const kept = keepVisible(
-      [spec('/data/.env'), spec('/data/.git/config'), spec('/data/a.txt')],
-      [scope()],
-      false,
-    )
-    expect(kept.map((p) => p.virtual)).toEqual(['/data/a.txt'])
-  })
-
-  it('keeps everything under --hidden', () => {
-    const paths = [spec('/data/.env'), spec('/data/a.txt')]
-    expect(keepVisible(paths, [scope()], true)).toEqual(paths)
-  })
-
-  it('ignores dots in the scope itself', () => {
-    const hiddenScope = new PathSpec({
-      virtual: '/data/.cfg',
-      directory: '/data/.cfg',
-      vfsPath: '.cfg',
-    })
-    const kept = keepVisible([spec('/data/.cfg/a.txt')], [hiddenScope], false)
-    expect(kept.map((p) => p.virtual)).toEqual(['/data/.cfg/a.txt'])
-  })
-})
-
 describe('box rg push-down', () => {
   it('allows narrowing for a plain rg', async () => {
     await runRg({})
@@ -105,30 +83,30 @@ describe('box rg push-down', () => {
   })
 
   it('forces the full walk for -v, --type, and --glob', async () => {
-    await runRg({ v: true })
+    await runRg({ invert_match: true })
     expect(narrow.mock.calls[0]?.[3]?.exactFileSet).toBe(true)
-    await runRg({ type: 'py' })
+    await runRg({ type: ['py'] })
     expect(narrow.mock.calls[1]?.[3]?.exactFileSet).toBe(true)
-    await runRg({ glob: '*.py' })
+    await runRg({ glob: ['*.py'] })
     expect(narrow.mock.calls[2]?.[3]?.exactFileSet).toBe(true)
   })
 
   it('forces filename labels for a narrowed run', async () => {
     narrow.mockResolvedValue({ resolved: [spec('/data/a.txt')], usedSearch: true })
     await runRg({})
-    expect(generic.mock.calls[0]?.[2]?.flags.H).toBe(true)
+    expect(generic.mock.calls[0]?.[2]?.flags.with_filename).toBe(true)
   })
 
   it('keeps -I suppression instead of forcing labels', async () => {
     narrow.mockResolvedValue({ resolved: [spec('/data/a.txt')], usedSearch: true })
-    await runRg({ args_I: true })
-    expect('H' in (generic.mock.calls[0]?.[2]?.flags ?? {})).toBe(false)
+    await runRg({ no_filename: true })
+    expect('with_filename' in (generic.mock.calls[0]?.[2]?.flags ?? {})).toBe(false)
   })
 
   it('leaves flags alone on the walk fallback', async () => {
     narrow.mockResolvedValue({ resolved: [scope()], usedSearch: false })
     await runRg({})
-    expect('H' in (generic.mock.calls[0]?.[2]?.flags ?? {})).toBe(false)
+    expect('with_filename' in (generic.mock.calls[0]?.[2]?.flags ?? {})).toBe(false)
   })
 
   it('prunes hidden candidates', async () => {

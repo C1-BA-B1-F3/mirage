@@ -35,10 +35,9 @@ def test_session_defaults():
     assert s.cwd == "/"
     # bash exports `$PWD` from startup, so even a session that never
     # ran `cd` has one.
-    assert s.env == {"PWD": "/"}
+    assert s.env == {"PWD": "/", "PATH": "/usr/bin", "IFS": " \t\n"}
     assert s.functions == {}
     assert s.last_exit_code == 0
-    assert s._stdin_buffer is None
 
 
 def test_session_custom_cwd():
@@ -72,14 +71,6 @@ def test_session_exit_code():
     assert s.last_exit_code == 42
 
 
-def test_session_stdin_buffer():
-    s = SessionState(session_id="s1")
-    s._stdin_buffer = b"hello\n"
-    assert s._stdin_buffer == b"hello\n"
-    s._stdin_buffer = None
-    assert s._stdin_buffer is None
-
-
 def test_session_to_dict():
     s = SessionState(session_id="s1",
                      cwd="/data",
@@ -87,7 +78,12 @@ def test_session_to_dict():
     d = s.to_dict()
     assert d["session_id"] == "s1"
     assert d["cwd"] == "/data"
-    assert d["env"] == {"K": "V", "PWD": "/data"}
+    assert d["env"] == {
+        "K": "V",
+        "PWD": "/data",
+        "PATH": "/usr/bin",
+        "IFS": " \t\n"
+    }
     assert "created_at" in d
 
 
@@ -156,7 +152,12 @@ def test_fork_copies_every_field_including_mount_modes():
     forked = original.fork()
     assert forked.session_id == "orig"
     assert forked.cwd == "/disk"
-    assert forked.env == {"FOO": "bar", "PWD": "/disk"}
+    assert forked.env == {
+        "FOO": "bar",
+        "PWD": "/disk",
+        "PATH": "/usr/bin",
+        "IFS": " \t\n"
+    }
     assert forked.mount_modes == {
         "/s3": MountMode.READ,
         "/dev": MountMode.EXEC,
@@ -199,9 +200,19 @@ def test_fork_overrides_apply_without_mutating_original():
     forked = original.fork(cwd="/ram", vars=vars_from_env({"BAZ": "qux"}))
     assert forked.cwd == "/ram"
     # `$PWD` follows the caller-supplied cwd rather than staying stale.
-    assert forked.env == {"BAZ": "qux", "PWD": "/ram"}
+    assert forked.env == {
+        "BAZ": "qux",
+        "PWD": "/ram",
+        "PATH": "/usr/bin",
+        "IFS": " \t\n"
+    }
     assert original.cwd == "/disk"
-    assert original.env == {"FOO": "bar", "PWD": "/disk"}
+    assert original.env == {
+        "FOO": "bar",
+        "PWD": "/disk",
+        "PATH": "/usr/bin",
+        "IFS": " \t\n"
+    }
 
 
 def test_fork_drops_the_logical_cwd_when_the_caller_overrides_cwd():
@@ -261,7 +272,12 @@ def test_snapshot_and_restore_undo_a_child_shell():
     session.script_name = "run.sh"
     session.restore(saved)
     assert session.cwd == "/data"
-    assert session.env == {"A": "1", "PWD": "/data"}
+    assert session.env == {
+        "A": "1",
+        "PWD": "/data",
+        "PATH": "/usr/bin",
+        "IFS": " \t\n"
+    }
     assert session.functions == {}
     assert session.script_name is None
 
@@ -281,7 +297,13 @@ def test_to_dict_carries_the_attributes_beside_the_values():
     # `env` stays a plain name/value map, the shape an embedder writes
     # and the other language reads; the letters ride beside it. An unset
     # name has no value to carry and appears only in `var_attrs`.
-    assert data["env"] == {"PWD": "/", "PLAIN": "hello", "EXPO": "world"}
+    assert data["env"] == {
+        "PWD": "/",
+        "PATH": "/usr/bin",
+        "IFS": " \t\n",
+        "PLAIN": "hello",
+        "EXPO": "world"
+    }
     assert data["var_attrs"] == {"PWD": "x", "EXPO": "x", "MARKED": "rx"}
 
 

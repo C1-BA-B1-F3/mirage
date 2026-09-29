@@ -4,6 +4,7 @@
       "id": "find_arg_size",
       "seq": 320002,
       "targets": [
+        "argerr-airtable",
         "argerr-databricks",
         "argerr-discord",
         "argerr-email",
@@ -24,13 +25,14 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "find: invalid argument 'abc' to '-size'\n"
+        "stderr": "find: Invalid argument `abc' to -size\n"
       }
     },
     {
       "id": "find_arg_size_trailing",
       "seq": 320006,
       "targets": [
+        "argerr-airtable",
         "argerr-databricks",
         "argerr-discord",
         "argerr-email",
@@ -51,7 +53,7 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "find: invalid argument '12ab' to '-size'\n"
+        "stderr": "find: Invalid argument `12ab' to -size\n"
       }
     }
   ]

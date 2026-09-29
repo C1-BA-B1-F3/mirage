@@ -45,6 +45,25 @@ walking up from there, so a path inside the tree works:
 git -C /repo/src status
 ```
 
+`--git-dir` and `--work-tree` name the two halves directly, as do
+`GIT_DIR` and `GIT_WORK_TREE`, which the options override. Both resolve
+against the `-C` directory. With `--git-dir` alone nothing is
+discovered and the working directory is the work tree. A repository's
+own `core.worktree` and `core.bare` apply as they do in git, and a
+linked worktree ignores both. `core.bare` reads as git reads any
+boolean, its name and value in either letter case or the value as an
+integer such as `1`, `0x10` or `2k`, and a value git cannot read fails
+every verb, even under `--work-tree` or in a linked worktree. A verb
+that reads or writes working files
+(`status`, `add`, `commit`, `checkout`, `switch`, `restore`, `mv`,
+`reset`, and `rm` without `--cached`) refuses a bare repository or a
+work tree that is not a directory, in git's words:
+
+```bash
+git --git-dir=/repo/.git --work-tree=/repo status --short
+GIT_DIR=/repo/.git git log --oneline -1
+```
+
 ## Verbs
 
 ### Inspect
@@ -57,7 +76,9 @@ git -C /repo status -uall
 git -C /repo log --oneline -n 20
 git -C /repo log --reverse
 git -C /repo log -S delta
+git -C /repo log --all --oneline --grep=fix -i --max-count=5
 git -C /repo log HEAD~2
+git -C /repo log --oneline main..topic
 git -C /repo log --all --oneline
 git -C /repo log --format='%h %an %s'
 git -C /repo log --pretty=fuller -n 3
@@ -66,6 +87,7 @@ git -C /repo show --stat HEAD
 git -C /repo show --name-only HEAD
 git -C /repo show -s --format=%H HEAD
 git -C /repo diff HEAD~1 HEAD
+git -C /repo diff --stat main...topic
 git -C /repo branch
 ```
 
@@ -80,6 +102,13 @@ every ref, tags peeled. `show` takes `--stat` (git's scaled diffstat
 table), `--name-only`, and `-s`/`--no-patch`, which suppresses every
 diff section just as it does in git.
 
+`log` and `rev-list` read revisions the way git does: `A..B` walks B and
+hides what A reaches, `A...B` walks both and hides what they share, `^A`
+hides A, and several revisions walk together. `diff` takes `A..B` and
+`A...B` as one operand, the second comparing B with the merge base.
+Paths are quoted the way git quotes them, and `core.quotePath=false` in
+the repository's config leaves bytes outside ASCII as they are.
+
 `status` honors `.gitignore` at every level, including negated rules, and
 collapses an untracked directory to one entry the way git does (`-uall`
 descends, `-uno` hides untracked files entirely).
@@ -93,6 +122,7 @@ git -C /repo add -u
 git -C /repo reset
 git -C /repo reset src/main.ts
 git -C /repo commit -m "message"
+git -C /repo commit -a -m "message"
 git -C /repo branch topic
 git -C /repo branch -d topic
 git -C /repo branch -D topic
@@ -113,12 +143,12 @@ git -C /repo tag -d v1.0
 
 | Verb       | Notes                                                                                                                                  |
 | ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `add`      | `-A` everything, `-u` tracked only, `-f` to stage an ignored path                                                                       |
-| `reset`    | mixed only, from HEAD; a pathspec limits it to those paths                                                                              |
+| `add`      | `-A` everything, `-u` tracked only, `-f` to stage an ignored path, `-v` names each path it stages or removes                            |
+| `reset`    | mixed only, from HEAD; a pathspec limits it to those paths; `-q` leaves out the report                                                  |
 | `restore`  | worktree by default, `--staged` the index, `-SW` both; `--source` takes any tree-ish, spelled as a peel (`HEAD^{tree}`), a subtree (`HEAD:sub`) or a raw id, and is required before the first commit since the implicit HEAD source has nothing to read; a path it lacks is removed from the target, a path still in conflict is named rather than half-restored, a file replaces a directory standing in its place, as it replaces a symlink standing on one of its parents, and a gitlink keeps whatever working tree it has |
 | `rm`       | refuses a path with uncommitted work unless `-f`, a path a symlinked ancestor now hides included; `--cached` keeps the file; `-r` for a directory; `-q`, `--ignore-unmatch`; the index is written only once the working tree is done with, so a deletion the mount refuses leaves the entry staged as it stood |
 | `mv`       | files and directories, `-f` over an existing file and over the conflict stages it was holding, `-k` skips what cannot move, `-n` dry run, `-v`; two sources cannot land on one name, a directory and something inside it cannot both move, an unmerged path moves nowhere as a source, and a move that would cross a mount boundary at either end is refused rather than half-moved |
-| `commit`   | `-m` required, `--author "Name <email>"` optional                                                                                       |
+| `commit`   | `-m` required, `--author "Name <email>"` optional, `-a` restages tracked files first                                                     |
 | `branch`   | `-d` deletes a merged branch, `-D` any branch; a name whose ref path another branch already holds is refused                             |
 | `checkout` | refuses rather than overwrite work you have not committed, an untracked file the target needs the room for included and an index still holding conflict stages too, the branch HEAD already names included, since moving nothing is not the same as having nothing to check |
 | `switch`   | the same move for a branch only; `-c` creates and checks the name against git's ref rules and works before the first commit, `--detach` is the only way onto a bare commit and takes HEAD when nothing is named; a staged addition, deletion or edit both branches agree about is carried across and reported with its status letter |
@@ -130,6 +160,13 @@ serve, and inventing a name would put an unreviewed one into history.
 
 ## Deliberate limits
 
+- **No `config.worktree`.** The per-worktree config that
+  `extensions.worktreeConfig` enables is not read, so a linked worktree
+  never takes a `core.worktree` or `core.bare` of its own.
+- **No warning for `core.bare` beside `core.worktree`.** git warns that
+  the pair does not make sense and refuses a work-tree verb as invalid
+  config; mirage keeps the repository bare, so `log` runs silently and
+  `status` gives the bare refusal.
 - **No network verbs.** `clone`, `fetch`, `pull` and `push` are absent.
 - **A pathspec that begins with a dash needs `--`.** `git rm -draft` is a
   refused switch and `git rm -- -draft` removes the file, which is what
@@ -141,6 +178,12 @@ serve, and inventing a name would put an unreviewed one into history.
   changes on purpose, and `rm` refuses unless `-f` says so.
 - **No `switch -`.** The previous branch lives in the reflog, which this
   build writes but does not read back.
+- **`commit` takes no paths.** Real git commits only the paths named;
+  this build commits the whole index, so it refuses the operand rather
+  than record changes nobody named. `commit -a` restages tracked files
+  as git does, but git's `-a` also resolves conflicts into a merge
+  commit, which this build does not write, so an unmerged index is
+  refused either way.
 - **An unmerged index stops a branch move.** Every collision check reads
   stage 0, so a path held only as conflict stages would be carried past
   all of them and then cleared. `switch` and `checkout` name each such
@@ -369,6 +412,11 @@ serve, and inventing a name would put an unreviewed one into history.
   --pretty format`), not silently misrendered. `--date=` relative
   formats and `--decorate` are absent; decorations render only through
   `%d`/`%D`, matching git's piped default of no decorations.
+- **History searches use ASCII case folding.** `-i` /
+  `--regexp-ignore-case` folds ASCII letters in `--grep`, `--author` and
+  `-S` on both hosts. Non-ASCII letters keep their exact spelling, matching
+  Git's literal searches under `LC_ALL=C`. `--grep` values containing
+  newlines are lists of alternative patterns.
 - **`log` dates are strict.** `--since`/`--until` read ISO-8601 or an
   epoch second; git's relative wording (`2 weeks ago`) is refused
   rather than misread.

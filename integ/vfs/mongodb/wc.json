@@ -64,6 +64,19 @@
         "stdout": "5 /mongodb/mirage_integ/collections/books/documents.jsonl\n3 /mongodb/mirage_integ/collections/authors/documents.jsonl\n8 total\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "mdb_wc_l_cross_mount_counts_on_each_mount",
+      "seq": 620025,
+      "targets": [
+        "mongodb"
+      ],
+      "command": "wc -l /mongo-limited/mirage_integ/collections/books/documents.jsonl /mongodb/mirage_integ/collections/authors/documents.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "5 /mongo-limited/mirage_integ/collections/books/documents.jsonl\n3 /mongodb/mirage_integ/collections/authors/documents.jsonl\n8 total\n",
+        "stderr": ""
+      }
     }
   ]
 }

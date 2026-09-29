@@ -31,14 +31,18 @@ from mirage.commands.cli.builtin.git.io import entry_bytes
 from mirage.commands.cli.builtin.git.objects import store_blob
 from mirage.commands.cli.builtin.git.pathspec import matched, repo_relative
 from mirage.commands.cli.builtin.git.session import opened
-from mirage.commands.cli.builtin.git.types import RepoLocation, WorkTree
+from mirage.commands.cli.builtin.git.types import (IndexState, RepoLocation,
+                                                   WorkTree)
 from mirage.commands.cli.builtin.git.util import (  # yapf: disable
     check_operands, escaped, fatal, links_of, start_point, switches)
-from mirage.commands.cli.builtin.git.worktree import UNTRACKED_ALL, scan
+from mirage.commands.cli.builtin.git.worktree import (UNTRACKED_ALL,
+                                                      UNTRACKED_NO, scan)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
+from mirage.io.stream import yield_bytes
 from mirage.io.types import ByteSource, IOResult
-from mirage.ops.types import StatPath
+from mirage.ops.types import LinkView, StatPath
+from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType
 
 
@@ -50,10 +54,12 @@ class AddFlags:
         every (bool): ``-A``, stage every change in the working tree.
         update (bool): ``-u``, stage changes to tracked files only.
         force (bool): ``-f``, stage a path an ignore rule covers.
+        verbose (bool): ``-v``, name each path as it is staged.
     """
     every: bool
     update: bool
     force: bool
+    verbose: bool = False
 
 
 def parse_flags(fl: FlagView) -> AddFlags:
@@ -64,7 +70,8 @@ def parse_flags(fl: FlagView) -> AddFlags:
     """
     return AddFlags(every=fl.as_bool("all"),
                     update=fl.as_bool("update"),
-                    force=fl.as_bool("force"))
+                    force=fl.as_bool("force"),
+                    verbose=fl.as_bool("verbose"))
 
 
 def entry_mode(info: FileStat) -> int:
@@ -204,6 +211,72 @@ async def _resolve(stat_path: StatPath, location: RepoLocation, start: str,
     return stage, remove
 
 
+async def stage_changes(dispatch: DispatchFn, location: RepoLocation,
+                        state: IndexState, found: WorkTree, stage: set[str],
+                        remove: set[str]) -> list[str]:
+    """Hash the staged paths into the index and drop the removed ones.
+
+    Returns what ``-v`` prints, in git's order: first the paths the
+    index already held whose content or mode changed, a removal among
+    them, then the new paths, each group sorted. A path restaged
+    unchanged is not named (pinned against git 2.50).
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        location (RepoLocation): the discovered repository.
+        state (IndexState): the index, updated in place.
+        found (WorkTree): what the walk of the working tree found.
+        stage (set[str]): repository-relative paths to stage.
+        remove (set[str]): repository-relative paths to unstage.
+    """
+    changed: list[tuple[str, str]] = []
+    added: list[str] = []
+    for path in sorted(stage):
+        data = await entry_bytes(dispatch,
+                                 posixpath.join(location.worktree, path),
+                                 found.files[path])
+        sha = await store_blob(dispatch, location.commondir, data)
+        entry = staged_entry(sha, found.files[path], len(data))
+        before = state.entries.get(path.encode())
+        if before is None:
+            added.append(path)
+        elif (before.sha, before.mode) != (entry.sha, entry.mode):
+            changed.append((path, "add"))
+        state.entries[path.encode()] = entry
+    for path in remove:
+        state.entries.pop(path.encode(), None)
+        changed.append((path, "remove"))
+    return [f"{verb} '{path}'" for path, verb in sorted(changed)
+            ] + [f"add '{path}'" for path in added]
+
+
+async def stage_tracked(dispatch: DispatchFn, stat_path: StatPath,
+                        location: RepoLocation, state: IndexState,
+                        links: LinkView | None) -> None:
+    """Restage every path the index holds from the working tree.
+
+    What ``add -u`` does with no pathspec and ``commit -a`` does first:
+    a modified file is hashed again, a deleted one leaves the index, and
+    an untracked one stays untracked.
+
+    Args:
+        dispatch (DispatchFn): workspace op dispatcher.
+        stat_path (StatPath): dispatcher-backed stat, both channels.
+        location (RepoLocation): the discovered repository.
+        state (IndexState): the index, updated in place.
+        links (LinkView | None): the namespace's symlink table.
+    """
+    tracked = {
+        path.decode("utf-8", errors="replace")
+        for path in state.entries
+    }
+    found = await scan(dispatch, stat_path, location, tracked, UNTRACKED_NO,
+                       links)
+    present = set(found.files)
+    await stage_changes(dispatch, location, state, found, tracked & present,
+                        tracked - present)
+
+
 async def add(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     """Stage working-tree content into the index.
 
@@ -236,7 +309,7 @@ async def add(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         parsed = parse_flags(fl)
         if not texts and not parsed.every and not parsed.update:
             raise NothingSpecifiedError()
-        _repo, location = await opened(fl, doors)
+        _repo, location = await opened(fl, doors, work_tree=True)
         state = await read_index(dispatch, location.gitdir)
         tracked = {
             path.decode("utf-8", errors="replace")
@@ -244,7 +317,7 @@ async def add(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         }
         found = await scan(dispatch, stat_path, location, tracked,
                            UNTRACKED_ALL, links_of(doors))
-        ignores = await load_ignores(dispatch, location.gitdir,
+        ignores = await load_ignores(dispatch, location.commondir,
                                      location.worktree)
         if parsed.update:
             scope = (_update_scope(location, start_point(fl), tracked,
@@ -259,16 +332,12 @@ async def add(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
             stage, remove = await _resolve(stat_path, location,
                                            start_point(fl), texts, found,
                                            tracked, ignores, parsed.force)
-        for path in sorted(stage):
-            data = await entry_bytes(dispatch,
-                                     posixpath.join(location.worktree, path),
-                                     found.files[path])
-            sha = await store_blob(dispatch, location.commondir, data)
-            state.entries[path.encode()] = staged_entry(
-                sha, found.files[path], len(data))
-        for path in remove:
-            state.entries.pop(path.encode(), None)
+        lines = await stage_changes(dispatch, location, state, found, stage,
+                                    remove)
         await write_index(dispatch, location.gitdir, state)
     except GitError as exc:
         return fatal(exc)
-    return None, IOResult()
+    if not parsed.verbose or not lines:
+        return None, IOResult()
+    return yield_bytes("".join(f"{line}\n"
+                               for line in lines).encode()), IOResult()

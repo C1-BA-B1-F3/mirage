@@ -75,11 +75,10 @@ async def head_commit(accessor: HfHubAccessor) -> str:
 async def classify_absence(accessor: HfHubAccessor) -> Absence:
     """Why a listing came back empty, asked of the Hub directly.
 
-    ``fetch_tree`` folds 401/403/404 into an empty listing on purpose: a
-    mount's readdir over a repository it cannot see has to render an
-    empty directory rather than raise. A CLI verb wants the opposite, so
-    it asks this on the failure path only, which costs one request and
-    only when something already went wrong.
+    ``hf download`` folds a tree walk the Hub refused (401/403/404) into
+    an empty listing itself, so its failure path can name the absence
+    upstream would. It asks this on that path only, which costs one
+    request and only when something already went wrong.
 
     The status cannot answer it. A missing repository, a missing
     revision and a missing file are all 404, and only the Hub's

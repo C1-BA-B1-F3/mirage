@@ -17,7 +17,7 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { readStdinAsync } from '../utils/stream.ts'
+import { readStdinAsync, stdinStream } from '../utils/stream.ts'
 import { operandsIo, readOperands } from '../utils/operands.ts'
 
 const ENC = new TextEncoder()
@@ -47,6 +47,8 @@ export async function stringsGeneric(
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
 ): Promise<CommandFnResult> {
+  // binutils strings never reads `-` as stdin; only /dev/stdin is.
+  stream = stdinStream(stream, opts.stdin, false, false)
   const fl = new FlagView(opts.flags, specOf('strings'))
   const minLen = fl.asInt('n') ?? 4
   // Each operand is scanned independently and the matches concatenate in

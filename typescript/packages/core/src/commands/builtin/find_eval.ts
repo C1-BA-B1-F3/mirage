@@ -17,6 +17,7 @@ import { inMtimeWindow } from '../../utils/dates.ts'
 import type { LinkView } from '../../ops/types.ts'
 import { respellOne } from '../../utils/path.ts'
 import { rstripSlash, stripSlash } from '../../utils/slash.ts'
+import { DIR_SIZE } from '../../utils/stat_view.ts'
 import type { RowActionKind } from './types.ts'
 
 export interface FindEntry {
@@ -411,10 +412,9 @@ export interface EmitStartPathOptions {
 // backend find op so the start path is emitted uniformly: bare `find <dir>`,
 // `-type d` on the root, `-maxdepth 0`, `-mindepth 0`, and `-name` against the
 // start's own basename all behave the same everywhere. A directory start path
-// contributes size 0 to `-size` filtering (mirage directories have no
-// meaningful content size; a documented divergence from GNU, which compares
-// the inode size), so `-size +N` excludes directory roots and `-size -N`
-// keeps them (#318). A file start with an unknown size skips the filter.
+// contributes `DIR_SIZE` to `-size` filtering, the size `ls -l` shows for it
+// and GNU compares on ext4. A file start with an unknown size skips the
+// filter.
 export function emitStartPath(
   results: string[],
   startKey: string,
@@ -435,12 +435,10 @@ export function emitStartPath(
     (opts.minSize !== null && opts.minSize !== undefined) ||
     (opts.maxSize !== null && opts.maxSize !== undefined)
   ) {
-    // Directories count as size 0 for -size: GNU compares the inode size (e.g. 4096 on ext4); see CLAUDE.md Rules.
-    const effective = opts.kind !== 'f' ? 0 : (opts.size ?? null)
-    if (effective !== null) {
-      if (opts.minSize !== null && opts.minSize !== undefined && effective < opts.minSize) return
-      if (opts.maxSize !== null && opts.maxSize !== undefined && effective > opts.maxSize) return
-    }
+    // Unknown rendered sizes count as zero, like walked entries.
+    const effective = opts.kind === 'f' ? (opts.size ?? 0) : opts.kind === 'd' ? DIR_SIZE : 0
+    if (opts.minSize !== null && opts.minSize !== undefined && effective < opts.minSize) return
+    if (opts.maxSize !== null && opts.maxSize !== undefined && effective > opts.maxSize) return
   }
   results.push(startKey)
 }
@@ -541,7 +539,7 @@ export function unrespellRaw(row: string, virtual: string, raw: string): string 
   if (row === raw) return virtual
   const stem = raw.endsWith('/') ? raw : raw + '/'
   if (row.startsWith(stem)) {
-    const base = virtual.replace(/\/+$/, '')
+    const base = rstripSlash(virtual)
     return base + '/' + row.slice(stem.length)
   }
   return row

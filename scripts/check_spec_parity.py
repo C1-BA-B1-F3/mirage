@@ -24,6 +24,11 @@ TYPESCRIPT = [
     SPEC / "typescript" / "node" / "general",
     SPEC / "typescript" / "browser" / "general"
 ]
+PYTHON_VFS_COMMANDS = SPEC / "python" / "vfs_commands"
+TYPESCRIPT_VFS_COMMANDS = [
+    SPEC / "typescript" / "node" / "vfs_commands",
+    SPEC / "typescript" / "browser" / "vfs_commands"
+]
 EXCEPTIONS = SPEC / "parity_exceptions.json"
 
 BY_VFS = "_meta.by_vfs"
@@ -581,8 +586,14 @@ def main() -> int:
                                    str]]] = exceptions["variant_vfs_facts"]
     config_exempt: dict[str, dict[str, str]] = exceptions["config_fields"]
 
-    py_specs = load_dir(PYTHON)
-    ts_variants = [load_dir(p) for p in TYPESCRIPT]
+    # A backend verb carries its spec inline rather than in SPECS, so the
+    # generators dump it beside the general specs; one comparison covers
+    # both, keyed by file stem.
+    py_specs = load_dir(PYTHON) | load_dir(PYTHON_VFS_COMMANDS)
+    ts_variants = [
+        load_dir(general) | load_dir(own)
+        for general, own in zip(TYPESCRIPT, TYPESCRIPT_VFS_COMMANDS)
+    ]
 
     failures: list[str] = []
     used: set[str] = set()

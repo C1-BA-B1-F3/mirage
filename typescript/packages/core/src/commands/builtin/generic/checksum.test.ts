@@ -15,7 +15,10 @@
 import { stripSlash } from '../../../utils/slash.ts'
 import { describe, expect, it } from 'vitest'
 import { IOResult, materialize } from '../../../io/types.ts'
-import { PathSpec } from '../../../types.ts'
+import { MountMode, PathSpec } from '../../../types.ts'
+import { RAMVFS } from '../../../vfs/ram/ram.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
 import type { CommandOpts } from '../../config.ts'
 import { checksumGeneric } from './checksum.ts'
 
@@ -300,5 +303,55 @@ describe('checksum --check', () => {
     expect(out).toBe('')
     expect(err).toBe('md5sum: /nope.txt: No such file or directory\n')
     expect(code).toBe(1)
+  })
+})
+
+async function shell(
+  line: string,
+  stdin: Uint8Array | null = null,
+  seed: Record<string, string> = {},
+): Promise<[string, string, number]> {
+  const ws = new Workspace(
+    { '/data/': new RAMVFS() },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  try {
+    for (const [path, body] of Object.entries(seed)) {
+      await ws.shell(`tee ${path} > /dev/null`, { stdin: new TextEncoder().encode(body) })
+    }
+    const io = await ws.shell(line, { stdin })
+    const dec = new TextDecoder()
+    return [dec.decode(io.stdout), dec.decode(io.stderr), io.exitCode]
+  } finally {
+    await ws.close()
+  }
+}
+
+async function sha256(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', ENC.encode(text))
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+describe('checksums with stdin', () => {
+  it('hash dash and /dev/stdin under their own names', async () => {
+    // One stdin: the second operand reads what the first left, nothing.
+    const r = await shell('sha256sum - /dev/stdin', ENC.encode('a\nb\n'))
+    expect(r).toEqual([`${await sha256('a\nb\n')}  -\n${await sha256('')}  /dev/stdin\n`, '', 0])
+  })
+
+  it('check the list on stdin when -c names no operand', async () => {
+    const r = await shell('cd /data && sha256sum a.txt | sha256sum -c', null, {
+      '/data/a.txt': 'hello\n',
+    })
+    expect(r).toEqual(['a.txt: OK\n', '', 0])
+  })
+
+  it('call a stdin list standard input', async () => {
+    const r = await shell('sha256sum -c -', ENC.encode('junk\n'))
+    expect(r).toEqual([
+      '',
+      "sha256sum: 'standard input': no properly formatted checksum lines found\n",
+      1,
+    ])
   })
 })

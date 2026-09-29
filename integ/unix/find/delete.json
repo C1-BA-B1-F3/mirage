@@ -32,6 +32,96 @@
       "flags": [
         "delete"
       ]
+    },
+    {
+      "id": "find_delete_directory_with_unmatched_link",
+      "seq": 500311,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "mkdir -p /data/find_link_dir && ln -s missing /data/find_link_dir/link && find /data/find_link_dir -type d -delete",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "find: cannot delete '/data/find_link_dir': Directory not empty\n"
+      }
+    },
+    {
+      "id": "find_delete_link_directory_cleanup",
+      "seq": 500312,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "find /data/find_link_dir -delete",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "find_delete_twice",
+      "seq": 500313,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "echo x > /data/delete_twice && find /data/delete_twice -delete -delete -print",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "find: cannot delete '/data/delete_twice': No such file or directory\n"
+      }
     }
   ]
 }

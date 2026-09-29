@@ -1266,6 +1266,7 @@
     },
     {
       "id": "memory_growth_output",
+      "sdk_only": "Holds 2.1 GB in one Pyodide heap for six steps to put output above the 2 GiB wasm32 boundary, an engine path the in-process pass already covers. Through the CLI that heap sits in a daemon sharing the runner with the other host's daemon, the service containers and the docker suite, where the case failed intermittently and nowhere else.",
       "hosts": [
         "typescript"
       ],

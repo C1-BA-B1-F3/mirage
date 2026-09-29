@@ -37,6 +37,11 @@ export function snakeToCamel(snake: string): string {
   return snake.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase())
 }
 
+/** The key `normalizeFields` writes an input key's value under. */
+export function normalizedKey(key: string, spec: FieldNormalizer = {}): string {
+  return spec.rename?.[key] ?? snakeToCamel(key)
+}
+
 /**
  * Translate a Python-style snake_case config blob to a TS camelCase one.
  *
@@ -55,9 +60,8 @@ export function normalizeFields(
   const out: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(input)) {
     if (drop.has(key)) continue
-    const renamed = spec.rename?.[key] ?? snakeToCamel(key)
     const transformer = spec.transform?.[key]
-    out[renamed] = transformer !== undefined ? transformer(value) : value
+    out[normalizedKey(key, spec)] = transformer !== undefined ? transformer(value) : value
   }
   return out
 }

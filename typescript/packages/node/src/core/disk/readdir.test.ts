@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { DiskAccessor } from '../../accessor/disk.ts'
@@ -38,6 +38,19 @@ describe('core/disk/readdir', () => {
     await writeFile(join(root, 'b'), '')
     await writeFile(join(root, 'a'), '')
     expect(await readdir(accessor, spec('/'))).toEqual(['/a', '/b'])
+  })
+
+  it('leaves a host symlink out', async () => {
+    await mkdir(join(root, 'lib'))
+    await symlink('lib', join(root, 'lib64'))
+    await symlink('/nowhere/python3', join(root, 'python'))
+    expect(await readdir(accessor, spec('/'))).toEqual(['/lib'])
+  })
+
+  it('refuses a directory reached through a host symlink', async () => {
+    await mkdir(join(root, 'lib'))
+    await symlink('lib', join(root, 'lib64'))
+    await expect(readdir(accessor, spec('/lib64'))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('lists nested directory', async () => {

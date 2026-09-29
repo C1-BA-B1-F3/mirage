@@ -1,5 +1,13 @@
 {
   "services": {
+    "airtable": {
+      "python": [
+        "AIRTABLE_URL"
+      ],
+      "typescript": [
+        "AIRTABLE_URL"
+      ]
+    },
     "box": {
       "python": [
         "BOX_URL"
@@ -1272,7 +1280,47 @@
           "path": "/pg",
           "vfs": "postgres",
           "backend": "postgres",
-          "mode": "read"
+          "mode": "read",
+          "config": {
+            "schemas": [
+              "public"
+            ]
+          }
+        },
+        {
+          "path": "/pg-limited",
+          "vfs": "postgres",
+          "backend": "postgres",
+          "mode": "read",
+          "config": {
+            "schemas": [
+              "public"
+            ],
+            "max_read_rows": 3
+          }
+        },
+        {
+          "path": "/pg-contract",
+          "vfs": "postgres",
+          "backend": "postgres",
+          "mode": "read",
+          "config": {
+            "schemas": [
+              "contract"
+            ]
+          }
+        },
+        {
+          "path": "/pg-bytes",
+          "vfs": "postgres",
+          "backend": "postgres",
+          "mode": "read",
+          "config": {
+            "schemas": [
+              "byte_budget"
+            ],
+            "max_read_bytes": 64
+          }
         }
       ]
     },
@@ -1289,6 +1337,26 @@
           "vfs": "mongodb",
           "backend": "mongodb",
           "mode": "read"
+        },
+        {
+          "path": "/mongo-limited",
+          "vfs": "mongodb",
+          "backend": "mongodb",
+          "mode": "read",
+          "config": {
+            "max_doc_limit": 3
+          }
+        },
+        {
+          "path": "/mongo-denied",
+          "vfs": "mongodb",
+          "backend": "mongodb",
+          "mode": "read",
+          "config": {
+            "databases": [
+              "excluded"
+            ]
+          }
         }
       ]
     },
@@ -1531,6 +1599,13 @@
           "backend": "github",
           "repo": "integ/repo-trunc",
           "mode": "read"
+        },
+        {
+          "path": "/data",
+          "vfs": "github",
+          "backend": "github",
+          "repo": "integ/data-v1",
+          "mode": "read"
         }
       ]
     },
@@ -1732,6 +1807,36 @@
           "path": "/docs",
           "vfs": "gdocs",
           "backend": "gdocs"
+        }
+      ],
+      "clis": [
+        "gws"
+      ]
+    },
+    {
+      "id": "gapps-fresh",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "service": "gws",
+      "epoch": "2026-01-01T00:00:00Z",
+      "apps": "google-apps/v1",
+      "mounts": [
+        {
+          "path": "/docs",
+          "vfs": "gdocs",
+          "backend": "gdocs"
+        },
+        {
+          "path": "/sheets",
+          "vfs": "gsheets",
+          "backend": "gsheets"
+        },
+        {
+          "path": "/slides",
+          "vfs": "gslides",
+          "backend": "gslides"
         }
       ],
       "clis": [
@@ -2026,6 +2131,30 @@
       ]
     },
     {
+      "id": "cli-airtable",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "service": "airtable",
+      "facet": "cli",
+      "clis": [
+        "airtable"
+      ],
+      "mounts": [
+        {
+          "path": "/airtable",
+          "vfs": "airtable",
+          "mode": "read"
+        },
+        {
+          "path": "/scratch",
+          "vfs": "ram",
+          "backend": "memory"
+        }
+      ]
+    },
+    {
       "id": "slack",
       "hosts": [
         "python",
@@ -2063,6 +2192,32 @@
       ]
     },
     {
+      "id": "airtable",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "service": "airtable",
+      "facet": "project",
+      "mounts": [
+        {
+          "path": "/airtable",
+          "vfs": "airtable",
+          "backend": "airtable",
+          "mode": "read"
+        },
+        {
+          "path": "/roadmap",
+          "vfs": "airtable",
+          "backend": "airtable",
+          "mode": "read",
+          "base_ids": [
+            "appRoadmapBase001"
+          ]
+        }
+      ]
+    },
+    {
       "id": "trello",
       "hosts": [
         "python",
@@ -2080,6 +2235,28 @@
           "path": "/scratch",
           "vfs": "ram",
           "backend": "ram"
+        }
+      ]
+    },
+    {
+      "id": "trello-scoped",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "service": "trello",
+      "facet": "project",
+      "mounts": [
+        {
+          "path": "/scoped",
+          "vfs": "trello",
+          "backend": "trello",
+          "config": {
+            "workspace_id": "org_strukto",
+            "board_ids": [
+              "brd_ops"
+            ]
+          }
         }
       ]
     },
@@ -2317,6 +2494,22 @@
           "path": "/langfuse",
           "vfs": "arg_error",
           "backend": "langfuse",
+          "mode": "read"
+        }
+      ]
+    },
+    {
+      "id": "argerr-airtable",
+      "facet": "argerr",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "mounts": [
+        {
+          "path": "/airtable",
+          "vfs": "arg_error",
+          "backend": "airtable",
           "mode": "read"
         }
       ]
@@ -3050,6 +3243,165 @@
           "path": "/data",
           "vfs": "ram",
           "backend": "memory"
+        }
+      ]
+    },
+    {
+      "id": "disk-host-links",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "mounts": [
+        {
+          "path": "/data",
+          "vfs": "disk",
+          "backend": "tmpdir",
+          "host_fixture": "disk/host-links"
+        }
+      ]
+    },
+    {
+      "id": "slack-time-scope",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "service": "slack",
+      "facet": "chat",
+      "mounts": [
+        {
+          "path": "/slack",
+          "vfs": "slack",
+          "backend": "slack",
+          "config": {
+            "start_time": "2026-06-01T10:00:00Z",
+            "end_time": "2026-06-02T00:00:00Z"
+          }
+        },
+        {
+          "path": "/full",
+          "vfs": "slack",
+          "backend": "slack",
+          "config": {}
+        },
+        {
+          "path": "/since",
+          "vfs": "slack",
+          "backend": "slack",
+          "config": {
+            "start_time": "2026-06-01T10:00:00Z"
+          }
+        },
+        {
+          "path": "/until",
+          "vfs": "slack",
+          "backend": "slack",
+          "config": {
+            "end_time": "2026-06-02T00:00:00Z"
+          }
+        },
+        {
+          "path": "/millis",
+          "vfs": "slack",
+          "backend": "slack",
+          "config": {
+            "start_time": "2026-06-01T23:59:59.999Z",
+            "end_time": "2026-06-02T00:00:00Z"
+          }
+        }
+      ],
+      "dataset": "time_scope"
+    },
+    {
+      "id": "discord-time-scope",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "service": "discord",
+      "facet": "chat",
+      "mounts": [
+        {
+          "path": "/discord",
+          "vfs": "discord",
+          "backend": "discord",
+          "config": {
+            "start_time": "2026-06-01T10:00:00Z",
+            "end_time": "2026-06-02T00:00:00Z"
+          }
+        },
+        {
+          "path": "/full",
+          "vfs": "discord",
+          "backend": "discord",
+          "config": {}
+        },
+        {
+          "path": "/since",
+          "vfs": "discord",
+          "backend": "discord",
+          "config": {
+            "start_time": "2026-06-01T10:00:00Z"
+          }
+        },
+        {
+          "path": "/until",
+          "vfs": "discord",
+          "backend": "discord",
+          "config": {
+            "end_time": "2026-06-02T00:00:00Z"
+          }
+        }
+      ],
+      "dataset": "time_scope"
+    },
+    {
+      "id": "gcal-time-scope",
+      "hosts": [
+        "python",
+        "typescript-node"
+      ],
+      "service": "gws",
+      "facet": "cli",
+      "epoch": "2026-02-01T00:00:00Z",
+      "calendar": "calendar/time_scope",
+      "mounts": [
+        {
+          "path": "/cal",
+          "vfs": "gcal",
+          "backend": "gcal",
+          "config": {
+            "start_time": "2026-06-01T10:00:00Z",
+            "end_time": "2026-06-02T00:00:00Z",
+            "time_zone": "UTC"
+          }
+        },
+        {
+          "path": "/full",
+          "vfs": "gcal",
+          "backend": "gcal",
+          "config": {
+            "time_zone": "UTC"
+          }
+        },
+        {
+          "path": "/since",
+          "vfs": "gcal",
+          "backend": "gcal",
+          "config": {
+            "start_time": "2026-06-01T10:00:00Z",
+            "time_zone": "UTC"
+          }
+        },
+        {
+          "path": "/until",
+          "vfs": "gcal",
+          "backend": "gcal",
+          "config": {
+            "end_time": "2026-06-02T00:00:00Z",
+            "time_zone": "UTC"
+          }
         }
       ]
     }

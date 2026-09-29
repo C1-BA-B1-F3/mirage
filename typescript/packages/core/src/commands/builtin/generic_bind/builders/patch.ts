@@ -13,23 +13,26 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { patchGeneric } from '../../generic/patch.ts'
-import { type Builder, resolveGlobOf } from '../adapter.ts'
+import { type Builder, dirAwareStat, requireOp, resolveGlobOf } from '../adapter.ts'
 
 export const PATCH_BUILDER: Builder = {
   name: 'patch',
   write: true,
-  requirements: ['write'],
   fn: async (ops, accessor, paths, _texts, opts) => {
     const idx = opts.index ?? undefined
-    const { write } = ops
-    if (write === undefined) {
-      throw new Error('patch: backend provides no write op')
-    }
+    const write = requireOp(ops.write, 'write')
+    const stat = dirAwareStat(ops, accessor, opts)
     const resolved = paths.length > 0 ? await resolveGlobOf(ops)(accessor, paths, idx) : []
+    // Stat first, as GNU patch does: a directory is refused before it is
+    // read, because a store whose read of a collection answers a page
+    // (nextcloud) never raises for one. Mirrors Python's patch builder.
     return patchGeneric(
       resolved,
       opts,
-      (p) => ops.readStream(accessor, p, idx),
+      async (p) => {
+        await stat(p)
+        return ops.readBytes(accessor, p, idx)
+      },
       (p, d) => write(accessor, p, d),
     )
   },

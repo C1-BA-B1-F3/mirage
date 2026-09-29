@@ -20,7 +20,7 @@ from stat import S_IFDIR, S_IFREG
 import pytest
 
 from mirage.types import ContentType, FileStat, FileType
-from mirage.utils.stat_view import (DIR_MODE, FILE_MODE, LINK_MODE,
+from mirage.utils.stat_view import (DIR_MODE, DIR_SIZE, FILE_MODE, LINK_MODE,
                                     content_size, is_dir, is_link, mtime_ns,
                                     posix_mode)
 
@@ -94,9 +94,9 @@ def test_epoch_zero_is_a_real_time_not_unknown():
     assert mtime_ns(st) == 0
 
 
-def test_directory_size_is_zero_whatever_the_backend_reports():
-    st = FileStat(name="d", type=FileType.DIRECTORY, size=4096)
-    assert content_size(st) == 0
+def test_directory_size_is_dir_size_whatever_the_backend_reports():
+    st = FileStat(name="d", type=FileType.DIRECTORY, size=123456)
+    assert content_size(st) == DIR_SIZE
     assert is_dir(st)
 
 

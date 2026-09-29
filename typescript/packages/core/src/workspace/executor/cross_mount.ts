@@ -45,6 +45,9 @@ export async function handleCrossMount(
   storageKey?: (path: PathSpec) => string,
   ns?: NamespaceView,
   sessionView?: SessionView,
+  // The session's working directory, which a typed operand resolves against
+  // (cp's link sources).
+  cwd = '/',
 ): Promise<Result> {
   const [stdout, io] = await routeCrossMount(
     cmdName,
@@ -57,6 +60,7 @@ export async function handleCrossMount(
     storageKey,
     ns,
     sessionView,
+    cwd,
   )
   const stderrBytes = await materialize(io.stderr)
   const exec = new ExecutionNode({ command: cmdStr, stderr: stderrBytes, exitCode: io.exitCode })

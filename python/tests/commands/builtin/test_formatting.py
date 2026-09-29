@@ -85,14 +85,18 @@ def test_format_ls_long_owner_is_user_and_group_is_profile():
 
 
 def test_format_ls_long_metadata_less_row_keeps_the_owner_columns():
-    # A synthetic directory with neither size nor mtime shows `-` for
-    # both rather than inventing size 0 and the epoch, and still names
-    # who the session is.
+    # A synthetic directory with neither size nor mtime shows DIR_SIZE
+    # and `-` for the time rather than inventing the epoch, and still
+    # names who the session is; a file with neither shows `-` for both.
     stat = FileStat(name="dev", type=FileType.DIRECTORY)
     [line] = format_ls_long([stat])
-    assert line == "drwxr-xr-x 1 - - - - dev"
+    assert line == "drwxr-xr-x 1 - - 4096 - dev"
     [line] = format_ls_long([stat], identity=Identity(profile="admin"))
-    assert line == "drwxr-xr-x 1 - admin - - dev"
+    assert line == "drwxr-xr-x 1 - admin 4096 - dev"
+    [line] = format_ls_long([stat], human=True)
+    assert line == "drwxr-xr-x 1 - - 4.0K - dev"
+    [line] = format_ls_long([FileStat(name="page", type=FileType.FILE)])
+    assert line == "-rw-r--r-- 1 - - - - page"
 
 
 def test_format_ls_long_device_row():
@@ -149,4 +153,4 @@ def test_format_ls_long_missing_modified():
                     content=ContentType.TEXT,
                     modified=None)
     [line] = format_ls_long([stat])
-    assert "Jan  1 00:00" in line
+    assert line == "-rw-r--r-- 1 - - 0 - x"

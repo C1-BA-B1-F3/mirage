@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class JaegerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     host: str = "http://localhost:16686"
     default_trace_limit: int = 100
     # Jaeger's search endpoint takes an explicit microsecond window and its

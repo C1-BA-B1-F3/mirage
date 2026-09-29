@@ -24,7 +24,6 @@ describe('expandOldStyle', () => {
     const old = expandOldStyle(TAR, ['xz'])
     expect(old.argv).toEqual(['-x', '-z'])
     expect(old.origins).toEqual([0, 0])
-    expect(old.cluster).toBe('xz')
     expect(old.needsValue).toBeNull()
   })
 
@@ -77,20 +76,17 @@ describe('expandOldStyle', () => {
     const old = expandOldStyle(TAR, ['-x', '-z', '-f', 'a.tgz'])
     expect(old.argv).toEqual(['-x', '-z', '-f', 'a.tgz'])
     expect(old.origins).toEqual([0, 1, 2, 3])
-    expect(old.cluster).toBeNull()
   })
 
   it('leaves a long-option first word alone', () => {
     const old = expandOldStyle(TAR, ['--extract', '--file', 'a.tgz'])
     expect(old.argv).toEqual(['--extract', '--file', 'a.tgz'])
-    expect(old.cluster).toBeNull()
   })
 
   it('leaves an empty argv alone', () => {
     const old = expandOldStyle(TAR, [])
     expect(old.argv).toEqual([])
     expect(old.origins).toEqual([])
-    expect(old.cluster).toBeNull()
   })
 
   it('reads an empty first word as an empty cluster', () => {
@@ -99,6 +95,5 @@ describe('expandOldStyle', () => {
     const old = expandOldStyle(TAR, ['', 'one.txt'])
     expect(old.argv).toEqual(['one.txt'])
     expect(old.origins).toEqual([1])
-    expect(old.cluster).toBe('')
   })
 })

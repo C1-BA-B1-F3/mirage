@@ -1124,7 +1124,7 @@
       "command": "type -t h1; type -t h2",
       "expect": {
         "exit": 1,
-        "stdout": "cli\n",
+        "stdout": "file\n",
         "stderr": ""
       }
     },

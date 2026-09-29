@@ -310,7 +310,7 @@
         "stdout": "after\n",
         "stderr": "x"
       },
-      "note": "bash 5.2 (debian:stable-slim, stdin from /dev/null). In a subshell so the battery's shared session keeps its streams. Mirage keeps no offset on a descriptor: a read through a read-open stream starts at the file's beginning, a write through a write-open one appends."
+      "note": "bash 5.2 (debian:stable-slim, stdin from /dev/null). In a subshell so the battery's shared session keeps its streams. A read end keeps its offset; mirage keeps none on a write-open descriptor, so a write through one appends."
     },
     {
       "id": "exec_read_open_stream_answers_a_transient_read",
@@ -345,7 +345,7 @@
         "stdout": "after\n",
         "stderr": "xrc=0\n"
       },
-      "note": "bash 5.2 (debian:stable-slim, stdin from /dev/null). In a subshell so the battery's shared session keeps its streams. Mirage keeps no offset on a descriptor: a read through a read-open stream starts at the file's beginning, a write through a write-open one appends."
+      "note": "bash 5.2 (debian:stable-slim, stdin from /dev/null). In a subshell so the battery's shared session keeps its streams. A read end keeps its offset; mirage keeps none on a write-open descriptor, so a write through one appends."
     },
     {
       "id": "exec_write_open_stdin_takes_transient_dups",
@@ -380,7 +380,7 @@
         "stdout": "x\na\nb\ny\n",
         "stderr": ""
       },
-      "note": "bash 5.2 (debian:stable-slim, stdin from /dev/null). In a subshell so the battery's shared session keeps its streams. Mirage keeps no offset on a descriptor: a read through a read-open stream starts at the file's beginning, a write through a write-open one appends."
+      "note": "bash 5.2 (debian:stable-slim, stdin from /dev/null). In a subshell so the battery's shared session keeps its streams. A read end keeps its offset; mirage keeps none on a write-open descriptor, so a write through one appends."
     },
     {
       "id": "exec_terminal_stream_on_stdin_takes_a_transient_dup",
@@ -415,7 +415,7 @@
         "stdout": "x\n",
         "stderr": ""
       },
-      "note": "bash 5.2 (debian:stable-slim, stdin from /dev/null). In a subshell so the battery's shared session keeps its streams. Mirage keeps no offset on a descriptor: a read through a read-open stream starts at the file's beginning, a write through a write-open one appends."
+      "note": "bash 5.2 (debian:stable-slim, stdin from /dev/null). In a subshell so the battery's shared session keeps its streams. A read end keeps its offset; mirage keeps none on a write-open descriptor, so a write through one appends."
     },
     {
       "id": "exec_stdin_alias_answers_a_transient_read",
@@ -448,9 +448,9 @@
       "expect": {
         "exit": 0,
         "stdout": "after\n",
-        "stderr": "xx"
+        "stderr": "x"
       },
-      "note": "bash 5.2: a stream dup'd from stdin (`exec 1<&0`) reads what stdin reads, and keeps the file `exec <f` bound after `exec 0<&-`, since a dup copies the open file. Mirage keeps no offset on a descriptor, so the second read starts at the file's beginning where bash's is at EOF. In a subshell so the battery's shared session keeps its streams."
+      "note": "bash 5.2: a stream dup'd from stdin (`exec 1<&0`) reads what stdin reads, and keeps the file `exec <f` bound after `exec 0<&-`, since a dup copies the open file. The dup shares the offset too, so the second read is at EOF. In a subshell so the battery's shared session keeps its streams."
     }
   ]
 }

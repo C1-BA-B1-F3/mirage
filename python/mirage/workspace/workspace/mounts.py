@@ -22,6 +22,7 @@ from mirage.cache.file.mixin import FileCacheMixin
 from mirage.cache.index import IndexConfig
 from mirage.cache.index.store import IndexCacheStore
 from mirage.ops import Ops
+from mirage.shell.constants import BIN_PREFIX
 from mirage.types import KERNEL_BACKENDS, MountBackend, MountMode, ReadSpec
 from mirage.vfs.base import BaseVFS
 from mirage.vfs.history import HISTORY_PREFIX
@@ -240,6 +241,8 @@ async def unmount(registry: MountRegistry, ops: Ops, prefix: str,
         raise ValueError("cannot unmount reserved prefix: '/dev/'")
     if norm == HISTORY_PREFIX + "/":
         raise ValueError(f"cannot unmount history view: {HISTORY_PREFIX!r}")
+    if norm == BIN_PREFIX + "/":
+        raise ValueError(f"cannot unmount program view: {BIN_PREFIX!r}")
     entry = registry.try_mount_for_prefix(prefix)
     if entry is None:
         raise ValueError(f"no mount at prefix: {norm!r}")

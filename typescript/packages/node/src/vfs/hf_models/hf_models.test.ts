@@ -133,11 +133,11 @@ describe('HfModelsVFS', () => {
 })
 
 describe('HfBucketsVFS', () => {
-  it('uses the bucket field and normalizes keyPrefix', () => {
+  it('uses the bucket field and normalizes keyPrefix', async () => {
     const vfs = new HfBucketsVFS({ bucket: 'ns/store', keyPrefix: '/lead/' })
     expect(vfs.name).toBe('hf_buckets')
     expect(vfs.config.keyPrefix).toBe('lead/')
     expect(vfs.accessor.bucketUri).toBe('hf://buckets/ns/store')
-    installFakeOperator(vfs.accessor, fakeHfOperator({ 'config.json': '{}' }))
+    await installFakeOperator(vfs.accessor, fakeHfOperator({ 'config.json': '{}' }))
   })
 })

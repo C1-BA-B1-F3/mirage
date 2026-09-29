@@ -68,6 +68,7 @@ async def test_calendar_lists_only_days_holding_events(api, accessor, index):
     out = await readdir(accessor, spec("/primary"), index)
     assert names(out) == [
         "calendar.json",
+        "2025-01-05",
         "2026-08-10",
         "2026-08-11",
         "2026-08-12",
@@ -75,11 +76,9 @@ async def test_calendar_lists_only_days_holding_events(api, accessor, index):
     ]
 
 
-async def test_calendar_listing_omits_days_outside_the_window(
-        api, accessor, index):
+async def test_calendar_listing_includes_all_past_days(api, accessor, index):
     out = names(await readdir(accessor, spec("/primary"), index))
-    # 2025-01-05 exists but sits far outside the -30/+90 day window.
-    assert "2025-01-05" not in out
+    assert "2025-01-05" in out
 
 
 async def test_a_date_glob_escapes_the_default_window(api, accessor, index):
@@ -87,8 +86,8 @@ async def test_a_date_glob_escapes_the_default_window(api, accessor, index):
                         index)
     assert "2025-01-05" in names(out)
     listed = api.listed[-1]
-    assert listed[1].startswith("2025-01-01")
-    assert listed[2].startswith("2025-02-01")
+    assert listed[1] == "2024-12-31T16:00:00+00:00"
+    assert listed[2] == "2025-01-31T16:00:00+00:00"
 
 
 async def test_day_lists_one_file_per_overlapping_event(api, accessor, index):
@@ -150,8 +149,8 @@ async def test_the_window_is_centred_in_the_bucket_zone(api, accessor, index):
     # the bounds carry the bucket zone's offset rather than the host's.
     await readdir(accessor, spec("/primary"), index)
     _, time_min, time_max = api.listed[-1]
-    assert time_min.endswith("+08:00")
-    assert time_max.endswith("+08:00")
+    assert time_min is None
+    assert time_max == "2026-11-09T16:00:00+00:00"
 
 
 async def test_too_deep_a_path_is_enoent(api, accessor, index):

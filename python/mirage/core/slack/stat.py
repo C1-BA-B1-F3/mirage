@@ -19,6 +19,7 @@ from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.hierarchy.stat import make_stat
 from mirage.core.slack.readdir import readdir
 from mirage.core.slack.scope import detect_scope
+from mirage.core.time_range import guard_day
 from mirage.core.timeutil import epoch_to_iso
 from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
@@ -115,6 +116,7 @@ async def _stat_day(accessor: SlackAccessor, match: ScopeMatch, path: PathSpec,
         path (PathSpec): the path to stat.
         index (IndexCacheStore): index cache.
     """
+    await guard_day(accessor, match, path.virtual)
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is not None:
         return FileStat(name=entry.vfs_name, type=FileType.DIRECTORY)
@@ -136,6 +138,8 @@ def _chat_stat(match: ScopeMatch, path: PathSpec,
 stat = make_stat(
     detect_scope,
     readdir,
+    guards={kind: guard_day
+            for kind in ("messages", "files", "file_blob")},
     entry_stats={
         "channel": _channel_stat,
         "user": _user_stat,

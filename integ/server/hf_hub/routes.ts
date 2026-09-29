@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { load as yamlLoad } from 'js-yaml'
-import { rangeReply, route } from '../kit/typescript/index.ts'
+import { rangeReply, route, stripSlash } from '../kit/typescript/index.ts'
 import type { Ctx, JsonValue, KitRoute, Reply } from '../kit/typescript/index.ts'
 import {
   DEFAULT_LIMIT,
@@ -477,7 +477,7 @@ async function tree(ctx: Ctx<C>): Promise<Reply> {
     limit = n
   }
 
-  const prefix = (ctx.params.path ?? '').replace(/^\/+|\/+$/g, '')
+  const prefix = stripSlash(ctx.params.path ?? '')
   const under = prefix === '' ? '' : `${prefix}/`
   const blobs = (await blobsAt(ctx.db, ctx.tenant, key, sha)).filter((b) =>
     prefix === '' ? true : b.path.startsWith(under),
@@ -528,6 +528,56 @@ async function blobFor(ctx: Ctx<C>): Promise<Found | Reply> {
   const blob = await blobAt(ctx.db, ctx.tenant, key, sha, path)
   if (blob === null) return entryNotFound()
   return { sha, blob }
+}
+
+// The real Hub's answer to a paths-info body it cannot read as JSON, which is
+// what an untyped fetch body arrives as. Measured against huggingface.co,
+// 2026-09-24: a text/plain JSON body and a form without `paths` both get it.
+const INVALID_PATHS = '✖ Invalid input\n  → at paths'
+
+function contentType(ctx: Ctx<C>): string {
+  const raw = ctx.headers['content-type']
+  const one = Array.isArray(raw) ? raw[0] : raw
+  return one ?? ''
+}
+
+/**
+ * One row per requested path that exists, in the tree's own row shape.
+ *
+ * JSON only, and deliberately so: the buckets fake also reads a form body, but
+ * the real endpoint answers a body without a JSON content type with 400, and a
+ * fake that accepted it would hide a client that forgot the header. A path
+ * with no file and nothing under it is simply left out of the list, which is
+ * how the Hub reports absence here (a 200 with fewer rows, never a 404).
+ */
+async function pathsInfo(ctx: Ctx<C>): Promise<Reply> {
+  const found = await locate(ctx)
+  if (isReply(found)) return found
+  const { key } = found
+  const revision = ctx.params.rev ?? DEFAULT_REVISION
+  const sha = await resolveRevision(ctx.db, ctx.tenant, key, revision)
+  if (sha === null) return revisionNotFound(revision)
+  if (!contentType(ctx).includes('json')) return { status: 400, body: { error: INVALID_PATHS } }
+  let body: Record<string, JsonValue> | null
+  try {
+    body = ctx.json() as Record<string, JsonValue> | null
+  } catch {
+    return { status: 400, body: { error: INVALID_PATHS } }
+  }
+  const named = body?.paths
+  if (!Array.isArray(named)) return { status: 400, body: { error: INVALID_PATHS } }
+  const expand = body?.expand === true
+  const blobs = await blobsAt(ctx.db, ctx.tenant, key, sha)
+  const date = blobs[0]?.lastModified ?? ''
+  const rows: JsonValue[] = []
+  for (const raw of named) {
+    const path = stripSlash(String(raw))
+    const blob = blobs.find((b) => b.path === path)
+    if (blob !== undefined) rows.push(treeRow(blob, expand))
+    else if (path !== '' && blobs.some((b) => b.path.startsWith(`${path}/`)))
+      rows.push(dirRow(path, expand, sha, date))
+  }
+  return { status: 200, body: rows }
 }
 
 async function resolve(ctx: Ctx<C>): Promise<Reply> {
@@ -1009,6 +1059,7 @@ export function hfHubRoutes(): KitRoute<C>[] {
     ...repoRoute('GET', '/commits/:rev', commits),
     ...repoRoute('GET', '/tree/:rev', tree),
     ...repoRoute('GET', '/tree/:rev/*path', tree),
+    ...repoRoute('POST', '/paths-info/:rev', pathsInfo),
     ...repoRoute('POST', '/preupload/:rev', preupload),
     ...repoRoute('POST', '/commit/:rev', commit, { write: true }),
     ...repoRoute('POST', '/tag/:rev', createTag, { write: true }),

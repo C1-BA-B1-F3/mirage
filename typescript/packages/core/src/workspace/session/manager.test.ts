@@ -118,7 +118,7 @@ describe('SessionManager with a SessionStore', () => {
     await m.ensureLoaded()
     const s = m.get('restored')
     expect(s.cwd).toBe('/w')
-    expect(s.env).toEqual({ K: 'v', PWD: '/w' })
+    expect(s.env).toEqual({ K: 'v', PWD: '/w', PATH: '/usr/bin', IFS: ' \t\n' })
     expect(s.mountModes?.get('/data')).toBe(MountMode.READ)
   })
 
@@ -138,7 +138,7 @@ describe('SessionManager with a SessionStore', () => {
     const m = new SessionManager('def', store)
     await m.ensureLoaded()
     expect(m.cwd).toBe('/w')
-    expect(m.env).toEqual({ A: '1', PWD: '/w' })
+    expect(m.env).toEqual({ A: '1', PWD: '/w', PATH: '/usr/bin', IFS: ' \t\n' })
   })
 
   it('default session adopts stored hidden specs', async () => {

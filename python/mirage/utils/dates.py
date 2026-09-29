@@ -30,6 +30,13 @@ _NUMBER_UNIT_RE = re.compile(r"([+-]?\d+)([a-z]+)\Z")
 _NUMBER_RE = re.compile(r"[+-]?\d+\Z")
 
 _EPOCH_RE = re.compile(r"@\s*[+-]?\d+(?:\.\d+)?")
+# POSIX `MMDDhhmm[[CC]YY][.ss]`, the clock a bare `date` operand sets.
+# [0-9], not \d: python's \d also matches Unicode digits, which gnulib
+# refuses.
+_POSIX_TIME_RE = re.compile(r"([0-9]{8}|[0-9]{10}|[0-9]{12})(\.[0-9]{2})?")
+_FIRST_SECOND = datetime.min.replace(tzinfo=timezone.utc).timestamp()
+_LAST_SECOND = datetime.max.replace(tzinfo=timezone.utc,
+                                    microsecond=0).timestamp()
 
 
 def _date_unit(word: str) -> str | None:
@@ -282,6 +289,58 @@ def parse_date_expr(text: str,
         index = take
         break
     return _apply_relative(base, words[index:])
+
+
+def parse_posix_time(text: str,
+                     *,
+                     tz: tzinfo | None = None,
+                     now: datetime | None = None) -> datetime | None:
+    """Parse the ``MMDDhhmm[[CC]YY][.ss]`` a bare ``date`` operand is.
+
+    gnulib's posixtime with date's syntax bits, measured on coreutils
+    9.7: no year is this year, a two-digit one is 2000-2068 up to 68
+    and 1969-1999 from 69, and ``.ss`` takes exactly two digits. A
+    field out of range (``1301000024``, ``01012500``) is not a date,
+    nor is a wall clock ``tz`` skips; second 60 is the next minute's
+    first, as mktime reads a leap second. One divergence: GNU shows
+    year 0 and year 10000, where mirage holds what ``datetime`` holds,
+    so a year 0 operand, a UTC moment outside years 1-9999 and the
+    leap second after 9999-12-31 23:59:59 are not a date either.
+
+    Args:
+        text (str): the operand as typed.
+        tz (tzinfo | None): the zone the wall clock is read in, None for
+            the host's local zone.
+        now (datetime | None): the current moment, injectable for tests.
+    """
+    match = _POSIX_TIME_RE.fullmatch(text)
+    if match is None:
+        return None
+    digits, dot = match.group(1), match.group(2)
+    month, day, hour, minute = (int(digits[i:i + 2]) for i in range(0, 8, 2))
+    tail = digits[8:]
+    if not tail:
+        year = (now if now is not None else datetime.now(tz)).year
+    elif len(tail) == 2:
+        year = int(tail) + (2000 if int(tail) <= 68 else 1900)
+    else:
+        year = int(tail)
+    second = int(dot[1:]) if dot else 0
+    leap = second == 60
+    try:
+        wall = datetime(year, month, day, hour, minute, 59 if leap else second)
+    except ValueError:
+        return None
+    try:
+        placed = _localize(wall, tz)
+        if placed is None:
+            return None
+        first = placed.timestamp()
+        if first < _FIRST_SECOND or first + leap > _LAST_SECOND:
+            return None
+        return placed + timedelta(seconds=leap)
+    except (OverflowError, ValueError):
+        return None
 
 
 def utc_date_folder(ts: float | None = None) -> str:

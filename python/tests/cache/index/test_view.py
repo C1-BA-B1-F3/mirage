@@ -29,8 +29,10 @@ from mirage.workspace import Workspace
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store_kind", ["ram", "redis"])
 @pytest.mark.parametrize("phase", ["backend", "store"])
-@pytest.mark.parametrize(
-    "method", ["put", "set_dir", "seed_get", "seed_list_dir", "seed_entries"])
+@pytest.mark.parametrize("method", [
+    "put", "set_dir", "set_partial_dir", "seed_get", "seed_list_dir",
+    "seed_entries"
+])
 @pytest.mark.parametrize("shadow", [False, True])
 async def test_late_index_write_cannot_cross_mount_ownership(
         monkeypatch, store_kind, phase, method, shadow):
@@ -70,6 +72,8 @@ async def test_late_index_write_cannot_cross_mount_ownership(
             await index.put("/data/stale", entry)
         elif method == "set_dir":
             await index.set_dir("/data", [("stale", entry)])
+        elif method == "set_partial_dir":
+            await index.set_partial_dir("/data", [("stale", entry)])
         else:
             index.seed({"/data/stale": entry}, {"/data": ["/data/stale"]},
                        datetime.now(timezone.utc) + timedelta(hours=1))

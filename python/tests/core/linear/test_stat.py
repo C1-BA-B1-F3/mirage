@@ -19,12 +19,14 @@ import pytest
 from mirage.accessor.linear import LinearAccessor
 from mirage.cache.index import IndexEntry
 from mirage.cache.index.ram import RAMIndexCacheStore
+from mirage.core.hierarchy.scope import Slot
 from mirage.core.linear import read as linear_read
 from mirage.core.linear import readdir as linear_readdir
 from mirage.core.linear.config import LinearConfig
 from mirage.core.linear.normalize import normalize_team, to_json_bytes
 from mirage.core.linear.read import read
 from mirage.core.linear.readdir import readdir
+from mirage.core.linear.scope import detect_scope
 from mirage.core.linear.stat import stat
 from mirage.types import ContentType, FileType, PathSpec
 
@@ -330,9 +332,9 @@ async def _comments_for(config, issue_id, session=None):
     return list(_COMMENTS.get(issue_id, []))
 
 
-async def _walk_files(accessor, index):
+async def _walk_nodes(accessor, index):
     stack = ["/"]
-    files = []
+    nodes = []
     while stack:
         current = stack.pop()
         listing = await readdir(
@@ -345,16 +347,17 @@ async def _walk_files(accessor, index):
                                     index)
             if entry_stat.type == FileType.DIRECTORY:
                 stack.append(path)
-            else:
-                files.append((path, entry_stat))
-    return files
+            nodes.append((path, entry_stat))
+    return nodes
 
 
-@pytest.mark.asyncio
-async def test_stat_size_matches_read_for_every_file(accessor, index,
-                                                     monkeypatch):
-    # The fskit invariant: whatever size stat reports at lookup must equal
-    # the byte length a read delivers, for every file in the tree.
+async def _walk_files(accessor, index):
+    return [(path, entry_stat)
+            for path, entry_stat in await _walk_nodes(accessor, index)
+            if entry_stat.type != FileType.DIRECTORY]
+
+
+def _fake_tree(monkeypatch) -> dict[str, AsyncMock]:
     fakes = {
         "list_teams": AsyncMock(return_value=[_TEAM]),
         "list_team_members": AsyncMock(return_value=_USERS),
@@ -369,6 +372,15 @@ async def test_stat_size_matches_read_for_every_file(accessor, index,
         for name, fake in fakes.items():
             if hasattr(module, name):
                 monkeypatch.setattr(module, name, fake)
+    return fakes
+
+
+@pytest.mark.asyncio
+async def test_stat_size_matches_read_for_every_file(accessor, index,
+                                                     monkeypatch):
+    # The fskit invariant: whatever size stat reports at lookup must equal
+    # the byte length a read delivers, for every file in the tree.
+    fakes = _fake_tree(monkeypatch)
     files = await _walk_files(accessor, index)
     assert len(files) == 9
     # Sizing never refetches an issue: the issues listing already carries the
@@ -377,3 +389,33 @@ async def test_stat_size_matches_read_for_every_file(accessor, index,
     for path, entry_stat in files:
         body = await read(accessor, PathSpec.from_str_path(path), index)
         assert entry_stat.size == len(body), path
+
+
+def _deepest_id_key(path: str) -> str:
+    match = detect_scope(PathSpec.from_str_path(path))
+    assert match.scope is not None, path
+    keys: list[str] = [
+        segment.id_key for segment in match.scope.segments
+        if isinstance(segment, Slot) and segment.id_key is not None
+    ]
+    return keys[-1]
+
+
+@pytest.mark.asyncio
+async def test_stat_extra_names_the_id_the_path_carries(
+        accessor, index, monkeypatch):
+    """Every id-addressed node's stat carries its id under the key its
+    path slot names (team_id, member_id, issue_id, ...), the value the
+    path encodes. The member kind wrote ``user_id`` while its slot and
+    trello's member say ``member_id``."""
+    _fake_tree(monkeypatch)
+    nodes = await _walk_nodes(accessor, index)
+    assert any("/members/" in path for path, _ in nodes)
+    for path, entry_stat in nodes:
+        match = detect_scope(PathSpec.from_str_path(path))
+        assert match.scope is not None, path
+        if (isinstance(match.scope.segments[-1], str)
+                and entry_stat.type == FileType.DIRECTORY):
+            continue
+        id_key = _deepest_id_key(path)
+        assert entry_stat.extra == {id_key: match.slots[id_key]}, path

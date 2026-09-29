@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "id": "wc_quotes_a_name_holding_a_newline",
+      "seq": 917206,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "mkdir -p /data/wcnl && printf 'x\\ny\\n' > \"/data/wcnl/n$(printf '\\nq')\" && printf 'z\\n' > /data/wcnl/c && wc -l /data/wcnl/n* /data/wcnl/c; rm -r /data/wcnl",
+      "expect": {
+        "exit": 0,
+        "stdout": "2 '/data/wcnl/n'$'\\n''q'\n1 /data/wcnl/c\n3 total\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

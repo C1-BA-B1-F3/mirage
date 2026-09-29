@@ -65,6 +65,210 @@
       "flags": [
         "C"
       ]
+    },
+    {
+      "id": "rg_C1_labels_context_across_files",
+      "seq": 612189,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && rg -C1 world a.txt a.txt)",
+      "expect": {
+        "exit": 0,
+        "stdout": "a.txt-hello\na.txt:world\na.txt-foo\n--\na.txt-hello\na.txt:world\na.txt-foo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "rg_C1_H_labels_a_single_file",
+      "seq": 612190,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "rg -H -n -C1 world /data/a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/a.txt-1-hello\n/data/a.txt:2:world\n/data/a.txt-3-foo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "rg_C1_b_labels_every_field",
+      "seq": 612191,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "rg -H -b -C1 world /data/a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/a.txt-0-hello\n/data/a.txt:6:world\n/data/a.txt-12-foo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "rg_A1_I_still_separates_files",
+      "seq": 612192,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "rg -n -A1 -I 'world|beta' /data/a.txt /data/c.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "2:world\n3-foo\n--\n2:beta\n3-gamma\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "rg_C1_walk_labels_context",
+      "seq": 612193,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "rg -C1 content /data/sub",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/sub/nested.txt-nested\n/data/sub/nested.txt:content\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "rg_C1_stdin_beside_a_file_is_separated",
+      "seq": 612194,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\nc\\n' | rg -C1 b - /data/a.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "<stdin>-a\n<stdin>:b\n<stdin>-c\n--\n/data/a.txt-foo\n/data/a.txt:bar\n/data/a.txt:baz\n",
+        "stderr": ""
+      }
     }
   ]
 }

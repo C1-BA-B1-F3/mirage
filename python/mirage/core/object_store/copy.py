@@ -68,7 +68,7 @@ def make_copy(driver: ObjectStoreDriver[A, C],
                     # a copy against src; that is inert there only
                     # because dropbox emits no read record at all, so no
                     # dropbox path is ever pinned.)
-                    record("copy", dst, driver.vfs, 0, timer)
+                    record("copy", dst_spec.virtual, driver.vfs, 0, timer)
                     # The eviction rides with the record, on the same
                     # condition, as in unlink.
                     await invalidate_after_write(dst_spec)

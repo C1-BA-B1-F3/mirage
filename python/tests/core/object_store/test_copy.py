@@ -46,7 +46,8 @@ def test_copy_duplicates_and_invalidates_destination_ancestors(accessor):
     manager = _managed(
         _copy_for(store)(accessor, spec("/src.txt"), spec("/a/b/dst.txt")))
     assert store.objects == {"src.txt": b"hi", "a/b/dst.txt": b"hi"}
-    assert manager.writes == ["/a/b/dst.txt", "/a/b", "/a"]
+    assert manager.writes == ["/a/b/dst.txt"]
+    assert manager.ancestors == ["/mnt/a/b/dst.txt"]
 
 
 def test_copy_missing_source_is_enoent(accessor):
@@ -94,7 +95,7 @@ def test_copy_records_a_retraction_for_the_destination(accessor):
     assert _recorded(
         make_copy(make_driver(store),
                   _exists)(accessor, spec("/a.txt"),
-                           spec("/b.txt"))) == [("copy", "/b.txt")]
+                           spec("/b.txt"))) == [("copy", "/mnt/b.txt")]
 
 
 def test_self_copy_records_nothing(accessor):
@@ -129,7 +130,7 @@ def test_copy_records_the_retraction_when_the_store_throws(accessor):
     driver = replace(make_driver(store), copy_file=_boom)
     assert _recorded_failure(
         make_copy(driver, _exists)(accessor, spec("/a.txt"), spec("/b.txt")),
-        RuntimeError, "boom") == [("copy", "/b.txt")]
+        RuntimeError, "boom") == [("copy", "/mnt/b.txt")]
 
 
 def test_copy_evicts_the_destination_when_the_store_throws(accessor):

@@ -4,7 +4,8 @@ from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 
 from mirage.commands.builtin.utils.lines import split_lines
-from mirage.commands.builtin.utils.stream import resolve_source
+from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
+                                                  stdin_stream)
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
@@ -127,8 +128,9 @@ async def xxd(
                                   or paths[2].virtual)
     cache: list[str] = []
     if paths:
-        source: AsyncIterator[bytes] = read_stream(paths[0])
-        cache = [paths[0].mount_path]
+        source: AsyncIterator[bytes] = stdin_stream(read_stream,
+                                                    stdin)(paths[0])
+        cache = [] if is_stdin(paths[0]) else [paths[0].mount_path]
     else:
         source = resolve_source(stdin)
 

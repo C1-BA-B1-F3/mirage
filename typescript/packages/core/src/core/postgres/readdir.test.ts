@@ -96,6 +96,7 @@ describe('readdir', () => {
   })
 
   it('lists entity: schema.json + semantic.json + rows.jsonl', async () => {
+    vi.mocked(client.listSchemas).mockResolvedValue(['public'])
     vi.mocked(client.listTables).mockResolvedValue(['users'])
     const out = await readdir(
       makeAccessor(),
@@ -170,6 +171,7 @@ describe('readdir', () => {
   })
 
   it('refuses an entity that does not exist', async () => {
+    vi.mocked(client.listSchemas).mockResolvedValue(['public'])
     vi.mocked(client.listTables).mockResolvedValue(['users'])
     await expect(
       readdir(
@@ -181,5 +183,32 @@ describe('readdir', () => {
         }),
       ),
     ).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  // The entity guard stands in for the listing chain, so it has to answer for
+  // the schema as well: it used to check only that the table existed, and a
+  // table under a schema `schemas` leaves out listed, stat'd and read as if
+  // the mount could see it.
+  it('refuses an entity under a schema outside schemas', async () => {
+    vi.mocked(client.listSchemas).mockImplementation((_accessor, allow) =>
+      Promise.resolve(['public', 'secret'].filter((s) => allow == null || allow.includes(s))),
+    )
+    vi.mocked(client.listTables).mockClear()
+    vi.mocked(client.listTables).mockResolvedValue(['users'])
+    const accessor = new PostgresAccessor(
+      STUB_DRIVER,
+      resolvePostgresConfig({ dsn: 'postgres://localhost/db', schemas: ['public'] }),
+    )
+    await expect(
+      readdir(
+        accessor,
+        new PathSpec({
+          virtual: '/pg/secret/tables/users',
+          directory: '/pg/secret/tables/users',
+          vfsPath: mountKey('/pg/secret/tables/users', '/pg'),
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(client.listTables).not.toHaveBeenCalled()
   })
 })

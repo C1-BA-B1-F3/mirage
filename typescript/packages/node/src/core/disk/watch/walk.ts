@@ -19,15 +19,15 @@ import {
   ListingDeltaHook,
   statFingerprint,
 } from '@struktoai/mirage-core/watch/index'
-import { lstat, readdir } from 'node:fs/promises'
+import { lstat } from 'node:fs/promises'
 import path from 'node:path'
 import type { DiskAccessor } from '../../../accessor/disk.ts'
-import { resolveSafe } from '../utils.ts'
+import { readEntries, resolveInside } from '../utils.ts'
 
 async function* descend(root: string, full: string): AsyncGenerator<WalkEntry> {
   let listing
   try {
-    listing = await readdir(full, { withFileTypes: true })
+    listing = await readEntries(full)
   } catch (error) {
     // Absence is the one error a walk may swallow: the directory went
     // away between the parent listing and this one, and the next pull
@@ -90,7 +90,15 @@ export class DiskWalk {
 
   async *walk(root: PathSpec): AsyncGenerator<WalkEntry> {
     const prefix = mountPrefixOf(root.virtual, root.vfsPath)
-    const start = resolveSafe(this.accessor.root, root.mountPath)
+    let start
+    try {
+      start = await resolveInside(this.accessor.root, root)
+    } catch (error) {
+      // A root reached through a host link is absent, the one error a walk
+      // may swallow (see descend).
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      return
+    }
     for await (const entry of descend(this.accessor.root, start)) {
       yield {
         ...entry,

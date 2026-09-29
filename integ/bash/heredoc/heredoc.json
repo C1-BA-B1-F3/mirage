@@ -669,10 +669,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "cat <<'END'\nleft \\\nright\nEND",
+      "command": "cat <<'END' | \\\ntr a-z A-Z\nleft \\\nright\nEND",
       "expect": {
         "exit": 0,
-        "stdout": "left \\\nright\n",
+        "stdout": "LEFT \\\nRIGHT\n",
         "stderr": ""
       }
     },
@@ -948,10 +948,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "v='a  b *'; cat <<END\n[$v]\nEND",
+      "command": "v='a  b *'; cat <<END\n[$v] [${u:-a\\ b}] [${u:-'q'}] [${u:-\"a\\ b\"}] [${u:-a\\\"b}]\nEND",
       "expect": {
         "exit": 0,
-        "stdout": "[a  b *]\n",
+        "stdout": "[a  b *] [a\\ b] ['q'] [a b] [a\"b]\n",
         "stderr": ""
       }
     },

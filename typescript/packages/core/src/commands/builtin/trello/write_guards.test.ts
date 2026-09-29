@@ -72,3 +72,40 @@ describe('trello card writes hold the mount-wide write grant', () => {
     })
   }
 })
+
+// Mirrors python's test_a_card_write_refuses_an_id_outside_the_scope: the
+// write is addressed by id, so without the check a mount narrowed to one
+// board writes to any board the token can reach. The transport answers
+// only the guard's lookups; a write that got past it throws a different
+// error.
+describe('trello card writes hold the mount scope', () => {
+  const scoped = new TrelloAccessor(
+    {
+      call(method: string, path: string) {
+        if (method === 'GET' && /^\/(cards|lists)\/[^/]+$/.test(path)) {
+          return Promise.resolve({ idBoard: 'b_out' })
+        }
+        throw new Error(`the transport was reached: ${method} ${path}`)
+      },
+    },
+    { boardIds: ['b_in'] },
+  )
+  for (const [cmds, flags] of CASES) {
+    const rc = cmds[0]
+    if (rc === undefined) throw new Error('command registered nothing')
+    it(`${rc.name} refuses an id outside the scope`, async () => {
+      const opts: CommandOpts = {
+        stdin: null,
+        flags,
+        filetypeFns: null,
+        cwd: '/',
+        mountPrefix: '/trello',
+      }
+      await runWithMountGate('/trello', MountMode.WRITE, async () => {
+        await expect(Promise.resolve(rc.fn(scoped, [], [], opts))).rejects.toThrow(
+          / is outside this mount's scope$/,
+        )
+      })
+    })
+  }
+})

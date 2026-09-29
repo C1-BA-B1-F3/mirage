@@ -42,12 +42,39 @@ def check_dest_parents(store: RAMStore, dst_spec: PathSpec, d: str) -> None:
         NotADirectoryError: A parent component is a plain file.
         FileNotFoundError: A parent component does not exist.
     """
-    for ancestor in ancestors(d):
+    broken = _broken_parent(store, dst_spec, d)
+    if broken is not None:
+        raise broken
+
+
+def lookup_error(store: RAMStore, spec: PathSpec, key: str) -> OSError:
+    """The error a lookup of a key the store does not hold answers with.
+
+    ``open(2)`` and ``stat(2)`` resolve a path one component at a time and
+    stop at the first that is not a directory, so a plain file above the
+    key is ENOTDIR (``cat a.txt/x`` is "Not a directory") and a missing
+    component, or a key that is simply absent, is ENOENT. It is the walk
+    :func:`check_dest_parents` makes for a destination, so a read, a stat
+    and a write of one path agree on its errno.
+
+    Args:
+        store (RAMStore): The backing store.
+        spec (PathSpec): The operand, reported in the error.
+        key (str): The normalized key that was looked up.
+    """
+    broken = _broken_parent(store, spec, key)
+    return broken if broken is not None else enoent(spec)
+
+
+def _broken_parent(store: RAMStore, spec: PathSpec,
+                   key: str) -> OSError | None:
+    for ancestor in ancestors(key):
         if ancestor in store.dirs:
             continue
         if ancestor in store.files:
-            raise enotdir(dst_spec)
-        raise enoent(dst_spec)
+            return enotdir(spec)
+        return enoent(spec)
+    return None
 
 
 def check_write_target(store: RAMStore, spec: PathSpec, key: str) -> None:

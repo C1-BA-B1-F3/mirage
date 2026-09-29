@@ -18,7 +18,7 @@ import { enotdir } from '@struktoai/mirage-core/utils/errors'
 import type { FsError } from '@struktoai/mirage-core/utils/errors'
 import { mountedPath } from '@struktoai/mirage-core/utils/key_prefix'
 import { ancestors } from '@struktoai/mirage-core/utils/path'
-import { resolveSafe } from './utils.ts'
+import { resolveInside } from './utils.ts'
 
 // The ENOTDIR `mkdir -p` owes, named after the component to blame. The disk
 // backend has a kernel, so it needs no equivalent of the store-backed
@@ -39,7 +39,7 @@ export async function mkdirComponentError(
 ): Promise<FsError | null> {
   for (const component of ancestors(key)) {
     try {
-      const st = await fsStat(resolveSafe(root, component))
+      const st = await fsStat(await resolveInside(root, spec, component))
       if (!st.isDirectory()) return enotdir(mountedPath(spec, component))
     } catch {
       return null

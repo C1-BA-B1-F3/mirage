@@ -47,6 +47,9 @@ ALLOWED = {
     ("mirage/workspace/node/command_dispatch.py", "execute_command"):
     "the prefix-assignment loop calls `pre_session_gate` explicitly "
     "before seeding, since `seed_var` is the ungated door",
+    ("mirage/workspace/node/command_dispatch.py", "seed_prefix"):
+    "execute_command's seeding, run once the command's words are "
+    "expanded, of values its `pre_session_gate` loop already admitted",
     ("mirage/workspace/session/shell_dirs.py", "change_dir"):
     "the shell's own bookkeeping for the two fixed names PWD and "
     "OLDPWD as part of a cd the router already authorized, not a "

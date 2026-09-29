@@ -12,11 +12,15 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import errno
+import os
+
 from mirage.accessor.base import Accessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
 from mirage.ops.generic.table import OpFn, OpsTable
 from mirage.ops.registry import RegisteredOp
-from mirage.types import PathSpec
+from mirage.types import FileType, PathSpec
+from mirage.utils.errors import enotsup
 from mirage.utils.glob_walk import make_resolve_glob
 from mirage.utils.ranges import is_unsatisfiable_range, slice_window
 
@@ -85,10 +89,13 @@ def _make_ranged_read(table: OpsTable) -> OpFn:
 def _make_glob(table: OpsTable) -> OpFn:
     # Glob expansion is a walk over readdir, so it is derived here rather
     # than written per driver: one walker, capped by the table's own
-    # limit. The mount hands it one pattern spec at a time and passes the
+    # limit, with the table's stat so a trailing slash keeps directories
+    # only. The mount hands it one pattern spec at a time and passes the
     # rest through, which is what every driver's resolver did with the
     # list.
-    resolve = make_resolve_glob(table.readdir, table.max_glob_matches)
+    resolve = make_resolve_glob(table.readdir,
+                                table.max_glob_matches,
+                                stat=table.stat)
 
     async def glob(accessor: Accessor,
                    path: PathSpec,
@@ -109,7 +116,8 @@ def _make_data_write(fn: OpFn) -> OpFn:
     return write
 
 
-def _make_emulated_append(read_bytes: OpFn, write_bytes: OpFn) -> OpFn:
+def _make_emulated_append(stat: OpFn, read_bytes: OpFn,
+                          write_bytes: OpFn) -> OpFn:
 
     async def append(accessor: Accessor,
                      path: PathSpec,
@@ -117,6 +125,22 @@ def _make_emulated_append(read_bytes: OpFn, write_bytes: OpFn) -> OpFn:
                      *,
                      index: IndexCacheStore | None = None,
                      **kwargs) -> None:
+        # A zero-byte append is an open for appending with nothing
+        # written after it (`exec >> f`, `: >> f`): it creates a missing
+        # file and leaves an existing one alone. Reading and rewriting
+        # the whole object to add nothing would move it twice and could
+        # put back bytes a concurrent writer had just replaced.
+        if not data:
+            try:
+                found = await stat(accessor, path, index)
+            except FileNotFoundError:
+                await write_bytes(accessor, path, data)
+                return
+            if found.type == FileType.DIRECTORY:
+                raise IsADirectoryError(errno.EISDIR,
+                                        os.strerror(errno.EISDIR),
+                                        path.virtual)
+            return
         # The read takes the caller's index, like every other read here:
         # an id-addressed backend (Box, Drive) turns a path into an id
         # through it, and without one every read is a miss, so each append
@@ -160,17 +184,25 @@ def _make_rename(fn: OpFn) -> OpFn:
 
 def _make_truncate(fn: OpFn) -> OpFn:
 
-    async def truncate(accessor: Accessor, path: PathSpec, length: int,
+    async def truncate(accessor: Accessor,
+                       path: PathSpec,
+                       length: int,
+                       no_create: bool = False,
                        **kwargs) -> None:
-        await fn(accessor, path, length)
+        await fn(accessor, path, length, no_create)
 
     return truncate
 
 
 def _make_emulated_truncate(read_bytes: OpFn, write_bytes: OpFn) -> OpFn:
 
-    async def truncate(accessor: Accessor, path: PathSpec, length: int,
+    async def truncate(accessor: Accessor,
+                       path: PathSpec,
+                       length: int,
+                       no_create: bool = False,
                        **kwargs) -> None:
+        if no_create:
+            raise enotsup("emulated", "truncate --no-create", path)
         try:
             data = await read_bytes(accessor, path, index=NULL_INDEX)
         except FileNotFoundError:
@@ -281,8 +313,8 @@ def make_generic_ops(
               None, skip)
     elif table.write is not None:
         _emit(ops, vfs_names, "append",
-              _make_emulated_append(table.read_bytes, table.write), True, None,
-              skip)
+              _make_emulated_append(table.stat, table.read_bytes, table.write),
+              True, None, skip)
     if table.create is not None:
         _emit(ops, vfs_names, "create", _make_path_write(table.create), True,
               None, skip)

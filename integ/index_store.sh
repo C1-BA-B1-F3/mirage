@@ -26,9 +26,9 @@ run_direction() {
   echo "===== $writer_name index write -> $reader_name index read ====="
   if [ "$writer_name" == "py" ]; then
     "$PY" "$HERE/index_store.py" write "$prefix" || fail=1
-    (cd "$HERE" && pnpm exec tsx index_store.ts read "$prefix") || fail=1
+    (cd "$ROOT/typescript" && pnpm --filter @struktoai/mirage-integ exec tsx index_store.ts read "$prefix") || fail=1
   else
-    (cd "$HERE" && pnpm exec tsx index_store.ts write "$prefix") || fail=1
+    (cd "$ROOT/typescript" && pnpm --filter @struktoai/mirage-integ exec tsx index_store.ts write "$prefix") || fail=1
     "$PY" "$HERE/index_store.py" read "$prefix" || fail=1
   fi
 }

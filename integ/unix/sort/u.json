@@ -36,6 +36,232 @@
       "flags": [
         "u"
       ]
+    },
+    {
+      "id": "sort_u_keeps_the_first_key_equal_line",
+      "seq": 1299030,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'b 1\\na 1\\n' | sort -u -k2,2",
+      "expect": {
+        "exit": 0,
+        "stdout": "b 1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "u",
+        "k"
+      ]
+    },
+    {
+      "id": "sort_cu_calls_equal_keys_a_disorder",
+      "seq": 1299031,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'a 1\\nb 1\\n' | sort -c -u -k2,2",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "sort: -:2: disorder: b 1\n"
+      },
+      "flags": [
+        "c",
+        "u",
+        "k"
+      ]
+    },
+    {
+      "id": "sort_u_fold_keeps_input_order",
+      "seq": 1299032,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'b\\na\\nB\\n' | sort -u -f",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nb\n",
+        "stderr": ""
+      },
+      "flags": [
+        "u",
+        "f"
+      ]
+    },
+    {
+      "id": "sort_decimal_unique",
+      "seq": 1302009,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '%s\\n' 4.5 4.9 4.50 04.900 -0 0.0 +5 junk -.50 -.5 | sort -nu",
+      "expect": {
+        "exit": 0,
+        "stdout": "-.50\n-0\n4.5\n4.9\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_exact_unique",
+      "seq": 1302010,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '%s\\n' 9007199254740993 9007199254740992 1.00000000000000002 1.00000000000000001 | sort -nu",
+      "expect": {
+        "exit": 0,
+        "stdout": "1.00000000000000001\n1.00000000000000002\n9007199254740992\n9007199254740993\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "sort_decimal_key_unique",
+      "seq": 1302011,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'z,1.20\\na,1.2\\nb,1.25\\nc,1.250\\n' | sort -t, -k2,2n -u",
+      "expect": {
+        "exit": 0,
+        "stdout": "z,1.20\nb,1.25\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n"
+      ]
     }
   ]
 }

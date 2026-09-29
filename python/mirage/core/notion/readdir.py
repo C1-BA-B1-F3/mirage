@@ -19,10 +19,11 @@ from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.notion.normalize import (normalize_data_source,
                                           normalize_database, to_json_bytes)
 from mirage.core.notion.pages import (get_data_source, get_database,
-                                      list_block_children, query_data_source,
-                                      search_data_sources, search_pages)
+                                      list_block_children, search_data_sources,
+                                      search_pages)
 from mirage.core.notion.pathing import (data_source_dirname, database_dirname,
                                         format_segment, page_dirname)
+from mirage.core.notion.resolve import guard_row
 from mirage.core.notion.scope import detect_scope
 
 
@@ -76,9 +77,9 @@ async def _list_databases_root(
     return entries
 
 
-async def _list_page(accessor: NotionAccessor,
-                     match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
-    page_id = match.slots["page_id"]
+async def _list_page(accessor: NotionAccessor, match: ScopeMatch,
+                     entry: IndexEntry) -> list[tuple[str, IndexEntry]]:
+    page_id = match.slots.get("page_id") or match.slots["row_id"]
     blocks = await list_block_children(accessor.config,
                                        page_id,
                                        session=accessor.pool)
@@ -112,8 +113,8 @@ async def _list_page(accessor: NotionAccessor,
     return entries
 
 
-async def _list_database(accessor: NotionAccessor,
-                         match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_database(accessor: NotionAccessor, match: ScopeMatch,
+                         entry: IndexEntry) -> list[tuple[str, IndexEntry]]:
     database_id = match.slots["database_id"]
     database = await get_database(accessor.config,
                                   database_id,
@@ -141,16 +142,17 @@ async def _list_database(accessor: NotionAccessor,
     return entries
 
 
-async def _list_data_source(accessor: NotionAccessor,
-                            match: ScopeMatch) -> list[tuple[str, IndexEntry]]:
+async def _list_data_source(accessor: NotionAccessor, match: ScopeMatch,
+                            entry: IndexEntry) -> list[tuple[str, IndexEntry]]:
     data_source_id = match.slots["data_source_id"]
     data_source = await get_data_source(accessor.config,
                                         data_source_id,
                                         session=accessor.pool)
-    rows = await query_data_source(accessor.config,
-                                   data_source_id,
-                                   session=accessor.pool)
-    entries = [
+    # The rows are one file, not one directory each: a query answers a
+    # hundred rows' cells a call, while a row directory costs calls of its
+    # own to enter, so a walk over a table stays a walk over its pages of
+    # query results. rows.jsonl stays size-unknown until a read renders it.
+    return [
         ("data_source.json",
          IndexEntry(
              id=f"{data_source_id}:data_source",
@@ -158,21 +160,15 @@ async def _list_data_source(accessor: NotionAccessor,
              resource_type="file",
              vfs_name="data_source.json",
              size=len(to_json_bytes(normalize_data_source(data_source))),
-         ))
+         )),
+        ("rows.jsonl",
+         IndexEntry(
+             id=f"{data_source_id}:rows",
+             name="rows.jsonl",
+             resource_type="file",
+             vfs_name="rows.jsonl",
+         )),
     ]
-    for row in rows:
-        if row.get("object") != "page":
-            continue
-        dirname = page_dirname(row)
-        entries.append((dirname,
-                        IndexEntry(
-                            id=row["id"],
-                            name=dirname,
-                            resource_type="notion/page",
-                            remote_time=row.get("last_edited_time", ""),
-                            vfs_name=dirname,
-                        )))
-    return entries
 
 
 readdir = make_readdir(
@@ -180,9 +176,16 @@ readdir = make_readdir(
     listers={
         "pages": _list_pages_root,
         "databases": _list_databases_root,
+    },
+    parent_entry_listers={"row": _list_page},
+    entry_listers={
         "page": _list_page,
         "database": _list_database,
         "data_source": _list_data_source,
     },
     static_root=("pages", "databases"),
+    guards={
+        "row": guard_row,
+        "page": guard_row
+    },
 )

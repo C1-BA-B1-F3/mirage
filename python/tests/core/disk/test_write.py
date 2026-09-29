@@ -93,3 +93,19 @@ async def test_write_error_reports_the_virtual_path(tmp_path):
                      directory="/data/nodir/file.txt"), b"data")
     assert str(tmp_path) not in str(excinfo.value)
     assert "/data/nodir/file.txt" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_never_writes_through_a_host_symlink_out_of_the_root(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    target = tmp_path / "target.txt"
+    target.write_bytes(b"original")
+    (root / "link").symlink_to(target)
+    accessor = DiskAccessor(root)
+    with pytest.raises(FileNotFoundError):
+        await write_bytes(
+            accessor,
+            PathSpec(vfs_path="link", virtual="/link", directory="/link"),
+            b"pwned")
+    assert target.read_bytes() == b"original"

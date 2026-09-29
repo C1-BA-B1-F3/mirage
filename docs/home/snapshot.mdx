@@ -72,6 +72,8 @@ TypeScript file-path snapshot I/O is available in Node. In the browser, `Workspa
 
 Both `snapshot` and `copy` are async because they serialize workspace state and collect recorded fingerprints.
 
+`copy` also keeps the workspace's profiles, default profile, and command limits. Policy objects and the route policy are not copied; add them to the copy again if it needs them.
+
 ## Versioning: commit, checkout, clone
 
 A tar snapshot is a *portable* capture you move between machines. Versioning is the in-place complement: a git-style history kept *with* the workspace, server-side and keyed by workspace id, so you can checkpoint, roll back, branch, and fork without writing a file. It is backed by a real git object store (dulwich) inside the daemon.
@@ -176,7 +178,8 @@ Legend: ✅ = implemented · 🟡 = VFS opts in, but recorded reads do not yet c
 | SharePoint | ✅ | — | — | ✅ | Same Microsoft Graph version flow as OneDrive. |
 | Hugging Face mounts | 🟡 | 🟡 | — | ❌ | mounts opt in, but read records do not yet include the stat fingerprint. |
 | Nextcloud | 🟡 | — | — | ❌ | The VFS opts in, but read records do not yet include the WebDAV ETag. |
-| GitHub and Google Drive | ❌ | ❌ | ❌ | ❌ | Current reads are live-only; revision-aware replay is not wired yet. |
+| GitHub | ✅ | ✅ | ✅ | ❌ | Uses the git blob sha; a commit pin is not wired. |
+| Google Drive | ❌ | ❌ | ❌ | ❌ | Current reads are live-only; revision-aware replay is not wired yet. |
 | Other remote mounts | ❌ | ❌ | ❌ | ❌ | Snapshot restores their config/state, then reads current remote content. |
 
 ### Local State

@@ -3,10 +3,14 @@ from typing import Any
 from mirage.accessor.chroma import ChromaAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore, IndexEntry
 from mirage.core.chroma.path import resolve_path
+from mirage.core.chroma.readdir import readdir
 from mirage.core.chroma.walk import walk
 from mirage.types import PathSpec
+from mirage.utils.glob_walk import make_resolve_glob
 from mirage.utils.key_prefix import mount_prefix_of, rekey
 from mirage.utils.score import score_from_distance
+from mirage.vfs.search import int_option, validate_options
+from mirage.vfs.types import SearchQuery
 
 
 async def search_segments(
@@ -118,3 +122,31 @@ def first_result_list(value: Any) -> list[Any]:
     if value and isinstance(value[0], list):
         return value[0]
     return value
+
+
+async def search_many(accessor: ChromaAccessor,
+                      paths: list[PathSpec],
+                      query: SearchQuery,
+                      index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    validate_options(query, {'top_k'})
+    top_k = int_option(query, "top_k", 10)
+    if not paths:
+        raise ValueError("search: at least one scope is required")
+    prefix = mount_prefix_of(paths[0].virtual, paths[0].vfs_path)
+    targets = [] if any(not p.vfs_path.strip("/")
+                        for p in paths) else await make_resolve_glob(readdir)(
+                            accessor, paths, index)
+    output = await search_segments(accessor,
+                                   query.query,
+                                   targets,
+                                   index,
+                                   top_k=top_k,
+                                   mount_prefix=prefix)
+    return output.decode().removesuffix("\n").split("\n") if output else []
+
+
+async def search_resource(accessor: ChromaAccessor,
+                          path: PathSpec,
+                          query: SearchQuery,
+                          index: IndexCacheStore = NULL_INDEX) -> list[str]:
+    return await search_many(accessor, [path], query, index)

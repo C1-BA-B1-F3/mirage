@@ -190,6 +190,23 @@ describe('handlePs', () => {
     const [out] = handlePs(jt, ['ps'])
     expect((out as Uint8Array).byteLength).toBe(0)
   })
+
+  it.each(['true && ps < /m/f | cat', 'ps | cat 2>/dev/null', 'true && ps | cat 2>/dev/null'])(
+    'lists the stages of a pipeline under a redirect: %s',
+    async (line) => {
+      const ws = buildWs()
+      try {
+        await ws.shell('echo x > /m/f')
+        const rows = stdoutStr(await ws.shell(line))
+          .trim()
+          .split('\n')
+        const commands = rows.map((row) => row.split('\t')[1])
+        expect(commands).toEqual(expect.arrayContaining(['ps', 'cat']))
+      } finally {
+        await ws.close()
+      }
+    },
+  )
 })
 
 describe('handleWait with an invocation signal', () => {
@@ -278,7 +295,9 @@ describe('& inside a compound body', () => {
   it('$! names each loop-body job', async () => {
     const ws = buildWs()
     const io = await ws.shell('for i in 1 2; do sleep 0.1 & echo $!; done; wait')
-    expect(stdoutStr(io)).toBe('1\n2\n')
+    const pids = stdoutStr(io).trim().split('\n').map(Number)
+    expect(pids).toHaveLength(2)
+    expect(pids[1]).toBeGreaterThan(pids[0] ?? 0)
   })
 
   it('errexit does not trip on a body launch', async () => {
@@ -337,7 +356,7 @@ describe('jobs are scoped to the session that launched them', () => {
       const io = await ws.shell('wait %1', { sessionId: 'b' })
       expect(io.exitCode).toBe(127)
       expect(stderrStr(io)).toContain('no such job')
-      expect(stdoutStr(await ws.shell('ps', { sessionId: 'b' }))).toBe('')
+      expect(stdoutStr(await ws.shell('ps', { sessionId: 'b' }))).not.toContain('sleep 30')
       expect((await ws.shell('kill %1', { sessionId: 'a' })).exitCode).toBe(0)
     } finally {
       await ws.close()
@@ -358,7 +377,10 @@ describe('jobs are scoped to the session that launched them', () => {
       // A session reusing the id starts from one and inherits nothing.
       ws.createSession('a')
       expect(stdoutStr(await ws.shell('jobs', { sessionId: 'a' }))).toBe('')
-      expect(stdoutStr(await ws.shell('sleep 30 & echo $!', { sessionId: 'a' }))).toBe('1\n')
+      expect(
+        Number(stdoutStr(await ws.shell('sleep 30 & echo $!', { sessionId: 'a' }))),
+      ).toBeGreaterThan(old?.process?.info.pid ?? 0)
+      expect(ws.jobTable.get(1, 'a')).not.toBeNull()
       const io = await ws.shell('wait %2', { sessionId: 'a' })
       expect(io.exitCode).toBe(127)
       expect(stderrStr(io)).toContain('no such job')
@@ -393,11 +415,72 @@ describe('jobs are scoped to the session that launched them', () => {
       const firstA = await ws.shell('sleep 30 & echo $!', { sessionId: 'a' })
       const firstB = await ws.shell('sleep 30 & echo $!', { sessionId: 'b' })
       const secondA = await ws.shell('sleep 30 & echo $!', { sessionId: 'a' })
-      expect([stdoutStr(firstA), stdoutStr(firstB), stdoutStr(secondA)]).toEqual([
-        '1\n',
-        '1\n',
-        '2\n',
+      expect(new Set([stdoutStr(firstA), stdoutStr(firstB), stdoutStr(secondA)]).size).toBe(3)
+      expect(ws.jobTable.listJobs('a').map((j) => j.id)).toEqual([1, 2])
+      expect(ws.jobTable.listJobs('b').map((j) => j.id)).toEqual([1])
+    } finally {
+      await ws.close()
+    }
+  })
+})
+
+describe('job builtins honor the process profile', () => {
+  it('ps and kill reach other sessions as far as the profile says', async () => {
+    const ws = buildWs()
+    ws.createSession('a')
+    ws.createSession('b')
+    ws.createSession('audit', { profile: { processes: { list: 'workspace' } } })
+    ws.createSession('ops', { profile: { processes: 'workspace' } })
+    const count = "ps | grep -c 'sleep 30$'"
+    const stop = "kill $(ps | grep 'sleep 30$' | cut -f1); echo rc=$?"
+    try {
+      const pid = stdoutStr(await ws.shell('sleep 30 & echo $!', { sessionId: 'a' })).trim()
+      expect(stdoutStr(await ws.shell(count, { sessionId: 'b' }))).toBe('0\n')
+      expect(stdoutStr(await ws.shell(count, { sessionId: 'audit' }))).toBe('1\n')
+      const io = await ws.shell(stop, { sessionId: 'audit' })
+      expect([stdoutStr(io), new TextDecoder().decode(io.stderr)]).toEqual([
+        'rc=1\n',
+        `kill: (${pid}) - Operation not permitted\n`,
       ])
+      expect(stdoutStr(await ws.shell(stop, { sessionId: 'ops' }))).toBe('rc=0\n')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('a session at its process cap cannot fork', async () => {
+    const ws = buildWs()
+    ws.createSession('capped', { profile: { processes: { max: 2 } } })
+    const refusal = 'bash: fork: Resource temporarily unavailable\n'
+    const run = async (line: string): Promise<[string, string, number]> => {
+      const io = await ws.shell(line, { sessionId: 'capped' })
+      return [stdoutStr(io), new TextDecoder().decode(io.stderr), io.exitCode]
+    }
+    try {
+      expect(await run('(sleep 30 & echo in); echo sub=$?')).toEqual(['sub=254\n', refusal, 0])
+      expect(await run('sleep 30 & echo one')).toEqual(['one\n', '', 0])
+      for (const line of ['(echo sub); echo no', 'echo x | cat; echo no', 'sleep 30 & echo no'])
+        expect(await run(line)).toEqual(['', refusal, 254])
+      expect(await run('echo $?')).toEqual(['254\n', '', 0])
+      expect(await run('kill %1')).toEqual(['', '', 0])
+      await ws.processes.drain()
+      expect(await run('(echo sub)')).toEqual(['sub\n', '', 0])
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('a runaway loop stops at the process cap', async () => {
+    const ws = buildWs()
+    ws.createSession('capped', { profile: { processes: { max: 3 } } })
+    try {
+      const io = await ws.shell('n=0; while true; do sleep 30 & n=$((n+1)); done; echo no', {
+        sessionId: 'capped',
+      })
+      expect(io.exitCode).toBe(254)
+      expect(stdoutStr(await ws.shell('echo $n; jobs', { sessionId: 'capped' }))).toBe(
+        '2\n[1] running sleep 30\n[2] running sleep 30\n',
+      )
     } finally {
       await ws.close()
     }

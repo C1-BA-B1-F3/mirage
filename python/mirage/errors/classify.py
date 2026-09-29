@@ -15,6 +15,7 @@
 import errno
 
 from mirage.errors.constants import CLASS_ARMS, ERRNO_ARMS
+from mirage.errors.posix import gnu_phrase
 from mirage.errors.types import FsCondition
 
 
@@ -43,3 +44,22 @@ def classify(exc: BaseException) -> FsCondition | None:
     if isinstance(exc, OSError) and exc.errno:
         return ERRNO_ARMS.get(exc.errno)
     return None
+
+
+def failure_text(exc: BaseException) -> str:
+    """What a diagnostic says about a failure.
+
+    GNU's strerror for a condition the vocabulary names (EIO reads
+    ``Input/output error``), else the OSError's own strerror, else the
+    exception's own words (``Server disconnected``). Mirrors TS
+    ``failureText``.
+
+    Args:
+        exc (BaseException): the failure to word.
+    """
+    condition = classify(exc)
+    if condition is not None:
+        return gnu_phrase(condition)
+    if isinstance(exc, OSError) and exc.strerror:
+        return exc.strerror
+    return str(exc)

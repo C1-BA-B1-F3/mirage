@@ -1,6 +1,18 @@
 {
   "_meta": {
     "by_vfs": {
+      "airtable": {
+        "filetypes": [],
+        "has_aggregate": false,
+        "has_provision": true,
+        "has_write": false
+      },
+      "bin": {
+        "filetypes": [],
+        "has_aggregate": false,
+        "has_provision": true,
+        "has_write": false
+      },
       "box": {
         "filetypes": [],
         "has_aggregate": false,
@@ -193,6 +205,8 @@
     "has_provision": true,
     "has_write": false,
     "vfs_names": [
+      "airtable",
+      "bin",
       "box",
       "chroma",
       "databricks_volume",
@@ -234,8 +248,9 @@
       "type": "str"
     },
     {
-      "long": "--section-delimiter",
-      "short": "-d",
+      "long": "--starting-line-number",
+      "multiple": true,
+      "short": "-v",
       "type": "str"
     },
     {
@@ -257,20 +272,18 @@
       "type": "str"
     },
     {
-      "long": "--number-format",
-      "multiple": true,
-      "short": "-n",
-      "type": "str"
-    },
-    {
       "long": "--no-renumber",
       "short": "-p",
       "type": "bool"
     },
     {
-      "long": "--starting-line-number",
-      "multiple": true,
-      "short": "-v",
+      "long": "--number-separator",
+      "short": "-s",
+      "type": "str"
+    },
+    {
+      "long": "--section-delimiter",
+      "short": "-d",
       "type": "str"
     },
     {
@@ -286,8 +299,9 @@
       "type": "str"
     },
     {
-      "long": "--number-separator",
-      "short": "-s",
+      "long": "--number-format",
+      "multiple": true,
+      "short": "-n",
       "type": "str"
     }
   ],

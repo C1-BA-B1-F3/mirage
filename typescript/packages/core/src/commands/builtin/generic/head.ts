@@ -12,14 +12,15 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { isStdin } from '../utils/stream.ts'
+import { operandLabel } from '../utils/stream.ts'
 import { stdinStream, stdinStat } from '../utils/stream.ts'
 import { cacheAwareStreamEager } from '../../../cache/read_through.ts'
 import { IOResult } from '../../../io/types.ts'
 import { FileType, Limit, type FileStat, type PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { numberFlagError, parseByteCount } from '../tail_counts.ts'
-import { CHAR_DEVICE_MAX_BYTES } from '../utils/constants.ts'
+import { CHAR_DEVICE_MAX_BYTES, STDIN_HEADER_NAME } from '../utils/constants.ts'
+import { asyncChain } from '../../../io/stream.ts'
 import { truncateStream } from '../utils/limit.ts'
 import { splitReadable } from '../utils/operands.ts'
 import { resolveSource } from '../utils/stream.ts'
@@ -165,7 +166,7 @@ async function* headMulti(
     if (p === undefined) continue
     if (showHeaders) {
       const prefix = i > 0 ? '\n' : ''
-      yield ENC.encode(`${prefix}==> ${isStdin(p) ? '(standard input)' : p.rawPath} <==\n`)
+      yield ENC.encode(`${prefix}==> ${operandLabel(p, STDIN_HEADER_NAME)} <==\n`)
     }
     const source = stream(p)
     for await (const chunk of headStream(source, lines, bytesMode, zeroTerminated)) yield chunk
@@ -215,10 +216,10 @@ export async function headGeneric(
   }
   try {
     const source = resolveSource(opts.stdin, 'head: missing operand')
-    return [
-      headStream(source, parsed.lines, parsed.bytesMode, parsed.zeroTerminated),
-      new IOResult(),
-    ]
+    const body = headStream(source, parsed.lines, parsed.bytesMode, parsed.zeroTerminated)
+    // -v heads a stdin nobody named with the name it gives `-`.
+    const header = ENC.encode(`==> ${STDIN_HEADER_NAME} <==\n`)
+    return [parsed.verbose && !parsed.quiet ? asyncChain([header, body]) : body, new IOResult()]
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(`${msg}\n`) })]

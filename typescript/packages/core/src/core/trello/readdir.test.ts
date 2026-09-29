@@ -19,7 +19,7 @@ import { RAMIndexCacheStore } from '../../cache/index/ram.ts'
 import { PathSpec } from '../../types.ts'
 import type { TrelloTransport } from './client.ts'
 import { normalizeWorkspace, toJsonBytes } from './normalize.ts'
-import { readdir } from './readdir.ts'
+import { boardInScope, filteredBoards, filteredWorkspaces, readdir } from './readdir.ts'
 
 interface Call {
   method: string
@@ -328,5 +328,46 @@ describe('trello readdir unrecognized paths', () => {
     await expect(
       readdir(new TrelloAccessor(t), spec('/workspaces/w/nope/deeper'), new RAMIndexCacheStore()),
     ).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
+
+// Mirrors python's test_board_in_scope_* and
+// test_filtered_boards_and_workspaces_apply_both_knobs.
+describe('trello board scope', () => {
+  it('admits every id on an unnarrowed mount without a call', async () => {
+    const t = new FakeTransport(() => ({}))
+    expect(await boardInScope(new TrelloAccessor(t), 'b_any')).toBe(true)
+    expect(t.calls).toHaveLength(0)
+  })
+
+  it('holds an id to boardIds without a call', async () => {
+    const t = new FakeTransport(() => ({}))
+    const accessor = new TrelloAccessor(t, { boardIds: ['b_in'] })
+    expect(await boardInScope(accessor, 'b_in')).toBe(true)
+    expect(await boardInScope(accessor, 'b_out')).toBe(false)
+    expect(await boardInScope(accessor, '')).toBe(false)
+    expect(t.calls).toHaveLength(0)
+  })
+
+  it('holds an id to workspaceId', async () => {
+    const t = new FakeTransport((path) =>
+      path === '/boards/b_in'
+        ? { id: 'b_in', idOrganization: 'ws1' }
+        : { id: 'b_out', idOrganization: 'ws2' },
+    )
+    const accessor = new TrelloAccessor(t, { workspaceId: 'ws1' })
+    expect(await boardInScope(accessor, 'b_in')).toBe(true)
+    expect(await boardInScope(accessor, 'b_out')).toBe(false)
+  })
+
+  it('filters workspaces and boards by both knobs', async () => {
+    const t = new FakeTransport((path) =>
+      path === '/members/me/organizations'
+        ? [{ id: 'ws1' }, { id: 'ws2' }]
+        : [{ id: 'b1' }, { id: 'b2' }],
+    )
+    const accessor = new TrelloAccessor(t, { workspaceId: 'ws1', boardIds: ['b1'] })
+    expect(await filteredWorkspaces(accessor)).toEqual([{ id: 'ws1' }])
+    expect(await filteredBoards(accessor, 'ws1')).toEqual([{ id: 'b1' }])
   })
 })

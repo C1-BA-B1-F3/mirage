@@ -31,7 +31,211 @@
       "expect": {
         "exit": 1,
         "stdout": "",
-        "stderr": "zcat: (stdin): unexpected end of file"
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
+      }
+    },
+    {
+      "id": "zcat_plain_file_is_not_in_gzip_format",
+      "seq": 846,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "zcat /data/a.txt",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "\ngzip: /data/a.txt: not in gzip format\n"
+      }
+    },
+    {
+      "id": "zcat_empty_stdin_is_an_unexpected_end",
+      "seq": 847,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '' | zcat",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
+      }
+    },
+    {
+      "id": "zcat_reports_a_plain_file_and_goes_on",
+      "seq": 848,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && printf 'hello\\n' | gzip | zcat a.txt -)",
+      "expect": {
+        "exit": 1,
+        "stdout": "hello\n",
+        "stderr": "\ngzip: a.txt: not in gzip format\n"
+      }
+    },
+    {
+      "id": "zcat_stops_at_a_truncated_archive",
+      "seq": 849,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && printf 'hello\\n' | gzip | head -c 10 | zcat - a.txt)",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "\ngzip: stdin: unexpected end of file\n"
+      }
+    },
+    {
+      "id": "zcat_stops_at_a_damaged_trailer",
+      "seq": 850,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(cd /data && printf 'x\\n' | gzip > zcok.gz && printf '\\x1f\\x8b\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x03\\xcb\\x48\\xcd\\xc9\\xc9\\x57\\x28\\xcf\\x2f\\xca\\x49\\xe1\\x02\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00\\x00' | zcat - zcok.gz; rc=$?; rm -f zcok.gz; exit $rc)",
+      "expect": {
+        "exit": 1,
+        "stdout": "hello world\n",
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n\ngzip: stdin: invalid compressed data--length error\n"
+      }
+    },
+    {
+      "id": "zcat_names_a_crc_mismatch_alone",
+      "seq": 851,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf '\\x1f\\x8b\\x08\\x00\\x00\\x00\\x00\\x00\\x00\\x03\\xcb\\x48\\xcd\\xc9\\xc9\\x57\\x28\\xcf\\x2f\\xca\\x49\\xe1\\x02\\x00\\x00\\x00\\x00\\x00\\x0c\\x00\\x00\\x00' | zcat",
+      "expect": {
+        "exit": 1,
+        "stdout": "hello world\n",
+        "stderr": "\ngzip: stdin: invalid compressed data--crc error\n"
       }
     }
   ]

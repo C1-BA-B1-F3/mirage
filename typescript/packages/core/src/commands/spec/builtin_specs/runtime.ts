@@ -104,6 +104,17 @@ const PYTHON_OPTIONS: readonly Option[] = [
   }),
 ]
 
+// CPython's own synopsis, `[-c cmd | -m mod | file | -] [arg] ...`: the
+// first operand is a file the interpreter reads, unless a -c or -m
+// already named the program, and the words after it are the program's
+// argv. The slot has to say so, because a runtime that reads the script
+// itself (a sandbox, a host process) is outside every op door, so the
+// admission gate is the one place a path rule can see the file.
+const PYTHON_SCRIPT = new Operand({ type: 'path', providedBy: ['-c', '-m'] })
+
+// node's `[script.js | -e "script" | -] [arguments]`, the same shape.
+const JS_SCRIPT = new Operand({ type: 'path', providedBy: ['-e'] })
+
 export const SPECS: Record<string, CommandSpec> = {
   bash: new CommandSpec({
     description:
@@ -149,12 +160,37 @@ export const SPECS: Record<string, CommandSpec> = {
     options: [
       new Option({
         short: '-d',
+        long: '--date',
         type: 'str',
         description: 'Display the time described by the given date string.',
       }),
-      new Option({ short: '-u', description: 'Use Coordinated Universal Time (UTC).' }),
-      new Option({ short: '-I', description: 'Output date in ISO 8601 format.' }),
-      new Option({ short: '-R', description: 'Output date in RFC 5322 email format.' }),
+      // GNU -I[FMT]: the precision rides attached (-Is) or after `=`, never
+      // as the next word, and matches by prefix in GNU's own table order.
+      new Option({
+        short: '-I',
+        long: '--iso-8601',
+        type: 'str',
+        valueOptional: true,
+        choices: ['hours', 'minutes', 'date', 'seconds', 'ns'],
+        description: 'Output date/time in ISO 8601 format, to the given precision (default date).',
+      }),
+      new Option({
+        short: '-R',
+        long: '--rfc-email',
+        description: 'Output date in RFC 5322 email format.',
+      }),
+      new Option({
+        long: '--rfc-3339',
+        type: 'str',
+        choices: ['date', 'seconds', 'ns'],
+        description: 'Output date/time in RFC 3339 format, to the given precision.',
+      }),
+      new Option({
+        short: '-u',
+        long: '--utc',
+        description: 'Use Coordinated Universal Time (UTC).',
+      }),
+      new Option({ long: '--universal', description: 'Use Coordinated Universal Time (UTC).' }),
     ],
     positional: [new Operand({ type: 'str' })],
   }),
@@ -208,6 +244,7 @@ export const SPECS: Record<string, CommandSpec> = {
           'Run as an ES module (top-level import/export/await); .mjs files select this automatically.',
       }),
     ],
+    positional: [JS_SCRIPT],
     rest: new Operand({ type: 'str', remainder: true }),
   }),
   mktemp: new CommandSpec({
@@ -243,17 +280,67 @@ export const SPECS: Record<string, CommandSpec> = {
           'Run as an ES module (top-level import/export/await); .mjs files select this automatically.',
       }),
     ],
+    positional: [JS_SCRIPT],
     rest: new Operand({ type: 'str', remainder: true }),
   }),
   python: new CommandSpec({
     description: "Run Python on the workspace's bound runtime.",
     options: PYTHON_OPTIONS,
+    positional: [PYTHON_SCRIPT],
     rest: new Operand({ type: 'str', remainder: true }),
   }),
   python3: new CommandSpec({
     description: "Run Python on the workspace's bound runtime.",
     options: PYTHON_OPTIONS,
+    positional: [PYTHON_SCRIPT],
     rest: new Operand({ type: 'str', remainder: true }),
+  }),
+  uname: new CommandSpec({
+    description: 'Print certain system information.',
+    options: [
+      new Option({
+        short: '-a',
+        long: '--all',
+        description: 'Print all information, omitting -p and -i if unknown.',
+      }),
+      new Option({ short: '-s', long: '--kernel-name', description: 'Print the kernel name.' }),
+      new Option({
+        short: '-n',
+        long: '--nodename',
+        description: 'Print the network node hostname.',
+      }),
+      new Option({
+        short: '-r',
+        long: '--kernel-release',
+        description: 'Print the kernel release.',
+      }),
+      new Option({
+        short: '-v',
+        long: '--kernel-version',
+        description: 'Print the kernel version.',
+      }),
+      new Option({
+        short: '-m',
+        long: '--machine',
+        description: 'Print the machine hardware name.',
+      }),
+      new Option({
+        short: '-p',
+        long: '--processor',
+        description: 'Print the processor type.',
+      }),
+      new Option({
+        short: '-i',
+        long: '--hardware-platform',
+        description: 'Print the hardware platform.',
+      }),
+      new Option({
+        short: '-o',
+        long: '--operating-system',
+        description: 'Print the operating system.',
+      }),
+    ],
+    rest: new Operand({ type: 'str' }),
   }),
   sleep: new CommandSpec({
     description: 'Delay for a specified amount of time.',

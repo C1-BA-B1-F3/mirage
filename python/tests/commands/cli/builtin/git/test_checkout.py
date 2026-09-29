@@ -331,16 +331,23 @@ async def test_checking_out_a_symlink_restores_a_link_not_a_file(git_rw):
     # a regular file holding the target string. The name plane owns
     # links, so restoring one is a namespace write rather than a
     # content write; writing the blob would leave a 5-byte regular file
-    # spelling "a.txt".
+    # spelling "a.txt". A link alone in a directory the checkout takes
+    # away comes back with the directory made first, which symlink(2)
+    # needs as the blob write does.
     assert (await run(git_rw, "checkout -b side"))[0] == 0
     await git_rw.shell("ln -s a.txt /repo/link")
-    assert (await run(git_rw, "add link"))[0] == 0
+    await git_rw.shell("mkdir -p /repo/sub/deep && "
+                       "ln -s ../../a.txt /repo/sub/deep/link")
+    assert (await run(git_rw, "add link sub"))[0] == 0
     assert (await run(git_rw, "commit -m linked"))[0] == 0
     assert (await run(git_rw, "checkout main"))[0] == 0
+    assert (await git_rw.shell("test -e /repo/sub")).exit_code == 1
     assert (await run(git_rw, "checkout side"))[0] == 0
     listing = await git_rw.shell("ls -l /repo/link")
     assert (listing.stdout or b"").startswith(b"lrwxrwxrwx")
     assert b"link -> a.txt" in (listing.stdout or b"")
+    nested = await git_rw.shell("readlink /repo/sub/deep/link")
+    assert nested.stdout == b"../../a.txt\n"
 
 
 @pytest.mark.asyncio

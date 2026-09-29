@@ -15,6 +15,7 @@
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -47,6 +48,7 @@ import {
 } from './io.ts'
 import type { MountView } from '../../../../ops/types.ts'
 import type { Dispatch } from './types.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 const BUILDER = fileURLToPath(
   new URL('../../../../../../../../integ/fixtures/git/build.sh', import.meta.url),
@@ -84,7 +86,7 @@ function walkDisk(root: string, base = root): string[] {
 async function walkMount(dispatch: Dispatch, root: string, base = root): Promise<string[]> {
   const out: string[] = []
   for (const entry of await readNames(dispatch, root)) {
-    const name = entry.replace(/\/+$/, '').split('/').pop() ?? ''
+    const name = rstripSlash(entry).split('/').pop() ?? ''
     if (name === '') continue
     const full = `${root}/${name}`
     const data = await readOptional(dispatch, full)
@@ -351,7 +353,38 @@ describe('git add', () => {
   })
 })
 
+describe('git add -v', () => {
+  it('names each change in git order', async () => {
+    // Paths the index already held come first, in index order and a removal
+    // among them, then new ones; pinned against git 2.50.
+    const h = await harness()
+    await write(h, 'letters.txt', 'edited\n')
+    await h.ws.dispatch('unlink', '/repo/numbers.txt')
+    await write(h, 'aa.txt', 'new\n')
+    expect(await h.run('add -v -A')).toEqual([
+      0,
+      "add 'letters.txt'\nremove 'numbers.txt'\nadd 'aa.txt'\n",
+      '',
+    ])
+  })
+
+  it('names nothing restaged unchanged', async () => {
+    const h = await harness()
+    await write(h, 'letters.txt', 'edited\n')
+    await h.run('add letters.txt')
+    expect(await h.run('add --verbose letters.txt')).toEqual([0, '', ''])
+  })
+})
+
 describe('git reset', () => {
+  it('unstages quietly under -q', async () => {
+    const h = await harness()
+    await write(h, 'letters.txt', 'edited\n')
+    await h.run('add -A')
+    expect(await h.run('reset -q')).toEqual([0, '', ''])
+    expect(git(await h.drain(), ['status', '--porcelain'])).toBe(' M letters.txt\n')
+  })
+
   it('unstages an edit but keeps it in the working tree', async () => {
     const h = await harness()
     await write(h, 'letters.txt', 'edited\n')
@@ -412,6 +445,84 @@ describe('git reset', () => {
 })
 
 describe('git commit', () => {
+  it('stages tracked changes but no new file under -a', async () => {
+    const h = await harness()
+    await write(h, 'letters.txt', 'edited\n')
+    await h.ws.dispatch('unlink', '/repo/numbers.txt')
+    await write(h, 'fresh.txt', 'x\n')
+    const [code, out] = await h.run('commit -a -m both')
+    expect(code).toBe(0)
+    expect(out.split('\n').slice(1).join('\n')).toBe(
+      ' 2 files changed, 1 insertion(+), 6 deletions(-)\n delete mode 100644 numbers.txt\n',
+    )
+    expect(git(await h.drain(), ['status', '--porcelain'])).toBe('?? fresh.txt\n')
+  })
+
+  it('refuses paths with -a the way git does', async () => {
+    const h = await harness()
+    expect(await h.run('commit -a -m x letters.txt')).toEqual([
+      128,
+      '',
+      "fatal: paths 'letters.txt ...' with -a does not make sense\n",
+    ])
+  })
+
+  it('refuses paths without -a rather than committing everything', async () => {
+    const h = await harness()
+    await write(h, 'letters.txt', 'edited\n')
+    await h.run('add -A')
+    const [code, , err] = await h.run('commit -m x letters.txt')
+    expect(code).toBe(128)
+    expect(err.startsWith("fatal: cannot commit 'letters.txt' alone")).toBe(true)
+    expect(git(await h.drain(), ['log', '--format=%s', '-1'])).toBe('add two\n')
+  })
+
+  it('summarizes a move as a rename', async () => {
+    const h = await harness()
+    await h.run('mv numbers.txt count.txt')
+    const [, out] = await h.run('commit -m moved')
+    expect(out.split('\n').slice(1).join('\n')).toBe(
+      ' 1 file changed, 0 insertions(+), 0 deletions(-)\n rename numbers.txt => count.txt (100%)\n',
+    )
+  })
+
+  it('refuses a core.quotePath git cannot read', async () => {
+    const h = await harness((repo) => git(repo, ['config', 'core.quotePath', 'junk']))
+    expect(await h.run('status')).toEqual([
+      128,
+      '',
+      "fatal: bad boolean config value 'junk' for 'core.quotepath'\n",
+    ])
+  })
+
+  it.each(['[Core]\n\tBare = yes\n', '[core]\n\tbare = 1\n'])(
+    'reads core.bare as git does in %j',
+    async (spelling) => {
+      const h = await harness((repo) => {
+        appendFileSync(join(repo, '.git', 'config'), spelling)
+      })
+      expect(await h.run('status')).toEqual([
+        128,
+        '',
+        'fatal: this operation must be run in a work tree\n',
+      ])
+      expect(await h.run('add -A')).toEqual([
+        128,
+        '',
+        'fatal: this operation must be run in a work tree\n',
+      ])
+    },
+  )
+
+  it('refuses every verb over a core.bare git cannot read', async () => {
+    const h = await harness((repo) => {
+      appendFileSync(join(repo, '.git', 'config'), '[core]\n\tbare = maybe\n\tbare = false\n')
+    })
+    const refusal = "fatal: bad boolean config value 'maybe' for 'core.bare'\n"
+    expect(await h.run('log --oneline -1')).toEqual([128, '', refusal])
+    expect(await h.run('--work-tree=. status')).toEqual([128, '', refusal])
+  })
+
   it('records the index, and git reads the commit back', async () => {
     const h = await harness()
     await write(h, 'letters.txt', 'edited\n')

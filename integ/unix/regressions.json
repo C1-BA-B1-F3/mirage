@@ -1,0 +1,102 @@
+{
+  "cases": [
+    {
+      "id": "pipeline_stops_compound_producer",
+      "seq": 9901202,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "rm -f /data/pipe-produced; for i in {1..20}; do echo x >> /data/pipe-produced; echo \"$i\"; sleep 0.02; done | head -n 1; produced=$(wc -l < /data/pipe-produced); test \"$produced\" -ge 1 && test \"$produced\" -lt 20",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "pipefail_keeps_a_producer_that_finished_before_head_closed",
+      "seq": 9901205,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "set -o pipefail; for i in 1 2 3; do echo \"$i\"; done | head -n 1; echo \"status=$? pipestatus=${PIPESTATUS[*]}\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\nstatus=0 pipestatus=0 0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "pipefail_reports_a_write_after_head_closed",
+      "seq": 9901206,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "set -o pipefail; for i in 1 2 3; do echo \"$i\"; sleep 0.05; done | head -n 1; echo \"status=$? pipestatus=${PIPESTATUS[*]}\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\nstatus=141 pipestatus=141 0\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "concat_cmdsub_runs_once",
+      "seq": 9901211,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "rm -f /data/sub-count; echo pre$(echo x >> /data/sub-count; printf value)post; wc -l < /data/sub-count",
+      "expect": {
+        "exit": 0,
+        "stdout": "prevaluepost\n1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "brace_cmdsub_runs_once",
+      "seq": 9901213,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "rm -f /data/sub-count; echo {a,b}$(echo x >> /data/sub-count; printf value); wc -l < /data/sub-count",
+      "expect": {
+        "exit": 0,
+        "stdout": "avalue bvalue\n1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_recursive_file_mount_label",
+      "seq": 9901221,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "history -c; history -s unique_history_1221; grep -Rn '^unique_history_1221$' / | sed 's/[0-9][0-9]*:/:/'",
+      "expect": {
+        "exit": 0,
+        "stdout": "/.bash_history::unique_history_1221\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "grep_recursive_file_mount_explicit_no_label",
+      "seq": 9901222,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "history -c; history -s unique_history_no_label_1221; grep -Rnh '^unique_history_no_label_1221$' / | sed 's/[0-9][0-9]*:/:/'",
+      "expect": {
+        "exit": 0,
+        "stdout": ":unique_history_no_label_1221\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

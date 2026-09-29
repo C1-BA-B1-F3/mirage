@@ -23,10 +23,10 @@
         "nextcloud",
         "box"
       ],
-      "command": "rg -o \"err[a-z]*\" /data/r4/app.log",
+      "command": "rg -o \"err[a-z]*\" /data/r4/app.log; rg -o -r X 'err[a-z]*' /data/r4/app.log; rg -r '[$0]' 'err[a-z]*' /data/r4/app.log; rg -r '<$1>' 'e(r+)' /data/r4/app.log",
       "expect": {
         "exit": 0,
-        "stdout": "error\nerror\n",
+        "stdout": "error\nerror\nX\nX\n[error]: disk full\n[error]: timeout\n<rr>or: disk full\n<rr>or: timeout\n",
         "stderr": ""
       },
       "flags": [
@@ -67,7 +67,7 @@
       ]
     },
     {
-      "id": "rg_o_empty_match_prints_nothing",
+      "id": "rg_o_empty_match_prints_an_empty_line",
       "seq": 500421,
       "targets": [
         "ram",
@@ -92,7 +92,7 @@
       "command": "printf 'ab\\n' | rg -o '[0-9]*'",
       "expect": {
         "exit": 0,
-        "stdout": "",
+        "stdout": "\n\n\n",
         "stderr": ""
       },
       "flags": [
@@ -100,7 +100,7 @@
       ]
     },
     {
-      "id": "rg_o_empty_pattern_prints_nothing",
+      "id": "rg_o_empty_pattern_prints_every_empty_match",
       "seq": 500422,
       "targets": [
         "ram",
@@ -125,7 +125,7 @@
       "command": "printf 'ab\\n' | rg -o ''",
       "expect": {
         "exit": 0,
-        "stdout": "",
+        "stdout": "\n\n\n",
         "stderr": ""
       },
       "flags": [
@@ -133,7 +133,7 @@
       ]
     },
     {
-      "id": "rg_o_start_anchor_prints_nothing",
+      "id": "rg_o_start_anchor_prints_one_empty_line",
       "seq": 500423,
       "targets": [
         "ram",
@@ -158,7 +158,7 @@
       "command": "printf 'ab\\n' | rg -o '^'",
       "expect": {
         "exit": 0,
-        "stdout": "",
+        "stdout": "\n",
         "stderr": ""
       },
       "flags": [
@@ -166,7 +166,7 @@
       ]
     },
     {
-      "id": "rg_o_end_anchor_prints_nothing",
+      "id": "rg_o_end_anchor_prints_one_empty_line",
       "seq": 500424,
       "targets": [
         "ram",
@@ -191,7 +191,7 @@
       "command": "printf 'ab\\n' | rg -o '$'",
       "expect": {
         "exit": 0,
-        "stdout": "",
+        "stdout": "\n",
         "stderr": ""
       },
       "flags": [
@@ -199,7 +199,7 @@
       ]
     },
     {
-      "id": "rg_o_empty_matches_dropped_around_a_real_one",
+      "id": "rg_o_empty_matches_print_around_a_real_one",
       "seq": 500425,
       "targets": [
         "ram",
@@ -224,7 +224,7 @@
       "command": "printf 'a1b\\n' | rg -o '[0-9]*'",
       "expect": {
         "exit": 0,
-        "stdout": "1\n",
+        "stdout": "\n1\n\n",
         "stderr": ""
       },
       "flags": [
@@ -232,7 +232,7 @@
       ]
     },
     {
-      "id": "rg_o_nonempty_runs_kept_in_order",
+      "id": "rg_o_matches_kept_in_order",
       "seq": 500426,
       "targets": [
         "ram",
@@ -257,7 +257,7 @@
       "command": "printf '1a22b\\n' | rg -o '[0-9]*'",
       "expect": {
         "exit": 0,
-        "stdout": "1\n22\n",
+        "stdout": "1\n22\n\n",
         "stderr": ""
       },
       "flags": [
@@ -265,7 +265,7 @@
       ]
     },
     {
-      "id": "rg_o_star_keeps_only_the_nonempty_match",
+      "id": "rg_o_star_skips_the_empty_match_after_one",
       "seq": 500427,
       "targets": [
         "ram",
@@ -290,7 +290,7 @@
       "command": "printf 'abc\\n' | rg -o 'b*'",
       "expect": {
         "exit": 0,
-        "stdout": "b\n",
+        "stdout": "\nb\n\n",
         "stderr": ""
       },
       "flags": [
@@ -298,7 +298,7 @@
       ]
     },
     {
-      "id": "rg_oc_still_counts_the_selected_line",
+      "id": "rg_oc_counts_every_match",
       "seq": 500428,
       "targets": [
         "ram",
@@ -323,7 +323,7 @@
       "command": "printf 'ab\\n' | rg -oc '[0-9]*'",
       "expect": {
         "exit": 0,
-        "stdout": "1\n",
+        "stdout": "3\n",
         "stderr": ""
       },
       "flags": [
@@ -332,7 +332,7 @@
       ]
     },
     {
-      "id": "rg_o_empty_match_on_every_line_prints_nothing",
+      "id": "rg_o_empty_matches_print_on_every_line",
       "seq": 500429,
       "targets": [
         "ram",
@@ -357,7 +357,7 @@
       "command": "printf 'a\\nb\\n' | rg -o '[0-9]*'",
       "expect": {
         "exit": 0,
-        "stdout": "",
+        "stdout": "\n\n\n\n",
         "stderr": ""
       },
       "flags": [
@@ -491,7 +491,7 @@
       "command": "mkdir -p /data/rgo3 && printf 'ab\\n' > /data/rgo3/p.txt && printf 'cd\\n' > /data/rgo3/q.txt && rg -o '[0-9]*' /data/rgo3/p.txt /data/rgo3/q.txt",
       "expect": {
         "exit": 0,
-        "stdout": "",
+        "stdout": "/data/rgo3/p.txt:\n/data/rgo3/p.txt:\n/data/rgo3/p.txt:\n/data/rgo3/q.txt:\n/data/rgo3/q.txt:\n/data/rgo3/q.txt:\n",
         "stderr": ""
       },
       "flags": [
@@ -524,7 +524,7 @@
       "command": "mkdir -p /data/rgo4 && printf 'ab\\n' > /data/rgo4/z.txt && rg -oH '[0-9]*' /data/rgo4/z.txt",
       "expect": {
         "exit": 0,
-        "stdout": "",
+        "stdout": "/data/rgo4/z.txt:\n/data/rgo4/z.txt:\n/data/rgo4/z.txt:\n",
         "stderr": ""
       },
       "flags": [
@@ -567,7 +567,7 @@
       ]
     },
     {
-      "id": "rg_ob_empty_matches_dropped_around_a_real_one",
+      "id": "rg_ob_empty_matches_offset_around_a_real_one",
       "seq": 500436,
       "targets": [
         "ram",
@@ -592,7 +592,7 @@
       "command": "printf 'a1b\\n' | rg -ob '[0-9]*'",
       "expect": {
         "exit": 0,
-        "stdout": "1:1\n",
+        "stdout": "0:\n1:1\n3:\n",
         "stderr": ""
       },
       "flags": [
@@ -626,7 +626,7 @@
       "command": "mkdir -p /data/rgo5 && printf 'ab\\n' > /data/rgo5/z.txt && rg -o '[0-9]*' /data/rgo5",
       "expect": {
         "exit": 0,
-        "stdout": "",
+        "stdout": "/data/rgo5/z.txt:\n/data/rgo5/z.txt:\n/data/rgo5/z.txt:\n",
         "stderr": ""
       },
       "flags": [
@@ -634,7 +634,7 @@
       ]
     },
     {
-      "id": "rg_ov_prints_nothing",
+      "id": "rg_ov_prints_the_unmatched_lines_whole",
       "seq": 612120,
       "targets": [
         "ram",
@@ -659,7 +659,7 @@
       "command": "printf 'abc\\ndef\\n' > /data/rov.txt; rg -ov abc /data/rov.txt",
       "expect": {
         "exit": 0,
-        "stdout": "",
+        "stdout": "def\n",
         "stderr": ""
       },
       "flags": [
@@ -668,7 +668,7 @@
       ]
     },
     {
-      "id": "rg_ovc_still_counts_the_selected_line",
+      "id": "rg_ovc_counts_no_matches",
       "seq": 612121,
       "targets": [
         "ram",
@@ -693,13 +693,361 @@
       "command": "printf 'abc\\ndef\\n' > /data/rov.txt; rg -ovc abc /data/rov.txt",
       "expect": {
         "exit": 0,
-        "stdout": "1\n",
+        "stdout": "0\n",
         "stderr": ""
       },
       "flags": [
         "o",
         "v",
         "c"
+      ]
+    },
+    {
+      "id": "rg_ovn_numbers_the_unmatched_lines",
+      "seq": 612122,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'x\\ny\\nzz\\n' | rg -v -o -n y",
+      "expect": {
+        "exit": 0,
+        "stdout": "1:x\n3:zz\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "v",
+        "n"
+      ]
+    },
+    {
+      "id": "rg_on_c_upper_context_lines_print_whole",
+      "seq": 612123,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\nc\\n' | rg -o -n -C1 b",
+      "expect": {
+        "exit": 0,
+        "stdout": "1-a\n2:b\n3-c\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "n",
+        "C"
+      ]
+    },
+    {
+      "id": "rg_obv_c_upper_context_line_prints_its_matches",
+      "seq": 612124,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'xay\\nb\\n' | rg -o -b -v -C1 'a|y'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1-a\n2-y\n4:b\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "b",
+        "v",
+        "C"
+      ]
+    },
+    {
+      "id": "rg_o_a_upper_separates_the_groups",
+      "seq": 612125,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'a\\nb\\nc\\nd\\ne\\nf\\n' | rg -o -A1 -e b -e f",
+      "expect": {
+        "exit": 0,
+        "stdout": "b\nc\n--\nf\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "A",
+        "e"
+      ]
+    },
+    {
+      "id": "rg_oc_counts_matches_not_lines",
+      "seq": 612126,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'b1\\nb22\\n' | rg -o -c '[0-9]'",
+      "expect": {
+        "exit": 0,
+        "stdout": "3\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "c"
+      ]
+    },
+    {
+      "id": "rg_ovc_two_operands_lists_the_file_that_selected",
+      "seq": 612127,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'abc\\n' > /data/rovc1.txt; printf 'def\\n' > /data/rovc2.txt; rg -ovc abc /data/rovc1.txt /data/rovc2.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/rovc2.txt:0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "v",
+        "c"
+      ]
+    },
+    {
+      "id": "rg_ov_directory_prints_the_line_whole",
+      "seq": 612128,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "mkdir -p /data/rovd && printf 'abc\\ndef\\n' > /data/rovd/x.txt && rg -ov abc /data/rovd",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/rovd/x.txt:def\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "v"
+      ]
+    },
+    {
+      "id": "rg_ovc_directory_counts_no_matches",
+      "seq": 612129,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "mkdir -p /data/rovd && printf 'abc\\ndef\\n' > /data/rovd/x.txt && rg -ovc abc /data/rovd",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/rovd/x.txt:0\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "v",
+        "c"
+      ]
+    },
+    {
+      "id": "rg_o_c_upper_directory_prints_whole_context_lines",
+      "seq": 612131,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "mkdir -p /data/rocd && printf 'a\\nb\\nc\\n' > /data/rocd/x.txt && rg -o -C1 b /data/rocd",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/rocd/x.txt-a\n/data/rocd/x.txt:b\n/data/rocd/x.txt-c\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "C"
+      ]
+    },
+    {
+      "id": "rg_on_a_upper_two_operands_separate_the_files",
+      "seq": 612132,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'a1b2\\nc\\n' > /data/roc4.txt; rg -o -n -A1 '[0-9]' /data/roc4.txt /data/roc4.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/roc4.txt:1:1\n/data/roc4.txt:1:2\n/data/roc4.txt-2-c\n--\n/data/roc4.txt:1:1\n/data/roc4.txt:1:2\n/data/roc4.txt-2-c\n",
+        "stderr": ""
+      },
+      "flags": [
+        "o",
+        "n",
+        "A"
       ]
     }
   ]

@@ -34,5 +34,5 @@ async def write_bytes(
     await check_write_target(store, path_spec, p)
     await store.set_file(p, data)
     await store.set_modified(p, now_iso())
-    record("write", path, "redis", len(data), timer)
+    record("write", path_spec.virtual, "redis", len(data), timer)
     await invalidate_after_write(path_spec)

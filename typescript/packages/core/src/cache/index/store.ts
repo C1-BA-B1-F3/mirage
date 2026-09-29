@@ -32,6 +32,21 @@ export abstract class IndexCacheStore {
   ): Promise<void>
   abstract invalidateDir(vfsPath: string): Promise<void>
   /**
+   * Cache observed children without claiming a complete directory. Stores
+   * supporting partial freshness return these keys as `partialEntries`
+   * until expiry or invalidation. Custom stores inherit the conservative
+   * put-only fallback, which refreshes the parent on the next lookup.
+   */
+  async setPartialDir(
+    vfsPath: string,
+    entries: readonly [string, IndexEntry][],
+    _expiredAt?: Date | null,
+  ): Promise<void> {
+    await this.invalidateDir(vfsPath)
+    const stem = vfsPath.replace(/\/$/, '')
+    for (const [name, entry] of entries) await this.put(`${stem}/${name}`, entry)
+  }
+  /**
    * Drop `vfsPath` and everything cached below it.
    *
    * `invalidateDir` drops one directory's listing and its direct children's

@@ -41,12 +41,18 @@ class FakeClient:
 
 class CreatedOnlyClient(FakeClient):
 
-    async def get(self, memory_id):
+    async def get_all(self, options=None):
         return {
-            "id": memory_id,
-            "memory": "x",
-            "created_at": "2026-06-15T00:00:00-07:00",
-            "updated_at": None,
+            "count":
+            1,
+            "next":
+            None,
+            "results": [{
+                "id": "aaa",
+                "memory": "x",
+                "created_at": "2026-06-15T00:00:00-07:00",
+                "updated_at": None,
+            }]
         }
 
 
@@ -82,23 +88,25 @@ async def test_stat_memory_from_cache_has_times():
 
 
 @pytest.mark.asyncio
-async def test_stat_memory_fallback_get():
+async def test_stat_of_a_memory_outside_the_scope_is_enoent():
+    # The scoped listing is the proof, as it is for read: a by-id fetch
+    # answered for another user's memory the listing never showed.
     acc = _accessor()
     fpath = PathSpec(virtual="/mem/zzz.json",
                      directory="/mem",
                      vfs_path="zzz.json")
-    s = await stat(acc, fpath, RAMIndexCacheStore())
-    assert s.modified == "2026-06-15T09:00:00-07:00"
-    assert acc._client.get_calls == 1
+    with pytest.raises(FileNotFoundError):
+        await stat(acc, fpath, RAMIndexCacheStore())
+    assert acc._client.get_calls == 0
 
 
 @pytest.mark.asyncio
 async def test_stat_falls_back_to_created_at():
     acc = _accessor()
     acc._client = CreatedOnlyClient()
-    fpath = PathSpec(virtual="/mem/zzz.json",
+    fpath = PathSpec(virtual="/mem/aaa.json",
                      directory="/mem",
-                     vfs_path="zzz.json")
+                     vfs_path="aaa.json")
     s = await stat(acc, fpath, RAMIndexCacheStore())
     assert s.modified == "2026-06-15T00:00:00-07:00"
 

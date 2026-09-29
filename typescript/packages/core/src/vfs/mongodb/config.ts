@@ -26,8 +26,6 @@ import {
 const MongoDBConfigSchema = z.object({
   uri: secretStr(),
   databases: z.array(z.string()).readonly().optional(),
-  defaultDocLimit: z.number().optional(),
-  defaultSearchLimit: z.number().optional(),
   maxDocLimit: z.number().optional(),
   elideFields: z.record(z.string(), z.array(z.string()).readonly()).optional(),
 })
@@ -37,8 +35,6 @@ export type MongoDBConfig = ConfigOf<typeof MongoDBConfigSchema>
 export interface MongoDBConfigResolved {
   uri: string
   databases: readonly string[] | null
-  defaultDocLimit: number
-  defaultSearchLimit: number
   maxDocLimit: number
   elideFields: Record<string, readonly string[]>
 }
@@ -51,8 +47,6 @@ export function resolveMongoDBConfig(config: MongoDBConfig): MongoDBConfigResolv
   return {
     uri: config.uri,
     databases: config.databases ?? null,
-    defaultDocLimit: config.defaultDocLimit ?? 1000,
-    defaultSearchLimit: config.defaultSearchLimit ?? 100,
     maxDocLimit: config.maxDocLimit ?? 5000,
     elideFields: config.elideFields ?? {},
   }

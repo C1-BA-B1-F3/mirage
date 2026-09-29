@@ -46,10 +46,6 @@ export class CompiledSpec {
   /** Every long spelling in declaration order (the order GNU's ambiguity
    * refusal lists possibilities), for getopt_long prefix expansion. */
   readonly longSpellings: readonly string[]
-  /** Behavior signature per long spelling. Prefix candidates whose
-   * signatures all match are one option in glibc's eyes (same action
-   * struct), so the prefix resolves instead of refusing as ambiguous. */
-  readonly longSignatures: ReadonlyMap<string, string>
   /** Canonical spellings of int-typed options; the parser refuses a
    * non-integer value at parse time (argparse `type=int`). */
   readonly intDests: ReadonlySet<string>
@@ -101,7 +97,6 @@ export class CompiledSpec {
     longValueSpellings: ReadonlySet<string>
     longOptionalSpellings: ReadonlySet<string>
     longSpellings: readonly string[]
-    longSignatures: ReadonlyMap<string, string>
     intDests: ReadonlySet<string>
     floatDests: ReadonlySet<string>
     kindOf: ReadonlyMap<string, ValueType>
@@ -126,7 +121,6 @@ export class CompiledSpec {
     this.longValueSpellings = fields.longValueSpellings
     this.longOptionalSpellings = fields.longOptionalSpellings
     this.longSpellings = fields.longSpellings
-    this.longSignatures = fields.longSignatures
     this.intDests = fields.intDests
     this.floatDests = fields.floatDests
     this.kindOf = fields.kindOf
@@ -153,6 +147,11 @@ export class CompiledSpec {
 
 const CACHE = new WeakMap<CommandSpec, CompiledSpec>()
 
+// git's notation for an option parse-options also answers as `--no-<name>`,
+// and the prefix itself.
+const NEGATABLE = '[no-]'
+const NO = 'no-'
+
 /** Lower a CommandSpec into parser lookup tables, cached per spec. */
 export function compileSpec(spec: CommandSpec): CompiledSpec {
   const cached = CACHE.get(spec)
@@ -166,7 +165,6 @@ export function compileSpec(spec: CommandSpec): CompiledSpec {
   const longValueSpellings = new Set<string>()
   const longOptionalSpellings = new Set<string>()
   const longSpellings: string[] = []
-  const longSignatures = new Map<string, string>()
   const intDests = new Set<string>()
   const floatDests = new Set<string>()
   const kindOf = new Map<string, ValueType>()
@@ -256,21 +254,6 @@ export function compileSpec(spec: CommandSpec): CompiledSpec {
     }
     if (opt.long !== null) {
       longSpellings.push(opt.long)
-      // Everything parsing-relevant except the spellings and the help
-      // text: two options that agree here are one action.
-      longSignatures.set(
-        opt.long,
-        [
-          opt.type,
-          String(opt.valueOptional),
-          String(opt.multiple),
-          String(opt.pair),
-          String(opt.count),
-          opt.choices.join(','),
-          String(opt.required),
-          String(opt.default),
-        ].join('|'),
-      )
       if (opt.type === 'bool') {
         longBoolSpellings.add(opt.long)
       } else if (opt.valueOptional) {
@@ -310,7 +293,6 @@ export function compileSpec(spec: CommandSpec): CompiledSpec {
     longValueSpellings,
     longOptionalSpellings,
     longSpellings,
-    longSignatures,
     intDests,
     floatDests,
     kindOf,
@@ -337,22 +319,122 @@ export function compileSpec(spec: CommandSpec): CompiledSpec {
  *
  * An exact declared spelling always wins (GNU: `--binary` never trips
  * over `--binary-files`); otherwise the candidates are every declared
- * long the typed spelling prefixes. Candidates whose behavior signatures
- * all match count as one option, the way glibc treats several table
- * entries with one action struct (`grep --colo` resolves despite
- * `--color`/`--colour` being separate entries), and the prefix resolves
- * to the first. The result length tells the caller everything: 0
- * unknown, 1 match, 2+ ambiguous (every matching spelling in
- * declaration order, the order GNU lists possibilities, synonyms
- * included like GNU's own listing).
+ * long the typed spelling prefixes. Two declared options are two options,
+ * so a prefix of both is ambiguous (`ls --re` is `--reverse` or
+ * `--recursive`), unless `synonyms` (from LONG_SYNONYMS) names them one
+ * option under two names, the way glibc treats several table entries
+ * sharing one `val` (`grep --colo` resolves despite `--color`/`--colour`
+ * being separate entries); then the prefix resolves to the first. The
+ * result length tells the caller everything: 0 unknown, 1 match, 2+
+ * ambiguous (every matching spelling in declaration order, the order GNU
+ * lists possibilities, synonyms included like GNU's own listing).
  */
-export function expandLong(cs: CompiledSpec, spelling: string): readonly string[] {
+/**
+ * git's parse-options resolution of one long option against the program's own
+ * table, which lists each option in git's `--[no-]` notation.
+ *
+ * An exact name wins at once, a negatable option answering to its `--no-`
+ * form too. Otherwise the word may abbreviate one option, `--no-` abbreviating
+ * a negation, and a word that abbreviates two is ambiguous: git names the last
+ * two it found, each with the `no-` it was matched under. A word matching
+ * nothing is null, and the caller decides what that is. The result is the
+ * spelling the table resolves to, which the spec may or may not declare.
+ *
+ * @param table the program's long options, e.g. `['[no-]verbose', 'contains']`
+ * @param typed the word as typed, `--` included and any `=value` removed
+ */
+export function expandGitLong(
+  table: readonly string[],
+  typed: string,
+): { spelling: string } | { ambiguous: [string, string] } | null {
+  const arg = typed.slice(2)
+  let found: [string, boolean] | null = null
+  let earlier: [string, boolean] | null = null
+  for (const entry of table) {
+    const negatable = entry.startsWith(NEGATABLE)
+    const long = negatable ? entry.slice(NEGATABLE.length) : entry
+    const inverted = !arg.startsWith(NO) && negatable && long.startsWith(NO)
+    const name = inverted ? long.slice(NO.length) : long
+    let unset = false
+    let exact = arg === name
+    let abbreviated = !exact && name.startsWith(arg)
+    if (!exact && !abbreviated && negatable) {
+      if (NO.startsWith(arg)) {
+        unset = true
+        abbreviated = true
+      } else if (arg.startsWith(NO)) {
+        unset = true
+        exact = arg.slice(NO.length) === name
+        abbreviated = !exact && name.startsWith(arg.slice(NO.length))
+      }
+    }
+    if (exact) return { spelling: gitSpelling(long, unset !== inverted) }
+    if (abbreviated) {
+      earlier = found
+      found = [long, unset !== inverted]
+    }
+  }
+  if (found === null) return null
+  if (earlier !== null) return { ambiguous: [gitShown(...earlier), gitShown(...found)] }
+  return { spelling: gitSpelling(...found) }
+}
+
+/** How git names a candidate in its ambiguity refusal. */
+function gitShown(long: string, unset: boolean): string {
+  return `--${unset ? NO : ''}${long}`
+}
+
+/** The long spelling one of git's options answers to, negated or not. */
+function gitSpelling(long: string, unset: boolean): string {
+  if (!unset) return `--${long}`
+  return long.startsWith(NO) ? `--${long.slice(NO.length)}` : `--${NO}${long}`
+}
+
+/**
+ * getopt_long prefix matching against a program's whole table.
+ *
+ * An entry spelled exactly names its option; otherwise every entry the typed
+ * spelling prefixes is a candidate. glibc sets aside a later candidate that
+ * names the same option as the first one, so one option's aliases resolve
+ * where two options are ambiguous. The result length tells the caller
+ * everything: 0 unknown, 1 the option's primary spelling, 2+ the
+ * possibilities glibc lists (the first candidate and every later one naming
+ * another option, in table order). `table` is each option's primary spelling
+ * then its aliases, in the program's table order (LONG_OPTION_TABLES).
+ * Mirrors Python's expand_table_long.
+ */
+export function expandTableLong(
+  table: readonly (readonly string[])[],
+  spelling: string,
+): readonly string[] {
+  const entries = table.flatMap((group) => group.map((name) => [name, group[0] ?? name] as const))
+  for (const [name, primary] of entries) if (name === spelling) return [primary]
+  if (spelling.length <= 2) return []
+  const matches = entries.filter(([name]) => name.startsWith(spelling))
+  const first = matches[0]
+  if (first === undefined) return []
+  const listed = [
+    first[0],
+    ...matches
+      .slice(1)
+      .filter(([, p]) => p !== first[1])
+      .map(([n]) => n),
+  ]
+  return listed.length === 1 ? [first[1]] : listed
+}
+
+export function expandLong(
+  cs: CompiledSpec,
+  spelling: string,
+  synonyms: ReadonlyMap<string, string> = new Map(),
+): readonly string[] {
   if (cs.dest.has(spelling)) return [spelling]
   if (spelling.length <= 2) return []
   const matches = cs.longSpellings.filter((declared) => declared.startsWith(spelling))
   const first = matches[0]
   if (first === undefined) return []
-  const signatures = new Set(matches.map((declared) => cs.longSignatures.get(declared)))
-  if (signatures.size === 1) return [first]
+  if (new Set(matches.map((declared) => synonyms.get(declared) ?? declared)).size === 1) {
+    return [first]
+  }
   return matches
 }

@@ -1,0 +1,2464 @@
+{
+  "source": {
+    "dataset": "ScaleAI/MCP-Atlas",
+    "revision": "8c563b55d7c967755f474299848049834d624617",
+    "license": "CC-BY-4.0",
+    "server": "slack-mcp-server@1.1.23",
+    "export_url": "https://raw.githubusercontent.com/scaleapi/mcp-atlas/c64799a8e4056582c1220e82751c445862a33308/data_exports/slack_mcp_eval_export.zip",
+    "export_sha256": "07e72603facd1d3b7adbd2fc7043b57228b2960188fdfa6015fb37ffb4bad931",
+    "message_timestamp_shift_seconds": -13910400,
+    "notes": [
+      "Channel privacy follows the last exported conversion event.",
+      "Files retain metadata; the export has no file contents.",
+      "Search replies ignore relevance order: Slack scores are not exported."
+    ]
+  },
+  "workspace": {
+    "users": [
+      {
+        "id": "U092JB0UZFY",
+        "name": "mcpdumle",
+        "realName": "mcpdumle",
+        "email": "mcpdumle@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U0930LCUF1D",
+        "name": "brandonaz.vadillo",
+        "realName": "Brandon Vadillo",
+        "email": "brandonaz.vadillo@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U09390DQQ30",
+        "name": "ivansalazar0003",
+        "realName": "",
+        "email": "ivansalazar0003@gmail.com",
+        "isBot": false,
+        "deleted": true
+      },
+      {
+        "id": "U09395SU0PQ",
+        "name": "javiergarcialucentini",
+        "realName": "Javier Garcia",
+        "email": "javiergarcialucentini@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U093982097Y",
+        "name": "mcardonasierra",
+        "realName": "María Fernanda Cardona Sierra",
+        "email": "mcardonasierra@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U0939QZ7SK0",
+        "name": "sebas.mb12",
+        "realName": "Sebastián Mendoza Brieva",
+        "email": "sebas.mb12@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U093F1270TU",
+        "name": "lucas.t.medina1994",
+        "realName": "",
+        "email": "lucas.t.medina1994@gmail.com",
+        "isBot": false,
+        "deleted": true
+      },
+      {
+        "id": "U093FRM3U2Y",
+        "name": "elitrejo0219",
+        "realName": "Danae Trejo",
+        "email": "elitrejo0219@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U093FRRTEDS",
+        "name": "nosdle",
+        "realName": "Éldson Santos",
+        "email": "nosdle@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U093JH7PD9A",
+        "name": "spjara.aravena",
+        "realName": "Samuel Jara",
+        "email": "spjara.aravena@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U093P4WJ05D",
+        "name": "kwfan2022",
+        "realName": "kwfan lakes",
+        "email": "kwfan2022@yahoo.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U093U9S2Z5F",
+        "name": "luisg.garciaespinoza",
+        "realName": "Luis Garcia",
+        "email": "luisg.garciaespinoza@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U093UBJHSNM",
+        "name": "alvarjosevr",
+        "realName": "Alvaro Villalobos",
+        "email": "alvarjosevr@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U093UGEAVC1",
+        "name": "jeanfrancois",
+        "realName": "Jean-Francois Laloux",
+        "email": "jeanfrancois@laloux.me",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U093YBBLH9U",
+        "name": "hiphopluvr1989",
+        "realName": "Omari West",
+        "email": "hiphopluvr1989@proton.me",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U0944CHVBT6",
+        "name": "kcpfan46",
+        "realName": "kcpfan",
+        "email": "kcpfan46@gmail.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U0944EJFDM2",
+        "name": "qtwatcher1999",
+        "realName": "QT watcher",
+        "email": "qtwatcher1999@yahoo.com",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U0944N06J20",
+        "name": "quickfits01",
+        "realName": "James Fitz",
+        "email": "quickfits01@proton.me",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U094G0AQR6V",
+        "name": "gymrat2079",
+        "realName": "Jim Rat",
+        "email": "gymrat2079@proton.me",
+        "isBot": false,
+        "deleted": false
+      },
+      {
+        "id": "U094G2BTX7B",
+        "name": "shinsplints7070",
+        "realName": "Steve Shins",
+        "email": "shinsplints7070@proton.me",
+        "isBot": false,
+        "deleted": false
+      }
+    ],
+    "channels": [
+      {
+        "id": "C092JB1AMK8",
+        "name": "all-dumle-servers",
+        "kind": "channel",
+        "created": 1750712682,
+        "isArchived": false,
+        "isPrivate": false,
+        "topic": "",
+        "purpose": "Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐",
+        "membersJson": [
+          "U092JB0UZFY",
+          "U0930LCUF1D",
+          "U09395SU0PQ",
+          "U093982097Y",
+          "U0939QZ7SK0",
+          "U093FRM3U2Y",
+          "U093FRRTEDS",
+          "U093JH7PD9A",
+          "U093P4WJ05D",
+          "U093U9S2Z5F",
+          "U093UBJHSNM",
+          "U093UGEAVC1",
+          "U093YBBLH9U",
+          "U0944CHVBT6",
+          "U0944EJFDM2",
+          "U0944N06J20",
+          "U094G0AQR6V",
+          "U094G2BTX7B"
+        ]
+      },
+      {
+        "id": "C092JB1DH9C",
+        "name": "social",
+        "kind": "channel",
+        "created": 1750712683,
+        "isArchived": false,
+        "isPrivate": true,
+        "topic": "",
+        "purpose": "Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈",
+        "membersJson": [
+          "U092JB0UZFY",
+          "U093P4WJ05D",
+          "U093YBBLH9U",
+          "U0944CHVBT6",
+          "U0944EJFDM2",
+          "U0944N06J20",
+          "U094G0AQR6V",
+          "U094G2BTX7B"
+        ]
+      },
+      {
+        "id": "C092QL74W68",
+        "name": "new-channel",
+        "kind": "channel",
+        "created": 1750712712,
+        "isArchived": false,
+        "isPrivate": true,
+        "topic": "",
+        "purpose": "This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.",
+        "membersJson": [
+          "U092JB0UZFY",
+          "U093P4WJ05D",
+          "U093YBBLH9U",
+          "U0944CHVBT6",
+          "U0944EJFDM2",
+          "U0944N06J20",
+          "U094G0AQR6V",
+          "U094G2BTX7B"
+        ]
+      },
+      {
+        "id": "C0938PV4E7Q",
+        "name": "gaming-suggestions",
+        "kind": "channel",
+        "created": 1751042041,
+        "isArchived": false,
+        "isPrivate": true,
+        "topic": "",
+        "purpose": "",
+        "membersJson": [
+          "U092JB0UZFY",
+          "U093P4WJ05D",
+          "U093YBBLH9U",
+          "U0944CHVBT6",
+          "U0944EJFDM2",
+          "U0944N06J20",
+          "U094G0AQR6V",
+          "U094G2BTX7B"
+        ]
+      },
+      {
+        "id": "C093EL23YP4",
+        "name": "tv-show-suggestions",
+        "kind": "channel",
+        "created": 1751042079,
+        "isArchived": false,
+        "isPrivate": true,
+        "topic": "",
+        "purpose": "",
+        "membersJson": [
+          "U092JB0UZFY",
+          "U093P4WJ05D",
+          "U093YBBLH9U",
+          "U0944CHVBT6",
+          "U0944EJFDM2",
+          "U0944N06J20",
+          "U094G0AQR6V",
+          "U094G2BTX7B"
+        ]
+      },
+      {
+        "id": "C093FF10B5J",
+        "name": "movie-suggestions",
+        "kind": "channel",
+        "created": 1751042063,
+        "isArchived": false,
+        "isPrivate": true,
+        "topic": "",
+        "purpose": "",
+        "membersJson": [
+          "U092JB0UZFY",
+          "U093P4WJ05D",
+          "U093YBBLH9U",
+          "U0944CHVBT6",
+          "U0944EJFDM2",
+          "U0944N06J20",
+          "U094G0AQR6V",
+          "U094G2BTX7B"
+        ]
+      }
+    ],
+    "messages": [
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1750712682.934579",
+        "userId": "U092JB0UZFY",
+        "text": "<@U092JB0UZFY> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1750712686.899689",
+        "userId": "U092JB0UZFY",
+        "text": "",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751044266.459309",
+        "userId": "U09390DQQ30",
+        "text": "<@U09390DQQ30> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751046196.731499",
+        "userId": "U093U9S2Z5F",
+        "text": "<@U093U9S2Z5F> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751046220.039559",
+        "userId": "U093FRM3U2Y",
+        "text": "<@U093FRM3U2Y> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751046225.385669",
+        "userId": "U0930LCUF1D",
+        "text": "<@U0930LCUF1D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751046226.158349",
+        "userId": "U093F1270TU",
+        "text": "<@U093F1270TU> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751046240.396639",
+        "userId": "U093FRRTEDS",
+        "text": "<@U093FRRTEDS> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751046447.589889",
+        "userId": "U09395SU0PQ",
+        "text": "<@U09395SU0PQ> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751046936.390059",
+        "userId": "U093UBJHSNM",
+        "text": "<@U093UBJHSNM> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751047309.755599",
+        "userId": "U093982097Y",
+        "text": "<@U093982097Y> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751048916.717259",
+        "userId": "U093UGEAVC1",
+        "text": "<@U093UGEAVC1> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751054743.744089",
+        "userId": "U0939QZ7SK0",
+        "text": "<@U0939QZ7SK0> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751122671.279809",
+        "userId": "U093JH7PD9A",
+        "text": "<@U093JH7PD9A> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751470312.139749",
+        "userId": "U0944CHVBT6",
+        "text": "<@U0944CHVBT6> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751470691.346169",
+        "userId": "U093P4WJ05D",
+        "text": "<@U093P4WJ05D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751470949.186319",
+        "userId": "U0944EJFDM2",
+        "text": "<@U0944EJFDM2> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751472866.745299",
+        "userId": "U094G0AQR6V",
+        "text": "<@U094G0AQR6V> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751473270.564689",
+        "userId": "U0944N06J20",
+        "text": "<@U0944N06J20> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751473633.996979",
+        "userId": "U094G2BTX7B",
+        "text": "<@U094G2BTX7B> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751474043.310459",
+        "userId": "U093YBBLH9U",
+        "text": "<@U093YBBLH9U> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751474354.078389",
+        "userId": "U092JB0UZFY",
+        "text": "changed channel posting permissions",
+        "type": "message",
+        "subtype": "channel_posting_permissions",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751474765.428759",
+        "userId": "U092JB0UZFY",
+        "text": "changed channel posting permissions",
+        "type": "message",
+        "subtype": "channel_posting_permissions",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1AMK8",
+        "ts": "1751474784.732289",
+        "userId": "U092JB0UZFY",
+        "text": "changed channel posting permissions",
+        "type": "message",
+        "subtype": "channel_posting_permissions",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1750712683.161359",
+        "userId": "U092JB0UZFY",
+        "text": "<@U092JB0UZFY> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1750712687.403729",
+        "userId": "U092JB0UZFY",
+        "text": "",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751044266.552389",
+        "userId": "U09390DQQ30",
+        "text": "<@U09390DQQ30> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751046196.818839",
+        "userId": "U093U9S2Z5F",
+        "text": "<@U093U9S2Z5F> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751046220.134669",
+        "userId": "U093FRM3U2Y",
+        "text": "<@U093FRM3U2Y> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751046225.485709",
+        "userId": "U0930LCUF1D",
+        "text": "<@U0930LCUF1D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751046226.244979",
+        "userId": "U093F1270TU",
+        "text": "<@U093F1270TU> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751046240.491879",
+        "userId": "U093FRRTEDS",
+        "text": "<@U093FRRTEDS> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751046447.673549",
+        "userId": "U09395SU0PQ",
+        "text": "<@U09395SU0PQ> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751046936.461089",
+        "userId": "U093UBJHSNM",
+        "text": "<@U093UBJHSNM> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751047309.839409",
+        "userId": "U093982097Y",
+        "text": "<@U093982097Y> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751048916.789779",
+        "userId": "U093UGEAVC1",
+        "text": "<@U093UGEAVC1> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751054743.820039",
+        "userId": "U0939QZ7SK0",
+        "text": "<@U0939QZ7SK0> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751122671.347079",
+        "userId": "U093JH7PD9A",
+        "text": "<@U093JH7PD9A> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751470312.232459",
+        "userId": "U0944CHVBT6",
+        "text": "<@U0944CHVBT6> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751470691.434609",
+        "userId": "U093P4WJ05D",
+        "text": "<@U093P4WJ05D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751470949.285549",
+        "userId": "U0944EJFDM2",
+        "text": "<@U0944EJFDM2> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751472866.826529",
+        "userId": "U094G0AQR6V",
+        "text": "<@U094G0AQR6V> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751473270.661059",
+        "userId": "U0944N06J20",
+        "text": "<@U0944N06J20> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751473634.113809",
+        "userId": "U094G2BTX7B",
+        "text": "<@U094G2BTX7B> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751474043.392029",
+        "userId": "U093YBBLH9U",
+        "text": "<@U093YBBLH9U> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092JB1DH9C",
+        "ts": "1751475583.191739",
+        "userId": "U092JB0UZFY",
+        "text": "made this channel *private*. Now, it can only be viewed or joined by invitation.",
+        "type": "message",
+        "subtype": "channel_convert_to_private",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1750712712.400029",
+        "userId": "U092JB0UZFY",
+        "text": "<@U092JB0UZFY> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751044266.624919",
+        "userId": "U09390DQQ30",
+        "text": "<@U09390DQQ30> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751046196.888389",
+        "userId": "U093U9S2Z5F",
+        "text": "<@U093U9S2Z5F> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751046220.206079",
+        "userId": "U093FRM3U2Y",
+        "text": "<@U093FRM3U2Y> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751046225.553309",
+        "userId": "U0930LCUF1D",
+        "text": "<@U0930LCUF1D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751046226.319269",
+        "userId": "U093F1270TU",
+        "text": "<@U093F1270TU> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751046240.587069",
+        "userId": "U093FRRTEDS",
+        "text": "<@U093FRRTEDS> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751046447.741259",
+        "userId": "U09395SU0PQ",
+        "text": "<@U09395SU0PQ> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751046936.530109",
+        "userId": "U093UBJHSNM",
+        "text": "<@U093UBJHSNM> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751047309.929769",
+        "userId": "U093982097Y",
+        "text": "<@U093982097Y> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751048916.855939",
+        "userId": "U093UGEAVC1",
+        "text": "<@U093UGEAVC1> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751054743.885049",
+        "userId": "U0939QZ7SK0",
+        "text": "<@U0939QZ7SK0> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751122671.410999",
+        "userId": "U093JH7PD9A",
+        "text": "<@U093JH7PD9A> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751470312.317639",
+        "userId": "U0944CHVBT6",
+        "text": "<@U0944CHVBT6> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751470691.537429",
+        "userId": "U093P4WJ05D",
+        "text": "<@U093P4WJ05D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751470949.385379",
+        "userId": "U0944EJFDM2",
+        "text": "<@U0944EJFDM2> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751472866.887199",
+        "userId": "U094G0AQR6V",
+        "text": "<@U094G0AQR6V> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751473270.726509",
+        "userId": "U0944N06J20",
+        "text": "<@U0944N06J20> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751473634.184049",
+        "userId": "U094G2BTX7B",
+        "text": "<@U094G2BTX7B> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751474043.455459",
+        "userId": "U093YBBLH9U",
+        "text": "<@U093YBBLH9U> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C092QL74W68",
+        "ts": "1751475440.234899",
+        "userId": "U092JB0UZFY",
+        "text": "made this channel *private*. Now, it can only be viewed or joined by invitation.",
+        "type": "message",
+        "subtype": "channel_convert_to_private",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751042042.120829",
+        "userId": "U092JB0UZFY",
+        "text": "<@U092JB0UZFY> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751042308.961259",
+        "userId": "U092JB0UZFY",
+        "text": "One of my favorite games growing up was Paper Mario and the Thousand Year Old Door on the Nintendo Gamecube",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751046275.661989",
+        "userId": "U093U9S2Z5F",
+        "text": "<@U093U9S2Z5F> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751046289.874019",
+        "userId": "U0930LCUF1D",
+        "text": "<@U0930LCUF1D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751046486.099539",
+        "userId": "U093F1270TU",
+        "text": "<@U093F1270TU> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751046740.117599",
+        "userId": "U093F1270TU",
+        "text": "You should totally check out 'This War of Mine'. Makes you see war in a whole new way.",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": [
+          {
+            "name": "raised_hands",
+            "users": [
+              "U092JB0UZFY"
+            ],
+            "count": 1
+          }
+        ]
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751047066.499739",
+        "userId": "U093FRM3U2Y",
+        "text": "<@U093FRM3U2Y> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751048594.431389",
+        "userId": "U093FRRTEDS",
+        "text": "<@U093FRRTEDS> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751048975.819739",
+        "userId": "U093FRRTEDS",
+        "text": "If we're talking about Super Nintendo classics, you can't go wrong with Donkey Kong Country. A must-play for anyone who likes retro games.",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": [
+          {
+            "name": "fire",
+            "users": [
+              "U092JB0UZFY"
+            ],
+            "count": 1
+          }
+        ]
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751055069.453619",
+        "userId": "U0939QZ7SK0",
+        "text": "<@U0939QZ7SK0> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751122734.732769",
+        "userId": "U093JH7PD9A",
+        "text": "<@U093JH7PD9A> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751122915.301309",
+        "userId": "U093JH7PD9A",
+        "text": "*I recommend my all-time favorite game, _Disco Elysium._ It's on PC and Consoles.*",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751127520.376889",
+        "userId": "U0930LCUF1D",
+        "text": "I recommend The Legend of Zelda: The Wind Waker on GameCube. It's a masterpiece with such a beautiful story.",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751144404.721939",
+        "userId": "U0939QZ7SK0",
+        "text": "Talking about Nintendo games, one of my favorites is _Monster Hunter Stories 2: Wings of Ruin_. But if we’re talking more generally, without a doubt, _Marvel’s Spider-Man_ is the best.",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": [
+          {
+            "name": "raised_hands",
+            "users": [
+              "U092JB0UZFY"
+            ],
+            "count": 1
+          }
+        ]
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751470333.452209",
+        "userId": "U0944CHVBT6",
+        "text": "<@U0944CHVBT6> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751470374.019319",
+        "userId": "U0944CHVBT6",
+        "text": "idk about you guys, but playing tony hawk underground was always my jam",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751470708.240099",
+        "userId": "U093P4WJ05D",
+        "text": "<@U093P4WJ05D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751470751.435149",
+        "userId": "U093P4WJ05D",
+        "text": "I've always been a fan of tetris. I know it's basic, but so addicting",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751470964.282689",
+        "userId": "U0944EJFDM2",
+        "text": "<@U0944EJFDM2> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751471001.376839",
+        "userId": "U0944EJFDM2",
+        "text": "Has anyone said super mario 64? I've lost so many hours of my life to that game!",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751472886.172669",
+        "userId": "U094G0AQR6V",
+        "text": "<@U094G0AQR6V> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751472914.864839",
+        "userId": "U094G0AQR6V",
+        "text": "Any NBA 2k has always been my favorite",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751473282.520009",
+        "userId": "U0944N06J20",
+        "text": "<@U0944N06J20> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751473307.151029",
+        "userId": "U0944N06J20",
+        "text": "I love sports games too! I'm always buying the new FIFA",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751473650.557339",
+        "userId": "U094G2BTX7B",
+        "text": "<@U094G2BTX7B> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751473680.118179",
+        "userId": "U094G2BTX7B",
+        "text": "Apex Legends is my favorite battle royale game",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751474066.379399",
+        "userId": "U093YBBLH9U",
+        "text": "<@U093YBBLH9U> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751474083.591519",
+        "userId": "U093YBBLH9U",
+        "text": "Def Jam Fight For New York was a classic growing up",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751474394.246519",
+        "userId": "U092JB0UZFY",
+        "text": "made this channel *private*. Now, it can only be viewed or joined by invitation.",
+        "type": "message",
+        "subtype": "channel_convert_to_private",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751474532.910359",
+        "userId": "U092JB0UZFY",
+        "text": "made this channel *public*. Any member in this workspace can see and join it.",
+        "type": "message",
+        "subtype": "channel_convert_to_public",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C0938PV4E7Q",
+        "ts": "1751475287.339789",
+        "userId": "U092JB0UZFY",
+        "text": "made this channel *private*. Now, it can only be viewed or joined by invitation.",
+        "type": "message",
+        "subtype": "channel_convert_to_private",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751042080.116109",
+        "userId": "U092JB0UZFY",
+        "text": "<@U092JB0UZFY> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751042274.855279",
+        "userId": "U092JB0UZFY",
+        "text": "My favorite show is Breaking Bad, I highly suggest it if you haven't seen it before.",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751046275.173659",
+        "userId": "U093F1270TU",
+        "text": "<@U093F1270TU> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751046279.465499",
+        "userId": "U093U9S2Z5F",
+        "text": "<@U093U9S2Z5F> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751046361.269019",
+        "userId": "U093FRM3U2Y",
+        "text": "<@U093FRM3U2Y> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751046475.017049",
+        "userId": "U093F1270TU",
+        "text": "One of my favorite shows is 'Whose Line Is It Anyway?'\nIt's super funny and all improvised, definitely worth checking out if you haven’t seen it.",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": [
+          {
+            "name": "raised_hands",
+            "users": [
+              "U092JB0UZFY"
+            ],
+            "count": 1
+          }
+        ]
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751048833.754179",
+        "userId": "U093FRRTEDS",
+        "text": "<@U093FRRTEDS> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751049218.154719",
+        "userId": "U093FRRTEDS",
+        "text": "I have to recommend Game of Thrones, in my opinion, it's the best series of all time, and everyone should watch it. The story is epic, full of political intrigue and twists that will leave you shocked. If you haven't seen it yet, you're missing out.",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751050079.936219",
+        "userId": "U092JB0UZFY",
+        "text": "That's a good suggetion <@U093FRRTEDS>, I still haven't watched that one yet. I still haven't watched Squid Games either. Sometimes you just gotta save the good ones for later!",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751055074.117699",
+        "userId": "U0939QZ7SK0",
+        "text": "<@U0939QZ7SK0> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751128786.542389",
+        "userId": "U0930LCUF1D",
+        "text": "<@U0930LCUF1D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751131794.422579",
+        "userId": "U093JH7PD9A",
+        "text": "<@U093JH7PD9A> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751470378.937059",
+        "userId": "U0944CHVBT6",
+        "text": "<@U0944CHVBT6> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751470404.845349",
+        "userId": "U0944CHVBT6",
+        "text": "I always loved the anime One Piece",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751470757.745819",
+        "userId": "U093P4WJ05D",
+        "text": "<@U093P4WJ05D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751470788.677179",
+        "userId": "U093P4WJ05D",
+        "text": "Oh nice, One Piece is a good anime. I've been rewatching Dragon Ball Z lately, you should if you haven't and like anime!",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751471006.635949",
+        "userId": "U0944EJFDM2",
+        "text": "<@U0944EJFDM2> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751471052.567749",
+        "userId": "U0944EJFDM2",
+        "text": "Oh since we are talking about anime, I always loved Death Note. I didn't like the movie with Nat Wolff though.",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751472921.015479",
+        "userId": "U094G0AQR6V",
+        "text": "<@U094G0AQR6V> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751472927.905339",
+        "userId": "U094G0AQR6V",
+        "text": "I always like to watch the animes Naruto and Shippuden",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751473311.835569",
+        "userId": "U0944N06J20",
+        "text": "<@U0944N06J20> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751473348.834369",
+        "userId": "U0944N06J20",
+        "text": "I love animes too, One Punch Man is a good one!",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751473719.094589",
+        "userId": "U094G2BTX7B",
+        "text": "<@U094G2BTX7B> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751473758.898549",
+        "userId": "U094G2BTX7B",
+        "text": "I always loved the anime JoJo's Bizarre Adventure",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751474089.252249",
+        "userId": "U093YBBLH9U",
+        "text": "<@U093YBBLH9U> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751474288.127389",
+        "userId": "U093YBBLH9U",
+        "text": "I'm always watching the anime _Samurai Champloo_",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751475528.199209",
+        "userId": "U092JB0UZFY",
+        "text": "made this channel *private*. Now, it can only be viewed or joined by invitation.",
+        "type": "message",
+        "subtype": "channel_convert_to_private",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751475532.377679",
+        "userId": "U0930LCUF1D",
+        "text": "<@U0930LCUF1D> has left the channel",
+        "type": "message",
+        "subtype": "channel_leave",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751475535.617919",
+        "userId": "U093FRM3U2Y",
+        "text": "<@U093FRM3U2Y> has left the channel",
+        "type": "message",
+        "subtype": "channel_leave",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751475538.899289",
+        "userId": "U093FRRTEDS",
+        "text": "<@U093FRRTEDS> has left the channel",
+        "type": "message",
+        "subtype": "channel_leave",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751475543.898459",
+        "userId": "U093F1270TU",
+        "text": "<@U093F1270TU> has left the channel",
+        "type": "message",
+        "subtype": "channel_leave",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751475546.826059",
+        "userId": "U093U9S2Z5F",
+        "text": "<@U093U9S2Z5F> has left the channel",
+        "type": "message",
+        "subtype": "channel_leave",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751475553.732549",
+        "userId": "U093JH7PD9A",
+        "text": "<@U093JH7PD9A> has left the channel",
+        "type": "message",
+        "subtype": "channel_leave",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093EL23YP4",
+        "ts": "1751475557.041619",
+        "userId": "U0939QZ7SK0",
+        "text": "<@U0939QZ7SK0> has left the channel",
+        "type": "message",
+        "subtype": "channel_leave",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751042063.817939",
+        "userId": "U092JB0UZFY",
+        "text": "<@U092JB0UZFY> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751042336.421649",
+        "userId": "U092JB0UZFY",
+        "text": "You can't go wrong with Napoleon Dynamite",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": [
+          {
+            "name": "clap",
+            "users": [
+              "U093FRRTEDS"
+            ],
+            "count": 1
+          }
+        ]
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751046281.891719",
+        "userId": "U093U9S2Z5F",
+        "text": "<@U093U9S2Z5F> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751046362.657279",
+        "userId": "U093F1270TU",
+        "text": "<@U093F1270TU> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751046508.868049",
+        "userId": "U093FRM3U2Y",
+        "text": "<@U093FRM3U2Y> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751046662.910819",
+        "userId": "U093F1270TU",
+        "text": "You gotta check out 'They Live' if you haven’t, it’s weird in the best way and kinda awesome.",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": [
+          {
+            "name": "raised_hands",
+            "users": [
+              "U092JB0UZFY"
+            ],
+            "count": 1
+          }
+        ]
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751048839.131249",
+        "userId": "U093FRRTEDS",
+        "text": "<@U093FRRTEDS> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751049523.815749",
+        "userId": "U093FRRTEDS",
+        "text": "If you want a movie that makes you think, watch Fight Club. It's a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary!",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751055072.153149",
+        "userId": "U0939QZ7SK0",
+        "text": "<@U0939QZ7SK0> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751128782.937669",
+        "userId": "U0930LCUF1D",
+        "text": "<@U0930LCUF1D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751131798.397719",
+        "userId": "U093JH7PD9A",
+        "text": "<@U093JH7PD9A> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751470408.142599",
+        "userId": "U0944CHVBT6",
+        "text": "<@U0944CHVBT6> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751470438.529969",
+        "userId": "U0944CHVBT6",
+        "text": "You have to watch The Matrix if you haven't already",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751470792.634179",
+        "userId": "U093P4WJ05D",
+        "text": "<@U093P4WJ05D> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751470811.194169",
+        "userId": "U093P4WJ05D",
+        "text": "I just watched Y Tu Mama Tambien, what a rollercoaster!",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751471057.541059",
+        "userId": "U0944EJFDM2",
+        "text": "<@U0944EJFDM2> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751471077.750929",
+        "userId": "U0944EJFDM2",
+        "text": "Reservoir Dogs is a must watch",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751472969.254089",
+        "userId": "U094G0AQR6V",
+        "text": "<@U094G0AQR6V> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751473019.313659",
+        "userId": "U094G0AQR6V",
+        "text": "Never Back Down is a good movie!",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751473352.361689",
+        "userId": "U0944N06J20",
+        "text": "<@U0944N06J20> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751473361.927469",
+        "userId": "U0944N06J20",
+        "text": "OPPENHEIMER!",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751473770.478059",
+        "userId": "U094G2BTX7B",
+        "text": "<@U094G2BTX7B> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751473784.501699",
+        "userId": "U094G2BTX7B",
+        "text": "Good Will Hunting is a good one!",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751474177.571659",
+        "userId": "U093YBBLH9U",
+        "text": "<@U093YBBLH9U> has joined the channel",
+        "type": "message",
+        "subtype": "channel_join",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751474186.026929",
+        "userId": "U093YBBLH9U",
+        "text": "I always liked the anime movie Akira",
+        "type": "message",
+        "subtype": null,
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751474508.736819",
+        "userId": "U092JB0UZFY",
+        "text": "made this channel *private*. Now, it can only be viewed or joined by invitation.",
+        "type": "message",
+        "subtype": "channel_convert_to_private",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751474513.744709",
+        "userId": "U092JB0UZFY",
+        "text": "made this channel *public*. Any member in this workspace can see and join it.",
+        "type": "message",
+        "subtype": "channel_convert_to_public",
+        "threadTs": null,
+        "reactionsJson": []
+      },
+      {
+        "channelId": "C093FF10B5J",
+        "ts": "1751475331.332439",
+        "userId": "U092JB0UZFY",
+        "text": "made this channel *private*. Now, it can only be viewed or joined by invitation.",
+        "type": "message",
+        "subtype": "channel_convert_to_private",
+        "threadTs": null,
+        "reactionsJson": []
+      }
+    ],
+    "files": [
+      {
+        "id": "F092Q44BBQA",
+        "channelId": "C092JB1AMK8",
+        "messageTs": "1750712686.899689",
+        "name": "Company_Handbook",
+        "title": "Company Handbook",
+        "mimetype": "application/vnd.slack-docs",
+        "filetype": "quip",
+        "content": ""
+      },
+      {
+        "id": "F092JAR3SNA",
+        "channelId": "C092JB1DH9C",
+        "messageTs": "1750712687.403729",
+        "name": "____________",
+        "title": ":tada::heartpulse::stuck_out_tongue_winking_eye:",
+        "mimetype": "application/vnd.slack-docs",
+        "filetype": "quip",
+        "content": ""
+      }
+    ]
+  },
+  "calls": [
+    {
+      "task": "689bd255c0422b257e7dfcc4",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel, private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n",
+      "skip": "Identical channel-list arguments have contradictory live replies"
+    },
+    {
+      "task": "689bd255c0422b257e7dfcc4",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093FF10B5J"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n"
+    },
+    {
+      "task": "689af4e653c3905e7b5b2581",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": ""
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "689af4e653c3905e7b5b2581",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C0938PV4E7Q"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C0938PV4E7Q,,Def Jam Fight For New York was a classic growing up,1751474083.591519,\nU094G2BTX7B,shinsplints7070,Steve Shins,C0938PV4E7Q,,Apex Legends is my favorite battle royale game,1751473680.118179,\nU0944N06J20,quickfits01,James Fitz,C0938PV4E7Q,,I love sports games too Im always buying the new FIFA,1751473307.151029,\nU094G0AQR6V,gymrat2079,Jim Rat,C0938PV4E7Q,,Any NBA 2k has always been my favorite,1751472914.864839,\nU0944EJFDM2,qtwatcher1999,QT watcher,C0938PV4E7Q,,Has anyone said super mario 64? Ive lost so many hours of my life to that game,1751471001.376839,\nU093P4WJ05D,kwfan2022,kwfan lakes,C0938PV4E7Q,,\"Ive always been a fan of tetris. I know its basic, but so addicting\",1751470751.435149,\nU0944CHVBT6,kcpfan46,kcpfan,C0938PV4E7Q,,\"idk about you guys, but playing tony hawk underground was always my jam\",1751470374.019319,\nU0939QZ7SK0,sebas.mb12,Sebastián Mendoza Brieva,C0938PV4E7Q,,\"Talking about Nintendo games, one of my favorites is _Monster Hunter Stories 2: Wings of Ruin_. But if were talking more generally, without a doubt, _Marvels Spider-Man_ is the best.\",1751144404.721939,\nU0930LCUF1D,brandonaz.vadillo,Brandon Vadillo,C0938PV4E7Q,,I recommend The Legend of Zelda: The Wind Waker on GameCube. Its a masterpiece with such a beautiful story.,1751127520.376889,\nU093JH7PD9A,spjara.aravena,Samuel Jara,C0938PV4E7Q,,\"I recommend my all-time favorite game, _Disco Elysium._ Its on PC and Consoles.\",1751122915.301309,\nU093FRRTEDS,nosdle,Éldson Santos,C0938PV4E7Q,,\"If were talking about Super Nintendo classics, you cant go wrong with Donkey Kong Country. A must-play for anyone who likes retro games.\",1751048975.819739,\nU093F1270TU,lucas.t.medina1994,,C0938PV4E7Q,,You should totally check out This War of Mine. Makes you see war in a whole new way.,1751046740.117599,\nU092JB0UZFY,mcpdumle,mcpdumle,C0938PV4E7Q,,One of my favorite games growing up was Paper Mario and the Thousand Year Old Door on the Nintendo Gamecube,1751042308.961259,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b2014",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel,private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b2014",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_in_channel": "C093FF10B5J",
+        "filter_users_from": "kcpfan46"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU0944CHVBT6,kcpfan46,kcpfan,#movie-suggestions,,You have to watch The Matrix if you havent already,1751470438.529969,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfccf",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel, private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n",
+      "skip": "Identical channel-list arguments have contradictory live replies"
+    },
+    {
+      "task": "689bd255c0422b257e7dfccf",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C0938PV4E7Q"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C0938PV4E7Q,,Def Jam Fight For New York was a classic growing up,1751474083.591519,\nU094G2BTX7B,shinsplints7070,Steve Shins,C0938PV4E7Q,,Apex Legends is my favorite battle royale game,1751473680.118179,\nU0944N06J20,quickfits01,James Fitz,C0938PV4E7Q,,I love sports games too Im always buying the new FIFA,1751473307.151029,\nU094G0AQR6V,gymrat2079,Jim Rat,C0938PV4E7Q,,Any NBA 2k has always been my favorite,1751472914.864839,\nU0944EJFDM2,qtwatcher1999,QT watcher,C0938PV4E7Q,,Has anyone said super mario 64? Ive lost so many hours of my life to that game,1751471001.376839,\nU093P4WJ05D,kwfan2022,kwfan lakes,C0938PV4E7Q,,\"Ive always been a fan of tetris. I know its basic, but so addicting\",1751470751.435149,\nU0944CHVBT6,kcpfan46,kcpfan,C0938PV4E7Q,,\"idk about you guys, but playing tony hawk underground was always my jam\",1751470374.019319,\nU0939QZ7SK0,sebas.mb12,Sebastián Mendoza Brieva,C0938PV4E7Q,,\"Talking about Nintendo games, one of my favorites is _Monster Hunter Stories 2: Wings of Ruin_. But if were talking more generally, without a doubt, _Marvels Spider-Man_ is the best.\",1751144404.721939,\nU0930LCUF1D,brandonaz.vadillo,Brandon Vadillo,C0938PV4E7Q,,I recommend The Legend of Zelda: The Wind Waker on GameCube. Its a masterpiece with such a beautiful story.,1751127520.376889,\nU093JH7PD9A,spjara.aravena,Samuel Jara,C0938PV4E7Q,,\"I recommend my all-time favorite game, _Disco Elysium._ Its on PC and Consoles.\",1751122915.301309,\nU093FRRTEDS,nosdle,Éldson Santos,C0938PV4E7Q,,\"If were talking about Super Nintendo classics, you cant go wrong with Donkey Kong Country. A must-play for anyone who likes retro games.\",1751048975.819739,\nU093F1270TU,lucas.t.medina1994,,C0938PV4E7Q,,You should totally check out This War of Mine. Makes you see war in a whole new way.,1751046740.117599,\nU092JB0UZFY,mcpdumle,mcpdumle,C0938PV4E7Q,,One of my favorite games growing up was Paper Mario and the Thousand Year Old Door on the Nintendo Gamecube,1751042308.961259,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b2008",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel, private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n",
+      "skip": "Identical channel-list arguments have contradictory live replies"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b2008",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093FF10B5J"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b201e",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b201e",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C0938PV4E7Q"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C0938PV4E7Q,,Def Jam Fight For New York was a classic growing up,1751474083.591519,\nU094G2BTX7B,shinsplints7070,Steve Shins,C0938PV4E7Q,,Apex Legends is my favorite battle royale game,1751473680.118179,\nU0944N06J20,quickfits01,James Fitz,C0938PV4E7Q,,I love sports games too Im always buying the new FIFA,1751473307.151029,\nU094G0AQR6V,gymrat2079,Jim Rat,C0938PV4E7Q,,Any NBA 2k has always been my favorite,1751472914.864839,\nU0944EJFDM2,qtwatcher1999,QT watcher,C0938PV4E7Q,,Has anyone said super mario 64? Ive lost so many hours of my life to that game,1751471001.376839,\nU093P4WJ05D,kwfan2022,kwfan lakes,C0938PV4E7Q,,\"Ive always been a fan of tetris. I know its basic, but so addicting\",1751470751.435149,\nU0944CHVBT6,kcpfan46,kcpfan,C0938PV4E7Q,,\"idk about you guys, but playing tony hawk underground was always my jam\",1751470374.019319,\nU0939QZ7SK0,sebas.mb12,Sebastián Mendoza Brieva,C0938PV4E7Q,,\"Talking about Nintendo games, one of my favorites is _Monster Hunter Stories 2: Wings of Ruin_. But if were talking more generally, without a doubt, _Marvels Spider-Man_ is the best.\",1751144404.721939,\nU0930LCUF1D,brandonaz.vadillo,Brandon Vadillo,C0938PV4E7Q,,I recommend The Legend of Zelda: The Wind Waker on GameCube. Its a masterpiece with such a beautiful story.,1751127520.376889,\nU093JH7PD9A,spjara.aravena,Samuel Jara,C0938PV4E7Q,,\"I recommend my all-time favorite game, _Disco Elysium._ Its on PC and Consoles.\",1751122915.301309,\nU093FRRTEDS,nosdle,Éldson Santos,C0938PV4E7Q,,\"If were talking about Super Nintendo classics, you cant go wrong with Donkey Kong Country. A must-play for anyone who likes retro games.\",1751048975.819739,\nU093F1270TU,lucas.t.medina1994,,C0938PV4E7Q,,You should totally check out This War of Mine. Makes you see war in a whole new way.,1751046740.117599,\nU092JB0UZFY,mcpdumle,mcpdumle,C0938PV4E7Q,,One of my favorite games growing up was Paper Mario and the Thousand Year Old Door on the Nintendo Gamecube,1751042308.961259,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b1fe0",
+      "tool": "conversations_search_messages",
+      "args": {
+        "search_query": "",
+        "filter_date_after": "2025-06-01",
+        "filter_date_before": "2025-07-01"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093F1270TU,lucas.t.medina1994,,#tv-show-suggestions,,\"One of my favorite shows is Whose Line Is It Anyway? Its super funny and all improvised, definitely worth checking out if you havent seen it.\",1751046475.017049,\nU093F1270TU,lucas.t.medina1994,,#gaming-suggestions,,You should totally check out This War of Mine. Makes you see war in a whole new way.,1751046740.117599,\nU093F1270TU,lucas.t.medina1994,,#movie-suggestions,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU0939QZ7SK0,sebas.mb12,Sebastián Mendoza Brieva,#gaming-suggestions,,\"Talking about Nintendo games, one of my favorites is Monster Hunter Stories 2: Wings of Ruin. But if were talking more generally, without a doubt, Marvels Spider-Man is the best.\",1751144404.721939,\nU093FRRTEDS,nosdle,Éldson Santos,#gaming-suggestions,,\"If were talking about Super Nintendo classics, you cant go wrong with Donkey Kong Country. A must-play for anyone who likes retro games.\",1751048975.819739,\nU092JB0UZFY,mcpdumle,mcpdumle,#movie-suggestions,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\nU092JB0UZFY,mcpdumle,mcpdumle,#tv-show-suggestions,,\"Thats a good suggetion U093FRRTEDSÉldson Santos, I still havent watched that one yet. I still havent watched Squid Games either. Sometimes you just gotta save the good ones for later\",1751050079.936219,\nU092JB0UZFY,mcpdumle,mcpdumle,#tv-show-suggestions,,\"My favorite show is Breaking Bad, I highly suggest it if you havent seen it before.\",1751042274.855279,\nU092JB0UZFY,mcpdumle,mcpdumle,#gaming-suggestions,,One of my favorite games growing up was Paper Mario and the Thousand Year Old Door on the Nintendo Gamecube,1751042308.961259,\nU093FRRTEDS,nosdle,Éldson Santos,#tv-show-suggestions,,\"I have to recommend Game of Thrones, in my opinion, its the best series of all time, and everyone should watch it. The story is epic, full of political intrigue and twists that will leave you shocked. If you havent seen it yet, youre missing out.\",1751049218.154719,\nU093JH7PD9A,spjara.aravena,Samuel Jara,#gaming-suggestions,,\"I recommend my all-time favorite game, Disco Elysium. Its on PC and Consoles.\",1751122915.301309,\nU093FRRTEDS,nosdle,Éldson Santos,#movie-suggestions,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU0930LCUF1D,brandonaz.vadillo,Brandon Vadillo,#gaming-suggestions,,I recommend The Legend of Zelda: The Wind Waker on GameCube. Its a masterpiece with such a beautiful story.,1751127520.376889,\nUSLACKBOT,slackbot,Slackbot,#USLACKBOT,,Your workspace is on a free trial through July 22nd :tada:. Nows a good time to make sure your whole team is here.,1750712713.666689,\n",
+      "skip": "Reply contains messages absent from the export: #USLACKBOT at 1750712713.666689"
+    },
+    {
+      "task": "6866d4d2eea665b355a8f8bc",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel,private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "6866d4d2eea665b355a8f8bc",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093FF10B5J",
+        "limit": "100"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfcbd",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel, private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n",
+      "skip": "Identical channel-list arguments have contradictory live replies"
+    },
+    {
+      "task": "689bd255c0422b257e7dfcbd",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_in_channel": "C093FF10B5J",
+        "filter_users_from": "kcpfan46"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU0944CHVBT6,kcpfan46,kcpfan,#movie-suggestions,,You have to watch The Matrix if you havent already,1751470438.529969,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfcbd",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_in_channel": "C093FF10B5J",
+        "filter_users_from": "quickfits01"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU0944N06J20,quickfits01,James Fitz,#movie-suggestions,,OPPENHEIMER,1751473361.927469,\n"
+    },
+    {
+      "task": "6887c6d4614f06dc73af245f",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "private channel, public channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "6887c6d4614f06dc73af245f",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093FF10B5J"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b2030",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel, private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n",
+      "skip": "Identical channel-list arguments have contradictory live replies"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b2030",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "#movie-suggestions",
+        "limit": "90d"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n",
+      "skip": "History window is relative to the unrecorded call time"
+    },
+    {
+      "task": "6866d4d2eea665b355a8f885",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel,private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "6866d4d2eea665b355a8f885",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C0938PV4E7Q",
+        "limit": "100"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C0938PV4E7Q,,Def Jam Fight For New York was a classic growing up,1751474083.591519,\nU094G2BTX7B,shinsplints7070,Steve Shins,C0938PV4E7Q,,Apex Legends is my favorite battle royale game,1751473680.118179,\nU0944N06J20,quickfits01,James Fitz,C0938PV4E7Q,,I love sports games too Im always buying the new FIFA,1751473307.151029,\nU094G0AQR6V,gymrat2079,Jim Rat,C0938PV4E7Q,,Any NBA 2k has always been my favorite,1751472914.864839,\nU0944EJFDM2,qtwatcher1999,QT watcher,C0938PV4E7Q,,Has anyone said super mario 64? Ive lost so many hours of my life to that game,1751471001.376839,\nU093P4WJ05D,kwfan2022,kwfan lakes,C0938PV4E7Q,,\"Ive always been a fan of tetris. I know its basic, but so addicting\",1751470751.435149,\nU0944CHVBT6,kcpfan46,kcpfan,C0938PV4E7Q,,\"idk about you guys, but playing tony hawk underground was always my jam\",1751470374.019319,\nU0939QZ7SK0,sebas.mb12,Sebastián Mendoza Brieva,C0938PV4E7Q,,\"Talking about Nintendo games, one of my favorites is _Monster Hunter Stories 2: Wings of Ruin_. But if were talking more generally, without a doubt, _Marvels Spider-Man_ is the best.\",1751144404.721939,\nU0930LCUF1D,brandonaz.vadillo,Brandon Vadillo,C0938PV4E7Q,,I recommend The Legend of Zelda: The Wind Waker on GameCube. Its a masterpiece with such a beautiful story.,1751127520.376889,\nU093JH7PD9A,spjara.aravena,Samuel Jara,C0938PV4E7Q,,\"I recommend my all-time favorite game, _Disco Elysium._ Its on PC and Consoles.\",1751122915.301309,\nU093FRRTEDS,nosdle,Éldson Santos,C0938PV4E7Q,,\"If were talking about Super Nintendo classics, you cant go wrong with Donkey Kong Country. A must-play for anyone who likes retro games.\",1751048975.819739,\nU093F1270TU,lucas.t.medina1994,,C0938PV4E7Q,,You should totally check out This War of Mine. Makes you see war in a whole new way.,1751046740.117599,\nU092JB0UZFY,mcpdumle,mcpdumle,C0938PV4E7Q,,One of my favorite games growing up was Paper Mario and the Thousand Year Old Door on the Nintendo Gamecube,1751042308.961259,\n"
+    },
+    {
+      "task": "689af4e653c3905e7b5b25bd",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel, private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n",
+      "skip": "Identical channel-list arguments have contradictory live replies"
+    },
+    {
+      "task": "689af4e653c3905e7b5b25bd",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_in_channel": "C093EL23YP4",
+        "filter_users_from": "nosdle"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093FRRTEDS,nosdle,Éldson Santos,#tv-show-suggestions,,\"I have to recommend Game of Thrones, in my opinion, its the best series of all time, and everyone should watch it. The story is epic, full of political intrigue and twists that will leave you shocked. If you havent seen it yet, youre missing out.\",1751049218.154719,\n"
+    },
+    {
+      "task": "689af4e653c3905e7b5b25bd",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_in_channel": "C093EL23YP4",
+        "filter_users_from": "mcpdumle"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU092JB0UZFY,mcpdumle,mcpdumle,#tv-show-suggestions,,\"made this channel private. Now, it can only be viewed or joined by invitation.\",1751475528.199209,\nU092JB0UZFY,mcpdumle,mcpdumle,#tv-show-suggestions,,\"Thats a good suggetion U093FRRTEDSÉldson Santos, I still havent watched that one yet. I still havent watched Squid Games either. Sometimes you just gotta save the good ones for later\",1751050079.936219,\nU092JB0UZFY,mcpdumle,mcpdumle,#tv-show-suggestions,,\"My favorite show is Breaking Bad, I highly suggest it if you havent seen it before.\",1751042274.855279,\n"
+    },
+    {
+      "task": "688706e2ca6b3308497106ec",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": ""
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "688706e2ca6b3308497106ec",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C0938PV4E7Q"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C0938PV4E7Q,,Def Jam Fight For New York was a classic growing up,1751474083.591519,\nU094G2BTX7B,shinsplints7070,Steve Shins,C0938PV4E7Q,,Apex Legends is my favorite battle royale game,1751473680.118179,\nU0944N06J20,quickfits01,James Fitz,C0938PV4E7Q,,I love sports games too Im always buying the new FIFA,1751473307.151029,\nU094G0AQR6V,gymrat2079,Jim Rat,C0938PV4E7Q,,Any NBA 2k has always been my favorite,1751472914.864839,\nU0944EJFDM2,qtwatcher1999,QT watcher,C0938PV4E7Q,,Has anyone said super mario 64? Ive lost so many hours of my life to that game,1751471001.376839,\nU093P4WJ05D,kwfan2022,kwfan lakes,C0938PV4E7Q,,\"Ive always been a fan of tetris. I know its basic, but so addicting\",1751470751.435149,\nU0944CHVBT6,kcpfan46,kcpfan,C0938PV4E7Q,,\"idk about you guys, but playing tony hawk underground was always my jam\",1751470374.019319,\nU0939QZ7SK0,sebas.mb12,Sebastián Mendoza Brieva,C0938PV4E7Q,,\"Talking about Nintendo games, one of my favorites is _Monster Hunter Stories 2: Wings of Ruin_. But if were talking more generally, without a doubt, _Marvels Spider-Man_ is the best.\",1751144404.721939,\nU0930LCUF1D,brandonaz.vadillo,Brandon Vadillo,C0938PV4E7Q,,I recommend The Legend of Zelda: The Wind Waker on GameCube. Its a masterpiece with such a beautiful story.,1751127520.376889,\nU093JH7PD9A,spjara.aravena,Samuel Jara,C0938PV4E7Q,,\"I recommend my all-time favorite game, _Disco Elysium._ Its on PC and Consoles.\",1751122915.301309,\nU093FRRTEDS,nosdle,Éldson Santos,C0938PV4E7Q,,\"If were talking about Super Nintendo classics, you cant go wrong with Donkey Kong Country. A must-play for anyone who likes retro games.\",1751048975.819739,\nU093F1270TU,lucas.t.medina1994,,C0938PV4E7Q,,You should totally check out This War of Mine. Makes you see war in a whole new way.,1751046740.117599,\nU092JB0UZFY,mcpdumle,mcpdumle,C0938PV4E7Q,,One of my favorite games growing up was Paper Mario and the Thousand Year Old Door on the Nintendo Gamecube,1751042308.961259,\n"
+    },
+    {
+      "task": "689e0b1d9c8e2ac413c1f24b",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "private_chanel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "689e0b1d9c8e2ac413c1f24b",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_users_from": "shinsplints7070",
+        "filter_in_channel": "C093FF10B5J"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU094G2BTX7B,shinsplints7070,Steve Shins,#movie-suggestions,,Good Will Hunting is a good one,1751473784.501699,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b1ff7",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel,private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b1ff7",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_in_channel": "C093FF10B5J",
+        "filter_users_from": "qtwatcher1999"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU0944EJFDM2,qtwatcher1999,QT watcher,#movie-suggestions,,Reservoir Dogs is a must watch,1751471077.750929,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b2039",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "private_channel,public_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b2039",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093FF10B5J"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfca5",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfca5",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093FF10B5J"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n"
+    },
+    {
+      "task": "6886306b5ed4da6b2c381199",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": ""
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "689e0b1d9c8e2ac413c1f225",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "private_channel, public_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n",
+      "skip": "Identical channel-list arguments have contradictory live replies"
+    },
+    {
+      "task": "689e0b1d9c8e2ac413c1f225",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093FF10B5J"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n"
+    },
+    {
+      "task": "689af4e653c3905e7b5b25b9",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "689af4e653c3905e7b5b25b9",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093FF10B5J"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfcce",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": " 'mpim', 'im', 'public_channel', 'private_channel'"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfcce",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C0938PV4E7Q"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C0938PV4E7Q,,Def Jam Fight For New York was a classic growing up,1751474083.591519,\nU094G2BTX7B,shinsplints7070,Steve Shins,C0938PV4E7Q,,Apex Legends is my favorite battle royale game,1751473680.118179,\nU0944N06J20,quickfits01,James Fitz,C0938PV4E7Q,,I love sports games too Im always buying the new FIFA,1751473307.151029,\nU094G0AQR6V,gymrat2079,Jim Rat,C0938PV4E7Q,,Any NBA 2k has always been my favorite,1751472914.864839,\nU0944EJFDM2,qtwatcher1999,QT watcher,C0938PV4E7Q,,Has anyone said super mario 64? Ive lost so many hours of my life to that game,1751471001.376839,\nU093P4WJ05D,kwfan2022,kwfan lakes,C0938PV4E7Q,,\"Ive always been a fan of tetris. I know its basic, but so addicting\",1751470751.435149,\nU0944CHVBT6,kcpfan46,kcpfan,C0938PV4E7Q,,\"idk about you guys, but playing tony hawk underground was always my jam\",1751470374.019319,\nU0939QZ7SK0,sebas.mb12,Sebastián Mendoza Brieva,C0938PV4E7Q,,\"Talking about Nintendo games, one of my favorites is _Monster Hunter Stories 2: Wings of Ruin_. But if were talking more generally, without a doubt, _Marvels Spider-Man_ is the best.\",1751144404.721939,\nU0930LCUF1D,brandonaz.vadillo,Brandon Vadillo,C0938PV4E7Q,,I recommend The Legend of Zelda: The Wind Waker on GameCube. Its a masterpiece with such a beautiful story.,1751127520.376889,\nU093JH7PD9A,spjara.aravena,Samuel Jara,C0938PV4E7Q,,\"I recommend my all-time favorite game, _Disco Elysium._ Its on PC and Consoles.\",1751122915.301309,\nU093FRRTEDS,nosdle,Éldson Santos,C0938PV4E7Q,,\"If were talking about Super Nintendo classics, you cant go wrong with Donkey Kong Country. A must-play for anyone who likes retro games.\",1751048975.819739,\nU093F1270TU,lucas.t.medina1994,,C0938PV4E7Q,,You should totally check out This War of Mine. Makes you see war in a whole new way.,1751046740.117599,\nU092JB0UZFY,mcpdumle,mcpdumle,C0938PV4E7Q,,One of my favorite games growing up was Paper Mario and the Thousand Year Old Door on the Nintendo Gamecube,1751042308.961259,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfcce",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093FF10B5J"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfd04",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "private_channel, public_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n",
+      "skip": "Identical channel-list arguments have contradictory live replies"
+    },
+    {
+      "task": "689bd255c0422b257e7dfd04",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_in_channel": "C0938PV4E7Q",
+        "filter_users_from": "qtwatcher1999"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU0944EJFDM2,qtwatcher1999,QT watcher,#gaming-suggestions,,Has anyone said super mario 64? Ive lost so many hours of my life to that game,1751471001.376839,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfd04",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_in_channel": "C0938PV4E7Q",
+        "filter_users_from": "kwfan2022"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093P4WJ05D,kwfan2022,kwfan lakes,#gaming-suggestions,,\"Ive always been a fan of tetris. I know its basic, but so addicting\",1751470751.435149,\n"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b2013",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "public_channel, private_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n",
+      "skip": "Identical channel-list arguments have contradictory live replies"
+    },
+    {
+      "task": "689cd6f8522029b7ad7b2013",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093EL23YP4"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093EL23YP4,,Im always watching the anime _Samurai Champloo_,1751474288.127389,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093EL23YP4,,I always loved the anime JoJos Bizarre Adventure,1751473758.898549,\nU0944N06J20,quickfits01,James Fitz,C093EL23YP4,,\"I love animes too, One Punch Man is a good one\",1751473348.834369,\nU094G0AQR6V,gymrat2079,Jim Rat,C093EL23YP4,,I always like to watch the animes Naruto and Shippuden,1751472927.905339,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093EL23YP4,,\"Oh since we are talking about anime, I always loved Death Note. I didnt like the movie with Nat Wolff though.\",1751471052.567749,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093EL23YP4,,\"Oh nice, One Piece is a good anime. Ive been rewatching Dragon Ball Z lately, you should if you havent and like anime\",1751470788.677179,\nU0944CHVBT6,kcpfan46,kcpfan,C093EL23YP4,,I always loved the anime One Piece,1751470404.845349,\nU092JB0UZFY,mcpdumle,mcpdumle,C093EL23YP4,,\"Thats a good suggetion U093FRRTEDS, I still havent watched that one yet. I still havent watched Squid Games either. Sometimes you just gotta save the good ones for later\",1751050079.936219,\nU093FRRTEDS,nosdle,Éldson Santos,C093EL23YP4,,\"I have to recommend Game of Thrones, in my opinion, its the best series of all time, and everyone should watch it. The story is epic, full of political intrigue and twists that will leave you shocked. If you havent seen it yet, youre missing out.\",1751049218.154719,\nU093F1270TU,lucas.t.medina1994,,C093EL23YP4,,\"One of my favorite shows is Whose Line Is It Anyway? Its super funny and all improvised, definitely worth checking out if you havent seen it.\",1751046475.017049,\nU092JB0UZFY,mcpdumle,mcpdumle,C093EL23YP4,,\"My favorite show is Breaking Bad, I highly suggest it if you havent seen it before.\",1751042274.855279,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfcda",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "private_channel, public_channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n",
+      "skip": "Identical channel-list arguments have contradictory live replies"
+    },
+    {
+      "task": "689bd255c0422b257e7dfcda",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_in_channel": "C0938PV4E7Q",
+        "filter_date_during": "2025-06-27"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093F1270TU,lucas.t.medina1994,,#gaming-suggestions,,You should totally check out This War of Mine. Makes you see war in a whole new way.,1751046740.117599,\nU093FRRTEDS,nosdle,Éldson Santos,#gaming-suggestions,,\"If were talking about Super Nintendo classics, you cant go wrong with Donkey Kong Country. A must-play for anyone who likes retro games.\",1751048975.819739,\nU092JB0UZFY,mcpdumle,mcpdumle,#gaming-suggestions,,One of my favorite games growing up was Paper Mario and the Thousand Year Old Door on the Nintendo Gamecube,1751042308.961259,\n"
+    },
+    {
+      "task": "689bd255c0422b257e7dfcda",
+      "tool": "conversations_search_messages",
+      "args": {
+        "filter_date_before": "",
+        "filter_users_from": "mcpdumle",
+        "filter_date_after": "",
+        "filter_date_during": "2025-06-27"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU092JB0UZFY,mcpdumle,mcpdumle,#movie-suggestions,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\nU092JB0UZFY,mcpdumle,mcpdumle,#gaming-suggestions,,One of my favorite games growing up was Paper Mario and the Thousand Year Old Door on the Nintendo Gamecube,1751042308.961259,\nU092JB0UZFY,mcpdumle,mcpdumle,#tv-show-suggestions,,\"Thats a good suggetion U093FRRTEDSÉldson Santos, I still havent watched that one yet. I still havent watched Squid Games either. Sometimes you just gotta save the good ones for later\",1751050079.936219,\nU092JB0UZFY,mcpdumle,mcpdumle,#tv-show-suggestions,,\"My favorite show is Breaking Bad, I highly suggest it if you havent seen it before.\",1751042274.855279,\n"
+    },
+    {
+      "task": "687ebf5ff5a578e0055a455e",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": ""
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "6888e207a34beb25cfedda70",
+      "tool": "channels_list",
+      "args": {
+        "channel_types": "private channel"
+      },
+      "reply": "ID,Name,Topic,Purpose,MemberCount,Cursor\nC092JB1AMK8,#all-dumle-servers,,\"Share announcements and updates about company news, upcoming events, or teammates who deserve some kudos. ⭐\",18,\nC092JB1DH9C,#social,,Other channels are for work. This one’s just for fun. Get to know your teammates and show your lighter side. 🎈,8,\nC092QL74W68,#new-channel,,\"This channel is for everything #new-channel. Hold meetings, share docs, and make decisions together with your team.\",8,\nC0938PV4E7Q,#gaming-suggestions,,,8,\nC093EL23YP4,#tv-show-suggestions,,,8,\nC093FF10B5J,#movie-suggestions,,,8,\n"
+    },
+    {
+      "task": "6888e207a34beb25cfedda70",
+      "tool": "conversations_history",
+      "args": {
+        "channel_id": "C093FF10B5J"
+      },
+      "reply": "UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor\nU093YBBLH9U,hiphopluvr1989,Omari West,C093FF10B5J,,I always liked the anime movie Akira,1751474186.026929,\nU094G2BTX7B,shinsplints7070,Steve Shins,C093FF10B5J,,Good Will Hunting is a good one,1751473784.501699,\nU0944N06J20,quickfits01,James Fitz,C093FF10B5J,,OPPENHEIMER,1751473361.927469,\nU094G0AQR6V,gymrat2079,Jim Rat,C093FF10B5J,,Never Back Down is a good movie,1751473019.313659,\nU0944EJFDM2,qtwatcher1999,QT watcher,C093FF10B5J,,Reservoir Dogs is a must watch,1751471077.750929,\nU093P4WJ05D,kwfan2022,kwfan lakes,C093FF10B5J,,\"I just watched Y Tu Mama Tambien, what a rollercoaster\",1751470811.194169,\nU0944CHVBT6,kcpfan46,kcpfan,C093FF10B5J,,You have to watch The Matrix if you havent already,1751470438.529969,\nU093FRRTEDS,nosdle,Éldson Santos,C093FF10B5J,,\"If you want a movie that makes you think, watch Fight Club. Its a very intelligent and dark critique of modern society, disguised as an action film. And the twist at the end is simply legendary\",1751049523.815749,\nU093F1270TU,lucas.t.medina1994,,C093FF10B5J,,\"You gotta check out They Live if you havent, its weird in the best way and kinda awesome.\",1751046662.910819,\nU092JB0UZFY,mcpdumle,mcpdumle,C093FF10B5J,,You cant go wrong with Napoleon Dynamite,1751042336.421649,\n"
+    }
+  ]
+}

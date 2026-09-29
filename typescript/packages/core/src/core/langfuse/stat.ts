@@ -12,8 +12,15 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { LangfuseAccessor } from '../../accessor/langfuse.ts'
+import type { IndexCacheStore } from '../../cache/index/store.ts'
+import { ContentType, FileStat, FileType, type PathSpec } from '../../types.ts'
+import { stripSlash } from '../../utils/slash.ts'
+import { listedSize, resolveEntry } from '../hierarchy/probe.ts'
 import type { ScopeMatch } from '../hierarchy/scope.ts'
 import { makeStat } from '../hierarchy/stat.ts'
+import { jsonBytes } from '../render/json.ts'
+import { fetchTraceFile } from './read.ts'
 import { readdir } from './readdir.ts'
 import { detectScope } from './scope.ts'
 
@@ -29,7 +36,30 @@ function datasetExtra(match: ScopeMatch): Record<string, string> {
   return { dataset_name: match.slots.dataset_name ?? '' }
 }
 
+// A trace listing stops at defaultTraceLimit and defaultFromTimestamp while
+// read fetches any trace by id, so a trace the listing left out is probed
+// the way read reaches it; the probe fetched the whole trace, so its
+// rendered size is exact. Mirrors python's `_stat_trace`.
+async function statTrace(
+  accessor: LangfuseAccessor,
+  match: ScopeMatch,
+  path: PathSpec,
+  index?: IndexCacheStore,
+): Promise<FileStat> {
+  const name = stripSlash(path.vfsPath).split('/').pop() ?? ''
+  const entry = await resolveEntry(readdir, accessor, path, index)
+  const size =
+    entry !== null
+      ? await listedSize(index, path)
+      : jsonBytes(await fetchTraceFile(accessor, match, path)).byteLength
+  return new FileStat({ name, type: FileType.FILE, content: ContentType.JSON, size })
+}
+
 export const stat = makeStat(detectScope, readdir, {
+  overrides: {
+    trace: statTrace,
+    session_trace: statTrace,
+  },
   extras: {
     session: sessionExtra,
     prompt: promptExtra,

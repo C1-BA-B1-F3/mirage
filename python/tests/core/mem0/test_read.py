@@ -60,15 +60,28 @@ async def test_read_full_json_from_cache_no_get():
 
 
 @pytest.mark.asyncio
-async def test_read_falls_back_to_get_when_no_cache():
+async def test_a_cold_read_resolves_through_the_scoped_listing():
     acc = _accessor()
-    index = RAMIndexCacheStore()
+    fpath = PathSpec(virtual="/mem/aaa.json",
+                     directory="/mem",
+                     vfs_path="aaa.json")
+    data = json.loads(await read(acc, fpath, RAMIndexCacheStore()))
+    assert data["id"] == "aaa"
+    assert acc._client.get_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_a_memory_outside_the_scope_is_enoent():
+    """Which memories exist is the configured entity's listing; the
+    read used to fetch any id in the file name, so ``cat`` served another
+    user's memory that ``ls`` never showed."""
+    acc = _accessor()
     fpath = PathSpec(virtual="/mem/zzz.json",
                      directory="/mem",
                      vfs_path="zzz.json")
-    data = json.loads(await read(acc, fpath, index))
-    assert data["id"] == "zzz"
-    assert acc._client.get_calls == 1
+    with pytest.raises(FileNotFoundError):
+        await read(acc, fpath, RAMIndexCacheStore())
+    assert acc._client.get_calls == 0
 
 
 @pytest.mark.asyncio

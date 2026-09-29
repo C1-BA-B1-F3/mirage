@@ -17,11 +17,11 @@ import { copyFile, stat } from 'node:fs/promises'
 import { invalidateAfterWrite } from '@struktoai/mirage-core/cache/context'
 import type { PathSpec } from '@struktoai/mirage-core/types'
 import { diskError } from './errors.ts'
-import { resolveSafe } from './utils.ts'
+import { resolveInside } from './utils.ts'
 
 export async function copy(accessor: DiskAccessor, src: PathSpec, dst: PathSpec): Promise<void> {
-  const s = resolveSafe(accessor.root, src.mountPath)
-  const d = resolveSafe(accessor.root, dst.mountPath)
+  const s = await resolveInside(accessor.root, src)
+  const d = await resolveInside(accessor.root, dst)
   try {
     await copyFile(s, d)
   } catch (err) {

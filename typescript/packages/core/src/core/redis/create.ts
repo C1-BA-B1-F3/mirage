@@ -27,6 +27,6 @@ export async function create(accessor: RedisAccessor, path: PathSpec): Promise<v
   await checkDestParents(store, path, p)
   await store.setFile(p, new Uint8Array(0))
   await store.setModified(p, nowIso())
-  record('create', p, VFSName.REDIS, 0, timer)
+  record('create', path.virtual, VFSName.REDIS, 0, timer)
   await invalidateAfterWrite(path)
 }

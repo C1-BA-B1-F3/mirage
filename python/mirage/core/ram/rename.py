@@ -14,7 +14,7 @@
 
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.context import invalidate_subtree
-from mirage.core.ram.dest import check_dest_parents
+from mirage.core.ram.dest import check_dest_parents, lookup_error
 from mirage.core.timeutil import now_iso
 from mirage.types import PathSpec
 from mirage.utils.path import norm
@@ -74,6 +74,6 @@ async def rename(accessor: RAMAccessor, src_spec: PathSpec,
             store.attrs[d] = store.attrs.pop(s)
         _move_subtree(store, s, d)
     else:
-        raise FileNotFoundError(s)
+        raise lookup_error(store, src_spec, s)
     await invalidate_subtree(dst_spec)
     await invalidate_subtree(src_spec)

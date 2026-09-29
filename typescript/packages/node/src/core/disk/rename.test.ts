@@ -36,9 +36,17 @@ class FakeManager {
     return Promise.resolve()
   }
 
+  invalidateAncestors(_path: PathSpec): Promise<void> {
+    return Promise.resolve()
+  }
+
   invalidateSubtree(path: string | PathSpec): Promise<void> {
     this.subtrees.push(typeof path === 'string' ? path : path.mountPath)
     return Promise.resolve()
+  }
+
+  readThrough(_path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {
+    return fetch()
   }
 
   cachedBytes(_path: PathSpec): Promise<Uint8Array | null> {

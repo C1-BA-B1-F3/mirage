@@ -19,25 +19,33 @@ from dulwich.objects import Blob, Commit, ObjectID
 EMPTY_TREE = None
 
 
-def _occurrences(store: BaseObjectStore, sha: ObjectID | None,
-                 needle: bytes) -> int:
-    """How many times a string appears in one blob.
+def _occurrences(store: BaseObjectStore, sha: ObjectID | None, needle: bytes,
+                 ignore_case: bool) -> int:
+    """How many times a string appears in one blob, ASCII case folded
+    when asked.
 
     Args:
         store (BaseObjectStore): object database holding the blob.
         sha (ObjectID | None): blob id, None when the side does not
             exist.
-        needle (bytes): the string being counted.
+        needle (bytes): the string being counted, already folded under
+            ``ignore_case``.
+        ignore_case (bool): fold the blob's ASCII letters to lower case,
+            the table git folds a ``-S`` string through under ``-i``.
     """
     if sha is None:
         return 0
     obj = store[sha]
     if not isinstance(obj, Blob):
         return 0
-    return obj.data.count(needle)
+    data = obj.data.lower() if ignore_case else obj.data
+    return data.count(needle)
 
 
-def touches(store: BaseObjectStore, commit: Commit, needle: bytes) -> bool:
+def touches(store: BaseObjectStore,
+            commit: Commit,
+            needle: bytes,
+            ignore_case: bool = False) -> bool:
     """Whether a commit changed the number of occurrences of a string.
 
     This is git's ``-S`` (pickaxe), and it is deliberately not a grep: a
@@ -48,12 +56,16 @@ def touches(store: BaseObjectStore, commit: Commit, needle: bytes) -> bool:
 
     Compared against the first parent, or against nothing for a root
     commit, so the objects a root commit adds all count as introduced.
+    ``-i`` counts without regard to ASCII case.
 
     Args:
         store (BaseObjectStore): object database holding the trees.
         commit (Commit): the commit to test.
         needle (bytes): the string being counted.
+        ignore_case (bool): ``-i``.
     """
+    if ignore_case:
+        needle = needle.lower()
     parent_tree = EMPTY_TREE
     if commit.parents:
         parent = store[commit.parents[0]]
@@ -62,7 +74,8 @@ def touches(store: BaseObjectStore, commit: Commit, needle: bytes) -> bool:
     for change in tree_changes(store, parent_tree, commit.tree):
         old = change.old.sha if change.old is not None else None
         new = change.new.sha if change.new is not None else None
-        if _occurrences(store, old,
-                        needle) != _occurrences(store, new, needle):
+        if _occurrences(store, old, needle,
+                        ignore_case) != _occurrences(store, new, needle,
+                                                     ignore_case):
             return True
     return False

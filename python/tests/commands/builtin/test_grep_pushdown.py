@@ -1,10 +1,12 @@
 import re
+from unittest.mock import AsyncMock
 
 import pytest
 
 from mirage.commands.builtin import grep_pushdown
 from mirage.commands.builtin.constants import PatternType
 from mirage.types import PathSpec
+from mirage.vfs.types import SearchOps, SearchQuery
 
 
 def test_classify_pattern_newline_list_is_regex():
@@ -103,57 +105,63 @@ def test_is_literal_pattern(pattern, fixed, expected):
     assert grep_pushdown.is_literal_pattern(pattern, fixed) is expected
 
 
-@pytest.mark.parametrize("flags,expected", [
-    ({}, False),
-    ({
-        "i": True
-    }, False),
-    ({
-        "F": True
-    }, False),
-    ({
-        "r": True
-    }, False),
-    ({
-        "v": True
-    }, True),
-    ({
-        "n": True
-    }, True),
-    ({
-        "c": True
-    }, True),
-    ({
-        "args_l": True
-    }, True),
-    ({
-        "w": True
-    }, True),
-    ({
-        "o": True
-    }, True),
-    ({
-        "q": True
-    }, True),
-    ({
-        "H": True
-    }, True),
-    ({
-        "h": True
-    }, True),
-    ({
-        "m": "3"
-    }, True),
-    ({
-        "A": "2"
-    }, True),
-    ({
-        "B": "2"
-    }, True),
-    ({
-        "C": "2"
-    }, True),
-])
+@pytest.mark.parametrize(
+    "flags,expected",
+    [
+        ({}, False),
+        ({
+            "i": True
+        }, False),
+        ({
+            "F": True
+        }, False),
+        ({
+            "r": True
+        }, False),
+        ({
+            "v": True
+        }, True),
+        ({
+            "n": True
+        }, True),
+        ({
+            "c": True
+        }, True),
+        ({
+            "args_l": True
+        }, True),
+        ({
+            "w": True
+        }, True),
+        ({
+            "o": True
+        }, True),
+        ({
+            "q": True
+        }, True),
+        ({
+            "H": True
+        }, True),
+        ({
+            "h": True
+        }, True),
+        ({
+            "m": "3"
+        }, True),
+        ({
+            "A": "2"
+        }, True),
+        ({
+            "B": "2"
+        }, True),
+        ({
+            "C": "2"
+        }, True),
+        # rg -L walks links, which no backend's search can see.
+        ({
+            "follow": True
+        }, True),
+    ])
 def test_has_search_shaping_flags(flags, expected):
     assert grep_pushdown.has_search_shaping_flags(flags) is expected
 
@@ -297,6 +305,19 @@ def test_lone_operand_is_the_operand_rule_on_its_own():
     assert grep_pushdown.lone_operand([_operand("/traces/*", "*")]) is None
 
 
+def test_lone_operand_never_answers_for_stdin():
+    # A `-` is the line's stdin, which no backend holds, so every
+    # push-down defers to the scan that reads the pipe.
+    dash = PathSpec(virtual="/traces/-",
+                    directory="/traces/",
+                    vfs_path="traces/-",
+                    resolved=True,
+                    raw_path="-")
+    assert grep_pushdown.lone_operand([dash]) is None
+    assert grep_pushdown.pushdown_operand([dash], {}, "ada") is None
+    assert grep_pushdown.literal_pushdown_operand([dash], {}, "ada") is None
+
+
 @pytest.mark.parametrize("mode", ["binary", "text", "without-match", "bad"])
 def test_binary_mode_requires_scanning(mode):
     assert grep_pushdown.has_search_shaping_flags({"binary_files": mode})
@@ -307,3 +328,67 @@ def test_binary_mode_requires_scanning(mode):
                                            ("hello\udcff", False)])
 def test_search_result_binary_guard(text, expected):
     assert grep_pushdown.text_search_results([text]) is expected
+
+
+@pytest.mark.parametrize("meta", [{
+    "mode": "semantic"
+}, {
+    "mode": "literal",
+    "stream": None
+}, {
+    "mode": "literal",
+    "typo": True
+}, None])
+def test_grep_metadata_rejects_invalid_opt_in(meta):
+    with pytest.raises(ValueError):
+        grep_pushdown.grep_search_meta(
+            SearchOps(search=AsyncMock(), meta={"grep": meta}))
+
+
+@pytest.mark.parametrize("options", [{
+    "ignore_case": "true"
+}, {
+    "typo": True
+}, None])
+def test_grep_options_reject_invalid_values(options):
+    with pytest.raises(ValueError):
+        grep_pushdown.grep_search_options(
+            SearchQuery("query", options={"grep": options}))
+
+
+def test_plain_query_and_other_namespaces_do_not_require_grep():
+    options = grep_pushdown.grep_search_options(
+        SearchQuery("a.*b", options={"limit": 20}))
+    assert options.fixed_string
+    assert grep_pushdown.grep_search_meta(
+        SearchOps(search=AsyncMock(), meta={"semantic": True})) is None
+
+
+@pytest.mark.parametrize("pattern, fixed, whole_word, expected", [
+    ("import", False, True, "import"),
+    ("import", True, True, "import"),
+    ("import os", False, True, "import os"),
+    ("import", False, False, None),
+    ("import.*os", False, True, None),
+    ("import.*os", True, True, "import.*os"),
+    ("foo|bar", False, True, None),
+    ("a\nb", True, True, None),
+    (None, False, True, None),
+])
+def test_whole_word_literal_is_the_term_a_word_index_answers_for(
+        pattern, fixed, whole_word, expected):
+    # Only a whole-word literal is what the index is asked for: without -w
+    # a word index under-fetches substrings, a regex narrows on a term that
+    # is only part of the match, and a pattern list has no required term.
+    assert grep_pushdown.whole_word_literal(pattern, fixed,
+                                            whole_word) == expected
+
+
+def test_text_candidates_drops_what_a_walk_never_reads():
+    paths = [
+        PathSpec.from_str_path(p)
+        for p in ["/a.py", "/m.gguf", "/b.txt", "/w.bin", "/README"]
+    ]
+    assert [p.virtual for p in grep_pushdown.text_candidates(paths)
+            ] == ["/a.py", "/b.txt", "/README"]
+    assert grep_pushdown.text_candidates([]) == []

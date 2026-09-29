@@ -39,6 +39,15 @@ def index():
     return RAMIndexCacheStore()
 
 
+@pytest.fixture(autouse=True)
+def visible_collections(monkeypatch):
+    # Every documents stream proves its collection through the entity
+    # guard first; these tests are about rendering, so the catalog says
+    # yes. The scope tests at the bottom replace it.
+    monkeypatch.setattr("mirage.core.mongodb.readdir.entity_exists",
+                        AsyncMock(return_value=True))
+
+
 @pytest.fixture
 def accessor():
     return MongoDBAccessor(config=MongoDBConfig(
@@ -278,7 +287,8 @@ async def test_read_tail_returns_docs_in_ascending_order(accessor):
             new_callable=AsyncMock,
             return_value=list(docs),
     ) as fake:
-        data = await read_tail(accessor, _path(DOCS_PATH), 2)
+        data, stopped = await read_tail(accessor, _path(DOCS_PATH), 2)
+    assert not stopped
     lines = data.decode().splitlines()
     assert '"_id": 4' in lines[0]
     assert '"_id": 5' in lines[1]
@@ -289,14 +299,34 @@ async def test_read_tail_returns_docs_in_ascending_order(accessor):
 
 @pytest.mark.asyncio
 async def test_read_tail_caps_limit_at_max_doc_limit(accessor):
+    # A count past the ceiling fetches the ceiling; whether that stopped
+    # the read short depends on how many documents there are.
     with patch(
             "mirage.core.mongodb.stream.find_documents",
             new_callable=AsyncMock,
             return_value=[],
-    ) as fake:
-        data = await read_tail(accessor, _path(DOCS_PATH), 10**9)
-    assert data == b""
+    ) as fake, patch("mirage.core.mongodb.stream.count_documents",
+                     new=AsyncMock(return_value=3)):
+        data, stopped = await read_tail(accessor, _path(DOCS_PATH), 10**9)
+    assert (data, stopped) == (b"", False)
     assert fake.await_args.kwargs["limit"] == accessor.config.max_doc_limit
+
+
+@pytest.mark.asyncio
+async def test_read_tail_says_when_the_ceiling_stopped_it():
+    """``min(n, max_doc_limit)`` stood in for the count with nothing to
+    say so: ``tail -n 6000`` of a larger collection printed 5000 lines
+    and exited 0."""
+    acc = MongoDBAccessor(
+        config=MongoDBConfig(uri="mongodb://localhost:27017", max_doc_limit=2))
+    docs = [{"_id": 9, "n": 9}, {"_id": 8, "n": 8}]
+    with patch("mirage.core.mongodb.stream.find_documents",
+               new=AsyncMock(return_value=list(docs))), \
+            patch("mirage.core.mongodb.stream.count_documents",
+                  new=AsyncMock(return_value=10)):
+        data, stopped = await read_tail(acc, _path(DOCS_PATH), 5)
+    assert stopped
+    assert len(data.decode().splitlines()) == 2
 
 
 @pytest.mark.asyncio
@@ -312,7 +342,7 @@ async def test_read_tail_applies_elision(index):
             new_callable=AsyncMock,
             return_value=docs,
     ):
-        data = await read_tail(acc, _path(DOCS_PATH), 1)
+        data, _ = await read_tail(acc, _path(DOCS_PATH), 1)
     parsed = json.loads(data.decode().strip())
     assert parsed["title"] == "hi"
     assert "vector" not in parsed
@@ -340,3 +370,28 @@ async def test_watch_stream_applies_elision(index):
     assert parsed["title"] == "live"
     assert "vector" not in parsed
     assert parsed["_id"] == {"$oid": str(oid)}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("opener", ["read", "watch", "tail"])
+async def test_a_collection_outside_the_scope_is_enoent_to_every_stream(
+        monkeypatch, opener):
+    """The documents streams went straight to the collection the path
+    names, so a database ``databases`` leaves out streamed while ``ls``
+    and ``stat`` said it was not there."""
+    accessor = MongoDBAccessor(config=MongoDBConfig(
+        uri="mongodb://localhost:27017", databases=["db1"]))
+    exists = AsyncMock(return_value=False)
+    monkeypatch.setattr("mirage.core.mongodb.readdir.entity_exists", exists)
+    fetched = AsyncMock(side_effect=AssertionError("queried the collection"))
+    path = _path("/secret/collections/coll1/documents.jsonl")
+    with patch("mirage.core.mongodb.stream.iter_documents", new=fetched), \
+            patch("mirage.core.mongodb.stream.iter_inserts", new=fetched), \
+            patch("mirage.core.mongodb.stream.find_documents", new=fetched):
+        with pytest.raises(FileNotFoundError):
+            if opener == "tail":
+                await read_tail(accessor, path, 5)
+            else:
+                stream = read_stream if opener == "read" else watch_stream
+                await _collect(stream(accessor, path))
+    exists.assert_awaited_once()

@@ -20,6 +20,7 @@ from mirage.commands.builtin.find_eval import (FindEntry, PredNode, build_tree,
                                                start_basename)
 from mirage.types import PathSpec
 from mirage.utils.path import norm
+from mirage.utils.stat_view import DIR_SIZE
 
 
 async def find(
@@ -105,9 +106,7 @@ async def find(
             continue
 
         if min_size is not None or max_size is not None:
-            # Directories count as size 0 for -size (deliberate GNU
-            # divergence).
-            size = await store.file_len(key) if kind == "f" else 0
+            size = await store.file_len(key) if kind == "f" else DIR_SIZE
             if min_size is not None and size < min_size:
                 continue
             if max_size is not None and size > max_size:

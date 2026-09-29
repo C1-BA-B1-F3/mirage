@@ -103,4 +103,6 @@ async def test_find_honors_mtime_and_empty(monkeypatch, dify_accessor,
                             index=dify_index)
 
     assert recent == ["/README.md", "/guides/deep/note", "/guides/quickstart"]
-    assert empty == ["/README.md", "/guides/deep/note", "/guides/quickstart"]
+    # Every document has a source file and no rendered size, so none is
+    # known to be empty.
+    assert empty == []

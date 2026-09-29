@@ -15,23 +15,81 @@
 import type { PathSpec } from '../../../types.ts'
 import type { Accessor } from '../../../accessor/base.ts'
 import { IOResult } from '../../../io/types.ts'
-import { parseDateExpr } from '../../../utils/dates.ts'
+import { parseDateExpr, parsePosixTime } from '../../../utils/dates.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { pureProvision } from '../generic_bind/provision.ts'
-import { DAY_NAMES, MONTH_NAMES, pad2, pad4, strftime } from '../utils/strftime.ts'
+import { strftime } from '../utils/strftime.ts'
 import { quoteText } from '../../quote.ts'
-import { extraOperandError } from '../../spec/usage.ts'
+import { extraOperandError, usageExitCode, usageHint } from '../../spec/usage.ts'
+import { UsageError } from '../../errors.ts'
 import { CommandName } from '../../spec/types.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { LOCAL_ZONE, UTC_ZONE, type Zone, zoneFromEnv } from '../../../utils/timezone.ts'
+import { LOCAL_ZONE, UTC_ZONE, zoneFromEnv } from '../../../utils/timezone.ts'
 
 const ENC = new TextEncoder()
 
-// RFC 5322 (email) date format — e.g. "Mon, 21 Apr 2026 06:34:55 +0000"
-function formatRFC5322(dt: Date, zone: Zone): string {
-  const p = zone.parts(dt)
-  return `${DAY_NAMES[p.weekday] ?? ''}, ${pad2(p.day)} ${MONTH_NAMES[p.month] ?? ''} ${pad4(p.year)} ${pad2(p.hour)}:${pad2(p.minute)}:${pad2(p.second)} ${strftime(dt, '%z', zone)}`
+// GNU date's output formats (date.c), each chosen by one option: -I takes one
+// per precision, --rfc-3339 one per its narrower set, -R the RFC 5322 line,
+// and a line that chooses none gets the C locale's default (`%e`, so the 5th
+// is " 5"). All of them render through strftime, the path `+FORMAT` takes.
+const ISO_8601_FORMATS: Readonly<Record<string, string>> = {
+  date: '%Y-%m-%d',
+  hours: '%Y-%m-%dT%H%:z',
+  minutes: '%Y-%m-%dT%H:%M%:z',
+  seconds: '%Y-%m-%dT%H:%M:%S%:z',
+  ns: '%Y-%m-%dT%H:%M:%S,%N%:z',
+}
+const RFC_3339_FORMATS: Readonly<Record<string, string>> = {
+  date: '%Y-%m-%d',
+  seconds: '%Y-%m-%d %H:%M:%S%:z',
+  ns: '%Y-%m-%d %H:%M:%S.%N%:z',
+}
+const RFC_EMAIL_FORMAT = '%a, %d %b %Y %H:%M:%S %z'
+const DEFAULT_FORMAT = '%a %b %e %H:%M:%S %Z %Y'
+const MULTIPLE_FORMATS = 'date: multiple output formats specified\n'
+// What setting the clock answers: mirage has none to set, which is what GNU
+// says for a user without the privilege to.
+const CANNOT_SET = 'date: cannot set date: Operation not permitted\n'
+
+// The output formats the line's options choose, one per option. GNU keeps one
+// and refuses a second as it reads it, so any two of -I, -R and --rfc-3339 are
+// `multiple output formats specified`. The parser has already resolved a
+// precision to its whole word (`-Is` is `seconds`). One divergence: the flag
+// bag keeps the last of a REPEATED option, so `date -I -I` prints where GNU
+// refuses it.
+function optionFormats(fl: FlagView): string[] {
+  const formats: string[] = []
+  const iso = fl.raw('iso_8601')
+  if (iso === true) formats.push(ISO_8601_FORMATS.date ?? '')
+  else if (typeof iso === 'string') formats.push(ISO_8601_FORMATS[iso] ?? '')
+  if (fl.asBool('rfc_email')) formats.push(RFC_EMAIL_FORMAT)
+  const rfc3339 = fl.asStr('rfc_3339')
+  if (rfc3339 !== undefined) formats.push(RFC_3339_FORMATS[rfc3339] ?? '')
+  return formats
+}
+
+function multipleFormats(): CommandFnResult {
+  return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(MULTIPLE_FORMATS) })]
+}
+
+// GNU's refusal of a date it cannot read, exit 1.
+function invalidDate(text: string): CommandFnResult {
+  return [
+    null,
+    new IOResult({ exitCode: 1, stderr: ENC.encode(`date: invalid date '${quoteText(text)}'\n`) }),
+  ]
+}
+
+// GNU's refusal of a non-`+` operand beside `-d`, a usage error.
+function lacksPlusError(operand: string): UsageError {
+  return new UsageError(
+    `date: the argument '${quoteText(operand)}' lacks a leading '+';\n` +
+      'when using an option to specify date(s), any non-option\n' +
+      "argument must be a format string beginning with '+'\n" +
+      usageHint(CommandName.DATE),
+    usageExitCode(CommandName.DATE),
+  )
 }
 
 // GNU `date`: the current moment, or the one `-d` names, rendered in the
@@ -41,25 +99,38 @@ function formatRFC5322(dt: Date, zone: Zone): string {
 // `opts.env`, never from process state, so concurrent workspaces cannot
 // move each other's clock. `%Z` is tzdata's abbreviation (`HKT`), as GNU
 // prints it, read from a table generated off zoneinfo since Intl has
-// none; the Python twin reads zoneinfo itself.
+// none; the Python twin reads zoneinfo itself. An operand without `+` sets
+// the clock, GNU's `MMDDhhmm[[CC]YY][.ss]`: mirage has no clock to set, so it
+// prints the date it names and refuses the setting, as GNU does for a user
+// without the privilege. Beside `-d` it is a usage error.
 function dateCommand(
   _accessor: Accessor,
   paths: PathSpec[],
   texts: string[],
   opts: CommandOpts,
 ): CommandFnResult {
-  if (texts.length > 1) throw extraOperandError(CommandName.DATE, texts[1] ?? '')
   const fl = new FlagView(opts.flags, specOf('date'))
-  const u = fl.asBool('u')
-  const d = fl.asStr('d') ?? null
-  // -I is short-only, so it lands on the disambiguated `args_I` dest
-  // (`AMBIGUOUS_NAMES`); a plain `I` key is one the parser never emits.
-  const argsI = fl.asBool('args_I')
-  const R = fl.asBool('R')
+  const u = fl.asBool('utc') || fl.asBool('universal')
+  const d = fl.asStr('date') ?? null
+  const formats = optionFormats(fl)
+  if (formats.length > 1) return multipleFormats()
+  if (texts.length > 1) throw extraOperandError(CommandName.DATE, texts[1] ?? '')
+  let setting = texts[0] ?? null
+  if (setting?.startsWith('+') === true) {
+    if (formats.length > 0) return multipleFormats()
+    formats.push(setting.slice(1))
+    setting = null
+  } else if (setting !== null && d !== null) {
+    throw lacksPlusError(setting)
+  }
   const named = u ? UTC_ZONE : zoneFromEnv(opts.env)
   const zone = named ?? LOCAL_ZONE
   let dt: Date
-  if (d !== null && d.trim() === '') {
+  if (setting !== null) {
+    const placed = parsePosixTime(setting, zone)
+    if (placed === null) return invalidDate(setting)
+    dt = placed
+  } else if (d !== null && d.trim() === '') {
     // GNU ACCEPTS an empty (or blank) expression, exit 0: gnulib's
     // parse-datetime sees no component at all and falls through to "a date
     // with no time", which is today at midnight. Measured on coreutils
@@ -70,39 +141,17 @@ function dateCommand(
     dt = midnight ?? new Date()
   } else if (d !== null) {
     const parsed = parseDateExpr(d, zone)
-    if (parsed === null) {
-      // GNU's refusal, exit 1: a NaN render with exit 0 poisons whatever
-      // consumed it (the 0NaN-NaN-NaN corpus failure).
-      return [
-        null,
-        new IOResult({
-          exitCode: 1,
-          stderr: ENC.encode(`date: invalid date '${quoteText(d)}'\n`),
-        }),
-      ]
-    }
+    // GNU's refusal, exit 1: a NaN render with exit 0 poisons whatever
+    // consumed it (the 0NaN-NaN-NaN corpus failure).
+    if (parsed === null) return invalidDate(d)
     dt = parsed
   } else {
     dt = new Date()
   }
-  let fmt: string | null = null
-  for (const t of texts) {
-    if (t.startsWith('+')) {
-      fmt = t.slice(1)
-      break
-    }
-  }
-  let result: string
-  if (argsI) {
-    result = strftime(dt, '%Y-%m-%d', zone)
-  } else if (R) {
-    result = formatRFC5322(dt, zone)
-  } else if (fmt !== null) {
-    result = strftime(dt, fmt, zone)
-  } else {
-    result = strftime(dt, '%a %b %d %H:%M:%S %Z %Y', zone)
-  }
-  return [ENC.encode(result + '\n'), new IOResult()]
+  const fmt = formats[0] ?? DEFAULT_FORMAT
+  const out = ENC.encode(strftime(dt, fmt, zone) + '\n')
+  if (setting !== null) return [out, new IOResult({ exitCode: 1, stderr: ENC.encode(CANNOT_SET) })]
+  return [out, new IOResult()]
 }
 
 export const GENERAL_DATE = command({

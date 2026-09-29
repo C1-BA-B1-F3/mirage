@@ -16,10 +16,13 @@ import pytest
 from dulwich.objects import Commit
 from dulwich.repo import Repo
 
+from mirage.commands.cli.builtin.git import GIT
 from mirage.commands.cli.builtin.git.errors import BadDateError
 from mirage.commands.cli.builtin.git.format import subject
 from mirage.commands.cli.builtin.git.history import parse_flags, select
+from mirage.commands.spec import parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
+from tests.commands.cli.builtin.git.conftest import commit_file
 
 NO_FLAGS: dict[str, object] = {}
 
@@ -77,7 +80,7 @@ def test_history_is_newest_first(repo_path):
 
 
 def test_max_count_cuts_from_the_newest_end(repo_path):
-    assert subjects(repo_path, {"n": 2}) == ["third", "second"]
+    assert subjects(repo_path, {"max_count": 2}) == ["third", "second"]
 
 
 def test_reverse_flips_the_whole_walk(repo_path):
@@ -88,7 +91,7 @@ def test_reverse_flips_the_whole_walk(repo_path):
 def test_limit_applies_before_reverse(repo_path):
     # git cuts to -n against the newest commits and only then reverses,
     # so this is the newest one, not the oldest.
-    assert subjects(repo_path, {"n": 1, "reverse": True}) == ["third"]
+    assert subjects(repo_path, {"max_count": 1, "reverse": True}) == ["third"]
 
 
 def test_pickaxe_selects_only_commits_that_change_the_count(repo_path):
@@ -105,10 +108,97 @@ def test_pickaxe_limit_counts_survivors_not_commits_visited(repo_path):
     # -n cannot be pushed into the walker while a pickaxe is active: the
     # limit counts commits that pass the filter. Two commits are newer
     # than the match, so a naive push-down would return nothing.
-    assert subjects(repo_path, {"S": "one", "n": 1}) == ["first"]
+    assert subjects(repo_path, {"S": "one", "max_count": 1}) == ["first"]
 
 
 def test_since_drops_everything_older(repo_path):
     with Repo(str(repo_path)) as repo:
         newest = head_of(repo).commit_time
     assert subjects(repo_path, {"since": str(newest + 60)}) == []
+
+
+@pytest.mark.parametrize("argv,expected", [
+    (["--date-order", "--topo-order"], "topo"),
+    (["--topo-order", "--date-order"], "date"),
+    (["--topo-order", "--date-order", "--topo-order"], "topo"),
+    (["--graph", "--date-order", "--topo-order"], "topo"),
+    (["--date-order", "--graph"], "date"),
+    (["-S", "--topo-order", "--date-order"], "date"),
+])
+def test_order_options_follow_the_last_typed_occurrence(argv, expected):
+    spec = next(node for node in GIT.subcommands if node.name == "log")
+    parsed = parse_command(spec, argv, "/")
+    assert parse_flags(FlagView(parse_to_kwargs(parsed))).order == expected
+
+
+def log_subjects(repo_path, argv: list[str]) -> list[str]:
+    """Subjects of the commits ``git log <argv>`` would print.
+
+    Args:
+        repo_path (Path): the repository's working tree.
+        argv (list[str]): the words after ``git log``.
+    """
+    spec = next(node for node in GIT.subcommands if node.name == "log")
+    return subjects(repo_path, parse_to_kwargs(parse_command(spec, argv, "/")))
+
+
+@pytest.mark.parametrize("argv", [
+    ["--max-count=2"],
+    ["--max-count", "2"],
+    ["-n", "2"],
+    ["-n2"],
+    ["-2"],
+])
+def test_every_spelling_of_the_count_cuts_the_same(repo_path, argv):
+    assert log_subjects(repo_path, argv) == ["third", "second"]
+
+
+@pytest.mark.parametrize("argv,expected", [
+    (["-n", "3", "--max-count=1"], ["third"]),
+    (["--max-count=1", "-n", "3"], ["third", "second", "first"]),
+    (["--max-count=-1"], ["third", "second", "first"]),
+    (["-n", "-5"], ["third", "second", "first"]),
+])
+def test_the_last_count_wins_and_a_negative_one_is_no_limit(
+        repo_path, argv, expected):
+    assert log_subjects(repo_path, argv) == expected
+
+
+def test_grep_matches_a_line_of_the_body(repo_path):
+    commit_file(repo_path, "c.txt", "c\n", "fourth\n\nMentions a needle.\n")
+    assert log_subjects(repo_path, ["--grep=^Mentions"]) == ["fourth"]
+    assert log_subjects(repo_path, ["--grep=^fourth.*needle"]) == []
+
+
+def test_several_greps_are_alternatives(repo_path):
+    assert log_subjects(
+        repo_path, ["--grep=first", "--grep", "third"]) == ["third", "first"]
+
+
+def test_grep_never_reads_the_author(repo_path):
+    assert log_subjects(repo_path, ["--grep=Test Author"]) == []
+
+
+def test_the_count_applies_after_grep_and_before_reverse(repo_path):
+    assert log_subjects(repo_path, ["--grep=ir", "--max-count=1"]) == ["third"]
+    assert log_subjects(
+        repo_path,
+        ["--grep=ir", "--max-count=2", "--reverse"]) == ["first", "third"]
+
+
+@pytest.mark.parametrize("flag", ["-i", "--regexp-ignore-case"])
+def test_ignore_case_reaches_grep_author_and_pickaxe(repo_path, flag):
+    assert log_subjects(repo_path, ["--grep=THIRD"]) == []
+    assert log_subjects(repo_path, ["--grep=THIRD", flag]) == ["third"]
+    assert log_subjects(repo_path, ["--author=TEST AUTHOR"]) == []
+    assert log_subjects(repo_path, ["--author=TEST AUTHOR", flag]) == [
+        "third", "second", "first"
+    ]
+    assert log_subjects(repo_path, ["-S", "ONE"]) == []
+    assert log_subjects(repo_path, ["-S", "ONE", flag]) == ["first"]
+
+
+def test_author_and_grep_must_both_match(repo_path):
+    assert log_subjects(repo_path,
+                        ["--author=Test", "--grep=second"]) == ["second"]
+    assert log_subjects(repo_path, ["--author=absent", "--grep=second"]) == []

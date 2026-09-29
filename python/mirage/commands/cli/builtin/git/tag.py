@@ -33,6 +33,11 @@ from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
     UnresolvedRefError)
 from mirage.commands.cli.builtin.git.format import short
 from mirage.commands.cli.builtin.git.objects import abbrev_for
+from mirage.commands.cli.builtin.git.ref_filter import (filter_words,
+                                                        kept_refs,
+                                                        list_mode_option,
+                                                        ref_filter,
+                                                        without_filter_values)
 from mirage.commands.cli.builtin.git.refs import (TAG_PREFIX, blocking_ref,
                                                   delete_ref, valid_ref_name,
                                                   write_ref)
@@ -227,6 +232,10 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     ``-a`` without ``-m`` is refused for the reason ``commit`` refuses
     a missing message: there is no editor to open.
 
+    The ref filters (``--contains``, ``--merged``, ``--points-at`` and
+    their negations) imply a listing the way ``-n`` does, so their
+    operands are patterns.
+
     Args:
         inv (CLIInvocation[None]): the line's invocation record.
             git declares no config_model; the planes it reads
@@ -235,7 +244,9 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     """
     doors = inv.doors or CLIDoors()
     dispatch = doors.dispatch
-    texts = inv.texts
+    words = filter_words(inv)
+    texts = without_filter_values(inv.texts, words)
+    filtered = bool(words)
     fl = FlagView(inv.flags)
     try:
         if dispatch is None:
@@ -252,7 +263,7 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         # counts here too.
         creating = flags.annotate or flags.force
         reading = (flags.listing or flags.delete or flags.lines is not None
-                   or not texts)
+                   or filtered or not texts)
         if creating and reading:
             raise TagUsageError()
         # After the two usage refusals above, which git reaches first:
@@ -260,12 +271,16 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
         # usage, both exiting 129, where ``-d -n1`` alone dies here.
         if flags.delete and flags.lines is not None:
             raise ListModeOnlyError()
+        list_only = list_mode_option(words) if flags.delete else None
+        if list_only is not None:
+            raise ListModeOnlyError(list_only)
         # git reads the count while parsing the format it lists with,
         # which is after both usage refusals above and before any ref
         # is read: a repository holding no tags refuses this one too.
         if flags.lines is not None and flags.lines < 0:
             raise TagLinesError(flags.lines)
         repo, location = await opened(fl, doors)
+        filt = await asyncio.to_thread(ref_filter, repo, words)
         known = repo.refs.allkeys()
         if flags.delete:
             out: list[str] = []
@@ -297,8 +312,13 @@ async def tag(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
                            f"(was {short(sha, abbrev_for(repo))})\n")
             return yield_bytes("".join(out).encode()), IOResult(
                 exit_code=1 if err else 0, stderr="".join(err).encode())
-        if flags.listing or flags.lines is not None or not texts:
+        if (flags.listing or flags.lines is not None or filtered or not texts):
             names = selected_names(tag_names(known), texts)
+            if filt is not None:
+                pairs = [(name, repo.refs[Ref(f"{TAG_PREFIX}{name}".encode())])
+                         for name in names]
+                kept = await asyncio.to_thread(kept_refs, repo, filt, pairs)
+                names = [name for name in names if name in kept]
             messages = None
             # -n0 (and any other count that prints no line) is a plain
             # listing in git, so nothing is read and nothing is padded.

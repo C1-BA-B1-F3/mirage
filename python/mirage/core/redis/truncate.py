@@ -14,23 +14,23 @@
 
 from mirage.accessor.redis import RedisAccessor
 from mirage.cache.context import invalidate_after_write
-from mirage.core.redis.dest import check_write_target
+from mirage.core.redis.dest import check_dest_parents, check_write_target
 from mirage.core.timeutil import now_iso
 from mirage.observe.context import record, start_op
 from mirage.types import PathSpec
 from mirage.utils.path import norm
 
 
-async def truncate(accessor: RedisAccessor, path: PathSpec,
-                   length: int) -> None:
+async def truncate(accessor: RedisAccessor,
+                   path: PathSpec,
+                   length: int,
+                   no_create: bool = False) -> None:
     store = accessor.store
     timer = start_op()
     p = norm(path.mount_path)
+    await check_dest_parents(store, path, p)
     await check_write_target(store, path, p)
-    data = await store.get_file(p)
-    if data is None:
-        data = b""
-    await store.set_file(p, data[:length].ljust(length, b"\0"))
-    await store.set_modified(p, now_iso())
-    record("truncate", path.mount_path, "redis", 0, timer)
+    if not await store.truncate_file(p, length, now_iso(), no_create):
+        return
+    record("truncate", path.virtual, "redis", 0, timer)
     await invalidate_after_write(path)

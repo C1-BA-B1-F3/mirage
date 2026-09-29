@@ -14,35 +14,12 @@
 
 import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
-import { stripSlash } from '../../../utils/slash.ts'
-import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
-import { PathSpec } from '../../../types.ts'
-import { gunzip } from '../../../utils/compress.ts'
+import type { PathSpec } from '../../../types.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
-import { resolveSource } from '../utils/stream.ts'
-
-const ENC = new TextEncoder()
-
-function makePathSpec(virtual: string): PathSpec {
-  return new PathSpec({
-    virtual,
-    directory: virtual,
-    vfsPath: stripSlash(virtual),
-    resolved: true,
-  })
-}
-
-function concat(chunks: Uint8Array[]): Uint8Array {
-  let total = 0
-  for (const c of chunks) total += c.byteLength
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const c of chunks) {
-    out.set(c, offset)
-    offset += c.byteLength
-  }
-  return out
-}
+import { GZIP_SUFFIX } from '../constants.ts'
+import type { StatFn } from './archive/walk.ts'
+import { linkDoor } from '../utils/links.ts'
+import { decompressInputs } from './decompress.ts'
 
 export async function gunzipGeneric(
   paths: PathSpec[],
@@ -50,52 +27,20 @@ export async function gunzipGeneric(
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
   write: (p: PathSpec, data: Uint8Array) => Promise<void>,
   unlink: (p: PathSpec) => Promise<void>,
+  stat?: StatFn,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('gunzip'))
-  const keep = fl.asBool('k')
-  const stdoutMode = fl.asBool('c')
-  const testMode = fl.asBool('t')
-
-  if (paths.length === 0) {
-    let source: AsyncIterable<Uint8Array>
-    try {
-      source = resolveSource(opts.stdin, 'gunzip: (stdin): unexpected end of file')
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(`${msg}\n`) })]
-    }
-    const data = await materialize(source)
-    const out = await gunzip(data)
-    const result: ByteSource = out
-    return [result, new IOResult()]
-  }
-
-  if (testMode) {
-    for (const p of paths) {
-      const raw = await materialize(stream(p))
-      await gunzip(raw)
-    }
-    return [null, new IOResult()]
-  }
-
-  if (stdoutMode) {
-    const chunks: Uint8Array[] = []
-    for (const p of paths) {
-      const raw = await materialize(stream(p))
-      chunks.push(await gunzip(raw))
-    }
-    return [concat(chunks), new IOResult()]
-  }
-
-  const writes: Record<string, Uint8Array> = {}
-  for (const p of paths) {
-    const raw = await materialize(stream(p))
-    const pStripped = p.mountPath
-    const outPath = pStripped.endsWith('.gz') ? pStripped.slice(0, -3) : pStripped + '.out'
-    const outData = await gunzip(raw)
-    await write(makePathSpec(outPath), outData)
-    writes[outPath] = outData
-    if (!keep) await unlink(p)
-  }
-  return [null, new IOResult({ writes })]
+  return decompressInputs(paths, stream, {
+    stdin: opts.stdin,
+    keep: fl.asBool('k'),
+    force: fl.asBool('f'),
+    quiet: fl.asBool('q'),
+    suffix: fl.asStr('S') ?? GZIP_SUFFIX,
+    toStdout: fl.asBool('c'),
+    testOnly: fl.asBool('t'),
+    write,
+    unlink,
+    ...(stat !== undefined ? { stat } : {}),
+    door: linkDoor(opts),
+  })
 }

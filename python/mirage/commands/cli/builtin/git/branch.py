@@ -13,7 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
+import fnmatch
 
+from dulwich.config import ConfigFile
 from dulwich.objects import ObjectID
 from dulwich.refs import Ref
 from dulwich.repo import BaseRepo
@@ -21,11 +23,16 @@ from dulwich.walk import Walker
 
 from mirage.commands.cli.builtin.git.constants import HEAD
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    BranchExistsError, BranchNameRequiredError, CheckedOutBranchError,
-    GitError, InvalidBranchNameError, NoBranchError, NoWorkspaceError,
-    RefLockError, UnknownSwitchError, UnmergedBranchError)
-from mirage.commands.cli.builtin.git.format import short
+    BranchExistsError, BranchNameRequiredError, BranchUsageError,
+    CheckedOutBranchError, GitError, InvalidBranchNameError, NoBranchError,
+    NoWorkspaceError, RefLockError, UnknownSwitchError, UnmergedBranchError)
+from mirage.commands.cli.builtin.git.format import short, subject
+from mirage.commands.cli.builtin.git.inspect import repo_config
 from mirage.commands.cli.builtin.git.objects import abbrev_for
+from mirage.commands.cli.builtin.git.ref_filter import (RefFilter,
+                                                        filter_words,
+                                                        kept_refs, ref_filter,
+                                                        without_filter_values)
 from mirage.commands.cli.builtin.git.refs import (blocking_ref, delete_ref,
                                                   read_head, valid_ref_name,
                                                   write_ref)
@@ -176,6 +183,45 @@ async def _delete(dispatch: DispatchFn, repo: BaseRepo, location: RepoLocation,
             f"(was {short(sha, abbrev_for(repo))}).\n").encode()
 
 
+def _listed(repo: BaseRepo, local: bool, remote: bool,
+            patterns: tuple[str, ...], filt: RefFilter | None) -> list[bytes]:
+    """The refs a listing shows: the kinds ``-r``/``-a`` asked for,
+    narrowed by the name patterns and the ref filter.
+
+    A pattern matches the name as listed without its ``remotes/`` label
+    (``origin/*``), which is git's reading, and any one pattern keeps a
+    ref. Synchronous, for a worker thread: the filter walks history.
+
+    Args:
+        repo (BaseRepo): the opened repository.
+        local (bool): whether local branches are listed.
+        remote (bool): whether remote-tracking branches are listed.
+        patterns (tuple[str, ...]): the name patterns, empty for all.
+        filt (RefFilter | None): the resolved ref filter.
+    """
+    shown: list[bytes] = []
+    for ref in sorted(repo.refs.allkeys()):
+        is_local = ref.startswith(HEADS_PREFIX)
+        if not (local and is_local) and not (remote and
+                                             ref.startswith(REMOTES_PREFIX)):
+            continue
+        name = ref[len(HEADS_PREFIX if is_local else REMOTES_PREFIX):].decode()
+        if patterns and not any(
+                fnmatch.fnmatchcase(name, pattern) for pattern in patterns):
+            continue
+        shown.append(ref)
+    if filt is None:
+        return shown
+    pairs: list[tuple[str, bytes]] = []
+    for listed in shown:
+        try:
+            pairs.append((listed.decode(), repo.refs[Ref(listed)]))
+        except KeyError:
+            continue
+    kept = kept_refs(repo, filt, pairs)
+    return [listed for listed in shown if listed.decode() in kept]
+
+
 async def branch(
         inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
     """List, create or delete branches.
@@ -188,6 +234,13 @@ async def branch(
     remote-tracking branches instead of local ones and ``-a`` lists
     both; local names sort together and remotes follow.
 
+    ``-l`` and the ref filters (``--contains``, ``--merged``,
+    ``--points-at`` and their negations) make the line a listing whose
+    operands are name patterns, so ``git branch --contains side topic``
+    lists ``topic`` if it holds ``side`` rather than creating anything,
+    and a line that also deletes names two modes, which git answers
+    with its usage.
+
     Args:
         inv (CLIInvocation[None]): the line's invocation record.
             git declares no config_model; the planes it reads
@@ -196,20 +249,28 @@ async def branch(
     """
     doors = inv.doors or CLIDoors()
     dispatch = doors.dispatch
-    texts = inv.texts
+    words = filter_words(inv)
+    texts = without_filter_values(inv.texts, words)
     flags = inv.flags
     fl = FlagView(flags)
     remotes_only = fl.as_bool("r")
     include_remotes = remotes_only or fl.as_bool("a")
+    listing = bool(words) or fl.as_bool("list")
     try:
         if dispatch is None:
             raise NoWorkspaceError()
         check_operands(texts, UnknownSwitchError, escaped(inv.argv),
                        switches(inv))
         repo, location = await opened(fl, doors)
+        filt = await asyncio.to_thread(ref_filter, repo, words)
         head = await read_head(dispatch, location.gitdir)
+        if fl.as_bool("show_current"):
+            return ((head.branch +
+                     "\n").encode() if head.branch else b""), IOResult()
         force = fl.as_bool("D")
         if fl.as_bool("delete") or force:
+            if listing:
+                raise BranchUsageError()
             if not texts:
                 raise BranchNameRequiredError()
             deleted = b"".join([
@@ -217,23 +278,80 @@ async def branch(
                 for name in texts
             ])
             return yield_bytes(deleted), IOResult()
-        if texts:
+        if texts and not listing:
             await _create(dispatch, repo, location, texts[0],
                           texts[1] if len(texts) > 1 else None)
             return None, IOResult()
+        shown = await asyncio.to_thread(_listed, repo, not remotes_only,
+                                        include_remotes, texts if listing else
+                                        (), filt)
     except GitError as exc:
         return fatal(exc)
-    keys = repo.refs.allkeys()
+    verbose = fl.as_int("verbose") or 0
+    cfg = await repo_config(inv, fl) if verbose else None
+    width = max(
+        (len(r[len(HEADS_PREFIX):].decode()) if r.startswith(HEADS_PREFIX) else
+         len(REMOTE + r[len(REMOTES_PREFIX):].decode()) for r in shown),
+        default=0)
     lines: list[str] = []
     if not remotes_only:
-        for ref in sorted(k for k in keys if k.startswith(HEADS_PREFIX)):
+        for ref in (k for k in shown if k.startswith(HEADS_PREFIX)):
             name = ref[len(HEADS_PREFIX):].decode()
             marker = CURRENT if name == head.branch else OTHER
-            lines.append(f"{marker}{name}")
+            detail = await asyncio.to_thread(_branch_detail, repo, ref, cfg,
+                                             verbose) if verbose else ""
+            lines.append(
+                f"{marker}{name.ljust(width) if verbose else name}{detail}")
     if include_remotes:
-        for ref in sorted(k for k in keys if k.startswith(REMOTES_PREFIX)):
+        for ref in (k for k in shown if k.startswith(REMOTES_PREFIX)):
             name = ref[len(REMOTES_PREFIX):].decode()
-            lines.append(f"{OTHER}{REMOTE}{name}{_symref_suffix(repo, ref)}")
+            label = f"{REMOTE}{name}"
+            suffix = _symref_suffix(repo, ref)
+            detail = await asyncio.to_thread(
+                _branch_detail, repo, ref, cfg,
+                verbose) if verbose and not suffix else ""
+            lines.append(f"{OTHER}{label.ljust(width) if detail else label}"
+                         f"{suffix}{detail}")
     if not lines:
         return None, IOResult()
     return yield_bytes(("\n".join(lines) + "\n").encode()), IOResult()
+
+
+def _branch_detail(repo: BaseRepo, ref: bytes, cfg: ConfigFile | None,
+                   verbose: int) -> str:
+    commit = resolve_commit(repo, ref.decode())
+    upstream = ""
+    if cfg is not None and ref.startswith(HEADS_PREFIX):
+        section = (b"branch", ref[len(HEADS_PREFIX):])
+        values = dict(cfg.items(section)) if cfg.has_section(section) else {}
+        remote, merge = values.get(b"remote"), values.get(b"merge")
+        if remote is not None and merge is not None:
+            tracked = merge
+            if remote != b".":
+                tracked = (REMOTES_PREFIX + remote + b"/" +
+                           merge.removeprefix(HEADS_PREFIX))
+            label = tracked.removeprefix(HEADS_PREFIX).removeprefix(
+                REMOTES_PREFIX).decode()
+            differences = []
+            if Ref(tracked) not in repo.refs.allkeys():
+                differences.append("gone")
+            else:
+                ours = {
+                    e.commit.id
+                    for e in Walker(repo.object_store, [commit.id])
+                }
+                theirs = {
+                    e.commit.id
+                    for e in Walker(repo.object_store,
+                                    [repo.refs[Ref(tracked)]])
+                }
+                if ours - theirs:
+                    differences.append(f"ahead {len(ours - theirs)}")
+                if theirs - ours:
+                    differences.append(f"behind {len(theirs - ours)}")
+            counts = ", ".join(differences)
+            if verbose > 1:
+                upstream = f" [{label}{': ' + counts if counts else ''}]"
+            elif counts:
+                upstream = f" [{counts}]"
+    return f" {short(commit.id, abbrev_for(repo))}{upstream} {subject(commit)}"

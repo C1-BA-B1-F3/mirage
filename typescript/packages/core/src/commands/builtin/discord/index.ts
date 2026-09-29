@@ -15,7 +15,9 @@
 import type { DiscordAccessor } from '../../../accessor/discord.ts'
 import { VFSName } from '../../../types.ts'
 import type { RegisteredCommand } from '../../config.ts'
+import { resolveGlobOf } from '../generic_bind/adapter.ts'
 import { makeGenericCommands } from '../generic_bind/index.ts'
+import { withDefaultProvisions } from '../generic_bind/provision.ts'
 import { DISCORD_GREP } from './grep.ts'
 import { DISCORD_HEAD } from './head.ts'
 import { DISCORD_IO } from './io.ts'
@@ -27,7 +29,10 @@ export const DISCORD_COMMANDS: readonly RegisteredCommand[] = [
   ...makeGenericCommands<DiscordAccessor>(VFSName.DISCORD, DISCORD_IO, {
     overrides: DISCORD_OVERRIDES,
   }),
-  ...DISCORD_GREP,
-  ...DISCORD_RG,
-  ...DISCORD_HEAD,
+  ...withDefaultProvisions(
+    [...DISCORD_GREP, ...DISCORD_RG, ...DISCORD_HEAD],
+    DISCORD_IO.stat,
+    resolveGlobOf(DISCORD_IO),
+    DISCORD_IO.readdir,
+  ),
 ]

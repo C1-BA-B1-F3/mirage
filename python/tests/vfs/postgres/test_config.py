@@ -23,7 +23,6 @@ def test_defaults():
     assert cfg.default_row_limit == 1000
     assert cfg.max_read_rows == 10_000
     assert cfg.max_read_bytes == 10 * 1024 * 1024
-    assert cfg.default_search_limit == 100
 
 
 def test_schema_filter():

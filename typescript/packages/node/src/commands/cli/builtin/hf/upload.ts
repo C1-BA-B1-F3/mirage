@@ -18,7 +18,7 @@ import { UsageError } from '@struktoai/mirage-core/commands/errors'
 import { FlagView } from '@struktoai/mirage-core/commands/spec/index'
 import type { DispatchFn } from '@struktoai/mirage-core/runtime/types'
 import { FileType, PathSpec } from '@struktoai/mirage-core/types'
-import { isMissingPath } from '@struktoai/mirage-core/utils/errors'
+import { fsStrerror, isEnotdir, isMissingPath } from '@struktoai/mirage-core/utils/errors'
 import { fnmatch } from '@struktoai/mirage-core/utils/fnmatch'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import { createRepo } from '../../../../core/hf_hub/admin.ts'
@@ -28,6 +28,7 @@ import type { HfConfig } from '../../../../core/hf_hub/config.ts'
 import { DEFAULT_COMMIT_MESSAGE } from '../../../../core/hf_hub/constants.ts'
 import { hubFor, repoTypeOf, requireOperands, requireToken, textOut } from './accessor.ts'
 import { refuseVariadic } from './download.ts'
+import { rstripSlash } from '@struktoai/mirage-core/utils/slash'
 
 interface Row {
   name: string
@@ -55,12 +56,14 @@ async function collect(
   dispatch: DispatchFn,
   local: string,
 ): Promise<{ rows: Row[]; fromDir: boolean }> {
-  const base = local.replace(/\/+$/, '')
+  const base = rstripSlash(local)
   let directory: boolean
   try {
     directory = await isDir(dispatch, base)
   } catch (err) {
-    if (isMissingPath(err)) throw new UsageError(`${local}: No such file or directory`)
+    if (isMissingPath(err) || isEnotdir(err)) {
+      throw new UsageError(`${local}: ${fsStrerror(err) ?? 'No such file or directory'}`)
+    }
     throw err
   }
   if (!directory) {
@@ -185,6 +188,6 @@ export async function uploadCmd(inv: CLIInvocation): Promise<CommandFnResult> {
     createPr: fl.asBool('create_pr'),
   })
   const home = repoUrl((inv.config as HfConfig).endpoint, accessor.repoType, repoId)
-  const url = `${home}/tree/${accessor.revision}/${base}`.replace(/\/+$/, '')
+  const url = rstripSlash(`${home}/tree/${accessor.revision}/${base}`)
   return textOut(`${url}\n`)
 }

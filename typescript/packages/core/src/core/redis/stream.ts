@@ -16,7 +16,7 @@ import type { IndexCacheStore } from '../../cache/index/store.ts'
 import { recordStream } from '../../observe/context.ts'
 import { VFSName } from '../../types.ts'
 import type { PathSpec } from '../../types.ts'
-import { enoent } from '../../utils/errors.ts'
+import { lookupError } from './dest.ts'
 import type { RedisAccessor } from '../../accessor/redis.ts'
 import { norm } from './utils.ts'
 
@@ -27,8 +27,8 @@ export async function* stream(
 ): AsyncIterable<Uint8Array> {
   const p = norm(path.mountPath)
   const data = await accessor.store.getFile(p)
-  if (data === null) throw enoent(path)
-  const rec = recordStream('read', p, VFSName.REDIS)
+  if (data === null) throw await lookupError(accessor.store, path, p)
+  const rec = recordStream('read', path.virtual, VFSName.REDIS)
   if (rec !== null) rec.bytes = data.byteLength
   yield data
 }

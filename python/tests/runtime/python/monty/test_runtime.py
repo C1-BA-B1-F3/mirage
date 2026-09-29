@@ -21,7 +21,7 @@ from mirage.runtime.errors import EvalError
 from mirage.runtime.mixin import EvaluatorMixin
 from mirage.runtime.python import MontyRuntime
 from mirage.runtime.types import RunArgs
-from mirage.types import MountMode
+from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -210,6 +210,49 @@ async def test_eval_sessions_keep_state_per_id():
     assert other.exit_code == 1
     assert other.stderr is not None and b"NameError" in other.stderr
     await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_cwd_inherits_context_and_explicit_run_cwd_wins():
+    runtime = MontyRuntime()
+    ws = Workspace({"/data": RAMVFS()},
+                   mode=MountMode.EXEC,
+                   runtimes=[runtime, "workspace"])
+    try:
+        assert (await ws.shell("mkdir /data/sub; cd /data")).exit_code == 0
+        code = "import os; print(os.getcwd())"
+        inherited = await runtime.run(RunArgs(code=code))
+        assert inherited.stdout == b"/data\n"
+        explicit = await runtime.run(
+            RunArgs(code=code, cwd=PathSpec.from_str_path("/data/sub")))
+        assert explicit.stdout == b"/data/sub\n"
+    finally:
+        await ws.close()
+
+
+@pytest.mark.asyncio
+async def test_eval_cwd_is_seeded_once_per_session():
+    runtime = MontyRuntime()
+    ws = Workspace({"/data": RAMVFS()},
+                   mode=MountMode.EXEC,
+                   runtimes=[runtime, "workspace"])
+    try:
+        assert (
+            await
+            ws.shell("mkdir /data/sub; echo child > /data/sub/item; cd /data")
+        ).exit_code == 0
+        assert (await runtime.eval("import os; os.getcwd()")).value == "/data"
+        first = await runtime.eval("import os; os.chdir('sub'); os.getcwd()",
+                                   session="a")
+        assert first.value == "/data/sub"
+        assert (await ws.shell("cd /")).exit_code == 0
+        again = await runtime.eval("open('item').read()", session="a")
+        assert again.value == "child\n"
+        assert (await runtime.eval("import os; os.getcwd()",
+                                   session="b")).value == "/"
+        assert (await runtime.eval("import os; os.getcwd()")).value == "/"
+    finally:
+        await ws.close()
 
 
 @pytest.mark.asyncio

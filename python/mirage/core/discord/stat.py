@@ -20,6 +20,7 @@ from mirage.core.discord.scope import detect_scope
 from mirage.core.hierarchy.probe import resolve_entry
 from mirage.core.hierarchy.scope import ScopeMatch
 from mirage.core.hierarchy.stat import entry_stat, make_stat
+from mirage.core.time_range import guard_day
 from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent
 from mirage.utils.filetype import content_type_for_mime
@@ -102,6 +103,7 @@ async def _stat_day(accessor: DiscordAccessor, match: ScopeMatch,
         path (PathSpec): the path to stat.
         index (IndexCacheStore): index cache.
     """
+    await guard_day(accessor, match, path.virtual)
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is not None:
         return FileStat(name=entry.vfs_name, type=FileType.DIRECTORY)
@@ -122,6 +124,7 @@ async def _stat_chat(accessor: DiscordAccessor, match: ScopeMatch,
         path (PathSpec): the path to stat.
         index (IndexCacheStore): index cache.
     """
+    await guard_day(accessor, match, path.virtual)
     entry = await resolve_entry(readdir, accessor, path, index)
     if entry is not None:
         return FileStat(name="chat.jsonl",
@@ -138,6 +141,8 @@ async def _stat_chat(accessor: DiscordAccessor, match: ScopeMatch,
 stat = make_stat(
     detect_scope,
     readdir,
+    guards={kind: guard_day
+            for kind in ("messages", "files", "file_blob")},
     entry_stats={
         "guild": _guild_stat,
         "channels_dir": _dir_stat,

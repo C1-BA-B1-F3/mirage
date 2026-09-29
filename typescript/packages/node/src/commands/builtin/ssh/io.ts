@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '@struktoai/mirage-core/vfs/adapter'
+
 import { type CommandIO, rangeOf } from '@struktoai/mirage-core/commands/builtin/generic_bind/index'
 import type { SSHAccessor } from '../../../accessor/ssh.ts'
 import { appendBytes as sshAppend } from '../../../core/ssh/append.ts'
@@ -34,27 +36,29 @@ import { truncate as sshTruncate } from '../../../core/ssh/truncate.ts'
 import { unlink as sshUnlink } from '../../../core/ssh/unlink.ts'
 import { writeBytes as sshWrite } from '../../../core/ssh/write.ts'
 
-export const SSH_IO: CommandIO<SSHAccessor> = {
+export const SSH_IO: CommandIO<SSHAccessor> = new VFSAdapter<SSHAccessor>({
+  read: { readdir: sshReaddir, readBytes: sshRead, stat: sshStat },
+  native: {
+    readRange: rangeOf(sshRead),
+    readStream: sshStream,
+    exists: sshExists,
+    find: sshFind,
+    du: { size: sshDu, entries: sshDuAll },
+  },
+  writes: {
+    write: sshWrite,
+    mkdir: (accessor, path, parents) => sshMkdir(accessor, path, parents === true),
+    unlink: sshUnlink,
+    rmdir: sshRmdir,
+    rmR: sshRmR,
+    rename: sshRename,
+    copy: sshCopy,
+    create: sshCreate,
+    truncate: sshTruncate,
+    append: sshAppend,
+    setAttrs: sshSetAttrs,
+  },
   maxGlobMatches: SCOPE_ERROR,
-  readdir: sshReaddir,
-  readBytes: sshRead,
-  readRange: rangeOf(sshRead),
-  readStream: sshStream,
-  stat: sshStat,
   isMounted: () => true,
   local: false,
-  write: sshWrite,
-  exists: sshExists,
-  mkdir: (accessor, path, parents) => sshMkdir(accessor, path, parents === true),
-  unlink: sshUnlink,
-  rmdir: sshRmdir,
-  rmR: sshRmR,
-  rename: sshRename,
-  copy: sshCopy,
-  create: sshCreate,
-  truncate: sshTruncate,
-  append: sshAppend,
-  find: sshFind,
-  du: { size: sshDu, entries: sshDuAll },
-  setAttrs: sshSetAttrs,
-}
+}).toCommandIO()

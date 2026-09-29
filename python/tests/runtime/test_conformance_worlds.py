@@ -60,8 +60,6 @@ quickjs_live = pytest.mark.skipif(
 # RuntimeVFS captures the launch session and re-binds it across the
 # thread hop) landed too, so the guest confinement group runs unmarked.
 
-CWD = "runtime cwd is not wired: guests resolve no relative paths"
-
 
 def _seed(files: dict[str, bytes]) -> RAMVFS:
     """A RAM VFS preloaded with mount-relative files.
@@ -309,14 +307,18 @@ async def test_door_stats_structure_only_directory():
 async def test_link_ancestors_synthesize_on_every_surface():
     """A link below an absent directory chain is reachable from above.
 
-    ``ln`` permits ``/ghost/deep/lnk`` with no backend serving
-    ``/ghost``; its ancestors synthesize exactly as nested mount
-    prefixes do, so ``ls /`` shows the way in and a guest walk from
-    the root reaches the link.
+    ``ln`` refuses ``/ghost/deep/lnk`` with no backend serving
+    ``/ghost`` (symlink(2)'s ENOENT), but a node table restored from an
+    older snapshot can still hold one; its ancestors synthesize exactly
+    as nested mount prefixes do, so ``ls /`` shows the way in and a
+    guest walk from the root reaches the link.
     """
     ws = structure_world("monty")
     try:
-        assert (await _sh(ws, "ln -s /base/a.txt /ghost/deep/lnk"))[0] == 0
+        code, _, err = await _sh(ws, "ln -s /base/a.txt /ghost/deep/lnk")
+        assert code == 1
+        assert "No such file or directory" in err
+        await ws.namespace.symlink("/ghost/deep/lnk", "/base/a.txt", 0.0)
         st = await ws.vfs.stat("/ghost")
         assert st.type.value == "directory"
         code, out, _ = await _sh(ws, "ls /")
@@ -627,22 +629,27 @@ async def test_guest_cannot_follow_link_out_of_scope():
 
 # ── Group 4: a guest resolves relative paths against its cwd (forward) ──
 #
-# The shell has a cwd; the guest never receives it. Relative-path ops
-# in a guest fail today. Pinned as the fact a cwd-carrying door must
-# satisfy, so the wiring lands with a test already waiting for it.
+# Both Python guests inherit the shell cwd before executing user code.
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "runtime,line",
-    _guest_cases({
-        "monty":
-        "cd /base && python3 -c \"print(open('a.txt').read())\"",
-        "wasi":
-        "cd /base && python3 -c \"print(open('a.txt').read())\"",
-    }),
+    [
+        pytest.param(
+            "monty",
+            "cd /base && python3 -c \"print(open('a.txt').read())\"",
+            id="monty",
+            marks=GUARDS["monty"],
+        ),
+        pytest.param(
+            "wasi",
+            "cd /base && python3 -c \"print(open('a.txt').read())\"",
+            id="wasi",
+            marks=wasi_live,
+        ),
+    ],
 )
-@pytest.mark.xfail(reason=CWD, strict=True)
 async def test_guest_resolves_relative_path_against_cwd(
         runtime: str, line: str):
     """A guest launched in ``/base`` reads ``a.txt`` relatively.

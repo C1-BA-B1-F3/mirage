@@ -16,9 +16,13 @@ import posixpath
 
 from mirage.runtime.types import DispatchFn
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import MISS_ERRORS, enoent
+from mirage.utils.errors import ELOOP_STRERROR, MISS_ERRORS, DotWalkLoop
 from mirage.utils.path import CycleError
 from mirage.workspace.mount.namespace import Namespace
+
+# What an existence probe reads as nothing there: every miss, and a link
+# loop, which the walk reaches nothing through.
+_ABSENT: tuple[type[Exception], ...] = (*MISS_ERRORS, DotWalkLoop)
 
 
 async def resolve_path_stat(dispatch: DispatchFn,
@@ -39,6 +43,10 @@ async def resolve_path_stat(dispatch: DispatchFn,
     ``tables``/``views`` under any first segment, and every absent
     schema read as a directory here.
 
+    A link loop in the path is absence too: the walk reaches nothing
+    there, which is the question this answers, and a diagnostic that has
+    to name the errno asks :func:`miss_strerror`.
+
     Args:
         dispatch (DispatchFn): op dispatcher.
         path (PathSpec): path to resolve.
@@ -46,13 +54,13 @@ async def resolve_path_stat(dispatch: DispatchFn,
     stat: FileStat | None
     try:
         stat, _ = await dispatch("stat", path)
-    except MISS_ERRORS:
+    except _ABSENT:
         stat = None
     if stat is not None:
         return stat
     try:
         entries, _ = await dispatch("readdir", path)
-    except MISS_ERRORS:
+    except _ABSENT:
         return None
     if not entries:
         return None
@@ -76,6 +84,30 @@ async def path_stat(dispatch: DispatchFn, virtual: str) -> FileStat | None:
                     directory=virtual[:virtual.rfind("/") + 1] or "/",
                     vfs_path="")
     return await resolve_path_stat(dispatch, spec)
+
+
+async def miss_strerror(dispatch: DispatchFn, virtual: str) -> str:
+    """The strerror GNU names for a path ``path_stat`` found nothing at.
+
+    ``path_stat`` answers None for both ways a lookup fails, since an
+    existence probe treats them alike, while a diagnostic names the one
+    the stat met: ENOTDIR for a path under a plain file, ELOOP for one a
+    link loop stands in, ENOENT for the rest. Asked only after a miss, so
+    its round trip is on the failure path.
+
+    Args:
+        dispatch (DispatchFn): op dispatcher.
+        virtual (str): absolute virtual path.
+    """
+    try:
+        await dispatch("stat", PathSpec.from_str_path(virtual))
+    except NotADirectoryError:
+        return "Not a directory"
+    except MISS_ERRORS:
+        return "No such file or directory"
+    except DotWalkLoop:
+        return ELOOP_STRERROR
+    return "No such file or directory"
 
 
 async def path_readdir(dispatch: DispatchFn, virtual: str) -> list[str]:
@@ -110,6 +142,25 @@ async def path_exists(dispatch: DispatchFn, virtual: str) -> bool:
         return False
 
 
+def resolve_link(namespace: Namespace, virtual: str) -> str:
+    """Where a path really points, as the door can address it.
+
+    The namespace's walk, with a relative target's walk up from the
+    link's own directory (``../a.txt``) collapsed, which the door does
+    not do for a path it is handed whole. The link's directory is a real
+    one, since the table keys every link by its resolved parent, so the
+    ``..`` it names is that directory's parent.
+
+    Args:
+        namespace (Namespace): addressing authority holding the links.
+        virtual (str): absolute virtual path.
+
+    Raises:
+        CycleError: when the chain loops past the hop limit (ELOOP).
+    """
+    return posixpath.normpath(namespace.follow(virtual))
+
+
 async def link_target_stat(namespace: Namespace, dispatch: DispatchFn,
                            virtual: str) -> FileStat | None:
     """The stat of what a link points at, or None when it dangles.
@@ -131,30 +182,13 @@ async def link_target_stat(namespace: Namespace, dispatch: DispatchFn,
         virtual (str): absolute virtual path of the link.
     """
     try:
-        target = namespace.follow(virtual)
+        target = resolve_link(namespace, virtual)
     except CycleError:
         return None
     spec = PathSpec(virtual=target,
                     directory=target[:target.rfind("/") + 1] or "/",
                     vfs_path="")
     return await stat_or_none(dispatch, spec)
-
-
-async def dispatch_stat(dispatch: DispatchFn, path: PathSpec) -> FileStat:
-    """Stat a path via dispatch in the shape the generics' probes take.
-
-    ``dest_kind`` and its kin are written against a backend ``stat`` that
-    raises on a miss, so a dispatcher answer of nothing becomes ENOENT.
-
-    Args:
-        dispatch (DispatchFn): op dispatcher.
-        path (PathSpec): path to stat.
-    """
-    stat: FileStat | None
-    stat, _ = await dispatch("stat", path)
-    if stat is None:
-        raise enoent(path)
-    return stat
 
 
 async def stat_or_none(dispatch: DispatchFn,

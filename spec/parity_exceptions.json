@@ -9,16 +9,7 @@
       "hf_buckets": "hf"
     }
   },
-  "commands": {
-    "grep": {
-      "by_vfs": {
-        "github": [
-          "has_provision"
-        ]
-      },
-      "reason": "TypeScript has no github grep provision. Python's is a bespoke cost model that walks the index to sum matched bytes and read ops, and it reaches IndexCacheStore internals, so porting it needs its own change rather than riding along with the parity gate."
-    }
-  },
+  "commands": {},
   "config_fields": {
     "dropbox": {
       "refreshFn": "TypeScript's delegated-refresh hook for browser PKCE and secret-proxy setups, a callback no YAML block can carry. Python's seam for a caller that owns the OAuth dance is the `access_token` provider callable, which both sides have."
@@ -59,9 +50,6 @@
     "opfs": "Browser-only OPFS backend. Python has no browser runtime, so there is nothing to mirror."
   },
   "vfs_capabilities": {
-    "github": {
-      "supports_snapshot": "TypeScript records the blob SHA as a snapshot fingerprint; python stamps the same SHA in core/github/stat.py but does not declare supports_snapshot, so no drift check fires. Left to the snapshot redesign (#721) rather than flipped here, because turning it on changes what a python snapshot records."
-    },
     "lancedb": {
       "caches_reads": "Both languages compute it per mount from the URI scheme (remote tables cache, local ones do not): lancedb.py sets it in __init__, lancedb.ts in its constructor. The generators disagree because python reads the class attribute, which is still the base default at class level, while the TypeScript walk reads the constructor assignment. A per-instance value, not a table, so there is nothing to single-source."
     }
@@ -78,14 +66,17 @@
   },
   "unconstructible_vfs_names": {
     "browser": {
+      "bin": "See python: the /usr/bin view mount is workspace-internal.",
       "databricks_volume": "Node-only on purpose, and not for want of a factory: the Databricks Files API sends no CORS headers, so a browser fetch is blocked whatever the config says. docs/typescript/setup/databricks_volume.mdx states it. The commands still register because they live in core, which every bundle carries.",
       "history": "See python: the history view mount is workspace-internal.",
       "jaeger": "Same as databricks_volume, measured rather than assumed: on jaegertracing/jaeger:latest a GET carrying an Origin comes back with no Access-Control-Allow-Origin and the CORS preflight OPTIONS is a 404, so the query API is unreachable from a page. A deployment that fronts Jaeger with a CORS-adding proxy can register its own factory."
     },
     "node": {
+      "bin": "See python: the /usr/bin view mount is workspace-internal.",
       "history": "See python: the history view mount is workspace-internal."
     },
     "python": {
+      "bin": "The /usr/bin view mount is created by the workspace itself and is never named in YAML or a snapshot, so it registers commands without a build_vfs entry.",
       "history": "The /.bash_history view mount is created by the workspace itself and is never named in YAML or a snapshot, so it registers commands without a build_vfs entry."
     }
   },

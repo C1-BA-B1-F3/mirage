@@ -15,9 +15,9 @@
 import pytest
 
 from mirage.commands.cli.builtin.git.errors import (  # yapf: disable
-    FATAL_EXIT, NotARepositoryError, UnknownSwitchError)
-from mirage.commands.cli.builtin.git.util import (check_operands, escaped,
-                                                  fatal, start_point, switches)
+    FATAL_EXIT, BadConfigValueError, NotARepositoryError, UnknownSwitchError)
+from mirage.commands.cli.builtin.git.util import (  # yapf: disable
+    check_operands, escaped, fatal, git_bool, start_point, switches)
 from mirage.commands.cli.types import CLIInvocation, CLISpec
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import Option
@@ -49,43 +49,43 @@ def test_fatal_names_an_explicit_gitdir():
 @pytest.mark.asyncio
 async def test_an_unsupported_log_flag_says_so_rather_than_blaming_the_repo(
         git_ws):
-    # -p is real git, absent here. As a revision operand it used to come
-    # back "ambiguous argument", which reads as a missing commit.
-    result = await git_ws.shell("git -C /repo log -p")
+    # Unknown options must not read as missing revisions.
+    result = await git_ws.shell("git -C /repo log --zzz")
     assert result.exit_code == 128
-    assert result.stderr == b"fatal: unrecognized argument: -p\n"
+    assert result.stderr == b"fatal: unrecognized argument: --zzz\n"
 
 
 @pytest.mark.asyncio
 async def test_an_unsupported_long_log_flag_is_refused_whole(git_ws):
-    result = await git_ws.shell("git -C /repo log --graph")
+    result = await git_ws.shell("git -C /repo log --simplify-by-decoration")
     assert result.exit_code == 128
-    assert result.stderr == b"fatal: unrecognized argument: --graph\n"
+    assert result.stderr == (
+        b"fatal: unrecognized argument: --simplify-by-decoration\n")
 
 
 @pytest.mark.asyncio
 async def test_an_unsupported_show_flag_is_refused(git_ws):
-    result = await git_ws.shell("git -C /repo show --raw HEAD")
+    result = await git_ws.shell("git -C /repo show --word-diff HEAD")
     assert result.exit_code == 128
-    assert result.stderr == b"fatal: unrecognized argument: --raw\n"
+    assert result.stderr == b"fatal: unrecognized argument: --word-diff\n"
 
 
 @pytest.mark.asyncio
 async def test_diff_keeps_gits_own_wording_and_exit_for_a_bad_option(git_ws):
     # git words this one differently from log and show, and exits 129
     # rather than 128. Pinned against git 2.50.1.
-    result = await git_ws.shell("git -C /repo diff --stat HEAD")
+    result = await git_ws.shell("git -C /repo diff --zzz HEAD")
     assert result.exit_code == 129
-    assert result.stderr == b"error: invalid option: --stat\n"
+    assert result.stderr == b"error: invalid option: --zzz\n"
 
 
 @pytest.mark.asyncio
 async def test_a_refused_flag_costs_no_object_reads(git_ws):
     # The check runs before the repository is opened, so a bad flag is
     # answered without touching the backend.
-    result = await git_ws.shell("git -C /nowhere log -p")
+    result = await git_ws.shell("git -C /nowhere log --zzz")
     assert result.exit_code == 128
-    assert result.stderr == b"fatal: unrecognized argument: -p\n"
+    assert result.stderr == b"fatal: unrecognized argument: --zzz\n"
 
 
 @pytest.mark.asyncio
@@ -192,3 +192,39 @@ def test_switches_reads_the_leaf_the_line_was_parsed_against():
                             Option(short="-k"), Option(long="--sparse")))
     assert switches(CLIInvocation(None, spec=leaf)) == {"f", "k"}
     assert switches(CLIInvocation(None)) == frozenset()
+
+
+@pytest.mark.parametrize("value", [
+    b"true", b"YES", b"On", b"1", b"-1", b"+1", b"0x10", b"010", b"2k", b"1g",
+    b" 1", b"-2097152k", b"2147483647", b"-2147483648"
+])
+def test_git_reads_these_as_true(value):
+    assert git_bool([value], "core.bare", False) is True
+
+
+@pytest.mark.parametrize("value", [b"false", b"No", b"OFF", b"", b"0", b"-0"])
+def test_git_reads_these_as_false(value):
+    assert git_bool([value], "core.bare", True) is False
+
+
+@pytest.mark.parametrize("value", [
+    b"maybe", b" true", b"08", b"0x", b"1x", b"1 ", b"- 1", b"2g", b"2097152k",
+    b"2147483648", b"-2147483649", b"99999999999"
+])
+def test_git_cannot_read_these(value):
+    # Pinned against git 2.54: strtoimax in base 0, one k, m or g, and a
+    # product that has to fit an int.
+    with pytest.raises(BadConfigValueError) as excinfo:
+        git_bool([value], "core.bare", False)
+    assert str(excinfo.value) == (f"bad boolean config value "
+                                  f"'{value.decode()}' for 'core.bare'")
+
+
+def test_the_last_occurrence_wins():
+    assert git_bool([b"true", b"false"], "core.bare", True) is False
+    assert git_bool([], "core.bare", True) is True
+
+
+def test_every_occurrence_is_parsed():
+    with pytest.raises(BadConfigValueError):
+        git_bool([b"maybe", b"true"], "core.bare", False)

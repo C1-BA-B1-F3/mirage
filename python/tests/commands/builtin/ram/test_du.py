@@ -98,8 +98,9 @@ async def test_du_max_depth_one(workspace):
 @pytest.mark.asyncio
 async def test_du_without_operand_measures_the_working_directory(workspace):
     """GNU du with no operand summarises '.', dot-spelled; no error."""
-    await workspace.vfs.write("/a.txt", b"hello")
-    io = await workspace.shell("du")
+    await workspace.vfs.mkdir("/d")
+    await workspace.vfs.write("/d/a.txt", b"hello")
+    io = await workspace.shell("du", cwd="/d")
     assert io.exit_code == 0
     assert "5\t." in io.stdout.decode().splitlines()
 

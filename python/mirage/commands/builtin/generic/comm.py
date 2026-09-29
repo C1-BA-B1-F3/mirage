@@ -2,11 +2,13 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 
 from mirage.commands.builtin.utils.lines import split_lines
+from mirage.commands.builtin.utils.stream import stdin_bytes
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName, FlagValue
-from mirage.commands.spec.usage import extra_operand_error
+from mirage.commands.spec.usage import (extra_operand_error,
+                                        missing_operand_error)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import PathSpec
 
@@ -73,6 +75,7 @@ async def comm(
     paths: list[PathSpec],
     *,
     read_bytes: Callable[..., Awaitable[bytes]],
+    stdin: ByteSource | None = None,
     suppress1: bool = False,
     suppress2: bool = False,
     suppress3: bool = False,
@@ -85,9 +88,12 @@ async def comm(
         raise extra_operand_error(CommandName.COMM, paths[2].raw_path
                                   or paths[2].virtual)
     if len(paths) < 2:
-        raise ValueError("comm: requires two paths")
-    data1 = (await read_bytes(paths[0])).decode(errors="replace")
-    data2 = (await read_bytes(paths[1])).decode(errors="replace")
+        raise missing_operand_error(
+            CommandName.COMM,
+            paths[-1].raw_path or paths[-1].virtual if paths else None)
+    read = stdin_bytes(read_bytes, stdin)
+    data1 = (await read(paths[0])).decode(errors="replace")
+    data2 = (await read(paths[1])).decode(errors="replace")
     lines1 = data1.rstrip("\0").split(
         "\0") if zero_terminated else split_lines(data1)
     lines2 = data2.rstrip("\0").split(
@@ -144,6 +150,7 @@ async def comm_generic(
     parsed = parse_flags(opts.flags)
     return await comm(paths,
                       read_bytes=read_bytes,
+                      stdin=opts.stdin,
                       suppress1=parsed.suppress1,
                       suppress2=parsed.suppress2,
                       suppress3=parsed.suppress3,

@@ -17,6 +17,7 @@ import { countRows } from '../../../core/postgres/client.ts'
 import { resolveGlobOf } from '../generic_bind/index.ts'
 import { POSTGRES_IO } from './io.ts'
 import { readStream } from '../../../core/postgres/read.ts'
+import { entityExists } from '../../../core/postgres/readdir.ts'
 import { detectScope } from '../../../core/postgres/scope.ts'
 import { type ByteSource, IOResult } from '../../../io/types.ts'
 import { type PathSpec, VFSName } from '../../../types.ts'
@@ -41,6 +42,16 @@ function rowsScope(p: PathSpec): { schema: string; entity: string } | null {
   return null
 }
 
+// The count queries the relation by the names in the path, so the fast path
+// runs only when every operand is an entity the mount can see; the generic
+// stats the rest through the same guard and reports them.
+async function allExist(accessor: PostgresAccessor, paths: readonly PathSpec[]): Promise<boolean> {
+  for (const p of paths) {
+    if (!(await entityExists(accessor, detectScope(p), p.virtual))) return false
+  }
+  return true
+}
+
 async function wcCommand(
   accessor: PostgresAccessor,
   paths: PathSpec[],
@@ -58,7 +69,12 @@ async function wcCommand(
   // needs the content).
   const countOnly =
     parsed.lines && !parsed.words && !parsed.bytes && !parsed.chars && !parsed.maxLineLength
-  if (countOnly && resolved.length > 0 && resolved.every((p) => rowsScope(p) !== null)) {
+  if (
+    countOnly &&
+    resolved.length > 0 &&
+    resolved.every((p) => rowsScope(p) !== null) &&
+    (await allExist(accessor, resolved))
+  ) {
     const rows: WcRow[] = []
     let total = 0
     for (const p of resolved) {

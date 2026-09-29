@@ -17,7 +17,8 @@ from mirage.ops.types import LinkView, MountView, StatPath
 from mirage.types import (DEVICE_NUMBERS_KEY, LINK_TARGET_KEY, FileStat,
                           FileType, PathSpec, StatFn)
 from mirage.utils.errors import FS_ERRORS, fs_error_line
-from mirage.utils.stat_view import device_rdev, posix_mode
+from mirage.utils.stat_view import (DIR_SIZE, content_size, device_rdev,
+                                    is_dir, posix_mode)
 
 _STR_DIRECTIVES = frozenset("nNF")
 
@@ -200,7 +201,8 @@ def _directive_value(spec: str, s: FileStat, name: str,
     if spec == "n":
         return name
     if spec == "s":
-        return str(s.size if s.size is not None else 0)
+        return "-" if not is_dir(s) and s.size is None else str(
+            content_size(s))
     if spec == "F":
         return _type_label(s)
     if spec == "a":
@@ -361,9 +363,12 @@ def _render_stat(s: FileStat) -> str:
     """
     # The record's type= shows a regular file's content shape and a
     # non-regular node's kind, so one field reads the way it always has.
+    # A directory's size= is DIR_SIZE, as `%s` prints it; anything else
+    # keeps its own, None when unknown.
     shown = (s.content.value if s.type is FileType.FILE
              and s.content is not None else s.type.value)
-    return (f"name={s.name} size={s.size} modified={s.modified}"
+    size = DIR_SIZE if is_dir(s) else s.size
+    return (f"name={s.name} size={size} modified={s.modified}"
             f" type={shown}")
 
 

@@ -15,6 +15,7 @@
 from mirage.accessor.ram import RAMAccessor
 from mirage.cache.context import invalidate_after_unlink
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.core.ram.dest import lookup_error
 from mirage.types import PathSpec
 from mirage.utils.errors import enotempty
 from mirage.utils.path import norm
@@ -27,7 +28,7 @@ async def rmdir(accessor: RAMAccessor,
     store = accessor.store
     p = norm(path)
     if p not in store.dirs:
-        raise FileNotFoundError(p)
+        raise lookup_error(store, path_spec, p)
     prefix = p.rstrip("/") + "/"
     children = [
         k for k in list(store.files) + list(store.dirs)

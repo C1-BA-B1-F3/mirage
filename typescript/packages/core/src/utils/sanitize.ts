@@ -87,10 +87,20 @@ function stripTrailingUnderscoresAndDots(value: string): string {
   return value.slice(0, end)
 }
 
-export function stripUnderscores(value: string): string {
+/**
+ * Trim what a cleaned name may not start or end with: underscores at either
+ * edge, and dots at the start. Every hierarchy classifier treats a dot-led
+ * segment as hidden, so a label that rendered one (a board titled `.plan`, or
+ * `_.x` once its underscore was trimmed) was dropped from its listing and
+ * refused as a path, with no error anywhere. `pathSafeName` keeps a dot-led
+ * spelling by escaping it instead; these names are the shell-safe kind, which
+ * drop what is not safe rather than escape it. python's
+ * `cleaned.lstrip("._").rstrip("_")`, linearly.
+ */
+function stripNameEdges(value: string): string {
   let start = 0
   let end = value.length
-  while (start < end && value[start] === '_') start += 1
+  while (start < end && (value[start] === '_' || value[start] === '.')) start += 1
   while (end > start && value[end - 1] === '_') end -= 1
   return value.slice(start, end)
 }
@@ -99,14 +109,18 @@ export function stripUnderscores(value: string): string {
  * Sanitize a name for use in virtual paths.
  *
  * Replaces shell-unsafe characters (apostrophes, quotes, etc.) and spaces
- * with underscores. Safe for use in shell commands without quoting.
+ * with underscores. Safe for use in shell commands without quoting. Never
+ * dot-led, and never empty: a name with nothing left once the unsafe
+ * characters go (`!!!`, an emoji-only title) is `unknown`, as a blank one is,
+ * because an empty label renders a `__<id>` segment no classifier accepts.
  */
 export function sanitizeName(name: string): string {
   if (isBlank(name)) return 'unknown'
   let cleaned = name.replace(UNSAFE_CHARS, '_')
   cleaned = cleaned.replace(/ /g, '_')
   cleaned = cleaned.replace(MULTI_UNDERSCORE, '_')
-  cleaned = stripUnderscores(cleaned)
+  cleaned = stripNameEdges(cleaned)
+  if (cleaned === '') return 'unknown'
   // Code points, not UTF-16 units -- see sanitizeLabel.
   const points = Array.from(cleaned)
   if (points.length > MAX_LEN) cleaned = points.slice(0, MAX_LEN).join('')
@@ -139,7 +153,9 @@ export function pathSafeName(name: string): string {
  * empty label becomes and how long a label may be, so those are the arguments.
  *
  * Unlike `sanitizeName` this ellipsizes rather than hard-cutting, so a
- * truncated name reads as truncated.
+ * truncated name reads as truncated. Like it, the label is never dot-led, and
+ * one with nothing left once the unsafe characters go is the `fallback`, as a
+ * blank one is.
  *
  * Two budgets apply, and both have to: `maxLen` is the readable length a
  * backend wants, while `maxBytes` is what the filesystem will actually
@@ -156,7 +172,8 @@ export function sanitizeLabel(
 ): string {
   if (isBlank(text)) return options.fallback
   let cleaned = text.replace(UNSAFE_CHARS, '_').replace(/ /g, '_').replace(MULTI_UNDERSCORE, '_')
-  cleaned = stripUnderscores(cleaned)
+  cleaned = stripNameEdges(cleaned)
+  if (cleaned === '') return options.fallback
   // The budget counts characters, and python counts code points where
   // `String.length` counts UTF-16 units. Measuring in units both truncates a
   // label python leaves whole and can cut a surrogate pair in half, which

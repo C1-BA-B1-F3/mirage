@@ -539,7 +539,7 @@
       "targets": [
         "chroma"
       ],
-      "command": "ln -s /knowledge/guides/auth.md /knowledge/meta_link",
+      "command": "ln -s /knowledge/guides/auth.md /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "",
@@ -552,7 +552,7 @@
       "targets": [
         "chroma"
       ],
-      "command": "readlink /knowledge/meta_link",
+      "command": "readlink /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "/knowledge/guides/auth.md\n",
@@ -565,7 +565,7 @@
       "targets": [
         "chroma"
       ],
-      "command": "cat /knowledge/meta_link",
+      "command": "cat /meta_link",
       "expect": {
         "exit": 0,
         "stdout": "Authentication uses bearer tokens via the Authorization header.\nRequests are rate limited to 100 calls per minute per token.\nIf you exceed the limit you receive HTTP 429 and must back off.",
@@ -578,10 +578,10 @@
       "targets": [
         "chroma"
       ],
-      "command": "wc -l /knowledge/meta_link",
+      "command": "wc -l /meta_link",
       "expect": {
         "exit": 0,
-        "stdout": "2 /knowledge/meta_link\n",
+        "stdout": "2 /meta_link\n",
         "stderr": ""
       }
     },
@@ -591,7 +591,7 @@
       "targets": [
         "chroma"
       ],
-      "command": "ls -F /knowledge/ | grep meta_link",
+      "command": "ls -F / | grep meta_link",
       "expect": {
         "exit": 0,
         "stdout": "meta_link@\n",
@@ -604,7 +604,7 @@
       "targets": [
         "chroma"
       ],
-      "command": "rm /knowledge/meta_link && ls /knowledge/",
+      "command": "rm /meta_link && ls /knowledge/",
       "expect": {
         "exit": 0,
         "stdout": "CHANGELOG.md\nguides\npolicies\n",

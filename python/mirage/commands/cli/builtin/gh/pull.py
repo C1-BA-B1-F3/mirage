@@ -18,6 +18,7 @@ from mirage.commands.cli.builtin.gh.accessor import (body_value, camel,
                                                      list_limit, repo_for,
                                                      repo_number, text_out,
                                                      typed_out)
+from mirage.commands.cli.builtin.gh.issue import comments_for, comments_text
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.config import GhConfig
@@ -111,7 +112,13 @@ async def view_cmd(
     fl = FlagView(inv.flags)
     ref, number = _target(inv, fl)
     row = _pull(await get_pull(inv.config, ref, number))
-    return await typed_out(row, fl, _view_text(row), PR_FIELDS)
+    comments = await comments_for(inv, fl, ref, number)
+    if comments is not None:
+        row["comments"] = comments
+    return await typed_out(
+        row, fl,
+        comments_text(comments or []) if fl.as_bool("comments") else
+        _view_text(row), (*PR_FIELDS, "comments"))
 
 
 async def create_cmd(

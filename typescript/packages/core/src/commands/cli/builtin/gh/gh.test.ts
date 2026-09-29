@@ -14,15 +14,23 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type * as AccessorModule from './accessor.ts'
-import { bodyValue, repoNumber } from './accessor.ts'
-import { type GitHubResponse, type GitHubTransport } from '../../../../core/github/client.ts'
+import { bodyValue, readCliFile, repoNumber } from './accessor.ts'
+import {
+  GitHubApiError,
+  type GitHubResponse,
+  type GitHubTransport,
+} from '../../../../core/github/client.ts'
 import { cliSpecFor } from '../../specs.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import { FlagView } from '../../../spec/flag_view.ts'
 import type { CLIInvocation } from '../../types.ts'
+import { issueComments } from '../../../../core/github/issue.ts'
+import { commentsFor, commentsText } from './issue.ts'
 import { GH } from './index.ts'
+import { PathSpec } from '../../../../types.ts'
+import { IOResult, materialize } from '../../../../io/types.ts'
 import { api } from './api.ts'
-import { fork, rename, summary, view } from './repo.ts'
+import { fork, listCmd, rename, summary, view } from './repo.ts'
 
 const DEC = new TextDecoder()
 
@@ -109,6 +117,7 @@ describe('gh tree', () => {
   it('registers itself under the grammar gh uses', () => {
     expect(cliSpecFor('gh')).toBe(GH)
     expect(GH.subcommands.map((c) => c.name)).toEqual([
+      'version',
       'api',
       'issue',
       'pr',
@@ -116,6 +125,7 @@ describe('gh tree', () => {
       'release',
       'run',
       'workflow',
+      'search',
     ])
     const repo = GH.subcommands.find((c) => c.name === 'repo')
     expect(repo?.subcommands.map((c) => c.name)).toEqual([
@@ -156,10 +166,109 @@ describe('gh repo', () => {
     ])
   })
 
-  it('does not fetch README content for JSON output', async () => {
-    reset({ name: 'r', full_name: 'o/r' })
-    await view(inv(['o/r'], { json: 'name' }))
-    expect(CALLS).toEqual([{ method: 'GET', path: '/repos/o/r' }])
+  it('asks GraphQL for exactly the JSON fields named, and no README', async () => {
+    reset({ data: { repository: { parent: null, name: 'r' } } })
+    const out = text(await view(inv(['o/r'], { json: 'parent,name' })))
+    expect(CALLS).toEqual([
+      {
+        method: 'POST',
+        path: '/graphql',
+        body: {
+          query:
+            'query RepositoryInfo($owner: String!, $name: String!) {\n' +
+            '    repository(owner: $owner, name: $name) {parent{id,name,owner{id,login}},name}\n  }',
+          variables: { owner: 'o', name: 'r' },
+        },
+      },
+    ])
+    expect(out).toBe('{\n  "name": "r",\n  "parent": null\n}\n')
+  })
+
+  // gh decodes the answer into Go structs and prints those: a null string is
+  // "", a struct keeps every field (a user's databaseId is 0), a repository
+  // with no topics prints null, and projectsV2 prints its untagged `Nodes`.
+  it('prints each field in the shape gh decodes it into', async () => {
+    reset({
+      data: {
+        repository: {
+          description: null,
+          assignableUsers: { nodes: [{ id: 'U1', login: 'ada', name: null }] },
+          repositoryTopics: { nodes: [] },
+          projectsV2: { nodes: [] },
+          latestRelease: null,
+          watchers: { totalCount: 3 },
+          owner: { id: 'O1', login: 'o' },
+          parent: { id: 'R0', name: 'up', owner: { id: 'O0', login: 'u' } },
+        },
+      },
+    })
+    const fields =
+      'watchers,parent,owner,latestRelease,projectsV2,repositoryTopics,assignableUsers,description'
+    const out = text(await view(inv(['o/r'], { json: fields })))
+    expect(JSON.parse(out)).toStrictEqual({
+      assignableUsers: [{ id: 'U1', login: 'ada', name: '', databaseId: 0 }],
+      description: '',
+      latestRelease: null,
+      owner: { id: 'O1', login: 'o' },
+      parent: { id: 'R0', name: 'up', owner: { id: 'O0', login: 'u' } },
+      projectsV2: { Nodes: [] },
+      repositoryTopics: null,
+      watchers: { totalCount: 3 },
+    })
+    expect(Object.keys(JSON.parse(out) as object)).toEqual([
+      'assignableUsers',
+      'description',
+      'latestRelease',
+      'owner',
+      'parent',
+      'projectsV2',
+      'repositoryTopics',
+      'watchers',
+    ])
+  })
+
+  it('refuses an unknown field before asking, listing every field gh exports', async () => {
+    reset()
+    const refusal = view(inv(['o/r'], { json: 'isFork,bogus' }))
+    await expect(refusal).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringMatching(
+        /^Unknown JSON field: "bogus"\nAvailable fields:\n {2}archivedAt\n {2}assignableUsers\n/,
+      ) as unknown,
+    })
+    expect(CALLS).toEqual([])
+  })
+
+  it('words a GraphQL error the way gh does', async () => {
+    reset({
+      data: { repository: null },
+      errors: [
+        { message: "Could not resolve to a Repository with the name 'o/r'.", path: ['repository'] },
+      ],
+    })
+    await expect(view(inv(['o/r'], { json: 'name' }))).rejects.toThrow(
+      "GraphQL: Could not resolve to a Repository with the name 'o/r'. (repository)",
+    )
+  })
+
+  it("lists an owner's repositories over GraphQL for JSON output", async () => {
+    reset({
+      data: {
+        repositoryOwner: {
+          repositories: {
+            nodes: [{ name: 'a', isFork: true }],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      },
+    })
+    const out = text(await listCmd(inv(['acme'], { json: 'name,isFork', limit: 5 })))
+    expect(CALLS).toHaveLength(1)
+    const body = CALLS[0]?.body as { query: string; variables: unknown }
+    expect(body.query).toContain('repositoryOwner(login: $owner)')
+    expect(body.query).toContain('nodes{name,isFork}')
+    expect(body.variables).toEqual({ perPage: 5, owner: 'acme' })
+    expect(JSON.parse(out)).toEqual([{ isFork: true, name: 'a' }])
   })
 
   it('falls back to the install repo when no operand is given', async () => {
@@ -216,8 +325,27 @@ describe('gh repo', () => {
 })
 
 describe('gh file input', () => {
+  it('keeps a resolved path and materializes streamed file content', async () => {
+    const path = new PathSpec({
+      virtual: '/scratch/body.md',
+      directory: '/scratch/',
+      vfsPath: 'body.md',
+      rawPath: './body.md',
+    })
+    const content = ['first ', 'second']
+    const dispatch = vi.fn(async function* () {
+      for (const chunk of content) yield await Promise.resolve(new TextEncoder().encode(chunk))
+    })
+    const read = vi.fn(() => Promise.resolve([dispatch(), new IOResult()] as [unknown, IOResult]))
+    const call = inv([], {}, { token: 't' }, { doors: { dispatch: read } })
+    expect(DEC.decode(await readCliFile(call, path, '--body-file'))).toBe('first second')
+    expect(read).toHaveBeenCalledWith('read', path)
+  })
+
   it('reads short -F - from standard input after path resolution', async () => {
-    const flags = { body_file: '/-' }
+    const flags = {
+      body_file: new PathSpec({ virtual: '/-', directory: '/', vfsPath: '-', rawPath: '-' }),
+    }
     for (const argv of [
       ['issue', 'create', '-F', '-'],
       ['issue', 'create', '-F-'],
@@ -467,4 +595,198 @@ describe('gh repo view rendering', () => {
       'name:\to/r\ndescription:\t\n',
     )
   })
+})
+
+it('follows GraphQL comment cursors and propagates errors', async () => {
+  const transport = new FakeTransport()
+  const request = vi.spyOn(transport, 'request')
+  const page = (body: string, more: boolean) => ({
+    data: {
+      repository: {
+        issueOrPullRequest: {
+          comments: { nodes: [{ body }], pageInfo: { hasNextPage: more, endCursor: 'next' } },
+        },
+      },
+    },
+  })
+  request.mockResolvedValueOnce(page('first', true)).mockResolvedValueOnce(page('second', false))
+  expect(await issueComments(transport, { owner: 'o', repo: 'r' }, 1)).toEqual([
+    { body: 'first' },
+    { body: 'second' },
+  ])
+  expect(request).toHaveBeenNthCalledWith(
+    2,
+    'POST',
+    '/graphql',
+    expect.objectContaining({ variables: { owner: 'o', repo: 'r', number: 1, cursor: 'next' } }),
+  )
+  request.mockResolvedValueOnce({ errors: [{ message: 'Could not resolve repository' }] })
+  await expect(issueComments(transport, { owner: 'o', repo: 'r' }, 1)).rejects.toThrow(
+    'Could not resolve repository',
+  )
+})
+
+it('formats deleted authors, edited/minimized comments and nonzero reactions like gh', async () => {
+  const row = {
+    author: null,
+    authorAssociation: 'CONTRIBUTOR',
+    includesCreatedEdit: true,
+    isMinimized: true,
+    minimizedReason: 'OUTDATED',
+    body: 'comment',
+    viewerDidAuthor: false,
+    reactionGroups: [
+      { content: 'THUMBS_UP', users: { totalCount: 2 } },
+      { content: 'LAUGH', users: { totalCount: 0 } },
+    ],
+  }
+  reset({
+    data: {
+      repository: {
+        issueOrPullRequest: {
+          comments: { nodes: [row], pageInfo: { hasNextPage: false, endCursor: null } },
+        },
+      },
+    },
+  })
+  const rows = await commentsFor(
+    inv([], { comments: true }),
+    new FlagView({ comments: true }),
+    { owner: 'o', repo: 'r' },
+    1,
+  )
+  expect(rows).toEqual([{ ...row, author: { login: '' }, reactionGroups: [row.reactionGroups[0]] }])
+  expect(commentsText(rows ?? [])).toBe(
+    'author:\t\nassociation:\tcontributor\nedited:\ttrue\nstatus:\toutdated\n--\ncomment\n--\n',
+  )
+})
+
+it.each([
+  [{}, ' {"message":"Not Found"}\n', ' {"message":"Not Found"}\n', 'gh: Not Found (HTTP 404)\n'],
+  [{ silent: true }, '{"message":"Not Found"}', '', 'gh: Not Found (HTTP 404)\n'],
+  [
+    { jq: '.message' },
+    '{"message":"Not Found"}',
+    '{"message":"Not Found"}',
+    'gh: Not Found (HTTP 404)\n',
+  ],
+  [{}, 'not found\n', 'not found\n', 'gh: HTTP 404\n'],
+  [{}, '', '', 'gh: HTTP 404\n'],
+] as const)('keeps HTTP error responses with flags %s', async (flags, body, stdout, stderr) => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockRejectedValue(new GitHubApiError('Not Found', 404, body))
+  try {
+    const result = await api(inv(['repos/o/missing'], flags))
+    if (result === null) throw new Error('missing API result')
+    expect(DEC.decode(await materialize(result[0]))).toBe(stdout)
+    expect(DEC.decode(await materialize(result[1].stderr))).toBe(stderr)
+    expect(result[1].exitCode).toBe(1)
+  } finally {
+    request.mockRestore()
+  }
+})
+
+it.each([
+  ['{"message":"Validation Failed","errors":"bad thing"}', 'gh: bad thing (Validation Failed)\n'],
+  ['{"errors":"bad thing"}', 'gh: bad thing\n'],
+  [
+    '{"message":"Validation Failed","errors":[{"message":"one"}]}',
+    'gh: Validation Failed (HTTP 422)\n',
+  ],
+  ['{"errors":[{"message":"one"},"two"]}', 'gh: one\ntwo\n'],
+  ['{"errors":[{"code":"x"}]}', 'gh: HTTP 422\n'],
+  ['{"errors":[]}', 'gh: HTTP 422\n'],
+  ['{"message":""}', 'gh: HTTP 422\n'],
+  ['["not", "an", "object"]', 'gh: HTTP 422\n'],
+] as const)('names what gh reads off an error body: %s', async (body, stderr) => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockRejectedValue(new GitHubApiError('Validation Failed', 422, body))
+  try {
+    const result = await api(inv(['repos/o/r']))
+    if (result === null) throw new Error('missing API result')
+    expect(DEC.decode(await materialize(result[0]))).toBe(body)
+    expect(DEC.decode(await materialize(result[1].stderr))).toBe(stderr)
+    expect(result[1].exitCode).toBe(1)
+  } finally {
+    request.mockRestore()
+  }
+})
+
+it.each([
+  [
+    { jq: '.value' },
+    '{"message":"Validation Failed"}',
+    'first\n{"message":"Validation Failed"}',
+    'gh: Validation Failed (HTTP 422)\n',
+  ],
+  [
+    { slurp: true },
+    '{"message":"Validation Failed"}',
+    '[{"value":"first"},{"message":"Validation Failed"}]',
+    'gh: Validation Failed (HTTP 422)\n',
+  ],
+  [
+    { slurp: true },
+    'upstream unavailable\n',
+    '[{"value":"first"},upstream unavailable\n]',
+    'gh: HTTP 422\n',
+  ],
+  [{ slurp: true }, '', '[{"value":"first"},]', 'gh: HTTP 422\n'],
+  [{ silent: true }, '{"message":"Validation Failed"}', '', 'gh: Validation Failed (HTTP 422)\n'],
+] as const)(
+  'keeps rendered pages when a later request fails: %s %j',
+  async (flags, body, stdout, stderr) => {
+    const request = vi
+      .spyOn(FakeTransport.prototype, 'requestWithResponse')
+      .mockResolvedValueOnce({
+        data: { value: 'first' },
+        status: 200,
+        headers: { link: '</page2>; rel="next"' },
+      })
+      .mockRejectedValueOnce(new GitHubApiError('Validation Failed', 422, body))
+    try {
+      const result = await api(inv(['page1'], { paginate: true, ...flags }))
+      if (result === null) throw new Error('missing API result')
+      expect(DEC.decode(await materialize(result[0]))).toBe(stdout)
+      expect(DEC.decode(await materialize(result[1].stderr))).toBe(stderr)
+      expect(result[1].exitCode).toBe(1)
+      expect(request).toHaveBeenCalledTimes(2)
+    } finally {
+      request.mockRestore()
+    }
+  },
+)
+
+it.each([
+  [{}, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'],
+  [{ jq: '.data' }, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'],
+  [{ silent: true }, ''],
+] as const)('fails a graphql answer carrying errors as gh does: %j', async (flags, stdout) => {
+  reset()
+  RESPONSES = [
+    {
+      data: { errors: [{ message: 'one' }, { message: 'two' }], data: null },
+      status: 200,
+      headers: {},
+    },
+  ]
+  const result = await api(
+    inv(['graphql'], { raw_field: ['query={ viewer { login } }'], ...flags }),
+  )
+  if (result === null) throw new Error('missing API result')
+  expect(DEC.decode(await materialize(result[0]))).toBe(stdout)
+  expect(DEC.decode(await materialize(result[1].stderr))).toBe('gh: one\ntwo\n')
+  expect(result[1].exitCode).toBe(1)
+})
+
+it('reads graphql errors only off the graphql endpoint', async () => {
+  const data = { errors: [{ message: 'one' }] }
+  reset()
+  RESPONSES = [{ data, status: 200, headers: {} }]
+  const result = await api(inv(['repos/o/r']))
+  if (result === null) throw new Error('missing API result')
+  expect(JSON.parse(DEC.decode(await materialize(result[0])))).toEqual(data)
+  expect(result[1].exitCode).toBe(0)
 })

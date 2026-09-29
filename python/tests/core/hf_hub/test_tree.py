@@ -21,8 +21,9 @@ from mirage.cache.index import NULL_INDEX
 from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.core.hf_hub.client import HfHubError
 from mirage.core.hf_hub.tree import (collect, ensure_live_index, ensure_tree,
-                                     fetch_tree, index_rows, next_cursor,
-                                     parse_entry, refill_index, tree_url)
+                                     fetch_path, fetch_tree, index_rows,
+                                     next_cursor, parse_entry, paths_info_url,
+                                     refill_index, tree_url)
 from tests.core.hf_hub.conftest import FakeAccessor, dir_row, file_row, page
 
 
@@ -167,12 +168,73 @@ async def test_fetch_tree_forced_bare_never_expands(mock_get, accessor):
 
 @pytest.mark.asyncio
 @patch("mirage.core.hf_hub.tree.hub_get_response")
-@pytest.mark.parametrize("status", [401, 403, 404])
-async def test_fetch_tree_reads_absence_as_an_empty_tree(
-        mock_get, accessor, status):
-    """The Hub answers 401 rather than 404 for a repo an anonymous
-    caller may not know exists, so all three mean the same thing here."""
-    mock_get.side_effect = HfHubError("nope", status)
+async def test_fetch_tree_reads_a_missing_subtree_as_empty(mock_get, accessor):
+    # A key_prefix that names no folder: the Hub answers 404 EntryNotFound,
+    # and there really is nothing under it (measured against huggingface.co,
+    # 2026-09-24).
+    mock_get.side_effect = HfHubError("nope", 404, "EntryNotFound")
+    assert await fetch_tree(accessor) == {}
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_get_response")
+@pytest.mark.parametrize("status,code", [
+    (401, ""),
+    (403, ""),
+    (404, "RevisionNotFound"),
+    (404, "RepoNotFound"),
+])
+async def test_fetch_tree_raises_for_a_repo_it_cannot_see(
+        mock_get, accessor, status, code):
+    # The tree is seeded as the whole index, so an empty one for a repo the
+    # token cannot see would read every file as deleted; an error does not.
+    mock_get.side_effect = HfHubError("nope", status, code)
+    with pytest.raises(HfHubError):
+        await fetch_tree(accessor)
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_get_response")
+async def test_fetch_tree_raises_for_a_missing_subtree_on_a_later_page(
+        mock_get, accessor):
+    accessor.config = accessor.config.model_copy(
+        update={"expand_commits": False})
+    mock_get.side_effect = [
+        page([file_row("a.txt")], next_url="https://h/p2"),
+        HfHubError("gone", 404, "EntryNotFound"),
+    ]
+    # Folding here would keep page one as if it were the whole listing.
+    with pytest.raises(HfHubError):
+        await fetch_tree(accessor)
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_get_response")
+async def test_fetch_tree_raises_for_a_missing_subtree_on_the_continuation(
+        mock_get, accessor):
+    # The expanded walk continues in a second walk_pages call, whose first
+    # request is already a cursor page; "first page" is the request that
+    # carries the first page's params, not the first turn of a loop.
+    accessor.config = accessor.config.model_copy(
+        update={"expand_commits": True})
+    mock_get.side_effect = [
+        page([file_row("a.txt")], next_url="https://h/p2"),
+        HfHubError("gone", 404, "EntryNotFound"),
+    ]
+    with pytest.raises(HfHubError):
+        await fetch_tree(accessor)
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_get_response")
+async def test_fetch_tree_folds_a_missing_subtree_on_the_bare_restart(
+        mock_get, accessor):
+    mock_get.side_effect = [
+        page([file_row("a.txt")], next_url="https://h/p2"),
+        HfHubError("gone", 404, "EntryNotFound"),
+    ]
+    # The bare walk restarts from the first page with fresh params and an
+    # empty result, so a subtree gone by then is truthfully empty.
     assert await fetch_tree(accessor) == {}
 
 
@@ -274,3 +336,78 @@ async def test_fetch_tree_refuses_a_listing_it_could_not_finish(
                                  next_url="https://h/next")
     with pytest.raises(HfHubError, match="listing exceeds"):
         await fetch_tree(accessor)
+
+
+class _DatasetAccessor(FakeAccessor):
+    REPO_TYPE = "dataset"
+    VFS_NAME = "hf_datasets"
+
+
+class _SpaceAccessor(FakeAccessor):
+    REPO_TYPE = "space"
+    VFS_NAME = "hf_spaces"
+
+
+@pytest.mark.parametrize("cls,segment", [
+    (FakeAccessor, "models"),
+    (_DatasetAccessor, "datasets"),
+    (_SpaceAccessor, "spaces"),
+])
+def test_paths_info_url_names_the_repo_type(cls, segment):
+    accessor = cls(HfRepoConfig(repo_id="acme/widget"))
+    assert paths_info_url(accessor) == (
+        f"https://huggingface.co/api/{segment}/acme/widget/paths-info/main")
+
+
+def test_paths_info_url_encodes_a_revision_and_carries_no_prefix():
+    accessor = FakeAccessor(
+        HfRepoConfig(repo_id="acme/widget",
+                     revision="refs/pr/1",
+                     key_prefix="sub/dir"))
+    # The prefix belongs in the requested path, not the route: the route's
+    # trailing segment is the whole revision.
+    assert paths_info_url(accessor) == ("https://huggingface.co/api/models/"
+                                        "acme/widget/paths-info/refs%2Fpr%2F1")
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_post")
+async def test_fetch_path_asks_for_the_prefixed_path(mock_post, prefixed):
+    decoy = {**file_row("a.txt"), "oid": "decoy"}
+    real = {**file_row("sub/dir/a.txt"), "oid": "real"}
+    mock_post.return_value = [decoy, real]
+    found = await fetch_path(prefixed, "a.txt")
+    assert mock_post.await_args.args[2]["paths"] == ["sub/dir/a.txt"]
+    assert list(found) == ["a.txt"]
+    assert found["a.txt"].oid == "real"
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_post")
+@pytest.mark.parametrize("expand,sent", [(True, True), (None, False),
+                                         (False, False)])
+async def test_fetch_path_expands_only_when_asked(mock_post, accessor, expand,
+                                                  sent):
+    accessor.config = accessor.config.model_copy(
+        update={"expand_commits": expand})
+    mock_post.return_value = []
+    await fetch_path(accessor, "a.txt")
+    assert mock_post.await_args.args[2]["expand"] is sent
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_post")
+async def test_fetch_path_refuses_an_answer_that_is_not_a_list(
+        mock_post, accessor):
+    # Only an empty list says the path is missing; any other shape is an
+    # answer the client cannot read, and must not become absence.
+    mock_post.return_value = {"error": "unexpected"}
+    with pytest.raises(HfHubError):
+        await fetch_path(accessor, "a.txt")
+
+
+@pytest.mark.asyncio
+@patch("mirage.core.hf_hub.tree.hub_post")
+async def test_fetch_path_reads_an_empty_list_as_absence(mock_post, accessor):
+    mock_post.return_value = []
+    assert await fetch_path(accessor, "a.txt") == {}

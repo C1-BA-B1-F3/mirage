@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { VFSAdapter } from '../../../vfs/adapter.ts'
+
 import type { GitHubAccessor } from '../../../accessor/github.ts'
 import { SCOPE_ERROR } from '../../../core/github/constants.ts'
 import { read as githubRead, stream as githubStream } from '../../../core/github/read.ts'
@@ -19,12 +21,10 @@ import { readdir as githubReaddir } from '../../../core/github/readdir.ts'
 import { stat as githubStat } from '../../../core/github/stat.ts'
 import type { CommandIO } from '../generic_bind/index.ts'
 
-export const GITHUB_IO: CommandIO<GitHubAccessor> = {
-  readdir: githubReaddir,
-  readBytes: githubRead,
-  readStream: githubStream,
-  stat: githubStat,
+export const GITHUB_IO: CommandIO<GitHubAccessor> = new VFSAdapter<GitHubAccessor>({
+  read: { readdir: githubReaddir, readBytes: githubRead, stat: githubStat },
+  native: { readStream: githubStream },
   isMounted: () => true,
   local: false,
   maxGlobMatches: SCOPE_ERROR,
-}
+}).toCommandIO()

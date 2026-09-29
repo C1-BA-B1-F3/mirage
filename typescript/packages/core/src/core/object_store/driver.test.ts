@@ -32,7 +32,6 @@ describe('object_store driver', () => {
     const hints: FindHints = {
       name: null,
       iname: null,
-      type: null,
       minSize: null,
       maxSize: null,
       pushdown: false,

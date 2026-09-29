@@ -13,106 +13,150 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import git from 'isomorphic-git'
-
-import { unifiedDiff } from '../../../builtin/diff_format.ts'
-import { short } from './format.ts'
+import { getOpcodes, groupOpcodes } from '../../../builtin/diff_format.ts'
+import { DiffOpTag } from '../../../builtin/diff_types.ts'
+import { FUNCNAME_START, GIT_SPACE } from './constants.ts'
+import { quotePath } from './render.ts'
 import { repoArgs, type Repo } from './repo.ts'
-import { treeEntries, type TreeEntry } from './tree.ts'
-import { compareCodePoints } from '../../../../utils/sort.ts'
+import type { TreeEntry } from './tree.ts'
 
-const DEC = new TextDecoder('utf-8', { fatal: false })
-// git's blob abbreviation inside an index line is fixed at seven, unlike the
-// commit abbreviation, which widens with the repository.
-const BLOB_ABBREV = 7
+const HUNK_CONTEXT = 3
+const FUNCNAME_BYTES = 80
+const HUNK_HEADER_BYTES = 128
+const BINARY_SNIFF = 8000
+const OID_HEX = 40
 const DEV_NULL = '/dev/null'
+const ENC = new TextEncoder()
+const DEC = new TextDecoder()
 
-// Deliberate divergence, verified against git 2.47.3 on a real repository. The
-// patch is correct and applies cleanly, and file headers, mode lines and blob
-// abbreviations match git exactly, but the hunks are not byte-identical:
-//
-//   ours: @@ -3,6 +3,10 @@
-//   git:  @@ -4,6 +4,10 @@ from collections import defaultdict
-//
-// Two causes, both from rendering through a Myers/SequenceMatcher diff rather
-// than git's xdiff. git appends the enclosing function or section to a hunk
-// header (xfuncname), and git slides a hunk to the equivalent boundary xdiff
-// prefers, so a blank line can be attributed to the additions on one side and
-// the context on the other. Closing this means reimplementing xdl_change_compact
-// and the xfuncname scan; until then do not claim byte parity for diff bodies.
-// `log`, `log --oneline`, `show`'s header and `branch` ARE byte-identical.
-//
-// The same divergence exists on the Python side and for the same reason (its
-// dulwich patch writer runs on difflib), so the two implementations agree with
-// each other even where both differ from git.
-
-/** Read one blob as lines, keeping the newline on each. */
-async function blobLines(repo: Repo, oid: string | null): Promise<string[]> {
-  if (oid === null) return []
-  const { blob } = await git.readBlob({ ...repoArgs(repo), oid })
-  const text = DEC.decode(blob)
-  if (text === '') return []
-  return text.split(/(?<=\n)/)
+async function blobData(repo: Repo, entry: TreeEntry | null): Promise<Uint8Array> {
+  if (!entry) return new Uint8Array()
+  if (entry.mode === '160000') return ENC.encode(`Subproject commit ${entry.oid}\n`)
+  return (await git.readBlob({ ...repoArgs(repo), oid: entry.oid })).blob
+}
+function lines(data: Uint8Array): string[] {
+  const text = DEC.decode(data)
+  return text === '' ? [] : text.split(/(?<=\n)/)
 }
 
-/** The `index <old>..<new> <mode>` line git puts under the header. */
-function indexLine(before: TreeEntry | null, after: TreeEntry | null): string {
-  const zero = '0'.repeat(BLOB_ABBREV)
-  const old = before === null ? zero : short(before.oid, BLOB_ABBREV)
-  const now = after === null ? zero : short(after.oid, BLOB_ABBREV)
-  if (before !== null && after !== null && before.mode === after.mode) {
-    return `index ${old}..${now} ${after.mode}`
-  }
-  return `index ${old}..${now}`
-}
-
-/** The header lines for one changed path, git's own order. */
-function header(path: string, before: TreeEntry | null, after: TreeEntry | null): string[] {
-  const lines = [`diff --git a/${path} b/${path}`]
-  if (before === null && after !== null) lines.push(`new file mode ${after.mode}`)
-  else if (before !== null && after === null) lines.push(`deleted file mode ${before.mode}`)
-  else if (before !== null && after !== null && before.mode !== after.mode) {
-    lines.push(`old mode ${before.mode}`, `new mode ${after.mode}`)
-  }
-  lines.push(indexLine(before, after))
-  return lines
+/** An entry's object id cut to `width`, zeros for a missing side. */
+export function shortOid(entry: TreeEntry | null, width: number): string {
+  return (entry?.oid ?? '0'.repeat(OID_HEX)).slice(0, width)
 }
 
 /**
- * Render a patch between two trees, in git's own format.
- *
- * Paths are compared in sorted order, which is what git prints; a path whose
- * blob id is unchanged is skipped even when its mode moved, apart from the mode
- * lines, because there is no content hunk to show.
- *
- * @param repo repository holding the objects
- * @param beforeTree the tree on the minus side, or null for no commit at all
- * @param afterTree the tree on the plus side
+ * One path's patch, headers and hunks, as git's builtin_diff writes it. A
+ * change between a file and a symlink is split into a deletion and a creation,
+ * the way git's run_diff splits a type change. A `---` or `+++` label holding a
+ * space ends in a tab, so a patch tool can tell where the name stops.
  */
-export async function treeDiff(
+export async function filePatch(
   repo: Repo,
-  beforeTree: string | null,
-  afterTree: string | null,
+  path: string,
+  oldPath: string,
+  before: TreeEntry | null,
+  after: TreeEntry | null,
+  score: number | null,
+  width: number,
+  fully = true,
+  count = HUNK_CONTEXT,
 ): Promise<string> {
-  const before =
-    beforeTree === null ? new Map<string, TreeEntry>() : await treeEntries(repo, beforeTree)
-  const after =
-    afterTree === null ? new Map<string, TreeEntry>() : await treeEntries(repo, afterTree)
-  const paths = [...new Set([...before.keys(), ...after.keys()])].sort(compareCodePoints)
-  const out: string[] = []
-  for (const path of paths) {
-    const old = before.get(path) ?? null
-    const now = after.get(path) ?? null
-    if (old !== null && now !== null && old.oid === now.oid && old.mode === now.mode) continue
-    out.push(...header(path, old, now))
-    const oldLines = await blobLines(repo, old?.oid ?? null)
-    const newLines = await blobLines(repo, now?.oid ?? null)
-    const body = unifiedDiff(
-      oldLines,
-      newLines,
-      old === null ? DEV_NULL : `a/${path}`,
-      now === null ? DEV_NULL : `b/${path}`,
+  if (before && after && before.mode.slice(0, 3) !== after.mode.slice(0, 3))
+    return (
+      (await filePatch(repo, path, oldPath, before, null, score, width, fully, count)) +
+      (await filePatch(repo, path, oldPath, null, after, score, width, fully, count))
     )
-    for (const line of body) out.push(line.endsWith('\n') ? line.slice(0, -1) : line)
+  const source = quotePath(`a/${oldPath}`, false, fully),
+    target = quotePath(`b/${path}`, false, fully)
+  const head = [`diff --git ${source} ${target}`]
+  if (!before && after) head.push(`new file mode ${after.mode}`)
+  else if (!after && before) head.push(`deleted file mode ${before.mode}`)
+  else if (before && after && before.mode !== after.mode)
+    head.push(`old mode ${before.mode}`, `new mode ${after.mode}`)
+  if (score !== null)
+    head.push(
+      `similarity index ${String(score)}%`,
+      `rename from ${quotePath(oldPath, false, fully)}`,
+      `rename to ${quotePath(path, false, fully)}`,
+    )
+  if (before && before.oid === after?.oid) return text(head)
+  head.push(
+    `index ${shortOid(before, width)}..${shortOid(after, width)}` +
+      (before && before.mode === after?.mode ? ` ${after.mode}` : ''),
+  )
+  const old = await blobData(repo, before),
+    fresh = await blobData(repo, after)
+  const from = before ? source : DEV_NULL,
+    to = after ? target : DEV_NULL
+  if ([old, fresh].some((data) => data.subarray(0, BINARY_SNIFF).includes(0)))
+    return text([...head, `Binary files ${from} and ${to} differ`])
+  const body = hunks(lines(old), lines(fresh), count)
+  return (
+    text(body ? [...head, `--- ${from}${labelTab(from)}`, `+++ ${to}${labelTab(to)}`] : head) + body
+  )
+}
+
+/** The tab git puts after a `---`/`+++` label holding a space. */
+function labelTab(label: string): string {
+  return label.includes(' ') ? '\t' : ''
+}
+
+function text(rows: readonly string[]): string {
+  return rows.map((row) => row + '\n').join('')
+}
+
+/**
+ * The `@@` hunks of a two-way patch, as xdiff's xdl_emit_diff emits them. Each
+ * header carries the nearest earlier line of the old side that starts with a
+ * letter, `_` or `$` (git's default funcname), and keeps the previous hunk's
+ * when none lies between the two.
+ */
+function hunks(old: readonly string[], fresh: readonly string[], count: number): string {
+  const out: string[] = []
+  let context = ''
+  let searched = -1
+  for (const group of groupOpcodes(getOpcodes(old, fresh), count)) {
+    const first = group[0],
+      last = group.at(-1)
+    if (first === undefined || last === undefined) continue
+    const start = first[1]
+    for (let k = start - 1; k > searched; k--) {
+      const line = old[k] ?? ''
+      if (FUNCNAME_START.test(line)) {
+        context = trimmed(ENC.encode(line).subarray(0, FUNCNAME_BYTES))
+        break
+      }
+    }
+    searched = start - 1
+    let header = `@@ -${span(start, last[2])} +${span(first[3], last[4])} @@`
+    if (context) {
+      const room = HUNK_HEADER_BYTES - ENC.encode(header).length - 2
+      header += ' ' + DEC.decode(ENC.encode(context).subarray(0, room))
+    }
+    out.push(header + '\n')
+    for (const [tag, i1, i2, j1, j2] of group) {
+      if (tag === DiffOpTag.EQUAL) {
+        for (const line of old.slice(i1, i2)) out.push(hunkLine(' ', line))
+        continue
+      }
+      for (const line of old.slice(i1, i2)) out.push(hunkLine('-', line))
+      for (const line of fresh.slice(j1, j2)) out.push(hunkLine('+', line))
+    }
   }
-  return out.length === 0 ? '' : `${out.join('\n')}\n`
+  return out.join('')
+}
+
+function trimmed(bytes: Uint8Array): string {
+  let end = bytes.length
+  while (end > 0 && GIT_SPACE.has(bytes[end - 1] ?? 0)) end--
+  return DEC.decode(bytes.subarray(0, end))
+}
+
+function span(start: number, stop: number): string {
+  if (stop - start === 1) return String(start + 1)
+  return `${String(stop > start ? start + 1 : start)},${String(stop - start)}`
+}
+
+function hunkLine(marker: string, line: string): string {
+  return line.endsWith('\n') ? marker + line : `${marker}${line}\n\\ No newline at end of file\n`
 }

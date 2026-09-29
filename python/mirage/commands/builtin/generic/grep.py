@@ -12,8 +12,8 @@ from mirage.commands.builtin.grep_scan import exit_code_for
 from mirage.commands.builtin.grep_select import (WalkFilters, dir_admitted,
                                                  file_admitted,
                                                  parse_file_globs)
-from mirage.commands.builtin.utils.stream import (is_stdin, resolve_source,
-                                                  stdin_stream)
+from mirage.commands.builtin.utils.stream import (is_stdin, operand_label,
+                                                  resolve_source, stdin_stream)
 from mirage.commands.builtin.utils.wrap import (call_read_bytes, call_readdir,
                                                 call_stat,
                                                 mount_parent_readdir,
@@ -27,7 +27,7 @@ from mirage.commands.spec.synopsis import SYNOPSES
 from mirage.commands.spec.usage import usage_hint
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import FileStat, FileType, PathSpec
-from mirage.utils.errors import WALK_ERRORS, fs_strerror
+from mirage.utils.errors import WALK_ERRORS, fs_strerror, walk_refusal
 from mirage.utils.key_prefix import mount_key, mount_prefix_of
 from mirage.utils.path import respell_one
 
@@ -164,6 +164,20 @@ def parse_flags(fl: FlagView, never_match: bool) -> GrepFlags:
     )
 
 
+def prints_context(f: GrepFlags) -> bool:
+    """Whether grep's output shows -A/-B/-C context.
+
+    Only printed lines carry it: -c, -l, -L and -q print none, and -o
+    drops it.
+
+    Args:
+        f (GrepFlags): the parsed flags.
+    """
+    if f.count_only or f.files_only or f.files_without_match or f.quiet:
+        return False
+    return bool(f.after_context or f.before_context) and not f.only_matching
+
+
 async def grep(
     paths: list[PathSpec],
     texts: Sequence[str],
@@ -182,7 +196,7 @@ async def grep(
         read_stream if read_stream is not None else read_bytes, stdin)
     fl = FlagView(opts.flags, spec=SPECS["grep"])
     pattern, never_match = await resolve_pattern(texts, fl, read_bytes,
-                                                 GREP_NO_PATTERN)
+                                                 GREP_NO_PATTERN, "file")
     f = parse_flags(fl, never_match)
     pat = compile_pattern(pattern, f.ignore_case, f.fixed_string, f.whole_word,
                           f.basic_regexp)
@@ -202,6 +216,8 @@ async def grep(
                                                     or f.files_without_match):
         p = paths[0]
         try:
+            if p.walk_error is not None:
+                raise walk_refusal(p)
             info = FileStat(name="-",
                             type=FileType.FIFO) if is_stdin(p) else await st(
                                 p.virtual)
@@ -220,8 +236,7 @@ async def grep(
                 stderr=f"grep: {p.raw_path}: {fs_strerror(exc) or exc}\n".
                 encode())
         io = IOResult()
-        return grep_input(source, pat, f,
-                          "(standard input)" if is_stdin(p) else p.raw_path,
+        return grep_input(source, pat, f, operand_label(p, "(standard input)"),
                           f.with_filename and not f.no_filename, io), io
     warnings: list[str] = []
     diagnostics: list[bytes] = []
@@ -235,6 +250,10 @@ async def grep(
     async def scan(p: PathSpec, walked: bool = False) -> AsyncIterator[bytes]:
         nonlocal matched, printed
         try:
+            # The probes below go by `virtual`, which cannot carry the
+            # walk's verdict on an operand it refused.
+            if p.walk_error is not None:
+                raise walk_refusal(p)
             info = FileStat(name="-",
                             type=FileType.FIFO) if is_stdin(p) else await st(
                                 p.virtual)
@@ -276,10 +295,9 @@ async def grep(
             file_io = IOResult(exit_code=1)
             show = not f.no_filename and (f.with_filename or walked
                                           or len(paths) > 1)
-            async for chunk in grep_input(
-                    source, pat, f,
-                    "(standard input)" if is_stdin(p) else p.raw_path, show,
-                    file_io, printed):
+            async for chunk in grep_input(source, pat, f,
+                                          operand_label(p, "(standard input)"),
+                                          show, file_io, printed):
                 printed = True
                 yield chunk
             matched = matched or file_io.exit_code == 0
@@ -298,7 +316,7 @@ async def grep(
             io.stderr = b"".join(diagnostics)
         io.exit_code = exit_code_for(matched, bool(warnings), f.quiet)
 
-    return await materialize(run()), io
+    return run(), io
 
 
 async def wrap_bytes(data: bytes) -> AsyncIterator[bytes]:

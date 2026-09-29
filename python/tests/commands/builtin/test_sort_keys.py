@@ -4,6 +4,7 @@ from mirage.commands.builtin.errors import SortKeyError
 from mirage.commands.builtin.generic.sort import sort
 from mirage.commands.builtin.sort_keys import (KeyMods, _compute_fields,
                                                _extract, build_config,
+                                               compare_lines, merge_lines,
                                                parse_keydef, sort_lines)
 
 _G = KeyMods()
@@ -86,6 +87,135 @@ class TestParseKeydef:
         with pytest.raises(SortKeyError):
             parse_keydef("2.٣", _G, False)
 
+    def test_h_is_an_ordering_letter(self):
+        key = parse_keydef("1,1h", KeyMods(numeric=True), False)
+        assert key.mods.human is True
+        assert key.mods.numeric is False
+
+    def test_a_number_takes_leading_blanks_and_a_plus(self):
+        assert parse_keydef("+2", _G, False).start_field == 2
+        assert parse_keydef(" 2", _G, False).start_field == 2
+        assert parse_keydef("\t2", _G, False).start_field == 2
+        assert parse_keydef("1.+2", _G, False).start_char == 2
+        assert parse_keydef("1,+2", _G, False).end_field == 2
+
+    def test_a_zero_end_offset_is_the_end_of_its_field(self):
+        key = parse_keydef("2,2.0n", _G, False)
+        assert (key.end_field, key.end_char) == (2, 0)
+        assert key.mods.numeric is True
+
+
+# GNU coreutils 9.7's own words for a KEYDEF it refuses, measured on
+# debian:stable-slim under LC_ALL=C. Mirrored in sort_keys.test.ts.
+@pytest.mark.parametrize("spec,message", [
+    ("a", "invalid number at field start: invalid count at start of 'a'"),
+    ("", "invalid number at field start: invalid count at start of ''"),
+    ("-1", "invalid number at field start: invalid count at start of '-1'"),
+    ("1.a", "invalid number after '.': invalid count at start of 'a'"),
+    ("1.", "invalid number after '.': invalid count at start of ''"),
+    ("1,a", "invalid number after ',': invalid count at start of 'a'"),
+    ("1,", "invalid number after ',': invalid count at start of ''"),
+    ("1,-2", "invalid number after ',': invalid count at start of '-2'"),
+    ("1,1.a", "invalid number after '.': invalid count at start of 'a'"),
+    ("0", "field number is zero: invalid field specification '0'"),
+    ("0.x", "field number is zero: invalid field specification '0.x'"),
+    ("1.0", "character offset is zero: invalid field specification '1.0'"),
+    ("1.0x", "character offset is zero: invalid field specification '1.0x'"),
+    ("1,0", "field number is zero: invalid field specification '1,0'"),
+    ("1x", "stray character in field spec: invalid field specification '1x'"),
+    ("1,1x",
+     "stray character in field spec: invalid field specification '1,1x'"),
+    ("1x,2",
+     "stray character in field spec: invalid field specification '1x,2'"),
+    ("1n.2",
+     "stray character in field spec: invalid field specification '1n.2'"),
+    ("1,2,3",
+     "stray character in field spec: invalid field specification '1,2,3'"),
+    ("1N", "stray character in field spec: invalid field specification '1N'"),
+    ("1nMx",
+     "stray character in field spec: invalid field specification '1nMx'"),
+    ("'1", "invalid number at field start: invalid count at start of "
+     "'\\'1'"),
+    ("1'x", "stray character in field spec: invalid field specification "
+     "'1\\'x'"),
+    ("1\nx", "stray character in field spec: invalid field specification "
+     "'1\\nx'"),
+    ("1é", "stray character in field spec: invalid field specification "
+     "'1\\303\\251'"),
+])
+def test_a_refused_keydef_in_gnus_words(spec, message):
+    with pytest.raises(SortKeyError) as exc:
+        parse_keydef(spec, _G, False)
+    assert str(exc.value) == message
+
+
+class TestOrderingCompatibility:
+    """sort.c's ``check_ordering_compatibility``, measured against GNU
+    coreutils 9.7 under LC_ALL=C. Mirrored in sort_keys.test.ts."""
+
+    @pytest.mark.parametrize("options,letters", [
+        (dict(numeric=True, general_numeric=True), "gn"),
+        (dict(numeric=True, dictionary=True), "dn"),
+        (dict(human_numeric=True, month_sort=True), "hM"),
+        (dict(numeric=True, ignore_nonprinting=True), "in"),
+        (dict(numeric=True, dictionary=True, ignore_nonprinting=True), "dn"),
+        (dict(numeric=True, general_numeric=True, fold_case=True), "fgn"),
+        (dict(numeric=True,
+              general_numeric=True,
+              ignore_blanks=True,
+              reverse=True), "gn"),
+        (dict(month_sort=True, version_sort=True), "MV"),
+        (dict(human_numeric=True, numeric=True), "hn"),
+        (dict(general_numeric=True, month_sort=True), "gM"),
+        (dict(dictionary=True, month_sort=True), "dM"),
+    ])
+    def test_the_global_options_are_the_one_key(self, options, letters):
+        with pytest.raises(SortKeyError) as exc:
+            _cfg(**options)
+        assert str(exc.value) == f"options '-{letters}' are incompatible"
+
+    @pytest.mark.parametrize("key_defs,letters", [
+        (["1n,1g"], "gn"),
+        (["1nM"], "Mn"),
+        (["1,1nR"], "nR"),
+        (["1bn,1g"], "gn"),
+        (["1hM"], "hM"),
+        (["1fiM"], "fiM"),
+        (["1idn"], "dn"),
+        (["1,1Mg"], "gM"),
+        (["2Mn", "1gn"], "Mn"),
+        (["1n", "2gh"], "gh"),
+    ])
+    def test_each_key_is_checked_in_the_order_typed(self, key_defs, letters):
+        with pytest.raises(SortKeyError) as exc:
+            _cfg(key_defs)
+        assert str(exc.value) == f"options '-{letters}' are incompatible"
+
+    def test_a_key_without_letters_inherits_the_conflict(self):
+        with pytest.raises(SortKeyError) as exc:
+            _cfg(["1,1"], numeric=True, general_numeric=True)
+        assert str(exc.value) == "options '-gn' are incompatible"
+        with pytest.raises(SortKeyError) as exc:
+            _cfg(["1"], numeric=True, dictionary=True)
+        assert str(exc.value) == "options '-dn' are incompatible"
+
+    def test_globals_no_key_inherits_are_not_checked(self):
+        cfg = _cfg(["1,1n"], numeric=True, general_numeric=True)
+        assert [key.mods.general_numeric for key in cfg.keys] == [False]
+        _cfg(["1d"], numeric=True)
+
+    @pytest.mark.parametrize("key_defs,options", [
+        (["1dVR"], {}),
+        (["1,1VR"], {}),
+        ([], dict(version_sort=True, dictionary=True)),
+        ([], dict(version_sort=True, ignore_nonprinting=True)),
+        ([], dict(dictionary=True, fold_case=True)),
+        (["1n", "2g"], {}),
+        ([], dict(numeric=True, reverse=True, ignore_blanks=True)),
+    ])
+    def test_orderings_that_combine(self, key_defs, options):
+        _cfg(key_defs, **options)
+
 
 class TestExtract:
 
@@ -148,6 +278,41 @@ class TestSortKeydef:
     def test_invalid_key_leaves_lines_via_config(self):
         with pytest.raises(SortKeyError):
             _cfg(["0"])
+
+
+class TestNumericKeys:
+    """-n and -h in the C locale, pinned against GNU sort 9.7."""
+
+    def test_a_newline_is_a_blank_before_a_number(self):
+        # A -z record may hold one; sort.c's blanks table counts it.
+        data = ["\n5", "3", "\n-5", "-4"]
+        assert sort_lines(data,
+                          _cfg(numeric=True)) == ["\n-5", "-4", "3", "\n5"]
+
+    def test_a_newline_separates_fields(self):
+        assert sort_lines(["b\n1", "a\n2"], _cfg(["2,2n"])) == ["b\n1", "a\n2"]
+
+    def test_the_unit_outranks_the_magnitude(self):
+        assert _lines("1500\n1.5K\n2000\n1K", human_numeric=True) == \
+            ["1500", "2000", "1K", "1.5K"]
+
+    def test_only_k_is_a_unit_in_lowercase(self):
+        assert _lines("1m\n1M\n2\n1k", human_numeric=True) == \
+            ["1m", "2", "1k", "1M"]
+
+    def test_a_negative_number_negates_its_unit_and_zero_has_none(self):
+        assert _lines("-1K\n-2\n1\n-1M\n0\n-0K\n0K",
+                      human_numeric=True) == \
+            ["-1M", "-1K", "-2", "-0K", "0", "0K", "1"]
+
+    def test_the_unit_follows_the_digits_and_points(self):
+        assert _lines("5.K\n3K\n.5K\n3\nK", human_numeric=True,
+                      stable=True) == ["K", "3", ".5K", "3K", "5.K"]
+
+    def test_human_numbers_compare_exactly(self):
+        assert _lines("1.000000000000000002K\n1.000000000000000001K",
+                      human_numeric=True, stable=True) == \
+            ["1.000000000000000001K", "1.000000000000000002K"]
 
 
 async def _rb(_path):
@@ -262,3 +427,52 @@ class TestSortMixed:
         assert len(result) == 2
         assert result[0].lower() == "apple"
         assert result[1].lower() == "banana"
+
+
+# Measured against GNU coreutils 9.7 on debian:stable-slim, LC_ALL=C.
+class TestUniqueStopsAtTheKeys:
+
+    def test_key_equal_lines_compare_equal_under_unique(self):
+        cfg = _cfg(["2,2"], unique=True)
+        assert compare_lines("b 1", "a 1", cfg) == 0
+        assert compare_lines("b 1", "a 1", _cfg(["2,2"])) > 0
+
+    def test_unique_keeps_the_first_key_equal_line_in_input_order(self):
+        assert _lines("b 1\na 1", ["2,2"], unique=True) == ["b 1"]
+        assert _lines("b\na\nB", fold_case=True, unique=True) == ["a", "b"]
+
+    def test_unique_reverse_keeps_input_order_among_ties(self):
+        assert _lines("a 1\nb 1\nc 2", ["2,2"], unique=True,
+                      reverse=True) == ["c 2", "a 1"]
+
+
+class TestMergeLines:
+
+    def test_a_run_is_never_reordered(self):
+        assert merge_lines([["b", "a"]], _cfg()) == ["b", "a"]
+
+    def test_the_smallest_head_goes_first(self):
+        assert merge_lines([["c", "a"], ["b"]], _cfg()) == ["b", "c", "a"]
+        assert merge_lines([["a", "d"], ["b", "e"], ["c", "f"]],
+                           _cfg()) == ["a", "b", "c", "d", "e", "f"]
+
+    def test_a_tie_goes_to_the_earlier_run(self):
+        runs = [["k 3"], ["k 1"], ["k 2"]]
+        assert merge_lines(runs, _cfg(["1,1"],
+                                      stable=True)) == ["k 3", "k 1", "k 2"]
+        assert merge_lines(runs, _cfg(["1,1"])) == ["k 1", "k 2", "k 3"]
+
+    def test_empty_runs_are_skipped(self):
+        assert merge_lines([[], ["b", "a"], []], _cfg()) == ["b", "a"]
+        assert merge_lines([[], []], _cfg()) == []
+
+    def test_unique_collapses_only_adjacent_duplicates(self):
+        cfg = _cfg(unique=True)
+        assert merge_lines([["a", "b", "a"]], cfg) == ["a", "b", "a"]
+        assert merge_lines([["a", "b"], ["a", "c"]], cfg) == ["a", "b", "c"]
+
+    def test_unique_keeps_the_first_line_of_a_key_equal_series(self):
+        assert merge_lines([["x 1"], ["a 1"]], _cfg(["2,2"],
+                                                    unique=True)) == ["x 1"]
+        assert merge_lines([["b"], ["B"]], _cfg(fold_case=True,
+                                                unique=True)) == ["b"]

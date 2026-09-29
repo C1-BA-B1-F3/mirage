@@ -130,3 +130,12 @@ def test_unreadable_directory_aborts_rather_than_reporting_empty(tmp_path):
                          _root("/d/data", "data")))
     finally:
         locked.chmod(0o755)
+
+
+def test_walk_leaves_host_symlinks_out(tmp_path):
+    _touch(tmp_path, "data/lib/a.txt", b"alpha", 1_700_000_000)
+    (tmp_path / "data" / "lib64").symlink_to("lib")
+    (tmp_path / "data" / "python").symlink_to("/nowhere/python3")
+    entries = asyncio.run(
+        _collect(DiskWalk(_accessor(tmp_path)), _root("/d/data", "data")))
+    assert {e.virtual for e in entries} == {"/d/data/lib", "/d/data/lib/a.txt"}

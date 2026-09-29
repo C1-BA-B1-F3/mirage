@@ -20,8 +20,11 @@ export const EMAIL_PROMPT = `{prefix}
         <attachment-filename>
   Folders include: INBOX, Sent, Drafts, etc. cat shows email as JSON.
 
-  To act on mail (list/read/send/reply/forward), use the himalaya CLI
-  if installed: himalaya --help`
+  <subject> is sanitized (don't construct it; ls the date dir).
+
+  To act on mail (list/search/read/compose/reply/forward), use the
+  himalaya CLI if installed: himalaya --help`
 
 export const EMAIL_WRITE_PROMPT = `  Sending mail goes through the himalaya CLI if installed:
-    himalaya message send --to "to@email.com" --subject "Hi" --body "..."`
+    himalaya message compose --to "to@email.com" --subject "Hi" \\
+      --body "..." --send`

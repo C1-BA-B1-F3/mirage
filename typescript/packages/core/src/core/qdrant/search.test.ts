@@ -12,8 +12,10 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 
+import { QDRANT_IO } from '../../commands/builtin/qdrant/io.ts'
+import { searchResources } from '../../vfs/search.ts'
 import type { QdrantAccessor } from '../../accessor/qdrant.ts'
 import { resolveQdrantConfig } from '../../vfs/qdrant/config.ts'
 import { PathSpec } from '../../types.ts'
@@ -45,4 +47,21 @@ it('returns the canonical nested document lineage path', async () => {
   )
 
   expect(output).toMatch(/^\/db\/refund\.pdf\/004__17\.txt:0\.8100\n/)
+})
+
+it('uses one native ranking for a batch and carries the requested limit', async () => {
+  const searchRows = vi.fn(() => Promise.resolve([{ id: 17, _score: 0.81, text: 'answer' }]))
+  const accessor = {
+    config: resolveQdrantConfig({ collection: 'docs', textField: 'text' }),
+    searchRows,
+  } as unknown as QdrantAccessor
+  const root = new PathSpec({ virtual: '/data', directory: '/', vfsPath: '' })
+  const result = await searchResources(QDRANT_IO.search, accessor, [root, root], {
+    query: 'question',
+    options: { top_k: 2, threshold: 0.5 },
+  })
+  expect(new TextDecoder().decode(result)).toContain('/data/')
+  expect(searchRows).toHaveBeenCalledOnce()
+  expect(searchRows).toHaveBeenCalledWith('docs', 'question', 2)
+  expect(QDRANT_IO.search?.meta?.grep).toBeUndefined()
 })

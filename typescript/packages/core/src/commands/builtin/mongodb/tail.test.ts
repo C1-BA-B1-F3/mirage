@@ -39,15 +39,24 @@ import * as statModule from '../../../core/mongodb/stat.ts'
 import * as streamModule from '../../../core/mongodb/stream.ts'
 import { resolveMongoDBConfig } from '../../../vfs/mongodb/config.ts'
 import { FileStat, FileType, PathSpec } from '../../../types.ts'
+import { materialize } from '../../../io/types.ts'
 import type { FlagValue } from '../../spec/types.ts'
 import { MONGODB_TAIL } from './tail.ts'
 
 const DEC = new TextDecoder()
 const ENC = new TextEncoder()
-const STUB_DRIVER = stubMongoDriver()
+// The change stream proves its collection through the entity guard first, so
+// the catalog holds the database and collections the tests name.
+const STUB_DRIVER = stubMongoDriver({
+  listDatabases: () => Promise.resolve(['app', 'secret']),
+  listCollections: () => Promise.resolve(['users', 'orders']),
+})
 
-function makeAccessor(): MongoDBAccessor {
-  return new MongoDBAccessor(STUB_DRIVER, resolveMongoDBConfig({ uri: 'mongodb://h' }))
+function makeAccessor(databases?: string[]): MongoDBAccessor {
+  return new MongoDBAccessor(
+    STUB_DRIVER,
+    resolveMongoDBConfig({ uri: 'mongodb://h', ...(databases === undefined ? {} : { databases }) }),
+  )
 }
 
 function docs(name: string): PathSpec {
@@ -68,10 +77,11 @@ async function run(
   paths: PathSpec[],
   flags: Record<string, FlagValue>,
   signal?: AbortSignal,
+  accessor: MongoDBAccessor = makeAccessor(),
 ): Promise<AsyncIterable<Uint8Array> | Uint8Array | null> {
   const cmd = MONGODB_TAIL[0]
   if (cmd === undefined) throw new Error('tail not registered')
-  const result = await cmd.fn(makeAccessor(), paths, [], {
+  const result = await cmd.fn(accessor, paths, [], {
     stdin: null,
     flags,
     filetypeFns: null,
@@ -101,6 +111,23 @@ describe('mongodb tail pushdown', () => {
     expect(readModule.streamAny).not.toHaveBeenCalled()
   })
 
+  it('refuses the optimized suffix outside databases before querying documents', async () => {
+    const cmd = MONGODB_TAIL[0]
+    if (cmd === undefined) throw new Error('tail not registered')
+    const result = await cmd.fn(makeAccessor(['secret']), [docs('users')], [], {
+      stdin: null,
+      flags: { n: '1' },
+      filetypeFns: null,
+      cwd: '/',
+    })
+    if (result === null) throw new Error('tail returned nothing')
+    const [out, io] = result
+    expect(DEC.decode(await materialize(out))).toBe('')
+    expect(io.exitCode).toBe(1)
+    expect(DEC.decode(await materialize(io.stderr))).toContain('No such file or directory')
+    expect(clientModule.findDocuments).not.toHaveBeenCalled()
+  })
+
   it.each([{ follow: true }, { F: true }])(
     'follows one collection as a change stream (%o)',
     async (mode) => {
@@ -110,6 +137,56 @@ describe('mongodb tail pushdown', () => {
       expect(clientModule.findDocuments).not.toHaveBeenCalled()
     },
   )
+
+  // The change stream queried the collection by the names in the path, so a
+  // database `databases` leaves out was followed while `ls` and `cat` said it
+  // was not there.
+  it('does not follow a collection outside databases', async () => {
+    vi.mocked(streamModule.watchStream).mockImplementation(() => lines())
+    const virtual = '/mongo/secret/collections/users/documents.jsonl'
+    const secret = new PathSpec({
+      virtual,
+      directory: '/mongo/secret/collections/users/',
+      resolved: true,
+      vfsPath: mountKey(virtual, '/mongo'),
+    })
+    await run([secret], { follow: true }, undefined, makeAccessor(['app']))
+    expect(streamModule.watchStream).not.toHaveBeenCalled()
+  })
+
+  // `maxDocLimit` stood in for the count in silence: `tail -n 6000` of a larger
+  // collection printed 5000 lines and exited 0.
+  it('stops at maxDocLimit and says so', async () => {
+    vi.mocked(clientModule.findDocuments).mockResolvedValue([{ _id: 2 }, { _id: 1 }])
+    const accessor = new MongoDBAccessor(
+      stubMongoDriver({
+        listDatabases: () => Promise.resolve(['app']),
+        listCollections: () => Promise.resolve(['users']),
+        countDocuments: () => Promise.resolve(10),
+      }),
+      resolveMongoDBConfig({ uri: 'mongodb://h', maxDocLimit: 2 }),
+    )
+    const cmd = MONGODB_TAIL[0]
+    if (cmd === undefined) throw new Error('tail not registered')
+    const result = await cmd.fn(accessor, [docs('users')], [], {
+      stdin: null,
+      flags: { n: '5' },
+      filetypeFns: null,
+      cwd: '/',
+    })
+    if (result === null) throw new Error('tail returned nothing')
+    const [out, io] = result
+    expect(
+      DEC.decode(await materialize(out))
+        .trim()
+        .split('\n'),
+    ).toHaveLength(2)
+    expect(io.exitCode).toBe(1)
+    expect(DEC.decode(await materialize(io.stderr))).toBe(
+      'tail: /mongo/app/collections/users/documents.jsonl: stopped at 2 documents ' +
+        '(max_doc_limit); the output is incomplete\n',
+    )
+  })
 
   it('reads every collection whole when a follow polls more than one', async () => {
     // The pushed-down suffix moves with the collection and has no byte

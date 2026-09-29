@@ -228,7 +228,7 @@ export function makeReaddir<A extends Accessor>(
     const entries = dropHidden(listed)
     const stem = rstripSlash(virtualKey)
     if (partial) {
-      for (const [name, entry] of entries) await store.put(`${stem}/${name}`, entry)
+      await store.setPartialDir(virtualKey, entries)
     } else {
       await store.setDir(virtualKey, entries)
     }

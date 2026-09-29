@@ -279,10 +279,11 @@
       "targets": [
         "langfuse"
       ],
-      "command": "du -sh /lf/traces",
+      "clear_cache": true,
+      "command": "set -o pipefail; cat /lf/traces/*.json > /dev/null && du -sh /lf/traces | sed -E 's/^[1-9][0-9]*(\\.[0-9]+)?K/size/'",
       "expect": {
         "exit": 0,
-        "stdout": "0\t/lf/traces\n",
+        "stdout": "size\t/lf/traces\n",
         "stderr": ""
       }
     },
@@ -335,6 +336,20 @@
       "expect": {
         "exit": 0,
         "stdout": "checkout-flow\nsummarize-doc\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "lf_read_26",
+      "seq": 601026,
+      "targets": [
+        "langfuse"
+      ],
+      "clear_cache": true,
+      "command": "set -o pipefail; bytes=$(cat /lf/traces/*.json | wc -c) && total=$(du -s /lf/traces | cut -f1) && test \"$total\" -gt 0 && test \"$total\" = \"$bytes\" && echo same",
+      "expect": {
+        "exit": 0,
+        "stdout": "same\n",
         "stderr": ""
       }
     }

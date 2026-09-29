@@ -13,8 +13,6 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import asyncio
-import os
-import uuid
 from contextlib import ExitStack
 
 import pytest
@@ -24,16 +22,10 @@ from mirage.core.ram.write import write_bytes as mem_write
 from mirage.core.redis.mkdir import mkdir as redis_mkdir
 from mirage.core.redis.write import write_bytes as redis_write
 from mirage.types import MountMode, PathSpec
-from mirage.vfs.disk import DiskVFS
-from mirage.vfs.gdrive import GoogleDriveConfig, GoogleDriveVFS
-from mirage.vfs.ram import RAMVFS
-from mirage.vfs.redis import RedisVFS
-from mirage.vfs.s3 import S3VFS, S3Config
 from mirage.workspace import Workspace
-from tests.e2e.gdrive_mock import FakeGDrive, patch_gdrive
+from tests.e2e.gdrive_mock import patch_gdrive
+from tests.e2e.mounts import REDIS_URL, MountState, build_mount
 from tests.e2e.s3_mock import patch_s3_multi
-
-REDIS_URL = os.environ.get("REDIS_URL", "")
 
 WRITABLE = {"ram", "disk", "redis", "s3"}
 
@@ -63,68 +55,7 @@ def _supports_delete(ptype: str) -> bool:
     return ptype in WRITABLE
 
 
-def _make_s3_vfs(bucket: str) -> S3VFS:
-    config = S3Config(bucket=bucket,
-                      region="us-east-1",
-                      aws_access_key_id="testing",
-                      aws_secret_access_key="testing")
-    return S3VFS(config)
-
-
-def _make_redis_vfs(prefix: str) -> RedisVFS:
-    return RedisVFS(url=REDIS_URL, key_prefix=prefix)
-
-
-def _make_gdrive_vfs() -> GoogleDriveVFS:
-    config = GoogleDriveConfig(
-        client_id="fake-id",
-        client_secret="fake-secret",
-        refresh_token="fake-refresh",
-    )
-    return GoogleDriveVFS(config)
-
-
-class _MountState:
-
-    def __init__(self, ptype: str, mount_path: str, idx: int) -> None:
-        self.ptype = ptype
-        self.mount_path = mount_path
-        self.idx = idx
-        self.disk_root = None
-        self.s3_bucket: str | None = None
-        self.gdrive: FakeGDrive | None = None
-        self.redis_prefix: str | None = None
-        self.vfs = None
-        self.accessor = None
-
-
-def _build_mount(ptype: str, mount_path: str, tmp_path,
-                 idx: int) -> _MountState:
-    state = _MountState(ptype, mount_path, idx)
-    if ptype == "ram":
-        state.vfs = RAMVFS()
-        state.accessor = state.vfs.accessor
-    elif ptype == "disk":
-        root = tmp_path / f"disk{idx}"
-        root.mkdir()
-        state.disk_root = root
-        state.vfs = DiskVFS(root=str(root))
-    elif ptype == "redis":
-        prefix = f"mirage:test:{uuid.uuid4().hex}:{idx}:"
-        state.redis_prefix = prefix
-        state.vfs = _make_redis_vfs(prefix)
-    elif ptype == "s3":
-        state.s3_bucket = f"test-bucket-{idx}"
-        state.vfs = _make_s3_vfs(state.s3_bucket)
-    elif ptype == "gdrive":
-        state.gdrive = FakeGDrive()
-        state.vfs = _make_gdrive_vfs()
-    else:
-        raise ValueError(f"unknown VFS: {ptype}")
-    return state
-
-
-async def _populate_file_async(state: _MountState, name: str,
+async def _populate_file_async(state: MountState, name: str,
                                content: bytes) -> None:
     if state.ptype == "ram":
         parts = ("/" + name).strip("/").split("/")
@@ -151,7 +82,7 @@ async def _populate_file_async(state: _MountState, name: str,
                           PathSpec.from_str_path("/" + name), content)
 
 
-def _populate_file(state: _MountState, name: str, content: bytes,
+def _populate_file(state: MountState, name: str, content: bytes,
                    buckets: dict) -> None:
     if state.ptype in ("ram", "disk", "redis"):
         asyncio.run(_populate_file_async(state, name, content))
@@ -161,8 +92,7 @@ def _populate_file(state: _MountState, name: str, content: bytes,
         state.gdrive.add_file(name, content)
 
 
-async def _ls_for_index(ws: Workspace, state: "_MountState",
-                        name: str) -> None:
+async def _ls_for_index(ws: Workspace, state: MountState, name: str) -> None:
     mount_path = state.mount_path
     parts = name.strip("/").split("/")
     for i in range(len(parts)):
@@ -178,7 +108,7 @@ async def _ls_for_index(ws: Workspace, state: "_MountState",
 
 class CrossMountEnv:
 
-    def __init__(self, ws: Workspace, m1: _MountState, m2: _MountState,
+    def __init__(self, ws: Workspace, m1: MountState, m2: MountState,
                  buckets: dict) -> None:
         self.ws = ws
         self.m1 = m1
@@ -237,8 +167,8 @@ def cross(request, tmp_path):
     pair = request.param
     p1_type, p2_type = pair
 
-    m1 = _build_mount(p1_type, "/m1", tmp_path, 1)
-    m2 = _build_mount(p2_type, "/m2", tmp_path, 2)
+    m1 = build_mount(p1_type, "/m1", tmp_path, 1)
+    m2 = build_mount(p2_type, "/m2", tmp_path, 2)
 
     ws = Workspace(
         {

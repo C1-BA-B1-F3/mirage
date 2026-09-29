@@ -36,3 +36,17 @@ export interface PrintfAction {
 }
 
 export type FindAction = ExecAction | RowAction | PrintfAction
+
+/** Parsed per-request options owned by the grep integration. */
+export interface GrepSearchOptions {
+  readonly ignoreCase: boolean
+  readonly fixedString: boolean
+  readonly wholeWord: boolean
+  readonly basic: boolean
+}
+
+/** Declared search dialect and fallback scan strategy for grep/rg. */
+export interface GrepSearchMeta {
+  readonly mode: 'literal' | 'regex'
+  readonly stream: boolean
+}

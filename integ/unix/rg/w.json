@@ -23,10 +23,10 @@
         "nextcloud",
         "box"
       ],
-      "command": "rg -w alpha /data/r4/notes.txt",
+      "command": "rg -w alpha /data/r4/notes.txt; rg -x alpha /data/r4/notes.txt; rg -xi alpha /data/r4/notes.txt; rg -w -x alph /data/r4/notes.txt; echo rc=$?",
       "expect": {
         "exit": 0,
-        "stdout": "alpha\n",
+        "stdout": "alpha\nalpha\nalpha\nALPHA\nrc=1\n",
         "stderr": ""
       },
       "flags": [
@@ -63,6 +63,41 @@
         "stderr": ""
       },
       "flags": [
+        "w"
+      ]
+    },
+    {
+      "id": "rg_prefilter_word_count",
+      "seq": 1287010,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "seq 1 20000 > /data/prefilter.txt; printf 'NEEDLE\\nneedle\\nother\\nneedleX\\n' >> /data/prefilter.txt; rg -ciw needle /data/prefilter.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "i",
         "w"
       ]
     }

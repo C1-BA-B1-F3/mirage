@@ -12,10 +12,12 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class LangfuseConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     public_key: str
     secret_key: SecretStr
     host: str = "https://cloud.langfuse.com"

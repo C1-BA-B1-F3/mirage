@@ -148,11 +148,13 @@ async def check_partial_read(ws: Workspace, dst: str, label: str) -> None:
     out, err, code = await run(ws, f"head -n 1 {src} {miss}")
     check(
         f"{label}: head keeps banner", out == f"==> {src} <==\naaa\n"
-        and code == 1 and err == f"head: {miss}: No such file or directory\n")
+        and code == 1 and err ==
+        f"head: cannot open '{miss}' for reading: No such file or directory\n")
     out, err, code = await run(ws, f"tail -n 1 {src} {miss}")
     check(
         f"{label}: tail keeps banner", out == f"==> {src} <==\naaa\n"
-        and code == 1 and err == f"tail: {miss}: No such file or directory\n")
+        and code == 1 and err ==
+        f"tail: cannot open '{miss}' for reading: No such file or directory\n")
     # nl rides the STREAM strategy cross-mount: the error line must carry
     # nl's own name, not the cat sub-run that fetched the operand.
     out, err, code = await run(ws, f"nl {src} {miss}")
@@ -168,7 +170,7 @@ async def check_partial_read(ws: Workspace, dst: str, label: str) -> None:
     out, err, code = await run(ws, f"stat {src} {miss}")
     check(
         f"{label}: stat keeps good row", "name=a.txt" in out and code == 1
-        and err == f"stat: {miss}: No such file or directory\n")
+        and err == f"stat: cannot statx '{miss}': No such file or directory\n")
     out, err, code = await run(ws, f"cut -c1 {src} {miss}")
     check(
         f"{label}: cut keeps partial output", out == "a\n" and code == 1
@@ -176,19 +178,20 @@ async def check_partial_read(ws: Workspace, dst: str, label: str) -> None:
     out, err, code = await run(ws, f"tac {src} {miss}")
     check(
         f"{label}: tac keeps partial output", out == "aaa\n" and code == 1
-        and err == f"tac: {miss}: No such file or directory\n")
+        and err == (f"tac: failed to open '{miss}' for reading: "
+                    "No such file or directory\n"))
     # sed and sort exit 2 on a failed operand where the commands above exit
     # 1: the code belongs to the command, not to the errno (GNU sed 4.9,
     # coreutils 9.7).
     out, err, code = await run(ws, f"sed s/a/X/ {src} {miss}")
     check(
         f"{label}: sed keeps partial output", out == "Xaa\n" and code == 2
-        and err == f"sed: {miss}: No such file or directory\n")
+        and err == f"sed: can't read {miss}: No such file or directory\n")
     # sort aborts on any failed operand, single- and cross-mount alike.
     out, err, code = await run(ws, f"sort {src} {miss}")
     check(
         f"{label}: sort aborts", out == "" and code == 2
-        and err == f"sort: {miss}: No such file or directory\n")
+        and err == f"sort: cannot read: {miss}: No such file or directory\n")
 
 
 async def check_compare(ws: Workspace, dst: str, label: str) -> None:

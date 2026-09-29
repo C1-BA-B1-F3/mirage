@@ -321,7 +321,7 @@ it.each(['abort', 'timeout'])(
     const execute: ExecuteNodeFn = async (nd, _session, stdin) => {
       if (nd.text === 'cat')
         return [
-          asyncChain(input),
+          asyncChain([input]),
           new IOResult({ reads: { '/remote': input }, cache: ['/remote'] }),
           new ExecutionNode({ command: 'cat' }),
         ]
@@ -341,34 +341,54 @@ it('keeps a cache read drainable after a normal early pipeline exit', async () =
   const { CachableAsyncIterator } = await import('../../io/cachable_iterator.ts')
   const { asyncChain } = await import('../../io/stream.ts')
   let closed = false
+  let readSignal: AbortSignal | null = null
   async function* source() {
     await Promise.resolve()
     try {
       yield encode('first')
       yield encode('rest')
+      readSignal?.throwIfAborted()
     } finally {
       closed = true
     }
   }
   const input = new CachableAsyncIterator(source())
-  const execute: ExecuteNodeFn = async (nd, _session, stdin) => {
-    if (nd.text === 'cat')
+  const execute: ExecuteNodeFn = async (nd, child, stdin) => {
+    if (nd.text === 'cat') {
+      readSignal = child.abortSignal
       return [
-        asyncChain(input),
+        asyncChain([input]),
         new IOResult({ reads: { '/remote': input }, cache: ['/remote'] }),
         new ExecutionNode({ command: 'cat' }),
       ]
+    }
     if (stdin === null || stdin instanceof Uint8Array) throw new Error('expected stream')
     await stdin[Symbol.asyncIterator]().next()
     return [encode('first'), new IOResult(), new ExecutionNode({ command: 'head' })]
   }
-  await handlePipe(
-    execute,
-    [node('cat'), node('head')],
-    [],
-    new SessionState({ sessionId: 'test' }),
-  )
+  const session = new SessionState({ sessionId: 'test' })
+  session.shellOptions.pipefail = true
+  const [, io] = await handlePipe(execute, [node('cat'), node('head')], [], session)
+  expect(io.exitCode).toBe(0)
   expect(closed).toBe(false)
   expect(decode(await input.drain())).toBe('firstrest')
   expect(closed).toBe(true)
+})
+
+it('pipeline timeout releases the caller even when a producer ignores cancellation', async () => {
+  const session = new SessionState({ sessionId: 'timeout' })
+  session.pipelineTimeoutSeconds = 0.01
+  let finish: ((value: Awaited<ReturnType<ExecuteNodeFn>>) => void) | undefined
+  const pending = new Promise<Awaited<ReturnType<ExecuteNodeFn>>>((resolve) => {
+    finish = resolve
+  })
+  const execute: ExecuteNodeFn = (nd) =>
+    nd.text === 'blocked' ? pending : Promise.resolve([null, new IOResult(), new ExecutionNode()])
+  try {
+    await expect(
+      handlePipe(execute, [node('blocked'), node('done')], [false], session),
+    ).rejects.toThrow('timed out')
+  } finally {
+    finish?.([null, new IOResult(), new ExecutionNode()])
+  }
 })

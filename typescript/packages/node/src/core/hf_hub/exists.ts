@@ -14,6 +14,7 @@
 
 import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import type { PathSpec } from '@struktoai/mirage-core/types'
+import { isEnoent } from '@struktoai/mirage-core/utils/errors'
 import type { HfHubAccessor } from '../../accessor/hf_hub.ts'
 import { stat } from './stat.ts'
 
@@ -25,8 +26,11 @@ export async function exists(
 ): Promise<boolean> {
   try {
     await stat(accessor, path, index)
-  } catch {
-    return false
+  } catch (err) {
+    // "Cannot see the repo" is not "the path is absent"; only the latter
+    // answers false, as python's twin catches FileNotFoundError alone.
+    if (isEnoent(err)) return false
+    throw err
   }
   return true
 }

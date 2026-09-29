@@ -14,25 +14,28 @@
 
 import asyncio
 import dataclasses
+from collections.abc import Callable
 from functools import partial
+from types import SimpleNamespace
 from typing import Any
 
-from mirage.commands.builtin.utils.limit import run_with_timeout
+from mirage.commands.builtin.utils.limit import guard_io, run_with_timeout
 from mirage.context import (redirect_paths_for, reset_admission,
                             reset_op_policies, set_admission, set_op_policies)
 from mirage.io import IOResult
 from mirage.io.types import materialize
-from mirage.policy import PolicyDenied, resolve_limit
+from mirage.policy import PolicyDenied, resolve_limit, resolve_producer
 from mirage.policy.types import Claimant, HandOff, SessionContext
 from mirage.runtime.routing import RouteDecision
 from mirage.shell.bytes import encode_text
 from mirage.shell.parse import find_syntax_error, parse, syntax_error_result
 from mirage.shell.types import NodeType as NT
-from mirage.shell.variable import ShellVar, VarAttr
+from mirage.shell.variable import TempEnv, VarAttr
 from mirage.shell.xtrace import trace_command
-from mirage.types import PathSpec, Producer, word_text
+from mirage.types import LsLinkMode, PathSpec, Producer, word_text
 from mirage.utils.glob_walk import glob_pattern
 from mirage.utils.path import CycleError
+from mirage.vfs.dev.dev import DevVFS
 from mirage.workspace.executor.builtins.alias import alias_command_text
 from mirage.workspace.executor.builtins.table import BUILTINS
 from mirage.workspace.executor.builtins.types import BuiltinCall
@@ -41,9 +44,11 @@ from mirage.workspace.executor.command.external import run_external
 from mirage.workspace.expand import expand_node
 from mirage.workspace.expand.argv import Argv, expand_argv
 from mirage.workspace.expand.globs import expand_boundary_globs
+from mirage.workspace.expand.node import child_line
 from mirage.workspace.lookup import (SLASH_KEEPS_LAST, UNSUPPORTED_BUILTINS,
                                      Consumer, follows_last_component, lookup,
-                                     runtime_refused)
+                                     ls_link_mode, runtime_refused)
+from mirage.workspace.lookup.constants import INTERPRETER_NAMES
 from mirage.workspace.node.admission import Admitted, Refused, admit
 from mirage.workspace.node.occurrence import claimant_for, evaluated_from
 from mirage.workspace.session.state import (ensure_var_visible,
@@ -57,9 +62,10 @@ from mirage.shell.helpers import (  # isort: skip
 from mirage.shell.types import ProcessSubDirection  # isort: skip
 
 from mirage.workspace.executor.builtins import (  # isort: skip
-    accepts_line, follow_paths, handle_chgrp, handle_exec_path, handle_chmod,
-    handle_chown, handle_df, handle_getfattr, handle_ln, handle_readlink,
-    handle_setfattr, handle_touch, prepare_mv, strip_link_operands)
+    accepts_line, follow_directory_links, follow_paths, handle_chgrp,
+    handle_exec_path, handle_chmod, handle_chown, handle_df, handle_getfattr,
+    handle_ln, handle_readlink, handle_setfattr, handle_touch, prepare_mv,
+    settle_moves, strip_link_operands)
 
 
 async def execute_command(
@@ -156,8 +162,8 @@ async def execute_command(
     for k, v in prefix_assignments:
         # The hidden gate runs first, as in set_var: calling a hidden
         # name "readonly" would leak that it exists. Both branches
-        # below write session.env raw (a function-call prefix on
-        # purpose never restores), so ungated they would let a
+        # below write session.env raw (an `export` inside a function
+        # keeps its prefix past the call), so ungated they would let a
         # narrowed session clobber the host's value.
         try:
             ensure_var_visible(session, k)
@@ -195,30 +201,41 @@ async def execute_command(
             f"{k}={v}" for k, v in prefix_assignments),
                                                exit_code=0)
 
-    is_function_call = name in session.functions
-    saved_env_overrides: dict[str, ShellVar | None] = {}
-    for k, v in prefix_assignments:
-        if not is_function_call:
-            saved_env_overrides[k] = session.vars.get(k)
-        # Exported for the duration, which is the whole point of the
-        # form: `TOKEN=x printenv TOKEN` prints `x` because bash puts a
-        # prefix assignment in the *command's environment*, not merely in
-        # the shell. Seeding it plain left it invisible to every reader
-        # of `env_snapshot` -- the command's own env, an installed CLI,
-        # a guest runtime -- once that view narrowed to the exported set.
-        # The saved record is put back below, so the attribute does not
-        # outlive the command; a function call deliberately saves nothing
-        # and keeps the assignment, as bash does.
-        seed_var(session, k, v)
-        set_attr(session, k, VarAttr.EXPORT)
+    saved_env_overrides = TempEnv()
+
+    def seed_prefix(command: str) -> None:
+        # Seeded once the command's words are expanded, since bash
+        # expands them with the values from before the assignment:
+        # `x=new echo $x` prints the old x and `IFS=, cmd $v` splits on
+        # the old IFS.
+        for k, v in prefix_assignments:
+            saved_env_overrides.setdefault(k, session.vars.get(k))
+            # Exported for the duration, which is the whole point of the
+            # form: `TOKEN=x printenv TOKEN` prints `x` because bash puts
+            # a prefix assignment in the *command's environment*, not
+            # merely in the shell. Seeding it plain left it invisible to
+            # every reader of `env_snapshot` -- the command's own env, an
+            # installed CLI, a guest runtime -- once that view narrowed
+            # to the exported set. The saved record is put back below, so
+            # neither the value nor the attribute outlives the command.
+            seed_var(session, k, v)
+            set_attr(session, k, VarAttr.EXPORT)
+        if command in session.functions:
+            # A function runs with the prefix as its temporary
+            # environment, a scope under its own locals: `unset` inside
+            # reveals the caller's value and `export` keeps the name.
+            session._local_frames.append(saved_env_overrides)
 
     try:
         return await _dispatch_command_body(recurse, dispatch, registry,
                                             namespace, execute_fn, node, parts,
                                             name, session, stdin, call_stack,
-                                            job_table, cancel,
+                                            job_table, seed_prefix, cancel,
                                             routing_decision, agent_id, handed)
     finally:
+        frames = session._local_frames
+        if frames and frames[-1] is saved_env_overrides:
+            frames.pop()
         for k, prev in saved_env_overrides.items():
             if prev is None:
                 session.vars.pop(k, None)
@@ -239,6 +256,7 @@ async def _dispatch_command_body(
     stdin,
     call_stack,
     job_table,
+    seed_prefix: Callable[[str], None],
     cancel: asyncio.Event | None = None,
     routing_decision: RouteDecision | None = None,
     agent_id: str = "",
@@ -266,82 +284,109 @@ async def _dispatch_command_body(
                     stdin = encode_text(content) + b"\n"
                     break
 
-    # Process substitution: <(cmd) feeds inner stdout as stdin.
-    # Output direction >(cmd) is unsupported; reject early so the
-    # caller sees a capability gap rather than a silent no-op.
-    proc_sub_parts = []
+    # Buffered virtual files preserve operand identity without host pipes.
+    dev: DevVFS | None = None
+    proc_sub_inputs: list[tuple[str, int]] = []
     proc_sub_stderr = []
     clean_parts = []
-    for p in parts:
-        if hasattr(p, "type") and p.type == NT.PROCESS_SUBSTITUTION:
+    try:
+        for p in parts:
+            if p.type != NT.PROCESS_SUBSTITUTION:
+                clean_parts.append(p)
+                continue
             if get_process_sub_direction(p) == ProcessSubDirection.OUTPUT:
                 err = b"mirage: unsupported: process substitution >(...)\n"
                 return None, IOResult(exit_code=2, stderr=err), ExecutionNode(
                     command=name or "process_sub", exit_code=2, stderr=err)
+            if dev is None:
+                dev, _, _ = registry.resolve("/dev/null")
+                assert isinstance(dev, DevVFS)
+            path, allocation = dev.allocate_input()
+            proc_sub_inputs.append((path, allocation))
             inner = get_process_sub_body(p)
             if inner:
-                io_ps = await execute_fn(inner,
-                                         session_id=session.session_id,
-                                         node=p)
-                proc_sub_parts.append(io_ps.stdout or b"")
-                stderr = await materialize(io_ps.stderr)
-                if stderr:
-                    proc_sub_stderr.append(stderr)
-        else:
-            clean_parts.append(p)
-    if proc_sub_parts and stdin is None:
-        stdin = b"".join(proc_sub_parts)
-    parts = clean_parts
+                io_ps = await child_line(session, execute_fn, inner, p)
+                data = await materialize(io_ps.stdout)
+                dev.set_input(path, allocation, data)
+                proc_sub_stderr.append(await materialize(io_ps.stderr))
+            clean_parts.append(
+                SimpleNamespace(type=NT.WORD,
+                                text=path.encode(),
+                                children=[],
+                                named_children=[]))
+        parts = clean_parts
 
-    argv = await expand_argv(parts,
-                             session,
-                             execute_fn,
-                             call_stack,
-                             registry,
-                             namespace,
-                             view=session_view(session, registry.policies),
-                             routing=routing_decision)
+        argv = await expand_argv(parts,
+                                 session,
+                                 execute_fn,
+                                 call_stack,
+                                 registry,
+                                 namespace,
+                                 view=session_view(session, registry.policies),
+                                 routing=routing_decision)
+        seed_prefix(argv.name)
 
-    # Limits resolve against the expanded name, so `$CMD`-style
-    # invocations get their real command's policy.
-    # External execution owns its mount-resolved deadline and cancellation.
-    external = ("/" not in argv.name and lookup(
-        argv.name, session, registry, routing_decision) is Consumer.EXTERNAL)
-    resolved = resolve_limit(argv.name) if argv.name and not external else None
-    timeout = (resolved.timeout_seconds if resolved is not None else None)
-    body = _run_argv(recurse,
-                     dispatch,
-                     registry,
-                     namespace,
-                     execute_fn,
-                     argv,
-                     session,
-                     stdin,
-                     call_stack,
-                     job_table,
-                     cancel,
-                     routing_decision,
-                     row=node.start_point[0],
-                     agent_id=agent_id,
-                     redirects=redirect_paths_for(node.id),
-                     claimant=claimant)
-    # Capture xtrace before the body runs so `set -x` itself is not
-    # traced (bash enables tracing only for the following commands).
-    xtrace = bool(session.shell_options.get("xtrace"))
-    stdout, io, exec_node = await run_with_timeout(body, timeout, argv.name
-                                                   or "?")
-    if io.producer is None and argv.name:
-        # Builtins and other non-mount routes return no rider; stamp the
-        # expanded name here so post_execute policies keyed on a command
-        # (echo, printf, ...) still see it.
-        io.producer = Producer(command=argv.name)
-    if proc_sub_stderr:
-        io.stderr = b"".join(proc_sub_stderr) + await materialize(io.stderr)
-        exec_node.stderr = io.stderr
-    if xtrace and argv.name:
-        existing = await materialize(io.stderr) or b""
-        io.stderr = trace_command([argv.name, *argv.args]) + existing
-    return stdout, io, exec_node
+        # Limits resolve against the expanded name, so `$CMD`-style
+        # invocations get their real command's policy.
+        # Mount, CLI and external dispatch own their resolved deadlines.
+        owns_deadline = ("/" not in argv.name and lookup(
+            argv.name, session, registry, routing_decision)
+                         in (Consumer.EXTERNAL, Consumer.MOUNT,
+                             Consumer.CLI)) or argv.name in INTERPRETER_NAMES
+        resolved = resolve_limit(argv.name,
+                                 workspace_limits=registry.command_limits,
+                                 profile_limits=session.command_limits
+                                 ) if argv.name and not owns_deadline else None
+        timeout = (resolved.timeout_seconds if resolved is not None else None)
+        body = _run_argv(recurse,
+                         dispatch,
+                         registry,
+                         namespace,
+                         execute_fn,
+                         argv,
+                         session,
+                         stdin,
+                         call_stack,
+                         job_table,
+                         cancel,
+                         routing_decision,
+                         row=node.start_point[0],
+                         agent_id=agent_id,
+                         redirects=redirect_paths_for(node.id),
+                         claimant=claimant)
+        # Capture xtrace before the body runs so `set -x` itself is not
+        # traced (bash enables tracing only for the following commands).
+        xtrace = bool(session.shell_options.get("xtrace"))
+        stdout, io, exec_node = await run_with_timeout(body, timeout, argv.name
+                                                       or "?")
+        if io.producer is None and argv.name:
+            # Builtins and other non-mount routes return no rider; stamp the
+            # expanded name here so post_execute policies keyed on a command
+            # (echo, printf, ...) still see it.
+            io.producer = Producer(command=argv.name)
+        if not io.output_finalized:
+            io.output_finalized = True
+            if session.terminal_output and session.exec_stdout in (
+                    None, "&1") and io.producer is not None:
+                bound = resolve_producer(io.producer, registry.limit_override,
+                                         registry.command_limits,
+                                         session.command_limits)
+                stdout = guard_io(stdout, io, bound, io.producer.command)
+                exec_node.exit_code = io.exit_code
+        if proc_sub_stderr:
+            io.stderr = b"".join(proc_sub_stderr) + await materialize(io.stderr
+                                                                      )
+            exec_node.stderr = io.stderr
+        if xtrace and argv.name:
+            existing = await materialize(io.stderr) or b""
+            io.stderr = trace_command([argv.name, *argv.args]) + existing
+        if proc_sub_inputs and stdout is not None:
+            stdout = await materialize(stdout)
+        return stdout, io, exec_node
+    finally:
+        if dev is not None:
+            for path, allocation in proc_sub_inputs:
+                dev.release_input(path, allocation)
 
 
 async def _run_argv(
@@ -516,7 +561,7 @@ async def _route_argv(
     if name and "/" in name:
         return await handle_exec_path(dispatch, execute_fn, name,
                                       [word_text(a) for a in args], session,
-                                      stdin)
+                                      registry, namespace, stdin)
 
     # ── unsupported bash builtins ──────────────
     # Constructs the parser accepts but the executor cannot honor.
@@ -559,20 +604,22 @@ async def _route_argv(
     #    that follows (open(2) rather than lstat(2)) or an operand typed
     #    with a trailing slash, which POSIX reads as `dlink/.`. This runs
     #    ahead of every handler below because the kernel resolves a path
-    #    before the syscall, not inside it.
+    #    before the syscall, not inside it. An operand a link loop stands
+    #    in comes back refused (`walk_error`) rather than failing the
+    #    line: the command meets ELOOP at its op and words it per operand.
     if namespace.nodes and operands:
-        try:
-            operands = follow_paths(namespace,
-                                    operands,
-                                    follows_last_component(name, argv.words),
-                                    slash_follows=name not in SLASH_KEEPS_LAST)
-        except CycleError as exc:
-            err = (f"{name}: {exc}: "
-                   f"Too many levels of symbolic links\n").encode()
-            return None, IOResult(exit_code=1,
-                                  stderr=err), ExecutionNode(command=name,
-                                                             exit_code=1,
-                                                             stderr=err)
+        ls_mode = ls_link_mode(argv.words) if name == "ls" else None
+        operands = follow_paths(
+            namespace,
+            operands,
+            ls_mode is LsLinkMode.ALL if ls_mode is not None else
+            follows_last_component(name, argv.words),
+            slash_follows=name not in SLASH_KEEPS_LAST)
+        if ls_mode is LsLinkMode.DIRECTORY:
+            # ls resolves a command-line link only when it leads to a
+            # directory, and only a stat can tell where it leads.
+            operands = await follow_directory_links(namespace, dispatch,
+                                                    operands)
         argv = argv.with_operands(operands)
 
     # ── symlinks (namespace-backed; not bash builtins, not mount
@@ -608,8 +655,6 @@ async def _route_argv(
 
     # ── symlink-aware dispatch: reads follow links (open(2)); rm/mv act
     #    on the link entry itself (lstat semantics) ──
-    post_unlink: str | None = None
-    post_rename: tuple[str, str] | None = None
     link_errors: list[str] = []
     if namespace.nodes:
         try:
@@ -635,8 +680,9 @@ async def _route_argv(
                                                                 exit_code=1,
                                                                 stderr=err)
             elif name == "mv":
-                operands, post_unlink, post_rename, early = await prepare_mv(
-                    namespace, dispatch, operands, argv.args, session.cwd)
+                operands, early = await prepare_mv(namespace, dispatch,
+                                                   operands, argv.args,
+                                                   session.cwd)
                 if early is not None:
                     return early
         except CycleError as exc:
@@ -673,6 +719,12 @@ async def _route_argv(
             for item in operands:
                 if not isinstance(item, PathSpec):
                     continue
+                if item.walk_error is not None:
+                    # The walk refused it, so rm removed nothing there
+                    # (-f only silenced the refusal), and the empty
+                    # name's `virtual` is the working directory: purging
+                    # under it dropped every link the directory held.
+                    continue
                 if item.raw_path.endswith("/"):
                     # A trailing slash asked for the directory, and rm
                     # refused (or -f silenced the refusal). Nothing was
@@ -688,16 +740,8 @@ async def _route_argv(
                 else:
                     await namespace.unlink(item.virtual)
                     await namespace.purge_under(item.virtual)
-        if post_unlink is not None:
-            # The landing is replaced the way rename(2) replaces it,
-            # node and subtree alike, and then the source's own node and
-            # subtree land on it. The same four steps the dispatcher
-            # takes for a rename it forwards itself.
-            await namespace.unlink(post_unlink)
-            await namespace.purge_under(post_unlink)
-        if post_rename is not None:
-            await namespace.rename(post_rename[0], post_rename[1])
-            await namespace.rename_under(post_rename[0], post_rename[1])
+    if name == "mv" and io.renames:
+        await settle_moves(namespace, io.renames)
     if link_errors:
         # A refused link operand fails the line the way a refused
         # backend operand does: its lines lead (they were reported

@@ -18,8 +18,8 @@ from typing import Any
 
 from mirage.commands.spec.shell import SHELL_SPECS, parse_shell_options
 from mirage.io import IOResult
-from mirage.io.async_line_iterator import AsyncLineIterator
-from mirage.io.stream import async_chain, materialize
+from mirage.io.async_line_iterator import line_buffer
+from mirage.io.stream import materialize
 from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
@@ -130,15 +130,7 @@ async def handle_mapfile(
     if name in visible_assocs(session):
         return fail(cmd, f"bash: {cmd}: {name}: not an indexed array\n", 1)
 
-    if stdin is not None and (session._stdin_buffer is None
-                              or session._stdin_source is not stdin):
-        if isinstance(stdin, bytes):
-            session._stdin_buffer = AsyncLineIterator(async_chain(stdin))
-            session._stdin_source = stdin
-        elif hasattr(stdin, "__aiter__"):
-            session._stdin_buffer = AsyncLineIterator(stdin)
-            session._stdin_source = stdin
-    buffer = session._stdin_buffer
+    buffer = line_buffer(stdin) if stdin is not None else None
 
     existing = visible_arrays(session).get(name)
     arr: ShellArray = (list(existing)

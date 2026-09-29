@@ -226,6 +226,14 @@ export async function boxGet(
   })
 }
 
+export async function boxOptions(tm: BoxTokenManager, url: string): Promise<unknown> {
+  return apiRequest('OPTIONS', url, {
+    errorOf: (r, text) =>
+      new BoxApiError(`Box OPTIONS ${url} → ${String(r.status)} ${text}`, r.status),
+    headers: await boxAuthHeaders(tm),
+  })
+}
+
 export async function boxGetBytes(
   tm: BoxTokenManager,
   url: string,

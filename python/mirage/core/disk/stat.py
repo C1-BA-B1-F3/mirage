@@ -12,42 +12,36 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from pathlib import Path
+from stat import S_ISDIR
 
 import aiofiles.os
-from aiofiles.os import path as aio_path
 
 from mirage.accessor.disk import DiskAccessor
 from mirage.cache.index import NULL_INDEX, IndexCacheStore
+from mirage.core.disk.errors import disk_errors
+from mirage.core.disk.utils import resolve_inside
 from mirage.core.timeutil import epoch_to_iso
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.filetype import content_type_for_path
-
-
-def _resolve(root: Path, path: str) -> Path:
-    relative = path.lstrip("/")
-    resolved = (root / relative).resolve()
-    resolved.relative_to(root)
-    return resolved
 
 
 async def stat(accessor: DiskAccessor,
                path_spec: PathSpec,
                index: IndexCacheStore = NULL_INDEX) -> FileStat:
     virtual = path_spec.virtual
-    path = path_spec.mount_path
     root = accessor.root
-    p = _resolve(root, path)
-    if not await aio_path.exists(p):
-        raise FileNotFoundError(virtual)
-    st = await aiofiles.os.stat(p)
+    p = await resolve_inside(root, path_spec)
+    # One stat, restamped: an existence check first would read ENOTDIR
+    # (a path under a plain file) as plain absence.
+    with disk_errors(virtual):
+        st = await aiofiles.os.stat(p)
     modified = epoch_to_iso(st.st_mtime)
     # Fields setattr applies natively (mode, times) read from the real
     # inode, so external chmod/utime stays visible. Ownership can never
     # be applied natively (chown needs privileges), so it lives wholly
     # in the namespace overlay, merged at the stat-merge layer; host
     # uid/gid numbers would also be machine-dependent noise.
-    if await aio_path.isdir(p):
+    if S_ISDIR(st.st_mode):
         return FileStat(name=p.name,
                         size=None,
                         modified=modified,

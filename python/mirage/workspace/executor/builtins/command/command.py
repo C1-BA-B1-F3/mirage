@@ -12,14 +12,15 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import shlex
 from collections.abc import Callable, Sequence
 from typing import Any
 
 from mirage.io.types import ByteSource
+from mirage.shell.join import shell_join
 from mirage.utils.quote import single_quote
 from mirage.workspace.executor.builtins.getopt import last_of, scan_options
-from mirage.workspace.executor.builtins.lookup import classify, describe
+from mirage.workspace.executor.builtins.lookup import (classify, describe,
+                                                       program_file)
 from mirage.workspace.executor.builtins.lookup.types import NameKind
 from mirage.workspace.executor.builtins.shared import ok, result
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
@@ -37,8 +38,9 @@ def _probe(mode: str, rest: Sequence[str], session: SessionState,
 
     The exit status is 0 when no names are given, otherwise 0 if any name
     resolved and 1 if none did (bash's ``command`` uses this any-found
-    rule, unlike ``type``'s all-found rule). ``-v`` prints the name for a
-    resolvable command (no fake path); ``-V`` prints a verbose line.
+    rule, unlike ``type``'s all-found rule). ``-v`` prints a program's
+    file and any other resolvable name bare (a builtin, a function);
+    ``-V`` prints a verbose line.
     Not-found names are silent under ``-v`` and warn on stderr under ``-V``.
 
     Args:
@@ -63,6 +65,8 @@ def _probe(mode: str, rest: Sequence[str], session: SessionState,
             # `command -v` prints an alias as its definition, the one
             # form that is not just the name.
             line = f"alias {name}={single_quote(session.aliases[name])}"
+        elif kind is NameKind.FILE:
+            line = program_file(name)
         else:
             line = name
         out_lines.append(f"{line}\n")
@@ -91,8 +95,9 @@ async def handle_command_builtin(
     session function table for the inner run so a shadowing function is
     skipped while builtins and mount commands still resolve. Already
     expanded operands are re-joined with ``shlex`` so they survive
-    re-parsing as one token each. ``-p`` is accepted but inert (mirage
-    has no PATH) and the last of ``-v``/``-V`` wins.
+    re-parsing as one token each. ``-p`` is accepted but inert (the
+    default PATH is the one PATH there is) and the last of ``-v``/``-V``
+    wins.
 
     Args:
         execute_fn (Callable): shell evaluator for the inner line.
@@ -114,7 +119,7 @@ async def handle_command_builtin(
         return ok("command")
 
     inner_name = rest[0]
-    inner = shlex.join(rest)
+    inner = shell_join(rest)
     # Function bodies are never None, so popping with a None default lets
     # `is not None` mean "a shadowing function was masked" for restore.
     # An alias is masked the same way: bash expands an alias only as a

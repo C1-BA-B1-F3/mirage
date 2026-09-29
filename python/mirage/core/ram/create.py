@@ -28,5 +28,5 @@ async def create(accessor: RAMAccessor, path: PathSpec) -> None:
     check_dest_parents(store, path, p)
     store.files[p] = b""
     store.modified[p] = now_iso()
-    record("create", path.mount_path, "ram", 0, timer)
+    record("create", path.virtual, "ram", 0, timer)
     await invalidate_after_write(path)

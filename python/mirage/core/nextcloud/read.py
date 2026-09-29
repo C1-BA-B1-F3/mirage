@@ -27,5 +27,5 @@ async def read_bytes(accessor: NextcloudAccessor,
             data = bytes(await op.read(key))
     except NotFound as exc:
         raise enoent(path) from exc
-    record("read", raw, "nextcloud", len(data), timer)
+    record("read", path.virtual, "nextcloud", len(data), timer)
     return data

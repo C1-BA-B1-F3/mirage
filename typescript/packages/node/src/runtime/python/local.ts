@@ -16,7 +16,7 @@ import { type ChildProcess, spawn } from 'node:child_process'
 import { HOME_CONFIG_KEYS } from '@struktoai/mirage-core/runtime/config'
 import type { HomeConfig } from '@struktoai/mirage-core/runtime/config'
 import { PythonRuntime } from '@struktoai/mirage-core/runtime/python/base'
-import { bootstrap } from '@struktoai/mirage-core/runtime/python/bootstrap'
+import { prepareSource } from '@struktoai/mirage-core/runtime/python/execution'
 import { registerRuntime } from '@struktoai/mirage-core/runtime/table'
 import type { RunArgs, RunResult, RuntimeOptions } from '@struktoai/mirage-core/runtime/types'
 
@@ -56,7 +56,12 @@ export class LocalRuntime extends PythonRuntime {
   }
 
   run(args: RunArgs): Promise<RunResult> {
-    return this.runProcess(['-c', bootstrap(args), ...args.args], args.env, args.stdin, args.signal)
+    return this.runProcess(
+      ['-c', prepareSource(args), ...args.args],
+      args.env,
+      args.stdin,
+      args.signal,
+    )
   }
 
   private runProcess(

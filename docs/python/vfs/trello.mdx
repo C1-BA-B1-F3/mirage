@@ -276,10 +276,15 @@ Standard commands available on the mounted Trello tree:
 The command surface mirrors a Trello CLI: nested `trello <noun> <verb>` names
 that emit normalized JSON to stdout, so you can pipe any of them to `jq`.
 
+`workspace_id` and `board_ids` narrow these commands the way they narrow the
+tree: `trello board list` shows the boards the mount lists, and a board, list
+or card id on a board outside them is refused before any read or write
+(`trello card show: card crd_009 is outside this mount's scope`, exit 1).
+
 ### Read commands
 
 ```bash
-trello board list                         # all boards
+trello board list                         # the boards the mount lists
 trello board show brd_001
 trello board members brd_001
 trello list list brd_001                  # lists on a board

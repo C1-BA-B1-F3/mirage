@@ -56,23 +56,23 @@ def glob_regex(pattern: str) -> str | None:
 
 
 def build_query(pfx: str, name: str | None, iname: str | None,
-                type: str | None, min_size: int | None, max_size: int | None,
+                min_size: int | None, max_size: int | None,
                 pushdown: bool) -> dict[str, Any]:
     """Build the fs.files query, pushing filters server-side when exact.
 
-    Every condition is a superset of the GNU semantics (directory markers
-    always pass the size condition, unpushable globs fall back to the
-    prefix scan), so the client-side ``keep()`` pass stays authoritative.
+    A pushed query selects files only, since pushdown is set for a
+    ``-type f`` find alone, and every condition is a superset of what
+    GNU prints (an unpushable glob falls back to the prefix scan), so
+    the client-side ``keep()`` pass stays authoritative.
 
     Args:
         pfx (str): Key prefix of the start directory ("" for root).
         name (str | None): -name glob.
         iname (str | None): -iname glob.
-        type (str | None): "f" or "d".
         min_size (int | None): Inclusive lower size bound.
         max_size (int | None): Inclusive upper size bound.
-        pushdown (bool): False when a complex predicate tree is present;
-            only the prefix condition is used then.
+        pushdown (bool): a ``-type f`` find with no complex predicate
+            tree; only the prefix condition is used otherwise.
     """
     conds: list[dict[str, Any]] = []
     base = prefix_query(pfx)
@@ -87,35 +87,19 @@ def build_query(pfx: str, name: str | None, iname: str | None,
             if rx is None:
                 continue
             regex: dict[str, Any] = {
-                "$regex": f"^{escaped}(.*/)?{rx}/?$",
+                "$regex": f"^{escaped}(.*/)?{rx}$",
             }
             if options:
                 regex["$options"] = options
             conds.append({"filename": regex})
-        if type == "f":
-            conds.append({"filename": {"$not": {"$regex": "/$"}}})
-        elif type == "d":
-            conds.append({"filename": {"$regex": "/$"}})
+        conds.append({"filename": {"$not": {"$regex": "/$"}}})
         if min_size is not None or max_size is not None:
             size_cond: dict[str, Any] = {}
             if min_size is not None:
                 size_cond["$gte"] = min_size
             if max_size is not None:
                 size_cond["$lte"] = max_size
-            # Directory markers ride through; the client-side
-            # dirs-count-as-0 rule decides their fate.
-            conds.append({
-                "$or": [
-                    {
-                        "length": size_cond
-                    },
-                    {
-                        "filename": {
-                            "$regex": "/$"
-                        }
-                    },
-                ]
-            })
+            conds.append({"length": size_cond})
     if not conds:
         return {}
     if len(conds) == 1:
@@ -207,8 +191,8 @@ async def _iter_query(conn: GridFSAccessor,
 
 def _find_tree(conn: GridFSAccessor, pfx: str,
                hints: FindHints) -> tuple[AsyncIterator[TreeEntry], bool]:
-    query = build_query(pfx, hints.name, hints.iname, hints.type,
-                        hints.min_size, hints.max_size, hints.pushdown)
+    query = build_query(pfx, hints.name, hints.iname, hints.min_size,
+                        hints.max_size, hints.pushdown)
     return _iter_query(conn, query), query != prefix_query(pfx)
 
 

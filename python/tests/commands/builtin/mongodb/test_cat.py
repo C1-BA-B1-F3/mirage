@@ -33,6 +33,15 @@ def accessor():
         uri="mongodb://localhost:27017"))
 
 
+@pytest.fixture(autouse=True)
+def visible_collections(monkeypatch):
+    # The documents stream proves its collection through the entity guard
+    # before it queries it; these tests are about streaming, so the
+    # catalog says yes.
+    monkeypatch.setattr("mirage.core.mongodb.readdir.entity_exists",
+                        AsyncMock(return_value=True))
+
+
 def _path(s: str = "/db1/collections/coll1/documents.jsonl") -> PathSpec:
     return PathSpec(virtual=s, directory=s, vfs_path=s.strip("/"))
 

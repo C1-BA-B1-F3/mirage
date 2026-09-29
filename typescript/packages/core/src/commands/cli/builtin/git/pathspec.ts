@@ -15,6 +15,7 @@
 import { posixNormpath } from '../../../../utils/path.ts'
 import { OutsideRepositoryError } from './errors.ts'
 import type { RepoLocation } from './types.ts'
+import { rstripSlash } from '../../../../utils/slash.ts'
 
 /**
  * The virtual path a path operand names.
@@ -37,17 +38,19 @@ function absoluteOperand(start: string, operand: string): string {
  * A path operand as a repository-relative path.
  *
  * Empty string for the working tree root itself, which is what `git add .` from
- * the top resolves to and means "everything".
+ * the top resolves to and means "everything". Git uses the work tree as the
+ * base when invoked from outside it, as with --git-dir and --work-tree.
  *
  * @param location the discovered repository
  * @param start absolute virtual path git is running in
  * @param operand the operand as the user spelled it
  */
 export function repoRelative(location: RepoLocation, start: string, operand: string): string {
-  const absolute = absoluteOperand(start, operand)
-  const root = location.worktree.replace(/\/+$/, '') || '/'
-  if (absolute === root) return ''
+  const root = rstripSlash(location.worktree) || '/'
   const prefix = root.endsWith('/') ? root : `${root}/`
+  const base = start === root || start.startsWith(prefix) ? start : root
+  const absolute = absoluteOperand(base, operand)
+  if (absolute === root) return ''
   if (!absolute.startsWith(prefix)) throw new OutsideRepositoryError(operand, root)
   return absolute.slice(prefix.length)
 }

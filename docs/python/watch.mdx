@@ -92,7 +92,7 @@ path's cache entries, and every cached ancestor listing up to the mount root,
 
 Your service hosts the endpoint; mirage opens no socket and runs no watcher.
 What arrives is the provider's own payload, and turning that into a path is
-the only real work. Three backends ship a mapper for it:
+the only real work. Four backends ship a mapper for it:
 
 ```python
 from mirage.core.slack.watch import SlackEventHook
@@ -116,6 +116,7 @@ buy nothing.
 | Slack | `mirage.core.slack.watch.SlackEventHook` | Events API delivery (inner `event` object) |
 | Disk | `mirage.core.disk.watch.DiskEventHook` | watchdog `FileSystemEvent` fields (`src_path`, `dest_path`) |
 | Redis | `mirage.core.redis.watch.RedisEventHook` | keyspace notification (`__keyevent@N__:<verb>`, the key) |
+| Box | `mirage.core.box.watch.BoxEventHook` | one `/events` entry, read after the long poll (`realtime_server`) answers `new_change` |
 
 A mapper answers with zero or more `FileEvent`s and never invents a path it
 was not told about. When a notification names only a scope, it returns

@@ -42,6 +42,13 @@ real engine: `console.log` and the `print` global append a newline,
 (write stderr with `std.err.puts`). These match the Python `quickjs`
 runtime, so a script behaves the same in both languages.
 
+Relative paths start at the Mirage session's working directory. Direct
+`run()` calls can override it with `RunArgs.cwd`; one-shot `eval()` calls
+inherit the current workspace directory. `os.getcwd()` returns
+`[directory, 0]`, and `os.chdir(path)` returns `0` or negative WASI errno.
+A guest directory change lasts for that execution and leaves the Mirage
+session and host process directories unchanged.
+
 ## Modules
 
 A `.mjs` file runs as an ES module automatically (top-level

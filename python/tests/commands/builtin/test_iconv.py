@@ -61,3 +61,17 @@ def test_iconv_output_path_writes_file():
     assert io.exit_code == 0
     stdout, _ = _run_raw(ws, "cat /data/out.txt")
     assert _bytes(stdout).strip() != b""
+
+
+def test_a_read_only_mount_runs_iconv_to_stdout_and_refuses_its_output_file():
+    vfs = RAMVFS()
+    vfs._store.files["/in.txt"] = b"caf\xe9\n"
+    ws = Workspace({"/ro/": (vfs, MountMode.READ)})
+    stdout, io = _run_raw(ws, "iconv -f latin1 -t utf-8 /ro/in.txt")
+    assert (io.exit_code, _bytes(stdout)) == (0, "café\n".encode())
+    stdout, io = _run_raw(ws, "cd /ro && iconv -f latin1 -t utf-8 < in.txt")
+    assert (io.exit_code, _bytes(stdout)) == (0, "café\n".encode())
+    _, io = _run_raw(ws, "iconv -f latin1 -t utf-8 -o /ro/out.txt /ro/in.txt")
+    assert io.exit_code == 1
+    assert io.stderr == b"iconv: /ro/out.txt: Read-only file system\n"
+    assert sorted(vfs._store.files) == ["/in.txt"]

@@ -95,3 +95,49 @@ describe('gdrive stat parent refresh', () => {
     ).rejects.toThrow(/drive unavailable/)
   })
 })
+
+describe('the token stat stamps', () => {
+  const STAMP = '2026-04-01T00:00:00.000Z'
+
+  async function statWith(extra: Record<string, unknown>, resourceType = 'gdrive/file') {
+    const index = new RAMIndexCacheStore()
+    await index.setDir('/', [
+      [
+        'report.pdf',
+        new IndexEntry({
+          id: 'f1',
+          name: 'report',
+          resourceType,
+          remoteTime: STAMP,
+          vfsName: 'report.pdf',
+          extra,
+        }),
+      ],
+    ])
+    return stat(
+      makeAccessor(),
+      new PathSpec({ vfsPath: 'report.pdf', virtual: '/report.pdf', directory: '/report.pdf' }),
+      index,
+    )
+  }
+
+  it('prefers the md5', async () => {
+    const st = await statWith({ md5_checksum: 'abc', head_revision_id: 'r3' })
+    expect(st.fingerprint).toBe('abc')
+  })
+
+  it('falls to the head revision when there is no md5', async () => {
+    const st = await statWith({ head_revision_id: 'r3' })
+    expect(st.fingerprint).toBe('r3')
+  })
+
+  it('stamps nothing for a file with content and neither token', async () => {
+    const st = await statWith({})
+    expect(st.fingerprint).toBeNull()
+  })
+
+  it('stamps a doc by its modified time', async () => {
+    const st = await statWith({}, 'gdrive/gdoc')
+    expect(st.fingerprint).toBe(STAMP)
+  })
+})

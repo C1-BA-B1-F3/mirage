@@ -1,0 +1,29 @@
+---
+title: Airtable
+icon: table
+description: Set up the Airtable CLI with Python or TypeScript.
+---
+
+Create a token in [Airtable setup](/home/setup/airtable), with the write scopes
+the CLI needs, then register it on an existing `ws`. Commands:
+[Python](/python/cli/airtable) · [TypeScript](/typescript/cli/airtable).
+
+<Tabs>
+  <Tab title="Python" icon="/images/python-logo.svg">
+    ```python
+    from mirage.commands.cli.builtin.airtable import AIRTABLE
+    from mirage.vfs.airtable import AirtableConfig
+
+    config = AirtableConfig(token="pat...")
+    ws.register_cli("airtable", AIRTABLE, config.model_dump())
+    ```
+  </Tab>
+  <Tab title="TypeScript" icon="/images/typescript-logo.svg">
+    ```typescript
+    import { AIRTABLE } from '@struktoai/mirage-core'
+
+    const config = { token: 'pat...' }
+    ws.registerCli('airtable', AIRTABLE, config)
+    ```
+  </Tab>
+</Tabs>

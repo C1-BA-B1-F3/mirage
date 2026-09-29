@@ -101,6 +101,7 @@ export interface Matched<C> {
 export class Router<C> {
   private readonly routes: KitRoute<C>[]
   private readonly queues = new Map<string, Promise<unknown>>()
+  private readonly readers = new Map<string, Set<Promise<unknown>>>()
 
   constructor(routes: KitRoute<C>[]) {
     this.routes = routes
@@ -134,27 +135,41 @@ export class Router<C> {
   // one, and one file is the state actually shared here.
   enqueue<T>(run: string, work: () => Promise<T> | T): Promise<T> {
     const prior = this.queues.get(run) ?? Promise.resolve()
-    const next = prior.then(work)
-    this.queues.set(
-      run,
-      next.catch(() => null),
+    const readers = [...(this.readers.get(run) ?? [])]
+    const next = Promise.all([prior, ...readers]).then(work)
+    const settled = next.then(
+      () => undefined,
+      () => undefined,
     )
+    this.queues.set(run, settled)
+    void settled.then(() => {
+      if (this.queues.get(run) === settled) this.queues.delete(run)
+    })
     return next
   }
 
-  // A read WAITS for the writes already queued on its run, but does not JOIN
-  // the queue. Both halves matter. Waiting, because every migrated write
-  // handler spans several awaited Prisma calls and the rows are inconsistent
-  // in between: a read that started immediately answered from the middle of
-  // one (probed: a transfer handler observed with 50 of 100 units in flight).
-  // Not joining, because a read is a predecessor for nothing -- two reads
-  // behind the same write still run concurrently, and the next write does not
-  // queue behind them.
-  run(spec: KitRoute<C>, ctx: Ctx<C>): Promise<Reply> {
-    if (spec.write) return this.enqueue(ctx.run, () => spec.handler(ctx))
-    const pending = this.queues.get(ctx.run)
-    if (pending === undefined) return Promise.resolve(spec.handler(ctx))
-    return pending.then(() => spec.handler(ctx))
+  // Reads share a snapshot boundary and run concurrently. A subsequent write
+  // waits for them, so reset/drop cannot close a client still being read.
+  read<T>(run: string, work: () => Promise<T> | T): Promise<T> {
+    const next = (this.queues.get(run) ?? Promise.resolve()).then(work)
+    const settled = next.then(
+      () => undefined,
+      () => undefined,
+    )
+    const readers = this.readers.get(run) ?? new Set<Promise<unknown>>()
+    readers.add(settled)
+    this.readers.set(run, readers)
+    void settled.then(() => {
+      readers.delete(settled)
+      if (readers.size === 0) this.readers.delete(run)
+    })
+    return next
+  }
+
+  // Build clients and other context inside work, after preceding resets and
+  // deletions. Keeping the scheduling decision here makes protocol arms agree.
+  run<T>(run: string, write: boolean, work: () => Promise<T> | T): Promise<T> {
+    return write ? this.enqueue(run, work) : this.read(run, work)
   }
 
   // The pending work on ONE run, for a caller that has to see the effect of an
@@ -165,6 +180,9 @@ export class Router<C> {
   }
 
   async drain(): Promise<void> {
-    await Promise.all([...this.queues.values()])
+    await Promise.all([
+      ...this.queues.values(),
+      ...[...this.readers.values()].flatMap((r) => [...r]),
+    ])
   }
 }

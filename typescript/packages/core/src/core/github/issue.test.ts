@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import type { GitHubTransport } from './client.ts'
+import { GRAPHQL_PATH } from './constants.ts'
 import { commentIssue, editIssue, getIssue, issueFields, listIssueFields } from './issue.ts'
 
 /** A transport that answers each GraphQL request with the next reply. */
@@ -24,7 +25,7 @@ function graphqlTransport(
   return {
     get: () => Promise.reject(new Error('unexpected GET')),
     request: (_method, path, body) => {
-      if (path !== '/graphql') return Promise.reject(new Error(`unexpected ${path}`))
+      if (path !== GRAPHQL_PATH) return Promise.reject(new Error(`unexpected ${path}`))
       sent.push(body as { query: string; variables: Record<string, unknown> })
       return Promise.resolve(replies.shift())
     },

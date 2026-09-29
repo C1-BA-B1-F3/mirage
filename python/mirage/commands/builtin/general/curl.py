@@ -151,6 +151,50 @@ def _dump(lines: list[str], prefix: str = "") -> str:
     return "".join(f"{prefix}{line}{CRLF}" for line in [*lines, ""])
 
 
+def _doubled(hops: list[HttpResponse]) -> str:
+    """The header blocks when -D and -i (or -I) both print to stdout.
+
+    curl writes each header line to the dump as it arrives and then to
+    the output, so on one stream every line comes out twice, one after
+    the other (curl 8.14.1).
+
+    Args:
+        hops (list[HttpResponse]): every response, redirects first.
+    """
+    return "".join(f"{line}{CRLF}{line}{CRLF}" for hop in hops
+                   for line in [*response_lines(hop), ""])
+
+
+def _write_failure(shown: str, exc: Exception) -> str:
+    """Why a write to ``shown`` failed, in curl's exit code 23.
+
+    Deliberate divergence: real curl says "Failed writing received data
+    to disk/application" (or "client returned ERROR on write of N
+    bytes") and drops the cause. A mirage write can fail for reasons a
+    local file cannot (read-only mount, unsupported op), so the exit
+    code matches curl while the message keeps the path and the reason.
+    The refusals whose wording is load-bearing (read-only mount,
+    unsupported op) keep their raw message; an unusable path carries
+    only the path as its message, so it needs the GNU strerror. str()
+    on an OSError renders "[Errno 13] msg: 'path'", so the errno and a
+    python repr would reach stderr; strerror is the message on its own.
+
+    Args:
+        shown (str): the path as the line named it.
+        exc (Exception): the write's failure.
+    """
+    detail = getattr(exc, "strerror", None) or str(exc)
+    if not isinstance(exc, (PermissionError, OperationNotSupportedError)):
+        strerror = fs_strerror(exc)
+        if strerror is not None:
+            detail = strerror
+    return f"curl: ({EXIT_WRITE}) {shown}: {detail}\n"
+
+
+def _path_str(value: PathSpec | str) -> str:
+    return value.virtual if isinstance(value, PathSpec) else value
+
+
 @command("curl", vfs=None, spec=SPECS["curl"])
 async def curl(
     accessor: Accessor,
@@ -165,6 +209,16 @@ async def curl(
     data = fl.as_str("data")
     form = fl.as_str("form")
     output = fl.raw("output")
+    # -D names a file, or stdout as a lone `-`, which the parser leaves
+    # unresolved (STDOUT_DASH_OPTIONS); `./-` is a file.
+    dump_header = fl.raw("dump_header")
+    dump_to_stdout = dump_header == "-" or (isinstance(dump_header, PathSpec)
+                                            and dump_header.raw_path == "-")
+    dump_file = (None if dump_to_stdout
+                 or not isinstance(dump_header,
+                                   (PathSpec, str)) else dump_header)
+    # -k: the server's certificate is not verified.
+    verify = not fl.as_bool("insecure")
     location = fl.as_bool("location")
     verbose = fl.as_bool("verbose")
     include = fl.as_bool("include")
@@ -271,7 +325,8 @@ async def curl(
                                      form_data={key: value},
                                      headers=headers,
                                      timeout=timeout,
-                                     follow_redirects=location)
+                                     follow_redirects=location,
+                                     verify=verify)
         else:
             method = request or ("HEAD" if head else
                                  ("POST" if data else "GET"))
@@ -289,7 +344,8 @@ async def curl(
                                 headers=sent,
                                 data=body,
                                 timeout=timeout,
-                                follow_redirects=location)
+                                follow_redirects=location,
+                                verify=verify)
     except HttpTimeoutError as exc:
         # Nothing was received: the body is read whole, so a deadline
         # that hits mid-transfer still counts as zero bytes here.
@@ -321,18 +377,39 @@ async def curl(
                                   body_type if carries else None), "> "))
             dumped.append(_dump(response_lines(hop), "< "))
         trace = "".join(dumped).encode()
-    # Only -f makes an error status an error, and then nothing is written.
+    # -i, -I and -D all show every hop's header block (curl 8.14.1); the
+    # body a redirect carried is never written, only the final one.
+    blocks = "".join(_dump(response_lines(hop)) for hop in hops).encode()
+    writes: dict[str, ByteSource] = {}
+    # -D writes the headers as they arrive, so before -f judges the
+    # status and before -o writes the body: a file both name ends up
+    # holding the body.
+    if dump_file is not None:
+        if opts.dispatch is not None:
+            try:
+                await opts.dispatch("write",
+                                    resolve_target(dump_file, opts.cwd),
+                                    data=blocks)
+            except WALK_ERRORS as exc:
+                err = b"" if quiet else _write_failure(_path_str(dump_file),
+                                                       exc).encode()
+                return await finish(
+                    None, IOResult(exit_code=EXIT_WRITE, stderr=trace + err),
+                    resp)
+        writes[_path_str(dump_file)] = blocks
+    header_out = blocks if dump_to_stdout else None
+    # Only -f makes an error status an error, and then no body is
+    # written; the headers -D already dumped stay dumped.
     if fl.as_bool("fail") and resp.is_error:
         err = b"" if quiet else (
             f"curl: ({EXIT_HTTP_ERROR}) The requested URL returned error: "
             f"{resp.status}\n").encode()
         return await finish(
-            None, IOResult(exit_code=EXIT_HTTP_ERROR, stderr=trace + err),
-            resp)
+            header_out,
+            IOResult(exit_code=EXIT_HTTP_ERROR,
+                     stderr=trace + err,
+                     writes=writes), resp)
     result = resp.body
-    # -i and -I print every hop's header block (curl 8.7.1); the body a
-    # redirect carried is never written, only the final one.
-    blocks = "".join(_dump(response_lines(hop)) for hop in hops).encode()
     if head:
         # -I prints the headers alone, whatever method -X made it send.
         result = blocks
@@ -340,7 +417,7 @@ async def curl(
         result = blocks + result
     if isinstance(output, (PathSpec, str)) and (output.raw_path if isinstance(
             output, PathSpec) else output) != "-":
-        o_str = output.virtual if isinstance(output, PathSpec) else output
+        o_str = _path_str(output)
         if opts.dispatch is not None:
             scope = resolve_target(output, opts.cwd)
             try:
@@ -350,31 +427,19 @@ async def curl(
             # so a missing parent cannot escape the way it did when this caught
             # only three types.
             except WALK_ERRORS as exc:
-                # Deliberate divergence: real curl says "client returned ERROR
-                # on write of N bytes" and drops the cause. A mirage write can
-                # fail for reasons a local file cannot (read-only mount,
-                # unsupported op), so the exit code matches curl while the
-                # message keeps the path and the reason.
-                #
-                # The refusals whose wording is load-bearing (read-only mount,
-                # unsupported op) keep their raw message; an unusable path
-                # carries only the path as its message, so it needs the GNU
-                # strerror.
-                # str() on an OSError renders "[Errno 13] msg: 'path'", so the
-                # errno and a python repr would reach stderr; strerror is the
-                # message on its own.
-                detail = getattr(exc, "strerror", None) or str(exc)
-                if not isinstance(
-                        exc, (PermissionError, OperationNotSupportedError)):
-                    strerror = fs_strerror(exc)
-                    if strerror is not None:
-                        detail = strerror
-                err = b"" if quiet else (
-                    f"curl: ({EXIT_WRITE}) {o_str}: {detail}\n").encode()
+                err = b"" if quiet else _write_failure(o_str, exc).encode()
                 return await finish(
-                    None, IOResult(exit_code=EXIT_WRITE, stderr=trace + err),
-                    resp)
-        # Real curl writes the body to the file and prints nothing on stdout.
-        return await finish(None, IOResult(writes={o_str: result},
-                                           stderr=trace), resp)
-    return await finish(result, IOResult(stderr=trace), resp)
+                    header_out,
+                    IOResult(exit_code=EXIT_WRITE,
+                             stderr=trace + err,
+                             writes=writes), resp)
+        writes[o_str] = result
+        # Real curl writes the body to the file and prints nothing else
+        # on stdout, the headers -D sends there aside.
+        return await finish(header_out, IOResult(writes=writes, stderr=trace),
+                            resp)
+    if dump_to_stdout and (head or include):
+        result = _doubled(hops).encode() + (b"" if head else resp.body)
+    elif dump_to_stdout:
+        result = blocks + result
+    return await finish(result, IOResult(writes=writes, stderr=trace), resp)

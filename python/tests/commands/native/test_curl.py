@@ -50,7 +50,8 @@ def _stub(monkeypatch, resp=None, exc=None) -> list[dict]:
              headers=None,
              data=None,
              timeout=30,
-             follow_redirects=False):
+             follow_redirects=False,
+             verify=True):
         calls.append({
             "url": url,
             "method": method,
@@ -58,6 +59,7 @@ def _stub(monkeypatch, resp=None, exc=None) -> list[dict]:
             "data": data,
             "timeout": timeout,
             "follow_redirects": follow_redirects,
+            "verify": verify,
         })
         if exc is not None:
             raise exc
@@ -222,7 +224,8 @@ def test_form_field_uses_the_form_helper(monkeypatch):
                   form_data=None,
                   headers=None,
                   timeout=30,
-                  follow_redirects=False):
+                  follow_redirects=False,
+                  verify=True):
         calls.append({"url": url, "method": method, "form_data": form_data})
         return _ok(b"form ok")
 
@@ -491,3 +494,98 @@ def test_include_with_output_writes_headers_and_body(monkeypatch):
     assert io.writes == {
         "/tmp/out.txt": (RESPONSE_DUMP + "hello body").encode()
     }
+
+
+# -D/--dump-header and -k/--insecure, pinned against curl 8.14.1 in
+# debian:stable-slim. The header block is the one -i prints, with its
+# documented divergences (lowercase sorted names, HTTP/1.1).
+
+
+def test_dump_header_dash_prints_the_headers_before_the_body(monkeypatch):
+    _stub(monkeypatch)
+    body, io = _run("http://x.test/f", dump_header="-")
+    assert body.decode() == RESPONSE_DUMP + "hello body"
+    assert io.writes == {}
+
+
+def test_dump_header_file_gets_the_headers_and_stdout_the_body(monkeypatch):
+    _stub(monkeypatch)
+    body, io = _run("http://x.test/f", dump_header="/tmp/h")
+    assert body == b"hello body"
+    assert io.writes == {"/tmp/h": RESPONSE_DUMP.encode()}
+
+
+def test_dump_header_file_is_written_through_the_door(monkeypatch):
+    _stub(monkeypatch)
+    written: list[tuple[str, bytes]] = []
+
+    async def door(op, scope, **kwargs):
+        written.append((scope.virtual, kwargs["data"]))
+
+    body, io = _run("http://x.test/f", dump_header="/tmp/h", dispatch=door)
+    assert body == b"hello body"
+    assert written == [("/tmp/h", RESPONSE_DUMP.encode())]
+    assert io.exit_code == 0
+
+
+def test_dump_header_dash_with_output_leaves_only_headers_on_stdout(
+        monkeypatch):
+    _stub(monkeypatch)
+    body, io = _run("http://x.test/f", dump_header="-", output="/tmp/b")
+    assert body.decode() == RESPONSE_DUMP
+    assert io.writes == {"/tmp/b": b"hello body"}
+
+
+def test_dump_header_and_output_naming_one_file_leave_the_body(monkeypatch):
+    _stub(monkeypatch)
+    _body, io = _run("http://x.test/f", dump_header="/tmp/x", output="/tmp/x")
+    assert io.writes == {"/tmp/x": b"hello body"}
+
+
+@pytest.mark.parametrize("flag,tail", [("include", "hello body"),
+                                       ("head", "")])
+def test_dump_header_dash_beside_include_prints_each_line_twice(
+        monkeypatch, flag, tail):
+    _stub(monkeypatch)
+    body, _io = _run("http://x.test/f", dump_header="-", **{flag: True})
+    lines = RESPONSE_DUMP.split("\r\n")[:-1]
+    assert body.decode() == "".join(f"{line}\r\n{line}\r\n"
+                                    for line in lines) + tail
+
+
+def test_dump_header_with_location_dumps_every_hop(monkeypatch):
+    _stub(monkeypatch, resp=_redirected())
+    body, _io = _run("http://x.test/r", location=True, dump_header="-")
+    assert body.decode() == HOP_DUMP + RESPONSE_DUMP + "hello body"
+
+
+def test_dump_header_survives_fail(monkeypatch):
+    _stub(monkeypatch, resp=_ok(b"not found", 404, "Not Found"))
+    body, io = _run("http://x.test/missing",
+                    dump_header="-",
+                    fail=True,
+                    silent=True)
+    assert io.exit_code == 22
+    assert body == (b"HTTP/1.1 404 Not Found\r\ncontent-length: 10\r\n"
+                    b"content-type: text/plain\r\n\r\n")
+
+
+def test_dump_header_write_failure_is_exit_23(monkeypatch):
+    _stub(monkeypatch)
+
+    async def boom(op, scope, **kwargs):
+        raise FileNotFoundError("/tmp/nope/h")
+
+    body, io = _run("http://x.test/f",
+                    dump_header="/tmp/nope/h",
+                    dispatch=boom)
+    assert io.exit_code == 23
+    assert body == b""
+    assert io.stderr == b"curl: (23) /tmp/nope/h: No such file or directory\n"
+
+
+def test_insecure_turns_certificate_verification_off(monkeypatch):
+    calls = _stub(monkeypatch)
+    _run("https://x.test/f")
+    _run("https://x.test/f", insecure=True)
+    assert [call["verify"] for call in calls] == [True, False]

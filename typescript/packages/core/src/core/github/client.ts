@@ -16,7 +16,7 @@ import { Octokit } from '@octokit/core'
 import { RequestError } from '@octokit/request-error'
 import { retry } from '@octokit/plugin-retry'
 import { throttling } from '@octokit/plugin-throttling'
-import { SEARCH_PAGE_SIZE } from './constants.ts'
+import { GRAPHQL_PATH, SEARCH_PAGE_SIZE } from './constants.ts'
 
 export const GITHUB_API_BASE = 'https://api.github.com'
 export const GITHUB_API_VERSION = '2022-11-28'
@@ -69,6 +69,27 @@ function escapeRoute(path: string): string {
   return query < 0
     ? escaped
     : escaped.slice(0, query + 1) + escaped.slice(query + 1).replace(/:/g, '%3A')
+}
+
+/**
+ * The GraphQL endpoint of the install whose REST base is `baseUrl`.
+ *
+ * gh pairs the two by host (internal/ghinstance, GraphQLEndpoint and
+ * RESTPrefix): github.com serves REST at https://api.github.com/ and GraphQL
+ * at https://api.github.com/graphql, while a GitHub Enterprise Server serves
+ * REST at https://HOST/api/v3/ and GraphQL at https://HOST/api/graphql, which
+ * is not under the REST base. Octokit's own graphql client draws the same
+ * line.
+ *
+ * Args:
+ *   baseUrl (string): the REST base the install is configured with.
+ *
+ * Returns:
+ *   string: the URL GraphQL queries are posted to.
+ */
+export function graphqlUrl(baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, '')
+  return base.endsWith('/api/v3') ? `${base.slice(0, -'/v3'.length)}/graphql` : `${base}/graphql`
 }
 
 export class HttpGitHubTransport implements GitHubTransport {
@@ -127,9 +148,11 @@ export class HttpGitHubTransport implements GitHubTransport {
       // collide with a transport option. A call with neither sends no body
       // at all, which is what a bare DELETE has to look like on the wire.
       const query = new URLSearchParams(params ?? {}).toString()
+      const target = path === GRAPHQL_PATH ? graphqlUrl(this.baseUrl) : path
       const r = await this.kit.request({
         method: method.toUpperCase(),
-        url: escapeRoute(path) + (query === '' ? '' : `${path.includes('?') ? '&' : '?'}${query}`),
+        url:
+          escapeRoute(target) + (query === '' ? '' : `${target.includes('?') ? '&' : '?'}${query}`),
         headers: { 'X-GitHub-Api-Version': GITHUB_API_VERSION, ...headers },
         request: {
           fetch: async (input: RequestInfo | URL, init?: RequestInit) => {

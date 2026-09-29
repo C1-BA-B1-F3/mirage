@@ -518,6 +518,77 @@ describe('curl option surface (#1065)', () => {
   })
 })
 
+// -D/--dump-header and -k/--insecure, pinned against curl 8.14.1 in
+// debian:stable-slim. The header block is the one -i prints, with its
+// documented divergences (lowercase sorted names, HTTP/1.1).
+describe('curl -D and -k', () => {
+  const original = globalThis.fetch
+  afterEach(() => {
+    globalThis.fetch = original
+  })
+
+  it('-D - prints the headers before the body', async () => {
+    mockFetch('hello body')
+    const r = await runCurl(['http://x.test/f'], { dump_header: '-' })
+    expect(r.out).toBe(`${RESPONSE_DUMP}hello body`)
+    expect(r.writes).toEqual({})
+  })
+
+  it('-D FILE gets the headers and stdout the body', async () => {
+    mockFetch('hello body')
+    const r = await runCurl(['http://x.test/f'], { dump_header: '/tmp/h' })
+    expect(r.out).toBe('hello body')
+    expect(DEC.decode(r.writes['/tmp/h'] as Uint8Array)).toBe(RESPONSE_DUMP)
+  })
+
+  it('-D - with -o leaves only the headers on stdout', async () => {
+    mockFetch('hello body')
+    const r = await runCurl(['http://x.test/f'], { dump_header: '-', output: '/tmp/b' })
+    expect(r.out).toBe(RESPONSE_DUMP)
+    expect(DEC.decode(r.writes['/tmp/b'] as Uint8Array)).toBe('hello body')
+  })
+
+  it('-D and -o naming one file leave the body in it', async () => {
+    mockFetch('hello body')
+    const r = await runCurl(['http://x.test/f'], { dump_header: '/tmp/x', output: '/tmp/x' })
+    expect(DEC.decode(r.writes['/tmp/x'] as Uint8Array)).toBe('hello body')
+  })
+
+  it.each([
+    ['include', 'hello body'],
+    ['head', ''],
+  ])('-D - beside --%s prints each header line twice', async (flag, tail) => {
+    mockFetch('hello body')
+    const r = await runCurl(['http://x.test/f'], { dump_header: '-', [flag]: true })
+    const lines = RESPONSE_DUMP.split('\r\n').slice(0, -1)
+    expect(r.out).toBe(lines.map((line) => `${line}\r\n${line}\r\n`).join('') + tail)
+  })
+
+  it('-D - with -L dumps every hop', async () => {
+    mockRedirect()
+    const r = await runCurl(['http://x.test/r'], { location: true, dump_header: '-' })
+    expect(r.out).toBe(HOP_DUMP + RESPONSE_DUMP + 'hello body')
+  })
+
+  it('-D - keeps the headers when -f refuses the status', async () => {
+    mockFetch('not found', 404)
+    const r = await runCurl(['http://x.test/missing'], {
+      dump_header: '-',
+      fail: true,
+      silent: true,
+    })
+    expect(r.exitCode).toBe(22)
+    expect(r.out).toBe('HTTP/1.1 404 OK\r\ncontent-length: 10\r\ncontent-type: text/plain\r\n\r\n')
+  })
+
+  it('accepts --insecure', async () => {
+    mockFetch('hello body')
+    const r = await runCurl(['https://x.test/f'], { insecure: true })
+    expect(r.exitCode).toBe(0)
+    expect(r.out).toBe('hello body')
+  })
+})
+
 describe('responseLines header order', () => {
   // The headers print sorted by name. GNU `sort` orders by byte, which is
   // code-point order: 'z', then U+FFFD, then U+1D11E. A `<`/`>` comparator

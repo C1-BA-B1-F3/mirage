@@ -1,7 +1,7 @@
 import pytest
 
 from mirage.shell.arith import evaluate_arith
-from mirage.shell.errors import ArithError
+from mirage.shell.errors import ArithError, UnboundVariable
 from mirage.shell.types import ArithResult, ElementOps
 
 
@@ -230,3 +230,41 @@ def test_an_indexed_subscript_evaluates_in_the_expression_record():
     # An associative subscript stays a key, never an expression.
     result = evaluate_arith("m[a] + 1", {}, elements=_fake_elements())
     assert result.value == 8 and result.writes == ()
+
+
+# `set -u` for the names an expression reads, pinned on bash 5.2.37: an
+# unset name is fatal, an empty one is 0, an assignment target and a
+# short-circuited operand are never read, and an array name is set
+# whatever its element 0 holds.
+@pytest.mark.parametrize("expr,env", [
+    ("v + 1", {}),
+    ("v++", {}),
+    ("v += 1", {}),
+    ("w", {
+        "w": "v"
+    }),
+])
+def test_nounset_refuses_a_name_no_variable_holds(expr, env):
+    with pytest.raises(UnboundVariable) as info:
+        evaluate_arith(expr, env, nounset=True)
+    assert info.value.stderr == b"bash: v: unbound variable\n"
+    assert (info.value.exit_code, info.value.contained_code) == (127, 1)
+
+
+def test_nounset_reads_what_is_set_and_skips_what_is_never_read():
+    assert evaluate_arith("v", {"v": ""}, nounset=True).value == 0
+    assert evaluate_arith("v = 1, v + 1", {}, nounset=True).value == 2
+    assert evaluate_arith("1 || v", {}, nounset=True).value == 1
+    assert evaluate_arith("0 && v", {}, nounset=True).value == 0
+    assert evaluate_arith("1 ? 2 : v", {}, nounset=True).value == 2
+    base = _fake_elements()
+    ops = ElementOps(resolve=base.resolve,
+                     read=base.read,
+                     is_assoc=base.is_assoc,
+                     holds_array=lambda name: name == "holes")
+    assert evaluate_arith("holes + 1", {}, elements=ops,
+                          nounset=True).value == 1
+
+
+def test_without_nounset_an_unset_name_reads_0():
+    assert evaluate_arith("v + 1", {}).value == 1

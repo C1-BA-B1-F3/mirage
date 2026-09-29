@@ -425,7 +425,14 @@ export async function fanOutTraversal(
       const result = await rgGeneric(
         flatten([...paths]),
         [...texts],
-        { ...crossOpts(flagKwargs), cwd, stdin, ...(signal !== undefined ? { signal } : {}) },
+        {
+          ...crossOpts(flagKwargs),
+          cwd,
+          stdin,
+          ...(signal !== undefined ? { signal } : {}),
+          ...(ns === undefined ? {} : { ns }),
+          dispatch,
+        },
         statOp(dispatch),
         readdirOp(dispatch),
         streamOp(dispatch),
@@ -466,6 +473,7 @@ export async function fanOutTraversal(
         ...(signal === undefined ? {} : { signal }),
         ...(ns === undefined ? {} : { ns }),
         ...(statPath === null ? {} : { statPath }),
+        ...(dispatch === undefined ? {} : { dispatch }),
       })
     const runOperand = runWithFanout(
       runSingle,
@@ -637,6 +645,7 @@ export async function fanOutTraversal(
         ...(signal === undefined ? {} : { signal }),
         ...(ns === undefined ? {} : { ns }),
         ...(statPath !== null ? { statPath } : {}),
+        ...(dispatch === undefined ? {} : { dispatch }),
       })
     } catch (err) {
       // A usage error belongs to the line, not to one mount: the

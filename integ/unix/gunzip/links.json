@@ -1,0 +1,320 @@
+{
+  "cases": [
+    {
+      "id": "gunzip_refuses_a_link_it_would_replace",
+      "seq": 1311001,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/gzl131101 && printf 'hi\\n' | gzip > /data/gzl131101/t.gz && ln -s t.gz /data/gzl131101/tl.gz && gunzip /data/gzl131101/tl.gz; echo rc=$?; ls /data/gzl131101; rc=$?; rm -r /data/gzl131101; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nt.gz\ntl.gz\n",
+        "stderr": "gzip: /data/gzl131101/tl.gz: Too many levels of symbolic links\n"
+      }
+    },
+    {
+      "id": "gunzip_c_reads_through_a_link",
+      "seq": 1311002,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/gzl131102 && printf 'hi\\n' | gzip > /data/gzl131102/t.gz && ln -s t.gz /data/gzl131102/tl.gz && gunzip -c /data/gzl131102/tl.gz && gunzip -t /data/gzl131102/tl.gz && echo ok; rc=$?; rm -r /data/gzl131102; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\nok\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gunzip_f_decodes_beside_a_link_and_removes_it",
+      "seq": 1311003,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/gzl131103 && printf 'hi\\n' | gzip > /data/gzl131103/t.gz && ln -s t.gz /data/gzl131103/tl.gz && gunzip -f /data/gzl131103/tl.gz && ls /data/gzl131103 && cat /data/gzl131103/tl; rc=$?; rm -r /data/gzl131103; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "t.gz\ntl\nhi\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gunzip_kf_decodes_beside_a_link_and_keeps_it",
+      "seq": 1311004,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/gzl131104 && printf 'hi\\n' | gzip > /data/gzl131104/t.gz && ln -s t.gz /data/gzl131104/tl.gz && gunzip -kf /data/gzl131104/tl.gz && ls /data/gzl131104; rc=$?; rm -r /data/gzl131104; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "t.gz\ntl\ntl.gz\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gunzip_refuses_a_link_its_retry_found",
+      "seq": 1311005,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/gzl131105 && printf 'hi\\n' | gzip > /data/gzl131105/t.gz && ln -s t.gz /data/gzl131105/x.gz && gunzip /data/gzl131105/x; echo rc=$?; gunzip -c /data/gzl131105/x; rc=$?; rm -r /data/gzl131105; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\nhi\n",
+        "stderr": "gzip: /data/gzl131105/x.gz: Too many levels of symbolic links\n"
+      }
+    },
+    {
+      "id": "gunzip_counts_a_link_at_the_output_as_taken",
+      "seq": 1311006,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/gzl131106 && printf 'hi\\n' | gzip > /data/gzl131106/t.gz && ln -s nowhere /data/gzl131106/t && gunzip /data/gzl131106/t.gz; echo rc=$?; gunzip -f /data/gzl131106/t.gz && ls /data/gzl131106 && cat /data/gzl131106/t; rc=$?; rm -r /data/gzl131106; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=2\nt\nhi\n",
+        "stderr": "gzip: /data/gzl131106/t already exists;\tnot overwritten\n"
+      }
+    },
+    {
+      "id": "gzip_refuses_a_link_it_would_replace",
+      "seq": 1311007,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/gzl131107 && printf 'hi\\n' > /data/gzl131107/a && ln -s a /data/gzl131107/al && gzip /data/gzl131107/al; echo rc=$?; ls /data/gzl131107; rc=$?; rm -r /data/gzl131107; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "rc=1\na\nal\n",
+        "stderr": "gzip: /data/gzl131107/al: Too many levels of symbolic links\n"
+      }
+    },
+    {
+      "id": "gzip_f_compresses_beside_a_link_and_removes_it",
+      "seq": 1311008,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/gzl131108 && printf 'hi\\n' > /data/gzl131108/a && ln -s a /data/gzl131108/al && gzip -f /data/gzl131108/al && ls /data/gzl131108 && gunzip -c /data/gzl131108/al.gz; rc=$?; rm -r /data/gzl131108; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "a\nal.gz\nhi\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "gzip_refuses_a_dangling_link",
+      "seq": 1311009,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(ln -s nowhere /data/gzd1311 && gzip /data/gzd1311; echo rc=$?; gzip -q /data/gzd1311; rc=$?; rm /data/gzd1311; exit $rc)",
+      "expect": {
+        "exit": 1,
+        "stdout": "rc=1\n",
+        "stderr": "gzip: /data/gzd1311: Too many levels of symbolic links\ngzip: /data/gzd1311: Too many levels of symbolic links\n"
+      }
+    },
+    {
+      "id": "gunzip_names_a_file_given_a_trailing_slash",
+      "seq": 1311010,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "gunzip -c /data/a.txt/",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "gzip: /data/a.txt/: Not a directory\n"
+      }
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import dataclasses
 from collections.abc import Sequence
 
 from mirage.commands.builtin.find_parse import find_expr_tail
+from mirage.commands.builtin.generic.program import FILE_KEYS
 from mirage.commands.cli.walk import walk
 from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
@@ -102,14 +103,8 @@ def path_flag_scopes(cmd_name: str, argv: list[str],
     if spec is None:
         return []
     parsed = parse_command(spec, argv, cwd, cmd_name)
-    key = {
-        "grep": "--file",
-        "rg": "--file",
-        "sed": "-f",
-        "awk": "-f",
-        "jq": "--from-file"
-    }.get(cmd_name)
-    program = parsed.flags.get(key) if key is not None else None
+    key = FILE_KEYS.get(cmd_name)
+    program = parse_to_kwargs(parsed).get(key) if key is not None else None
     program_paths = program if isinstance(program, list) else [program]
     flag_paths = list(parsed.path_flag_values)
     for value in program_paths:

@@ -42,8 +42,10 @@ import { rstripSlash } from '../../../utils/slash.ts'
  * purpose: the mount stamps the backend key on every path at execute
  * time (`Mount.executeCmd`), so a parse-time stamp is dead weight —
  * proven in both languages by running the full suite with this field
- * set to a sentinel. Mirrors `synthesize_path_spec` in the Python
- * executor.
+ * set to a sentinel. The empty name, which only an attached value can
+ * spell (`--file=`), names nothing, however it resolved: its walk answers
+ * ENOENT, as a typed '' operand's does. Mirrors `synthesize_path_spec` in
+ * the Python executor.
  */
 function synthesizePathSpec(value: string, rawPath = value): PathSpec {
   const slash = value.lastIndexOf('/')
@@ -53,6 +55,7 @@ function synthesizePathSpec(value: string, rawPath = value): PathSpec {
     rawPath,
     directory: slash >= 0 ? value.slice(0, slash + 1) : '/',
     resolved: true,
+    walkError: rawPath === '' ? 'ENOENT' : null,
   })
 }
 

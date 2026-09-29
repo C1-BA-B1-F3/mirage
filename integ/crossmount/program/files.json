@@ -503,6 +503,118 @@
         "stdout": "",
         "stderr": "sed: couldn't open file /data2/opt1199/missing: No such file or directory\n"
       }
+    },
+    {
+      "id": "program_file_zgrep_cross",
+      "seq": 1311018,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; zgrep -f /data2/opt1311/pattern /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "world\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_zgrep_missing",
+      "seq": 1311019,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; zgrep -f /data2/opt1311/missing /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "cat: /data2/opt1311/missing: No such file or directory\n"
+      }
+    },
+    {
+      "id": "program_file_zgrep_dir",
+      "seq": 1311020,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; zgrep -f /data2/opt1311 /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "cat: /data2/opt1311: Is a directory\n"
+      }
+    },
+    {
+      "id": "program_file_grep_dir",
+      "seq": 1311021,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; grep -f /data2/opt1311 /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "grep: /data2/opt1311: Is a directory\n"
+      }
+    },
+    {
+      "id": "program_file_rg_dir",
+      "seq": 1311022,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; rg -f /data2/opt1311 /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "rg: /data2/opt1311:Is a directory (os error 21)\n"
+      }
+    },
+    {
+      "id": "program_file_sed_dir",
+      "seq": 1311023,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; sed -f /data2/opt1311 /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "hello\nworld\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "program_file_awk_dir",
+      "seq": 1311024,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; awk -f /data2/opt1311 /data/opt1311/input; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "awk: read error (Is a directory)\n"
+      }
+    },
+    {
+      "id": "program_file_jq_dir",
+      "seq": 1311025,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "(mkdir -p /data/opt1311 /data2/opt1311; printf 'hello\\nworld\\n' > /data/opt1311/input; echo '{\"a\":1}' > /data/opt1311/input.json; printf 'wor\\n' > /data2/opt1311/pattern; jq --from-file /data2/opt1311 /data/opt1311/input.json; rc=$?; rm -rf /data/opt1311 /data2/opt1311; exit $rc)",
+      "expect": {
+        "exit": 2,
+        "stdout": "",
+        "stderr": "jq: Could not open /data2/opt1311: It's a directory\n"
+      }
     }
   ]
 }

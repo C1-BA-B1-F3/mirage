@@ -18,9 +18,9 @@ import { type Builder, resolveGlobOf } from '../adapter.ts'
 export const CMP_BUILDER: Builder = {
   name: 'cmp',
   read: true,
-  fn: async (ops, accessor, paths, _texts, opts) => {
+  fn: async (ops, accessor, paths, texts, opts) => {
     const idx = opts.index ?? undefined
     const resolved = paths.length > 0 ? await resolveGlobOf(ops)(accessor, paths, idx) : []
-    return cmpGeneric(resolved, opts, (p) => ops.readStream(accessor, p, idx))
+    return cmpGeneric(resolved, texts, opts, (p) => ops.readStream(accessor, p, idx))
   },
 }

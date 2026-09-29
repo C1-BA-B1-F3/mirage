@@ -30,8 +30,16 @@ import {
   ERROR_TRAILER,
   FATAL_TRAILER,
   INVALID_ARCHIVE,
+  MODE_CONFLICT,
+  MULTIPLE_ARCHIVES,
+  NO_MODE,
+  STRIP_COUNT,
   TAPE_START,
+  USAGE_HINT,
 } from './tar/constants.ts'
+import { C_SPACE, UINTMAX } from '../constants.ts'
+import { UsageError } from '../../errors.ts'
+import type { FlagValue } from '../../spec/types.ts'
 import { planCreate, type DirProbe, type StatFn, type WalkFn } from './tar/create.ts'
 import {
   eisdir,
@@ -148,12 +156,84 @@ function detectCompression(data: Uint8Array): Compression {
   return null
 }
 
-function compressionOf(opts: CommandOpts): Compression {
-  const fl = new FlagView(opts.flags, specOf('tar'))
-  if (fl.asBool('z')) return 'gzip'
-  if (fl.asBool('j')) return 'bzip2'
-  if (fl.asBool('J')) return 'xz'
-  return null
+/** tar's flags as argp read them. Mirrors Python's TarFlags. */
+export interface TarFlags {
+  create: boolean
+  extract: boolean
+  list: boolean
+  compression: Compression
+  verbose: boolean
+  dereference: boolean
+  toStdout: boolean
+  // The -f value as a string, and the word that spelled it.
+  archive: string | null
+  archiveOperand: PathSpec | undefined
+  // Every -C value, in order, and the words that spelled them.
+  directories: string[]
+  directoryOperands: PathSpec[]
+  stripComponents: number
+  exclude: string | null
+}
+
+const MODES = ['create', 'extract', 'list'] as const
+const STRIP_COUNT_PATTERN = new RegExp(`^${C_SPACE}\\+?([0-9]+)$`)
+
+/**
+ * A --strip-components value as tar reads it, or tar's refusal: xstrtoumax
+ * at base 10 with no suffix, so leading blanks and one `+` pass, a sign,
+ * another letter or a count past UINTMAX does not (tar 1.35). Mirrors
+ * Python's strip_count.
+ */
+export function stripCount(raw: string): number {
+  const digits = STRIP_COUNT_PATTERN.exec(raw)?.[1]
+  if (digits === undefined || BigInt(digits) > UINTMAX) {
+    throw new UsageError(`${STRIP_COUNT.replace('{}', raw)}\n${USAGE_HINT}`, CREATE_ERROR_EXIT)
+  }
+  return Number(digits)
+}
+
+/**
+ * tar's flags as argp reads them, refusing what tar refuses. argp meets the
+ * options in line order and stops at the first it refuses: a second main
+ * operation where one is already set, or a --strip-components value that is
+ * no count. After the scan, more than one archive is refused without -M,
+ * which mirage does not have (tar 1.35). Mirrors Python's parse_flags.
+ */
+export function parseTarFlags(bag: Record<string, FlagValue>): TarFlags {
+  const fl = new FlagView(bag, specOf('tar'))
+  let mode: string | null = null
+  let stripComponents = 0
+  for (const [name, value] of fl.occurrences(...MODES, 'strip_components')) {
+    if (name === 'strip_components') stripComponents = stripCount(String(value))
+    else if (mode !== null && name !== mode) {
+      throw new UsageError(`${MODE_CONFLICT}\n${USAGE_HINT}`, CREATE_ERROR_EXIT)
+    } else mode = name
+  }
+  if (fl.occurrences('file').length > 1) {
+    throw new UsageError(`${MULTIPLE_ARCHIVES}\n${USAGE_HINT}`, CREATE_ERROR_EXIT)
+  }
+  const compression: Compression = fl.asBool('gzip')
+    ? 'gzip'
+    : fl.asBool('bzip2')
+      ? 'bzip2'
+      : fl.asBool('xz')
+        ? 'xz'
+        : null
+  return {
+    create: fl.asBool('create'),
+    extract: fl.asBool('extract'),
+    list: fl.asBool('list'),
+    compression,
+    verbose: fl.asBool('verbose'),
+    dereference: fl.asBool('dereference'),
+    toStdout: fl.asBool('to_stdout'),
+    archive: fl.asStr('file') ?? null,
+    archiveOperand: fl.asPaths('file')[0],
+    directories: fl.asList('directory'),
+    directoryOperands: fl.asPaths('directory'),
+    stripComponents,
+    exclude: fl.asStr('exclude') ?? null,
+  }
 }
 
 async function compress(raw: Uint8Array, kind: Compression): Promise<Uint8Array> {
@@ -344,12 +424,8 @@ export async function tarGeneric(
   deps: TarDeps,
   relay = false,
 ): Promise<CommandFnResult> {
-  const fl = new FlagView(opts.flags, specOf('tar'))
-  const create = fl.asBool('c')
-  const extract = fl.asBool('x')
-  const list = fl.asBool('t')
-  const compression = compressionOf(opts)
-  const verbose = fl.asBool('v')
+  const parsed = parseTarFlags(opts.flags)
+  const { create, extract, list, compression, verbose } = parsed
   const missing = unsupportedKind(compression, create)
   if (missing !== null) {
     return [
@@ -357,16 +433,16 @@ export async function tarGeneric(
       new IOResult({ exitCode: 1, stderr: ENC.encode(`tar: ${missing} not supported\n`) }),
     ]
   }
-  const fFlag = fl.asStr('f') ?? null
-  const CFlags = fl.asList('C')
+  const fFlag = parsed.archive
+  const CFlags = parsed.directories
   // The words that spelled -f and each -C, for the lines that name them.
-  const archiveOperand = fl.asPaths('f')[0]
-  const COperands = fl.asPaths('C')
+  const archiveOperand = parsed.archiveOperand
+  const COperands = parsed.directoryOperands
   // Only the last -C is a destination; create checks every one.
   const CFlag = CFlags.length > 0 ? (CFlags[CFlags.length - 1] ?? null) : null
-  const stripN = fl.asInt('strip_components') ?? 0
-  const exclude = fl.asStr('exclude') ?? null
-  const toStdout = fl.asBool('to_stdout')
+  const stripN = parsed.stripComponents
+  const exclude = parsed.exclude
+  const toStdout = parsed.toStdout
   const mountPrefix = relay ? '' : (opts.mountPrefix ?? '')
   const archiveSpec =
     archiveOperand !== undefined
@@ -385,7 +461,7 @@ export async function tarGeneric(
     const plan = await planCreate(paths, {
       archive: archiveSpec,
       exclude,
-      dereference: fl.asBool('h'),
+      dereference: parsed.dereference,
       stat: deps.stat,
       walk: deps.walk,
       isDir: deps.isDir,
@@ -570,8 +646,5 @@ export async function tarGeneric(
     ]
   }
 
-  return [
-    null,
-    new IOResult({ exitCode: 1, stderr: ENC.encode('tar: must specify -c, -x, or -t\n') }),
-  ]
+  throw new UsageError(`${NO_MODE}\n${USAGE_HINT}`, CREATE_ERROR_EXIT)
 }

@@ -337,18 +337,19 @@ def namespace_stat_overlay(namespace: Namespace, virtual: str,
 
 
 async def run_on_mount(
-    registry: MountRegistry,
-    session: SessionState,
-    dispatch: DispatchFn,
-    namespace: Namespace | None,
-    cmd_name: str,
-    paths: list[PathSpec],
-    texts: list[str],
-    flag_kwargs: dict[str, FlagValue],
-    stdin: ByteSource | None = None,
-    resolve_hint: PathSpec | None = None,
-    mount: MountEntry | None = None,
-    routing_decision: RouteDecision | None = None,
+        registry: MountRegistry,
+        session: SessionState,
+        dispatch: DispatchFn,
+        namespace: Namespace | None,
+        cmd_name: str,
+        paths: list[PathSpec],
+        texts: list[str],
+        flag_kwargs: dict[str, FlagValue],
+        stdin: ByteSource | None = None,
+        resolve_hint: PathSpec | None = None,
+        mount: MountEntry | None = None,
+        routing_decision: RouteDecision | None = None,
+        argv: tuple[str, ...] = (),
 ) -> tuple[ByteSource | None, IOResult]:
     """Run one already-parsed command on the mount that owns its paths.
 
@@ -374,6 +375,8 @@ async def run_on_mount(
             is empty (a stream command running in stdin mode).
         mount: Pre-resolved mount; skips resolution and session mode
             checks, which the caller already performed.
+        argv (tuple[str, ...]): The words after the command name, as the
+            line spelled them; empty for a run split out of a line.
     """
     if mount is None:
         resolve_paths = paths or ([resolve_hint] if resolve_hint else [])
@@ -436,6 +439,7 @@ async def run_on_mount(
                 ns=ns,
                 stat_path=stat_path,
                 readdir_path=readdir_path,
+                argv=argv,
             ),
         )
     except UsageError as exc:

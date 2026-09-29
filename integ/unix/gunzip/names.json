@@ -689,6 +689,37 @@
         "stdout": "a.x\nhi\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "zgrep_retries_a_missing_name_with_its_suffixes",
+      "seq": 1311011,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "gridfs",
+        "s3-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/gzl131109 && printf 'hello\\n' | gzip > /data/gzl131109/x.gz && zgrep -H hello /data/gzl131109/x; echo rc=$?; printf '\\037\\213' > /data/gzl131109/bad.gz; zgrep -c hello /data/gzl131109/bad /data/gzl131109/x; echo rc=$?; zgrep -L hello /data/gzl131109/bad /data/gzl131109/x; echo rc=$?; rm -r /data/gzl131109)",
+      "expect": {
+        "exit": 0,
+        "stdout": "/data/gzl131109/x:hello\nrc=0\n/data/gzl131109/bad:0\n/data/gzl131109/x:1\nrc=2\n/data/gzl131109/bad\nrc=2\n",
+        "stderr": "\ngzip: /data/gzl131109/bad.gz: unexpected end of file\n\ngzip: /data/gzl131109/bad.gz: unexpected end of file\n"
+      }
     }
   ]
 }

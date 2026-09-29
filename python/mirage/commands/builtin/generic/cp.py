@@ -22,6 +22,7 @@ from mirage.commands.builtin.utils.copy import (STAT_REFUSALS,
                                                 backend_key_default,
                                                 copy_targets, is_directory,
                                                 path_exists)
+from mirage.commands.builtin.utils.links import typed_link
 from mirage.commands.builtin.utils.paths import (absent_dest_strerror,
                                                  descendant_path,
                                                  nearest_ancestor)
@@ -30,6 +31,7 @@ from mirage.commands.spec.argmatch import ArgmatchMatch, argmatch
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.commands.spec.usage import argmatch_error, extra_operand_error
+from mirage.context import path_allowed
 from mirage.io.types import ByteSource, IOResult
 from mirage.ops.types import LinkView
 from mirage.runtime.types import DispatchFn
@@ -242,20 +244,6 @@ def parse_flags(fl: FlagView) -> CpFlags:
     )
 
 
-def typed_link(copies: TransferLinks, path: PathSpec) -> FileStat | None:
-    """The link standing at the name an operand was typed as, its own row.
-
-    The router follows an operand through a link before cp runs, which
-    leaves ``virtual`` at the target and the typed name in ``raw_path``.
-
-    Args:
-        copies (TransferLinks): the namespace's links and door.
-        path (PathSpec): the operand.
-    """
-    return copies.links.stat_at(
-        resolve_path(path.raw_path or path.virtual, copies.cwd))
-
-
 async def _entry_at(dispatch: DispatchFn, spec: PathSpec) -> FileStat | None:
     """What stands at a path, asked through the door; None where nothing
     does, which is where a new link goes.
@@ -314,9 +302,8 @@ async def make_link(copies: TransferLinks, src: PathSpec, target: PathSpec,
     """
     stat = partial(link_stat, copies)
     target_link = copies.links.stat_at(target.virtual)
-    there = await _entry_at(copies.dispatch, target)
-    if target_link is None and there is not None \
-            and there.type == FileType.DIRECTORY:
+    there = target_link or await _entry_at(copies.dispatch, target)
+    if there is not None and there.type == FileType.DIRECTORY:
         errors.append(f"{policy.cmd_name}: cannot overwrite directory "
                       f"'{target.raw_path}' with non-directory")
         return False
@@ -384,6 +371,8 @@ async def copy_tree_links(
     shown_dst = target.raw_path.rstrip("/") or target.raw_path
     below = sorted(copies.links.subtree(base), key=lambda row: row[0])
     for virtual, row in below:
+        if not path_allowed(virtual):
+            continue
         rel = virtual[len(base.rstrip("/")) + 1:]
         landing = f"{dst_base}/{rel}"
         shown = f"{shown_src}/{rel}"
@@ -1231,7 +1220,7 @@ async def cp(
     errors: list[str] = []
     for src, target in copy_targets(sources, dst, dst_is_dir, dst_exists,
                                     dst_err):
-        link = (typed_link(copies, src) if copies is not None
+        link = (typed_link(copies.links, src, copies.cwd) if copies is not None
                 and flags.dereference is CopyDeref.NEVER else None)
         if copies is not None and link is not None:
             # The router followed the operand, but the policy copies the

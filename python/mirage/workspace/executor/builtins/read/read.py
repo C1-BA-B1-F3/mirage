@@ -14,8 +14,7 @@
 
 from mirage.commands.spec.shell import SHELL_SPECS, parse_shell_options
 from mirage.io import IOResult
-from mirage.io.async_line_iterator import AsyncLineIterator
-from mirage.io.stream import async_chain
+from mirage.io.async_line_iterator import AsyncLineIterator, line_buffer
 from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
 from mirage.policy import PolicyDenied
@@ -221,7 +220,7 @@ async def _read_raw(
     delimiter read is retried while the text ends in an odd backslash.
 
     Args:
-        buffer (AsyncLineIterator): the session's line source.
+        buffer (AsyncLineIterator): the input's line reader.
         raw (bool): `-r`, no backslash processing.
         delim (bytes): the one-byte delimiter (`-d`, newline by default).
         nchars (int | None): `-n`, stop after this many characters.
@@ -329,21 +328,8 @@ async def handle_read(
         return _read_refusal(
             f"bash: read: `{array_name}': not a valid identifier\n")
     variables = parse.operands or ["REPLY"]
-    # A NEW stdin source replaces any leftover buffer (a previous
-    # command's exhausted herestring/pipe must not shadow this one);
-    # the SAME source object reuses the buffer so sequential reads
-    # advance through its lines.
-    if stdin is not None and (session._stdin_buffer is None
-                              or session._stdin_source is not stdin):
-        if isinstance(stdin, bytes):
-            session._stdin_buffer = AsyncLineIterator(async_chain([stdin]))
-            session._stdin_source = stdin
-        elif hasattr(stdin, "__aiter__"):
-            session._stdin_buffer = AsyncLineIterator(stdin)
-            session._stdin_source = stdin
-
     view = require_view(state)
-    buffer = session._stdin_buffer
+    buffer = line_buffer(stdin) if stdin is not None else None
     if timeout == 0:
         # `read -t 0` asks whether input is available and reads nothing.
         # bash asks select(2), which reports a source at end of file as

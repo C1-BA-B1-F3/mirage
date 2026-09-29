@@ -38,6 +38,7 @@ async def handle_source(
     path: str | PathSpec,
     session: SessionState,
     args: list[str] | None = None,
+    stdin: ByteSource | None = None,
     call_stack: CallStack | None = None,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     """Read a script file and execute it in the calling shell.
@@ -57,6 +58,8 @@ async def handle_source(
             of the source and are restored afterwards, matching bash;
             when omitted the parameters in scope are the script's, and
             a ``shift`` or ``set --`` in it changes them.
+        stdin (ByteSource | None): the caller's standard input, which
+            the script's statements read in turn.
         call_stack (CallStack | None): function-call scope, if any; a
             file sourced inside a function sees the function's
             parameters.
@@ -82,7 +85,9 @@ async def handle_source(
     session.positional_args = args or positional_params(session, call_stack)
     session.source_depth += 1
     try:
-        io = await execute_fn(script, session_id=session.session_id)
+        io = await execute_fn(script,
+                              session_id=session.session_id,
+                              stdin=stdin)
     finally:
         session.source_depth -= 1
         scoped = session.positional_args
@@ -107,5 +112,5 @@ async def source_builtin(call: BuiltinCall) -> Result:
         return script_error("source", SOURCE_USAGE, 2)
     return await handle_source(call.dispatch, call.execute_fn, operands[0],
                                call.session,
-                               [word_text(o)
-                                for o in operands[1:]], call.call_stack)
+                               [word_text(o) for o in operands[1:]],
+                               call.stdin, call.call_stack)

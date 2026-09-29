@@ -64,6 +64,11 @@ const GNU_READ_EXIT: Record<string, [number, number]> = {
   'zgrep x {p}': [1, 2],
 }
 
+// zgrep runs gzip with -q, which keeps a directory's warning to itself, so
+// GNU and mirage both exit 1 there without a word (see the python twin's
+// SILENT_IN_GNU; mirage's jq still reports its directory).
+const SILENT_HERE: ReadonlySet<string> = new Set(['zgrep x {p}'])
+
 async function makeWs(): Promise<Workspace> {
   const parser = await getTestParser()
   const ram = new RAMVFS()
@@ -92,10 +97,15 @@ describe('a read that fails answers like GNU', () => {
       expect(io.exitCode).toBe(missExit)
     })
 
-    it(`${template}: directory says Is a directory`, async () => {
+    const says = SILENT_HERE.has(template) ? 'is silent like GNU' : 'says Is a directory'
+    it(`${template}: directory ${says}`, async () => {
       const ws = await makeWs()
       const io = await ws.shell(template.replaceAll('{p}', '/ram/dir'))
       const stderr = io.stderrText
+      if (SILENT_HERE.has(template)) {
+        expect(stderr).toBe('')
+        return
+      }
       // FAILURE_WORDING's commands say the step in GNU's words where that
       // still names the operand (head/tail/uniq `error reading 'dir'`,
       // tac/tsort `dir: read error`, sed `read error on dir`); the rest say

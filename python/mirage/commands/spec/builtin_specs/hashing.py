@@ -162,9 +162,13 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-b", long="--print-bytes"),
             Option(short="-i", long="--ignore-initial", type="str"),
         ),
+        # FILE1 [FILE2 [SKIP1 [SKIP2]]]: the skips are byte counts, read
+        # as -i reads its own (diffutils 3.10).
         positional=(
             Operand(type="path"),
             Operand(type="path"),
+            Operand(type="str"),
+            Operand(type="str"),
         ),
     ),
     'iconv':

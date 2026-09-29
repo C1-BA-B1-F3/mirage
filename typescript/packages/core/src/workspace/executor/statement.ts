@@ -13,11 +13,13 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { readFailExitCode } from '../../commands/spec/usage.ts'
+import type { SharedInput } from '../../io/async_line_iterator.ts'
 import type { ByteSource, IOResult } from '../../io/types.ts'
 import { materialize } from '../../io/types.ts'
 import { formatFsError } from '../../utils/errors.ts'
 import type { ExecutionNode } from '../types.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
+import { unreadableStdin } from '../../shell/descriptors.ts'
 import { pipelineTransparent } from '../../shell/node_kind.ts'
 import type { TSNodeLike } from '../../shell/types.ts'
 import type { SessionState, StatusWriter } from '../session/session.ts'
@@ -172,6 +174,42 @@ export async function finishStatement(
  * command substitutions, in which case the status of the last
  * substitution performed becomes the statement's own.
  */
+/**
+ * What the shell's fd 0 is bound to: the descriptor `exec <` opened, and
+ * whether an `exec` left it unreadable (`exec <&-`). A construct takes
+ * this as it starts, so `statementStdin` can tell an `exec` made inside
+ * it from one made before it.
+ */
+export function fd0Binding(session: SessionState): readonly [SharedInput | null, boolean] {
+  return [session.execStdin, session.execStdinUnreadable]
+}
+
+/**
+ * The stdin one statement of a construct reads.
+ *
+ * bash's fd 0 is one descriptor, so an `exec <` replaces whatever a
+ * construct was handed: `printf z | { exec < f; read a; }` reads `f`.
+ * Every statement-list loop asks this before each statement. The
+ * construct's own stdin stands while fd 0 is still what it was when the
+ * construct started (`bound`); a construct handed none reads fd 0, the
+ * descriptor `exec <` opened or EBADF after `exec <&-`.
+ */
+export function statementStdin(
+  session: SessionState,
+  stdin: ByteSource | null,
+  bound: readonly [SharedInput | null, boolean],
+): ByteSource | null {
+  if (
+    stdin !== null &&
+    session.execStdin === bound[0] &&
+    session.execStdinUnreadable === bound[1]
+  ) {
+    return stdin
+  }
+  if (session.execStdinUnreadable) return unreadableStdin()
+  return session.execStdin ?? stdin
+}
+
 export function assignmentStatus(session: SessionState, seqBefore: number): number {
   if (session.cmdsubSeq !== seqBefore) return session.cmdsubStatus
   return 0

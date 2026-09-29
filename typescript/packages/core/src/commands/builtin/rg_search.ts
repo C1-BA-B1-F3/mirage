@@ -85,6 +85,7 @@ export interface RgFlags {
   hidden: boolean
   maxDepth: number | null
   maxFilesize: number | null
+  follow: boolean
   oneFileSystem: boolean
   binary: boolean
   sort: string | null

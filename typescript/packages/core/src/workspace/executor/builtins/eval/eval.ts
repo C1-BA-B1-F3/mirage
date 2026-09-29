@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import type { ByteSource } from '../../../../io/types.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { ExecutionNode } from '../../../types.ts'
 import type { BuiltinCall, ExecuteStringFn, Result } from '../types.ts'
@@ -20,13 +21,14 @@ export async function handleEval(
   executeFn: ExecuteStringFn,
   args: string[],
   session: SessionState,
+  stdin: ByteSource | null = null,
 ): Promise<Result> {
   const script = args.join(' ')
-  const io = await executeFn(script, { sessionId: session.sessionId })
+  const io = await executeFn(script, { sessionId: session.sessionId, stdin })
   return [io.stdout, io, new ExecutionNode({ command: 'eval', exitCode: io.exitCode })]
 }
 
 /** The `eval` arm. */
 export async function evalBuiltin(call: BuiltinCall): Promise<Result> {
-  return handleEval(call.executeFn, [...call.argv.args], call.session)
+  return handleEval(call.executeFn, [...call.argv.args], call.session, call.stdin)
 }

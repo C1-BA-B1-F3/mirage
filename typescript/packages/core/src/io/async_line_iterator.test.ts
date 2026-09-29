@@ -13,8 +13,16 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { AsyncLineIterator, charWidth } from './async_line_iterator.ts'
+import {
+  AsyncLineIterator,
+  charWidth,
+  lineBuffer,
+  share,
+  SharedInput,
+} from './async_line_iterator.ts'
 import { CachableAsyncIterator } from './cachable_iterator.ts'
+import { chunks } from './cooperative.ts'
+import { DeviceInput, materialize } from './types.ts'
 
 async function* fromChunks(chunks: Uint8Array[]): AsyncIterable<Uint8Array> {
   await Promise.resolve()
@@ -233,4 +241,51 @@ it('skips records by another delimiter', async () => {
   expect(await iter.readUntil(0)).toEqual([encode('needle'), true])
   expect(iter.skipNonmatchingLines(needles, false, 0)).toEqual([0, 0])
   expect(await iter.readUntil(0)).toEqual([encode(''), false])
+})
+
+describe('SharedInput', () => {
+  it('hands over what a line read left', async () => {
+    const shared = new SharedInput(fromChunks([encode('a\nb\n'), encode('c\n')]))
+    expect(decode((await shared.lines.readline()) ?? new Uint8Array())).toBe('a')
+    expect(decode(await materialize(shared))).toBe('b\nc\n')
+    expect(await shared.lines.readline()).toBeNull()
+  })
+
+  it('reads bytes', async () => {
+    const shared = new SharedInput(encode('a\nb\n'))
+    expect(decode((await shared.lines.readline()) ?? new Uint8Array())).toBe('a')
+    expect(decode(await materialize(shared))).toBe('b\n')
+  })
+
+  it('dups another descriptor on the same offset', async () => {
+    const shared = new SharedInput(encode('a\nb\nc\n'))
+    const copy = shared.dup()
+    expect(copy).not.toBe(shared)
+    expect(decode((await shared.lines.readline()) ?? new Uint8Array())).toBe('a')
+    expect(decode((await copy.lines.readline()) ?? new Uint8Array())).toBe('b')
+    expect(decode(await materialize(shared))).toBe('c\n')
+  })
+
+  it('leaves the rest when a reader stops early', async () => {
+    const shared = new SharedInput(fromChunks([encode('a\n'), encode('b\n')]))
+    const reader = chunks(shared)
+    expect(decode((await reader.next()).value as Uint8Array)).toBe('a\n')
+    await reader.return?.(undefined)
+    expect(decode((await shared.lines.readline()) ?? new Uint8Array())).toBe('b')
+  })
+
+  it('is wrapped once, and /dev/null is left as it is', () => {
+    const shared = share(encode('x'))
+    expect(shared).toBeInstanceOf(SharedInput)
+    expect(share(shared)).toBe(shared)
+    const device = new DeviceInput(0)
+    expect(share(device)).toBe(device)
+    expect(share(null)).toBeNull()
+  })
+
+  it('is read in place by lineBuffer', async () => {
+    const shared = new SharedInput(encode('a\nb\n'))
+    expect(lineBuffer(shared)).toBe(shared.lines)
+    expect(decode((await lineBuffer(encode('a\nb\n')).readline()) ?? new Uint8Array())).toBe('a')
+  })
 })

@@ -19,6 +19,7 @@ from typing import Any
 
 from mirage.commands.errors import CommandTimeoutError
 from mirage.io import IOResult
+from mirage.io.async_line_iterator import SharedInput
 from mirage.io.stream import close_quietly
 from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
@@ -34,6 +35,7 @@ from mirage.shell.helpers import get_text, is_backgrounded
 from mirage.shell.job_table import Job, JobStatus, JobTable
 from mirage.shell.types import TSNodeLike
 from mirage.workspace.executor.builtins.getopt import scan_options
+from mirage.workspace.executor.statement import statement_stdin
 from mirage.workspace.node.occurrence import occurrence_of
 from mirage.workspace.session import (SessionState, reset_current_session,
                                       set_current_session)
@@ -219,6 +221,7 @@ async def run_statement(
     node: TSNodeLike,
     session: SessionState,
     stdin: ByteSource | None,
+    bound: tuple[SharedInput | None, bool],
     call_stack: CallStack | None,
     job_table: JobTable | None,
     agent_id: str | None,
@@ -238,8 +241,10 @@ async def run_statement(
         execute_node (Callable): the executor's statement runner.
         node (TSNodeLike): the statement.
         session (SessionState): shell session.
-        stdin (ByteSource | None): the statement's input; a job gets
-            none, like a background process reading /dev/null.
+        stdin (ByteSource | None): the body's input; a job gets none,
+            like a background process reading /dev/null.
+        bound (tuple[SharedInput | None, bool]): ``fd0_binding`` as the
+            body started, so an ``exec <`` in it replaces ``stdin``.
         call_stack (CallStack | None): function-call scope, if any.
         job_table (JobTable | None): where the job lives. None means
             the caller wired no job plane, which is a programming
@@ -249,7 +254,9 @@ async def run_statement(
         decisions (Decisions | None): ledger that holds those claims.
     """
     if not is_backgrounded(node):
-        return await execute_node(node, session, stdin, call_stack)
+        return await execute_node(node, session,
+                                  statement_stdin(session, stdin, bound),
+                                  call_stack)
     if job_table is None:
         raise RuntimeError(
             f"`{get_text(node)} &` needs a job table; none was wired")

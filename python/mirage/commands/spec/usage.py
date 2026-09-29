@@ -12,12 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections.abc import Sequence
+
 from mirage.commands.errors import UsageError
 from mirage.commands.quote import quote_text
 from mirage.commands.spec.argmatch import ArgmatchChoices, ArgmatchKind
-from mirage.commands.spec.constants import (OLD_OPTION_EXIT, OPERAND_EXIT,
-                                            PYTHON_NAMES, PYTHON_USAGE,
-                                            READ_FAIL_EXIT,
+from mirage.commands.spec.constants import (ARGV_IN_ORDER, OLD_OPTION_EXIT,
+                                            OPERAND_EXIT, PYTHON_NAMES,
+                                            PYTHON_USAGE, READ_FAIL_EXIT,
                                             READ_FAIL_EXIT_ISDIR, USAGE_EXIT,
                                             USAGE_HINT_PREFIX)
 from mirage.commands.spec.types import CommandName
@@ -528,21 +530,32 @@ def extra_operand_error(cmd_name: str, operand: str) -> UsageError:
                       usage_exit_code(cmd_name))
 
 
-def missing_operand_error(cmd_name: str, last: str | None) -> UsageError:
+def missing_operand_error(
+    cmd_name: str, last: str | None, argv: Sequence[str] = ()) -> UsageError:
     """GNU-shaped usage error for an operand short of a command's arity.
 
     Shapes pinned against real GNU: ``<cmd>: missing operand after
-    '<arg>'`` names the last operand given. With none given, coreutils
-    says a bare ``missing operand`` while diffutils names the program
-    itself (``cmp: missing operand after 'cmp'``).
+    '<arg>'`` names ``argv[argc - 1]`` once getopt has moved the operands
+    behind the options, which is the last operand given, or the line's
+    last word for a program that reads its operands in order (join).
+    With none given, coreutils says a bare ``missing operand``, while
+    diffutils still names the line's last word, an option or its value
+    included (``cmp: missing operand after '-s'``, ``diff -U 3`` names
+    ``3``), and the program itself on a bare line (``cmp: missing
+    operand after 'cmp'``; diffutils 3.10).
 
     Args:
         cmd_name (str): command name for the message and exit code.
         last (str | None): the last operand as typed, or None when the
             line has none.
+        argv (Sequence[str]): the line's words after the command name,
+            which the line's last word is read from.
     """
-    after = last if last is not None else (
-        cmd_name if cmd_name in USAGE_HINT_PREFIX else None)
+    after = last
+    if after is not None and cmd_name in ARGV_IN_ORDER and argv:
+        after = argv[-1]
+    if after is None and cmd_name in USAGE_HINT_PREFIX:
+        after = argv[-1] if argv else cmd_name
     line = (f"{cmd_name}: missing operand" if after is None else
             f"{cmd_name}: missing operand after '{after}'")
     return UsageError(f"{line}\n{usage_hint(cmd_name)}",

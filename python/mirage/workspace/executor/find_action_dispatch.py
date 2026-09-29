@@ -12,8 +12,6 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import shlex
-
 from mirage.commands.builtin.constants import EXEC_PLACEHOLDER
 from mirage.commands.builtin.find_parse import FindExpr, parse_find_expression
 from mirage.commands.builtin.find_printf import (expand_printf,
@@ -30,6 +28,7 @@ from mirage.io.stream import SharedStdin, materialize
 from mirage.io.types import ByteSource
 from mirage.ops.types import NamespaceView, StatPath
 from mirage.runtime.types import DispatchFn
+from mirage.shell.join import shell_join
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import enoent, fs_strerror
 from mirage.utils.path import resolve_path
@@ -67,14 +66,14 @@ def exec_line(action: ExecAction, paths: list[str]) -> str:
     """The shell line one ``-exec`` run becomes.
 
     GNU execs the words directly, so every match must reach the command
-    as exactly one argv word: the line is built with ``shlex.join``, and
+    as exactly one argv word: the line is built with ``shell_join``, and
     a plain join would be re-parsed by the shell.
 
     Args:
         action (ExecAction): the action.
         paths (list[str]): the match, or every match for a batched run.
     """
-    return shlex.join(exec_words(action, paths))
+    return shell_join(exec_words(action, paths))
 
 
 async def _head_state(head: str, registry: MountRegistry, cwd: str,
@@ -161,7 +160,7 @@ async def _run_exec(execute_fn: ExecuteLine, session_id: str,
     # the line runs the program past it, as `command` does. The run is
     # marked a program run for the session, so a builtin that doubles
     # as a program answers as the program (`printf -v` is a format).
-    line = ("command " if shadowed else "") + shlex.join(words)
+    line = ("command " if shadowed else "") + shell_join(words)
     sess = get_current_session()
     token = set_program_invocation(sess) if sess is not None else None
     try:

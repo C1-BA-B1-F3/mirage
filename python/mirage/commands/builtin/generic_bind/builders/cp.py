@@ -24,15 +24,15 @@ from mirage.commands.builtin.generic.find import parse_find_args, walk_find
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           Operation, bound_op,
                                                           overlaid_stat)
+from mirage.commands.builtin.utils.links import typed_link
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.context import hidden_paths_intersect, path_rules_active
 from mirage.io.types import ByteSource, IOResult
-from mirage.ops.types import LinkView, StatOverlay
-from mirage.types import FileStat, NativeCopy, PathSpec, PrimitiveCopy
+from mirage.ops.types import StatOverlay
+from mirage.types import NativeCopy, PathSpec, PrimitiveCopy
 from mirage.utils.key_prefix import rekey
-from mirage.utils.path import resolve_path
 from mirage.vfs.types import OperationFn
 
 
@@ -137,26 +137,10 @@ async def cp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
         stat=overlayable_stat(ops, accessor, opts.index, overlay),
         flags=parsed,
         readdir=bound_op(ops.readdir, accessor, opts.index),
-        link_at=(partial(_typed_link, links, cwd)
+        link_at=(partial(typed_link, links, cwd=cwd)
                  if links is not None else None),
         copies=(transfer_links(links, opts.dispatch, cwd)
                 if links is not None and opts.dispatch is not None else None))
-
-
-def _typed_link(links: LinkView, cwd: str, path: PathSpec) -> FileStat | None:
-    """The link standing at the name a destination was typed as.
-
-    The router follows an operand through a link before the command runs,
-    which leaves ``virtual`` at the target and the typed name in
-    ``raw_path``; cp needs the name, since a dangling one is refused
-    rather than written through.
-
-    Args:
-        links (LinkView): the namespace's symlink facts.
-        cwd (str): the directory a relative name resolves against.
-        path (PathSpec): the destination.
-    """
-    return links.stat_at(resolve_path(path.raw_path or path.virtual, cwd))
 
 
 BUILDER = Builder('cp', cp, write=True)

@@ -1,23 +1,27 @@
 import io
 import logging
+import re
 import tarfile
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 
+from mirage.commands.builtin.constants import C_SPACE, UINTMAX
 from mirage.commands.builtin.generic.archive.extract import (ensure_dir,
                                                              extract_dest)
 from mirage.commands.builtin.generic.archive.walk import (DirProbe, StatFn,
                                                           WalkFn)
 from mirage.commands.builtin.generic.tar.constants import (  # yapf: disable
     CHILD_NAME, CHILD_STATUS, CREATE_ERROR_EXIT, EMPTY_PIPE, ERROR_TRAILER,
-    FATAL_TRAILER, INVALID_ARCHIVE, READ_MODES, TAPE_START, WRITE_MODES)
+    FATAL_TRAILER, INVALID_ARCHIVE, MODE_CONFLICT, MULTIPLE_ARCHIVES, NO_MODE,
+    READ_MODES, STRIP_COUNT, TAPE_START, USAGE_HINT, WRITE_MODES)
 from mirage.commands.builtin.generic.tar.create import plan_create
 from mirage.commands.builtin.generic.tar.types import (CompressionSuffix,
                                                        CreateResult, Member,
                                                        ReadMode, ReadResult,
                                                        WriteMode)
 from mirage.commands.config import CommandOpts
+from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
@@ -492,7 +496,7 @@ async def tar(
     to_stdout: bool = False,
     f: PathSpec | None = None,
     C: list[PathSpec] | None = None,
-    strip_components: str | None = None,
+    strip_components: int = 0,
     exclude: str | None = None,
     links: LinkView | None = None,
     mounts: MountView | None = None,
@@ -509,7 +513,7 @@ async def tar(
     dest_path = extract_dest(C[-1] if C else None, cwd, relay)
     chosen = list(selectors or [])
     mode_suffix = _compression_suffix(z, j, J)
-    strip_n = int(strip_components) if strip_components else 0
+    strip_n = strip_components
     if c:
         if archive is None:
             raise ValueError("tar: -f is required")
@@ -539,7 +543,7 @@ async def tar(
         return await _extract_archive(archive, dest_path, mode_suffix, strip_n,
                                       v, to_stdout, chosen, relay, read_bytes,
                                       write_bytes, mkdir_fn, stat, is_dir)
-    raise ValueError("tar: must specify -c, -x, or -t")
+    raise UsageError(f"{NO_MODE}\n{USAGE_HINT}", CREATE_ERROR_EXIT)
 
 
 __all__ = ["tar"]
@@ -558,26 +562,77 @@ class TarFlags:
     to_stdout: bool = False
     archive: PathSpec | None = None
     directories: tuple[PathSpec, ...] = ()
-    strip_components: str | None = None
+    strip_components: int = 0
     exclude: str | None = None
 
 
+_MODES = ("create", "extract", "list")
+_STRIP_COUNT = re.compile(rf"^{C_SPACE}\+?([0-9]+)$")
+
+
+def strip_count(raw: str) -> int:
+    """A --strip-components value as tar reads it, or tar's refusal.
+
+    xstrtoumax at base 10 with no suffix: leading blanks and one ``+``
+    pass, a sign, another letter or a count past UINTMAX does not (tar
+    1.35).
+
+    Args:
+        raw (str): the value as typed.
+
+    Raises:
+        UsageError: the value is no count.
+    """
+    match = _STRIP_COUNT.match(raw)
+    if match is None or int(match.group(1)) > UINTMAX:
+        raise UsageError(f"{STRIP_COUNT.format(raw)}\n{USAGE_HINT}",
+                         CREATE_ERROR_EXIT)
+    return int(match.group(1))
+
+
 def parse_flags(flags: Mapping[str, FlagValue]) -> TarFlags:
+    """tar's flags as argp reads them, refusing what tar refuses.
+
+    argp meets the options in line order and stops at the first it
+    refuses: a second main operation where one is already set, or a
+    --strip-components value that is no count. After the scan, more than
+    one archive is refused without -M, which mirage does not have (tar
+    1.35).
+
+    Args:
+        flags (Mapping[str, FlagValue]): the parsed flag bag.
+
+    Raises:
+        UsageError: tar's refusal, exit 2.
+    """
     fl = FlagView(flags, spec=SPECS["tar"])
-    archive = fl.raw("f")
+    mode: str | None = None
+    strip = 0
+    for name, value in fl.occurrences(*_MODES, "strip_components"):
+        if name == "strip_components":
+            strip = strip_count(str(value))
+        elif mode is not None and name != mode:
+            raise UsageError(f"{MODE_CONFLICT}\n{USAGE_HINT}",
+                             CREATE_ERROR_EXIT)
+        else:
+            mode = name
+    if len(fl.occurrences("file")) > 1:
+        raise UsageError(f"{MULTIPLE_ARCHIVES}\n{USAGE_HINT}",
+                         CREATE_ERROR_EXIT)
+    archive = fl.raw("file")
     return TarFlags(
-        create=fl.as_bool("c"),
-        extract=fl.as_bool("x"),
-        list_only=fl.as_bool("t"),
-        gzip=fl.as_bool("z"),
-        bzip2=fl.as_bool("j"),
-        xz=fl.as_bool("J"),
-        verbose=fl.as_bool("v"),
-        deref=fl.as_bool("h"),
+        create=fl.as_bool("create"),
+        extract=fl.as_bool("extract"),
+        list_only=fl.as_bool("list"),
+        gzip=fl.as_bool("gzip"),
+        bzip2=fl.as_bool("bzip2"),
+        xz=fl.as_bool("xz"),
+        verbose=fl.as_bool("verbose"),
+        deref=fl.as_bool("dereference"),
         to_stdout=fl.as_bool("to_stdout"),
         archive=archive if isinstance(archive, PathSpec) else None,
-        directories=tuple(fl.as_paths("C")),
-        strip_components=fl.as_str("strip_components"),
+        directories=tuple(fl.as_paths("directory")),
+        strip_components=strip,
         exclude=fl.as_str("exclude"),
     )
 

@@ -12,10 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import AsyncIterator
-
 from mirage.io.cachable_iterator import CachableAsyncIterator
 from mirage.io.cooperative import chunks
+from mirage.io.types import ByteSource, DeviceInput
 from mirage.io.yield_budget import YieldBudget
 
 
@@ -44,7 +43,7 @@ def char_width(data: bytes) -> int:
 
 class AsyncLineIterator:
 
-    def __init__(self, source: AsyncIterator[bytes]) -> None:
+    def __init__(self, source: ByteSource) -> None:
         self._input = source
         self._source = chunks(source)
         self._budget = YieldBudget()
@@ -167,6 +166,37 @@ class AsyncLineIterator:
             self._exhausted = True
             raise
 
+    async def read_chunk(self) -> bytes | None:
+        """Hand over what is buffered, else the source's next chunk.
+
+        Returns:
+            bytes | None: the bytes, or None at end of input.
+        """
+        if self._buf:
+            data, self._buf = self._buf, b""
+            self._view = None
+            return data
+        if self._exhausted:
+            return None
+        try:
+            await self._budget.run()
+            return await self._source.__anext__()
+        except StopAsyncIteration:
+            self._exhausted = True
+            return None
+        except BaseException:
+            await self.discard()
+            raise
+
+    async def discard(self) -> None:
+        """Close the source and drop what it buffered, for input a failed
+        line abandoned."""
+        self._buf = b""
+        self._exhausted = True
+        await self._source.aclose()
+        if isinstance(self._input, CachableAsyncIterator):
+            await self._input.discard()
+
     async def read_chars(self, count: int,
                          delim: bytes | None) -> tuple[bytes, bool]:
         """Read at most ``count`` characters, stopping early at ``delim``.
@@ -227,3 +257,69 @@ class AsyncLineIterator:
             self._buf = b""
             self._exhausted = True
             raise
+
+
+class SharedInput:
+    """Standard input that the commands of one group, loop or shell read
+    in turn, as bash's all read one open descriptor.
+
+    What one command reads the next does not see again: ``read`` takes
+    its line off ``lines`` and leaves the rest buffered there, and any
+    other command iterates this object for that rest, then for what the
+    source still holds. A command that stops early never closes the
+    source, since a later command may still read it; whoever opened the
+    source closes it, and a failed line discards it.
+
+    Args:
+        source (ByteSource | AsyncLineIterator): what the descriptor
+            reads, or the line buffer of the descriptor it duplicates.
+    """
+
+    def __init__(self, source: ByteSource | AsyncLineIterator) -> None:
+        self.lines = (source if isinstance(source, AsyncLineIterator) else
+                      AsyncLineIterator(source))
+
+    def __aiter__(self) -> "SharedInput":
+        return self
+
+    def dup(self) -> "SharedInput":
+        """Another descriptor on the same open file, as ``dup`` makes:
+        a read through either moves the one offset."""
+        return SharedInput(self.lines)
+
+    async def __anext__(self) -> bytes:
+        chunk = await self.lines.read_chunk()
+        if chunk is None:
+            raise StopAsyncIteration
+        return chunk
+
+    async def discard(self) -> None:
+        """Close the source for good, for a line that failed reading it."""
+        await self.lines.discard()
+
+
+def share(stdin: ByteSource | None) -> ByteSource | None:
+    """The one descriptor a construct hands every command it runs.
+
+    ``< /dev/null`` stays as it is: it reads nothing, so there is no
+    position to share, and its type tells a command no file is attached.
+
+    Args:
+        stdin (ByteSource | None): the construct's standard input.
+    """
+    if stdin is None or isinstance(stdin, (SharedInput, DeviceInput)):
+        return stdin
+    return SharedInput(stdin)
+
+
+def line_buffer(stdin: ByteSource) -> AsyncLineIterator:
+    """The line reader ``read``, ``mapfile`` and ``select`` take input
+    from: a shared descriptor's own, so what they leave the next command
+    reads, else one over ``stdin`` alone.
+
+    Args:
+        stdin (ByteSource): the command's standard input.
+    """
+    if isinstance(stdin, SharedInput):
+        return stdin.lines
+    return AsyncLineIterator(stdin)

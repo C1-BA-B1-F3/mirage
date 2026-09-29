@@ -23,13 +23,18 @@ import { Workspace } from '../../workspace/workspace.ts'
 import { defaultCwdOperand, pathFlagScopes, programTokens } from './routing.ts'
 
 describe('pathFlagScopes', () => {
-  it('leaves a program file out', () => {
+  it.each([
+    ['grep', '-f'],
+    ['rg', '-f'],
+    ['zgrep', '-f'],
+    ['sed', '-f'],
+    ['awk', '-f'],
+    ['jq', '--from-file'],
+  ])('leaves %s %s program file out', (cmd, flag) => {
     // The program file is read before routing, so a pattern file on
-    // another mount does not make the line cross-mount; rg's -f is one,
-    // exactly as grep's is.
-    for (const cmd of ['grep', 'rg']) {
-      expect(pathFlagScopes(cmd, ['-f', '/other/p', '/data/in'], '/')).toEqual([])
-    }
+    // another mount does not make the line cross-mount, for every command
+    // that reads one: the keys come from the reader's own table.
+    expect(pathFlagScopes(cmd, [flag, '/other/p', '/data/in'], '/')).toEqual([])
   })
 })
 

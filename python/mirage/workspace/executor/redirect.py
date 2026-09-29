@@ -35,7 +35,6 @@ from mirage.utils.errors import FS_ERRORS, format_fs_error, fs_strerror
 from mirage.workspace.executor.builtins import _to_scope
 from mirage.workspace.executor.builtins.exec.constants import (
     CLOSED, OPEN_FOR_READING, TO_STDERR, TO_STDIN, TO_STDOUT)
-from mirage.workspace.executor.builtins.exec.exec import read_open_source
 from mirage.workspace.executor.create import create_file
 from mirage.workspace.session import SessionState
 from mirage.workspace.types import ExecutionNode
@@ -203,12 +202,15 @@ async def handle_redirect(
         stdin, _Unreadable.TOKEN, _Unreadable.TOKEN
     ]
     # A stream `exec 1<f` opened for reading answers a read through it
-    # (`cat <&1`) with the file, from its start, and one `exec 1<&0`
-    # aliased onto stdin's own read end reads what stdin reads.
-    for fd, binding in ((FD_STDOUT, session.exec_stdout),
-                        (FD_STDERR, session.exec_stderr)):
+    # (`cat <&1`) from where the last read through that end stopped, and
+    # one `exec 1<&0` aliased onto stdin's own read end reads what stdin
+    # reads.
+    for fd, binding, read_end in ((FD_STDOUT, session.exec_stdout,
+                                   session.exec_stdout_input),
+                                  (FD_STDERR, session.exec_stderr,
+                                   session.exec_stderr_input)):
         if binding is not None and binding.startswith(OPEN_FOR_READING):
-            inputs[fd] = await read_open_source(dispatch, binding)
+            inputs[fd] = read_end
         elif binding == TO_STDIN:
             inputs[fd] = inputs[FD_STDIN]
     # A descriptor an earlier redirect closed, or an `exec` closed for

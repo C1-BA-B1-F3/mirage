@@ -23,6 +23,7 @@ import { varsFromEnv } from '../../workspace/session/session.ts'
 import { describe, expect, it, vi } from 'vitest'
 import { CLISpec } from '../../commands/cli/types.ts'
 import { GENERAL_COMMANDS } from '../../commands/builtin/general/index.ts'
+import { share } from '../../io/async_line_iterator.ts'
 import { IOResult, materialize } from '../../io/types.ts'
 import type { ByteSource } from '../../io/types.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
@@ -1216,7 +1217,7 @@ describe('handleEval', () => {
     const s = new SessionState({ sessionId: 'sess' })
     const [, io] = await handleEval(exec, ['echo', 'hi'], s)
     expect(io.exitCode).toBe(7)
-    expect(exec).toHaveBeenCalledWith('echo hi', { sessionId: 'sess' })
+    expect(exec).toHaveBeenCalledWith('echo hi', { sessionId: 'sess', stdin: null })
   })
 })
 
@@ -1659,7 +1660,7 @@ describe('handleRead', () => {
 
   it('a NEW stdin source replaces a stale exhausted buffer', async () => {
     const s = new SessionState({ sessionId: 'test' })
-    const first = new TextEncoder().encode('first\n')
+    const first = share(new TextEncoder().encode('first\n'))
     await handleRead(['X'], s, first, sessionView(s))
     await handleRead(['X2'], s, first, sessionView(s))
     expect(s.env.X2).toBe('')
@@ -1669,9 +1670,9 @@ describe('handleRead', () => {
     expect(s.env.Y).toBe('second')
   })
 
-  it('the SAME stdin source keeps advancing through lines', async () => {
+  it('the SAME shared stdin keeps advancing through lines', async () => {
     const s = new SessionState({ sessionId: 'test' })
-    const shared = new TextEncoder().encode('a\nb\n')
+    const shared = share(new TextEncoder().encode('a\nb\n'))
     await handleRead(['P'], s, shared, sessionView(s))
     await handleRead(['Q'], s, shared, sessionView(s))
     expect(s.env.P).toBe('a')
@@ -2073,6 +2074,12 @@ describe('handleXargs', () => {
     const shell = fakeShell()
     await handleXargs(shell.fn, ['-0', 'echo'], session, new TextEncoder().encode('a b\0c\0'))
     expect(shell.lines).toEqual(["echo 'a b' c"])
+  })
+
+  it('hands a raw byte to the command as itself', async () => {
+    const shell = fakeShell()
+    await handleXargs(shell.fn, ['printf', '%s'], session, new Uint8Array([0x61, 0xff, 0x62, 0x0a]))
+    expect(shell.lines).toEqual(["printf %s 'a'$'\\xff''b'"])
   })
 
   it('-d splits on the delimiter', async () => {

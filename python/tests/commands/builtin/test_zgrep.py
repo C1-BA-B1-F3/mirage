@@ -17,7 +17,9 @@ import gzip
 
 import pytest
 
-from mirage.types import MountMode
+from mirage.commands.builtin.generic.zgrep import zgrep as zgrep_generic
+from mirage.io.types import materialize
+from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -245,3 +247,79 @@ def test_zgrep_m0_skips_validation_and_selection(pattern, mode, output):
                           stdin=gzip.compress(b"hello\n"))
     assert (_bytes(stdout), _bytes(io.stderr), io.exit_code) == (output, b"",
                                                                  1)
+
+
+def _opens(line):
+    """Run ``line`` in /data over a.txt, x.gz (a.txt compressed), a
+    directory and a link to x.gz, as zgrep 1.13 was pinned."""
+    ws, _ = _ws()
+    _run_raw(ws, "printf 'hello\\nworld\\n' > /data/a.txt")
+    _run_raw(ws,
+             "tee /data/x.gz > /dev/null",
+             stdin=gzip.compress(b"hello\nworld\n"))
+    _run_raw(ws, "mkdir /data/dir && cd /data && ln -s x.gz xl.gz")
+    stdout, io = _run_raw(ws, f"cd /data && {line}")
+    return _bytes(stdout).decode(), _bytes(io.stderr).decode(), io.exit_code
+
+
+@pytest.mark.parametrize(
+    "line,out,err,code",
+    [
+        # gzip retries a missing name with each suffix, a link included.
+        ("zgrep hello x", "hello\n", "", 0),
+        ("zgrep hello xl", "hello\n", "", 0),
+        ("zgrep -l hello x", "x\n", "", 0),
+        ("zgrep hello nope", "", "gzip: nope.gz: No such file or directory\n",
+         2),
+        ("zgrep hello ''", "", "gzip: .gz: No such file or directory\n", 2),
+        # A failed open is empty input to grep, and the run goes on.
+        ("zgrep hello nope x a.txt", "x:hello\na.txt:hello\n",
+         "gzip: nope.gz: No such file or directory\n", 2),
+        ("zgrep -c hello nope x", "nope:0\nx:1\n",
+         "gzip: nope.gz: No such file or directory\n", 2),
+        ("zgrep -L hello nope", "nope\n",
+         "gzip: nope.gz: No such file or directory\n", 2),
+        # gzip -q keeps a directory's warning to itself.
+        ("zgrep hello dir", "", "", 1),
+        ("zgrep -c hello dir a.txt", "dir:0\na.txt:1\n", "", 0),
+        ("zgrep -L hello dir", "dir\n", "", 1),
+        ("zgrep hello a.txt/x", "", "gzip: a.txt/x: Not a directory\n", 2),
+        ("zgrep hello x.gz/", "", "gzip: x.gz/: Not a directory\n", 2),
+        ("zgrep -s hello nope", "",
+         "gzip: nope.gz: No such file or directory\n", 2),
+    ])
+def test_zgrep_opens_each_operand_as_gzip_cdfq_does(line, out, err, code):
+    assert _opens(line) == (out, err, code)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flags,out", [
+    ({}, b"/bad:hello\n/good.gz:hello\n"),
+    ({
+        "c": True
+    }, b"/bad:1\n/good.gz:1\n"),
+    ({
+        "files_without_match": True
+    }, b""),
+])
+async def test_zgrep_keeps_partial_matches_and_continues_after_a_read_error(
+        flags, out):
+    reads = []
+
+    async def read(path):
+        reads.append(path.virtual)
+        if path.virtual == "/bad":
+            raise FileNotFoundError(path.virtual)
+        yield gzip.compress(b"hello\n")
+        if path.virtual == "/bad.gz":
+            raise PermissionError(path.virtual)
+
+    body, io = await zgrep_generic(
+        [PathSpec.from_str_path("/bad"),
+         PathSpec.from_str_path("/good.gz")], ["hello"],
+        flags,
+        read_bytes=read)
+    assert await materialize(body) == out
+    assert io.exit_code == 2
+    assert io.stderr == b"\ngzip: /bad.gz: Permission denied\n"
+    assert reads == ["/bad", "/bad.gz", "/good.gz"]

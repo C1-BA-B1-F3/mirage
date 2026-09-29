@@ -514,7 +514,9 @@ async def _fan_out_traversal(
                 CommandOpts(flags=flag_kwargs,
                             cwd=PathSpec(virtual=cwd,
                                          directory=cwd,
-                                         vfs_path=cwd.strip("/"))),
+                                         vfs_path=cwd.strip("/")),
+                            ns=ns,
+                            dispatch=dispatch),
                 readdir=functools.partial(relay, dispatch, "readdir"),
                 stat=functools.partial(relay, dispatch, "stat"),
                 read_bytes=functools.partial(relay, dispatch, "read"),
@@ -546,7 +548,11 @@ async def _fan_out_traversal(
         ) -> tuple[ByteSource | None, IOResult]:
             return await primary_mount.execute_cmd(
                 name, operands, words, flags,
-                ExecContext(stdin=stdin, cwd=cwd, ns=ns, stat_path=stat_path))
+                ExecContext(stdin=stdin,
+                            cwd=cwd,
+                            ns=ns,
+                            stat_path=stat_path,
+                            dispatch=dispatch))
 
         run_operand = functools.partial(run_with_fanout,
                                         run_single,
@@ -657,7 +663,11 @@ async def _fan_out_traversal(
         try:
             stdout, io = await mount.execute_cmd(
                 cmd_name, sub_paths, sub_texts, sub_flags,
-                ExecContext(stdin=stdin, cwd=cwd, ns=ns, stat_path=stat_path))
+                ExecContext(stdin=stdin,
+                            cwd=cwd,
+                            ns=ns,
+                            stat_path=stat_path,
+                            dispatch=dispatch))
         except UsageError as exc:
             # A usage error belongs to the line, not to one mount: the
             # single-mount path reports it once as the command's result

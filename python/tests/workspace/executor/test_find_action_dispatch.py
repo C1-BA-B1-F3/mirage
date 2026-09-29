@@ -924,9 +924,9 @@ async def test_ls_renders_the_stat_find_already_holds():
 @pytest.mark.asyncio
 async def test_exec_runs_the_head_as_a_program():
     # execvp answers `printf` with coreutils printf, which has no -v: the
-    # word is the format (GNU adds a warning about the excess arguments,
-    # which mirage's printf does not report). A nested shell the line
-    # starts is a shell again, so its printf assigns.
+    # word is the format, and it warns about the arguments the format
+    # leaves over. A nested shell the line starts is a shell again, so
+    # its printf assigns.
     ws = _ws()
     try:
         io = await ws.shell(
@@ -935,7 +935,8 @@ async def test_exec_runs_the_head_as_a_program():
             "find . -type f -exec sh -c 'printf -v y hi; echo \"[$y]\"' \\; ; "
             "printf -v z hi; echo \"[$z]\"")
         assert await io.stdout_str() == "-v[]\n[hi]\n[hi]\n"
-        assert await io.stderr_str() == ""
+        assert await io.stderr_str() == (
+            "printf: warning: ignoring excess arguments, starting with 'x'\n")
     finally:
         await ws.close()
 

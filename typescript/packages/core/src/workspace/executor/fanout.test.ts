@@ -883,3 +883,46 @@ it('keeps every producing mount when the last operand is refused', async () => {
   )
   expect(io.producer?.prefixes).toEqual(expect.arrayContaining(['/', '/data/']))
 })
+
+// /data holding a.txt and s, whose f sits beside a link to ../a.txt and one to
+// nowhere, over a descendant mount /data/m holding g.
+async function linkedTree(): Promise<Workspace> {
+  const ws = new Workspace(
+    { '/data/': new RAMVFS(), '/data/m/': new RAMVFS() },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  await ws.shell(
+    "mkdir /data/s && printf o > /data/s/f && printf 'hello\\n' > /data/a.txt && " +
+      'printf o > /data/m/g && cd /data && ln -s ../a.txt s/al && ln -s nowhere s/dang',
+  )
+  return ws
+}
+
+const DANGLING =
+  'rg: /data/s/dang: IO error for operation on /data/s/dang: No such file or directory (os error 2)\n'
+
+// Both fan-outs hand the walk the namespace and the door: the unified walk
+// --sort takes skipped every link as ripgrep does only once it could tell
+// one, and a per-mount run follows them under -L.
+it.each([
+  ['rg --sort path o /data', '/data/a.txt:hello\n/data/m/g:o\n/data/s/f:o\n', '', 0],
+  [
+    'rg -L --sort path o /data',
+    '/data/a.txt:hello\n/data/m/g:o\n/data/s/al:hello\n/data/s/f:o\n',
+    DANGLING,
+    2,
+  ],
+  ['rg -L o /data', '/data/a.txt:hello\n/data/s/f:o\n/data/s/al:hello\n/data/m/g:o\n', DANGLING, 2],
+])('follows links across mounts only under -L: %s', async (line, stdout, stderr, code) => {
+  const ws = await linkedTree()
+  try {
+    const io = await ws.shell(line)
+    expect([stdoutStr(io), new TextDecoder().decode(io.stderr), io.exitCode]).toEqual([
+      stdout,
+      stderr,
+      code,
+    ])
+  } finally {
+    await ws.close()
+  }
+})

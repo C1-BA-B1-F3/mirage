@@ -22,6 +22,7 @@ import { getExtension } from '../resolve.ts'
 import { BINARY_EXTENSIONS } from './constants.ts'
 import type { FileTypes } from './rg_filetypes.ts'
 import { type Overrides, Verdict, walkCandidate } from './rg_glob.ts'
+import type { LinkDoor } from './utils/links.ts'
 import type { AsyncReaddirFn, AsyncStatFn } from './utils/types.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 
@@ -67,14 +68,17 @@ export class WalkFilter {
 /**
  * One input rg searches: its virtual path (`-` for stdin), the path rg
  * prints for it, its stat when the walk read one (the time sorts read it),
- * and the operand itself when it was named on the line, which a stream read
- * takes.
+ * the operand itself when it was named on the line, which a stream read
+ * takes, and the door a file the walk reached through a link is read
+ * through, since the link may lead onto a mount the operand's backend
+ * cannot read.
  */
 export interface Haystack {
   virtual: string
   shown: string
   stat: FileStat | null
   spec: PathSpec | null
+  door: LinkDoor | null
 }
 
 function errorText(err: unknown): string {
@@ -100,6 +104,13 @@ export function walkErrorLine(shown: string, err: unknown): string {
   return `rg: ${shown}: IO error for operation on ${shown}: ${osErrorText(err)}`
 }
 
+// ripgrep's line for a link -L found leading back into the walk: the link,
+// then the directory above it that it names, nearest first, each as the
+// walker spells it (ripgrep 14.1.1). Mirrors Python's loop_error_line.
+export function loopErrorLine(shown: string, ancestor: string): string {
+  return `rg: File system loop found: ${shown} points to an ancestor ${ancestor}`
+}
+
 // ripgrep's line for a file its searcher could not open or read: the bare
 // I/O error, without the walker's preamble (ripgrep 14.1.1). Mirrors
 // Python's open_error_line.
@@ -119,14 +130,36 @@ function byName(a: string, b: string): number {
 }
 
 /**
+ * --one-file-system's test: whether a directory lies on another mount than
+ * the operand's. A mount is mirage's filesystem boundary, which a directory
+ * crosses by being a mount root and a link by leading onto another mount.
+ * `path` has every link resolved. Mirrors Python's on_other_mount.
+ */
+export function onOtherMount(
+  rootOf: (path: string) => string,
+  home: string,
+  path: string,
+): boolean {
+  return rootOf(path) !== home
+}
+
+/**
  * The files a walk of one directory operand searches, in walk order. `root`
  * is the operand's virtual path and `shownRoot` the operand as typed, which
- * every printed path below it starts with; `cwd` is the root the globs are
- * matched from. `sortByName` is --sort path, each directory's entries in
- * name order rather than the backend's. `boundary` is --one-file-system's
- * test for a mount root, which the walk does not enter, or null to enter
- * everything the backend lists. `depth` is how deep `directory` is below the
- * operand, which is listed when `directory` is null.
+ * every printed path below it starts with (empty for the implicit cwd, whose
+ * matches print bare while the walker names `./x`); `cwd` is the root the
+ * globs are matched from. `sortByName` is --sort path, each directory's
+ * entries in name order rather than the backend's. `boundary` is
+ * --one-file-system's test for a directory on another mount than the
+ * operand's, which the walk does not enter, or null to enter everything.
+ * `door` is the namespace's links and the door past them, null outside a
+ * workspace, where no link can stand.
+ *
+ * A link the walk meets is skipped, as ripgrep skips one, unless `follow`
+ * (-L) says to walk through it: then it stands for what it leads to, a
+ * directory descended and a file searched under the link's own name, and
+ * one that dangles, loops or leads back to a directory above it is reported
+ * in ripgrep's words and skipped. Mirrors Python's walk_haystacks.
  */
 export async function* walkHaystacks(
   readdirFn: AsyncReaddirFn,
@@ -138,53 +171,169 @@ export async function* walkHaystacks(
   sortByName: boolean,
   warnings: string[] | null,
   boundary: ((path: string) => boolean) | null = null,
-  depth = 0,
-  directory: string | null = null,
+  door: LinkDoor | null = null,
+  follow = false,
 ): AsyncGenerator<Haystack> {
-  const here = directory ?? root
-  if (walk.maxDepth !== null && depth >= walk.maxDepth) return
-  let entries: string[]
-  try {
-    entries = await readdirFn(here)
-  } catch (err) {
-    if (!isWalkError(err)) throw err
-    warnings?.push(walkErrorLine(respellOne(here, root, shownRoot), err))
-    return
+  const walker = new Walker(
+    readdirFn,
+    statFn,
+    cwd,
+    walk,
+    sortByName,
+    warnings,
+    boundary,
+    door,
+    follow,
+    shownRoot === '',
+  )
+  yield* walker.below(root, root, shownRoot, 0, [[root, walker.named(shownRoot)]], false)
+}
+
+// One directory the walk has listed, as its link-resolved path and the
+// walker's name for it.
+type Level = readonly [real: string, named: string]
+
+// What one operand's walk reads with and keeps, for every level. Mirrors
+// Python's _Walker.
+class Walker {
+  constructor(
+    readonly readdirFn: AsyncReaddirFn,
+    readonly statFn: AsyncStatFn,
+    readonly cwd: string,
+    readonly walk: WalkFilter,
+    readonly sortByName: boolean,
+    readonly warnings: string[] | null,
+    readonly boundary: ((path: string) => boolean) | null,
+    readonly door: LinkDoor | null,
+    readonly follow: boolean,
+    readonly implicit: boolean,
+  ) {}
+
+  // A path as the walker names it in a warning. Matches print the implicit
+  // cwd's paths bare, but the walker's own errors name the path it walked,
+  // which starts `./` (ripgrep 14.1.1).
+  named(shown: string): string {
+    if (!this.implicit) return shown
+    return shown !== '' ? `./${shown}` : './'
   }
-  if (sortByName) entries = [...entries].sort(byName)
-  for (const entry of entries) {
-    // box/dropbox readdir marks folders with a trailing slash.
-    const child = entryName(entry) || entry
-    const shown = respellOne(child, root, shownRoot)
-    let s: FileStat
+
+  warn(line: string): void {
+    this.warnings?.push(line)
+  }
+
+  // Whether a link stands at a walked entry.
+  isLink(virtual: string): boolean {
+    return this.door !== null && this.door.links.statAt(virtual) !== null
+  }
+
+  /**
+   * The files under one directory the walk lists. `here` has every link
+   * resolved; `base` is the path its entries are spelled from (the operand,
+   * or the link-resolved directory the walk last reached through a link)
+   * and `shownBase` that path as printed. `chain` is `here` and every
+   * directory above it to the operand, nearest first: what a link leading
+   * back into the walk is caught against. `linked` says the walk reached
+   * `here` through a link, so it reads through the door rather than the
+   * operand's backend.
+   */
+  async *below(
+    here: string,
+    base: string,
+    shownBase: string,
+    depth: number,
+    chain: readonly Level[],
+    linked: boolean,
+  ): AsyncGenerator<Haystack> {
+    if (this.walk.maxDepth !== null && depth >= this.walk.maxDepth) return
+    const door = linked ? this.door : null
+    let entries: string[]
     try {
-      s = await statFn(entry)
+      entries = door !== null ? await door.readdir(here) : await this.readdirFn(here)
     } catch (err) {
       if (!isWalkError(err)) throw err
-      warnings?.push(walkErrorLine(shown, err))
-      continue
+      this.warn(walkErrorLine(chain[0]?.[1] ?? here, err))
+      return
     }
-    const name = gnuBasename(child)
-    const candidate = walkCandidate(shown, cwd)
-    if (s.type === FileType.DIRECTORY) {
-      if (boundary?.(child) === true) continue
-      if (walk.admits(candidate, name, true)) {
-        yield* walkHaystacks(
-          readdirFn,
-          statFn,
-          root,
-          shownRoot,
-          cwd,
-          walk,
-          sortByName,
-          warnings,
-          boundary,
-          depth + 1,
-          child,
-        )
+    if (this.follow && this.door !== null) {
+      const listed = new Set(entries.map(entryName))
+      entries = [...entries, ...this.door.children(here).filter((link) => !listed.has(link))]
+    }
+    if (this.sortByName) entries = [...entries].sort(byName)
+    for (const entry of entries) {
+      // box/dropbox readdir marks folders with a trailing slash.
+      const child = entryName(entry) || entry
+      const shown = respellOne(child, base, shownBase)
+      if (this.isLink(child)) {
+        if (this.follow) yield* this.through(child, shown, depth, chain)
+        continue
       }
-    } else if (s.type === FileType.FILE && walk.admitsFile(candidate, name, s)) {
-      yield { virtual: child, shown, stat: s, spec: null }
+      let s: FileStat
+      try {
+        s = door !== null ? await door.stat(entry) : await this.statFn(entry)
+      } catch (err) {
+        if (!isWalkError(err)) throw err
+        this.warn(walkErrorLine(this.named(shown), err))
+        continue
+      }
+      const name = gnuBasename(child)
+      const candidate = walkCandidate(shown, this.cwd)
+      if (s.type === FileType.DIRECTORY) {
+        if (this.boundary?.(child) === true) continue
+        if (this.walk.admits(candidate, name, true)) {
+          yield* this.below(
+            child,
+            base,
+            shownBase,
+            depth + 1,
+            [[child, this.named(shown)], ...chain],
+            linked,
+          )
+        }
+      } else if (s.type === FileType.FILE && this.walk.admitsFile(candidate, name, s)) {
+        yield { virtual: child, shown, stat: s, spec: null, door }
+      }
+    }
+  }
+
+  /**
+   * What -L walks in place of one link. The ignore crate's order: the link
+   * is followed first, so one that dangles or loops is reported whatever the
+   * filters would have said of its name, then a directory it leads to is
+   * checked against the chain above it, and only then do the filters decide.
+   */
+  async *through(
+    link: string,
+    shown: string,
+    depth: number,
+    chain: readonly Level[],
+  ): AsyncGenerator<Haystack> {
+    const door = this.door
+    if (door === null) return
+    const named = this.named(shown)
+    let target: string
+    let s: FileStat
+    try {
+      target = door.target(link)
+      s = await door.stat(target)
+    } catch (err) {
+      if (!isWalkError(err)) throw err
+      this.warn(walkErrorLine(named, err))
+      return
+    }
+    const name = gnuBasename(link)
+    const candidate = walkCandidate(shown, this.cwd)
+    if (s.type === FileType.DIRECTORY) {
+      const above = chain.find(([real]) => real === target)
+      if (above !== undefined) {
+        this.warn(loopErrorLine(named, above[1]))
+        return
+      }
+      if (this.boundary?.(target) === true) return
+      if (this.walk.admits(candidate, name, true)) {
+        yield* this.below(target, target, shown, depth + 1, [[target, named], ...chain], true)
+      }
+    } else if (s.type === FileType.FILE && this.walk.admitsFile(candidate, name, s)) {
+      yield { virtual: target, shown, stat: s, spec: null, door }
     }
   }
 }

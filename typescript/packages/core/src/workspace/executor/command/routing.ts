@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { findExprTail } from '../../../commands/builtin/find_parse.ts'
+import { FILE_KEYS } from '../../../commands/builtin/generic/program.ts'
 import { walk } from '../../../commands/cli/walk.ts'
 import { SPECS } from '../../../commands/spec/index.ts'
 import { FlagView } from '../../../commands/spec/flag_view.ts'
@@ -96,13 +97,8 @@ export function pathFlagScopes(cmdName: string, argv: string[], cwd: string): Pa
   const spec = SPECS[cmdName]
   if (spec === undefined) return []
   const parsed = parseCommand(spec, argv, cwd, cmdName)
-  const key = (
-    { grep: '--file', rg: '--file', sed: '-f', awk: '-f', jq: '--from-file' } as Record<
-      string,
-      string
-    >
-  )[cmdName]
-  const program = key === undefined ? undefined : parsed.flags[key]
+  const key = FILE_KEYS[cmdName]
+  const program = key === undefined ? undefined : parseToKwargs(parsed)[key]
   const programPaths = Array.isArray(program) ? program : [program]
   const flagPaths = [...parsed.pathFlagValues]
   for (const value of programPaths) {

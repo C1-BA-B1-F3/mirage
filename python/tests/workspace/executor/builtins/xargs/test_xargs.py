@@ -131,6 +131,13 @@ async def test_null_delimited_input():
 
 
 @pytest.mark.asyncio
+async def test_a_raw_byte_reaches_the_command_as_itself():
+    shell = FakeShell()
+    await handle_xargs(shell, ["printf", "%s"], make_session(), b"a\xffb\n")
+    assert shell.lines == ["printf %s 'a'$'\\xff''b'"]
+
+
+@pytest.mark.asyncio
 async def test_custom_delimiter():
     shell = FakeShell()
     await handle_xargs(shell, ["-d,", "echo"], make_session(), b"a,b,c")

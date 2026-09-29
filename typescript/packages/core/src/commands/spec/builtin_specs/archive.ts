@@ -47,22 +47,26 @@ export const SPECS: Record<string, CommandSpec> = {
     rest: new Operand({ type: 'path' }),
   }),
   tar: new CommandSpec({
+    // Each option under GNU tar's own long name. Its aliases (--get,
+    // --gunzip, --ungzip) and every abbreviation resolve through
+    // LONG_OPTION_TABLES, tar's whole table, which also knows the options
+    // mirage does not declare.
     options: [
-      new Option({ short: '-c' }),
-      new Option({ short: '-x' }),
-      new Option({ short: '-t' }),
-      new Option({ short: '-z' }),
-      new Option({ short: '-j' }),
-      new Option({ short: '-J' }),
-      new Option({ short: '-v' }),
+      new Option({ short: '-c', long: '--create' }),
+      new Option({ short: '-x', long: '--extract' }),
+      new Option({ short: '-t', long: '--list' }),
+      new Option({ short: '-z', long: '--gzip' }),
+      new Option({ short: '-j', long: '--bzip2' }),
+      new Option({ short: '-J', long: '--xz' }),
+      new Option({ short: '-v', long: '--verbose' }),
       // -h archives what a symlink points at instead of the link.
-      new Option({ short: '-h' }),
+      new Option({ short: '-h', long: '--dereference' }),
       new Option({ short: '-O', long: '--to-stdout' }),
-      new Option({ short: '-f', type: 'path' }),
+      new Option({ short: '-f', long: '--file', type: 'path' }),
       // Every occurrence is kept, in order: GNU chdirs at each one and
       // fails at the first it cannot enter, so the planner has to see
       // them all, not just the last.
-      new Option({ short: '-C', type: 'path', multiple: true }),
+      new Option({ short: '-C', long: '--directory', type: 'path', multiple: true }),
       new Option({ long: '--strip-components', type: 'str' }),
       new Option({ long: '--exclude', type: 'str' }),
     ],

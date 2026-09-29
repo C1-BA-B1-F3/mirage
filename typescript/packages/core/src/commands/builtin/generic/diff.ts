@@ -165,7 +165,8 @@ export async function diffGeneric(
 ): Promise<[ByteSource | null, IOResult]> {
   const fl = new FlagView(opts.flags, specOf('diff'))
   if (paths.length > 2) throw extraOperandError(CommandName.DIFF, paths[2]?.rawPath ?? '')
-  if (paths.length < 2) throw missingOperandError(CommandName.DIFF, paths[0]?.rawPath ?? null)
+  if (paths.length < 2)
+    throw missingOperandError(CommandName.DIFF, paths[0]?.rawPath ?? null, opts.argv ?? [])
   const flags: DiffFlags = {
     i: fl.asBool('i'),
     w: fl.asBool('w'),

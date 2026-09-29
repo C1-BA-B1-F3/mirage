@@ -14,9 +14,12 @@
 
 import { describe, expect, it } from 'vitest'
 import { materialize, type ByteSource, type IOResult } from '../../../io/types.ts'
-import { FileStat, FileType, PathSpec } from '../../../types.ts'
+import { FileStat, FileType, MountMode, PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
 import { eacces, enoent } from '../../../utils/errors.ts'
+import { RAMVFS } from '../../../vfs/ram/ram.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
 import { labelled, rgGeneric } from './rg.ts'
 
 const ENC = new TextEncoder()
@@ -521,5 +524,104 @@ describe('labelled', () => {
   it('lets -I win', () => {
     const opts = { ...base, flags: { no_filename: true } }
     expect(labelled(opts)).toBe(opts)
+  })
+})
+
+// Run `line` in /data, where s holds f, t holds g and a.txt says hello and
+// world, beside a read-only /ro holding f, as ripgrep 14.1.1 was pinned.
+async function walked(line: string): Promise<[string, string, number]> {
+  const ro = new RAMVFS()
+  const seed = new Workspace(
+    { '/ro/': ro },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  await seed.shell("printf 'ro\\n' > /ro/f")
+  const ws = new Workspace(
+    { '/data/': new RAMVFS(), '/ro/': [ro, MountMode.READ] },
+    { mode: MountMode.WRITE, shellParser: await getTestParser() },
+  )
+  try {
+    await ws.shell(
+      "cd /data && mkdir s t && printf 'hello\\nworld\\n' > a.txt && printf o > s/f && printf o > t/g",
+    )
+    const io = await ws.shell(`cd /data && ${line}`)
+    const dec = new TextDecoder()
+    return [dec.decode(io.stdout), dec.decode(io.stderr), io.exitCode]
+  } finally {
+    await ws.close()
+    await seed.close()
+  }
+}
+
+const AL = 'ln -s ../a.txt s/al && '
+const dang = (p: string): string =>
+  `rg: ${p}: IO error for operation on ${p}: No such file or directory (os error 2)\n`
+const loop = (p: string): string =>
+  `rg: ${p}: IO error for operation on ${p}: Too many levels of symbolic links (os error 40)\n`
+
+describe('rg -L', () => {
+  // A link the walk meets is skipped unless -L (the last of it and
+  // --no-follow) says to follow it; one to a directory is descended under the
+  // link's own name, onto any mount, unless --one-file-system keeps the walk
+  // on the operand's.
+  it.each([
+    [AL + 'rg --sort path o s', 's/f:o\n', '', 0],
+    [AL + 'rg -L --sort path o s', 's/al:hello\ns/al:world\ns/f:o\n', '', 0],
+    [AL + 'rg --follow --sort path o s', 's/al:hello\ns/al:world\ns/f:o\n', '', 0],
+    [AL + 'rg -L --no-follow --sort path o s', 's/f:o\n', '', 0],
+    [AL + 'rg --no-follow -L --sort path o s', 's/al:hello\ns/al:world\ns/f:o\n', '', 0],
+    [AL + 'rg -L --files --sort path s', 's/al\ns/f\n', '', 0],
+    ['ln -s ../t s/tl && rg -L --sort path o s', 's/f:o\ns/tl/g:o\n', '', 0],
+    ['ln -s ../t s/tl && rg --sort path o s', 's/f:o\n', '', 0],
+    ['ln -s /ro s/rol && rg -L --sort path ro s', 's/rol/f:ro\n', '', 0],
+    ['ln -s /ro s/rol && rg -L --one-file-system --files --sort path s', 's/f\n', '', 0],
+    ['ln -s /ro/f s/rf && rg -L --one-file-system --files --sort path s', 's/f\ns/rf\n', '', 0],
+  ])('%s', async (line, stdout, stderr, code) => {
+    expect(await walked(line)).toEqual([stdout, stderr, code])
+  })
+
+  // The ignore crate follows a link before a filter sees its name, so a
+  // dangling, looping or ancestor link is reported even hidden or
+  // glob-excluded, each named as the walker spells it: `./x` under the
+  // implicit cwd, whose matches print bare (ripgrep 14.1.1).
+  it.each([
+    ['ln -s nowhere s/dang && rg -L o s', 's/f:o\n', dang('s/dang')],
+    ["ln -s nowhere s/.dang && rg -L -g '*.txt' o s", '', dang('s/.dang')],
+    [
+      'ln -s lp2 s/lp1 && ln -s lp1 s/lp2 && rg -L --sort path o s',
+      's/f:o\n',
+      loop('s/lp1') + loop('s/lp2'),
+    ],
+    [
+      'mkdir s/sub && ln -s .. s/sub/up && rg -L --sort path o s',
+      's/f:o\n',
+      'rg: File system loop found: s/sub/up points to an ancestor s\n',
+    ],
+    [
+      'ln -s . s/.self && rg -L o s',
+      's/f:o\n',
+      'rg: File system loop found: s/.self points to an ancestor s\n',
+    ],
+    [
+      'ln -s ../t s/tl && ln -s ../s t/sl && rg -L --sort path o s',
+      's/f:o\ns/tl/g:o\n',
+      'rg: File system loop found: s/tl/sl points to an ancestor s\n',
+    ],
+    ['ln -s nowhere s/dang && cd s && rg -L o', 'f:o\n', dang('./dang')],
+    [
+      'mkdir s/sub && ln -s .. s/sub/up && cd s && rg -L --files',
+      'f\n',
+      'rg: File system loop found: ./sub/up points to an ancestor ./\n',
+    ],
+  ])('reports what it cannot follow: %s', async (line, stdout, stderr) => {
+    expect(await walked(line)).toEqual([stdout, stderr, 2])
+  })
+
+  it('keeps status 0 under -q past a dangling link', async () => {
+    expect(await walked('ln -s nowhere s/dang && rg -L -q --sort path o s')).toEqual([
+      '',
+      dang('s/dang'),
+      0,
+    ])
   })
 })

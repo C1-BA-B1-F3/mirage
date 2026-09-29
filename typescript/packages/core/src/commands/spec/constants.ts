@@ -149,6 +149,183 @@ export const LONG_SYNONYMS: ReadonlyMap<string, string> = new Map([
   ['rg --passthrough', '--passthru'],
 ])
 
+// The whole long-option table of a program whose getopt_long resolves an
+// abbreviation against more options than mirage declares for it, so a partial
+// spec cannot say whether a prefix is ambiguous: `tar --fil` is `--file` or
+// `--files-from`, the second one mirage never declared. Each group is one
+// option, its primary spelling first and its aliases after it (argp's
+// OPTION_ALIAS entries, which share the primary's key and so never make a
+// prefix of both ambiguous), in the order getopt_long reads the table, which
+// is the order it lists possibilities in. A prefix names an option this table
+// resolves; one mirage does not declare stays unrecognized.
+//
+// GNU tar 1.35: argp hands getopt_long tar.c's options, then names.c's, then
+// argp's own --help, --usage, --program-name and --HANG, then --version.
+// Mirrors Python's TAR_LONG_OPTIONS.
+export const TAR_LONG_OPTIONS: readonly (readonly string[])[] = [
+  ['--list'],
+  ['--extract', '--get'],
+  ['--create'],
+  ['--diff', '--compare'],
+  ['--append'],
+  ['--update'],
+  ['--catenate', '--concatenate'],
+  ['--delete'],
+  ['--test-label'],
+  ['--sparse'],
+  ['--hole-detection'],
+  ['--sparse-version'],
+  ['--incremental'],
+  ['--listed-incremental'],
+  ['--level'],
+  ['--ignore-failed-read'],
+  ['--occurrence'],
+  ['--seek'],
+  ['--no-seek'],
+  ['--no-check-device'],
+  ['--check-device'],
+  ['--verify'],
+  ['--remove-files'],
+  ['--keep-old-files'],
+  ['--skip-old-files'],
+  ['--keep-newer-files'],
+  ['--overwrite'],
+  ['--unlink-first'],
+  ['--recursive-unlink'],
+  ['--no-overwrite-dir'],
+  ['--overwrite-dir'],
+  ['--keep-directory-symlink'],
+  ['--one-top-level'],
+  ['--to-stdout'],
+  ['--to-command'],
+  ['--ignore-command-error'],
+  ['--no-ignore-command-error'],
+  ['--owner'],
+  ['--group'],
+  ['--owner-map'],
+  ['--group-map'],
+  ['--mtime'],
+  ['--clamp-mtime'],
+  ['--mode'],
+  ['--atime-preserve'],
+  ['--touch'],
+  ['--same-owner'],
+  ['--no-same-owner'],
+  ['--numeric-owner'],
+  ['--preserve-permissions', '--same-permissions'],
+  ['--no-same-permissions'],
+  ['--preserve-order', '--same-order'],
+  ['--delay-directory-restore'],
+  ['--no-delay-directory-restore'],
+  ['--sort'],
+  ['--xattrs'],
+  ['--no-xattrs'],
+  ['--xattrs-include'],
+  ['--xattrs-exclude'],
+  ['--selinux'],
+  ['--no-selinux'],
+  ['--acls'],
+  ['--no-acls'],
+  ['--file'],
+  ['--force-local'],
+  ['--rmt-command'],
+  ['--rsh-command'],
+  ['--multi-volume'],
+  ['--tape-length'],
+  ['--info-script', '--new-volume-script'],
+  ['--volno-file'],
+  ['--blocking-factor'],
+  ['--record-size'],
+  ['--ignore-zeros'],
+  ['--read-full-records'],
+  ['--format'],
+  ['--old-archive', '--portability'],
+  ['--posix'],
+  ['--pax-option'],
+  ['--label'],
+  ['--auto-compress'],
+  ['--no-auto-compress'],
+  ['--use-compress-program'],
+  ['--bzip2'],
+  ['--gzip', '--gunzip', '--ungzip'],
+  ['--compress', '--uncompress'],
+  ['--lzip'],
+  ['--lzma'],
+  ['--lzop'],
+  ['--xz'],
+  ['--zstd'],
+  ['--one-file-system'],
+  ['--absolute-names'],
+  ['--dereference'],
+  ['--hard-dereference'],
+  ['--starting-file'],
+  ['--newer', '--after-date'],
+  ['--newer-mtime'],
+  ['--backup'],
+  ['--suffix'],
+  ['--strip-components'],
+  ['--transform', '--xform'],
+  ['--checkpoint'],
+  ['--checkpoint-action'],
+  ['--check-links'],
+  ['--totals'],
+  ['--utc'],
+  ['--full-time'],
+  ['--index-file'],
+  ['--block-number'],
+  ['--show-defaults'],
+  ['--show-snapshot-field-ranges'],
+  ['--show-omitted-dirs'],
+  ['--show-transformed-names', '--show-stored-names'],
+  ['--quoting-style'],
+  ['--quote-chars'],
+  ['--no-quote-chars'],
+  ['--interactive', '--confirmation'],
+  ['--verbose'],
+  ['--warning'],
+  ['--restrict'],
+  ['--add-file'],
+  ['--directory'],
+  ['--files-from'],
+  ['--null'],
+  ['--no-null'],
+  ['--unquote'],
+  ['--no-unquote'],
+  ['--verbatim-files-from'],
+  ['--no-verbatim-files-from'],
+  ['--exclude'],
+  ['--exclude-from'],
+  ['--exclude-caches'],
+  ['--exclude-caches-under'],
+  ['--exclude-caches-all'],
+  ['--exclude-tag'],
+  ['--exclude-ignore'],
+  ['--exclude-ignore-recursive'],
+  ['--exclude-tag-under'],
+  ['--exclude-tag-all'],
+  ['--exclude-vcs'],
+  ['--exclude-vcs-ignores'],
+  ['--exclude-backups'],
+  ['--recursion'],
+  ['--no-recursion'],
+  ['--anchored'],
+  ['--no-anchored'],
+  ['--ignore-case'],
+  ['--no-ignore-case'],
+  ['--wildcards'],
+  ['--no-wildcards'],
+  ['--wildcards-match-slash'],
+  ['--no-wildcards-match-slash'],
+  ['--help'],
+  ['--usage'],
+  ['--program-name'],
+  ['--HANG'],
+  ['--version'],
+]
+export const LONG_OPTION_TABLES: Readonly<Record<string, readonly (readonly string[])[]>> = {
+  tar: TAR_LONG_OPTIONS,
+}
+
 // The programs whose short value options drop one `=` from an attached value,
 // the way lexopt (ripgrep's parser), clap and argparse read `-x=VALUE`. GNU
 // getopt keeps it (`head -n=5` is refused as `=5`), which is every other
@@ -216,6 +393,12 @@ export const FLOAT_VALUE = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/
 // name (GNU diffutils style: `diff: Try 'diff --help' ...`).
 export const USAGE_HINT_PREFIX: ReadonlySet<string> = new Set(['diff', 'cmp', 'patch'])
 
+// Commands that read their operands in line order (getopt's
+// RETURN_IN_ORDER), so the argv[argc - 1] a missing-operand line names is
+// the line's last word, not its last operand: `join a.txt -t ,` is missing
+// an operand after ',' (coreutils 9.7). Mirrors Python's ARGV_IN_ORDER.
+export const ARGV_IN_ORDER: ReadonlySet<string> = new Set(['join'])
+
 // An old-style cluster letter left without its argument exits 2, not
 // USAGE_EXIT's 64: tar reads the cluster itself and raises its own fatal
 // error, while 64 (EX_USAGE) is what argp returns for a letter it does
@@ -275,19 +458,18 @@ export const READ_FAIL_EXIT: Readonly<Record<string, number>> = Object.freeze({
   unzip: 9,
 })
 
-// The four commands whose code DOES depend on the errno, so the table
-// above cannot express them on its own. sed opens the directory
-// successfully and fails on the read, which is its own class (4), while a
-// missing file fails at open (2). The gzip family reports a directory as
-// a warning (2) and a missing file as an error (1). zgrep inverts that,
-// because its exit code is grep's: a directory it cannot decompress
-// yields no match (1) where a missing file is grep's own error (2).
+// The commands whose code DOES depend on the errno, so the table above
+// cannot express them on its own. sed opens the directory successfully and
+// fails on the read, which is its own class (4), while a missing file fails at
+// open (2). The gzip family reports a directory as a warning (2) and a missing
+// file as an error (1). zgrep opens its operands itself, as `gzip -cdfq`
+// does, and a pattern file it cannot read is exit 2 however it failed.
+// Mirrors Python's READ_FAIL_EXIT_ISDIR.
 export const READ_FAIL_EXIT_ISDIR: Readonly<Record<string, number>> = Object.freeze({
   sed: 4,
   gzip: 2,
   gunzip: 2,
   zcat: 2,
-  zgrep: 1,
 })
 
 // The interpreter commands answer option errors in CPython's words, not

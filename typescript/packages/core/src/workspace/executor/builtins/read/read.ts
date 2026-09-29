@@ -13,8 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { SHELL_SPECS, parseShellOptions } from '../../../../commands/spec/shell.ts'
-import { AsyncLineIterator } from '../../../../io/async_line_iterator.ts'
-import { asyncChain } from '../../../../io/stream.ts'
+import { type AsyncLineIterator, lineBuffer } from '../../../../io/async_line_iterator.ts'
 import { IOResult } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import { ArithError } from '../../../../shell/errors.ts'
@@ -247,16 +246,8 @@ export async function handleRead(
     return readRefusal(`bash: read: \`${arrayName}': not a valid identifier\n`)
   }
   const variables = parse.operands.length > 0 ? parse.operands : ['REPLY']
-  if (stdin !== null && (session.stdinBuffer === null || session.stdinSource !== stdin)) {
-    if (stdin instanceof Uint8Array) {
-      session.stdinBuffer = new AsyncLineIterator(asyncChain([stdin]))
-    } else {
-      session.stdinBuffer = new AsyncLineIterator(stdin)
-    }
-    session.stdinSource = stdin
-  }
   const view = requireView(state)
-  const buffer = session.stdinBuffer
+  const buffer = stdin !== null ? lineBuffer(stdin) : null
   if (timeout === 0) {
     const code = buffer !== null ? 0 : 1
     return [

@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from mirage.commands.builtin.constants import (CMP_SIZE_UNITS, INTMAX,
@@ -14,7 +14,7 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName, FlagValue
 from mirage.commands.spec.usage import (extra_operand_error,
                                         missing_operand_error, usage_hint)
-from mirage.io.types import ByteSource, IOResult
+from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import PathSpec
 from mirage.utils.errors import FS_ERRORS, format_fs_error
 
@@ -113,8 +113,34 @@ def offset_width(sizes: list[int], limit: int | None) -> int:
     return len(str(max(most, 0)))
 
 
+def operand_skips(texts: Sequence[str], skip: tuple[int,
+                                                    int]) -> tuple[int, int]:
+    """The skips cmp's SKIP1 and SKIP2 operands give, beside -i's.
+
+    Each is read as -i reads its counts, and each file keeps the larger
+    of the two skips it was given: diffutils' specify_ignore_initial
+    only ever raises one. Past the fourth operand is an extra one, which
+    diffutils refuses only after both skips have parsed.
+
+    Args:
+        texts (Sequence[str]): the operands after FILE1 and FILE2.
+        skip (tuple[int, int]): what -i gave each file.
+
+    Raises:
+        UsageError: a skip is not a count cmp accepts, or an extra
+            operand follows them.
+    """
+    skips = list(skip)
+    for f, raw in enumerate(texts[:2]):
+        skips[f] = max(skips[f], parse_count(raw, "--ignore-initial"))
+    if len(texts) > 2:
+        raise extra_operand_error(CommandName.CMP, texts[2])
+    return skips[0], skips[1]
+
+
 async def cmp_cmd(
         paths: list[PathSpec],
+        texts: Sequence[str] = (),
         *,
         read_bytes: Callable[..., Awaitable[bytes]],
         stdin: ByteSource | None = None,
@@ -123,18 +149,16 @@ async def cmp_cmd(
         limit: int | None = None,
         print_bytes: bool = False,
         skip: tuple[int, int] = (0, 0),
+        argv: Sequence[str] = (),
 ) -> tuple[ByteSource | None, IOResult]:
-    if len(paths) > 2:
-        raise extra_operand_error(CommandName.CMP, paths[2].raw_path
-                                  or paths[2].virtual)
     if not paths:
-        raise missing_operand_error(CommandName.CMP, None)
+        raise missing_operand_error(CommandName.CMP, None, argv)
+    skip = operand_skips(texts, skip)
     # A lone FILE1 is compared with stdin, which GNU names `-`.
     p0, p1 = paths[0], paths[1] if len(paths) > 1 else STDIN_OPERAND
     if is_stdin(p0) and is_stdin(p1):
-        # Both name the one stdin: GNU sees the same file at the same
-        # offset and answers equal without reading, whatever the skips.
-        return None, IOResult()
+        return await _one_stdin_twice(read_bytes, stdin, p0, skip, silent,
+                                      verbose, limit, print_bytes)
     names = (p0.raw_path or p0.virtual, p1.raw_path or p1.virtual)
     read = stdin_bytes(read_bytes, stdin)
     # GNU cmp reserves exit 1 for "files differ"; trouble is exit 2.
@@ -164,8 +188,60 @@ async def cmp_cmd(
     sizes = [len(data1) - skip[0]] if not is_stdin(p0) else []
     if not is_stdin(p1):
         sizes.append(len(data2) - skip[1])
-    data1 = data1[skip[0]:]
-    data2 = data2[skip[1]:]
+    return _compared(data1[skip[0]:], data2[skip[1]:], names, sizes, silent,
+                     verbose, limit, print_bytes)
+
+
+async def _one_stdin_twice(
+        read_bytes: Callable[..., Awaitable[bytes]], stdin: ByteSource | None,
+        p: PathSpec, skip: tuple[int, int], silent: bool, verbose: bool,
+        limit: int | None,
+        print_bytes: bool) -> tuple[ByteSource | None, IOResult]:
+    """Both operands naming the one stdin, as diffutils 3.10 answers it.
+
+    The same file at the same offset is equal unread. Otherwise cmp
+    skips on the one descriptor twice, so the first file reads what is
+    left past both skips and the second reads nothing, and closing the
+    descriptor a second time fails: that line and exit 2 follow
+    whatever the comparison said, -s included.
+
+    Args:
+        read_bytes (Callable): the backend reader, which stdin rides.
+        stdin (ByteSource | None): the line's input.
+        p (PathSpec): the stdin operand.
+        skip (tuple[int, int]): each file's skip.
+        silent (bool): -s.
+        verbose (bool): -l.
+        limit (int | None): -n.
+        print_bytes (bool): -b.
+    """
+    if skip[0] == skip[1]:
+        return None, IOResult()
+    data = await stdin_bytes(read_bytes, stdin)(p)
+    stdout, io = _compared(data[skip[0] + skip[1]:], b"", ("-", "-"), [],
+                           silent, verbose, limit, print_bytes)
+    held = await materialize(io.stderr) if io.stderr is not None else b""
+    io.stderr = held + b"cmp: -: Bad file descriptor\n"
+    io.exit_code = 2
+    return stdout, io
+
+
+def _compared(data1: bytes, data2: bytes, names: tuple[str, str],
+              sizes: list[int], silent: bool, verbose: bool, limit: int | None,
+              print_bytes: bool) -> tuple[ByteSource | None, IOResult]:
+    """cmp's answer for two inputs already past their skips.
+
+    Args:
+        data1 (bytes): the first input's compared bytes.
+        data2 (bytes): the second input's.
+        names (tuple[str, str]): the two operands as typed.
+        sizes (list[int]): bytes left after the skip in each regular
+            operand, which size -l's offset column.
+        silent (bool): -s.
+        verbose (bool): -l.
+        limit (int | None): -n.
+        print_bytes (bool): -b.
+    """
     if limit is not None:
         data1 = data1[:limit]
         data2 = data2[:limit]
@@ -277,10 +353,12 @@ async def cmp_generic(
 ) -> tuple[ByteSource | None, IOResult]:
     parsed = parse_flags(opts.flags)
     return await cmp_cmd(paths,
+                         texts,
                          read_bytes=read_bytes,
                          stdin=opts.stdin,
                          silent=parsed.silent,
                          verbose=parsed.verbose,
                          limit=parsed.limit,
                          print_bytes=parsed.print_bytes,
-                         skip=parsed.skip)
+                         skip=parsed.skip,
+                         argv=opts.argv)

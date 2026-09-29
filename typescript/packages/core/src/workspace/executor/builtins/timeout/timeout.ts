@@ -23,6 +23,7 @@ import {
   unknownOptionError,
   usageHint,
 } from '../../../../commands/spec/usage.ts'
+import { runAsProgram } from '../../../../context/session_context.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import { yieldBytes } from '../../../../io/stream.ts'
@@ -323,14 +324,18 @@ export async function handleTimeout(
   // survives the deadline the way the drained stdout does.
   const held: IOResult[] = []
   const abort = new AbortController()
-  const run = executeDrained(
-    executeFn,
-    shellJoin(command),
-    session.sessionId,
-    stdin,
-    drained,
-    held,
-    abort.signal,
+  // timeout execs its command, so a builtin that is also a program answers
+  // as the program.
+  const run = runAsProgram(session, () =>
+    executeDrained(
+      executeFn,
+      shellJoin(command),
+      session.sessionId,
+      stdin,
+      drained,
+      held,
+      abort.signal,
+    ),
   )
   // The run may be abandoned and reject later; without a handler that
   // becomes an unhandled rejection and can crash the process.

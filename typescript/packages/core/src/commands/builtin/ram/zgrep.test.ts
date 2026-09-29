@@ -12,6 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { eacces, enoent } from '../../../utils/errors.ts'
+import { zgrepGeneric } from '../generic/zgrep.ts'
 import { RAM_COMMANDS } from './index.ts'
 import { describe, expect, it } from 'vitest'
 import { materialize } from '../../../io/types.ts'
@@ -232,4 +234,67 @@ describe('zgrep invalid extended expressions (GNU grep 3.11)', () => {
       ).toEqual([output, '', 1])
     }
   })
+})
+
+describe('zgrep opens each operand as gzip -cdfq does', () => {
+  // /data holds a.txt, x.gz (a.txt compressed), a directory and a link to
+  // x.gz, as zgrep 1.13 was pinned. Mirrors python's
+  // test_zgrep_opens_each_operand_as_gzip_cdfq_does.
+  it.each([
+    // gzip retries a missing name with each suffix, a link included.
+    ['zgrep hello x', 'hello\n', '', 0],
+    ['zgrep hello xl', 'hello\n', '', 0],
+    ['zgrep -l hello x', 'x\n', '', 0],
+    ['zgrep hello nope', '', 'gzip: nope.gz: No such file or directory\n', 2],
+    ["zgrep hello ''", '', 'gzip: .gz: No such file or directory\n', 2],
+    // A failed open is empty input to grep, and the run goes on.
+    [
+      'zgrep hello nope x a.txt',
+      'x:hello\na.txt:hello\n',
+      'gzip: nope.gz: No such file or directory\n',
+      2,
+    ],
+    ['zgrep -c hello nope x', 'nope:0\nx:1\n', 'gzip: nope.gz: No such file or directory\n', 2],
+    ['zgrep -L hello nope', 'nope\n', 'gzip: nope.gz: No such file or directory\n', 2],
+    // gzip -q keeps a directory's warning to itself.
+    ['zgrep hello dir', '', '', 1],
+    ['zgrep -c hello dir a.txt', 'dir:0\na.txt:1\n', '', 0],
+    ['zgrep -L hello dir', 'dir\n', '', 1],
+    ['zgrep hello a.txt/x', '', 'gzip: a.txt/x: Not a directory\n', 2],
+    ['zgrep hello x.gz/', '', 'gzip: x.gz/: Not a directory\n', 2],
+    ['zgrep -s hello nope', '', 'gzip: nope.gz: No such file or directory\n', 2],
+  ] as const)('%s', async (line, out, err, code) => {
+    const text = ENC.encode('hello\nworld\n')
+    const r = await shell(`mkdir /data/dir && cd /data && ln -s x.gz xl.gz && ${line}`, null, {
+      '/data/a.txt': text,
+      '/data/x.gz': await gzip(text),
+    })
+    expect(r).toEqual([out, err, code])
+  })
+})
+
+it.each([
+  [{}, '/bad:hello\n/good.gz:hello\n'],
+  [{ c: true }, '/bad:1\n/good.gz:1\n'],
+  [{ files_without_match: true }, ''],
+] as const)('keeps partial matches and continues after read errors: %j', async (flags, out) => {
+  const reads: string[] = []
+  async function* read(path: PathSpec): AsyncIterable<Uint8Array> {
+    reads.push(path.virtual)
+    if (path.virtual === '/bad') throw enoent(path)
+    yield await gzip(ENC.encode('hello\n'))
+    if (path.virtual === '/bad.gz') throw eacces(path)
+  }
+  const result = await zgrepGeneric(
+    [PathSpec.fromStrPath('/bad'), PathSpec.fromStrPath('/good.gz')],
+    ['hello'],
+    { flags, stdin: null, filetypeFns: null, cwd: '/' },
+    read,
+  )
+  if (result === null) throw new Error('zgrep returned no result')
+  const [body, io] = result
+  expect(DEC.decode(await materialize(body))).toBe(out)
+  expect(io.exitCode).toBe(2)
+  expect(await io.stderrStr()).toBe('\ngzip: /bad.gz: Permission denied\n')
+  expect(reads).toEqual(['/bad', '/bad.gz', '/good.gz'])
 })

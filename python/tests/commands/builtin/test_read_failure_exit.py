@@ -92,11 +92,13 @@ GNU_READ_EXIT = {
 # the operand and the errno are named and only the exit code above is
 # GNU's for every line.
 #
-# Two lines print nothing at all on a directory in GNU (`jq .` exits 2
-# silently, `zgrep x` exits 1 silently because gzip's warning is
-# swallowed by the pipe into grep). mirage reports them like the rest,
-# which is a deliberate divergence toward saying something.
+# Two lines print nothing at all on a directory in GNU: `jq .` exits 2
+# silently, and `zgrep x` exits 1 silently because zgrep runs gzip with
+# -q, which keeps the directory warning to itself. zgrep is silent here
+# too; jq reports it like the rest, which is a deliberate divergence
+# toward saying something.
 SILENT_IN_GNU = {"jq . {p}", "zgrep x {p}"}
+SILENT_HERE = {"zgrep x {p}"}
 
 
 # `diff` is absent on purpose. GNU diff DESCENDS into a directory
@@ -129,7 +131,15 @@ async def test_missing_read_exit_matches_gnu(template):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("template", sorted(GNU_READ_EXIT))
+@pytest.mark.parametrize("template", sorted(SILENT_HERE))
+async def test_directory_read_is_silent_like_gnu(template):
+    ws = await _ws()
+    result = await ws.shell(template.format(p="/ram/dir"))
+    assert (result.stderr or b"") == b""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("template", sorted(set(GNU_READ_EXIT) - SILENT_HERE))
 async def test_directory_read_says_is_a_directory(template):
     ws = await _ws()
     result = await ws.shell(template.format(p="/ram/dir"))

@@ -21,7 +21,8 @@ from mirage.commands.spec.argmatch import (ArgmatchChoices, ArgmatchMatch,
                                            argmatch, value_classes)
 from mirage.commands.spec.builtin_specs import SPECS, is_builtin_grammar
 from mirage.commands.spec.compile import (CompiledSpec, compile_spec,
-                                          expand_git_long, expand_long)
+                                          expand_git_long, expand_long,
+                                          expand_table_long)
 from mirage.commands.spec.constants import (ARG_PLACEHOLDER,
                                             ARGMATCH_CHOICE_OPTIONS,
                                             FLOAT_VALUE, INT_VALUE,
@@ -567,6 +568,7 @@ def parse_command(
         digit_options = False
         equals_values = False
         synonyms: dict[str, str] = {}
+        long_table = None
     else:
         # getopt_long, with exactly two exceptions, both named rather
         # than derived from the spec because nothing in a declaration
@@ -602,6 +604,8 @@ def parse_command(
             for (name, spelling), same in constants.LONG_SYNONYMS.items()
             if builtin and name == cmd_name
         }
+        long_table = (constants.LONG_OPTION_TABLES.get(cmd_name)
+                      if builtin else None)
     i = 0
     end_of_flags = False
 
@@ -654,12 +658,25 @@ def parse_command(
                     continue
                 if resolved is not None and resolved in cs.dest:
                     spelling = resolved
+            elif typed not in cs.dest and long_table is not None:
+                # The program's own table decides, since a prefix of an
+                # option mirage never declared is still ambiguous.
+                found = expand_table_long(long_table, typed)
+                if len(found) > 1:
+                    ambiguous_options.append((tok, found))
+                    option_error_kinds.append("ambiguous")
+                    i += 1
+                    continue
+                if found and found[0] in cs.dest:
+                    spelling = found[0]
             elif typed not in cs.dest and not no_long_option_parser:
                 expansions = expand_long(cs, typed, synonyms)
                 if len(expansions) == 1:
                     spelling = expansions[0]
                 elif len(expansions) > 1:
-                    ambiguous_options.append((typed, expansions))
+                    # glibc names the word as typed, `=value` and all
+                    # (`ls: option '--re=x' is ambiguous`).
+                    ambiguous_options.append((tok, expansions))
                     option_error_kinds.append("ambiguous")
                     i += 1
                     continue

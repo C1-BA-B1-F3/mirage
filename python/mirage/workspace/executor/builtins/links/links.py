@@ -99,11 +99,19 @@ def follow_paths(
             continue
         last = follow_last or (slash_follows and item.raw_path.endswith("/"))
         try:
-            virtual = (namespace.follow(item.virtual)
-                       if last else follow_parent(namespace, item.virtual))
+            followed = (namespace.follow(item.virtual)
+                        if last else follow_parent(namespace, item.virtual))
         except CycleError:
             out.append(dataclasses.replace(item, walk_error="ELOOP"))
             continue
+        # A relative target climbs from the link's own directory, which
+        # is a real one, so its `..` collapses the way resolve_link
+        # collapses it; left in, the path no longer matched the word that
+        # spelled it and the operand lost its typed name (`wc -c sub/al`
+        # printed `/data/sub/../a`).
+        virtual = posixpath.normpath(followed)
+        if followed.endswith("/") and virtual != "/":
+            virtual += "/"
         if virtual == item.virtual:
             out.append(item)
             continue

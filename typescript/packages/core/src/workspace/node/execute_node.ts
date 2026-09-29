@@ -19,13 +19,19 @@ import type { ProcessHandle } from '../../process/handle.ts'
 import type { ProcessSupervisor } from '../../process/supervisor.ts'
 import type { Runtime } from '../../runtime/base.ts'
 import type { RouteDecision } from '../../runtime/routing/index.ts'
+import { share } from '../../io/async_line_iterator.ts'
 import { asyncChain } from '../../io/stream.ts'
 import { type ByteSource, IOResult } from '../../io/types.ts'
 import type { VFS } from '../../vfs/base.ts'
 import { makeAbortError, mergeSignals } from '../abort.ts'
 import type { CallStack } from '../../shell/call_stack.ts'
 import { applyBarrier, BarrierPolicy } from '../../shell/barrier.ts'
-import { assignmentStatus, finishStatement, recordStatus } from '../executor/statement.ts'
+import {
+  assignmentStatus,
+  fd0Binding,
+  finishStatement,
+  recordStatus,
+} from '../executor/statement.ts'
 import {
   getCaseItems,
   getCaseWord,
@@ -791,6 +797,11 @@ async function executeNodeBody(
   const executeFn: ExecuteFn = (cmd, opts) => deps.executeFn(cmd, { session, ...opts })
   const kind = nodeKind(node)
 
+  // The statements a construct runs all read one descriptor, as bash's
+  // do: `read` takes its line and the command after it gets the rest, in
+  // a group, a loop, a list, a subshell or a nested shell alike.
+  if (STREAMING_KINDS.has(kind)) stdin = share(stdin)
+
   // `set -n` reads without executing, and it stops *everything* after
   // it, at every depth: GNU answers `if true; then set -n; echo BAD; fi`
   // and `f(){ set -n; echo BAD; }; f` with nothing at all. Stated here,
@@ -1081,6 +1092,7 @@ async function executeNodeBody(
     const allStdout: ByteSource[] = []
     let mergedIo = new IOResult()
     let lastExec = new ExecutionNode({ command: '{}', exitCode: 0 })
+    const bound = fd0Binding(session)
     for (const child of node.namedChildren) {
       if (child.type === NT.COMMENT) continue
       const [rawStdout, io, execNode] = await runStatement(
@@ -1088,6 +1100,7 @@ async function executeNodeBody(
         child,
         session,
         stdin,
+        bound,
         callStack,
         jobTable,
         agentId,

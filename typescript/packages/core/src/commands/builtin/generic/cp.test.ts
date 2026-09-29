@@ -45,6 +45,10 @@ import { type FlagValue } from '../../spec/types.ts'
 import { specOf } from '../../spec/builtins.ts'
 import { SPECS, parseCommand } from '../../spec/index.ts'
 import { parseToKwargs } from '../../spec/parser.ts'
+import { MountMode } from '../../../types.ts'
+import { RAMVFS } from '../../../vfs/ram/ram.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
 
 const DEC = new TextDecoder()
 
@@ -1141,6 +1145,24 @@ describe('the link options', () => {
   })
 })
 
+describe('a link reached through a linked directory', () => {
+  // The table keys a link by its resolved directory, so `dl/al` stands at
+  // `dir/al`; coreutils 9.7 copies the link itself. Mirrors python's
+  // test_a_link_reached_through_a_linked_directory_copies_as_a_link.
+  it.each(['-P', '-d'])('cp %s copies it as a link', async (flag) => {
+    const ws = new Workspace(
+      { '/data/': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    await ws.shell(
+      "cd /data && mkdir dir w && printf 'x\\n' > a.txt && ln -s ../a.txt dir/al && ln -s dir dl",
+    )
+    const r = await ws.shell(`cd /data && cp ${flag} dl/al w/x && ls -F w`)
+    expect([r.exitCode, DEC.decode(r.stdout)]).toEqual([0, 'x@\n'])
+    await ws.close()
+  })
+})
+
 for (const native of [false, true]) {
   for (const failure of ['read', 'write', 'partial-write']) {
     it.each(['/safe', '/missing', '/dst~'])(
@@ -1244,4 +1266,35 @@ for (const native of [false, true]) {
       },
     )
   }
+}
+
+for (const flag of ['-r', '-rL']) {
+  it.each(['/data/copy', '/other/copy'])(
+    `cp ${flag} omits hidden links at %s`,
+    async (destination) => {
+      const ws = new Workspace(
+        { '/data': new RAMVFS(), '/other': new RAMVFS() },
+        { mode: MountMode.WRITE, shellParser: await getTestParser() },
+      )
+      try {
+        await ws.shell(
+          'mkdir -p /data/src/sec && echo visible > /data/src/a && ' +
+            'ln -s a /data/src/public && ln -s /private/key /data/src/secret && ' +
+            'ln -s /private/nested /data/src/sec/link',
+        )
+        ws.createSession('agent', {
+          profile: { paths: { hide: ['/data/src/secret', '/data/src/sec'] } },
+        })
+        const result = await ws.shell(`cp ${flag} /data/src ${destination}`, { sessionId: 'agent' })
+        expect(result.exitCode).toBe(0)
+        expect(DEC.decode(result.stderr)).toBe('')
+        const copied = await ws.shell(`ls -A ${destination} && cat ${destination}/public`)
+        expect(DEC.decode(copied.stdout)).toBe('a\npublic\nvisible\n')
+        expect(ws.namespace.isLink(`${destination}/secret`)).toBe(false)
+        expect(ws.namespace.isLink(`${destination}/sec/link`)).toBe(false)
+      } finally {
+        await ws.close()
+      }
+    },
+  )
 }

@@ -13,8 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { SHELL_SPECS, parseShellOptions } from '../../../../commands/spec/shell.ts'
-import { AsyncLineIterator } from '../../../../io/async_line_iterator.ts'
-import { asyncChain } from '../../../../io/stream.ts'
+import { lineBuffer } from '../../../../io/async_line_iterator.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import type { ByteSource } from '../../../../io/types.ts'
 import { PolicyDenied } from '../../../../policy/errors.ts'
@@ -99,13 +98,7 @@ export async function handleMapfile(
   if (name in visibleAssocs(session))
     return fail(cmd, `bash: ${cmd}: ${name}: not an indexed array\n`, 1)
 
-  if (stdin !== null && (session.stdinBuffer === null || session.stdinSource !== stdin)) {
-    if (stdin instanceof Uint8Array)
-      session.stdinBuffer = new AsyncLineIterator(asyncChain([stdin]))
-    else session.stdinBuffer = new AsyncLineIterator(stdin)
-    session.stdinSource = stdin
-  }
-  const buffer = session.stdinBuffer
+  const buffer = stdin !== null ? lineBuffer(stdin) : null
   const existing = visibleArrays(session)[name]
   const arr: ShellArray = existing !== undefined && 'O' in flags ? [...existing] : []
   const dec = new TextDecoder()

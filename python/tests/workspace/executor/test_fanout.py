@@ -867,3 +867,41 @@ def test_successful_mount_does_not_mask_a_failed_mount(command, code):
                            None))
     assert io.exit_code == code
     assert io.stderr == b"backend failed\n"
+
+
+def _linked_tree() -> Workspace:
+    """/data holding a.txt and s, whose f sits beside a link to ../a.txt and
+    one to nowhere, over a descendant mount /data/m holding g."""
+    ws = Workspace(
+        {
+            "/data": (RAMVFS(), MountMode.WRITE),
+            "/data/m": (RAMVFS(), MountMode.WRITE),
+        },
+        mode=MountMode.WRITE)
+    asyncio.run(
+        ws.shell("mkdir /data/s && printf o > /data/s/f && "
+                 "printf 'hello\\n' > /data/a.txt && printf o > /data/m/g && "
+                 "cd /data && ln -s ../a.txt s/al && ln -s nowhere s/dang"))
+    return ws
+
+
+DANGLING = (b"rg: /data/s/dang: IO error for operation on /data/s/dang: "
+            b"No such file or directory (os error 2)\n")
+
+
+@pytest.mark.parametrize("line, stdout, stderr, code", [
+    ("rg --sort path o /data", "/data/a.txt:hello\n/data/m/g:o\n"
+     "/data/s/f:o\n", b"", 0),
+    ("rg -L --sort path o /data", "/data/a.txt:hello\n/data/m/g:o\n"
+     "/data/s/al:hello\n/data/s/f:o\n", DANGLING, 2),
+    ("rg -L o /data", "/data/a.txt:hello\n/data/s/f:o\n/data/s/al:hello\n"
+     "/data/m/g:o\n", DANGLING, 2),
+])
+def test_rg_follows_links_in_a_walk_that_spans_mounts_only_under_dash_upper_l(
+        line: str, stdout: str, stderr: bytes, code: int):
+    # Both fan-outs hand the walk the namespace and the door: the unified
+    # walk --sort takes skipped every link as ripgrep does only once it
+    # could tell one, and a per-mount run follows them under -L.
+    io = asyncio.run(_linked_tree().shell(line))
+    assert (_stdout(io), io.stderr
+            or b"", io.exit_code) == (stdout, stderr, code)

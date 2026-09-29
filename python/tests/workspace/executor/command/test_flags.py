@@ -119,8 +119,8 @@ def test_old_option_missing_argument_outranks_an_undeclared_letter():
 def test_old_style_cluster_with_its_argument_is_no_refusal():
     parsed = parse_flags(["xzf", "/data/a.tgz"], SPECS["tar"], "tar", "/")
     assert option_error("tar", parsed) is None
-    assert parsed.flag_kwargs["x"] is True
-    assert parsed.flag_kwargs["z"] is True
+    assert parsed.flag_kwargs["extract"] is True
+    assert parsed.flag_kwargs["gzip"] is True
 
 
 def test_two_spellings_of_one_path_keep_their_own_spelling():
@@ -144,7 +144,7 @@ def test_an_operand_after_a_chdir_option_keeps_its_own_spelling():
     parsed = parse_flags(["-cf", out, "-C", base, dot], SPECS["tar"], "tar",
                          "/data")
     assert parsed.paths[0] is dot
-    assert parsed.flag_kwargs["C"][0] is base
+    assert parsed.flag_kwargs["directory"][0] is base
 
 
 def test_the_string_flag_view_takes_the_option_word_off_the_queue_too():
@@ -252,3 +252,11 @@ def test_unclassified_path_options_retain_scalar_repeated_and_pair_spellings():
     assert fl.as_list("rawfile")[0] == "body"
     assert [(p.virtual, p.raw_path)
             for p in fl.as_paths("rawfile")] == [("/data/same", "./same")]
+
+
+def test_an_empty_attached_path_value_names_nothing():
+    # `--file=` spells the empty name, which resolved to the cwd; its walk
+    # answers ENOENT as a typed '' operand's does (GNU tar 1.35: `tar: :
+    # Cannot open: No such file or directory`).
+    assert synthesize_path_spec("/data", "").walk_error == "ENOENT"
+    assert synthesize_path_spec("/data/a", "a").walk_error is None

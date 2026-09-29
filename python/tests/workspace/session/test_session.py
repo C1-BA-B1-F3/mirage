@@ -38,7 +38,6 @@ def test_session_defaults():
     assert s.env == {"PWD": "/", "PATH": "/usr/bin", "IFS": " \t\n"}
     assert s.functions == {}
     assert s.last_exit_code == 0
-    assert s._stdin_buffer is None
 
 
 def test_session_custom_cwd():
@@ -70,14 +69,6 @@ def test_session_exit_code():
     s = SessionState(session_id="s1")
     s.last_exit_code = 42
     assert s.last_exit_code == 42
-
-
-def test_session_stdin_buffer():
-    s = SessionState(session_id="s1")
-    s._stdin_buffer = b"hello\n"
-    assert s._stdin_buffer == b"hello\n"
-    s._stdin_buffer = None
-    assert s._stdin_buffer is None
 
 
 def test_session_to_dict():

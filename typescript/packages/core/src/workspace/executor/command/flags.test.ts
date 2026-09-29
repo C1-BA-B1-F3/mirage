@@ -263,8 +263,8 @@ describe("optionError — tar's old option style", () => {
     const parsed = parseFlags(['xzf', '/data/a.tgz'], specOf('tar'), 'tar', '/')
     const refusal = optionError('tar', parsed)
     expect(refusal).toBeNull()
-    expect(parsed.flagKwargs.x).toBe(true)
-    expect(parsed.flagKwargs.z).toBe(true)
+    expect(parsed.flagKwargs.extract).toBe(true)
+    expect(parsed.flagKwargs.gzip).toBe(true)
   })
 })
 
@@ -292,4 +292,16 @@ it('retains scalar, repeated and pair spellings without classified paths', () =>
   expect(fl.asPaths('rawfile').map((p) => [p.virtual, p.rawPath])).toEqual([
     ['/data/same', './same'],
   ])
+})
+
+describe('an empty attached path value', () => {
+  // `--file=` spells the empty name, which resolved to the cwd; its walk
+  // answers ENOENT as a typed '' operand's does (GNU tar 1.35: `tar: :
+  // Cannot open: No such file or directory`). Mirrors python's
+  // test_an_empty_attached_path_value_names_nothing.
+  it('names nothing', () => {
+    const parsed = parseFlags(['--file=', '-t'], SPECS.tar ?? null, 'tar', '/data')
+    const file = parsed.flagKwargs.file
+    expect(file instanceof PathSpec ? file.walkError : null).toBe('ENOENT')
+  })
 })

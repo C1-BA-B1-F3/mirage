@@ -20,6 +20,7 @@ from typing import Any, Callable
 from mirage.context import (program_invocation, reset_program_invocation,
                             set_program_invocation)
 from mirage.io import IOResult
+from mirage.io.async_line_iterator import share
 from mirage.io.stream import async_chain
 from mirage.io.types import ByteSource
 from mirage.ops.types import SessionView
@@ -51,7 +52,7 @@ from mirage.workspace.executor.pipes import (handle_connection, handle_pipe,
                                              handle_subshell)
 from mirage.workspace.executor.redirect import handle_redirect
 from mirage.workspace.executor.statement import (assignment_status,
-                                                 finish_statement,
+                                                 fd0_binding, finish_statement,
                                                  record_status)
 from mirage.workspace.expand import (expand_and_classify, expand_node,
                                      expand_redirects)
@@ -772,6 +773,12 @@ async def _execute_node(
 
     kind = node_kind(node)
 
+    # The statements a construct runs all read one descriptor, as bash's
+    # do: `read` takes its line and the command after it gets the rest,
+    # in a group, a loop, a list, a subshell or a nested shell alike.
+    if kind in STREAMING_KINDS:
+        stdin = share(stdin)
+
     # A sink turns this walk from "return your output" into "write your
     # output". Sequencing constructs pass it to their children so each
     # statement lands as it finishes; everything else runs unchanged and
@@ -967,12 +974,13 @@ async def _execute_node(
         all_stdout: list[Any] = []
         merged_io = IOResult()
         last_exec = ExecutionNode(command="{}", exit_code=0)
+        bound = fd0_binding(session)
         for child in node.named_children:
             if child.type == NT.COMMENT:
                 continue
             stdout, io, last_exec = await run_statement(
-                stream, child, session, stdin, cs, job_table, agent_id, handed,
-                registry.decisions)
+                stream, child, session, stdin, bound, cs, job_table, agent_id,
+                handed, registry.decisions)
             stdout = await finish_statement(stdout, io, session, child)
             if stdout is not None:
                 all_stdout.append(stdout)

@@ -177,53 +177,45 @@ function offsetWidth(sizes: readonly number[], limit: number | null): number {
   return String(most > 0n ? most : 0n).length
 }
 
-export async function cmpGeneric(
-  paths: PathSpec[],
-  opts: CommandOpts,
-  stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
-): Promise<[ByteSource | null, IOResult]> {
-  const parsed = parseFlags(new FlagView(opts.flags, specOf('cmp')))
-  if (paths.length > 2) throw extraOperandError(CommandName.CMP, paths[2]?.rawPath ?? '')
-  const p0 = paths[0]
-  if (p0 === undefined) throw missingOperandError(CommandName.CMP, null)
-  // A lone FILE1 is compared with stdin, which GNU names `-`.
-  const p1 = paths[1] ?? STDIN_OPERAND
-  // Both name the one stdin: GNU sees the same file at the same offset
-  // and answers equal without reading, whatever the skips.
-  if (isStdin(p0) && isStdin(p1)) return [null, new IOResult()]
-  const names = [p0.rawPath, p1.rawPath] as const
-  const read = stdinStream(stream, opts.stdin)
-  // GNU cmp reserves exit 1 for "files differ"; trouble is exit 2.
-  // diffutils 3.10 opens both operands before it reads either, and -s drops
-  // the message only for an operand it cannot open: a directory opens, fails
-  // at its first read, and is reported whatever -s says, unless both operands
-  // name it, which is the same file at the same offset and so equal unread.
-  const data: Uint8Array[] = []
-  let unread: unknown = null
-  for (const p of [p0, p1]) {
-    try {
-      data.push(await materialize(read(p)))
-    } catch (err) {
-      if (isEisdir(err)) {
-        unread ??= err
-        data.push(new Uint8Array())
-        continue
-      }
-      if (!isFsError(err)) throw err
-      const stderr = parsed.silent ? null : formatFsError('cmp', err, paths)
-      return [null, new IOResult({ exitCode: 2, stderr })]
-    }
-  }
-  if (p0.virtual === p1.virtual && parsed.skip[0] === parsed.skip[1]) return [null, new IOResult()]
-  if (unread !== null)
-    return [null, new IOResult({ exitCode: 2, stderr: formatFsError('cmp', unread, paths) })]
-  let data1 = data[0] ?? new Uint8Array()
-  let data2 = data[1] ?? new Uint8Array()
-  const sizes: number[] = []
-  if (!isStdin(p0)) sizes.push(data1.byteLength - parsed.skip[0])
-  if (!isStdin(p1)) sizes.push(data2.byteLength - parsed.skip[1])
-  data1 = data1.slice(parsed.skip[0])
-  data2 = data2.slice(parsed.skip[1])
+/**
+ * The skips cmp's SKIP1 and SKIP2 operands give, beside -i's.
+ *
+ * Each is read as -i reads its counts, and each file keeps the larger of the
+ * two skips it was given: diffutils' specify_ignore_initial only ever raises
+ * one. Past the fourth operand is an extra one, which diffutils refuses only
+ * after both skips have parsed. Mirrors Python's operand_skips.
+ */
+export function operandSkips(
+  texts: readonly string[],
+  skip: readonly [number, number],
+): [number, number] {
+  const skips: [number, number] = [skip[0], skip[1]]
+  texts.slice(0, 2).forEach((raw, f) => {
+    skips[f] = Math.max(skips[f] ?? 0, parseCount(raw, '--ignore-initial'))
+  })
+  const extra = texts[2]
+  if (extra !== undefined) throw extraOperandError(CommandName.CMP, extra)
+  return skips
+}
+
+interface Compared {
+  readonly silent: boolean
+  readonly verbose: boolean
+  readonly limit: number | null
+  readonly printBytes: boolean
+}
+
+/** cmp's answer for two inputs already past their skips. Mirrors Python's
+ * _compared. */
+function compared(
+  first: Uint8Array,
+  second: Uint8Array,
+  names: readonly [string, string],
+  sizes: readonly number[],
+  parsed: Compared,
+): [ByteSource | null, IOResult] {
+  let data1 = first
+  let data2 = second
   if (parsed.limit !== null) {
     data1 = data1.slice(0, parsed.limit)
     data2 = data2.slice(0, parsed.limit)
@@ -269,4 +261,85 @@ export async function cmpGeneric(
     null,
     new IOResult({ exitCode: 1, stderr: eofError(names, data1, data2, parsed.verbose) }),
   ]
+}
+
+/**
+ * Both operands naming the one stdin, as diffutils 3.10 answers it.
+ *
+ * The same file at the same offset is equal unread. Otherwise cmp skips on
+ * the one descriptor twice, so the first file reads what is left past both
+ * skips and the second reads nothing, and closing the descriptor a second
+ * time fails: that line and exit 2 follow whatever the comparison said, -s
+ * included. Mirrors Python's _one_stdin_twice.
+ */
+async function oneStdinTwice(
+  read: (p: PathSpec) => AsyncIterable<Uint8Array>,
+  p: PathSpec,
+  skip: readonly [number, number],
+  parsed: Compared,
+): Promise<[ByteSource | null, IOResult]> {
+  if (skip[0] === skip[1]) return [null, new IOResult()]
+  const data = await materialize(read(p))
+  const [out, io] = compared(
+    data.slice(skip[0] + skip[1]),
+    new Uint8Array(),
+    ['-', '-'],
+    [],
+    parsed,
+  )
+  const held = io.stderr === null ? new Uint8Array() : await materialize(io.stderr)
+  const tail = ENC.encode('cmp: -: Bad file descriptor\n')
+  const stderr = new Uint8Array(held.byteLength + tail.byteLength)
+  stderr.set(held)
+  stderr.set(tail, held.byteLength)
+  io.stderr = stderr
+  io.exitCode = 2
+  return [out, io]
+}
+
+export async function cmpGeneric(
+  paths: PathSpec[],
+  texts: readonly string[],
+  opts: CommandOpts,
+  stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
+): Promise<[ByteSource | null, IOResult]> {
+  const parsed = parseFlags(new FlagView(opts.flags, specOf('cmp')))
+  const p0 = paths[0]
+  if (p0 === undefined) throw missingOperandError(CommandName.CMP, null, opts.argv ?? [])
+  const skip = operandSkips(texts, parsed.skip)
+  // A lone FILE1 is compared with stdin, which GNU names `-`.
+  const p1 = paths[1] ?? STDIN_OPERAND
+  const read = stdinStream(stream, opts.stdin)
+  if (isStdin(p0) && isStdin(p1)) return oneStdinTwice(read, p0, skip, parsed)
+  const names = [p0.rawPath, p1.rawPath] as const
+  // GNU cmp reserves exit 1 for "files differ"; trouble is exit 2.
+  // diffutils 3.10 opens both operands before it reads either, and -s drops
+  // the message only for an operand it cannot open: a directory opens, fails
+  // at its first read, and is reported whatever -s says, unless both operands
+  // name it, which is the same file at the same offset and so equal unread.
+  const data: Uint8Array[] = []
+  let unread: unknown = null
+  for (const p of [p0, p1]) {
+    try {
+      data.push(await materialize(read(p)))
+    } catch (err) {
+      if (isEisdir(err)) {
+        unread ??= err
+        data.push(new Uint8Array())
+        continue
+      }
+      if (!isFsError(err)) throw err
+      const stderr = parsed.silent ? null : formatFsError('cmp', err, paths)
+      return [null, new IOResult({ exitCode: 2, stderr })]
+    }
+  }
+  if (p0.virtual === p1.virtual && skip[0] === skip[1]) return [null, new IOResult()]
+  if (unread !== null)
+    return [null, new IOResult({ exitCode: 2, stderr: formatFsError('cmp', unread, paths) })]
+  const data1 = data[0] ?? new Uint8Array()
+  const data2 = data[1] ?? new Uint8Array()
+  const sizes: number[] = []
+  if (!isStdin(p0)) sizes.push(data1.byteLength - skip[0])
+  if (!isStdin(p1)) sizes.push(data2.byteLength - skip[1])
+  return compared(data1.slice(skip[0]), data2.slice(skip[1]), names, sizes, parsed)
 }

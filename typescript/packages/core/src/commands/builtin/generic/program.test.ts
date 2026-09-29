@@ -5,9 +5,10 @@ import { IOResult, materialize } from '../../../io/types.ts'
 import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import { createShellParser } from '../../../shell/parse/index.ts'
 import { Workspace } from '../../../workspace/workspace/workspace.ts'
-import { MountMode, PathSpec } from '../../../types.ts'
+import { FileStat, FileType, MountMode, PathSpec } from '../../../types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
-import { prepareProgram } from './program.ts'
+import { eisdir, enoent, enotdir } from '../../../utils/errors.ts'
+import { prepareProgram, programFileRefusal, readProgramFile } from './program.ts'
 
 const require = createRequire(import.meta.url)
 const engineWasm = readFileSync(require.resolve('web-tree-sitter/web-tree-sitter.wasm'))
@@ -159,5 +160,45 @@ describe('rg program files from stdin', () => {
     )
     expect(error).toBeNull()
     expect(flags).toEqual({ file: [], e: ['a'] })
+  })
+})
+
+describe('a program file the command cannot read', () => {
+  // grep 3.11, ripgrep 14.1.1, gzip 1.13 (zgrep copies the file with cat),
+  // sed 4.9, mawk 1.3.4, jq 1.7.1 on debian:stable-slim. Mirrors python's
+  // test_a_program_file_refusal_is_in_each_commands_words.
+  it.each([
+    ['grep', eisdir('/dir'), 'grep: dir: Is a directory\n', 2],
+    ['grep', enoent('/dir'), 'grep: dir: No such file or directory\n', 2],
+    ['rg', eisdir('/dir'), 'rg: dir:Is a directory (os error 21)\n', 2],
+    ['rg', enoent('/dir'), 'rg: dir: No such file or directory (os error 2)\n', 2],
+    ['rg', enotdir('/dir'), 'rg: dir: Not a directory (os error 20)\n', 2],
+    ['zgrep', eisdir('/dir'), 'cat: dir: Is a directory\n', 2],
+    ['zgrep', enoent('/dir'), 'cat: dir: No such file or directory\n', 2],
+    ['sed', enoent('/dir'), "sed: couldn't open file dir: No such file or directory\n", 4],
+    ['awk', eisdir('/dir'), 'awk: read error (Is a directory)\n', 2],
+    ['awk', enoent('/dir'), 'awk: cannot open "dir" (No such file or directory)\n', 2],
+    ['jq', eisdir('/dir'), "jq: Could not open dir: It's a directory\n", 2],
+    ['jq', enoent('/dir'), 'jq: Could not open dir: No such file or directory\n', 2],
+  ] as const)('%s words %s its own way', (name, err, line, code) => {
+    expect(programFileRefusal(name, typed('dir'), err)).toEqual([line, code])
+  })
+
+  it.each([
+    ['sed', true],
+    ['grep', false],
+  ])('reads a directory as %s reads it', async (name, empty) => {
+    // sed 4.9 reads a directory as an empty script; everyone else fails its
+    // read, which the stat tells from a keyed store's plain miss.
+    const dispatch: DispatchFn = (op, path) => {
+      if (op !== 'stat') throw new Error(`${op} ${path.virtual} was dispatched`)
+      return Promise.resolve([
+        new FileStat({ name: 'dir', type: FileType.DIRECTORY }),
+        new IOResult(),
+      ])
+    }
+    const read = readProgramFile(name, typed('dir'), dispatch)
+    if (empty) expect((await read).byteLength).toBe(0)
+    else await expect(read).rejects.toMatchObject({ code: 'EISDIR' })
   })
 })

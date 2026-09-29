@@ -33,7 +33,14 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-b', long: '--print-bytes' }),
       new Option({ short: '-i', long: '--ignore-initial', type: 'str' }),
     ],
-    positional: [new Operand({ type: 'path' }), new Operand({ type: 'path' })],
+    // FILE1 [FILE2 [SKIP1 [SKIP2]]]: the skips are byte counts, read as -i
+    // reads its own (diffutils 3.10).
+    positional: [
+      new Operand({ type: 'path' }),
+      new Operand({ type: 'path' }),
+      new Operand({ type: 'str' }),
+      new Operand({ type: 'str' }),
+    ],
   }),
   diff: new CommandSpec({
     options: [

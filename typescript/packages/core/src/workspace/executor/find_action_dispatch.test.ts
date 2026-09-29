@@ -280,9 +280,9 @@ describe('find actions', () => {
 
   it('runs the -exec head as a program', async () => {
     // execvp answers `printf` with coreutils printf, which has no -v: the
-    // word is the format (GNU adds a warning about the excess arguments,
-    // which mirage's printf does not report). A nested shell the line
-    // starts is a shell again, so its printf assigns.
+    // word is the format, and it warns about the arguments the format
+    // leaves over. A nested shell the line starts is a shell again, so its
+    // printf assigns.
     const ws = await shellWs()
     try {
       const r = await ws.shell(
@@ -290,7 +290,7 @@ describe('find actions', () => {
         { sessionId: 's' },
       )
       expect(r.stdoutText).toBe('-v[]\n[hi]\n[hi]\n')
-      expect(r.stderrText).toBe('')
+      expect(r.stderrText).toBe("printf: warning: ignoring excess arguments, starting with 'x'\n")
     } finally {
       await ws.close()
     }

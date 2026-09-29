@@ -373,6 +373,24 @@ Exercise a custom backend at a nested prefix, with globs, unknown file sizes, a 
 
 ## Updating Existing Backends
 
+### From `GenericVFS` and the per-driver methods
+
+`BaseVFS` is now the one driver contract, and a driver serves only through
+the tables `ops()` and `commands()` return. Nothing keeps the old spelling
+alive, so a custom backend written against it changes in these places:
+
+| Before | Now |
+| --- | --- |
+| `GenericVFS(name=..., accessor=..., io=...)` | `BaseVFS(name=..., accessor=..., io=...)`; `io` takes a `VFSAdapter` or a `CommandIO`, and a driver built from one needs a name |
+| `PROMPT`, `WRITE_PROMPT`, `SUPPORTS_SNAPSHOT`, `SIZES_ALWAYS_KNOWN`, `READ_REVALIDATABLE` | `prompt`, `write_prompt`, `supports_snapshot`, `sizes_always_known`, `read_revalidatable` |
+| `self.register(fn)` and `self.register_op(op)` in `__init__`, `ops_list()` | return the tables from `commands()` and `ops()`; the mount registers them when it places the driver |
+| `resolve_glob(paths, prefix)` | the `glob` op `make_generic_ops` derives from `readdir`; the mount stamps each spec's `vfs_path` before calling it |
+| `vfs.read_bytes(path)`, `vfs.stat(path)` and the other per-driver methods | `DriverOps(vfs)` outside a workspace, `ws.dispatch(...)` inside one |
+| `vfs.index`, `set_index(...)`, `index=` on the constructor | `Workspace(index=...)` or `Mount(index=...)`; the store is the mount's (`ws.mount(prefix).index_store`) |
+| `storage_id()` | `storage_location()`, which may return `None` |
+| `statfs()` | `capacity()` |
+| `vfs.vfs_ref` | `Mount(vfs_ref=...)`, recorded on the mount |
+
 Mount configs now reject unknown fields. Remove PostgreSQL's `default_search_limit` and MongoDB's `default_doc_limit` and `default_search_limit`; the remaining read ceilings are `max_read_rows` and `max_doc_limit`. PostgreSQL `head`/`tail` and MongoDB `tail` report a clipped window through stderr and a nonzero status; consumers must check status before treating captured output as complete. PostgreSQL refuses whole reads over its thresholds. MongoDB streams and search no longer apply a silent result cap.
 
 The hierarchy name helpers sanitize empty and dot-leading labels to reachable names. Regenerate stored paths from the listing instead of retaining an old sanitized label; the provider id remains the stable identifier. Keep read and mutation scope checks on every entry point, including direct ids, rather than relying on what a previous listing exposed.
@@ -396,6 +414,21 @@ await check_read_contract(adapter, accessor, ReadFixture(
     missing=missing_path,
     content=b"known fixture bytes",
 ))
+```
+
+`check_driver_contract(vfs, fixture)` runs the same read checks against a whole
+driver, through the op table `vfs.ops()` serves, the one channel a mount
+dispatches to. It checks a builtin-shaped subclass as readily as a driver built
+from an adapter, and always probes the `read` op's byte window. `DriverOps(vfs)`
+is the table it drives: it calls a driver's ops the way a mount does, with the
+accessor bound and one index store per instance, which is also how to script a
+driver outside a workspace.
+
+```python
+from mirage import DriverOps, check_driver_contract
+
+await DriverOps(vfs).write(file_path, b"known fixture bytes")
+await check_driver_contract(vfs, fixture)
 ```
 
 Use disposable fixtures to test supported writes and verify read-only mounts

@@ -58,7 +58,7 @@ Implement these resource operations over `PathSpec`:
   `None` / `null` when the length is unknown without reading it.
 
 Group those callbacks as `ReadOps` inside `VFSAdapter`, and pass the adapter
-as `BaseVFS(io=...)` / `new BaseVFS({ io: ... })`. The minimal adapter
+as `BaseVFS(name=..., io=...)` / `new BaseVFS({ name, io })`. The minimal adapter
 needs only these three callbacks. It derives streaming from bytes and existence
 from stat, and defaults to a remote resource. A derived stream still fetches
 the entire file; it is not a memory-efficient stream.

@@ -346,6 +346,23 @@ Exercise a custom backend at a nested prefix, with globs, unknown file sizes, a 
 
 ## Updating Existing Backends
 
+### From `GenericVFS` and the `VFS` interface
+
+`BaseVFS` is now the one driver contract, and a driver serves only through
+the tables `ops()` and `commands()` return. Nothing keeps the old spelling
+alive, so a custom backend written against it changes in these places:
+
+| Before | Now |
+| --- | --- |
+| `new GenericVFS({ name, accessor, io, index })` | `new BaseVFS({ name, accessor, io })`; `io` takes a `VFSAdapter` or a `CommandIO`, and the index moves to `Workspace` or `Mount` `index` |
+| `implements VFS`, `readonly kind` | `extends BaseVFS`, `override readonly name` |
+| `open()` | gone: reach the service lazily on the first request, or set up in a `static async create` |
+| `readFile`, `readdir`, `stat`, `glob` and the other per-driver methods, `opsMap` | `new DriverOps(vfs)` outside a workspace, `ws.dispatch(...)` inside one |
+| `vfs.index`, `setIndex(...)` | the mount's store, `ws.mount(prefix).indexStore` |
+| `storageId()`, `statfs()` | `storageLocation()`, which may return `null`, and `capacity()` |
+| `recordVfsRef(vfs, ref)`, `vfsRefOf(vfs)` | the mount's `vfsRef` |
+| `cachesReads(vfs)`, `sizesAlwaysKnown(vfs)`, `readRevalidatable(vfs)` | read the flag off the driver |
+
 Mount configs now reject unknown fields. Remove PostgreSQL's `default_search_limit` and MongoDB's `default_doc_limit` and `default_search_limit` from YAML (or `defaultSearchLimit` and `defaultDocLimit` from TypeScript). The remaining read ceilings are `max_read_rows` / `maxReadRows` and `max_doc_limit` / `maxDocLimit`. PostgreSQL `head`/`tail` and MongoDB `tail` report a clipped window through stderr and a nonzero status; consumers must check status before treating captured output as complete. PostgreSQL refuses whole reads over its thresholds. MongoDB streams and search no longer apply a silent result cap.
 
 `BaseVFS` provides `loadState` and `indexTtl` defaults, and has no `open` step. Subclasses that replace a member need `override` when `noImplicitOverride` is enabled. The hierarchy name helpers sanitize empty and dot-leading labels to reachable names; regenerate stored paths from the listing and keep the provider id as the stable identifier. Enforce read and mutation scope on every entry point, including direct ids, rather than relying on a previous listing.
@@ -370,6 +387,21 @@ const fixture: ReadFixture = {
   content: new TextEncoder().encode('known fixture bytes'),
 }
 await checkReadContract(adapter, accessor, fixture)
+```
+
+`checkDriverContract(vfs, fixture)` runs the same read checks against a whole
+driver, through the op table `vfs.ops()` serves, the one channel a mount
+dispatches to. It checks a builtin-shaped subclass as readily as a driver built
+from an adapter, and always probes the `read` op's byte window. `DriverOps` is
+the table it drives: it calls a driver's ops the way a mount does, with the
+accessor bound and one index store per instance, which is also how to script a
+driver outside a workspace.
+
+```ts
+import { checkDriverContract, DriverOps } from '@struktoai/mirage-node'
+
+await new DriverOps(vfs).write(filePath, new TextEncoder().encode('known fixture bytes'))
+await checkDriverContract(vfs, fixture)
 ```
 
 Use disposable fixtures to test supported writes and verify read-only mounts

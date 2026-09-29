@@ -14,6 +14,9 @@
 
 from collections.abc import Sequence
 
+from mirage.commands.spec.compile import expand_table_long
+from mirage.commands.spec.constants import TAR_LONG_OPTIONS
+
 
 def is_create_mode(argv: Sequence[str]) -> bool:
     """Whether a tar line reads the filesystem rather than an archive.
@@ -30,7 +33,9 @@ def is_create_mode(argv: Sequence[str]) -> bool:
     operand and cannot turn the mode on. ``--`` ends the scan the way
     it ends GNU's option parsing: a later ``-c`` names a member, and
     reading it as the create flag would refuse the very selector fix
-    this gate exists to protect (``tar -xf a.tar -C /dst -- -c``).
+    this gate exists to protect (``tar -xf a.tar -C /dst -- -c``). A
+    long word is read the way tar's getopt_long reads it, against tar's
+    whole table, so an abbreviation (``--crea``) is create too.
 
     Args:
         argv (Sequence[str]): raw argv after the command name.
@@ -40,9 +45,10 @@ def is_create_mode(argv: Sequence[str]) -> bool:
             continue
         if tok == "--":
             return False
-        if tok == "--create":
-            return True
         if tok.startswith("--"):
+            if expand_table_long(TAR_LONG_OPTIONS,
+                                 tok.split("=", 1)[0]) == ("--create", ):
+                return True
             continue
         if tok.startswith("-"):
             if "c" in tok[1:]:

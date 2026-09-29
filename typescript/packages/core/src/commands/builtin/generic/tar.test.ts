@@ -21,6 +21,11 @@ import { RAMVFS } from '../../../vfs/ram/ram.ts'
 import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
 import { Workspace } from '../../../workspace/workspace/workspace.ts'
 import { writeTar } from '../tar_helper.ts'
+import { UsageError } from '../../errors.ts'
+import { parseCommand, specOf } from '../../spec/index.ts'
+import { parseToKwargs } from '../../spec/parser.ts'
+import { MODE_CONFLICT, MULTIPLE_ARCHIVES } from './tar/constants.ts'
+import { parseTarFlags, stripCount } from './tar.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder()
@@ -182,4 +187,50 @@ it('keeps the empty archive refusal across mounts', async () => {
   } finally {
     await ws.close()
   }
+})
+
+describe("tar's argp refusals", () => {
+  // argp stops at the first refusal in line order (tar 1.35). Mirrors
+  // python's test_parse_flags_refuses_what_tar_refuses.
+  it.each([
+    [['-c', '-x'], MODE_CONFLICT],
+    [['-x', '--list'], MODE_CONFLICT],
+    [['--strip-components=x', '-c', '-x'], 'tar: x: Invalid number of elements'],
+    [['-c', '-x', '--strip-components=x'], MODE_CONFLICT],
+    [['-t', '-f', '/a', '-f', '/a'], MULTIPLE_ARCHIVES],
+    [['-t', '--strip-components=-1'], 'tar: -1: Invalid number of elements'],
+    [['-t', '--strip-components='], 'tar: : Invalid number of elements'],
+    [
+      ['-t', '--strip-components=99999999999999999999'],
+      'tar: 99999999999999999999: Invalid number of elements',
+    ],
+  ])('%j', (words, message) => {
+    const flags = parseToKwargs(parseCommand(specOf('tar'), words, '/', 'tar'))
+    expect(() => parseTarFlags(flags)).toThrow(
+      new UsageError(`${message}\nTry 'tar --help' for more information.`),
+    )
+  })
+
+  it.each([
+    ['0', 0],
+    ['+1', 1],
+    [' 2', 2],
+    ['010', 10],
+  ])('reads the strip count %j at base ten', (raw, count) => {
+    expect(stripCount(raw)).toBe(count)
+  })
+})
+
+describe("tar's long options", () => {
+  // Mirrors python's test_tars_long_options_run_as_the_short_ones.
+  it.each([
+    ['tar --create --file=a.tar a.txt && tar --list --file a.tar', 'a.txt\n'],
+    ['tar -cf a.tar a.txt && tar --get -f a.tar --directory=dir && ls dir', 'a.txt\n'],
+    ['tar --create --gzip --file=a.tgz a.txt && tar -t --gun -f a.tgz', 'a.txt\n'],
+  ])('%s', async (line, out) => {
+    const [code, stdout] = await shell(`mkdir /data/dir && cd /data && ${line}`, {
+      '/data/a.txt': new TextEncoder().encode('x\n'),
+    })
+    expect([code, stdout]).toEqual([0, out])
+  })
 })

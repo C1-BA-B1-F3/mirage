@@ -22,8 +22,11 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.io.types import IOResult
 from mirage.ops.types import LinkView
 from mirage.types import (LINK_TARGET_KEY, ContentType, CopyDeref, FileStat,
-                          FileType, NativeCopy, PathSpec, PrimitiveCopy)
+                          FileType, MountMode, NativeCopy, PathSpec,
+                          PrimitiveCopy)
 from mirage.utils.errors import enotsup
+from mirage.vfs.ram import RAMVFS
+from mirage.workspace import Workspace
 
 
 def _spec(path: str) -> PathSpec:
@@ -929,6 +932,20 @@ def test_the_last_link_option_wins_and_recursion_defaults_to_never(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("flag", ["-P", "-d"])
+async def test_a_link_reached_through_a_linked_directory_copies_as_a_link(
+        flag):
+    # The table keys a link by its resolved directory, so `dl/al` stands
+    # at `dir/al`; coreutils 9.7 copies the link itself.
+    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
+                   mode=MountMode.WRITE)
+    await ws.shell("cd /data && mkdir dir w && printf 'x\\n' > a.txt && "
+                   "ln -s ../a.txt dir/al && ln -s dir dl")
+    r = await ws.shell(f"cd /data && cp {flag} dl/al w/x && ls -F w")
+    assert (r.exit_code, await r.materialize_stdout()) == (0, b"x@\n")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("native", [False, True])
 @pytest.mark.parametrize("failure", ["read", "write", "partial-write"])
 @pytest.mark.parametrize("referent", ["/safe", "/missing", "/dst~"])
@@ -998,3 +1015,32 @@ async def test_failed_backup_restores_existing_link(native, failure, referent):
     assert io.writes == {}
     assert links == {"/dst~": referent}
     assert files == {"/src": b"new", "/dst": b"old", "/safe": b"safe"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("flag", ["-r", "-rL"])
+@pytest.mark.parametrize("destination", ["/data/copy", "/other/copy"])
+async def test_recursive_copy_omits_hidden_links(flag, destination):
+    ws = Workspace(
+        {
+            "/data": (RAMVFS(), MountMode.WRITE),
+            "/other": (RAMVFS(), MountMode.WRITE)
+        },
+        mode=MountMode.WRITE)
+    await ws.shell(
+        "mkdir -p /data/src/sec && echo visible > /data/src/a && "
+        "ln -s a /data/src/public && ln -s /private/key /data/src/secret && "
+        "ln -s /private/nested /data/src/sec/link")
+    ws.create_session(
+        "agent",
+        profile={"paths": {
+            "hide": ["/data/src/secret", "/data/src/sec"]
+        }})
+    result = await ws.shell(f"cp {flag} /data/src {destination}",
+                            session_id="agent")
+    assert result.exit_code == 0
+    assert await result.materialize_stderr() == b""
+    copied = await ws.shell(f"ls -A {destination} && cat {destination}/public")
+    assert await copied.materialize_stdout() == b"a\npublic\nvisible\n"
+    assert not ws.namespace.is_link(f"{destination}/secret")
+    assert not ws.namespace.is_link(f"{destination}/sec/link")

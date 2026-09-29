@@ -138,6 +138,9 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-u", long="--unrestricted", count=True),
             Option(short="-d", long="--max-depth", type="str"),
             Option(long="--max-filesize", type="str"),
+            # -L follows a link the walk meets; one named on the line is
+            # followed either way (ripgrep 14.1.1).
+            Option(short="-L", long="--follow"),
             # A mount is mirage's filesystem boundary: this keeps the walk
             # out of every mount below the one it starts in.
             Option(long="--one-file-system"),
@@ -155,10 +158,9 @@ SPECS: dict[str, CommandSpec] = {
             Option(long="--no-messages"),
             Option(long="--messages"),
             # Accepted no-ops: mirage reads no ignore files and no config
-            # file, runs one search at a time, never follows a link while
-            # walking, and never writes to a tty, so its output is already
-            # what these ask for; the negations restore defaults of
-            # features it does not have.
+            # file, runs one search at a time, and never writes to a tty,
+            # so its output is already what these ask for; the negations
+            # restore defaults of features it does not have.
             Option(long="--no-ignore"),
             Option(long="--ignore"),
             Option(long="--no-ignore-dot"),
@@ -187,6 +189,7 @@ SPECS: dict[str, CommandSpec] = {
             Option(long="--no-block-buffered"),
             Option(long="--mmap"),
             Option(long="--no-mmap"),
+            # -L's negation, the last of the two winning.
             Option(long="--no-follow"),
             Option(long="--no-stats"),
             Option(long="--no-crlf"),
@@ -359,6 +362,10 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-m", type="str"),
             Option(short="-o"),
             Option(short="-q"),
+            # An accepted no-op: zgrep hands -s to grep, which reads a
+            # pipe and has no file to complain about, and gzip's own
+            # lines are gzip's (gzip 1.13).
+            Option(short="-s"),
             Option(short="-w"),
         ),
         positional=(Operand(type="str", provided_by=("-e", "-f")), ),

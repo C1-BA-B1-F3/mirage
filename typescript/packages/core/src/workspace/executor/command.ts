@@ -146,6 +146,12 @@ async function finishFind(
   return newStdout
 }
 
+/** The command's words as the line spelled them, an operand as typed.
+ * Mirrors Python's spelled_words. */
+function spelledWords(parts: readonly (string | PathSpec)[]): string[] {
+  return parts.map((p) => (p instanceof PathSpec ? p.rawPath : p))
+}
+
 export async function handleCommand(
   executeNode: ExecuteNodeFn,
   dispatch: DispatchFn,
@@ -693,6 +699,7 @@ export async function handleCommand(
     stdin,
     mount,
     resolveHint: routingScopes[0] ?? null,
+    argv: spelledWords(parts.slice(1)),
   })
   let stdout = rawStdout
   if (cmdName === 'find') {

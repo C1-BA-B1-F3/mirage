@@ -5,9 +5,11 @@ import pytest
 
 from mirage.commands.builtin.generic.program import (RG_STDIN_REREAD,
                                                      RG_STDIN_SEARCHED,
-                                                     prepare_program)
-from mirage.io.types import materialize
-from mirage.types import PathSpec
+                                                     prepare_program,
+                                                     program_file_refusal,
+                                                     read_program_file)
+from mirage.io.types import IOResult, materialize
+from mirage.types import FileStat, FileType, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
@@ -94,3 +96,48 @@ async def test_grep_reads_a_dash_pattern_file_twice_without_refusing():
     }, b"a\n", _no_dispatch, [_typed("-")])
     assert error is None
     assert flags == {"file": [], "e": ["a"]}
+
+
+@pytest.mark.parametrize("name,exc,line,code", [
+    ("grep", IsADirectoryError(), "grep: dir: Is a directory\n", 2),
+    ("grep", FileNotFoundError(), "grep: dir: No such file or directory\n", 2),
+    ("rg", IsADirectoryError(), "rg: dir:Is a directory (os error 21)\n", 2),
+    ("rg", FileNotFoundError(),
+     "rg: dir: No such file or directory (os error 2)\n", 2),
+    ("rg", NotADirectoryError(), "rg: dir: Not a directory (os error 20)\n",
+     2),
+    ("zgrep", IsADirectoryError(), "cat: dir: Is a directory\n", 2),
+    ("zgrep", FileNotFoundError(), "cat: dir: No such file or directory\n", 2),
+    ("sed", FileNotFoundError(),
+     "sed: couldn't open file dir: No such file or directory\n", 4),
+    ("awk", IsADirectoryError(), "awk: read error (Is a directory)\n", 2),
+    ("awk", FileNotFoundError(),
+     'awk: cannot open "dir" (No such file or directory)\n', 2),
+    ("jq", IsADirectoryError(), "jq: Could not open dir: It's a directory\n",
+     2),
+    ("jq", FileNotFoundError(),
+     "jq: Could not open dir: No such file or directory\n", 2),
+])
+def test_a_program_file_refusal_is_in_each_commands_words(
+        name, exc, line, code):
+    # grep 3.11, ripgrep 14.1.1, gzip 1.13 (zgrep copies the file with
+    # cat), sed 4.9, mawk 1.3.4, jq 1.7.1 on debian:stable-slim.
+    assert program_file_refusal(name, _typed("dir"), exc) == (line, code)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name,data", [("sed", b""), ("grep", None)])
+async def test_a_directory_program_file_is_read_as_the_command_reads_it(
+        name, data):
+    # sed 4.9 reads a directory as an empty script; everyone else fails
+    # its read, which the stat tells from a keyed store's plain miss.
+
+    async def dispatch(op, path, **kwargs):
+        assert op == "stat", f"{op} {path.virtual} was dispatched"
+        return FileStat(name="dir", type=FileType.DIRECTORY), IOResult()
+
+    if data is None:
+        with pytest.raises(IsADirectoryError):
+            await read_program_file(name, _typed("dir"), dispatch)
+    else:
+        assert await read_program_file(name, _typed("dir"), dispatch) == data

@@ -13,13 +13,14 @@ from mirage.commands.builtin.grep_scan import exit_code_for
 from mirage.commands.builtin.rg_filetypes import FileTypes, type_listing
 from mirage.commands.builtin.rg_glob import Overrides
 from mirage.commands.builtin.rg_scan import (Haystack, WalkFilter,
-                                             open_error_line, walk_error_line,
-                                             walk_haystacks)
+                                             on_other_mount, open_error_line,
+                                             walk_error_line, walk_haystacks)
 from mirage.commands.builtin.rg_search import (RgFlags, Tally,
                                                host_named_groups,
                                                prints_context, search_haystack,
                                                smart_case_folds)
 from mirage.commands.builtin.utils.constants import STDIN_OPERAND
+from mirage.commands.builtin.utils.links import LinkDoor, link_door
 from mirage.commands.builtin.utils.output import (format_optional_records,
                                                   format_records)
 from mirage.commands.builtin.utils.stream import is_stdin, stdin_stream
@@ -33,7 +34,7 @@ from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagBag, FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult
-from mirage.ops.types import MountIsRoot
+from mirage.ops.types import MountView
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import FS_ERRORS, WALK_ERRORS, walk_refusal
 from mirage.utils.key_prefix import mount_prefix_of
@@ -396,6 +397,7 @@ def parse_flags(fl: FlagView) -> RgFlags:
         hidden=hidden,
         max_depth=number_flag(fl, "max_depth"),
         max_filesize=filesize_flag(fl),
+        follow=_last(fl, "follow", "no_follow") == "follow",
         one_file_system=_last(fl, "one_file_system",
                               "no_one_file_system") == "one_file_system",
         binary=_binary(fl, unrestricted),
@@ -663,10 +665,11 @@ async def rg(
         f.one_file_system
         or not (mounts is not None and mounts.descendants(p.virtual)))
                    for p in paths)
-    # A mount root below the operand shadows whatever the backend holds
-    # there; the fan-out that would search the mount itself is off too.
-    boundary = mounts.is_root if f.one_file_system and mounts else None
-    found = _haystacks(paths, rd, st, cwd, walk, f, warnings, boundary)
+    # A mount below the operand shadows whatever the backend holds there;
+    # the fan-out that would search the mount itself is off too.
+    boundary = mounts if f.one_file_system else None
+    found = _haystacks(paths, rd, st, cwd, walk, f, warnings, boundary,
+                       link_door(opts))
     if f.sort not in (None, "none") and not (f.sort == "path"
                                              and not f.sort_reverse):
         listed = [h async for h in found]
@@ -845,7 +848,8 @@ async def _haystacks(paths: list[PathSpec], rd: Callable[[str],
                                                          Awaitable[list[str]]],
                      st: Callable[[str], Awaitable[FileStat]], cwd: str,
                      walk: WalkFilter, f: RgFlags, warnings: list[str],
-                     boundary: MountIsRoot | None) -> AsyncIterator[Haystack]:
+                     boundary: MountView | None,
+                     door: LinkDoor | None) -> AsyncIterator[Haystack]:
     """Every input the line searches, in order: a stdin operand, a named
     file as itself whatever the filters say, and a directory walked.
 
@@ -857,8 +861,11 @@ async def _haystacks(paths: list[PathSpec], rd: Callable[[str],
         walk (WalkFilter): what a walk keeps.
         f (RgFlags): the parsed flags.
         warnings (list[str]): collects what could not be read.
-        boundary (MountIsRoot | None): --one-file-system's mount-root
-            test, None when the walk may enter any directory.
+        boundary (MountView | None): the mounts --one-file-system keeps
+            each walk to its operand's own, None when the walk may enter
+            any directory.
+        door (LinkDoor | None): the namespace's links and the door past
+            them, which -L walks through.
     """
     for p in paths:
         if is_stdin(p):
@@ -885,9 +892,11 @@ async def _haystacks(paths: list[PathSpec], rd: Callable[[str],
         if not is_dir:
             yield Haystack(p.virtual, p.raw_path, s, p)
             continue
+        crosses = (None if boundary is None else partial(
+            on_other_mount, boundary.root_of, boundary.root_of(p.virtual)))
         async for found in walk_haystacks(
                 rd, st, p.virtual, p.raw_path, cwd, walk, f.sort == "path"
-                and not f.sort_reverse, warnings, boundary):
+                and not f.sort_reverse, warnings, crosses, door, f.follow):
             yield found
 
 
@@ -957,6 +966,8 @@ async def _search_all(found: AsyncIterator[Haystack], paths: list[PathSpec],
                 source = operand_stream(h.spec)
             elif h.spec is not None and read_stream is not None:
                 source = read_stream(h.spec)
+            elif h.door is not None:
+                source = h.door.read(h.virtual)
             else:
                 source = _wrap_bytes(await rb(h.virtual))
             chunks = [

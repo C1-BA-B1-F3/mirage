@@ -1,14 +1,16 @@
 import { PATTERN_KEYS, mergePatternList } from '../grep_pattern.ts'
+import { osErrorText } from '../rg_scan.ts'
+import { dispatchStat } from '../utils/paths.ts'
 import { isStdin, resolveSource } from '../utils/stream.ts'
 import { specOf } from '../../spec/index.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import type { FlagValue } from '../../spec/types.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { DispatchFn } from '../../../runtime/types.ts'
-import type { PathSpec } from '../../../types.ts'
-import { fsErrorLine, fsStrerror, isFsError } from '../../../utils/errors.ts'
+import { FileType, type PathSpec } from '../../../types.ts'
+import { eisdir, fsErrorLine, fsStrerror, isEisdir, isFsError } from '../../../utils/errors.ts'
 
-export const PROGRAM_FILE_COMMANDS = new Set(['grep', 'rg', 'sed', 'awk', 'jq'])
+export const PROGRAM_FILE_COMMANDS = new Set(['grep', 'rg', 'zgrep', 'sed', 'awk', 'jq'])
 
 // ripgrep reads patterns from stdin once, and refuses both a second `-f -`
 // and a `-` operand after it, exit 2 (14.1.1).
@@ -17,12 +19,61 @@ const RG_STDIN_SEARCHED =
   'rg: error: attempted to read patterns from stdin while also searching stdin\n'
 
 // The dest each command's spec gives its program file.
-const FILE_KEYS: Readonly<Record<string, string>> = {
+export const FILE_KEYS: Readonly<Record<string, string>> = {
   grep: 'file',
   rg: 'file',
+  zgrep: 'f',
   sed: 'f',
   awk: 'f',
   jq: 'from_file',
+}
+
+/**
+ * A program file the command cannot read, in its own words and code.
+ *
+ * sed could not open the file, exit 4. mawk quotes the name after `cannot
+ * open`, and a file it opened and then failed to read, which is how a
+ * directory fails, is a bare `read error`. jq could not open it, and calls a
+ * directory one in words of its own. ripgrep appends the errno, with no space
+ * after the colon for a failed read. zgrep copies each pattern file with cat,
+ * so the line is cat's. grep names it as any operand. Every other code is 2.
+ * Pinned on debian:stable-slim (grep 3.11, sed 4.9, mawk 1.3.4, jq 1.7.1,
+ * ripgrep 14.1.1, gzip 1.13). Mirrors Python's program_file_refusal.
+ */
+export function programFileRefusal(name: string, path: PathSpec, err: unknown): [string, number] {
+  const shown = path.rawPath !== '' ? path.rawPath : path.virtual
+  const strerror = fsStrerror(err) ?? ''
+  const readFailed = isEisdir(err)
+  if (name === 'sed') return [`sed: couldn't open file ${shown}: ${strerror}\n`, 4]
+  if (name === 'awk') {
+    if (readFailed) return [`awk: read error (${strerror})\n`, 2]
+    return [`awk: cannot open "${shown}" (${strerror})\n`, 2]
+  }
+  if (name === 'jq') {
+    return [`jq: Could not open ${shown}: ${readFailed ? "It's a directory" : strerror}\n`, 2]
+  }
+  if (name === 'rg') return [`rg: ${shown}:${readFailed ? '' : ' '}${osErrorText(err)}\n`, 2]
+  if (name === 'zgrep') return [fsErrorLine('cat', path, err), 2]
+  return [fsErrorLine(name, path, err), 2]
+}
+
+/**
+ * One program file's bytes, read through the door. A directory opens and
+ * fails at its read, which a keyed store's own read cannot tell from nothing
+ * being there, so a stat goes first; sed alone reads a directory as an empty
+ * script (sed 4.9). Mirrors Python's read_program_file.
+ */
+export async function readProgramFile(
+  name: string,
+  path: PathSpec,
+  dispatch: DispatchFn,
+): Promise<Uint8Array> {
+  if ((await dispatchStat(dispatch)(path)).type === FileType.DIRECTORY) {
+    if (name === 'sed') return new Uint8Array()
+    throw eisdir(path)
+  }
+  const [data] = await dispatch('read', path)
+  return materialize(data as ByteSource)
 }
 
 /** The invocation's program files, or an empty list for inline programs. */
@@ -72,26 +123,14 @@ export async function prepareProgram(
         pieces.push(await materialize(source))
         consumed = true
       } else {
-        const [data] = await dispatch('read', path)
-        pieces.push(await materialize(data as ByteSource))
+        pieces.push(await readProgramFile(name, path, dispatch))
       }
     } catch (err) {
       if (!isFsError(err)) throw err
-      // sed names this step apart from an input's (`couldn't open file`
-      // against `can't read`).
-      const line =
-        name === 'sed'
-          ? `sed: couldn't open file ${path.rawPath}: ${fsStrerror(err) ?? ''}\n`
-          : fsErrorLine(name, path, err)
-      return [
-        texts,
-        bag,
-        stdin,
-        new IOResult({
-          exitCode: name === 'sed' ? 4 : 2,
-          stderr: new TextEncoder().encode(line),
-        }),
-      ]
+      // Match GNU's fatal script-open status; ordinary input-file failures
+      // still belong to the native command handlers.
+      const [line, exitCode] = programFileRefusal(name, path, err)
+      return [texts, bag, stdin, new IOResult({ exitCode, stderr: new TextEncoder().encode(line) })]
     }
   }
   if (taken && operands.some((p) => p.rawPath === '-')) {
@@ -104,7 +143,7 @@ export async function prepareProgram(
   }
   const out = Object.fromEntries(Object.entries(bag).filter(([name]) => name !== key))
   const dec = new TextDecoder()
-  if (name === 'grep' || name === 'rg') {
+  if (name === 'grep' || name === 'rg' || name === 'zgrep') {
     const patternKey = PATTERN_KEYS[name] ?? 'e'
     const expressions = fl.asList(patternKey)
     let pattern = expressions.length > 0 ? expressions.join('\n') : null

@@ -10,8 +10,11 @@ from mirage.commands.builtin.rg_search import RgFlags
 from mirage.commands.config import CommandOpts
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.types import ContentType, FileStat, FileType, PathSpec, WalkErrno
+from mirage.types import (ContentType, FileStat, FileType, MountMode, PathSpec,
+                          WalkErrno)
 from mirage.utils.key_prefix import mount_key
+from mirage.vfs.ram import RAMVFS
+from mirage.workspace import Workspace
 
 
 def _spec(path: str) -> PathSpec:
@@ -1367,3 +1370,90 @@ def test_labelled_asks_for_the_filename_a_walk_would_have_printed():
 def test_labelled_lets_dash_upper_i_win():
     opts = CommandOpts(flags={"no_filename": True})
     assert labelled(opts) is opts
+
+
+async def _walked(line: str) -> tuple[str, str, int]:
+    """Run ``line`` in /data, where s holds f, t holds g and a.txt says
+    hello and world, beside a read-only /ro holding f, as ripgrep 14.1.1
+    was pinned."""
+    ro = RAMVFS()
+    ro._store.files["/f"] = b"ro\n"
+    ws = Workspace(
+        {
+            "/data": (RAMVFS(), MountMode.WRITE),
+            "/ro": (ro, MountMode.READ),
+        },
+        mode=MountMode.WRITE)
+    await ws.shell("cd /data && mkdir s t && printf 'hello\\nworld\\n' > a.txt"
+                   " && printf o > s/f && printf o > t/g")
+    r = await ws.shell(f"cd /data && {line}")
+    return ((await r.materialize_stdout()).decode(),
+            (await r.materialize_stderr()).decode(), r.exit_code)
+
+
+AL = "ln -s ../a.txt s/al && "
+DANG = "rg: {0}: IO error for operation on {0}: No such file or directory " \
+    "(os error 2)\n"
+LOOP = "rg: {0}: IO error for operation on {0}: Too many levels of " \
+    "symbolic links (os error 40)\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, stdout, stderr, code", [
+    (AL + "rg --sort path o s", "s/f:o\n", "", 0),
+    (AL + "rg -L --sort path o s", "s/al:hello\ns/al:world\ns/f:o\n", "", 0),
+    (AL + "rg --follow --sort path o s", "s/al:hello\ns/al:world\ns/f:o\n", "",
+     0),
+    (AL + "rg -L --no-follow --sort path o s", "s/f:o\n", "", 0),
+    (AL + "rg --no-follow -L --sort path o s",
+     "s/al:hello\ns/al:world\ns/f:o\n", "", 0),
+    (AL + "rg -L --files --sort path s", "s/al\ns/f\n", "", 0),
+    ("ln -s ../t s/tl && rg -L --sort path o s", "s/f:o\ns/tl/g:o\n", "", 0),
+    ("ln -s ../t s/tl && rg --sort path o s", "s/f:o\n", "", 0),
+    ("ln -s /ro s/rol && rg -L --sort path ro s", "s/rol/f:ro\n", "", 0),
+    ("ln -s /ro s/rol && rg -L --one-file-system --files --sort path s",
+     "s/f\n", "", 0),
+    ("ln -s /ro/f s/rf && rg -L --one-file-system --files --sort path s",
+     "s/f\ns/rf\n", "", 0),
+])
+async def test_rg_follows_a_walked_link_only_under_dash_upper_l(
+        line: str, stdout: str, stderr: str, code: int):
+    # A link the walk meets is skipped unless -L (the last of it and
+    # --no-follow) says to follow it; one to a directory is descended under
+    # the link's own name, onto any mount, unless --one-file-system keeps
+    # the walk on the operand's.
+    assert await _walked(line) == (stdout, stderr, code)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line, stdout, stderr", [
+    ("ln -s nowhere s/dang && rg -L o s", "s/f:o\n", DANG.format("s/dang")),
+    ("ln -s nowhere s/.dang && rg -L -g '*.txt' o s", "",
+     DANG.format("s/.dang")),
+    ("ln -s lp2 s/lp1 && ln -s lp1 s/lp2 && rg -L --sort path o s", "s/f:o\n",
+     LOOP.format("s/lp1") + LOOP.format("s/lp2")),
+    ("mkdir s/sub && ln -s .. s/sub/up && rg -L --sort path o s", "s/f:o\n",
+     "rg: File system loop found: s/sub/up points to an ancestor s\n"),
+    ("ln -s . s/.self && rg -L o s", "s/f:o\n",
+     "rg: File system loop found: s/.self points to an ancestor s\n"),
+    ("ln -s ../t s/tl && ln -s ../s t/sl && rg -L --sort path o s",
+     "s/f:o\ns/tl/g:o\n",
+     "rg: File system loop found: s/tl/sl points to an ancestor s\n"),
+    ("ln -s nowhere s/dang && cd s && rg -L o", "f:o\n",
+     DANG.format("./dang")),
+    ("mkdir s/sub && ln -s .. s/sub/up && cd s && rg -L --files", "f\n",
+     "rg: File system loop found: ./sub/up points to an ancestor ./\n"),
+])
+async def test_rg_reports_a_link_it_cannot_follow_before_any_filter(
+        line: str, stdout: str, stderr: str):
+    # The ignore crate follows a link before a filter sees its name, so a
+    # dangling, looping or ancestor link is reported even hidden or
+    # glob-excluded, each named as the walker spells it: `./x` under the
+    # implicit cwd, whose matches print bare (ripgrep 14.1.1).
+    assert await _walked(line) == (stdout, stderr, 2)
+
+
+@pytest.mark.asyncio
+async def test_rg_dash_q_keeps_status_0_past_a_dangling_link():
+    assert await _walked("ln -s nowhere s/dang && rg -L -q --sort path o s"
+                         ) == ("", DANG.format("s/dang"), 0)

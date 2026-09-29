@@ -3,20 +3,21 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import partial
 
+from mirage.commands.builtin.generic.decompress import decompress_inputs
 from mirage.commands.builtin.grep_offsets import (decode_line, line_offsets,
                                                   match_offset, prefix_of)
 from mirage.commands.builtin.grep_pattern import (compile_pattern,
                                                   resolve_pattern)
 from mirage.commands.builtin.utils.constants import STDIN_OPERAND
 from mirage.commands.builtin.utils.lines import split_lines
+from mirage.commands.builtin.utils.links import LinkDoor
 from mirage.commands.builtin.utils.output import format_records
-from mirage.commands.builtin.utils.stream import operand_label, stdin_bytes
+from mirage.commands.builtin.utils.stream import operand_label
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
-from mirage.io.types import ByteSource, IOResult
-from mirage.types import PathSpec
-from mirage.utils.compress import gunzip_partial
+from mirage.io.types import ByteSource, IOResult, materialize
+from mirage.types import PathSpec, StatFn
 
 
 async def _read_plain(
@@ -160,6 +161,8 @@ async def zgrep(
     *,
     read_bytes: Callable[..., Awaitable[bytes]],
     stdin: ByteSource | None = None,
+    stat: StatFn | None = None,
+    door: LinkDoor | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     fl = FlagView(flags, spec=SPECS["zgrep"])
     pattern, never_match = await resolve_pattern(
@@ -173,17 +176,23 @@ async def zgrep(
     show_filename = f.force_filename or (multi and not f.suppress_filename)
     any_match = False
     all_results: list[str] = []
-    read = stdin_bytes(read_bytes, stdin)
 
     errors: list[str] = []
+    failed = False
     for p in paths or [STDIN_OPERAND]:
-        raw = await read(p)
-        # zgrep decompresses with `gzip -cdfq`, which passes an input with
-        # no gzip header through as it is, the bytes after a member too,
-        # and reports a bad archive in gzip's own lines.
-        data, failure = gunzip_partial(raw, passthrough=True)
-        if failure is not None:
-            errors.append(failure.render(operand_label(p, "stdin")))
+        # zgrep decompresses each operand with `gzip -cdfq -- FILE`,
+        # which reports its own failures and hands grep what it decoded.
+        body, io = await decompress_inputs([p],
+                                           read=read_bytes,
+                                           stdin=stdin,
+                                           to_stdout=True,
+                                           force=True,
+                                           quiet=True,
+                                           stat=stat,
+                                           door=door)
+        data = await materialize(body)
+        errors.append(await io.stderr_str())
+        failed = failed or io.exit_code == 1
         if compiled is None:
             if f.files_without_match:
                 all_results.append(p.raw_path)
@@ -208,8 +217,9 @@ async def zgrep(
                 any_match = True
             all_results.extend(result)
 
-    # A bad archive is exit 2 even beside a match, -q included (zgrep 3.11).
-    exit_code = 2 if errors else 0 if any_match else 1
+    # gzip's failure is exit 2 even beside a match, -q included (zgrep
+    # 1.13 takes the more serious status of gzip's and grep's per file).
+    exit_code = 2 if failed else 0 if any_match else 1
     stderr = "".join(errors).encode() or None
     # Under -m0, GNU still prints -L's operands even with -q.
     if (f.quiet and f.max_count != 0) or not all_results:

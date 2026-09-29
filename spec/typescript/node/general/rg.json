@@ -605,6 +605,11 @@
       "type": "str"
     },
     {
+      "long": "--follow",
+      "short": "-L",
+      "type": "bool"
+    },
+    {
       "long": "--one-file-system",
       "type": "bool"
     },

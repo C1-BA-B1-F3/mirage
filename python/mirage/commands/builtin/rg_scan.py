@@ -19,11 +19,12 @@ from dataclasses import dataclass
 from mirage.commands.builtin.constants import BINARY_EXTENSIONS
 from mirage.commands.builtin.rg_filetypes import FileTypes
 from mirage.commands.builtin.rg_glob import Overrides, Verdict, walk_candidate
+from mirage.commands.builtin.utils.links import LinkDoor
 from mirage.commands.builtin.utils.types import AsyncReaddir, AsyncStat
 from mirage.commands.resolve import get_extension
 from mirage.errors.classify import classify
 from mirage.errors.posix import linux_errno
-from mirage.ops.types import MountIsRoot
+from mirage.ops.types import MountIsRoot, MountRoot
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import WALK_ERRORS, fs_strerror
 from mirage.utils.path import respell_one
@@ -59,6 +60,21 @@ def walk_error_line(shown: str, exc: BaseException) -> str:
     """
     return (f"rg: {shown}: IO error for operation on {shown}: "
             f"{os_error_text(exc)}")
+
+
+def loop_error_line(shown: str, ancestor: str) -> str:
+    """ripgrep's line for a link -L found leading back into the walk.
+
+    ``rg: File system loop found: s/sub/up points to an ancestor s``: the
+    link, then the directory above it that it names, nearest first, each
+    as the walker spells it (ripgrep 14.1.1).
+
+    Args:
+        shown (str): the link as the walker names it.
+        ancestor (str): the directory it leads back to, named the same way.
+    """
+    return (f"rg: File system loop found: {shown} points to an ancestor "
+            f"{ancestor}")
 
 
 def open_error_line(shown: str, exc: BaseException) -> str:
@@ -150,12 +166,16 @@ class Haystack:
             sorts read it).
         spec (PathSpec | None): the operand itself when it was named on
             the line, which a stream read takes.
+        door (LinkDoor | None): the door a file the walk reached through a
+            link is read through, since the link may lead onto a mount
+            the operand's backend cannot read.
     """
 
     virtual: str
     shown: str
     stat: FileStat | None = None
     spec: PathSpec | None = None
+    door: LinkDoor | None = None
 
 
 def _entry_name(entry: str) -> str:
@@ -167,26 +187,47 @@ def _entry_name(entry: str) -> str:
     return entry.rstrip("/")
 
 
-async def walk_haystacks(
-        readdir_fn: AsyncReaddir,
-        stat_fn: AsyncStat,
-        root: str,
-        shown_root: str,
-        cwd: str,
-        walk: WalkFilter,
-        sort_by_name: bool,
-        warnings: list[str] | None,
-        boundary: MountIsRoot | None = None,
-        depth: int = 0,
-        directory: str | None = None) -> AsyncIterator[Haystack]:
+def on_other_mount(root_of: MountRoot, home: str, path: str) -> bool:
+    """Whether a directory lies on another mount than the operand's.
+
+    --one-file-system's test: a mount is mirage's filesystem boundary,
+    which a directory crosses by being a mount root and a link by leading
+    onto another mount.
+
+    Args:
+        root_of (MountRoot): the mount serving a path.
+        home (str): the mount serving the operand.
+        path (str): the directory's virtual path, every link resolved.
+    """
+    return root_of(path) != home
+
+
+async def walk_haystacks(readdir_fn: AsyncReaddir,
+                         stat_fn: AsyncStat,
+                         root: str,
+                         shown_root: str,
+                         cwd: str,
+                         walk: WalkFilter,
+                         sort_by_name: bool,
+                         warnings: list[str] | None,
+                         boundary: MountIsRoot | None = None,
+                         door: LinkDoor | None = None,
+                         follow: bool = False) -> AsyncIterator[Haystack]:
     """The files a walk of one directory operand searches, in walk order.
+
+    A link the walk meets is skipped, as ripgrep skips one, unless
+    ``follow`` (-L) says to walk through it: then it stands for what it
+    leads to, a directory descended and a file searched under the link's
+    own name, and one that dangles, loops or leads back to a directory
+    above it is reported in ripgrep's words and skipped.
 
     Args:
         readdir_fn (AsyncReaddir): directory reader.
         stat_fn (AsyncStat): stat reader.
         root (str): the operand's virtual path.
         shown_root (str): the operand as typed, which every printed path
-            below it starts with.
+            below it starts with; empty for the implicit cwd, whose
+            matches print bare while the walker names ``./x``.
         cwd (str): the session's working directory, the root the globs
             are matched from.
         walk (WalkFilter): what the walk keeps.
@@ -194,47 +235,195 @@ async def walk_haystacks(
             order rather than the backend's.
         warnings (list[str] | None): collects what could not be read.
         boundary (MountIsRoot | None): --one-file-system's test for a
-            mount root, which the walk does not enter; None to enter
-            everything the backend lists.
-        depth (int): how deep ``directory`` is below the operand.
-        directory (str | None): the directory to list, the operand itself
-            when None.
+            directory on another mount than the operand's, which the walk
+            does not enter; None to enter everything.
+        door (LinkDoor | None): the namespace's links and the door past
+            them, None outside a workspace, where no link can stand.
+        follow (bool): -L, walk through a link rather than skip it.
     """
-    here = root if directory is None else directory
-    if walk.max_depth is not None and depth >= walk.max_depth:
-        return
-    try:
-        entries = await readdir_fn(here)
-    except WALK_ERRORS as exc:
-        if warnings is not None:
-            shown = respell_one(here, root, shown_root)
-            warnings.append(walk_error_line(shown, exc))
-        return
-    if sort_by_name:
-        entries = sorted(entries, key=_entry_name)
-    for entry in entries:
-        # box/dropbox readdir marks folders with a trailing slash.
-        child = entry.rstrip("/") or entry
-        shown = respell_one(child, root, shown_root)
+    walker = _Walker(readdir_fn, stat_fn, cwd, walk, sort_by_name, warnings,
+                     boundary, door, follow, shown_root == "")
+    top = walker.named(shown_root)
+    async for found in walker.below(root, root, shown_root, 0, ((root, top), ),
+                                    False):
+        yield found
+
+
+@dataclass(frozen=True, slots=True)
+class _Walker:
+    """What one operand's walk reads with and keeps, for every level.
+
+    Args:
+        readdir_fn (AsyncReaddir): the operand's directory reader.
+        stat_fn (AsyncStat): the operand's stat reader.
+        cwd (str): the root the globs are matched from.
+        walk (WalkFilter): what the walk keeps.
+        sort_by_name (bool): each directory's entries in name order.
+        warnings (list[str] | None): collects what could not be read.
+        boundary (MountIsRoot | None): --one-file-system's mount test.
+        door (LinkDoor | None): the namespace's links and the door.
+        follow (bool): -L.
+        implicit (bool): the operand is the implicit cwd.
+    """
+
+    readdir_fn: AsyncReaddir
+    stat_fn: AsyncStat
+    cwd: str
+    walk: WalkFilter
+    sort_by_name: bool
+    warnings: list[str] | None
+    boundary: MountIsRoot | None
+    door: LinkDoor | None
+    follow: bool
+    implicit: bool
+
+    def named(self, shown: str) -> str:
+        """A path as the walker names it in a warning.
+
+        Matches print the implicit cwd's paths bare, but the walker's own
+        errors name the path it walked, which starts ``./`` (ripgrep
+        14.1.1).
+
+        Args:
+            shown (str): the path as a match prints it.
+        """
+        if not self.implicit:
+            return shown
+        return f"./{shown}" if shown else "./"
+
+    def warn(self, line: str) -> None:
+        """Record one warning, where the caller collects them.
+
+        Args:
+            line (str): ripgrep's line.
+        """
+        if self.warnings is not None:
+            self.warnings.append(line)
+
+    def is_link(self, virtual: str) -> bool:
+        """Whether a link stands at a walked entry.
+
+        Args:
+            virtual (str): the entry's virtual path.
+        """
+        return (self.door is not None
+                and self.door.links.stat_at(virtual) is not None)
+
+    async def below(self, here: str, base: str, shown_base: str, depth: int,
+                    chain: tuple[tuple[str, str], ...],
+                    linked: bool) -> AsyncIterator[Haystack]:
+        """The files under one directory the walk lists.
+
+        Args:
+            here (str): the directory's virtual path, every link resolved.
+            base (str): the path its entries are spelled from: the
+                operand, or the link-resolved directory the walk last
+                reached through a link.
+            shown_base (str): ``base`` as printed: the operand as typed,
+                or that link's printed path.
+            depth (int): how deep ``here`` is below the operand.
+            chain (tuple[tuple[str, str], ...]): ``here`` and every
+                directory above it to the operand, nearest first, as its
+                resolved path and the walker's name for it: what a link
+                leading back into the walk is caught against.
+            linked (bool): reached through a link, so read through the
+                door rather than the operand's backend.
+        """
+        if self.walk.max_depth is not None and depth >= self.walk.max_depth:
+            return
+        door = self.door if linked else None
         try:
-            s = await stat_fn(entry)
+            if door is not None:
+                entries = await door.readdir(here)
+            else:
+                entries = await self.readdir_fn(here)
         except WALK_ERRORS as exc:
-            if warnings is not None:
-                warnings.append(walk_error_line(shown, exc))
-            continue
-        name = posixpath.basename(child)
-        candidate = walk_candidate(shown, cwd)
-        if s.type == FileType.DIRECTORY:
-            if boundary is not None and boundary(child):
+            self.warn(walk_error_line(chain[0][1], exc))
+            return
+        if self.follow and self.door is not None:
+            listed = {_entry_name(entry) for entry in entries}
+            entries = [
+                *entries,
+                *(link
+                  for link in self.door.children(here) if link not in listed)
+            ]
+        if self.sort_by_name:
+            entries = sorted(entries, key=_entry_name)
+        for entry in entries:
+            # box/dropbox readdir marks folders with a trailing slash.
+            child = entry.rstrip("/") or entry
+            shown = respell_one(child, base, shown_base)
+            if self.is_link(child):
+                if self.follow:
+                    async for found in self.through(child, shown, depth,
+                                                    chain):
+                        yield found
                 continue
-            if walk.admits(candidate, name, True):
-                async for found in walk_haystacks(readdir_fn, stat_fn, root,
-                                                  shown_root, cwd, walk,
-                                                  sort_by_name, warnings,
-                                                  boundary, depth + 1, child):
+            try:
+                if door is not None:
+                    s = await door.stat(entry)
+                else:
+                    s = await self.stat_fn(entry)
+            except WALK_ERRORS as exc:
+                self.warn(walk_error_line(self.named(shown), exc))
+                continue
+            name = posixpath.basename(child)
+            candidate = walk_candidate(shown, self.cwd)
+            if s.type == FileType.DIRECTORY:
+                if self.boundary is not None and self.boundary(child):
+                    continue
+                if self.walk.admits(candidate, name, True):
+                    async for found in self.below(
+                            child, base, shown_base, depth + 1,
+                        ((child, self.named(shown)), *chain), linked):
+                        yield found
+            elif s.type is FileType.FILE and self.walk.admits_file(
+                    candidate, name, s):
+                yield Haystack(child, shown, s, door=door)
+
+    async def through(
+            self, link: str, shown: str, depth: int,
+            chain: tuple[tuple[str, str], ...]) -> AsyncIterator[Haystack]:
+        """What -L walks in place of one link.
+
+        The ignore crate's order: the link is followed first, so one that
+        dangles or loops is reported whatever the filters would have said
+        of its name, then a directory it leads to is checked against the
+        chain above it, and only then do the filters decide.
+
+        Args:
+            link (str): the link's virtual path.
+            shown (str): the link as printed.
+            depth (int): how deep the directory holding it is.
+            chain (tuple[tuple[str, str], ...]): that directory and
+                every one above it, nearest first.
+        """
+        door = self.door
+        if door is None:
+            return
+        named = self.named(shown)
+        try:
+            target = door.target(link)
+            s = await door.stat(target)
+        except WALK_ERRORS as exc:
+            self.warn(walk_error_line(named, exc))
+            return
+        name = posixpath.basename(link)
+        candidate = walk_candidate(shown, self.cwd)
+        if s.type == FileType.DIRECTORY:
+            for above, spelled in chain:
+                if above == target:
+                    self.warn(loop_error_line(named, spelled))
+                    return
+            if self.boundary is not None and self.boundary(target):
+                return
+            if self.walk.admits(candidate, name, True):
+                async for found in self.below(target, target, shown, depth + 1,
+                                              ((target, named), *chain), True):
                     yield found
-        elif s.type is FileType.FILE and walk.admits_file(candidate, name, s):
-            yield Haystack(child, shown, s)
+        elif s.type is FileType.FILE and self.walk.admits_file(
+                candidate, name, s):
+            yield Haystack(target, shown, s, door=door)
 
 
 def walk_candidates(candidates: list[PathSpec], scopes: list[PathSpec],

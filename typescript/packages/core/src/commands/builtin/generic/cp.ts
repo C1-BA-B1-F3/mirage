@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { pathAllowed } from '../../../context/session_context.ts'
 import { mountedPath, rekey, respelled } from '../../../utils/key_prefix.ts'
 import type { IndexCacheStore } from '../../../cache/index/store.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
@@ -53,6 +54,7 @@ import {
   isFsError,
   isMissingPath,
 } from '../../../utils/errors.ts'
+import { typedLink } from '../utils/links.ts'
 import { absentDestStrerror, descendantPath, nearestAncestor } from '../utils/paths.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
@@ -224,14 +226,6 @@ export function parseFlags(fl: FlagView): CpFlags {
   })
 }
 
-// The link standing at the name an operand was typed as, its own row: the
-// router follows an operand through a link before cp runs, which leaves
-// `virtual` at the target and the typed name in `rawPath`. Mirrors Python's
-// typed_link.
-export function typedLink(copies: TransferLinks, path: PathSpec): FileStat | null {
-  return copies.links.statAt(resolvePath(path.rawPath || path.virtual, copies.cwd))
-}
-
 // What stands at a path, asked through the door; null where nothing does,
 // which is where a new link goes. Mirrors Python's _entry_at.
 async function entryAt(dispatch: DispatchFn, spec: PathSpec): Promise<FileStat | null> {
@@ -273,8 +267,8 @@ export async function makeLink(
 ): Promise<boolean> {
   const stat: StatFn = (path) => linkStat(copies, path)
   const targetLink = copies.links.statAt(target.virtual)
-  const there = await entryAt(copies.dispatch, target)
-  if (targetLink === null && there?.type === FileType.DIRECTORY) {
+  const there = targetLink ?? (await entryAt(copies.dispatch, target))
+  if (there?.type === FileType.DIRECTORY) {
     errors.push(
       `${policy.cmdName}: cannot overwrite directory '${target.rawPath}' with non-directory`,
     )
@@ -283,7 +277,7 @@ export async function makeLink(
   if (!(await overwriteGate(policy, stat, src, target, errors))) return false
   const made = await makeBackup(
     policy,
-    targetLink !== null ? { rename: (a, b) => renameLink(copies, a, b) } : copies.relay,
+    targetLink === null ? copies.relay : { rename: (a, b) => renameLink(copies, a, b) },
     stat,
     copies.relay.readdir,
     target,
@@ -336,6 +330,7 @@ export async function copyTreeLinks(
   const shownDst = rstripSlash(target.rawPath) || target.rawPath
   const below = [...copies.links.subtree(base)].sort((a, b) => compareCodePoints(a[0], b[0]))
   for (const [virtual, row] of below) {
+    if (!pathAllowed(virtual)) continue
     const rel = virtual.slice(rstripSlash(base).length + 1)
     const landing = `${dstBase}/${rel}`
     const shown = `${shownSrc}/${rel}`
@@ -1107,7 +1102,9 @@ export async function cpGeneric(
   const errors: string[] = []
   for (const [src, target] of copyTargets(sources, dst, dstIsDir, dstExists, dstErr)) {
     const link =
-      copies !== undefined && flags.dereference === 'never' ? typedLink(copies, src) : null
+      copies !== undefined && flags.dereference === 'never'
+        ? typedLink(copies.links, src, copies.cwd)
+        : null
     if (copies !== undefined && link !== null) {
       // The router followed the operand, but the policy copies the link
       // itself, whatever it leads to (coreutils 9.7). Onto a destination that

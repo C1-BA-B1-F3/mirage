@@ -16,11 +16,13 @@ import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
-import { gunzipPartial } from '../../../utils/compress.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { compilePattern, resolvePattern } from '../grep_pattern.ts'
 import { STDIN_OPERAND } from '../utils/constants.ts'
-import { operandLabel, stdinStream } from '../utils/stream.ts'
+import { linkDoor } from '../utils/links.ts'
+import { operandLabel } from '../utils/stream.ts'
+import type { StatFn } from './archive/walk.ts'
+import { decompressInputs } from './decompress.ts'
 import { decodeLine, lineOffsets, matchOffset, prefixOf } from '../grep_offsets.ts'
 import { formatRecords } from '../utils/output.ts'
 import { splitLines } from '../utils/lines.ts'
@@ -103,6 +105,7 @@ export async function zgrepGeneric(
   texts: string[],
   opts: CommandOpts,
   stream: (p: PathSpec) => AsyncIterable<Uint8Array>,
+  stat?: StatFn,
 ): Promise<CommandFnResult> {
   const fl = new FlagView(opts.flags, specOf('zgrep'))
   const resolution = await resolvePattern(
@@ -160,15 +163,23 @@ export async function zgrepGeneric(
   let anyMatch = false
   const allResults: string[] = []
 
-  const read = stdinStream(stream, opts.stdin)
+  const door = linkDoor(opts)
   let errors = ''
+  let failed = false
   for (const p of paths.length > 0 ? paths : [STDIN_OPERAND]) {
-    const raw = await materialize(read(p))
-    // zgrep decompresses with `gzip -cdfq`, which passes an input with no
-    // gzip header through as it is, the bytes after a member too, and
-    // reports a bad archive in gzip's own lines.
-    const [data, failure] = await gunzipPartial(raw, true)
-    if (failure !== null) errors += failure.render(operandLabel(p, 'stdin'))
+    // zgrep decompresses each operand with `gzip -cdfq -- FILE`, which
+    // reports its own failures and hands grep what it decoded.
+    const [body, io] = await decompressInputs([p], stream, {
+      stdin: opts.stdin,
+      toStdout: true,
+      force: true,
+      quiet: true,
+      ...(stat !== undefined ? { stat } : {}),
+      door,
+    })
+    const data = await materialize(body)
+    errors += await io.stderrStr()
+    failed ||= io.exitCode === 1
     if (pattern === null) {
       if (filesWithoutMatch) allResults.push(p.rawPath)
       continue
@@ -195,8 +206,9 @@ export async function zgrepGeneric(
     }
   }
 
-  // A bad archive is exit 2 even beside a match, -q included (zgrep 3.11).
-  const exitCode = errors !== '' ? 2 : anyMatch ? 0 : 1
+  // gzip's failure is exit 2 even beside a match, -q included (zgrep 1.13
+  // takes the more serious status of gzip's and grep's per file).
+  const exitCode = failed ? 2 : anyMatch ? 0 : 1
   const stderr = errors === '' ? null : ENC.encode(errors)
   // Under -m0, GNU still prints -L's operands even with -q.
   if ((quiet && maxCount !== 0) || allResults.length === 0)

@@ -237,6 +237,40 @@ def expand_long(cs: CompiledSpec,
     return matches
 
 
+def expand_table_long(table: Sequence[Sequence[str]],
+                      spelling: str) -> tuple[str, ...]:
+    """getopt_long prefix matching against a program's whole table.
+
+    An entry spelled exactly names its option; otherwise every entry the
+    typed spelling prefixes is a candidate. glibc sets aside a later
+    candidate that names the same option as the first one, so one
+    option's aliases resolve where two options are ambiguous. The result
+    length tells the caller everything: 0 unknown, 1 the option's primary
+    spelling, 2+ the possibilities glibc lists (the first candidate and
+    every later one naming another option, in table order).
+
+    Args:
+        table (Sequence[Sequence[str]]): each option's primary spelling
+            then its aliases, in the program's table order
+            (LONG_OPTION_TABLES).
+        spelling (str): the typed long spelling, without any ``=value``.
+    """
+    entries = [(name, group[0]) for group in table for name in group]
+    for name, primary in entries:
+        if name == spelling:
+            return (primary, )
+    if len(spelling) <= 2:
+        return ()
+    matches = [(name, primary) for name, primary in entries
+               if name.startswith(spelling)]
+    if not matches:
+        return ()
+    first = matches[0][1]
+    listed = (matches[0][0],
+              *(name for name, primary in matches[1:] if primary != first))
+    return (first, ) if len(listed) == 1 else listed
+
+
 @lru_cache(maxsize=512)
 def compile_spec(spec: CommandSpec) -> CompiledSpec:
     """Lower a CommandSpec into parser lookup tables.

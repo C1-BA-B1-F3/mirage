@@ -68,6 +68,7 @@ export interface ExecContext {
   readdirPath?: ReaddirPath
   signal?: AbortSignal
   limitOverride?: Limit | null
+  argv?: readonly string[]
 }
 
 /**
@@ -121,6 +122,14 @@ export interface CommandOpts {
   readdirPath?: ReaddirPath
   signal?: AbortSignal
   timeoutSeconds?: number
+  // The words after the command name, as the line spelled them (an
+  // operand's rawPath), for the GNU diagnostic that quotes a word the
+  // classified operands do not hold: diffutils names the line's last
+  // argument, an option included (`cmp: missing operand after '-s'`).
+  // Flags are read through a spec-bound FlagView, never from here. Absent
+  // where a line runs split per operand or per mount, since no one word
+  // list describes such a run. Mirrors Python's `argv`.
+  argv?: readonly string[]
 }
 
 export type CommandFnResult = [ByteSource | null, IOResult] | null

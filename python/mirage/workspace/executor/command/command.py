@@ -84,6 +84,16 @@ JOB_HANDLERS = {
 }
 
 
+def spelled_words(parts: list[str | PathSpec]) -> tuple[str, ...]:
+    """The command's words as the line spelled them, an operand as typed.
+
+    Args:
+        parts (list[str | PathSpec]): the classified words after the
+            command name.
+    """
+    return tuple(p.raw_path if isinstance(p, PathSpec) else p for p in parts)
+
+
 async def _finish_find(
         stdout: ByteSource | None,
         io: IOResult,
@@ -552,7 +562,8 @@ async def handle_command(
                                     flag_kwargs,
                                     stdin=stdin,
                                     mount=mount,
-                                    routing_decision=routing_decision)
+                                    routing_decision=routing_decision,
+                                    argv=spelled_words(parts[1:]))
     if cmd_name == "find":
         stdout = await _finish_find(stdout,
                                     io,

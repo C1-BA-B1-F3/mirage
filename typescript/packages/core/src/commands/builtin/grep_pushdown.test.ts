@@ -167,6 +167,8 @@ describe('hasSearchShapingFlags', () => {
     [{ A: '2' }, true],
     [{ B: '2' }, true],
     [{ C: '2' }, true],
+    // rg -L walks links, which no backend's search can see.
+    [{ follow: true }, true],
   ])('hasSearchShapingFlags(%j) === %j', (flags, expected) => {
     expect(
       hasSearchShapingFlags(flags as Record<string, string | boolean | number | string[]>),

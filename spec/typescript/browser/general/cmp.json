@@ -277,6 +277,12 @@
     },
     {
       "type": "path"
+    },
+    {
+      "type": "str"
+    },
+    {
+      "type": "str"
     }
   ]
 }

@@ -24,6 +24,8 @@ import { eacces, enoent } from '../../utils/errors.ts'
 import { decodeLine } from './grep_offsets.ts'
 import {
   type WalkFilter,
+  loopErrorLine,
+  onOtherMount,
   openErrorLine,
   osErrorText,
   walkCandidates,
@@ -1020,5 +1022,25 @@ describe('ripgrep error lines', () => {
     expect(openErrorLine('locked', eacces('locked'))).toBe(
       'rg: locked: Permission denied (os error 13)',
     )
+  })
+})
+
+describe('rg -L walk lines', () => {
+  it('names the link, then the ancestor it leads to', () => {
+    // ripgrep 14.1.1's ignore crate, for a link -L follows back up the walk.
+    expect(loopErrorLine('s/sub/up', 's')).toBe(
+      'rg: File system loop found: s/sub/up points to an ancestor s',
+    )
+  })
+
+  it.each([
+    ['/data/s', false],
+    ['/data/m', true],
+    ['/ro/sub', true],
+  ])('keeps --one-file-system on the operand mount: %s crosses %s', (path, crosses) => {
+    // A directory crosses by being a mount root, a link by leading onto
+    // another mount: both are a different mount root than the operand's.
+    const roots: Record<string, string> = { '/data/m': '/data/m/', '/ro/sub': '/ro/' }
+    expect(onOtherMount((p) => roots[p] ?? '/data/', '/data/', path)).toBe(crosses)
   })
 })

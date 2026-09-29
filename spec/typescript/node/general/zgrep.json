@@ -370,6 +370,10 @@
       "type": "bool"
     },
     {
+      "short": "-s",
+      "type": "bool"
+    },
+    {
       "short": "-w",
       "type": "bool"
     }

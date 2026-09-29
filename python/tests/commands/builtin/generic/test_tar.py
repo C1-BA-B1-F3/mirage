@@ -7,6 +7,7 @@ import pytest
 from mirage.commands.builtin.generic.archive.types import Walked
 from mirage.commands.builtin.generic.tar import (excluded, member_name, pruned,
                                                  strip_prefix, tar)
+from mirage.commands.errors import UsageError
 from mirage.ops.types import LinkView, MountView
 from mirage.types import (LINK_TARGET_KEY, ContentType, FileStat, FileType,
                           MountMode, PathSpec)
@@ -459,7 +460,7 @@ async def test_extract_strips_leading_components():
     _, io_res = await _create(tree, [],
                               x=True,
                               f=_spec("/out.tar"),
-                              strip_components="2",
+                              strip_components=2,
                               C=[_spec("/out")])
     assert "/out/a.txt" in io_res.writes
 
@@ -467,7 +468,7 @@ async def test_extract_strips_leading_components():
 @pytest.mark.asyncio
 async def test_requires_a_mode():
     tree = _Tree({})
-    with pytest.raises(ValueError, match="-c, -x, or -t"):
+    with pytest.raises(UsageError, match="You must specify one of"):
         await _create(tree, [])
 
 

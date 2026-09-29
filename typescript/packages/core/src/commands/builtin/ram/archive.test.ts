@@ -129,11 +129,11 @@ describe('tar', () => {
     vfs.store.files.set('/a.txt', ENC.encode('aaa'))
     vfs.store.files.set('/b.txt', ENC.encode('bbb'))
     await runCmd(RAM_TAR, vfs, [PathSpec.fromStrPath('/a.txt'), PathSpec.fromStrPath('/b.txt')], {
-      c: true,
-      f: '/archive.tar',
+      create: true,
+      file: '/archive.tar',
     })
     expect(vfs.store.files.has('/archive.tar')).toBe(true)
-    const { out } = await runCmd(RAM_TAR, vfs, [], { t: true, f: '/archive.tar' })
+    const { out } = await runCmd(RAM_TAR, vfs, [], { list: true, file: '/archive.tar' })
     const decoded = DEC.decode(out)
     expect(decoded).toContain('a.txt')
     expect(decoded).toContain('b.txt')
@@ -143,11 +143,11 @@ describe('tar', () => {
     const vfs = new RAMVFS()
     vfs.store.files.set('/a.txt', ENC.encode('content_a'))
     await runCmd(RAM_TAR, vfs, [PathSpec.fromStrPath('/a.txt')], {
-      c: true,
-      f: '/archive.tar',
+      create: true,
+      file: '/archive.tar',
     })
     vfs.store.files.delete('/a.txt')
-    await runCmd(RAM_TAR, vfs, [], { x: true, f: '/archive.tar', C: '/' })
+    await runCmd(RAM_TAR, vfs, [], { extract: true, file: '/archive.tar', directory: '/' })
     expect(vfs.store.files.has('/a.txt')).toBe(true)
     expect(DEC.decode(vfs.store.files.get('/a.txt'))).toBe('content_a')
   })
@@ -159,13 +159,13 @@ describe('tar', () => {
     vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
     vfs.store.files.set('/d/sub/b.txt', ENC.encode('beta'))
     const { exitCode, out } = await runCmd(RAM_TAR, vfs, [dirSpec('/d', 'd')], {
-      c: true,
-      v: true,
-      f: '/out.tar',
+      create: true,
+      verbose: true,
+      file: '/out.tar',
     })
     expect(exitCode).toBe(0)
     expect(DEC.decode(out).trim().split('\n')).toEqual(['d/', 'd/a.txt', 'd/sub/', 'd/sub/b.txt'])
-    const listed = await runCmd(RAM_TAR, vfs, [], { t: true, f: '/out.tar' })
+    const listed = await runCmd(RAM_TAR, vfs, [], { list: true, file: '/out.tar' })
     expect(DEC.decode(listed.out).trim().split('\n')).toEqual([
       'd/',
       'd/a.txt',
@@ -179,8 +179,8 @@ describe('tar', () => {
     vfs.store.dirs.add('/base')
     vfs.store.dirs.add('/base/d')
     vfs.store.files.set('/base/d/a.txt', ENC.encode('alpha'))
-    await runCmd(RAM_TAR, vfs, [dirSpec('/base/d', 'd')], { c: true, f: '/out.tar' })
-    const listed = await runCmd(RAM_TAR, vfs, [], { t: true, f: '/out.tar' })
+    await runCmd(RAM_TAR, vfs, [dirSpec('/base/d', 'd')], { create: true, file: '/out.tar' })
+    const listed = await runCmd(RAM_TAR, vfs, [], { list: true, file: '/out.tar' })
     expect(DEC.decode(listed.out).trim().split('\n')).toEqual(['d/', 'd/a.txt'])
   })
 
@@ -189,8 +189,8 @@ describe('tar', () => {
     vfs.store.dirs.add('/d')
     vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
     const { stderr } = await runCmd(RAM_TAR, vfs, [dirSpec('/d', '/d')], {
-      c: true,
-      f: '/out.tar',
+      create: true,
+      file: '/out.tar',
     })
     const text = DEC.decode(stderr)
     expect(text).toContain('Removing leading')
@@ -205,11 +205,11 @@ describe('tar', () => {
     vfs.store.dirs.add('/d/sub')
     vfs.store.files.set('/d/a.txt', ENC.encode('alpha'))
     const { stderr } = await runCmd(RAM_TAR, vfs, [dirSpec('/d/a.txt', '/d/sub/../a.txt')], {
-      c: true,
-      f: '/out.tar',
+      create: true,
+      file: '/out.tar',
     })
     expect(DEC.decode(stderr)).toBe("tar: Removing leading `/d/sub/../' from member names\n")
-    const listed = await runCmd(RAM_TAR, vfs, [], { t: true, f: '/out.tar' })
+    const listed = await runCmd(RAM_TAR, vfs, [], { list: true, file: '/out.tar' })
     expect(DEC.decode(listed.out).trim()).toBe('a.txt')
   })
 
@@ -220,8 +220,8 @@ describe('tar', () => {
     vfs.store.dirs.add('/d')
     vfs.store.dirs.add('/d/sub')
     const { stderr } = await runCmd(RAM_TAR, vfs, [dirSpec('/d/missing', 'sub/../missing')], {
-      c: true,
-      f: '/out.tar',
+      create: true,
+      file: '/out.tar',
     })
     expect(DEC.decode(stderr).split('\n').slice(0, 2)).toEqual([
       "tar: Removing leading `sub/../' from member names",
@@ -240,7 +240,7 @@ describe('tar', () => {
       RAM_TAR,
       vfs,
       [dirSpec('/base/nope', 'nope'), dirSpec('/base/file', '../file')],
-      { c: true, f: '/out.tar' },
+      { create: true, file: '/out.tar' },
     )
     expect(DEC.decode(first.stderr).split('\n').slice(0, 2)).toEqual([
       'tar: nope: Cannot stat: No such file or directory',
@@ -250,7 +250,7 @@ describe('tar', () => {
       RAM_TAR,
       vfs,
       [dirSpec('/base/file', '../file'), dirSpec('/base/nope', 'nope')],
-      { c: true, f: '/out2.tar' },
+      { create: true, file: '/out2.tar' },
     )
     expect(DEC.decode(second.stderr).split('\n').slice(0, 2)).toEqual([
       "tar: Removing leading `../' from member names",
@@ -266,7 +266,7 @@ describe('tar', () => {
       RAM_TAR,
       vfs,
       [dirSpec('/nope', 'nope'), dirSpec('/d', 'd')],
-      { c: true, f: '/out.tar' },
+      { create: true, file: '/out.tar' },
     )
     expect(exitCode).toBe(2)
     const text = DEC.decode(stderr)
@@ -277,8 +277,8 @@ describe('tar', () => {
   it('refuses to create an empty archive', async () => {
     const vfs = new RAMVFS()
     const { exitCode, stderr, writes } = await runCmd(RAM_TAR, vfs, [], {
-      c: true,
-      f: '/out.tar',
+      create: true,
+      file: '/out.tar',
     })
     expect(exitCode).toBe(2)
     expect(DEC.decode(stderr)).toContain('Cowardly refusing to create an empty archive')
@@ -293,7 +293,7 @@ describe('tar', () => {
       RAM_TAR,
       vfs,
       [dirSpec('/nodir/a.txt', 'a.txt')],
-      { c: true, f: '/out.tar', C: '/nodir' },
+      { create: true, file: '/out.tar', directory: '/nodir' },
     )
     expect(exitCode).toBe(2)
     const text = DEC.decode(stderr)
@@ -309,21 +309,21 @@ describe('tar', () => {
     vfs.store.files.set('/d/a.txt', ENC.encode('a'))
     vfs.store.files.set('/d/sub/b.txt', ENC.encode('b'))
     const pruned = await runCmd(RAM_TAR, vfs, [dirSpec('/d', 'd')], {
-      c: true,
-      f: '/out.tar',
+      create: true,
+      file: '/out.tar',
       exclude: 'sub',
     })
     expect(pruned.exitCode).toBe(0)
-    const listed = await runCmd(RAM_TAR, vfs, [], { t: true, f: '/out.tar' })
+    const listed = await runCmd(RAM_TAR, vfs, [], { list: true, file: '/out.tar' })
     expect(DEC.decode(listed.out).trim().split('\n')).toEqual(['d/', 'd/a.txt'])
 
     const one = await runCmd(RAM_TAR, vfs, [dirSpec('/d', 'd')], {
-      c: true,
-      f: '/two.tar',
+      create: true,
+      file: '/two.tar',
       exclude: 'sub/b.txt',
     })
     expect(one.exitCode).toBe(0)
-    const listedTwo = await runCmd(RAM_TAR, vfs, [], { t: true, f: '/two.tar' })
+    const listedTwo = await runCmd(RAM_TAR, vfs, [], { list: true, file: '/two.tar' })
     expect(DEC.decode(listedTwo.out).trim().split('\n')).toEqual(['d/', 'd/a.txt', 'd/sub/'])
   })
 
@@ -332,10 +332,10 @@ describe('tar', () => {
     vfs.store.dirs.add('/d')
     vfs.store.dirs.add('/d/empty')
     vfs.store.files.set('/d/a.txt', ENC.encode('a'))
-    await runCmd(RAM_TAR, vfs, [dirSpec('/d', 'd')], { c: true, f: '/out.tar' })
-    const listed = await runCmd(RAM_TAR, vfs, [], { t: true, f: '/out.tar' })
+    await runCmd(RAM_TAR, vfs, [dirSpec('/d', 'd')], { create: true, file: '/out.tar' })
+    const listed = await runCmd(RAM_TAR, vfs, [], { list: true, file: '/out.tar' })
     expect(DEC.decode(listed.out)).toContain('d/empty/')
-    await runCmd(RAM_TAR, vfs, [], { x: true, f: '/out.tar', C: '/out' })
+    await runCmd(RAM_TAR, vfs, [], { extract: true, file: '/out.tar', directory: '/out' })
     expect(vfs.store.dirs.has('/out/d/empty')).toBe(true)
   })
 
@@ -359,7 +359,7 @@ describe('tar', () => {
       RAM_TAR,
       vfs,
       [operand],
-      { c: true, v: true, f: '/tdir.tar' },
+      { create: true, verbose: true, file: '/tdir.tar' },
       [],
       '/data',
     )
@@ -378,11 +378,11 @@ describe('tar', () => {
     vfs.store.files.set('/d/a.txt', ENC.encode('a'))
     vfs.store.files.set('/d/old.tar', ENC.encode('stale'))
     const { stderr } = await runCmd(RAM_TAR, vfs, [dirSpec('/d', 'd')], {
-      c: true,
-      f: '/d/old.tar',
+      create: true,
+      file: '/d/old.tar',
     })
     expect(DEC.decode(stderr)).toContain('archive cannot contain itself')
-    const listed = await runCmd(RAM_TAR, vfs, [], { t: true, f: '/d/old.tar' })
+    const listed = await runCmd(RAM_TAR, vfs, [], { list: true, file: '/d/old.tar' })
     expect(DEC.decode(listed.out).trim().split('\n')).toEqual(['d/', 'd/a.txt'])
   })
 })
@@ -866,7 +866,7 @@ describe('archive planner regressions', () => {
       RAM_TAR,
       vfs,
       [dirSpec('/d', 'd')],
-      { c: true, h: true, v: true, f: '/out.tar' },
+      { create: true, dereference: true, verbose: true, file: '/out.tar' },
       [],
       '',
       links,
@@ -884,7 +884,7 @@ describe('archive planner regressions', () => {
       RAM_TAR,
       vfs,
       [dirSpec('/d', 'd')],
-      { c: true, h: true, f: '/out.tar' },
+      { create: true, dereference: true, file: '/out.tar' },
       [],
       '',
       links,
@@ -904,13 +904,13 @@ describe('archive planner regressions', () => {
       RAM_TAR,
       vfs,
       [dirSpec('/link', 'link')],
-      { c: true, v: true, f: '/out.tar' },
+      { create: true, verbose: true, file: '/out.tar' },
       [],
       '',
       links,
     )
     expect(DEC.decode(out).trim()).toBe('link')
-    const { out: listed } = await runCmd(RAM_TAR, vfs, [], { t: true, f: '/out.tar' })
+    const { out: listed } = await runCmd(RAM_TAR, vfs, [], { list: true, file: '/out.tar' })
     expect(DEC.decode(listed).trim()).toBe('link')
   })
 
@@ -925,7 +925,7 @@ describe('archive planner regressions', () => {
       RAM_TAR,
       vfs,
       [dirSpec('/link', 'link')],
-      { c: true, f: '/out.tar' },
+      { create: true, file: '/out.tar' },
       [],
       '',
       links,
@@ -949,7 +949,7 @@ describe('archive planner regressions', () => {
       RAM_TAR,
       vfs,
       [dirSpec('/link', 'link')],
-      { c: true, h: true, f: '/out.tar' },
+      { create: true, dereference: true, file: '/out.tar' },
       [],
       '',
       links,
@@ -969,7 +969,7 @@ describe('archive planner regressions', () => {
       RAM_TAR,
       vfs,
       [dirSpec('/link', 'link')],
-      { c: true, h: true, f: '/out.tar' },
+      { create: true, dereference: true, file: '/out.tar' },
       [],
       '',
       links,
@@ -984,9 +984,9 @@ describe('archive planner regressions', () => {
     vfs.store.dirs.add('/good')
     vfs.store.files.set('/good/y.txt', ENC.encode('y'))
     const { exitCode, stderr } = await runCmd(RAM_TAR, vfs, [dirSpec('/good/y.txt', 'y.txt')], {
-      c: true,
-      f: '/out.tar',
-      C: ['/missing', '/good'],
+      create: true,
+      file: '/out.tar',
+      directory: ['/missing', '/good'],
     })
     expect(exitCode).toBe(2)
     const text = DEC.decode(stderr)

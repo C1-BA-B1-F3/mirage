@@ -21,6 +21,12 @@ export const ZGREP_BUILDER: Builder = {
   fn: async (ops, accessor, paths, texts, opts) => {
     const idx = opts.index ?? undefined
     const resolved = paths.length > 0 ? await resolveGlobOf(ops)(accessor, paths, idx) : []
-    return zgrepGeneric(resolved, texts, opts, (p) => ops.readStream(accessor, p, idx))
+    return zgrepGeneric(
+      resolved,
+      texts,
+      opts,
+      (p) => ops.readStream(accessor, p, idx),
+      (p) => ops.stat(accessor, p),
+    )
   },
 }

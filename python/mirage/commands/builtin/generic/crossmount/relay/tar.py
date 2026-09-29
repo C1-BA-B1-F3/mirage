@@ -15,11 +15,9 @@
 from mirage.commands.builtin.generic.crossmount.types import CrossResult
 from mirage.commands.builtin.generic.crossmount.utils import (
     flat_scopes, transfer_primitives)
-from mirage.commands.builtin.generic.tar.tar import tar
+from mirage.commands.builtin.generic.tar.tar import parse_flags, tar
 from mirage.commands.builtin.generic_bind.archive_io import (relay_is_dir_of,
                                                              relay_walk_of)
-from mirage.commands.spec import SPECS
-from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.ops.types import NamespaceView
 from mirage.runtime.types import DispatchFn
@@ -68,14 +66,13 @@ async def run_tar(scopes: list[PathSpec], text_args: list[str],
         ns (NamespaceView | None): The symlinks and mount boundaries the
             create scan merges into each walk.
     """
-    fl = FlagView(flag_kwargs, spec=SPECS["tar"])
+    parsed = parse_flags(flag_kwargs)
     prim = transfer_primitives(dispatch)
-    archive = next(iter(fl.as_paths("f")), None)
-    directories = fl.as_paths("C")
-    create = fl.as_bool("c")
+    archive = parsed.archive
+    directories = list(parsed.directories)
     operands = (_operands(scopes,
                           [archive.virtual, *[d.virtual for d in directories]])
-                if create and archive else [])
+                if parsed.create and archive else [])
     return await tar(
         flat_scopes(operands),
         read_bytes=prim["read_bytes"],
@@ -86,19 +83,19 @@ async def run_tar(scopes: list[PathSpec], text_args: list[str],
                            ns.child_mounts if ns is not None else None),
         is_dir=relay_is_dir_of(dispatch),
         selectors=list(text_args),
-        c=create,
-        x=fl.as_bool("x"),
-        t=fl.as_bool("t"),
-        z=fl.as_bool("z"),
-        j=fl.as_bool("j"),
-        J=fl.as_bool("J"),
-        v=fl.as_bool("v"),
-        h=fl.as_bool("h"),
-        to_stdout=fl.as_bool("to_stdout"),
+        c=parsed.create,
+        x=parsed.extract,
+        t=parsed.list_only,
+        z=parsed.gzip,
+        j=parsed.bzip2,
+        J=parsed.xz,
+        v=parsed.verbose,
+        h=parsed.deref,
+        to_stdout=parsed.to_stdout,
         f=archive,
         C=directories or None,
-        strip_components=fl.as_str("strip_components"),
-        exclude=fl.as_str("exclude"),
+        strip_components=parsed.strip_components,
+        exclude=parsed.exclude,
         links=ns.links if ns is not None else None,
         mounts=ns.mounts if ns is not None else None,
         relay=True,

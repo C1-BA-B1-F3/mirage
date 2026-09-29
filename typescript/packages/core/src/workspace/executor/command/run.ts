@@ -89,6 +89,9 @@ interface RunOnMountOpts {
   stdin?: ByteSource | null
   resolveHint?: PathSpec | null
   mount?: MountEntry | null
+  // The words after the command name, as the line spelled them; absent for
+  // a run split out of a line.
+  argv?: readonly string[]
 }
 
 /** The 126 result for a command no runtime accepted. */
@@ -318,6 +321,7 @@ export async function runOnMount(
       readdirPath,
       ...(signal !== undefined ? { signal } : {}),
       limitOverride,
+      ...(opts.argv !== undefined ? { argv: opts.argv } : {}),
     })
     const stdout = initialStdout
     const prefix = rstripSlash(mount.prefix)

@@ -244,34 +244,42 @@
   "operand_base": "-C",
   "options": [
     {
+      "long": "--create",
       "short": "-c",
       "type": "bool"
     },
     {
+      "long": "--extract",
       "short": "-x",
       "type": "bool"
     },
     {
+      "long": "--list",
       "short": "-t",
       "type": "bool"
     },
     {
+      "long": "--gzip",
       "short": "-z",
       "type": "bool"
     },
     {
+      "long": "--bzip2",
       "short": "-j",
       "type": "bool"
     },
     {
+      "long": "--xz",
       "short": "-J",
       "type": "bool"
     },
     {
+      "long": "--verbose",
       "short": "-v",
       "type": "bool"
     },
     {
+      "long": "--dereference",
       "short": "-h",
       "type": "bool"
     },
@@ -281,10 +289,12 @@
       "type": "bool"
     },
     {
+      "long": "--file",
       "short": "-f",
       "type": "path"
     },
     {
+      "long": "--directory",
       "multiple": true,
       "short": "-C",
       "type": "path"

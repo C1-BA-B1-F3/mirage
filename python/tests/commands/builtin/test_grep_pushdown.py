@@ -105,57 +105,63 @@ def test_is_literal_pattern(pattern, fixed, expected):
     assert grep_pushdown.is_literal_pattern(pattern, fixed) is expected
 
 
-@pytest.mark.parametrize("flags,expected", [
-    ({}, False),
-    ({
-        "i": True
-    }, False),
-    ({
-        "F": True
-    }, False),
-    ({
-        "r": True
-    }, False),
-    ({
-        "v": True
-    }, True),
-    ({
-        "n": True
-    }, True),
-    ({
-        "c": True
-    }, True),
-    ({
-        "args_l": True
-    }, True),
-    ({
-        "w": True
-    }, True),
-    ({
-        "o": True
-    }, True),
-    ({
-        "q": True
-    }, True),
-    ({
-        "H": True
-    }, True),
-    ({
-        "h": True
-    }, True),
-    ({
-        "m": "3"
-    }, True),
-    ({
-        "A": "2"
-    }, True),
-    ({
-        "B": "2"
-    }, True),
-    ({
-        "C": "2"
-    }, True),
-])
+@pytest.mark.parametrize(
+    "flags,expected",
+    [
+        ({}, False),
+        ({
+            "i": True
+        }, False),
+        ({
+            "F": True
+        }, False),
+        ({
+            "r": True
+        }, False),
+        ({
+            "v": True
+        }, True),
+        ({
+            "n": True
+        }, True),
+        ({
+            "c": True
+        }, True),
+        ({
+            "args_l": True
+        }, True),
+        ({
+            "w": True
+        }, True),
+        ({
+            "o": True
+        }, True),
+        ({
+            "q": True
+        }, True),
+        ({
+            "H": True
+        }, True),
+        ({
+            "h": True
+        }, True),
+        ({
+            "m": "3"
+        }, True),
+        ({
+            "A": "2"
+        }, True),
+        ({
+            "B": "2"
+        }, True),
+        ({
+            "C": "2"
+        }, True),
+        # rg -L walks links, which no backend's search can see.
+        ({
+            "follow": True
+        }, True),
+    ])
 def test_has_search_shaping_flags(flags, expected):
     assert grep_pushdown.has_search_shaping_flags(flags) is expected
 

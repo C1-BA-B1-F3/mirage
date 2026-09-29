@@ -19,9 +19,10 @@ import zlib
 import pytest
 
 from mirage.commands.builtin.generic.gzip import extract_level
+from mirage.commands.builtin.generic.gzip import gzip as compress_inputs
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.types import MountMode
+from mirage.types import MountMode, PathSpec
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 from mirage.workspace.executor.command.flags import parse_flags
@@ -113,3 +114,71 @@ async def test_a_dash_goes_to_stdout_while_files_compress_in_place():
     r = await ws.shell("cd /data && gzip - a.txt | gzip -dc; ls",
                        stdin=b"hi\n")
     assert await r.materialize_stdout() == b"hi\na.txt.gz\n"
+
+
+async def _with_link(line: str) -> tuple[Workspace, str, int]:
+    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)},
+                   mode=MountMode.WRITE)
+    await ws.shell("cd /data && printf 'hello\\n' > a.txt && ln -s a.txt al")
+    r = await ws.shell(f"cd /data && {line}")
+    return ws, (await r.materialize_stderr()).decode(), r.exit_code
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line", ["gzip al", "gzip -k al", "gzip -q al"])
+async def test_compressing_in_place_refuses_a_link(line: str):
+    ws, stderr, code = await _with_link(line)
+    assert (stderr, code) == ("gzip: al: Too many levels of symbolic links\n",
+                              1)
+    r = await ws.shell("cd /data && ls -F")
+    assert await r.materialize_stdout() == b"a.txt\nal@\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,listing", [
+    ("gzip -f al", b"a.txt\nal.gz\n"),
+    ("gzip -kf al", b"a.txt\nal@\nal.gz\n"),
+])
+async def test_f_compresses_beside_the_link(line: str, listing: bytes):
+    ws, stderr, code = await _with_link(line)
+    r = await ws.shell("cd /data && ls -F && gunzip -c al.gz")
+    assert (stderr, code) == ("", 0)
+    assert await r.materialize_stdout() == listing + b"hello\n"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("skipped", [False, True])
+async def test_compression_skips_suffixed_streams_and_reports_late_errors(
+        skipped):
+    reads = []
+    writes = {}
+    removed = []
+    name = "/bad.gz" if skipped else "/bad"
+
+    async def read(path):
+        reads.append(path.virtual)
+        yield b"hello\n"
+        if path.virtual == name:
+            reads.append("continued")
+            raise PermissionError(path.virtual)
+
+    async def write(path, data):
+        writes[path.virtual] = data
+
+    async def unlink(path):
+        removed.append(path.virtual)
+
+    _, io = await compress_inputs(
+        [PathSpec.from_str_path(name),
+         PathSpec.from_str_path("/good")],
+        read_bytes=read,
+        write_bytes=write,
+        unlink=unlink)
+    assert io.exit_code == (0 if skipped else 1)
+    assert io.stderr == (b"gzip: /bad.gz already has .gz suffix -- unchanged\n"
+                         if skipped else b"\ngzip: /bad: Permission denied\n")
+    assert reads == ([name, "/good"] if skipped else [name, "continued"])
+    assert removed == (["/good"] if skipped else [])
+    assert set(writes) == ({"/good.gz"} if skipped else set())
+    if skipped:
+        assert gzip.decompress(writes["/good.gz"]) == b"hello\n"

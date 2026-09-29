@@ -18,7 +18,10 @@
 import { describe, expect, it } from 'vitest'
 import { cmpGeneric, parseCount, parseSkip, visible } from './cmp.ts'
 import { UsageError } from '../../errors.ts'
-import { PathSpec } from '../../../types.ts'
+import { RAMVFS } from '../../../vfs/ram/ram.ts'
+import { getTestParser } from '../../../workspace/fixtures/workspace_fixture.ts'
+import { Workspace } from '../../../workspace/workspace/workspace.ts'
+import { MountMode, PathSpec } from '../../../types.ts'
 import { materialize } from '../../../io/types.ts'
 import { eisdir, enoent } from '../../../utils/errors.ts'
 import type { CommandOpts } from '../../config.ts'
@@ -47,7 +50,7 @@ async function run(
     })()
   }
   const opts = { flags, stdin: null } as unknown as CommandOpts
-  const [src, io] = await cmpGeneric([P1, P2], opts, stream)
+  const [src, io] = await cmpGeneric([P1, P2], [], opts, stream)
   return {
     out: DEC.decode(await materialize(src)),
     err: DEC.decode(await materialize(io.stderr)),
@@ -234,7 +237,7 @@ async function runWithStdin(
     })()
   }
   const opts = { flags, stdin: ENC.encode(stdin) } as unknown as CommandOpts
-  const [src, io] = await cmpGeneric(paths, opts, stream)
+  const [src, io] = await cmpGeneric(paths, [], opts, stream)
   return {
     out: DEC.decode(await materialize(src)),
     err: DEC.decode(await materialize(io.stderr)),
@@ -262,7 +265,7 @@ describe('cmpGeneric with stdin', () => {
     const stream = (p: PathSpec): AsyncIterable<Uint8Array> => {
       throw new Error(`read ${p.virtual}`)
     }
-    const call = cmpGeneric([], { flags: {}, stdin: null } as unknown as CommandOpts, stream)
+    const call = cmpGeneric([], [], { flags: {}, stdin: null } as unknown as CommandOpts, stream)
     await expect(call).rejects.toThrow(
       new UsageError(
         "cmp: missing operand after 'cmp'\ncmp: Try 'cmp --help' for more information.",
@@ -271,17 +274,38 @@ describe('cmpGeneric with stdin', () => {
     await expect(call).rejects.toMatchObject({ exitCode: 2 })
   })
 
-  it('takes two stdin operands as one file whatever the skips', async () => {
+  it('takes two stdin operands at one offset as equal unread', async () => {
     const stream = (p: PathSpec): AsyncIterable<Uint8Array> => {
       throw new Error(`read ${p.virtual}`)
     }
     const opts = {
-      flags: { ignore_initial: '0:1' },
+      flags: { ignore_initial: '1' },
       stdin: ENC.encode('abc'),
     } as unknown as CommandOpts
-    const [src, io] = await cmpGeneric([DASH, DEV_STDIN], opts, stream)
+    const [src, io] = await cmpGeneric([DASH, DEV_STDIN], [], opts, stream)
     expect([src, io.exitCode, io.stderr]).toEqual([null, 0, null])
   })
+
+  it.each([
+    [false, 'cmp: EOF on - which is empty\ncmp: -: Bad file descriptor\n'],
+    [true, 'cmp: -: Bad file descriptor\n'],
+  ])(
+    'shares one descriptor between two stdin operands skipped apart (-s %s)',
+    async (silent, err) => {
+      // diffutils 3.10 skips on the one descriptor twice, the first file reads
+      // what is left and the second nothing, and closing it again fails:
+      // `cmp - - 1 2 < a.txt`.
+      const stream = (p: PathSpec): AsyncIterable<Uint8Array> => {
+        throw new Error(`read ${p.virtual}`)
+      }
+      const opts = {
+        flags: silent ? { quiet: true } : {},
+        stdin: ENC.encode('hello\n'),
+      } as unknown as CommandOpts
+      const [src, io] = await cmpGeneric([DASH, DASH], ['1', '2'], opts, stream)
+      expect([src, DEC.decode(await materialize(io.stderr)), io.exitCode]).toEqual([null, err, 2])
+    },
+  )
 
   it('names the line an EOF on a line boundary closed', async () => {
     const r = await run(ENC.encode('ab\n'), ENC.encode('ab\ncd'))
@@ -317,7 +341,7 @@ describe('cmpGeneric with stdin', () => {
         yield ENC.encode(p.virtual === one.virtual ? 'a' : 'b')
       })()
     const opts = { flags: {}, stdin: null } as unknown as CommandOpts
-    const [src] = await cmpGeneric([one, two], opts, stream)
+    const [src] = await cmpGeneric([one, two], [], opts, stream)
     expect(DEC.decode(await materialize(src))).toBe('one two differ: char 1, line 1\n')
   })
 })
@@ -356,7 +380,7 @@ describe('cmpGeneric -s', () => {
       [{}, 'cmp: /F/one: No such file or directory\n'],
     ] as const) {
       const opts = { flags, stdin: null } as unknown as CommandOpts
-      const [src, io] = await cmpGeneric([P1, P2], opts, missing)
+      const [src, io] = await cmpGeneric([P1, P2], [], opts, missing)
       expect(src).toBeNull()
       expect(DEC.decode(await materialize(io.stderr))).toBe(want)
       expect(io.exitCode).toBe(2)
@@ -385,7 +409,7 @@ describe('cmpGeneric -s', () => {
         (n) => new PathSpec({ virtual: `/F/${n}`, directory: '/F', vfsPath: n, rawPath: n }),
       )
       const opts = { flags: silent ? { quiet: true } : {}, stdin: null } as unknown as CommandOpts
-      const [, io] = await cmpGeneric(paths, opts, read)
+      const [, io] = await cmpGeneric(paths, [], opts, read)
       expect([DEC.decode(await materialize(io.stderr)), io.exitCode]).toEqual([want, code])
     },
   )
@@ -397,5 +421,97 @@ describe('cmpGeneric -s', () => {
     await expect(call).rejects.toThrow(
       "cmp: options -l and -s are incompatible\ncmp: Try 'cmp --help' for more information.",
     )
+  })
+})
+
+async function runSkips(
+  texts: string[],
+  flags: Record<string, unknown> = {},
+): Promise<[string, number]> {
+  const stream = (p: PathSpec): AsyncIterable<Uint8Array> =>
+    (async function* gen() {
+      await Promise.resolve()
+      yield ENC.encode(p.virtual === P1.virtual ? 'xhello\n' : 'hello\n')
+    })()
+  const opts = { flags, stdin: null } as unknown as CommandOpts
+  const [src, io] = await cmpGeneric([P1, P2], texts, opts, stream)
+  return [DEC.decode(await materialize(src)), io.exitCode]
+}
+
+describe('the skip operands', () => {
+  // Mirrors python's test_the_skip_operands_read_as_i_and_keep_the_larger.
+  const differ = '/F/one /F/two differ: char 1, line 1\n'
+  it.each([
+    // SKIP1 skips the first file only; SKIP2 the second.
+    [['1'], {}, '', 0],
+    [['0', '1'], {}, differ, 1],
+    [['1', '1'], {}, differ, 1],
+    // Base 0 and cmp's own suffixes, as -i reads them.
+    [['0x1'], {}, '', 0],
+    [['01'], {}, '', 0],
+    [['+1'], {}, '', 0],
+    // Each file keeps the larger of -i's skip and its operand's.
+    [['0', '2'], { ignore_initial: '1' }, differ, 1],
+    [['0', '0'], { ignore_initial: '1:0' }, '', 0],
+  ] as const)('%j with %j', async (texts, flags, out, code) => {
+    expect(await runSkips([...texts], flags)).toEqual([out, code])
+  })
+
+  it.each([
+    [['x'], "cmp: invalid --ignore-initial value 'x'"],
+    [['1', 'y'], "cmp: invalid --ignore-initial value 'y'"],
+    [[''], "cmp: invalid --ignore-initial value ''"],
+    [['1:2'], "cmp: invalid --ignore-initial value '1:2'"],
+    [['1 '], "cmp: invalid --ignore-initial value '1 '"],
+    [['9223372036854775808'], "cmp: invalid --ignore-initial value '9223372036854775808'"],
+    // Both skips parse before the extra one is refused.
+    [['1', '2', '3'], "cmp: extra operand '3'"],
+    [['y', '1', '2'], "cmp: invalid --ignore-initial value 'y'"],
+  ] as const)('refuses %j', async (texts, message) => {
+    await expect(runSkips([...texts])).rejects.toThrow(
+      new UsageError(`${message}\ncmp: Try 'cmp --help' for more information.`),
+    )
+  })
+
+  it.each([
+    [[], 'cmp'],
+    [['-s'], '-s'],
+    [['-n', '5'], '5'],
+    [['-i3'], '-i3'],
+    [['--ignore-initial=3'], '--ignore-initial=3'],
+    [['-s', '--'], '--'],
+  ] as const)('names the last word of %j when no operand is given', async (argv, after) => {
+    const opts = { flags: {}, stdin: null, argv } as unknown as CommandOpts
+    const stream = (): AsyncIterable<Uint8Array> => {
+      throw new Error('read')
+    }
+    await expect(cmpGeneric([], [], opts, stream)).rejects.toThrow(
+      new UsageError(
+        `cmp: missing operand after '${after}'\ncmp: Try 'cmp --help' for more information.`,
+      ),
+    )
+  })
+})
+
+describe('cmp across mounts', () => {
+  // The relay reads the skips too, and refuses a bad one as cmp's own result,
+  // so the rest of the line still runs. Mirrors python's
+  // test_the_skips_reach_a_cmp_across_mounts.
+  it.each([
+    ['cmp /data/x /other/f 1; echo rc=$?', 'rc=0\n', ''],
+    [
+      'cmp /data/x /other/f z; echo rc=$?',
+      'rc=2\n',
+      "cmp: invalid --ignore-initial value 'z'\ncmp: Try 'cmp --help' for more information.\n",
+    ],
+  ])('%s', async (line, out, err) => {
+    const ws = new Workspace(
+      { '/data/': new RAMVFS(), '/other/': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParser: await getTestParser() },
+    )
+    await ws.shell("printf 'xro\\n' > /data/x && printf 'ro\\n' > /other/f")
+    const r = await ws.shell(line)
+    expect([DEC.decode(r.stdout), DEC.decode(r.stderr)]).toEqual([out, err])
+    await ws.close()
   })
 })

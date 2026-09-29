@@ -116,6 +116,25 @@ it.each(['missing', 'a.txt', 'l1'])('mv replaces a loop with a symlink to %s', a
   }
 })
 
+describe('followPaths and a relative target', () => {
+  it('collapses its climb and keeps the typed name', async () => {
+    // `../a` climbs from the link's own directory; left uncollapsed the
+    // followed path no longer matched the word that spelled it, and every
+    // command named the operand `/data/sub/../a`.
+    const ws = await makeWs()
+    await ws.shell(
+      "mkdir -p /data/sub && printf 'x\\n' > /data/a && ln -s ../a /data/sub/al && ln -s ../nowhere /data/sub/d",
+    )
+    const [followed] = followPaths(ws.namespace, [
+      PathSpec.fromStrPath('/data/sub/al'),
+    ]) as PathSpec[]
+    expect(followed?.virtual).toBe('/data/a')
+    const r = await ws.shell('cd /data && wc -c sub/al && cat sub/d')
+    expect(DEC.decode(r.stdout)).toBe('2 sub/al\n')
+    expect(err(r)).toBe('cat: sub/d: No such file or directory\n')
+  })
+})
+
 describe('ln -f on the same file', () => {
   it('refuses the same file before removing it', async () => {
     // Pinned on coreutils 9.7: `ln -sf a a` and `ln -f a a` are refused

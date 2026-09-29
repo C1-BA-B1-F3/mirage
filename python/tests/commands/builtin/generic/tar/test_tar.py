@@ -18,6 +18,13 @@ import tarfile
 
 import pytest
 
+from mirage.commands.builtin.generic.tar.constants import (MODE_CONFLICT,
+                                                           MULTIPLE_ARCHIVES)
+from mirage.commands.builtin.generic.tar.tar import \
+    parse_flags as tar_parse_flags
+from mirage.commands.builtin.generic.tar.tar import strip_count
+from mirage.commands.errors import UsageError
+from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.types import MountMode
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
@@ -144,3 +151,49 @@ async def test_cross_mount_tar_keeps_the_empty_archive_refusal():
     assert result.exit_code == 2
     assert result.stderr == (b"tar: : Cannot open: No such file or directory\n"
                              b"tar: Error is not recoverable: exiting now\n")
+
+
+@pytest.mark.parametrize(
+    "words,message",
+    [
+        # argp stops at the first refusal in line order (tar 1.35).
+        (["-c", "-x"], MODE_CONFLICT),
+        (["-x", "--list"], MODE_CONFLICT),
+        (["--strip-components=x", "-c", "-x"
+          ], "tar: x: Invalid number of elements"),
+        (["-c", "-x", "--strip-components=x"], MODE_CONFLICT),
+        (["-t", "-f", "/a", "-f", "/a"], MULTIPLE_ARCHIVES),
+        (["-t", "--strip-components=-1"
+          ], "tar: -1: Invalid number of elements"),
+        (["-t", "--strip-components="], "tar: : Invalid number of elements"),
+        (["-t", "--strip-components=99999999999999999999"
+          ], "tar: 99999999999999999999: Invalid number of elements"),
+    ])
+def test_parse_flags_refuses_what_tar_refuses(words, message):
+    flags = parse_to_kwargs(parse_command(SPECS["tar"], words, "/", "tar"))
+    with pytest.raises(UsageError) as exc:
+        tar_parse_flags(flags)
+    assert str(
+        exc.value) == f"{message}\nTry 'tar --help' for more information."
+    assert exc.value.exit_code == 2
+
+
+@pytest.mark.parametrize("raw,count", [("0", 0), ("+1", 1), (" 2", 2),
+                                       ("010", 10)])
+def test_a_strip_count_reads_at_base_ten(raw, count):
+    assert strip_count(raw) == count
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line,out", [
+    ("tar --create --file=a.tar a.txt && tar --list --file a.tar", "a.txt\n"),
+    ("tar -cf a.tar a.txt && tar --get -f a.tar --directory=dir && ls dir",
+     "a.txt\n"),
+    ("tar --create --gzip --file=a.tgz a.txt && tar -t --gun -f a.tgz",
+     "a.txt\n"),
+])
+async def test_tars_long_options_run_as_the_short_ones(line, out):
+    ws = Workspace({"/data": RAMVFS()}, mode="write")
+    await ws.shell("mkdir /data/dir && printf 'x\\n' > /data/a.txt")
+    r = await ws.shell(f"cd /data && {line}")
+    assert (r.exit_code, await r.stdout_str()) == (0, out)

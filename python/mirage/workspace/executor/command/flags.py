@@ -37,7 +37,9 @@ def synthesize_path_spec(value: str, raw_path: str | None = None) -> PathSpec:
     positional path and path-shaped flag value at execute time
     (``Mount.execute_cmd``), so a parse-time stamp is dead weight —
     proven by running the full suite with this field set to a
-    sentinel.
+    sentinel. The empty name, which only an attached value can spell
+    (``--file=``), names nothing, however it resolved: its walk answers
+    ENOENT, as a typed ``''`` operand's does.
 
     Args:
         value (str): the resolved absolute virtual path.
@@ -47,7 +49,8 @@ def synthesize_path_spec(value: str, raw_path: str | None = None) -> PathSpec:
                     raw_path=raw_path,
                     directory=value[:value.rfind("/") + 1] or "/",
                     vfs_path="",
-                    resolved=True)
+                    resolved=True,
+                    walk_error="ENOENT" if raw_path == "" else None)
 
 
 def take_spelling(spellings: dict[str, deque[PathSpec]],

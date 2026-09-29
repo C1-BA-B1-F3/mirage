@@ -1097,9 +1097,9 @@ def test_operands_stay_paths_without_the_args_flags():
 
 def test_tar_old_style_cluster_parses_as_flags():
     parsed = parse_command(SPECS["tar"], ["xzf", "/data/a.tgz"], "/")
-    assert parsed.flags["-x"] is True
-    assert parsed.flags["-z"] is True
-    assert parsed.flags["-f"] == "/data/a.tgz"
+    assert parsed.flags["--extract"] is True
+    assert parsed.flags["--gzip"] is True
+    assert parsed.flags["--file"] == "/data/a.tgz"
     assert parsed.paths() == []
     assert parsed.path_flag_values == ["/data/a.tgz"]
 
@@ -1123,14 +1123,14 @@ def test_tar_old_style_operands_keep_their_argv_slots():
 def test_tar_old_style_two_value_letters_bind_in_letter_order():
     parsed = parse_command(SPECS["tar"], ["xfC", "/data/a.tgz", "/data/out"],
                            "/")
-    assert parsed.flags["-f"] == "/data/a.tgz"
-    assert parsed.flags["-C"] == ["/data/out"]
+    assert parsed.flags["--file"] == "/data/a.tgz"
+    assert parsed.flags["--directory"] == ["/data/out"]
 
 
 def test_tar_old_style_value_letter_before_bool_letter():
     parsed = parse_command(SPECS["tar"], ["cfz", "/data/a.tgz"], "/")
-    assert parsed.flags["-f"] == "/data/a.tgz"
-    assert parsed.flags["-z"] is True
+    assert parsed.flags["--file"] == "/data/a.tgz"
+    assert parsed.flags["--gzip"] is True
 
 
 def test_tar_old_style_missing_argument_is_reported_not_raised():
@@ -1157,7 +1157,7 @@ def test_tar_old_style_still_accepts_long_options_after_the_cluster():
         ["xzf", "/data/a.tgz", "--strip-components", "1", "-C", "/data/out"],
         "/")
     assert parsed.flags["--strip-components"] == "1"
-    assert parsed.flags["-C"] == ["/data/out"]
+    assert parsed.flags["--directory"] == ["/data/out"]
 
 
 def test_old_option_style_is_off_for_every_other_command():
@@ -1256,8 +1256,8 @@ def test_operand_base_rebases_the_operands_typed_after_it():
         SPECS["tar"], ["-czf", "out.tgz", "-C", "/work/check", "my_paper"],
         cwd="/home")
     assert parsed.paths() == ["/work/check/my_paper"]
-    assert parsed.flags["-f"] == "/home/out.tgz"
-    assert parsed.flags["-C"] == ["/work/check"]
+    assert parsed.flags["--file"] == "/home/out.tgz"
+    assert parsed.flags["--directory"] == ["/work/check"]
 
 
 def test_operand_base_is_cumulative_like_a_real_chdir():
@@ -1266,7 +1266,7 @@ def test_operand_base_is_cumulative_like_a_real_chdir():
         cwd="/work")
     assert parsed.paths() == ["/work/d1/x", "/work/d2/y"]
     # Every occurrence is kept in order: GNU chdirs at each one.
-    assert parsed.flags["-C"] == ["/work/d1", "/work/d2"]
+    assert parsed.flags["--directory"] == ["/work/d1", "/work/d2"]
 
 
 def test_operand_base_only_moves_what_follows_it():
@@ -1465,3 +1465,37 @@ def test_wget_stdout_is_not_a_path_operand(argv):
                             cmd_name="wget")
     assert literal.flags["-O"] == "/data/-"
     assert literal.path_flag_values == ["/data/-"]
+
+
+@pytest.mark.parametrize("words,dest", [
+    (["--file=/data/a.tar", "-t"], "--file"),
+    (["--file", "/data/a.tar", "-t"], "--file"),
+    (["--get", "-f", "/data/a.tar"], "--extract"),
+    (["--gun", "-tf", "/data/a.tar"], "--gzip"),
+    (["--crea", "-f", "/data/a.tar", "/data/x"], "--create"),
+])
+def test_tar_long_options_resolve_against_tars_whole_table(words, dest):
+    parsed = parse_command(SPECS["tar"], words, "/", "tar")
+    assert dest in parsed.flags
+    assert parsed.invalid_options == [] and parsed.ambiguous_options == []
+
+
+def test_tar_names_an_ambiguity_with_every_option_its_table_holds():
+    # `--fil` could be --files-from, which mirage never declared; glibc
+    # names the word as typed, `=value` and all (GNU tar 1.35).
+    parsed = parse_command(SPECS["tar"], ["--fil=/data/a.tar", "-t"], "/",
+                           "tar")
+    assert parsed.ambiguous_options == [("--fil=/data/a.tar",
+                                         ("--file", "--files-from"))]
+
+
+def test_an_option_tar_has_and_mirage_does_not_stays_unrecognized():
+    parsed = parse_command(SPECS["tar"], ["--files-from=x", "-t"], "/", "tar")
+    assert parsed.invalid_options == ["--files-from=x"]
+
+
+def test_an_ambiguous_long_names_the_word_with_its_value():
+    # glibc prints d->__nextchar, the whole word after `--` (coreutils
+    # 9.7: `ls: option '--re=x' is ambiguous`).
+    parsed = parse_command(SPECS["ls"], ["--re=x", "/data"], "/", "ls")
+    assert parsed.ambiguous_options[0][0] == "--re=x"

@@ -48,12 +48,14 @@ def test_path_flag_scopes_unknown_command_is_empty():
     assert path_flag_scopes("nosuchcmd", ["-x", "/a"], "/") == []
 
 
-def test_path_flag_scopes_leaves_a_program_file_out():
+@pytest.mark.parametrize("cmd, flag", [("grep", "-f"), ("rg", "-f"),
+                                       ("zgrep", "-f"), ("sed", "-f"),
+                                       ("awk", "-f"), ("jq", "--from-file")])
+def test_path_flag_scopes_leaves_a_program_file_out(cmd: str, flag: str):
     # The program file is read before routing, so a pattern file on
-    # another mount does not make the line cross-mount; rg's -f is one,
-    # exactly as grep's is.
-    for cmd in ("grep", "rg"):
-        assert path_flag_scopes(cmd, ["-f", "/other/p", "/data/in"], "/") == []
+    # another mount does not make the line cross-mount, for every command
+    # that reads one: the keys come from the reader's own table.
+    assert path_flag_scopes(cmd, [flag, "/other/p", "/data/in"], "/") == []
 
 
 def test_program_tokens_walks_a_cli_verb_path_and_keeps_the_rest_raw():

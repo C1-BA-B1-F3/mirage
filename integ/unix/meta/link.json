@@ -59,7 +59,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/link1320/sub; printf hello > /data/link1320/a; ln -s ./a /data/link1320/next; ln -s ../next /data/link1320/sub/al",
+      "command": "mkdir -p /data/link1320/sub && printf keep > /data/link1320/sub/.keep; printf hello > /data/link1320/a; ln -s ./a /data/link1320/next; ln -s ../next /data/link1320/sub/al",
       "expect": {
         "exit": 0,
         "stdout": "",

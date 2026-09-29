@@ -148,7 +148,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "(mkdir -p /data/t1320dash && cd /data/t1320dash && tar -cf ./- -C /data a.txt && tar -tf ./-; rc=$?; rm -r /data/t1320dash; exit $rc)",
+      "command": "(mkdir -p /data/t1320dash && printf keep > /data/t1320dash/.keep && cd /data/t1320dash && tar -cf ./- -C /data a.txt && tar -tf ./-; rc=$?; rm -r /data/t1320dash; exit $rc)",
       "expect": {
         "exit": 0,
         "stdout": "a.txt\n",
@@ -179,7 +179,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "(mkdir -p /data/t1320pipe/out; printf 'hello\\nworld\\n' > /data/t1320pipe/a.txt; cd /data/t1320pipe && tar -cf - a.txt | tar -xf - -C out; cat out/a.txt; rc=$?; rm -r /data/t1320pipe; exit $rc)",
+      "command": "(mkdir -p /data/t1320pipe/out && printf keep > /data/t1320pipe/out/.keep; printf 'hello\\nworld\\n' > /data/t1320pipe/a.txt; cd /data/t1320pipe && tar -cf - a.txt | tar -xf - -C out; cat out/a.txt; rc=$?; rm -r /data/t1320pipe; exit $rc)",
       "expect": {
         "exit": 0,
         "stdout": "hello\nworld\n",

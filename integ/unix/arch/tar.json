@@ -95,7 +95,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/arch/out && tar -x -z -f /data/arch/a.tgz --strip-components 2 -C /data/arch/out && cat /data/arch/out/g.txt",
+      "command": "mkdir -p /data/arch/out && printf keep > /data/arch/out/.keep && tar -x -z -f /data/arch/a.tgz --strip-components 2 -C /data/arch/out && cat /data/arch/out/g.txt",
       "expect": {
         "exit": 0,
         "stdout": "gz-data\n",
@@ -145,7 +145,7 @@
         "redis",
         "opfs"
       ],
-      "command": "mkdir -p /data/otar/out && mkdir -p /data/otar && echo otar-data | tee /data/otar/g.txt > /dev/null && tar czf /data/otar/a.tgz /data/otar/g.txt && tar tzf /data/otar/a.tgz && tar xzf /data/otar/a.tgz --strip-components 2 -C /data/otar/out && cat /data/otar/out/g.txt",
+      "command": "mkdir -p /data/otar/out && printf keep > /data/otar/out/.keep && mkdir -p /data/otar && echo otar-data | tee /data/otar/g.txt > /dev/null && tar czf /data/otar/a.tgz /data/otar/g.txt && tar tzf /data/otar/a.tgz && tar xzf /data/otar/a.tgz --strip-components 2 -C /data/otar/out && cat /data/otar/out/g.txt",
       "expect": {
         "exit": 0,
         "stdout": "data/otar/g.txt\notar-data\n",
@@ -285,7 +285,7 @@
         "redis",
         "opfs"
       ],
-      "command": "mkdir -p /data/trtout && mkdir -p /data/trt/sub && echo rt | tee /data/trt/sub/r.txt > /dev/null && tar -c -f /data/trt.tar -C /data trt && tar -x -f /data/trt.tar -C /data/trtout && cat /data/trtout/trt/sub/r.txt",
+      "command": "mkdir -p /data/trtout && printf keep > /data/trtout/.keep && mkdir -p /data/trt/sub && echo rt | tee /data/trt/sub/r.txt > /dev/null && tar -c -f /data/trt.tar -C /data trt && tar -x -f /data/trt.tar -C /data/trtout && cat /data/trtout/trt/sub/r.txt",
       "expect": {
         "exit": 0,
         "stdout": "rt\n",
@@ -700,7 +700,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/mselout && tar -xzf /data/msel.tgz -C /data/mselout msel/sub && ls /data/mselout/msel && cat /data/mselout/msel/sub/b.txt",
+      "command": "mkdir -p /data/mselout && printf keep > /data/mselout/.keep && tar -xzf /data/msel.tgz -C /data/mselout msel/sub && ls /data/mselout/msel && cat /data/mselout/msel/sub/b.txt",
       "expect": {
         "exit": 0,
         "stdout": "sub\ntwo\n",

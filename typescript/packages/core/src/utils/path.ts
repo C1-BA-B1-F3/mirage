@@ -238,7 +238,8 @@ export function resolveSymlinks(path: string, links: Map<string, string>): strin
     if (target.startsWith('/')) resolved.length = 0
     pending.push(...target.split('/').reverse())
   }
-  return '/' + resolved.join('/')
+  const suffix = resolved.length > 0 && path.endsWith('/') ? '/' : ''
+  return '/' + resolved.join('/') + suffix
 }
 
 export function gnuBasename(path: string, suffix?: string): string {

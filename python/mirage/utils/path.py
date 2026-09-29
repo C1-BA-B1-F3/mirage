@@ -288,7 +288,8 @@ def resolve_symlinks(path: str, links: dict[str, str]) -> str:
         if target.startswith("/"):
             resolved.clear()
         pending.extend(reversed(target.split("/")))
-    return "/" + "/".join(resolved)
+    suffix = "/" if resolved and path.endswith("/") else ""
+    return "/" + "/".join(resolved) + suffix
 
 
 def expand_tilde(word: str, home: str | None) -> str:

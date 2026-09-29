@@ -220,3 +220,16 @@ it.each([
     expect(resolveSymlinks(path, new Map(links))).toBe(expected)
   },
 )
+
+it.each([
+  ['/data/al/', '/other/dir/'],
+  ['/data/al/../', '/other/'],
+  ['/data/plain/', '/data/plain/'],
+  ['/data/root/', '/'],
+])('preserves the directory suffix on %s', (path, expected) => {
+  const links = new Map([
+    ['/data/al', '/other/dir'],
+    ['/data/root', '/'],
+  ])
+  expect(resolveSymlinks(path, links)).toBe(expected)
+})

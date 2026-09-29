@@ -27,7 +27,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data2/xout && mkdir -p /data/xtar && echo xm | tee /data/xtar/f.txt > /dev/null && tar -czf /data/xtar.tgz -C /data xtar && tar -xzf /data/xtar.tgz -C /data2/xout && cat /data2/xout/xtar/f.txt",
+      "command": "mkdir -p /data2/xout && printf keep > /data2/xout/.keep && mkdir -p /data/xtar && echo xm | tee /data/xtar/f.txt > /dev/null && tar -czf /data/xtar.tgz -C /data xtar && tar -xzf /data/xtar.tgz -C /data2/xout && cat /data2/xout/xtar/f.txt",
       "expect": {
         "exit": 0,
         "stdout": "xm\n",
@@ -163,10 +163,112 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data2/xdout && mkdir -p /data/xtd && echo dash | tee '/data/xtd/-c' > /dev/null && tar -cf /data/xtd.tar -C /data/xtd -- -c && tar -xf /data/xtd.tar -C /data2/xdout -- -c && cat '/data2/xdout/-c'",
+      "command": "mkdir -p /data2/xdout && printf keep > /data2/xdout/.keep && mkdir -p /data/xtd && echo dash | tee '/data/xtd/-c' > /dev/null && tar -cf /data/xtd.tar -C /data/xtd -- -c && tar -xf /data/xtd.tar -C /data2/xdout -- -c && cat '/data2/xdout/-c'",
       "expect": {
         "exit": 0,
         "stdout": "dash\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_tar_stdin_t_with_chdirs_on_two_mounts",
+      "seq": 1320034,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/t1329src /data2/t1329out && printf keep > /data2/t1329out/.keep && printf 'relay\\n' > /data/t1329src/a.txt && tar -czf - -C /data/t1329src a.txt | tar -tzf - -C /data/t1329src -C /data2/t1329out; rc=$?; rm -r /data/t1329src /data2/t1329out; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "a.txt\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_tar_stdin_x_with_chdirs_on_two_mounts",
+      "seq": 1320035,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/t1329src /data2/t1329out && printf keep > /data2/t1329out/.keep && printf 'relay\\n' > /data/t1329src/a.txt && tar -czf - -C /data/t1329src a.txt | tar -xzf - -C /data/t1329src -C /data2/t1329out && cat /data2/t1329out/a.txt; rc=$?; rm -r /data/t1329src /data2/t1329out; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "relay\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "xm_tar_stdin_xO_with_chdirs_on_two_mounts",
+      "seq": 1320036,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "(mkdir -p /data/t1329src /data2/t1329out && printf keep > /data2/t1329out/.keep && printf 'relay\\n' > /data/t1329src/a.txt && tar -czf - -C /data/t1329src a.txt | tar -xOzf - -C /data/t1329src -C /data2/t1329out; rc=$?; rm -r /data/t1329src /data2/t1329out; exit $rc)",
+      "expect": {
+        "exit": 0,
+        "stdout": "relay\n",
         "stderr": ""
       }
     }

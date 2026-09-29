@@ -310,3 +310,14 @@ def test_respell_one_root_original_collapses_to_raw():
 ])
 def test_link_targets_walk_dots_and_links_in_order(path, links, expected):
     assert resolve_symlinks(path, links) == expected
+
+
+@pytest.mark.parametrize("path, expected", [
+    ("/data/al/", "/other/dir/"),
+    ("/data/al/../", "/other/"),
+    ("/data/plain/", "/data/plain/"),
+    ("/data/root/", "/"),
+])
+def test_resolve_symlinks_preserves_directory_suffix(path, expected):
+    links = {"/data/al": "/other/dir", "/data/root": "/"}
+    assert resolve_symlinks(path, links) == expected

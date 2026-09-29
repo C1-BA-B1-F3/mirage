@@ -84,9 +84,9 @@ async def _live_size(live: Callable[[], Awaitable[None]],
     return await _du_size(accessor, path)
 
 
-async def _live_entries(
-        live: Callable[[], Awaitable[None]], accessor: GitHubAccessor,
-        path: PathSpec) -> tuple[list[tuple[str, int]], int]:
+async def _live_entries(live: Callable[[], Awaitable[None]],
+                        accessor: GitHubAccessor,
+                        path: PathSpec) -> tuple[list[tuple[str, int]], int]:
     await live()
     return await _du_entries(accessor, path)
 

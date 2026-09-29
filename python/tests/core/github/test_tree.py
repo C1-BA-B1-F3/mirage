@@ -213,7 +213,8 @@ async def test_ensure_live_snapshot_refetches_the_build_tree(mock_get, config):
 
 @pytest.mark.asyncio
 @patch("mirage.core.github.tree.github_get")
-async def test_ensure_live_snapshot_refetches_a_dropped_listing(mock_get, config):
+async def test_ensure_live_snapshot_refetches_a_dropped_listing(
+        mock_get, config):
     mock_get.return_value = _tree_payload()
     index = RAMIndexCacheStore(ttl=600)
     accessor = _accessor(config)
@@ -243,7 +244,8 @@ async def test_ensure_live_snapshot_refetches_an_expired_listing(
 
 @pytest.mark.asyncio
 @patch("mirage.core.github.tree.github_get")
-async def test_ensure_live_snapshot_leaves_a_live_index_alone(mock_get, config):
+async def test_ensure_live_snapshot_leaves_a_live_index_alone(
+        mock_get, config):
     mock_get.return_value = _tree_payload()
     index = RAMIndexCacheStore(ttl=600)
     accessor = _accessor(config)
@@ -265,7 +267,8 @@ async def test_ensure_live_snapshot_skips_a_truncated_tree(mock_get, config):
 
 @pytest.mark.asyncio
 async def test_ensure_live_snapshot_skips_the_null_index(config):
-    assert await ensure_live_snapshot(_accessor(config), NULL_INDEX, "") is None
+    assert await ensure_live_snapshot(_accessor(config), NULL_INDEX,
+                                      "") is None
 
 
 def test_index_rows_key_by_mount_absolute_path():

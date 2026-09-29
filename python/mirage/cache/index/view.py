@@ -157,13 +157,11 @@ class IndexView(IndexCacheStore):
         return IndexSnapshot(
             entries={
                 path: entry
-                for path, entry in snapshot.entries.items()
-                if self._owns(path)
+                for path, entry in snapshot.entries.items() if self._owns(path)
             },
             children={
                 path: [key for key in keys if self._owns(key)]
-                for path, keys in snapshot.children.items()
-                if self._owns(path)
+                for path, keys in snapshot.children.items() if self._owns(path)
             },
         )
 

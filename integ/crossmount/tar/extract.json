@@ -27,7 +27,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/xtar && echo xm | tee /data/xtar/f.txt > /dev/null && tar -czf /data/xtar.tgz -C /data xtar && tar -xzf /data/xtar.tgz -C /data2/xout && cat /data2/xout/xtar/f.txt",
+      "command": "mkdir -p /data2/xout && mkdir -p /data/xtar && echo xm | tee /data/xtar/f.txt > /dev/null && tar -czf /data/xtar.tgz -C /data xtar && tar -xzf /data/xtar.tgz -C /data2/xout && cat /data2/xout/xtar/f.txt",
       "expect": {
         "exit": 0,
         "stdout": "xm\n",
@@ -163,7 +163,7 @@
         "gdrive-folder",
         "box"
       ],
-      "command": "mkdir -p /data/xtd && echo dash | tee '/data/xtd/-c' > /dev/null && tar -cf /data/xtd.tar -C /data/xtd -- -c && tar -xf /data/xtd.tar -C /data2/xdout -- -c && cat '/data2/xdout/-c'",
+      "command": "mkdir -p /data2/xdout && mkdir -p /data/xtd && echo dash | tee '/data/xtd/-c' > /dev/null && tar -cf /data/xtd.tar -C /data/xtd -- -c && tar -xf /data/xtd.tar -C /data2/xdout -- -c && cat '/data2/xdout/-c'",
       "expect": {
         "exit": 0,
         "stdout": "dash\n",

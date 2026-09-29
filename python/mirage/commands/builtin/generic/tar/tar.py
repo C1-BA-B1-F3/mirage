@@ -1,10 +1,12 @@
 import io
 import logging
 import re
+import stat as stat_mode
 import tarfile
 from collections.abc import Awaitable, Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 
 from mirage.commands.builtin.constants import C_SPACE, UINTMAX
 from mirage.commands.builtin.generic.archive.extract import (ensure_dir,
@@ -15,11 +17,13 @@ from mirage.commands.builtin.generic.tar.constants import (  # yapf: disable
     CHILD_NAME, CHILD_STATUS, CREATE_ERROR_EXIT, EMPTY_PIPE, ERROR_TRAILER,
     FATAL_TRAILER, INVALID_ARCHIVE, MODE_CONFLICT, MULTIPLE_ARCHIVES, NO_MODE,
     READ_MODES, STRIP_COUNT, TAPE_START, USAGE_HINT, WRITE_MODES)
-from mirage.commands.builtin.generic.tar.create import plan_create
+from mirage.commands.builtin.generic.tar.create import (check_directories,
+                                                        plan_create)
 from mirage.commands.builtin.generic.tar.types import (CompressionSuffix,
                                                        CreateResult, Member,
                                                        ReadMode, ReadResult,
                                                        WriteMode)
+from mirage.commands.builtin.utils.stream import stdin_bytes
 from mirage.commands.config import CommandOpts
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
@@ -86,12 +90,10 @@ def _open_archive(data: bytes,
                 tarfile.open(fileobj=io.BytesIO(data), mode=mode))
             tf.getmembers()
         except tarfile.TarError as exc:
-            if failure is None:
-                raise
-            logger.debug("tar: failed to parse gzip output: %s", exc)
+            logger.debug("tar: failed to parse archive: %s", exc)
             tf = None
-            if len(data) >= tarfile.BLOCKSIZE:
-                notices = INVALID_ARCHIVE
+            notices = (INVALID_ARCHIVE if len(data) >= tarfile.BLOCKSIZE else
+                       INVALID_ARCHIVE[:1] if failure is None else ())
         yield ReadResult(tf, failure, notices)
 
 
@@ -233,6 +235,10 @@ async def _create_archive(
     if exit_code:
         notices.append(ERROR_TRAILER)
     archive = buf.getvalue()
+    if archive_path.raw_path == "-":
+        return archive, IOResult(stderr=_stderr(notices +
+                                                (names if verbose else [])),
+                                 exit_code=exit_code)
     try:
         await write_bytes(archive_path, archive)
     except FS_ERRORS as exc:
@@ -317,14 +323,37 @@ async def _read_archive(archive_path: PathSpec,
         return _open_failure(archive_path.raw_path, failure, suffix, True)
 
 
+def _long_member(member: tarfile.TarInfo, name: str) -> str:
+    """GNU's verbose row, using the metadata stored in the archive.
+
+    Args:
+        member (tarfile.TarInfo): parsed archive header.
+        name (str): listed member name, including a directory's slash.
+    """
+    kind = stat_mode.S_IFDIR if member.isdir() else (
+        stat_mode.S_IFLNK if member.issym() else stat_mode.S_IFREG)
+    mode = stat_mode.filemode(kind | member.mode)
+    owner = f"{member.uname or member.uid}/{member.gname or member.gid}"
+    stamp = datetime.fromtimestamp(member.mtime,
+                                   timezone.utc).strftime("%Y-%m-%d %H:%M")
+    suffix = f" -> {member.linkname}" if member.issym() else (
+        f" link to {member.linkname}" if member.islnk() else "")
+    size = f"{member.size:>{max(1, 19 - len(owner))}}"
+    return f"{mode} {owner}{size} {stamp} {name}{suffix}"
+
+
 async def _list_archive(
     archive_path: PathSpec,
     mode_suffix: CompressionSuffix,
     selectors: list[str],
+    verbose: bool,
+    directories: list[PathSpec],
+    stat: StatFn,
     read_bytes: Callable[..., Awaitable[bytes]],
     is_dir: DirProbe,
 ) -> tuple[ByteSource | None, IOResult]:
     names: list[str] = []
+    rows: list[str] = []
     data = await _read_archive(archive_path, read_bytes, is_dir, mode_suffix)
     if isinstance(data, IOResult):
         return None, data
@@ -335,22 +364,32 @@ async def _list_archive(
                 member.name + "/" if member.isdir() else member.name
                 for member in tf.getmembers()
             ]
+            rows = [
+                _long_member(member, name) if verbose else name
+                for member, name in zip(tf.getmembers(), names)
+            ]
     keep, misses = _selected(names, selectors)
-    shown = [name for idx, name in enumerate(names) if idx in keep]
+    if keep:
+        errors = await check_directories(directories, is_dir, stat)
+        if errors:
+            return None, IOResult(exit_code=2, stderr=_stderr(errors))
+    shown = [row for idx, row in enumerate(rows) if idx in keep]
     stdout = ("\n".join(shown) + "\n").encode() if shown else None
     if failure is not None:
         return stdout, IOResult(exit_code=2,
                                 stderr=_child_failure(failure,
                                                       list(result.notices)))
-    if misses:
-        return stdout, IOResult(exit_code=2,
-                                stderr=_stderr(misses + [ERROR_TRAILER]))
+    if result.notices or misses:
+        return stdout, IOResult(
+            exit_code=2,
+            stderr=_stderr(list(result.notices) + misses + [ERROR_TRAILER]))
     return stdout, IOResult()
 
 
 async def _extract_archive(
     archive_path: PathSpec,
     dest_path: str,
+    directories: list[PathSpec],
     mode_suffix: CompressionSuffix,
     strip_n: int,
     verbose: bool,
@@ -385,6 +424,10 @@ async def _extract_archive(
                 for member in members
             ]
             keep, misses = _selected(listed, selectors)
+            if keep:
+                errors = await check_directories(directories, is_dir, stat)
+                if errors:
+                    return None, IOResult(exit_code=2, stderr=_stderr(errors))
             for idx, member in enumerate(members):
                 if idx not in keep:
                     continue
@@ -454,6 +497,7 @@ async def _extract_archive(
                     writes[out_path] = content
                 names.append(member.name)
     notices[:0] = result.notices
+    failed = failed or bool(result.notices)
     if to_stdout:
         # GNU moves the verbose listing to stderr when stdout carries
         # the member bytes.
@@ -502,6 +546,7 @@ async def tar(
     mounts: MountView | None = None,
     cwd: PathSpec | str = "/",
     relay: bool = False,
+    stdin: ByteSource | None = None,
 ) -> tuple[ByteSource | None, IOResult]:
     archive = f if f else None
     if relay and archive is not None:
@@ -535,13 +580,15 @@ async def tar(
     if t:
         if archive is None:
             raise ValueError("tar: -f is required")
-        return await _list_archive(archive, mode_suffix, chosen, read_bytes,
-                                   is_dir)
+        return await _list_archive(archive, mode_suffix, chosen,
+                                   v, C or [], stat,
+                                   stdin_bytes(read_bytes, stdin), is_dir)
     if x:
         if archive is None:
             raise ValueError("tar: -f is required")
-        return await _extract_archive(archive, dest_path, mode_suffix, strip_n,
-                                      v, to_stdout, chosen, relay, read_bytes,
+        return await _extract_archive(archive, dest_path, C or [], mode_suffix,
+                                      strip_n, v, to_stdout, chosen, relay,
+                                      stdin_bytes(read_bytes, stdin),
                                       write_bytes, mkdir_fn, stat, is_dir)
     raise UsageError(f"{NO_MODE}\n{USAGE_HINT}", CREATE_ERROR_EXIT)
 
@@ -674,4 +721,5 @@ async def tar_generic(
                      links=opts.ns.links if opts.ns is not None else None,
                      mounts=opts.ns.mounts if opts.ns is not None else None,
                      cwd=opts.cwd,
-                     relay=relay)
+                     relay=relay,
+                     stdin=opts.stdin)

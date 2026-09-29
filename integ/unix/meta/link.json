@@ -31,6 +31,46 @@
         "stdout": "total ?\n-rw----r-- 1 - -  6 g.txt\nlrwxrwxrwx 1 - - 17 ln.txt -> /data/metad/g.txt\n-rw-r--r-- 1 - -  0 new.txt\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "op_read_resolves_parent_relative_link_chain",
+      "seq": 1320032,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/link1320/sub; printf hello > /data/link1320/a; ln -s ./a /data/link1320/next; ln -s ../next /data/link1320/sub/al",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "",
+        "check": "ell"
+      },
+      "check": {
+        "read": "/data/link1320/sub/al",
+        "offset": 1,
+        "size": 3
+      }
     }
   ]
 }

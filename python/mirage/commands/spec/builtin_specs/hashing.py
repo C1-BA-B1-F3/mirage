@@ -25,7 +25,9 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-b"),
             Option(short="-e"),
             Option(short="-u"),
-            Option(short="-q"),
+            Option(short="-U", type="str"),
+            Option(long="--unified", type="str", value_optional=True),
+            Option(short="-q", long="--brief"),
             Option(short="-r"),
         ),
         positional=(

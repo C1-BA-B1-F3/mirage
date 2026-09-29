@@ -217,33 +217,28 @@ export class CycleError extends Error {
   }
 }
 
-function isLinkPrefix(key: string, path: string): boolean {
-  return path === key || path.startsWith(key + '/')
-}
-
-// Follow the symlink table over a whole-path lookup: repeatedly substitute the
-// longest link prefix that matches `path` until no link applies, resolving
-// relative targets lazily against the link's own parent. Throws CycleError
-// once the hop count is exceeded (POSIX ELOOP).
 export function resolveSymlinks(path: string, links: Map<string, string>): string {
-  if (links.size === 0) return path
-  for (let hop = 0; hop < MAX_SYMLINK_HOPS; hop++) {
-    let best: string | null = null
-    let bestTarget = ''
-    for (const [key, value] of links) {
-      if (isLinkPrefix(key, path) && (best === null || key.length > best.length)) {
-        best = key
-        bestTarget = value
-      }
+  const pending = path.split('/').reverse()
+  const resolved: string[] = []
+  let hops = 0
+  while (pending.length > 0) {
+    const part = pending.pop() ?? ''
+    if (part === '' || part === '.') continue
+    if (part === '..') {
+      resolved.pop()
+      continue
     }
-    if (best === null) return path
-    let target = bestTarget
-    if (!target.startsWith('/')) {
-      target = norm(parent(best) + '/' + target)
+    const candidate = '/' + [...resolved, part].join('/')
+    const target = links.get(candidate)
+    if (target === undefined) {
+      resolved.push(part)
+      continue
     }
-    path = target + path.slice(best.length)
+    if (++hops > MAX_SYMLINK_HOPS) throw new CycleError(path)
+    if (target.startsWith('/')) resolved.length = 0
+    pending.push(...target.split('/').reverse())
   }
-  throw new CycleError(path)
+  return '/' + resolved.join('/')
 }
 
 export function gnuBasename(path: string, suffix?: string): string {

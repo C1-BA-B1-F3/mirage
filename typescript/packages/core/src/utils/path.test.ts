@@ -192,3 +192,31 @@ describe('respellOne', () => {
     expect(respellOne(path, original, '')).toBe(want)
   })
 })
+
+it.each([
+  ['/data/s/al', [['/data/s/al', '../a.txt']], '/data/a.txt'],
+  [
+    '/data/s/al',
+    [
+      ['/data/s/al', '../next'],
+      ['/data/next', './a.txt'],
+    ],
+    '/data/a.txt',
+  ],
+  ['/data/al', [['/data/al', '/data/s/../a.txt']], '/data/a.txt'],
+  ['/data/al/x', [['/data/al', 's/..']], '/data/x'],
+  [
+    '/data/al',
+    [
+      ['/data/al', 'dir/../a.txt'],
+      ['/data/dir', '/other/deep'],
+    ],
+    '/other/a.txt',
+  ],
+  ['/data/al', [['/data/al', '../../../../a.txt']], '/a.txt'],
+] as [string, [string, string][], string][])(
+  'walks target components for %s',
+  (path, links, expected) => {
+    expect(resolveSymlinks(path, new Map(links))).toBe(expected)
+  },
+)

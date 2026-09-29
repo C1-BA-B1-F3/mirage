@@ -48,6 +48,23 @@ GZIP_TRAILER = 8
 GZIP_CHUNK_SIZE = 65536
 
 
+def gzip_compress(data: bytes, level: int = -1, name: str = "") -> bytes:
+    """Compress bytes with the original basename stored in the gzip header.
+
+    Args:
+        data (bytes): uncompressed input.
+        level (int): zlib compression level.
+        name (str): original basename, empty for stdin and archive streams.
+    """
+    compressed = zlib.compress(data, level=level, wbits=zlib.MAX_WBITS | 16)
+    if not name:
+        return compressed
+    header = bytearray(compressed[:GZIP_FIXED_HEADER])
+    header[3] |= GZIP_ORIG_NAME
+    return (bytes(header) + name.encode() + b"\0" +
+            compressed[GZIP_FIXED_HEADER:])
+
+
 async def gzip_compress_stream(
     source: AsyncIterator[bytes],
     level: int,

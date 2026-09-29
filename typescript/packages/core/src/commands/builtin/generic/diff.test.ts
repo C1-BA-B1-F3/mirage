@@ -72,7 +72,7 @@ async function run(
 
 describe('diffGeneric with stdin', () => {
   it('reads a dash operand from stdin and names it dash', async () => {
-    expect(await run([DASH, FILE], 'x\n', { q: true })).toEqual([
+    expect(await run([DASH, FILE], 'x\n', { brief: true })).toEqual([
       'Files - and a.txt differ\n',
       '',
       1,

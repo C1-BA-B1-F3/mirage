@@ -16,7 +16,7 @@ import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { mountKey } from '../../../utils/key_prefix.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
-import { PathSpec } from '../../../types.ts'
+import { FileStat, FileType, PathSpec } from '../../../types.ts'
 import { gzip, gunzipPartial, getCompressionCodec } from '../../../utils/compress.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { readTar, writeTar, type TarEntry } from '../tar_helper.ts'
@@ -40,7 +40,13 @@ import {
 import { C_SPACE, UINTMAX } from '../constants.ts'
 import { UsageError } from '../../errors.ts'
 import type { FlagValue } from '../../spec/types.ts'
-import { planCreate, type DirProbe, type StatFn, type WalkFn } from './tar/create.ts'
+import {
+  checkDirectories,
+  planCreate,
+  type DirProbe,
+  type StatFn,
+  type WalkFn,
+} from './tar/create.ts'
 import {
   eisdir,
   fsStrerror,
@@ -48,6 +54,8 @@ import {
   isFsError,
   type GzipDataError,
 } from '../../../utils/errors.ts'
+import { stdinStream } from '../utils/stream.ts'
+import { lsModeString } from '../utils/formatting.ts'
 import { ensureDir, extractDest } from './archive/extract.ts'
 import type { Compression, CompressionKind, CreateResult, ReadResult } from './tar/types.ts'
 
@@ -276,8 +284,17 @@ async function readArchive(data: Uint8Array, kind: Compression): Promise<ReadRes
   try {
     return { entries: await readTar(data), failure, notices: [] }
   } catch (err) {
-    if (failure === null) throw err
-    return { entries: [], failure, notices: data.byteLength >= 512 ? [...INVALID_ARCHIVE] : [] }
+    if (!(err instanceof Error)) throw err
+    return {
+      entries: [],
+      failure,
+      notices:
+        data.byteLength >= 512
+          ? [...INVALID_ARCHIVE]
+          : failure === null
+            ? INVALID_ARCHIVE.slice(0, 1)
+            : [],
+    }
   }
 }
 
@@ -397,6 +414,10 @@ async function writeArchive(
   if (exitCode !== 0) notices.push(ERROR_TRAILER)
   const raw = await writeTar(entries)
   const archive = await compress(raw, compression)
+  if (archivePath.rawPath === '-') {
+    const stderr = stderrOf([...notices, ...(verbose ? names : [])])
+    return [archive, new IOResult({ exitCode, ...(stderr !== null ? { stderr } : {}) })]
+  }
   try {
     await deps.write(archivePath, archive)
   } catch (err) {
@@ -415,6 +436,34 @@ async function writeArchive(
       ...(stderr !== null ? { stderr } : {}),
     }),
   ]
+}
+
+function longMember(entry: TarEntry, name: string): string {
+  const header = entry.header
+  const kind = header?.type
+  const type =
+    entry.isDir === true
+      ? FileType.DIRECTORY
+      : kind === 'symlink'
+        ? FileType.SYMLINK
+        : FileType.FILE
+  const mode = lsModeString(new FileStat({ name, type, mode: header?.mode ?? 0o644 }))
+  const user =
+    header?.uname === undefined || header.uname === '' ? String(header?.uid ?? 0) : header.uname
+  const group =
+    header?.gname === undefined || header.gname === '' ? String(header?.gid ?? 0) : header.gname
+  const owner = `${user}/${group}`
+  const size = String(header?.size ?? entry.data.byteLength).padStart(
+    Math.max(1, 19 - owner.length),
+  )
+  const stamp = (header?.mtime ?? new Date(0)).toISOString().slice(0, 16).replace('T', ' ')
+  const suffix =
+    kind === 'symlink'
+      ? ` -> ${entry.linkname ?? ''}`
+      : kind === 'link'
+        ? ` link to ${entry.linkname ?? ''}`
+        : ''
+  return `${mode} ${owner}${size} ${stamp} ${name}${suffix}`
 }
 
 export async function tarGeneric(
@@ -451,6 +500,13 @@ export async function tarGeneric(
         ? makePathSpec(fFlag, mountPrefix)
         : null
   const destPath = extractDest(CFlag, opts.cwd)
+  const directories = CFlags.map((c, index) => {
+    const operand = COperands[index]
+    return operand === undefined
+      ? makePathSpec(c, mountPrefix)
+      : makePathSpec(operand.virtual, mountPrefix, operand)
+  })
+  const archiveStream = stdinStream(deps.stream, opts.stdin)
   const selectors = [...texts]
   const verboseLines: string[] = []
 
@@ -465,12 +521,7 @@ export async function tarGeneric(
       stat: deps.stat,
       walk: deps.walk,
       isDir: deps.isDir,
-      directories: CFlags.map((c, index) => {
-        const operand = COperands[index]
-        return operand === undefined
-          ? makePathSpec(c, mountPrefix)
-          : makePathSpec(operand.virtual, mountPrefix, operand)
-      }),
+      directories,
       links: opts.ns?.links ?? null,
       mounts: opts.ns?.mounts ?? null,
     })
@@ -491,18 +542,25 @@ export async function tarGeneric(
     if (archiveSpec === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
-    const raw = await readArchiveBytes(deps.stream, archiveSpec, deps.isDir, compression)
+    const raw = await readArchiveBytes(archiveStream, archiveSpec, deps.isDir, compression)
     if (raw instanceof IOResult) return [null, raw]
     const { entries, failure, notices } = await readArchive(raw, compression)
     const names = entries.map((e) => (e.isDir === true ? `${rstripSlash(e.name)}/` : e.name))
     const { keep, misses } = selectedMembers(names, selectors)
-    const shown = names.filter((_, index) => keep.has(index))
+    if (keep.size > 0) {
+      const errors = await checkDirectories(directories, deps.isDir, deps.stat)
+      if (errors.length > 0) return [null, new IOResult({ exitCode: 2, stderr: stderrOf(errors) })]
+    }
+    const shown = entries.flatMap((entry, index) => {
+      const name = names[index] ?? entry.name
+      return keep.has(index) ? [verbose ? longMember(entry, name) : name] : []
+    })
     const out: ByteSource | null = shown.length > 0 ? ENC.encode(shown.join('\n') + '\n') : null
     if (failure !== null) {
       return [out, new IOResult({ exitCode: 2, stderr: childFailure(failure, notices) })]
     }
-    if (misses.length > 0) {
-      const missStderr = stderrOf([...misses, ERROR_TRAILER])
+    if (notices.length > 0 || misses.length > 0) {
+      const missStderr = stderrOf([...notices, ...misses, ERROR_TRAILER])
       return [
         out,
         new IOResult({
@@ -518,18 +576,22 @@ export async function tarGeneric(
     if (archiveSpec === null) {
       return [null, new IOResult({ exitCode: 1, stderr: ENC.encode('tar: -f is required\n') })]
     }
-    const raw = await readArchiveBytes(deps.stream, archiveSpec, deps.isDir, compression)
+    const raw = await readArchiveBytes(archiveStream, archiveSpec, deps.isDir, compression)
     if (raw instanceof IOResult) return [null, raw]
     const { entries, failure, notices } = await readArchive(raw, compression)
     const writes: Record<string, Uint8Array> = {}
     const listed = entries.map((e) => (e.isDir === true ? `${rstripSlash(e.name)}/` : e.name))
     const { keep, misses } = selectedMembers(listed, selectors)
+    if (keep.size > 0) {
+      const errors = await checkDirectories(directories, deps.isDir, deps.stat)
+      if (errors.length > 0) return [null, new IOResult({ exitCode: 2, stderr: stderrOf(errors) })]
+    }
     const made = new Set<string>()
     const chunks: Uint8Array[] = []
     // A member GNU cannot create (a read-only region, a missing op) is
     // reported by its own name and the run goes on to the next one,
     // closing with the one trailer and exit 2.
-    let failed = false
+    let failed = notices.length > 0
     const toSpec = (virtual: string): PathSpec => makePathSpec(virtual, mountPrefix)
     for (const [index, entry] of entries.entries()) {
       if (!keep.has(index)) continue

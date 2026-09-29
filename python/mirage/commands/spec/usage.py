@@ -197,7 +197,7 @@ def unknown_option_error(cmd_name: str, token: str) -> tuple[bytes, int]:
         line = f"{cmd_name}: unrecognized option '{token}'\n"
     else:
         line = f"{cmd_name}: invalid option -- '{token}'\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -240,7 +240,7 @@ def unexpected_value_error(cmd_name: str, token: str) -> tuple[bytes, int]:
         return unknown_option_error(cmd_name, token)
     option = token.split("=", 1)[0]
     line = f"{cmd_name}: option '{option}' doesn't allow an argument\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -262,7 +262,7 @@ def ambiguous_option_error(cmd_name: str, token: str,
     listed = " ".join(f"'{c}'" for c in candidates)
     line = (f"{cmd_name}: option '{token}' is ambiguous; "
             f"possibilities: {listed}\n")
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -281,7 +281,7 @@ def invalid_int_error(cmd_name: str, option: str,
         value (str): the rejected value.
     """
     line = f"{cmd_name}: invalid int value: '{value}' for '{option}'\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -301,7 +301,7 @@ def invalid_float_error(cmd_name: str, option: str,
         return curl_option_error(
             f"curl: option {option}: expected a proper numerical parameter\n")
     line = f"{cmd_name}: invalid float value: '{value}' for '{option}'\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -324,7 +324,7 @@ def missing_value_error(cmd_name: str, token: str) -> tuple[bytes, int]:
         line = f"{cmd_name}: option '{token}' requires an argument\n"
     else:
         line = f"{cmd_name}: option requires an argument -- '{token}'\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 
@@ -348,7 +348,7 @@ def old_option_error(cmd_name: str, letter: str) -> tuple[bytes, int]:
         letter (str): the cluster letter whose argument ran out.
     """
     line = f"{cmd_name}: Old option '{letter}' requires an argument.\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), OLD_OPTION_EXIT
 
 
@@ -442,7 +442,7 @@ def invalid_argument_error(
     """
     line = (f"{argmatch_line(cmd_name, option, value, kind)}\n"
             f"{argmatch_valid_block(choices)}\n")
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     code = usage_exit_code(cmd_name) if exit_code is None else exit_code
     return (line + hint).encode(), code
 
@@ -485,7 +485,7 @@ def missing_required_error(cmd_name: str, option: str) -> tuple[bytes, int]:
         option (str): canonical dashed spelling ('--output').
     """
     line = f"{cmd_name}: option '{option}' is required\n"
-    hint = f"Try '{cmd_name} --help' for more information.\n"
+    hint = usage_hint(cmd_name) + "\n"
     return (line + hint).encode(), usage_exit_code(cmd_name)
 
 

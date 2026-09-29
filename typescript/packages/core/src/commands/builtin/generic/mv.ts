@@ -36,6 +36,9 @@ import {
 import { fsStrerror, isFsError } from '../../../utils/errors.ts'
 import { rstripSlash } from '../../../utils/slash.ts'
 import {
+  type TransferLinks,
+  linkStat,
+  renameLink,
   backupDisplaces,
   backupRaw,
   copyEntries,
@@ -307,7 +310,9 @@ export async function mvGeneric(
   // a directory source, since a file carries nothing below it to
   // reveal.
   guard?: (src: PathSpec, dst: PathSpec) => void,
+  copies?: TransferLinks,
 ): Promise<[ByteSource | null, IOResult]> {
+  if (copies !== undefined) stat = (path) => linkStat(copies, path)
   const keyOf = backendKey ?? backendKeyDefault
   const [sources, dstOperand] = splitOperands('mv', paths, flags.targetDir, flags.noTargetDir)
   let dst: PathSpec
@@ -349,6 +354,7 @@ export async function mvGeneric(
     backup: flags.backup,
     suffix: flags.suffix,
   }
+  const renames: [string, string][] = []
   const writes: Record<string, ByteSource> = {}
   const lines: string[] = []
   const errors: string[] = []
@@ -459,18 +465,39 @@ export async function mvGeneric(
         continue
       }
     }
+    const sourceLink = copies !== undefined && copies.links.statAt(src.virtual) !== null
+    const backupStrategy =
+      copies !== undefined
+        ? { rename: (a: PathSpec, b: PathSpec) => renameLink(copies, a, b) }
+        : strategy
     const made = await makeBackup(
       policy,
-      strategy,
+      backupStrategy,
       stat,
       versionReaddir,
       target,
       writes,
       errors,
       index,
+      copies,
     )
     if (!made.ok) continue
-    if (isPrimitiveMove(strategy)) {
+    if (made.backup !== null && copies === undefined && !isPrimitiveMove(strategy)) {
+      renames.push([target.virtual, made.backup.virtual])
+    }
+    if (copies !== undefined && sourceLink) {
+      try {
+        await renameLink(copies, src, target)
+      } catch (err) {
+        if (!isFsError(err)) throw err
+        errors.push(
+          `mv: cannot move '${src.rawPath}' to '${target.rawPath}': ${String(fsStrerror(err))}`,
+        )
+        continue
+      }
+      writes[src.mountPath] = new Uint8Array()
+      writes[target.mountPath] = new Uint8Array()
+    } else if (isPrimitiveMove(strategy)) {
       const entries = await cpWalk(strategy.readdir, stat, src, index)
       const { copiedAll, wroteAny } = await copyEntries(
         'mv',
@@ -481,6 +508,7 @@ export async function mvGeneric(
         entries,
         errors,
         index,
+        { copies },
       )
       if (wroteAny) writes[target.mountPath] = new Uint8Array()
       // GNU keeps the whole source tree when any copy failed; the
@@ -508,6 +536,7 @@ export async function mvGeneric(
       writes[src.mountPath] = new Uint8Array()
       writes[target.mountPath] = new Uint8Array()
     }
+    if (!sourceLink && !isPrimitiveMove(strategy)) renames.push([src.virtual, target.virtual])
     if (flags.verbose) {
       let line = `renamed '${src.virtual}' -> '${target.virtual}'`
       if (made.backup !== null) line += ` (backup: '${made.backup.virtual}')`
@@ -516,5 +545,5 @@ export async function mvGeneric(
   }
   const output: ByteSource | null = lines.length > 0 ? ENC.encode(lines.join('\n') + '\n') : null
   const stderr = errors.length > 0 ? ENC.encode(errors.join('\n') + '\n') : null
-  return [output, new IOResult({ writes, stderr, exitCode: errors.length > 0 ? 1 : 0 })]
+  return [output, new IOResult({ writes, renames, stderr, exitCode: errors.length > 0 ? 1 : 0 })]
 }

@@ -99,7 +99,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -133,7 +133,7 @@
       "expect": {
         "exit": 2,
         "stdout": "/data/a.txt\n",
-        "stderr": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -167,7 +167,7 @@
       "expect": {
         "exit": 2,
         "stdout": "/data/a.txt:hello\n/data/a.txt-world\n",
-        "stderr": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -201,7 +201,7 @@
       "expect": {
         "exit": 2,
         "stdout": "/data/a.txt:hello\n",
-        "stderr": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -235,7 +235,7 @@
       "expect": {
         "exit": 2,
         "stdout": "/data/a.txt:1\n",
-        "stderr": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -269,7 +269,7 @@
       "expect": {
         "exit": 2,
         "stdout": "/data/a.txt:hello\n",
-        "stderr": "rg: /data/nosuch.txt: No such file or directory\n"
+        "stderr": "rg: /data/nosuch.txt: IO error for operation on /data/nosuch.txt: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -303,7 +303,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "rg: nope: No such file or directory\n"
+        "stderr": "rg: nope: IO error for operation on nope: No such file or directory (os error 2)\n"
       }
     },
     {
@@ -337,7 +337,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "rg: nope: No such file or directory\n"
+        "stderr": "rg: nope: IO error for operation on nope: No such file or directory (os error 2)\n"
       },
       "flags": [
         "l"
@@ -374,7 +374,7 @@
       "expect": {
         "exit": 2,
         "stdout": "",
-        "stderr": "rg: nope: No such file or directory\n"
+        "stderr": "rg: nope: IO error for operation on nope: No such file or directory (os error 2)\n"
       },
       "flags": [
         "type"
@@ -411,7 +411,7 @@
       "expect": {
         "exit": 2,
         "stdout": "a.txt:hello\na.txt-world\n",
-        "stderr": "rg: nope: No such file or directory\n"
+        "stderr": "rg: nope: IO error for operation on nope: No such file or directory (os error 2)\n"
       },
       "flags": [
         "C"

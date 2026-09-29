@@ -14,6 +14,7 @@
 
 import asyncio
 import base64
+import dataclasses
 import functools
 import gzip
 import importlib.util
@@ -118,6 +119,8 @@ from mirage.vfs.supabase import SupabaseConfig, SupabaseVFS
 from mirage.vfs.tencent import TencentConfig, TencentVFS
 from mirage.vfs.trello import TrelloConfig, TrelloVFS
 from mirage.vfs.wasabi import WasabiConfig, WasabiVFS
+from mirage.workspace.mount.spec import Mount
+from mirage.workspace.workspace.types import VFSMount
 
 from .secrets import build_secrets_env
 
@@ -2734,8 +2737,8 @@ async def make_service(target: dict, run_id: str) -> "Service | None":
 
 async def build_mounts(
     target: dict, run_id: str, service: "Service | None"
-) -> tuple[dict[str, object], list[Callable[[], Awaitable[None]]]]:
-    mounts: dict[str, object] = {}
+) -> tuple[dict[str, VFSMount], list[Callable[[], Awaitable[None]]]]:
+    mounts: dict[str, VFSMount] = {}
     cleanups: list[Callable[[], Awaitable[None]]] = []
     built: dict[str, object] = {}
     for mount in target["mounts"]:
@@ -2996,20 +2999,66 @@ async def open_target(
     return ws, functools.partial(teardown_target, [ws], cleanups, service)
 
 
+def apply_mount_read(mounts: dict[str, VFSMount],
+                     mount_read: dict[str, ReadSpec]) -> dict[str, VFSMount]:
+    """The mount table with each named prefix under its own read policy.
+
+    A mount keeps everything its builder gave it but the policy: a bare
+    VFS still takes the workspace's mode, a ``(vfs, mode)`` pair keeps its
+    mode and limits. A prefix the override does not name is left exactly
+    as built, so it inherits the workspace's policy.
+
+    Raises:
+        ValueError: an override names no mount in ``mounts``.
+
+    Args:
+        mounts (dict[str, VFSMount]): ``build_mounts`` output.
+        mount_read (dict[str, ReadSpec]): the case's per-mount policies.
+    """
+    out = dict(mounts)
+    for prefix, spec in mount_read.items():
+        entry = out.get(prefix)
+        if entry is None:
+            raise ValueError(f"mount_read names no mount: {prefix}")
+        if isinstance(entry, Mount):
+            out[prefix] = dataclasses.replace(entry, read=spec)
+        elif isinstance(entry, tuple):
+            out[prefix] = Mount(
+                vfs=entry[0],
+                mode=entry[1],
+                command_limits=(entry[2] if len(entry) == 3 else {}),
+                read=spec)
+        else:
+            out[prefix] = Mount(vfs=entry, read=spec)
+    return out
+
+
 async def open_consistency(
-    target: dict, read: ReadSpec
+    target: dict, read: ReadSpec, mount_read: dict[str, ReadSpec]
 ) -> tuple[
         Workspace,
         Callable[[str, bytes], Awaitable[None]],
         Callable[[str], Awaitable[None]],
         Callable[[], Awaitable[None]],
 ]:
+    # Refused before anything opens, so there is nothing to clean up.
+    unknown = sorted(set(mount_read) - {m["path"] for m in target["mounts"]})
+    if unknown:
+        raise ValueError(f"{target['id']}: mount_read names no mount: "
+                         f"{', '.join(unknown)}")
     run_id = uuid.uuid4().hex[:8]
     service = await make_service(target, run_id)
     read_mounts, read_cleanups = await build_mounts(target, run_id, service)
     shadow_mounts, shadow_cleanups = await build_mounts(
         target, run_id, service)
-    read_ws = Workspace(read_mounts, mode=MountMode.WRITE, read=read)
+    # A refused policy fails here, after the mounts and service exist.
+    try:
+        read_ws = Workspace(apply_mount_read(read_mounts, mount_read),
+                            mode=MountMode.WRITE,
+                            read=read)
+    except Exception:
+        await teardown_target([], [*read_cleanups, *shadow_cleanups], service)
+        raise
     shadow_ws = Workspace(shadow_mounts, mode=MountMode.WRITE)
     # Same rule as open_target: a target's declared environment reaches
     # every workspace a case can run against, or a consistency scenario

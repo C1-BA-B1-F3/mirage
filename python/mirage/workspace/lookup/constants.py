@@ -14,11 +14,13 @@
 
 from collections.abc import Sequence
 
-from mirage.commands.spec import SPECS
+from mirage.commands.builtin.generic.ls import link_mode
+from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.compile import compile_spec
+from mirage.commands.spec.flag_view import FlagView
 from mirage.shell.constants import BUILTIN_GROUP
 from mirage.shell.types import BuiltinGroup
-from mirage.types import PathSpec
+from mirage.types import LsLinkMode, PathSpec
 from mirage.workspace.names import (BASH_BUILTINS, JOB_BUILTINS, KEYWORDS,
                                     NAMESPACE_COMMANDS, NO_FOLLOW_COMMANDS,
                                     SHELL_NAMES, SHELL_ONLY_BUILTINS,
@@ -46,7 +48,6 @@ INTERPRETER_NAMES = frozenset(
 # one, GNU's -L / --dereference.
 DEREFERENCE_FLAGS = {
     "stat": ("L", ("dereference", )),
-    "ls": ("L", ("dereference", )),
     "file": ("L", ("dereference", )),
     "du": ("L", ("dereference", )),
 }
@@ -168,11 +169,6 @@ def end_options_after_program(name: str, words: list[str]) -> list[str]:
         return words[:after] + ["--"] + words[after:]
     return words
 
-
-# The mirror: flags that make a following command report the link
-# itself. GNU ls dereferences a command-line symlink to a directory, but
-# -l and -d suppress that and show the link's own row instead.
-NO_FOLLOW_FLAGS = {"ls": ("ld", ("directory", ))}
 
 # Commands whose traversal descends into descendant mounts (the
 # executor's fan-out reruns them per mount), always or under a flag.
@@ -302,17 +298,22 @@ def dereferences(name: str, words: list[str | PathSpec]) -> bool:
     return spec is not None and _has_option(words, spec[0], spec[1])
 
 
-def reports_link(name: str, words: list[str | PathSpec]) -> bool:
-    """Whether a following command was asked to report links themselves.
+def ls_link_mode(words: Sequence[str | PathSpec]) -> LsLinkMode:
+    """Which command-line links an ``ls`` line resolves before it lists.
+
+    Read off the parsed line rather than scanned, because ls's own rule
+    turns on the last of several options, some of them valued and any of
+    them abbreviated (``--cl``, ``--indicator-style=classify``); the rule
+    itself is the ls generic's ``link_mode``.
 
     Args:
-        name (str): command name.
-        words (list[str | PathSpec]): the command's raw words.
+        words (Sequence[str | PathSpec]): the command's raw words, name
+            first.
     """
-    if dereferences(name, words):
-        return False
-    spec = NO_FOLLOW_FLAGS.get(name)
-    return spec is not None and _has_option(words, spec[0], spec[1])
+    argv = [w if isinstance(w, str) else w.raw_path for w in words[1:]]
+    spec = SPECS["ls"]
+    parsed = parse_command(spec, argv, "/", "ls")
+    return link_mode(FlagView(parse_to_kwargs(parsed), spec=spec))
 
 
 # Commands that decide the last component for themselves, so the router
@@ -347,6 +348,11 @@ def follows_last_component(name: str, words: list[str | PathSpec]) -> bool:
         name (str): command name.
         words (list[str | PathSpec]): the command's raw words.
     """
-    if reports_link(name, words) or name in SELF_RESOLVING:
+    if name == "ls":
+        # A link to a directory is resolved only once a stat has shown
+        # where it leads, which the router does itself; what this answers
+        # is whether the line may resolve one at all.
+        return ls_link_mode(words) is not LsLinkMode.NONE
+    if name in SELF_RESOLVING:
         return False
     return name not in NO_FOLLOW_COMMANDS or dereferences(name, words)

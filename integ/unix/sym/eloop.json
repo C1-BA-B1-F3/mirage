@@ -405,7 +405,7 @@
       "expect": {
         "exit": 2,
         "stdout": "/data/a.txt:3\n",
-        "stderr": "rg: /data/lp1: Too many levels of symbolic links\n"
+        "stderr": "rg: /data/lp1: IO error for operation on /data/lp1: Too many levels of symbolic links (os error 40)\n"
       }
     },
     {

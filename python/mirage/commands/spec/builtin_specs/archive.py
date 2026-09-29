@@ -55,6 +55,8 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-k"),
             Option(short="-f"),
             Option(short="-c"),
+            Option(short="-q"),
+            Option(short="-S", type="str"),
             Option(short="-1"),
             Option(short="-2"),
             Option(short="-3"),
@@ -74,6 +76,8 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-f"),
             Option(short="-c"),
             Option(short="-t"),
+            Option(short="-q"),
+            Option(short="-S", type="str"),
         ),
         rest=Operand(type="path"),
     ),
@@ -130,6 +134,15 @@ SPECS: dict[str, CommandSpec] = {
         positional=(Operand(type="path"), ),
         rest=Operand(type="str"),
     ),
+    # zcat is `gzip -cd`: -f copies input that is not gzip, -q drops
+    # the warnings, and -S names the suffix a missing name is retried with.
     'zcat':
-    CommandSpec(rest=Operand(type="path")),
+    CommandSpec(
+        options=(
+            Option(short="-f"),
+            Option(short="-q"),
+            Option(short="-S", type="str"),
+        ),
+        rest=Operand(type="path"),
+    ),
 }

@@ -14,9 +14,10 @@
 
 import { mountKey } from '../../../utils/key_prefix.ts'
 import { describe, expect, it } from 'vitest'
-import type { ByteSource, IOResult } from '../../../io/types.ts'
+import { type ByteSource, IOResult } from '../../../io/types.ts'
 import {
   ContentType,
+  LINK_TARGET_KEY,
   FileStat,
   FileType,
   PathSpec,
@@ -35,12 +36,15 @@ import {
   targetDirError,
   updateMode,
   type CpFlags,
+  type TransferLinks,
 } from './cp.ts'
 import { UsageError } from '../../errors.ts'
 import { entryKind } from '../utils/paths.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import { type FlagValue } from '../../spec/types.ts'
 import { specOf } from '../../spec/builtins.ts'
+import { SPECS, parseCommand } from '../../spec/index.ts'
+import { parseToKwargs } from '../../spec/parser.ts'
 
 const DEC = new TextDecoder()
 
@@ -1108,3 +1112,136 @@ describe('cpGeneric trailing slash', () => {
     expect([...files.keys()]).toEqual(['/reg'])
   })
 })
+
+describe('the link options', () => {
+  function flagsOf(...argv: string[]): CpFlags {
+    const spec = SPECS.cp
+    if (spec === undefined) throw new Error('no cp spec')
+    const words = [...argv, '/data/a', '/data/b']
+    return parseFlags(new FlagView(parseToKwargs(parseCommand(spec, words, '/', 'cp')), spec))
+  }
+
+  // cp.c: -L, -P, -H, -d and -a each set the dereference policy, so the last
+  // one wins; with none, a recursive copy copies links as links and any other
+  // copy follows them. Mirrors test_cp.py.
+  it.each([
+    [[], 'always'],
+    [['-r'], 'never'],
+    [['-R'], 'never'],
+    [['-a'], 'never'],
+    [['-rL'], 'always'],
+    [['-rH'], 'command_line'],
+    [['-P'], 'never'],
+    [['-d'], 'never'],
+    [['-L', '-P'], 'never'],
+    [['-P', '-L'], 'always'],
+    [['-a', '-L'], 'always'],
+  ] as const)('reads %j as %s', (argv, deref) => {
+    expect(flagsOf(...argv).dereference).toBe(deref)
+  })
+})
+
+for (const native of [false, true]) {
+  for (const failure of ['read', 'write', 'partial-write']) {
+    it.each(['/safe', '/missing', '/dst~'])(
+      `failed ${native ? 'native' : 'primitive'} backup ${failure} restores link to %s`,
+      async (referent) => {
+        const enc = new TextEncoder()
+        const files = new Map<string, Uint8Array>([
+          ['/src', enc.encode('new')],
+          ['/dst', enc.encode('old')],
+          ['/safe', enc.encode('safe')],
+        ])
+        const original = new Map(files)
+        const links = new Map([['/dst~', referent]])
+        const { stat, find } = makeBackend(files, new Set())
+        const read = (path: PathSpec): Promise<Uint8Array> => {
+          if (failure === 'read' && path.virtual === '/dst') throw eacces(path.virtual)
+          const data = files.get(path.virtual)
+          if (data === undefined) throw enoent(path.virtual)
+          return Promise.resolve(data)
+        }
+        const write = (path: PathSpec, data: Uint8Array): Promise<void> => {
+          if (path.virtual === '/dst~') {
+            if (failure === 'partial-write') files.set(path.virtual, enc.encode('partial'))
+            throw eacces(path.virtual)
+          }
+          files.set(path.virtual, data)
+          return Promise.resolve()
+        }
+        const primitive: PrimitiveCopy = {
+          readBytes: read,
+          write,
+          mkdir: (path) => {
+            expect(files.has(path.virtual)).toBe(false)
+            return Promise.resolve()
+          },
+          readdir: (path) =>
+            Promise.resolve(
+              [...files.keys(), ...links.keys()].filter((p) => p.startsWith(path.virtual)),
+            ),
+        }
+        const copies: TransferLinks = {
+          cwd: '/',
+          relay: primitive,
+          relayStat: stat,
+          links: {
+            statAt: (path) =>
+              links.has(path)
+                ? new FileStat({
+                    name: path,
+                    type: FileType.SYMLINK,
+                    extra: { [LINK_TARGET_KEY]: links.get(path) ?? '' },
+                  })
+                : null,
+            children: (path) =>
+              [...links.keys()]
+                .filter((p) => p.startsWith(path))
+                .flatMap((p) => {
+                  const row = copies.links.statAt(p)
+                  return row === null ? [] : [row]
+                }),
+            subtree: (path) =>
+              [...links.keys()]
+                .filter((p) => p.startsWith(path))
+                .flatMap((p): [string, FileStat][] => {
+                  const row = copies.links.statAt(p)
+                  return row === null ? [] : [[p, row]]
+                }),
+            resolve: (path) => links.get(path) ?? path,
+            exists: (path) => Promise.resolve(files.has(path)),
+            targetStat: (path) => stat(spec(links.get(path) ?? path)),
+          },
+          dispatch: (op, path, _args, kwargs = {}) => {
+            if (op === 'unlink') {
+              if (!links.delete(path.virtual)) files.delete(path.virtual)
+            } else if (op === 'symlink') {
+              expect(files.has(path.virtual)).toBe(false)
+              links.set(path.virtual, String(kwargs.target))
+            } else throw new Error(`unexpected op: ${op}`)
+            return Promise.resolve([null, new IOResult()])
+          },
+        }
+        const strategy = native
+          ? { copy: async (src: PathSpec, dst: PathSpec) => write(dst, await read(src)), find }
+          : primitive
+        const [, io] = await cpGeneric(
+          [spec('/src'), spec('/dst')],
+          stat,
+          strategy,
+          cpFlags({ backup: 'simple' }),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          copies,
+        )
+        expect(io.exitCode).toBe(1)
+        expect(await io.stderrStr()).toBe("cp: cannot backup '/dst': Permission denied\n")
+        expect(io.writes).toEqual({})
+        expect(links).toEqual(new Map([['/dst~', referent]]))
+        expect(files).toEqual(original)
+      },
+    )
+  }
+}

@@ -296,7 +296,7 @@ def test_zcat_good_then_missing():
     _run(ws, "printf 'z\\n' > /a/z1.txt && gzip /a/z1.txt")
     out, err, code = _run(ws, "zcat /a/z1.txt.gz /a/missing.gz")
     assert out == "z\n"
-    assert err == "zcat: /a/missing.gz: No such file or directory\n"
+    assert err == "gzip: /a/missing.gz: No such file or directory\n"
     assert code == 1
 
 

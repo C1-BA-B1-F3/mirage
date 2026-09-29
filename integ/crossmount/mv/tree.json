@@ -24,10 +24,10 @@
         "gdrive",
         "gdrive-folder"
       ],
-      "command": "mkdir -p /data/xm2tree/sub && echo a | tee /data/xm2tree/a.txt > /dev/null && echo b | tee /data/xm2tree/sub/b.txt > /dev/null && mv /data/xm2tree /data2/xm2tree && cat /data2/xm2tree/a.txt /data2/xm2tree/sub/b.txt && find /data -name 'xm2tree'",
+      "command": "mkdir -p /data/xm2tree/sub && echo a | tee /data/xm2tree/a.txt > /dev/null && echo b | tee /data/xm2tree/sub/b.txt > /dev/null && ln -s sub /data/xm2tree/dir && ln -s sub/b.txt /data/xm2tree/file && ln -s missing /data/xm2tree/dangling && ln -s loop /data/xm2tree/loop && mv /data/xm2tree /data2/xm2tree && cat /data2/xm2tree/a.txt /data2/xm2tree/sub/b.txt && cat /data2/xm2tree/dir/b.txt /data2/xm2tree/file && readlink /data2/xm2tree/dir /data2/xm2tree/file /data2/xm2tree/dangling /data2/xm2tree/loop && find /data -name 'xm2tree' && test ! -L /data/xm2tree/dir && test ! -L /data/xm2tree/file && test ! -L /data/xm2tree/dangling && test ! -L /data/xm2tree/loop",
       "expect": {
         "exit": 0,
-        "stdout": "a\nb\n",
+        "stdout": "a\nb\nb\nb\nsub\nsub/b.txt\nmissing\nloop\n",
         "stderr": ""
       }
     }

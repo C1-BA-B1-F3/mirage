@@ -71,6 +71,11 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-r"),
             Option(short="-R", long="--recursive"),
             Option(short="-a", long="--archive"),
+            # The link policy: the last of these and -a wins.
+            Option(short="-L", long="--dereference"),
+            Option(short="-P", long="--no-dereference"),
+            Option(short="-H"),
+            Option(short="-d"),
             # Non-interactive control plane (rm precedent): -f/-i are
             # accepted no-ops — there is no prompt, and an overwrite
             # proceeds unless -n/--update say otherwise.

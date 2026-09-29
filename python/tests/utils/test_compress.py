@@ -31,13 +31,13 @@ def test_every_member_decompresses():
 
 
 @pytest.mark.parametrize("data,reason,fatal", [
-    (b"", "gzip: f: unexpected end of file\n", True),
-    (b"x", "gzip: f: unexpected end of file\n", True),
-    (b"hello\n", "gzip: f: not in gzip format\n", False),
-    (HELLO[:10], "gzip: f: unexpected end of file\n", True),
-    (HELLO[:-3], "gzip: f: unexpected end of file\n", True),
+    (b"", "\ngzip: f: unexpected end of file\n", True),
+    (b"x", "\ngzip: f: unexpected end of file\n", True),
+    (b"hello\n", "\ngzip: f: not in gzip format\n", False),
+    (HELLO[:10], "\ngzip: f: unexpected end of file\n", True),
+    (HELLO[:-3], "\ngzip: f: unexpected end of file\n", True),
     (b"\x1f\x8b\x08\x00garbage-here",
-     "gzip: f: invalid compressed data--format violated\n", True),
+     "\ngzip: f: invalid compressed data--format violated\n", True),
     (b"\x1f\x8b\x07", "gzip: f: unknown method 7 -- not supported\n", False),
     (b"\x1f\x8b\x08\x20", "gzip: f is encrypted -- not supported\n", False),
     (b"\x1f\x8b\x08\x48", "gzip: f has flags 0x48 -- not supported\n", False),
@@ -48,10 +48,11 @@ def test_every_member_decompresses():
 def test_refusals_carry_gzips_reason_and_severity(data, reason, fatal):
     # gzip 1.13: no header, or a header gzip does not support, is
     # reported and skipped, while a short, truncated or corrupt input
-    # ends the run.
+    # ends the run. Only the header refusals come without gzip's leading
+    # newline.
     with pytest.raises(GzipDataError) as exc:
         gunzip_checked(data)
-    assert (exc.value.render("gzip", "f"), exc.value.fatal) == (reason, fatal)
+    assert (exc.value.render("f"), exc.value.fatal) == (reason, fatal)
 
 
 def test_optional_header_fields_are_skipped():

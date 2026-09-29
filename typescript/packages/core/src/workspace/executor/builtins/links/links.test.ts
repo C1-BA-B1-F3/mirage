@@ -351,61 +351,112 @@ describe('rm and unlink reach a link through the op door', () => {
 })
 
 describe('mv re-anchors what the node table holds', () => {
-  it('hands back the pair whatever the table holds at the source', async () => {
-    // Gated on the source carrying overlay attrs, the pair was withheld
-    // for a directory whose own node is empty, and every link below it
-    // stayed at the emptied name: readable nowhere, since no backend
-    // holds an entry for a link at all.
+  it.each(['-n', '--update=none', '--update=none-fail'])(
+    'applies %s to every link operand',
+    async (option) => {
+      for (const operands of [
+        '/data/l /data/dst',
+        '/data/l /data/a /data/dst',
+        '-t /data/dst /data/l /data/a',
+      ]) {
+        const ws = await makeWs()
+        try {
+          await ws.shell(
+            'mkdir /data/dst; echo old > /data/dst/l; ln -s missing /data/l; echo a > /data/a',
+          )
+          expect((await ws.shell(`mv ${option} ${operands}`)).exitCode).toBe(
+            option === '--update=none-fail' ? 1 : 0,
+          )
+          expect(DEC.decode((await ws.shell('cat /data/dst/l')).stdout)).toBe('old\n')
+          expect(DEC.decode((await ws.shell('readlink /data/l')).stdout)).toBe('missing\n')
+        } finally {
+          await ws.close()
+        }
+      }
+    },
+  )
+
+  it('follows a linked destination for many sources', async () => {
+    // GNU stats the destination of `mv a b dlink` through the link, so the
+    // generic mv is handed the directory it names (coreutils 9.7), and each
+    // source lands inside it.
     const ws = await makeWs()
     try {
-      await ws.shell('mkdir -p /data/d; printf t > /data/t')
-      await ws.shell('ln -s /data/t /data/d/link')
+      await ws.shell('mkdir -p /data/dst; printf a > /data/a; printf b > /data/b')
+      await ws.shell('ln -s /data/dst /data/dlink')
+      const items = [
+        PathSpec.fromStrPath('/data/a'),
+        PathSpec.fromStrPath('/data/b'),
+        new PathSpec({
+          virtual: '/data/dlink',
+          directory: '/data/',
+          vfsPath: 'dlink',
+          rawPath: 'dlink',
+        }),
+      ]
       const prepared = await prepareMv(
         ws.namespace,
         dispatchOf(ws),
-        [PathSpec.fromStrPath('/data/d'), PathSpec.fromStrPath('/data/moved')],
-        ['/data/d', '/data/moved'],
-        '/',
+        items,
+        ['a', 'b', 'dlink'],
+        '/data',
       )
       expect(prepared.early).toBeNull()
-      expect(prepared.postUnlink).toBe('/data/moved')
-      expect(prepared.postRename).toEqual(['/data/d', '/data/moved'])
+      const dst = prepared.items[prepared.items.length - 1]
+      expect(dst instanceof PathSpec ? [dst.virtual, dst.rawPath] : null).toEqual([
+        '/data/dst',
+        'dlink',
+      ])
     } finally {
       await ws.close()
     }
   })
 
-  it('reads the destination off the parsed line', async () => {
-    // -T names the destination outright, so no basename is appended to
-    // it, and -t makes every positional a source, which is the shape a
-    // two-operand pair cannot describe at all.
+  it('leaves link sources for the generic', async () => {
+    // A link has no backend entry for the generic mv to move, so a
+    // several-source mv lost it (`mv: cannot stat 'l'`); the namespace
+    // renames it into the directory and the rest go to the backend.
     const ws = await makeWs()
     try {
       await ws.shell('mkdir -p /data/dst; printf a > /data/a')
-      const pair = [PathSpec.fromStrPath('/data/a'), PathSpec.fromStrPath('/data/dst')]
-      const dispatch = dispatchOf(ws)
-      const into = await prepareMv(ws.namespace, dispatch, pair, ['/data/a', '/data/dst'], '/')
-      expect(into.postRename).toEqual(['/data/a', '/data/dst/a'])
-      const onto = await prepareMv(
+      await ws.shell('ln -s /data/a /data/l')
+      const link = PathSpec.fromStrPath('/data/l')
+      const prepared = await prepareMv(
         ws.namespace,
-        dispatch,
-        pair,
-        ['-T', '/data/a', '/data/dst'],
+        dispatchOf(ws),
+        [link, PathSpec.fromStrPath('/data/a'), PathSpec.fromStrPath('/data/dst')],
+        ['/data/l', '/data/a', '/data/dst'],
         '/',
       )
-      expect(onto.postRename).toEqual(['/data/a', '/data/dst'])
-      const many = await prepareMv(
-        ws.namespace,
-        dispatch,
-        pair,
-        ['-t', '/data/dst', '/data/a'],
-        '/',
-      )
-      expect(many.postRename).toBeNull()
+      expect(prepared.early).toBeNull()
+      expect(prepared.items).toContain(link)
+      expect(ws.namespace.isLink('/data/dst/l')).toBe(false)
+      expect(ws.namespace.isLink('/data/l')).toBe(true)
     } finally {
       await ws.close()
     }
   })
+
+  it.each([false, true])(
+    'reanchors only completed sources in a partial move (skip=%s)',
+    async (skip) => {
+      const ws = await makeWs()
+      try {
+        await ws.shell(
+          'mkdir -p /data/src /data/out/src; echo x > /data/src/f; ln -s f /data/src/l',
+        )
+        expect(
+          (await ws.shell(`mv ${skip ? '-n' : ''} /data/missing /data/src /data/out`)).exitCode,
+        ).toBe(1)
+        const kept = skip ? '/data/src/l' : '/data/out/src/l'
+        const absent = skip ? '/data/out/src/l' : '/data/src/l'
+        expect(DEC.decode((await ws.shell(`cat ${kept}`)).stdout)).toBe('x\n')
+        expect(ws.namespace.isLink(absent)).toBe(false)
+      } finally {
+        await ws.close()
+      }
+    },
+  )
 
   it('moves a link below a renamed directory with it', async () => {
     const ws = await makeWs()
@@ -437,3 +488,212 @@ it.each(['missing', 'a.txt', 'loop'])(
     }
   },
 )
+
+class RefuseLinkCreation implements Policy {
+  preOps(ctx: OpsContext): Action | null {
+    return ctx.op === 'symlink' && ctx.path.virtual === '/other/tree/loop'
+      ? { kind: 'deny', reason: 'sealed' }
+      : null
+  }
+}
+
+it.each([null, 'read', 'unlink', 'symlink'] as const)(
+  'cross-mount mv preserves tree links with %s failure',
+  async (failure) => {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS(), '/other': new RAMVFS() },
+      {
+        mode: MountMode.WRITE,
+        policies:
+          failure === 'read'
+            ? [new SealReads()]
+            : failure === 'unlink'
+              ? [new PinLinks()]
+              : failure === 'symlink'
+                ? [new RefuseLinkCreation()]
+                : [],
+        shellParserFactory: () => Promise.resolve(parser),
+      },
+    )
+    try {
+      const setup = await ws.shell(
+        'mkdir -p /data/tree/sub; printf kept > /data/tree/sub/file; ' +
+          'printf sealed > /data/tree/file.sealed; ' +
+          'ln -s sub /data/tree/dir; ln -s sub/file /data/tree/file; ' +
+          'ln -s missing /data/tree/dangling; ln -s loop /data/tree/loop; ' +
+          'ln -s sub /data/tree/link.pinned',
+      )
+      expect(setup.exitCode).toBe(0)
+      const result = await ws.shell('mv /data/tree /other/tree')
+      expect(result.exitCode).toBe(failure === null ? 0 : 1)
+      expect(err(result)).toBe(
+        failure === 'read'
+          ? "mv: cannot open '/data/tree/file.sealed' for reading: Permission denied\n"
+          : failure === 'unlink'
+            ? "mv: cannot remove '/data/tree/link.pinned': Permission denied\n"
+            : failure === 'symlink'
+              ? "mv: cannot create symbolic link '/other/tree/loop': Permission denied\n"
+              : '',
+      )
+      const links = {
+        dir: 'sub',
+        file: 'sub/file',
+        dangling: 'missing',
+        loop: 'loop',
+        'link.pinned': 'sub',
+      }
+      for (const [name, target] of Object.entries(links)) {
+        if (failure === 'symlink' && name === 'loop') {
+          expect(ws.namespace.isLink(`/other/tree/${name}`)).toBe(false)
+        } else {
+          expect(ws.namespace.readlink(`/other/tree/${name}`)).toBe(target)
+        }
+        expect(ws.namespace.isLink(`/data/tree/${name}`)).toBe(
+          failure === 'read' ||
+            failure === 'symlink' ||
+            (failure === 'unlink' && name === 'link.pinned'),
+        )
+      }
+      expect(DEC.decode((await ws.shell('cat /other/tree/dir/file /other/tree/file')).stdout)).toBe(
+        'keptkept',
+      )
+      expect((await ws.shell('test -e /data/tree')).exitCode).toBe(failure === null ? 1 : 0)
+      expect((await ws.shell('test -e /data/tree/sub/file')).exitCode).toBe(
+        failure === 'read' || failure === 'symlink' ? 0 : 1,
+      )
+    } finally {
+      await ws.close()
+    }
+  },
+)
+
+it.each(['/data', '/other'])(
+  'mv to %s keeps directory links only in the backup',
+  async (destination) => {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS(), '/other': new RAMVFS() },
+      { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
+    )
+    try {
+      const setup = await ws.shell(
+        `mkdir -p /data/src ${destination}/dst/sub; ` +
+          `printf old > ${destination}/dst/sub/file; ` +
+          `ln -s sub ${destination}/dst/link; ` +
+          `ln -s missing ${destination}/dst/dangling; ` +
+          'printf new > /data/src/new',
+      )
+      expect(setup.exitCode).toBe(0)
+      const result = await ws.shell(`mv -bT /data/src ${destination}/dst`)
+      expect(result.exitCode).toBe(0)
+      expect(err(result)).toBe('')
+      expect(ws.namespace.readlink(`${destination}/dst~/link`)).toBe('sub')
+      expect(ws.namespace.readlink(`${destination}/dst~/dangling`)).toBe('missing')
+      expect(ws.namespace.isLink(`${destination}/dst/link`)).toBe(false)
+      expect(ws.namespace.isLink(`${destination}/dst/dangling`)).toBe(false)
+      expect(
+        DEC.decode(
+          (await ws.shell(`cat ${destination}/dst/new ${destination}/dst~/link/file`)).stdout,
+        ),
+      ).toBe('newold')
+      expect((await ws.shell(`test -e ${destination}/dst/sub`)).exitCode).toBe(1)
+    } finally {
+      await ws.close()
+    }
+  },
+)
+
+for (const destination of ['/data', '/other']) {
+  for (const sourceLink of [false, true]) {
+    it.each(['safe', 'missing', 'dst~', 'dir'])(
+      `cp backup at ${destination} preserves %s referent (source link: ${String(sourceLink)})`,
+      async (backupTarget) => {
+        const parser = await getTestParser()
+        const ws = new Workspace(
+          { '/data': new RAMVFS(), '/other': new RAMVFS() },
+          { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
+        )
+        try {
+          const setup = await ws.shell(
+            `mkdir -p ${destination}/dir; printf safe > ${destination}/safe; ` +
+              `printf child > ${destination}/dir/file; printf old > ${destination}/dst; ` +
+              `ln -s ${backupTarget} ${destination}/dst~; ` +
+              (sourceLink ? 'ln -s absent /data/src' : 'printf new > /data/src'),
+          )
+          expect(setup.exitCode).toBe(0)
+          const result = await ws.shell(`cp -Pb /data/src ${destination}/dst`)
+          expect(result.exitCode).toBe(0)
+          expect(err(result)).toBe('')
+          expect(ws.namespace.isLink(`${destination}/dst~`)).toBe(false)
+          const content = await ws.shell(
+            `cat ${destination}/dst~ ${destination}/safe ${destination}/dir/file`,
+          )
+          expect(DEC.decode(content.stdout)).toBe('oldsafechild')
+          expect((await ws.shell(`test -e ${destination}/missing`)).exitCode).toBe(1)
+          if (sourceLink) expect(ws.namespace.readlink(`${destination}/dst`)).toBe('absent')
+          else expect(DEC.decode((await ws.shell(`cat ${destination}/dst`)).stdout)).toBe('new')
+        } finally {
+          await ws.close()
+        }
+      },
+    )
+  }
+}
+
+it.each([false, true])(
+  'cp backup unlink refusal preserves destination (source link: %s)',
+  async (sourceLink) => {
+    const parser = await getTestParser()
+    const ws = new Workspace(
+      { '/data': new RAMVFS(), '/other': new RAMVFS() },
+      {
+        mode: MountMode.WRITE,
+        policies: [new PinLinks()],
+        shellParserFactory: () => Promise.resolve(parser),
+      },
+    )
+    try {
+      const setup = await ws.shell(
+        'printf safe > /other/safe; printf old > /other/dst; ln -s safe /other/dst.pinned; ' +
+          (sourceLink ? 'ln -s absent /data/src' : 'printf new > /data/src'),
+      )
+      expect(setup.exitCode).toBe(0)
+      const result = await ws.shell('cp -Pb --suffix=.pinned /data/src /other/dst')
+      expect(result.exitCode).toBe(1)
+      expect(err(result)).toBe("cp: cannot backup '/other/dst': Permission denied\n")
+      expect(ws.namespace.readlink('/other/dst.pinned')).toBe('safe')
+      expect(DEC.decode((await ws.shell('cat /other/dst /other/safe')).stdout)).toBe('oldsafe')
+      expect((await ws.shell('test -e /data/src || test -L /data/src')).exitCode).toBe(0)
+    } finally {
+      await ws.close()
+    }
+  },
+)
+
+for (const command of ['cp -P', 'mv']) {
+  it.each(['/data', '/other'])(
+    `${command} counts namespace links in numbered backups at %s`,
+    async (destination) => {
+      const parser = await getTestParser()
+      const ws = new Workspace(
+        { '/data': new RAMVFS(), '/other': new RAMVFS() },
+        { mode: MountMode.WRITE, shellParserFactory: () => Promise.resolve(parser) },
+      )
+      try {
+        const setup = await ws.shell(
+          `printf old > ${destination}/dst; ln -s missing ${destination}/dst.~1~; printf new > /data/src`,
+        )
+        expect(setup.exitCode).toBe(0)
+        const result = await ws.shell(`${command} --backup=numbered /data/src ${destination}/dst`)
+        expect(result.exitCode).toBe(0)
+        expect(ws.namespace.readlink(`${destination}/dst.~1~`)).toBe('missing')
+        expect(
+          DEC.decode((await ws.shell(`cat ${destination}/dst ${destination}/dst.~2~`)).stdout),
+        ).toBe('newold')
+      } finally {
+        await ws.close()
+      }
+    },
+  )
+}

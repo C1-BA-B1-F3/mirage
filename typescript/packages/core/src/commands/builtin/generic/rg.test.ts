@@ -385,7 +385,8 @@ describe('rgGeneric - unreadable paths are named as typed', () => {
       io.exitCode,
     ]
   }
-  const missing = 'rg: nope: No such file or directory\n'
+  const missing =
+    'rg: nope: IO error for operation on nope: No such file or directory (os error 2)\n'
 
   it.each([
     [
@@ -410,7 +411,7 @@ describe('rgGeneric - unreadable paths are named as typed', () => {
   it('names a walked file it could not read', async () => {
     expect(await runTyped([typed('/d/sub', 'sub')], {})).toEqual([
       'sub/ok.txt:hit\n',
-      'rg: sub/locked.txt: Permission denied\n',
+      'rg: sub/locked.txt: Permission denied (os error 13)\n',
       2,
     ])
   })
@@ -446,11 +447,15 @@ describe('rgGeneric - an operand the walk refused', () => {
   }
 
   it.each([
-    ['the empty name', walkRefused('/sub', '', 'ENOENT'), 'rg: : No such file or directory\n'],
+    [
+      'the empty name',
+      walkRefused('/sub', '', 'ENOENT'),
+      'rg: : IO error for operation on : No such file or directory (os error 2)\n',
+    ],
     [
       'a link loop',
       walkRefused('/lp1', 'lp1', 'ELOOP'),
-      'rg: lp1: Too many levels of symbolic links\n',
+      'rg: lp1: IO error for operation on lp1: Too many levels of symbolic links (os error 40)\n',
     ],
   ] as const)('refuses %s by name', async (_, operand, message) => {
     // ripgrep 14.1.1: `rg o ''` and `rg o lp1` (a loop) refuse the operand by
@@ -464,6 +469,34 @@ describe('rgGeneric - an operand the walk refused', () => {
     ])
   })
 
+  it('refuses a lone operand it may not read in the searcher voice', async () => {
+    // ripgrep 14.1.1 opens a lone file operand after the stat said it is one,
+    // so a file it may not read is `rg: locked.txt: Permission denied (os
+    // error 13)`, exit 2, not the shared handler's exit 1.
+    const opts = { stdin: null, flags: {}, filetypeFns: null, cwd: '/' } as unknown as CommandOpts
+    const typedLocked = new PathSpec({
+      virtual: '/a.txt',
+      directory: '/',
+      resolved: true,
+      vfsPath: 'a.txt',
+      rawPath: 'locked.txt',
+    })
+    // eslint-disable-next-line require-yield
+    async function* denied(): AsyncIterable<Uint8Array> {
+      await Promise.resolve()
+      throw eacces('/a.txt')
+    }
+    const [out, io] = (await rgGeneric([typedLocked], ['o'], opts, stat, readdir, denied)) as [
+      ByteSource,
+      IOResult,
+    ]
+    expect(DEC.decode(await materialize(out))).toBe('')
+    expect(DEC.decode(await materialize(io.stderr))).toBe(
+      'rg: locked.txt: Permission denied (os error 13)\n',
+    )
+    expect(io.exitCode).toBe(2)
+  })
+
   it('does not read a typed empty operand as the implicit cwd', async () => {
     // A bare `rg PAT` searches a synthetic cwd operand spelled '' too, so only
     // the walk's verdict tells a typed '' apart. A line that named paths earns
@@ -472,7 +505,7 @@ describe('rgGeneric - an operand the walk refused', () => {
     const empty = walkRefused('/sub', '', 'ENOENT')
     expect(await runAll([empty, empty])).toEqual([
       '',
-      'rg: : No such file or directory\n'.repeat(2),
+      'rg: : IO error for operation on : No such file or directory (os error 2)\n'.repeat(2),
       2,
     ])
   })

@@ -21,10 +21,57 @@ from mirage.commands.builtin.rg_filetypes import FileTypes
 from mirage.commands.builtin.rg_glob import Overrides, Verdict, walk_candidate
 from mirage.commands.builtin.utils.types import AsyncReaddir, AsyncStat
 from mirage.commands.resolve import get_extension
+from mirage.errors.classify import classify
+from mirage.errors.posix import linux_errno
 from mirage.ops.types import MountIsRoot
 from mirage.types import FileStat, FileType, PathSpec
 from mirage.utils.errors import WALK_ERRORS, fs_strerror
 from mirage.utils.path import respell_one
+
+
+def os_error_text(exc: BaseException) -> str:
+    """An OS error the way ripgrep's Rust ``io::Error`` displays it.
+
+    The strerror, then the Linux errno it came from: ``No such file or
+    directory (os error 2)``. A failure the vocabulary cannot number keeps
+    its words alone.
+
+    Args:
+        exc (BaseException): the failure.
+    """
+    text = fs_strerror(exc) or str(exc)
+    condition = classify(exc)
+    if condition is None:
+        return text
+    return f"{text} (os error {linux_errno(condition)})"
+
+
+def walk_error_line(shown: str, exc: BaseException) -> str:
+    """ripgrep's line for a path its walker could not stat or list.
+
+    The walker's I/O error names the path a second time: ``rg: nope: IO
+    error for operation on nope: No such file or directory (os error 2)``
+    (ripgrep 14.1.1).
+
+    Args:
+        shown (str): the path as ripgrep names it.
+        exc (BaseException): the failure.
+    """
+    return (f"rg: {shown}: IO error for operation on {shown}: "
+            f"{os_error_text(exc)}")
+
+
+def open_error_line(shown: str, exc: BaseException) -> str:
+    """ripgrep's line for a file its searcher could not open or read.
+
+    The bare I/O error, without the walker's preamble: ``rg: locked.txt:
+    Permission denied (os error 13)`` (ripgrep 14.1.1).
+
+    Args:
+        shown (str): the path as ripgrep names it.
+        exc (BaseException): the failure.
+    """
+    return f"rg: {shown}: {os_error_text(exc)}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,7 +208,7 @@ async def walk_haystacks(
     except WALK_ERRORS as exc:
         if warnings is not None:
             shown = respell_one(here, root, shown_root)
-            warnings.append(f"rg: {shown}: {fs_strerror(exc) or exc}")
+            warnings.append(walk_error_line(shown, exc))
         return
     if sort_by_name:
         entries = sorted(entries, key=_entry_name)
@@ -173,7 +220,7 @@ async def walk_haystacks(
             s = await stat_fn(entry)
         except WALK_ERRORS as exc:
             if warnings is not None:
-                warnings.append(f"rg: {shown}: {fs_strerror(exc) or exc}")
+                warnings.append(walk_error_line(shown, exc))
             continue
         name = posixpath.basename(child)
         candidate = walk_candidate(shown, cwd)

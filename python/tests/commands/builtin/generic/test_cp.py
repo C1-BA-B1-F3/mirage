@@ -14,12 +14,15 @@
 
 import pytest
 
-from mirage.commands.builtin.generic.cp import CpFlags, cp, update_mode
+from mirage.commands.builtin.generic.cp import (CpFlags, TransferLinks, cp,
+                                                parse_flags, update_mode)
 from mirage.commands.errors import UsageError
-from mirage.commands.spec import SPECS
+from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
 from mirage.commands.spec.flag_view import FlagView
-from mirage.types import (ContentType, FileStat, FileType, NativeCopy,
-                          PathSpec, PrimitiveCopy)
+from mirage.io.types import IOResult
+from mirage.ops.types import LinkView
+from mirage.types import (LINK_TARGET_KEY, ContentType, CopyDeref, FileStat,
+                          FileType, NativeCopy, PathSpec, PrimitiveCopy)
 from mirage.utils.errors import enotsup
 
 
@@ -894,3 +897,104 @@ async def test_slashed_file_source_reports_cannot_stat():
     assert io.exit_code == 1
     assert io.stderr == b"cp: cannot stat '/reg/': Not a directory\n"
     assert files == {"/reg": b"R"}
+
+
+def _cp_flags(*argv: str) -> CpFlags:
+    spec = SPECS["cp"]
+    words = [*argv, "/data/a", "/data/b"]
+    return parse_flags(
+        FlagView(parse_to_kwargs(parse_command(spec, words, "/", "cp")),
+                 spec=spec))
+
+
+@pytest.mark.parametrize("argv,deref", [
+    ([], CopyDeref.ALWAYS),
+    (["-r"], CopyDeref.NEVER),
+    (["-R"], CopyDeref.NEVER),
+    (["-a"], CopyDeref.NEVER),
+    (["-rL"], CopyDeref.ALWAYS),
+    (["-rH"], CopyDeref.COMMAND_LINE),
+    (["-P"], CopyDeref.NEVER),
+    (["-d"], CopyDeref.NEVER),
+    (["-L", "-P"], CopyDeref.NEVER),
+    (["-P", "-L"], CopyDeref.ALWAYS),
+    (["-a", "-L"], CopyDeref.ALWAYS),
+])
+def test_the_last_link_option_wins_and_recursion_defaults_to_never(
+        argv, deref):
+    # cp.c: -L, -P, -H, -d and -a each set the dereference policy, so the
+    # last one wins; with none, a recursive copy copies links as links and
+    # any other copy follows them.
+    assert _cp_flags(*argv).dereference is deref
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("native", [False, True])
+@pytest.mark.parametrize("failure", ["read", "write", "partial-write"])
+@pytest.mark.parametrize("referent", ["/safe", "/missing", "/dst~"])
+async def test_failed_backup_restores_existing_link(native, failure, referent):
+    files = {"/src": b"new", "/dst": b"old", "/safe": b"safe"}
+    links = {"/dst~": referent}
+    stat, _, find = _make_backend(files, set())
+
+    async def read(path):
+        if failure == "read" and path.virtual == "/dst":
+            raise PermissionError("denied")
+        return files[path.virtual]
+
+    async def write(path, data):
+        if path.virtual == "/dst~":
+            if failure == "partial-write":
+                files[path.virtual] = b"partial"
+            raise PermissionError("denied")
+        files[path.virtual] = data
+
+    async def copy(src, dst):
+        await write(dst, await read(src))
+
+    async def dispatch(op, path, **kwargs):
+        if op == "unlink":
+            if path.virtual in links:
+                del links[path.virtual]
+            else:
+                del files[path.virtual]
+        elif op == "symlink":
+            assert path.virtual not in files
+            links[path.virtual] = kwargs["target"]
+        else:
+            raise AssertionError(op)
+        return None, IOResult()
+
+    async def readdir(path):
+        return [p for p in (*files, *links) if p.startswith(path.virtual)]
+
+    async def exists(path):
+        return path in files
+
+    async def target_stat(path):
+        return await stat(_spec(links[path]))
+
+    view = LinkView(stat_at=lambda path: FileStat(
+        name=path, type=FileType.SYMLINK, extra={LINK_TARGET_KEY: links[path]})
+                    if path in links else None,
+                    children=lambda path: [],
+                    subtree=lambda path: [],
+                    resolve=lambda path: links.get(path, path),
+                    exists=exists,
+                    target_stat=target_stat)
+    primitive = PrimitiveCopy(read_bytes=read,
+                              write=write,
+                              mkdir=readdir,
+                              readdir=readdir)
+    strategy = NativeCopy(copy=copy, find=find) if native else primitive
+    _, io = await cp([_spec("/src"), _spec("/dst")],
+                     stat=stat,
+                     strategy=strategy,
+                     flags=CpFlags(backup="simple"),
+                     copies=TransferLinks(view, dispatch, "/", primitive,
+                                          stat))
+    assert io.exit_code == 1
+    assert io.stderr == b"cp: cannot backup '/dst': Permission denied\n"
+    assert io.writes == {}
+    assert links == {"/dst~": referent}
+    assert files == {"/src": b"new", "/dst": b"old", "/safe": b"safe"}

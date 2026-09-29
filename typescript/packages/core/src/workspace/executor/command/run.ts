@@ -29,7 +29,13 @@ import type {
 import { namespaceNames } from '../../../ops/namespace_view.ts'
 import type { Namespace } from '../../mount/namespace/namespace.ts'
 import { envSnapshot, sessionView } from '../../session/state.ts'
-import { linkTargetStat, pathExists, pathReaddir, pathStat } from '../builtins/links/index.ts'
+import {
+  linkTargetStat,
+  pathExists,
+  pathReaddir,
+  pathStat,
+  resolveLink,
+} from '../builtins/links/index.ts'
 import { mergeOverlayStat } from '../../mount/namespace/overlay.ts'
 import { MountCommandUnsupported, type MountRegistry } from '../../mount/registry.ts'
 import { ownLimit } from '../../../policy/builtin/output_cap.ts'
@@ -377,7 +383,7 @@ function linkView(
     statAt: (path: string) => namespace.linkStatAt(path),
     children: (directory: string) => namespace.linkStatsUnder(directory),
     subtree: (directory: string) => namespace.linkStatsBelow(directory),
-    resolve: (path: string) => namespace.follow(path),
+    resolve: (path: string) => resolveLink(namespace, path),
     exists: (path: string) => pathExists(dispatch, path),
     targetStat: (path: string) => linkTargetStat(namespace, dispatch, path, overlay),
   }

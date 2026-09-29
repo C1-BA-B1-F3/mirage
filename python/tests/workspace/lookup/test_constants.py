@@ -12,10 +12,14 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.types import PathSpec
+import pytest
+
+from mirage.types import LsLinkMode, PathSpec
 from mirage.workspace.lookup.constants import (NO_FOLLOW_COMMANDS,
-                                               dereferences, reads_subtrees,
-                                               reports_link, walks_mounts)
+                                               dereferences,
+                                               follows_last_component,
+                                               ls_link_mode, reads_subtrees,
+                                               walks_mounts)
 
 
 def test_stat_is_a_no_follow_command():
@@ -59,30 +63,35 @@ def test_a_pathspec_operand_is_not_read_as_a_flag():
     assert dereferences("stat", ["stat", spec]) is False
 
 
-def test_ls_reports_the_link_under_dash_l():
-    """GNU ls -l shows a command-line link itself, not its target."""
-    assert reports_link("ls", ["ls", "-l", "/data/link"]) is True
-
-
-def test_ls_reports_the_link_under_dash_d():
-    assert reports_link("ls", ["ls", "-d", "/data/link"]) is True
-
-
-def test_ls_reports_the_link_in_a_flag_cluster():
-    assert reports_link("ls", ["ls", "-la", "/data/link"]) is True
-
-
-def test_bare_ls_dereferences_a_directory_link():
-    assert reports_link("ls", ["ls", "/data/link"]) is False
-
-
-def test_dash_capital_l_wins_over_the_no_follow_flags():
-    """-L asks to dereference, which outranks -l's lstat default."""
-    assert reports_link("ls", ["ls", "-l", "-L", "/data/link"]) is False
+@pytest.mark.parametrize("words, mode", [
+    (["ls", "-l", "/data/link"], LsLinkMode.NONE),
+    (["ls", "-d", "/data/link"], LsLinkMode.NONE),
+    (["ls", "-la", "/data/link"], LsLinkMode.NONE),
+    (["ls", "-g", "/data/link"], LsLinkMode.NONE),
+    (["ls", "-F", "/data/link"], LsLinkMode.NONE),
+    (["ls", "--cl", "/data/link"], LsLinkMode.NONE),
+    (["ls", "--indicator-style=classify", "/data/link"], LsLinkMode.NONE),
+    (["ls", "/data/link"], LsLinkMode.DIRECTORY),
+    (["ls", "-p", "/data/link"], LsLinkMode.DIRECTORY),
+    (["ls", "--file-type", "/data/link"], LsLinkMode.DIRECTORY),
+    (["ls", "--classify=never", "/data/link"], LsLinkMode.DIRECTORY),
+    (["ls", "-l", "-L", "/data/link"], LsLinkMode.ALL),
+    (["ls", "-F", "-H", "/data/link"], LsLinkMode.ALL),
+    (["ls", "-H", "--dereference-command-line-symlink-to-dir", "/data/link"
+      ], LsLinkMode.DIRECTORY),
+])
+def test_ls_link_mode_is_gnus_command_line_rule(words, mode):
+    # coreutils 9.7: the last of -L, -H and
+    # --dereference-command-line-symlink-to-dir wins; without one, -d, a
+    # long format or the classify style (abbreviated or valued) resolve
+    # no command-line link, and anything else resolves a link to a
+    # directory. -p and --file-type are not classify.
+    assert ls_link_mode(words) is mode
 
 
 def test_a_command_with_no_no_follow_flag_is_never_affected():
-    assert reports_link("cat", ["cat", "-l", "/data/link"]) is False
+    # Only ls reads -l as a request to report the link itself.
+    assert follows_last_component("cat", ["cat", "-l", "/data/link"]) is True
 
 
 def test_file_lstats_like_stat():

@@ -14,7 +14,8 @@
 import pytest
 
 from mirage.commands.builtin.generic.cmp import (cmp_cmd, parse_count,
-                                                 parse_skip, visible)
+                                                 parse_flags, parse_skip,
+                                                 visible)
 from mirage.commands.errors import UsageError
 from mirage.io.stream import materialize
 from mirage.types import PathSpec
@@ -319,3 +320,69 @@ async def test_operands_are_named_as_typed():
                    raw_path="two")
     src, _ = await cmp_cmd([one, two], read_bytes=_reader(b"a", b"b"))
     assert await materialize(src) == b"one two differ: char 1, line 1\n"
+
+
+@pytest.mark.asyncio
+async def test_silent_keeps_exit_2_for_an_operand_it_cannot_read():
+    # diffutils 3.10: `cmp -s a.txt nope` prints nothing and exits 2; the
+    # message is what -s drops, not the trouble.
+
+    async def missing(path: PathSpec) -> bytes:
+        raise FileNotFoundError(path.virtual)
+
+    for silent, want in ((True, ""),
+                         (False, "cmp: /F/one: No such file or directory\n")):
+        src, io = await cmp_cmd([P1, P2], read_bytes=missing, silent=silent)
+        assert src is None
+        assert (io.stderr or b"").decode() == want
+        assert io.exit_code == 2
+
+
+def _dirs(*dirs: str):
+
+    async def read(path: PathSpec) -> bytes:
+        if path.virtual in dirs:
+            raise IsADirectoryError(path.virtual)
+        if path.virtual.endswith("nope"):
+            raise FileNotFoundError(path.virtual)
+        return b"a"
+
+    return read
+
+
+def _spec(name: str) -> PathSpec:
+    return PathSpec(virtual=f"/F/{name}",
+                    directory="/F/",
+                    vfs_path=name,
+                    raw_path=name)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("names,silent,code,stderr", [
+    (("dir", "one"), True, 2, "cmp: dir: Is a directory\n"),
+    (("one", "dir"), True, 2, "cmp: dir: Is a directory\n"),
+    (("dir", "nope"), True, 2, ""),
+    (("dir", "nope"), False, 2, "cmp: nope: No such file or directory\n"),
+    (("dir", "dir"), False, 0, ""),
+])
+async def test_a_directory_fails_at_its_read_after_both_opens(
+        names, silent, code, stderr):
+    # diffutils 3.10 opens both operands, then reads: -s drops only a
+    # failed open, a directory opens and fails reading, and one file
+    # named twice at the same offset is equal unread.
+    _, io = await cmp_cmd([_spec(n) for n in names],
+                          read_bytes=_dirs("/F/dir"),
+                          silent=silent)
+    assert ((io.stderr or b"").decode(), io.exit_code) == (stderr, code)
+
+
+def test_parse_flags_reads_the_long_spellings_and_refuses_l_with_s():
+    # --quiet and --silent are -s; --verbose is -l, and diffutils refuses
+    # the pair while it reads the options.
+    assert parse_flags({"quiet": True}).silent
+    assert parse_flags({"silent": True}).silent
+    assert parse_flags({"verbose": True}).verbose
+    with pytest.raises(UsageError) as info:
+        parse_flags({"verbose": True, "silent": True})
+    assert str(info.value) == ("cmp: options -l and -s are incompatible\n"
+                               "cmp: Try 'cmp --help' for more information.")

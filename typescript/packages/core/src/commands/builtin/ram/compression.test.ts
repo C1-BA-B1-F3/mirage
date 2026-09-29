@@ -142,9 +142,10 @@ describe('gzip and gunzip on a read-only mount', () => {
     ['gzip -f /ro/f.txt', 1, 'gzip: /ro/f.txt.gz: Read-only file system\n'],
     ['gzip /ro/g.txt', 1, '\ngzip: /ro/g.txt.gz: Read-only file system\n'],
     ['gzip /ro/f.txt /ro/g.txt', 1, exists + '\ngzip: /ro/g.txt.gz: Read-only file system\n'],
-    ['gzip -d /ro/f.txt.gz', 1, 'gzip: /ro/f.txt: Read-only file system\n'],
-    ['gunzip /ro/f.txt.gz', 1, 'gunzip: /ro/f.txt: Read-only file system\n'],
-    ['gunzip -k /ro/f.txt.gz', 1, 'gunzip: /ro/f.txt: Read-only file system\n'],
+    ['gzip -d /ro/f.txt.gz', 2, 'gzip: /ro/f.txt already exists;\tnot overwritten\n'],
+    ['gzip -df /ro/f.txt.gz', 1, 'gzip: /ro/f.txt: Read-only file system\n'],
+    ['gunzip /ro/f.txt.gz', 2, 'gzip: /ro/f.txt already exists;\tnot overwritten\n'],
+    ['gunzip -kf /ro/f.txt.gz', 1, 'gzip: /ro/f.txt: Read-only file system\n'],
   ])('refuses %s at its write', async (line, code, stderr) => {
     expect(await readOnlyShell(line)).toEqual([code, '', stderr, ['/f.txt', '/f.txt.gz', '/g.txt']])
   })

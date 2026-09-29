@@ -26,11 +26,12 @@ export const SPECS: Record<string, CommandSpec> = {
   }),
   cmp: new CommandSpec({
     options: [
-      new Option({ short: '-l' }),
-      new Option({ short: '-s' }),
-      new Option({ short: '-n', type: 'str' }),
-      new Option({ short: '-b' }),
-      new Option({ short: '-i', type: 'str' }),
+      new Option({ short: '-l', long: '--verbose' }),
+      new Option({ short: '-s', long: '--quiet' }),
+      new Option({ long: '--silent' }),
+      new Option({ short: '-n', long: '--bytes', type: 'str' }),
+      new Option({ short: '-b', long: '--print-bytes' }),
+      new Option({ short: '-i', long: '--ignore-initial', type: 'str' }),
     ],
     positional: [new Operand({ type: 'path' }), new Operand({ type: 'path' })],
   }),

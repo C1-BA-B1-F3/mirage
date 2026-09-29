@@ -312,6 +312,14 @@
     {
       "short": "-t",
       "type": "bool"
+    },
+    {
+      "short": "-q",
+      "type": "bool"
+    },
+    {
+      "short": "-S",
+      "type": "str"
     }
   ],
   "rest": {

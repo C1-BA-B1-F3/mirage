@@ -9,13 +9,16 @@ import pytest
 from mirage.commands.builtin.generic.ls import (LS_FAILURE, LS_MINOR_PROBLEM,
                                                 LS_OK, LsWarning,
                                                 exit_status_for, filevercmp,
-                                                format_simple, ls, parse_flags,
-                                                sort_stats, walk)
+                                                format_simple, indicator_flag,
+                                                ls, parse_flags, sort_stats,
+                                                type_indicator, walk)
 from mirage.commands.builtin.utils.formatting import BlockSize, LsColumns
 from mirage.commands.errors import CommandTimeoutError, UsageError
+from mirage.commands.spec import SPECS, parse_command, parse_to_kwargs
+from mirage.commands.spec.flag_view import FlagView
 from mirage.ops.types import LinkView, MountView
 from mirage.types import (LINK_TARGET_KEY, ContentType, FileStat, FileType,
-                          LsSortBy, LsTimeKind, PathSpec)
+                          LsIndicator, LsSortBy, LsTimeKind, PathSpec)
 from mirage.utils.stat_view import DIR_SIZE
 
 
@@ -92,7 +95,8 @@ def test_format_simple_default_lists_names():
 
 
 def test_format_simple_classify_marks_dirs_with_slash():
-    out = format_simple([_file("a.txt"), _dir("sub")], classify=True)
+    out = format_simple([_file("a.txt"), _dir("sub")],
+                        indicator=LsIndicator.CLASSIFY)
     assert out == ["a.txt", "sub/"]
 
 
@@ -281,7 +285,7 @@ async def test_ls_classify_appends_slash_for_dirs():
     output, _ = await ls([_spec("/dir")],
                          readdir=readdir,
                          stat=stat,
-                         classify=True)
+                         indicator=LsIndicator.CLASSIFY)
     decoded = output.decode().splitlines()
     assert "sub/" in decoded
     assert "a.txt" in decoded
@@ -403,7 +407,7 @@ async def test_ls_reports_an_unstamped_backend_error_in_its_own_words():
     output, io = await ls([_spec("/dir")],
                           readdir=readdir,
                           stat=stat,
-                          classify=True)
+                          indicator=LsIndicator.CLASSIFY)
     assert io.exit_code == LS_MINOR_PROBLEM
     assert output == b"a.txt\nb.txt\n"
     assert io.stderr == (b"ls: cannot access '/dir/b.txt': "
@@ -1029,7 +1033,7 @@ async def test_a_child_mount_serving_one_file_is_not_a_directory_row():
                        readdir=readdir,
                        stat=stat,
                        recursive=True,
-                       classify=True,
+                       indicator=LsIndicator.CLASSIFY,
                        child_mounts=lambda d: ["hist"] if d == "/base" else [],
                        mounts=_mount_view("/base/hist"),
                        stat_path=stat_path)
@@ -1046,7 +1050,7 @@ async def test_a_child_mount_row_falls_back_to_directory_with_no_dispatcher():
     out, io = await ls([PathSpec.from_str_path("/base")],
                        readdir=readdir,
                        stat=stat,
-                       classify=True,
+                       indicator=LsIndicator.CLASSIFY,
                        child_mounts=lambda d: ["hist"] if d == "/base" else [])
     assert io.exit_code == 0
     assert out.decode() == "hist/\n"
@@ -1691,3 +1695,61 @@ async def test_dot_entries_respect_mount_boundary(prefix, subdir, namespace):
         assert namespace_calls[-2:] == [directory, parent]
     else:
         assert calls
+
+
+def _ls_view(*argv: str) -> FlagView:
+    spec = SPECS["ls"]
+    return FlagView(parse_to_kwargs(parse_command(spec, list(argv), "/",
+                                                  "ls")),
+                    spec=spec)
+
+
+@pytest.mark.parametrize("argv,style", [
+    ([], LsIndicator.NONE),
+    (["-F"], LsIndicator.CLASSIFY),
+    (["--classify=always"], LsIndicator.CLASSIFY),
+    (["--classify=never"], LsIndicator.NONE),
+    (["--classify=auto"], LsIndicator.NONE),
+    (["-p"], LsIndicator.SLASH),
+    (["--file-type"], LsIndicator.FILE_TYPE),
+    (["--indicator-style=classify"], LsIndicator.CLASSIFY),
+    (["-F", "-p"], LsIndicator.SLASH),
+    (["-p", "-F"], LsIndicator.CLASSIFY),
+    (["--file-type", "--indicator-style=none"], LsIndicator.NONE),
+])
+def test_indicator_flag_takes_the_last_style(argv, style):
+    # coreutils 9.7: -F, --classify[=WHEN], -p, --file-type and
+    # --indicator-style all set the one style, so the last one wins; a
+    # --classify that is not always has no terminal to be auto on.
+    assert indicator_flag(_ls_view(*argv)) is style
+
+
+@pytest.mark.parametrize("argv",
+                         [["--indicator-style=bogus"], ["--classify=bogus"],
+                          ["--indicator-style=bogus", "-F"]])
+def test_indicator_flag_refuses_a_word_gnu_does_not_know(argv):
+    # GNU checks each value while it reads the options, so a bad one
+    # before a good one is still refused.
+    with pytest.raises(UsageError) as info:
+        indicator_flag(_ls_view(*argv))
+    assert str(info.value).startswith("ls: invalid argument 'bogus' for")
+
+
+@pytest.mark.parametrize("kind,mode,marks", [
+    (FileType.DIRECTORY, None, ("", "/", "/", "/")),
+    (FileType.SYMLINK, None, ("", "", "@", "@")),
+    (FileType.FIFO, None, ("", "", "|", "|")),
+    (FileType.FILE, 0o755, ("", "", "", "*")),
+    (FileType.FILE, 0o644, ("", "", "", "")),
+])
+def test_type_indicator_marks_by_style(kind, mode, marks):
+    # ls.c get_type_indicator: slash marks only directories, and only
+    # classify marks an executable.
+    entry = FileStat(name="x", type=kind, mode=mode)
+    styles = (LsIndicator.NONE, LsIndicator.SLASH, LsIndicator.FILE_TYPE,
+              LsIndicator.CLASSIFY)
+    assert tuple(type_indicator(entry, s) for s in styles) == marks
+
+
+def test_type_indicator_marks_nothing_it_could_not_stat():
+    assert type_indicator(None, LsIndicator.CLASSIFY) == ""

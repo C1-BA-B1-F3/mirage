@@ -77,9 +77,25 @@ def copy_targets(
         return [(sources[0], dst)]
     pairs: list[tuple[PathSpec, PathSpec]] = []
     for src in sources:
-        name = src.mount_path.rstrip("/").rsplit("/", 1)[-1]
-        pairs.append((src, child_path(dst, name)))
+        pairs.append((src, child_path(dst, landing_name(src))))
     return pairs
+
+
+def landing_name(src: PathSpec) -> str:
+    """The name a source lands under inside a directory destination.
+
+    GNU names it after the operand as typed, so a link the router
+    followed still lands under its own name (``cp al dir`` makes
+    ``dir/al``, not ``dir/a.txt``). ``''``, ``.`` and ``..`` name no entry
+    of their own, so they keep the name of what they resolve to.
+
+    Args:
+        src (PathSpec): the source operand.
+    """
+    typed = src.raw_path.rstrip("/").rsplit("/", 1)[-1]
+    if typed not in ("", ".", ".."):
+        return typed
+    return src.mount_path.rstrip("/").rsplit("/", 1)[-1]
 
 
 async def path_exists(stat: StatFn, path: PathSpec) -> bool:

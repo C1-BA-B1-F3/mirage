@@ -19,6 +19,7 @@ from mirage.accessor.base import Accessor
 from mirage.cache.index import IndexCacheStore
 from mirage.commands.builtin.generic.cp import cp as generic_cp
 from mirage.commands.builtin.generic.cp import parse_flags
+from mirage.commands.builtin.generic.crossmount.utils import transfer_links
 from mirage.commands.builtin.generic.find import parse_find_args, walk_find
 from mirage.commands.builtin.generic_bind.adapter import (Builder, CommandIO,
                                                           Operation, bound_op,
@@ -130,15 +131,16 @@ async def cp(ops: CommandIO, accessor: Accessor, paths: list[PathSpec],
     overlay = opts.ns.stat_overlay if opts.ns is not None else None
     links = opts.ns.links if opts.ns is not None else None
     cwd = opts.cwd.virtual if opts.cwd is not None else "/"
-    return await generic_cp(paths,
-                            strategy=strategy,
-                            stat=overlayable_stat(ops, accessor, opts.index,
-                                                  overlay),
-                            flags=parsed,
-                            readdir=bound_op(ops.readdir, accessor,
-                                             opts.index),
-                            link_at=(partial(_typed_link, links, cwd)
-                                     if links is not None else None))
+    return await generic_cp(
+        paths,
+        strategy=strategy,
+        stat=overlayable_stat(ops, accessor, opts.index, overlay),
+        flags=parsed,
+        readdir=bound_op(ops.readdir, accessor, opts.index),
+        link_at=(partial(_typed_link, links, cwd)
+                 if links is not None else None),
+        copies=(transfer_links(links, opts.dispatch, cwd)
+                if links is not None and opts.dispatch is not None else None))
 
 
 def _typed_link(links: LinkView, cwd: str, path: PathSpec) -> FileStat | None:

@@ -25,8 +25,8 @@ import adapters  # noqa: E402
 import harness  # noqa: E402
 
 from mirage.concurrency import ConcurrencyLimiter  # noqa: E402
-from mirage.types import ReadPolicy  # noqa: E402
-from mirage.types import DEFAULT_READ_TTL, ReadSpec
+from mirage.types import ReadSpec  # noqa: E402
+from mirage.workspace.mount.read_policy import resolve_read_spec  # noqa: E402
 
 HOST = "python"
 
@@ -67,10 +67,23 @@ def read_spec_of(case: dict) -> ReadSpec:
     Args:
         case (dict): the integ case.
     """
-    policy = ReadPolicy(case["read"])
-    ttl = case.get("ttl")
-    return ReadSpec(policy=policy,
-                    ttl=DEFAULT_READ_TTL if ttl is None else int(ttl))
+    return resolve_read_spec(case["read"], case.get("ttl"))
+
+
+def mount_read_of(case: dict) -> dict[str, ReadSpec]:
+    """The per-mount policies a scenario case overrides its default with.
+
+    A selector like `read`: each named prefix runs under its own policy
+    and every other mount inherits `read`, which is the only way a case
+    can put two policies on one line. The case's `ttl` bounds each.
+
+    Args:
+        case (dict): the integ case.
+    """
+    return {
+        prefix: resolve_read_spec(policy, case.get("ttl"))
+        for prefix, policy in case.get("mount_read", {}).items()
+    }
 
 
 async def run_consistency_case(target: dict, case: dict,
@@ -78,7 +91,7 @@ async def run_consistency_case(target: dict, case: dict,
                                emit: list[dict] | None) -> None:
     spec = read_spec_of(case)
     read_ws, mutate, mutate_line, cleanup = await adapters.open_consistency(
-        target, spec)
+        target, spec, mount_read_of(case))
     try:
         exit_code, out, err = await harness.run_scenario(
             read_ws, mutate, mutate_line, case["scenario"])

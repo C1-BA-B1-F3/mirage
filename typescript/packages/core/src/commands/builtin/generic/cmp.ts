@@ -17,7 +17,7 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
-import { formatFsError, isFsError } from '../../../utils/errors.ts'
+import { formatFsError, isEisdir, isFsError } from '../../../utils/errors.ts'
 import { CMP_SIZE_UNITS, INTMAX, XSTRTOUMAX_PATTERN } from '../constants.ts'
 import { STDIN_OPERAND } from '../utils/constants.ts'
 import { formatRecords } from '../utils/output.ts'
@@ -110,13 +110,18 @@ interface CmpFlags {
 }
 
 function parseFlags(fl: FlagView): CmpFlags {
-  const nRaw = fl.asStr('n')
-  const iRaw = fl.asStr('i')
+  const silent = fl.asBool('quiet') || fl.asBool('silent')
+  const verbose = fl.asBool('verbose')
+  // diffutils refuses the pair while it reads the options, so ahead of any
+  // operand check.
+  if (silent && verbose) throw new UsageError(`cmp: options -l and -s are incompatible${TRY_HELP}`)
+  const nRaw = fl.asStr('bytes')
+  const iRaw = fl.asStr('ignore_initial')
   return {
-    silent: fl.asBool('s'),
-    verbose: fl.asBool('args_l'),
+    silent,
+    verbose,
     limit: nRaw === undefined ? null : parseCount(nRaw, '--bytes'),
-    printBytes: fl.asBool('b'),
+    printBytes: fl.asBool('print_bytes'),
     skip: iRaw === undefined ? [0, 0] : parseSkip(iRaw),
   }
 }
@@ -188,17 +193,32 @@ export async function cmpGeneric(
   if (isStdin(p0) && isStdin(p1)) return [null, new IOResult()]
   const names = [p0.rawPath, p1.rawPath] as const
   const read = stdinStream(stream, opts.stdin)
-  let data1: Uint8Array
-  let data2: Uint8Array
-  try {
-    data1 = await materialize(read(p0))
-    data2 = await materialize(read(p1))
-  } catch (err) {
-    if (!isFsError(err)) throw err
-    // GNU cmp reserves exit 1 for "files differ"; trouble (a missing or
-    // unreadable operand) is exit 2.
-    return [null, new IOResult({ exitCode: 2, stderr: formatFsError('cmp', err, paths) })]
+  // GNU cmp reserves exit 1 for "files differ"; trouble is exit 2.
+  // diffutils 3.10 opens both operands before it reads either, and -s drops
+  // the message only for an operand it cannot open: a directory opens, fails
+  // at its first read, and is reported whatever -s says, unless both operands
+  // name it, which is the same file at the same offset and so equal unread.
+  const data: Uint8Array[] = []
+  let unread: unknown = null
+  for (const p of [p0, p1]) {
+    try {
+      data.push(await materialize(read(p)))
+    } catch (err) {
+      if (isEisdir(err)) {
+        unread ??= err
+        data.push(new Uint8Array())
+        continue
+      }
+      if (!isFsError(err)) throw err
+      const stderr = parsed.silent ? null : formatFsError('cmp', err, paths)
+      return [null, new IOResult({ exitCode: 2, stderr })]
+    }
   }
+  if (p0.virtual === p1.virtual && parsed.skip[0] === parsed.skip[1]) return [null, new IOResult()]
+  if (unread !== null)
+    return [null, new IOResult({ exitCode: 2, stderr: formatFsError('cmp', unread, paths) })]
+  let data1 = data[0] ?? new Uint8Array()
+  let data2 = data[1] ?? new Uint8Array()
   const sizes: number[] = []
   if (!isStdin(p0)) sizes.push(data1.byteLength - parsed.skip[0])
   if (!isStdin(p1)) sizes.push(data2.byteLength - parsed.skip[1])

@@ -57,6 +57,6 @@ describe('gzip with a dash operand', () => {
 describe('gzip -d on inputs gzip refuses', () => {
   it('calls a truncated stdin an unexpected end', async () => {
     const cut = (await gzip(new TextEncoder().encode('hi\n'))).subarray(0, 10)
-    expect(await shell('gzip -dc', cut)).toEqual(['', 'gzip: stdin: unexpected end of file\n', 1])
+    expect(await shell('gzip -dc', cut)).toEqual(['', '\ngzip: stdin: unexpected end of file\n', 1])
   })
 })

@@ -57,6 +57,11 @@ export const SPECS: Record<string, CommandSpec> = {
       new Option({ short: '-r' }),
       new Option({ short: '-R', long: '--recursive' }),
       new Option({ short: '-a', long: '--archive' }),
+      // The link policy: the last of these and -a wins.
+      new Option({ short: '-L', long: '--dereference' }),
+      new Option({ short: '-P', long: '--no-dereference' }),
+      new Option({ short: '-H' }),
+      new Option({ short: '-d' }),
       // Non-interactive control plane (rm precedent): -f/-i are accepted
       // no-ops — there is no prompt, and an overwrite proceeds unless
       // -n/--update say otherwise.

@@ -54,7 +54,9 @@ const GNU_READ_EXIT: Record<string, [number, number]> = {
   "awk '{print}' {p}": [2, 2],
   'jq . {p}': [2, 2],
   'grep x {p}': [2, 2],
-  'cmp {p} {p}': [2, 2],
+  // One file named twice is equal unread, so the second operand is another
+  // file.
+  'cmp {p} /ram/dir/inner.txt': [2, 2],
   'sed -n p {p}': [4, 2],
   'gzip -c {p}': [2, 1],
   'gunzip -c {p}': [2, 1],
@@ -97,13 +99,15 @@ describe('a read that fails answers like GNU', () => {
       // FAILURE_WORDING's commands say the step in GNU's words where that
       // still names the operand (head/tail/uniq `error reading 'dir'`,
       // tac/tsort `dir: read error`, sed `read error on dir`); the rest say
-      // the house `<cmd>: <path>: Is a directory`, and awk mawk's `cannot
-      // open "dir" (Is a directory)` (see the python twin).
+      // the house `<cmd>: <path>: Is a directory`, awk mawk's `cannot open
+      // "dir" (Is a directory)` and the gzip family gzip's own `dir is a
+      // directory -- ignored` (see the python twin).
       expect(
         stderr.includes('/ram/dir: Is a directory') ||
           stderr.includes('/ram/dir: read error: Is a directory') ||
           stderr.includes("error reading '/ram/dir': Is a directory") ||
-          stderr.includes('cannot open "/ram/dir" (Is a directory)'),
+          stderr.includes('cannot open "/ram/dir" (Is a directory)') ||
+          stderr.includes('gzip: /ram/dir is a directory -- ignored'),
       ).toBe(true)
       expect(stderr).not.toContain('No such file')
     })
@@ -154,7 +158,7 @@ const GNU_MULTI: [string, number, string, string][] = [
     'zcat /ram/dir /ram/nope',
     1,
     '',
-    'zcat: /ram/dir: Is a directory\nzcat: /ram/nope: No such file or directory\n',
+    'gzip: /ram/dir is a directory -- ignored\ngzip: /ram/nope.gz: No such file or directory\n',
   ],
   // gzip's error outranks its warning in EITHER order, so the reversed line
   // is 1 too: `progerror` assigns ERROR outright while `WARN` assigns only
@@ -163,13 +167,13 @@ const GNU_MULTI: [string, number, string, string][] = [
     'zcat /ram/nope /ram/dir',
     1,
     '',
-    'zcat: /ram/nope: No such file or directory\nzcat: /ram/dir: Is a directory\n',
+    'gzip: /ram/nope.gz: No such file or directory\ngzip: /ram/dir is a directory -- ignored\n',
   ],
   [
     'zcat /ram/dir /ram/dir',
     2,
     '',
-    'zcat: /ram/dir: Is a directory\nzcat: /ram/dir: Is a directory\n',
+    'gzip: /ram/dir is a directory -- ignored\ngzip: /ram/dir is a directory -- ignored\n',
   ],
 ]
 

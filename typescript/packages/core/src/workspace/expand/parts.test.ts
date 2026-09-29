@@ -125,3 +125,14 @@ describe('expandParts', () => {
     expect(texts.every((t) => t === unmarkGlobs(t))).toBe(true)
   })
 })
+
+describe('expandWords at scale', () => {
+  // More words than a call takes as spread arguments, which is how a
+  // `push(...words)` overflowed the stack on `printf %s $(seq 1 300000)`.
+  it('splits a substitution into 300000 words', async () => {
+    const lines = Array.from({ length: 300_000 }, (_, i) => String(i + 1)).join('\n')
+    const { out } = await words('c $(seq 1 300000)', {}, `${lines}\n`)
+    expect(out.length).toBe(300_001)
+    expect(out.at(-1)).toBe('300000')
+  })
+})

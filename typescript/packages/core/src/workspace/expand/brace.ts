@@ -37,7 +37,7 @@ export function substitute(word: string, values: Chunk[][]): Chunk[] {
     if (literal !== '') out.push(piece(literal))
     if (j < 0) return out
     const k = word.indexOf(INERT_CLOSE, j)
-    out.push(...(values[Number(word.slice(j + 1, k))] ?? []))
+    for (const c of values[Number(word.slice(j + 1, k))] ?? []) out.push(c)
     i = k + 1
   }
 }

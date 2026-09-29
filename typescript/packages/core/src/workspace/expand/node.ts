@@ -410,7 +410,7 @@ export async function expandChunks(
       const child = children[position]
       if (child === undefined) continue
       if (child.type === '$' && children[position + 1]?.type === NT.STRING) continue
-      chunks.push(...(await expandChunks(child, session, executeFn, callStack, view)))
+      for (const c of await expandChunks(child, session, executeFn, callStack, view)) chunks.push(c)
     }
     return chunks
   }
@@ -464,7 +464,7 @@ async function stringChunks(
       splat = true
       yielded = yielded || pieces.length > 0
     }
-    chunks.push(...pieces)
+    for (const c of pieces) chunks.push(c)
   }
   if (splat && !yielded && joinChunks(chunks) === '') return []
   return chunks

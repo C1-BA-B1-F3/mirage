@@ -94,7 +94,7 @@ async function flatten(
       continue
     }
     const chunks = await expandChunks(child, session, executeFn, cs, view)
-    out.push(...splitFields(chunks, ifsValue(session, cs)).map((word) => unmarkGlobs(word)))
+    for (const word of splitFields(chunks, ifsValue(session, cs))) out.push(unmarkGlobs(word))
   }
   return true
 }

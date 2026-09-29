@@ -523,7 +523,7 @@ function operandLiteral(
     const ref = char === '$' ? scanParameter(text, index) : null
     if (ref !== null) {
       flush()
-      out.push(...parameterChunks(ref[0], session, callStack, quoted))
+      for (const c of parameterChunks(ref[0], session, callStack, quoted)) out.push(c)
       index = ref[1]
       continue
     }
@@ -576,7 +576,7 @@ async function nestedString(node: TSNodeLike, expandChild: ExpandChild): Promise
     else if (part.type === NT.STRING_CONTENT) text = part.text
     else if (part.type === NT.DQUOTE) text = part.text.slice(0, -1)
     else {
-      out.push(...(await expandChild(part, true)))
+      for (const c of await expandChild(part, true)) out.push(c)
       continue
     }
     out.push(piece(markGlobs(unescapeAll(text))))
@@ -613,13 +613,32 @@ async function wordChunks(
       literal += typeof part === 'string' ? part : part.text
       continue
     }
-    out.push(...operandLiteral(literal, quoted, session, callStack, out.length === 0 ? home : null))
+    for (const c of operandLiteral(
+      literal,
+      quoted,
+      session,
+      callStack,
+      out.length === 0 ? home : null,
+    ))
+      out.push(c)
     literal = ''
     if (quoted && part.type === NT.RAW_STRING) out.push(piece(markGlobs(part.text)))
-    else if (quoted && part.type === NT.STRING) out.push(...(await nestedString(part, expandChild)))
-    else out.push(...(await expandChild(part, quoted)))
+    else {
+      const chunks =
+        quoted && part.type === NT.STRING
+          ? await nestedString(part, expandChild)
+          : await expandChild(part, quoted)
+      for (const c of chunks) out.push(c)
+    }
   }
-  out.push(...operandLiteral(literal, quoted, session, callStack, out.length === 0 ? home : null))
+  for (const c of operandLiteral(
+    literal,
+    quoted,
+    session,
+    callStack,
+    out.length === 0 ? home : null,
+  ))
+    out.push(c)
   return out
 }
 

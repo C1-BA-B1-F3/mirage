@@ -222,15 +222,18 @@ def test_graphql_url_pairs_with_the_rest_base_as_gh_does(base, url):
 
 @pytest.mark.asyncio
 async def test_graphql_goes_outside_an_enterprise_rest_base(base_url):
+    # A slash-led `/graphql` is a REST path, as `gh api /graphql` is in gh.
     await github_request("t",
                          "POST",
-                         "/graphql", {"query": "{ viewer { login } }"},
+                         "graphql", {"query": "{ viewer { login } }"},
                          base_url=base_url + "/api/v3")
     await github_request("t",
                          "GET",
                          "/repos/o/r",
                          base_url=base_url + "/api/v3")
+    await github_request("t", "GET", "/graphql", base_url=base_url + "/api/v3")
     assert [(seen["method"], seen["path"]) for seen in SEEN] == [
         ("POST", "/api/graphql"),
         ("GET", "/api/v3/repos/o/r"),
+        ("GET", "/api/v3/graphql"),
     ]

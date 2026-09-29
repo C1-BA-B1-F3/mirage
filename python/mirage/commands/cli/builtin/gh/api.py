@@ -22,6 +22,7 @@ from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.client import GitHubApiError, github_request_response
 from mirage.core.github.config import GhConfig
+from mirage.core.github.constants import GRAPHQL_PATH
 from mirage.core.github.placeholder import expand
 from mirage.core.jq import jq_eval
 from mirage.io.types import ByteSource, IOResult
@@ -211,7 +212,8 @@ async def api(
     method = fl.as_str("method") or ("POST" if fields or has_input else "GET")
     upper = method.upper()
     path = expand(endpoint, inv.config)
-    path = path if path.startswith("/") else f"/{path}"
+    if path != GRAPHQL_PATH and not path.startswith("/"):
+        path = f"/{path}"
 
     params: dict[str, str] | None = None
     body: "JsonValue | None" = None

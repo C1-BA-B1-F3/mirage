@@ -83,12 +83,15 @@ describe('graphqlUrl', () => {
   })
 
   it('sends a GraphQL query outside an Enterprise REST base', async () => {
+    // A slash-led `/graphql` is a REST path, as `gh api /graphql` is in gh.
     const ghes = new HttpGitHubTransport({ token: 't', baseUrl: 'https://ghe.example/api/v3' })
-    await ghes.request('POST', '/graphql', { query: '{ viewer { login } }' })
+    await ghes.request('POST', 'graphql', { query: '{ viewer { login } }' })
     await ghes.get('/repos/o/r')
+    await ghes.get('/graphql')
     expect(SEEN.map((seen) => `${seen.method} ${seen.url}`)).toEqual([
       'POST https://ghe.example/api/graphql',
       'GET https://ghe.example/api/v3/repos/o/r',
+      'GET https://ghe.example/api/v3/graphql',
     ])
   })
 })

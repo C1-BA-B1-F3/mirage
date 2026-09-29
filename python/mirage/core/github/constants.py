@@ -26,6 +26,8 @@ SCOPE_ERROR = 5000
 # answer about the file, so the caller asks the whole tree instead, where a
 # real absence is honest and a refusal raises.
 DEFER_STATUSES = frozenset({404, 422})
-# The request path the transport sends to the install's GraphQL endpoint
-# instead of under its REST base (`graphql_url`).
-GRAPHQL_PATH = "/graphql"
+# The endpoint gh names GraphQL by (`gh api graphql`), which the transport
+# sends to the install's GraphQL endpoint (`graphql_url`) instead of under
+# its REST base. A REST path always leads with a slash, so `gh api
+# /graphql` stays a REST call, as gh's `p == "graphql"` has it.
+GRAPHQL_PATH = "graphql"

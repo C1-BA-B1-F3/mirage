@@ -269,7 +269,7 @@
       "command": "man gh | head -8",
       "expect": {
         "exit": 0,
-        "stdout": "gh: GitHub CLI\n\nUsage: gh [flags] <command> [<args>]\n\nCommands:\n  api       Make an authenticated GitHub API request\n  issue     Manage issues\n  pr        Manage pull requests\n",
+        "stdout": "gh: GitHub CLI\n\nUsage: gh [flags] <command> [<args>]\n\nCommands:\n  api                  Make an authenticated GitHub API request\n  issue                Manage issues\n  pr                   Manage pull requests\n",
         "stderr": ""
       }
     },

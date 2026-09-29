@@ -1122,9 +1122,9 @@ class BoxService:
     replaces naming the mount folder `integ-<runid>-<mount>` inside one shared
     account, which isolated runs only as far as a name collision.
 
-    Box is read-only through the workspace, so the harness tee-seeding cannot
-    run and the fixture is uploaded over the Box API instead, exactly as the
-    TypeScript host does it.
+    The fixture is uploaded over the Box API rather than tee-seeded through
+    the workspace, exactly as the TypeScript host does it: the folder id
+    becomes the mount root, mirroring how a real Box app scopes to a folder.
 
     Args:
         run_id (str): this run's id, which names its account.

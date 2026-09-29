@@ -13,7 +13,8 @@
         "sharepoint",
         "sharepoint-prefix",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "box"
       ],
       "read": "bounded",
       "ttl": 3,
@@ -65,7 +66,7 @@
         "stdout": "a.txt\na.txt\na.txt\nb.txt\na\n3\n",
         "stderr": ""
       },
-      "note": "Listings stay cached before ttl and include remote additions after expiry. Setup creates the OneDrive root and Drive parent folders. GitHub and HF Hub use overwrite cases in integ/vfs/github/listing_ttl.json and integ/vfs/hf_hub/listing_ttl.json because their fakes retain state. Mail/gapps have no shadow /data mount. Excludes ssh (TS listings are uncached) and box (no TS shadow workspace)."
+      "note": "Listings stay cached before ttl and include remote additions after expiry. Setup creates the OneDrive root and Drive parent folders. GitHub and HF Hub use overwrite cases in integ/vfs/github/listing_ttl.json and integ/vfs/hf_hub/listing_ttl.json because their fakes retain state. Mail/gapps have no shadow /data mount. Excludes ssh (TS listings are uncached)."
     },
     {
       "id": "listing_ttl_glob_first",
@@ -80,7 +81,8 @@
         "sharepoint",
         "sharepoint-prefix",
         "gdrive",
-        "gdrive-folder"
+        "gdrive-folder",
+        "box"
       ],
       "read": "bounded",
       "ttl": 3,

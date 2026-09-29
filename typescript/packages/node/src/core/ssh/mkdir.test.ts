@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
+import { runWithCacheManager, type CacheInvalidator } from '@struktoai/mirage-core/cache/context'
 import { FileType, PathSpec } from '@struktoai/mirage-core/types'
 import { makeFakeAccessor } from './_test_utils.ts'
 import { mkdir } from './mkdir.ts'
@@ -22,7 +23,66 @@ function spec(p: string): PathSpec {
   return PathSpec.fromStrPath(p)
 }
 
+class RecordingInvalidator implements CacheInvalidator {
+  readonly writes: string[] = []
+  readonly ancestors: string[] = []
+
+  invalidateAfterWrite(path: string | PathSpec): Promise<void> {
+    this.writes.push(typeof path === 'string' ? path : path.mountPath)
+    return Promise.resolve()
+  }
+
+  invalidateAfterUnlink(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  invalidateAncestors(path: PathSpec): Promise<void> {
+    this.ancestors.push(path.virtual)
+    return Promise.resolve()
+  }
+
+  invalidateSubtree(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  readThrough(_path: PathSpec, fetch: () => Promise<Uint8Array>): Promise<Uint8Array> {
+    return fetch()
+  }
+
+  cachedBytes(): Promise<Uint8Array | null> {
+    return Promise.resolve(null)
+  }
+
+  cachedSize(): Promise<number | null> {
+    return Promise.resolve(null)
+  }
+}
+
+async function record(path: string, recursive: boolean): Promise<RecordingInvalidator> {
+  const recorder = new RecordingInvalidator()
+  const accessor = makeFakeAccessor({ files: new Map(), dirs: new Map([['/', {}]]) })
+  await runWithCacheManager(recorder, async () => {
+    await mkdir(accessor, spec(path), recursive)
+  })
+  return recorder
+}
+
 describe('core/ssh/mkdir', () => {
+  // A cross-mount mkdir calls this directly, past the dispatcher's own
+  // eviction, so the parent's cached listing must be dropped here. Mirrors
+  // the python mkdir: the path always, its ancestors only with parents.
+  it('invalidates the new directory without parents', async () => {
+    const recorder = await record('/d', false)
+    expect(recorder.writes).toEqual(['/d'])
+    expect(recorder.ancestors).toEqual([])
+  })
+
+  it('invalidates the new directory and its ancestors with parents', async () => {
+    const recorder = await record('/a/b/c', true)
+    expect(recorder.writes).toEqual(['/a/b/c'])
+    expect(recorder.ancestors).toEqual(['/a/b/c'])
+  })
+
   it('creates a single directory', async () => {
     const accessor = makeFakeAccessor({
       files: new Map(),

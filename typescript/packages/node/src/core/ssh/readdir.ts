@@ -13,13 +13,17 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { FileEntryWithStats, Stats } from 'ssh2'
+import { IndexEntry, ResourceType } from '@struktoai/mirage-core/cache/index/config'
+import type { IndexCacheStore } from '@struktoai/mirage-core/cache/index/store'
 import type { PathSpec } from '@struktoai/mirage-core/types'
+import { epochToIso } from '@struktoai/mirage-core/utils/dates'
 import { listingError } from '@struktoai/mirage-core/utils/errors'
 import { mountPrefixOf } from '@struktoai/mirage-core/utils/key_prefix'
-import { stripSlash } from '@struktoai/mirage-core/utils/slash'
+import { rstripSlash, stripSlash } from '@struktoai/mirage-core/utils/slash'
 import { compareCodePoints } from '@struktoai/mirage-core/utils/sort'
 import type { SSHAccessor } from '../../accessor/ssh.ts'
-import { isDirectoryAttrs, isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
+import type { SshAttrs } from './entry.ts'
+import { isDirectoryAttrs, isFileAttrs, isNoSuchFile, joinRoot, stripPrefix } from './utils.ts'
 
 async function attrsOrNull(accessor: SSHAccessor, key: string): Promise<Stats | null> {
   const sftp = await accessor.sftp()
@@ -50,12 +54,20 @@ async function isDir(accessor: SSHAccessor, key: string): Promise<boolean> {
   return attrs !== null && isDirectoryAttrs(attrs)
 }
 
-export async function readdir(accessor: SSHAccessor, p: PathSpec): Promise<string[]> {
+export async function readdir(
+  accessor: SSHAccessor,
+  p: PathSpec,
+  index?: IndexCacheStore,
+): Promise<string[]> {
+  const mountPrefix = mountPrefixOf(p.virtual, p.vfsPath)
+  const virtual = p.pattern !== null ? p.directory.slice(mountPrefix.length) || '/' : stripPrefix(p)
+  const base = `/${stripSlash(virtual)}`
+  const virtualKey = rstripSlash(`${mountPrefix}${base}`) || '/'
+  if (index !== undefined) {
+    const listing = await index.listDir(virtualKey)
+    if (listing.entries !== undefined && listing.entries !== null) return listing.entries
+  }
   const sftp = await accessor.sftp()
-  const virtual =
-    p.pattern !== null
-      ? p.directory.slice(mountPrefixOf(p.virtual, p.vfsPath).length) || '/'
-      : stripPrefix(p)
   const remote = joinRoot(accessor.config.root ?? '/', virtual)
   const list = await new Promise<FileEntryWithStats[] | null>((resolveFn, rejectFn) => {
     sftp.readdir(remote, (err, entries) => {
@@ -75,14 +87,35 @@ export async function readdir(accessor: SSHAccessor, p: PathSpec): Promise<strin
       (key) => isDir(accessor, key),
     )
   }
-  const base = `/${stripSlash(virtual)}`
   const dirPrefix = base === '/' ? '/' : `${base}/`
-  const mountPrefix = mountPrefixOf(p.virtual, p.vfsPath)
-  const names: string[] = []
-  for (const entry of list) {
-    if (entry.filename === '.' || entry.filename === '..') continue
-    names.push(`${mountPrefix}${dirPrefix}${entry.filename}`)
+  const found = list
+    .filter((entry) => entry.filename !== '.' && entry.filename !== '..')
+    .sort((x, y) => compareCodePoints(x.filename, y.filename))
+  const names = found.map((entry) => `${mountPrefix}${dirPrefix}${entry.filename}`)
+  if (index !== undefined) {
+    // SFTP readdir already returns each entry's attrs, so the listing keeps
+    // type, size and mtime rather than discarding them. The attrs are
+    // lstat-style: only a regular file gets a size, since a symlink's
+    // link-text length is not what stat (which follows) or read serve.
+    // Mirrors the python readdir.
+    await index.setDir(
+      virtualKey,
+      found.map((entry) => {
+        // ssh2 types every field as present, but a server may leave the
+        // times (or size) out of a readdir entry; read them as optional.
+        const attrs: SshAttrs = entry.attrs
+        return [
+          entry.filename,
+          new IndexEntry({
+            id: `${dirPrefix}${entry.filename}`,
+            name: entry.filename,
+            resourceType: isDirectoryAttrs(attrs) ? ResourceType.FOLDER : ResourceType.FILE,
+            size: isFileAttrs(attrs) ? (attrs.size ?? null) : null,
+            remoteTime: attrs.mtime !== undefined ? epochToIso(attrs.mtime) : '',
+          }),
+        ]
+      }),
+    )
   }
-  names.sort(compareCodePoints)
   return names
 }

@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
-import { RunState, run } from '@openai/agents'
+import { RunState, run, type ApplyPatchResult } from '@openai/agents'
 import {
   Manifest,
   SandboxAgent,
@@ -32,6 +32,10 @@ function mkWs(): Workspace {
     { '/': new RAMVFS(), '/ro': [new RAMVFS(), MountMode.READ] },
     { mode: MountMode.WRITE },
   )
+}
+
+function statusOf(result: ApplyPatchResult | void): string | undefined {
+  return result ? result.status : undefined
 }
 
 function outputOf(response: string): string {
@@ -127,7 +131,7 @@ describe('MirageSandboxClient', () => {
       path: 'pkg/new.py',
       diff: '+x = 1\n',
     })
-    expect(created.status).toBe('completed')
+    expect(statusOf(created)).toBe('completed')
     expect(await ws.vfs.readFileText('/project/pkg/new.py')).toBe('x = 1')
     expect(writes.mock.calls.map((call) => [call[0], call[2]])).toEqual([
       ['/project/pkg/new.py', session.sessionId],
@@ -137,9 +141,9 @@ describe('MirageSandboxClient', () => {
       path: 'pkg/new.py',
       diff: '@@\n-x = 1\n+x = 2\n',
     })
-    expect(updated.status).toBe('completed')
+    expect(statusOf(updated)).toBe('completed')
     expect(await ws.vfs.readFileText('/project/pkg/new.py')).toBe('x = 2')
-    expect((await editor.deleteFile({ type: 'delete_file', path: 'pkg/new.py' })).status).toBe(
+    expect(statusOf(await editor.deleteFile({ type: 'delete_file', path: 'pkg/new.py' }))).toBe(
       'completed',
     )
     expect(await ws.vfs.exists('/project/pkg/new.py')).toBe(false)
@@ -150,7 +154,7 @@ describe('MirageSandboxClient', () => {
     const result = await session
       .createEditor()
       .createFile({ type: 'create_file', path: '/ro/sub/new.py', diff: '+x\n' })
-    expect(result.status).toBe('failed')
+    expect(statusOf(result)).toBe('failed')
   })
 
   it('closes the session when the manifest cannot be written', async () => {

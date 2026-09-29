@@ -12,13 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from typing import TYPE_CHECKING
-
 from mirage.accessor.base import Accessor
 from mirage.core.google.client import TokenManager
-
-if TYPE_CHECKING:
-    from mirage.vfs.gdrive.config import GoogleDriveConfig
+from mirage.core.google.config import GoogleConfig
 
 
 class GDriveAccessor(Accessor):
@@ -28,7 +24,7 @@ class GDriveAccessor(Accessor):
     # the first resolution.
     root_drive_id: str | None
 
-    def __init__(self, config: "GoogleDriveConfig",
+    def __init__(self, config: GoogleConfig,
                  token_manager: TokenManager) -> None:
         self.config = config
         self.token_manager = token_manager

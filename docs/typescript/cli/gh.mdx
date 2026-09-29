@@ -52,6 +52,14 @@ remote and checkout. A workspace has neither, so the install carries them:
 `{owner}`/`{repo}`/`{branch}` placeholders. Two installs under different head words are two
 accounts.
 
+## Authentication status
+
+`gh auth status` checks the configured token with `GET /user`, reports the
+host and account, and exits 1 when GitHub rejects the credential. It needs
+no mount. The token source is reported as `Mirage configuration`: configuration
+retains the resolved secret, not the environment variable or file that supplied
+it. The credential itself is never printed.
+
 ## Reading is the mount, acting is the CLI
 
 ```bash

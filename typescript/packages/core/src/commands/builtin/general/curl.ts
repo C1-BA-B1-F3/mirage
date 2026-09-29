@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import type { Accessor } from '../../../accessor/base.ts'
-import { IOResult } from '../../../io/types.ts'
+import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
@@ -26,10 +26,12 @@ import {
   isHttpError,
 } from '../utils/http.ts'
 import { UsageError } from '../../errors.ts'
-import { gnuStrerror, isFsError } from '../../../utils/errors.ts'
+import { gnuStrerror, isFsError, isWalkError, enotsup } from '../../../utils/errors.ts'
 import { rstripSlash, stripSlash } from '../../../utils/slash.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 import { FlagView } from '../../spec/flag_view.ts'
+
+import { renderWriteOut } from './curl_write_out.ts'
 
 const ENC = new TextEncoder()
 
@@ -41,6 +43,7 @@ const EXIT_USAGE = 2
 const EXIT_CONNECT = 7
 const EXIT_HTTP_ERROR = 22
 const EXIT_WRITE = 23
+const EXIT_READ = 26
 const EXIT_TIMEOUT = 28
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -158,7 +161,11 @@ async function curlCommand(
   const request = fl.asStr('request') ?? null
   const data = fl.asStr('data') ?? null
   const form = fl.asStr('form') ?? null
-  const output = fl.asStr('output') ?? null
+  const outputValue = fl.raw('output')
+  const output =
+    outputValue instanceof PathSpec && outputValue.rawPath === '-'
+      ? '-'
+      : (fl.asStr('output') ?? null)
   const location = fl.asBool('location')
   const failOnError = fl.asBool('fail')
   const verbose = fl.asBool('verbose')
@@ -202,6 +209,53 @@ async function curlCommand(
   // A zero --max-time is curl's "no limit", not a deadline of zero.
   const timeoutMs =
     maxTime === undefined ? DEFAULT_TIMEOUT_MS : maxTime === 0 ? null : maxTime * 1000
+  let template = fl.asStr('write_out') ?? ''
+  if (template.startsWith('@')) {
+    try {
+      let content: ByteSource | null = opts.stdin ?? null
+      if (template !== '@-') {
+        if (opts.dispatch === undefined) throw enotsup('unavailable', 'read', template.slice(1))
+        const [format] = await opts.dispatch('read', resolveTarget(template.slice(1), opts.cwd), [])
+        content = format as ByteSource
+      }
+      template = new TextDecoder().decode(await materialize(content))
+    } catch (err) {
+      if (!isWalkError(err)) throw err
+      // curl 8.14.1: -s suppresses only the opening diagnostic; -S does
+      // not restore it. Parsed flags lose their spelling, so use -w.
+      const detail = fl.asBool('silent') ? '' : `curl: Failed to open ${template.slice(1)}\n`
+      const failure = new UsageError(
+        `${detail}curl: option -w: error encountered when reading a file\n${HELP_HINT}`,
+        EXIT_READ,
+      )
+      failure.cause = err
+      throw failure
+    }
+  }
+  const started = performance.now()
+  const finish = async (
+    stdout: ByteSource | null,
+    io: IOResult,
+    response?: HttpResponse,
+  ): Promise<CommandFnResult> => {
+    const code = String(response?.status ?? 0).padStart(3, '0')
+    const [out, err] = renderWriteOut(template, {
+      http_code: code,
+      response_code: code,
+      url_effective: response?.url ?? url,
+      num_redirects: String(response?.history.length ?? 0),
+      size_download: String(response?.body.length ?? 0),
+      content_type: response?.headers.find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? '',
+      method:
+        response?.method ??
+        request ??
+        (head ? 'HEAD' : data !== null || form !== null ? 'POST' : 'GET'),
+      exitcode: String(io.exitCode),
+      time_total: ((performance.now() - started) / 1000).toFixed(6),
+    })
+    io.stderr = concat(await materialize(io.stderr), err)
+    return [concat(await materialize(stdout), out), io]
+  }
   let method: string
   let bodyLen: number | null = null
   let bodyType: string | null = null
@@ -240,23 +294,23 @@ async function curlCommand(
       // Nothing was received: the body is read whole, so a deadline that
       // hits mid-transfer still counts as zero bytes here.
       const line = `curl: (${String(EXIT_TIMEOUT)}) Operation timed out after ${String(err.elapsedMs)} milliseconds with 0 bytes received\n`
-      return [
+      return await finish(
         null,
         new IOResult({
           exitCode: EXIT_TIMEOUT,
           stderr: quiet ? new Uint8Array() : ENC.encode(line),
         }),
-      ]
+      )
     }
     if (!(err instanceof HttpConnectError)) throw err
     const line = `curl: (${String(EXIT_CONNECT)}) Failed to connect to ${err.host} port ${String(err.port)}: Could not connect to server\n`
-    return [
+    return await finish(
       null,
       new IOResult({
         exitCode: EXIT_CONNECT,
         stderr: quiet ? new Uint8Array() : ENC.encode(line),
       }),
-    ]
+    )
   }
   const hops = [...resp.history, resp]
   // The first request is the one this handler built; each redirect's is
@@ -293,13 +347,14 @@ async function curlCommand(
   // Only -f makes an error status an error, and then nothing is written.
   if (failOnError && isHttpError(resp)) {
     const line = `curl: (${String(EXIT_HTTP_ERROR)}) The requested URL returned error: ${String(resp.status)}\n`
-    return [
+    return await finish(
       null,
       new IOResult({
         exitCode: EXIT_HTTP_ERROR,
         stderr: concat(trace, quiet ? new Uint8Array() : ENC.encode(line)),
       }),
-    ]
+      resp,
+    )
   }
   let result = resp.body
   // -i and -I print every hop's header block (curl 8.7.1); the body a
@@ -311,7 +366,7 @@ async function curlCommand(
   } else if (include) {
     result = concat(blocks, result)
   }
-  if (output !== null) {
+  if (output !== null && output !== '-') {
     if (opts.dispatch !== undefined) {
       const scope = resolveTarget(output, opts.cwd)
       try {
@@ -331,19 +386,20 @@ async function curlCommand(
         const detail =
           !raw && strerror !== null ? strerror : err instanceof Error ? err.message : String(err)
         const line = `curl: (${String(EXIT_WRITE)}) ${output}: ${detail}\n`
-        return [
+        return await finish(
           null,
           new IOResult({
             exitCode: EXIT_WRITE,
             stderr: concat(trace, quiet ? new Uint8Array() : ENC.encode(line)),
           }),
-        ]
+          resp,
+        )
       }
     }
     // Real curl writes the body to the file and prints nothing on stdout.
-    return [null, new IOResult({ writes: { [output]: result }, stderr: trace })]
+    return await finish(null, new IOResult({ writes: { [output]: result }, stderr: trace }), resp)
   }
-  return [result, new IOResult({ stderr: trace })]
+  return await finish(result, new IOResult({ stderr: trace }), resp)
 }
 
 export const GENERAL_CURL = command({

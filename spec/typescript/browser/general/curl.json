@@ -95,6 +95,24 @@
       "type": "bool"
     },
     {
+      "description": "Accept IPv4 preference (transport selects the address family).",
+      "long": "--ipv4",
+      "short": "-4",
+      "type": "bool"
+    },
+    {
+      "description": "Accept IPv6 preference (transport selects the address family).",
+      "long": "--ipv6",
+      "short": "-6",
+      "type": "bool"
+    },
+    {
+      "description": "Print transfer information after completion.",
+      "long": "--write-out",
+      "short": "-w",
+      "type": "str"
+    },
+    {
       "description": "Give up after this many seconds.",
       "long": "--max-time",
       "short": "-m",

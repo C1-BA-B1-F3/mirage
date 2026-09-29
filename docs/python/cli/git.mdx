@@ -65,6 +65,25 @@ git --git-dir=/repo/.git --work-tree=/repo status --short
 GIT_DIR=/repo/.git git log --oneline -1
 ```
 
+## Initialization and repository checks
+
+`git init [-q] [-b <branch>] [--bare] [<directory>]` creates a repository
+through the mount dispatcher. Reinitializing preserves existing objects,
+configuration and HEAD. The default initial branch is `master`; use `-b`
+to choose another. Host templates, hooks and the default-branch advisory
+are omitted.
+
+`git help [<command>]` renders the same declared grammar as `--help`.
+`git stash list` reads the stash reflog, and `git stash show [-p | --stat |
+--name-only] [<stash>]` compares the saved working tree with its original
+base. Numeric selectors and `stash@{n}` work with stashes made by native Git.
+Stash creation, application and deletion are not implemented.
+
+`git fsck [--full] [--no-dangling]` checks loose and packed object hashes,
+decoding and connectivity, using refs, the index and reflogs as roots.
+Missing and corrupt objects cause a nonzero exit. Corruption diagnostics
+retain the object ID and cause; their wording can differ from native Git.
+
 ## Verbs
 
 ### Inspect

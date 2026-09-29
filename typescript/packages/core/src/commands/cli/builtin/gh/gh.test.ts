@@ -641,6 +641,17 @@ describe('gh api --jq', () => {
     expect(out === null ? '' : text(out)).toBe(`${line}\n`)
   })
 
+  // gh prints a computed negative zero as -0, but jq.py hands it to Python as
+  // the int 0, so both hosts print 0.
+  it.each([
+    ['.n * 0 * -1', '0'],
+    ['[.n * 0 * -1]', '[0]'],
+  ])('prints the negative zero of %s as 0', async (program, line) => {
+    reset({ n: 5000 })
+    const out = await api(inv(['repos/o/r'], { jq: program }))
+    expect(out === null ? '' : text(out)).toBe(`${line}\n`)
+  })
+
   it('prints null as an empty line', async () => {
     reset({ name: 'r' })
     const out = await api(inv(['repos/o/r'], { jq: '.nope' }))

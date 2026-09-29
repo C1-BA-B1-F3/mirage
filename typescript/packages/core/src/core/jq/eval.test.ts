@@ -632,6 +632,7 @@ describe('jqRaised', () => {
     ['try error("x") catch error("wrapped: " + .)', true],
     ['now, error("x")', true],
     ['[now] | .[0], error("y")', true],
+    ['range(20000), error("many")', true],
     ['.a | .b', false],
     ['label $out | .a | .b', false],
     ['try error("x") catch (.a | .b)', false],

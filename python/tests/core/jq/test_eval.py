@@ -268,6 +268,7 @@ def test_halt_error_refuses_a_code_that_is_not_a_number_as_jq_does():
     ('try error("x") catch error("wrapped: " + .)', True),
     ('now, error("x")', True),
     ('[now] | .[0], error("y")', True),
+    ('range(20000), error("many")', True),
     (".a | .b", False),
     ("label $out | .a | .b", False),
     ('try error("x") catch (.a | .b)', False),

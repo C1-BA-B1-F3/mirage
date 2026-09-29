@@ -755,6 +755,19 @@ async def test_api_jq_prints_each_output_as_go_gh_does(program, line):
     assert await materialize(out) == f"{line}\n".encode()
 
 
+# gh prints a computed negative zero as -0, but jq.py hands it to Python as
+# the int 0, so both hosts print 0.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, line", [
+    (".n * 0 * -1", "0"),
+    ("[.n * 0 * -1]", "[0]"),
+])
+async def test_api_jq_prints_negative_zero_as_zero(program, line):
+    _reset({"n": 5000})
+    out, _io = await api(_inv(["repos/o/r"], {"jq": program}))
+    assert await materialize(out) == f"{line}\n".encode()
+
+
 @pytest.mark.asyncio
 async def test_api_jq_prints_null_as_an_empty_line():
     _reset({"name": "r"})

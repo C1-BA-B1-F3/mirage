@@ -538,13 +538,27 @@ function sameError(stop: JqError | JqHalt | null, run: JqRun): boolean {
   )
 }
 
-/** A rerun's outputs, one per line jq-wasm printed, or null when jq refused it. */
-function rerunValues(result: jqWasm.JqResult): unknown[] | null {
-  if (refused(result)) return null
-  return result.stdout
-    .split('\n')
-    .filter((line) => line !== '')
-    .map((line) => JSON.parse(line) as unknown)
+/**
+ * A rerun's outputs as a verdict reads them, or null when jq refused the
+ * program. A verdict only counts the plain outputs, so the lines are read one
+ * at a time, and a line is parsed only when it carries the token every mark,
+ * stop and sentinel carries; any other stands as null.
+ */
+function rerunValues(result: jqWasm.JqResult): Iterable<unknown> | null {
+  return refused(result) ? null : rerunLines(result.stdout)
+}
+
+/** The values behind rerunValues, one line jq-wasm printed at a time. */
+function* rerunLines(stdout: string): Generator {
+  let start = 0
+  while (start < stdout.length) {
+    const newline = stdout.indexOf('\n', start)
+    const end = newline === -1 ? stdout.length : newline
+    const line = stdout.slice(start, end)
+    start = end + 1
+    if (line === '') continue
+    yield line.includes(TOKEN) ? (JSON.parse(line) as unknown) : null
+  }
 }
 
 /**
@@ -554,7 +568,7 @@ function rerunValues(result: jqWasm.JqResult): unknown[] | null {
  * stops anywhere else, which a `catch` of the program's own that reads a
  * wrapped value can make it do.
  */
-function wrappedVerdict(values: readonly unknown[], run: JqRun): boolean | null {
+function wrappedVerdict(values: Iterable<unknown>, run: JqRun): boolean | null {
   let printed = 0
   for (const value of values) {
     const raised = raisedMark(value)
@@ -574,7 +588,7 @@ function wrappedVerdict(values: readonly unknown[], run: JqRun): boolean | null 
  * raising it shows the program raised the one a run stopped at: it printed as
  * many outputs as the run did, and that error's mark last.
  */
-function markedVerdict(values: readonly unknown[], run: JqRun): boolean | null {
+function markedVerdict(values: Iterable<unknown>, run: JqRun): boolean | null {
   let printed = 0
   let last: JqError | null = null
   for (const value of values) {

@@ -23,10 +23,12 @@ import pytest
 from agents import Runner, RunState
 from agents.run import RunConfig
 from agents.sandbox import Manifest, SandboxAgent, SandboxRunConfig
+from agents.sandbox.apply_patch import WorkspaceEditor
 from agents.sandbox.capabilities import Shell
 from agents.sandbox.capabilities.shell import ShellToolSet
 from agents.sandbox.entries import File
 from agents.sandbox.errors import ExecTimeoutError
+from agents.sandbox.manifest import Environment
 from agents.sandbox.session.sandbox_session_state import SandboxSessionState
 
 from mirage.agents.openai_agents.constants import (INTERRUPT,
@@ -378,5 +380,58 @@ def test_an_approved_command_resumes_through_the_runner(scripted_model):
             state.approve(interruption)
         result = await Runner.run(agent, state, run_config=config)
         assert "resumed" in result.final_output
+
+    asyncio.run(_run())
+
+
+def test_commands_see_the_manifest_environment():
+
+    async def _run():
+        session = await _make_client().create(manifest=Manifest(
+            root="/project", environment=Environment(value={"GREETING": "hi"}))
+                                              )
+        await session.start()
+        assert (await session.exec("echo $GREETING")).stdout == b"hi\n"
+        update = await session.pty_exec_start("echo $GREETING")
+        assert update.output == b"hi\n"
+
+    asyncio.run(_run())
+
+
+def test_a_background_command_raises_on_its_timeout():
+
+    async def _run():
+        session = await _make_client().create()
+        started = await session.pty_exec_start("sleep 5",
+                                               timeout=0.3,
+                                               yield_time_s=0.25)
+        assert started.process_id is not None
+        with pytest.raises(ExecTimeoutError):
+            await session.pty_write_stdin(session_id=started.process_id,
+                                          chars="",
+                                          yield_time_s=3)
+
+    asyncio.run(_run())
+
+
+def test_apply_patch_writes_inside_the_sandbox_session():
+
+    async def _run():
+        ws = _workspace()
+        session = await MirageSandboxClient(ws).create()
+        seen: list[str | None] = []
+        write = ws.vfs.write
+
+        async def recording_write(path, data, *, session_id=None):
+            seen.append(session_id)
+            await write(path, data, session_id=session_id)
+
+        ws.vfs.write = recording_write
+        await WorkspaceEditor(session).apply_patch({
+            "type": "create_file",
+            "path": "pkg/new.py",
+            "diff": "+x = 1\n",
+        })
+        assert seen == [f"openai-{session.state.session_id.hex}"]
 
     asyncio.run(_run())

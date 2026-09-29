@@ -108,18 +108,26 @@ class MirageSandboxSession(BaseSandboxSession):
         *command: str | Path,
         timeout: float | None = None,
     ) -> ExecResult:
+        return await self._run(shell_line(command, True), timeout)
+
+    async def _run(self,
+                   line: str,
+                   timeout: float | None = None) -> ExecResult:
         try:
             async with asyncio.timeout(timeout) as deadline:
-                return await self._run(shell_line(command, True))
+                return await self._shell(line)
         except TimeoutError as exc:
             if not deadline.expired():
                 raise
-            raise ExecTimeoutError(command=command, timeout_s=timeout) from exc
+            raise ExecTimeoutError(command=(line, ),
+                                   timeout_s=timeout) from exc
 
-    async def _run(self, line: str) -> ExecResult:
+    async def _shell(self, line: str) -> ExecResult:
+        env = await self.state.manifest.environment.resolve()
         io_result = await self._ws.shell(line,
                                          session_id=self._session_id,
-                                         cwd=self.state.manifest.root)
+                                         cwd=self.state.manifest.root,
+                                         env=env or None)
         stdout = await io_result.materialize_stdout()
         stderr = with_refusal_bytes(await io_result.materialize_stderr(),
                                     io_result.refusal)
@@ -142,7 +150,7 @@ class MirageSandboxSession(BaseSandboxSession):
     ) -> PtyExecUpdate:
         process_id = allocate_pty_process_id(set(self._lines))
         self._lines[process_id] = asyncio.create_task(
-            self._run(shell_line(command, bool(shell))))
+            self._run(shell_line(command, bool(shell)), timeout))
         yield_ms = (DEFAULT_EXEC_YIELD_MS
                     if yield_time_s is None else int(yield_time_s * 1000))
         return await self._collect(process_id,

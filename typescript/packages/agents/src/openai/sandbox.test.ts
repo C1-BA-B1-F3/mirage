@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { RunState, run } from '@openai/agents'
 import {
   Manifest,
@@ -108,6 +108,60 @@ describe('MirageSandboxClient', () => {
       }),
     )
     expect(await ws.vfs.readFileText('/workspace/a/b/c.txt')).toBe('deep')
+  })
+
+  it('passes the manifest environment to every command', async () => {
+    const session = await new MirageSandboxClient(mkWs()).create(
+      new Manifest({ root: '/project', environment: { GREETING: 'hi' } }),
+    )
+    expect((await session.exec({ cmd: 'echo $GREETING' })).stdout).toBe('hi\n')
+  })
+
+  it('patches files inside the sandbox session, resolved against the root', async () => {
+    const ws = mkWs()
+    const session = await new MirageSandboxClient(ws).create(new Manifest({ root: '/project' }))
+    const writes = vi.spyOn(ws.vfs, 'writeFile')
+    const editor = session.createEditor()
+    const created = await editor.createFile({
+      type: 'create_file',
+      path: 'pkg/new.py',
+      diff: '+x = 1\n',
+    })
+    expect(created.status).toBe('completed')
+    expect(await ws.vfs.readFileText('/project/pkg/new.py')).toBe('x = 1')
+    expect(writes.mock.calls.map((call) => [call[0], call[2]])).toEqual([
+      ['/project/pkg/new.py', session.sessionId],
+    ])
+    const updated = await editor.updateFile({
+      type: 'update_file',
+      path: 'pkg/new.py',
+      diff: '@@\n-x = 1\n+x = 2\n',
+    })
+    expect(updated.status).toBe('completed')
+    expect(await ws.vfs.readFileText('/project/pkg/new.py')).toBe('x = 2')
+    expect((await editor.deleteFile({ type: 'delete_file', path: 'pkg/new.py' })).status).toBe(
+      'completed',
+    )
+    expect(await ws.vfs.exists('/project/pkg/new.py')).toBe(false)
+  })
+
+  it('reports a patch under a read-only mount as failed', async () => {
+    const session = await new MirageSandboxClient(mkWs()).create()
+    const result = await session
+      .createEditor()
+      .createFile({ type: 'create_file', path: '/ro/sub/new.py', diff: '+x\n' })
+    expect(result.status).toBe('failed')
+  })
+
+  it('closes the session when the manifest cannot be written', async () => {
+    const ws = mkWs()
+    const before = ws.listSessions().length
+    await expect(
+      new MirageSandboxClient(ws).create(
+        new Manifest({ entries: { 'x.txt': { type: 'local_file', src: '/etc/hosts' } } }),
+      ),
+    ).rejects.toBeInstanceOf(SandboxUnsupportedFeatureError)
+    expect(ws.listSessions()).toHaveLength(before)
   })
 
   it('refuses an entry type it cannot materialize', async () => {

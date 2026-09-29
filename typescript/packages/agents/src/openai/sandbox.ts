@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import type { ApplyPatchOperation, ApplyPatchResult, Editor, ToolOutputImage } from '@openai/agents'
+import { applyDiff, type Editor, type ToolOutputImage } from '@openai/agents'
 import {
   Manifest,
   SandboxUnsupportedFeatureError,
@@ -64,7 +64,6 @@ import {
   INTERRUPTED_EXIT_CODE,
   NO_STDIN,
 } from './constants.ts'
-import { MirageEditor } from './editor.ts'
 
 export interface MirageSandboxSessionState extends SandboxSessionState {
   mirageSessionId: string
@@ -122,31 +121,16 @@ async function settleWithin(line: Line, ms: number): Promise<boolean> {
   }
 }
 
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export function combinedOutput(outcome: LineOutcome): string {
   const { stdout, stderr } = outcome
   if (stdout !== '' && stderr !== '') {
     return `${stdout}${stdout.endsWith('\n') ? '' : '\n'}${stderr}`
   }
   return stdout || stderr
-}
-
-class RootedEditor implements Editor {
-  constructor(
-    private readonly editor: MirageEditor,
-    private readonly resolve: (path: string) => string,
-  ) {}
-
-  createFile(op: Extract<ApplyPatchOperation, { type: 'create_file' }>): Promise<ApplyPatchResult> {
-    return this.editor.createFile({ ...op, path: this.resolve(op.path) })
-  }
-
-  updateFile(op: Extract<ApplyPatchOperation, { type: 'update_file' }>): Promise<ApplyPatchResult> {
-    return this.editor.updateFile({ ...op, path: this.resolve(op.path) })
-  }
-
-  deleteFile(op: Extract<ApplyPatchOperation, { type: 'delete_file' }>): Promise<ApplyPatchResult> {
-    return this.editor.deleteFile({ ...op, path: this.resolve(op.path) })
-  }
 }
 
 /**
@@ -181,7 +165,37 @@ export class MirageSandboxSession implements SandboxSession<MirageSandboxSession
   }
 
   createEditor(): Editor {
-    return new RootedEditor(new MirageEditor(this.workspace), (path) => this.resolve(path))
+    return {
+      createFile: async (op) => {
+        const path = this.resolve(op.path)
+        try {
+          await this.mkdirP(posixDirname(path))
+        } catch (error) {
+          return { status: 'failed', output: errorText(error) }
+        }
+        await this.workspace.vfs.writeFile(path, applyDiff('', op.diff, 'create'), this.sessionId)
+        return { status: 'completed' }
+      },
+      updateFile: async (op) => {
+        const path = this.resolve(op.path)
+        let current: string
+        try {
+          current = await this.workspace.vfs.readFileText(path, 'utf-8', this.sessionId)
+        } catch (error) {
+          return { status: 'failed', output: errorText(error) }
+        }
+        await this.workspace.vfs.writeFile(path, applyDiff(current, op.diff), this.sessionId)
+        return { status: 'completed' }
+      },
+      deleteFile: async (op) => {
+        const path = this.resolve(op.path)
+        if (!(await this.workspace.vfs.exists(path, this.sessionId))) {
+          return { status: 'failed', output: `File not found: ${op.path}` }
+        }
+        await this.workspace.vfs.unlink(path, this.sessionId)
+        return { status: 'completed' }
+      },
+    }
   }
 
   async execCommand(args: ExecCommandArgs): Promise<string> {
@@ -191,8 +205,14 @@ export class MirageSandboxSession implements SandboxSession<MirageSandboxSession
   async exec(args: ExecCommandArgs): Promise<SandboxExecResult> {
     const start = Date.now()
     const cwd = this.resolve(args.workdir ?? '.')
+    const env = await this.state.manifest.resolveEnvironment()
     const line = new Line((signal) =>
-      this.workspace.shell(args.cmd, { sessionId: this.sessionId, cwd, signal }),
+      this.workspace.shell(args.cmd, {
+        sessionId: this.sessionId,
+        cwd,
+        signal,
+        ...(Object.keys(env).length > 0 ? { env } : {}),
+      }),
     )
     if (!(await settleWithin(line, args.yieldTimeMs ?? DEFAULT_EXEC_YIELD_MS))) {
       const sessionId = this.nextProcessId++
@@ -409,8 +429,7 @@ export class MirageSandboxClient implements SandboxClient<
       mirageSessionId: `openai-${crypto.randomUUID().replaceAll('-', '')}`,
       workspaceReady: false,
     })
-    await session.materializeManifest(manifest)
-    session.state.workspaceReady = true
+    await this.materializeOrClose(session, manifest)
     return session
   }
 
@@ -425,10 +444,7 @@ export class MirageSandboxClient implements SandboxClient<
     const preserved =
       state.workspaceReady === true &&
       (await this.workspace.vfs.exists(state.manifest.root, session.sessionId))
-    if (!preserved) {
-      await session.materializeManifest(state.manifest)
-      session.state.workspaceReady = true
-    }
+    if (!preserved) await this.materializeOrClose(session, state.manifest)
     return session
   }
 
@@ -452,6 +468,19 @@ export class MirageSandboxClient implements SandboxClient<
       mirageSessionId: readString(record, 'mirageSessionId'),
       workspaceReady: record.workspaceReady === true,
     })
+  }
+
+  private async materializeOrClose(
+    session: MirageSandboxSession,
+    manifest: Manifest,
+  ): Promise<void> {
+    try {
+      await session.materializeManifest(manifest)
+    } catch (error) {
+      await this.delete(session.state)
+      throw error
+    }
+    session.state.workspaceReady = true
   }
 
   private open(state: MirageSandboxSessionState): MirageSandboxSession {

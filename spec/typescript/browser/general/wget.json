@@ -27,6 +27,12 @@
       "type": "bool"
     },
     {
+      "description": "Set the network timeout in seconds (zero disables it).",
+      "long": "--timeout",
+      "short": "-T",
+      "type": "float"
+    },
+    {
       "description": "Check that the URL exists without downloading it.",
       "long": "--spider",
       "type": "bool"

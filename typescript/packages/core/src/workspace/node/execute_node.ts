@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { timingReport } from './timing.ts'
 import { PathSpec } from '../../types.ts'
 import { runWithSession } from '../../context/session_context.ts'
 import { isProgramInvocation, runAsProgram } from '../../context/session_context.ts'
@@ -837,6 +838,30 @@ async function executeNodeBody(
       io.stderr = null
     }
     return [null, io, execNode]
+  }
+
+  if (kind === NodeKind.TIMED) {
+    const started = performance.now()
+    const inner = node.namedChildren[0]
+    if (inner === undefined) throw new Error('timed statement has no body')
+    const [body, io, execNode] = await stream(inner, session, stdin, callStack)
+    const stdout = await applyBarrier(body, io, BarrierPolicy.VALUE)
+    const elapsed = (performance.now() - started) / 1000
+    const stderr = await io.materializeStderr()
+    const reports = [...(node.timing ?? [])]
+      .reverse()
+      .map((portable) => timingReport(elapsed, portable, session.env.TIMEFORMAT))
+    const merged = new Uint8Array(
+      stderr.length + reports.reduce((n, report) => n + report.length, 0),
+    )
+    merged.set(stderr)
+    let offset = stderr.length
+    for (const report of reports) {
+      merged.set(report, offset)
+      offset += report.length
+    }
+    io.stderr = merged
+    return [stdout, io, execNode]
   }
 
   if (kind === NodeKind.COMMENT) {

@@ -1,0 +1,172 @@
+{
+  "cases": [
+    {
+      "id": "time_pipeline_status",
+      "seq": 511000,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; time false | true; echo \"$? ${PIPESTATUS[*]}\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "0 1 0\n",
+        "stderr": "timed\n"
+      }
+    },
+    {
+      "id": "time_group_state",
+      "seq": 511001,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; time { x=kept; echo hi; }; echo $x",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\nkept\n",
+        "stderr": "timed\n"
+      }
+    },
+    {
+      "id": "time_false_status",
+      "seq": 511002,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; time false",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "timed\n"
+      }
+    },
+    {
+      "id": "time_negated_pipeline",
+      "seq": 511003,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; time ! false | true; echo $?",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": "timed\n"
+      }
+    },
+    {
+      "id": "time_function",
+      "seq": 511004,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; f() { echo hi; }; time f",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\n",
+        "stderr": "timed\n"
+      }
+    },
+    {
+      "id": "time_in_substitution",
+      "seq": 511005,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; echo \"$(time echo hi)\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\n",
+        "stderr": "timed\n"
+      }
+    },
+    {
+      "id": "time_nested",
+      "seq": 511006,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; time time echo hi",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\n",
+        "stderr": "timed\n"
+      }
+    },
+    {
+      "id": "time_empty_format",
+      "seq": 511007,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=''; time echo hi",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "time_bare",
+      "seq": 511008,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; time",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "timed\n"
+      }
+    },
+    {
+      "id": "time_redirect_scope",
+      "seq": 511009,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; { time echo hi > {mount}/out; } 2> {mount}/timing; cat {mount}/out {mount}/timing",
+      "expect": {
+        "exit": 0,
+        "stdout": "hi\ntimed\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "time_conditional",
+      "seq": 511010,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; time [[ x = x ]]",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "timed\n"
+      }
+    },
+    {
+      "id": "time_arithmetic",
+      "seq": 511011,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "TIMEFORMAT=timed; time (( 1 + 1 ))",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "timed\n"
+      }
+    }
+  ]
+}

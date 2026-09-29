@@ -393,3 +393,29 @@ Agent harnesses commonly fan out tool calls in parallel, each with its own `cwd`
     Each `( ... )` runs in its own scope, so the parallel `cd` / `export` don't collide. `&` backgrounds them inside Mirage Bash and `wait` joins.
   </Tab>
 </Tabs>
+
+## Timing pipelines
+
+`time pipeline` measures the entire pipeline, including output consumption,
+and writes the report to stderr. It preserves the pipeline's exit status and
+session changes. `time -p` uses the POSIX `real`, `user`, and `sys` layout;
+otherwise `TIMEFORMAT` controls the report (`%R`, `%U`, `%S`, `%P`, precision,
+and the `l` minute format). An empty `TIMEFORMAT` suppresses it.
+
+Elapsed time uses a monotonic clock. User and system CPU times are zero in both
+hosts: browser runtimes have no per-job CPU counters, and process-wide counters
+would include unrelated sessions.
+
+## HTTP command compatibility
+
+`curl -4` / `--ipv4` and `-6` / `--ipv6` are accepted as compatibility flags;
+the host HTTP transport chooses the address family. `-w` / `--write-out` renders
+`http_code`, `response_code`, `url_effective`, `num_redirects`, `size_download`,
+`content_type`, `method`, `exitcode`, and `time_total` after the transfer, including
+failed transfers. Templates accept `@file`, `@-`, escaped newlines, `%%`, and
+`%{stdout}`, `%{stderr}`, and `%{onerror}`. Unsupported variables produce a
+diagnostic. Output selected by `-o` contains only the response body.
+
+`wget -T` / `--timeout` sets the request timeout in seconds; zero disables it.
+Timeouts return network-error status 4. The shared HTTP transport uses one
+request deadline, rather than GNU Wget's separate DNS, connect, and read timers.

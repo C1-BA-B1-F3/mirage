@@ -45,12 +45,10 @@ export const INTERPRETER_NAMES: ReadonlySet<string> = new Set(
 
 // bash reserved words that mirage's grammar implements. The parser, not
 // the executor, consumes them, so they never reach lookup; `type` reports
-// them and the CLI registry refuses them as head words. bash's `time`
-// and `coproc` are left out on purpose: mirage implements neither
-// construct, so a line starting with one reports `command not found`,
-// and `type` may not contradict what dispatch does. Add a word back when
-// its construct lands.
+// them and the CLI registry refuses them as head words. `coproc` is omitted
+// because its construct is not implemented.
 export const KEYWORDS: ReadonlySet<string> = new Set([
+  'time',
   'if',
   'then',
   'else',

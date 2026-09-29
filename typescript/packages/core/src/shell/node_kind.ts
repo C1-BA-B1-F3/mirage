@@ -28,6 +28,7 @@ import { NodeType as NT } from './types.ts'
 export const NodeKind = Object.freeze({
   COMMENT: 'comment',
   PROGRAM: 'program',
+  TIMED: 'timed',
   COMMAND: 'command',
   PIPELINE: 'pipeline',
   LIST: 'list',
@@ -55,6 +56,7 @@ export type NodeKind = (typeof NodeKind)[keyof typeof NodeKind]
 const SIMPLE_KINDS: Readonly<Record<string, NodeKind>> = Object.freeze({
   [NT.COMMENT]: NodeKind.COMMENT,
   [NT.PROGRAM]: NodeKind.PROGRAM,
+  [NT.TIMED_STATEMENT]: NodeKind.TIMED,
   [NT.COMMAND]: NodeKind.COMMAND,
   [NT.PIPELINE]: NodeKind.PIPELINE,
   [NT.LIST]: NodeKind.LIST,
@@ -101,6 +103,7 @@ const PIPELINE_TRANSPARENT_KINDS: ReadonlySet<NodeKind> = new Set([
   NodeKind.UNTIL,
   NodeKind.CASE,
   NodeKind.NEGATED,
+  NodeKind.TIMED,
   NodeKind.FUNCTION_DEF,
 ])
 

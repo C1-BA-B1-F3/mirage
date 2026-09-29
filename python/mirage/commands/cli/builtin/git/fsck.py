@@ -1,0 +1,127 @@
+import asyncio
+
+from dulwich.objects import Commit, ObjectID, ShaFile, Tag, Tree
+from dulwich.repo import BaseRepo
+
+from mirage.commands.cli.builtin.git.errors import GitError
+from mirage.commands.cli.builtin.git.index import read_index
+from mirage.commands.cli.builtin.git.io import read_names, read_optional
+from mirage.commands.cli.builtin.git.session import opened
+from mirage.commands.cli.builtin.git.util import fatal
+from mirage.commands.cli.types import CLIDoors, CLIInvocation
+from mirage.commands.spec.flag_view import FlagView
+from mirage.io.types import ByteSource, IOResult
+from mirage.ops.types import StatPath
+from mirage.runtime.types import DispatchFn
+from mirage.types import FileType
+
+
+async def log_roots(dispatch: DispatchFn, stat_path: StatPath,
+                    path: str) -> set[bytes]:
+    """Collect reflog roots without assuming names or storage layout.
+
+    Args:
+        dispatch (DispatchFn): repository dispatcher.
+        stat_path (StatPath): namespace-aware entry classification.
+        path (str): logs directory or a log file.
+    """
+    found: set[bytes] = set()
+    for entry in await read_names(dispatch, path):
+        name = entry.rstrip("/").rsplit("/", 1)[-1]
+        target = f"{path}/{name}"
+        info = await stat_path(target)
+        if info is not None and info.type is FileType.DIRECTORY:
+            found.update(await log_roots(dispatch, stat_path, target))
+        else:
+            data = await read_optional(dispatch, target)
+            for line in (data or b"").splitlines():
+                found.update(oid for oid in line.split(b" ", 2)[:2]
+                             if len(oid) == 40 and oid != b"0" * 40)
+    return found
+
+
+def links(obj: ShaFile) -> list[bytes]:
+    """Object links, excluding gitlinks into other repositories.
+
+    Args:
+        obj (ShaFile): a validated object.
+    """
+    if isinstance(obj, Commit):
+        return [obj.tree, *obj.parents]
+    if isinstance(obj, Tree):
+        return [
+            entry.sha for entry in obj.iteritems() if entry.mode != 0o160000
+        ]
+    if isinstance(obj, Tag):
+        return [obj.object[1]]
+    return []
+
+
+def check(repo: BaseRepo, roots: set[bytes],
+          dangling: bool) -> tuple[bytes, IOResult]:
+    """Hash, decode and check connectivity of loose and packed objects.
+
+    Corruption diagnostics retain the object ID and underlying cause; wording
+    differs from native Git, whose zlib/pack diagnostics are platform-specific.
+
+    Args:
+        repo (BaseRepo): lazily dispatched object store, driven on a worker.
+        roots (set[bytes]): refs, index and reflog tips.
+        dangling (bool): report unreferenced tips.
+    """
+    errors: list[str] = []
+    objects: dict[bytes, ShaFile] = {}
+    referenced = set(roots)
+    for oid in sorted(
+            set(repo.object_store) | {ObjectID(oid)
+                                      for oid in roots}):
+        try:
+            obj = repo.object_store[ObjectID(oid)]
+            obj.check()
+            if obj.id != oid:
+                raise ValueError("hash mismatch")
+            objects[oid] = obj
+            referenced.update(links(obj))
+        except Exception as exc:
+            errors.append(f"error: object {oid.decode()}: {exc}\n")
+    for missing in sorted(referenced - objects.keys()):
+        if missing not in roots:
+            errors.append(f"missing object {missing.decode()}\n")
+    stdout = "".join(
+        f"dangling {objects[oid].type_name.decode()} {oid.decode()}\n"
+        for oid in sorted(objects.keys() - referenced)) if dangling else ""
+    return stdout.encode(), IOResult(exit_code=1 if errors else 0,
+                                     stderr="".join(errors).encode())
+
+
+async def fsck(inv: CLIInvocation[None]) -> tuple[ByteSource | None, IOResult]:
+    """Check the mounted repository without invoking host Git.
+
+    Args:
+        inv (CLIInvocation[None]): repository and fsck options.
+    """
+    try:
+        doors = inv.doors or CLIDoors()
+        fl = FlagView(inv.flags)
+        repo, location = await opened(fl, doors)
+        assert doors.dispatch is not None and doors.stat_path is not None
+        roots: set[bytes] = set(repo.refs.as_dict().values())
+        index = await read_index(doors.dispatch, location.gitdir)
+        roots.update(entry.sha for entry in index.entries.values()
+                     if entry.mode != 0o160000)
+        for directory in {location.gitdir, location.commondir}:
+            roots.update(await log_roots(doors.dispatch, doors.stat_path,
+                                         f"{directory}/logs"))
+        out, io = await asyncio.to_thread(check, repo, roots,
+                                          not fl.as_bool("no_dangling"))
+        if not roots:
+            head = await read_optional(doors.dispatch,
+                                       f"{location.gitdir}/HEAD")
+            branch = (head
+                      or b"").decode().strip().removeprefix("ref: refs/heads/")
+            notice = (f"notice: HEAD points to an unborn branch ({branch})\n"
+                      "notice: No default references\n")
+            io.stderr = notice.encode() + await io.materialize_stderr()
+        return out, io
+    except GitError as exc:
+        return fatal(exc)

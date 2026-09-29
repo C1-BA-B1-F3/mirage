@@ -17,6 +17,8 @@ from mirage.commands.cli.builtin.git.branch import branch
 from mirage.commands.cli.builtin.git.checkout import checkout
 from mirage.commands.cli.builtin.git.commit import commit
 from mirage.commands.cli.builtin.git.diff import diff
+from mirage.commands.cli.builtin.git.fsck import fsck
+from mirage.commands.cli.builtin.git.init import init
 from mirage.commands.cli.builtin.git.inspect import (config, remote, rev_list,
                                                      rev_parse, show_ref,
                                                      version)
@@ -27,11 +29,14 @@ from mirage.commands.cli.builtin.git.restore import restore
 from mirage.commands.cli.builtin.git.rm import rm
 from mirage.commands.cli.builtin.git.shortlog import shortlog
 from mirage.commands.cli.builtin.git.show import diff_tree, show
+from mirage.commands.cli.builtin.git.stash import stash_list, stash_show
 from mirage.commands.cli.builtin.git.status import status
 from mirage.commands.cli.builtin.git.switch import switch
 from mirage.commands.cli.builtin.git.tag import tag
-from mirage.commands.cli.types import CLISpec, UsageStyle
+from mirage.commands.cli.types import CLIInvocation, CLISpec, UsageStyle
+from mirage.commands.cli.walk import find_node, node_help
 from mirage.commands.spec.types import Operand, Option
+from mirage.io.types import IOResult
 
 # `-C` is git's own before-anything-else option, so it sits on the root
 # and every verb inherits it. The "." default is load-bearing: a PATH
@@ -364,6 +369,24 @@ STATUS_OPTIONS = (
            description="Show untracked files: no, normal or all"),
 )
 
+
+async def help_cmd(inv: CLIInvocation[None]) -> tuple[bytes | None, IOResult]:
+    """Render the declared command tree, without needing a repository.
+
+    Args:
+        inv (CLIInvocation[None]): optional command to describe.
+    """
+    found = find_node(GIT, inv.texts)
+    if found is None:
+        return None, IOResult(
+            exit_code=1,
+            stderr=(f"git: '{' '.join(inv.texts)}' is not a git command. "
+                    "See 'git --help'.\n").encode())
+    node, path = found
+    return node_help(" ".join(("git", *path)), node,
+                     GIT.usage_style).encode(), IOResult()
+
+
 # The git program tree. No config_model: local git needs no credentials,
 # which is what makes it installable with a bare `cli: git`.
 GIT = CLISpec(
@@ -380,6 +403,35 @@ GIT = CLISpec(
                     env="GIT_WORK_TREE",
                     description="Use <path> as the working tree")),
     subcommands=(
+        CLISpec(name="help",
+                fn=help_cmd,
+                description="Show command help",
+                rest=Operand(type="str")),
+        CLISpec(
+            name="init",
+            fn=init,
+            description=
+            "Create an empty Git repository or reinitialize an existing one",
+            write=True,
+            options=(Option(short="-q", long="--quiet"), Option(long="--bare"),
+                     Option(short="-b", long="--initial-branch", type="str")),
+            positional=(Operand(type="str", name="directory"), )),
+        CLISpec(name="fsck",
+                fn=fsck,
+                description="Verify object hashes and connectivity",
+                options=(Option(long="--full"), Option(long="--no-dangling"))),
+        CLISpec(name="stash",
+                description="Inspect saved working trees",
+                subcommands=(
+                    CLISpec(name="list",
+                            fn=stash_list,
+                            description="List stashed changes"),
+                    CLISpec(name="show",
+                            fn=stash_show,
+                            description="Show stashed changes",
+                            options=DIFF_OPTIONS,
+                            positional=(Operand(type="str", name="stash"), )),
+                )),
         CLISpec(name="version",
                 aliases=("--version", "-v"),
                 fn=version,

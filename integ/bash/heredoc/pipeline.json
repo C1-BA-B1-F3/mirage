@@ -1,0 +1,102 @@
+{
+  "cases": [
+    {
+      "id": "heredoc_three_stages_then_input",
+      "seq": 510700,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cat <<'A' | cat | cat\none\nA\ncat <<'B'\ntwo\nB",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\ntwo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "heredoc_four_stages_two_outputs",
+      "seq": 510701,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "cat <<'A' | tr ',' '\\n' | tr -d ' ' | sort -u > {mount}/a.txt\n3, 1, 2\nA\ncat <<B | tr ',' '\\n' | tr -d ' ' | sort -u > {mount}/b.txt\n2, 3, 4\nB\ncat {mount}/a.txt {mount}/b.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n2\n3\n2\n3\n4\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "file_redirect_pipeline_newline",
+      "seq": 510702,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf 'one\\n' > {mount}/one; printf 'two\\n' > {mount}/two\ncat < {mount}/one | cat | cat\ncat < {mount}/two",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\ntwo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "heredoc_five_stages_in_function",
+      "seq": 510703,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "f() { cat <<-'A' | cat | cat | cat | cat\n\tone\n\tA\ncat <<'B'\ntwo\nB\n}; f",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\ntwo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "heredoc_pipeline_command_substitution",
+      "seq": 510704,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "x=$(cat <<A | cat | cat\none\nA\ncat <<B\ntwo\nB\n); printf '%s\\n' \"$x\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\ntwo\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "pipeline_quoted_newline_is_argument",
+      "seq": 510705,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%s\\n' 'one\ntwo' | cat | cat\nprintf '%s\\n' three",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\ntwo\nthree\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "pipeline_continuation_is_argument",
+      "seq": 510706,
+      "targets": [
+        "ram",
+        "disk"
+      ],
+      "command": "printf '%s\\n' one \\\ntwo | cat | cat\nprintf '%s\\n' three",
+      "expect": {
+        "exit": 0,
+        "stdout": "one\ntwo\nthree\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

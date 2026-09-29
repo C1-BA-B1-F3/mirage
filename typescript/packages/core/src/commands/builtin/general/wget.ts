@@ -17,7 +17,7 @@ import { IOResult } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
 import { command, type CommandFnResult, type CommandOpts } from '../../config.ts'
 import { specOf } from '../../spec/builtins.ts'
-import { HttpConnectError } from '../errors.ts'
+import { HttpConnectError, HttpTimeoutError } from '../errors.ts'
 import { httpGet, isHttpError } from '../utils/http.ts'
 import { UsageError } from '../../errors.ts'
 import { resolveTarget } from './curl.ts'
@@ -51,14 +51,20 @@ async function wgetCommand(
   const argsO = fl.asStr('args_O') ?? null
   const q = fl.asBool('q')
   const spider = fl.asBool('spider')
+  const timeout = fl.asFloat('timeout')
+  if (timeout !== undefined && timeout < 0)
+    throw new UsageError(`wget: --timeout: Negative time period '${String(timeout)}'`, 2)
 
   // wget follows redirects unconditionally; it has no -L equivalent.
   let resp
   try {
-    resp = await httpGet(url)
+    resp = await httpGet(url, {
+      timeoutMs: timeout === undefined ? 30_000 : timeout === 0 ? null : timeout * 1000,
+    })
   } catch (err) {
-    if (!(err instanceof HttpConnectError)) throw err
-    const line = `Connecting to ${err.host}:${String(err.port)}... failed: Connection refused.\n`
+    if (!(err instanceof HttpConnectError) && !(err instanceof HttpTimeoutError)) throw err
+    const reason = err instanceof HttpTimeoutError ? 'Connection timed out' : 'Connection refused'
+    const line = `Connecting to ${err.host}:${String(err.port)}... failed: ${reason}.\n`
     return [
       null,
       new IOResult({

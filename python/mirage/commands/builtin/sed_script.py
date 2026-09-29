@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import re
+import string
 from typing import Any, Required, TypedDict
 
 from mirage.utils.posix import translate_classes
@@ -132,6 +133,121 @@ def _consume_address(rest: str) -> tuple[tuple[str, str] | None, str]:
     return None, rest
 
 
+_TEXT_ESCAPES = {
+    "a": "\x07",
+    "f": "\f",
+    "n": "\n",
+    "r": "\r",
+    "t": "\t",
+    "v": "\v",
+    "\n": "\n",
+}
+
+_TEXT_ESCAPE_BASES = {"d": 10, "o": 8, "x": 16}
+
+
+def _decode_text_escapes(buf: str) -> str:
+    """Decode a/i/c text as GNU's normalize_text does.
+
+    The escapes in ``_TEXT_ESCAPES``, ``\\dNNN``, ``\\oNNN`` and ``\\xHH``
+    byte values (a value above 0x7f becomes that code point, as the text
+    here is a string and not bytes), and ``\\cX`` control characters; a
+    backslash before any other character is dropped. The text always ends
+    in the newline that closed it, so ``\\c`` at its end takes that newline
+    as X.
+
+    Args:
+        buf (str): the text as read, closing newline included.
+
+    Returns:
+        str: the decoded text.
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(buf):
+        ch = buf[i]
+        if ch != "\\" or i + 1 >= len(buf):
+            out.append(ch)
+            i += 1
+            continue
+        nx = buf[i + 1]
+        i += 2
+        simple = _TEXT_ESCAPES.get(nx)
+        if simple is not None:
+            out.append(simple)
+            continue
+        base = _TEXT_ESCAPE_BASES.get(nx)
+        if base is not None:
+            value = 0
+            digits = 0
+            limit = 1
+            while i < len(buf) and limit <= 255:
+                d = int(buf[i], 16) if buf[i] in string.hexdigits else base
+                if d >= base:
+                    break
+                value = value * base + d
+                digits += 1
+                i += 1
+                limit *= base
+            out.append(chr(value & 0xFF) if digits else nx)
+            continue
+        if nx == "c":
+            x = buf[i]
+            upper = x.upper() if "a" <= x <= "z" else x
+            out.append(chr(ord(upper) ^ 0x40))
+            i += 1
+            if x == "\\":
+                if buf[i:i + 1] != "\\":
+                    raise ValueError(
+                        "sed: recursive escaping after \\c not allowed")
+                i += 1
+            continue
+        out.append(nx)
+    return "".join(out)
+
+
+def _read_text(rest: str) -> tuple[str, str]:
+    """Read the text of ``a``, ``i`` or ``c`` as GNU's read_text does.
+
+    Blanks after the letter are skipped. A backslash there starts the
+    classic form: a newline after it is dropped and any other character is
+    the text's first, so ``a\\  x`` keeps its leading blanks. The text runs
+    to the first newline no backslash escapes (a ``;`` is part of it) and
+    keeps that newline. A script that ends on a backslash leaves the text as
+    read, undecoded, as GNU keeps text still pending when its script runs
+    out.
+
+    Args:
+        rest (str): the script right after the command letter.
+
+    Returns:
+        tuple[str, str]: the text and the script after it.
+    """
+    i = 0
+    while i < len(rest) and rest[i] in " \t":
+        i += 1
+    if i >= len(rest):
+        raise ValueError("sed: expected \\ after `a', `c' or `i'")
+    buf: list[str] = []
+    if rest[i] == "\\":
+        i += 1
+        if i >= len(rest):
+            return "", ""
+        if rest[i] != "\n":
+            buf.append(rest[i])
+        i += 1
+    while i < len(rest) and rest[i] != "\n":
+        if rest[i] == "\\":
+            if i + 1 >= len(rest):
+                return "".join(buf) + "\n", ""
+            buf.append(rest[i:i + 2])
+            i += 2
+            continue
+        buf.append(rest[i])
+        i += 1
+    return _decode_text_escapes("".join(buf) + "\n"), rest[i:]
+
+
 def parse_one_command(rest: str) -> tuple[SedCommand, str]:
     addr_start = None
     addr_end = None
@@ -148,7 +264,7 @@ def parse_one_command(rest: str) -> tuple[SedCommand, str]:
         negate = True
         rest = probe[1:].lstrip(" ")
 
-    if not rest:
+    if not rest.strip():
         raise ValueError("sed: missing command")
 
     ch = rest[0]
@@ -274,36 +390,22 @@ def parse_one_command(rest: str) -> tuple[SedCommand, str]:
             "negate": negate,
         }, rest[1:]
     if ch in ("a", "i", "c"):
-        # Text forms: `a\` <newline> text (classic multi-line form, where the
-        # backslash-newline is a continuation and not part of the text),
-        # `a\text`, and the one-line `a text`. Strip that leading prefix so the
-        # text itself does not start with a stray newline.
-        text = rest[1:]
-        if text.startswith("\\"):
-            text = text[1:]
-            if text.startswith("\n"):
-                text = text[1:]
-        elif text.startswith(" "):
-            text = text[1:]
-        end = len(text)
-        for j, c in enumerate(text):
-            if c == ";":
-                end = j
-                break
+        text, after = _read_text(rest[1:])
         return {
             "cmd": ch,
-            "text": text[:end],
+            "text": text,
             "addr_start": addr_start,
             "addr_end": addr_end,
             "negate": negate,
-        }, text[end:]
+        }, after
 
     raise ValueError(f"sed: unsupported command: {ch!r}")
 
 
 def parse_program(expr: str) -> list[SedCommand]:
     commands: list[SedCommand] = []
-    rest = expr.strip()
+    # Only leading blanks go: trailing ones may belong to a/i/c text.
+    rest = expr.lstrip()
     while rest:
         if rest[0] in (";", "\n"):
             rest = rest[1:].lstrip()
@@ -314,6 +416,16 @@ def parse_program(expr: str) -> list[SedCommand]:
         cmd, rest = parse_one_command(rest)
         commands.append(cmd)
         rest = rest.lstrip()
+    # A `}` on the line of an a/i/c text is part of the text, so `1{a x;}`
+    # leaves its block open, which GNU refuses.
+    depth = 0
+    for c in commands:
+        if c["cmd"] == "{":
+            depth += 1
+        elif c["cmd"] == "}":
+            depth -= 1
+    if depth > 0:
+        raise ValueError("sed: unmatched `{'")
     return commands
 
 
@@ -423,6 +535,22 @@ def _split_content_lines(text: str) -> tuple[list[str], bool]:
     final_newline = text.endswith("\n")
     body = text[:-1] if final_newline else text
     return body.split("\n"), final_newline
+
+
+def _text_line(text: str) -> str:
+    """Render the text of ``i`` or ``c`` as GNU's output_line does.
+
+    ``a`` writes its text as read, closing newline included; ``i`` and
+    ``c`` write all of it but the last character and then a newline, and
+    nothing for an empty text (``a\\`` ending the script).
+
+    Args:
+        text (str): the command's text, closing newline included.
+
+    Returns:
+        str: the text to write.
+    """
+    return text[:-1] + "\n" if text else ""
 
 
 def execute_program(text: str,
@@ -592,9 +720,9 @@ def execute_program(text: str,
             elif c == "x":
                 pattern, hold = hold, pattern
             elif c == "a":
-                deferred.append(cmd["text"] + "\n")
+                deferred.append(cmd["text"])
             elif c == "i":
-                output.append(cmd["text"] + "\n")
+                output.append(_text_line(cmd["text"]))
             elif c == "y":
                 # Transliterate pattern[i] -> replacement[i].
                 pattern = pattern.translate(
@@ -607,7 +735,7 @@ def execute_program(text: str,
                 is_range = addr_end is not None
                 range_open = range_active.get(id(cmd), False)
                 if (not is_range) or (not range_open) or (lineno == total):
-                    output.append(cmd["text"] + "\n")
+                    output.append(_text_line(cmd["text"]))
                 break
             elif c == "q":
                 output.append(pattern + tail_nl(lineno))

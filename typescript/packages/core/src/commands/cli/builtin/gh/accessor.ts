@@ -16,7 +16,7 @@ import { HttpGitHubTransport, type GitHubTransport } from '../../../../core/gith
 import type { GhConfig } from '../../../../core/github/config.ts'
 import { parseRepo, type RepoRef } from '../../../../core/github/repo.ts'
 import { jqRun } from '../../../../core/jq/index.ts'
-import { UsageError } from '../../../errors.ts'
+import { PartialOutputError, UsageError } from '../../../errors.ts'
 import type { FlagView } from '../../../spec/flag_view.ts'
 import type { FlagValue } from '../../../spec/types.ts'
 import { IOResult, materialize, type ByteSource } from '../../../../io/types.ts'
@@ -231,18 +231,27 @@ export function jsonFields(fl: FlagView, allowed: readonly string[]): string[] |
 }
 
 /**
- * What `--jq` prints of one value, the way go-gh's jq evaluates it. An error
- * fails the command. `halt`, and `halt_error` on null, end the output there;
- * any other `halt_error` fails the command as `halt error: <message>`,
- * whatever code it names.
+ * The lines `--jq` prints for each value in turn, the way go-gh's jq
+ * evaluates them. `halt`, and `halt_error` on null, end that value's output
+ * there. An error, or any other `halt_error`, fails the command, the latter
+ * as `halt error: <message>` whatever code it names, after the lines printed
+ * before it: a PartialOutputError carries them.
  */
-export async function jqValues(value: unknown, program: string): Promise<unknown[]> {
-  const run = await jqRun(value, program)
-  if (run.stop?.kind === 'error') throw new Error(run.stop.text)
-  if (run.stop?.kind === 'halt' && run.stop.message !== null) {
-    throw new Error(`halt error: ${run.stop.message}`)
+export async function jqLines(values: readonly unknown[], program: string): Promise<string> {
+  const lines: string[] = []
+  for (const value of values) {
+    const run = await jqRun(value, program)
+    for (const item of run.outputs) lines.push(`${jqLine(item)}\n`)
+    let failure: string | null = null
+    if (run.stop?.kind === 'error') failure = run.stop.text
+    else if (run.stop?.kind === 'halt' && run.stop.message !== null) {
+      failure = `halt error: ${run.stop.message}`
+    }
+    if (failure !== null) {
+      throw new PartialOutputError(failure, new TextEncoder().encode(lines.join('')))
+    }
   }
-  return run.outputs
+  return lines.join('')
 }
 
 export async function typedOut(
@@ -259,8 +268,7 @@ export async function typedOut(
   }
   const selected = select(value, fields)
   if (program !== undefined && program !== '') {
-    const values = await jqValues(selected, program)
-    return textOut(values.map((item) => `${jqLine(item)}\n`).join(''))
+    return textOut(await jqLines([selected], program))
   }
   return jsonOut(selected)
 }

@@ -17,7 +17,7 @@ import re
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from mirage.commands.cli.builtin.gh.accessor import (jq_values, read_cli_file,
+from mirage.commands.cli.builtin.gh.accessor import (jq_lines, read_cli_file,
                                                      text_out)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
@@ -49,15 +49,6 @@ def typed(value: str) -> JsonValue:
     if INT_RE.match(value):
         return int(value)
     return value
-
-
-def jq_line(value: JsonValue) -> str:
-    """Render one jq result the way gh renders it."""
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def split(pair: str,
@@ -368,8 +359,7 @@ def _render_pages(pages: list[Any],
     program = fl.as_str("jq")
     if program:
         inputs = [pages] if slurp else pages
-        return "".join(f"{jq_line(value)}\n" for item in inputs
-                       for value in jq_values(item, program)) + (failure or "")
+        return jq_lines(inputs, program) + (failure or "")
     if slurp:
         return "[" + ",".join(map(_body_text, pages)) + "]"
     return _joined_pages(pages, failure is not None) + (failure or "")

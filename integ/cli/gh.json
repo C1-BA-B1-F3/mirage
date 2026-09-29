@@ -1741,6 +1741,19 @@
         "stdout": "integ-user\nexit=1\n",
         "stderr": "gh api: halt error: x\n"
       }
+    },
+    {
+      "id": "gh_jq_failure_keeps_the_output_printed_before_it",
+      "seq": 569332,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api user --jq '.login, (\"x\" | halt_error(3))'; echo \"exit=$?\"; gh issue view 4 --json number --jq '.number, (\"y\" | halt_error(3))'; echo \"exit=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "integ-user\nexit=1\n4\nexit=1\n",
+        "stderr": "gh api: halt error: x\ngh issue view: halt error: y\n"
+      }
     }
   ]
 }

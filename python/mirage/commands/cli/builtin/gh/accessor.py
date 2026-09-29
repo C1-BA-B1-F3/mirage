@@ -19,7 +19,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from mirage.commands.cli.types import CLIInvocation
-from mirage.commands.errors import UsageError
+from mirage.commands.errors import PartialOutputError, UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.core.github.config import GhConfig
@@ -243,26 +243,32 @@ def json_fields(fl: FlagView, allowed: Iterable[str]) -> list[str] | None:
     return fields
 
 
-def jq_values(value: JsonValue, program: str) -> list[JsonValue]:
-    """What `--jq` prints of one value, the way go-gh's jq evaluates it.
-
-    An error fails the command. `halt`, and `halt_error` on null, end the
-    output there; any other `halt_error` fails the command as
-    `halt error: <message>`, whatever code it names.
+def jq_lines(values: Iterable[JsonValue], program: str) -> str:
+    """The lines `--jq` prints for each value in turn, the way go-gh's jq
+    evaluates them. `halt`, and `halt_error` on null, end that value's
+    output there. An error, or any other `halt_error`, fails the command,
+    the latter as `halt error: <message>` whatever code it names, after
+    the lines printed before it.
 
     Args:
-        value (JsonValue): the JSON the program reads.
+        values (Iterable[JsonValue]): the JSON values the program reads.
         program (str): the `--jq` program.
 
     Raises:
-        ValueError: the program's error, or its halt_error.
+        PartialOutputError: the failure, carrying the lines before it.
     """
-    run = jq_run(value, program)
-    if isinstance(run.stop, JqError):
-        raise ValueError(run.stop.text)
-    if isinstance(run.stop, JqHalt) and run.stop.message is not None:
-        raise ValueError(f"halt error: {run.stop.message}")
-    return run.outputs
+    lines: list[str] = []
+    for value in values:
+        run = jq_run(value, program)
+        lines.extend(f"{jq_line(item)}\n" for item in run.outputs)
+        failure = None
+        if isinstance(run.stop, JqError):
+            failure = run.stop.text
+        elif isinstance(run.stop, JqHalt) and run.stop.message is not None:
+            failure = f"halt error: {run.stop.message}"
+        if failure is not None:
+            raise PartialOutputError(failure, "".join(lines).encode())
+    return "".join(lines)
 
 
 async def typed_out(
@@ -277,7 +283,5 @@ async def typed_out(
         return text_out(human)
     selected = _select(value, fields)
     if program:
-        lines = "".join(f"{jq_line(item)}\n"
-                        for item in jq_values(selected, program))
-        return text_out(lines)
+        return text_out(jq_lines([selected], program))
     return json_out(selected)

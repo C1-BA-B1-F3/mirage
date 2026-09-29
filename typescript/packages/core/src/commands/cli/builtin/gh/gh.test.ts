@@ -28,6 +28,7 @@ import { issueComments } from '../../../../core/github/issue.ts'
 import { commentsFor, commentsText } from './issue.ts'
 import { GH } from './index.ts'
 import { PathSpec } from '../../../../types.ts'
+import { PartialOutputError } from '../../../errors.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import { api } from './api.ts'
 import { fork, listCmd, rename, summary, view } from './repo.ts'
@@ -626,6 +627,17 @@ describe('gh api --jq', () => {
     reset({ a: 'x' })
     await expect(api(inv(['repos/o/r'], { jq: program }))).rejects.toThrow(message)
   })
+
+  it.each([
+    ['.a, ("y" | halt_error(1))', 'halt error: y'],
+    ['.a, error("boom")', 'boom'],
+  ])('keeps what it printed before %s failed', async (program, message) => {
+    reset({ a: 'x' })
+    const failure = await api(inv(['repos/o/r'], { jq: program })).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(PartialOutputError)
+    const partial = failure as PartialOutputError
+    expect([partial.message, new TextDecoder().decode(partial.stdout)]).toEqual([message, 'x\n'])
+  })
 })
 
 // gh prints two tab-separated header lines and then the README verbatim;
@@ -811,6 +823,32 @@ it.each([
     }
   },
 )
+
+// gh runs `--jq` over each page as it lands, so a failure on a later page
+// keeps the lines the earlier pages printed.
+it.each([
+  ['if .value == "second" then "y" | halt_error(1) else .value end', 'halt error: y'],
+  ['if .value == "second" then error("boom") else .value end', 'boom'],
+])('keeps the earlier pages when --jq %s fails on a later one', async (program, message) => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockResolvedValueOnce({
+      data: { value: 'first' },
+      status: 200,
+      headers: { link: '</page2>; rel="next"' },
+    })
+    .mockResolvedValueOnce({ data: { value: 'second' }, status: 200, headers: {} })
+  try {
+    const failure = await api(inv(['page1'], { paginate: true, jq: program })).catch(
+      (error: unknown) => error,
+    )
+    expect(failure).toBeInstanceOf(PartialOutputError)
+    const partial = failure as PartialOutputError
+    expect([partial.message, DEC.decode(partial.stdout)]).toEqual([message, 'first\n'])
+  } finally {
+    request.mockRestore()
+  }
+})
 
 // A failing response after an array page is still a page to gh, so that
 // array's closing bracket stays withheld and the failing body runs on.

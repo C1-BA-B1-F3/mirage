@@ -19,7 +19,7 @@ import type { CLIInvocation } from '../../types.ts'
 import { expand } from '../../../../core/github/placeholder.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
 import { GitHubApiError, type GitHubResponse } from '../../../../core/github/client.ts'
-import { ghTransport, jqValues, readCliFile, textOut } from './accessor.ts'
+import { ghTransport, jqLines, readCliFile, textOut } from './accessor.ts'
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 const EMPTY_ARRAY = Symbol('empty-array')
@@ -30,12 +30,6 @@ function typed(value: string): Json {
   if (value === 'null') return null
   if (/^-?\d+$/.test(value)) return Number(value)
   return value
-}
-
-function jqLine(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value
-  return JSON.stringify(value)
 }
 
 function split(pair: string, emptyArray = false): [string, string | typeof EMPTY_ARRAY] {
@@ -350,11 +344,7 @@ async function renderPages(pages: unknown[], fl: FlagView, failure?: string): Pr
   if (slurp && failure !== undefined) return `[${[...pages.map(bodyText), failure].join(',')}]`
   const program = fl.asStr('jq')
   if (program !== undefined && program !== '') {
-    const output: string[] = []
-    for (const item of slurp ? [pages] : pages) {
-      for (const value of await jqValues(item, program)) output.push(`${jqLine(value)}\n`)
-    }
-    return output.join('') + (failure ?? '')
+    return (await jqLines(slurp ? [pages] : pages, program)) + (failure ?? '')
   }
   if (slurp) return `[${pages.map(bodyText).join(',')}]`
   return joinedPages(pages, failure !== undefined) + (failure ?? '')

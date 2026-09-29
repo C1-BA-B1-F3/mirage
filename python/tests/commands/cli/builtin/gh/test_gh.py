@@ -26,7 +26,7 @@ from mirage.commands.cli.builtin.gh.repo import (fork, list_cmd, rename,
                                                  summary, view)
 from mirage.commands.cli.specs import cli_spec_for
 from mirage.commands.cli.types import CLIDoors, CLIInvocation
-from mirage.commands.errors import UsageError
+from mirage.commands.errors import PartialOutputError, UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.api.client import ApiResponse
 from mirage.core.github.client import GitHubApiError
@@ -745,9 +745,21 @@ async def test_api_jq_ends_the_output_at_halt():
 ])
 async def test_api_jq_fails_at_halt_error(program, message):
     _reset({"a": "x"})
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(PartialOutputError) as caught:
         await api(_inv(["repos/o/r"], {"jq": program}))
-    assert str(caught.value) == message
+    assert (str(caught.value), caught.value.stdout) == (message, b"")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, message", [
+    ('.a, ("y" | halt_error(1))', "halt error: y"),
+    ('.a, error("boom")', "boom"),
+])
+async def test_api_jq_keeps_what_it_printed_before_failing(program, message):
+    _reset({"a": "x"})
+    with pytest.raises(PartialOutputError) as caught:
+        await api(_inv(["repos/o/r"], {"jq": program}))
+    assert (str(caught.value), caught.value.stdout) == (message, b"x\n")
 
 
 # gh prints two tab-separated header lines and then the README verbatim;
@@ -964,6 +976,26 @@ async def test_api_later_page_failure_keeps_rendered_pages(
     assert io.exit_code == 1
     assert await io.stderr_str() == stderr
     assert request.await_count == 2
+
+
+# gh runs `--jq` over each page as it lands, so a failure on a later page
+# keeps the lines the earlier pages printed.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, message", [
+    ('if .value == "second" then "y" | halt_error(1) else .value end',
+     "halt error: y"),
+    ('if .value == "second" then error("boom") else .value end', "boom"),
+])
+async def test_api_jq_failure_on_a_later_page_keeps_the_earlier_pages(
+        monkeypatch, program, message):
+    request = AsyncMock(side_effect=[
+        ApiResponse({"value": "first"}, 200, {"link": '</page2>; rel="next"'}),
+        ApiResponse({"value": "second"}, 200, {}),
+    ])
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    with pytest.raises(PartialOutputError) as caught:
+        await api(_inv(("page1", ), {"paginate": True, "jq": program}))
+    assert (str(caught.value), caught.value.stdout) == (message, b"first\n")
 
 
 # A failing response after an array page is still a page to gh, so that

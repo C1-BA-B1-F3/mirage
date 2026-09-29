@@ -1751,6 +1751,23 @@ async function main(): Promise<void> {
     eq('pullRequests narrows by state', field(pullLists, 'data'), {
       repository: { open: { totalCount: 1, nodes: [{ number: 2 }] }, merged: { totalCount: 0 } },
     })
+    const owned = await post(`${at}/graphql`, {
+      query:
+        '{ repositoryOwner(login: "integ") { repositories(first: 100) { nodes { name ' +
+        'pullRequests(states: [OPEN], first: 10) { nodes { number repository { name } } } ' +
+        'issues(first: 1) { pageInfo { hasNextPage } } } } } }',
+    })
+    const cli = (
+      field(
+        field(field(field(owned.body, 'data'), 'repositoryOwner'), 'repositories'),
+        'nodes',
+      ) as JsonValue[]
+    ).find((repo) => field(repo, 'name') === 'repo-cli')
+    eq(
+      'a repository reached through its owner answers its connections as a top-level one does',
+      [field(owned.body, 'errors'), field(cli ?? null, 'pullRequests')],
+      [null, { nodes: [{ number: 2, repository: { name: 'repo-cli' } }] }],
+    )
     const cards = await pullGraph(
       'pullRequest(number: 2) { projectCards(first: 100) { totalCount } }',
     )

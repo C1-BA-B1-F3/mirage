@@ -278,7 +278,7 @@ function commentCursor(id: number): string {
  * `issues/{n}/comments` wrote, oldest first, a page at a time.
  */
 export function commentConnection(
-  ctx: Ctx<C>,
+  ctx: { db: C; tenant: string },
   repo: RepoRow,
   number: number,
 ): (args: { first: number; after?: string | null }) => Promise<Record<string, unknown>> {
@@ -337,7 +337,7 @@ function pullReference(
  * repository it lives in.
  */
 export async function issueNode(
-  ctx: Ctx<C>,
+  ctx: { db: C; tenant: string },
   repo: RepoRow,
   row: IssueRow,
   repository: Record<string, unknown>,
@@ -410,7 +410,7 @@ export interface IssuesArgs extends PageArgs {
  * turns each row into its node.
  */
 export async function issueConnection(
-  ctx: Ctx<C>,
+  ctx: { db: C; tenant: string },
   repo: RepoRow,
   args: IssuesArgs,
   nodes: (row: IssueRow) => Promise<Record<string, unknown>>,

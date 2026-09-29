@@ -17,6 +17,10 @@ import { API_PREFIXES, DEFAULT_LOGIN } from './config.ts'
 import type { C } from './config.ts'
 import { PROJECTS_CLASSIC_GONE, commitJson, nodeId, ownerNode } from './wire.ts'
 import { createReposAllowed, initRepo } from './seed.ts'
+import { commentConnection, issueConnection, issueNode, issueRow } from './issues.ts'
+import type { IssueRow, IssuesArgs } from './issues.ts'
+import { pullRequestConnection, pullRequestNode, pullRow } from './pulls.ts'
+import type { PullRequestsArgs, PullRow } from './pulls.ts'
 import {
   addBranch,
   allRepos,
@@ -104,7 +108,7 @@ export async function repositoryNode(
     const row = (await allRepos(ctx.db, ctx.tenant)).find((each) => each.seq === parentSeq)
     return row === undefined ? null : repositoryNode(ctx, row)
   }
-  return {
+  const node: Record<string, unknown> = {
     id: nodeId('010:Repository', repo.seq),
     name: repo.name,
     nameWithOwner: repo.fullName,
@@ -135,12 +139,6 @@ export async function repositoryNode(
     forkCount: count('forks_count'),
     stargazerCount: count('stargazers_count'),
     watchers: { totalCount: count('watchers_count') },
-    issues: async () => ({
-      totalCount: await ctx.db.githubIssue.count({ where: { ...where, state: 'open' } }),
-    }),
-    pullRequests: async () => ({
-      totalCount: await ctx.db.githubPull.count({ where: { ...where, state: 'open' } }),
-    }),
     codeOfConduct: null,
     contactLinks: [],
     defaultBranchRef: { name: repo.defaultBranch },
@@ -189,6 +187,40 @@ export async function repositoryNode(
     },
     projectsV2: { nodes: [] },
   }
+  // Issues own the comments on a pull request as on an issue.
+  const pull = async (row: PullRow): Promise<Record<string, unknown>> => ({
+    ...(await pullRequestNode(ctx, repo, row, node)),
+    __typename: 'PullRequest',
+    comments: commentConnection(ctx, repo, row.number),
+  })
+  const issue = (row: IssueRow): Promise<Record<string, unknown>> => issueNode(ctx, repo, row, node)
+  return Object.assign(node, {
+    issueOrPullRequest: async ({ number }: { number: number }) => {
+      const found = await issueRow(ctx.db, ctx.tenant, repo, number)
+      if (found !== null) return issue(found)
+      const row = await pullRow(ctx.db, ctx.tenant, repo, number)
+      if (row !== null) return pull(row)
+      throw new Error(
+        `Could not resolve to an issue or pull request with the number of ${String(number)}.`,
+      )
+    },
+    issue: async ({ number }: { number: number }) => {
+      const found = await issueRow(ctx.db, ctx.tenant, repo, number)
+      if (found === null) {
+        throw new Error(`Could not resolve to an Issue with the number of ${String(number)}.`)
+      }
+      return issue(found)
+    },
+    issues: (args: IssuesArgs) => issueConnection(ctx, repo, args, issue),
+    pullRequest: async ({ number }: { number: number }) => {
+      const row = await pullRow(ctx.db, ctx.tenant, repo, number)
+      if (row === null) {
+        throw new Error(`Could not resolve to a PullRequest with the number of ${String(number)}.`)
+      }
+      return pull(row)
+    },
+    pullRequests: (args: PullRequestsArgs) => pullRequestConnection(ctx, repo, args, pull),
+  })
 }
 
 /** The value a GraphQL `RepositoryOrder` field sorts one repository by. */

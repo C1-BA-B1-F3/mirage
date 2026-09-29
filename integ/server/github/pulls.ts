@@ -241,7 +241,11 @@ function reviewJson(repo: RepoRow, number: number, row: ReviewRow): JsonValue {
   }
 }
 
-async function reviewRows(ctx: Ctx<C>, repo: RepoRow, number: number): Promise<ReviewRow[]> {
+async function reviewRows(
+  ctx: { db: C; tenant: string },
+  repo: RepoRow,
+  number: number,
+): Promise<ReviewRow[]> {
   return (await ctx.db.githubReview.findMany({
     where: { ...scope(ctx.tenant), repo: repo.fullName, pullNumber: number },
     orderBy: { seq: 'asc' },
@@ -336,7 +340,11 @@ function reviewNode(repo: RepoRow, number: number, row: ReviewRow): Record<strin
  * checks and statuses rolled up against it. Nothing in the fake diffs two
  * trees, which is why the counts, the file and the commit are fixed.
  */
-function headCommit(ctx: Ctx<C>, repo: RepoRow, row: PullRow): Record<string, unknown> {
+function headCommit(
+  ctx: { db: C; tenant: string },
+  repo: RepoRow,
+  row: PullRow,
+): Record<string, unknown> {
   const where = { ...scope(ctx.tenant), repo: repo.fullName }
   const person = commitPerson(row.user, row.createdAt) as { name: string; email: string }
   return {
@@ -386,7 +394,7 @@ function headCommit(ctx: Ctx<C>, repo: RepoRow, row: PullRow): Record<string, un
  * opens every pull request between two of one repository's branches.
  */
 export async function pullRequestNode(
-  ctx: Ctx<C>,
+  ctx: { db: C; tenant: string },
   repo: RepoRow,
   row: PullRow,
   repository: Record<string, unknown>,
@@ -502,7 +510,7 @@ export interface PullRequestsArgs extends PageArgs {
  * into its node, which the caller composes with what it owns.
  */
 export async function pullRequestConnection(
-  ctx: Ctx<C>,
+  ctx: { db: C; tenant: string },
   repo: RepoRow,
   args: PullRequestsArgs,
   nodes: (row: PullRow) => Promise<Record<string, unknown>>,

@@ -18,11 +18,6 @@ import type { Ctx, JsonValue, KitRoute, Reply } from '../kit/typescript/index.ts
 import { DEFAULT_LOGIN } from './config.ts'
 import type { C } from './config.ts'
 import { authedRoute, everywhere, jsonBodyOf, route, str } from './http.ts'
-import { issueConnection, issueNode, issueRow } from './issues.ts'
-import type { IssueRow, IssuesArgs } from './issues.ts'
-import { commentConnection } from './issues.ts'
-import { pullRequestConnection, pullRequestNode, pullRow } from './pulls.ts'
-import type { PullRequestsArgs, PullRow } from './pulls.ts'
 import { ownedRepositories, repositoryNode } from './repos.ts'
 import { repoByName } from './store.ts'
 
@@ -356,45 +351,7 @@ async function answer(ctx: Ctx<C>): Promise<Reply> {
         if (repo === null) {
           throw new Error(`Could not resolve to a Repository with the name '${owner}/${name}'.`)
         }
-        const node = await repositoryNode(ctx, repo)
-        // Issues own the comments on a pull request as on an issue.
-        const pull = async (row: PullRow): Promise<Record<string, unknown>> => ({
-          ...(await pullRequestNode(ctx, repo, row, node)),
-          __typename: 'PullRequest',
-          comments: commentConnection(ctx, repo, row.number),
-        })
-        const issue = (row: IssueRow): Promise<Record<string, unknown>> =>
-          issueNode(ctx, repo, row, node)
-        return {
-          ...node,
-          issueOrPullRequest: async ({ number }: { number: number }) => {
-            const found = await issueRow(ctx.db, ctx.tenant, repo, number)
-            if (found !== null) return issue(found)
-            const row = await pullRow(ctx.db, ctx.tenant, repo, number)
-            if (row !== null) return pull(row)
-            throw new Error(
-              `Could not resolve to an issue or pull request with the number of ${String(number)}.`,
-            )
-          },
-          issue: async ({ number }: { number: number }) => {
-            const found = await issueRow(ctx.db, ctx.tenant, repo, number)
-            if (found === null) {
-              throw new Error(`Could not resolve to an Issue with the number of ${String(number)}.`)
-            }
-            return issue(found)
-          },
-          issues: (args: IssuesArgs) => issueConnection(ctx, repo, args, issue),
-          pullRequest: async ({ number }: { number: number }) => {
-            const row = await pullRow(ctx.db, ctx.tenant, repo, number)
-            if (row === null) {
-              throw new Error(
-                `Could not resolve to a PullRequest with the number of ${String(number)}.`,
-              )
-            }
-            return pull(row)
-          },
-          pullRequests: (args: PullRequestsArgs) => pullRequestConnection(ctx, repo, args, pull),
-        }
+        return repositoryNode(ctx, repo)
       },
       repositoryOwner: ({ login }: { login: string }) => ownedRepositories(ctx, login),
       viewer: () => ownedRepositories(ctx, DEFAULT_LOGIN),

@@ -148,7 +148,7 @@ async def cat_generic(
                 parts.append(data)
             io.reads.update(reads)
             io.cache.extend(reads)
-            source = async_chain(*parts)
+            source = async_chain(parts)
         if err:
             io.stderr = err
             io.exit_code = 1

@@ -143,7 +143,7 @@ async function executeBody(
 function chainNonNull(sources: readonly (ByteSource | null)[]): ByteSource | null {
   const nonNull = sources.filter((s): s is ByteSource => s !== null)
   if (nonNull.length === 0) return null
-  return asyncChain(...nonNull)
+  return asyncChain(nonNull)
 }
 
 function collectLoopResult(
@@ -613,7 +613,7 @@ export async function handleCase(
   if (!ran) return [null, new IOResult(), new ExecutionNode({ command: 'case', exitCode: 0 })]
   const first = allStdout[0]
   if (allStdout.length === 1 && first !== undefined) return [first, mergedIo, lastExec]
-  const combined = allStdout.length > 0 ? asyncChain(...allStdout) : null
+  const combined = allStdout.length > 0 ? asyncChain(allStdout) : null
   return [combined, mergedIo, lastExec]
 }
 

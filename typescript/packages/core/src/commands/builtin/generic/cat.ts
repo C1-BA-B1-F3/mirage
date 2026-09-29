@@ -198,7 +198,7 @@ export async function catGeneric(
       }
       outputs.push(readable.length === 1 ? cachable : reported(cachable, io, p))
     }
-    const merged = outputs.length === 1 ? outputs[0] : asyncChain(...outputs)
+    const merged = outputs.length === 1 ? outputs[0] : asyncChain(outputs)
     if (merged === undefined) throw new Error('cat: missing readable stream')
     const out: ByteSource = wantsDisplay ? displayLines(merged, display) : merged
     return [out, io]

@@ -293,7 +293,7 @@ export async function handleConnection(
     children.push(rightExec)
     const rightBytes = await materialize(rightStdout)
     const merged = await leftIo.merge(rightIo)
-    const combined = asyncChain(leftBytes, rightBytes)
+    const combined = asyncChain([leftBytes, rightBytes])
     return [combined, merged, new ExecutionNode({ op: '&&', exitCode: merged.exitCode, children })]
   }
 
@@ -324,7 +324,7 @@ export async function handleConnection(
     children.push(rightExec)
     const rightBytes = await materialize(rightStdout)
     const merged = await leftIo.merge(rightIo)
-    const combined = asyncChain(leftBytes, rightBytes)
+    const combined = asyncChain([leftBytes, rightBytes])
     return [combined, merged, new ExecutionNode({ op: '||', exitCode: merged.exitCode, children })]
   }
 
@@ -347,7 +347,7 @@ export async function handleConnection(
   children.push(rightExec)
   const rightBytes = await materialize(rightStdout)
   const merged = await leftIo.merge(rightIo)
-  const combined = asyncChain(leftBytes, rightBytes)
+  const combined = asyncChain([leftBytes, rightBytes])
   return [
     combined,
     merged,
@@ -493,7 +493,7 @@ export async function handleSubshell(
     if (allStdout.length === 1 && allStdout[0] !== undefined) {
       return [allStdout[0], mergedIo, lastExec]
     }
-    const combined = allStdout.length > 0 ? asyncChain(...allStdout) : null
+    const combined = allStdout.length > 0 ? asyncChain(allStdout) : null
     return [combined, mergedIo, lastExec]
   } finally {
     session.restore(saved)

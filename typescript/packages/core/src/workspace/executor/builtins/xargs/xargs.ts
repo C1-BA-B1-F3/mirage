@@ -863,7 +863,7 @@ export async function handleXargs(
     exitCode = ios.some((io) => io.exitCode !== 0) ? 123 : 0
   }
   merged.exitCode = exitCode
-  const out = stdouts.length > 0 ? asyncChain(...stdouts) : null
+  const out = stdouts.length > 0 ? asyncChain(stdouts) : null
   return [out, merged, new ExecutionNode({ command: 'xargs', exitCode })]
 }
 

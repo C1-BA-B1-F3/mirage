@@ -203,6 +203,19 @@
         "stdout": "in:new\nout:old\nu:old\nu-out:old\ne-out:kept\nx=kept\nd:pre\nd-out:glob\nl:pre\ninner:n2\nnest:n1\ntop:glob\ndup:glob\nh:glob\ng:glob\ntop:glob\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "ctl_for_long_word_list_leaves_last_value",
+      "seq": 502177,
+      "targets": [
+        "ram"
+      ],
+      "command": "for i in $(seq 1 300000); do :; done; echo \"$i\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "300000\n",
+        "stderr": ""
+      }
     }
   ]
 }

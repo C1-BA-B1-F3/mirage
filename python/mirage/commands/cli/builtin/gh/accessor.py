@@ -55,9 +55,31 @@ def gh_repo(config: GhConfig, spec: str | None) -> RepoRef:
     return parse_repo(named)
 
 
+# gh's exporter writes with Go's encoding/json, which escapes U+2028 and
+# U+2029 where json.dumps writes them raw. Every other character comes out
+# the same (Go 1.22 and later spell \b and \f short, as json.dumps does),
+# <, > and & raw too, since gh turns HTML escaping off.
+_SEPARATORS = re.compile(r"[\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}]")
+
+
+def _go_json(value: JsonValue) -> str:
+    """One value as gh's exporter prints it: Go's compact JSON.
+
+    Args:
+        value (JsonValue): the value to print.
+    """
+    text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return _SEPARATORS.sub(lambda match: f"\\u{ord(match.group()):04x}", text)
+
+
 def json_out(value: JsonValue) -> tuple[ByteSource | None, IOResult]:
-    text = ("" if value is None else
-            f"{json.dumps(value, indent=2, ensure_ascii=False)}\n")
+    """``--json`` output as gh writes it where stdout is not a terminal,
+    which in a workspace it never is: one compact line.
+
+    Args:
+        value (JsonValue): the selected fields.
+    """
+    text = "" if value is None else f"{_go_json(value)}\n"
     return yield_bytes(text.encode()), IOResult()
 
 

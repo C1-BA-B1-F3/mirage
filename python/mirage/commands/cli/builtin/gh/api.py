@@ -253,7 +253,7 @@ async def api(
         if endpoint == "graphql":
             diagnostic = _server_error(response.data, response.status)
             if diagnostic:
-                return _failed(pages, fl, _compact_json(response.data),
+                return _failed(pages, fl, _body_text(response.data),
                                diagnostic)
         pages.append(response.data)
         first = False
@@ -302,14 +302,47 @@ def _failed(pages: list[Any], fl: FlagView, body: str,
         exit_code=1, stderr=f"gh: {diagnostic}\n".encode())
 
 
-def _compact_json(value: JsonValue) -> str:
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+def _body_text(page: Any) -> str:
+    """A page's body as gh copies it out: verbatim, with no newline added.
 
+    The body arrives decoded, and the vendor's JSON is compact, so the
+    compact spelling of what arrived is the text it sent. A body that is
+    not JSON is its own text, and a call that answered with none prints
+    nothing.
 
-def _json_page(value: Any) -> str:
-    if value is None:
+    Args:
+        page (Any): the decoded body.
+    """
+    if page is None:
         return ""
-    return json.dumps(value, indent=2, ensure_ascii=False) + "\n"
+    if isinstance(page, str):
+        return page
+    return json.dumps(page, ensure_ascii=False, separators=(",", ":"))
+
+
+def _joined_pages(pages: list[Any], more: bool) -> str:
+    """The bodies of ``--paginate`` as gh's paginatedArrayReader streams
+    them.
+
+    A JSON array body after the first opens with a comma instead of its
+    bracket (an empty one with a space), and one that more pages follow
+    drops its closing bracket, so array pages print as one array. Object
+    bodies, and bodies that are not JSON, run on as they came.
+
+    Args:
+        pages (list[Any]): the decoded bodies of the pages that landed.
+        more (bool): whether a failing body follows the last page here.
+    """
+    texts: list[str] = []
+    for index, page in enumerate(pages):
+        text = _body_text(page)
+        if page is not None and not isinstance(page, str):
+            if index > 0 and text.startswith("["):
+                text = (" " if text.startswith("[]") else ",") + text[1:]
+            if (more or index < len(pages) - 1) and text.endswith("]"):
+                text = text[:-1]
+        texts.append(text)
+    return "".join(texts)
 
 
 def _render_pages(pages: list[Any],
@@ -329,16 +362,14 @@ def _render_pages(pages: list[Any],
     if fl.as_bool("silent"):
         return ""
     slurp = fl.as_bool("slurp")
+    # gh's jsonArrayWriter: every body in one array, a comma between each.
     if slurp and failure is not None:
-        return "[" + ",".join([*map(_compact_json, pages), failure]) + "]"
+        return "[" + ",".join([*map(_body_text, pages), failure]) + "]"
     program = fl.as_str("jq")
     if program:
         inputs = [pages] if slurp else pages
-        rendered = "".join(f"{jq_line(value)}\n" for item in inputs
-                           for value in jq_eval(item, program))
-    elif slurp:
-        rendered = _json_page(pages)
-    else:
-        rendered = "".join(page if isinstance(page, str) else _json_page(page)
-                           for page in pages)
-    return rendered + (failure or "")
+        return "".join(f"{jq_line(value)}\n" for item in inputs
+                       for value in jq_eval(item, program)) + (failure or "")
+    if slurp:
+        return "[" + ",".join(map(_body_text, pages)) + "]"
+    return _joined_pages(pages, failure is not None) + (failure or "")

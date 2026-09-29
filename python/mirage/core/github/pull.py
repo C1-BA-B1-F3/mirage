@@ -13,12 +13,13 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from mirage.core.github.client import github_request
 from mirage.core.github.config import GhConfig
 from mirage.core.github.paginate import github_pages
-from mirage.core.github.repo import RepoRef
+from mirage.core.github.repo import RepoRef, graphql_data
 from mirage.types import JsonValue
 
 STATUS_CONCLUSIONS = ("error", "failure", "success")
@@ -49,6 +50,131 @@ async def get_pull(config: GhConfig, ref: RepoRef, number: int) -> JsonValue:
                                 "GET",
                                 _path(ref, f"/{number}"),
                                 base_url=config.base_url)
+
+
+async def pull_request_fields(config: GhConfig,
+                              ref: RepoRef,
+                              number: int,
+                              selection: str,
+                              end_cursor: str | None = None) -> dict[str, Any]:
+    """The selected fields of one pull request, over GraphQL, as gh's
+    PullRequestByNumber asks for them for ``pr view --json``: one query
+    naming only what was asked for. A selection that reads the page of a
+    connection after ``$endCursor`` is given that cursor as
+    ``end_cursor``.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        number (int): the pull request.
+        selection (str): the GraphQL selection inside ``pullRequest { }``.
+        end_cursor (str | None): the cursor ``$endCursor`` carries.
+    """
+    variables: dict[str, JsonValue] = {
+        "owner": ref.owner,
+        "repo": ref.repo,
+        "pr_number": number,
+    }
+    if end_cursor is not None:
+        variables["endCursor"] = end_cursor
+    cursor = "" if end_cursor is None else ", $endCursor: String"
+    data = await graphql_data(
+        config, "query PullRequestByNumber($owner: String!, $repo: String!, "
+        f"$pr_number: Int!{cursor}) {{\n"
+        "    repository(owner: $owner, name: $repo) {\n"
+        f"      pullRequest(number: $pr_number) {{{selection}}}\n"
+        "    }\n  }", variables)
+    repository = data.get("repository")
+    pull = repository.get("pullRequest") if isinstance(repository,
+                                                       dict) else None
+    return pull if isinstance(pull, dict) else {}
+
+
+@dataclass(frozen=True, slots=True)
+class PullListFilter:
+    """The narrowing ``gh pr list`` applies before it lists.
+
+    Args:
+        states (tuple[str, ...]): the pull request states to list.
+        base (str | None): the base branch, or any.
+        head (str | None): the head branch, or any.
+    """
+    states: tuple[str, ...]
+    base: str | None = None
+    head: str | None = None
+
+
+_PULL_LIST = ("    query PullRequestList(\n      $owner: String!,\n"
+              "      $repo: String!,\n      $limit: Int!,\n"
+              "      $endCursor: String,\n      $baseBranch: String,\n"
+              "      $headBranch: String,\n"
+              "      $state: [PullRequestState!] = OPEN\n    ) {\n"
+              "      repository(owner: $owner, name: $repo) {\n"
+              "        pullRequests(\n          states: $state,\n"
+              "          baseRefName: $baseBranch,\n"
+              "          headRefName: $headBranch,\n          first: $limit,\n"
+              "          after: $endCursor,\n"
+              "          orderBy: {field: CREATED_AT, direction: DESC}\n"
+              "        ) {\n          totalCount\n          nodes {\n"
+              "            ...pr\n          }\n          pageInfo {\n"
+              "            hasNextPage\n            endCursor\n          }\n"
+              "        }\n      }\n    }")
+
+
+async def list_pull_request_fields(config: GhConfig, ref: RepoRef,
+                                   filter_: PullListFilter, limit: int,
+                                   selection: str) -> list[dict[str, Any]]:
+    """The selected fields of a repository's pull requests, over GraphQL,
+    as gh's PullRequestList asks for them for ``pr list --json``: newest
+    first, a page of up to 100 at a time until ``limit``. A pull request
+    a later page repeats is listed once, which gh can only tell when the
+    line asked for ``number``.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        filter_ (PullListFilter): the states and the base and head
+            branches.
+        limit (int): how many pull requests at most.
+        selection (str): the GraphQL selection for each pull request.
+    """
+    query = f"fragment pr on PullRequest{{{selection}}}\n{_PULL_LIST}"
+    rows: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    cursor: str | None = None
+    page_limit = min(limit, 100)
+    while len(rows) < limit:
+        variables: dict[str, JsonValue] = {
+            "owner": ref.owner,
+            "repo": ref.repo,
+            "limit": page_limit,
+            "state": list(filter_.states),
+        }
+        if filter_.base:
+            variables["baseBranch"] = filter_.base
+        if filter_.head:
+            variables["headBranch"] = filter_.head
+        if cursor is not None:
+            variables["endCursor"] = cursor
+        data = await graphql_data(config, query, variables)
+        repository = data.get("repository") or {}
+        page = repository.get("pullRequests") or {}
+        for node in page.get("nodes") or []:
+            number = node.get("number")
+            if isinstance(number, int) and number > 0:
+                if number in seen:
+                    continue
+                seen.add(number)
+            rows.append(node)
+            if len(rows) == limit:
+                break
+        info = page.get("pageInfo") or {}
+        following = info.get("endCursor")
+        if not info.get("hasNextPage") or following in (None, cursor):
+            break
+        cursor = following
+        page_limit = min(page_limit, limit - len(rows))
+    return rows
 
 
 async def create_pull(config: GhConfig, ref: RepoRef,

@@ -29,6 +29,18 @@ import {
   withRepo,
 } from './http.ts'
 import { pullJson, pullRow } from './pulls.ts'
+import type { PullRow } from './pulls.ts'
+import {
+  PROJECTS_CLASSIC_GONE,
+  closedNumbers,
+  issueNodeId,
+  nodeId,
+  page,
+  pullNodeId,
+  reactionGroups,
+  userNode,
+} from './wire.ts'
+import type { PageArgs } from './wire.ts'
 
 // Both timestamps are fixed rather than taken from the clock: a golden renders
 // them, so a real one would make every case that files an issue unassertable.
@@ -43,6 +55,8 @@ export interface IssueRow {
   user: string
   labelsJson: string
   assigneesJson: string
+  stateReason: string
+  closedAt: string
   createdAt: string
   updatedAt: string
 }
@@ -64,8 +78,10 @@ export function issueJson(repo: RepoRow, row: IssueRow): JsonValue {
     title: row.title,
     body: row.body,
     state: row.state,
+    state_reason: row.stateReason === '' ? null : row.stateReason,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
+    closed_at: row.closedAt === '' ? null : row.closedAt,
     user: { login: row.user },
     assignees: names(row.assigneesJson).map((login) => ({ login })),
     labels: names(row.labelsJson).map((name) => ({ name })),
@@ -121,6 +137,8 @@ async function createIssue(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
     user: DEFAULT_LOGIN,
     labelsJson: nameList(body.labels),
     assigneesJson: nameList(body.assignees),
+    stateReason: '',
+    closedAt: '',
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
   }
@@ -163,6 +181,15 @@ async function editIssue(ctx: Ctx<C>, repo: RepoRow): Promise<Reply> {
   if ('title' in body) next.title = str(body, 'title')
   if ('body' in body) next.body = str(body, 'body')
   if ('state' in body) next.state = str(body, 'state')
+  // The vendor records why on every close (completed unless the caller
+  // says otherwise) and on every reopen, and when the issue last closed.
+  if (next.state === 'closed' && row.state !== 'closed') {
+    next.stateReason = str(body, 'state_reason') || 'completed'
+    next.closedAt = EDITED_AT
+  } else if (next.state === 'open' && row.state === 'closed') {
+    next.stateReason = 'reopened'
+    next.closedAt = ''
+  }
   if ('labels' in body) next.labelsJson = nameList(body.labels)
   if ('assignees' in body) next.assigneesJson = nameList(body.assignees)
   await ctx.db.githubIssue.updateMany({
@@ -247,50 +274,162 @@ function commentCursor(id: number): string {
 }
 
 /**
- * The GraphQL `issueOrPullRequest` node for one number, null when the
- * repository holds neither: its type and a page of its comments, oldest first.
+ * The GraphQL `comments` connection of one issue or pull request: the rows
+ * `issues/{n}/comments` wrote, oldest first, a page at a time.
  */
-export async function issueOrPullRequestNode(
+export function commentConnection(
   ctx: Ctx<C>,
   repo: RepoRow,
   number: number,
-): Promise<Record<string, unknown> | null> {
-  const issue = await issueRow(ctx.db, ctx.tenant, repo, number)
-  const pull = issue === null ? await pullRow(ctx.db, ctx.tenant, repo, number) : null
-  if (issue === null && pull === null) return null
-  return {
-    __typename: issue === null ? 'PullRequest' : 'Issue',
-    comments: async ({ first, after }: { first: number; after?: string }) => {
-      if (first < 1 || first > 100) throw new Error('first must be between 1 and 100')
-      const rows = await ctx.db.githubComment.findMany({
-        where: { ...scope(ctx.tenant), repo: repo.fullName, issueNumber: number },
-        orderBy: { seq: 'asc' },
-      })
-      const start = after ? rows.findIndex((row) => commentCursor(row.id) === after) + 1 : 0
-      if (after && start === 0) throw new Error('Invalid cursor')
-      const page = rows.slice(start, start + first)
-      return {
-        nodes: page.map((row) => ({
-          id: Buffer.from(`012:IssueComment${row.id}`).toString('base64'),
-          author: { login: row.user },
-          authorAssociation: 'NONE',
-          body: row.body,
-          createdAt: row.createdAt,
-          includesCreatedEdit: false,
-          isMinimized: false,
-          minimizedReason: null,
-          reactionGroups: [],
-          url: `https://github.com/${repo.fullName}/issues/${number}#issuecomment-${row.id}`,
-          viewerDidAuthor: row.user === DEFAULT_LOGIN,
-          ...(JSON.parse(row.metaJson) as Record<string, JsonValue>),
-        })),
-        pageInfo: {
-          hasNextPage: start + first < rows.length,
-          endCursor: page.length ? commentCursor(page[page.length - 1]!.id) : null,
-        },
-      }
-    },
+): (args: { first: number; after?: string | null }) => Promise<Record<string, unknown>> {
+  return async ({ first, after }) => {
+    if (first < 1 || first > 100) throw new Error('first must be between 1 and 100')
+    const rows = await ctx.db.githubComment.findMany({
+      where: { ...scope(ctx.tenant), repo: repo.fullName, issueNumber: number },
+      orderBy: { seq: 'asc' },
+    })
+    const start = after ? rows.findIndex((row) => commentCursor(row.id) === after) + 1 : 0
+    if (after && start === 0) throw new Error('Invalid cursor')
+    const page = rows.slice(start, start + first)
+    return {
+      nodes: page.map((row) => ({
+        id: Buffer.from(`012:IssueComment${row.id}`).toString('base64'),
+        author: userNode(row.user),
+        authorAssociation: 'NONE',
+        body: row.body,
+        createdAt: row.createdAt,
+        includesCreatedEdit: false,
+        isMinimized: false,
+        minimizedReason: null,
+        reactionGroups: [],
+        url: `https://github.com/${repo.fullName}/issues/${number}#issuecomment-${row.id}`,
+        viewerDidAuthor: row.user === DEFAULT_LOGIN,
+        ...(JSON.parse(row.metaJson) as Record<string, JsonValue>),
+      })),
+      totalCount: rows.length,
+      pageInfo: {
+        hasNextPage: start + first < rows.length,
+        endCursor: page.length ? commentCursor(page[page.length - 1]!.id) : null,
+      },
+    }
   }
+}
+
+/** A pull request as GraphQL references it from an issue it closes. */
+function pullReference(
+  repo: RepoRow,
+  row: PullRow,
+  repository: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    id: pullNodeId(repo.seq, row.number),
+    number: row.number,
+    url: `https://github.com/${repo.fullName}/pull/${String(row.number)}`,
+    repository,
+  }
+}
+
+/**
+ * One issue as GraphQL's `Issue` reports it, for every field `gh issue
+ * view --json` and `gh issue list --json` read: its labels and assignees
+ * from the names the REST side stores, the pull requests whose body says
+ * they close it, and its comments. `repository` is the GraphQL node of the
+ * repository it lives in.
+ */
+export async function issueNode(
+  ctx: Ctx<C>,
+  repo: RepoRow,
+  row: IssueRow,
+  repository: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const closed = row.state === 'closed'
+  const pulls = (await ctx.db.githubPull.findMany({
+    where: { ...scope(ctx.tenant), repo: repo.fullName },
+    orderBy: { seq: 'asc' },
+  })) as PullRow[]
+  const closers = pulls.filter((pull) => closedNumbers(pull.body).includes(row.number))
+  return {
+    __typename: 'Issue',
+    id: issueNodeId(repo.seq, row.number),
+    number: row.number,
+    title: row.title,
+    body: row.body,
+    url: `https://github.com/${repo.fullName}/issues/${String(row.number)}`,
+    state: closed ? 'CLOSED' : 'OPEN',
+    stateReason: row.stateReason === '' ? null : row.stateReason.toUpperCase(),
+    closed,
+    closedAt: row.closedAt === '' ? null : row.closedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    author: userNode(row.user),
+    assignees: ({ first, after }: PageArgs) =>
+      page(names(row.assigneesJson).map(userNode), first, after),
+    labels: ({ first, after }: PageArgs) =>
+      page(
+        names(row.labelsJson).map((name) => ({
+          id: nodeId('05:Label', `${String(repo.seq)}:${name}`),
+          name,
+          description: null,
+          color: 'ededed',
+        })),
+        first,
+        after,
+      ),
+    milestone: null,
+    reactionGroups: reactionGroups(),
+    isPinned: false,
+    repository,
+    comments: commentConnection(ctx, repo, row.number),
+    projectCards: () => {
+      throw new Error(PROJECTS_CLASSIC_GONE)
+    },
+    projectItems: ({ first, after }: PageArgs) => page([], first, after),
+    closedByPullRequestsReferences: ({ first, after }: PageArgs) =>
+      page(
+        closers.map((pull) => pullReference(repo, pull, repository)),
+        first,
+        after,
+      ),
+  }
+}
+
+/** The arguments GraphQL's `issues` connection narrows by. */
+export interface IssuesArgs extends PageArgs {
+  states?: string[] | null
+  filterBy?: {
+    assignee?: string | null
+    createdBy?: string | null
+    mentioned?: string | null
+    labels?: string[] | null
+  } | null
+}
+
+/**
+ * The issues GraphQL's `issues` lists: narrowed by state, assignee, author
+ * and labels (every one of them), newest first, a page at a time. `nodes`
+ * turns each row into its node.
+ */
+export async function issueConnection(
+  ctx: Ctx<C>,
+  repo: RepoRow,
+  args: IssuesArgs,
+  nodes: (row: IssueRow) => Promise<Record<string, unknown>>,
+): Promise<Record<string, unknown>> {
+  const rows = (await ctx.db.githubIssue.findMany({
+    where: { ...scope(ctx.tenant), repo: repo.fullName },
+    orderBy: { seq: 'desc' },
+  })) as IssueRow[]
+  const states = args.states ?? ['OPEN', 'CLOSED']
+  const filter = args.filterBy ?? {}
+  const kept = rows.filter((row) => {
+    if (!states.includes(row.state === 'closed' ? 'CLOSED' : 'OPEN')) return false
+    if (filter.assignee && !names(row.assigneesJson).includes(filter.assignee)) return false
+    if (filter.createdBy && row.user !== filter.createdBy) return false
+    const labels = new Set(names(row.labelsJson))
+    return (filter.labels ?? []).every((label) => labels.has(label))
+  })
+  const connection = page(kept, args.first ?? 0, args.after)
+  return { ...connection, nodes: await Promise.all(connection.nodes.map(nodes)) }
 }
 
 export function issueRoutes(): KitRoute<C>[] {

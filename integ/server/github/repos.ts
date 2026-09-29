@@ -15,7 +15,7 @@
 import type { JsonValue, KitRoute } from '../kit/typescript/index.ts'
 import { API_PREFIXES, DEFAULT_LOGIN } from './config.ts'
 import type { C } from './config.ts'
-import { commitJson } from './wire.ts'
+import { PROJECTS_CLASSIC_GONE, commitJson, nodeId, ownerNode } from './wire.ts'
 import { createReposAllowed, initRepo } from './seed.ts'
 import {
   addBranch,
@@ -69,16 +69,6 @@ export function repoJson(repo: RepoRow): JsonValue {
 
 // Every date the fresh-repository defaults report, unless a fixture states one.
 const REPO_DATE = '2026-01-01T00:00:00Z'
-
-/** A GraphQL global id in the vendor's base64 `<type><id>` spelling. */
-function nodeId(type: string, key: string | number): string {
-  return Buffer.from(`${type}${String(key)}`).toString('base64')
-}
-
-/** The GraphQL `owner` of a repository, a user or an organization. */
-function ownerNode(login: string): Record<string, JsonValue> {
-  return { id: nodeId(login === DEFAULT_LOGIN ? '04:User' : '012:Organization', login), login }
-}
 
 /**
  * The GraphQL `Repository` for one row: the same facts the REST object reports,
@@ -195,10 +185,7 @@ export async function repositoryNode(
     assignableUsers: { nodes: [user] },
     mentionableUsers: { nodes: [user] },
     projects: () => {
-      throw new Error(
-        'Projects (classic) is being deprecated in favor of the new Projects experience, ' +
-          'see: https://github.blog/changelog/2024-05-23-sunset-notice-projects-classic/.',
-      )
+      throw new Error(PROJECTS_CLASSIC_GONE)
     },
     projectsV2: { nodes: [] },
   }
@@ -237,8 +224,11 @@ export async function ownedRepositories(
   login: string,
 ): Promise<Record<string, unknown>> {
   const owned = (await allRepos(ctx.db, ctx.tenant)).filter((row) => row.owner === login)
+  const user = login === DEFAULT_LOGIN
   return {
-    login,
+    __typename: user ? 'User' : 'Organization',
+    ...ownerNode(login),
+    ...(user ? { name: login } : {}),
     repositories: async ({ first, after, privacy, isFork, orderBy }: RepositoriesArgs) => {
       const rows = owned
         .filter((row) => {

@@ -15,8 +15,10 @@
 import pytest
 
 from mirage.core.github.config import GhConfig
-from mirage.core.github.issue import (comment_issue, edit_issue, get_issue,
-                                      issue_comments, list_issues)
+from mirage.core.github.issue import (IssueListFilter, IssueSelections,
+                                      comment_issue, edit_issue, get_issue,
+                                      issue_comments, issue_fields,
+                                      list_issue_fields, list_issues)
 from mirage.core.github.repo import RepoRef
 
 
@@ -115,3 +117,147 @@ async def test_comments_report_graphql_errors(monkeypatch):
     monkeypatch.setitem(issue_comments.__globals__, "github_request", request)
     with pytest.raises(ValueError, match="Could not resolve repository"):
         await issue_comments(GhConfig(token="t"), RepoRef("o", "r"), 1)
+
+
+class GraphQL:
+    """Canned graphql_data answers, in order, and the requests sent."""
+
+    def __init__(self, *answers):
+        self.answers = list(answers)
+        self.sent: list[tuple[str, dict]] = []
+
+    async def __call__(self, config, query, variables):
+        self.sent.append((query, dict(variables)))
+        return self.answers.pop(0)
+
+
+@pytest.mark.asyncio
+async def test_issue_fields_ask_for_the_number_as_an_issue_or_a_pull(
+        monkeypatch):
+    graphql = GraphQL({
+        "repository": {
+            "hasIssuesEnabled": True,
+            "issue": {
+                "__typename": "Issue",
+                "title": "t"
+            }
+        }
+    })
+    monkeypatch.setitem(issue_fields.__globals__, "graphql_data", graphql)
+
+    node = await issue_fields(GhConfig(token="t"), RepoRef("o", "r"), 4,
+                              IssueSelections("title,isPinned", "title"))
+
+    assert node == {"__typename": "Issue", "title": "t"}
+    query, variables = graphql.sent[0]
+    assert variables == {"owner": "o", "repo": "r", "number": 4}
+    assert "issue: issueOrPullRequest(number: $number)" in query
+    assert "...on Issue{title,isPinned}" in query
+    assert "...on PullRequest{title}" in query
+    assert "$endCursor" not in query
+
+
+@pytest.mark.asyncio
+async def test_issue_fields_leave_an_empty_half_out_and_page_by_cursor(
+        monkeypatch):
+    graphql = GraphQL({"repository": {"issue": {"__typename": "PullRequest"}}})
+    monkeypatch.setitem(issue_fields.__globals__, "graphql_data", graphql)
+
+    await issue_fields(
+        GhConfig(token="t"), RepoRef("o", "r"), 4,
+        IssueSelections(
+            "", "comments(first: 100, after: $endCursor) {nodes {id}}"), "c1")
+
+    query, variables = graphql.sent[0]
+    assert "$number: Int!, $endCursor: String)" in query
+    assert "...on Issue" not in query
+    assert variables["endCursor"] == "c1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled, message", [
+    (False, "the 'o/r' repository has disabled issues"),
+    (True, "issue was not found but GraphQL reported no error"),
+])
+async def test_issue_fields_refuse_an_answer_with_no_issue(
+        monkeypatch, enabled, message):
+    graphql = GraphQL(
+        {"repository": {
+            "hasIssuesEnabled": enabled,
+            "issue": None
+        }})
+    monkeypatch.setitem(issue_fields.__globals__, "graphql_data", graphql)
+
+    with pytest.raises(ValueError, match=message):
+        await issue_fields(GhConfig(token="t"), RepoRef("o", "r"), 4,
+                           IssueSelections("title", "title"))
+
+
+def _page(numbers, following):
+    return {
+        "repository": {
+            "hasIssuesEnabled": True,
+            "issues": {
+                "nodes": [{
+                    "number": number
+                } for number in numbers],
+                "pageInfo": {
+                    "hasNextPage": following is not None,
+                    "endCursor": following
+                },
+            }
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_issue_listing_pages_newest_first_to_the_limit(monkeypatch):
+    graphql = GraphQL(_page([9, 8], "c1"), _page([7, 6], None))
+    monkeypatch.setitem(list_issue_fields.__globals__, "graphql_data", graphql)
+
+    rows = await list_issue_fields(
+        GhConfig(token="t"), RepoRef("o", "r"),
+        IssueListFilter(("OPEN", "CLOSED"), author="me", labels=("bug", )), 3,
+        "number")
+
+    assert rows == [{"number": 9}, {"number": 8}, {"number": 7}]
+    assert graphql.sent[0][1] == {
+        "owner": "o",
+        "repo": "r",
+        "states": ["OPEN", "CLOSED"],
+        "limit": 3,
+        "author": "me",
+        "labels": ["bug"],
+    }
+    assert graphql.sent[1][1]["endCursor"] == "c1"
+    assert graphql.sent[1][1]["limit"] == 1
+    assert "fragment issue on Issue {number}" in graphql.sent[0][0]
+    assert ("orderBy: {field: CREATED_AT, direction: DESC}"
+            in graphql.sent[0][0])
+
+
+@pytest.mark.asyncio
+async def test_issue_listing_refuses_disabled_issues(monkeypatch):
+    graphql = GraphQL(
+        {"repository": {
+            "hasIssuesEnabled": False,
+            "issues": None
+        }})
+    monkeypatch.setitem(list_issue_fields.__globals__, "graphql_data", graphql)
+
+    with pytest.raises(ValueError,
+                       match="the 'o/r' repository has disabled issues"):
+        await list_issue_fields(GhConfig(token="t"), RepoRef("o", "r"),
+                                IssueListFilter(("OPEN", )), 30, "number")
+
+
+@pytest.mark.asyncio
+async def test_issue_listing_asks_nothing_for_a_zero_limit(monkeypatch):
+    graphql = GraphQL()
+    monkeypatch.setitem(list_issue_fields.__globals__, "graphql_data", graphql)
+
+    rows = await list_issue_fields(GhConfig(token="t"), RepoRef("o", "r"),
+                                   IssueListFilter(("OPEN", )), 0, "number")
+
+    assert rows == []
+    assert graphql.sent == []

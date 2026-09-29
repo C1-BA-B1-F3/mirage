@@ -12,12 +12,13 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from dataclasses import dataclass
 from typing import Any, cast
 
 from mirage.core.github.client import github_request
 from mirage.core.github.config import GhConfig
 from mirage.core.github.paginate import github_pages
-from mirage.core.github.repo import RepoRef
+from mirage.core.github.repo import RepoRef, graphql_data
 from mirage.types import JsonValue
 
 
@@ -148,3 +149,156 @@ async def issue_comments(config: GhConfig, ref: RepoRef,
         if not next_cursor or next_cursor == cursor:
             raise ValueError("GitHub returned a non-advancing comments cursor")
         cursor = next_cursor
+
+
+@dataclass(frozen=True, slots=True)
+class IssueSelections:
+    """The selection for each half of gh's IssueByNumber; an empty one is
+    left out.
+
+    Args:
+        issue (str): what to read of an issue.
+        pull (str): what to read of a pull request.
+    """
+    issue: str
+    pull: str
+
+
+async def issue_fields(config: GhConfig,
+                       ref: RepoRef,
+                       number: int,
+                       selections: IssueSelections,
+                       end_cursor: str | None = None) -> dict[str, Any]:
+    """The selected fields of one issue, over GraphQL, as gh's
+    IssueByNumber asks for them for ``issue view --json``: the number read
+    as an issue or as a pull request, each half with its own selection. A
+    selection that reads a later page of a connection is given that
+    cursor as ``end_cursor``.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        number (int): the issue or pull request.
+        selections (IssueSelections): what to read of each.
+        end_cursor (str | None): the cursor ``$endCursor`` carries.
+
+    Raises:
+        ValueError: when the repository has issues disabled, or the
+            answer carried no issue.
+    """
+    variables: dict[str, JsonValue] = {
+        "owner": ref.owner,
+        "repo": ref.repo,
+        "number": number,
+    }
+    if end_cursor is not None:
+        variables["endCursor"] = end_cursor
+    cursor = "" if end_cursor is None else ", $endCursor: String"
+    halves = ((f"\n        ...on Issue{{{selections.issue}}}"
+               if selections.issue else "") +
+              (f"\n        ...on PullRequest{{{selections.pull}}}"
+               if selections.pull else ""))
+    data = await graphql_data(
+        config, "query IssueByNumber($owner: String!, $repo: String!, "
+        f"$number: Int!{cursor}) {{\n"
+        "    repository(owner: $owner, name: $repo) {\n"
+        "      hasIssuesEnabled\n"
+        "      issue: issueOrPullRequest(number: $number) {\n"
+        f"        __typename{halves}\n      }}\n    }}\n  }}", variables)
+    repository = data.get("repository")
+    repository = repository if isinstance(repository, dict) else {}
+    issue = repository.get("issue")
+    if isinstance(issue, dict):
+        return issue
+    if repository.get("hasIssuesEnabled") is False:
+        raise ValueError(
+            f"the '{ref.owner}/{ref.repo}' repository has disabled issues")
+    raise ValueError("issue was not found but GraphQL reported no error")
+
+
+@dataclass(frozen=True, slots=True)
+class IssueListFilter:
+    """The narrowing ``gh issue list`` applies before it lists.
+
+    Args:
+        states (tuple[str, ...]): the issue states to list.
+        assignee (str | None): the assignee, or any.
+        author (str | None): the author, or any.
+        labels (tuple[str, ...]): labels an issue must all carry.
+    """
+    states: tuple[str, ...]
+    assignee: str | None = None
+    author: str | None = None
+    labels: tuple[str, ...] = ()
+
+
+_ISSUE_LIST = (
+    "\tquery IssueList($owner: String!, $repo: String!, $limit: Int, "
+    "$endCursor: String, $states: [IssueState!] = OPEN, $assignee: String, "
+    "$author: String, $mention: String, $labels: [String!]) {\n"
+    "\t\trepository(owner: $owner, name: $repo) {\n"
+    "\t\t\thasIssuesEnabled\n\t\t\tissues(first: $limit, after: $endCursor, "
+    "orderBy: {field: CREATED_AT, direction: DESC}, states: $states, "
+    "filterBy: {assignee: $assignee, createdBy: $author, mentioned: $mention, "
+    "labels: $labels}) {\n\t\t\t\ttotalCount\n\t\t\t\tnodes {\n"
+    "\t\t\t\t\t...issue\n\t\t\t\t}\n\t\t\t\tpageInfo {\n"
+    "\t\t\t\t\thasNextPage\n\t\t\t\t\tendCursor\n\t\t\t\t}\n"
+    "\t\t\t}\n\t\t}\n\t}\n\t")
+
+
+async def list_issue_fields(config: GhConfig, ref: RepoRef,
+                            filter_: IssueListFilter, limit: int,
+                            selection: str) -> list[dict[str, Any]]:
+    """The selected fields of a repository's issues, over GraphQL, as gh's
+    IssueList asks for them for ``issue list --json``: newest first, a
+    page of up to 100 at a time until ``limit``. gh reaches for search to
+    narrow by label; the connection's own ``labels`` filter narrows to the
+    same issues.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        filter_ (IssueListFilter): the states, assignee, author and
+            labels.
+        limit (int): how many issues at most.
+        selection (str): the GraphQL selection for each issue.
+
+    Raises:
+        ValueError: when the repository has issues disabled.
+    """
+    query = f"fragment issue on Issue {{{selection}}}\n{_ISSUE_LIST}"
+    rows: list[dict[str, Any]] = []
+    cursor: str | None = None
+    page_limit = min(limit, 100)
+    while len(rows) < limit:
+        variables: dict[str, JsonValue] = {
+            "owner": ref.owner,
+            "repo": ref.repo,
+            "states": list(filter_.states),
+            "limit": page_limit,
+        }
+        if filter_.assignee:
+            variables["assignee"] = filter_.assignee
+        if filter_.author:
+            variables["author"] = filter_.author
+        if filter_.labels:
+            variables["labels"] = list(filter_.labels)
+        if cursor is not None:
+            variables["endCursor"] = cursor
+        data = await graphql_data(config, query, variables)
+        repository = data.get("repository") or {}
+        if repository.get("hasIssuesEnabled") is False:
+            raise ValueError(
+                f"the '{ref.owner}/{ref.repo}' repository has disabled issues")
+        page = repository.get("issues") or {}
+        for node in page.get("nodes") or []:
+            rows.append(node)
+            if len(rows) == limit:
+                break
+        info = page.get("pageInfo") or {}
+        following = info.get("endCursor")
+        if not info.get("hasNextPage") or following in (None, cursor):
+            break
+        cursor = following
+        page_limit = min(page_limit, limit - len(rows))
+    return rows

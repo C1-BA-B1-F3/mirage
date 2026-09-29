@@ -32,6 +32,86 @@ export function commitSha(path: string): string {
   return createHash('sha1').update(`commit\0${path}`, 'utf8').digest('hex')
 }
 
+/** A GraphQL global id in the vendor's base64 `<type><id>` spelling. */
+export function nodeId(type: string, key: string | number): string {
+  return Buffer.from(`${type}${String(key)}`).toString('base64')
+}
+
+/** The GraphQL `owner` of a repository, a user or an organization. */
+export function ownerNode(login: string): Record<string, JsonValue> {
+  return { id: nodeId(login === DEFAULT_LOGIN ? '04:User' : '012:Organization', login), login }
+}
+
+/**
+ * A user as a GraphQL `Actor`: the concrete type rides along, since the
+ * field that holds one is abstract, and the display name is the login, as
+ * every user the fake knows spells it.
+ */
+export function userNode(login: string): Record<string, JsonValue> {
+  return { __typename: 'User', id: nodeId('04:User', login), login, name: login }
+}
+
+/** The GraphQL id of an issue, keyed by its repository and number. */
+export function issueNodeId(repoSeq: number, number: number): string {
+  return nodeId('05:Issue', `${String(repoSeq)}:${String(number)}`)
+}
+
+/** The GraphQL id of a pull request, keyed by its repository and number. */
+export function pullNodeId(repoSeq: number, number: number): string {
+  return nodeId('011:PullRequest', `${String(repoSeq)}:${String(number)}`)
+}
+
+/** The eight reaction groups GraphQL lists on anything a user can react to. */
+export function reactionGroups(): JsonValue[] {
+  return ['THUMBS_UP', 'THUMBS_DOWN', 'LAUGH', 'HOORAY', 'CONFUSED', 'HEART', 'ROCKET', 'EYES'].map(
+    (content) => ({ content, users: { totalCount: 0 } }),
+  )
+}
+
+// The pull request keywords the vendor reads as "merging this closes #n".
+export const CLOSING_KEYWORD = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b/gi
+
+/** The issue numbers a pull request body says merging it closes. */
+export function closedNumbers(body: string): number[] {
+  return [...body.matchAll(CLOSING_KEYWORD)].map((match) => Number(match[1]))
+}
+
+// How the vendor refuses any Projects (classic) field now.
+export const PROJECTS_CLASSIC_GONE =
+  'Projects (classic) is being deprecated in favor of the new Projects experience, ' +
+  'see: https://github.blog/changelog/2024-05-23-sunset-notice-projects-classic/.'
+
+/** The `first` and `after` a GraphQL connection is paged by. */
+export interface PageArgs {
+  first?: number | null
+  after?: string | null
+}
+
+/** A GraphQL connection over rows already in hand, a page at a time. */
+export function page<T>(
+  rows: T[],
+  first: number | null | undefined,
+  after: string | null | undefined,
+): {
+  nodes: T[]
+  totalCount: number
+  pageInfo: { hasNextPage: boolean; endCursor: string | null }
+} {
+  const start = after ? Number(Buffer.from(after, 'base64').toString()) : 0
+  const size = first ?? 100
+  if (size < 0 || size > 100) throw new Error('first must be between 0 and 100')
+  const nodes = rows.slice(start, start + size)
+  const end = start + nodes.length
+  return {
+    nodes,
+    totalCount: rows.length,
+    pageInfo: {
+      hasNextPage: end < rows.length,
+      endCursor: nodes.length > 0 ? Buffer.from(String(end)).toString('base64') : null,
+    },
+  }
+}
+
 export function commitPerson(name: string, when: string): JsonValue {
   const handle = name.toLowerCase().replace(/ /g, '-')
   return { name, email: `${handle}@users.noreply.github.com`, date: when }

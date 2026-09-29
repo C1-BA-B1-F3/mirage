@@ -181,7 +181,15 @@ describe('gh repo', () => {
         },
       },
     ])
-    expect(out).toBe('{\n  "name": "r",\n  "parent": null\n}\n')
+    expect(out).toBe('{"name":"r","parent":null}\n')
+  })
+
+  // Go's encoder, which gh's exporter uses, escapes the two Unicode line
+  // separators; with HTML escaping off, `<`, `>` and `&` stay raw.
+  it("prints JSON as gh does: compact, in Go's escaping", async () => {
+    reset({ data: { repository: { description: 'a<b>&c\u{2028}d\u{2029}\b\u{e9}' } } })
+    const out = text(await view(inv(['o/r'], { json: 'description' })))
+    expect(out).toBe('{"description":"a<b>&c\\u2028d\\u2029\\b\u{e9}"}\n')
   })
 
   // gh decodes the answer into Go structs and prints those: a null string is
@@ -527,7 +535,29 @@ describe('gh api', () => {
     ]
     const out = await api(inv(['items'], { paginate: true, slurp: true }))
     expect(CALLS.map((call) => call.path)).toEqual(['/items', '/items?page=2'])
-    expect(out === null ? '' : JSON.parse(text(out))).toEqual([[{ id: 1 }], [{ id: 2 }]])
+    expect(out === null ? '' : text(out)).toBe('[[{"id":1}],[{"id":2}]]')
+  })
+
+  // gh copies each body out verbatim, the vendor's compact text with no
+  // newline added, and a paginated run streams array pages as one array
+  // (its paginatedArrayReader); an empty page leaves a space behind.
+  it.each([
+    ['one body', [[{ id: 1 }]], false, '[{"id":1}]'],
+    ['array pages', [[1, 2], [3]], true, '[1,2,3]'],
+    ['an empty page between', [[1], [], [2]], true, '[1 ,2]'],
+    ['object pages', [{ a: 1 }, { a: 2 }], true, '{"a":1}{"a":2}'],
+  ] as const)('prints %s as gh does', async (_name, bodies, paginate, stdout) => {
+    reset()
+    RESPONSES = bodies.map((data, index) => ({
+      data,
+      status: 200,
+      headers:
+        index < bodies.length - 1
+          ? { link: `<http://fake/items?page=${String(index + 2)}>; rel="next"` }
+          : {},
+    }))
+    const out = await api(inv(['items'], paginate ? { paginate: true } : {}))
+    expect(out === null ? '' : text(out)).toBe(stdout)
   })
 
   it('strips the Enterprise API prefix from Link pages', async () => {
@@ -734,6 +764,12 @@ it.each([
     'gh: HTTP 422\n',
   ],
   [{ slurp: true }, '', '[{"value":"first"},]', 'gh: HTTP 422\n'],
+  [
+    {},
+    '{"message":"Validation Failed"}',
+    '{"value":"first"}{"message":"Validation Failed"}',
+    'gh: Validation Failed (HTTP 422)\n',
+  ],
   [{ silent: true }, '{"message":"Validation Failed"}', '', 'gh: Validation Failed (HTTP 422)\n'],
 ] as const)(
   'keeps rendered pages when a later request fails: %s %j',
@@ -758,6 +794,25 @@ it.each([
     }
   },
 )
+
+// A failing response after an array page is still a page to gh, so that
+// array's closing bracket stays withheld and the failing body runs on.
+it('leaves an array page open when a failing page follows it', async () => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockResolvedValueOnce({ data: [1], status: 200, headers: { link: '</page2>; rel="next"' } })
+    .mockRejectedValueOnce(
+      new GitHubApiError('Validation Failed', 422, '{"message":"Validation Failed"}'),
+    )
+  try {
+    const result = await api(inv(['page1'], { paginate: true }))
+    if (result === null) throw new Error('missing API result')
+    expect(DEC.decode(await materialize(result[0]))).toBe('[1{"message":"Validation Failed"}')
+    expect(result[1].exitCode).toBe(1)
+  } finally {
+    request.mockRestore()
+  }
+})
 
 it.each([
   [{}, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'],

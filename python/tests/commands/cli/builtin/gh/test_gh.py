@@ -246,8 +246,17 @@ async def test_json_repo_view_asks_graphql_for_the_fields_named(monkeypatch):
             },
         },
     }]
-    assert await materialize(out
-                             ) == b'{\n  "name": "r",\n  "parent": null\n}\n'
+    assert await materialize(out) == b'{"name":"r","parent":null}\n'
+
+
+@pytest.mark.asyncio
+async def test_json_output_is_ghs_compact_go_encoding(monkeypatch):
+    _graphql(monkeypatch)
+    text = "a<b>&c\N{LINE SEPARATOR}d\N{PARAGRAPH SEPARATOR}\b\u00e9"
+    _reset({"data": {"repository": {"description": text}}})
+    out, _io = await view(_inv(["o/r"], {"json": "description"}))
+    assert await materialize(out) == ('{"description":"a<b>&c\\u2028d'
+                                      '\\u2029\\b\u00e9"}\n').encode()
 
 
 # gh decodes the answer into Go structs and prints those: a null string
@@ -623,7 +632,35 @@ async def test_api_follows_link_headers_and_slurps_pages():
     ])
     out, _io = await api(_inv(["items"], {"paginate": True, "slurp": True}))
     assert [call["path"] for call in CALLS] == ["/items", "/items?page=2"]
-    assert json.loads(await materialize(out)) == [[{"id": 1}], [{"id": 2}]]
+    assert await materialize(out) == b'[[{"id":1}],[{"id":2}]]'
+
+
+# gh copies each body out verbatim, the vendor's compact text with no
+# newline added, and a paginated run streams array pages as one array (its
+# paginatedArrayReader); an empty page leaves a space behind.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bodies,paginate,stdout", [
+    ([[{
+        "id": 1
+    }]], False, '[{"id":1}]'),
+    ([[1, 2], [3]], True, "[1,2,3]"),
+    ([[1], [], [2]], True, "[1 ,2]"),
+    ([{
+        "a": 1
+    }, {
+        "a": 2
+    }], True, '{"a":1}{"a":2}'),
+])
+async def test_api_prints_bodies_as_gh_does(bodies, paginate, stdout):
+    RESPONSES.extend(
+        ApiResponse(
+            body, 200,
+            {"link": f'<http://fake/items?page={index + 2}>; '
+             'rel="next"'} if index < len(bodies) - 1 else {})
+        for index, body in enumerate(bodies))
+    out, _io = await api(
+        _inv(["items"], {"paginate": True} if paginate else {}))
+    assert await materialize(out) == stdout.encode()
 
 
 @pytest.mark.asyncio
@@ -885,6 +922,9 @@ async def test_api_failure_names_what_gh_reads_off_the_body(
     ({
         "slurp": True
     }, "", '[{"value":"first"},]', "gh: HTTP 422\n"),
+    ({}, '{"message":"Validation Failed"}',
+     '{"value":"first"}{"message":"Validation Failed"}',
+     "gh: Validation Failed (HTTP 422)\n"),
     ({
         "silent": True
     }, '{"message":"Validation Failed"}', "",
@@ -902,6 +942,22 @@ async def test_api_later_page_failure_keeps_rendered_pages(
     assert io.exit_code == 1
     assert await io.stderr_str() == stderr
     assert request.await_count == 2
+
+
+# A failing response after an array page is still a page to gh, so that
+# array's closing bracket stays withheld and the failing body runs on.
+@pytest.mark.asyncio
+async def test_api_leaves_an_array_page_open_before_a_failing_page(
+        monkeypatch):
+    request = AsyncMock(side_effect=[
+        ApiResponse([1], 200, {"link": '</page2>; rel="next"'}),
+        GitHubApiError(
+            "Validation Failed", 422, body='{"message":"Validation Failed"}'),
+    ])
+    monkeypatch.setitem(api.__globals__, "github_request_response", request)
+    out, io = await api(_inv(("page1", ), {"paginate": True}))
+    assert await materialize(out) == b'[1{"message":"Validation Failed"}'
+    assert io.exit_code == 1
 
 
 @pytest.mark.asyncio

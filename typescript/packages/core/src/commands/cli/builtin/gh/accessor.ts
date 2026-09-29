@@ -49,8 +49,26 @@ export function ghRepo(config: unknown, spec: string | undefined): RepoRef {
   return parseRepo(named)
 }
 
+// gh's exporter writes with Go's encoding/json, which escapes U+2028 and
+// U+2029 where JSON.stringify writes them raw. Every other character comes
+// out the same (Go 1.22 and later spell \b and \f short, as JSON.stringify
+// does), `<`, `>` and `&` raw too, since gh turns HTML escaping off.
+const SEPARATORS = /[\u{2028}\u{2029}]/gu
+
+/** One value as gh's exporter prints it: Go's compact JSON. */
+function goJson(value: unknown): string {
+  return JSON.stringify(value).replace(
+    SEPARATORS,
+    (separator) => `\\u${separator.charCodeAt(0).toString(16)}`,
+  )
+}
+
+/**
+ * `--json` output as gh writes it where stdout is not a terminal, which in a
+ * workspace it never is: one compact line.
+ */
 export function jsonOut(value: unknown): CommandFnResult {
-  const text = value === null ? '' : `${JSON.stringify(value, null, 2)}\n`
+  const text = value === null ? '' : `${goJson(value)}\n`
   const out: ByteSource = ENC.encode(text)
   return [out, new IOResult()]
 }

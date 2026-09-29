@@ -413,7 +413,9 @@ async def subscript_index(session: SessionState,
                                 visible_env(session),
                                 elements=session_elements(session, reader),
                                 read_var=reader.read,
-                                wrote_var=reader.wrote)
+                                wrote_var=reader.wrote,
+                                nounset=bool(
+                                    session.shell_options.get("nounset")))
         idx, writes = result.value, result.writes
     except ArithError as exc:
         error, writes = exc, exc.writes
@@ -484,6 +486,15 @@ class _SessionElements:
         """
         return name in visible_assocs(self._session)
 
+    def holds_array(self, name: str) -> bool:
+        """Whether the name holds an array, indexed or associative.
+
+        Args:
+            name (str): the variable's name.
+        """
+        return (name in visible_assocs(self._session)
+                or name in visible_arrays(self._session))
+
     def read(self, name: str, key: str) -> str | None:
         """The element's stored text, None when unset.
 
@@ -518,7 +529,8 @@ def session_elements(session: SessionState,
     bound = _SessionElements(session, reader)
     return ElementOps(resolve=bound.resolve,
                       read=bound.read,
-                      is_assoc=bound.is_assoc)
+                      is_assoc=bound.is_assoc,
+                      holds_array=bound.holds_array)
 
 
 def seed_from(word: str, session: SessionState) -> int:

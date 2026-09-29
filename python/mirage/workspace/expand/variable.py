@@ -23,7 +23,7 @@ from mirage.shell.array import (ShellArray, array_extent, array_get, array_has,
                                 array_indices, array_slice, array_values)
 from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import RANDOM
-from mirage.shell.errors import ArithError, ExitSignal
+from mirage.shell.errors import ArithError, ExitSignal, UnboundVariable
 from mirage.shell.escapes import decode_ansi_c
 from mirage.shell.helpers import get_text, source_parts
 from mirage.shell.parameter import scan_parameter
@@ -75,14 +75,6 @@ _QUOTED_ARG_TYPES = frozenset(
 # Operators that handle unset themselves, so `set -u` must not fire
 # on the lookup that feeds them.
 _UNSET_GUARD_OPS = frozenset({"-", ":-", "+", ":+", "=", ":=", "?", ":?"})
-
-
-def _unbound(var: str) -> ExitSignal:
-    # GNU: fatal at top level with status 127; a containing
-    # subshell/pipeline segment reports 1 (same shape as ${var:?}).
-    return ExitSignal(127,
-                      stderr=f"bash: {var}: unbound variable\n".encode(),
-                      contained_code=1)
 
 
 def guard_expansion_write(session: SessionState, *names: str) -> None:
@@ -260,7 +252,7 @@ def _lookup_var(var: str,
         if idx <= len(positional):
             return positional[idx - 1]
         if nounset:
-            raise _unbound(var)
+            raise UnboundVariable(var)
         return ""
     if call_stack:
         local_val = call_stack.get_local(var)
@@ -285,9 +277,24 @@ def _lookup_var(var: str,
         return home_dir(session) or ""
     if var not in env:
         if nounset:
-            raise _unbound(var)
+            raise UnboundVariable(var)
         return ""
     return env[var]
+
+
+def _positional_set(name: str, session: SessionState,
+                    call_stack: CallStack | None) -> bool:
+    """Whether ``name`` is a positional parameter the current count reaches.
+
+    Args:
+        name (str): the parameter name.
+        session (SessionState): shell session.
+        call_stack (CallStack | None): function-call scope, if any.
+    """
+    if not name.isdigit():
+        return False
+    idx = int(name)
+    return idx == 0 or idx <= len(positional_params(session, call_stack))
 
 
 def ifs_value(session: SessionState,
@@ -852,12 +859,13 @@ class _ArithOperand:
         """
         reader = random_reader(self.session)
         try:
-            result = evaluate_arith(text,
-                                    visible_env(self.session),
-                                    elements=session_elements(
-                                        self.session, reader),
-                                    read_var=reader.read,
-                                    wrote_var=reader.wrote)
+            result = evaluate_arith(
+                text,
+                visible_env(self.session),
+                elements=session_elements(self.session, reader),
+                read_var=reader.read,
+                wrote_var=reader.wrote,
+                nounset=bool(self.session.shell_options.get("nounset")))
         except ArithError as exc:
             await land_arith_writes(self.session, self.view, exc.writes,
                                     reader)
@@ -1134,13 +1142,23 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
             var_in_env = True
         if not var_in_env:
             # Specials, positionals, PWD/HOME fall back to the shared
-            # lookup; set-ness follows value presence.
+            # lookup; set-ness follows value presence, except that a
+            # positional parameter is set whenever the count reaches it,
+            # empty or not (`set -- ""` sets $1).
             val = _lookup_var(p.var_name,
                               session,
                               call_stack,
                               strict=p.op not in _UNSET_GUARD_OPS)
-            var_in_env = val != ""
+            var_in_env = val != "" or _positional_set(p.var_name, session,
+                                                      call_stack)
 
+    # `set -u` refuses an element or key that holds nothing, named as
+    # typed (`a[i]`, `m[$k]`), unless the operator handles unset itself;
+    # a length is 0 (bash 5.2.37). A scalar's refusal is _lookup_var's.
+    if (p.subscript is not None and not var_in_env
+            and session.shell_options.get("nounset") and not p.length_op
+            and not p.indirect_op and p.op not in _UNSET_GUARD_OPS):
+        raise UnboundVariable(f"{p.var_name}[{p.subscript}]")
     if p.indirect_op:
         # `${!r}` on a name reference is the target's *name*, not an
         # indirection through the value.
@@ -1191,6 +1209,12 @@ async def _expand_braces(node: TSNodeLike, session: SessionState,
         return await _operator_word(p, expand_child, quoted, session,
                                     call_stack)
     if p.op == ":":
+        # bash slices only a set parameter: an unset one expands empty
+        # and its bounds are never evaluated, so `${a[i]:.2f}` is nothing
+        # while a[i] is unset and an arithmetic error once it is set
+        # (5.2.37).
+        if not var_in_env:
+            return [value_piece("", quoted)]
         return [
             value_piece(await _substring(val, node, expand_child, operand),
                         quoted)
@@ -1294,7 +1318,12 @@ async def _expand_splat(p: _BraceParse, arr: ShellArray, keys: list[str],
     if p.indirect_op:
         items = keys
     elif p.op == ":":
-        items = await _slice_array(arr, node, expand_child, operand)
+        # An array with no element is unset to a slice, as a scalar is:
+        # empty, bounds unevaluated. The positional parameters always
+        # evaluate theirs, since `$0` stands at their front.
+        unset = p.subscript is not None and not values
+        items = [] if unset else await _slice_array(arr, node, expand_child,
+                                                    operand)
     elif p.op in _STRIP_OPS | _REPLACE_OPS | _CASE_OPS:
         items = [_value_op(p.op, el, groups) for el in values]
     elif p.op in _UNSET_GUARD_OPS:

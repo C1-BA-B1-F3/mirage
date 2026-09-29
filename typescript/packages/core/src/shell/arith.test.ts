@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { evaluateArith } from './arith.ts'
-import { ArithError } from './errors.ts'
+import { ArithError, UnboundVariable } from './errors.ts'
 import type { ElementOps } from './types.ts'
 
 describe('evaluateArith', () => {
@@ -268,5 +268,45 @@ describe('an indexed subscript', () => {
     const assoc = evaluateArith('m[a] + 1', {}, 0, fakeElements())
     expect(assoc.value).toBe(8n)
     expect(assoc.writes).toEqual([])
+  })
+})
+
+// `set -u` for the names an expression reads, pinned on bash 5.2.37: an
+// unset name is fatal, an empty one is 0, an assignment target and a
+// short-circuited operand are never read, and an array name is set
+// whatever its element 0 holds.
+describe('nounset', () => {
+  const unbound = (expr: string, env: Record<string, string> = {}): string => {
+    try {
+      evaluateArith(expr, env, 0, null, null, null, true)
+    } catch (err) {
+      if (!(err instanceof UnboundVariable)) throw err
+      expect([err.exitCode, err.containedCode]).toEqual([127, 1])
+      return new TextDecoder().decode(err.stderr)
+    }
+    throw new Error(`${expr} did not refuse`)
+  }
+
+  it('refuses a name no variable holds', () => {
+    expect(unbound('v + 1')).toBe('bash: v: unbound variable\n')
+    expect(unbound('v++')).toBe('bash: v: unbound variable\n')
+    expect(unbound('v += 1')).toBe('bash: v: unbound variable\n')
+    expect(unbound('w', { w: 'v' })).toBe('bash: v: unbound variable\n')
+  })
+
+  it('reads what is set and skips what is never read', () => {
+    const run = (expr: string, env: Record<string, string> = {}, ops: ElementOps | null = null) =>
+      evaluateArith(expr, env, 0, ops, null, null, true).value
+    expect(run('v', { v: '' })).toBe(0n)
+    expect(run('v = 1, v + 1')).toBe(2n)
+    expect(run('1 || v')).toBe(1n)
+    expect(run('0 && v')).toBe(0n)
+    expect(run('1 ? 2 : v')).toBe(2n)
+    const ops: ElementOps = { ...fakeElements(), holdsArray: (name) => name === 'holes' }
+    expect(run('holes + 1', {}, ops)).toBe(1n)
+  })
+
+  it('reads an unset name as 0 without it', () => {
+    expect(evaluateArith('v + 1', {}).value).toBe(1n)
   })
 })

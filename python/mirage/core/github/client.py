@@ -20,7 +20,7 @@ from pydantic import SecretStr
 
 from mirage.core.api.client import (ApiResponse, SessionArg, api_request,
                                     status_error)
-from mirage.core.github.constants import API_BASE, API_VERSION
+from mirage.core.github.constants import API_BASE, API_VERSION, GRAPHQL_PATH
 from mirage.types import JsonValue
 from mirage.vfs.secrets import reveal_secret
 
@@ -42,6 +42,25 @@ def github_headers(token: SecretStr) -> dict[str, str]:
 
 def github_url(path: str, base_url: str | None = None, **kwargs: str) -> str:
     return (base_url or API_BASE) + path.format(**kwargs)
+
+
+def graphql_url(base_url: str | None = None) -> str:
+    """The GraphQL endpoint of the install whose REST base is ``base_url``.
+
+    gh pairs the two by host (internal/ghinstance, GraphQLEndpoint and
+    RESTPrefix): github.com serves REST at https://api.github.com/ and
+    GraphQL at https://api.github.com/graphql, while a GitHub Enterprise
+    Server serves REST at https://HOST/api/v3/ and GraphQL at
+    https://HOST/api/graphql, which is not under the REST base.
+    Octokit's own graphql client draws the same line.
+
+    Args:
+        base_url (str | None): the REST base, defaulting to github.com's.
+    """
+    base = (base_url or API_BASE).rstrip("/")
+    if base.endswith("/api/v3"):
+        return base.removesuffix("/v3") + "/graphql"
+    return base + "/graphql"
 
 
 class GitHubApiError(Exception):
@@ -141,7 +160,8 @@ async def github_request_response(token: SecretStr,
                                   headers: dict[str, str] | None = None,
                                   session: SessionArg = None) -> ApiResponse:
     """One GitHub call retaining status and headers for CLI pagination."""
-    url = (base_url or API_BASE) + path
+    url = (graphql_url(base_url) if path == GRAPHQL_PATH else
+           (base_url or API_BASE) + path)
     merged = github_headers(token)
     for key, value in (headers or {}).items():
         prior = next((name for name in merged if name.lower() == key.lower()),

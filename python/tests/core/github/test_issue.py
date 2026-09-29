@@ -80,7 +80,7 @@ async def test_comments_follow_graphql_cursors(monkeypatch):
     async def request(token, method, path, body, *, base_url):
         cursor = body["variables"]["cursor"]
         cursors.append(cursor)
-        assert (method, path) == ("POST", "/graphql")
+        assert (method, path) == ("POST", "graphql")
         return {
             "data": {
                 "repository": {

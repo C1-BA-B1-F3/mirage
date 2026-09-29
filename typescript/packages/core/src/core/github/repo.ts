@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { GitHubApiError, type GitHubTransport } from './client.ts'
+import { GRAPHQL_PATH } from './constants.ts'
 import { decodeBase64 } from '../../utils/base64.ts'
 import { githubPages } from './paginate.ts'
 
@@ -73,7 +74,7 @@ export async function graphqlData(
   query: string,
   variables: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const response = (await transport.request('POST', '/graphql', { query, variables })) as {
+  const response = (await transport.request('POST', GRAPHQL_PATH, { query, variables })) as {
     data?: Record<string, unknown> | null
     errors?: GraphQLErrorRow[]
   }

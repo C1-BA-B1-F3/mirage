@@ -234,7 +234,7 @@ async def test_json_repo_view_asks_graphql_for_the_fields_named(monkeypatch):
     out, _io = await view(_inv(["o/r"], {"json": "parent,name"}))
     assert CALLS == [{
         "method": "POST",
-        "path": "/graphql",
+        "path": "graphql",
         "body": {
             "query":
             "query RepositoryInfo($owner: String!, $name: String!) {\n"
@@ -527,6 +527,15 @@ async def test_api_keeps_everything_after_the_first_equals():
 async def test_api_takes_an_endpoint_with_or_without_a_leading_slash():
     await api(_inv(["/user"]))
     assert CALLS[0]["path"] == "/user"
+
+
+# gh sends `graphql` alone to the GraphQL endpoint (`p == "graphql"`) and
+# any other spelling, `/graphql` included, under the REST base.
+@pytest.mark.asyncio
+async def test_api_names_graphql_by_the_bare_graphql_endpoint_alone():
+    await api(_inv(["graphql"], {"raw_field": ["query={ viewer { login } }"]}))
+    await api(_inv(["/graphql"]))
+    assert [call["path"] for call in CALLS] == ["graphql", "/graphql"]
 
 
 @pytest.mark.asyncio

@@ -406,3 +406,23 @@ describe('github listings respect the mount ttl', () => {
     }
   })
 })
+
+// du refills an expired tree only after it has validated its flags, and
+// find's expression is refused before its handler runs: a usage error
+// answers locally, with no request at all.
+describe('an invalid walk after an expiry', () => {
+  it.each(['du -s -a /gh', 'find /gh -maxdepth nope'])('%s fetches nothing', async (line) => {
+    const w = await wsOf(await vfsOf(), { policy: ReadPolicy.BOUNDED, ttl: 600 })
+    try {
+      expect(await out(w, 'ls /gh/docs')).toBe(OLD_LS)
+      await indexOf(w, '/gh').invalidate()
+      const before = gh.counts()
+      const result = await w.shell(line)
+      expect(result.exitCode).toBe(1)
+      expect(DEC.decode(result.stderr)).not.toBe('')
+      expect(delta(before)).toEqual([0, 0, 0])
+    } finally {
+      await w.close()
+    }
+  })
+})

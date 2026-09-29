@@ -33,14 +33,28 @@ async function duCommand(
   opts: CommandOpts,
 ): Promise<CommandFnResult> {
   const idx = opts.index ?? undefined
-  await ensureLiveTree(accessor, idx, opts.mountPrefix ?? '')
+  // Sizes come from accessor.tree, so each callback brings it live, after
+  // du has validated its flags: an invalid line must cost no fetch.
+  const live = (): Promise<void> => ensureLiveTree(accessor, idx, opts.mountPrefix ?? '')
   const out = await runDu(
     paths,
     opts,
-    (targets) => resolveGlob(accessor, targets, idx),
-    (p) => GITHUB_IO.stat(accessor, p, idx),
-    (p) => githubDu(accessor, p, idx),
-    (p) => githubDuAll(accessor, p, idx),
+    async (targets) => {
+      await live()
+      return resolveGlob(accessor, targets, idx)
+    },
+    async (p) => {
+      await live()
+      return GITHUB_IO.stat(accessor, p, idx)
+    },
+    async (p) => {
+      await live()
+      return githubDu(accessor, p, idx)
+    },
+    async (p) => {
+      await live()
+      return githubDuAll(accessor, p, idx)
+    },
   )
   return [out.stdout, new IOResult({ stderr: out.stderr, exitCode: out.exitCode })]
 }

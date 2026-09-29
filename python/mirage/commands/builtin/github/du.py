@@ -65,23 +65,37 @@ async def du_provision(accessor: GitHubAccessor, paths: list[PathSpec],
 
 
 async def _resolve(accessor: GitHubAccessor, index: IndexCacheStore,
-                   targets: list[PathSpec]) -> list[PathSpec]:
+                   prefix: str, targets: list[PathSpec]) -> list[PathSpec]:
+    await ensure_tree(accessor, index, prefix)
     return await resolve_glob(accessor, targets, index)
 
 
-async def _stat(accessor: GitHubAccessor, index: IndexCacheStore,
+async def _stat(accessor: GitHubAccessor, index: IndexCacheStore, prefix: str,
                 path: PathSpec):
+    await ensure_tree(accessor, index, prefix)
     return await IO.stat(accessor, path, index)
+
+
+async def _live_size(accessor: GitHubAccessor, index: IndexCacheStore,
+                     prefix: str, path: PathSpec) -> int:
+    await ensure_tree(accessor, index, prefix)
+    return await _du_size(accessor, path)
+
+
+async def _live_entries(accessor: GitHubAccessor, index: IndexCacheStore,
+                        prefix: str,
+                        path: PathSpec) -> tuple[list[tuple[str, int]], int]:
+    await ensure_tree(accessor, index, prefix)
+    return await _du_entries(accessor, path)
 
 
 @command("du", vfs="github", spec=SPECS["du"], provision=du_provision)
 async def du(accessor: GitHubAccessor, paths: list[PathSpec], texts: list[str],
              opts: CommandOpts) -> tuple[ByteSource | None, IOResult]:
-    # `_subtree` reads accessor.tree directly rather than the index, so
-    # the tree has to be hydrated first; the mount is built without it.
-    await ensure_tree(accessor, opts.index, opts.mount_prefix)
-    return await du_generic(paths, list(texts), opts,
-                            partial(_resolve, accessor, opts.index),
-                            partial(_stat, accessor, opts.index),
-                            partial(_du_size, accessor),
-                            partial(_du_entries, accessor))
+    # `_subtree` reads accessor.tree rather than the index, so each
+    # callback brings the tree live, after du has validated its flags: an
+    # invalid line must cost no fetch.
+    live = (accessor, opts.index, opts.mount_prefix)
+    return await du_generic(paths, list(texts), opts, partial(_resolve, *live),
+                            partial(_stat, *live), partial(_live_size, *live),
+                            partial(_live_entries, *live))

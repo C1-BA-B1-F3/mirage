@@ -361,3 +361,24 @@ async def test_a_mount_without_a_ttl_caps_listings_at_the_default(
             assert await _out(ws, "ls /gh/docs") == expected
         finally:
             await ws.close()
+
+
+# du refills an expired tree only after it has validated its flags, and
+# find's expression is refused before its handler runs: a usage error
+# answers locally, with no request at all.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("line", ["du -s -a /gh", "find /gh -maxdepth nope"])
+async def test_an_invalid_walk_after_an_expiry_fetches_nothing(line):
+    with serve(_hub()) as hub:
+        ws = _ws(_vfs(hub))
+        try:
+            await _out(ws, "ls /gh/docs")
+            await _expire(ws, "/gh")
+            before = hub.counts()
+            result = await asyncio.wait_for(ws.shell(line), 10)
+            await result.materialize_stdout()
+            assert result.exit_code == 1
+            assert await result.stderr_str() != ""
+            assert hub.counts() == before
+        finally:
+            await ws.close()

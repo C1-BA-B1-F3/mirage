@@ -20,18 +20,6 @@ from mirage.types import JsonValue
 
 DEFAULT_INDENT = 2
 
-# The named arguments a run's prelude reads. Spelled so a user program
-# can never collide with them by accident.
-
-# The unread documents `input` and `inputs` read.
-INPUTS_VAR = "__mirage_jq_inputs"
-
-# The value the `$ARGS` prelude rebinds.
-ARGS_VAR = "__mirage_jq_args"
-
-# The one clock reading `now` answers in a program that can halt.
-NOW_VAR = "__mirage_jq_now"
-
 # What jq names standard input when it reports where it stands, and what
 # it reports before it has read any input at all.
 STDIN_NAME = "<stdin>"

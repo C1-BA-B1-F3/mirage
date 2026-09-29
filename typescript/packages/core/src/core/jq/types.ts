@@ -14,24 +14,6 @@
 
 export const DEFAULT_INDENT = 2
 
-// The variables a run's prelude binds. Spelled so a user program can
-// never collide with them by accident.
-
-// The unread documents `input` and `inputs` read.
-export const INPUTS_VAR = '__mirage_jq_inputs'
-
-// The value the `$ARGS` prelude rebinds.
-export const ARGS_VAR = '__mirage_jq_args'
-
-// The one clock reading `now` answers in a program that can halt.
-export const NOW_VAR = '__mirage_jq_now'
-
-// The document the program runs on, once the prelude has unpacked it.
-export const VALUE_VAR = '__mirage_jq_value'
-
-// The --arg / --argjson / --rawfile / --slurpfile bindings, by name.
-export const NAMED_VAR = '__mirage_jq_named'
-
 // What jq names standard input when it reports where it stands, and what
 // it reports before it has read any input at all.
 export const STDIN_NAME = '<stdin>'

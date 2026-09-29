@@ -426,7 +426,7 @@
       ]
     },
     {
-      "id": "jq_halt_reads_now_as_the_output_before_it_did",
+      "id": "jq_arg_named_like_the_input_binding_stays_the_programs",
       "seq": 700979,
       "targets": [
         "ram",
@@ -434,14 +434,36 @@
         "redis",
         "opfs"
       ],
-      "command": "mkdir -p /data/qjqn && jq -n 'now | tostring | ., (. + \"\\n\" | halt_error(3))' > /data/qjqn/t.json 2> /data/qjqn/t.err; echo \"exit=$?\"; [ \"$(jq -r . /data/qjqn/t.json)\" = \"$(cat /data/qjqn/t.err)\" ] && echo same",
+      "command": "echo 1 | jq -n -c --arg __mirage_jq_inputs mine '$__mirage_jq_inputs, input'",
       "expect": {
         "exit": 0,
-        "stdout": "exit=3\nsame\n",
+        "stdout": "\"mine\"\n1\n",
         "stderr": ""
       },
       "flags": [
-        "n"
+        "n",
+        "c",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_args_named_like_the_prelude_bindings_stay_the_programs",
+      "seq": 700980,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":1}' | jq -c --arg __mirage_jq_args x --arg __mirage_jq_value y --arg __mirage_jq_named z '., [$__mirage_jq_args, $__mirage_jq_value, $__mirage_jq_named], ($ARGS.named | keys)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"a\":1}\n[\"x\",\"y\",\"z\"]\n[\"__mirage_jq_args\",\"__mirage_jq_named\",\"__mirage_jq_value\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "arg"
       ]
     }
   ]

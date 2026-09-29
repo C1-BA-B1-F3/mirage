@@ -243,10 +243,9 @@ reports every event where its whole document ends, not where jq's
 incremental parser hands each one over. A halt ends the command wherever
 it is called, a `try` of the program's own included. Its message and code
 are read by running the program again with `halt` and `halt_error`
-redefined. So that every run takes the same path, `now` in a program that
-can halt answers one clock reading for the whole run, where jq reads the
-clock at each call. The program's own error handling can still defeat the
-rerun: a halt inside a `try` inside a collector
+redefined, which reads the clock again and which the program's own error
+handling can defeat: a halt whose message or choice rests on `now`
+reports what the rerun read, a halt inside a `try` inside a collector
 (`[try halt_error(2) catch .]`) reports status 5 with no message, and a
 halt that a `try ... catch empty` swallows can report the message and
 code of a later halt instead. A `.[]` program

@@ -216,18 +216,34 @@ def test_a_halt_whose_message_no_second_run_recovers_reads_as_the_default():
                                                                    5))
 
 
-def test_a_program_that_can_halt_reads_now_from_one_clock_reading(monkeypatch):
-    # Every run of it, the reruns that read a halt back included, reads
-    # the same time, so the halt they read back is the first run's.
-    monkeypatch.setattr("time.time_ns", lambda: 1_790_000_000_123_456_789)
-    run = jq_run(None, "now, (now | tostring | halt_error(3))")
-    assert run == JqRun([1790000000.123456],
-                        JqHalt("1790000000.123456", True, 3))
+def test_a_halt_reads_back_past_outputs_that_differ_from_run_to_run():
+    # `now` prints another value when the program runs again for the halt.
+    run = jq_run(None, 'now, ("x" | halt_error(3))')
+    assert (len(run.outputs), run.stop) == (1, JqHalt("x", True, 3))
 
 
-def test_a_program_that_cannot_halt_reads_jqs_own_clock(monkeypatch):
-    monkeypatch.setattr("time.time_ns", lambda: 1_790_000_000_123_456_789)
-    assert jq_run(None, "now").outputs != [1790000000.123456]
+def test_a_program_that_can_halt_reads_jqs_own_clock_at_each_call():
+    # The work between the two readings takes well over the microsecond
+    # jq's clock counts in.
+    run = jq_run(
+        None, "now as $a | ([range(100000)] | length) as $n | "
+        "now as $b | ($b > $a), halt")
+    assert run == JqRun([True], JqHalt(None, False, None))
+
+
+def test_named_arguments_named_like_the_preludes_variables_stay_the_programs():
+    named = {
+        "__mirage_jq_value": "v",
+        "__mirage_jq_named": "n",
+        "__mirage_jq_inputs": "i",
+        "__mirage_jq_args": "a",
+    }
+    program = ("., [$__mirage_jq_value, $__mirage_jq_named, "
+               "$__mirage_jq_inputs, $__mirage_jq_args], input, "
+               "($ARGS.named | keys)")
+    args = {"positional": [], "named": named}
+    run = jq_run({"a": 1}, program, named, [2], args)
+    assert run == JqRun([{"a": 1}, ["v", "n", "i", "a"], 2, sorted(named)])
 
 
 def test_halt_error_refuses_a_code_that_is_not_a_number_as_jq_does():

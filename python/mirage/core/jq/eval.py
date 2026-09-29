@@ -14,7 +14,6 @@
 
 import logging
 import re
-import time
 import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
@@ -22,8 +21,7 @@ from typing import Any
 import jq as _libjq
 
 from mirage.core.jq.errors import JqCompileError
-from mirage.core.jq.types import (ARGS_VAR, INPUTS_VAR, NOW_VAR, JqError,
-                                  JqHalt, JqOptions, JqRun, StreamReads)
+from mirage.core.jq.types import JqError, JqHalt, JqOptions, JqRun, StreamReads
 from mirage.types import JsonValue
 
 logger = logging.getLogger(__name__)
@@ -35,7 +33,6 @@ INPUTS_DEF = re.compile(r"(?<![\w$.:])def\s+inputs\s*[:(]")
 ARGS_REF = re.compile(r"\$ARGS(?![\w:])")
 HALT_REF = re.compile(r"(?<![\w$.:])halt(?:_error)?(?![\w:])")
 HALT_ERROR_REF = re.compile(r"(?<![\w$.:])halt_error(?![\w:])")
-NOW_REF = re.compile(r"(?<![\w$.:])now(?![\w:])")
 TOP_LEVEL_LINE = re.compile(r"(at <top-level>, line )(\d+)")
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 TO_STREAM = "tostream"
@@ -51,6 +48,12 @@ _TOKEN = uuid.uuid4().hex
 ERROR_KEY = f"__mirage_jq_error_{_TOKEN}"
 HALT_KEY = f"__mirage_jq_halt_{_TOKEN}"
 DONE_KEY = f"__mirage_jq_done_{_TOKEN}"
+
+# The named arguments the prelude reads: the unread documents `input` and
+# `inputs` read, and the value it rebinds `$ARGS` to. They carry the same
+# token, so no `--arg` of the program's own can take one's place.
+INPUTS_VAR = f"__mirage_jq_inputs_{_TOKEN}"
+ARGS_VAR = f"__mirage_jq_args_{_TOKEN}"
 
 # The error no `try` inside the program caught: whether it was a string,
 # and its text as jq prints it.
@@ -68,9 +71,11 @@ _DONE = ', {"' + DONE_KEY + '": true}'
 # `[halt_error]` or `map`), and when a `try` of the program's own caught
 # that, to print them just before the real halt. Either answer counts only
 # when the run printed as many outputs up to it as the first run did: the
-# runs are one run up to the first halt, `now` included (see _bindings),
-# so a later halt shows as more outputs before it. A `try` that swallows
-# one halt unseen before the program reaches another still gets past that.
+# runs are one run up to the first halt, so a later halt shows as more
+# outputs before it, where the values themselves can differ (`now`). Two
+# things still get past that: a `try` that swallows one halt unseen before
+# the program reaches another, and a halt whose message or choice rests on
+# `now`, which the rerun reads again.
 _HALT_MARK = ('{"' + HALT_KEY + '": [$code, (if . == null then null '
               'elif type == "string" then . else tojson end), '
               '(type == "string")]}')
@@ -327,13 +332,6 @@ def _collected(results: Iterable[JsonValue]) -> tuple[JqRun, bool]:
     return JqRun(outputs), False
 
 
-def _clock() -> float:
-    """The time `now` answers, as jq's gettimeofday reading spells it:
-    whole seconds plus whole microseconds."""
-    seconds, micros = divmod(time.time_ns() // 1000, 1_000_000)
-    return seconds + micros / 1_000_000
-
-
 def _bindings(
     expr: str,
     named_args: Mapping[str, Any] | None,
@@ -342,11 +340,6 @@ def _bindings(
 ) -> tuple[dict[str, Any], list[str]]:
     """The named arguments a run compiles with, and the prelude steps
     that read them.
-
-    A program that can halt also reads `now` from one clock reading,
-    which every run of it shares, so the runs that read a halt back
-    (see _halt_of) take the path the first one took, where jq reads the
-    clock at each call.
 
     Args:
         expr (str): jq program text.
@@ -362,9 +355,6 @@ def _bindings(
     if args_value is not None:
         args[ARGS_VAR] = dict(args_value)
         steps.append(f"${ARGS_VAR} as $ARGS |")
-    if halts(expr) and NOW_REF.search(code_only(expr)) is not None:
-        args[NOW_VAR] = _clock()
-        steps.append(f"def now: ${NOW_VAR};")
     return args, steps
 
 

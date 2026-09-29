@@ -231,6 +231,7 @@ def self_signed_url(tmp_path):
                           serialization.PrivateFormat.PKCS8,
                           serialization.NoEncryption()))
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(tmp_path / "cert.pem", tmp_path / "key.pem")
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Secure)
     server.socket = context.wrap_socket(server.socket, server_side=True)

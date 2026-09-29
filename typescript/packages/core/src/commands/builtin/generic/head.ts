@@ -219,7 +219,7 @@ export async function headGeneric(
     const body = headStream(source, parsed.lines, parsed.bytesMode, parsed.zeroTerminated)
     // -v heads a stdin nobody named with the name it gives `-`.
     const header = ENC.encode(`==> ${STDIN_HEADER_NAME} <==\n`)
-    return [parsed.verbose && !parsed.quiet ? asyncChain(header, body) : body, new IOResult()]
+    return [parsed.verbose && !parsed.quiet ? asyncChain([header, body]) : body, new IOResult()]
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return [null, new IOResult({ exitCode: 1, stderr: ENC.encode(`${msg}\n`) })]

@@ -117,6 +117,17 @@ const LOG_OPTIONS = [
     multiple: true,
     description: 'Limit commits to matching authors',
   }),
+  new Option({
+    long: '--grep',
+    type: 'str',
+    multiple: true,
+    description: 'Limit commits to ones with a message line that matches',
+  }),
+  new Option({
+    short: '-i',
+    long: '--regexp-ignore-case',
+    description: 'Match --grep, --author and -S without regard to case',
+  }),
   ...MERGE_OPTIONS,
   new Option({
     long: '--after',
@@ -145,6 +156,7 @@ const LOG_OPTIONS = [
   new Option({ long: '--decorate', description: 'Print ref names on commits' }),
   new Option({
     short: '-n',
+    long: '--max-count',
     type: 'int',
     numericShorthand: true,
     description: 'Limit the number of commits shown',
@@ -447,12 +459,18 @@ export const GIT = new CLISpec({
       positional: [new Operand({ type: 'str', name: 'name' })],
     }),
     new CLISpec({ name: 'show-ref', description: 'List references', fn: showRef, rest: REVISION }),
+    // shortlog's -n is --numbered, so the count keeps only its long spelling.
     new CLISpec({
       name: 'shortlog',
       fn: shortlog,
       description: 'Summarize commit history',
       options: [
         ...LOG_OPTIONS.filter((opt) => opt.short !== '-n'),
+        new Option({
+          long: '--max-count',
+          type: 'int',
+          description: 'Limit the number of commits',
+        }),
         new Option({ short: '-s', long: '--summary', description: 'Show only commit counts' }),
         new Option({ short: '-e', long: '--email', description: 'Show author email addresses' }),
         new Option({ short: '-n', long: '--numbered', description: 'Sort by commit count' }),

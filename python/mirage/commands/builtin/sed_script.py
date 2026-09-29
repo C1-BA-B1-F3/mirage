@@ -16,7 +16,7 @@ import re
 import string
 from typing import Any, Required, TypedDict
 
-from mirage.utils.posix import translate_classes
+from mirage.utils.posix import compile_posix_regex, translate_classes
 
 _SIMPLE_CMDS = frozenset("dDpPhHgGxNq")
 
@@ -522,7 +522,8 @@ def _addr_matches(addr: tuple[str, str],
     if kind == "last":
         return lineno == total
     if kind == "regex":
-        return re.search(_re_pattern(val, extended), line) is not None
+        return compile_posix_regex(_re_pattern(
+            val, extended)).search(line) is not None
     return False
 
 
@@ -639,7 +640,7 @@ def execute_program(text: str,
                 pat = cmd["pattern"]
                 repl = cmd["replacement"]
                 eflags = cmd["expr_flags"]
-                re_flags = re.IGNORECASE if "i" in eflags else 0
+                re_flags = re.IGNORECASE if "i" in eflags.lower() else 0
                 # `nth` is the 1-based occurrence the substitution starts at
                 # (GNU sed's numeric s///N flag, default 1). Without `g` only
                 # that occurrence is replaced; with `g` that one and every
@@ -652,6 +653,7 @@ def execute_program(text: str,
                 global_ = "g" in eflags
                 counter = [0]
                 last_end = [-1]
+                replaced = [False]
 
                 # Defaults bind the per-command values early (the closure is
                 # defined inside the command loop and used immediately).
@@ -668,13 +670,14 @@ def execute_program(text: str,
                     _counter[0] += 1
                     hit = (_counter[0] >= _nth
                            if _global else _counter[0] == _nth)
+                    if hit:
+                        replaced[0] = True
                     return _apply_repl(m, repl=_repl_s) if hit else m.group(0)
 
-                new_pattern = re.sub(_re_pattern(pat, extended),
-                                     _repl,
-                                     pattern,
-                                     flags=re_flags)
-                changed = new_pattern != pattern
+                new_pattern = compile_posix_regex(_re_pattern(pat, extended),
+                                                  re_flags).sub(
+                                                      _repl, pattern)
+                changed = replaced[0]
                 if changed:
                     substituted = True
                 pattern = new_pattern

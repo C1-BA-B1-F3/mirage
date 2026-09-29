@@ -50,7 +50,7 @@ async def test_cache_read_remains_drainable_after_early_pipeline_exit():
 
     async def execute_node(nd, _session, stdin, _call_stack=None, **kwargs):
         if nd.text == "cat":
-            return (async_chain(stream),
+            return (async_chain([stream]),
                     IOResult(reads={"/remote": stream},
                              cache=["/remote"]), ExecutionNode(command="cat"))
         await anext(stdin)

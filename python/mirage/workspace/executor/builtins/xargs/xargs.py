@@ -792,7 +792,7 @@ async def handle_xargs(
     else:
         exit_code = 123 if any(io.exit_code != 0 for io in ios) else 0
     merged.exit_code = exit_code
-    out = async_chain(*stdouts) if stdouts else None
+    out = async_chain(stdouts) if stdouts else None
     return out, merged, ExecutionNode(command="xargs", exit_code=exit_code)
 
 

@@ -17,6 +17,7 @@ import { GhConfigSchema } from '../../../../core/github/config.ts'
 import { CLISpec } from '../../types.ts'
 import { Operand, Option } from '../../../spec/types.ts'
 import { api } from './api.ts'
+import { version } from './version.ts'
 import {
   closeCmd as issueClose,
   commentCmd as issueComment,
@@ -485,6 +486,12 @@ export const GH = new CLISpec({
   description: 'GitHub CLI',
   configModel: GhConfigSchema,
   subcommands: [
+    new CLISpec({
+      name: 'version',
+      aliases: ['--version'],
+      fn: version,
+      description: 'Show the Mirage GitHub CLI implementation version',
+    }),
     new CLISpec({
       name: 'api',
       description: 'Make an authenticated GitHub API request',

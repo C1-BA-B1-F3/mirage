@@ -14,7 +14,7 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 
 from mirage.io import CachableAsyncIterator, IOResult
 from mirage.io.async_line_iterator import SharedInput
@@ -160,7 +160,8 @@ async def discard_io(io: IOResult) -> None:
                           io.stderr)
 
 
-async def async_chain(*streams: ByteSource | None, ) -> AsyncIterator[bytes]:
+async def async_chain(
+        streams: Iterable[ByteSource | None]) -> AsyncIterator[bytes]:
     for stream in streams:
         if stream is None:
             continue

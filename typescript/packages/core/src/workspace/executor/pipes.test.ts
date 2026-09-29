@@ -321,7 +321,7 @@ it.each(['abort', 'timeout'])(
     const execute: ExecuteNodeFn = async (nd, _session, stdin) => {
       if (nd.text === 'cat')
         return [
-          asyncChain(input),
+          asyncChain([input]),
           new IOResult({ reads: { '/remote': input }, cache: ['/remote'] }),
           new ExecutionNode({ command: 'cat' }),
         ]
@@ -357,7 +357,7 @@ it('keeps a cache read drainable after a normal early pipeline exit', async () =
     if (nd.text === 'cat') {
       readSignal = child.abortSignal
       return [
-        asyncChain(input),
+        asyncChain([input]),
         new IOResult({ reads: { '/remote': input }, cache: ['/remote'] }),
         new ExecutionNode({ command: 'cat' }),
       ]

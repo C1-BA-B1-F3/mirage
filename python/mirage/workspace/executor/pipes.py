@@ -235,7 +235,7 @@ async def handle_connection(
         children.append(right_exec)
         right_bytes = await materialize(right_stdout)
         merged = await left_io.merge(right_io)
-        combined = async_chain(left_bytes, right_bytes)
+        combined = async_chain([left_bytes, right_bytes])
         return combined, merged, ExecutionNode(op="&&",
                                                exit_code=merged.exit_code,
                                                children=children)
@@ -256,7 +256,7 @@ async def handle_connection(
         children.append(right_exec)
         right_bytes = await materialize(right_stdout)
         merged = await left_io.merge(right_io)
-        combined = async_chain(left_bytes, right_bytes)
+        combined = async_chain([left_bytes, right_bytes])
         return combined, merged, ExecutionNode(op="||",
                                                exit_code=merged.exit_code,
                                                children=children)
@@ -274,7 +274,7 @@ async def handle_connection(
     # the combined stream is returned to the caller.
     right_bytes = await materialize(right_stdout)
     merged = await left_io.merge(right_io)
-    combined = async_chain(left_bytes, right_bytes)
+    combined = async_chain([left_bytes, right_bytes])
     return combined, merged, ExecutionNode(op=str(op),
                                            exit_code=merged.exit_code,
                                            children=children)
@@ -394,7 +394,7 @@ async def handle_subshell(
                 break
         if len(all_stdout) == 1:
             return all_stdout[0], merged_io, last_exec
-        combined = async_chain(*all_stdout) if all_stdout else None
+        combined = async_chain(all_stdout) if all_stdout else None
         return combined, merged_io, last_exec
     finally:
         session.restore(saved)

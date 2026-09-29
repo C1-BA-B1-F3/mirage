@@ -135,6 +135,40 @@
         "stdout": "one\ntwo\n",
         "stderr": ""
       }
+    },
+    {
+      "id": "sed_casefold_inplace",
+      "seq": 1326014,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'ÉAb aB\\n' > /data/casefold.txt; sed -i -E 's/(a)(b)/[\\2\\1]/Ig' /data/casefold.txt; cat /data/casefold.txt",
+      "expect": {
+        "exit": 0,
+        "stdout": "É[bA] [Ba]\n",
+        "stderr": ""
+      }
     }
   ]
 }

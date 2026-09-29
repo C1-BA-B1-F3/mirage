@@ -14,7 +14,7 @@
 
 import re
 
-from mirage.utils.posix import POSIX_CLASSES
+from mirage.utils.posix import POSIX_CLASSES, compile_posix_regex
 
 # The strings glibc's `regerror` produces, which every GNU tool that
 # compiles a BRE prints verbatim after its own `<prog>: ` prefix. Measured
@@ -568,7 +568,7 @@ def compile_bre(pattern: str) -> tuple[re.Pattern[str], int]:
     return compiled, groups
 
 
-def search_bre(pattern: str) -> re.Pattern[str]:
+def search_bre(pattern: str, ignore_case: bool = False) -> re.Pattern[str]:
     """Translate a POSIX BRE and compile it for an unanchored search.
 
     The companion to `compile_bre`, and the difference between them is
@@ -583,6 +583,7 @@ def search_bre(pattern: str) -> re.Pattern[str]:
 
     Args:
         pattern (str): the BRE exactly as it arrived on the line.
+        ignore_case (bool): fold ASCII letters when searching.
 
     Returns:
         re.Pattern[str]: the compiled pattern, to be used with
@@ -596,6 +597,7 @@ def search_bre(pattern: str) -> re.Pattern[str]:
     """
     source, _ = translate_bre(pattern)
     try:
-        return re.compile(source, re.DOTALL | re.ASCII)
+        return compile_posix_regex(
+            source, re.DOTALL | (re.IGNORECASE if ignore_case else 0))
     except re.error as exc:
         raise BreError(INVALID_PATTERN) from exc

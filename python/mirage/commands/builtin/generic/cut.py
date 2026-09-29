@@ -113,7 +113,7 @@ async def cut(
                        zero_terminated=parsed.zero_terminated)
             for path in paths
         ]
-        return async_chain(*outputs), IOResult()
+        return async_chain(outputs), IOResult()
     source = resolve_source(stdin, "cut: missing operand")
     return cut_stream(source,
                       ranges=ranges,

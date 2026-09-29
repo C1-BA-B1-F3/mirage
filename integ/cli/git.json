@@ -3991,6 +3991,104 @@
       }
     },
     {
+      "id": "git_log_grep_ignore_case_reverse",
+      "seq": 567991,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --all --oneline --grep='ADD' -i --reverse)",
+      "expect": {
+        "exit": 0,
+        "stdout": "265ec3a add delta\n225f39c add docs\n8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_graph_decorate_max_count",
+      "seq": 567992,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --all --oneline --decorate --graph --max-count=30)",
+      "expect": {
+        "exit": 0,
+        "stdout": "* 8ef2542 (HEAD -> main) add two\n* 225f39c (topic) add docs\n* 265ec3a add delta\n* 98b4ffe first commit\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_grep_separate_word",
+      "seq": 567993,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --oneline --grep 'add d')",
+      "expect": {
+        "exit": 0,
+        "stdout": "225f39c add docs\n265ec3a add delta\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_grep_alternatives",
+      "seq": 567994,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --format=%s --grep=delta --grep=first)",
+      "expect": {
+        "exit": 0,
+        "stdout": "add delta\nfirst commit\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_max_count_cuts_before_reverse",
+      "seq": 567995,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --oneline --grep=add --max-count=1 --reverse)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542 add two\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_log_author_ignore_case",
+      "seq": 567996,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git log --format=%h --author=INTEG; git log --format=%h --author=INTEG --regexp-ignore-case -n1)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef2542\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_rev_list_max_count",
+      "seq": 567997,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(cd /repo; git rev-list --max-count=2 HEAD)",
+      "expect": {
+        "exit": 0,
+        "stdout": "8ef25423772bbfe671c8e285ae1d63991d59db19\n225f39c50d27e015653a38d589474ce2880399e6\n",
+        "stderr": ""
+      }
+    },
+    {
       "id": "git_dir_equals",
       "seq": 567950,
       "targets": [
@@ -4604,6 +4702,48 @@
         "exit": 0,
         "stdout": " D docs/readme.md\n D letters.txt\n D numbers.txt\n",
         "stderr": "fatal: this operation must be run in a work tree\n"
+      }
+    },
+    {
+      "id": "git_history_casefold_message_author",
+      "seq": 1326100,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/casefold; cp -r /repo/.git /repo/casefold/.git; cd /repo/casefold; export GIT_AUTHOR_DATE=2025-08-05T10:00:00Z GIT_COMMITTER_DATE=2025-08-05T10:00:00Z; printf '\u00c9LAN Aa\\n' > case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00c9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00c9LAN Aa' > /dev/null; export GIT_AUTHOR_DATE=2025-08-06T10:00:00Z GIT_COMMITTER_DATE=2025-08-06T10:00:00Z; printf '\u00e9lan aA\\n' >> case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00e9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00e9lan aA' > /dev/null; git log --format=%s --grep=\u00e9 -i; git log --format=%s --author=\u00c9LODIE -i; git log --format=%s --grep=\u00e9 --author=\u00c9 -i; git shortlog -sn --all --grep=\u00e9 -i; cd /repo; rm -r casefold)",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u00e9lan aA\n\u00c9LAN Aa\n     1\t\u00e9lodie\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_history_casefold_count_reverse",
+      "seq": 1326101,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/casefold; cp -r /repo/.git /repo/casefold/.git; cd /repo/casefold; export GIT_AUTHOR_DATE=2025-08-05T10:00:00Z GIT_COMMITTER_DATE=2025-08-05T10:00:00Z; printf '\u00c9LAN Aa\\n' > case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00c9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00c9LAN Aa' > /dev/null; export GIT_AUTHOR_DATE=2025-08-06T10:00:00Z GIT_COMMITTER_DATE=2025-08-06T10:00:00Z; printf '\u00e9lan aA\\n' >> case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00e9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00e9lan aA' > /dev/null; git log --format=%s --grep=\u00e9 --grep=\u00c9 -i --max-count=2 --reverse; git log --format=%s --grep=\u00e9 -i --max-count=0; git log --format=%s --grep=\u00e9 --grep=\u00c9 -i --max-count=-1 -n1; cd /repo; rm -r casefold)",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u00c9LAN Aa\n\u00e9lan aA\n\u00e9lan aA\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_history_casefold_pickaxe_newline",
+      "seq": 1326102,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "(mkdir -p /repo/casefold; cp -r /repo/.git /repo/casefold/.git; cd /repo/casefold; export GIT_AUTHOR_DATE=2025-08-05T10:00:00Z GIT_COMMITTER_DATE=2025-08-05T10:00:00Z; printf '\u00c9LAN Aa\\n' > case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00c9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00c9LAN Aa' > /dev/null; export GIT_AUTHOR_DATE=2025-08-06T10:00:00Z GIT_COMMITTER_DATE=2025-08-06T10:00:00Z; printf '\u00e9lan aA\\n' >> case.txt; git add case.txt; GIT_AUTHOR_NAME=\u00e9lodie GIT_AUTHOR_EMAIL=elodie@example.com git commit -m '\u00e9lan aA' > /dev/null; git log --format=%s -S \u00c9lan -i; git log --format=%s -S \u00e9lan -i; git log --format=%s --grep='missing\n\u00e9lan' -i; cd /repo; rm -r casefold)",
+      "expect": {
+        "exit": 0,
+        "stdout": "\u00c9LAN Aa\n\u00e9lan aA\n\u00e9lan aA\n",
+        "stderr": ""
       }
     }
   ]

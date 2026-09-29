@@ -353,3 +353,15 @@ describe('sed address delimiters', () => {
     expect(() => sed('/a\\/b', 'x\n')).toThrow('unterminated address regex')
   })
 })
+
+describe('sed replacement uses the original match', () => {
+  it('preserves word boundary context', () => {
+    expect(sed(String.raw`s/\Ba/X/g`, 'ba a\n')).toBe('bX a\n')
+  })
+  it('expands zero and single-digit captures without changing case', () => {
+    expect(sed(String.raw`s/\(a\)b/[\0:\1:&:\10]/I`, 'Ab\n')).toBe('[Ab:A:Ab:A0]\n')
+  })
+  it('keeps unmatched groups empty and dollar signs literal', () => {
+    expect(sedE(String.raw`s/(a)(b)?/[\1:\2:$&]/I`, 'A\n')).toBe('[A::$A]\n')
+  })
+})

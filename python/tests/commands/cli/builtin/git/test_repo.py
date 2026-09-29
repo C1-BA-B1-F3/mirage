@@ -12,14 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from collections import Counter
+
 import pytest
 from dulwich.objects import Commit
 from dulwich.walk import Walker
 
+from mirage.commands.cli.builtin.git import GIT
 from mirage.commands.cli.builtin.git.discover import discover
 from mirage.commands.cli.builtin.git.repo import open_repo
 
-from .conftest import commit_file, pack_everything, repo_facts
+from .conftest import commit_file, mounted, pack_everything, repo_facts
 
 HEAD = b"HEAD"
 MAIN = b"refs/heads/main"
@@ -53,6 +56,38 @@ async def test_opens_a_packed_repository(repo_path, workspace):
     head = repo[repo.refs[MAIN]]
     assert head.message == b"third"
     assert len(list(Walker(repo.object_store, [head.id]))) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command", [
+    "rev-list --all --count", "log --all --format=%H",
+    "show --stat --format=%s HEAD~1", "diff HEAD~2 HEAD~1"
+])
+async def test_reads_each_pack_and_index_once_per_invocation(
+        repo_path, monkeypatch, command):
+    pack_everything(repo_path)
+    with mounted(repo_path) as ws:
+        ws.register_cli("git", GIT)
+        reads = Counter()
+        original = ws.dispatch
+
+        async def counting(op, path, *args, **kwargs):
+            if op == "read" and path.virtual.endswith((".pack", ".idx")):
+                reads[path.virtual] += 1
+            return await original(op, path, *args, **kwargs)
+
+        monkeypatch.setattr(ws, "dispatch", counting)
+        outputs = []
+        for _ in range(2):
+            reads.clear()
+            result = await ws.shell(f"git -C /repo {command}")
+            assert result.exit_code == 0
+            assert not result.stderr
+            outputs.append(result.stdout)
+            assert sum(path.endswith(".pack") for path in reads) == 1
+            assert sum(path.endswith(".idx") for path in reads) == 1
+            assert list(reads.values()) == [1, 1]
+        assert outputs[0] == outputs[1]
 
 
 @pytest.mark.asyncio

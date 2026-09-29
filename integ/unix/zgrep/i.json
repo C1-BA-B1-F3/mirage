@@ -200,6 +200,66 @@
         "i",
         "l"
       ]
+    },
+    {
+      "id": "zgrep_casefold_accent",
+      "seq": 1326022,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'ÉLAN\\nélan\\n' | gzip > /data/casefold.gz; zgrep -i é /data/casefold.gz",
+      "expect": {
+        "exit": 0,
+        "stdout": "élan\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "zgrep_casefold_only_matching",
+      "seq": 1326023,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "box"
+      ],
+      "command": "printf 'ÉAb éAB\\n' | gzip > /data/casefold.gz; zgrep -oib 'éab' /data/casefold.gz",
+      "expect": {
+        "exit": 0,
+        "stdout": "5:éAB\n",
+        "stderr": ""
+      }
     }
   ]
 }

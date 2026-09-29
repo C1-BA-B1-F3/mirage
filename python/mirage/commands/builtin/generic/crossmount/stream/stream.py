@@ -42,7 +42,7 @@ async def _line_ended(source: ByteSource) -> AsyncIterator[bytes]:
         source (ByteSource): the operand's bytes.
     """
     last = b"\n"
-    async for chunk in async_chain(source):
+    async for chunk in async_chain([source]):
         if chunk:
             last = chunk[-1:]
         yield chunk
@@ -120,7 +120,7 @@ async def run_stream(cmd_name: str, scopes: list[PathSpec],
     if cmd_name in LINE_STREAM_COMMANDS and sources:
         ended: list[ByteSource] = [_line_ended(s) for s in sources[:-1]]
         sources = ended + sources[-1:]
-    body: ByteSource = async_chain(*sources)
+    body: ByteSource = async_chain(sources)
 
     if cmd_name == Cmd.CAT and not _has_active_flags(flag_kwargs):
         if failed:

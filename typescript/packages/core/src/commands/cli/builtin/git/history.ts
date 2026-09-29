@@ -35,13 +35,18 @@ const REMOTE_PREFIX = 'refs/remotes/'
 
 /** The parsed shape of a `git log` invocation. */
 export interface LogFlags {
+  /** `--author` patterns, any of which may match. */
   readonly authors: readonly RegExp[]
+  /** `--grep` patterns, any of which may match a line of the message. */
+  readonly greps: readonly RegExp[]
+  /** `-i`, which folds case for `--grep`, `--author` and `-S` alike. */
+  readonly ignoreCase: boolean
   readonly minParents: number | null
   readonly maxParents: number | null
   readonly firstParent: boolean
   readonly date: string
   readonly decorate: boolean
-  /** `-n`, how many commits to print. */
+  /** `-n`/`--max-count`, how many commits to print; null when unlimited. */
   readonly maxCount: number | null
   /** `--oneline`, one abbreviated row per commit. */
   readonly oneline: boolean
@@ -137,18 +142,27 @@ export function parseFlags(fl: FlagView): LogFlags {
   for (const name of fl.typedOrder('topo_order', 'date_order')) {
     if (fl.asBool(name)) order = name === 'topo_order' ? 'topo' : 'date'
   }
+  const ignoreCase = fl.asBool('regexp_ignore_case')
   let authors: RegExp[]
+  let greps: RegExp[]
   try {
-    authors = fl.asList('author').map(searchBre)
+    authors = fl.asList('author').map((value) => searchBre(value, ignoreCase))
+    greps = fl
+      .asList('grep')
+      .flatMap((values) => values.split('\n').map((value) => searchBre(value, ignoreCase)))
   } catch (err) {
     if (err instanceof BreError) throw new GitError(err.message)
     throw err
   }
+  const maxCount = fl.asInt('max_count') ?? null
   return {
     authors,
+    greps,
+    ignoreCase,
     date: fl.asStr('date') ?? 'default',
     decorate: fl.asBool('decorate'),
-    maxCount: fl.asInt('n') ?? null,
+    // git reads a negative count as no limit at all.
+    maxCount: maxCount !== null && maxCount < 0 ? null : maxCount,
     minParents: fl.asBool('merges') ? 2 : (fl.asInt('min_parents') ?? null),
     maxParents: fl.asBool('no_merges') ? 1 : (fl.asInt('max_parents') ?? null),
     firstParent: fl.asBool('first_parent'),
@@ -452,13 +466,28 @@ function inWindow(commit: CommitFacts, flags: LogFlags): boolean {
   return flags.until === null || commit.committerTime <= flags.until
 }
 
-/** Whether a commit's author and parent count pass `--merges`, `--no-merges` and kin. */
+/**
+ * Whether a `--grep` pattern matches the message. git searches the message a
+ * line at a time, so `^` and `$` anchor to a line, and never the author or
+ * committer header.
+ */
+function messageMatches(message: string, greps: readonly RegExp[]): boolean {
+  const lines = message.split('\n')
+  return greps.some((pattern) => lines.some((line) => pattern.test(line)))
+}
+
+/**
+ * Whether a commit passes `--author`, `--grep`, `--merges`, `--no-merges` and
+ * kin. Several `--author`s or several `--grep`s are alternatives, while an
+ * `--author` and a `--grep` must both match.
+ */
 function filtersPass(commit: CommitFacts, flags: LogFlags): boolean {
   if (
     flags.authors.length &&
     !flags.authors.some((pattern) => pattern.test(`${commit.authorName} <${commit.authorEmail}>`))
   )
     return false
+  if (flags.greps.length && !messageMatches(commit.message, flags.greps)) return false
   if (flags.minParents !== null && commit.parents.length < flags.minParents) return false
   return !(
     flags.maxParents !== null &&
@@ -508,7 +537,8 @@ export async function walked(
   for await (const commit of source) {
     if (!inWindow(commit, flags) || !filtersPass(commit, flags)) continue
     const shown =
-      flags.search === null || (await touches(repo, commit.oid, commit.parents, flags.search))
+      flags.search === null ||
+      (await touches(repo, commit.oid, commit.parents, flags.search, flags.ignoreCase))
     steps.push({ commit, shown })
     if (shown) printed += 1
     if (flags.maxCount !== null && printed >= flags.maxCount) break

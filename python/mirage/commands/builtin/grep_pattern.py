@@ -21,7 +21,7 @@ from mirage.commands.errors import UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.types import PathSpec
 from mirage.utils.key_prefix import mount_prefix_of
-from mirage.utils.posix import translate_classes
+from mirage.utils.posix import compile_posix_regex, translate_classes
 
 NEVER_MATCH = r"(?!)"
 # The dest -e fills in each search command's spec: rg spells its options
@@ -222,17 +222,10 @@ def compile_pattern(
         whole_word (bool): True if -w flag is set.
         basic (bool): True for a basic regular expression.
     """
-    # `re.ASCII` because GNU's word boundary and its case folding are the
-    # ASCII ones under `LC_ALL=C` while python's defaults are Unicode, and
-    # because a non-`u` RegExp is ASCII for both, so the TypeScript twin
-    # was already answering GNU's way. Without it `grep -w ab` missed
-    # `éab`, `grep -w a` missed `aé`, and `grep -i k` and
-    # `grep -i s` matched U+212A and U+017F. `compile_bre` in
-    # `utils/bre.py` already passes it; this was grep's own gap.
-    flags = re.ASCII | (re.IGNORECASE if ignore_case else 0)
+    flags = re.IGNORECASE if ignore_case else 0
     source = build_pattern_str(pattern, fixed_string, whole_word, basic)
     try:
-        return re.compile(source, flags)
+        return compile_posix_regex(source, flags)
     except re.error as exc:
         # GNU grep 3.11 diagnostics, also used by zgrep. Syntax outside
         # our supported dialect gets a stable generic refusal.

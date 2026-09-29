@@ -131,3 +131,13 @@ def class_characters(name: str) -> str:
         raise ValueError(f"tr: invalid character class '{name}'")
     pattern = re.compile("[" + POSIX_CLASSES[name] + "]")
     return "".join(chr(n) for n in range(128) if pattern.fullmatch(chr(n)))
+
+
+def compile_posix_regex(source: str, flags: int = 0) -> re.Pattern[str]:
+    """Compile translated POSIX regex source with C-locale case folding.
+
+    Args:
+        source (str): regex source in the host engine's syntax.
+        flags (int): host regex flags, including IGNORECASE when requested.
+    """
+    return re.compile(source, flags | re.ASCII)

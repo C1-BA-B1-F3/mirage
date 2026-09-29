@@ -13,7 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it, vi } from 'vitest'
-import { RunState, run, type ApplyPatchResult } from '@openai/agents'
+import { RunState, run, type Editor } from '@openai/agents'
 import {
   Manifest,
   SandboxAgent,
@@ -34,7 +34,7 @@ function mkWs(): Workspace {
   )
 }
 
-function statusOf(result: ApplyPatchResult | void): string | undefined {
+function statusOf(result: Awaited<ReturnType<Editor['createFile']>>): string | undefined {
   return result ? result.status : undefined
 }
 

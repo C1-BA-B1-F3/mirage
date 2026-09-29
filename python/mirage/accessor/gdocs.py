@@ -14,10 +14,12 @@
 
 from mirage.accessor.base import Accessor
 from mirage.core.google.client import TokenManager
+from mirage.core.google.config import GoogleConfig
 
 
 class GDocsAccessor(Accessor):
 
-    def __init__(self, config, token_manager: TokenManager) -> None:
+    def __init__(self, config: GoogleConfig,
+                 token_manager: TokenManager) -> None:
         self.config = config
         self.token_manager = token_manager

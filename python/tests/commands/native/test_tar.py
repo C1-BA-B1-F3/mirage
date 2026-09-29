@@ -44,6 +44,7 @@ def test_tar_J_create_list(env):
 
 
 def test_tar_strip_components(env):
+    env.create_file("extracted/.keep", b"")
     env.create_file("a.txt", b"aaa\n")
     env.mirage("tar -c -z -f /data/out.tar.gz /data/a.txt")
     env.mirage(
@@ -73,6 +74,7 @@ def test_tar_v(env):
 
 
 def test_tar_old_style_cluster_create_list_extract(env):
+    env.create_file("ex/.keep", b"")
     env.create_file("a.txt", b"aaa\n")
     env.mirage("tar czf /data/out.tar.gz /data/a.txt")
     listing = env.mirage("tar tzf /data/out.tar.gz")
@@ -90,6 +92,7 @@ def test_tar_old_style_value_letter_before_bool_letter_compresses(env):
 
 
 def test_tar_old_style_two_value_letters_bind_in_letter_order(env):
+    env.create_file("ex/.keep", b"")
     env.create_file("a.txt", b"aaa\n")
     env.mirage("tar czf /data/out.tar.gz /data/a.txt")
     env.mirage("tar xzCf /data/ex /data/out.tar.gz")

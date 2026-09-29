@@ -16,6 +16,7 @@ import { varsFromEnv } from '../../../workspace/session/session.ts'
 import { describe, expect, it, vi } from 'vitest'
 
 import { CLISpec, type CLIInvocation, type CLIVerbFn } from '../../../commands/cli/types.ts'
+import { PartialOutputError } from '../../../commands/errors.ts'
 import { Operand, Option, UsageStyle } from '../../../commands/spec/types.ts'
 import { IOResult, materialize } from '../../../io/types.ts'
 import { Limit } from '../../../types.ts'
@@ -664,6 +665,34 @@ describe('handleCli script arm', () => {
     ).rejects.toThrow(/pager: timed out/)
     expect(sleepy.seen[0]?.timeoutSeconds).toBe(0.05)
     expect(sleepy.seen[0]?.signal?.aborted).toBe(true)
+  })
+})
+
+describe('a leaf that fails after printing', () => {
+  it('keeps what it printed ahead of the diagnostic', async () => {
+    const spec = new CLISpec({
+      name: 'prog',
+      configModel: (input) => input,
+      subcommands: [
+        new CLISpec({
+          name: 'go',
+          fn: () => {
+            throw new PartialOutputError('late boom', new TextEncoder().encode('first\n'))
+          },
+        }),
+      ],
+    })
+    const install: CLIInstall = { name: 'prog', spec, config: { token: 'tok' } }
+    const [stdout, io] = await handleCli(
+      install,
+      ['prog', 'go'],
+      new SessionState({ sessionId: 't' }),
+    )
+    expect(dec.decode(await materialize(stdout))).toBe('first\n')
+    expect([io.exitCode, dec.decode(await materialize(io.stderr))]).toEqual([
+      1,
+      'prog go: late boom\n',
+    ])
   })
 })
 

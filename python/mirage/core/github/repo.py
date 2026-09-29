@@ -145,8 +145,8 @@ async def view_repo(config: GhConfig, ref: RepoRef) -> JsonValue:
                                 base_url=config.base_url)
 
 
-async def _graphql_data(config: GhConfig, query: str,
-                        variables: dict[str, JsonValue]) -> dict[str, Any]:
+async def graphql_data(config: GhConfig, query: str,
+                       variables: dict[str, JsonValue]) -> dict[str, Any]:
     """Run one GraphQL query and return its data, refusing the way gh does.
 
     gh names each error with the path of the field that raised it and
@@ -190,7 +190,7 @@ async def repository_fields(config: GhConfig, ref: RepoRef,
         ref (RepoRef): the repository.
         selection (str): the GraphQL selection inside ``repository { }``.
     """
-    data = await _graphql_data(
+    data = await graphql_data(
         config, "query RepositoryInfo($owner: String!, $name: String!) {\n"
         f"    repository(owner: $owner, name: $name) {{{selection}}}\n  }}", {
             "owner": ref.owner,
@@ -236,7 +236,7 @@ async def list_repository_fields(config: GhConfig, owner: str | None,
             variables["owner"] = owner
         if cursor is not None:
             variables["endCursor"] = cursor
-        data = await _graphql_data(config, query, variables)
+        data = await graphql_data(config, query, variables)
         owner_node = data.get("repositoryOwner") or {}
         page = owner_node.get("repositories") or {}
         rows.extend(page.get("nodes") or [])

@@ -19,8 +19,7 @@ import type { CLIInvocation } from '../../types.ts'
 import { expand } from '../../../../core/github/placeholder.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
 import { GitHubApiError, type GitHubResponse } from '../../../../core/github/client.ts'
-import { jqEval } from '../../../../core/jq/index.ts'
-import { ghTransport, readCliFile, textOut } from './accessor.ts'
+import { ghTransport, jqLines, readCliFile, textOut } from './accessor.ts'
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 const EMPTY_ARRAY = Symbol('empty-array')
@@ -31,12 +30,6 @@ function typed(value: string): Json {
   if (value === 'null') return null
   if (/^-?\d+$/.test(value)) return Number(value)
   return value
-}
-
-function jqLine(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (typeof value === 'string') return value
-  return JSON.stringify(value)
 }
 
 function split(pair: string, emptyArray = false): [string, string | typeof EMPTY_ARRAY] {
@@ -303,8 +296,38 @@ async function failed(
   ]
 }
 
-function jsonPage(value: unknown): string {
-  return value === null ? '' : `${JSON.stringify(value, null, 2)}\n`
+/**
+ * A page's body as gh copies it out: verbatim, with no newline added. The
+ * body arrives decoded, and the vendor's JSON is compact, so the compact
+ * spelling of what arrived is the text it sent. A body that is not JSON is
+ * its own text, and a call that answered with none prints nothing.
+ */
+function bodyText(page: unknown): string {
+  if (page === null) return ''
+  return typeof page === 'string' ? page : JSON.stringify(page)
+}
+
+/**
+ * The bodies of `--paginate` as gh's paginatedArrayReader streams them.
+ *
+ * A JSON array body after the first opens with a comma instead of its
+ * bracket (an empty one with a space), and one that more pages follow drops
+ * its closing bracket, so array pages print as one array. Object bodies, and
+ * bodies that are not JSON, run on as they came. `more` says a failing body
+ * follows the last page here.
+ */
+function joinedPages(pages: unknown[], more: boolean): string {
+  return pages
+    .map((page, index) => {
+      let text = bodyText(page)
+      if (page === null || typeof page === 'string') return text
+      if (index > 0 && text.startsWith('[')) {
+        text = `${text.startsWith('[]') ? ' ' : ','}${text.slice(1)}`
+      }
+      if ((more || index < pages.length - 1) && text.endsWith(']')) text = text.slice(0, -1)
+      return text
+    })
+    .join('')
 }
 
 /**
@@ -317,21 +340,12 @@ function jsonPage(value: unknown): string {
 async function renderPages(pages: unknown[], fl: FlagView, failure?: string): Promise<string> {
   if (fl.asBool('silent')) return ''
   const slurp = fl.asBool('slurp')
-  if (slurp && failure !== undefined) {
-    return `[${[...pages.map((page) => JSON.stringify(page)), failure].join(',')}]`
-  }
+  // gh's jsonArrayWriter: every body in one array, a comma between each.
+  if (slurp && failure !== undefined) return `[${[...pages.map(bodyText), failure].join(',')}]`
   const program = fl.asStr('jq')
-  let rendered: string
   if (program !== undefined && program !== '') {
-    const output: string[] = []
-    for (const item of slurp ? [pages] : pages) {
-      for (const value of await jqEval(item, program)) output.push(`${jqLine(value)}\n`)
-    }
-    rendered = output.join('')
-  } else if (slurp) {
-    rendered = jsonPage(pages)
-  } else {
-    rendered = pages.map((page) => (typeof page === 'string' ? page : jsonPage(page))).join('')
+    return (await jqLines(slurp ? [pages] : pages, program)) + (failure ?? '')
   }
-  return rendered + (failure ?? '')
+  if (slurp) return `[${pages.map(bodyText).join(',')}]`
+  return joinedPages(pages, failure !== undefined) + (failure ?? '')
 }

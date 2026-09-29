@@ -294,3 +294,13 @@ it.each([0x08, 0x10])('consumes long header field %i without growing copies', as
     }
   }
 })
+
+it('stores the filename before the compressed bytes', async () => {
+  const named = await gzip(new TextEncoder().encode('hello\nworld\n'), 'a.txt')
+  expect((named[3] ?? 0) & 8).toBe(8)
+  expect(new TextDecoder().decode(named.subarray(10, 16))).toBe('a.txt\0')
+  const [data, failure] = await gunzipPartial(named.subarray(0, 20))
+  expect(new TextDecoder().decode(data)).toBe('hel')
+  expect(failure).not.toBeNull()
+  expect(new TextDecoder().decode(await gunzipChecked(named))).toBe('hello\nworld\n')
+})

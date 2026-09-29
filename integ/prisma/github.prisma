@@ -60,6 +60,7 @@ model GithubRepo {
   commits     GithubCommit[]
   issues      GithubIssue[]
   pulls       GithubPull[]
+  reviews     GithubReview[]
   releases    GithubRelease[]
   comments    GithubComment[]
   workflows   GithubWorkflow[]
@@ -174,6 +175,9 @@ model GithubIssue {
   // and a link table would restate an order the caller already fixed.
   labelsJson    String @default("[]")
   assigneesJson String @default("[]")
+  // Both empty until the issue first closes.
+  stateReason   String @default("")
+  closedAt      String @default("")
   createdAt     String
   updatedAt     String
   seq           Int
@@ -215,6 +219,8 @@ model GithubPull {
   merged    Boolean @default(false)
   // The sha `gh pr checks` resolves its check runs and statuses against.
   headSha   String  @default("")
+  // Requested reviewers' logins, in request order.
+  reviewersJson String @default("[]")
   createdAt String
   updatedAt String
   seq       Int
@@ -222,6 +228,27 @@ model GithubPull {
   repository GithubRepo @relation(fields: [tenant, repo], references: [tenant, fullName])
 
   @@index([tenant, repo])
+}
+
+// A submitted pull request review. `state` is the vendor's past-tense
+// spelling (APPROVED, CHANGES_REQUESTED, COMMENTED), which the event the
+// caller posted (APPROVE, REQUEST_CHANGES, COMMENT) decides.
+model GithubReview {
+  pk          Int    @id @default(autoincrement())
+  tenant      String
+  repo        String
+  pullNumber  Int
+  id          Int
+  user        String
+  body        String @default("")
+  state       String
+  commitId    String
+  submittedAt String
+  seq         Int
+
+  repository GithubRepo @relation(fields: [tenant, repo], references: [tenant, fullName])
+
+  @@index([tenant, repo, pullNumber])
 }
 
 model GithubRelease {

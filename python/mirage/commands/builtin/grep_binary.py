@@ -1,6 +1,6 @@
 import re
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 
 from mirage.commands.builtin.grep_offsets import (MatchOffsets, decode_line,
@@ -128,13 +128,14 @@ def output_line(raw: bytes,
     return prefix + fields.encode() + raw + b"\n"
 
 
-async def grep_input(source: AsyncIterator[bytes],
-                     pat: re.Pattern[str],
-                     f: GrepFlags,
-                     path: str,
-                     show_filename: bool,
-                     io: IOResult,
-                     after_output: bool = False) -> AsyncIterator[bytes]:
+async def grep_input(
+        source: AsyncIterator[bytes],
+        pat: re.Pattern[str],
+        f: GrepFlags,
+        path: str,
+        show_filename: bool,
+        io: IOResult,
+        after_output: bool = False) -> AsyncGenerator[bytes, None]:
     """Scan one input, yielding grep's output for it.
 
     Args:

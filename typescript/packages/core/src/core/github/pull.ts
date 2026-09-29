@@ -14,7 +14,7 @@
 
 import type { GitHubTransport } from './client.ts'
 import { githubPages } from './paginate.ts'
-import type { RepoRef } from './repo.ts'
+import { graphqlData, type RepoRef } from './repo.ts'
 
 function path(ref: RepoRef, tail = ''): string {
   return `/repos/${ref.owner}/${ref.repo}/pulls${tail}`
@@ -40,6 +40,122 @@ export function getPull(
   number: number,
 ): Promise<unknown> {
   return transport.get(path(ref, `/${String(number)}`))
+}
+
+/**
+ * The selected fields of one pull request, over GraphQL, as gh's
+ * PullRequestByNumber asks for them for `pr view --json`: one query naming
+ * only what was asked for. A selection that reads the page of a connection
+ * after `$endCursor` is given that cursor as `endCursor`.
+ *
+ * Args:
+ *   transport (GitHubTransport): the API client.
+ *   ref (RepoRef): the repository.
+ *   number (number): the pull request.
+ *   selection (string): the GraphQL selection inside `pullRequest { }`.
+ *   endCursor (string | undefined): the cursor `$endCursor` carries.
+ */
+export async function pullRequestFields(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  number: number,
+  selection: string,
+  endCursor?: string,
+): Promise<Record<string, unknown>> {
+  const variables: Record<string, unknown> = { owner: ref.owner, repo: ref.repo, pr_number: number }
+  if (endCursor !== undefined) variables.endCursor = endCursor
+  const cursor = endCursor === undefined ? '' : ', $endCursor: String'
+  const data = await graphqlData(
+    transport,
+    `query PullRequestByNumber($owner: String!, $repo: String!, $pr_number: Int!${cursor}) {\n` +
+      '    repository(owner: $owner, name: $repo) {\n' +
+      `      pullRequest(number: $pr_number) {${selection}}\n` +
+      '    }\n  }',
+    variables,
+  )
+  const repository = data.repository as { pullRequest?: unknown } | null | undefined
+  const pull = repository?.pullRequest
+  return pull !== null && typeof pull === 'object' ? (pull as Record<string, unknown>) : {}
+}
+
+/** The narrowing `gh pr list` applies before it lists. */
+export interface PullListFilter {
+  readonly states: readonly string[]
+  readonly base?: string | undefined
+  readonly head?: string | undefined
+}
+
+/**
+ * The selected fields of a repository's pull requests, over GraphQL, as
+ * gh's PullRequestList asks for them for `pr list --json`: newest first, a
+ * page of up to 100 at a time until `limit`. A pull request a later page
+ * repeats is listed once, which gh can only tell when the line asked for
+ * `number`.
+ *
+ * Args:
+ *   transport (GitHubTransport): the API client.
+ *   ref (RepoRef): the repository.
+ *   filter (PullListFilter): the states and the base and head branches.
+ *   limit (number): how many pull requests at most.
+ *   selection (string): the GraphQL selection for each pull request.
+ */
+export async function listPullRequestFields(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  filter: PullListFilter,
+  limit: number,
+  selection: string,
+): Promise<Record<string, unknown>[]> {
+  const query =
+    `fragment pr on PullRequest{${selection}}\n` +
+    '    query PullRequestList(\n      $owner: String!,\n      $repo: String!,\n' +
+    '      $limit: Int!,\n      $endCursor: String,\n      $baseBranch: String,\n' +
+    '      $headBranch: String,\n      $state: [PullRequestState!] = OPEN\n    ) {\n' +
+    '      repository(owner: $owner, name: $repo) {\n        pullRequests(\n' +
+    '          states: $state,\n          baseRefName: $baseBranch,\n' +
+    '          headRefName: $headBranch,\n          first: $limit,\n' +
+    '          after: $endCursor,\n          orderBy: {field: CREATED_AT, direction: DESC}\n' +
+    '        ) {\n          totalCount\n          nodes {\n            ...pr\n' +
+    '          }\n          pageInfo {\n            hasNextPage\n            endCursor\n' +
+    '          }\n        }\n      }\n    }'
+  const rows: Record<string, unknown>[] = []
+  const seen = new Set<number>()
+  let cursor: string | null = null
+  let pageLimit = Math.min(limit, 100)
+  while (rows.length < limit) {
+    const variables: Record<string, unknown> = {
+      owner: ref.owner,
+      repo: ref.repo,
+      limit: pageLimit,
+      state: filter.states,
+    }
+    if (filter.base !== undefined && filter.base !== '') variables.baseBranch = filter.base
+    if (filter.head !== undefined && filter.head !== '') variables.headBranch = filter.head
+    if (cursor !== null) variables.endCursor = cursor
+    const data = await graphqlData(transport, query, variables)
+    const page = (
+      data.repository as {
+        pullRequests?: {
+          nodes?: Record<string, unknown>[]
+          pageInfo?: { hasNextPage?: boolean; endCursor?: string | null }
+        }
+      } | null
+    )?.pullRequests
+    for (const node of page?.nodes ?? []) {
+      const number = node.number
+      if (typeof number === 'number' && number > 0) {
+        if (seen.has(number)) continue
+        seen.add(number)
+      }
+      rows.push(node)
+      if (rows.length === limit) break
+    }
+    const next = page?.pageInfo?.endCursor ?? null
+    if (page?.pageInfo?.hasNextPage !== true || next === null || next === cursor) break
+    cursor = next
+    pageLimit = Math.min(pageLimit, limit - rows.length)
+  }
+  return rows
 }
 
 export function createPull(

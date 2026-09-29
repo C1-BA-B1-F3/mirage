@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.postgres.config import PostgresConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.postgres.postgres import PostgresVFS
 
 __all__ = ["PostgresConfig", "PostgresVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[PostgresVFS]":
     if name == "PostgresVFS":
         from mirage.vfs.postgres.postgres import PostgresVFS
         return PostgresVFS

@@ -74,10 +74,29 @@ def test_tar_extract_lands_in_cwd_across_mounts(ws):
 
 
 def test_tar_extract_dash_C_into_another_mount(ws):
+    assert _run(ws, "mkdir /dest").exit_code == 0
     result = _run(ws, "tar -xzf /work/files.tar.gz -C /dest")
     assert result.exit_code == 0
     out = _run(ws, "cat /dest/memory/memory.json")
     assert out.stdout == b"content:./memory/memory.json\n"
+
+
+@pytest.mark.parametrize("mode, expected", [
+    ("t", b"./memory/memory.json\n./other.txt\n"),
+    ("xO", b"content:./memory/memory.json\ncontent:./other.txt\n"),
+    ("x", b""),
+])
+def test_tar_stdin_survives_relay_across_chdir_mounts(ws, mode, expected):
+    assert _run(ws, "mkdir /dest").exit_code == 0
+    result = _run(
+        ws, "cat /work/files.tar.gz | "
+        f"tar -{mode}zf - -C /work -C /dest")
+    assert result.exit_code == 0, result.stderr
+    assert not result.stderr
+    assert (result.stdout or b"") == expected
+    if mode == "x":
+        assert _run(ws, "cat /dest/memory/memory.json").stdout == (
+            b"content:./memory/memory.json\n")
 
 
 def _archive(ws: Workspace, path: str) -> bytes:

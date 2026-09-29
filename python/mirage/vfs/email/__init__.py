@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.core.email.config import EmailConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.email.email import EmailVFS
 
 __all__ = ["EmailConfig", "EmailVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[EmailVFS]":
     if name == "EmailVFS":
         from mirage.vfs.email.email import EmailVFS
 

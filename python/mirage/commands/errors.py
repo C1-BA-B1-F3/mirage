@@ -47,6 +47,21 @@ class CommandTimeoutError(Exception):
         self.seconds = seconds
 
 
+class PartialOutputError(Exception):
+    """A command's failure after it had already printed output, which a
+    program that writes as it goes leaves on stdout ahead of the
+    diagnostic.
+
+    Args:
+        message (str): the diagnostic.
+        stdout (bytes): what the command printed before it failed.
+    """
+
+    def __init__(self, message: str, stdout: bytes) -> None:
+        super().__init__(message)
+        self.stdout = stdout
+
+
 def is_entry_error(exc: Exception) -> bool:
     """Whether a listing reports this failure against one entry and walks on.
 

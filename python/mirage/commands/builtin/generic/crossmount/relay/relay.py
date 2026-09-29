@@ -99,7 +99,8 @@ async def run_relay(cmd_name: str,
     if cmd_name == Cmd.JOIN:
         return await run_join(scopes, flag_kwargs, dispatch, stdin)
     if cmd_name == Cmd.TAR:
-        return await run_tar(scopes, text_args, flag_kwargs, dispatch, ns)
+        return await run_tar(scopes, text_args, flag_kwargs, dispatch, ns,
+                             stdin)
     if cmd_name == Cmd.UNZIP:
         return await run_unzip(scopes, text_args, flag_kwargs, dispatch)
     if cmd_name == Cmd.ZIP:

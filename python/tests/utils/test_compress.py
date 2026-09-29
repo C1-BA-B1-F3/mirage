@@ -19,7 +19,7 @@ import pytest
 from mirage.io.types import materialize
 from mirage.utils.compress import (GZIP_CHUNK_SIZE, GZIP_CRC, GZIP_LENGTH,
                                    GzipDecoder, gunzip_checked, gunzip_partial,
-                                   gunzip_stream)
+                                   gunzip_stream, gzip_compress)
 from mirage.utils.errors import GzipDataError
 
 HELLO = gzip.compress(b"hello\n", mtime=0)
@@ -229,3 +229,15 @@ def test_long_header_fields_use_bounded_memory(flag, terminated):
     else:
         with pytest.raises(GzipDataError, match="unexpected end of file"):
             decoder.finish()
+
+
+def test_named_gzip_header_moves_the_truncation_boundary():
+    named = gzip_compress(b"hello\nworld\n", name="a.txt")
+    assert named[3] & 8
+    assert named[10:16] == b"a.txt\0"
+    data, failure = gunzip_partial(named[:20])
+    assert data == b"hel"
+    assert failure is not None
+    assert gunzip_checked(named) == b"hello\nworld\n"
+    unnamed = gzip_compress(b"hello\nworld\n")
+    assert gunzip_partial(unnamed[:20])[0] == b"hello\nwor"

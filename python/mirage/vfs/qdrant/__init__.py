@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.qdrant.config import QdrantConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.qdrant.qdrant import QdrantVFS
 
 __all__ = ["QdrantConfig", "QdrantVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[QdrantVFS]":
     if name == "QdrantVFS":
         from mirage.vfs.qdrant.qdrant import QdrantVFS
         return QdrantVFS

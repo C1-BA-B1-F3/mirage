@@ -19,6 +19,7 @@ from mirage.commands.builtin.generic.tar.tar import parse_flags, tar
 from mirage.commands.builtin.generic_bind.archive_io import (relay_is_dir_of,
                                                              relay_walk_of)
 from mirage.commands.spec.types import FlagValue
+from mirage.io.types import ByteSource
 from mirage.ops.types import NamespaceView
 from mirage.runtime.types import DispatchFn
 from mirage.types import PathSpec
@@ -46,9 +47,12 @@ def _operands(scopes: list[PathSpec], taken: list[str]) -> list[PathSpec]:
     return rest
 
 
-async def run_tar(scopes: list[PathSpec], text_args: list[str],
-                  flag_kwargs: dict[str, FlagValue], dispatch: DispatchFn,
-                  ns: NamespaceView | None) -> CrossResult:
+async def run_tar(scopes: list[PathSpec],
+                  text_args: list[str],
+                  flag_kwargs: dict[str, FlagValue],
+                  dispatch: DispatchFn,
+                  ns: NamespaceView | None,
+                  stdin: ByteSource | None = None) -> CrossResult:
     """Run a tar whose archive, operands and -C destination span mounts.
 
     Pure wiring: the shared generic runs on dispatch-relayed doors, so
@@ -65,6 +69,7 @@ async def run_tar(scopes: list[PathSpec], text_args: list[str],
         dispatch (DispatchFn): Workspace operation dispatcher.
         ns (NamespaceView | None): The symlinks and mount boundaries the
             create scan merges into each walk.
+        stdin (ByteSource | None): The archive input when ``-f -`` is used.
     """
     parsed = parse_flags(flag_kwargs)
     prim = transfer_primitives(dispatch)
@@ -99,4 +104,5 @@ async def run_tar(scopes: list[PathSpec], text_args: list[str],
         links=ns.links if ns is not None else None,
         mounts=ns.mounts if ns is not None else None,
         relay=True,
+        stdin=stdin,
     )

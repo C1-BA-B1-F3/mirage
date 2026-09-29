@@ -12,12 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.slack.config import SlackConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.slack.slack import SlackVFS
 
 __all__ = ["SlackConfig", "SlackVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[SlackVFS]":
     if name == "SlackVFS":
         from mirage.vfs.slack.slack import SlackVFS
         return SlackVFS

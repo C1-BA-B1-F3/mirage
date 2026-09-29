@@ -12,13 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.gsheets.config import GSheetsConfig
 from mirage.vfs.gsheets.sheet_entry import SheetEntry
+
+if TYPE_CHECKING:
+    from mirage.vfs.gsheets.gsheets import GSheetsVFS
 
 __all__ = ["GSheetsConfig", "SheetEntry", "GSheetsVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[GSheetsVFS]":
     if name == "GSheetsVFS":
         from mirage.vfs.gsheets.gsheets import GSheetsVFS
         return GSheetsVFS

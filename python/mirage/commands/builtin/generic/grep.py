@@ -1,4 +1,6 @@
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import (AsyncGenerator, AsyncIterator, Awaitable,
+                             Callable, Sequence)
+from contextlib import aclosing
 from dataclasses import replace
 from functools import partial
 
@@ -247,7 +249,8 @@ async def grep(
         warnings.append(message)
         diagnostics.append((message + "\n").encode())
 
-    async def scan(p: PathSpec, walked: bool = False) -> AsyncIterator[bytes]:
+    async def scan(p: PathSpec,
+                   walked: bool = False) -> AsyncGenerator[bytes, None]:
         nonlocal matched, printed
         try:
             # The probes below go by `virtual`, which cannot carry the
@@ -280,8 +283,11 @@ async def grep(
                             warn(f"grep: {child.raw_path}: "
                                  f"{fs_strerror(exc) or exc}")
                             continue
-                    async for chunk in scan(child, True):
-                        yield chunk
+                    async with aclosing(scan(child, True)) as child_stream:
+                        async for chunk in child_stream:
+                            yield chunk
+                    if f.quiet and matched:
+                        break
                 return
             if walked and info.type != FileType.FILE:
                 return
@@ -295,11 +301,13 @@ async def grep(
             file_io = IOResult(exit_code=1)
             show = not f.no_filename and (f.with_filename or walked
                                           or len(paths) > 1)
-            async for chunk in grep_input(source, pat, f,
-                                          operand_label(p, "(standard input)"),
-                                          show, file_io, printed):
-                printed = True
-                yield chunk
+            async with aclosing(
+                    grep_input(source, pat, f,
+                               operand_label(p, "(standard input)"), show,
+                               file_io, printed)) as output:
+                async for chunk in output:
+                    printed = True
+                    yield chunk
             matched = matched or file_io.exit_code == 0
             if file_io.stderr:
                 diagnostics.append(await materialize(file_io.stderr))
@@ -308,8 +316,9 @@ async def grep(
 
     async def run() -> AsyncIterator[bytes]:
         for path in paths:
-            async for chunk in scan(path):
-                yield chunk
+            async with aclosing(scan(path)) as output:
+                async for chunk in output:
+                    yield chunk
             if f.quiet and matched:
                 break
         if diagnostics:

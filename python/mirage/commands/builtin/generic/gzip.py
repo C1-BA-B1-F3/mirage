@@ -18,9 +18,10 @@ from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.io.types import ByteSource, IOResult, materialize
 from mirage.types import PathSpec
-from mirage.utils.compress import gzip_compress_stream
+from mirage.utils.compress import gzip_compress, gzip_compress_stream
 from mirage.utils.errors import FS_ERRORS, fs_strerror
 from mirage.utils.key_prefix import mounted_path
+from mirage.utils.path import gnu_basename
 
 
 def extract_level(fl: FlagView) -> int:
@@ -132,7 +133,10 @@ async def gzip(
                 report(f"\ngzip: {p.raw_path}: {fs_strerror(exc)}", 1)
                 break
             link = opened.link
-        data = zlib.compress(raw, level=level, wbits=zlib.MAX_WBITS | 16)
+        data = gzip_compress(
+            raw,
+            level=level,
+            name="" if p.raw_path == "-" else gnu_basename(p.raw_path))
         if not in_place:
             stdout.append(data)
             continue

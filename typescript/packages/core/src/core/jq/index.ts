@@ -12,15 +12,29 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export { argsObject, jqEval, referencesArgs, referencesInputs, streamEvents } from './eval.ts'
-export { concatBytes, formatJqOutput } from './format.ts'
+export { JqCompileError } from './errors.ts'
+export {
+  argsObject,
+  halts,
+  jqCheck,
+  jqEval,
+  jqRun,
+  referencesArgs,
+  streamEvents,
+  streamReads,
+} from './eval.ts'
+export { concatBytes, errorReport, formatJqOutput, haltReport } from './format.ts'
+export { InputPositions } from './position.ts'
 export {
   evalJsonlStream,
   isJsonlPath,
   isStreamableJsonlExpr,
   parseJsonDocs,
+  parseJsonText,
   parseSeqDocs,
+  parseSeqText,
   splitRawLines,
+  splitRawText,
 } from './stream.ts'
-export { DEFAULT_INDENT, jqOptions } from './types.ts'
-export type { JqOptions } from './types.ts'
+export { DEFAULT_INDENT, STDIN_NAME, UNKNOWN_POSITION, jqOptions } from './types.ts'
+export type { JqError, JqHalt, JqOptions, JqRun, StreamReads } from './types.ts'

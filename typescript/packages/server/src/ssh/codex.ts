@@ -30,6 +30,7 @@ import {
   CODEX_INTERRUPT_SIGNAL,
   CODEX_MAX_MESSAGE,
   CODEX_READ_SIZE,
+  CODEX_RETAINED_OUTPUT,
   CODEX_SHELLS,
   CODEX_SHELL_NAME,
   CODEX_SHELL_PATH,
@@ -391,9 +392,14 @@ class ProcessInput implements AsyncIterable<Uint8Array> {
   }
 }
 
-/** One started process: its output so far and how it ended. */
+/**
+ * One started process: its recent output and how it ended. Output is kept
+ * for `process/read` up to `CODEX_RETAINED_OUTPUT` bytes, the oldest chunks
+ * dropped first; notifications carry all of it.
+ */
 class CodexProcess {
-  readonly chunks: [number, Message][] = []
+  readonly chunks: [number, number, Message][] = []
+  retained = 0
   seq = 0
   exitCode: number | null = null
   closed = false
@@ -411,6 +417,17 @@ class CodexProcess {
   nextSeq(): number {
     this.seq += 1
     return this.seq
+  }
+
+  /** Keep a chunk for `process/read`, dropping the oldest past the bound. */
+  keep(seq: number, size: number, chunk: Message): void {
+    this.chunks.push([seq, size, chunk])
+    this.retained += size
+    while (this.retained > CODEX_RETAINED_OUTPUT) {
+      const dropped = this.chunks.shift()
+      if (dropped === undefined) break
+      this.retained -= dropped[1]
+    }
   }
 
   changed(): void {
@@ -438,8 +455,10 @@ class CodexProcess {
  * process runs as a line in the channel's session, and a file call lands
  * on the MountCore SFTP uses, so both see the tree, modes and policies a
  * shell in that session sees. Requests are answered one at a time, in
- * order, as the exec-server answers them by default; a process runs on in
- * the background and reports through notifications.
+ * order, as the exec-server answers them by default, except `process/read`,
+ * which may wait for output and so runs beside them. A process runs on in
+ * the background and reports through notifications; once it has closed,
+ * `process/terminate` forgets it, as Codex sends after every command.
  */
 class CodexChannel {
   private readonly input: ChannelInput
@@ -448,6 +467,7 @@ class CodexChannel {
   private readonly processes = new Map<string, CodexProcess>()
   private readonly handles = new Map<string, [string, number]>()
   private starts: [CodexProcess, string, string, Record<string, string>][] = []
+  private readonly reads = new Set<Promise<void>>()
   private readonly methods: Record<string, Handler>
 
   constructor(
@@ -516,6 +536,7 @@ class CodexChannel {
     await Promise.all(
       [...this.processes.values()].flatMap((p) => (p.done === null ? [] : [p.done])),
     )
+    await Promise.all(this.reads)
     for (const [, fd] of this.handles.values()) await this.core.release(fd)
     this.handles.clear()
     this.input.close()
@@ -543,18 +564,34 @@ class CodexChannel {
     // notification (`initialized`); neither is answered.
     if (typeof method !== 'string' || !('id' in request)) return
     const id = request.id ?? null
+    if (method === 'process/read') {
+      // A read may wait for output; stdin and signals sent behind it must
+      // not wait with it.
+      const read = this.answer(id, method, request.params)
+      this.reads.add(read)
+      void read.finally(() => this.reads.delete(read))
+      return
+    }
+    await this.answer(id, method, request.params)
+    const starts = this.starts
+    this.starts = []
+    for (const [proc, line, cwd, env] of starts) this.launch(proc, line, cwd, env)
+  }
+
+  private async answer(
+    id: JsonValue,
+    method: string,
+    params: JsonValue | undefined,
+  ): Promise<void> {
     let result: JsonValue
     try {
-      result = await this.dispatch(method, request.params)
+      result = await this.dispatch(method, params)
     } catch (err) {
       const error = err instanceof CodexRPCError ? err : rpcError(err)
       await this.send({ id, error: { code: error.code, message: error.message } })
       return
     }
     await this.send({ id, result })
-    const starts = this.starts
-    this.starts = []
-    for (const [proc, line, cwd, env] of starts) this.launch(proc, line, cwd, env)
   }
 
   private async dispatch(method: string, params: JsonValue | undefined): Promise<JsonValue> {
@@ -669,6 +706,7 @@ class CodexChannel {
       method: 'process/closed',
       params: { processId: proc.processId, seq: proc.nextSeq() },
     })
+    if (proc.stopCode === CODEX_TERMINATED) this.processes.delete(proc.processId)
   }
 
   private async emit(proc: CodexProcess, data: Uint8Array, stderr: boolean): Promise<void> {
@@ -676,7 +714,7 @@ class CodexChannel {
     const stream = proc.tty ? 'pty' : stderr ? 'stderr' : 'stdout'
     const seq = proc.nextSeq()
     const chunk: Message = { seq, stream, chunk: b64(data) }
-    proc.chunks.push([seq, chunk])
+    proc.keep(seq, data.byteLength, chunk)
     proc.changed()
     await this.send({ method: 'process/output', params: { processId: proc.processId, ...chunk } })
   }
@@ -703,7 +741,7 @@ class CodexChannel {
     const proc = this.known(params)
     const after = arg(params, 'afterSeq', 'number', 0)
     const waitMs = arg(params, 'waitMs', 'number', 0)
-    const fresh = (): JsonValue[] => proc.chunks.filter(([seq]) => seq > after).map(([, c]) => c)
+    const fresh = (): JsonValue[] => proc.chunks.filter(([seq]) => seq > after).map(([, , c]) => c)
     if (fresh().length === 0 && !proc.closed && waitMs > 0) await proc.until(waitMs)
     return {
       chunks: fresh(),
@@ -741,8 +779,14 @@ class CodexChannel {
   }
 
   private processTerminate(params: Message): Promise<JsonValue> {
-    const proc = this.processes.get(arg(params, 'processId', 'string'))
-    return Promise.resolve({ running: proc !== undefined && this.stop(proc, CODEX_TERMINATED) })
+    const processId = arg(params, 'processId', 'string')
+    const proc = this.processes.get(processId)
+    if (proc === undefined) return Promise.resolve({ running: false })
+    if (proc.closed) {
+      this.processes.delete(processId)
+      return Promise.resolve({ running: false })
+    }
+    return Promise.resolve({ running: this.stop(proc, CODEX_TERMINATED) })
   }
 
   private async canonicalize(params: Message): Promise<JsonValue> {

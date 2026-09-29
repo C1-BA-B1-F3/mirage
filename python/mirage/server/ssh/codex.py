@@ -408,7 +408,11 @@ class ProcessInput:
 
 
 class CodexProcess:
-    """One started process: its output so far and how it ended.
+    """One started process: its recent output and how it ended.
+
+    Output is kept for ``process/read`` up to ``CODEX_RETAINED_OUTPUT``
+    bytes, the oldest chunks dropped first; notifications carry all of
+    it.
 
     Args:
         process_id (str): Codex's id for it.
@@ -421,7 +425,8 @@ class CodexProcess:
         self.process_id = process_id
         self.tty = tty
         self.stdin = stdin
-        self.chunks: list[tuple[int, Message]] = []
+        self.chunks: deque[tuple[int, int, Message]] = deque()
+        self.retained = 0
         self.seq = 0
         self.exit_code: int | None = None
         self.closed = False
@@ -433,6 +438,21 @@ class CodexProcess:
     def next_seq(self) -> int:
         self.seq += 1
         return self.seq
+
+    def keep(self, seq: int, size: int, chunk: Message) -> None:
+        """Keep a chunk for ``process/read``, dropping the oldest past
+        the bound.
+
+        Args:
+            seq (int): the chunk's sequence number.
+            size (int): its byte length.
+            chunk (Message): the chunk as ``process/read`` returns it.
+        """
+        self.chunks.append((seq, size, chunk))
+        self.retained += size
+        while self.retained > constants.CODEX_RETAINED_OUTPUT and self.chunks:
+            _, dropped, _ = self.chunks.popleft()
+            self.retained -= dropped
 
 
 async def run_process(ws: Workspace, session_id: str, line: str, cwd: str,
@@ -494,9 +514,11 @@ class CodexChannel:
     process runs as a line in the channel's session, and a file call
     lands on the MountCore SFTP uses, so both see the tree, modes and
     policies a shell in that session sees. Requests are answered one
-    at a time, in order, as the exec-server answers them by default; a
-    process runs on in the background and reports through
-    notifications.
+    at a time, in order, as the exec-server answers them by default,
+    except ``process/read``, which may wait for output and so runs
+    beside them. A process runs on in the background and reports
+    through notifications; once it has closed, ``process/terminate``
+    forgets it, as Codex sends after every command.
 
     Args:
         registry (WorkspaceRegistry): the daemon's workspaces.
@@ -521,6 +543,7 @@ class CodexChannel:
         self._processes: dict[str, CodexProcess] = {}
         self._handles: dict[str, tuple[str, int]] = {}
         self._starts: list[tuple[CodexProcess, str, str, dict[str, str]]] = []
+        self._reads: set[asyncio.Task[None]] = set()
         self._methods: dict[str, Handler] = {
             "initialize": self._initialize,
             "environment/info": self._environment_info,
@@ -569,6 +592,10 @@ class CodexChannel:
             await self._shutdown()
 
     async def _shutdown(self) -> None:
+        for read in self._reads:
+            read.cancel()
+        if self._reads:
+            await asyncio.wait(self._reads)
         for proc in self._processes.values():
             if proc.future is not None:
                 proc.future.cancel()
@@ -611,10 +638,25 @@ class CodexChannel:
             return
         if "id" not in message:
             return
-        request_id = message["id"]
+        if message["method"] == "process/read":
+            # A read may wait for output; stdin and signals sent behind it
+            # must not wait with it.
+            read = asyncio.create_task(
+                self._answer(message["id"], message["method"],
+                             message.get("params")))
+            self._reads.add(read)
+            read.add_done_callback(self._reads.discard)
+            return
+        await self._answer(message["id"], message["method"],
+                           message.get("params"))
+        starts, self._starts = self._starts, []
+        for proc, line, cwd, env in starts:
+            self._launch(proc, line, cwd, env)
+
+    async def _answer(self, request_id: JsonValue, method: str,
+                      params: JsonValue) -> None:
         try:
-            result = await self._dispatch(message["method"],
-                                          message.get("params"))
+            result = await self._dispatch(method, params)
         except CodexRPCError as exc:
             await self._send({
                 "id": request_id,
@@ -625,9 +667,6 @@ class CodexChannel:
             })
             return
         await self._send({"id": request_id, "result": result})
-        starts, self._starts = self._starts, []
-        for proc, line, cwd, env in starts:
-            self._launch(proc, line, cwd, env)
 
     async def _dispatch(self, method: str, params: JsonValue) -> JsonValue:
         handler = self._methods.get(method)
@@ -723,7 +762,7 @@ class CodexChannel:
         stream = "pty" if proc.tty else "stderr" if stderr else "stdout"
         seq = proc.next_seq()
         chunk: Message = {"seq": seq, "stream": stream, "chunk": b64(data)}
-        proc.chunks.append((seq, chunk))
+        proc.keep(seq, len(data), chunk)
         proc.changed.set()
         await self._send({
             "method": "process/output",
@@ -769,6 +808,8 @@ class CodexChannel:
                 "seq": proc.next_seq()
             }
         })
+        if proc.stop_code == constants.CODEX_TERMINATED:
+            self._processes.pop(proc.process_id, None)
 
     def _known(self, params: Message) -> CodexProcess:
         process_id = arg(params, "processId", str)
@@ -790,7 +831,9 @@ class CodexChannel:
         proc = self._known(params)
         after = arg(params, "afterSeq", int, 0)
         wait_ms = arg(params, "waitMs", int, 0)
-        fresh: list[JsonValue] = [c for seq, c in proc.chunks if seq > after]
+        fresh: list[JsonValue] = [
+            c for seq, _, c in proc.chunks if seq > after
+        ]
         if not fresh and not proc.closed and wait_ms > 0:
             proc.changed.clear()
             try:
@@ -798,7 +841,7 @@ class CodexChannel:
             except TimeoutError:
                 logger.debug("codex: %s had nothing new in %d ms",
                              proc.process_id, wait_ms)
-            fresh = [c for seq, c in proc.chunks if seq > after]
+            fresh = [c for seq, _, c in proc.chunks if seq > after]
         return {
             "chunks": fresh,
             "nextSeq": proc.seq + 1,
@@ -836,10 +879,14 @@ class CodexChannel:
         return {}
 
     async def _process_terminate(self, params: Message) -> JsonValue:
-        proc = self._processes.get(arg(params, "processId", str))
-        running = proc is not None and self._stop(proc,
-                                                  constants.CODEX_TERMINATED)
-        return {"running": running}
+        process_id = arg(params, "processId", str)
+        proc = self._processes.get(process_id)
+        if proc is None:
+            return {"running": False}
+        if proc.closed:
+            del self._processes[process_id]
+            return {"running": False}
+        return {"running": self._stop(proc, constants.CODEX_TERMINATED)}
 
     async def _get_metadata(self, params: Message) -> JsonValue:
         path = to_path(arg(params, "path", str))

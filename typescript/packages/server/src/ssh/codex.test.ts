@@ -23,6 +23,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { WorkspaceRegistry, type WorkspaceEntry } from '../registry.ts'
 import { argvLine, processEnv, toPath, toUri } from './codex.ts'
 import {
+  CODEX_RETAINED_OUTPUT,
   CODEX_SUBSYSTEM,
   RPC_INTERNAL_ERROR,
   RPC_INVALID_PARAMS,
@@ -168,15 +169,25 @@ class CodexClient {
     this.stream.write(text)
   }
 
-  async call(method: string, params: Message = {}): Promise<Message> {
+  send(method: string, params: Message = {}): number {
     this.id += 1
-    const id = this.id
-    this.write(JSON.stringify({ id, method, params }) + '\n')
+    this.write(JSON.stringify({ id: this.id, method, params }) + '\n')
+    return this.id
+  }
+
+  async response(id: number): Promise<Message> {
+    const index = this.notes.findIndex((n) => n.id === id && !('method' in n))
+    const noted = index >= 0 ? this.notes.splice(index, 1)[0] : undefined
+    if (noted !== undefined) return noted
     for (;;) {
       const message = await this.receive()
       if (message.id === id && !('method' in message)) return message
       this.notes.push(message)
     }
+  }
+
+  call(method: string, params: Message = {}): Promise<Message> {
+    return this.response(this.send(method, params))
   }
 
   async result(method: string, params: Message = {}): Promise<Message> {
@@ -538,6 +549,47 @@ describe('codex-exec', () => {
     expect(running).toEqual({ running: true })
     expect(terminated.exitCode).toBe(-1)
     expect(ctrlC.exitCode).toBe(130)
+  })
+
+  it('answers a signal while a read waits', async () => {
+    const client = await codex(await startHarness())
+    await client.start('s', 'sleep 30')
+    const readId = client.send('process/read', { processId: 's', afterSeq: 0, waitMs: 20_000 })
+    const started = Date.now()
+    await client.result('process/signal', { processId: 's', signal: 'interrupt' })
+    const read = (await client.response(readId)).result as Message
+    expect(Date.now() - started).toBeLessThan(10_000)
+    expect(read).toMatchObject({ exited: true, exitCode: 130 })
+  })
+
+  it('forgets a process once it is terminated', async () => {
+    const client = await codex(await startHarness())
+    await client.run('p', 'echo once')
+    await client.noteAny('p', 'process/closed')
+    await client.result('process/terminate', { processId: 'p' })
+    const gone = await client.error('process/read', { processId: 'p' })
+    const [again] = await client.run('p', 'echo twice')
+    await client.start('t', 'sleep 30')
+    await client.result('process/terminate', { processId: 't' })
+    await client.noteAny('t', 'process/closed')
+    const stopped = await client.error('process/read', { processId: 't' })
+    expect(gone.code).toBe(RPC_INVALID_REQUEST)
+    expect(again).toBe('twice\n')
+    expect(stopped.code).toBe(RPC_INVALID_REQUEST)
+  })
+
+  it('bounds the output it keeps for reads', async () => {
+    const client = await codex(await startHarness())
+    const [out, , code] = await client.run('big', 'seq 1 300000')
+    const read = await client.result('process/read', { processId: 'big' })
+    const kept = (read.chunks as Message[]).reduce(
+      (n, c) => n + Buffer.from(String(c.chunk), 'base64').byteLength,
+      0,
+    )
+    expect(code).toBe(0)
+    expect(out.length).toBeGreaterThan(CODEX_RETAINED_OUTPUT)
+    expect(out.endsWith('299999\n300000\n')).toBe(true)
+    expect(kept).toBeLessThanOrEqual(CODEX_RETAINED_OUTPUT)
   })
 
   it('checks process ids', async () => {

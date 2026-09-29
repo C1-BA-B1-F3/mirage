@@ -43,6 +43,9 @@ CODEX_SHELLS = frozenset({"bash", "sh", "zsh", "dash"})
 # message may run far past a shell line.
 CODEX_MAX_MESSAGE = 64 * 1024 * 1024
 CODEX_READ_SIZE = 1024 * 1024
+# The output a process keeps for `process/read`, oldest dropped first.
+# Codex takes output from notifications, so this is a bounded replay.
+CODEX_RETAINED_OUTPUT = 1024 * 1024
 CODEX_INTERRUPT_SIGNAL = "interrupt"
 CODEX_CTRL_C = b"\x03"
 CODEX_CTRL_D = b"\x04"

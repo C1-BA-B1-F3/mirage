@@ -45,6 +45,11 @@ export const CODEX_SHELLS: ReadonlySet<string> = new Set(['bash', 'sh', 'zsh', '
  */
 export const CODEX_MAX_MESSAGE = 64 * 1024 * 1024
 export const CODEX_READ_SIZE = 1024 * 1024
+/**
+ * The output a process keeps for `process/read`, oldest dropped first.
+ * Codex takes output from notifications, so this is a bounded replay.
+ */
+export const CODEX_RETAINED_OUTPUT = 1024 * 1024
 export const CODEX_INTERRUPT_SIGNAL = 'interrupt'
 export const CODEX_CTRL_C = 0x03
 export const CODEX_CTRL_D = 0x04

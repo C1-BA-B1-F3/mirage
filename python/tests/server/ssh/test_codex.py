@@ -15,6 +15,7 @@
 import asyncio
 import base64
 import json
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -23,7 +24,8 @@ import asyncssh
 import pytest
 
 from mirage.server.ssh.codex import argv_line, process_env, to_path, to_uri
-from mirage.server.ssh.constants import (CODEX_SUBSYSTEM, RPC_INTERNAL_ERROR,
+from mirage.server.ssh.constants import (CODEX_RETAINED_OUTPUT,
+                                         CODEX_SUBSYSTEM, RPC_INTERNAL_ERROR,
                                          RPC_INVALID_PARAMS,
                                          RPC_INVALID_REQUEST,
                                          RPC_METHOD_NOT_FOUND, RPC_NOT_FOUND)
@@ -69,9 +71,7 @@ class CodexClient:
         line, self._buffer = self._buffer.split("\n", 1)
         return json.loads(line)
 
-    async def call(self,
-                   method: str,
-                   params: dict[str, Any] | None = None) -> dict[str, Any]:
+    def send(self, method: str, params: dict[str, Any] | None = None) -> int:
         self._id += 1
         self.process.stdin.write(
             json.dumps({
@@ -79,11 +79,23 @@ class CodexClient:
                 "method": method,
                 "params": params or {}
             }) + "\n")
+        return self._id
+
+    async def response(self, request_id: int) -> dict[str, Any]:
+        for note in self.notes:
+            if note.get("id") == request_id and "method" not in note:
+                self.notes.remove(note)
+                return note
         while True:
             message = await self.receive()
-            if message.get("id") == self._id and "method" not in message:
+            if message.get("id") == request_id and "method" not in message:
                 return message
             self.notes.append(message)
+
+    async def call(self,
+                   method: str,
+                   params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return await self.response(self.send(method, params))
 
     async def result(self,
                      method: str,
@@ -560,6 +572,54 @@ async def test_interrupt_and_terminate_stop_a_process(ssh):
     assert running == {"running": True}
     assert terminated["exitCode"] == -1
     assert ctrl_c["exitCode"] == 130
+
+
+@pytest.mark.asyncio
+async def test_a_waiting_read_does_not_hold_up_a_signal(ssh):
+    async with codex(ssh) as client:
+        await client.start("s", "sleep 30")
+        read_id = client.send("process/read", {
+            "processId": "s",
+            "afterSeq": 0,
+            "waitMs": 20000
+        })
+        started = time.monotonic()
+        await client.result("process/signal", {
+            "processId": "s",
+            "signal": "interrupt"
+        })
+        read = await client.response(read_id)
+        waited = time.monotonic() - started
+    assert waited < 10
+    assert read["result"]["exited"] and read["result"]["exitCode"] == 130
+
+
+@pytest.mark.asyncio
+async def test_a_terminated_process_is_forgotten(ssh):
+    async with codex(ssh) as client:
+        await client.run("p", "echo once")
+        await client.note("process/closed", "p")
+        await client.result("process/terminate", {"processId": "p"})
+        gone = await client.error("process/read", {"processId": "p"})
+        again, _, _ = await client.run("p", "echo twice")
+        await client.start("t", "sleep 30")
+        await client.result("process/terminate", {"processId": "t"})
+        await client.note("process/closed", "t")
+        stopped = await client.error("process/read", {"processId": "t"})
+    assert gone["code"] == RPC_INVALID_REQUEST
+    assert again == b"twice\n"
+    assert stopped["code"] == RPC_INVALID_REQUEST
+
+
+@pytest.mark.asyncio
+async def test_output_kept_for_reads_is_bounded(ssh):
+    async with codex(ssh) as client:
+        out, _, code = await client.run("big", "seq 1 300000")
+        read = await client.result("process/read", {"processId": "big"})
+    kept = sum(len(base64.b64decode(c["chunk"])) for c in read["chunks"])
+    assert code == 0 and len(out) > CODEX_RETAINED_OUTPUT
+    assert out.endswith(b"299999\n300000\n")
+    assert kept <= CODEX_RETAINED_OUTPUT
 
 
 @pytest.mark.asyncio

@@ -18,6 +18,7 @@ export {
   halts,
   jqCheck,
   jqEval,
+  jqRaised,
   jqRun,
   referencesArgs,
   streamEvents,

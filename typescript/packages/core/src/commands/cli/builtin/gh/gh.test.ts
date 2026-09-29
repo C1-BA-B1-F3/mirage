@@ -628,9 +628,43 @@ describe('gh api --jq', () => {
     await expect(api(inv(['repos/o/r'], { jq: program }))).rejects.toThrow(message)
   })
 
+  // gojq reports what the program raised with `error` as `error: <value>`,
+  // anything but a string in gojq's own compact JSON (keys sorted), and a
+  // builtin's error in words mirage's jq does not share, so jq 1.8.2's stand,
+  // except for the builtins gojq writes in jq. Pinned against gh 2.85's gojq
+  // with `gh api rate_limit --jq`.
+  it.each([
+    ['error("boom")', 'error: boom'],
+    ['"x" | error', 'error: x'],
+    ['error(null)', 'error: null'],
+    ['error(error)', 'error: {"a":"x"}'],
+    ['error({"b": 1, "a": [2, "x"]})', 'error: {"a":[2,"x"],"b":1}'],
+    ['error(["\\u007f", "é", "<&>", "\\u0001"])', 'error: ["\\u007f","é","<&>","\\u0001"]'],
+    ['error(1.0)', 'error: 1'],
+    ['error(1e21)', 'error: 1e+21'],
+    ['error(0.0000001)', 'error: 1e-7'],
+    ['[error("in")]', 'error: in'],
+    ['first(error("in"))', 'error: in'],
+    ['try (.a | .b) catch error', 'error: Cannot index string with string ("b")'],
+    ['.a | .b', 'Cannot index string with string ("b")'],
+    ['label $f | .a | .b', 'Cannot index string with string ("b")'],
+    ['def error: 7; error | .b', 'Cannot index number with string ("b")'],
+    ['limit(-1; .a)', "error: limit doesn't support negative count"],
+    ['skip(-1; .a)', "error: skip doesn't support negative count"],
+    ['nth(-1; .a)', "error: nth doesn't support negative index"],
+    ['{"b": 1, "a": 2} | halt_error(1)', 'halt error: {"a":2,"b":1}'],
+  ])('fails %s the way gojq reports it', async (program, message) => {
+    reset({ a: 'x' })
+    const failure = await api(inv(['repos/o/r'], { jq: program })).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(PartialOutputError)
+    const partial = failure as PartialOutputError
+    expect([partial.message, new TextDecoder().decode(partial.stdout)]).toEqual([message, ''])
+  })
+
   it.each([
     ['.a, ("y" | halt_error(1))', 'halt error: y'],
-    ['.a, error("boom")', 'boom'],
+    ['.a, error("boom")', 'error: boom'],
+    ['(try error(.a) catch .), error("y")', 'error: y'],
   ])('keeps what it printed before %s failed', async (program, message) => {
     reset({ a: 'x' })
     const failure = await api(inv(['repos/o/r'], { jq: program })).catch((error: unknown) => error)
@@ -828,7 +862,7 @@ it.each([
 // keeps the lines the earlier pages printed.
 it.each([
   ['if .value == "second" then "y" | halt_error(1) else .value end', 'halt error: y'],
-  ['if .value == "second" then error("boom") else .value end', 'boom'],
+  ['if .value == "second" then error("boom") else .value end', 'error: boom'],
 ])('keeps the earlier pages when --jq %s fails on a later one', async (program, message) => {
   const request = vi
     .spyOn(FakeTransport.prototype, 'requestWithResponse')

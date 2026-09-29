@@ -234,6 +234,15 @@ gh api repos/acme/tools | jq -r .default_branch
 gh api repos/acme/tools/issues --jq '.[].title'
 ```
 
+A `--jq` program that fails ends the command with exit 1, after the lines
+it printed first. The report follows gh's gojq where mirage's jq can tell
+what gojq would say: an error the program raises with `error(v)` reads
+`error: <v>`, with `v` as it is when it is a string and as compact JSON with
+sorted keys otherwise; `halt_error` reads `halt error: <v>`; and `halt`, like
+`halt_error` on null, only ends the output. As with every CLI failure,
+mirage puts the command's name first (`gh api: error: boom`), where gh
+prints `error: boom` alone.
+
 ## Divergences from upstream gh
 
 `gh` is virtualized, not wrapped. The intentional boundaries are:
@@ -248,4 +257,5 @@ gh api repos/acme/tools/issues --jq '.[].title'
 | `gh api --input` accepts JSON, and pagination follows REST `Link` headers only | arbitrary byte bodies and GraphQL cursor pagination are not implemented |
 | `gh api` has no `--include`/verbose/cache flags | output is optimized for agents and shell composition rather than wire debugging |
 | `gh api --slurp` also takes `--jq`, running it once on the array of pages | gh refuses the pair; the combination is the one-call way to filter every page together |
+| A builtin's `--jq` error keeps jq 1.8.2's wording: `Cannot index number with string ("a")` where gh says `expected an object but got: number (5000)` | mirage evaluates `--jq` with jq, and gojq's messages carry values jq's leave out. The negative-count errors of `limit`, `skip` and `nth`, which gojq raises with `error`, still read `error: ...` as in gh. An `error(v)` built outside a `catch` from a value that `catch` took from another `error` also reads as a builtin's, because the reruns that tell the two apart cannot follow it |
 | A `HOST/` repository prefix is accepted but never routes | one install is one account on one host; use another install for another host |

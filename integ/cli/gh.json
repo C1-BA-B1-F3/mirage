@@ -1754,6 +1754,32 @@
         "stdout": "integ-user\nexit=1\n4\nexit=1\n",
         "stderr": "gh api: halt error: x\ngh issue view: halt error: y\n"
       }
+    },
+    {
+      "id": "gh_jq_error_reports_as_gojq_does",
+      "seq": 569333,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh api user --jq '.login, error(\"boom\")'; echo \"exit=$?\"; gh api user --jq 'error({\"b\": 1, \"a\": [2, \"x\"]})'; echo \"exit=$?\"; gh api user --jq '(try error(.login) catch .), error(\"y\")'; echo \"exit=$?\"; gh api user --jq '{\"b\": 1, \"a\": 2} | halt_error(1)'; echo \"exit=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "integ-user\nexit=1\nexit=1\ninteg-user\nexit=1\nexit=1\n",
+        "stderr": "gh api: error: boom\ngh api: error: {\"a\":[2,\"x\"],\"b\":1}\ngh api: error: y\ngh api: halt error: {\"a\":2,\"b\":1}\n"
+      }
+    },
+    {
+      "id": "gh_typed_jq_error_reports_as_gojq_does",
+      "seq": 569334,
+      "targets": [
+        "cli-gh"
+      ],
+      "command": "gh issue view 4 --json number --jq '.number, error(\"no \\(.number)\")'; echo \"exit=$?\"; gh issue view 4 --json number --jq '.number, limit(-1; .number)'; echo \"exit=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "4\nexit=1\n4\nexit=1\n",
+        "stderr": "gh issue view: error: no 4\ngh issue view: error: limit doesn't support negative count\n"
+      }
     }
   ]
 }

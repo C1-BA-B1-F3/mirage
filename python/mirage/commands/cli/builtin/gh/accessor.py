@@ -15,16 +15,19 @@
 import json
 import posixpath
 import re
-from collections.abc import Iterable
+import sys
+from collections.abc import Callable, Iterable
+from decimal import Decimal
 from typing import Any
 
+from mirage.commands.cli.builtin.gh.constants import GOJQ_RAISED
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.errors import PartialOutputError, UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.core.github.config import GhConfig
 from mirage.core.github.repo import RepoRef, parse_repo
-from mirage.core.jq import JqError, JqHalt, jq_run
+from mirage.core.jq import JqHalt, JqRun, jq_raised, jq_run
 from mirage.io.stream import materialize, yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue, PathSpec
@@ -184,6 +187,55 @@ def camel(value: Any) -> Any:
     return result
 
 
+def _go_number(number: int | float) -> str:
+    """A number as Go's JSON encoders, gojq's among them, write a float64,
+    which is how ES6 spells it: the shortest digits that read back the
+    same, in exponent form below 1e-6 and from 1e21 on, anything past the
+    largest finite float at that float.
+
+    Args:
+        number (int | float): the number.
+    """
+    bound = sys.float_info.max
+    clamped = float(min(max(number, -bound), bound))
+    digits = Decimal(repr(clamped))
+    magnitude = abs(clamped)
+    if magnitude != 0 and (magnitude < 1e-6 or magnitude >= 1e21):
+        return f"{digits:e}"
+    return f"{digits.normalize():f}"
+
+
+def _gojq_string(text: str) -> str:
+    """A string as gojq's encoder writes it into an error.
+
+    Args:
+        text (str): the string.
+    """
+    return json.dumps(text, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
+def _go_encoded(value: JsonValue, quote: Callable[[str], str]) -> str:
+    """A decoded JSON value as Go writes it back out: compact, object keys
+    sorted as a Go map's are, every number a float64 (see _go_number) and
+    every string as `quote` writes it.
+
+    Args:
+        value (JsonValue): the value.
+        quote (Callable[[str], str]): how a string is written.
+    """
+    if isinstance(value, dict):
+        pairs = (f"{quote(key)}:{_go_encoded(value[key], quote)}"
+                 for key in sorted(value))
+        return "{" + ",".join(pairs) + "}"
+    if isinstance(value, list):
+        return "[" + ",".join(_go_encoded(item, quote) for item in value) + "]"
+    if isinstance(value, str):
+        return quote(value)
+    if value is None or isinstance(value, bool):
+        return json.dumps(value)
+    return _go_number(value)
+
+
 def jq_line(value: Any) -> str:
     """Render one jq result in gh's raw-output mode."""
     if value is None:
@@ -243,12 +295,50 @@ def json_fields(fl: FlagView, allowed: Iterable[str]) -> list[str] | None:
     return fields
 
 
+def _gojq_text(text: str, string: bool) -> str:
+    """A value jq printed, the way gojq's errors print it: a string as it
+    is, anything else in gojq's own JSON.
+
+    Args:
+        text (str): the value as jq prints it.
+        string (bool): whether the value was a string.
+    """
+    return text if string else _go_encoded(json.loads(text), _gojq_string)
+
+
+def _jq_failure(value: JsonValue, program: str, run: JqRun) -> str | None:
+    """The message go-gh fails with when a run stopped early, or None when
+    that stop ends the output without failing.
+
+    gojq reports an error the program raised with `error` as
+    `error: <value>`, and a builtin's in gojq's own words, which mirage's
+    jq does not share, so jq 1.8.2's stand; the builtins gojq writes in
+    jq raise through `error` too (GOJQ_RAISED). A `halt_error` whose value
+    is not null fails as `halt error: <value>`.
+
+    Args:
+        value (JsonValue): the value the program ran on.
+        program (str): the `--jq` program.
+        run (JqRun): what jq_run returned for them.
+    """
+    stop = run.stop
+    if stop is None:
+        return None
+    if isinstance(stop, JqHalt):
+        if stop.message is None:
+            return None
+        return f"halt error: {_gojq_text(stop.message, stop.string)}"
+    if jq_raised(value, program, run):
+        return f"error: {_gojq_text(stop.text, stop.string)}"
+    raised = GOJQ_RAISED.get(stop.text)
+    return stop.text if raised is None else f"error: {raised}"
+
+
 def jq_lines(values: Iterable[JsonValue], program: str) -> str:
     """The lines `--jq` prints for each value in turn, the way go-gh's jq
     evaluates them. `halt`, and `halt_error` on null, end that value's
-    output there. An error, or any other `halt_error`, fails the command,
-    the latter as `halt error: <message>` whatever code it names, after
-    the lines printed before it.
+    output there. An error, or any other `halt_error`, fails the command
+    after the lines printed before it (see _jq_failure).
 
     Args:
         values (Iterable[JsonValue]): the JSON values the program reads.
@@ -261,11 +351,7 @@ def jq_lines(values: Iterable[JsonValue], program: str) -> str:
     for value in values:
         run = jq_run(value, program)
         lines.extend(f"{jq_line(item)}\n" for item in run.outputs)
-        failure = None
-        if isinstance(run.stop, JqError):
-            failure = run.stop.text
-        elif isinstance(run.stop, JqHalt) and run.stop.message is not None:
-            failure = f"halt error: {run.stop.message}"
+        failure = _jq_failure(value, program, run)
         if failure is not None:
             raise PartialOutputError(failure, "".join(lines).encode())
     return "".join(lines)

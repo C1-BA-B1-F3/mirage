@@ -14,7 +14,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { JqCompileError } from './errors.ts'
-import { halts, jqCheck, jqEval, jqRun, referencesArgs, streamReads } from './eval.ts'
+import { halts, jqCheck, jqEval, jqRaised, jqRun, referencesArgs, streamReads } from './eval.ts'
 import type { JqRun } from './types.ts'
 
 /**
@@ -611,6 +611,53 @@ describe('jqRun', () => {
     await expect(jqRun(1, '.a |\n  nosuch(1)', {}, null, { positional: [] })).rejects.toThrow(
       /line 2, column/,
     )
+  })
+})
+
+// gojq tells an error the program raised with `error` from a builtin's, which
+// jq never does; each verdict is gh 2.85's gojq's.
+describe('jqRaised', () => {
+  it.each<[string, boolean]>([
+    ['.a, error("boom")', true],
+    ['error({"b": 2})', true],
+    ['error(null)', true],
+    ['"x" | error', true],
+    ['try (.a | .b) catch error', true],
+    ['[error("in")]', true],
+    ['first(error("in"))', true],
+    ['label $out | error("in")', true],
+    ['{v:error("tight")}', true],
+    ['def f: error("in f"); try f catch error', true],
+    ['(try error("x") catch .), error("y")', true],
+    ['try error("x") catch error("wrapped: " + .)', true],
+    ['now, error("x")', true],
+    ['[now] | .[0], error("y")', true],
+    ['.a | .b', false],
+    ['label $out | .a | .b', false],
+    ['try error("x") catch (.a | .b)', false],
+    ['(try error("x") catch .), (.a | .b)', false],
+    ['.error, (.a | .b)', false],
+    ['"error" as $e | .a | .b # error', false],
+    ['def error: 7; error | .b', false],
+    ['limit(-1; .a)', false],
+  ])('tells who raised the error %s stopped at', async (expr, raised) => {
+    const run = await jqRun({ a: 1 }, expr)
+    expect(run.stop?.kind).toBe('error')
+    expect(await jqRaised({ a: 1 }, expr, run)).toBe(raised)
+  })
+
+  it("reads an error no rerun can speak for as a builtin's", async () => {
+    // Neither rerun can speak for it: the catch reads the wrapped value in
+    // the first, and the mark rides into the error in the second.
+    const expr = '(try error("x") catch .) as $m | error($m + "!")'
+    const run = await jqRun(null, expr)
+    expect(run.stop).toEqual({ kind: 'error', text: 'x!', string: true })
+    expect(await jqRaised(null, expr, run)).toBe(false)
+  })
+
+  it('is false for a run no error stopped', async () => {
+    expect(await jqRaised(1, '"a", halt', await jqRun(1, '"a", halt'))).toBe(false)
+    expect(await jqRaised(1, '.', await jqRun(1, '.'))).toBe(false)
   })
 })
 

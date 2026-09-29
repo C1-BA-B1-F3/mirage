@@ -750,10 +750,47 @@ async def test_api_jq_fails_at_halt_error(program, message):
     assert (str(caught.value), caught.value.stdout) == (message, b"")
 
 
+# gojq reports what the program raised with `error` as `error: <value>`,
+# anything but a string in gojq's own compact JSON (keys sorted), and a
+# builtin's error in words mirage's jq does not share, so jq 1.8.2's stand,
+# except for the builtins gojq writes in jq. Pinned against gh 2.85's
+# gojq with `gh api rate_limit --jq`.
+@pytest.mark.asyncio
+@pytest.mark.parametrize("program, message", [
+    ('error("boom")', "error: boom"),
+    ('"x" | error', "error: x"),
+    ("error(null)", "error: null"),
+    ("error(error)", 'error: {"a":"x"}'),
+    ('error({"b": 1, "a": [2, "x"]})', 'error: {"a":[2,"x"],"b":1}'),
+    ('error(["\\u007f", "é", "<&>", "\\u0001"])',
+     'error: ["\\u007f","é","<&>","\\u0001"]'),
+    ("error(1.0)", "error: 1"),
+    ("error(1e21)", "error: 1e+21"),
+    ("error(0.0000001)", "error: 1e-7"),
+    ('[error("in")]', "error: in"),
+    ('first(error("in"))', "error: in"),
+    ("try (.a | .b) catch error",
+     'error: Cannot index string with string ("b")'),
+    (".a | .b", 'Cannot index string with string ("b")'),
+    ("label $f | .a | .b", 'Cannot index string with string ("b")'),
+    ('def error: 7; error | .b', 'Cannot index number with string ("b")'),
+    ("limit(-1; .a)", "error: limit doesn't support negative count"),
+    ("skip(-1; .a)", "error: skip doesn't support negative count"),
+    ("nth(-1; .a)", "error: nth doesn't support negative index"),
+    ('{"b": 1, "a": 2} | halt_error(1)', 'halt error: {"a":2,"b":1}'),
+])
+async def test_api_jq_fails_the_way_gojq_reports_it(program, message):
+    _reset({"a": "x"})
+    with pytest.raises(PartialOutputError) as caught:
+        await api(_inv(["repos/o/r"], {"jq": program}))
+    assert (str(caught.value), caught.value.stdout) == (message, b"")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("program, message", [
     ('.a, ("y" | halt_error(1))', "halt error: y"),
-    ('.a, error("boom")', "boom"),
+    ('.a, error("boom")', "error: boom"),
+    ('(try error(.a) catch .), error("y")', "error: y"),
 ])
 async def test_api_jq_keeps_what_it_printed_before_failing(program, message):
     _reset({"a": "x"})
@@ -984,7 +1021,8 @@ async def test_api_later_page_failure_keeps_rendered_pages(
 @pytest.mark.parametrize("program, message", [
     ('if .value == "second" then "y" | halt_error(1) else .value end',
      "halt error: y"),
-    ('if .value == "second" then error("boom") else .value end', "boom"),
+    ('if .value == "second" then error("boom") else .value end',
+     "error: boom"),
 ])
 async def test_api_jq_failure_on_a_later_page_keeps_the_earlier_pages(
         monkeypatch, program, message):

@@ -33,6 +33,7 @@ INPUTS_DEF = re.compile(r"(?<![\w$.:])def\s+inputs\s*[:(]")
 ARGS_REF = re.compile(r"\$ARGS(?![\w:])")
 HALT_REF = re.compile(r"(?<![\w$.:])halt(?:_error)?(?![\w:])")
 HALT_ERROR_REF = re.compile(r"(?<![\w$.:])halt_error(?![\w:])")
+ERROR_CALL = re.compile(r"(?<![\w$.])(?<!::)error(?!\w)(?!::)")
 TOP_LEVEL_LINE = re.compile(r"(at <top-level>, line )(\d+)")
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 TO_STREAM = "tostream"
@@ -94,6 +95,30 @@ _PRINT = (_BUILTINS + 'def halt: {"' + HALT_KEY +
           f"{_HALT_MARK}, __mirage_jq_halt_error($code) "
           "else __mirage_jq_halt_error($code) end; "
           "def halt_error: halt_error(5); ")
+
+# Whether the program's own `error` raised the error a run stopped at comes
+# from running it again with every `error` it spells renamed to _RAISER, so
+# a builtin's error, and the `error` jq compiles `label` and `break` to,
+# stay as they were. The first rerun raises the value wrapped under
+# WRAP_KEY, which leaves any collector the way the error itself would, and
+# the top-level `catch` hands it back under RAISED_KEY; the second prints
+# it under RAISED_KEY just before raising it unchanged, which is what a
+# `catch` of the program's own that reads the value still sees. Either
+# answer counts only when the rerun stops at the same error after as many
+# outputs as the run printed, as a halt's does: the values themselves can
+# differ between the runs (`now`).
+WRAP_KEY = f"__mirage_jq_wrap_{_TOKEN}"
+RAISED_KEY = f"__mirage_jq_raised_{_TOKEN}"
+_RAISER = "__mirage_jq_raise"
+_RAISED_MARK = ('{"' + RAISED_KEY + '": [(type == "string"), '
+                '(if type == "string" then . else tojson end)]}')
+_WRAP = (f'def {_RAISER}: if type == "object" and has("{WRAP_KEY}") '
+         f'then error else error({{"{WRAP_KEY}": .}}) end; '
+         f"def {_RAISER}(msg): msg | {_RAISER}; ")
+_UNWRAP = (f' catch (if type == "object" and has("{WRAP_KEY}") '
+           f'then .["{WRAP_KEY}"] | {_RAISED_MARK} else {_ERROR_MARK} end)')
+_MARK = (f"def {_RAISER}: {_RAISED_MARK}, error; "
+         f"def {_RAISER}(msg): msg | {_RAISER}; ")
 
 
 def code_only(expr: str) -> str:
@@ -436,6 +461,103 @@ def _halt_of(obj: JsonValue, expr: str, args: dict[str, Any], steps: list[str],
     return JqHalt(None, False, 5)
 
 
+def _renamed(expr: str) -> str:
+    """The program with every `error` it calls, and any it defines, renamed
+    to _RAISER.
+
+    Only code is renamed, as code_only leaves it: a field (`.error`), a
+    variable (`$error`), an object key or its shorthand (`{error}`), a
+    module member (`m::error`), a string and a comment all keep theirs.
+
+    Args:
+        expr (str): jq program text.
+    """
+    parts: list[str] = []
+    last = 0
+    for match in ERROR_CALL.finditer(code_only(expr)):
+        parts.append(expr[last:match.start()])
+        parts.append(_RAISER)
+        last = match.end()
+    parts.append(expr[last:])
+    return "".join(parts)
+
+
+def _raised_mark(value: JsonValue) -> JqError | None:
+    """The error a rerun hands back under RAISED_KEY, when this output
+    is one.
+
+    Args:
+        value (JsonValue): one output of the rerun.
+    """
+    if not isinstance(value, dict) or len(value) != 1:
+        return None
+    mark = value.get(RAISED_KEY)
+    if isinstance(mark, list) and len(mark) == 2:
+        return JqError(str(mark[1]), mark[0] is True)
+    return None
+
+
+def _wrapped_verdict(results: Iterable[JsonValue], run: JqRun) -> bool | None:
+    """What the rerun that wraps the program's own errors says of the one
+    a run stopped at: raised by the program when it hands that error back
+    under RAISED_KEY, by a builtin when it stops at it as it was, and
+    nothing when it stops anywhere else, which a `catch` of the program's
+    own that reads a wrapped value can make it do.
+
+    Args:
+        results (Iterable[JsonValue]): the rerun's outputs, as libjq
+            yields them.
+        run (JqRun): the run that stopped.
+    """
+    printed = 0
+    try:
+        for value in results:
+            raised = _raised_mark(value)
+            stop = _stop_of(value) if raised is None else raised
+            if stop is not None:
+                if printed != len(run.outputs) or stop != run.stop:
+                    return None
+                return raised is not None
+            if isinstance(value, dict) and DONE_KEY in value:
+                return None
+            printed += 1
+    except ValueError as exc:
+        logger.debug("jq: the wrapping rerun failed: %s", exc)
+    return None
+
+
+def _marked_verdict(results: Iterable[JsonValue], run: JqRun) -> bool | None:
+    """Whether the rerun that prints each of the program's own errors just
+    before raising it shows the program raised the one a run stopped at:
+    it printed as many outputs as the run did, and that error's mark last.
+
+    Args:
+        results (Iterable[JsonValue]): the rerun's outputs, as libjq
+            yields them.
+        run (JqRun): the run that stopped.
+    """
+    printed = 0
+    last: JqError | None = None
+    try:
+        for value in results:
+            mark = _raised_mark(value)
+            if mark is not None:
+                last = mark
+                continue
+            stop = _stop_of(value)
+            if stop is not None:
+                if printed == len(run.outputs) and stop == run.stop == last:
+                    return True
+                return None
+            if isinstance(value, dict) and DONE_KEY in value:
+                return None
+            printed += 1
+            last = None
+    except ValueError as exc:
+        logger.debug("jq: the marking rerun failed: %s", exc)
+    return None
+
+
 def jq_run(
     obj: JsonValue,
     expr: str,
@@ -490,6 +612,50 @@ def jq_run(
         return run
     halt = _halt_of(obj, expr, args, steps, len(run.outputs))
     return JqRun(run.outputs, halt)
+
+
+def jq_raised(
+    obj: JsonValue,
+    expr: str,
+    run: JqRun,
+    named_args: Mapping[str, Any] | None = None,
+    inputs: Sequence[JsonValue] | None = None,
+    args_value: Mapping[str, Any] | None = None,
+) -> bool:
+    """Whether the program's own `error` raised the error a run stopped at,
+    rather than a builtin, which jq itself never tells apart but gojq does.
+
+    Every builtin raises a string, so an error that is not one is the
+    program's. A string is the program's only when it calls `error` at
+    all, and then only when a rerun that tells the program's own errors
+    apart shows it (see _WRAP and _MARK); a run neither rerun can speak
+    for reads as a builtin's.
+
+    Args:
+        obj (JsonValue): the value the program ran on.
+        expr (str): jq program text.
+        run (JqRun): what jq_run returned for them.
+        named_args (Mapping[str, Any] | None): $name bindings.
+        inputs (Sequence[JsonValue] | None): the unread documents.
+        args_value (Mapping[str, Any] | None): the value of `$ARGS`.
+    """
+    if not isinstance(run.stop, JqError):
+        return False
+    if not run.stop.string:
+        return True
+    renamed = _renamed(expr)
+    if renamed == expr:
+        return False
+    args, steps = _bindings(expr, named_args, inputs, args_value)
+    compiled = _wrapped(renamed, args, steps, _WRAP, f"{_UNWRAP}){_DONE}")
+    if compiled is not None:
+        verdict = _wrapped_verdict(compiled.input_value(obj), run)
+        if verdict is not None:
+            return verdict
+    compiled = _wrapped(renamed, args, steps, _MARK, f"{_CATCH}){_DONE}")
+    if compiled is None:
+        return False
+    return _marked_verdict(compiled.input_value(obj), run) is True
 
 
 def jq_check(

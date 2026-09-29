@@ -15,7 +15,7 @@
 import { HttpGitHubTransport, type GitHubTransport } from '../../../../core/github/client.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
 import { parseRepo, type RepoRef } from '../../../../core/github/repo.ts'
-import { jqRun } from '../../../../core/jq/index.ts'
+import { jqRaised, jqRun, type JqRun } from '../../../../core/jq/index.ts'
 import { PartialOutputError, UsageError } from '../../../errors.ts'
 import type { FlagView } from '../../../spec/flag_view.ts'
 import type { FlagValue } from '../../../spec/types.ts'
@@ -26,6 +26,7 @@ import { resolvePath } from '../../../../utils/path.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
+import { GOJQ_RAISED } from './constants.ts'
 
 const ENC = new TextEncoder()
 
@@ -180,6 +181,40 @@ export function textValue(value: unknown): string {
   return ''
 }
 
+/**
+ * A number as Go's JSON encoders, gojq's among them, write a float64, which is
+ * how ES6 spells it: the shortest digits that read back the same, in exponent
+ * form below 1e-6 and from 1e21 on, anything past the largest finite float at
+ * that float.
+ */
+function goNumber(number: number): string {
+  return String(Math.min(Math.max(number, -Number.MAX_VALUE), Number.MAX_VALUE))
+}
+
+/** A string as gojq's encoder writes it into an error. */
+function gojqString(text: string): string {
+  return JSON.stringify(text).replace(/\x7f/g, '\\u007f')
+}
+
+/**
+ * A decoded JSON value as Go writes it back out: compact, object keys sorted
+ * as a Go map's are, every number a float64 (see goNumber) and every string as
+ * `quote` writes it.
+ */
+function goEncoded(value: unknown, quote: (text: string) => string): string {
+  if (Array.isArray(value)) return `[${value.map((item) => goEncoded(item, quote)).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    const pairs = Object.keys(record)
+      .sort(compareCodePoints)
+      .map((key) => `${quote(key)}:${goEncoded(record[key], quote)}`)
+    return `{${pairs.join(',')}}`
+  }
+  if (typeof value === 'string') return quote(value)
+  if (typeof value === 'number') return goNumber(value)
+  return JSON.stringify(value)
+}
+
 function jqLine(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'string') return value
@@ -231,22 +266,46 @@ export function jsonFields(fl: FlagView, allowed: readonly string[]): string[] |
 }
 
 /**
+ * A value jq printed, the way gojq's errors print it: a string as it is,
+ * anything else in gojq's own JSON.
+ */
+function gojqText(text: string, string: boolean): string {
+  return string ? text : goEncoded(JSON.parse(text), gojqString)
+}
+
+/**
+ * The message go-gh fails with when a run stopped early, or null when that
+ * stop ends the output without failing.
+ *
+ * gojq reports an error the program raised with `error` as `error: <value>`,
+ * and a builtin's in gojq's own words, which mirage's jq does not share, so
+ * jq 1.8.2's stand; the builtins gojq writes in jq raise through `error` too
+ * (GOJQ_RAISED). A `halt_error` whose value is not null fails as
+ * `halt error: <value>`.
+ */
+async function jqFailure(value: unknown, program: string, run: JqRun): Promise<string | null> {
+  const stop = run.stop
+  if (stop === null) return null
+  if (stop.kind === 'halt') {
+    return stop.message === null ? null : `halt error: ${gojqText(stop.message, stop.string)}`
+  }
+  if (await jqRaised(value, program, run)) return `error: ${gojqText(stop.text, stop.string)}`
+  const raised = GOJQ_RAISED.get(stop.text)
+  return raised === undefined ? stop.text : `error: ${raised}`
+}
+
+/**
  * The lines `--jq` prints for each value in turn, the way go-gh's jq
  * evaluates them. `halt`, and `halt_error` on null, end that value's output
- * there. An error, or any other `halt_error`, fails the command, the latter
- * as `halt error: <message>` whatever code it names, after the lines printed
- * before it: a PartialOutputError carries them.
+ * there. An error, or any other `halt_error`, fails the command after the
+ * lines printed before it (see jqFailure): a PartialOutputError carries them.
  */
 export async function jqLines(values: readonly unknown[], program: string): Promise<string> {
   const lines: string[] = []
   for (const value of values) {
     const run = await jqRun(value, program)
     for (const item of run.outputs) lines.push(`${jqLine(item)}\n`)
-    let failure: string | null = null
-    if (run.stop?.kind === 'error') failure = run.stop.text
-    else if (run.stop?.kind === 'halt' && run.stop.message !== null) {
-      failure = `halt error: ${run.stop.message}`
-    }
+    const failure = await jqFailure(value, program, run)
     if (failure !== null) {
       throw new PartialOutputError(failure, new TextEncoder().encode(lines.join('')))
     }

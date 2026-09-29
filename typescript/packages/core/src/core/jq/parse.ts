@@ -14,8 +14,12 @@
 
 import { JqParseError, NO_VALUE, type NoValue } from './types.ts'
 
-// The deepest jq nests arrays, objects and the keys between them.
+// The deepest jq nests arrays, objects and the keys between them. jq's
+// streaming parser has no limit, but every event it hands out copies its
+// path, so input nested n deep costs time in n squared: mirage holds it
+// to this depth as well.
 export const MAX_PARSING_DEPTH = 10000
+const DEPTH_EXCEEDED = 'Exceeds depth limit for parsing'
 
 const UTF8_BOM = Uint8Array.of(0xef, 0xbb, 0xbf)
 const BOM_DONE = UTF8_BOM.length
@@ -853,7 +857,7 @@ export class JqParser {
   private parseToken(ch: number): string | null {
     const stack = this.stack
     if (ch === OPEN_BRACKET || ch === OPEN_BRACE) {
-      if (stack.length >= MAX_PARSING_DEPTH) return 'Exceeds depth limit for parsing'
+      if (stack.length >= MAX_PARSING_DEPTH) return DEPTH_EXCEEDED
       if (this.nextValue !== NO_VALUE) return EXPECTED_SEPARATOR
       stack.push(ch === OPEN_BRACKET ? [] : {})
     } else if (ch === COLON) {
@@ -903,6 +907,9 @@ export class JqParser {
   private streamToken(ch: number): string | null {
     const path = this.path
     const lastSeen = this.lastSeen
+    if ((ch === OPEN_BRACKET || ch === OPEN_BRACE) && path.length >= MAX_PARSING_DEPTH) {
+      return DEPTH_EXCEEDED
+    }
     if (ch === OPEN_BRACKET) {
       if (this.nextValue !== NO_VALUE) return 'Expected a separator between values'
       if (lastSeen === LastSeen.OPEN_OBJECT) return "Expected string key after '{', not '['"

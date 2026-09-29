@@ -21,8 +21,12 @@ from mirage.types import JsonValue
 
 logger = logging.getLogger(__name__)
 
-# The deepest jq nests arrays, objects and the keys between them.
+# The deepest jq nests arrays, objects and the keys between them. jq's
+# streaming parser has no limit, but every event it hands out copies its
+# path, so input nested n deep costs time in n squared: mirage holds it
+# to this depth as well.
 MAX_PARSING_DEPTH = 10000
+DEPTH_EXCEEDED = "Exceeds depth limit for parsing"
 
 UTF8_BOM = b"\xef\xbb\xbf"
 BOM_DONE = len(UTF8_BOM)
@@ -652,7 +656,7 @@ class JqParser:
         stack = self._stack
         if ch in (OPEN_BRACKET, OPEN_BRACE):
             if len(stack) >= MAX_PARSING_DEPTH:
-                return "Exceeds depth limit for parsing"
+                return DEPTH_EXCEEDED
             if self._next is not NO_VALUE:
                 return EXPECTED_SEPARATOR
             stack.append([] if ch == OPEN_BRACKET else {})
@@ -711,6 +715,8 @@ class JqParser:
     def _stream_token(self, ch: int) -> str | None:
         path = self._path
         last_seen = self._last_seen
+        if ch in (OPEN_BRACKET, OPEN_BRACE) and len(path) >= MAX_PARSING_DEPTH:
+            return DEPTH_EXCEEDED
         if ch == OPEN_BRACKET:
             if self._next is not NO_VALUE:
                 return "Expected a separator between values"

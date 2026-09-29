@@ -293,6 +293,19 @@ def test_stream_mode_matches_jq(data, values, error):
         assert message == error
 
 
+def test_stream_mode_holds_to_the_ordinary_parsers_depth_limit():
+    # jq's streaming parser has no depth limit; mirage's has the ordinary
+    # parser's, counted in containers.
+    too_deep = "Exceeds depth limit for parsing at line 1, column {}"
+    assert _flat(_whole(b"[" * 10001,
+                        streaming=True)) == [too_deep.format(10001)]
+    assert _flat(_whole(b'{"a":' * 10001,
+                        streaming=True)) == [too_deep.format(50001)]
+    events = _whole(b"[" * 10000 + b"]" * 10000, streaming=True)
+    assert len(events) == 10000
+    assert events[0] == [[0] * 9999, []] and events[-1] == [[0]]
+
+
 @pytest.mark.parametrize("data,expected", SEQ)
 def test_seq_mode_reports_and_reads_on(data, expected):
     for read in (_whole, _bytewise):

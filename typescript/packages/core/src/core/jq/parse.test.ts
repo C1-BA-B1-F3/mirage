@@ -375,6 +375,19 @@ describe('JqParser', () => {
     expect(parser.next()).toBe(NO_VALUE)
   })
 
+  it("holds --stream to the ordinary parser's depth limit, counted in containers", () => {
+    // jq's streaming parser has no depth limit; mirage's has the ordinary
+    // parser's.
+    const tooDeep = 'Exceeds depth limit for parsing at line 1, column '
+    expect(whole(b('['.repeat(10001)), false, true)).toEqual([err(`${tooDeep}10001`)])
+    expect(whole(b('{"a":'.repeat(10001)), false, true)).toEqual([err(`${tooDeep}50001`)])
+    const deepest = `${'['.repeat(MAX_PARSING_DEPTH)}${']'.repeat(MAX_PARSING_DEPTH)}`
+    const events = whole(b(deepest), false, true)
+    expect(events).toHaveLength(MAX_PARSING_DEPTH)
+    expect(events[0]).toEqual([Array<number>(MAX_PARSING_DEPTH - 1).fill(0), []])
+    expect(events[events.length - 1]).toEqual([[0]])
+  })
+
   it('nests as deep as jq and no deeper', () => {
     const deepest = `${'['.repeat(MAX_PARSING_DEPTH)}${']'.repeat(MAX_PARSING_DEPTH)}`
     let value = whole(b(deepest))[0]

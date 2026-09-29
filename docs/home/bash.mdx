@@ -278,7 +278,11 @@ the nearest double. On the TypeScript host an object lists keys that read as
 array indices first (`{"b":1,"1":2}` prints as `{"1":2,"b":1}`). A missing
 operand fails the whole command before anything runs (`jq: <file>: No such
 file or directory`, status 2), where jq reports `jq: error: Could not open
-file <file>: ...` and reads the other operands.
+file <file>: ...` and reads the other operands. Under `--stream`, input nested
+more than 10,000 levels deep is refused with `Exceeds depth limit for
+parsing`, the limit jq's ordinary parser has. jq's streaming parser has no
+limit, but every event carries a copy of its path, so input nested n deep
+costs time in n squared.
 
 Not implemented, and reported as an unknown option rather than quietly
 ignored: `-C` (colorized output, which an agent would only have to strip

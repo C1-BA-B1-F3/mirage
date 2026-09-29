@@ -1538,6 +1538,26 @@
         "c",
         "seq"
       ]
+    },
+    {
+      "id": "jq_parse_stream_holds_to_the_depth_limit",
+      "seq": 701043,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '%.0s[' $(seq 10001) | jq -c --stream .",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: parse error: Exceeds depth limit for parsing at line 1, column 10001\n"
+      },
+      "flags": [
+        "c",
+        "stream"
+      ]
     }
   ]
 }

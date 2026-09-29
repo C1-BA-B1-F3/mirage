@@ -13,11 +13,13 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from dataclasses import dataclass
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal
 
 from mirage.commands.cli.builtin.gh.accessor import (camel, gh_repo,
                                                      json_fields, list_limit,
                                                      text_out, typed_out)
+from mirage.commands.cli.builtin.gh.shape import (ListOf, Shape, exported,
+                                                  pointer, struct)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.config import GhConfig
@@ -28,79 +30,13 @@ from mirage.core.github.repo import (create_repo, fork_repo, list_repos,
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue
 
-Primitive: TypeAlias = Literal["string", "int", "bool", "time", "raw"]
-
-ZERO_TIME = "0001-01-01T00:00:00Z"
-
-
-@dataclass(frozen=True, slots=True)
-class _Struct:
-    """Ordered, zero-filled Go fields; nullable structs preserve null."""
-    fields: tuple[tuple[str, "Shape", str | None], ...]
-    nullable: bool
-
-
-@dataclass(frozen=True, slots=True)
-class _List:
-    """A Go slice that preserves null when the answer carried none."""
-    item: "Shape"
-
-
-# The Go type gh decodes a field into, which is what decides how it
-# prints. A string prints "" for null, a number 0 and a bool false;
-# "time" is a non-pointer time.Time, whose zero is the year-one
-# timestamp; "raw" is a pointer (or a nullable time) and stays null.
-Shape: TypeAlias = Primitive | _Struct | _List
-
-
-def _struct(*fields: tuple[str, Shape] | tuple[str, Shape, str]) -> _Struct:
-    return _Struct(
-        tuple((f[0], f[1], f[2] if len(f) > 2 else None) for f in fields),
-        False)
-
-
-def _pointer(*fields: tuple[str, Shape]) -> _Struct:
-    return _Struct(tuple((name, shape, None) for name, shape in fields), True)
-
-
-def _exported(value: Any, shape: Shape) -> Any:
-    """One value as gh prints it once decoded into ``shape``.
-
-    Args:
-        value (Any): the value as the answer carried it.
-        shape (Shape): the Go type gh decodes it into.
-    """
-    if shape == "string":
-        return value if isinstance(value, str) else ""
-    if shape == "int":
-        return value if isinstance(value,
-                                   int) and not isinstance(value, bool) else 0
-    if shape == "bool":
-        return value if isinstance(value, bool) else False
-    if shape == "time":
-        return value if isinstance(value, str) else ZERO_TIME
-    if shape == "raw":
-        return value
-    if isinstance(shape, _List):
-        return ([_exported(item, shape.item)
-                 for item in value] if isinstance(value, list) else None)
-    assert isinstance(shape, _Struct)
-    if value is None and shape.nullable:
-        return None
-    row = value if isinstance(value, dict) else {}
-    return {
-        name: _exported(row.get(source or name), inner)
-        for name, inner, source in shape.fields
-    }
-
-
-_OWNER = _struct(("id", "string"), ("login", "string"))
-_USER = _struct(("id", "string"), ("login", "string"), ("name", "string"),
-                ("databaseId", "int"))
-_COUNT = _struct(("totalCount", "int"))
+_OWNER = struct(("id", "string"), ("login", "string"))
+_USER = struct(("id", "string"), ("login", "string"), ("name", "string"),
+               ("databaseId", "int"))
+_COUNT = struct(("totalCount", "int"))
 # gh prints a related repository (a fork's parent, a template) as three
 # facts.
-_RELATED = _pointer(("id", "string"), ("name", "string"), ("owner", _OWNER))
+_RELATED = pointer(("id", "string"), ("name", "string"), ("owner", _OWNER))
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,27 +68,27 @@ REPO_FIELD_TABLE: dict[str, RepoField] = dict([
     _plain("archivedAt", "raw"),
     ("assignableUsers",
      RepoField("assignableUsers(first:100){nodes{id,login,name}}",
-               _List(_USER), "nodes")),
+               ListOf(_USER), "nodes")),
     ("codeOfConduct",
      RepoField(
          "codeOfConduct{key,name,url}",
-         _pointer(("key", "string"), ("name", "string"), ("url", "string")))),
+         pointer(("key", "string"), ("name", "string"), ("url", "string")))),
     ("contactLinks",
      RepoField(
          "contactLinks{about,name,url}",
-         _List(
-             _struct(("about", "string"), ("name", "string"),
-                     ("url", "string"))))),
+         ListOf(
+             struct(("about", "string"), ("name", "string"),
+                    ("url", "string"))))),
     _plain("createdAt", "time"),
     ("defaultBranchRef",
-     RepoField("defaultBranchRef{name}", _struct(("name", "string")))),
+     RepoField("defaultBranchRef{name}", struct(("name", "string")))),
     _plain("deleteBranchOnMerge", "bool"),
     _plain("description", "string"),
     _plain("diskUsage", "int"),
     _plain("forkCount", "int"),
     ("fundingLinks",
      RepoField("fundingLinks{platform,url}",
-               _List(_struct(("platform", "string"), ("url", "string"))))),
+               ListOf(struct(("platform", "string"), ("url", "string"))))),
     _plain("hasDiscussionsEnabled", "bool"),
     _plain("hasIssuesEnabled", "bool"),
     _plain("hasProjectsEnabled", "bool"),
@@ -172,43 +108,43 @@ REPO_FIELD_TABLE: dict[str, RepoField] = dict([
     ("issueTemplates",
      RepoField(
          "issueTemplates{name,title,body,about}",
-         _List(
-             _struct(("name", "string"), ("title", "string"),
-                     ("body", "string"), ("about", "string"))))),
+         ListOf(
+             struct(("name", "string"), ("title", "string"),
+                    ("body", "string"), ("about", "string"))))),
     ("issues", RepoField("issues(states:OPEN){totalCount}", _COUNT)),
     ("labels",
      RepoField(
          "labels(first:100){nodes{id,color,name,description}}",
-         _List(
-             _struct(("id", "string"), ("name", "string"),
-                     ("description", "string"), ("color", "string"))),
+         ListOf(
+             struct(("id", "string"), ("name", "string"),
+                    ("description", "string"), ("color", "string"))),
          "nodes")),
     ("languages",
      RepoField(
          "languages(first:100){edges{size,node{name}}}",
-         _List(_struct(("size", "int"), ("node", _struct(
-             ("name", "string"))))), "edges")),
+         ListOf(struct(("size", "int"), ("node", struct(("name", "string"))))),
+         "edges")),
     ("latestRelease",
      RepoField(
          "latestRelease{publishedAt,tagName,name,url}",
-         _pointer(("name", "string"), ("tagName", "string"), ("url", "string"),
-                  ("publishedAt", "time")))),
+         pointer(("name", "string"), ("tagName", "string"), ("url", "string"),
+                 ("publishedAt", "time")))),
     ("licenseInfo",
      RepoField(
          "licenseInfo{key,name,nickname}",
-         _pointer(("key", "string"), ("name", "string"),
-                  ("nickname", "string")))),
+         pointer(("key", "string"), ("name", "string"),
+                 ("nickname", "string")))),
     ("mentionableUsers",
      RepoField("mentionableUsers(first:100){nodes{id,login,name}}",
-               _List(_USER), "nodes")),
+               ListOf(_USER), "nodes")),
     _plain("mergeCommitAllowed", "bool"),
     ("milestones",
      RepoField(
          "milestones(first:100,states:OPEN)"
          "{nodes{number,title,description,dueOn}}",
-         _List(
-             _struct(("number", "int"), ("title", "string"),
-                     ("description", "string"), ("dueOn", "raw"))), "nodes")),
+         ListOf(
+             struct(("number", "int"), ("title", "string"),
+                    ("description", "string"), ("dueOn", "raw"))), "nodes")),
     _plain("mirrorUrl", "string"),
     _plain("name", "string"),
     _plain("nameWithOwner", "string"),
@@ -216,36 +152,36 @@ REPO_FIELD_TABLE: dict[str, RepoField] = dict([
     ("owner", RepoField("owner{id,login}", _OWNER)),
     ("parent", RepoField("parent{id,name,owner{id,login}}", _RELATED)),
     ("primaryLanguage",
-     RepoField("primaryLanguage{name}", _pointer(("name", "string")))),
+     RepoField("primaryLanguage{name}", pointer(("name", "string")))),
     ("projects",
      RepoField(
          "projects(first:100,states:OPEN)"
          "{nodes{id,name,number,body,resourcePath}}",
-         _List(
-             _struct(("id", "string"), ("name", "string"), ("number", "int"),
-                     ("resourcePath", "string"))), "nodes")),
+         ListOf(
+             struct(("id", "string"), ("name", "string"), ("number", "int"),
+                    ("resourcePath", "string"))), "nodes")),
     # gh has no flattening for this one, so it prints its Go struct as
     # is: the untagged `Nodes` field under its own capitalised name.
     ("projectsV2",
      RepoField(
          'projectsV2(first:100,query:"is:open")'
          "{nodes{id,number,title,resourcePath,closed,url}}",
-         _struct(
+         struct(
              ("Nodes",
-              _List(
-                  _struct(("id", "string"), ("title", "string"),
-                          ("number", "int"), ("resourcePath", "string"),
-                          ("closed", "bool"), ("url", "string"))), "nodes")))),
+              ListOf(
+                  struct(("id", "string"), ("title", "string"),
+                         ("number", "int"), ("resourcePath", "string"),
+                         ("closed", "bool"), ("url", "string"))), "nodes")))),
     ("pullRequestTemplates",
      RepoField("pullRequestTemplates{body,filename}",
-               _List(_struct(("filename", "string"), ("body", "string"))))),
+               ListOf(struct(("filename", "string"), ("body", "string"))))),
     ("pullRequests", RepoField("pullRequests(states:OPEN){totalCount}",
                                _COUNT)),
     _plain("pushedAt", "raw"),
     _plain("rebaseMergeAllowed", "bool"),
     ("repositoryTopics",
      RepoField("repositoryTopics(first:100){nodes{topic{name}}}",
-               _List(_struct(("name", "string"))), "topics")),
+               ListOf(struct(("name", "string"))), "topics")),
     _plain("securityPolicyUrl", "string"),
     _plain("squashMergeAllowed", "bool"),
     _plain("sshUrl", "string"),
@@ -260,7 +196,7 @@ REPO_FIELD_TABLE: dict[str, RepoField] = dict([
     _plain("viewerDefaultMergeMethod", "string"),
     _plain("viewerHasStarred", "bool"),
     _plain("viewerPermission", "string"),
-    _plain("viewerPossibleCommitEmails", _List("string")),
+    _plain("viewerPossibleCommitEmails", ListOf("string")),
     _plain("viewerSubscription", "string"),
     _plain("visibility", "string"),
     ("watchers", RepoField("watchers{totalCount}", _COUNT)),
@@ -301,7 +237,7 @@ def _exported_repo(node: dict[str, Any], fields: list[str]) -> dict[str, Any]:
                 item.get("topic") for item in connection.get("nodes") or []
             ]
             value = topics or None
-        row[field] = _exported(value, spec.shape)
+        row[field] = exported(value, spec.shape)
     return row
 
 

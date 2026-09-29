@@ -2,11 +2,12 @@ import pytest
 
 from mirage.commands.builtin.generic.jq import (assemble_inputs, exit_code, jq,
                                                 named_args, parse_flags,
-                                                positional_args)
+                                                positional_args, run_position,
+                                                run_status)
 from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
-from mirage.core.jq import JqOptions
+from mirage.core.jq import JqError, JqHalt, JqOptions, JqRun, StreamReads
 from mirage.io.types import materialize
 from mirage.types import PathSpec
 
@@ -20,6 +21,8 @@ FILES = {
     "/d/a.json": b'{"a":1}\n',
     "/d/b.json": b'{"b":2}\n',
     "/d/fields.json": b'{"inputs":1}\n{"inputs":2}\n',
+    "/d/four.json": b"1\n2\n3\n4\n",
+    "/d/empty.json": b"",
 }
 
 
@@ -37,6 +40,18 @@ def _path(virtual: str) -> PathSpec:
 
 def _spec_flags(**flags: object) -> FlagView:
     return FlagView(flags, spec=SPECS["jq"])
+
+
+def _sources(*texts: bytes) -> list[tuple[str, bytes]]:
+    return [(f"f{i}.json", text) for i, text in enumerate(texts)]
+
+
+def _docs(opts: JqOptions, *texts: bytes) -> list:
+    return assemble_inputs(_sources(*texts), opts)[0]
+
+
+def _printed(*outputs: object) -> int:
+    return run_status(JqRun(list(outputs)))
 
 
 async def _run(paths: list[str], *texts: str, **flags: object) -> tuple:
@@ -80,8 +95,7 @@ def test_argjson_rejects_invalid_json():
 
 
 def test_slurp_spans_every_input_rather_than_each_one():
-    chunks = [b'{"a":1}', b'{"b":2}']
-    assert assemble_inputs(chunks, JqOptions(slurp=True)) == [[{
+    assert _docs(JqOptions(slurp=True), b'{"a":1}', b'{"b":2}') == [[{
         "a": 1
     }, {
         "b": 2
@@ -89,28 +103,78 @@ def test_slurp_spans_every_input_rather_than_each_one():
 
 
 def test_raw_input_splits_lines_per_input():
-    chunks = [b"x\ny", b"z\n"]
-    opts = JqOptions(raw_input=True)
-    assert assemble_inputs(chunks, opts) == ["x", "y", "z"]
+    assert _docs(JqOptions(raw_input=True), b"x\ny", b"z\n") == ["x", "y", "z"]
 
 
 def test_raw_slurp_joins_every_input_into_one_string():
-    chunks = [b"x\n", b"y\n"]
     opts = JqOptions(raw_input=True, slurp=True)
-    assert assemble_inputs(chunks, opts) == ["x\ny\n"]
+    assert _docs(opts, b"x\n", b"y\n") == ["x\ny\n"]
+
+
+def test_each_document_is_placed_where_jq_reads_it_whole():
+    _, positions = assemble_inputs(_sources(b"1\n2\n", b"[3,\n4]\n5"),
+                                   JqOptions())
+    assert [positions.at(doc) for doc in range(4)
+            ] == ["f0.json:1", "f0.json:2", "f1.json:2", "f1.json:2"]
+    assert positions.end() == "f1.json:2"
+
+
+def test_a_slurp_is_placed_at_the_end_of_the_last_input():
+    _, positions = assemble_inputs(_sources(b"1\n", b"2\n3"),
+                                   JqOptions(slurp=True))
+    assert positions.at(0) == "f1.json:1"
 
 
 def test_exit_status_reads_the_last_output_only():
     opts = JqOptions(exit_status=True)
-    assert exit_code([1, False], opts) == 1
-    assert exit_code([False, 1], opts) == 0
-    assert exit_code([None], opts) == 1
+    assert exit_code([_printed(1, False)], opts) == 1
+    assert exit_code([_printed(False, 1)], opts) == 0
+    assert exit_code([_printed(None)], opts) == 1
     assert exit_code([], opts) == 4
 
 
 def test_exit_status_is_zero_without_the_flag():
     assert exit_code([], JqOptions()) == 0
-    assert exit_code([None], JqOptions()) == 0
+    assert exit_code([_printed(None)], JqOptions()) == 0
+
+
+def test_a_failed_run_counts_only_when_it_is_the_last_one():
+    failed = run_status(JqRun([1], JqError("x", True)))
+    assert exit_code([failed, _printed(1)], JqOptions()) == 0
+    assert exit_code([_printed(1), failed], JqOptions()) == 5
+    assert exit_code([failed, _printed(False)],
+                     JqOptions(exit_status=True)) == 1
+
+
+def test_exit_status_looks_back_past_runs_that_printed_nothing():
+    opts = JqOptions(exit_status=True)
+    assert exit_code([_printed(False), _printed()], opts) == 1
+    assert exit_code([_printed(1), _printed()], opts) == 0
+
+
+@pytest.mark.parametrize("code, exit_status, expected", [
+    (None, False, 0),
+    (2, False, 2),
+    (-1, False, 0),
+    (-1, True, 1),
+    (1.5, False, 1),
+    (300, False, 44),
+])
+def test_a_halt_exits_with_its_own_code(code, exit_status, expected):
+    status = run_status(JqRun([False], JqHalt(None, False, code)))
+    assert exit_code([status], JqOptions(exit_status=exit_status)) == expected
+
+
+def test_a_run_is_placed_where_the_reader_stops_for_it():
+    _, positions = assemble_inputs(_sources(b"1\n2\n3\n"), JqOptions())
+    none = StreamReads(input=False, inputs=False)
+    one = StreamReads(input=True, inputs=False)
+    rest = StreamReads(input=False, inputs=True)
+    assert run_position(positions, none, 1, 0) == "f0.json:2"
+    assert run_position(positions, none, None, 0) == "<unknown>"
+    assert run_position(positions, one, 0, 1) == "f0.json:2"
+    assert run_position(positions, one, 2, 0) == "f0.json:3"
+    assert run_position(positions, rest, 0, 2) == "f0.json:3"
 
 
 @pytest.mark.asyncio
@@ -147,6 +211,45 @@ async def test_null_input_never_reads_its_operands():
 async def test_inputs_without_null_input_drains_the_stream_once():
     out, _ = await _run(["/d/multi.json"], "[., inputs]", compact_output=True)
     assert out == b'[{"a":1},{"a":2},{"a":3}]\n'
+
+
+@pytest.mark.asyncio
+async def test_null_input_gives_input_the_first_document():
+    out, _ = await _run(["/d/four.json"],
+                        "input",
+                        null_input=True,
+                        compact_output=True)
+    assert out == b"1\n"
+
+
+@pytest.mark.asyncio
+async def test_inputs_starts_after_what_input_took():
+    out, _ = await _run(["/d/four.json"],
+                        "input as $h | [inputs]",
+                        null_input=True,
+                        compact_output=True)
+    assert out == b"[2,3,4]\n"
+    out, _ = await _run(["/d/four.json"],
+                        "[input, inputs]",
+                        null_input=True,
+                        compact_output=True)
+    assert out == b"[1,2,3,4]\n"
+
+
+@pytest.mark.asyncio
+async def test_input_alone_takes_one_document_per_run():
+    out, _ = await _run(["/d/four.json"], "[., input]", compact_output=True)
+    assert out == b"[1,2]\n[3,4]\n"
+    out, _ = await _run(["/d/four.json"], "input", compact_output=True)
+    assert out == b"2\n4\n"
+
+
+@pytest.mark.asyncio
+async def test_input_fails_with_break_on_an_empty_stream():
+    out, io = await _run(["/d/empty.json"], "input", null_input=True)
+    assert (out, io.exit_code) == (b"", 5)
+    assert await materialize(io.stderr
+                             ) == b"jq: error (at /d/empty.json:0): break\n"
 
 
 @pytest.mark.asyncio
@@ -232,24 +335,24 @@ def test_no_positional_args_without_the_flags():
 
 
 def test_stream_expands_documents_into_events():
-    chunks = [b'{"a":1}']
-    assert assemble_inputs(chunks, JqOptions(stream=True)) == [[["a"], 1],
-                                                               [["a"]]]
+    assert _docs(JqOptions(stream=True), b'{"a":1}') == [[["a"], 1], [["a"]]]
 
 
 def test_stream_and_slurp_collect_the_events():
-    chunks = [b'{"a":1}']
     opts = JqOptions(stream=True, slurp=True)
-    assert assemble_inputs(chunks, opts) == [[[["a"], 1], [["a"]]]]
+    assert _docs(opts, b'{"a":1}') == [[[["a"], 1], [["a"]]]]
 
 
 def test_seq_reads_only_rs_introduced_values():
-    chunks = [b'\x1e{"a":1}\n\x1e{"a":2}\n']
-    assert assemble_inputs(chunks, JqOptions(seq=True)) == [{"a": 1}, {"a": 2}]
+    assert _docs(JqOptions(seq=True), b'\x1e{"a":1}\n\x1e{"a":2}\n') == [{
+        "a": 1
+    }, {
+        "a": 2
+    }]
 
 
 def test_seq_drops_text_before_the_first_separator():
-    assert assemble_inputs([b'{"a":1}\n'], JqOptions(seq=True)) == []
+    assert _docs(JqOptions(seq=True), b'{"a":1}\n') == []
 
 
 @pytest.mark.asyncio
@@ -314,3 +417,60 @@ async def test_seq_writes_a_separator_before_each_value():
                         seq=True,
                         compact_output=True)
     assert out == b"\x1e1\n\x1e2\n"
+
+
+async def _ran(path: str, program: str) -> tuple[bytes, bytes, int]:
+    out, io = await _run([path], program, compact_output=True)
+    return out, await materialize(io.stderr), io.exit_code
+
+
+@pytest.mark.asyncio
+async def test_a_run_prints_what_came_before_an_error_and_goes_on():
+    assert await _ran("/d/four.json",
+                      'if . == 2 then error("two") else . end') == (
+                          b"1\n3\n4\n",
+                          b"jq: error (at /d/four.json:2): two\n", 0)
+    out, _, code = await _ran("/d/four.json",
+                              "., error({n: .}) | select(. > 3)")
+    assert (out, code) == (b"4\n", 5)
+
+
+@pytest.mark.asyncio
+async def test_a_report_says_when_the_message_was_not_a_string():
+    _, err, _ = await _ran("/d/four.json",
+                           "if . == 4 then error({n: .}) else empty end")
+    assert err == b'jq: error (at /d/four.json:4) (not a string): {"n":4}\n'
+
+
+@pytest.mark.asyncio
+async def test_a_halt_ends_the_whole_invocation():
+    assert await _ran(
+        "/d/four.json",
+        'if . == 2 then "bye\\n" | halt_error(3) else . end') == (b"1\n",
+                                                                  b"bye\n", 3)
+    assert await _ran("/d/four.json",
+                      "if . == 3 then halt else . end") == (b"1\n2\n", b"", 0)
+
+
+@pytest.mark.asyncio
+async def test_a_halt_inside_a_collector_halts_as_from_the_top():
+    assert await _ran("/d/four.json",
+                      "if . == 2 then [halt_error(3)] else . end") == (b"1\n",
+                                                                       b"2\n",
+                                                                       3)
+
+
+@pytest.mark.asyncio
+async def test_a_halt_ends_the_command_even_inside_a_try():
+    assert await _ran(
+        "/d/four.json",
+        'try (if . == 2 then halt_error(3) else . end) catch "continued"') == (
+            b"1\n", b"2\n", 3)
+
+
+@pytest.mark.asyncio
+async def test_a_program_that_does_not_compile_is_refused_before_any_read():
+    out, err, code = await _ran("/d/missing.json", "1 +")
+    assert (out, code) == (b"", 3)
+    assert err.startswith(b"jq: error: syntax error, ")
+    assert err.endswith(b"jq: 1 compile error\n")

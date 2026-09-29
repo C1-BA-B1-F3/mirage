@@ -15,8 +15,8 @@
 import { HttpGitHubTransport, type GitHubTransport } from '../../../../core/github/client.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
 import { parseRepo, type RepoRef } from '../../../../core/github/repo.ts'
-import { jqEval } from '../../../../core/jq/index.ts'
-import { UsageError } from '../../../errors.ts'
+import { jqRun } from '../../../../core/jq/index.ts'
+import { PartialOutputError, UsageError } from '../../../errors.ts'
 import type { FlagView } from '../../../spec/flag_view.ts'
 import type { FlagValue } from '../../../spec/types.ts'
 import { IOResult, materialize, type ByteSource } from '../../../../io/types.ts'
@@ -49,8 +49,26 @@ export function ghRepo(config: unknown, spec: string | undefined): RepoRef {
   return parseRepo(named)
 }
 
+// gh's exporter writes with Go's encoding/json, which escapes U+2028 and
+// U+2029 where JSON.stringify writes them raw. Every other character comes
+// out the same (Go 1.22 and later spell \b and \f short, as JSON.stringify
+// does), `<`, `>` and `&` raw too, since gh turns HTML escaping off.
+const SEPARATORS = /[\u{2028}\u{2029}]/gu
+
+/** One value as gh's exporter prints it: Go's compact JSON. */
+function goJson(value: unknown): string {
+  return JSON.stringify(value).replace(
+    SEPARATORS,
+    (separator) => `\\u${separator.charCodeAt(0).toString(16)}`,
+  )
+}
+
+/**
+ * `--json` output as gh writes it where stdout is not a terminal, which in a
+ * workspace it never is: one compact line.
+ */
 export function jsonOut(value: unknown): CommandFnResult {
-  const text = value === null ? '' : `${JSON.stringify(value, null, 2)}\n`
+  const text = value === null ? '' : `${goJson(value)}\n`
   const out: ByteSource = ENC.encode(text)
   return [out, new IOResult()]
 }
@@ -212,6 +230,30 @@ export function jsonFields(fl: FlagView, allowed: readonly string[]): string[] |
   return fields
 }
 
+/**
+ * The lines `--jq` prints for each value in turn, the way go-gh's jq
+ * evaluates them. `halt`, and `halt_error` on null, end that value's output
+ * there. An error, or any other `halt_error`, fails the command, the latter
+ * as `halt error: <message>` whatever code it names, after the lines printed
+ * before it: a PartialOutputError carries them.
+ */
+export async function jqLines(values: readonly unknown[], program: string): Promise<string> {
+  const lines: string[] = []
+  for (const value of values) {
+    const run = await jqRun(value, program)
+    for (const item of run.outputs) lines.push(`${jqLine(item)}\n`)
+    let failure: string | null = null
+    if (run.stop?.kind === 'error') failure = run.stop.text
+    else if (run.stop?.kind === 'halt' && run.stop.message !== null) {
+      failure = `halt error: ${run.stop.message}`
+    }
+    if (failure !== null) {
+      throw new PartialOutputError(failure, new TextEncoder().encode(lines.join('')))
+    }
+  }
+  return lines.join('')
+}
+
 export async function typedOut(
   value: unknown,
   fl: FlagView,
@@ -226,8 +268,7 @@ export async function typedOut(
   }
   const selected = select(value, fields)
   if (program !== undefined && program !== '') {
-    const values = await jqEval(selected, program)
-    return textOut(values.map((item) => `${jqLine(item)}\n`).join(''))
+    return textOut(await jqLines([selected], program))
   }
   return jsonOut(selected)
 }

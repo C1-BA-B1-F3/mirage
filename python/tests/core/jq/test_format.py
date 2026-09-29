@@ -12,7 +12,10 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from mirage.core.jq import JqOptions, format_jq_output, jq_eval
+import pytest
+
+from mirage.core.jq import (JqError, JqHalt, JqOptions, error_report,
+                            format_jq_output, halt_report, jq_eval)
 
 PRETTY = JqOptions()
 COMPACT = JqOptions(compact=True)
@@ -99,3 +102,27 @@ def test_indent_width_is_honored():
 
 def test_indent_zero_is_compact():
     assert format_jq_output([{"a": 1}], JqOptions(indent=0)) == b'{"a":1}\n'
+
+
+def test_error_report_words_an_error_the_way_jq_does():
+    assert error_report("<stdin>:1", JqError("boom",
+                                             True)) == ("jq: error (at "
+                                                        "<stdin>:1): boom\n")
+    assert error_report("<unknown>", JqError(
+        '{"a":1}',
+        False)) == ('jq: error (at <unknown>) (not a string): {"a":1}\n')
+
+
+def test_error_report_ends_a_string_message_at_a_nul():
+    assert error_report("f:0", JqError("a\0b",
+                                       True)) == "jq: error (at f:0): a\n"
+
+
+@pytest.mark.parametrize("message, string, expected", [
+    ("bye\n", True, "bye\n"),
+    ('{"a":1}', False, '{"a":1}\n'),
+    (None, False, ""),
+])
+def test_halt_report_writes_what_jq_writes_for_a_halt(message, string,
+                                                      expected):
+    assert halt_report(JqHalt(message, string, 5)) == expected

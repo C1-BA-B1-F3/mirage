@@ -68,7 +68,7 @@ interface GraphQLErrorRow {
  * them: `GraphQL: Could not resolve to a Repository with the name 'o/r'.
  * (repository)`.
  */
-async function graphqlData(
+export async function graphqlData(
   transport: GitHubTransport,
   query: string,
   variables: Record<string, unknown>,

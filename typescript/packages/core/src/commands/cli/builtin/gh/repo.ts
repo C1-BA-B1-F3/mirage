@@ -27,61 +27,7 @@ import {
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
 import { camel, ghRepo, ghTransport, jsonFields, textOut, textValue, typedOut } from './accessor.ts'
-
-/**
- * The Go type gh decodes a field into, which is what decides how it prints.
- *
- * A string prints `""` for null, a number 0 and a bool false; `time` is a
- * non-pointer `time.Time`, whose zero is the year-one timestamp; `raw` is a
- * pointer (or a nullable time) and stays null. A struct prints every one of
- * its fields in its own order, zero-filled where the query asked for fewer
- * (a user's `databaseId` is always there, as 0), and prints null only when it
- * is a pointer. A list prints null when the answer carried none. Each struct
- * field may read a differently spelled key from the answer: an untagged Go
- * field prints under its own name.
- */
-type Shape =
-  | 'string'
-  | 'int'
-  | 'bool'
-  | 'time'
-  | 'raw'
-  | {
-      readonly fields: readonly (readonly [string, Shape, string?])[]
-      readonly nullable: boolean
-    }
-  | { readonly list: Shape }
-
-const ZERO_TIME = '0001-01-01T00:00:00Z'
-
-function struct(...fields: (readonly [string, Shape, string?])[]): Shape {
-  return { fields, nullable: false }
-}
-
-function pointer(...fields: (readonly [string, Shape, string?])[]): Shape {
-  return { fields, nullable: true }
-}
-
-function list(shape: Shape): Shape {
-  return { list: shape }
-}
-
-/** One value as gh prints it once decoded into `shape`. */
-function exported(value: unknown, shape: Shape): unknown {
-  if (shape === 'string') return typeof value === 'string' ? value : ''
-  if (shape === 'int') return typeof value === 'number' ? value : 0
-  if (shape === 'bool') return typeof value === 'boolean' ? value : false
-  if (shape === 'time') return typeof value === 'string' ? value : ZERO_TIME
-  if (shape === 'raw') return value ?? null
-  if ('list' in shape) {
-    return Array.isArray(value) ? value.map((item) => exported(item, shape.list)) : null
-  }
-  if ((value === null || value === undefined) && shape.nullable) return null
-  const row = value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {}
-  return Object.fromEntries(
-    shape.fields.map(([name, inner, source]) => [name, exported(row[source ?? name], inner)]),
-  )
-}
+import { exported, list, pointer, struct, type Shape } from './shape.ts'
 
 const OWNER = struct(['id', 'string'], ['login', 'string'])
 const USER = struct(

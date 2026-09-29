@@ -15,20 +15,81 @@
 from typing import Any, cast
 
 from mirage.commands.cli.builtin.gh.accessor import (body_value, camel,
-                                                     csv_values, list_limit,
-                                                     repo_for, repo_number,
-                                                     text_out, typed_out)
+                                                     csv_values, json_fields,
+                                                     list_limit, repo_for,
+                                                     repo_number, text_out,
+                                                     typed_out)
+from mirage.commands.cli.builtin.gh.fields import (SHARED_FIELDS, Field, Node,
+                                                   exported_node, plain,
+                                                   read_rest, references,
+                                                   selection)
 from mirage.commands.cli.types import CLIInvocation
 from mirage.commands.spec.flag_view import FlagView
 from mirage.core.github.config import GhConfig
-from mirage.core.github.issue import (comment_issue, create_issue, edit_issue,
-                                      get_issue, issue_comments, list_issues)
+from mirage.core.github.issue import (IssueListFilter, IssueSelections,
+                                      comment_issue, create_issue, edit_issue,
+                                      get_issue, issue_comments, issue_fields,
+                                      list_issue_fields, list_issues)
 from mirage.core.github.repo import RepoRef
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue
 
-ISSUE_FIELDS = ("assignees", "author", "body", "closed", "createdAt", "labels",
-                "number", "state", "title", "updatedAt", "url")
+# Every field `gh issue view --json` and `gh issue list --json` accept in
+# gh 2.85: the ones pull requests share, and the ones only an issue has.
+ISSUE_FIELD_TABLE: dict[str, Field] = dict([
+    *SHARED_FIELDS,
+    plain("isPinned", "bool"),
+    plain("stateReason", "string"),
+    references("closedByPullRequestsReferences"),
+])
+
+ISSUE_FIELDS = tuple(ISSUE_FIELD_TABLE)
+
+# The fields a pull request has no answer for, which gh leaves out of the
+# pull request half of its query, so they print at their zero for one.
+_ISSUE_ONLY = frozenset(
+    {"isPinned", "stateReason", "closedByPullRequestsReferences"})
+
+# The --state spellings as the issue states gh lists for each.
+_STATES = {
+    "open": ("OPEN", ),
+    "closed": ("CLOSED", ),
+    "all": ("OPEN", "CLOSED"),
+}
+
+
+async def _viewed_issue(config: GhConfig, ref: RepoRef, number: int,
+                        fields: list[str]) -> Node:
+    """One issue as ``gh issue view --json`` reads it.
+
+    gh asks for the number as an issue or a pull request, so a pull
+    request's number answers too. It adds the ``id`` its follow-ups read,
+    and the ``number`` when it reads project items apart; every
+    connection it pages is then read to its end, through the half of the
+    query that matches what the number turned out to be.
+
+    Args:
+        config (GhConfig): the install's configuration.
+        ref (RepoRef): the repository.
+        number (int): the issue or pull request.
+        fields (list[str]): the ``--json`` fields.
+    """
+    names = [*fields, "id", *(["number"] if "projectItems" in fields else [])]
+    node = await issue_fields(
+        config, ref, number,
+        IssueSelections(
+            selection(ISSUE_FIELD_TABLE, names, True),
+            selection(ISSUE_FIELD_TABLE,
+                      [name for name in names if name not in _ISSUE_ONLY],
+                      True)))
+    pull = node.get("__typename") == "PullRequest"
+
+    async def fetch(select: str, cursor: str | None) -> Node:
+        halves = (IssueSelections("", select) if pull else IssueSelections(
+            select, ""))
+        return await issue_fields(config, ref, number, halves, cursor)
+
+    return await read_rest(ISSUE_FIELD_TABLE, node, fields, fetch)
 
 
 def _issue(value: JsonValue) -> dict[str, Any]:
@@ -68,8 +129,27 @@ def _target(inv: CLIInvocation[GhConfig], fl: FlagView) -> tuple[RepoRef, int]:
 
 async def list_cmd(
         inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    """``gh issue list``. With ``--json`` it asks GraphQL for exactly the
+    fields named, the way gh's IssueList does, so every field gh accepts is
+    answered in gh's own shape; the text view reads the REST listing.
+
+    Args:
+        inv (CLIInvocation[GhConfig]): the parsed invocation.
+    """
     fl = FlagView(inv.flags)
-    params = {"state": fl.as_str("state") or "open"}
+    state = fl.as_str("state") or "open"
+    fields = json_fields(fl, ISSUE_FIELDS)
+    if fields is not None:
+        answers = await list_issue_fields(
+            inv.config, repo_for(inv, fl),
+            IssueListFilter(_STATES.get(state, ("OPEN", )),
+                            fl.as_str("assignee"), fl.as_str("author"),
+                            tuple(csv_values(fl.as_list("label")))),
+            list_limit(fl, 30), selection(ISSUE_FIELD_TABLE, fields, False))
+        return await typed_out([
+            exported_node(ISSUE_FIELD_TABLE, node, fields) for node in answers
+        ], fl, "", ISSUE_FIELDS)
+    params = {"state": state}
     if fl.as_str("assignee"):
         params["assignee"] = fl.as_str("assignee") or ""
     if fl.as_str("author"):
@@ -85,16 +165,26 @@ async def list_cmd(
 
 async def view_cmd(
         inv: CLIInvocation[GhConfig]) -> tuple[ByteSource | None, IOResult]:
+    """``gh issue view``. With ``--json`` it reads the fields named over
+    GraphQL, as gh does (see _viewed_issue); the text view reads the REST
+    object, and ``-c`` its comments.
+
+    Args:
+        inv (CLIInvocation[GhConfig]): the parsed invocation.
+    """
     fl = FlagView(inv.flags)
     ref, number = _target(inv, fl)
+    fields = json_fields(fl, ISSUE_FIELDS)
+    if fields is not None:
+        node = await _viewed_issue(inv.config, ref, number, fields)
+        return await typed_out(exported_node(ISSUE_FIELD_TABLE, node, fields),
+                               fl, "", ISSUE_FIELDS)
     row = _issue(await get_issue(inv.config, ref, number))
     comments = await comments_for(inv, fl, ref, number)
-    if comments is not None:
-        row["comments"] = comments
     return await typed_out(
         row, fl,
-        comments_text(comments or []) if fl.as_bool("comments") else
-        _view_text(row), (*ISSUE_FIELDS, "comments"))
+        comments_text(comments or [])
+        if fl.as_bool("comments") else _view_text(row), ISSUE_FIELDS)
 
 
 async def create_cmd(
@@ -191,8 +281,7 @@ async def comment_cmd(
 async def comments_for(inv: CLIInvocation[GhConfig], fl: FlagView,
                        ref: RepoRef,
                        number: int) -> list[dict[str, Any]] | None:
-    if not fl.as_bool("comments") and "comments" not in (fl.as_str("json")
-                                                         or "").split(","):
+    if not fl.as_bool("comments"):
         return None
     rows = await issue_comments(inv.config, ref, number)
     for row in rows:

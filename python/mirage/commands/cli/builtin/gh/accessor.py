@@ -19,12 +19,12 @@ from collections.abc import Iterable
 from typing import Any
 
 from mirage.commands.cli.types import CLIInvocation
-from mirage.commands.errors import UsageError
+from mirage.commands.errors import PartialOutputError, UsageError
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
 from mirage.core.github.config import GhConfig
 from mirage.core.github.repo import RepoRef, parse_repo
-from mirage.core.jq import jq_eval
+from mirage.core.jq import JqError, JqHalt, jq_run
 from mirage.io.stream import materialize, yield_bytes
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue, PathSpec
@@ -55,9 +55,31 @@ def gh_repo(config: GhConfig, spec: str | None) -> RepoRef:
     return parse_repo(named)
 
 
+# gh's exporter writes with Go's encoding/json, which escapes U+2028 and
+# U+2029 where json.dumps writes them raw. Every other character comes out
+# the same (Go 1.22 and later spell \b and \f short, as json.dumps does),
+# <, > and & raw too, since gh turns HTML escaping off.
+_SEPARATORS = re.compile(r"[\N{LINE SEPARATOR}\N{PARAGRAPH SEPARATOR}]")
+
+
+def _go_json(value: JsonValue) -> str:
+    """One value as gh's exporter prints it: Go's compact JSON.
+
+    Args:
+        value (JsonValue): the value to print.
+    """
+    text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return _SEPARATORS.sub(lambda match: f"\\u{ord(match.group()):04x}", text)
+
+
 def json_out(value: JsonValue) -> tuple[ByteSource | None, IOResult]:
-    text = ("" if value is None else
-            f"{json.dumps(value, indent=2, ensure_ascii=False)}\n")
+    """``--json`` output as gh writes it where stdout is not a terminal,
+    which in a workspace it never is: one compact line.
+
+    Args:
+        value (JsonValue): the selected fields.
+    """
+    text = "" if value is None else f"{_go_json(value)}\n"
     return yield_bytes(text.encode()), IOResult()
 
 
@@ -221,6 +243,34 @@ def json_fields(fl: FlagView, allowed: Iterable[str]) -> list[str] | None:
     return fields
 
 
+def jq_lines(values: Iterable[JsonValue], program: str) -> str:
+    """The lines `--jq` prints for each value in turn, the way go-gh's jq
+    evaluates them. `halt`, and `halt_error` on null, end that value's
+    output there. An error, or any other `halt_error`, fails the command,
+    the latter as `halt error: <message>` whatever code it names, after
+    the lines printed before it.
+
+    Args:
+        values (Iterable[JsonValue]): the JSON values the program reads.
+        program (str): the `--jq` program.
+
+    Raises:
+        PartialOutputError: the failure, carrying the lines before it.
+    """
+    lines: list[str] = []
+    for value in values:
+        run = jq_run(value, program)
+        lines.extend(f"{jq_line(item)}\n" for item in run.outputs)
+        failure = None
+        if isinstance(run.stop, JqError):
+            failure = run.stop.text
+        elif isinstance(run.stop, JqHalt) and run.stop.message is not None:
+            failure = f"halt error: {run.stop.message}"
+        if failure is not None:
+            raise PartialOutputError(failure, "".join(lines).encode())
+    return "".join(lines)
+
+
 async def typed_out(
         value: Any, fl: FlagView, human: str,
         allowed: Iterable[str]) -> tuple[ByteSource | None, IOResult]:
@@ -233,7 +283,5 @@ async def typed_out(
         return text_out(human)
     selected = _select(value, fields)
     if program:
-        lines = "".join(f"{jq_line(item)}\n"
-                        for item in jq_eval(selected, program))
-        return text_out(lines)
+        return text_out(jq_lines([selected], program))
     return json_out(selected)

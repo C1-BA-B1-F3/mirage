@@ -1,0 +1,470 @@
+{
+  "cases": [
+    {
+      "id": "jq_error_prints_what_came_before_and_goes_on",
+      "seq": 700955,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 \"a\" 3' | jq '. + 1'",
+      "expect": {
+        "exit": 0,
+        "stdout": "2\n4\n",
+        "stderr": "jq: error (at <stdin>:0): string (\"a\") and number (1) cannot be added\n"
+      }
+    },
+    {
+      "id": "jq_error_in_the_last_document_exits_five",
+      "seq": 700956,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 2 3' | jq 'if . == 3 then error(\"three\") else . end'",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n2\n",
+        "stderr": "jq: error (at <stdin>:0): three\n"
+      }
+    },
+    {
+      "id": "jq_error_keeps_the_outputs_before_it_in_one_run",
+      "seq": 700957,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '{\"a\":1}' | jq -c '.a, error(\"boom\"), .a'",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n",
+        "stderr": "jq: error (at <stdin>:0): boom\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_error_that_is_not_a_string_says_so",
+      "seq": 700958,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1' | jq 'error({\"a\":1}), error(null)'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <stdin>:0) (not a string): {\"a\":1}\n"
+      }
+    },
+    {
+      "id": "jq_error_names_the_file_and_its_line",
+      "seq": 700959,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqe && printf '1\\n2\\n' > /data/qjqe/n.json && jq '.a' /data/qjqe/n.json",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at /data/qjqe/n.json:1): Cannot index number with string (\"a\")\njq: error (at /data/qjqe/n.json:2): Cannot index number with string (\"a\")\n"
+      }
+    },
+    {
+      "id": "jq_error_counts_the_lines_read_so_far",
+      "seq": 700960,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 2\\n3\\n4' | jq 'error(tostring)'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <stdin>:1): 1\njq: error (at <stdin>:1): 2\njq: error (at <stdin>:2): 3\njq: error (at <stdin>:2): 4\n"
+      }
+    },
+    {
+      "id": "jq_error_names_a_file_as_the_command_line_does",
+      "seq": 700961,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqe && printf '1\\n' > /data/qjqe/r.json && (cd /data/qjqe && jq 'error(tostring)' r.json ./r.json)",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at r.json:1): 1\njq: error (at ./r.json:1): 1\n"
+      }
+    },
+    {
+      "id": "jq_error_under_null_input_is_at_unknown",
+      "seq": 700962,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n '1, error(\"x\"), 2'",
+      "expect": {
+        "exit": 5,
+        "stdout": "1\n",
+        "stderr": "jq: error (at <unknown>): x\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_error_after_inputs_drain_is_at_the_end",
+      "seq": 700963,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n2\\n' | jq -n -c '[inputs] | error(tostring)'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <stdin>:2): [1,2]\n"
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_error_from_input_past_the_end_is_break",
+      "seq": 700964,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 2 3' | jq -c '[., input]'",
+      "expect": {
+        "exit": 5,
+        "stdout": "[1,2]\n",
+        "stderr": "jq: error (at <stdin>:0): break\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_error_raw_lines_read_as_lines",
+      "seq": 700965,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf 'a\\nb' | jq -R 'error'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <stdin>:1): a\njq: error (at <stdin>:1): b\n"
+      },
+      "flags": [
+        "R"
+      ]
+    },
+    {
+      "id": "jq_error_slurp_reads_the_whole_input_first",
+      "seq": 700966,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n2\\n' | jq -s 'error(\"s\")'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <stdin>:2): s\n"
+      },
+      "flags": [
+        "s"
+      ]
+    },
+    {
+      "id": "jq_error_message_ends_at_a_nul",
+      "seq": 700967,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1\\n' | jq 'error(\"a\\u0000b\")'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <stdin>:1): a\n"
+      }
+    },
+    {
+      "id": "jq_exit_status_reads_the_last_run_past_an_error",
+      "seq": 700968,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 2' | jq -e 'if . == 1 then error(\"e\") else false end'",
+      "expect": {
+        "exit": 1,
+        "stdout": "false\n",
+        "stderr": "jq: error (at <stdin>:0): e\n"
+      },
+      "flags": [
+        "e"
+      ]
+    },
+    {
+      "id": "jq_halt_error_prints_a_string_as_it_is",
+      "seq": 700969,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n '\"bye\\n\" | halt_error'; echo \"exit=$?\"",
+      "expect": {
+        "exit": 0,
+        "stdout": "exit=5\n",
+        "stderr": "bye\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_halt_error_dumps_anything_else_and_exits_its_code",
+      "seq": 700970,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n '{\"a\":1} | halt_error(3)'",
+      "expect": {
+        "exit": 3,
+        "stdout": "",
+        "stderr": "{\"a\":1}\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_halt_stops_every_later_document",
+      "seq": 700971,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 2 3' | jq 'if . == 2 then halt else . end'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "jq_halt_error_needs_a_number",
+      "seq": 700972,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n '\"x\" | halt_error(null)'",
+      "expect": {
+        "exit": 5,
+        "stdout": "",
+        "stderr": "jq: error (at <unknown>): string (\"x\") halt_error/1: number required\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_compile_error_exits_three_before_any_read",
+      "seq": 700973,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq '1 +' /data/qjqe/missing.json",
+      "expect": {
+        "exit": 3,
+        "stdout": "",
+        "stderr": "jq: error: syntax error, unexpected end of file at <top-level>, line 1, column 3:\n    1 +\n      ^\njq: 1 compile error\n"
+      }
+    },
+    {
+      "id": "jq_error_in_a_long_line_counts_the_line_at_its_last_piece",
+      "seq": 700974,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "(for i in $(seq 1000 2000); do printf '%d ' $i; done; printf '\\n') | jq 'error(tostring)' 2>&1 | awk '{pos=$4; if (pos != last) {print NR\": \"$0; last=pos}}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "1: jq: error (at <stdin>:0): 1000\n819: jq: error (at <stdin>:1): 1818\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "jq_halt_error_inside_a_collector_halts_the_command",
+      "seq": 700975,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 2 3' | jq -c 'if . == 2 then [halt_error(3)] else . end'",
+      "expect": {
+        "exit": 3,
+        "stdout": "1\n",
+        "stderr": "2\n"
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_output_shaped_like_a_stop_prints_as_output",
+      "seq": 700976,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "jq -n -c '{\"__mirage_jq_error\": [true, \"x\"]}, {\"__mirage_jq_halt\": [null, \"\"]}'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"__mirage_jq_error\":[true,\"x\"]}\n{\"__mirage_jq_halt\":[null,\"\"]}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_halt_inside_the_programs_own_try_still_ends_the_command",
+      "seq": 700977,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '1 2 3' | jq 'try (if . == 2 then \"failure\\n\" | halt_error(3) else . end) catch \"continued\"'",
+      "expect": {
+        "exit": 3,
+        "stdout": "1\n",
+        "stderr": "failure\n"
+      }
+    },
+    {
+      "id": "jq_halt_after_now_keeps_its_code_and_message",
+      "seq": 700978,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqn && jq -n 'now, (\"x\\n\" | halt_error(3))' > /data/qjqn/out.json; echo \"exit=$?\"; jq type /data/qjqn/out.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "exit=3\n\"number\"\n",
+        "stderr": "x\n"
+      },
+      "flags": [
+        "n"
+      ]
+    },
+    {
+      "id": "jq_arg_named_like_the_input_binding_stays_the_programs",
+      "seq": 700979,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo 1 | jq -n -c --arg __mirage_jq_inputs mine '$__mirage_jq_inputs, input'",
+      "expect": {
+        "exit": 0,
+        "stdout": "\"mine\"\n1\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c",
+        "arg"
+      ]
+    },
+    {
+      "id": "jq_args_named_like_the_prelude_bindings_stay_the_programs",
+      "seq": 700980,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "echo '{\"a\":1}' | jq -c --arg __mirage_jq_args x --arg __mirage_jq_value y --arg __mirage_jq_named z '., [$__mirage_jq_args, $__mirage_jq_value, $__mirage_jq_named], ($ARGS.named | keys)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"a\":1}\n[\"x\",\"y\",\"z\"]\n[\"__mirage_jq_args\",\"__mirage_jq_named\",\"__mirage_jq_value\"]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c",
+        "arg"
+      ]
+    }
+  ]
+}

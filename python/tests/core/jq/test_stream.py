@@ -84,7 +84,8 @@ async def _collect(stream) -> list[str]:
 @pytest.mark.asyncio
 async def test_eval_jsonl_stream_dot_chain_maps_per_line():
     source = _lines(b'{"msg":"hello"}\n', b'{"msg":"world"}\n')
-    out = await _collect(eval_jsonl_stream(source, ".[].msg", COMPACT))
+    out = await _collect(
+        eval_jsonl_stream(source, ".[].msg", COMPACT, "f.jsonl"))
     assert out == ['"hello"', '"world"']
 
 
@@ -92,22 +93,36 @@ async def test_eval_jsonl_stream_dot_chain_maps_per_line():
 async def test_eval_jsonl_stream_raw_unquotes_strings():
     source = _lines(b'{"msg":"hello"}\n', b'{"msg":"world"}\n')
     opts = JqOptions(raw_output=True, compact=True)
-    out = await _collect(eval_jsonl_stream(source, ".[].msg", opts))
+    out = await _collect(eval_jsonl_stream(source, ".[].msg", opts, "f.jsonl"))
     assert out == ["hello", "world"]
 
 
 @pytest.mark.asyncio
 async def test_eval_jsonl_stream_prints_every_output_of_a_line():
     source = _lines(b'{"a":1,"b":2}\n', b'{"a":3,"b":4}\n')
-    out = await _collect(eval_jsonl_stream(source, ".[] | .a, .b", COMPACT))
+    out = await _collect(
+        eval_jsonl_stream(source, ".[] | .a, .b", COMPACT, "f.jsonl"))
     assert out == ["1", "2", "3", "4"]
+
+
+@pytest.mark.asyncio
+async def test_eval_jsonl_stream_ends_at_the_first_error_in_jqs_words():
+    source = _lines(b'{"a":1}\n', b'{"a":"x"}\n', b'{"a":3}\n')
+    seen = []
+    with pytest.raises(ValueError) as caught:
+        async for chunk in eval_jsonl_stream(source, ".[] | .a + 1", COMPACT,
+                                             "f.jsonl"):
+            seen.append(chunk.decode().strip())
+    assert seen == ["2"]
+    assert str(caught.value) == ('jq: error (at f.jsonl:2): string ("x") and '
+                                 'number (1) cannot be added')
 
 
 @pytest.mark.asyncio
 async def test_eval_jsonl_stream_drops_lines_with_no_output():
     source = _lines(b'{"id":1}\n', b'{"id":2}\n', b'{"id":3}\n')
     out = await _collect(
-        eval_jsonl_stream(source, ".[] | select(.id > 2)", COMPACT))
+        eval_jsonl_stream(source, ".[] | select(.id > 2)", COMPACT, "f.jsonl"))
     assert out == ['{"id":3}']
 
 
@@ -133,7 +148,8 @@ def test_split_raw_lines_keeps_other_unicode_breaks_inline():
 async def test_eval_jsonl_stream_pretty_prints_by_default():
     source = _lines(b'{"a":1}\n')
     out = []
-    async for chunk in eval_jsonl_stream(source, ".[]", JqOptions()):
+    async for chunk in eval_jsonl_stream(source, ".[]", JqOptions(),
+                                         "f.jsonl"):
         out.append(chunk)
     assert b"".join(out) == b'{\n  "a": 1\n}\n'
 
@@ -142,5 +158,6 @@ async def test_eval_jsonl_stream_pretty_prints_by_default():
 async def test_eval_jsonl_stream_binds_named_args():
     source = _lines(b'{"a":1}\n')
     opts = JqOptions(compact=True, named_args={"v": "hi"})
-    out = await _collect(eval_jsonl_stream(source, ".[] | [., $v]", opts))
+    out = await _collect(
+        eval_jsonl_stream(source, ".[] | [., $v]", opts, "f.jsonl"))
     assert out == ['[{"a":1},"hi"]']

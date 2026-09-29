@@ -154,7 +154,7 @@ jq -c '[.name, .age]' /data/user.json
 
 | Reading input | |
 | --- | --- |
-| `-n`, `--null-input` | run once against `null`; `inputs` still reads the operands |
+| `-n`, `--null-input` | run once against `null`; `input` and `inputs` still read the operands |
 | `-R`, `--raw-input` | each line is a string, not a JSON document |
 | `-s`, `--slurp` | one value for the whole stream, spanning every operand |
 | `--stream` | read each document as its `[path, leaf]` events |
@@ -175,7 +175,7 @@ jq -c '[.name, .age]' /data/user.json
 | `-a`, `--ascii-output` | escape non-ASCII (and keep strings quoted, as jq does) |
 | `-S`, `--sort-keys` | sort object keys |
 | `--tab`, `--indent n` | indent width (`--indent -1` is a tab) |
-| `-e`, `--exit-status` | exit 1 when the last output is `false`/`null`, 4 when there was none |
+| `-e`, `--exit-status` | exit 1 when the last output is `false`/`null`, 4 when there was none (see [Errors](#errors)) |
 | `-M`, `--monochrome-output`, `--unbuffered` | accepted; already how mirage writes |
 
 Build JSON with a binding rather than by hand: the value arrives as a
@@ -199,14 +199,58 @@ jq -n -c --rawfile body /data/lines.txt '{text: $body}'
 `$ARGS` is always defined, carrying `named` (the `--arg` family) and
 `positional` (`--args` / `--jsonargs`).
 
-Three limits worth knowing. `inputs` is bound to whatever is still
-unread, so a program that drains it (`[., inputs]`, `reduce inputs as
-$x`) runs once and sees everything, but the stateful single `input` and a
-partial drain (`first(inputs)`) are not modeled. `--stream` reads whole
+### Errors
+
+An error that no `try` catches ends that document's run, the way jq's own
+main loop handles it: what the run printed before the error stays printed,
+the report goes to stderr, and the next document runs.
+
+```bash
+printf '1 "a" 3' | jq '. + 1'
+2
+4
+# stderr: jq: error (at <stdin>:0): string ("a") and number (1) cannot be added
+```
+
+The report names the input as the command line spelled it (`<stdin>` for a
+pipe) and the lines jq's reader had read by then. It reads a line at a
+time, and a long line in 4,091-byte pieces. Under `-n`, a program that
+reads no input reports `<unknown>`, and a message that is not a string is
+dumped after `(not a string)`. The exit status is the last document's: 5
+when its run failed, otherwise 0, or 1 and 4 under `-e` as above. `halt`
+ends the whole command with status 0. `halt_error` writes its input to
+stderr (a string as it is, anything else as JSON on a line of its own) and
+exits with its code, 5 by default. A program that does not compile is
+refused with status 3 before any input is opened. Both hosts evaluate with
+libjq 1.8.2, so the messages are jq 1.8.2's own.
+
+A few limits worth knowing. `input` and `inputs` read the documents
+still unread: `input` takes the next one (and fails with `break` when none
+is left, as jq does), `inputs` yields every one after it. mirage cannot see
+how many a run took, so it assumes the idioms: a program that calls
+`inputs` drains the stream in one run (`[., inputs]`, `reduce inputs as
+$x`, `input as $header | inputs`), and one that calls only `input` takes one
+document per run (`[., input]` pairs them up). A partial drain
+(`first(inputs)`), a second `input` in one run, or an `input` in a branch
+not taken leaves jq a different remainder than mirage. `--stream` reads whole
 documents and expands them, which matches jq except that jq's incremental
 parser splits the closing event of an input with no trailing newline into
 its own `-s` group. And `--seq` reads and writes the separator, but drops
-text before the first one silently where jq names it on stderr.
+text before the first one silently where jq names it on stderr. Error
+positions follow the same model, so a run that takes some other count than
+the idioms above reports a different position than jq, and `--stream`
+reports every event where its whole document ends, not where jq's
+incremental parser hands each one over. A halt ends the command wherever
+it is called, a `try` of the program's own included. Its message and code
+are read by running the program again with `halt` and `halt_error`
+redefined, which reads the clock again and which the program's own error
+handling can defeat: a halt whose message or choice rests on `now`
+reports what the rerun read, a halt inside a `try` inside a collector
+(`[try halt_error(2) catch .]`) reports status 5 with no message, and a
+halt that a `try ... catch empty` swallows can report the message and
+code of a later halt instead. A `.[]` program
+over a `.jsonl` file runs a line at a time as the file streams in, and
+there the first error ends the command with status 1 instead of going on.
 
 Not implemented, and reported as an unknown option rather than quietly
 ignored: `-C` (colorized output, which an agent would only have to strip

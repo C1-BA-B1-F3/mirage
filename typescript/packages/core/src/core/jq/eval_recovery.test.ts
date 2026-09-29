@@ -10,7 +10,13 @@ describe('jq evaluator recovery', () => {
     const poisonedRaw = vi.fn(() => {
       throw trap
     })
-    const healthyRaw = vi.fn(() => ({ stdout: '42', stderr: '', exitCode: 0 }))
+    // A healthy jq answers 42 and, having run to the end, prints the
+    // sentinel the program carries after itself.
+    const healthyRaw = vi.fn((_stdin: string, program: string) => ({
+      stdout: `42\n${/\{"__mirage_jq_done_\w+": true\}/.exec(program)?.[0] ?? ''}`,
+      stderr: '',
+      exitCode: 0,
+    }))
     vi.mocked(loadJq)
       .mockResolvedValueOnce({ raw: poisonedRaw } as unknown as Jq)
       .mockResolvedValueOnce({ raw: healthyRaw } as unknown as Jq)

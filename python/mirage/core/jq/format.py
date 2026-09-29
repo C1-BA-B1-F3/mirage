@@ -16,7 +16,7 @@ import json
 
 import orjson
 
-from mirage.core.jq.types import DEFAULT_INDENT, RS, JqOptions
+from mirage.core.jq.types import DEFAULT_INDENT, RS, JqError, JqHalt, JqOptions
 from mirage.types import JsonValue
 
 NUL = b"\x00"
@@ -89,3 +89,31 @@ def format_jq_output(outputs: list[JsonValue], opts: JqOptions) -> bytes:
         opts (JqOptions): resolved output options.
     """
     return b"".join(format_one(value, opts) for value in outputs)
+
+
+def error_report(position: str, error: JqError) -> str:
+    """jq's report of an error no `try` caught, which it writes to stderr.
+
+    A string message is printed the way C prints a string, so it ends at
+    a NUL.
+
+    Args:
+        position (str): where jq's reader stands.
+        error (JqError): the error.
+    """
+    if error.string:
+        text = error.text.split("\0", 1)[0]
+        return f"jq: error (at {position}): {text}\n"
+    return f"jq: error (at {position}) (not a string): {error.text}\n"
+
+
+def halt_report(halt: JqHalt) -> str:
+    """What jq writes to stderr for a halt: a string as it is, anything
+    else dumped on a line of its own, and nothing for `halt` or a null.
+
+    Args:
+        halt (JqHalt): the halt.
+    """
+    if halt.message is None:
+        return ""
+    return halt.message if halt.string else f"{halt.message}\n"

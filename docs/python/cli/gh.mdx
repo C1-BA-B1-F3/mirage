@@ -91,11 +91,23 @@ and issue and pull request `create` also accept `new`.
 Typed read commands accept `-R/--repo [HOST/]OWNER/REPO` where applicable.
 Most also accept `--json field1,field2` and `-q/--jq EXPRESSION`; `--jq`
 requires `--json`, so the selected field set stays explicit and bounded.
-List commands use `-L/--limit` and fetch as many REST pages as needed.
+List commands use `-L/--limit` and fetch as many pages as needed.
+
+`gh issue view`, `gh issue list`, `gh pr view` and `gh pr list` accept every
+`--json` field gh 2.85 does, and `gh repo view` and `gh repo list` every
+repository field. Like gh, they ask GraphQL for exactly the fields named and
+print each in gh's own shape, so `files`, `commits`, `reviews`,
+`statusCheckRollup` and `closedByPullRequestsReferences` need no fallback to
+`gh api`. `pr view` reads reviews, comments, closing issues and checks past
+their first 100, and `issue view` its comments and closing pull requests.
+`issue view` answers a pull request's number too, as gh does, with the
+fields only an issue has at their zero. The JSON prints compact, one value
+per line, the way gh prints it to anything but a terminal.
 
 ```bash
 gh issue list --state open --label bug --limit 20
 gh issue view 42 --json number,title,labels,url --jq '.url'
+gh pr view 17 --json files,commits,reviews --jq '.files[].path'
 gh pr checks 17 --json name,bucket,state
 gh repo list acme --json nameWithOwner,visibility
 gh release list --json tagName,isLatest
@@ -144,8 +156,8 @@ gh repo rename tools-v2 -R acme/tools
 
 The default `view` prints a `name:` line, a `description:` line, then `--`
 and the README, with the separator omitted when the repository has none.
-Use `--json` for a stable subset of repository fields or `gh api` for the
-complete REST object.
+Use `--json` for any of gh's repository fields or `gh api` for the complete
+REST object.
 
 `rename` takes the **new name** as the operand and the repository to
 rename on `-R`, which is the reverse of what the shape of the line
@@ -199,8 +211,9 @@ The rules are gh's own:
 - `--input FILE` sends that JSON document as the body and moves any fields
   to the query string. `--input -` reads stdin.
 - `-H/--header` adds or replaces request headers.
-- `--paginate` follows REST `Link` headers. Responses stream page by page;
-  `--slurp` wraps all pages in one array.
+- `--paginate` follows REST `Link` headers, and pages that are arrays print
+  as one array, joined the way gh joins them; `--slurp` wraps every page in
+  one array instead.
 - `--silent` suppresses response output without suppressing the request.
 - A call with no fields sends **no body at all**, so a bare `DELETE` is a
   bare `DELETE` rather than an empty JSON object with a content type. Some
@@ -211,8 +224,10 @@ The rules are gh's own:
 - A read (`GET`, `HEAD`, `OPTIONS`) leaves the mount's cache alone; only a
   write expires it.
 
-JSON responses are pretty-printed by default. `-q/--jq` evaluates in-process
-and renders strings raw, or the rest of the shell can consume stdout:
+A response prints as the server sent it, which is how gh prints it to
+anything but a terminal: GitHub's JSON arrives compact, with no newline at
+the end. `-q/--jq` evaluates in-process and renders strings raw, or the rest
+of the shell can consume stdout:
 
 ```bash
 gh api repos/acme/tools | jq -r .default_branch
@@ -229,7 +244,8 @@ gh api repos/acme/tools/issues --jq '.[].title'
 | Commands never prompt, open an editor, or launch a browser | agents need deterministic, noninteractive execution |
 | `pr create` requires explicit title, head, base, and body/body-file | there is no host checkout from which to infer or fill them |
 | `repo fork` omits clone/remote flags; release asset upload and workflow log/watch/YAML views are absent | those require host files, checkout state, or streaming surfaces not modeled here |
-| Typed `--json` exposes a stable REST-backed field subset | upstream's full field sets include GraphQL-only data; use `gh api` for arbitrary REST fields |
+| Outside `issue`, `pr` and `repo`, typed `--json` exposes a REST-backed field subset | upstream's full field sets include GraphQL-only data; use `gh api` for arbitrary REST fields |
 | `gh api --input` accepts JSON, and pagination follows REST `Link` headers only | arbitrary byte bodies and GraphQL cursor pagination are not implemented |
-| `gh api` pretty-prints JSON and has no `--include`/verbose/cache flags | output is optimized for agents and shell composition rather than wire debugging |
+| `gh api` has no `--include`/verbose/cache flags | output is optimized for agents and shell composition rather than wire debugging |
+| `gh api --slurp` also takes `--jq`, running it once on the array of pages | gh refuses the pair; the combination is the one-call way to filter every page together |
 | A `HOST/` repository prefix is accepted but never routes | one install is one account on one host; use another install for another host |

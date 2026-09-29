@@ -26,7 +26,8 @@ from mirage.commands.cli.refusal import (CLAP_EXIT, clap_missing_operands,
                                          leaf_refusal)
 from mirage.commands.cli.types import CLIDoors, CLIInvocation, CLISpec
 from mirage.commands.cli.walk import owns_argv, walk
-from mirage.commands.errors import CommandTimeoutError, UsageError
+from mirage.commands.errors import (CommandTimeoutError, PartialOutputError,
+                                    UsageError)
 from mirage.commands.spec import flag_kwarg_name
 from mirage.commands.spec.constants import HELP_OPTION
 from mirage.commands.spec.flag_view import FlagBag
@@ -461,7 +462,8 @@ async def handle_cli(
     except Exception as exc:
         # Any other thrown leaf error (an API RuntimeError, a ValueError)
         # becomes this command's IOResult, prefixed like GNU
-        # (prog: message), so the rest of the line keeps running.
+        # (prog: message), so the rest of the line keeps running, and
+        # what a leaf printed before it failed stays printed.
         # The write may already have landed when a leaf throws after its
         # request (a PUT whose --jq program fails filters a response the
         # service already applied); without the drop a github mount keeps
@@ -470,9 +472,10 @@ async def handle_cli(
             await drop_caches()
         err_stderr = f"{prog}: {exc}\n".encode()
         err_io = IOResult(exit_code=1, stderr=err_stderr)
-        return None, err_io, ExecutionNode(command=cmd_str,
-                                           exit_code=1,
-                                           stderr=err_stderr)
+        printed = exc.stdout if isinstance(exc, PartialOutputError) else None
+        return printed, err_io, ExecutionNode(command=cmd_str,
+                                              exit_code=1,
+                                              stderr=err_stderr)
     finally:
         active = False
     if out is None:

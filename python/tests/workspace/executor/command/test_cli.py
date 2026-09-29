@@ -18,7 +18,7 @@ import pytest
 from pydantic import BaseModel
 
 from mirage.commands.cli.types import CLIInvocation, CLISpec
-from mirage.commands.errors import CommandTimeoutError
+from mirage.commands.errors import CommandTimeoutError, PartialOutputError
 from mirage.commands.spec.parser import parse_command
 from mirage.commands.spec.types import CommandSpec, Operand, Option, UsageStyle
 from mirage.io import IOResult
@@ -59,6 +59,10 @@ def send_sync(inv: CLIInvocation[TokenConfig]):
 
 def raise_sync(inv: CLIInvocation[TokenConfig]):
     raise RuntimeError("sync boom")
+
+
+def raise_after_output(inv: CLIInvocation[TokenConfig]):
+    raise PartialOutputError("late boom", b"first\n")
 
 
 def make_sync_install(fn) -> CLIInstall:
@@ -127,6 +131,15 @@ async def test_a_sync_leaf_that_raises_lands_in_the_generic_arm():
                                    ["prog", "go"], SessionState("t"))
     assert io.exit_code == 1
     assert io.stderr == b"prog go: sync boom\n"
+    assert node.exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_a_leaf_that_fails_after_printing_keeps_what_it_printed():
+    stdout, io, node = await handle_cli(make_sync_install(raise_after_output),
+                                        ["prog", "go"], SessionState("t"))
+    assert await materialize(stdout) == b"first\n"
+    assert (io.exit_code, io.stderr) == (1, b"prog go: late boom\n")
     assert node.exit_code == 1
 
 

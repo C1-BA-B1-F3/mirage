@@ -15,8 +15,12 @@
 import type { JsonValue, KitRoute } from '../kit/typescript/index.ts'
 import { API_PREFIXES, DEFAULT_LOGIN } from './config.ts'
 import type { C } from './config.ts'
-import { commitJson } from './wire.ts'
+import { PROJECTS_CLASSIC_GONE, commitJson, nodeId, ownerNode } from './wire.ts'
 import { createReposAllowed, initRepo } from './seed.ts'
+import { commentConnection, issueConnection, issueNode, issueRow } from './issues.ts'
+import type { IssueRow, IssuesArgs } from './issues.ts'
+import { pullRequestConnection, pullRequestNode, pullRow } from './pulls.ts'
+import type { PullRequestsArgs, PullRow } from './pulls.ts'
 import {
   addBranch,
   allRepos,
@@ -70,16 +74,6 @@ export function repoJson(repo: RepoRow): JsonValue {
 // Every date the fresh-repository defaults report, unless a fixture states one.
 const REPO_DATE = '2026-01-01T00:00:00Z'
 
-/** A GraphQL global id in the vendor's base64 `<type><id>` spelling. */
-function nodeId(type: string, key: string | number): string {
-  return Buffer.from(`${type}${String(key)}`).toString('base64')
-}
-
-/** The GraphQL `owner` of a repository, a user or an organization. */
-function ownerNode(login: string): Record<string, JsonValue> {
-  return { id: nodeId(login === DEFAULT_LOGIN ? '04:User' : '012:Organization', login), login }
-}
-
 /**
  * The GraphQL `Repository` for one row: the same facts the REST object reports,
  * in GraphQL's spelling, plus what GraphQL alone exposes. A fixture's
@@ -114,7 +108,7 @@ export async function repositoryNode(
     const row = (await allRepos(ctx.db, ctx.tenant)).find((each) => each.seq === parentSeq)
     return row === undefined ? null : repositoryNode(ctx, row)
   }
-  return {
+  const node: Record<string, unknown> = {
     id: nodeId('010:Repository', repo.seq),
     name: repo.name,
     nameWithOwner: repo.fullName,
@@ -145,12 +139,6 @@ export async function repositoryNode(
     forkCount: count('forks_count'),
     stargazerCount: count('stargazers_count'),
     watchers: { totalCount: count('watchers_count') },
-    issues: async () => ({
-      totalCount: await ctx.db.githubIssue.count({ where: { ...where, state: 'open' } }),
-    }),
-    pullRequests: async () => ({
-      totalCount: await ctx.db.githubPull.count({ where: { ...where, state: 'open' } }),
-    }),
     codeOfConduct: null,
     contactLinks: [],
     defaultBranchRef: { name: repo.defaultBranch },
@@ -195,13 +183,44 @@ export async function repositoryNode(
     assignableUsers: { nodes: [user] },
     mentionableUsers: { nodes: [user] },
     projects: () => {
-      throw new Error(
-        'Projects (classic) is being deprecated in favor of the new Projects experience, ' +
-          'see: https://github.blog/changelog/2024-05-23-sunset-notice-projects-classic/.',
-      )
+      throw new Error(PROJECTS_CLASSIC_GONE)
     },
     projectsV2: { nodes: [] },
   }
+  // Issues own the comments on a pull request as on an issue.
+  const pull = async (row: PullRow): Promise<Record<string, unknown>> => ({
+    ...(await pullRequestNode(ctx, repo, row, node)),
+    __typename: 'PullRequest',
+    comments: commentConnection(ctx, repo, row.number),
+  })
+  const issue = (row: IssueRow): Promise<Record<string, unknown>> => issueNode(ctx, repo, row, node)
+  return Object.assign(node, {
+    issueOrPullRequest: async ({ number }: { number: number }) => {
+      const found = await issueRow(ctx.db, ctx.tenant, repo, number)
+      if (found !== null) return issue(found)
+      const row = await pullRow(ctx.db, ctx.tenant, repo, number)
+      if (row !== null) return pull(row)
+      throw new Error(
+        `Could not resolve to an issue or pull request with the number of ${String(number)}.`,
+      )
+    },
+    issue: async ({ number }: { number: number }) => {
+      const found = await issueRow(ctx.db, ctx.tenant, repo, number)
+      if (found === null) {
+        throw new Error(`Could not resolve to an Issue with the number of ${String(number)}.`)
+      }
+      return issue(found)
+    },
+    issues: (args: IssuesArgs) => issueConnection(ctx, repo, args, issue),
+    pullRequest: async ({ number }: { number: number }) => {
+      const row = await pullRow(ctx.db, ctx.tenant, repo, number)
+      if (row === null) {
+        throw new Error(`Could not resolve to a PullRequest with the number of ${String(number)}.`)
+      }
+      return pull(row)
+    },
+    pullRequests: (args: PullRequestsArgs) => pullRequestConnection(ctx, repo, args, pull),
+  })
 }
 
 /** The value a GraphQL `RepositoryOrder` field sorts one repository by. */
@@ -237,8 +256,11 @@ export async function ownedRepositories(
   login: string,
 ): Promise<Record<string, unknown>> {
   const owned = (await allRepos(ctx.db, ctx.tenant)).filter((row) => row.owner === login)
+  const user = login === DEFAULT_LOGIN
   return {
-    login,
+    __typename: user ? 'User' : 'Organization',
+    ...ownerNode(login),
+    ...(user ? { name: login } : {}),
     repositories: async ({ first, after, privacy, isFork, orderBy }: RepositoriesArgs) => {
       const rows = owned
         .filter((row) => {

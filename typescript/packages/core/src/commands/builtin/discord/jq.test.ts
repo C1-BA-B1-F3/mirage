@@ -53,7 +53,7 @@ async function runJq(
 }
 
 describe('discord jq', () => {
-  it('extracts .content from jsonl messages with .[].content', async () => {
+  it('extracts .content from each jsonl message', async () => {
     const idx = new RAMIndexCacheStore()
     await seedGuild(idx, '/mnt/discord', 'My Server__G1', 'G1')
     await seedChannel(idx, '/mnt/discord', 'My Server__G1', 'general__C1', 'C1', {
@@ -80,7 +80,7 @@ describe('discord jq', () => {
           ),
         }),
       ],
-      ['.[].content'],
+      ['.content'],
       { raw_output: true },
       { index: idx, transport },
     )

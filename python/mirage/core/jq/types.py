@@ -12,8 +12,9 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import Any
 
 from mirage.types import JsonValue
@@ -24,6 +25,43 @@ DEFAULT_INDENT = 2
 # it reports before it has read any input at all.
 STDIN_NAME = "<stdin>"
 UNKNOWN_POSITION = "<unknown>"
+
+
+class NoValue(Enum):
+    """jq's `jv_invalid()` where a value could stand: nothing yet, which
+    is not the same as null."""
+
+    TOKEN = auto()
+
+
+NO_VALUE = NoValue.TOKEN
+
+
+@dataclass(frozen=True, slots=True)
+class JqParseError:
+    """jq's parser refusing its input: the message, with the line and the
+    column it had reached, as jq's report words it.
+
+    Args:
+        message (str): e.g. ``Unfinished JSON term at EOF at line 1,
+            column 3``.
+    """
+
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class InputSource:
+    """One input of the stream jq reads: a file operand or stdin.
+
+    Args:
+        name (str): the input as jq reports it, the operand as the command
+            line spelled it or ``<stdin>``.
+        chunks (AsyncIterator[bytes]): its bytes.
+    """
+
+    name: str
+    chunks: AsyncIterator[bytes]
 
 
 @dataclass(frozen=True, slots=True)

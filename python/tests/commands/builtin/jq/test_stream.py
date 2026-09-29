@@ -15,9 +15,6 @@
 import asyncio
 import json
 
-import pytest
-
-from mirage.core.jq import is_streamable_jsonl_expr, parse_json_docs
 from mirage.core.ram.read import read_bytes
 from mirage.observe.context import RecordingScope
 from mirage.types import MountMode, PathSpec
@@ -25,50 +22,52 @@ from mirage.vfs.disk.disk import DiskVFS
 from mirage.vfs.ram import RAMVFS
 from mirage.workspace import Workspace
 
-from .conftest import (SAMPLE_JSONL, collect, jq, jq_all, mem_ws, run_raw,
-                       write_to_backend)
+from .conftest import (SAMPLE_JSONL, collect, jq_all, jq_slurp, jq_slurp_all,
+                       mem_ws, run_raw, write_to_backend)
 
 
 class TestJqJsonl:
+    """A JSON Lines file is a stream of documents: the program runs on each
+    line unchanged, as jq runs it, and `-s` collects the lines into one
+    array."""
 
     def test_jsonl_file_dot(self, backend):
         write_to_backend(backend, "/tmp/data.jsonl", SAMPLE_JSONL)
-        result = jq(backend, "/tmp/data.jsonl", ".")
-        assert isinstance(result, list)
-        assert len(result) == 3
-        assert result[0]["name"] == "alice"
+        result = jq_all(backend, "/tmp/data.jsonl", ".")
+        assert [row["name"] for row in result] == ["alice", "bob", "carol"]
 
-    def test_jsonl_file_length(self, backend):
+    def test_jsonl_file_length_is_each_lines_own(self, backend):
         write_to_backend(backend, "/tmp/data.jsonl", SAMPLE_JSONL)
-        result = jq(backend, "/tmp/data.jsonl", "length")
-        assert result == 3
+        assert jq_all(backend, "/tmp/data.jsonl", "length") == [2, 2, 2]
+        assert jq_slurp(backend, "/tmp/data.jsonl", "length") == 3
 
     def test_jsonl_file_select(self, backend):
         write_to_backend(backend, "/tmp/data.jsonl", SAMPLE_JSONL)
-        result = jq_all(backend, "/tmp/data.jsonl", ".[] | select(.age > 28)")
-        assert len(result) == 2
-        assert result[0]["name"] == "alice"
-        assert result[1]["name"] == "carol"
+        result = jq_all(backend, "/tmp/data.jsonl", "select(.age > 28)")
+        assert [row["name"] for row in result] == ["alice", "carol"]
+        slurped = jq_slurp_all(backend, "/tmp/data.jsonl",
+                               ".[] | select(.age > 28)")
+        assert slurped == result
 
-    def test_jsonl_file_map(self, backend):
+    def test_jsonl_file_map_over_the_slurped_lines(self, backend):
         write_to_backend(backend, "/tmp/data.jsonl", SAMPLE_JSONL)
-        result = jq(backend, "/tmp/data.jsonl", "map(.name)")
+        result = jq_slurp(backend, "/tmp/data.jsonl", "map(.name)")
         assert result == ["alice", "bob", "carol"]
 
-    def test_jsonl_file_iteration(self, backend):
+    def test_jsonl_iteration_walks_each_lines_values(self, backend):
         write_to_backend(backend, "/tmp/data.jsonl", SAMPLE_JSONL)
-        result = jq_all(backend, "/tmp/data.jsonl", ".[] | .name")
-        assert result == ["alice", "bob", "carol"]
+        assert jq_all(backend, "/tmp/data.jsonl",
+                      ".[]") == ["alice", 30, "bob", 25, "carol", 35]
+        assert jq_all(backend, "/tmp/data.jsonl",
+                      ".name") == ["alice", "bob", "carol"]
 
     def test_ndjson_extension(self, backend):
         write_to_backend(backend, "/tmp/data.ndjson", SAMPLE_JSONL)
-        result = jq(backend, "/tmp/data.ndjson", "length")
-        assert result == 3
+        assert jq_all(backend, "/tmp/data.ndjson", "length") == [2, 2, 2]
 
-    def test_json_extension_not_jsonl(self, backend):
+    def test_the_extension_does_not_decide_how_a_file_reads(self, backend):
         write_to_backend(backend, "/tmp/data.json", SAMPLE_JSONL)
-        with pytest.raises(json.JSONDecodeError):
-            jq(backend, "/tmp/data.json", ".")
+        assert jq_all(backend, "/tmp/data.json", "length") == [2, 2, 2]
 
     def test_jsonl_stdin_is_a_value_stream(self):
         # jq applies the program to each document on stdin, so `length` is
@@ -87,13 +86,25 @@ class TestJqJsonl:
 
     def test_jsonl_memory_backend(self):
         ws = mem_ws({"/data.jsonl": SAMPLE_JSONL})
-        stdout, _ = run_raw(ws, "jq '.[] | .name' /data/data.jsonl")
-        raw = collect(stdout).decode()
-        result = [
-            json.loads(line) for line in raw.strip().splitlines()
-            if line.strip()
+        stdout, _ = run_raw(ws, "jq -c '.[]' /data/data.jsonl")
+        assert collect(stdout) == b'"alice"\n30\n"bob"\n25\n"carol"\n35\n'
+        stdout, _ = run_raw(ws, "jq '.name' /data/data.jsonl")
+        assert collect(stdout) == b'"alice"\n"bob"\n"carol"\n'
+
+    def test_jsonl_errors_per_line_and_goes_on(self):
+        ws = mem_ws({"/data.jsonl": SAMPLE_JSONL})
+        stdout, io = run_raw(ws, "jq '.[] | .name' /data/data.jsonl")
+        assert collect(stdout) == b""
+        assert io.exit_code == 5
+        stderr = asyncio.run(io.stderr_str())
+        assert stderr.splitlines() == [
+            'jq: error (at /data/data.jsonl:1): Cannot index string with '
+            'string ("name")',
+            'jq: error (at /data/data.jsonl:2): Cannot index string with '
+            'string ("name")',
+            'jq: error (at /data/data.jsonl:3): Cannot index string with '
+            'string ("name")',
         ]
-        assert result == ["alice", "bob", "carol"]
 
     def test_jsonl_disk_backend(self, tmp_path):
         (tmp_path / "data.jsonl").write_bytes(SAMPLE_JSONL)
@@ -106,33 +117,6 @@ class TestJqJsonl:
         raw = collect(stdout).decode().strip()
         results = [json.loads(line) for line in raw.splitlines() if line]
         assert results == [2, 2, 2]
-
-
-class TestJqStreamableDetection:
-
-    def test_array_iter_is_streamable(self):
-        assert is_streamable_jsonl_expr(".[]") is True
-
-    def test_array_iter_pipe_is_streamable(self):
-        assert is_streamable_jsonl_expr(".[] | .name") is True
-
-    def test_array_iter_select_is_streamable(self):
-        assert is_streamable_jsonl_expr('.[] | select(.x > 1)') is True
-
-    def test_length_not_streamable(self):
-        assert is_streamable_jsonl_expr("length") is False
-
-    def test_map_not_streamable(self):
-        assert is_streamable_jsonl_expr("map(.x)") is False
-
-    def test_sort_not_streamable(self):
-        assert is_streamable_jsonl_expr("sort") is False
-
-    def test_dot_not_streamable(self):
-        assert is_streamable_jsonl_expr(".") is False
-
-    def test_first_not_streamable(self):
-        assert is_streamable_jsonl_expr("first") is False
 
 
 class TestJqStreamingVerification:
@@ -154,7 +138,7 @@ class TestJqStreamingVerification:
     def test_jsonl_streaming_produces_correct_output(self):
         data = self._make_large_jsonl(50)
         ws = self._ws_with_jsonl(data)
-        stdout, _ = run_raw(ws, "jq '.[] | .name' /m/data.jsonl")
+        stdout, _ = run_raw(ws, "jq '.name' /m/data.jsonl")
         raw = collect(stdout).decode()
         lines = [x for x in raw.strip().splitlines() if x.strip()]
         assert len(lines) == 50
@@ -191,7 +175,7 @@ class TestJqStreamingVerification:
         ws = self._ws_with_jsonl(data)
         # -c so each surviving document is one line; the streaming path
         # pretty-prints by default, like jq itself.
-        stdout, _ = run_raw(ws, "jq -c '.[] | select(.id > 95)' /m/data.jsonl")
+        stdout, _ = run_raw(ws, "jq -c 'select(.id > 95)' /m/data.jsonl")
         raw = collect(stdout).decode()
         lines = [json.loads(x) for x in raw.strip().splitlines() if x.strip()]
         assert len(lines) == 4
@@ -200,10 +184,10 @@ class TestJqStreamingVerification:
     def test_jsonl_streaming_pretty_prints_by_default(self):
         data = self._make_large_jsonl(3)
         ws = self._ws_with_jsonl(data)
-        stdout, _ = run_raw(ws, "jq '.[] | select(.id > 0)' /m/data.jsonl")
+        stdout, _ = run_raw(ws, "jq 'select(.id > 0)' /m/data.jsonl")
         raw = collect(stdout).decode()
         assert raw.startswith("{\n  ")
-        assert len(parse_json_docs(raw.encode())) == 2
+        assert raw.count("\n}\n") == 2
 
     def test_disk_jsonl_streaming(self, tmp_path):
         data = self._make_large_jsonl(50)
@@ -213,7 +197,7 @@ class TestJqStreamingVerification:
             {"/d": (disk, MountMode.WRITE)},
             mode=MountMode.WRITE,
         )
-        stdout, _ = run_raw(ws, "jq '.[] | .id' /d/data.jsonl")
+        stdout, _ = run_raw(ws, "jq '.id' /d/data.jsonl")
         raw = collect(stdout).decode()
         lines = [x for x in raw.strip().splitlines() if x.strip()]
         assert len(lines) == 50
@@ -245,11 +229,21 @@ class TestJqPlanDryRun:
         assert result.network_read_low == 0
         assert result.network_read_high == len(data)
 
-    def test_plan_jsonl_non_streamable_full(self):
+    def test_plan_jsonl_any_program_runs_line_by_line(self):
         lines = [json.dumps({"x": i}) for i in range(100)]
         data = ("\n".join(lines) + "\n").encode()
         ws = self._plan_ws("data.jsonl", data)
         result = asyncio.run(
             ws.shell("jq length /m/data.jsonl", provision=True))
-        assert result.network_read_low == len(data)
+        assert result.network_read_low == 0
         assert result.network_read_high == len(data)
+
+    def test_plan_jsonl_slurp_reads_everything(self):
+        lines = [json.dumps({"x": i}) for i in range(100)]
+        data = ("\n".join(lines) + "\n").encode()
+        ws = self._plan_ws("data.jsonl", data)
+        for command in ("jq -s length /m/data.jsonl",
+                        "jq -n '[inputs] | length' /m/data.jsonl"):
+            result = asyncio.run(ws.shell(command, provision=True))
+            assert result.network_read_low == len(data)
+            assert result.network_read_high == len(data)

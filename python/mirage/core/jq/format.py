@@ -13,11 +13,14 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import json
+import logging
 
 import orjson
 
 from mirage.core.jq.types import DEFAULT_INDENT, RS, JqError, JqHalt, JqOptions
 from mirage.types import JsonValue
+
+logger = logging.getLogger(__name__)
 
 NUL = b"\x00"
 NEWLINE = b"\n"
@@ -30,7 +33,8 @@ def _dumps(value: JsonValue, opts: JqOptions) -> bytes:
     orjson serves the two shapes it can express (compact and the default
     two-space indent, either one with sorted keys); a tab, another
     width, or ASCII escaping falls back to the stdlib encoder, which
-    renders numbers and separators identically.
+    renders numbers and separators identically. So does an integer past
+    64 bits, which orjson cannot write and jq prints digit for digit.
 
     Args:
         value (object): the value to render.
@@ -41,7 +45,10 @@ def _dumps(value: JsonValue, opts: JqOptions) -> bytes:
         option = orjson.OPT_SORT_KEYS if opts.sort_keys else 0
         if not opts.compact:
             option |= orjson.OPT_INDENT_2
-        return orjson.dumps(value, option=option)
+        try:
+            return orjson.dumps(value, option=option)
+        except orjson.JSONEncodeError as exc:
+            logger.debug("jq: output past orjson, written by json: %s", exc)
     if opts.compact or opts.indent == 0:
         text = json.dumps(value,
                           ensure_ascii=opts.ascii_output,
@@ -70,14 +77,16 @@ def format_one(value: JsonValue, opts: JqOptions) -> bytes:
         value (object): the value the program emitted.
         opts (JqOptions): resolved output options.
     """
+    raw = value if opts.raw_output and isinstance(value, str) else None
     # -a beats -r: jq quotes and escapes a string under --ascii-output
     # even when raw output was asked for.
-    if opts.raw_output and not opts.ascii_output and isinstance(value, str):
-        body = value.encode()
+    if raw is not None and not opts.ascii_output:
+        body = raw.encode()
     else:
         body = _dumps(value, opts)
-    # RFC 7464 puts the separator before the value, not after it.
-    prefix = RS_BYTES if opts.seq else b""
+    # RFC 7464 puts the separator before the value, not after it, and jq
+    # writes none before a string it prints raw, quoted by -a or not.
+    prefix = RS_BYTES if opts.seq and raw is None else b""
     return prefix + body + _terminator(opts)
 
 

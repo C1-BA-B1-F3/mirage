@@ -5,6 +5,7 @@ from mirage.commands.builtin.generic.jq import jq
 from mirage.commands.builtin.generic.patch import patch
 from mirage.commands.builtin.generic.tsort import tsort
 from mirage.commands.builtin.generic.unzip import unzip
+from mirage.io.types import materialize
 from mirage.types import ContentType, FileStat, FileType, PathSpec
 from mirage.utils.key_prefix import mount_key
 
@@ -83,21 +84,23 @@ async def test_tsort_stdin():
 @pytest.mark.asyncio
 async def test_jq_simple_object():
     rb, _, rs, _, _ = _make_backend({"a.json": b'{"name":"alice","age":30}'})
-    out, _ = await jq([_spec("a.json")],
-                      ".name",
-                      read_bytes=rb,
-                      read_stream=rs)
+    source, _ = await jq([_spec("a.json")],
+                         ".name",
+                         read_bytes=rb,
+                         read_stream=rs)
+    out = await materialize(source)
     assert b'"alice"' in out
 
 
 @pytest.mark.asyncio
 async def test_jq_raw_output():
     rb, _, rs, _, _ = _make_backend({"a.json": b'{"name":"alice"}'})
-    out, _ = await jq([_spec("a.json")],
-                      ".name",
-                      read_bytes=rb,
-                      read_stream=rs,
-                      raw_output=True)
+    source, _ = await jq([_spec("a.json")],
+                         ".name",
+                         read_bytes=rb,
+                         read_stream=rs,
+                         raw_output=True)
+    out = await materialize(source)
     assert b"alice" in out
     assert b'"' not in out
 
@@ -105,21 +108,24 @@ async def test_jq_raw_output():
 @pytest.mark.asyncio
 async def test_jq_stdin():
     rb, _, rs, _, _ = _make_backend({})
-    out, _ = await jq([],
-                      ".x",
-                      read_bytes=rb,
-                      read_stream=rs,
-                      stdin=b'{"x":42}')
+    source, _ = await jq([],
+                         ".x",
+                         read_bytes=rb,
+                         read_stream=rs,
+                         stdin=b'{"x":42}')
+    out = await materialize(source)
     assert b"42" in out
 
 
 @pytest.mark.asyncio
 async def test_jq_missing_expression_defaults_dot():
     rb, _, rs, _, _ = _make_backend({})
-    out, io = await jq([], read_bytes=rb, read_stream=rs, stdin=b'{"x":42}')
+    source, io = await jq([], read_bytes=rb, read_stream=rs, stdin=b'{"x":42}')
+    out = await materialize(source)
     assert b"42" in out
     assert io.exit_code == 0
-    out, io = await jq([], read_bytes=rb, read_stream=rs)
+    source, io = await jq([], read_bytes=rb, read_stream=rs)
+    out = await materialize(source)
     assert out == b""
     assert io.exit_code == 0
 
@@ -127,7 +133,8 @@ async def test_jq_missing_expression_defaults_dot():
 @pytest.mark.asyncio
 async def test_jq_no_input():
     rb, _, rs, _, _ = _make_backend({})
-    out, io = await jq([], ".x", read_bytes=rb, read_stream=rs)
+    source, io = await jq([], ".x", read_bytes=rb, read_stream=rs)
+    out = await materialize(source)
     assert out == b""
     assert io.exit_code == 0
 

@@ -21,6 +21,35 @@ import {
   STRUCTURAL_TOKENS,
 } from './constants.ts'
 
+/** Locate an open quote only in erroneous AST regions, leaving complete
+ * strings, comments and heredoc bodies opaque. Mirrors Python. */
+export function findUnterminatedQuote(node: TSNodeLike): string | null {
+  if (node.isMissing && (node.type === "'" || node.type === '"')) return node.type
+  if (node.type === 'ansi_c_string') {
+    const before = node.text.slice(0, -1)
+    const slashes = /\\+$/.exec(before)?.[0].length ?? 0
+    return slashes % 2 !== 0 ? "'" : null
+  }
+  for (const child of node.children) {
+    const quote = findUnterminatedQuote(child)
+    if (quote !== null) return quote
+  }
+  if (node.type === 'ERROR') {
+    if (node.children.length === 0 && node.text.startsWith("'")) return "'"
+    if (node.children.filter((child) => child.type === '"').length % 2 !== 0) return '"'
+  }
+  return null
+}
+
+export function syntaxErrorMessage(offending: string, node: TSNodeLike): string {
+  const quote = findUnterminatedQuote(node)
+  if (quote !== null) return 'mirage: unexpected EOF while looking for matching `' + quote + "'\n"
+  const snippet = offending.trim()
+  return snippet.length > 0
+    ? `mirage: syntax error near '${snippet}'\n`
+    : 'mirage: syntax error in command\n'
+}
+
 // Locate a backtick substitution that is never closed. tree-sitter
 // happily parses "echo `echo a" as a complete command, so the region has
 // to be scanned directly. Quoting follows the shell reader: single quotes
@@ -174,7 +203,7 @@ export function findSyntaxError(
   }
   const stray = strayCaseTerminator(node)
   if (stray !== null) return stray
-  if (!node.hasError) return null
+  if (!node.hasError) return findUnterminatedQuote(node)
   let previous: TSNodeLike | null = null
   for (const child of node.children) {
     // Bash permits unquoted spaces in associative subscripts. The grammar

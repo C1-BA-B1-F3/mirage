@@ -123,10 +123,29 @@ it.each(missingQuoteCases.cases.filter((c) => c.expect.exit === 2).map((c) => c.
       const io = await ws.shell(command)
       expect(io.exitCode).toBe(2)
       expect(new TextDecoder().decode(io.stdout)).toBe('')
-      expect(new TextDecoder().decode(io.stderr)).toContain('syntax error')
+      expect(new TextDecoder().decode(io.stderr)).toContain(
+        'unexpected EOF while looking for matching',
+      )
       expect((await ws.shell('test -e /data/unexpected')).exitCode).toBe(1)
     } finally {
       await ws.close()
     }
   },
 )
+
+it.each([
+  ['echo "it\'s fine"', "it's fine\n"],
+  ['echo ok # unterminated \'"', 'ok\n'],
+  ["cat <<'EOF'\n'\"\nEOF", '\'"\n'],
+  ["echo $'closed\\''", "closed'\n"],
+])('literal quotes are not unclosed: %s', async (command, expected) => {
+  const ws = new Workspace({ '/data': new RAMVFS() }, { shellParser: parser })
+  try {
+    const io = await ws.shell(command)
+    expect(io.exitCode).toBe(0)
+    expect(new TextDecoder().decode(io.stdout)).toBe(expected)
+    expect(new TextDecoder().decode(io.stderr)).toBe('')
+  } finally {
+    await ws.close()
+  }
+})

@@ -17,6 +17,7 @@ import { FlagView } from '../../spec/flag_view.ts'
 import { mountKey, mountPrefixOf, underPath } from '../../../utils/key_prefix.ts'
 import { IOResult, type ByteSource } from '../../../io/types.ts'
 import {
+  LINK_TARGET_KEY,
   FileStat,
   FileType,
   PathSpec,
@@ -49,6 +50,7 @@ import { CycleError, respellOne, posixNormpath } from '../../../utils/path.ts'
 import { formatRecords } from '../utils/output.ts'
 import { compareCodePoints } from '../../../utils/sort.ts'
 import { contentSize } from '../../../utils/stat_view.ts'
+import { escapeName } from '../../../utils/quote.ts'
 import { charWidth } from '../../../utils/width.ts'
 
 type Readdir = (p: PathSpec) => Promise<string[]>
@@ -68,6 +70,7 @@ interface LsWarning {
 }
 
 interface WalkOpts {
+  escape: boolean
   all: boolean
   sortBy: SortBy
   reverse: boolean
@@ -245,6 +248,7 @@ export function uriEscape(path: string): string {
 }
 
 interface RenderOpts {
+  escape: boolean
   long: boolean
   human: boolean
   indicator: LsIndicator
@@ -260,11 +264,15 @@ function appendListing(
   targets: readonly (FileStat | null)[] = [],
 ): void {
   const names =
-    hrefs === null
+    hrefs === null && !render.escape
       ? null
       : stats.map((s, i) => {
-          const linked = hyperlinked(s.name, hrefs[i] ?? '')
-          return render.long ? lsName(s.with({ name: linked })) : linked
+          let name = render.escape ? escapeName(s.name) : s.name
+          if (hrefs !== null) name = hyperlinked(name, hrefs[i] ?? '')
+          const target = s.extra[LINK_TARGET_KEY]
+          if (render.long && s.type === FileType.SYMLINK && typeof target === 'string')
+            name += ' -> ' + (render.escape ? escapeName(target) : target)
+          return name
         })
   if (render.long) {
     const marked = longNames(stats, names, render.indicator, targets)
@@ -400,13 +408,21 @@ function primaryValue(entry: FileStat, sortBy: SortBy, timeKind: LsTimeKind): st
 // included, which is why callers fold the sign into this comparator instead of
 // reversing the finished array. -X and --sort=width are stable sorts over
 // the name order too; -v is gnulib's version order.
-function compareStats(a: FileStat, b: FileStat, sortBy: SortBy, timeKind: LsTimeKind): number {
+function compareStats(
+  a: FileStat,
+  b: FileStat,
+  sortBy: SortBy,
+  timeKind: LsTimeKind,
+  escape = false,
+): number {
   if (sortBy === 'version') return filevercmp(a.name, b.name)
   if (sortBy === 'extension') {
     const byExt = compareCodePoints(extensionOf(a.name), extensionOf(b.name))
     if (byExt !== 0) return byExt
   } else if (sortBy === 'width') {
-    const byWidth = nameWidth(a.name) - nameWidth(b.name)
+    const byWidth =
+      nameWidth(escape ? escapeName(a.name) : a.name) -
+      nameWidth(escape ? escapeName(b.name) : b.name)
     if (byWidth !== 0) return byWidth
   } else if (sortBy !== 'name' && sortBy !== 'none') {
     const av = primaryValue(a, sortBy, timeKind)
@@ -428,13 +444,14 @@ export function sortStats(
   reverse: boolean,
   timeKind: LsTimeKind = 'mtime',
   groupDirsFirst = false,
+  escape = false,
 ): FileStat[] {
   let ordered: FileStat[]
   if (sortBy === 'none') {
     ordered = [...stats]
   } else {
     const sign = reverse ? -1 : 1
-    ordered = [...stats].sort((a, b) => sign * compareStats(a, b, sortBy, timeKind))
+    ordered = [...stats].sort((a, b) => sign * compareStats(a, b, sortBy, timeKind, escape))
   }
   if (groupDirsFirst && sortBy !== 'none') {
     ordered = [
@@ -685,7 +702,14 @@ async function probeOperand(
     const link = linkRow(path, opts.links)
     if (link !== null) return { path, row: link, groups: [] }
   }
-  const entries = sortStats(stats, opts.sortBy, opts.reverse, opts.timeKind, opts.groupDirsFirst)
+  const entries = sortStats(
+    stats,
+    opts.sortBy,
+    opts.reverse,
+    opts.timeKind,
+    opts.groupDirsFirst,
+    opts.escape,
+  )
   const groups: [PathSpec, FileStat[]][] = [[path, entries]]
   if (opts.recursive) {
     for (const s of entries) {
@@ -737,6 +761,7 @@ async function sortOperands(
   reverse: boolean,
   stat: Stat,
   timeKind: LsTimeKind,
+  escape: boolean,
 ): Promise<Operand[]> {
   const keyed: { key: FileStat; operand: Operand }[] = []
   for (const operand of operands) {
@@ -744,7 +769,7 @@ async function sortOperands(
   }
   if (sortBy === 'none') return keyed.map((k) => k.operand)
   const sign = reverse ? -1 : 1
-  keyed.sort((a, b) => sign * compareStats(a.key, b.key, sortBy, timeKind))
+  keyed.sort((a, b) => sign * compareStats(a.key, b.key, sortBy, timeKind, escape))
   return keyed.map((k) => k.operand)
 }
 
@@ -764,6 +789,7 @@ export interface LsFlags {
   readonly timeKind: LsTimeKind
   readonly groupDirsFirst: boolean
   readonly columns: LsColumns
+  readonly escape: boolean
   readonly hyperlink: boolean
 }
 
@@ -1034,6 +1060,7 @@ export function parseFlags(fl: FlagView): LsFlags {
     groupDirsFirst: fl.asBool('group_directories_first'),
     columns,
     hyperlink: hyperlinkFlag(fl),
+    escape: fl.asBool('escape'),
   })
 }
 
@@ -1102,7 +1129,14 @@ export async function lsGeneric(
   const listDirItself = flags.listDir
   const links = opts.ns?.links ?? null
   const identity = identityOf(opts)
-  const render: RenderOpts = { long, human, indicator, identity, columns: flags.columns }
+  const render: RenderOpts = {
+    long,
+    human,
+    indicator,
+    identity,
+    columns: flags.columns,
+    escape: flags.escape,
+  }
   const warnings: LsWarning[] = []
   const lines: string[] = []
 
@@ -1146,6 +1180,7 @@ export async function lsGeneric(
             reverse,
             timeKind,
             groupDirsFirst,
+            flags.escape,
           )
         : collected.map((c) => c.row)
     const rowPaths = rows.map((r) => byRow.get(r) ?? '')
@@ -1160,6 +1195,7 @@ export async function lsGeneric(
   }
 
   const walkOpts: WalkOpts = {
+    escape: flags.escape,
     all,
     sortBy,
     reverse,
@@ -1179,7 +1215,9 @@ export async function lsGeneric(
     probed.push(await probeOperand(readdir, stat, p, walkOpts, warnings, true))
   }
   const operands =
-    probed.length > 1 ? await sortOperands(probed, sortBy, reverse, stat, timeKind) : probed
+    probed.length > 1
+      ? await sortOperands(probed, sortBy, reverse, stat, timeKind, flags.escape)
+      : probed
 
   // GNU names every listed directory once there is more than one operand
   // (or under -R); a lone directory operand is listed bare.
@@ -1224,11 +1262,19 @@ export async function lsGeneric(
           }
           dots.push(row)
         }
-        entries = sortStats([...dots, ...entries], sortBy, reverse, timeKind, groupDirsFirst)
+        entries = sortStats(
+          [...dots, ...entries],
+          sortBy,
+          reverse,
+          timeKind,
+          groupDirsFirst,
+          flags.escape,
+        )
       }
       if (headed) {
         if (printed) lines.push('')
-        lines.push(`${respellOne(dirSpec.virtual, operand.path.virtual, operand.path.rawPath)}:`)
+        const header = respellOne(dirSpec.virtual, operand.path.virtual, operand.path.rawPath)
+        lines.push(`${flags.escape ? escapeName(header) : header}:`)
       }
       // GNU 9.7 prints allocated blocks; VFS has no allocation metadata.
       if (long) lines.push(entries.length > 0 ? 'total ?' : 'total 0')

@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  escapeName,
   needsShellQuote,
   quotesOperands,
   SHELL_QUOTED_COMMANDS,
@@ -167,4 +168,16 @@ describe('quotesOperands', () => {
       expect(SHELL_QUOTED_COMMANDS.has(name), name).toBe(false)
     }
   })
+})
+
+it.each([
+  ['a b', 'a\\ b'],
+  ['back\\slash', 'back\\\\slash'],
+  ['\u0007\b\t\n\u000b\f\r\u001b\u007f', '\\a\\b\\t\\n\\v\\f\\r\\033\\177'],
+  ['\u0085\u2028', '\\302\\205\\342\\200\\250'],
+  ['\u00e9\ud83c\udf0d\u00a0', '\u00e9\ud83c\udf0d\u00a0'],
+  ['quote\'"', 'quote\'"'],
+  ['\udcff', '\\377'],
+])('GNU ls escape names: %s', (name, expected) => {
+  expect(escapeName(name)).toBe(expected)
 })

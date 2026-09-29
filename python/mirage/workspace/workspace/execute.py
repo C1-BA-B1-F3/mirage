@@ -338,7 +338,7 @@ async def execute_line(
             # command, so the region is scanned separately.
             offending = find_unterminated_backtick((ast.text or b"").decode())
         if offending is not None:
-            io = syntax_error_result(offending)
+            io = syntax_error_result(offending, ast)
             return io
         decision = await ws._router.decide(ast, command, runtime, provision,
                                            effective_session, session_id, agent

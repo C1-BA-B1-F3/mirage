@@ -205,18 +205,20 @@ class SedFlags:
     in_place: bool = False
     suppress: bool = False
     extended: bool = False
-    expressions: tuple[str, ...] = ()
-    script_files: tuple[PathSpec, ...] = ()
+    scripts: tuple[str | PathSpec, ...] = ()
 
 
 def parse_flags(flags: Mapping[str, FlagValue]) -> SedFlags:
     fl = FlagView(flags, spec=SPECS["sed"])
+    expressions = iter(fl.as_list("e"))
+    files = iter(fl.as_paths("f"))
     return SedFlags(
         in_place=fl.as_bool("i"),
         suppress=fl.as_bool("n"),
         extended=fl.as_bool("E") or fl.as_bool("r"),
-        expressions=tuple(fl.as_list("e")),
-        script_files=tuple(fl.as_paths("f")),
+        scripts=tuple(
+            next(expressions) if name == "e" else next(files)
+            for name, _ in fl.occurrences("e", "f")),
     )
 
 
@@ -264,7 +266,7 @@ async def sed_generic(
     """Run sed over the given operands; mirrors sedGeneric.
 
     The script comes from -e expressions and -f script files (joined
-    with newlines, -e then -f as grep does) when any were given,
+    with newlines in option order) when any were given,
     otherwise from the first positional operand. The default
     stream-to-stdout path is read-only and works on every backend; only
     in-place editing needs a write op (#382).
@@ -279,14 +281,15 @@ async def sed_generic(
             backend is read-only.
     """
     parsed = parse_flags(opts.flags)
-    script_parts = list(parsed.expressions)
-    for pf in parsed.script_files:
-        data = await read_bytes(pf)
-        text = data.decode(errors="replace")
-        if text.endswith("\n"):
-            text = text[:-1]
-        script_parts.append(text)
-    flag_script = bool(parsed.expressions or parsed.script_files)
+    script_parts: list[str] = []
+    for part in parsed.scripts:
+        if isinstance(part, str):
+            script_parts.append(part)
+        else:
+            data = await read_bytes(part)
+            script_parts.append(
+                data.decode(errors="replace").removesuffix("\n"))
+    flag_script = bool(parsed.scripts)
     if not flag_script and texts:
         script_parts.append(texts[0])
     script = "\n".join(script_parts) if script_parts else None

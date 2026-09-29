@@ -18,15 +18,31 @@ import { LookupStatus, type IndexEntry, type ListResult, type LookupResult } fro
 import { IndexCacheStore } from './store.ts'
 import { rstripSlash } from '../../utils/slash.ts'
 
+interface IndexViewOptions {
+  /**
+   * Skip the non-reentrant mutation lock already held by the caller.
+   * The view must not outlive that hold.
+   */
+  readonly locked?: boolean
+}
+
 /** A mount-owned index view; delayed backend writes retain their original owner. */
 export class IndexView extends IndexCacheStore {
+  private readonly locked: boolean
+
   constructor(
     private readonly store: IndexCacheStore,
     private readonly cache: FileCache,
     private readonly prefix: string,
     private readonly owns: (path: string) => boolean,
+    options: IndexViewOptions = {},
   ) {
     super()
+    this.locked = options.locked ?? false
+  }
+
+  private fence<T>(fn: () => Promise<T>): Promise<T> {
+    return this.locked ? fn() : withCacheMutation(this.cache, fn)
   }
 
   seed(
@@ -47,7 +63,7 @@ export class IndexView extends IndexCacheStore {
   }
 
   entries(): Promise<Map<string, IndexEntry>> {
-    return withCacheMutation(this.cache, async () => {
+    return this.fence(async () => {
       if (!this.owns(this.prefix)) return new Map<string, IndexEntry>()
       const entries = await this.store.entries()
       return new Map([...entries].filter(([path]) => this.owns(path)))
@@ -56,7 +72,7 @@ export class IndexView extends IndexCacheStore {
 
   async get(path: string): Promise<LookupResult> {
     // Index lookups may flush queued state; keep them inside the write fence too.
-    return withCacheMutation(this.cache, async () => {
+    return this.fence(async () => {
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }
       const result = await this.store.get(path)
       return this.owns(path) ? result : { status: LookupStatus.NOT_FOUND }
@@ -64,7 +80,7 @@ export class IndexView extends IndexCacheStore {
   }
 
   async listDir(path: string): Promise<ListResult> {
-    return withCacheMutation(this.cache, async () => {
+    return this.fence(async () => {
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }
       const result = await this.store.listDir(path)
       if (!this.owns(path)) return { status: LookupStatus.NOT_FOUND }
@@ -81,7 +97,7 @@ export class IndexView extends IndexCacheStore {
   }
 
   put(path: string, entry: IndexEntry): Promise<void> {
-    return withCacheMutation(this.cache, async () => {
+    return this.fence(async () => {
       if (this.owns(path)) await this.store.put(path, entry)
     })
   }
@@ -108,7 +124,7 @@ export class IndexView extends IndexCacheStore {
     expiredAt: Date | null | undefined,
     partial: boolean,
   ): Promise<void> {
-    return withCacheMutation(this.cache, async () => {
+    return this.fence(async () => {
       if (this.owns(path)) {
         const prefix = rstripSlash(path) + '/'
         const owned = entries.filter(([name]) => this.owns(prefix + name))
@@ -119,19 +135,19 @@ export class IndexView extends IndexCacheStore {
   }
 
   invalidateDir(path: string): Promise<void> {
-    return withCacheMutation(this.cache, async () => {
+    return this.fence(async () => {
       if (this.owns(path)) await this.store.invalidateDir(path)
     })
   }
 
   invalidatePrefix(path: string): Promise<void> {
-    return withCacheMutation(this.cache, async () => {
+    return this.fence(async () => {
       if (this.owns(path)) await this.store.invalidatePrefix(path)
     })
   }
 
   invalidate(): Promise<void> {
-    return withCacheMutation(this.cache, async () => {
+    return this.fence(async () => {
       if (this.owns(this.prefix)) await this.store.invalidate()
     })
   }

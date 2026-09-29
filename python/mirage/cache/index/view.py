@@ -13,6 +13,7 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager, nullcontext
 from datetime import datetime
 
 from mirage.cache.file.io import mutation_lock
@@ -30,17 +31,36 @@ class IndexView(IndexCacheStore):
     cannot refill a replacement mount's index.
     """
 
-    def __init__(self, store: IndexCacheStore, cache: FileCacheMixin,
-                 prefix: str, owns: Callable[[str], bool]) -> None:
+    def __init__(self,
+                 store: IndexCacheStore,
+                 cache: FileCacheMixin,
+                 prefix: str,
+                 owns: Callable[[str], bool],
+                 *,
+                 locked: bool = False) -> None:
+        """Args:
+            store (IndexCacheStore): the VFS's own index.
+            cache (FileCacheMixin): workspace file cache whose mutation lock
+                fences these writes.
+            prefix (str): mount prefix.
+            owns (Callable[[str], bool]): whether this mount still owns a
+                key.
+            locked (bool): skip the non-reentrant mutation lock already
+                held by the caller; the view must not outlive that hold.
+        """
         super().__init__()
         self._store = store
         self._cache = cache
         self._prefix = prefix or "/"
         self._owns = owns
+        self._locked = locked
+
+    def _fence(self) -> AbstractAsyncContextManager[None]:
+        return nullcontext() if self._locked else mutation_lock(self._cache)
 
     async def get(self, vfs_path: str) -> LookupResult:
         # A lookup may flush a queued snapshot, so reads share the write fence.
-        async with mutation_lock(self._cache):
+        async with self._fence():
             if not self._owns(vfs_path):
                 return LookupResult(status=LookupStatus.NOT_FOUND)
             result = await self._store.get(vfs_path)
@@ -48,7 +68,7 @@ class IndexView(IndexCacheStore):
                 status=LookupStatus.NOT_FOUND)
 
     async def list_dir(self, vfs_path: str) -> ListResult:
-        async with mutation_lock(self._cache):
+        async with self._fence():
             if not self._owns(vfs_path):
                 return ListResult(status=LookupStatus.NOT_FOUND)
             result = await self._store.list_dir(vfs_path)
@@ -67,7 +87,7 @@ class IndexView(IndexCacheStore):
                 })
 
     async def put(self, vfs_path: str, entry: IndexEntry) -> None:
-        async with mutation_lock(self._cache):
+        async with self._fence():
             if self._owns(vfs_path):
                 await self._store.put(vfs_path, entry)
 
@@ -86,7 +106,7 @@ class IndexView(IndexCacheStore):
     async def _set_dir(self, vfs_path: str, entries: list[tuple[str,
                                                                 IndexEntry]],
                        expired_at: datetime | None, *, partial: bool) -> None:
-        async with mutation_lock(self._cache):
+        async with self._fence():
             if self._owns(vfs_path):
                 prefix = vfs_path.rstrip("/") + "/"
                 owned = [(name, entry) for name, entry in entries
@@ -109,7 +129,7 @@ class IndexView(IndexCacheStore):
             }, expires_at)
 
     async def entries(self) -> dict[str, IndexEntry]:
-        async with mutation_lock(self._cache):
+        async with self._fence():
             if not self._owns(self._prefix):
                 return {}
             entries = await self._store.entries()
@@ -119,17 +139,17 @@ class IndexView(IndexCacheStore):
             }
 
     async def invalidate_dir(self, vfs_path: str) -> None:
-        async with mutation_lock(self._cache):
+        async with self._fence():
             if self._owns(vfs_path):
                 await self._store.invalidate_dir(vfs_path)
 
     async def invalidate_prefix(self, vfs_path: str) -> None:
-        async with mutation_lock(self._cache):
+        async with self._fence():
             if self._owns(vfs_path):
                 await self._store.invalidate_prefix(vfs_path)
 
     async def invalidate(self) -> None:
-        async with mutation_lock(self._cache):
+        async with self._fence():
             if self._owns(self._prefix):
                 await self._store.invalidate()
 

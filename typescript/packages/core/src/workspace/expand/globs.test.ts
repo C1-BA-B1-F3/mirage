@@ -13,6 +13,7 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
+import type { IndexCacheStore } from '../../cache/index/store.ts'
 import type { NamespaceLinks } from '../../ops/config.ts'
 import { BaseVFS, type VFS } from '../../vfs/base.ts'
 import { RAMVFS } from '../../vfs/ram/ram.ts'
@@ -279,9 +280,13 @@ describe('matchRaw via resolveGlobs', () => {
 class PrefixBlindRAM extends RAMVFS {
   readonly seen: [string, string][] = []
 
-  override glob(paths: readonly PathSpec[], _prefix = ''): Promise<PathSpec[]> {
+  override glob(
+    paths: readonly PathSpec[],
+    _prefix = '',
+    index?: IndexCacheStore,
+  ): Promise<PathSpec[]> {
     for (const p of paths) this.seen.push([p.virtual, p.vfsPath])
-    return super.glob(paths, '')
+    return super.glob(paths, '', index)
   }
 }
 

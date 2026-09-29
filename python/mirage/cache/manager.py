@@ -108,6 +108,30 @@ class CacheManager:
         return IndexView(index, self._file_cache, self._prefix,
                          self._owns_path)
 
+    def scope_index_locked(self, index: IndexCacheStore) -> IndexCacheStore:
+        """A view for a caller already inside ``mutation()``.
+
+        It skips the mutation lock its caller holds and keeps the ownership
+        check. Never shared: it must not outlive that hold.
+
+        Args:
+            index (IndexCacheStore): the VFS's own index, never a view.
+
+        Raises:
+            ValueError: ``index`` is already a view, which would take the
+                lock again.
+        """
+        if self._file_cache is None:
+            return index
+        if isinstance(index, IndexView):
+            raise ValueError("scope_index_locked needs a raw store; a view "
+                             "would take the lock again")
+        return IndexView(index,
+                         self._file_cache,
+                         self._prefix,
+                         self._owns_path,
+                         locked=True)
+
     async def _evict_dir(self, key: str) -> None:
         """Drop one directory's cached listing.
 

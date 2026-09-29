@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mirage import GenericVFS, MountMode, PathSpec, Workspace
+from mirage.cache.index.ram import RAMIndexCacheStore
 from mirage.commands.builtin.ram.io import IO
 from mirage.vfs.bound import BoundVFS
 from mirage.vfs.ram import RAMVFS
@@ -37,3 +38,52 @@ async def test_builtin_and_custom_writes_obey_mount_mode(custom):
         await ws.close()
         if custom:
             await builtin.close()
+
+
+class _EmptyLookingIndex(RAMIndexCacheStore):
+
+    def __bool__(self) -> bool:
+        return False
+
+
+def _glob_spec() -> PathSpec:
+    return PathSpec(virtual="/data/*.txt",
+                    directory="/data/",
+                    vfs_path="*.txt",
+                    pattern="*.txt",
+                    resolved=False)
+
+
+class _GlobOnlyIO:
+
+    def __init__(self, resolve_glob: AsyncMock) -> None:
+        self.resolve_glob = resolve_glob
+
+
+def _glob_vfs(native: AsyncMock) -> RAMVFS:
+    vfs = RAMVFS()
+    vfs.io = _GlobOnlyIO(native)
+    return vfs
+
+
+@pytest.mark.asyncio
+async def test_resolve_glob_without_an_index_uses_the_vfs_own():
+    native = AsyncMock(return_value=[])
+    vfs = _glob_vfs(native)
+    spec = _glob_spec()
+    assert await vfs.resolve_glob([spec]) == []
+    native.assert_awaited_once_with(vfs.accessor, [spec], vfs.index)
+    await vfs.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("passed", [RAMIndexCacheStore, _EmptyLookingIndex])
+async def test_resolve_glob_reads_through_the_index_it_is_handed(passed):
+    native = AsyncMock(return_value=[])
+    vfs = _glob_vfs(native)
+    spec = _glob_spec()
+    index = passed()
+    assert await vfs.resolve_glob([spec], index=index) == []
+    native.assert_awaited_once_with(vfs.accessor, [spec], index)
+    assert native.await_args.args[2] is index
+    await vfs.close()

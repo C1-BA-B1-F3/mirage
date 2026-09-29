@@ -90,6 +90,22 @@ export class CacheManager {
   }
 
   /**
+   * A view for a caller already inside `withMutation`.
+   *
+   * It skips the mutation lock its caller holds and keeps the ownership
+   * check. Never shared: it must not outlive that hold.
+   */
+  scopeIndexLocked(index: IndexCacheStore): IndexCacheStore {
+    if (this.fileCache === null) return index
+    if (index instanceof IndexView) {
+      throw new Error('scopeIndexLocked needs a raw store; a view would take the lock again')
+    }
+    return new IndexView(index, this.fileCache, this.prefix || '/', this.ownsPath, {
+      locked: true,
+    })
+  }
+
+  /**
    * Drop one directory's cached listing.
    *
    * Both spellings of the directory go, because a backend may have keyed

@@ -68,6 +68,7 @@ export interface ArithResult {
 }
 
 export const NodeType = Object.freeze({
+  TIMED_STATEMENT: 'timed_statement',
   COMMAND: 'command',
   PIPELINE: 'pipeline',
   LIST: 'list',
@@ -427,6 +428,7 @@ export type BuiltinGroup = (typeof BuiltinGroup)[keyof typeof BuiltinGroup]
  * Python side reading nodes through shell.types.
  */
 export interface TSNodeLike {
+  readonly timing?: readonly boolean[]
   readonly heredoc?: Heredoc | undefined
   readonly warnings?: string
   readonly sourceText?: string

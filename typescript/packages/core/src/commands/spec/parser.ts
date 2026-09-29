@@ -675,7 +675,10 @@ export function parseCommand(
           continue
         }
         const only = found[0]
-        if (only !== undefined && cs.dest.has(only)) spelling = only
+        if (only !== undefined) {
+          const group = longTable.find((g) => g[0] === only)
+          spelling = group?.find((name) => cs.dest.has(name)) ?? typed
+        }
       } else if (!cs.dest.has(typed) && !noLongOptionParser) {
         const candidates = expandLong(cs, typed, synonyms)
         if (candidates.length === 1) {
@@ -850,7 +853,10 @@ export function parseCommand(
         }
       }
 
-      if (lenientDashOperands || NUMERIC_SHORT.test(tok)) {
+      if (
+        lenientDashOperands ||
+        (NUMERIC_SHORT.test(tok) && (!isBuiltinGrammar(cmdName, spec) || cmdName === 'seq'))
+      ) {
         rawArgs.push(tok)
         rawIndices.push(scanOrigins[i] ?? -1)
         rawBases.push(base)

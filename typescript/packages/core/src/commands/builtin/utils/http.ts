@@ -252,7 +252,7 @@ export function httpFormRequest(
 
 export function httpGet(
   url: string,
-  opts: { headers?: Record<string, string>; timeoutMs?: number } = {},
+  opts: { headers?: Record<string, string>; timeoutMs?: number | null } = {},
 ): Promise<HttpResponse> {
   const options: HttpRequestOptions = { method: 'GET' }
   if (opts.headers !== undefined) options.headers = opts.headers

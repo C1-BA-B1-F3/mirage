@@ -142,7 +142,7 @@ describe('diff', () => {
     const r = await runDiff(
       vfs,
       [PathSpec.fromStrPath('/tmp/a.txt'), PathSpec.fromStrPath('/tmp/b.txt')],
-      { q: true },
+      { brief: true },
     )
     expect(r.exitCode).toBe(1)
     expect(r.out).toContain('/tmp/a.txt')

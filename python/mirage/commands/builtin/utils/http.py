@@ -159,7 +159,7 @@ def http_form_request(
 def http_get(
     url: str,
     headers: dict[str, str] | None = None,
-    timeout: float = 30,
+    timeout: float | None = 30,
     follow_redirects: bool = True,
 ) -> HttpResponse:
     return http_request(url,

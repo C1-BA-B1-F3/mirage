@@ -517,6 +517,9 @@ async def provision_node(
             return ProvisionResult(precision=Precision.EXACT)
         return rollup_list(";", children)
 
+    if kind == NodeKind.TIMED:
+        return await recurse(node.named_children[0], session)
+
     if kind == NodeKind.COMMAND:
         name = get_command_name(node)
         _, parts = split_env_prefix(get_parts(node))

@@ -12,12 +12,14 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as AccessorModule from './accessor.ts'
 import type * as PullModule from '../../../../core/github/pull.ts'
 import type { CLIInvocation } from '../../types.ts'
 
 let ROWS: Record<string, unknown>[] = []
+const FIELDS = vi.fn<typeof PullModule.pullRequestFields>()
+const LIST = vi.fn<typeof PullModule.listPullRequestFields>()
 
 vi.mock('./accessor.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof AccessorModule>()
@@ -26,10 +28,22 @@ vi.mock('./accessor.ts', async (importOriginal) => {
 
 vi.mock('../../../../core/github/pull.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof PullModule>()
-  return { ...actual, pullChecks: () => Promise.resolve(ROWS) }
+  return {
+    ...actual,
+    pullChecks: () => Promise.resolve(ROWS),
+    pullRequestFields: (...args: Parameters<typeof PullModule.pullRequestFields>) =>
+      FIELDS(...args),
+    listPullRequestFields: (...args: Parameters<typeof PullModule.listPullRequestFields>) =>
+      LIST(...args),
+  }
 })
 
-const { checksCmd } = await import('./pull.ts')
+const { PR_FIELDS, checksCmd, listCmd, viewCmd } = await import('./pull.ts')
+
+function json(result: Awaited<ReturnType<typeof viewCmd>>): Record<string, unknown> {
+  if (result === null) throw new Error('expected a result tuple')
+  return JSON.parse(new TextDecoder().decode(result[0] as Uint8Array)) as Record<string, unknown>
+}
 
 function inv(flags: CLIInvocation['flags'] = {}): CLIInvocation {
   return {
@@ -89,5 +103,270 @@ describe('gh pr checks buckets', () => {
     ROWS = [{ name: 't', conclusion: 'failure' }]
     const result = await checksCmd(inv())
     expect(result?.[1].exitCode).toBe(1)
+  })
+})
+
+// Every field `gh pr view --json` and `gh pr list --json` accept in gh 2.85.
+const GH_FIELDS = [
+  'additions',
+  'assignees',
+  'author',
+  'autoMergeRequest',
+  'baseRefName',
+  'baseRefOid',
+  'body',
+  'changedFiles',
+  'closed',
+  'closedAt',
+  'closingIssuesReferences',
+  'comments',
+  'commits',
+  'createdAt',
+  'deletions',
+  'files',
+  'fullDatabaseId',
+  'headRefName',
+  'headRefOid',
+  'headRepository',
+  'headRepositoryOwner',
+  'id',
+  'isCrossRepository',
+  'isDraft',
+  'labels',
+  'latestReviews',
+  'maintainerCanModify',
+  'mergeCommit',
+  'mergeStateStatus',
+  'mergeable',
+  'mergedAt',
+  'mergedBy',
+  'milestone',
+  'number',
+  'potentialMergeCommit',
+  'projectCards',
+  'projectItems',
+  'reactionGroups',
+  'reviewDecision',
+  'reviewRequests',
+  'reviews',
+  'state',
+  'statusCheckRollup',
+  'title',
+  'updatedAt',
+  'url',
+]
+
+describe('gh pr view --json', () => {
+  beforeEach(() => {
+    FIELDS.mockReset()
+    LIST.mockReset()
+  })
+
+  it('offers every field gh 2.85 does', () => {
+    expect([...PR_FIELDS].sort()).toEqual(GH_FIELDS)
+  })
+
+  it('asks one query for the fields named, plus the id and number gh adds', async () => {
+    FIELDS.mockResolvedValueOnce({ title: 'DOC', changedFiles: 8, id: 'PR_1', number: 5 })
+    expect(json(await viewCmd(inv({ json: 'title,changedFiles' })))).toEqual({
+      changedFiles: 8,
+      title: 'DOC',
+    })
+    expect(FIELDS).toHaveBeenCalledTimes(1)
+    expect(FIELDS.mock.calls[0]?.[3]).toBe('title,changedFiles,id,number')
+  })
+
+  it('answers number alone from the line, as gh does', async () => {
+    expect(json(await viewCmd(inv({ json: 'number' })))).toEqual({ number: 5 })
+    expect(FIELDS).not.toHaveBeenCalled()
+  })
+
+  it('exports files, commits and reviews in the shapes gh prints', async () => {
+    FIELDS.mockResolvedValueOnce({
+      files: { nodes: [{ additions: 6, deletions: 6, path: 'README.md' }] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              authors: { nodes: [{ name: 'Work', email: 'w@example.test', user: null }] },
+              messageHeadline: 'DOC: fix typos',
+              messageBody: 'and terms',
+              oid: 'abc',
+              committedDate: '2025-08-12T03:37:28Z',
+              authoredDate: '2025-08-12T03:37:28Z',
+            },
+          },
+        ],
+      },
+      reviews: {
+        nodes: [
+          {
+            id: 'PRR_1',
+            author: { login: 'me' },
+            authorAssociation: 'CONTRIBUTOR',
+            submittedAt: '2025-08-17T20:15:50Z',
+            body: 'please review',
+            state: 'COMMENTED',
+            commit: { oid: 'abc' },
+            reactionGroups: [{ content: 'EYES', users: { totalCount: 0 } }],
+          },
+        ],
+        pageInfo: { hasNextPage: false, endCursor: 'c' },
+      },
+    })
+    const out = json(await viewCmd(inv({ json: 'files,commits,reviews' })))
+    expect(out.files).toEqual([{ path: 'README.md', additions: 6, deletions: 6 }])
+    expect(Object.keys((out.files as Record<string, unknown>[])[0] ?? {})).toEqual([
+      'path',
+      'additions',
+      'deletions',
+    ])
+    expect(out.commits).toEqual([
+      {
+        authoredDate: '2025-08-12T03:37:28Z',
+        authors: [{ email: 'w@example.test', id: '', login: '', name: 'Work' }],
+        committedDate: '2025-08-12T03:37:28Z',
+        messageBody: 'and terms',
+        messageHeadline: 'DOC: fix typos',
+        oid: 'abc',
+      },
+    ])
+    expect(out.reviews).toEqual([
+      {
+        id: 'PRR_1',
+        author: { login: 'me' },
+        authorAssociation: 'CONTRIBUTOR',
+        body: 'please review',
+        submittedAt: '2025-08-17T20:15:50Z',
+        includesCreatedEdit: false,
+        reactionGroups: [],
+        state: 'COMMENTED',
+        commit: { oid: 'abc' },
+      },
+    ])
+  })
+
+  it('reads a paged connection to its end', async () => {
+    FIELDS.mockResolvedValueOnce({
+      reviews: { nodes: [{ id: 'R1' }], pageInfo: { hasNextPage: true, endCursor: 'c1' } },
+    }).mockResolvedValueOnce({
+      reviews: { nodes: [{ id: 'R2' }], pageInfo: { hasNextPage: false, endCursor: 'c2' } },
+    })
+    const out = json(await viewCmd(inv({ json: 'reviews' })))
+    expect((out.reviews as { id: string }[]).map((review) => review.id)).toEqual(['R1', 'R2'])
+    expect(FIELDS.mock.calls[1]?.[3]).toContain('reviews(first: 100, after: $endCursor)')
+    expect(FIELDS.mock.calls[1]?.[4]).toBe('c1')
+  })
+
+  it('reads the status checks of the one commit gh rolls them up on', async () => {
+    const rollup = (nodes: unknown[], next: string | null) => ({
+      statusCheckRollup: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                contexts: { nodes, pageInfo: { hasNextPage: next !== null, endCursor: next } },
+              },
+            },
+          },
+        ],
+      },
+    })
+    FIELDS.mockResolvedValueOnce(
+      rollup(
+        [{ __typename: 'CheckRun', name: 'test', conclusion: 'SUCCESS', status: 'COMPLETED' }],
+        'c1',
+      ),
+    ).mockResolvedValueOnce(
+      rollup(
+        [{ __typename: 'StatusContext', context: 'ci', state: 'PENDING', createdAt: 't' }],
+        null,
+      ),
+    )
+    const out = json(await viewCmd(inv({ json: 'statusCheckRollup' })))
+    expect(out.statusCheckRollup).toEqual([
+      {
+        __typename: 'CheckRun',
+        completedAt: '0001-01-01T00:00:00Z',
+        conclusion: 'SUCCESS',
+        detailsUrl: '',
+        name: 'test',
+        startedAt: '0001-01-01T00:00:00Z',
+        status: 'COMPLETED',
+        workflowName: '',
+      },
+      {
+        __typename: 'StatusContext',
+        context: 'ci',
+        startedAt: 't',
+        state: 'PENDING',
+        targetUrl: '',
+      },
+    ])
+    expect(FIELDS.mock.calls[1]?.[3]).toContain('contexts(first:100, after: $endCursor)')
+  })
+
+  it('prints no status checks as null when no commit carries them', async () => {
+    FIELDS.mockResolvedValueOnce({ statusCheckRollup: { nodes: [] } })
+    expect(json(await viewCmd(inv({ json: 'statusCheckRollup' })))).toEqual({
+      statusCheckRollup: null,
+    })
+  })
+
+  it('never asks for project cards, which print null', async () => {
+    FIELDS.mockResolvedValueOnce({ id: 'PR_1', number: 5 })
+    expect(json(await viewCmd(inv({ json: 'projectCards' })))).toEqual({ projectCards: null })
+    expect(FIELDS.mock.calls[0]?.[3]).toBe('id,number')
+  })
+
+  it('reads project items apart and reads a missing scope as none', async () => {
+    FIELDS.mockResolvedValueOnce({ id: 'PR_1', number: 5 }).mockRejectedValueOnce(
+      new Error(
+        "GraphQL: Your token has not been granted the required scopes to execute this query. The 'id' field requires one of the following scopes: ['read:project'], but your token has only been granted the: ['repo'] scopes.",
+      ),
+    )
+    expect(json(await viewCmd(inv({ json: 'projectItems' })))).toEqual({ projectItems: [] })
+    expect(FIELDS.mock.calls[1]?.[3]).toMatch(/^projectItems\(first: 100\)/)
+  })
+
+  it('keeps any other failure of the project items query', async () => {
+    FIELDS.mockResolvedValueOnce({ id: 'PR_1', number: 5 }).mockRejectedValueOnce(
+      new Error('GraphQL: something else'),
+    )
+    await expect(viewCmd(inv({ json: 'projectItems' }))).rejects.toThrow('something else')
+  })
+
+  it('refuses a field gh does not export before asking anything', async () => {
+    await expect(viewCmd(inv({ json: 'nosuch' }))).rejects.toThrow('Unknown JSON field: "nosuch"')
+    expect(FIELDS).not.toHaveBeenCalled()
+  })
+})
+
+describe('gh pr list --json', () => {
+  beforeEach(() => {
+    LIST.mockReset()
+  })
+
+  it('lists over GraphQL with the states gh sends for --state', async () => {
+    LIST.mockResolvedValueOnce([{ number: 3, files: { nodes: [] } }])
+    const out = json(await listCmd(inv({ json: 'number,files', state: 'closed' })))
+    expect(out).toEqual([{ files: [], number: 3 }])
+    expect(LIST.mock.calls[0]?.[2]).toEqual({
+      states: ['CLOSED', 'MERGED'],
+      base: undefined,
+      head: undefined,
+    })
+    expect(LIST.mock.calls[0]?.[3]).toBe(30)
+    expect(LIST.mock.calls[0]?.[4]).toBe(
+      'number,files(first: 100) {nodes {additions,deletions,path}}',
+    )
+  })
+
+  it('asks for project cards and items inline, as gh pr list does', async () => {
+    LIST.mockResolvedValueOnce([])
+    await listCmd(inv({ json: 'projectCards,projectItems', state: 'all' }))
+    expect(LIST.mock.calls[0]?.[4]).toMatch(
+      /^projectCards\(first:100\).*,projectItems\(first:100\)/,
+    )
   })
 })

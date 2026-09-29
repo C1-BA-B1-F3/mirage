@@ -14,7 +14,127 @@
 
 import { describe, expect, it } from 'vitest'
 import type { GitHubTransport } from './client.ts'
-import { commentPull, commitStatuses, listPulls, pullChecks } from './pull.ts'
+import { GRAPHQL_PATH } from './constants.ts'
+import {
+  commentPull,
+  commitStatuses,
+  listPullRequestFields,
+  listPulls,
+  pullChecks,
+  pullRequestFields,
+} from './pull.ts'
+
+/** A transport that answers each GraphQL request with the next reply. */
+function graphqlTransport(
+  replies: unknown[],
+  sent: { query: string; variables: Record<string, unknown> }[],
+): GitHubTransport {
+  return {
+    get: () => Promise.reject(new Error('unexpected GET')),
+    request: (_method, path, body) => {
+      if (path !== GRAPHQL_PATH) return Promise.reject(new Error(`unexpected ${path}`))
+      sent.push(body as { query: string; variables: Record<string, unknown> })
+      return Promise.resolve(replies.shift())
+    },
+  }
+}
+
+describe('pullRequestFields', () => {
+  it('asks for one pull request by number and returns its node', async () => {
+    const sent: { query: string; variables: Record<string, unknown> }[] = []
+    const reply = { data: { repository: { pullRequest: { title: 't' } } } }
+    const node = await pullRequestFields(
+      graphqlTransport([reply], sent),
+      { owner: 'o', repo: 'r' },
+      7,
+      'title',
+    )
+    expect(node).toEqual({ title: 't' })
+    expect(sent[0]?.variables).toEqual({ owner: 'o', repo: 'r', pr_number: 7 })
+    expect(sent[0]?.query).toContain('pullRequest(number: $pr_number) {title}')
+    expect(sent[0]?.query).not.toContain('$endCursor')
+  })
+
+  it('declares $endCursor only for a page after a cursor', async () => {
+    const sent: { query: string; variables: Record<string, unknown> }[] = []
+    const reply = { data: { repository: { pullRequest: {} } } }
+    await pullRequestFields(
+      graphqlTransport([reply], sent),
+      { owner: 'o', repo: 'r' },
+      7,
+      'reviews(first: 100, after: $endCursor) {nodes {id}}',
+      'c1',
+    )
+    expect(sent[0]?.query).toContain('$pr_number: Int!, $endCursor: String)')
+    expect(sent[0]?.variables.endCursor).toBe('c1')
+  })
+
+  it('refuses a missing pull request the way gh words it', async () => {
+    const reply = {
+      data: { repository: { pullRequest: null } },
+      errors: [
+        {
+          message: 'Could not resolve to a PullRequest with the number of 9.',
+          path: ['repository', 'pullRequest'],
+        },
+      ],
+    }
+    await expect(
+      pullRequestFields(graphqlTransport([reply], []), { owner: 'o', repo: 'r' }, 9, 'title'),
+    ).rejects.toThrow(
+      'GraphQL: Could not resolve to a PullRequest with the number of 9. (repository.pullRequest)',
+    )
+  })
+})
+
+describe('listPullRequestFields', () => {
+  function page(numbers: number[], next: string | null) {
+    return {
+      data: {
+        repository: {
+          pullRequests: {
+            nodes: numbers.map((number) => ({ number })),
+            pageInfo: { hasNextPage: next !== null, endCursor: next },
+          },
+        },
+      },
+    }
+  }
+
+  it('pages until the limit, listing a repeated pull request once', async () => {
+    const sent: { query: string; variables: Record<string, unknown> }[] = []
+    const rows = await listPullRequestFields(
+      graphqlTransport([page([9, 8], 'c1'), page([8, 7, 6], null)], sent),
+      { owner: 'o', repo: 'r' },
+      { states: ['OPEN'], base: 'main', head: undefined },
+      3,
+      'number',
+    )
+    expect(rows).toEqual([{ number: 9 }, { number: 8 }, { number: 7 }])
+    expect(sent[0]?.variables).toEqual({
+      owner: 'o',
+      repo: 'r',
+      limit: 3,
+      state: ['OPEN'],
+      baseBranch: 'main',
+    })
+    expect(sent[1]?.variables).toMatchObject({ endCursor: 'c1', limit: 1 })
+    expect(sent[0]?.query).toContain('fragment pr on PullRequest{number}')
+  })
+
+  it('asks for nothing when the limit is zero', async () => {
+    const sent: { query: string; variables: Record<string, unknown> }[] = []
+    const rows = await listPullRequestFields(
+      graphqlTransport([], sent),
+      { owner: 'o', repo: 'r' },
+      { states: ['OPEN'] },
+      0,
+      'number',
+    )
+    expect(rows).toEqual([])
+    expect(sent).toEqual([])
+  })
+})
 
 describe('pullChecks', () => {
   function transportFor(

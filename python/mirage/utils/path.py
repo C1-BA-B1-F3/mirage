@@ -248,17 +248,12 @@ class CycleError(Exception):
     """
 
 
-def _is_link_prefix(key: str, path: str) -> bool:
-    return path == key or path.startswith(key + "/")
-
-
 def resolve_symlinks(path: str, links: dict[str, str]) -> str:
     """Resolve symlink prefixes in ``path`` until stable.
 
-    Repeatedly replaces the longest dict key that is a path-boundary prefix
-    of ``path`` with its target, mirroring filesystem symlink following
-    (``/a/b`` is a prefix of ``/a/b/c`` but not ``/a/bc``). Relative targets
-    are resolved against the link's own parent directory.
+    Walks components in order, expanding links before interpreting a later
+    ``..``. Relative targets start at the link's parent; absolute targets
+    restart at the root. Every caller therefore receives a canonical path.
 
     Args:
         path (str): An absolute virtual path.
@@ -271,21 +266,30 @@ def resolve_symlinks(path: str, links: dict[str, str]) -> str:
         CycleError: If resolution exceeds ``MAX_SYMLINK_HOPS`` (a loop or
             unbounded expansion), matching POSIX ELOOP.
     """
-    if not links:
-        return path
-    for _ in range(MAX_SYMLINK_HOPS):
-        best: str | None = None
-        for key in links:
-            if _is_link_prefix(key, path) and (best is None
-                                               or len(key) > len(best)):
-                best = key
-        if best is None:
-            return path
-        target = links[best]
-        if not target.startswith("/"):
-            target = norm(parent(best) + "/" + target)
-        path = target + path[len(best):]
-    raise CycleError(path)
+    pending = list(reversed(path.split("/")))
+    resolved: list[str] = []
+    hops = 0
+    while pending:
+        part = pending.pop()
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if resolved:
+                resolved.pop()
+            continue
+        candidate = "/" + "/".join([*resolved, part])
+        target = links.get(candidate)
+        if target is None:
+            resolved.append(part)
+            continue
+        hops += 1
+        if hops > MAX_SYMLINK_HOPS:
+            raise CycleError(path)
+        if target.startswith("/"):
+            resolved.clear()
+        pending.extend(reversed(target.split("/")))
+    suffix = "/" if resolved and path.endswith("/") else ""
+    return "/" + "/".join(resolved) + suffix
 
 
 def expand_tilde(word: str, home: str | None) -> str:

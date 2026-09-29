@@ -391,6 +391,12 @@ export async function provisionNode(
     return rollupList(';', children)
   }
 
+  if (kind === NodeKind.TIMED) {
+    const inner = node.namedChildren[0]
+    if (inner === undefined) throw new Error('timed statement has no body')
+    return recurse(inner, session)
+  }
+
   if (kind === NodeKind.COMMAND) {
     const name = getCommandName(node)
     const [, parts] = splitEnvPrefix(getParts(node))

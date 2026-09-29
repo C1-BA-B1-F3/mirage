@@ -236,7 +236,7 @@ async def test_create_walks_a_directory_operand():
 
 @pytest.mark.asyncio
 async def test_create_keeps_an_empty_directory_as_its_own_member():
-    tree = _Tree({"/d/a.txt": b"x"}, dirs=("/d", "/d/empty"))
+    tree = _Tree({"/d/a.txt": b"x"}, dirs=("/d", "/d/empty", "/out"))
     _, io_res = await _create(tree, [_raw("/d", "d")],
                               c=True,
                               f=_spec("/out.tar"))
@@ -437,7 +437,7 @@ async def test_create_and_list_round_trip_plain_files():
 
 @pytest.mark.asyncio
 async def test_extract_recreates_directories_including_empty_ones():
-    tree = _Tree({"/d/a.txt": b"x"}, dirs=("/d", "/d/empty"))
+    tree = _Tree({"/d/a.txt": b"x"}, dirs=("/d", "/d/empty", "/out"))
     _, io_res = await _create(tree, [_raw("/d", "d")],
                               c=True,
                               f=_spec("/out.tar"))
@@ -452,7 +452,7 @@ async def test_extract_recreates_directories_including_empty_ones():
 
 @pytest.mark.asyncio
 async def test_extract_strips_leading_components():
-    tree = _Tree({"/deep/d/a.txt": b"x"}, dirs=("/deep", "/deep/d"))
+    tree = _Tree({"/deep/d/a.txt": b"x"}, dirs=("/deep", "/deep/d", "/out"))
     _, io_res = await _create(tree, [_spec("/deep/d")],
                               c=True,
                               f=_spec("/out.tar"))

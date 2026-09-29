@@ -16,6 +16,13 @@ import { Operand, Option } from '../../../spec/types.ts'
 import { CLISpec } from '../../types.ts'
 import { UsageStyle } from '../../../spec/types.ts'
 import { add } from './add.ts'
+import { init } from './init.ts'
+import { fsck } from './fsck.ts'
+import { stashList, stashShow } from './stash.ts'
+import { nodeHelp, findNode } from '../../walk.ts'
+import type { CLIInvocation } from '../../types.ts'
+import { IOResult } from '../../../../io/types.ts'
+import type { CommandFnResult } from '../../../config.ts'
 import { branch } from './branch.ts'
 import { checkout } from './checkout.ts'
 import { commit } from './commit.ts'
@@ -411,6 +418,26 @@ const BRANCH_OPTIONS = [
  * reaches the object database through the same bridge, so a repository mounted
  * in a browser works exactly as one mounted over disk.
  */
+function helpCmd(inv: CLIInvocation): CommandFnResult {
+  const found = findNode(GIT, inv.texts)
+  if (found === null)
+    return [
+      null,
+      new IOResult({
+        exitCode: 1,
+        stderr: new TextEncoder().encode(
+          `git: '${inv.texts.join(' ')}' is not a git command. See 'git --help'.\n`,
+        ),
+      }),
+    ]
+  return [
+    new TextEncoder().encode(
+      nodeHelp(['git', ...found.path].join(' '), found.node, GIT.usageStyle),
+    ),
+    new IOResult(),
+  ]
+}
+
 export const GIT = new CLISpec({
   name: 'git',
   description: 'Content tracker',
@@ -431,6 +458,44 @@ export const GIT = new CLISpec({
     }),
   ],
   subcommands: [
+    new CLISpec({
+      name: 'help',
+      fn: helpCmd,
+      description: 'Show command help',
+      rest: new Operand({ type: 'str' }),
+    }),
+    new CLISpec({
+      name: 'init',
+      fn: init,
+      description: 'Create an empty Git repository or reinitialize an existing one',
+      write: true,
+      options: [
+        new Option({ short: '-q', long: '--quiet' }),
+        new Option({ long: '--bare' }),
+        new Option({ short: '-b', long: '--initial-branch', type: 'str' }),
+      ],
+      positional: [new Operand({ type: 'str', name: 'directory' })],
+    }),
+    new CLISpec({
+      name: 'fsck',
+      fn: fsck,
+      description: 'Verify object hashes and connectivity',
+      options: [new Option({ long: '--full' }), new Option({ long: '--no-dangling' })],
+    }),
+    new CLISpec({
+      name: 'stash',
+      description: 'Inspect saved working trees',
+      subcommands: [
+        new CLISpec({ name: 'list', fn: stashList, description: 'List stashed changes' }),
+        new CLISpec({
+          name: 'show',
+          fn: stashShow,
+          description: 'Show stashed changes',
+          options: DIFF_OPTIONS,
+          positional: [new Operand({ type: 'str', name: 'stash' })],
+        }),
+      ],
+    }),
     new CLISpec({
       name: 'version',
       aliases: ['--version', '-v'],

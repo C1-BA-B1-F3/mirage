@@ -16,21 +16,31 @@ import { specOf } from '../../spec/builtins.ts'
 import { FlagView } from '../../spec/flag_view.ts'
 import {
   DEFAULT_INDENT,
+  InputPositions,
+  JqCompileError,
+  STDIN_NAME,
+  UNKNOWN_POSITION,
   argsObject,
-  concatBytes,
+  errorReport,
   evalJsonlStream,
   formatJqOutput,
+  haltReport,
+  halts,
   isJsonlPath,
   isStreamableJsonlExpr,
-  jqEval,
+  jqCheck,
   jqOptions,
+  jqRun,
   parseJsonDocs,
-  parseSeqDocs,
+  parseJsonText,
+  parseSeqText,
   referencesArgs,
-  referencesInputs,
-  splitRawLines,
+  splitRawText,
   streamEvents,
+  streamReads,
   type JqOptions,
+  type JqRun,
+  type StreamReads,
 } from '../../../core/jq/index.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import { PathSpec } from '../../../types.ts'
@@ -45,6 +55,17 @@ type Stream = (p: PathSpec) => AsyncIterable<Uint8Array>
 const DEC = new TextDecoder()
 const INDENT_MIN = -1
 const INDENT_MAX = 7
+
+// What jq's process() answers for one run, which its exit status is made
+// of (main.c): the last output was not false or null, it was, there was
+// none, and an error no `try` caught ended the run.
+const OK = 0
+const OK_NULL_KIND = -1
+const OK_NO_OUTPUT = -4
+const ERROR_UNKNOWN = 5
+
+// jq's exit status when it refuses the program itself.
+const ERROR_COMPILE = 3
 const USAGE_HINT =
   'Use jq --help for help with command-line options,\n' +
   'or see the jq manpage, or online docs  at https://jqlang.github.io/jq'
@@ -159,37 +180,104 @@ export function parseFlags(fl: FlagView): JqOptions {
 }
 
 /**
- * Turn the raw inputs into the value stream the program sees.
+ * Turn the raw inputs into the value stream the program sees, and say
+ * where jq's reader stands once it has read each value.
  *
  * jq reads every file and stdin as one stream, so slurping spans them all
  * rather than restarting per file. Line splitting stays per input: a file
  * with no trailing newline ends its last line there instead of joining it
- * to the next file's first.
+ * to the next file's first. `sources` are each input's name, as jq reports
+ * it, and its bytes, in order.
  */
 export async function assembleInputs(
-  chunks: readonly Uint8Array[],
+  sources: readonly (readonly [string, Uint8Array])[],
   opts: JqOptions,
-): Promise<unknown[]> {
-  if (opts.rawInput) {
-    if (opts.slurp) return [DEC.decode(concatBytes(chunks))]
-    return chunks.flatMap((chunk) => splitRawLines(chunk))
+): Promise<[unknown[], InputPositions]> {
+  const names = sources.map(([name]) => name)
+  const texts = sources.map(([, raw]) => DEC.decode(raw))
+  let docs: unknown[] = []
+  let marks: [number, number][] = []
+  if (opts.rawInput && opts.slurp) {
+    docs.push(texts.join(''))
+  } else if (opts.rawInput) {
+    texts.forEach((text, i) => {
+      const [lines, ends] = splitRawText(text)
+      docs.push(...lines)
+      for (const end of ends) marks.push([i, end])
+    })
+  } else {
+    const parse = opts.seq ? parseSeqText : parseJsonText
+    texts.forEach((text, i) => {
+      const [values, ends] = parse(text)
+      docs.push(...values)
+      for (const end of ends) marks.push([i, end])
+    })
+    if (opts.stream) {
+      // --stream replaces each document with its events, and slurping
+      // then collects the events rather than the documents. Each event
+      // reads as where its document is whole, where jq's streaming parser
+      // hands events over as it goes.
+      const events = await Promise.all(docs.map((doc) => streamEvents(doc)))
+      docs = events.flat()
+      const own = marks
+      marks = events.flatMap((group, i) => group.map((): [number, number] => own[i] ?? [0, 0]))
+    }
+    if (opts.slurp) docs = [docs]
   }
-  const parse = opts.seq ? parseSeqDocs : parseJsonDocs
-  let docs = chunks.flatMap((chunk) => parse(chunk))
-  if (opts.stream) {
-    // --stream replaces each document with its events, and slurping then
-    // collects the events rather than the documents.
-    docs = (await Promise.all(docs.map((doc) => streamEvents(doc)))).flat()
+  if (opts.slurp) {
+    // One value, and whole only once every input is read.
+    const last = texts.length - 1
+    marks = last < 0 ? [] : [[last, texts[last]?.length ?? 0]]
   }
-  return opts.slurp ? [docs] : docs
+  return [docs, new InputPositions(names, texts, marks)]
 }
 
-/** Exit status for a run, which only -e makes interesting. */
-export function exitCode(outputs: readonly unknown[], opts: JqOptions): number {
-  if (!opts.exitStatus) return 0
-  if (outputs.length === 0) return 4
-  const last = outputs[outputs.length - 1]
-  return last === null || last === false ? 1 : 0
+/** What jq's process() answers for one run. */
+export function runStatus(run: JqRun): number {
+  if (run.stop?.kind === 'halt') return run.stop.code === null ? OK : Math.trunc(run.stop.code)
+  if (run.stop?.kind === 'error') return ERROR_UNKNOWN
+  if (run.outputs.length === 0) return OK_NO_OUTPUT
+  const last = run.outputs[run.outputs.length - 1]
+  return last === null || last === false ? OK_NULL_KIND : OK
+}
+
+/**
+ * Exit status for the program run over the whole input, as jq's main loop
+ * settles it from what each run answered (runStatus).
+ *
+ * Only the last run counts, even after one that failed, unless it printed
+ * nothing, when -e looks back to the last value any run printed. Without
+ * -e only a failure shows, and a halt's own code.
+ */
+export function exitCode(statuses: readonly number[], opts: JqOptions): number {
+  let ret = OK_NO_OUTPUT
+  let lastResult = -1
+  for (const status of statuses) {
+    ret = status
+    if (status <= 0 && status !== OK_NO_OUTPUT) lastResult = status === OK_NULL_KIND ? 0 : 1
+  }
+  let code: number
+  if (!opts.exitStatus) code = Math.max(ret, 0)
+  else if (ret !== OK_NO_OUTPUT) code = Math.abs(ret)
+  else code = lastResult === -1 ? 4 : lastResult === 0 ? 1 : 0
+  return code % 256
+}
+
+/**
+ * Where jq's reader stands after a run, for its error report. A run reads
+ * its own document (`first`, null under -n), and past it the ones `input`
+ * and `inputs` take (`taken`): `inputs` reads to the end, and so does an
+ * `input` that finds nothing left.
+ */
+export function runPosition(
+  positions: InputPositions,
+  reads: StreamReads,
+  first: number | null,
+  taken: number,
+): string {
+  if (reads.inputs || (reads.input && taken === 0)) return positions.end()
+  if (reads.input) return positions.at(first === null ? 0 : first + 1)
+  return first === null ? UNKNOWN_POSITION : positions.at(first)
 }
 
 // Path flags arrive as resolved virtual-path strings, so a flag that
@@ -229,7 +317,8 @@ export async function jqGeneric(
   const toSpec = pathSpecFactory(paths, opts)
   const hasProgramFile = fl.asStr('from_file') !== undefined
   const expr = (await programText(texts, fl, toSpec, stream)).trim()
-  const wantsInputs = referencesInputs(expr)
+  const reads = streamReads(expr)
+  const readsStream = reads.input || reads.inputs
   // --rawfile / --slurpfile read a file each, so they join the bindings
   // only once a reader is in hand. Their files route nothing (the executor's
   // DOOR_FLAG_KEYS), so one may sit on another mount than the operands: it
@@ -246,10 +335,26 @@ export async function jqGeneric(
     positionalArgs: positionalArgs(fl, texts, hasProgramFile),
   })
   const argsValue = referencesArgs(expr) ? argsObject(jq) : null
+  try {
+    await jqCheck(expr, jq.namedArgs, readsStream ? [] : null, argsValue)
+  } catch (error) {
+    if (!(error instanceof JqCompileError)) throw error
+    // jq compiles its program before it opens a single input, so a
+    // refusal is all it prints.
+    return [
+      null,
+      new IOResult({
+        exitCode: ERROR_COMPILE,
+        stderr: new TextEncoder().encode(`${error.message}\n`),
+      }),
+    ]
+  }
 
   // The per-line path rewrites the program to run on one element, so it
   // can only serve a run whose input stream is the file's documents and
-  // whose exit code does not depend on the last of them.
+  // whose exit code does not depend on the last of them. A halt reports on
+  // stderr and sets the exit code, which a stream of outputs has no room
+  // for.
   const first = paths[0]
   if (
     first !== undefined &&
@@ -261,43 +366,85 @@ export async function jqGeneric(
     !jq.stream &&
     !jq.seq &&
     !jq.exitStatus &&
-    !wantsInputs
+    !readsStream &&
+    !halts(expr)
   ) {
-    return [evalJsonlStream(stream(first), expr, jq), new IOResult()]
+    return [
+      evalJsonlStream(
+        stream(first),
+        expr,
+        jq,
+        first.rawPath === '' ? first.virtual : first.rawPath,
+      ),
+      new IOResult(),
+    ]
   }
 
-  const chunks: Uint8Array[] = []
+  const sources: [string, Uint8Array][] = []
   // -n does not read its inputs at all unless the program asks for them
-  // through `inputs`, which is why jq -n never opens a missing file.
-  if (!jq.nullInput || wantsInputs) {
+  // through `input` or `inputs`, which is why jq -n never opens a missing
+  // file.
+  if (!jq.nullInput || readsStream) {
     if (paths.length > 0) {
-      for (const path of paths) chunks.push(await materialize(stream(path)))
+      for (const path of paths) {
+        sources.push([
+          path.rawPath === '' ? path.virtual : path.rawPath,
+          await materialize(stream(path)),
+        ])
+      }
     } else {
       const stdinBytes = await readStdinAsync(opts.stdin)
-      if (stdinBytes !== null) chunks.push(stdinBytes)
+      if (stdinBytes !== null) sources.push([STDIN_NAME, stdinBytes])
     }
   }
-  const docs = await assembleInputs(chunks, jq)
+  const [docs, positions] = await assembleInputs(sources, jq)
 
+  // A run sees only the documents it can read: all of the rest when it
+  // calls `inputs`, or the one `input` takes when it calls only that.
+  const unread = (at: number): unknown[] => (reads.inputs ? docs.slice(at) : docs.slice(at, at + 1))
   const outputs: unknown[] = []
+  const statuses: number[] = []
+  const reports: string[] = []
+  // Fold one run into the invocation: its outputs, its answer toward the
+  // exit status, and its report when it stopped early. A halt ends the
+  // invocation, which is what this answers.
+  const settle = (run: JqRun, at: number | null, taken: number): boolean => {
+    outputs.push(...run.outputs)
+    statuses.push(runStatus(run))
+    if (run.stop?.kind === 'error') {
+      reports.push(errorReport(runPosition(positions, reads, at, taken), run.stop))
+    } else if (run.stop?.kind === 'halt') {
+      reports.push(haltReport(run.stop))
+      return true
+    }
+    return false
+  }
   if (jq.nullInput) {
-    outputs.push(...(await jqEval(null, expr, jq.namedArgs, wantsInputs ? docs : null, argsValue)))
-  } else if (wantsInputs) {
-    // `inputs` consumes from the same stream the main loop reads, so a
-    // program that drains it runs once. How much it drains is a runtime
-    // fact this evaluator does not report, so mirage assumes the whole
-    // rest, which is what the idiom (`[., inputs]`, `reduce inputs as $x`)
-    // does; a program that takes only some of them (`first(inputs)`) would
-    // leave the remainder for another pass in real jq and does not here.
-    if (docs.length > 0) {
-      outputs.push(...(await jqEval(docs[0], expr, jq.namedArgs, docs.slice(1), argsValue)))
+    const rest = readsStream ? unread(0) : null
+    settle(await jqRun(null, expr, jq.namedArgs, rest, argsValue), null, rest?.length ?? 0)
+  } else if (readsStream) {
+    // `input` and `inputs` consume from the same stream the main loop
+    // reads, so each run starts past whatever the one before it took. How
+    // much a run takes is a runtime fact this evaluator does not report,
+    // so mirage assumes what the idioms do: `inputs` drains the rest
+    // (`[., inputs]`, `reduce inputs as $x`), and `input` alone takes one
+    // (`[., input]` pairs the documents up). A program that takes some
+    // other count (`first(inputs)`, an `input` in a branch not taken)
+    // leaves real jq a different remainder for its next run than here.
+    let at = 0
+    while (at < docs.length) {
+      const rest = unread(at + 1)
+      if (settle(await jqRun(docs[at], expr, jq.namedArgs, rest, argsValue), at, rest.length)) break
+      at += 1 + rest.length
     }
   } else {
-    // jq applies the program to every document in the stream.
-    for (const doc of docs) {
-      outputs.push(...(await jqEval(doc, expr, jq.namedArgs, null, argsValue)))
+    // jq applies the program to every document in the stream, and goes on
+    // past one whose run failed.
+    for (const [at, doc] of docs.entries()) {
+      if (settle(await jqRun(doc, expr, jq.namedArgs, null, argsValue), at, 0)) break
     }
   }
   const out: ByteSource = formatJqOutput(outputs, jq)
-  return [out, new IOResult({ exitCode: exitCode(outputs, jq) })]
+  const stderr = reports.length > 0 ? new TextEncoder().encode(reports.join('')) : null
+  return [out, new IOResult({ exitCode: exitCode(statuses, jq), stderr })]
 }

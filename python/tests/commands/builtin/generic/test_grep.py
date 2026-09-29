@@ -971,3 +971,66 @@ async def test_grep_names_only_a_dash_stdin(raw, flags, want):
                             read_stream=rs,
                             stdin=b"b\n")
     assert (await _drain_async(output), io.exit_code) == (want, 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("quiet", [False, True])
+async def test_recursive_grep_stops_reading_and_closes_stream(quiet):
+    readdir, stat, rb, _ = _make_backend({
+        "/d/a/first": b"hit\n",
+        "/d/a/later": b"hit\n",
+        "/d/later": b"hit\n",
+        "/later": b"hit\n",
+    })
+    opened = []
+    closed = []
+
+    async def stream(path):
+        opened.append(path.virtual)
+        try:
+            yield b"hit\n"
+            raise AssertionError("read beyond the first match")
+        finally:
+            closed.append(path.virtual)
+
+    output, io = await grep([_spec("/d"), _spec("/later")], ["hit"],
+                            CommandOpts(flags={
+                                "r": True,
+                                "q": quiet
+                            }),
+                            readdir=readdir,
+                            stat=stat,
+                            read_bytes=rb,
+                            read_stream=stream)
+    assert opened == []  # Opening the command is lazy too.
+    if quiet:
+        assert await _drain_async(output) == b""
+        assert io.exit_code == 0
+    else:
+        assert await anext(output) == b"/d/a/first:hit\n"
+        await output.aclose()
+    assert opened == ["/d/a/first"]
+    assert closed == opened
+
+
+@pytest.mark.asyncio
+async def test_recursive_quiet_no_match_visits_every_file():
+    readdir, stat, rb, _ = _make_backend({"/d/a": b"no\n", "/d/b": b"no\n"})
+    opened = []
+
+    async def stream(path):
+        opened.append(path.virtual)
+        yield await rb(path)
+
+    output, io = await grep([_spec("/d")], ["hit"],
+                            CommandOpts(flags={
+                                "r": True,
+                                "q": True
+                            }),
+                            readdir=readdir,
+                            stat=stat,
+                            read_bytes=rb,
+                            read_stream=stream)
+    assert await _drain_async(output) == b""
+    assert io.exit_code == 1
+    assert opened == ["/d/a", "/d/b"]

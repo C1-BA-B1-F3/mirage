@@ -8,6 +8,7 @@ from mirage.commands.builtin.utils.lines import split_lines_keepends
 from mirage.commands.builtin.utils.stream import (is_stdin, stdin_bytes,
                                                   stdin_stat)
 from mirage.commands.config import CommandOpts
+from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import CommandName, FlagValue
@@ -28,6 +29,7 @@ class _DiffFlags:
     e: bool = False
     u: bool = False
     q: bool = False
+    context: int = 3
 
 
 def _child_spec(parent: PathSpec, name: str) -> PathSpec:
@@ -74,7 +76,8 @@ async def _diff_pair(
             difflib.unified_diff(a_lines,
                                  b_lines,
                                  fromfile=name1,
-                                 tofile=name2))
+                                 tofile=name2,
+                                 n=flags.context))
     else:
         result = normal_diff(a_lines, b_lines)
     return "".join(result).encode()
@@ -128,20 +131,21 @@ async def _diff_dirs(
 
 
 async def diff(
-        paths: list[PathSpec],
-        *,
-        read_bytes: Callable[..., Awaitable[bytes]],
-        readdir_fn: Callable[..., Awaitable[list[str]]],
-        stat_fn: Callable[..., Awaitable[FileStat]],
-        stdin: ByteSource | None = None,
-        i: bool = False,
-        w: bool = False,
-        b: bool = False,
-        e: bool = False,
-        u: bool = False,
-        q: bool = False,
-        r: bool = False,
-        argv: Sequence[str] = (),
+    paths: list[PathSpec],
+    *,
+    read_bytes: Callable[..., Awaitable[bytes]],
+    readdir_fn: Callable[..., Awaitable[list[str]]],
+    stat_fn: Callable[..., Awaitable[FileStat]],
+    stdin: ByteSource | None = None,
+    i: bool = False,
+    w: bool = False,
+    b: bool = False,
+    e: bool = False,
+    u: bool = False,
+    q: bool = False,
+    r: bool = False,
+    argv: Sequence[str] = (),
+    context: int = 3,
 ) -> tuple[ByteSource | None, IOResult]:
     if len(paths) > 2:
         raise extra_operand_error(CommandName.DIFF, paths[2].raw_path)
@@ -151,7 +155,7 @@ async def diff(
     if is_stdin(paths[0]) and is_stdin(paths[1]):
         # Both name the one stdin, which GNU sees as the same file.
         return None, IOResult()
-    flags = _DiffFlags(i=i, w=w, b=b, e=e, u=u, q=q)
+    flags = _DiffFlags(i=i, w=w, b=b, e=e, u=u, q=q, context=context)
     read_bytes = stdin_bytes(read_bytes, stdin)
     stat_fn = stdin_stat(stat_fn)
     dashes = [p.raw_path == "-" for p in paths]
@@ -193,19 +197,34 @@ class DiffFlags:
     ignore_space_change: bool = False
     ed: bool = False
     unified: bool = False
+    context: int = 3
     brief: bool = False
     recursive: bool = False
 
 
 def parse_flags(flags: Mapping[str, FlagValue]) -> DiffFlags:
     fl = FlagView(flags, spec=SPECS["diff"])
+    context = -1
+    unified = fl.as_bool("u")
+    for _, value in fl.occurrences("U", "unified"):
+        unified = True
+        if value is True:
+            context = max(context, 3)
+        elif isinstance(value, str) and (value == "" or re.fullmatch(
+                r"[ \t\n\r\v\f]*[+-]?[0-9]+", value)) and int(value
+                                                              or "0") >= 0:
+            context = max(context, min(int(value or "0"), 2**63 - 1))
+        else:
+            raise UsageError(f"diff: invalid context length '{value}'\n"
+                             "diff: Try 'diff --help' for more information.")
     return DiffFlags(
         ignore_case=fl.as_bool("i"),
         ignore_all_space=fl.as_bool("w"),
         ignore_space_change=fl.as_bool("b"),
         ed=fl.as_bool("e"),
-        unified=fl.as_bool("u"),
-        brief=fl.as_bool("q"),
+        unified=unified,
+        context=3 if context == -1 else context,
+        brief=fl.as_bool("brief"),
         recursive=fl.as_bool("r"),
     )
 
@@ -231,4 +250,5 @@ async def diff_generic(
                       u=parsed.unified,
                       q=parsed.brief,
                       r=parsed.recursive,
-                      argv=opts.argv)
+                      argv=opts.argv,
+                      context=parsed.context)

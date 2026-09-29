@@ -12,14 +12,17 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from mirage.core.airtable.config import AirtableConfig
+
+if TYPE_CHECKING:
+    from mirage.vfs.airtable.airtable import AirtableVFS
 
 __all__ = ["AirtableConfig", "AirtableVFS"]
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> "type[AirtableVFS]":
     if name == "AirtableVFS":
         from mirage.vfs.airtable.airtable import AirtableVFS
         return AirtableVFS

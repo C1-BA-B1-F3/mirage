@@ -19,6 +19,7 @@ import type { StatFn } from './archive/walk.ts'
 import { mountedPath } from '../../../utils/key_prefix.ts'
 import { IOResult, materialize, type ByteSource } from '../../../io/types.ts'
 import type { PathSpec } from '../../../types.ts'
+import { gnuBasename } from '../../../utils/path.ts'
 import { gzip } from '../../../utils/compress.ts'
 import type { CommandFnResult, CommandOpts } from '../../config.ts'
 import { linkDoor } from '../utils/links.ts'
@@ -136,7 +137,7 @@ export async function gzipGeneric(
       }
       link = found.link
     }
-    const data = await gzip(raw)
+    const data = await gzip(raw, p.rawPath === '-' ? '' : gnuBasename(p.rawPath))
     if (!inPlace) {
       stdout.push(data)
       continue

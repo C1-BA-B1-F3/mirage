@@ -197,3 +197,30 @@ async def test_tars_long_options_run_as_the_short_ones(line, out):
     await ws.shell("mkdir /data/dir && printf 'x\\n' > /data/a.txt")
     r = await ws.shell(f"cd /data && {line}")
     assert (r.exit_code, await r.stdout_str()) == (0, out)
+
+
+@pytest.mark.asyncio
+async def test_stdout_archive_needs_no_writable_root_and_does_not_create_dash(
+):
+    ws = Workspace({"/data": (RAMVFS(), MountMode.WRITE)}, mode=MountMode.READ)
+    await ws.shell("printf hello > /data/a")
+    result = await ws.shell("tar -cvf - -C /data a | tar -xOf -")
+    assert result.exit_code == 0
+    assert await result.materialize_stdout() == b"hello"
+    assert await result.materialize_stderr() == b"a\n"
+    assert (await ws.shell("test ! -e /-")).exit_code == 0
+    await ws.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("data", [b"", b"not an archive", b"x" * 1024])
+@pytest.mark.parametrize("flags", ["-tf", "-xf"])
+async def test_invalid_archive_has_tar_diagnostics(data, flags):
+    notices = b"tar: This does not look like a tar archive\n"
+    if len(data) >= 512:
+        notices += b"tar: Skipping to next header\n"
+    assert await _shell(
+        f"tar {flags} /data/bad",
+        {"/data/bad": data
+         }) == (2, b"", notices +
+                b"tar: Exiting with failure status due to previous errors\n")

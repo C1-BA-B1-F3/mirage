@@ -1,0 +1,88 @@
+{
+  "cases": [
+    {
+      "id": "git_init_independent_repository",
+      "seq": 568800,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git init -q -b main /repo/empty-repo && cat /repo/empty-repo/.git/HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "ref: refs/heads/main\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_reinit_preserves_head",
+      "seq": 568801,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git init -q -b ignored /repo/empty-repo && cat /repo/empty-repo/.git/HEAD",
+      "expect": {
+        "exit": 0,
+        "stdout": "ref: refs/heads/main\n",
+        "stderr": "warning: re-init: ignored --initial-branch=ignored\n"
+      }
+    },
+    {
+      "id": "git_stash_empty_list",
+      "seq": 568802,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo/empty-repo stash list",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "git_stash_empty_show",
+      "seq": 568803,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo/empty-repo stash show",
+      "expect": {
+        "exit": 1,
+        "stdout": "",
+        "stderr": "No stash entries found.\n"
+      }
+    },
+    {
+      "id": "git_fsck_empty_repository",
+      "seq": 568804,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git -C /repo/empty-repo fsck",
+      "expect": {
+        "exit": 0,
+        "stdout": "",
+        "stderr": "notice: HEAD points to an unborn branch (main)\nnotice: No default references\n"
+      }
+    },
+    {
+      "id": "git_help_without_repository",
+      "seq": 568805,
+      "targets": [
+        "git-disk",
+        "git-ram"
+      ],
+      "command": "git help | head -1",
+      "expect": {
+        "exit": 0,
+        "stdout": "git: Content tracker\n",
+        "stderr": ""
+      }
+    }
+  ]
+}

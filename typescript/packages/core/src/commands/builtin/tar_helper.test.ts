@@ -19,6 +19,19 @@ const ENC = new TextEncoder()
 const DEC = new TextDecoder()
 
 describe('tar_helper', () => {
+  it('accepts a complete member without EOF padding and ignores data after EOF', async () => {
+    const archive = await writeTar([{ name: 'a.txt', data: ENC.encode('aaa\n'), isFile: true }])
+    const withTail = new Uint8Array(archive.length + 4)
+    withTail.set(archive)
+    withTail.set(ENC.encode('junk'), archive.length)
+    for (const bytes of [archive.subarray(0, 1024), archive.subarray(0, 1536), withTail]) {
+      const entries = await readTar(bytes)
+      expect(entries.map((entry) => entry.name)).toEqual(['a.txt'])
+      expect(DEC.decode(entries[0]?.data)).toBe('aaa\n')
+    }
+    expect(await readTar(new Uint8Array(512))).toEqual([])
+  })
+
   it('round-trips a name past the 100 byte ustar limit', async () => {
     // ustar stores a name in 100 bytes; anything longer needs the prefix
     // field or a PAX header. Truncating it silently used to write the

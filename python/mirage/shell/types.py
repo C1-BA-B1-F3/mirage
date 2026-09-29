@@ -161,6 +161,7 @@ class ArithResult:
 
 class NodeType(StrEnum):
     """Tree-sitter-bash node types."""
+    TIMED_STATEMENT = "timed_statement"
     COMMAND = "command"
     PIPELINE = "pipeline"
     LIST = "list"

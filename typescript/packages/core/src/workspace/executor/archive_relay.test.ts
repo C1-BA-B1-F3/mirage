@@ -98,11 +98,30 @@ describe('tar member selectors and relay extraction', () => {
 
   it('-C extracts into another mount', async () => {
     const ws = await makeWs()
+    expect((await ws.shell('mkdir /dest')).exitCode).toBe(0)
     const io = await ws.shell('tar -xzf /work/files.tar.gz -C /dest')
     expect(stderrStr(io)).toBe('')
     expect(io.exitCode).toBe(0)
     const cat = await ws.shell('cat /dest/other.txt')
     expect(stdoutStr(cat)).toBe('content:./other.txt\n')
+  })
+
+  it.each([
+    ['t', './memory/memory.json\n./other.txt\n'],
+    ['xO', 'content:./memory/memory.json\ncontent:./other.txt\n'],
+    ['x', ''],
+  ])('tar -%szf - preserves stdin across chdir mounts', async (mode, expected) => {
+    const ws = await makeWs()
+    expect((await ws.shell('mkdir /dest')).exitCode).toBe(0)
+    const io = await ws.shell(`cat /work/files.tar.gz | tar -${mode}zf - -C /work -C /dest`)
+    expect(stderrStr(io)).toBe('')
+    expect(io.exitCode).toBe(0)
+    expect(stdoutStr(io)).toBe(expected)
+    if (mode === 'x') {
+      expect(stdoutStr(await ws.shell('cat /dest/memory/memory.json'))).toBe(
+        'content:./memory/memory.json\n',
+      )
+    }
   })
 
   it('create writes the archive on another mount', async () => {

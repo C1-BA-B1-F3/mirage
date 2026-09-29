@@ -12,13 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.gcal.config import GCalConfig
 from mirage.vfs.gcal.event_entry import make_event_filename
+
+if TYPE_CHECKING:
+    from mirage.vfs.gcal.gcal import GCalVFS
 
 __all__ = ["GCalConfig", "make_event_filename", "GCalVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[GCalVFS]":
     if name == "GCalVFS":
         from mirage.vfs.gcal.gcal import GCalVFS
         return GCalVFS

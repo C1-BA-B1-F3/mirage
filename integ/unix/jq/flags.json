@@ -834,6 +834,206 @@
       "flags": [
         "arg"
       ]
+    },
+    {
+      "id": "jq_inputs_reads_a_two_megabyte_stream",
+      "seq": 700945,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqf && jq -n -c 'range(20480) | {k: (\"x\" * 90)}' > /data/qjqf/big.jsonl && jq -n '[inputs] | length' /data/qjqf/big.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "20480\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_inputs_reads_a_two_megabyte_stdin",
+      "seq": 700946,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqf && jq -n -c 'range(20480) | {k: (\"x\" * 90)}' > /data/qjqf/big.jsonl && cat /data/qjqf/big.jsonl | jq -n 'reduce inputs as $x (0; . + 1)'",
+      "expect": {
+        "exit": 0,
+        "stdout": "20480\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_slurpfile_binds_a_two_megabyte_file",
+      "seq": 700947,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqf && jq -n -c 'range(20480) | {k: (\"x\" * 90)}' > /data/qjqf/big.jsonl && jq -n --slurpfile x /data/qjqf/big.jsonl '$x | length'",
+      "expect": {
+        "exit": 0,
+        "stdout": "20480\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_rawfile_binds_a_two_megabyte_file",
+      "seq": 700948,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqf && jq -n -c 'range(20480) | {k: (\"x\" * 90)}' > /data/qjqf/big.jsonl && jq -n --rawfile x /data/qjqf/big.jsonl '$x | length'",
+      "expect": {
+        "exit": 0,
+        "stdout": "2027520\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_null_input_input_takes_the_first_document",
+      "seq": 700949,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqf && printf '{\"n\":1}\\n{\"n\":2}\\n' > /data/qjqf/two.jsonl && jq -n -c input /data/qjqf/two.jsonl",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"n\":1}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_inputs_starts_after_the_document_input_took",
+      "seq": 700950,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqf && printf '1\\n2\\n3\\n4\\n' > /data/qjqf/four.json && jq -n -c 'input as $h | [$h, [inputs]]' /data/qjqf/four.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1,[2,3,4]]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_input_takes_one_document_per_run",
+      "seq": 700951,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqf && printf '1\\n2\\n3\\n4\\n' > /data/qjqf/four.json && jq -c '[., input]' /data/qjqf/four.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1,2]\n[3,4]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "c"
+      ]
+    },
+    {
+      "id": "jq_raw_input_header_row_then_the_rest",
+      "seq": 700952,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqf && printf 'a,b\\n1,2\\n3,4\\n' > /data/qjqf/t.csv && jq -R -n -c '(input | split(\",\")) as $h | inputs | split(\",\") | [$h, .] | transpose | map({key: .[0], value: .[1]}) | from_entries' /data/qjqf/t.csv",
+      "expect": {
+        "exit": 0,
+        "stdout": "{\"a\":\"1\",\"b\":\"2\"}\n{\"a\":\"3\",\"b\":\"4\"}\n",
+        "stderr": ""
+      },
+      "flags": [
+        "R",
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_input_past_the_end_of_the_stream_is_break",
+      "seq": 700953,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "mkdir -p /data/qjqf && printf '' > /data/qjqf/none.json && jq -n -c 'try input catch .' /data/qjqf/none.json",
+      "expect": {
+        "exit": 0,
+        "stdout": "\"break\"\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
+    },
+    {
+      "id": "jq_null_input_input_reads_stdin",
+      "seq": 700954,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs"
+      ],
+      "command": "printf '[1]\\n[2]\\n' | jq -n -c input",
+      "expect": {
+        "exit": 0,
+        "stdout": "[1]\n",
+        "stderr": ""
+      },
+      "flags": [
+        "n",
+        "c"
+      ]
     }
   ]
 }

@@ -335,6 +335,7 @@ describe('tar', () => {
     await runCmd(RAM_TAR, vfs, [dirSpec('/d', 'd')], { create: true, file: '/out.tar' })
     const listed = await runCmd(RAM_TAR, vfs, [], { list: true, file: '/out.tar' })
     expect(DEC.decode(listed.out)).toContain('d/empty/')
+    vfs.store.dirs.add('/out')
     await runCmd(RAM_TAR, vfs, [], { extract: true, file: '/out.tar', directory: '/out' })
     expect(vfs.store.dirs.has('/out/d/empty')).toBe(true)
   })

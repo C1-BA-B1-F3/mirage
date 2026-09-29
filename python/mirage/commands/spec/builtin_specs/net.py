@@ -70,6 +70,18 @@ SPECS: dict[str, CommandSpec] = {
             Option(short="-I",
                    long="--head",
                    description="Fetch the headers only."),
+            Option(short="-4",
+                   long="--ipv4",
+                   description=("Accept IPv4 preference "
+                                "(transport selects the address family).")),
+            Option(short="-6",
+                   long="--ipv6",
+                   description=("Accept IPv6 preference "
+                                "(transport selects the address family).")),
+            Option(short="-w",
+                   long="--write-out",
+                   type="str",
+                   description="Print transfer information after completion."),
             Option(short="-m",
                    long="--max-time",
                    type="float",
@@ -93,6 +105,11 @@ SPECS: dict[str, CommandSpec] = {
                 type="path",
                 description="Write the downloaded content to the given file."),
             Option(short="-q", description="Run quietly with no output."),
+            Option(short="-T",
+                   long="--timeout",
+                   type="float",
+                   description=
+                   "Set the network timeout in seconds (zero disables it)."),
             Option(
                 long="--spider",
                 description="Check that the URL exists without downloading it."

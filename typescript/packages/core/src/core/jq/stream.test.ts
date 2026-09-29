@@ -83,7 +83,7 @@ describe('parseJsonDocs', () => {
 describe('evalJsonlStream', () => {
   it('maps each line through the per-item program', async () => {
     const source = lines('{"msg":"hello"}\n', '{"msg":"world"}\n')
-    expect(await collect(evalJsonlStream(source, '.[].msg', COMPACT))).toEqual([
+    expect(await collect(evalJsonlStream(source, '.[].msg', COMPACT, 'f.jsonl'))).toEqual([
       '"hello"',
       '"world"',
     ])
@@ -93,14 +93,19 @@ describe('evalJsonlStream', () => {
     const source = lines('{"msg":"hello"}\n', '{"msg":"world"}\n')
     expect(
       await collect(
-        evalJsonlStream(source, '.[].msg', jqOptions({ rawOutput: true, compact: true })),
+        evalJsonlStream(
+          source,
+          '.[].msg',
+          jqOptions({ rawOutput: true, compact: true }),
+          'f.jsonl',
+        ),
       ),
     ).toEqual(['hello', 'world'])
   })
 
   it('prints every output of a line', async () => {
     const source = lines('{"a":1,"b":2}\n', '{"a":3,"b":4}\n')
-    expect(await collect(evalJsonlStream(source, '.[] | .a, .b', COMPACT))).toEqual([
+    expect(await collect(evalJsonlStream(source, '.[] | .a, .b', COMPACT, 'f.jsonl'))).toEqual([
       '1',
       '2',
       '3',
@@ -108,11 +113,22 @@ describe('evalJsonlStream', () => {
     ])
   })
 
+  it('ends at the first error, reported the way jq reports it', async () => {
+    const source = lines('{"a":1}\n', '{"a":"x"}\n', '{"a":3}\n')
+    const seen: string[] = []
+    await expect(async () => {
+      for await (const chunk of evalJsonlStream(source, '.[] | .a + 1', COMPACT, 'f.jsonl')) {
+        seen.push(DEC.decode(chunk).trim())
+      }
+    }).rejects.toThrow('jq: error (at f.jsonl:2): string ("x") and number (1) cannot be added')
+    expect(seen).toEqual(['2'])
+  })
+
   it('drops lines with no output', async () => {
     const source = lines('{"id":1}\n', '{"id":2}\n', '{"id":3}\n')
-    expect(await collect(evalJsonlStream(source, '.[] | select(.id > 2)', COMPACT))).toEqual([
-      '{"id":3}',
-    ])
+    expect(
+      await collect(evalJsonlStream(source, '.[] | select(.id > 2)', COMPACT, 'f.jsonl')),
+    ).toEqual(['{"id":3}'])
   })
 })
 
@@ -135,13 +151,15 @@ describe('parseJsonDocs on empty input', () => {
 describe('evalJsonlStream output options', () => {
   it('pretty-prints by default', async () => {
     const source = lines('{"a":1}\n')
-    expect(await collect(evalJsonlStream(source, '.[]', jqOptions()))).toEqual(['{\n  "a": 1\n}'])
+    expect(await collect(evalJsonlStream(source, '.[]', jqOptions(), 'f.jsonl'))).toEqual([
+      '{\n  "a": 1\n}',
+    ])
   })
 
   it('binds named args', async () => {
     const source = lines('{"a":1}\n')
     const opts = jqOptions({ compact: true, namedArgs: { v: 'hi' } })
-    expect(await collect(evalJsonlStream(source, '.[] | [., $v]', opts))).toEqual([
+    expect(await collect(evalJsonlStream(source, '.[] | [., $v]', opts, 'f.jsonl'))).toEqual([
       '[{"a":1},"hi"]',
     ])
   })

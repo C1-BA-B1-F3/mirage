@@ -30,6 +30,18 @@ export class UsageError extends Error {
 // Mirrors Python's mirage.commands.errors.FindParseError.
 export class FindParseError extends Error {}
 
+// A command's failure after it had already printed output, which a program
+// that writes as it goes leaves on stdout ahead of the diagnostic.
+// Mirrors Python's mirage.commands.errors.PartialOutputError.
+export class PartialOutputError extends Error {
+  readonly stdout: Uint8Array
+  constructor(message: string, stdout: Uint8Array) {
+    super(message)
+    this.name = 'PartialOutputError'
+    this.stdout = stdout
+  }
+}
+
 // A command or op overran its timeout budget (exit 124).
 // Mirrors Python's mirage.commands.errors.CommandTimeoutError.
 export class CommandTimeoutError extends Error {

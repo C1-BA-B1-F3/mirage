@@ -28,6 +28,7 @@ import { issueComments } from '../../../../core/github/issue.ts'
 import { commentsFor, commentsText } from './issue.ts'
 import { GH } from './index.ts'
 import { PathSpec } from '../../../../types.ts'
+import { PartialOutputError } from '../../../errors.ts'
 import { IOResult, materialize } from '../../../../io/types.ts'
 import { api } from './api.ts'
 import { fork, listCmd, rename, summary, view } from './repo.ts'
@@ -117,6 +118,7 @@ describe('gh tree', () => {
   it('registers itself under the grammar gh uses', () => {
     expect(cliSpecFor('gh')).toBe(GH)
     expect(GH.subcommands.map((c) => c.name)).toEqual([
+      'auth',
       'version',
       'api',
       'issue',
@@ -181,7 +183,15 @@ describe('gh repo', () => {
         },
       },
     ])
-    expect(out).toBe('{\n  "name": "r",\n  "parent": null\n}\n')
+    expect(out).toBe('{"name":"r","parent":null}\n')
+  })
+
+  // Go's encoder, which gh's exporter uses, escapes the two Unicode line
+  // separators; with HTML escaping off, `<`, `>` and `&` stay raw.
+  it("prints JSON as gh does: compact, in Go's escaping", async () => {
+    reset({ data: { repository: { description: 'a<b>&c\u{2028}d\u{2029}\b\u{e9}' } } })
+    const out = text(await view(inv(['o/r'], { json: 'description' })))
+    expect(out).toBe('{"description":"a<b>&c\\u2028d\\u2029\\b\u{e9}"}\n')
   })
 
   // gh decodes the answer into Go structs and prints those: a null string is
@@ -536,7 +546,29 @@ describe('gh api', () => {
     ]
     const out = await api(inv(['items'], { paginate: true, slurp: true }))
     expect(CALLS.map((call) => call.path)).toEqual(['/items', '/items?page=2'])
-    expect(out === null ? '' : JSON.parse(text(out))).toEqual([[{ id: 1 }], [{ id: 2 }]])
+    expect(out === null ? '' : text(out)).toBe('[[{"id":1}],[{"id":2}]]')
+  })
+
+  // gh copies each body out verbatim, the vendor's compact text with no
+  // newline added, and a paginated run streams array pages as one array
+  // (its paginatedArrayReader); an empty page leaves a space behind.
+  it.each([
+    ['one body', [[{ id: 1 }]], false, '[{"id":1}]'],
+    ['array pages', [[1, 2], [3]], true, '[1,2,3]'],
+    ['an empty page between', [[1], [], [2]], true, '[1 ,2]'],
+    ['object pages', [{ a: 1 }, { a: 2 }], true, '{"a":1}{"a":2}'],
+  ] as const)('prints %s as gh does', async (_name, bodies, paginate, stdout) => {
+    reset()
+    RESPONSES = bodies.map((data, index) => ({
+      data,
+      status: 200,
+      headers:
+        index < bodies.length - 1
+          ? { link: `<http://fake/items?page=${String(index + 2)}>; rel="next"` }
+          : {},
+    }))
+    const out = await api(inv(['items'], paginate ? { paginate: true } : {}))
+    expect(out === null ? '' : text(out)).toBe(stdout)
   })
 
   it('strips the Enterprise API prefix from Link pages', async () => {
@@ -587,6 +619,34 @@ describe('gh api --jq', () => {
     reset({ a: 'x', b: 'y' })
     const out = await api(inv(['repos/o/r'], { jq: '.a, .b' }))
     expect(out === null ? '' : text(out)).toBe('x\ny\n')
+  })
+
+  // go-gh's gojq ends the output at `halt` and fails at halt_error, pinned
+  // against gh: `halt error: <message>`, exit 1 whatever the code.
+  it('ends the output at halt', async () => {
+    reset({ a: 'x' })
+    const out = await api(inv(['repos/o/r'], { jq: '.a, halt, .a' }))
+    expect(out === null ? '' : text(out)).toBe('x\n')
+  })
+
+  it.each([
+    ['"x" | halt_error(3)', 'halt error: x'],
+    ['{"a":1} | halt_error', 'halt error: {"a":1}'],
+    ['[.a] | map({v: .} | halt_error(0))', 'halt error: {"v":"x"}'],
+  ])('fails at %s', async (program, message) => {
+    reset({ a: 'x' })
+    await expect(api(inv(['repos/o/r'], { jq: program }))).rejects.toThrow(message)
+  })
+
+  it.each([
+    ['.a, ("y" | halt_error(1))', 'halt error: y'],
+    ['.a, error("boom")', 'boom'],
+  ])('keeps what it printed before %s failed', async (program, message) => {
+    reset({ a: 'x' })
+    const failure = await api(inv(['repos/o/r'], { jq: program })).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(PartialOutputError)
+    const partial = failure as PartialOutputError
+    expect([partial.message, new TextDecoder().decode(partial.stdout)]).toEqual([message, 'x\n'])
   })
 })
 
@@ -743,6 +803,12 @@ it.each([
     'gh: HTTP 422\n',
   ],
   [{ slurp: true }, '', '[{"value":"first"},]', 'gh: HTTP 422\n'],
+  [
+    {},
+    '{"message":"Validation Failed"}',
+    '{"value":"first"}{"message":"Validation Failed"}',
+    'gh: Validation Failed (HTTP 422)\n',
+  ],
   [{ silent: true }, '{"message":"Validation Failed"}', '', 'gh: Validation Failed (HTTP 422)\n'],
 ] as const)(
   'keeps rendered pages when a later request fails: %s %j',
@@ -767,6 +833,51 @@ it.each([
     }
   },
 )
+
+// gh runs `--jq` over each page as it lands, so a failure on a later page
+// keeps the lines the earlier pages printed.
+it.each([
+  ['if .value == "second" then "y" | halt_error(1) else .value end', 'halt error: y'],
+  ['if .value == "second" then error("boom") else .value end', 'boom'],
+])('keeps the earlier pages when --jq %s fails on a later one', async (program, message) => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockResolvedValueOnce({
+      data: { value: 'first' },
+      status: 200,
+      headers: { link: '</page2>; rel="next"' },
+    })
+    .mockResolvedValueOnce({ data: { value: 'second' }, status: 200, headers: {} })
+  try {
+    const failure = await api(inv(['page1'], { paginate: true, jq: program })).catch(
+      (error: unknown) => error,
+    )
+    expect(failure).toBeInstanceOf(PartialOutputError)
+    const partial = failure as PartialOutputError
+    expect([partial.message, DEC.decode(partial.stdout)]).toEqual([message, 'first\n'])
+  } finally {
+    request.mockRestore()
+  }
+})
+
+// A failing response after an array page is still a page to gh, so that
+// array's closing bracket stays withheld and the failing body runs on.
+it('leaves an array page open when a failing page follows it', async () => {
+  const request = vi
+    .spyOn(FakeTransport.prototype, 'requestWithResponse')
+    .mockResolvedValueOnce({ data: [1], status: 200, headers: { link: '</page2>; rel="next"' } })
+    .mockRejectedValueOnce(
+      new GitHubApiError('Validation Failed', 422, '{"message":"Validation Failed"}'),
+    )
+  try {
+    const result = await api(inv(['page1'], { paginate: true }))
+    if (result === null) throw new Error('missing API result')
+    expect(DEC.decode(await materialize(result[0]))).toBe('[1{"message":"Validation Failed"}')
+    expect(result[1].exitCode).toBe(1)
+  } finally {
+    request.mockRestore()
+  }
+})
 
 it.each([
   [{}, '{"errors":[{"message":"one"},{"message":"two"}],"data":null}'],

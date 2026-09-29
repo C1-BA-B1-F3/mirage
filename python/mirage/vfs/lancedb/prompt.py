@@ -15,16 +15,9 @@
 PROMPT = """\
 This mount is a LanceDB table exposed as a filesystem.
 
-Layout:
-- Directories are the configured group-by columns. Descending narrows a filter,
-  e.g. `ls Men/Tshirts/Blue` lists rows where gender=Men, articleType=Tshirts,
-  baseColour=Blue.
-- Each matching row appears as two files: `<id>.md` (a readable card with all
-  attributes) and `<id>.<ext>` (the raw blob/image bytes), when a blob column is
-  configured.
-- Semantic search is a virtual folder named `_search`. Read a query as a path
-  segment: `ls "_search/red running shoes"` returns the top matches as row
-  files; `cat "_search/red running shoes/<id>.md"` shows the card with a score.
-
-Use ls/cd/cat/tree/find/grep as usual. Quote queries that contain spaces.\
-"""
+Directories are the configured group-by columns; descending narrows a filter.
+Each matching row is a <id>.md card plus a <id>.<ext> blob file. For semantic
+search use the search command, which returns ranked rows as canonical file
+paths with a score, e.g. search "red running shoes" /mount then cat one of the
+returned <path>.md files. Use ls/cd/cat/tree/find/wc as usual; grep/rg stay
+lexical. Quote queries that contain spaces."""

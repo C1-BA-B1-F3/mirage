@@ -12,13 +12,18 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from typing import TYPE_CHECKING
+
 from mirage.vfs.gdocs.config import GDocsConfig
 from mirage.vfs.gdocs.doc_entry import DocEntry
+
+if TYPE_CHECKING:
+    from mirage.vfs.gdocs.gdocs import GDocsVFS
 
 __all__ = ["GDocsConfig", "DocEntry", "GDocsVFS"]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> "type[GDocsVFS]":
     if name == "GDocsVFS":
         from mirage.vfs.gdocs.gdocs import GDocsVFS
         return GDocsVFS

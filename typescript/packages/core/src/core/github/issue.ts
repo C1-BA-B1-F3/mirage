@@ -15,7 +15,7 @@
 import type { GitHubTransport } from './client.ts'
 import { GRAPHQL_PATH } from './constants.ts'
 import { githubPages } from './paginate.ts'
-import type { RepoRef } from './repo.ts'
+import { graphqlData, type RepoRef } from './repo.ts'
 
 function path(ref: RepoRef, tail = ''): string {
   return `/repos/${ref.owner}/${ref.repo}/issues${tail}`
@@ -142,4 +142,133 @@ export async function issueComments(
     if (!next || next === cursor) throw new Error('GitHub returned a non-advancing comments cursor')
     cursor = next
   }
+}
+
+/** The selection for each half of gh's IssueByNumber; an empty one is left out. */
+export interface IssueSelections {
+  readonly issue: string
+  readonly pull: string
+}
+
+/**
+ * The selected fields of one issue, over GraphQL, as gh's IssueByNumber asks
+ * for them for `issue view --json`: the number read as an issue or as a pull
+ * request, each half with its own selection. A selection that reads a later
+ * page of a connection is given that cursor as `endCursor`.
+ *
+ * Args:
+ *   transport (GitHubTransport): the API client.
+ *   ref (RepoRef): the repository.
+ *   number (number): the issue or pull request.
+ *   selections (IssueSelections): what to read of each.
+ *   endCursor (string | undefined): the cursor `$endCursor` carries.
+ */
+export async function issueFields(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  number: number,
+  selections: IssueSelections,
+  endCursor?: string,
+): Promise<Record<string, unknown>> {
+  const variables: Record<string, unknown> = { owner: ref.owner, repo: ref.repo, number }
+  if (endCursor !== undefined) variables.endCursor = endCursor
+  const cursor = endCursor === undefined ? '' : ', $endCursor: String'
+  const halves =
+    (selections.issue === '' ? '' : `\n        ...on Issue{${selections.issue}}`) +
+    (selections.pull === '' ? '' : `\n        ...on PullRequest{${selections.pull}}`)
+  const data = await graphqlData(
+    transport,
+    `query IssueByNumber($owner: String!, $repo: String!, $number: Int!${cursor}) {\n` +
+      '    repository(owner: $owner, name: $repo) {\n      hasIssuesEnabled\n' +
+      `      issue: issueOrPullRequest(number: $number) {\n        __typename${halves}\n` +
+      '      }\n    }\n  }',
+    variables,
+  )
+  const repository = data.repository as
+    | { hasIssuesEnabled?: unknown; issue?: unknown }
+    | null
+    | undefined
+  const issue = repository?.issue
+  if (issue !== null && typeof issue === 'object') return issue as Record<string, unknown>
+  if (repository?.hasIssuesEnabled === false) {
+    throw new Error(`the '${ref.owner}/${ref.repo}' repository has disabled issues`)
+  }
+  throw new Error('issue was not found but GraphQL reported no error')
+}
+
+/** The narrowing `gh issue list` applies before it lists. */
+export interface IssueListFilter {
+  readonly states: readonly string[]
+  readonly assignee?: string | undefined
+  readonly author?: string | undefined
+  readonly labels?: readonly string[]
+}
+
+/**
+ * The selected fields of a repository's issues, over GraphQL, as gh's
+ * IssueList asks for them for `issue list --json`: newest first, a page of
+ * up to 100 at a time until `limit`. gh reaches for search to narrow by
+ * label; the connection's own `labels` filter narrows to the same issues.
+ *
+ * Args:
+ *   transport (GitHubTransport): the API client.
+ *   ref (RepoRef): the repository.
+ *   filter (IssueListFilter): the states, assignee, author and labels.
+ *   limit (number): how many issues at most.
+ *   selection (string): the GraphQL selection for each issue.
+ */
+export async function listIssueFields(
+  transport: GitHubTransport,
+  ref: RepoRef,
+  filter: IssueListFilter,
+  limit: number,
+  selection: string,
+): Promise<Record<string, unknown>[]> {
+  const query =
+    `fragment issue on Issue {${selection}}\n` +
+    '\tquery IssueList($owner: String!, $repo: String!, $limit: Int, $endCursor: String, ' +
+    '$states: [IssueState!] = OPEN, $assignee: String, $author: String, $mention: String, ' +
+    '$labels: [String!]) {\n\t\trepository(owner: $owner, name: $repo) {\n' +
+    '\t\t\thasIssuesEnabled\n\t\t\tissues(first: $limit, after: $endCursor, orderBy: ' +
+    '{field: CREATED_AT, direction: DESC}, states: $states, filterBy: {assignee: $assignee, ' +
+    'createdBy: $author, mentioned: $mention, labels: $labels}) {\n\t\t\t\ttotalCount\n' +
+    '\t\t\t\tnodes {\n\t\t\t\t\t...issue\n\t\t\t\t}\n\t\t\t\tpageInfo {\n' +
+    '\t\t\t\t\thasNextPage\n\t\t\t\t\tendCursor\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\t'
+  const rows: Record<string, unknown>[] = []
+  let cursor: string | null = null
+  let pageLimit = Math.min(limit, 100)
+  while (rows.length < limit) {
+    const variables: Record<string, unknown> = {
+      owner: ref.owner,
+      repo: ref.repo,
+      states: filter.states,
+      limit: pageLimit,
+    }
+    if (filter.assignee !== undefined && filter.assignee !== '')
+      variables.assignee = filter.assignee
+    if (filter.author !== undefined && filter.author !== '') variables.author = filter.author
+    if (filter.labels !== undefined && filter.labels.length > 0) variables.labels = filter.labels
+    if (cursor !== null) variables.endCursor = cursor
+    const data = await graphqlData(transport, query, variables)
+    const repository = data.repository as {
+      hasIssuesEnabled?: unknown
+      issues?: {
+        nodes?: Record<string, unknown>[]
+        pageInfo?: { hasNextPage?: boolean; endCursor?: string | null }
+      }
+    } | null
+    if (repository?.hasIssuesEnabled === false) {
+      throw new Error(`the '${ref.owner}/${ref.repo}' repository has disabled issues`)
+    }
+    const page = repository?.issues
+    for (const node of page?.nodes ?? []) {
+      rows.push(node)
+      if (rows.length === limit) break
+    }
+    const next = page?.pageInfo?.endCursor ?? null
+    if (page?.pageInfo?.hasNextPage !== true || next === null || next === cursor) break
+    cursor = next
+    pageLimit = Math.min(pageLimit, limit - rows.length)
+  }
+  return rows
 }

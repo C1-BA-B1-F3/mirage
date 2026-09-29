@@ -14,6 +14,7 @@
 
 import re
 
+from mirage.commands.spec.long_options import GNU_LONG_OPTIONS
 from mirage.commands.spec.types import Option
 
 # The two options every registered command answers, as GNU coreutils
@@ -311,7 +312,7 @@ TAR_LONG_OPTIONS: tuple[tuple[str, ...], ...] = (
     ("--HANG", ),
     ("--version", ),
 )
-LONG_OPTION_TABLES = {"tar": TAR_LONG_OPTIONS}
+LONG_OPTION_TABLES = {**GNU_LONG_OPTIONS, "tar": TAR_LONG_OPTIONS}
 
 # The programs whose short value options drop one `=` from an attached
 # value, the way lexopt (ripgrep's parser), clap and argparse read

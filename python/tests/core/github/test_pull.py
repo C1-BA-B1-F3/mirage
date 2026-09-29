@@ -15,8 +15,10 @@
 import pytest
 
 from mirage.core.github.config import GhConfig
-from mirage.core.github.pull import (comment_pull, commit_statuses, list_pulls,
-                                     pull_checks)
+from mirage.core.github.pull import (PullListFilter, comment_pull,
+                                     commit_statuses, list_pull_request_fields,
+                                     list_pulls, pull_checks,
+                                     pull_request_fields)
 from mirage.core.github.repo import RepoRef
 
 
@@ -155,3 +157,103 @@ async def test_list_pulls_filters_before_applying_the_limit(monkeypatch):
 
     assert rows == [{"number": 1, "merged_at": "now"}]
     assert seen == [("/repos/o/r/pulls", {"state": "closed"}, 1)]
+
+
+class GraphQL:
+    """Canned graphql_data answers, in order, and the requests sent."""
+
+    def __init__(self, *answers):
+        self.answers = list(answers)
+        self.sent: list[tuple[str, dict]] = []
+
+    async def __call__(self, config, query, variables):
+        self.sent.append((query, dict(variables)))
+        return self.answers.pop(0)
+
+
+@pytest.mark.asyncio
+async def test_pull_request_fields_ask_for_one_pull_by_number(monkeypatch):
+    graphql = GraphQL({"repository": {"pullRequest": {"title": "t"}}})
+    monkeypatch.setitem(pull_request_fields.__globals__, "graphql_data",
+                        graphql)
+
+    node = await pull_request_fields(GhConfig(token="t"), RepoRef("o", "r"), 7,
+                                     "title")
+
+    assert node == {"title": "t"}
+    query, variables = graphql.sent[0]
+    assert variables == {"owner": "o", "repo": "r", "pr_number": 7}
+    assert "pullRequest(number: $pr_number) {title}" in query
+    assert "$endCursor" not in query
+
+
+@pytest.mark.asyncio
+async def test_pull_request_fields_declare_the_cursor_only_for_a_page(
+        monkeypatch):
+    graphql = GraphQL({"repository": {"pullRequest": {}}})
+    monkeypatch.setitem(pull_request_fields.__globals__, "graphql_data",
+                        graphql)
+
+    await pull_request_fields(
+        GhConfig(token="t"), RepoRef("o", "r"), 7,
+        "reviews(first: 100, after: $endCursor) {nodes {id}}", "c1")
+
+    query, variables = graphql.sent[0]
+    assert "$pr_number: Int!, $endCursor: String)" in query
+    assert variables["endCursor"] == "c1"
+
+
+def _page(numbers, following):
+    return {
+        "repository": {
+            "pullRequests": {
+                "nodes": [{
+                    "number": number
+                } for number in numbers],
+                "pageInfo": {
+                    "hasNextPage": following is not None,
+                    "endCursor": following
+                },
+            }
+        }
+    }
+
+
+@pytest.mark.asyncio
+async def test_pull_listing_pages_to_the_limit_and_lists_a_repeat_once(
+        monkeypatch):
+    graphql = GraphQL(_page([9, 8], "c1"), _page([8, 7, 6], None))
+    monkeypatch.setitem(list_pull_request_fields.__globals__, "graphql_data",
+                        graphql)
+
+    rows = await list_pull_request_fields(GhConfig(token="t"),
+                                          RepoRef("o", "r"),
+                                          PullListFilter(("OPEN", ),
+                                                         "main"), 3, "number")
+
+    assert rows == [{"number": 9}, {"number": 8}, {"number": 7}]
+    assert graphql.sent[0][1] == {
+        "owner": "o",
+        "repo": "r",
+        "limit": 3,
+        "state": ["OPEN"],
+        "baseBranch": "main",
+    }
+    assert graphql.sent[1][1]["endCursor"] == "c1"
+    assert graphql.sent[1][1]["limit"] == 1
+    assert "fragment pr on PullRequest{number}" in graphql.sent[0][0]
+
+
+@pytest.mark.asyncio
+async def test_pull_listing_asks_nothing_for_a_zero_limit(monkeypatch):
+    graphql = GraphQL()
+    monkeypatch.setitem(list_pull_request_fields.__globals__, "graphql_data",
+                        graphql)
+
+    rows = await list_pull_request_fields(GhConfig(token="t"),
+                                          RepoRef("o", "r"),
+                                          PullListFilter(
+                                              ("OPEN", )), 0, "number")
+
+    assert rows == []
+    assert graphql.sent == []

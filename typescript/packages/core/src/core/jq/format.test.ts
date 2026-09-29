@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { jqEval } from './eval.ts'
-import { concatBytes, formatJqOutput } from './format.ts'
+import { concatBytes, errorReport, formatJqOutput } from './format.ts'
 import { jqOptions } from './types.ts'
 
 const DEC = new TextDecoder()
@@ -125,5 +125,22 @@ describe('concatBytes', () => {
 
   it('returns empty array for empty input', () => {
     expect(concatBytes([])).toEqual(new Uint8Array(0))
+  })
+})
+
+describe('errorReport', () => {
+  it('words an error the way jq does', () => {
+    expect(errorReport('<stdin>:1', { kind: 'error', text: 'boom', string: true })).toBe(
+      'jq: error (at <stdin>:1): boom\n',
+    )
+    expect(errorReport('<unknown>', { kind: 'error', text: '{"a":1}', string: false })).toBe(
+      'jq: error (at <unknown>) (not a string): {"a":1}\n',
+    )
+  })
+
+  it('ends a string message at a NUL', () => {
+    expect(errorReport('f:0', { kind: 'error', text: 'a\0b', string: true })).toBe(
+      'jq: error (at f:0): a\n',
+    )
   })
 })

@@ -12,29 +12,8 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-export { JqCompileError } from './errors.ts'
-export {
-  argsObject,
-  halts,
-  jqCheck,
-  jqEval,
-  jqRun,
-  referencesArgs,
-  streamEvents,
-  streamReads,
-} from './eval.ts'
-export { concatBytes, errorReport, formatJqOutput } from './format.ts'
-export { InputPositions } from './position.ts'
-export {
-  evalJsonlStream,
-  isJsonlPath,
-  isStreamableJsonlExpr,
-  parseJsonDocs,
-  parseJsonText,
-  parseSeqDocs,
-  parseSeqText,
-  splitRawLines,
-  splitRawText,
-} from './stream.ts'
-export { DEFAULT_INDENT, STDIN_NAME, UNKNOWN_POSITION, jqOptions } from './types.ts'
-export type { JqError, JqHalt, JqOptions, JqRun, StreamReads } from './types.ts'
+/**
+ * libjq's refusal of a program, which jq reports on stderr and exits 3
+ * for. The message is libjq's text, numbered by the program's own lines.
+ */
+export class JqCompileError extends Error {}

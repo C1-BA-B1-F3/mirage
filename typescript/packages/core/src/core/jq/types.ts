@@ -14,12 +14,70 @@
 
 export const DEFAULT_INDENT = 2
 
-// The named argument the `inputs` prelude reads. Spelled so a user
-// program can never collide with it by accident.
+// The variables a run's prelude binds. Spelled so a user program can
+// never collide with them by accident.
+
+// The unread documents `input` and `inputs` read.
 export const INPUTS_VAR = '__mirage_jq_inputs'
 
-// The named argument the `$ARGS` prelude rebinds.
+// The value the `$ARGS` prelude rebinds.
 export const ARGS_VAR = '__mirage_jq_args'
+
+// The document the program runs on, once the prelude has unpacked it.
+export const VALUE_VAR = '__mirage_jq_value'
+
+// The --arg / --argjson / --rawfile / --slurpfile bindings, by name.
+export const NAMED_VAR = '__mirage_jq_named'
+
+// The keys a run's prelude hands its stop back under: the error no `try`
+// caught, and the halt `halt` or `halt_error` asked for. Spelled so a
+// user program never prints one by accident.
+export const ERROR_KEY = '__mirage_jq_error'
+export const HALT_KEY = '__mirage_jq_halt'
+
+// What jq names standard input when it reports where it stands, and what
+// it reports before it has read any input at all.
+export const STDIN_NAME = '<stdin>'
+export const UNKNOWN_POSITION = '<unknown>'
+
+/**
+ * An error no `try` caught, which ends one run: jq reports it and goes on
+ * with the next document.
+ */
+export interface JqError {
+  readonly kind: 'error'
+  /** The message as jq prints it: a string as it is, anything else in
+   * jq's own compact dump. */
+  readonly text: string
+  /** Whether the message was a string, which jq's report says when it
+   * was not. */
+  readonly string: boolean
+}
+
+/** `halt` or `halt_error`, which end the whole invocation. */
+export interface JqHalt {
+  readonly kind: 'halt'
+  /** What jq writes to stderr for it, as it is. */
+  readonly text: string
+  /** The exit code `halt_error` named, or null for `halt`. */
+  readonly code: number | null
+}
+
+/** What one run of a program printed, and what ended it early. */
+export interface JqRun {
+  /** Every value it printed, in order. */
+  readonly outputs: unknown[]
+  /** The error or the halt that ended it, or null when it ran to its end. */
+  readonly stop: JqError | JqHalt | null
+}
+
+/** Which of the builtins that read the input stream a program calls. */
+export interface StreamReads {
+  /** `input`, which takes the next unread document. */
+  readonly input: boolean
+  /** `inputs`, which yields every unread document. */
+  readonly inputs: boolean
+}
 
 // The record separator an application/json-seq stream puts before every
 // value (RFC 7464).

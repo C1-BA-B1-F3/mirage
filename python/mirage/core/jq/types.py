@@ -16,14 +16,87 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from mirage.types import JsonValue
+
 DEFAULT_INDENT = 2
 
-# The named argument the `inputs` prelude reads. Spelled so a user
-# program can never collide with it by accident.
+# The named arguments a run's prelude reads. Spelled so a user program
+# can never collide with them by accident.
+
+# The unread documents `input` and `inputs` read.
 INPUTS_VAR = "__mirage_jq_inputs"
 
-# The named argument the `$ARGS` prelude rebinds.
+# The value the `$ARGS` prelude rebinds.
 ARGS_VAR = "__mirage_jq_args"
+
+# The keys a run's prelude hands its stop back under: the error no `try`
+# caught, and the halt `halt` or `halt_error` asked for. Spelled so a
+# user program never prints one by accident.
+ERROR_KEY = "__mirage_jq_error"
+HALT_KEY = "__mirage_jq_halt"
+
+# What jq names standard input when it reports where it stands, and what
+# it reports before it has read any input at all.
+STDIN_NAME = "<stdin>"
+UNKNOWN_POSITION = "<unknown>"
+
+
+@dataclass(frozen=True, slots=True)
+class JqError:
+    """An error no `try` caught, which ends one run: jq reports it and
+    goes on with the next document.
+
+    Args:
+        text (str): the message as jq prints it: a string as it is,
+            anything else in jq's own compact dump.
+        string (bool): whether the message was a string, which jq's
+            report says when it was not.
+    """
+
+    text: str
+    string: bool
+
+
+@dataclass(frozen=True, slots=True)
+class JqHalt:
+    """`halt` or `halt_error`, which end the whole invocation.
+
+    Args:
+        text (str): what jq writes to stderr for it, as it is.
+        code (float | None): the exit code `halt_error` named, or None
+            for `halt`.
+    """
+
+    text: str
+    code: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class JqRun:
+    """What one run of a program printed, and what ended it early.
+
+    Args:
+        outputs (list[JsonValue]): every value it printed, in order.
+        stop (JqError | JqHalt | None): the error or the halt that ended
+            it, or None when it ran to its end.
+    """
+
+    outputs: list[JsonValue]
+    stop: JqError | JqHalt | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StreamReads:
+    """Which of the builtins that read the input stream a program calls.
+
+    Args:
+        input (bool): `input`, which takes the next unread document.
+        inputs (bool): `inputs`, which yields every unread document.
+    """
+
+    input: bool
+    inputs: bool
+
 
 # The record separator an application/json-seq stream puts before every
 # value (RFC 7464).

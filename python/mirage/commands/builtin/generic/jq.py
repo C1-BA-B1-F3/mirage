@@ -10,16 +10,30 @@ from mirage.commands.errors import UsageError
 from mirage.commands.spec import SPECS
 from mirage.commands.spec.flag_view import FlagView
 from mirage.commands.spec.types import FlagValue
-from mirage.core.jq import (DEFAULT_INDENT, JqOptions, args_object,
-                            eval_jsonl_stream, format_jq_output, is_jsonl_path,
-                            is_streamable_jsonl_expr, jq_eval, parse_json_docs,
-                            parse_seq_docs, references_args, references_inputs,
-                            split_raw_lines, stream_events)
+from mirage.core.jq import (DEFAULT_INDENT, STDIN_NAME, UNKNOWN_POSITION,
+                            InputPositions, JqCompileError, JqError, JqHalt,
+                            JqOptions, JqRun, StreamReads, args_object,
+                            error_report, eval_jsonl_stream, format_jq_output,
+                            halts, is_jsonl_path, is_streamable_jsonl_expr,
+                            jq_check, jq_run, parse_json_docs, parse_json_text,
+                            parse_seq_text, references_args, split_raw_text,
+                            stream_events, stream_reads)
 from mirage.io.types import ByteSource, IOResult
 from mirage.types import JsonValue, PathSpec
 
 INDENT_MIN = -1
 INDENT_MAX = 7
+
+# What jq's process() answers for one run, which its exit status is made
+# of (main.c): the last output was not false or null, it was, there was
+# none, and an error no `try` caught ended the run.
+OK = 0
+OK_NULL_KIND = -1
+OK_NO_OUTPUT = -4
+ERROR_UNKNOWN = 5
+
+# jq's exit status when it refuses the program itself.
+ERROR_COMPILE = 3
 
 USAGE_HINT = ("Use jq --help for help with command-line options,\n"
               "or see the jq manpage, or online docs  at "
@@ -173,8 +187,10 @@ def parse_flags(fl: FlagView) -> JqOptions:
     )
 
 
-def assemble_inputs(chunks: list[bytes], opts: JqOptions) -> list[JsonValue]:
-    """Turn the raw inputs into the value stream the program sees.
+def assemble_inputs(sources: Sequence[tuple[str, bytes]],
+                    opts: JqOptions) -> tuple[list[JsonValue], InputPositions]:
+    """Turn the raw inputs into the value stream the program sees, and
+    say where jq's reader stands once it has read each value.
 
     jq reads every file and stdin as one stream, so slurping spans them
     all rather than restarting per file. Line splitting stays per input:
@@ -182,35 +198,105 @@ def assemble_inputs(chunks: list[bytes], opts: JqOptions) -> list[JsonValue]:
     joining it to the next file's first.
 
     Args:
-        chunks (list[bytes]): each input's bytes, in order.
+        sources (Sequence[tuple[str, bytes]]): each input's name, as jq
+            reports it, and its bytes, in order.
         opts (JqOptions): resolved options.
     """
-    if opts.raw_input:
+    names = [name for name, _ in sources]
+    texts = [raw.decode("utf-8", errors="replace") for _, raw in sources]
+    docs: list[JsonValue] = []
+    marks: list[tuple[int, int]] = []
+    if opts.raw_input and opts.slurp:
+        docs.append("".join(texts))
+    elif opts.raw_input:
+        for i, text in enumerate(texts):
+            lines, ends = split_raw_text(text)
+            docs.extend(lines)
+            marks.extend((i, end) for end in ends)
+    else:
+        parse = parse_seq_text if opts.seq else parse_json_text
+        for i, text in enumerate(texts):
+            values, ends = parse(text)
+            docs.extend(values)
+            marks.extend((i, end) for end in ends)
+        if opts.stream:
+            # --stream replaces each document with its events, and
+            # slurping then collects the events rather than the
+            # documents. Each event reads as where its document is whole,
+            # where jq's streaming parser hands events over as it goes.
+            events = [stream_events(doc) for doc in docs]
+            docs = [event for group in events for event in group]
+            marks = [mark for mark, group in zip(marks, events) for _ in group]
         if opts.slurp:
-            return [b"".join(chunks).decode("utf-8", errors="replace")]
-        return [line for chunk in chunks for line in split_raw_lines(chunk)]
-    parse = parse_seq_docs if opts.seq else parse_json_docs
-    docs: list[JsonValue] = [doc for chunk in chunks for doc in parse(chunk)]
-    if opts.stream:
-        # --stream replaces each document with its events, and slurping
-        # then collects the events rather than the documents.
-        docs = [event for doc in docs for event in stream_events(doc)]
-    return [docs] if opts.slurp else docs
+            docs = [docs]
+    if opts.slurp:
+        # One value, and whole only once every input is read.
+        marks = [(len(texts) - 1, len(texts[-1]))] if texts else []
+    return docs, InputPositions(names, texts, marks)
 
 
-def exit_code(outputs: Sequence[JsonValue], opts: JqOptions) -> int:
-    """Exit status for a run, which only -e makes interesting.
+def run_status(run: JqRun) -> int:
+    """What jq's process() answers for one run.
 
     Args:
-        outputs (Sequence[JsonValue]): every value the run printed.
+        run (JqRun): the run.
+    """
+    if isinstance(run.stop, JqHalt):
+        return OK if run.stop.code is None else int(run.stop.code)
+    if isinstance(run.stop, JqError):
+        return ERROR_UNKNOWN
+    if not run.outputs:
+        return OK_NO_OUTPUT
+    last = run.outputs[-1]
+    return OK_NULL_KIND if last is None or last is False else OK
+
+
+def exit_code(statuses: Sequence[int], opts: JqOptions) -> int:
+    """Exit status for the program run over the whole input, as jq's
+    main loop settles it.
+
+    Only the last run counts, even after one that failed, unless it
+    printed nothing, when -e looks back to the last value any run
+    printed. Without -e only a failure shows, and a halt's own code.
+
+    Args:
+        statuses (Sequence[int]): what each run answered (run_status).
         opts (JqOptions): resolved options.
     """
+    ret = OK_NO_OUTPUT
+    last_result = -1
+    for status in statuses:
+        ret = status
+        if status <= 0 and status != OK_NO_OUTPUT:
+            last_result = 0 if status == OK_NULL_KIND else 1
     if not opts.exit_status:
-        return 0
-    if not outputs:
-        return 4
-    last = outputs[-1]
-    return 1 if last is None or last is False else 0
+        code = max(ret, 0)
+    elif ret != OK_NO_OUTPUT:
+        code = abs(ret)
+    else:
+        code = {-1: 4, 0: 1, 1: 0}[last_result]
+    return code % 256
+
+
+def run_position(positions: InputPositions, reads: StreamReads,
+                 first: int | None, taken: int) -> str:
+    """Where jq's reader stands after a run, for its error report.
+
+    A run reads its own document, and past it the ones `input` and
+    `inputs` take: `inputs` reads to the end, and so does an `input`
+    that finds nothing left.
+
+    Args:
+        positions (InputPositions): the input stream's positions.
+        reads (StreamReads): which stream builtins the program calls.
+        first (int | None): the run's own document, None under -n.
+        taken (int): how many more documents the run was handed.
+    """
+    if reads.inputs or (reads.input and taken == 0):
+        return positions.end()
+    if reads.input:
+        return positions.at(0 if first is None else first + 1)
+    return UNKNOWN_POSITION if first is None else positions.at(first)
 
 
 async def _read_stdin_bytes(stdin: ByteSource | None) -> bytes:
@@ -263,7 +349,8 @@ async def jq(
         # jq defaults the filter to "." when no expression is given.
         expression = texts[0] if texts else "."
     expr = expression.strip()
-    wants_inputs = references_inputs(expr)
+    reads = stream_reads(expr)
+    reads_stream = reads.input or reads.inputs
     # --rawfile / --slurpfile read a file each, so they join the bindings
     # only once the backend reader is in hand.
     opts = dataclasses.replace(
@@ -276,52 +363,99 @@ async def jq(
                                         isinstance(program_file, PathSpec)),
     )
     args_value = args_object(opts) if references_args(expr) else None
+    try:
+        jq_check(expr, opts.named_args, [] if reads_stream else None,
+                 args_value)
+    except JqCompileError as exc:
+        # jq compiles its program before it opens a single input, so a
+        # refusal is all it prints.
+        return None, IOResult(exit_code=ERROR_COMPILE,
+                              stderr=f"{exc}\n".encode())
 
     # The per-line path rewrites the program to run on one element, so it
     # can only serve a run whose input stream is the file's documents and
-    # whose exit code does not depend on the last of them.
+    # whose exit code does not depend on the last of them. A halt reports
+    # on stderr and sets the exit code, which a stream of outputs has no
+    # room for.
     streamable = (paths and is_jsonl_path(paths[0].virtual)
                   and is_streamable_jsonl_expr(expr) and not opts.null_input
                   and not opts.raw_input and not opts.slurp and not opts.stream
                   and not opts.seq and not opts.exit_status
-                  and not wants_inputs)
+                  and not reads_stream and not halts(expr))
     if streamable:
-        return eval_jsonl_stream(read_stream(paths[0]), expr, opts), IOResult()
+        return eval_jsonl_stream(read_stream(paths[0]), expr, opts,
+                                 paths[0].raw_path
+                                 or paths[0].virtual), IOResult()
 
-    chunks: list[bytes] = []
+    sources: list[tuple[str, bytes]] = []
     # -n does not read its inputs at all unless the program asks for them
-    # through `inputs`, which is why jq -n never opens a missing file.
-    if not opts.null_input or wants_inputs:
+    # through `input` or `inputs`, which is why jq -n never opens a
+    # missing file.
+    if not opts.null_input or reads_stream:
         if paths:
             for path in paths:
-                chunks.append(await read_bytes(path))
+                sources.append((path.raw_path or path.virtual, await
+                                read_bytes(path)))
         elif stdin is not None:
-            chunks.append(await _read_stdin_bytes(stdin))
-    docs = assemble_inputs(chunks, opts)
+            sources.append((STDIN_NAME, await _read_stdin_bytes(stdin)))
+    docs, positions = assemble_inputs(sources, opts)
+
+    def unread(at: int) -> list[JsonValue]:
+        # A run sees only the documents it can read: all of the rest when
+        # it calls `inputs`, or the one `input` takes when it calls only
+        # that.
+        return docs[at:] if reads.inputs else docs[at:at + 1]
 
     outputs: list[JsonValue] = []
+    statuses: list[int] = []
+    reports: list[str] = []
+
+    def settle(run: JqRun, first: int | None, taken: int) -> bool:
+        # Fold one run into the invocation: its outputs, its answer toward
+        # the exit status, and its report when it stopped early. A halt
+        # ends the invocation, which is what this answers.
+        outputs.extend(run.outputs)
+        statuses.append(run_status(run))
+        if isinstance(run.stop, JqError):
+            reports.append(
+                error_report(run_position(positions, reads, first, taken),
+                             run.stop))
+        elif isinstance(run.stop, JqHalt):
+            reports.append(run.stop.text)
+            return True
+        return False
+
     if opts.null_input:
-        outputs.extend(
-            jq_eval(None, expr, opts.named_args,
-                    docs if wants_inputs else None, args_value))
-    elif wants_inputs:
-        # `inputs` consumes from the same stream the main loop reads, so a
-        # program that drains it runs once. How much it drains is a
-        # runtime fact libjq's Python binding does not report, so mirage
-        # assumes the whole rest, which is what the idiom
-        # (`[., inputs]`, `reduce inputs as $x`) does; a program that
-        # takes only some of them (`first(inputs)`) would leave the
-        # remainder for another pass in real jq and does not here.
-        if docs:
-            outputs.extend(
-                jq_eval(docs[0], expr, opts.named_args, docs[1:], args_value))
+        rest = unread(0) if reads_stream else None
+        settle(jq_run(None, expr, opts.named_args, rest, args_value), None,
+               len(rest or ()))
+    elif reads_stream:
+        # `input` and `inputs` consume from the same stream the main loop
+        # reads, so each run starts past whatever the one before it took.
+        # How much a run takes is a runtime fact libjq's Python binding
+        # does not report, so mirage assumes what the idioms do: `inputs`
+        # drains the rest (`[., inputs]`, `reduce inputs as $x`), and
+        # `input` alone takes one (`[., input]` pairs the documents up). A
+        # program that takes some other count (`first(inputs)`, an `input`
+        # in a branch not taken) leaves real jq a different remainder for
+        # its next run than here.
+        at = 0
+        while at < len(docs):
+            rest = unread(at + 1)
+            run = jq_run(docs[at], expr, opts.named_args, rest, args_value)
+            if settle(run, at, len(rest)):
+                break
+            at += 1 + len(rest)
     else:
-        # jq applies the program to every document in the stream.
-        for doc in docs:
-            outputs.extend(
-                jq_eval(doc, expr, opts.named_args, None, args_value))
-    return format_jq_output(outputs,
-                            opts), IOResult(exit_code=exit_code(outputs, opts))
+        # jq applies the program to every document in the stream, and goes
+        # on past one whose run failed.
+        for at, doc in enumerate(docs):
+            run = jq_run(doc, expr, opts.named_args, None, args_value)
+            if settle(run, at, 0):
+                break
+    return format_jq_output(outputs, opts), IOResult(
+        exit_code=exit_code(statuses, opts),
+        stderr="".join(reports).encode() if reports else None)
 
 
 __all__ = ["jq"]

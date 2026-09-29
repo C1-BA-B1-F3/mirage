@@ -13,7 +13,9 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
-import { jqEval, referencesArgs, referencesInputs } from './eval.ts'
+import { JqCompileError } from './errors.ts'
+import { halts, jqCheck, jqEval, jqRun, referencesArgs, streamReads } from './eval.ts'
+import type { JqRun } from './types.ts'
 
 /**
  * Evaluate expr and return its single output.
@@ -385,34 +387,94 @@ describe('named args and inputs', () => {
     expect(await jqEval(null, 'def inputs: 9; [inputs]', {}, [1, 2])).toEqual([[9]])
   })
 
-  it('finds whole-word inputs references only', () => {
-    expect(referencesInputs('[inputs]')).toBe(true)
-    expect(referencesInputs('reduce inputs as $x (0; . + $x)')).toBe(true)
-    expect(referencesInputs('.myinputs')).toBe(false)
-    expect(referencesInputs('.inputs_total')).toBe(false)
+  it('takes the first unread document for input', async () => {
+    expect(await jqEval(null, 'input', {}, [{ n: 1 }, { n: 2 }])).toEqual([{ n: 1 }])
   })
 
-  it('ignores the word where it spells data', () => {
-    expect(referencesInputs('.inputs')).toBe(false)
-    expect(referencesInputs('.a.inputs')).toBe(false)
-    expect(referencesInputs('$inputs')).toBe(false)
-    expect(referencesInputs('{inputs: .a}')).toBe(false)
-    expect(referencesInputs('{inputs}')).toBe(false)
-    expect(referencesInputs('{a, inputs}')).toBe(false)
-    expect(referencesInputs('m::inputs')).toBe(false)
+  it('leaves inputs the documents after the one input took', async () => {
+    expect(await jqEval(null, 'input as $h | [$h, [inputs]]', {}, [1, 2, 3])).toEqual([[1, [2, 3]]])
+    expect(await jqEval(null, '[input, inputs]', {}, [1, 2, 3])).toEqual([[1, 2, 3]])
+  })
+
+  it('fails input with break once nothing is left, as jq does', async () => {
+    await expect(jqEval(null, 'input', {}, [])).rejects.toThrow(/break/)
+    expect(await jqEval(null, 'try input catch .', {}, [])).toEqual(['break'])
+  })
+
+  it('binds values past the WebAssembly stack size', async () => {
+    const big = 'x'.repeat(2_000_000)
+    expect(await jqEval(null, '$x | length', { x: big })).toEqual([2_000_000])
+    const docs = Array.from({ length: 20_480 }, () => ({ k: 'x'.repeat(90) }))
+    expect(await jqEval(null, '[inputs] | length', {}, docs)).toEqual([20_480])
+    expect(
+      await jqEval(null, '$ARGS.named.x | length', { x: big }, null, { named: { x: big } }),
+    ).toEqual([2_000_000])
+  })
+
+  it('reports a compile error on the line the program wrote it', async () => {
+    await expect(jqEval(null, '1 +', { x: 1 })).rejects.toThrow(/at <top-level>, line 1,/)
+    await expect(jqEval(null, '.\n| 1 +', {}, [])).rejects.toThrow(/at <top-level>, line 2,/)
+  })
+
+  it('keeps a trailing comment from swallowing the program', async () => {
+    expect(await jqEval(null, '$x # the bound value', { x: 1 })).toEqual([1])
+  })
+
+  it('skips a named arg no variable can spell', async () => {
+    expect(await jqEval(null, '$ok', { 'a-b': 1, ok: 2 })).toEqual([2])
+  })
+
+  it('keeps jq refusing an empty program when something is bound', async () => {
+    await expect(jqEval(null, '# nothing', { x: 1 })).rejects.toThrow(/Top-level program not given/)
+  })
+
+  it('finds whole-word stream references only', () => {
+    expect(streamReads('[inputs]')).toEqual({ input: false, inputs: true })
+    expect(streamReads('reduce inputs as $x (0; . + $x)').inputs).toBe(true)
+    expect(streamReads('input')).toEqual({ input: true, inputs: false })
+    expect(streamReads('input as $h | [inputs]')).toEqual({ input: true, inputs: true })
+    expect(streamReads('.myinputs').inputs).toBe(false)
+    expect(streamReads('.inputs_total').inputs).toBe(false)
+    expect(streamReads('input_filename').input).toBe(false)
+    expect(streamReads('input_line_number').input).toBe(false)
+  })
+
+  it('ignores the words where they spell data', () => {
+    for (const expr of [
+      '.inputs',
+      '.a.inputs',
+      '$inputs',
+      '{inputs: .a}',
+      '{inputs}',
+      '{a, inputs}',
+      'm::inputs',
+    ]) {
+      expect(streamReads(expr).inputs).toBe(false)
+    }
+    for (const expr of ['.input', '$input', '{input: 1}', '{input}', 'm::input']) {
+      expect(streamReads(expr).input).toBe(false)
+    }
   })
 
   it('ignores strings and comments', () => {
-    expect(referencesInputs('"no inputs found"')).toBe(false)
-    expect(referencesInputs('. # drains inputs')).toBe(false)
-    expect(referencesInputs('"a\\("b" + "inputs")c"')).toBe(false)
+    expect(streamReads('"no inputs found"').inputs).toBe(false)
+    expect(streamReads('. # drains inputs').inputs).toBe(false)
+    expect(streamReads('"a\\("b" + "inputs")c"').inputs).toBe(false)
+    expect(streamReads('"read the input"').input).toBe(false)
+  })
+
+  it('ignores a function the program defines for itself', () => {
+    expect(streamReads('def input: 1; input').input).toBe(false)
+    expect(streamReads('def inputs: 9; [inputs]').inputs).toBe(false)
+    expect(streamReads('def f(x): x; f(input)').input).toBe(true)
   })
 
   it('reads calls in every value position', () => {
-    expect(referencesInputs('{a: inputs}')).toBe(true)
-    expect(referencesInputs('{(inputs): 1}')).toBe(true)
-    expect(referencesInputs('[1, inputs, 2]')).toBe(true)
-    expect(referencesInputs('"\\(inputs)"')).toBe(true)
+    expect(streamReads('{a: inputs}').inputs).toBe(true)
+    expect(streamReads('{(inputs): 1}').inputs).toBe(true)
+    expect(streamReads('[1, inputs, 2]').inputs).toBe(true)
+    expect(streamReads('"\\(inputs)"').inputs).toBe(true)
+    expect(streamReads('{a: input}').input).toBe(true)
   })
 
   it('reads $ARGS the same way', () => {
@@ -421,5 +483,73 @@ describe('named args and inputs', () => {
     expect(referencesArgs('"$ARGS"')).toBe(false)
     expect(referencesArgs('. # $ARGS')).toBe(false)
     expect(referencesArgs('$ARGSX')).toBe(false)
+  })
+})
+
+describe('jqRun', () => {
+  it.each<[string, JqRun]>([
+    [
+      '.a, error("boom"), .a',
+      { outputs: [1], stop: { kind: 'error', text: 'boom', string: true } },
+    ],
+    ['error({"b": 2})', { outputs: [], stop: { kind: 'error', text: '{"b":2}', string: false } }],
+    ['error(null)', { outputs: [], stop: { kind: 'error', text: 'null', string: false } }],
+    ['error("null")', { outputs: [], stop: { kind: 'error', text: 'null', string: true } }],
+    [
+      '.a | .b',
+      {
+        outputs: [],
+        stop: { kind: 'error', text: 'Cannot index number with string ("b")', string: true },
+      },
+    ],
+    ['"bye\\n" | halt_error', { outputs: [], stop: { kind: 'halt', text: 'bye\n', code: 5 } }],
+    ['[1] | halt_error(2)', { outputs: [], stop: { kind: 'halt', text: '[1]\n', code: 2 } }],
+    ['null | halt_error', { outputs: [], stop: { kind: 'halt', text: '', code: 5 } }],
+    ['"a", halt', { outputs: ['a'], stop: { kind: 'halt', text: '', code: null } }],
+    ['try error("x") catch .', { outputs: ['x'], stop: null }],
+  ])('hands back what stopped %s', async (expr, run) => {
+    expect(await jqRun({ a: 1 }, expr)).toEqual(run)
+  })
+
+  it('refuses a halt code that is not a number as jq does', async () => {
+    expect(await jqRun(1, 'halt_error("x")')).toEqual({
+      outputs: [],
+      stop: { kind: 'error', text: 'number (1) halt_error/1: number required', string: true },
+    })
+  })
+
+  it("keeps the program's own line numbers", async () => {
+    expect((await jqRun(null, '$__loc__ | .line')).outputs).toEqual([1])
+    expect((await jqRun(null, '$__loc__ | .line', {}, [])).outputs).toEqual([1])
+  })
+
+  it('refuses code that closes the prelude early as jq refuses it', async () => {
+    await expect(jqRun(1, '1) catch 2 | try (3')).rejects.toThrow(JqCompileError)
+  })
+
+  it('reads a compile error as the program numbers its lines', async () => {
+    await expect(jqRun(1, '.a |\n  nosuch(1)', {}, null, { positional: [] })).rejects.toThrow(
+      /line 2, column/,
+    )
+  })
+})
+
+describe('jqCheck', () => {
+  it('compiles a program without running it', async () => {
+    await jqCheck('repeat(1)')
+    await expect(jqCheck('1 +')).rejects.toThrow(/1 compile error$/)
+  })
+})
+
+describe('halts', () => {
+  it.each([
+    ['halt', true],
+    ['"x" | halt_error(1)', true],
+    ['.halt', false],
+    ['"halt"', false],
+    ['$halt', false],
+    ['def halting: 1; halting', false],
+  ])('finds a call to either halt in %s', (expr, expected) => {
+    expect(halts(expr)).toBe(expected)
   })
 })

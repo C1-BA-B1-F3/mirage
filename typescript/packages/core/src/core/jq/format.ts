@@ -12,7 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
-import { RS, type JqOptions } from './types.ts'
+import { RS, type JqError, type JqOptions } from './types.ts'
 import { compareCodePoints } from '../../utils/sort.ts'
 
 const ENC = new TextEncoder()
@@ -82,4 +82,17 @@ export function formatJqOutput(outputs: readonly unknown[], opts: JqOptions): Ui
   const parts: Uint8Array[] = []
   for (const value of outputs) parts.push(formatOne(value, opts))
   return concatBytes(parts)
+}
+
+/**
+ * jq's report of an error no `try` caught, which it writes to stderr. A
+ * string message is printed the way C prints a string, so it ends at a
+ * NUL.
+ */
+export function errorReport(position: string, error: JqError): string {
+  if (error.string) {
+    const text = error.text.split('\0', 1)[0] ?? ''
+    return `jq: error (at ${position}): ${text}\n`
+  }
+  return `jq: error (at ${position}) (not a string): ${error.text}\n`
 }

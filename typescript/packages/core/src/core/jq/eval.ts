@@ -225,9 +225,11 @@ const DONE = `, {"${DONE_KEY}": true}`
 // redefined, first to raise them as an error the top-level `catch` hands back
 // (which leaves any collector, `[halt_error]` or `map`), and when a `try` of
 // the program's own caught that, to print them just before the real halt.
-// Either answer counts only when the run printed the same outputs up to it
-// that the first run did, which a `try` that swallows one halt unseen before
-// the program reaches another still gets past.
+// Either answer counts only when the run printed as many outputs up to it as
+// the first run did: the two are one run up to the first halt, so a later
+// halt shows as more outputs before it, where the values themselves can
+// differ (`now`). A `try` that swallows one halt unseen before the program
+// reaches another still gets past that.
 const HALT_MARK =
   `{"${HALT_KEY}": [$code, (if . == null then null ` +
   'elif type == "string" then . else tojson end), (type == "string")]}'
@@ -455,8 +457,7 @@ async function ran(
  * The message and code of the halt a run stopped at, from running the
  * program again with the halts redefined (see RAISE and PRINT).
  */
-async function haltOf(bindings: Bound, expr: string, outputs: unknown[]): Promise<JqHalt> {
-  const seen = JSON.stringify(outputs)
+async function haltOf(bindings: Bound, expr: string, printed: number): Promise<JqHalt> {
   for (const [stops, tail] of [
     [RAISE, `${RAISED})`],
     [PRINT, `${CATCH})`],
@@ -464,7 +465,7 @@ async function haltOf(bindings: Bound, expr: string, outputs: unknown[]): Promis
     const program = wrapped(bindings, expr, stops, tail)
     if (program === null) continue
     const [again] = collected(await raw(bindings.stdin, program), false)
-    if (again.stop?.kind === 'halt' && JSON.stringify(again.outputs) === seen) return again.stop
+    if (again.stop?.kind === 'halt' && again.outputs.length === printed) return again.stop
   }
   // A halt caught by the program's own `try` inside a collector keeps its
   // message from both, so it reads as halt_error's default.
@@ -508,7 +509,7 @@ export async function jqRun(
   const bindings = bound(obj, expr, namedArgs, inputs, argsValue)
   const [run, ended] = collected(...(await ran(bindings, expr, false)))
   if (ended) return run
-  return { outputs: run.outputs, stop: await haltOf(bindings, expr, run.outputs) }
+  return { outputs: run.outputs, stop: await haltOf(bindings, expr, run.outputs.length) }
 }
 
 /**

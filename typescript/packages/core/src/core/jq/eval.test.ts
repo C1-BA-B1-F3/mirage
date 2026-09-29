@@ -552,6 +552,15 @@ describe('jqRun', () => {
     })
   })
 
+  it('reads a halt back past outputs that differ from run to run', async () => {
+    // `now` prints another value when the program runs again for the halt.
+    const run = await jqRun(null, 'now, ("x" | halt_error(3))')
+    expect([run.outputs.length, run.stop]).toEqual([
+      1,
+      { kind: 'halt', message: 'x', string: true, code: 3 },
+    ])
+  })
+
   it('refuses a halt code that is not a number as jq does', async () => {
     expect(await jqRun(1, 'halt_error("x")')).toEqual({
       outputs: [],

@@ -65,9 +65,11 @@ _DONE = ', {"' + DONE_KEY + '": true}'
 # error the top-level `catch` hands back (which leaves any collector,
 # `[halt_error]` or `map`), and when a `try` of the program's own caught
 # that, to print them just before the real halt. Either answer counts only
-# when the run printed the same outputs up to it that the first run did,
-# which a `try` that swallows one halt unseen before the program reaches
-# another still gets past.
+# when the run printed as many outputs up to it as the first run did: the
+# two are one run up to the first halt, so a later halt shows as more
+# outputs before it, where the values themselves can differ (`now`). A
+# `try` that swallows one halt unseen before the program reaches another
+# still gets past that.
 _HALT_MARK = ('{"' + HALT_KEY + '": [$code, (if . == null then null '
               'elif type == "string" then . else tojson end), '
               '(type == "string")]}')
@@ -403,7 +405,7 @@ def _wrapped(expr: str, args: dict[str, Any], steps: list[str], stops: str,
 
 
 def _halt_of(obj: JsonValue, expr: str, args: dict[str, Any], steps: list[str],
-             outputs: list[JsonValue]) -> JqHalt:
+             printed: int) -> JqHalt:
     """The message and code of the halt a run stopped at, from running the
     program again with the halts redefined (see _RAISE and _PRINT).
 
@@ -412,14 +414,14 @@ def _halt_of(obj: JsonValue, expr: str, args: dict[str, Any], steps: list[str],
         expr (str): jq program text.
         args (dict[str, Any]): the named arguments to compile with.
         steps (list[str]): the prelude steps that read them.
-        outputs (list[JsonValue]): what the run printed before it halted.
+        printed (int): how many outputs the run printed before it halted.
     """
     for stops, tail in ((_RAISE, f"{_RAISED})"), (_PRINT, f"{_CATCH})")):
         compiled = _wrapped(expr, args, steps, stops, tail)
         if compiled is None:
             continue
         again, _ = _collected(compiled.input_value(obj))
-        if isinstance(again.stop, JqHalt) and again.outputs == outputs:
+        if isinstance(again.stop, JqHalt) and len(again.outputs) == printed:
             return again.stop
     # A halt caught by the program's own `try` inside a collector keeps
     # its message from both, so it reads as halt_error's default.
@@ -480,7 +482,8 @@ def jq_run(
     run, ended = _collected(compiled.input_value(obj))
     if ended:
         return run
-    return JqRun(run.outputs, _halt_of(obj, expr, args, steps, run.outputs))
+    halt = _halt_of(obj, expr, args, steps, len(run.outputs))
+    return JqRun(run.outputs, halt)
 
 
 def jq_check(

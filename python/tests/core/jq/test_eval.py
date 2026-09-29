@@ -216,6 +216,12 @@ def test_a_halt_whose_message_no_second_run_recovers_reads_as_the_default():
                                                                    5))
 
 
+def test_a_halt_reads_back_past_outputs_that_differ_from_run_to_run():
+    # `now` prints another value when the program runs again for the halt.
+    run = jq_run(None, 'now, ("x" | halt_error(3))')
+    assert (len(run.outputs), run.stop) == (1, JqHalt("x", True, 3))
+
+
 def test_halt_error_refuses_a_code_that_is_not_a_number_as_jq_does():
     assert jq_run(1, 'halt_error("x")') == JqRun(
         [], JqError("number (1) halt_error/1: number required", True))

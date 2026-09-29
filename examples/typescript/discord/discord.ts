@@ -166,8 +166,8 @@ async function main(): Promise<void> {
     }
 
     // ── jq pipeline ────────────────────────────────
-    console.log(`\n=== jq -r '.[] | .author.username' ${targetDate}/chat.jsonl ===`)
-    r = await ws.shell(`jq -r ".[] | .author.username" "${filePath}" | head -n 5`)
+    console.log(`\n=== jq -r '.author.username' ${targetDate}/chat.jsonl ===`)
+    r = await ws.shell(`jq -r ".author.username" "${filePath}" | head -n 5`)
     const jqOut = r.stdoutText.trim()
     if (jqOut !== '') {
       for (const line of jqOut.split('\n').slice(0, 5)) console.log(`  ${line}`)

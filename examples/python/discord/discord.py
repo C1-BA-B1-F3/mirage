@@ -174,8 +174,8 @@ async def main():
         print("  (no results)")
 
     # ── jq pipeline ──────────────────────────────────
-    print(f"\n=== jq '.[] | .author.username' {target_date}/chat.jsonl ===")
-    r = await ws.shell(f'jq -r ".[] | .author.username" "{file_path}"'
+    print(f"\n=== jq '.author.username' {target_date}/chat.jsonl ===")
+    r = await ws.shell(f'jq -r ".author.username" "{file_path}"'
                        ' | head -n 5')
     out = (await r.stdout_str()).strip()
     if out:

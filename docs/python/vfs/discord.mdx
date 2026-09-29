@@ -171,13 +171,13 @@ async def main():
 
     # Extract usernames with jq
     r = await ws.shell(
-        f'jq -r ".[] | .author.username" "{base}/2026-04-04/chat.jsonl"')
+        f'jq -r ".author.username" "{base}/2026-04-04/chat.jsonl"')
     print(await r.stdout_str())
 
     # Count messages per user
     r = await ws.shell(
         f'cat "{base}/2026-04-04/chat.jsonl"'
-        ' | jq -r ".[] | .author.username" | sort | uniq -c')
+        ' | jq -r ".author.username" | sort | uniq -c')
     print(await r.stdout_str())
 
     # List attachments for a day and download one
@@ -228,12 +228,12 @@ stat "/discord/My Server__111222333444555666/channels/general__77788899900011122
 # → extra={"channel_id": "1256522563555819574"}
 
 # Message ID - inside JSONL messages
-jq -r '.[] | "\(.id) [\(.author.username)] \(.content)"' \
+jq -r '"\(.id) [\(.author.username)] \(.content)"' \
   "/discord/My Server__111222333444555666/channels/general__777888999000111222/2026-04-04/chat.jsonl"
 # → 1489887688978075769 [alice] hello world
 
 # Find a message then reply
-jq -r '.[] | select(.content | test("hello")) | .id' \
+jq -r 'select(.content | test("hello")) | .id' \
   "/discord/My Server__111222333444555666/channels/general__777888999000111222/2026-04-04/chat.jsonl"
 # → 1489887688978075769
 discord send --channel 1256522563555819574 \
@@ -255,12 +255,12 @@ tail -n 10 "/discord/My Server__111222333444555666/channels/general__77788899900
 grep "keyword" "/discord/My Server__111222333444555666/channels/general__777888999000111222/"
 
 # Extract specific fields
-jq -r '.[] | "\(.author.username): \(.content)"' \
+jq -r '"\(.author.username): \(.content)"' \
   "/discord/My Server__111222333444555666/channels/general__777888999000111222/2026-04-04/chat.jsonl" | head -n 20
 
 # Count messages per user
 cat "/discord/My Server__111222333444555666/channels/general__777888999000111222/2026-04-04/chat.jsonl" \
-  | jq -r '.[] | .author.username' | sort | uniq -c
+  | jq -r '.author.username' | sort | uniq -c
 ```
 
 Note: `grep`/`rg` at channel or guild level uses the Discord search
@@ -277,7 +277,7 @@ Standard commands available on the mounted Discord tree:
 | `cat`           | Read `chat.jsonl`, member `.json`, or download an attachment   |
 | `head` / `tail` | Smart: uses messages API for file scope                        |
 | `grep` / `rg`   | Smart: uses search API for channel/guild scope (with fallback) |
-| `jq`            | Query JSON; use `.[]` prefix for JSONL files                   |
+| `jq`            | Query JSON; runs once per line of a JSONL file (`-s` for all) |
 | `wc`            | Line/word/byte counts                                          |
 | `stat`          | File metadata (name, size, type, ID via `extra`)               |
 | `find`          | Recursive search with `-name`, `-maxdepth`                     |

@@ -282,7 +282,7 @@ async def main():
 
     # Extract titles with jq
     r = await ws.shell(
-        'jq -r ".[] | .title" "/mongodb/sample_mflix/collections/movies/documents.jsonl"'
+        'jq -r ".title" "/mongodb/sample_mflix/collections/movies/documents.jsonl"'
     )
     print(await r.stdout_str())
 
@@ -320,7 +320,7 @@ All three default to the `mirage_test` database seeded by `python/scripts/seed_m
 
 ```bash
 # List the first 10 ObjectId values
-jq -r '.[] | ._id["$oid"]' \
+jq -r '._id["$oid"]' \
   "/mongodb/sample_mflix/collections/movies/documents.jsonl" | head -n 10
 
 # Find a specific document by ID
@@ -328,7 +328,7 @@ grep "573a1390f29313caabcd42e8" \
   "/mongodb/sample_mflix/collections/movies/documents.jsonl"
 
 # Extract a few fields together
-jq -r '.[] | "\(._id["$oid"]) \(.title) \(.year)"' \
+jq -r '"\(._id["$oid"]) \(.title) \(.year)"' \
   "/mongodb/sample_mflix/collections/movies/documents.jsonl"
 ```
 
@@ -366,7 +366,7 @@ Standard commands available on the mounted MongoDB tree:
 | `head` / `tail` | `head` streams and stops early; `tail` sorts and limits server-side, stopping loudly at `max_doc_limit` |
 | `tail -f`       | Live-follow new inserts via Mongo change stream                         |
 | `grep` / `rg`   | A directory operand searches every file under it (documents, schema.json, database.json, views); a file streams |
-| `jq`            | Query JSON; use `.[]` prefix when iterating JSONL files                 |
+| `jq`            | Query JSON; runs once per line of a JSONL file (`-s` for all)            |
 | `wc`            | Smart: uses `countDocuments()` server-side                              |
 | `stat`          | Existence and type only; no counts or index queries              |
 | `find`          | List databases/collections/views with `-name`, `-maxdepth`              |

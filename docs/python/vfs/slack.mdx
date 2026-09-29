@@ -155,7 +155,7 @@ async def main():
     # Extract message text with jq
     r = await ws.shell(
         f'cat "{base}/2026-04-04/chat.jsonl"'
-        ' | jq -r ".[] | .text" | head -n 5')
+        ' | jq -r ".text" | head -n 5')
     print(await r.stdout_str())
 
     # Search across channel (scans all date files)
@@ -193,12 +193,12 @@ ls /slack/users/
 # → alice__U04K21SEVR9.json   ← user_id = U04K21SEVR9
 
 # Message timestamp (ts) - inside JSONL messages
-jq -r '.[] | "\(.ts) [\(.user)] \(.text)"' \
+jq -r '"\(.ts) [\(.user)] \(.text)"' \
   "/slack/channels/general__C04KEPWF6V7/2026-04-04/chat.jsonl"
 # → 1712345678.123456 [U04K21SEVR9] hello world
 
 # Find a specific message then reply
-jq -r '.[] | select(.text | test("hello")) | .ts' \
+jq -r 'select(.text | test("hello")) | .ts' \
   "/slack/channels/general__C04KEPWF6V7/2026-04-04/chat.jsonl"
 # → 1712345678.123456
 slack send-message --channel C04KEPWF6V7 \
@@ -221,12 +221,12 @@ tail -n 10 "/slack/channels/general__C04KEPWF6V7/2026-04-04/chat.jsonl"
 rg "keyword" "/slack/channels/general__C04KEPWF6V7/"
 
 # Extract specific fields to reduce output
-jq -r '.[] | "\(.ts) [\(.user)] \(.text)"' \
+jq -r '"\(.ts) [\(.user)] \(.text)"' \
   "/slack/channels/general__C04KEPWF6V7/2026-04-04/chat.jsonl" | head -n 20
 
 # Count messages per user
 cat "/slack/channels/general__C04KEPWF6V7/2026-04-04/chat.jsonl" \
-  | jq -r '.[] | .user' | sort | uniq -c
+  | jq -r '.user' | sort | uniq -c
 ```
 
 ## Shell Commands
@@ -239,7 +239,7 @@ Standard commands available on the mounted Slack tree:
 | `cat`           | Read `chat.jsonl`, user `.json`, or files  |
 | `head` / `tail` | First/last N lines                         |
 | `grep` / `rg`   | Pattern search (file or directory level)   |
-| `jq`            | Query JSON; use `.[]` prefix for JSONL     |
+| `jq`            | Query JSON, once per JSONL line (`-s` all) |
 | `wc`            | Line/word/byte counts                      |
 | `stat`          | File metadata (name, size, type)           |
 | `find`          | Recursive search with `-name`, `-maxdepth` |

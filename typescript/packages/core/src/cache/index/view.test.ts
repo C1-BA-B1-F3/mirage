@@ -186,6 +186,7 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
         const reading = ws.vfs.readdir('/data')
         let changing: Promise<unknown> | undefined
         const replacement = new RAMVFS()
+        replacement.store.files.set('/own', new TextEncoder().encode('own\n'))
         try {
           await entered
           let changed = false
@@ -218,6 +219,14 @@ for (const type of [IndexType.RAM, IndexType.REDIS]) {
           for (const candidate of [index, replacement.index]) {
             expect((await candidate.get('/data/stale')).status).toBe(LookupStatus.NOT_FOUND)
             expect((await candidate.listDir('/data')).entries ?? []).not.toContain('/data/stale')
+            if (method !== 'put') {
+              const listing = await candidate.listDir('/data')
+              // One redis keyspace backs every mount, so each handle reads the
+              // replacement's own listing; ram gives each mount its own store.
+              const shares = candidate === replacement.index || type === IndexType.REDIS
+              const own = shares ? ['/data/own'] : null
+              expect([listing.entries ?? null, listing.partialEntries ?? null]).toEqual([own, null])
+            }
           }
           expect((await replacement.index.get('/data/fresh')).entry?.id).toBe('new')
         } finally {

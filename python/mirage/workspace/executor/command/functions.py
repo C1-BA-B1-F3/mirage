@@ -107,7 +107,7 @@ async def run_shell_function(
                     and not session.errexit_immune):
                 merged_io.exit_code = io.exit_code
                 break
-        combined = async_chain(*all_stdout) if all_stdout else None
+        combined = async_chain(all_stdout) if all_stdout else None
         last_exec.exit_code = merged_io.exit_code
         return combined, merged_io, last_exec
     finally:

@@ -169,6 +169,19 @@ describe('handleFor', () => {
     await handleFor(execute, 'Y', [], [node('body')], s)
     expect('Y' in s.env).toBe(false)
   })
+
+  // bash 5.2: `for i in $(seq 1 300000); do :; done; echo "$i"` prints
+  // 300000.
+  it('runs a list of 300000 words and keeps the last one', async () => {
+    const words = Array.from({ length: 300_000 }, (_, i) => (i + 1).toString())
+    const s = new SessionState({ sessionId: 'test' })
+    const execute: ExecuteNodeFn = (_n, st) =>
+      Promise.resolve([encode(`${st.env.X ?? ''}\n`), new IOResult(), new ExecutionNode()])
+    const [stdout, io] = await handleFor(execute, 'X', words, [node('body')], s)
+    expect(io.exitCode).toBe(0)
+    expect(decode(await materialize(stdout))).toBe(words.map((w) => `${w}\n`).join(''))
+    expect(s.env.X).toBe('300000')
+  }, 30_000)
 })
 
 describe('handleWhile / handleUntil', () => {

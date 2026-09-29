@@ -270,5 +270,5 @@ async def _run_program(
 
     if len(all_stdout) == 1:
         return all_stdout[0], merged_io, last_exec
-    combined = async_chain(*all_stdout) if all_stdout else None
+    combined = async_chain(all_stdout) if all_stdout else None
     return combined, merged_io, last_exec

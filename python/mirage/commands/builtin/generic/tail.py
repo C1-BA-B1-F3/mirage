@@ -659,5 +659,5 @@ async def tail_generic(
                 from_byte=counts.from_byte)
     if parsed.verbose and not parsed.quiet:
         # -v heads a stdin nobody named with the name it gives `-`.
-        body = async_chain(f"==> {STDIN_HEADER_NAME} <==\n".encode(), body)
+        body = async_chain([f"==> {STDIN_HEADER_NAME} <==\n".encode(), body])
     return body, IOResult(stderr=retry_warning or None)

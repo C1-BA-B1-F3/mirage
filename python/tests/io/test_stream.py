@@ -105,7 +105,7 @@ def test_async_chain_two_streams():
         a = _make_stream(b"hello ")
         b = _make_stream(b"world")
         chunks = []
-        async for chunk in async_chain(a, b):
+        async for chunk in async_chain([a, b]):
             chunks.append(chunk)
         assert b"".join(chunks) == b"hello world"
 
@@ -118,7 +118,7 @@ def test_async_chain_with_none():
         a = None
         b = _make_stream(b"world")
         chunks = []
-        async for chunk in async_chain(a, b):
+        async for chunk in async_chain([a, b]):
             chunks.append(chunk)
         assert b"".join(chunks) == b"world"
 
@@ -131,7 +131,7 @@ def test_async_chain_with_bytes():
         a = b"hello "
         b = b"world"
         chunks = []
-        async for chunk in async_chain(a, b):
+        async for chunk in async_chain([a, b]):
             chunks.append(chunk)
         assert b"".join(chunks) == b"hello world"
 
@@ -142,7 +142,7 @@ def test_async_chain_empty():
 
     async def run():
         chunks = []
-        async for chunk in async_chain(None, None):
+        async for chunk in async_chain([None, None]):
             chunks.append(chunk)
         assert chunks == []
 

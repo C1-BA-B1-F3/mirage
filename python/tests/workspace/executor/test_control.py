@@ -182,6 +182,22 @@ async def test_for_over_no_words_leaves_the_variable_untouched():
     assert "Y" not in sess.env
 
 
+# bash 5.2: `for i in $(seq 1 300000); do :; done; echo "$i"` prints
+# 300000.
+@pytest.mark.asyncio
+async def test_for_runs_a_list_of_300000_words_and_keeps_the_last_one():
+    words = [str(i) for i in range(1, 300_001)]
+    sess = session()
+
+    async def execute(_n, s, *_args):
+        return result(f"{s.env['X']}\n".encode())
+
+    stdout, io, _ = await handle_for(execute, "X", words, [node("body")], sess)
+    assert io.exit_code == 0
+    assert await text_of(stdout) == "".join(f"{w}\n" for w in words)
+    assert sess.env["X"] == "300000"
+
+
 @pytest.mark.asyncio
 async def test_for_carries_a_multi_level_break_out_to_the_caller():
     seen = []

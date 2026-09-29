@@ -249,7 +249,7 @@ export async function handleRead(
   const variables = parse.operands.length > 0 ? parse.operands : ['REPLY']
   if (stdin !== null && (session.stdinBuffer === null || session.stdinSource !== stdin)) {
     if (stdin instanceof Uint8Array) {
-      session.stdinBuffer = new AsyncLineIterator(asyncChain(stdin))
+      session.stdinBuffer = new AsyncLineIterator(asyncChain([stdin]))
     } else {
       session.stdinBuffer = new AsyncLineIterator(stdin)
     }

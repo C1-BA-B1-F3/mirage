@@ -133,7 +133,7 @@ async def handle_mapfile(
     if stdin is not None and (session._stdin_buffer is None
                               or session._stdin_source is not stdin):
         if isinstance(stdin, bytes):
-            session._stdin_buffer = AsyncLineIterator(async_chain(stdin))
+            session._stdin_buffer = AsyncLineIterator(async_chain([stdin]))
             session._stdin_source = stdin
         elif hasattr(stdin, "__aiter__"):
             session._stdin_buffer = AsyncLineIterator(stdin)

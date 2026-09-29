@@ -34,7 +34,7 @@ function hasActiveFlags(flagKwargs: Record<string, FlagValue>): boolean {
 // Python's _line_ended.
 async function* lineEnded(source: ByteSource): AsyncIterable<Uint8Array> {
   let last = 0x0a
-  for await (const chunk of asyncChain(source)) {
+  for await (const chunk of asyncChain([source])) {
     if (chunk.byteLength > 0) last = chunk[chunk.byteLength - 1] ?? 0x0a
     yield chunk
   }
@@ -108,7 +108,7 @@ export async function runStream(
     LINE_STREAM_COMMANDS.has(cmdName) && sources.length > 0
       ? [...sources.slice(0, -1).map(lineEnded), ...sources.slice(-1)]
       : sources
-  const body: ByteSource = asyncChain(...merged)
+  const body: ByteSource = asyncChain(merged)
 
   if (cmdName === Cmd.CAT && !hasActiveFlags(flagKwargs)) {
     if (failed) mergedIo.exitCode = mergedIo.exitCode || failCode || 1

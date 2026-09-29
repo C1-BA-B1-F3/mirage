@@ -100,7 +100,8 @@ export async function handleMapfile(
     return fail(cmd, `bash: ${cmd}: ${name}: not an indexed array\n`, 1)
 
   if (stdin !== null && (session.stdinBuffer === null || session.stdinSource !== stdin)) {
-    if (stdin instanceof Uint8Array) session.stdinBuffer = new AsyncLineIterator(asyncChain(stdin))
+    if (stdin instanceof Uint8Array)
+      session.stdinBuffer = new AsyncLineIterator(asyncChain([stdin]))
     else session.stdinBuffer = new AsyncLineIterator(stdin)
     session.stdinSource = stdin
   }

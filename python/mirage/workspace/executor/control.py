@@ -47,7 +47,7 @@ _MAX_WHILE = 10000
 def _line_buffer(stdin: ByteSource) -> AsyncLineIterator:
     """Wrap a ByteSource (bytes or chunked async iter) as a line iterator."""
     if isinstance(stdin, bytes):
-        return AsyncLineIterator(async_chain(stdin))
+        return AsyncLineIterator(async_chain([stdin]))
     return AsyncLineIterator(stdin)
 
 
@@ -84,20 +84,14 @@ async def _execute_body(
             if sig.stdout is not None:
                 all_stdout.append(sig.stdout)
             merged_io = await merged_io.merge(sig.io)
-            combined = async_chain(*[s for s in all_stdout
-                                     if s is not None]) if any(
-                                         s is not None
-                                         for s in all_stdout) else None
+            combined = _chain_streams(all_stdout)
             raise BreakSignal(stdout=combined, io=merged_io, levels=sig.levels)
         except ContinueSignal as sig:
             record_status(session, 0)
             if sig.stdout is not None:
                 all_stdout.append(sig.stdout)
             merged_io = await merged_io.merge(sig.io)
-            combined = async_chain(*[s for s in all_stdout
-                                     if s is not None]) if any(
-                                         s is not None
-                                         for s in all_stdout) else None
+            combined = _chain_streams(all_stdout)
             raise ContinueSignal(stdout=combined,
                                  io=merged_io,
                                  levels=sig.levels)
@@ -109,9 +103,7 @@ async def _execute_body(
                 and not session.errexit_immune):
             merged_io.exit_code = io.exit_code
             break
-    non_empty = [s for s in all_stdout if s is not None]
-    combined = async_chain(*non_empty) if non_empty else None
-    return combined, merged_io, last_exec
+    return _chain_streams(all_stdout), merged_io, last_exec
 
 
 class BreakSignal(Exception):
@@ -132,7 +124,7 @@ class ContinueSignal(Exception):
 
 def _chain_streams(all_stdout: list[ByteSource | None]) -> ByteSource | None:
     non_empty = [s for s in all_stdout if s is not None]
-    return async_chain(*non_empty) if non_empty else None
+    return async_chain(non_empty) if non_empty else None
 
 
 def _collect_loop_result(
@@ -141,10 +133,7 @@ def _collect_loop_result(
     label: str,
 ) -> tuple[ByteSource | None, IOResult, ExecutionNode]:
     exec_node = ExecutionNode(command=label, exit_code=merged_io.exit_code)
-    non_empty = [s for s in all_stdout if s is not None]
-    if not non_empty:
-        return None, merged_io, exec_node
-    return async_chain(*non_empty), merged_io, exec_node
+    return _chain_streams(all_stdout), merged_io, exec_node
 
 
 async def handle_if(
@@ -545,7 +534,7 @@ async def handle_case(
         return None, IOResult(), ExecutionNode(command="case", exit_code=0)
     if len(all_stdout) == 1:
         return all_stdout[0], merged_io, last_exec
-    combined = async_chain(*all_stdout) if all_stdout else None
+    combined = async_chain(all_stdout) if all_stdout else None
     return combined, merged_io, last_exec
 
 

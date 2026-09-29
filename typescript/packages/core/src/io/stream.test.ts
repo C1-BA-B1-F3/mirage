@@ -148,7 +148,7 @@ describe('closeQuietly', () => {
 describe('asyncChain', () => {
   it('chains multiple streams/bytes/null into one', async () => {
     const out = await collect(
-      asyncChain(encode('a'), fromChunks([encode('b'), encode('c')]), null, encode('d')),
+      asyncChain([encode('a'), fromChunks([encode('b'), encode('c')]), null, encode('d')]),
     )
     expect(out).toBe('abcd')
   })

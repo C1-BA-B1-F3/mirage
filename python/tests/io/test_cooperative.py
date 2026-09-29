@@ -213,7 +213,7 @@ async def test_pipeline_cache_lifecycle(failure):
 
     async def execute(cmd, session, stdin, call_stack, *, sink=None):
         if cmd == "cat":
-            return async_chain(stream), IOResult(
+            return async_chain([stream]), IOResult(
                 reads={"/remote": stream},
                 cache=["/remote"]), ExecutionNode(command="cat")
         await anext(stdin)

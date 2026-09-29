@@ -340,6 +340,6 @@ async function runProgram(
   if (allStdout.length === 1 && allStdout[0] !== undefined) {
     return [allStdout[0], mergedIo, lastExec]
   }
-  const combined = allStdout.length > 0 ? asyncChain(...allStdout) : null
+  const combined = allStdout.length > 0 ? asyncChain(allStdout) : null
   return [combined, mergedIo, lastExec]
 }

@@ -148,7 +148,7 @@ export async function discardIo(io: IOResult): Promise<void> {
   )
 }
 
-export async function* asyncChain(...streams: (ByteSource | null)[]): AsyncIterable<Uint8Array> {
+export async function* asyncChain(streams: Iterable<ByteSource | null>): AsyncIterable<Uint8Array> {
   for (const stream of streams) {
     if (stream === null) continue
     if (stream instanceof Uint8Array) {

@@ -110,7 +110,7 @@ export async function executeShellFunction(
     session.localVars = outerLocals
   }
 
-  const combined = allStdout.length > 0 ? asyncChain(...allStdout) : null
+  const combined = allStdout.length > 0 ? asyncChain(allStdout) : null
   lastExec.exitCode = mergedIo.exitCode
   return [combined, mergedIo, lastExec]
 }

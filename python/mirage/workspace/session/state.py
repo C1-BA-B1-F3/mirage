@@ -24,12 +24,13 @@ from mirage.policy.types import SessionContext
 from mirage.shell.arith import evaluate_arith
 from mirage.shell.array import (ShellArray, array_extent, array_get, array_has,
                                 array_values, array_with, make_array)
+from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import (PIPESTATUS, RANDOM, RANDOM_MODULUS,
                                     RANDOM_UNSET)
 from mirage.shell.errors import ArithError
 from mirage.shell.types import ArithWrite, ElementOps
-from mirage.shell.variable import (ShellValue, ShellVar, VarAttr, coerce_value,
-                                   detach, with_attr, with_value)
+from mirage.shell.variable import (ShellValue, ShellVar, TempEnv, VarAttr,
+                                   coerce_value, detach, with_attr, with_value)
 from mirage.utils.hidden import var_hidden
 from mirage.workspace.session.errors import ReadonlyVariableError
 from mirage.workspace.session.rng import draw
@@ -979,10 +980,113 @@ async def unset_var(session: SessionState,
                        key=name,
                        value=None,
                        session_id=session.session_id))
-    session.vars.pop(name, None)
+    _drop(session, name)
     if name == RANDOM:
         # bash: unsetting RANDOM strips its special meaning for good.
         session._random_seed = RANDOM_UNSET
+
+
+def _shadowing_frame(session: SessionState,
+                     name: str) -> dict[str, ShellVar | None] | None:
+    """The innermost scope on the call path that saved ``name``.
+
+    Args:
+        session (SessionState): the session.
+        name (str): variable name.
+    """
+    return next((f for f in reversed(session._local_frames) if name in f),
+                None)
+
+
+def _drop(session: SessionState, name: str) -> None:
+    """Remove a variable as bash's ``unset`` does.
+
+    A name the running function made local stays unset until it
+    returns. A name an enclosing scope shadows, a caller's ``local`` or
+    the temporary environment of ``x=1 f``, is that scope's to lose:
+    the unset reveals the value it saved, and the name holds that value
+    from then on (GNU: ``x=old; x=pre f`` where f runs ``unset x``
+    reads ``old`` inside f and after it).
+
+    Args:
+        session (SessionState): the session being written.
+        name (str): variable name.
+    """
+    frame = _shadowing_frame(session, name)
+    if frame is None or frame is session._local_vars or name == RANDOM:
+        session.vars.pop(name, None)
+        return
+    saved = frame.pop(name)
+    if saved is None:
+        session.vars.pop(name, None)
+    else:
+        session.vars[name] = saved
+
+
+def outlive_call(session: SessionState, name: str) -> None:
+    """Let a temporary-environment variable outlive its call.
+
+    bash keeps a name that ``x=1 f`` put in front of a function once
+    something inside runs ``export x`` or ``readonly x``: x still holds
+    its value after f returns, where otherwise the caller's comes back.
+
+    Args:
+        session (SessionState): the session.
+        name (str): variable name.
+    """
+    frame = _shadowing_frame(session, name)
+    if isinstance(frame, TempEnv):
+        del frame[name]
+
+
+def in_call_env(session: SessionState, name: str) -> bool:
+    """Whether the running function's call assigned ``name`` in front.
+
+    ``x=1 f`` puts ``x`` in f's temporary environment, which sits right
+    under f's own frame of locals.
+
+    Args:
+        session (SessionState): the session.
+        name (str): variable name.
+    """
+    frames = session._local_frames
+    return (len(frames) > 1 and isinstance(frames[-2], TempEnv)
+            and name in frames[-2])
+
+
+def positional_params(session: SessionState,
+                      call_stack: CallStack | None) -> list[str]:
+    """The positional parameters in scope.
+
+    Inside a function they are the function's own, even when it was
+    called with none: bash's ``f`` run bare sees ``$#`` as 0, never its
+    caller's count. Outside every function they are the shell's.
+
+    Args:
+        session (SessionState): shell session state.
+        call_stack (CallStack | None): function-call scope, if any.
+    """
+    if call_stack is not None and call_stack.depth > 1:
+        return call_stack.get_all_positional()
+    return session.positional_args
+
+
+def set_positional_params(session: SessionState, call_stack: CallStack | None,
+                          values: list[str]) -> None:
+    """Replace the positional parameters in scope.
+
+    ``set --`` and ``shift`` inside a function change the function's
+    own and leave the caller's alone, as bash's do.
+
+    Args:
+        session (SessionState): shell session state.
+        call_stack (CallStack | None): function-call scope, if any.
+        values (list[str]): the new parameters.
+    """
+    if call_stack is not None and call_stack.depth > 1:
+        call_stack.set_positional(values)
+    else:
+        session.positional_args = values
 
 
 def shadow_local(session: SessionState, local_vars: dict[str, ShellVar | None],

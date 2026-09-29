@@ -26,8 +26,8 @@ from mirage.workspace.executor.builtins.shared import (readonly_refusal,
                                                        refusal, require_view)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (exported_names, session_view,
-                                            set_attr)
+from mirage.workspace.session.state import (exported_names, outlive_call,
+                                            session_view, set_attr)
 from mirage.workspace.types import ExecutionNode
 
 
@@ -131,6 +131,8 @@ async def handle_export(
                 await view.mark(assign, VarAttr.EXPORT, on)
             except PolicyDenied as exc:
                 return refusal("export", exc)
+        if on:
+            outlive_call(session, assign.partition("=")[0])
     if errors:
         return identifier_failure("export", errors)
     return None, IOResult(), ExecutionNode(command="export", exit_code=0)

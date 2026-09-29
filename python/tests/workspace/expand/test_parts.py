@@ -124,3 +124,10 @@ def test_expand_parts_is_the_unmarked_view():
     assert texts == [unmark_globs(w) for w in words]
     # No mark ever reaches a caller of expand_parts.
     assert all(w == unmark_globs(w) for w in texts)
+
+
+def test_a_substitution_splits_into_300000_words():
+    lines = "\n".join(str(i) for i in range(1, 300_001)) + "\n"
+    out = _words("c $(seq 1 300000)", stdout=lines.encode())
+    assert len(out) == 300_001
+    assert out[-1] == "300000"

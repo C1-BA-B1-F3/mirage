@@ -17,19 +17,43 @@ import type { CallStack } from '../../../../shell/call_stack.ts'
 import { parseOptionWord } from '../../../../shell/options.ts'
 import { SET_OPTION_DEFAULTS, SET_OPTION_NAMES } from '../../../../shell/constants.ts'
 import type { SessionState } from '../../../session/session.ts'
-import { visibleEnv } from '../../../session/state.ts'
+import { setPositionalParams, visibleEnv } from '../../../session/state.ts'
 import { ExecutionNode } from '../../../types.ts'
+import { singleQuote } from '../../../../utils/quote.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
+import { SET_QUOTED_CHARS } from '../constants.ts'
+import { bashDeclareQuote } from '../declare/declare.ts'
+import { CONTROL_RE } from '../declare/constants.ts'
 import type { BuiltinCall, Result } from '../types.ts'
+
+/**
+ * A value as bash's bare `set` prints it.
+ *
+ * `$'...'` when it holds a control character, the form `declare -p`
+ * writes; single quotes when the shell would read a character in it
+ * specially; bare otherwise. GNU prints `IFS=$' \t\n'`, `x='a b'` and
+ * `y=a,b`.
+ */
+function listedValue(value: string): string {
+  if (CONTROL_RE.test(value)) return bashDeclareQuote(value)
+  let quoted = value.startsWith('#')
+  for (let i = 0; i < value.length && !quoted; i++) {
+    const ch = value.charAt(i)
+    quoted =
+      SET_QUOTED_CHARS.has(ch) || (ch === '~' && (i === 0 || '=:'.includes(value.charAt(i - 1))))
+  }
+  return quoted ? singleQuote(value) : value
+}
 
 export function handleSet(
   args: string[],
   session: SessionState,
-  _callStack: CallStack | null = null,
+  callStack: CallStack | null = null,
 ): Result {
   if (args.length === 0) {
-    const lines = Object.entries(visibleEnv(session)).map(([k, v]) => `${k}=${v}`)
-    lines.sort(compareCodePoints)
+    const entries = Object.entries(visibleEnv(session))
+    entries.sort(([a], [b]) => compareCodePoints(a, b))
+    const lines = entries.map(([k, v]) => `${k}=${listedValue(v)}`)
     const out = new TextEncoder().encode(`${lines.join('\n')}\n`)
     return [out, new IOResult(), new ExecutionNode({ command: 'set', exitCode: 0 })]
   }
@@ -37,7 +61,7 @@ export function handleSet(
   while (i < args.length) {
     const tok = args[i] ?? ''
     if (tok === '--') {
-      session.positionalArgs = args.slice(i + 1)
+      setPositionalParams(session, callStack, args.slice(i + 1))
       return [null, new IOResult(), new ExecutionNode({ command: 'set', exitCode: 0 })]
     }
     // `-o` and `+o` with nothing after them print the option table
@@ -51,7 +75,7 @@ export function handleSet(
     }
     const word = parseOptionWord(tok, args[i + 1] ?? null)
     if (word === null) {
-      session.positionalArgs = args.slice(i)
+      setPositionalParams(session, callStack, args.slice(i))
       break
     }
     for (const [option, enable] of word.settings) {

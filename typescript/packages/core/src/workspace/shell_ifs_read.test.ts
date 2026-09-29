@@ -47,8 +47,18 @@ describe('IFS / read interaction and inline VAR=val cmd prefix', () => {
   it('env prefix to command', async () => {
     const { ws } = await makeIntegrationWS()
     try {
-      const out = await run(ws, 'FOO=bar bash -c "echo $FOO"')
+      const out = await run(ws, "FOO=bar bash -c 'echo $FOO'")
       expect(out).toContain('bar')
+    } finally {
+      await ws.close()
+    }
+  })
+
+  it('env prefix after word expansion', async () => {
+    const { ws } = await makeIntegrationWS()
+    try {
+      const out = await run(ws, 'FOO=bar bash -c "echo [$FOO]"')
+      expect(out).toBe('[]\n')
     } finally {
       await ws.close()
     }

@@ -26,7 +26,7 @@ from mirage.workspace.executor.builtins.shared import (arith_refusal,
                                                        refusal, require_view)
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
-from mirage.workspace.session.state import (env_get, session_view,
+from mirage.workspace.session.state import (env_get, in_call_env, session_view,
                                             shadow_local, visible_arrays,
                                             visible_assocs)
 from mirage.workspace.types import ExecutionNode
@@ -129,7 +129,12 @@ async def handle_local(
                 stored.append(key)
         else:
             if local_vars is not None:
+                fresh = assign not in local_vars
                 shadow_local(session, local_vars, assign)
+                refused = (await _fresh_local(session, view, cmd, assign)
+                           if fresh else None)
+                if refused is not None:
+                    return refused
             if (env_get(session, assign) is None
                     and assign not in visible_arrays(session)
                     and assign not in visible_assocs(session)):
@@ -154,6 +159,44 @@ async def handle_local(
     if errors:
         return identifier_failure(cmd, errors)
     return None, IOResult(), ExecutionNode(command=cmd, exit_code=0)
+
+
+async def _fresh_local(session: SessionState, view: SessionView, cmd: str,
+                       name: str) -> Result | None:
+    """Start a bare ``local NAME`` unset, as bash 5.2 does.
+
+    Only a name the frame did not shadow yet: a second ``local x``, or
+    the fresh array ``local -a x`` has already put in place, keeps what
+    the function holds.
+
+    The caller's value and attributes stay behind except the export
+    mark: GNU prints ``declare -- x`` for ``x=1; f() { local x; }`` and
+    ``declare -x x`` for an exported one, and ``local x; x+=y`` stores
+    ``y``. A name the call assigned in front is the exception and keeps
+    that value (``x=1 f`` where f runs ``local x`` reads 1). A readonly
+    name refuses, as GNU's does.
+
+    Args:
+        session (SessionState): shell session state.
+        view (SessionView): the session plane's gated door.
+        cmd (str): the builtin's spelling, for the diagnostic.
+        name (str): the name being declared.
+
+    Returns:
+        A refusal result, else None.
+    """
+    var = session.vars.get(name)
+    if var is None or in_call_env(session, name):
+        return None
+    if view.is_readonly(name):
+        return readonly_refusal(cmd, name)
+    try:
+        await view.unset(name, follow_ref=False)
+        if VarAttr.EXPORT in var.attrs:
+            await view.mark(name, VarAttr.EXPORT, True)
+    except PolicyDenied as exc:
+        return refusal(cmd, exc)
+    return None
 
 
 async def local_builtin(call: BuiltinCall) -> Result:

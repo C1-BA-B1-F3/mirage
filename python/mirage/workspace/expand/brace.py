@@ -14,6 +14,7 @@
 
 from mirage.workspace.expand.constants import (CHAR_SEQ, INERT_CLOSE,
                                                INERT_OPEN, NUM_SEQ)
+from mirage.workspace.expand.types import Chunk, Piece
 
 
 def make_inert(index: int) -> str:
@@ -31,27 +32,29 @@ def make_inert(index: int) -> str:
     return f"{INERT_OPEN}{index}{INERT_CLOSE}"
 
 
-def substitute(word: str, values: list[str]) -> str:
-    """Replace inert atoms in an expanded template word with values.
+def substitute(word: str, values: list[list[Chunk]]) -> list[Chunk]:
+    """Replace inert atoms in an expanded template word with their pieces.
+
+    The template's own text is literal and never splits; an atom keeps
+    the pieces its expansion produced. An empty word has no pieces, so
+    it is no word at all: ``{,x}`` is ``x``.
 
     Args:
         word (str): one word produced by expand_template.
-        values (list[str]): expanded chunk values, indexed by atom.
+        values (list[list[Chunk]]): expanded atom pieces, indexed by atom.
     """
-    if INERT_OPEN not in word:
-        return word
-    out: list[str] = []
+    out: list[Chunk] = []
     i = 0
     while True:
         j = word.find(INERT_OPEN, i)
+        literal = word[i:] if j < 0 else word[i:j]
+        if literal:
+            out.append(Piece(literal))
         if j < 0:
-            out.append(word[i:])
-            break
-        out.append(word[i:j])
+            return out
         k = word.index(INERT_CLOSE, j)
-        out.append(values[int(word[j + 1:k])])
+        out.extend(values[int(word[j + 1:k])])
         i = k + 1
-    return "".join(out)
 
 
 def _is_padded(text: str) -> bool:

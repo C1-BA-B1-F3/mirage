@@ -27,6 +27,37 @@ async def test_set_bare_lists_the_variables_sorted():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("value,listed", [
+    ("a,b", "a,b"),
+    ("", ""),
+    ("a b", "'a b'"),
+    ("it's", "'it'\\''s'"),
+    ("~x", "'~x'"),
+    ("x=~y", "'x=~y'"),
+    ("x~", "x~"),
+    ("#c", "'#c'"),
+    ("x#", "x#"),
+    (" \t\n", "$' \\t\\n'"),
+])
+async def test_set_bare_quotes_a_value_as_bash_does(value, listed):
+    session = SessionState(session_id="s1")
+    seed_var(session, "V", value)
+    out, _, _ = await handle_set([], session)
+    lines = (await materialize(out)).decode().split("\n")
+    assert f"V={listed}" in lines
+
+
+@pytest.mark.asyncio
+async def test_set_bare_sorts_by_name():
+    session = SessionState(session_id="s1")
+    seed_var(session, "B2", "1")
+    seed_var(session, "B", "2")
+    out, _, _ = await handle_set([], session)
+    lines = (await materialize(out)).decode().splitlines()
+    assert lines.index("B=2") < lines.index("B2=1")
+
+
+@pytest.mark.asyncio
 async def test_set_toggles_a_shell_option_by_letter_and_by_name():
     session = SessionState(session_id="s1")
     _, io, _ = await handle_set(["-e"], session)

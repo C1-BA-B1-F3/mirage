@@ -27,9 +27,6 @@ export const INERT_CLOSE = '\u0001'
 export const NUM_SEQ = /^(-?\d+)\.\.(-?\d+)(?:\.\.(-?\d+))?$/
 export const CHAR_SEQ = /^([A-Za-z])\.\.([A-Za-z])(?:\.\.(-?\d+))?$/
 
-// Unquoted expansions whose result splits into words on whitespace.
-export const SPLIT_TYPES: ReadonlySet<string> = new Set([NT.SIMPLE_EXPANSION, NT.EXPANSION])
-
 // Node types that may carry a brace-expandable word.
 export const BRACE_WORD_TYPES: ReadonlySet<string> = new Set([
   NT.CONCATENATION,
@@ -93,3 +90,7 @@ export const ARITH_OPERATORS: ReadonlySet<string> = new Set([
 // Arithmetic delimiter tokens that mark the start/end of $((...)), $[...], and
 // the (( ... )) arithmetic command.
 export const ARITH_DELIMITERS: ReadonlySet<string> = new Set(['$((', '((', '))', '$[', ']'])
+
+// What a backslash escapes in the word of a `${v:-word}` inside double
+// quotes: the double-quote set plus the closing brace.
+export const OPERAND_DQUOTE_ESCAPES: ReadonlySet<string> = new Set(['$', '`', '"', '\\', '}'])

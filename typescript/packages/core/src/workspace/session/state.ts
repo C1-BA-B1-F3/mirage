@@ -15,6 +15,7 @@
 import type { SessionView } from '../../ops/types.ts'
 import { PolicyDenied, preSessionGate, type Policies } from '../../policy/index.ts'
 import { evaluateArith } from '../../shell/arith.ts'
+import type { CallStack } from '../../shell/call_stack.ts'
 import {
   arrayExtent,
   arrayGet,
@@ -33,7 +34,15 @@ import { ReadonlyVariableError } from './errors.ts'
 import { draw, initialSeed } from './rng.ts'
 import { ownRecord, sessionEntry, setSessionEntry } from './session.ts'
 import type { ShellValue, ShellVar } from '../../shell/variable.ts'
-import { coerceValue, detach, makeVar, VarAttr, withAttr, withValue } from '../../shell/variable.ts'
+import {
+  coerceValue,
+  detach,
+  makeVar,
+  TempEnv,
+  VarAttr,
+  withAttr,
+  withValue,
+} from '../../shell/variable.ts'
 import type { SessionState } from './session.ts'
 
 /**
@@ -760,10 +769,95 @@ async function unsetVar(
     sessionId: session.sessionId,
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-  delete session.vars[name]
+  drop(session, name)
   // bash: unsetting RANDOM strips its special meaning for good.
   if (name === RANDOM) session.randomSeed = RANDOM_UNSET
+}
+
+/** The innermost scope on the call path that saved `name`. */
+function shadowingFrame(
+  session: SessionState,
+  name: string,
+): Map<string, ShellVar | null> | undefined {
+  for (let i = session.localFrames.length - 1; i >= 0; i--) {
+    const frame = session.localFrames[i]
+    if (frame?.has(name) === true) return frame
+  }
+  return undefined
+}
+
+/**
+ * Remove a variable as bash's `unset` does.
+ *
+ * A name the running function made local stays unset until it returns.
+ * A name an enclosing scope shadows, a caller's `local` or the temporary
+ * environment of `x=1 f`, is that scope's to lose: the unset reveals the
+ * value it saved, and the name holds that value from then on (GNU:
+ * `x=old; x=pre f` where f runs `unset x` reads `old` inside f and after
+ * it).
+ */
+function drop(session: SessionState, name: string): void {
+  const frame = shadowingFrame(session, name)
+  const saved = frame?.get(name) ?? null
+  if (frame !== undefined && frame !== session.localVars && name !== RANDOM) {
+    frame.delete(name)
+    if (saved !== null) {
+      setSessionEntry(session.vars, name, saved)
+      return
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+  delete session.vars[name]
+}
+
+/**
+ * Let a temporary-environment variable outlive its call.
+ *
+ * bash keeps a name that `x=1 f` put in front of a function once
+ * something inside runs `export x` or `readonly x`: x still holds its
+ * value after f returns, where otherwise the caller's comes back.
+ */
+export function outliveCall(session: SessionState, name: string): void {
+  const frame = shadowingFrame(session, name)
+  if (frame instanceof TempEnv) frame.delete(name)
+}
+
+/**
+ * Whether the running function's call assigned `name` in front.
+ *
+ * `x=1 f` puts `x` in f's temporary environment, which sits right under
+ * f's own frame of locals.
+ */
+export function inCallEnv(session: SessionState, name: string): boolean {
+  const below = session.localFrames[session.localFrames.length - 2]
+  return below instanceof TempEnv && below.has(name)
+}
+
+/**
+ * The positional parameters in scope.
+ *
+ * Inside a function they are the function's own, even when it was called
+ * with none: bash's `f` run bare sees `$#` as 0, never its caller's
+ * count. Outside every function they are the shell's.
+ */
+export function positionalParams(session: SessionState, callStack: CallStack | null): string[] {
+  if (callStack !== null && callStack.depth > 1) return callStack.getAllPositional()
+  return session.positionalArgs
+}
+
+/**
+ * Replace the positional parameters in scope.
+ *
+ * `set --` and `shift` inside a function change the function's own and
+ * leave the caller's alone, as bash's do.
+ */
+export function setPositionalParams(
+  session: SessionState,
+  callStack: CallStack | null,
+  values: string[],
+): void {
+  if (callStack !== null && callStack.depth > 1) callStack.setPositional(values)
+  else session.positionalArgs = values
 }
 
 /**

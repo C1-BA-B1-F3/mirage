@@ -17,7 +17,7 @@ import { ArithError } from '../../../../shell/errors.ts'
 import { PolicyDenied } from '../../../../policy/errors.ts'
 import { varHidden } from '../../../../utils/hidden.ts'
 import { VarAttr } from '../../../../shell/variable.ts'
-import { setAttr } from '../../../session/state.ts'
+import { outliveCall, setAttr } from '../../../session/state.ts'
 import type { SessionState } from '../../../session/session.ts'
 import { visibleEnv } from '../../../session/state.ts'
 import type { SessionView } from '../../../../ops/types.ts'
@@ -163,6 +163,7 @@ export async function handleReadonly(
       }
       if (stored !== null) stored.push(assign)
     }
+    outliveCall(session, assign.split('=', 1)[0] ?? assign)
   }
   if (errors.length > 0) return identifierFailure('readonly', errors)
   return [null, new IOResult(), new ExecutionNode({ command: 'readonly', exitCode: 0 })]

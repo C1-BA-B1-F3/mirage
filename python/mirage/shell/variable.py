@@ -116,6 +116,18 @@ class ShellVar:
     managed: ManagedRef | None = None
 
 
+class TempEnv(dict[str, ShellVar | None]):
+    """The records a prefix assignment shadowed for one function call.
+
+    bash runs ``x=1 f`` with ``x`` in a scope of its own around the
+    function, its temporary environment: the caller's value comes back
+    when the call returns, ``unset x`` inside reveals it, and an
+    ``export`` or ``readonly`` of the name lets the value outlive the
+    call. A frame of this type on the call path is that scope; a plain
+    frame holds a function's ``local`` shadows.
+    """
+
+
 def var_kind(var: ShellVar) -> VarKind:
     """What kind of variable this is, read off its value.
 

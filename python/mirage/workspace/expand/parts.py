@@ -13,98 +13,29 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from collections.abc import Callable
-from functools import partial
 from typing import Any
 
 from mirage.ops.types import SessionView
 from mirage.shell.call_stack import CallStack
 from mirage.shell.constants import SET_OPTION_DEFAULTS
 from mirage.shell.escapes import unescape_unquoted
-from mirage.shell.helpers import get_text, quoted_parts
-from mirage.shell.types import NodeType as NT
+from mirage.shell.helpers import get_text
 from mirage.shell.types import TSNodeLike
 from mirage.types import PathSpec
-from mirage.utils.glob_walk import mark_escaped_globs, mark_globs, unmark_globs
+from mirage.utils.glob_walk import mark_escaped_globs, unmark_globs
 from mirage.utils.path import expand_tilde
 from mirage.workspace.expand.brace import (expand_template, make_inert,
                                            substitute)
 from mirage.workspace.expand.classify import classify_word
 from mirage.workspace.expand.constants import (BRACE_LITERAL_TYPES,
-                                               BRACE_WORD_TYPES, SPLIT_TYPES)
-from mirage.workspace.expand.node import (_folded_whitespace, expand_node,
-                                          expand_node_marked)
-from mirage.workspace.expand.variable import expand_array_at, is_multiword_at
+                                               BRACE_WORD_TYPES)
+from mirage.workspace.expand.fields import split_fields
+from mirage.workspace.expand.node import expand_chunks
+from mirage.workspace.expand.types import Chunk
+from mirage.workspace.expand.variable import ifs_value
 from mirage.workspace.mount import MountRegistry
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.shell_dirs import home_dir
-
-
-def _string_has_array_at(node: TSNodeLike) -> bool:
-    return any(is_multiword_at(c) for c in node.children)
-
-
-async def _expand_string_with_array(
-    node: TSNodeLike,
-    session: SessionState,
-    execute_fn: Callable[..., Any],
-    call_stack: CallStack | None,
-    view: SessionView | None = None,
-) -> list[str]:
-    """Expand a string containing one or more "${a[@]...}" into words.
-
-    Bash semantics: "prefix${a[@]}suffix" with a=(1 2 3) produces three
-    words: "prefix1", "2", "3suffix". Slices ("${a[@]:o:l}"), per-element
-    ops ("${a[@]/x/y}"), and indices ("${!a[@]}") word-split the same
-    way. A single-element result merges prefix and suffix into one word;
-    an empty result still yields prefix+suffix.
-    """
-    expand_child = partial(expand_node,
-                           session=session,
-                           execute_fn=execute_fn,
-                           call_stack=call_stack,
-                           view=view)
-    fragments: list[str] = [""]
-    splat_yielded = False
-    for child in quoted_parts(node):
-        if isinstance(child, str):
-            fragments[-1] += child
-            continue
-        if is_multiword_at(child):
-            words = await expand_array_at(child,
-                                          session,
-                                          call_stack,
-                                          expand_child,
-                                          view=view)
-            # The separating whitespace is folded into this node, and
-            # survives even when the array is empty: bash renders
-            # "$x ${empty[@]}" as the single word "a ".
-            fragments[-1] = fragments[-1] + _folded_whitespace(child)
-            if not words:
-                continue
-            splat_yielded = True
-            if len(words) == 1:
-                fragments[-1] = fragments[-1] + words[0]
-            else:
-                fragments[-1] = fragments[-1] + words[0]
-                fragments.extend(words[1:-1])
-                fragments.append(words[-1])
-            continue
-        text = await expand_node(child,
-                                 session,
-                                 execute_fn,
-                                 call_stack,
-                                 view=view)
-        fragments[-1] = fragments[-1] + text
-    if fragments == [""] and not splat_yielded:
-        # A splat that yielded nothing, with no text around it, is no word
-        # at all. One empty ELEMENT is a word though (set -- "" passes one
-        # empty argument), so the rendered text cannot decide this; only
-        # the element count can. An empty expansion beside it does not
-        # rescue the word either: with no parameters, "$u$@" is nothing.
-        return []
-    # Every fragment came from inside the quotes, so its glob characters
-    # are literal.
-    return [mark_globs(f) for f in fragments]
 
 
 async def _expand_brace_word(
@@ -113,7 +44,7 @@ async def _expand_brace_word(
     execute_fn: Callable[..., Any],
     call_stack: CallStack | None,
     view: SessionView | None = None,
-) -> list[str] | None:
+) -> list[list[Chunk]] | None:
     """Brace-expand a concatenation or brace_expression into words.
 
     Literal word tokens form the brace template; every other child
@@ -127,7 +58,8 @@ async def _expand_brace_word(
     Quoting rides along per character: an atom keeps whatever marks its
     own expansion produced, and the template's escapes are marked
     before quote removal drops them, so `{'*',x}` stays literal while
-    `{$p,x}` keeps the value live.
+    `{$p,x}` keeps the value live. Each word keeps its atoms' pieces,
+    so an unquoted value still splits: `{a,b}$x` is `a$x b$x`.
 
     Args:
         node (TSNodeLike): concatenation or brace_expression.
@@ -147,11 +79,8 @@ async def _expand_brace_word(
     if words is None:
         return None
     values = [
-        await expand_node_marked(atom,
-                                 session,
-                                 execute_fn,
-                                 call_stack,
-                                 view=view) for atom in atoms
+        await expand_chunks(atom, session, execute_fn, call_stack, view=view)
+        for atom in atoms
     ]
     home = home_dir(session)
     return [
@@ -170,10 +99,12 @@ async def expand_words(
 ) -> list[str]:
     """Expand tree-sitter child nodes to words that still know their quoting.
 
-    The words are exactly expand_parts', except that a glob character
-    quoting made literal travels under its own mark, so
-    `"/data/"*.txt` still globs while `'/data/*'.txt` does not and
-    `'/data/*'?.txt` globs on the `?` alone. Only pathname expansion
+    Each node expands to its pieces, which IFS then splits into fields,
+    so an unquoted expansion anywhere in a word splits (``q$x`` too) and
+    quoted text never does. The words are exactly expand_parts', except
+    that a glob character quoting made literal travels under its own
+    mark, so `"/data/"*.txt` still globs while `'/data/*'.txt` does not
+    and `'/data/*'?.txt` globs on the `?` alone. Only pathname expansion
     reads these; everything else takes the unmarked ``expand_parts``.
 
     Args:
@@ -182,16 +113,9 @@ async def expand_words(
         execute_fn (Callable): evaluator for command substitutions.
         call_stack (CallStack | None): shell call stack.
     """
+    ifs = ifs_value(session, call_stack)
     result: list[str] = []
     for p in parts:
-        if p.type == NT.STRING and _string_has_array_at(p):
-            words = await _expand_string_with_array(p,
-                                                    session,
-                                                    execute_fn,
-                                                    call_stack,
-                                                    view=view)
-            result.extend(words)
-            continue
         # The default comes from the option table, not a literal here:
         # two spellings of "brace expansion is on unless told otherwise"
         # is one to drift.
@@ -203,34 +127,15 @@ async def expand_words(
                                                    call_stack,
                                                    view=view)
             if brace_words is not None:
-                # Empty unquoted words vanish, like bash: {,x} -> x.
-                result.extend(w for w in brace_words if w)
+                for chunks in brace_words:
+                    result.extend(split_fields(chunks, ifs))
                 continue
-        expanded = await expand_node_marked(p,
-                                            session,
-                                            execute_fn,
-                                            call_stack,
-                                            view=view)
-        if p.type == NT.COMMAND_SUBSTITUTION:
-            for word in expanded.split():
-                if word:
-                    result.append(word)
-            continue
-        elif p.type in SPLIT_TYPES:
-            for word in expanded.split():
-                if word:
-                    result.append(word)
-        elif p.type == NT.STRING:
-            # A quoted word stays a word even when it expands to "" (echo
-            # "" or "$EMPTY"). The splats that yield zero words instead
-            # ("$@", "${a[@]}") never reach here; they took the branch
-            # above.
-            result.append(expanded)
-        elif p.type in (NT.RAW_STRING, NT.ANSI_C_STRING, NT.TRANSLATED_STRING):
-            result.append(expanded)
-        else:
-            if expanded:
-                result.append(expanded)
+        chunks = await expand_chunks(p,
+                                     session,
+                                     execute_fn,
+                                     call_stack,
+                                     view=view)
+        result.extend(split_fields(chunks, ifs))
     return result
 
 

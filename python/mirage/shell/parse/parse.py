@@ -16,11 +16,14 @@ import tree_sitter
 import tree_sitter_bash
 
 from mirage.shell.parameter import scan_parameter
-from mirage.shell.parse.constants import ARITH_OPEN_TOKEN, QUOTES
+from mirage.shell.parse.constants import (ARITH_OPEN_TOKEN, QUOTES,
+                                          VERBATIM_TYPES)
 from mirage.shell.parse.expansion import expansion_source
 from mirage.shell.parse.heredoc import (heredoc_operators, protected_source,
                                         same_shape)
-from mirage.shell.parse.heredoc.lower import lower_heredocs, rebase_source
+from mirage.shell.parse.heredoc.constants import BACKSLASH
+from mirage.shell.parse.heredoc.lower import (drop_bytes, drop_source_bytes,
+                                              lower_heredocs, rebase_source)
 from mirage.shell.parse.heredoc.node import HeredocNode
 from mirage.shell.parse.heredoc.reader import discover_heredocs
 from mirage.shell.types import TSNodeLike
@@ -143,22 +146,69 @@ def _failed_arith_openers(root: tree_sitter.Node) -> list[int]:
     return offsets
 
 
-def strip_line_continuation(command: str) -> str:
-    """Drop a trailing backslash that continues the line, as bash does.
+def _verbatim_spans(root: tree_sitter.Node) -> list[tuple[int, int]]:
+    """Byte spans whose backslashes escape nothing: comments and strings
+    in single quotes, ANSI-C ones included.
 
-    The reader removes ``\\<newline>`` before the parser ever sees it, and
-    a backslash ending the input is the same thing with nothing left to
-    continue onto: ``echo a\\`` runs ``echo a``. Only an odd-length run
-    of trailing backslashes ends in a live one, since each earlier pair
-    is an escaped backslash (``echo a\\\\`` keeps its literal backslash).
+    Args:
+        root (tree_sitter.Node): root of the parsed tree.
+    """
+    spans: list[tuple[int, int]] = []
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if node.type in VERBATIM_TYPES:
+            spans.append((node.start_byte, node.end_byte))
+            continue
+        stack.extend(node.children)
+    return sorted(spans)
+
+
+def continuation_bytes(data: bytes) -> list[int]:
+    """Offsets of the bytes bash's reader deletes as line continuations.
+
+    The reader removes ``\\<newline>`` before a token is read, so the
+    halves it joins are one word (``a\\<newline>b`` is ``ab``,
+    ``$\\<newline>{x}`` an expansion); tree-sitter reads the pair as
+    whitespace instead. Single-quoted and ANSI-C text and a comment keep
+    theirs, and an escaped backslash continues nothing: only an
+    odd-length run of backslashes before the newline ends in a live one.
+    A live backslash ending the input continues onto nothing and goes
+    too: ``echo a\\`` runs ``echo a``. A heredoc body is lowered into a
+    quoted word before this runs, where every backslash it holds is
+    escaped, so no body loses a byte here.
+
+    Args:
+        data (bytes): shell source.
+    """
+    if b"\\\n" not in data and not data.endswith(b"\\"):
+        return []
+    spans = _verbatim_spans(TS_PARSER.parse(data).root_node)
+    dropped: list[int] = []
+    at = 0
+    index = data.find(b"\\")
+    while index >= 0:
+        end = index
+        while end < len(data) and data[end] == BACKSLASH:
+            end += 1
+        while at < len(spans) and spans[at][1] <= end - 1:
+            at += 1
+        verbatim = at < len(spans) and spans[at][0] <= end - 1
+        if ((end - index) % 2 and not verbatim
+                and data[end:end + 1] in (b"", b"\n")):
+            dropped.extend(range(end - 1, min(end + 1, len(data))))
+        index = data.find(b"\\", end)
+    return dropped
+
+
+def join_continuations(command: str) -> str:
+    """The line as bash's reader hands it on, continuations removed.
 
     Args:
         command (str): the raw command line.
     """
-    stripped = command.rstrip("\\")
-    if (len(command) - len(stripped)) % 2 == 1:
-        return command[:-1]
-    return command
+    data = command.encode()
+    return drop_bytes(data, continuation_bytes(data)).decode()
 
 
 def _orphaned_dollar_offsets(root: tree_sitter.Node, data: bytes) -> list[int]:
@@ -299,8 +349,10 @@ def parse(command: str) -> TSNodeLike:
         documents = discover_heredocs(original, hints)
         if documents:
             source = lower_heredocs(original, documents)
-    data = source.source if source is not None else strip_line_continuation(
-        command).encode()
+    if source is not None:
+        source = drop_source_bytes(source, continuation_bytes(source.source))
+    data = (source.source
+            if source is not None else join_continuations(command).encode())
     root = _parse_bytes(data)
     if root.has_error:
         # Sitting inside an ERROR is not evidence that an opener is

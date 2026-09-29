@@ -16,7 +16,6 @@ import { IOResult } from '../../../../io/types.ts'
 import { ArithError, ExitSignal } from '../../../../shell/errors.ts'
 import { PolicyDenied } from '../../../../policy/errors.ts'
 import { arrayExtent, arrayUnset } from '../../../../shell/array.ts'
-import { varHidden } from '../../../../utils/hidden.ts'
 import { sessionEntry } from '../../../session/session.ts'
 import { deref } from '../../../session/state.ts'
 import type { SessionState } from '../../../session/session.ts'
@@ -30,20 +29,13 @@ import { sessionView } from '../../../session/state.ts'
 import { TARGET_RE } from '../constants.ts'
 
 /**
- * Clear what the env door does not own after a whole-variable unset.
+ * Clear the getopts residue after a whole-variable unset.
  *
- * The scalar half is the view's (`unset` deleted it, or quietly kept
- * it for a hidden name — a direct delete here would undo that
- * refusal); this clears the array storage and the getopts residue.
- * The array delete keeps a hidden name too: the embedder can seed
- * `session.arrays` before narrowing, so a hidden array exists and is
- * as much the host's to keep as the scalar the view protected.
+ * The record itself is the view's to drop, scalar or array alike: it
+ * keeps a hidden name, and inside a function it may put back a value an
+ * enclosing scope saved.
  */
 function unsetVariable(session: SessionState, name: string): void {
-  if (!varHidden(session.hiddenVars, name)) {
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-    delete session.vars[name]
-  }
   if (name === 'OPTIND') session.getoptsOptind = null
 }
 

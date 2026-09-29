@@ -22,7 +22,7 @@ from mirage.workspace.executor.builtins.shared import (is_valid_name,
 from mirage.workspace.executor.builtins.types import BuiltinCall, Result
 from mirage.workspace.session import SessionState
 from mirage.workspace.session.errors import ReadonlyVariableError
-from mirage.workspace.session.state import session_view
+from mirage.workspace.session.state import positional_params, session_view
 from mirage.workspace.types import ExecutionNode
 
 
@@ -99,12 +99,8 @@ async def handle_getopts(
     view = require_view(state)
     optstring = args[0]
     name = args[1]
-    if len(args) > 2:
-        params = args[2:]
-    elif call_stack is not None and call_stack.get_all_positional():
-        params = call_stack.get_all_positional()
-    else:
-        params = session.positional_args
+    params = args[2:] if len(args) > 2 else positional_params(
+        session, call_stack)
     silent = optstring.startswith(":")
     verbose = not silent and session.env.get("OPTERR", "1") != "0"
     try:

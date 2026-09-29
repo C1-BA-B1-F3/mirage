@@ -104,6 +104,10 @@ export const SHELL_ARGV0 = 'mirage'
 // report.
 export const BIN_PREFIX = '/usr/bin'
 
+// The IFS a shell starts with, what an unset IFS splits on, and the
+// characters of any IFS that count as its whitespace.
+export const IFS_DEFAULT = ' \t\n'
+
 // What bash says when fork(2) fails with EAGAIN, as at `ulimit -u`: the
 // forking shell abandons the rest of its line with status 254 (bash 5.2,
 // pinned in debian:stable-slim), and a subshell dying of it reports 254 to

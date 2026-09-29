@@ -15,7 +15,7 @@
 import { HttpGitHubTransport, type GitHubTransport } from '../../../../core/github/client.ts'
 import type { GhConfig } from '../../../../core/github/config.ts'
 import { parseRepo, type RepoRef } from '../../../../core/github/repo.ts'
-import { jqRun } from '../../../../core/jq/index.ts'
+import { jqRaised, jqRun, type JqRun } from '../../../../core/jq/index.ts'
 import { PartialOutputError, UsageError } from '../../../errors.ts'
 import type { FlagView } from '../../../spec/flag_view.ts'
 import type { FlagValue } from '../../../spec/types.ts'
@@ -26,6 +26,7 @@ import { resolvePath } from '../../../../utils/path.ts'
 import { compareCodePoints } from '../../../../utils/sort.ts'
 import type { CommandFnResult } from '../../../config.ts'
 import type { CLIInvocation } from '../../types.ts'
+import { GOJQ_RAISED } from './constants.ts'
 
 const ENC = new TextEncoder()
 
@@ -180,10 +181,85 @@ export function textValue(value: unknown): string {
   return ''
 }
 
+// Go's json.Marshal escapes <, > and & for HTML and U+2028 and U+2029 for
+// JavaScript on top of the escapes JSON.stringify shares with it; gojq's own
+// encoder escapes none of them, but does escape DEL.
+const MARSHAL_ESCAPES = /[<>&\u{2028}\u{2029}]/gu
+
+/**
+ * A number as Go's JSON encoders, gojq's among them, write a float64, which is
+ * how ES6 spells it: the shortest digits that read back the same, in exponent
+ * form below 1e-6 and from 1e21 on, anything past the largest finite float at
+ * that float.
+ */
+function goNumber(number: number): string {
+  return String(Math.min(Math.max(number, -Number.MAX_VALUE), Number.MAX_VALUE))
+}
+
+/** A string as Go's json.Marshal writes it. */
+function marshalString(text: string): string {
+  return JSON.stringify(text).replace(
+    MARSHAL_ESCAPES,
+    (escaped) => `\\u${escaped.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  )
+}
+
+/** A string as gojq's encoder writes it into an error. */
+function gojqString(text: string): string {
+  return JSON.stringify(text).replace(/\x7f/g, '\\u007f')
+}
+
+/**
+ * A decoded JSON value as Go writes it back out: compact, object keys sorted
+ * as a Go map's are, every number a float64 (see goNumber) and every string as
+ * `quote` writes it.
+ */
+function goEncoded(value: unknown, quote: (text: string) => string): string {
+  if (Array.isArray(value)) return `[${value.map((item) => goEncoded(item, quote)).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    const pairs = Object.keys(record)
+      .sort(compareCodePoints)
+      .map((key) => `${quote(key)}:${goEncoded(record[key], quote)}`)
+    return `{${pairs.join(',')}}`
+  }
+  if (typeof value === 'string') return quote(value)
+  if (typeof value === 'number') return goNumber(value)
+  return JSON.stringify(value)
+}
+
+/**
+ * A number as go-gh prints a float64 on its own line: in fixed notation, with
+ * no decimals when it is whole and two otherwise, rounded half to even as
+ * strconv rounds. An infinity jq-wasm hands over counts as the largest finite
+ * float, which is what jq.py hands over for one.
+ */
+function fixedNumber(number: number): string {
+  const finite = Math.min(Math.max(number, -Number.MAX_VALUE), Number.MAX_VALUE)
+  if (Number.isInteger(finite)) return BigInt(finite).toString()
+  const text = finite.toFixed(2)
+  // toFixed breaks an exact tie away from zero where strconv breaks it to
+  // the even digit, and a number ties at two places exactly when its eighths
+  // are odd.
+  const eighths = finite * 8
+  const last = Number(text.slice(-1))
+  if (Number.isInteger(eighths) && eighths % 2 !== 0 && last % 2 === 1) {
+    return `${text.slice(0, -1)}${String(last - 1)}`
+  }
+  return text
+}
+
+/**
+ * One `--jq` output as go-gh prints it: a string raw, null as an empty line, a
+ * boolean as its word, a number in fixed notation (see fixedNumber), and
+ * anything else as Go's json.Marshal writes it.
+ */
 function jqLine(value: unknown): string {
   if (value === null || value === undefined) return ''
   if (typeof value === 'string') return value
-  return JSON.stringify(value)
+  if (typeof value === 'boolean') return String(value)
+  if (typeof value === 'number') return fixedNumber(value)
+  return goEncoded(value, marshalString)
 }
 
 /**
@@ -231,22 +307,46 @@ export function jsonFields(fl: FlagView, allowed: readonly string[]): string[] |
 }
 
 /**
+ * A value jq printed, the way gojq's errors print it: a string as it is,
+ * anything else in gojq's own JSON.
+ */
+function gojqText(text: string, string: boolean): string {
+  return string ? text : goEncoded(JSON.parse(text), gojqString)
+}
+
+/**
+ * The message go-gh fails with when a run stopped early, or null when that
+ * stop ends the output without failing.
+ *
+ * gojq reports an error the program raised with `error` as `error: <value>`,
+ * and a builtin's in gojq's own words, which mirage's jq does not share, so
+ * jq 1.8.2's stand; the builtins gojq writes in jq raise through `error` too
+ * (GOJQ_RAISED). A `halt_error` whose value is not null fails as
+ * `halt error: <value>`.
+ */
+async function jqFailure(value: unknown, program: string, run: JqRun): Promise<string | null> {
+  const stop = run.stop
+  if (stop === null) return null
+  if (stop.kind === 'halt') {
+    return stop.message === null ? null : `halt error: ${gojqText(stop.message, stop.string)}`
+  }
+  if (await jqRaised(value, program, run)) return `error: ${gojqText(stop.text, stop.string)}`
+  const raised = GOJQ_RAISED.get(stop.text)
+  return raised === undefined ? stop.text : `error: ${raised}`
+}
+
+/**
  * The lines `--jq` prints for each value in turn, the way go-gh's jq
  * evaluates them. `halt`, and `halt_error` on null, end that value's output
- * there. An error, or any other `halt_error`, fails the command, the latter
- * as `halt error: <message>` whatever code it names, after the lines printed
- * before it: a PartialOutputError carries them.
+ * there. An error, or any other `halt_error`, fails the command after the
+ * lines printed before it (see jqFailure): a PartialOutputError carries them.
  */
 export async function jqLines(values: readonly unknown[], program: string): Promise<string> {
   const lines: string[] = []
   for (const value of values) {
     const run = await jqRun(value, program)
     for (const item of run.outputs) lines.push(`${jqLine(item)}\n`)
-    let failure: string | null = null
-    if (run.stop?.kind === 'error') failure = run.stop.text
-    else if (run.stop?.kind === 'halt' && run.stop.message !== null) {
-      failure = `halt error: ${run.stop.message}`
-    }
+    const failure = await jqFailure(value, program, run)
     if (failure !== null) {
       throw new PartialOutputError(failure, new TextEncoder().encode(lines.join('')))
     }

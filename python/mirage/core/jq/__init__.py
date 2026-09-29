@@ -13,8 +13,9 @@
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 from mirage.core.jq.errors import JqCompileError
-from mirage.core.jq.eval import (args_object, halts, jq_check, jq_eval, jq_run,
-                                 references_args, stream_reads)
+from mirage.core.jq.eval import (args_object, halts, jq_check, jq_eval,
+                                 jq_raised, jq_run, references_args,
+                                 stream_reads)
 from mirage.core.jq.format import (error_report, format_jq_output, format_one,
                                    halt_report)
 from mirage.core.jq.parse import JqParser, decode_utf8
@@ -51,6 +52,7 @@ __all__ = [
     "is_jsonl_path",
     "jq_check",
     "jq_eval",
+    "jq_raised",
     "jq_run",
     "parse_value",
     "read_values",

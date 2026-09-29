@@ -16,6 +16,7 @@ import re
 import string
 from typing import Any, Required, TypedDict
 
+from mirage.shell.bytes import byte_char
 from mirage.utils.posix import compile_posix_regex, translate_classes
 
 _SIMPLE_CMDS = frozenset("dDpPhHgGxNq")
@@ -150,9 +151,10 @@ def _decode_text_escapes(buf: str) -> str:
     """Decode a/i/c text as GNU's normalize_text does.
 
     The escapes in ``_TEXT_ESCAPES``, ``\\dNNN``, ``\\oNNN`` and ``\\xHH``
-    byte values (a value above 0x7f becomes that code point, as the text
-    here is a string and not bytes), and ``\\cX`` control characters; a
-    backslash before any other character is dropped. The text always ends
+    bytes (one above ASCII carried as its surrogate escape, which
+    ``encode_text`` writes back as that raw byte, as GNU writes it), and
+    ``\\cX`` control characters; a backslash before any other character is
+    dropped. The text always ends
     in the newline that closed it, so ``\\c`` at its end takes that newline
     as X.
 
@@ -189,7 +191,7 @@ def _decode_text_escapes(buf: str) -> str:
                 digits += 1
                 i += 1
                 limit *= base
-            out.append(chr(value & 0xFF) if digits else nx)
+            out.append(byte_char(value) if digits else nx)
             continue
         if nx == "c":
             x = buf[i]

@@ -13,11 +13,49 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 import { describe, expect, it } from 'vitest'
 
+import { yieldBytes } from '../../../io/stream.ts'
 import { materialize } from '../../../io/types.ts'
+import { PathSpec } from '../../../types.ts'
 import type { CommandOpts } from '../../config.ts'
 import { sedGeneric } from './sed.ts'
 
 const DEC = new TextDecoder()
+
+function latin1Bytes(text: string): number[] {
+  return Array.from({ length: text.length }, (_, i) => text.charCodeAt(i))
+}
+
+async function sedBytes(
+  paths: PathSpec[],
+  texts: string[],
+  flags: CommandOpts['flags'],
+  files: Map<string, Uint8Array>,
+  stdin: Uint8Array | null = null,
+): Promise<number[] | null> {
+  const opts = {
+    stdin,
+    flags,
+    filetypeFns: null,
+    cwd: '/',
+    vfs: { kind: 'ram' } as never,
+  } as CommandOpts
+  const result = await sedGeneric(
+    paths,
+    texts,
+    opts,
+    (p) => {
+      const data = files.get(p.virtual)
+      if (data === undefined) throw new Error(`no file ${p.virtual}`)
+      return yieldBytes(data)
+    },
+    (p, data) => {
+      files.set(p.virtual, data)
+      return Promise.resolve()
+    },
+  )
+  const out = result?.[0] ?? null
+  return out === null ? null : [...(await materialize(out))]
+}
 
 async function runSed(
   texts: string[],
@@ -66,5 +104,26 @@ describe('sed usage reporting', () => {
       exitCode: 4,
       stderr: 'sed: no input files\n',
     })
+  })
+})
+
+describe('sed text escapes above ASCII', () => {
+  it('writes them as raw bytes', async () => {
+    const out = await sedBytes(
+      [],
+      ['1a [\\xff][\\d200][\\o377][\\x80][\\xc3\\xa9][\\o400]\n2i [\\xe9]\n2c [\\d233][\\o351]'],
+      {},
+      new Map(),
+      new TextEncoder().encode('x\ny\n'),
+    )
+    expect(out).toEqual(
+      latin1Bytes('x\n[\xff][\xc8][\xff][\x80][\xc3\xa9][\x00]\n[\xe9]\n[\xe9][\xe9]\n'),
+    )
+  })
+
+  it('writes a raw byte in place', async () => {
+    const files = new Map([['/a.txt', new TextEncoder().encode('x\n')]])
+    await sedBytes([PathSpec.fromStrPath('/a.txt')], ['a y\\xff'], { i: true }, files)
+    expect([...(files.get('/a.txt') ?? [])]).toEqual(latin1Bytes('x\ny\xff\n'))
   })
 })

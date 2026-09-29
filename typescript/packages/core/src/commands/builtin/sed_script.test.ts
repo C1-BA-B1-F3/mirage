@@ -13,10 +13,15 @@
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
 import { describe, expect, it } from 'vitest'
+import { encodeText } from '../../shell/bytes.ts'
 import { breToEre, executeProgram, parseProgram } from './sed_script.ts'
 
 function sed(expr: string, input: string, suppress = false, extended = false): string {
   return executeProgram(input, parseProgram(expr), suppress, extended)
+}
+
+function latin1Bytes(text: string): number[] {
+  return Array.from({ length: text.length }, (_, i) => text.charCodeAt(i))
 }
 
 // ERE convenience: sed -E
@@ -163,6 +168,13 @@ describe('sed a, i and c text (GNU sed 4.9)', () => {
     )
     expect(sed('a [\\cA][\\ca][\\c?][\\c\\\\]', 'x\n')).toBe('x\n[\x01][\x01][\x7f][\x1c]\n')
     expect(() => sed('a [\\c\\d]', 'x\n')).toThrow('recursive escaping after \\c not allowed')
+  })
+
+  it('writes numeric escapes above ASCII as raw bytes', () => {
+    const out = sed('a [\\xff][\\d200][\\o377][\\x80][\\xc3\\xa9][\\o400]', 'x\n')
+    expect([...encodeText(out)]).toEqual(
+      latin1Bytes('x\n[\xff][\xc8][\xff][\x80][\xc3\xa9][\x00]\n'),
+    )
   })
 
   it('lets a final \\c take the closing newline', () => {

@@ -12,6 +12,7 @@
 // limitations under the License.
 // ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+import { byteChar } from '../../shell/bytes.ts'
 import { compilePosixRegex, translateClasses } from '../../utils/posix.ts'
 const SIMPLE_CMDS = new Set(['d', 'D', 'p', 'P', 'h', 'H', 'g', 'G', 'x', 'N', 'q'])
 
@@ -96,9 +97,9 @@ const TEXT_ESCAPES: Record<string, string> = {
 const TEXT_ESCAPE_BASES: Record<string, number> = { d: 10, o: 8, x: 16 }
 
 // GNU's normalize_text over a/i/c text: the escapes above, `\dNNN`, `\oNNN`
-// and `\xHH` byte values (a value above 0x7f becomes that code point, as the
-// text here is a string and not bytes), and `\cX` control characters; a
-// backslash before any other character is dropped. The text always ends in
+// and `\xHH` bytes (one above ASCII carried as its surrogate escape, which
+// `encodeText` writes back as that raw byte, as GNU writes it), and `\cX`
+// control characters; a backslash before any other character is dropped. The text always ends in
 // the newline that closed it, so `\c` at its end takes that newline as X.
 function decodeTextEscapes(buf: string): string {
   let out = ''
@@ -128,7 +129,7 @@ function decodeTextEscapes(buf: string): string {
         digits += 1
         i += 1
       }
-      out += digits === 0 ? nx : String.fromCharCode(value & 0xff)
+      out += digits === 0 ? nx : byteChar(value)
       continue
     }
     if (nx === 'c') {

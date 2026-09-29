@@ -25,6 +25,7 @@ import { SED_MISSING_SCRIPT, SED_NO_INPUT_EXIT, SED_NO_INPUT_FILES } from '../co
 import { executeProgram, parseOneCommand, parseProgram, type SedCommand } from '../sed_script.ts'
 import { readStdinAsync } from '../utils/stream.ts'
 import { joinFileLines } from '../utils/lines.ts'
+import { encodeText } from '../../../shell/bytes.ts'
 
 const ENC = new TextEncoder()
 const DEC = new TextDecoder('utf-8', { fatal: false })
@@ -142,7 +143,7 @@ export async function sedGeneric(
           }
           const text = DEC.decode(data)
           const newText = executeProgram(text, commands, false, extended)
-          const newData = ENC.encode(newText)
+          const newData = encodeText(newText)
           await write(p, newData)
           writes[p.mountPath] = newData
           edited.push(p.mountPath)
@@ -173,7 +174,7 @@ export async function sedGeneric(
         texts.push(DEC.decode(data))
         readOk.push(p.mountPath)
       }
-      const out: ByteSource = ENC.encode(runStream(texts, commands, false, extended))
+      const out: ByteSource = encodeText(runStream(texts, commands, false, extended))
       return [
         out,
         new IOResult({
@@ -208,7 +209,7 @@ export async function sedGeneric(
         texts.push(text)
         continue
       }
-      const newData = ENC.encode(executeProgram(text, commands, suppress, extended))
+      const newData = encodeText(executeProgram(text, commands, suppress, extended))
       await write(p, newData)
       writes[p.mountPath] = newData
       edited.push(p.mountPath)
@@ -222,7 +223,7 @@ export async function sedGeneric(
       io.cache = edited
       return [null, io]
     }
-    const out: ByteSource = ENC.encode(runStream(texts, commands, suppress, extended))
+    const out: ByteSource = encodeText(runStream(texts, commands, suppress, extended))
     return [out, io]
   }
 
@@ -238,5 +239,5 @@ export async function sedGeneric(
   }
   const text = DEC.decode(raw)
   const result = executeProgram(text, commands, suppress, extended)
-  return [ENC.encode(result), new IOResult()]
+  return [encodeText(result), new IOResult()]
 }

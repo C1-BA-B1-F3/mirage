@@ -1,6 +1,7 @@
 import pytest
 
 from mirage.commands.builtin.sed_script import execute_program, parse_program
+from mirage.shell.bytes import encode_text
 
 
 def _sed(expr: str, text: str) -> str:
@@ -37,6 +38,12 @@ def test_text_decodes_numeric_and_control_escapes():
     with pytest.raises(ValueError,
                        match=r"recursive escaping after \\c not allowed"):
         _sed("a [\\c\\d]", "x\n")
+
+
+def test_text_numeric_escapes_above_ascii_are_raw_bytes():
+    out = _sed("a [\\xff][\\d200][\\o377][\\x80][\\xc3\\xa9][\\o400]", "x\n")
+    assert encode_text(out) == (
+        b"x\n[\xff][\xc8][\xff][\x80][\xc3\xa9][\x00]\n")
 
 
 def test_text_final_c_escape_takes_closing_newline():

@@ -305,6 +305,108 @@
         "stdout": "",
         "stderr": "sed: unmatched `{'\n"
       }
+    },
+    {
+      "id": "sed_text_high_byte_escapes",
+      "seq": 991609,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\ny\\n' | sed -e '1a [\\xff][\\d200][\\o377][\\x80][\\xc3\\xa9][\\o400]' -e '2i [\\xe9]' -e '2c [\\d233][\\o351]' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " 78 0a 5b ff 5d 5b c8 5d 5b ff 5d 5b 80 5d 5b c3\n a9 5d 5b 00 5d 0a 5b e9 5d 0a 5b e9 5d 5b e9 5d\n 0a\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_text_high_byte_inplace",
+      "seq": 991610,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "mkdir -p /data/sh && printf 'x\\n' > /data/sh/f && sed -i 'a y\\xff' /data/sh/f && od -An -tx1 /data/sh/f && rm -r /data/sh",
+      "expect": {
+        "exit": 0,
+        "stdout": " 78 0a 79 ff 0a\n",
+        "stderr": ""
+      }
+    },
+    {
+      "id": "sed_raw_byte_script_word",
+      "seq": 991611,
+      "targets": [
+        "ram",
+        "disk",
+        "redis",
+        "opfs",
+        "s3",
+        "databricks",
+        "gridfs",
+        "s3-prefix",
+        "databricks-prefix",
+        "gridfs-prefix",
+        "hf",
+        "hf-prefix",
+        "dropbox",
+        "dropbox-root",
+        "onedrive",
+        "sharepoint",
+        "sharepoint-prefix",
+        "ssh",
+        "nextcloud",
+        "gdrive",
+        "gdrive-folder",
+        "box"
+      ],
+      "command": "printf 'x\\n' | sed -e $'s/x/\\xfe/' -e $'a y\\xff' | od -An -tx1",
+      "expect": {
+        "exit": 0,
+        "stdout": " fe 0a 79 ff 0a\n",
+        "stderr": ""
+      }
     }
   ]
 }

@@ -617,3 +617,31 @@ async def test_sed_multi_file_output_concatenates_without_separator():
         write_bytes=wb,
     )
     assert output == b"A\nA\nB\nB\n"
+
+
+@pytest.mark.asyncio
+async def test_sed_text_escapes_above_ascii_write_raw_bytes():
+    rb, wb, _ = _make_backend({})
+    output, _ = await sed(
+        [],
+        "1a [\\xff][\\d200][\\o377][\\x80][\\xc3\\xa9][\\o400]\n"
+        "2i [\\xe9]\n2c [\\d233][\\o351]",
+        read_bytes=rb,
+        write_bytes=wb,
+        stdin=b"x\ny\n",
+    )
+    assert output == (b"x\n[\xff][\xc8][\xff][\x80][\xc3\xa9][\x00]\n"
+                      b"[\xe9]\n[\xe9][\xe9]\n")
+
+
+@pytest.mark.asyncio
+async def test_sed_inplace_text_escape_above_ascii_writes_raw_byte():
+    rb, wb, store = _make_backend({"/a.txt": b"x\n"})
+    await sed(
+        [_spec("/a.txt")],
+        "a y\\xff",
+        read_bytes=rb,
+        write_bytes=wb,
+        in_place=True,
+    )
+    assert store["/a.txt"] == b"x\ny\xff\n"

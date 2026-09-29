@@ -18,10 +18,11 @@ import os
 from agents import Runner
 from agents.run import RunConfig
 from agents.sandbox import SandboxAgent, SandboxRunConfig
+from agents.sandbox.capabilities import Capabilities
 from dotenv import load_dotenv
 
 from mirage import MountMode, Workspace
-from mirage.agents.openai_agents import MirageSandboxClient
+from mirage.agents.openai_agents import MirageCapability, MirageSandboxClient
 from mirage.vfs.ram import RAMVFS
 from mirage.vfs.s3 import S3VFS, S3Config
 from mirage.vfs.slack import SlackConfig, SlackVFS
@@ -55,7 +56,8 @@ client = MirageSandboxClient(ws)
 agent = SandboxAgent(
     name="Mirage Sandbox Agent",
     model="gpt-5.5",
-    instructions=ws.file_prompt,
+    capabilities=[*Capabilities.default(),
+                  MirageCapability()],
 )
 
 task = ("1. Find the date of the latest Slack message in the general channel. "

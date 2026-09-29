@@ -12,6 +12,7 @@
 # limitations under the License.
 # ========= Copyright 2026 @ Strukto.AI All Rights Reserved. =========
 
+from mirage.agents.openai_agents.capability import MirageCapability
 from mirage.agents.openai_agents.editor import MirageEditor
 from mirage.agents.openai_agents.prompt import (MIRAGE_SYSTEM_PROMPT,
                                                 build_system_prompt)
@@ -21,6 +22,7 @@ from mirage.agents.openai_agents.sandbox import (MirageSandboxClient,
 from mirage.agents.openai_agents.shell import MirageShellExecutor
 
 __all__ = [
+    "MirageCapability",
     "MirageEditor",
     "MirageRunner",
     "MirageSandboxClient",

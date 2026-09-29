@@ -1,6 +1,6 @@
 ---
 title: OpenAI Agents SDK
-description: Run openai-agents against a Mirage workspace using MirageShellExecutor, MirageEditor, and MirageSandboxClient.
+description: Run openai-agents against a Mirage workspace using MirageShellExecutor, MirageEditor, MirageSandboxClient, and MirageCapability.
 icon: /images/openai-logo.svg
 ---
 
@@ -44,15 +44,36 @@ agent = Agent(
 
 ## Sandbox Agent
 
-For the new `SandboxAgent` API, use `MirageSandboxClient`:
+`SandboxAgent` runs the SDK's own `exec_command`, `apply_patch` and `view_image` tools against a sandbox session. `MirageSandboxClient` makes that session a Mirage workspace, and `MirageCapability` adds the workspace's mounts (backend, mode, commands) to the agent's instructions:
 
 ```python
-from agents.sandbox import SandboxAgent
-from mirage.agents.openai_agents import MirageSandboxClient
+from agents import Runner
+from agents.run import RunConfig
+from agents.sandbox import SandboxAgent, SandboxRunConfig
+from agents.sandbox.capabilities import Capabilities
 
-client = MirageSandboxClient(ws)
-agent = SandboxAgent(name="...", model="gpt-5.5", instructions=ws.file_prompt)
+from mirage.agents.openai_agents import MirageCapability, MirageSandboxClient
+
+agent = SandboxAgent(
+    name="Mirage Sandbox Agent",
+    model="gpt-5.5",
+    capabilities=[*Capabilities.default(), MirageCapability()],
+)
+result = await Runner.run(
+    agent,
+    "Summarize /data/report.csv into /notes.md.",
+    run_config=RunConfig(sandbox=SandboxRunConfig(
+        client=MirageSandboxClient(ws))),
+)
 ```
+
+How the session behaves:
+
+- Every command starts at the manifest root, `/` unless you configure a `Manifest`, and a `cd` or `export` ends with its command, as in the SDK's other sandboxes. Each sandbox session has its own Mirage session, and its commands run one at a time.
+- A command still running after `exec_command`'s yield time keeps running. The model polls it with `write_stdin` and stops it with Ctrl-C (`\u0003`). A direct `exec(..., timeout=...)` raises `ExecTimeoutError`.
+- Relative paths resolve against the manifest root, and writes create missing parent directories.
+- A run paused for tool approval resumes on the same workspace and keeps the files the agent wrote.
+- `exec("ls", "-la", path, shell=False)` quotes each argument. A single string with `shell=False` is one program name, as in the SDK's other sandboxes.
 
 ## Exports
 
@@ -62,6 +83,7 @@ agent = SandboxAgent(name="...", model="gpt-5.5", instructions=ws.file_prompt)
 | `MirageEditor` | Drop-in `ApplyPatchTool` editor, patches go through Mirage FS ops. |
 | `MirageSandboxClient` | Adapter for `agents.sandbox.SandboxAgent`. |
 | `MirageSandboxSession` | Per-conversation session bound to a workspace. |
+| `MirageCapability` | `SandboxAgent` capability that lists the workspace's mounts in the agent's instructions. |
 | `build_system_prompt` | Generates a system prompt that describes mounted paths to the model. |
 
 ## Examples

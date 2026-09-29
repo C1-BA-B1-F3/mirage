@@ -94,6 +94,7 @@
     "@mastra/core": "^1.59.0",
     "@opencode-ai/plugin": "^1.18.18",
     "@openai/agents": "^0.16.0",
+    "@openai/agents-core": "^0.16.0",
     "ai": "^7.0.66",
     "deepagents": "^1.12.4"
   },
@@ -113,6 +114,9 @@
     "@openai/agents": {
       "optional": true
     },
+    "@openai/agents-core": {
+      "optional": true
+    },
     "ai": {
       "optional": true
     },
@@ -130,6 +134,7 @@
     "@mastra/core": "^1.59.0",
     "@opencode-ai/plugin": "^1.18.18",
     "@openai/agents": "^0.16.0",
+    "@openai/agents-core": "^0.16.0",
     "@struktoai/mirage-node": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/picomatch": "^4.0.3",
